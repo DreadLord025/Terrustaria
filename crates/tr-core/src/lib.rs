@@ -18,6 +18,7 @@ pub mod extract;
 pub mod falling;
 pub mod flame;
 pub mod framing;
+pub mod generation_progress;
 pub mod housing;
 pub mod lighting;
 pub mod liquid;

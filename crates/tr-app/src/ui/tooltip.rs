@@ -968,6 +968,10 @@ mod tests {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
         // (`Item.AffixName`, `:1194-1201`) plus the stack suffix.
+        // The language lock: the register→read sequence must be atomic
+        // against the culture-switching tests (the S1-E-17 flow tests init
+        // the language and spawn workers that read it).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         register_tooltip_language();
         let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
         let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());
@@ -1001,6 +1005,7 @@ mod tests {
         // `Lang.GetTooltip(item.type)` (`Lang.cs:193-196`) + the row loop
         // (`Main.cs:20958-20972`): the `ItemTooltip.<ItemID name>` language
         // rows, one line each.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         register_tooltip_language();
         let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
         let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());

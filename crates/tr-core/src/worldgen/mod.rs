@@ -36,7 +36,8 @@ mod micro_surface;
 mod mini_biomes;
 mod noise;
 mod ocean;
-mod pipeline;
+pub mod pipeline;
+pub mod progress;
 mod spider_gem_moss;
 mod structures;
 mod surface;
@@ -125,6 +126,37 @@ pub(crate) const WALL_SANDSTONE: u16 = 187;
 
 pub fn generate(opts: &GenOptions) -> World {
     generate_with_chest_stock(opts, None)
+}
+
+/// The generation entry with the loading-screen progress hook (S1-E-17):
+/// the app's `UIWorldLoad` driver implements [`pipeline::GenProgressHook`]
+/// over `GenerationProgress` + the abort controller, and the pipeline
+/// bookends every executed step with it (`WorldGenerator.RunPass`'s
+/// `Start`/`End`, `WorldGenerator.cs:498`/`:507`). Returns the world plus
+/// the outcome — `Aborted` means the controller's `QueuedAbort` stopped
+/// the loop (`WorldGenerator.cs:433-437`) and the world is partial (the
+/// vanilla `worldGenCallback` skips `SaveNewWorld` on that arm,
+/// `WorldGen.cs:6594-6598`). The hook draws no RNG: the generated world is
+/// byte-identical to the no-hook path for the same options.
+pub fn generate_with_progress<'a>(
+    opts: &GenOptions,
+    chest_stock: Option<&'a mut chest_stock::ChestStockHook<'a>>,
+    progress: &'a mut dyn pipeline::GenProgressHook,
+) -> (World, pipeline::GenOutcome) {
+    let width = opts.width.max(512);
+    let height = opts.height.max(512);
+    let mut world = World::new(opts.name.clone(), width, height);
+    world.seeds = opts.flags;
+    world.micro_seeds = opts.micro_flags;
+    // The same boot the no-hook path runs (`generate_with_chest_stock`).
+    pipeline::boot_statics(&mut world);
+    let noise = Noise { seed: opts.seed };
+    let config = config::WorldGenConfig::parse();
+    let mut streams = pipeline::Streams::new(opts.seed);
+    streams.chest_stock = chest_stock;
+    streams.progress = Some(progress);
+    let outcome = pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    (world, outcome)
 }
 
 /// The generation entry with the chest-stocking hook (S1-A-4): each chest
@@ -1172,5 +1204,149 @@ mod tests {
             }
         }
         assert!(anchors >= 4, "the intact chest quads ({anchors})");
+    }
+
+    // --- S1-E-17: the progress hook seam ------------------------------------
+
+    /// A recording hook: the pass bookends + the abort flag, over the real
+    /// `GenerationProgress` so the weighted math is exercised end-to-end.
+    struct RecordingHook {
+        progress: crate::generation_progress::GenerationProgress,
+        steps: Vec<(String, f64)>,
+        abort_after: Option<usize>,
+    }
+
+    impl pipeline::GenProgressHook for RecordingHook {
+        fn begin_generation(&mut self, total_weight: f64) {
+            self.progress.total_weight = total_weight;
+        }
+        fn begin_step(&mut self, name: &str, weight: f64) {
+            self.steps.push((name.to_string(), weight));
+            self.progress.start(weight);
+            // The pass body's progress feed (`progress.Set`): half-done.
+            self.progress.set(0.5);
+        }
+        fn end_step(&mut self) {
+            self.progress.end();
+        }
+        fn should_abort(&self) -> bool {
+            self.abort_after.is_some_and(|n| self.steps.len() >= n)
+        }
+    }
+
+    /// The hook is RNG-neutral: the same seed generates a byte-identical
+    /// world with and without it (the golden-rule determinism invariant —
+    /// the hook draws nothing, it only observes the pass bookends).
+    #[test]
+    fn s1_e_17_the_progress_hook_does_not_change_the_world() {
+        let opts = GenOptions {
+            seed: 7,
+            ..Default::default()
+        };
+        let plain = generate(&opts);
+        let mut hook = RecordingHook {
+            progress: crate::generation_progress::GenerationProgress::new(),
+            steps: Vec::new(),
+            abort_after: None,
+        };
+        let (hooked, outcome) = generate_with_progress(&opts, None, &mut hook);
+        assert_eq!(outcome, pipeline::GenOutcome::Completed);
+        assert_eq!(plain.tiles, hooked.tiles, "the tile field is identical");
+        assert_eq!(plain.chests.len(), hooked.chests.len());
+        // Every executed step got its bookend, in pipeline order, and the
+        // weights sum to the total the hook was handed (`TotalProgress`
+        // reaches exactly 1.0 — `WorldGenerator.cs:424`'s enabled-sum).
+        assert_eq!(hook.steps.len(), pipeline::executed_pass_names().len());
+        let summed: f64 = hook.steps.iter().map(|(_, w)| w).sum();
+        assert_eq!(hook.progress.total_weight, summed);
+        assert_eq!(hook.progress.total_progress(), 1.0);
+        // The first bookend is the terrain height-map step — the port's
+        // first half of the Terrain slot (`WorldGen.cs:11504`); the hook
+        // receives the executed step's name (the message table's key).
+        assert_eq!(hook.steps[0].0, "terrain height map");
+    }
+
+    /// `QueuedAbort` stops the loop before the next step applies
+    /// (`WorldGenerator.cs:433-437`): the outcome is `Aborted`, the world is
+    /// partial, and no step after the abort ran.
+    #[test]
+    fn s1_e_17_queued_abort_stops_the_pipeline() {
+        let opts = GenOptions {
+            seed: 7,
+            ..Default::default()
+        };
+        let mut hook = RecordingHook {
+            progress: crate::generation_progress::GenerationProgress::new(),
+            steps: Vec::new(),
+            abort_after: Some(3),
+        };
+        let (world, outcome) = generate_with_progress(&opts, None, &mut hook);
+        assert_eq!(outcome, pipeline::GenOutcome::Aborted);
+        assert_eq!(hook.steps.len(), 3, "the abort broke before step 4");
+        assert!(hook.progress.total_progress() < 1.0);
+        // The partial world never reached the surface dressing: no trees.
+        let trees = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 20)
+            .count();
+        assert_eq!(trees, 0, "the tree passes never ran");
+    }
+
+    /// The resumable runner produces a byte-identical world to the one-shot
+    /// path — the determinism invariant for the loading screen's incremental
+    /// generation. The steps draw from their own name-mixed streams, so
+    /// advancing one step per call (with the RNG state persisted between
+    /// calls) changes no generated byte.
+    #[test]
+    fn s1_e_17_the_runner_matches_the_one_shot_world() {
+        let opts = GenOptions {
+            seed: 7,
+            ..Default::default()
+        };
+        let one_shot = generate(&opts);
+        let mut runner = pipeline::GenerationRunner::new(&opts);
+        let mut hook = RecordingHook {
+            progress: crate::generation_progress::GenerationProgress::new(),
+            steps: Vec::new(),
+            abort_after: None,
+        };
+        let mut result = pipeline::GenStep::Running;
+        let mut guard = 0;
+        while result == pipeline::GenStep::Running {
+            result = runner.advance(Some(&mut hook), None);
+            guard += 1;
+            assert!(guard < 1000, "the runner must terminate");
+        }
+        assert_eq!(result, pipeline::GenStep::Completed);
+        let incremental = runner.into_world();
+        assert_eq!(one_shot.tiles, incremental.tiles, "the tile field is identical");
+        assert_eq!(one_shot.chests.len(), incremental.chests.len());
+        // The hook saw every executed step, and the weighted progress hit 1.0.
+        assert_eq!(hook.steps.len(), pipeline::executed_pass_names().len());
+        assert_eq!(hook.progress.total_progress(), 1.0);
+    }
+
+    /// The runner's abort arm: `QueuedAbort` stops before the next step, the
+    /// world is partial, and a second advance is a no-op returning `Aborted`.
+    #[test]
+    fn s1_e_17_the_runner_aborts_and_stays_aborted() {
+        let opts = GenOptions {
+            seed: 7,
+            ..Default::default()
+        };
+        let mut runner = pipeline::GenerationRunner::new(&opts);
+        let mut hook = RecordingHook {
+            progress: crate::generation_progress::GenerationProgress::new(),
+            steps: Vec::new(),
+            abort_after: Some(2),
+        };
+        assert_eq!(runner.advance(Some(&mut hook), None), pipeline::GenStep::Running);
+        assert_eq!(runner.advance(Some(&mut hook), None), pipeline::GenStep::Running);
+        assert_eq!(runner.advance(Some(&mut hook), None), pipeline::GenStep::Aborted);
+        assert_eq!(hook.steps.len(), 2);
+        // A terminal result is sticky.
+        assert_eq!(runner.advance(Some(&mut hook), None), pipeline::GenStep::Aborted);
+        assert_eq!(hook.steps.len(), 2, "no further step applied");
     }
 }

@@ -10495,26 +10495,65 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
-- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
-  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
-  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
-  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
-  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
-  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
-  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
-  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
-  light layer; the tracked explode sound (`:69362`) — no sound layer; the
-  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
-  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
-  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
-  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
-  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
-  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
-  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
-  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
-  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
-  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
-  the tile, `velocity = Zero`, no kill.
+- **S1-D-4b-2 (2026-11-18) ported the sentry-backpack family** — aiStyle **138**
+  (Explosive Trap, `AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`), **139** (the
+  blast, `AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick alpha fade, the
+  one-shot latch, the 3-tick frame-wrap kill), **134** (Ballista, `AI_134_Ballista`,
+  `:68510-68651`) and **137** (Lightning Aura, `AI_137_LightningAura`, `:68854-69023`),
+  plus the shared `CanGetPickedUpBySentryBackpack`/`SetAsSelectedSentryBackpackTarget`
+  (`:78785-78810`) and `AI_Sentries_HeavySlingReposition` (`:69025-69299`). The blast
+  kinds 694/695/696 ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139,
+  alpha 255, the local-immunity 30 pair); the Ballista's 680 bolt gained its row
+  (`:7253-7262` — 16x16, aiStyle 1, penetrate 4, local-immunity −1) and the towers/auras
+  their `proj_frames` (`Main.cs:8461-8466`).
+  - **The backpack accessory is wired.** `Player.accSentryBackpack` (the four slings
+    6172/6175/6176/6177, `Player.cs:14507`/`:14565`/`:14573`/`:14577`), the grab cooldown
+    (`accSentryBackpackGrabCooldown`, `Update_SentryBackpack` `:28428-28434`, decremented
+    in `world_sim/player.rs` beside the ammo cycler) and the DD2 set flags
+    (`setSquireT2/T3`, `setHuntressT2/T3`, `setMonkT2/T3` from `ArmorSetBonuses.Benefits`
+    `:68-118`, `ballistaPanic` from buff 205 `:11843-11846`) re-derive per tick after
+    `ResetEffects` clears them. The 6175 Scout Sling's +5% all-class damage and the 6177
+    Harness's `noKnockback` ride along; the 6176 `accGolemSentryBackpack` half and the
+    6175 `aggro -= 400` half have no port consumer (the Golem-backpack crit arm
+    `Projectile.cs:12930` and the aggro system are unported). The DD2 sets' `maxTurrets++`
+    halves land in `Player::update`'s armor-set block.
+  - **The reposition's gravDir folds to 1.** `AI_Sentries_HeavySlingReposition`'s
+    `player.gravDir` multipliers (`:69038`/`:69064`/`:69111`/`:69139`/`:69147`/`:69169`)
+    take their positive branch (no gravity potion in the port); the sleeping/sitting
+    offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
+    The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
+    but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
+    reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
+    `_type = -1`; the port's `dismount()` likewise resets the kind).
+  - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
+    `:69412-69413`) — no pool light layer; the tracked sounds (`:68615`/`:68905`/`:69362`)
+    — no sound layer; the aura's three dust loops (`:68959-69015`) and their `Main.rand`
+    gating rolls (`Next(6)`/`NextVector2Unit`/`Next(10)`) — no dust layer (the
+    `ai_volcano`/`ai_eye_fire` precedent). The 680 bolt's aiStyle-1 per-type flight
+    (`AI_001`'s `type == 680` arms `:57471-57478`/`:57658-57661`) rides the generic arrow
+    flight — the per-type `AI_001` table is S1-D-4b-8. The aura's `Colliding` arm
+    (`:15800-15814`, the `AI_137_LightningAura_CanHit` reach test) and the blast's
+    `StatusNPC` Oiled debuff (`:11434-11437`) + the aura's full armor-penetration
+    (`:13232-13235`) are damage-side arms under the S1-C-8 `Colliding`/`StatusNPC` skip —
+    the shared `Damage_PVE` pass uses the plain box overlap. `AI_137_LightningAura_CanHit`
+    (`:70470-70500`) is ported as a helper for that future wiring.
+  - **The reposition-kill edge follows the port's dead-slot convention.** In C#, when
+    the backpack accessory is removed mid-carry, `AI_Sentries_HeavySlingReposition`
+    calls `Kill()` (`:69030`) but the calling arm's remaining body still runs on the
+    dead slot (a Ballista can even fire one last bolt that tick — the spawn gate reads
+    only `owner == Main.myPlayer`). The port's arms stop at the kill (`killed` flag),
+    the same "a dead slot pays nothing further" convention the pool documents at its
+    AI-dispatch guard — the dead slot's writes are unobservable (the spawn seam fully
+    resets a recycled slot). The accessory-removal tick is the only reachable case.
+  - **RNG**: the four AI arm bodies draw no `Main.rand` (proven by the seed-untouched
+    test `s1_d_4b_2_the_sentry_arms_draw_no_rng`). The blocked-move chain's tile-cut
+    prologue (`:17910-17948`) would draw `Main.rand.Next(3)` (`:17948`) for a friendly,
+    damage > 0, `CanCutTiles()`-true sentry, but the pool skips the whole tile-cut chain
+    (no 484/cracked-brick cutting layer, the `sentry_hydra_step`/`sentry_turret_step`
+    precedent), so that draw is skipped with it; the aura is on `CanCutTiles`'s refusal
+    list (`:15329`) anyway. The blocked-move path is the DD2 sentry arm (`:17986-17990`,
+    the `dd2_sentry_step` helper): one last step into the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -16107,6 +16146,140 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The loading screen + capture mode (S1-E-17)
+
+`crates/tr-app/src/ui/world_load.rs` ports the loading screen:
+`UIGenProgressBar`'s progress math (`UIGenProgressBar.cs:51-55`, `:68-80`,
+`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`),
+plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
++ the `Outer_*` frames, `UIHeader.cs:46-62`'s four-corner Death-font header).
+`crates/tr-app/src/capture.rs` ports the capture family
+(`CaptureManager.cs`, `CaptureInterface.cs`, `CaptureCamera.cs`,
+`CaptureSettings.cs`, `CaptureBiome.cs`). Deliberate deviations:
+
+- **The "smoothing" is a verbatim copy in 1.4.5.8.** `DrawSelf` assigns
+  `_visualOverallProgress = _targetOverallProgress` (and the current pair)
+  directly (`UIGenProgressBar.cs:68-69`) — no lerp exists in this version.
+  The port keeps both field pairs and pins the copy in a test so a later
+  smoothing lerp cannot land silently.
+- **Wired (round 2).** `FrontScreen::WorldLoad` is the sixth front screen;
+  `finish_creating_world` (`app/session.rs`) starts the generation job and
+  opens the screen (`WorldGen.CreateNewWorld`, `WorldGen.cs:6607-6625`);
+  `update_world_load` polls the result and hops to the world select
+  (`worldGenCallback`'s `menuMode = 6`, `:6599-6602` → `Main.cs:49468-49472`).
+  The generation runs on a worker thread (`app/worldgen_job.rs`, the C#'s
+  `Task.Factory.StartNew`) through the `GenProgressHook` seam
+  (`tr_core::worldgen::pipeline`); the progress/controller pair is the
+  `WorldGenerator.CurrentGenerationProgress`/`CurrentController` statics
+  (`WorldGenerator.cs:398-400`). The bar's four `Outer_*` textures load
+  (`assets.rs`, `UIGenProgressBar.cs:34-37`). The Inventory trigger queues
+  the abort (`UIWorldLoad.cs:54-58`); the abort arm skips the save
+  (`WorldGen.cs:6595-6598`).
+- **The drunk-world `Main.rand` arms are deferred.** The evil-texture
+  flicker (`UIGenProgressBar.cs:63-67`) and the random-digit message
+  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them would perturb
+  that stream's call order (the RNG-order invariant). The ported
+  `draw_frame` takes the evil flags as inputs.
+- **`placingTraps` stays false.** It is a pass-runtime static
+  (`WorldGen.cs:18662`) the port's compact pipeline never sets; the
+  get-good message reversal's `noTraps && placingTraps` gate
+  (`UIWorldLoad.cs:108`) therefore always takes the reversal arm on a
+  For-the-Worthy world.
+- **`GetStatusText`'s `0.0%` formatting rides the shared
+  `tr_core::generation_progress::format_percent`** (`(v*1000).round()/10`,
+  half-away-from-zero — .NET's `"0.0%"` custom specifier). An earlier round
+  used Rust's `{:.1}` (half-to-even) and claimed the tie input was not
+  binary-representable; that claim was false — e.g. `0.0625` scales to
+  exactly `6.25`, where .NET prints `6.3%` and `{:.1}` prints `6.2%`. Both
+  the status text and the `Message` `{0:0.0%}` substitution now use the one
+  formatter, pinned by the `0.0625 → "6.3%"` test.
+- **The get-good message reversal walks Unicode scalars, not UTF-16 code
+  units.** The C# reverses via `Text.Substring(num, 1)` per UTF-16 unit
+  (`UIWorldLoad.cs:110-115`); the port's `chars().rev()` reverses whole
+  scalars. The two differ only for surrogate-pair characters (emoji, rare
+  CJK extensions), which the `Lang.gen`/`WorldGeneration.*` messages never
+  contain — ASCII and the localized messages are identical in practice.
+- **`worldGenCallback` plays sound 10 twice; the port plays the completion
+  one only.** The C# plays `SoundEngine.PlaySound(10)` at entry AND exit
+  (`WorldGen.cs:6592`/`:6603`); the port plays `Menu_Open` on the completion
+  poll (`app/session.rs::update_world_load`, `:6603`). The entry cue is
+  deferred: the worker thread has no audio seam, and playing it on the
+  frame thread at job start would shift the cue's frame relative to the
+  C# task-start ordering — a documented deviation, not a silent drop.
+- **`CreateNewWorld` reseeds `Main.rand`; the port does not.** The C#
+  assigns `Main.rand = new UnifiedRandom(Main.ActiveWorldFileData.Seed)`
+  (`WorldGen.cs:6612`) before the task starts. The port keeps its `Main.rand`
+  stream untouched (the RNG-order invariant): reseeding at world creation
+  would change every subsequent menu/gameplay roll's provenance. Documented
+  deviation; revisit with the faithful `UnifiedRandom` port.
+- `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
+  (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
+  F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
+  preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
+  60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
+  worker thread, so the shot is SHA256-stable; `update_world_load` only
+  re-latches the snapshot while a job is live (a job-less frame keeps the
+  preset's). Baseline `docs/screenshots/s1-e-17-worldload.png`,
+  `TR_SHOT` + `TR_UI=worldload` + `TR_NAME=ShotPin` + `TR_DEBUG=0` +
+  `TR_DAY=1.0`, two runs SHA256-equal
+  (`8f308c82c27b29ad523dfd2baa48dedb5887f55d6514ce1967e6c0e316496b9a`).
+
+### The capture mode (S1-E-17)
+
+`crates/tr-app/src/capture.rs` ports the capture family's state machines
+1:1: the `CaptureManager` facade (`CaptureManager.cs:8-114`), the
+`CaptureInterface` selection state machine (the three modes — edge selection, drag
+bounds, change settings — the toolbar, the camera countdown,
+`CaptureInterface.cs:15-1607`), the `CaptureCamera` chunk queue / scaling /
+blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
+(`CaptureSettings.cs:6-28`) and `CaptureBiome`'s style table + biome pick
+(`CaptureBiome.cs:3-246`). The App owns the one `CaptureManager.Instance`
+(`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
+sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`). The
+capture freeze has TWO halves, both ported: (1) the `DoUpdate` gate
+(`Main.cs:16886-16890`, `if (IsCapturing) { FocusHelper.UpdateFocus; return; }`)
+— while a capture renders the ENTIRE world update skips: `Sandstorm.EmitDust`
+(`:17247`, it consumes the dust RNG), `SceneState.Update` (`:17816`) and the
+whole sim sit AFTER that return. Ported in `frame.rs`: `update_world_frame`
+is gated on `!is_capturing()` (the capture interface itself still updates —
+it rides the interface pass, not DoUpdate's world branch). (2) The
+`UpdateSceneMetrics` gate (`Main.cs:62518-62521`) — the DRAW-SIDE guard for
+the lighting engines' ExportMetrics callers (`LightingEngine.cs:93`,
+`LegacyLighting.cs:722`): `update_scene` reads `is_capturing()` and keeps the
+parked metrics (no rescan) for any draw-side caller that still runs.
+Deviations:
+
+- **The selection UI has no sprite draw yet — state only.** The
+  `CaptureInterface` state machine (modes, toolbar actions, countdown) is
+  ported and live, but `capture.rs` has no sprite-draw function: the
+  selection rectangle, the toolbar buttons and the countdown digits do
+  not render on screen. The UI draw lands with the S1-G-13 render-target
+  seam (the GPU chunk render needs the same targets); until then capture
+  mode is driven blind (F6 toggle + the state machine). Earlier
+  ROADMAP/PORT_MAP wording calling the selection UI "live" meant the
+  state machine only — corrected.
+
+- **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
+  (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
+  through the layer targets; the port's `CaptureRenderer` trait is a no-op
+  stub until the render-target family lands, so a started capture drains
+  its queue without producing pixels. The selection state machine, the
+  countdown and the `IsCapturing` metrics gate are live (the selection
+  UI's sprite draw is NOT — see the bullet above); the write-out waits on
+  the targets.
+- **The capture toggle rides F6, not F4.** The vanilla binds
+  `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
+  debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
+- **The fullscreen-map selection arm is a gap.** `GetMapCoords`
+  (`CaptureInterface.cs:1318-1458`) needs the map renderer's texture
+  geometry; the port's selection modes run the world arm only.
+- **`Player.ghost`/`gravDir` and `Main.treeX` are unported**, so the
+  capture input's ghost/gravity gates read false and `GetPurityForPlayer`
+  takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
+- **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
+  the toolbar's open-folder button plays its cue only.
 
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 

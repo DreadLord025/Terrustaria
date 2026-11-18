@@ -2393,6 +2393,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2 | BALLISTRA_TOWER_3 => {
                 (26.0, 54.0, 134, 1, 36000, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:7253-7262` — the Ballista's bolt (680): 16x16,
+            // aiStyle 1 (the plain arrow flight), `penetrate = 4`, the
+            // local-immunity pair with `localNPCHitCooldown = -1` (one hit per
+            // NPC for the bolt's life). `friendly` rides the pool default.
+            BALLISTA_SHOT => (16.0, 16.0, 1, 4, TIME_LEFT_DEFAULT, 0, true, false, false, (true, -1, false, -1, 0, 1.0)),
             LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => {
                 (16.0, 16.0, 137, -1, 36000, 0, false, false, false, RESET_STATE)
             }
@@ -2642,6 +2647,10 @@ pub const FLAME_BURST_TOWER_3: u16 = 667;
 pub const BALLISTRA_TOWER_1: u16 = 677;
 pub const BALLISTRA_TOWER_2: u16 = 678;
 pub const BALLISTRA_TOWER_3: u16 = 679;
+/// `ProjectileID.BallistaShot` (680) — the Ballista's bolt
+/// (`Projectile.cs:7253-7262`: 16x16, aiStyle 1, `penetrate = 4`,
+/// local-immunity −1).
+pub const BALLISTA_SHOT: u16 = 680;
 pub const LIGHTNING_AURA_1: u16 = 688;
 pub const LIGHTNING_AURA_2: u16 = 689;
 pub const LIGHTNING_AURA_3: u16 = 690;
@@ -8913,6 +8922,503 @@ impl Projectile {
         }
     }
 
+    /// `HandleMovement`'s blocked-move arm for the DD2 sentries (the 663/665/
+    /// 667, 677-679, 688-690, 691-693 switch arm, `Projectile.cs:17986-17990`):
+    /// `base.position += base.velocity; base.velocity = Vector2.Zero` — a
+    /// blocked move takes one last step into the tile then stops (no kill, no
+    /// bounce). The move itself is `Collision.TileCollision` with `flag6 =
+    /// false` (the per-type switch at `:17556-17572` names every DD2 sentry)
+    /// then `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`). A
+    /// `tileCollide = false` slot (backpack-carried) skips the tile pass and
+    /// just integrates (`:17476`'s gate). The slope/wet refinement arms
+    /// (`:17660`/`:17748`/`:17807`/`:17854`, the aiStyle-137 Y-only slope case
+    /// included) are SKIPPED — the sentry movement precedent (ANALYSIS).
+    ///
+    /// RNG: the blocked-move chain's tile-cut prologue (`:17910-17948`) would
+    /// draw `Main.rand.Next(3)` (`:17948`) for a friendly, damage > 0,
+    /// `CanCutTiles()`-true sentry — the pool skips the whole tile-cut chain
+    /// (no 484 / cracked-brick cutting layer), so that draw is skipped too
+    /// (ANALYSIS). The aiStyle-137 aura is on `CanCutTiles`'s refusal list
+    /// (`:15329`), so it never drew there anyway.
+    fn dd2_sentry_step(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let before = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            false,
+            false,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+        if self.vel != before {
+            self.vel = Vec2::ZERO;
+        }
+    }
+
+    /// `Projectile.CanGetPickedUpBySentryBackpack` (`Projectile.cs:78785-78805`):
+    /// the sentry-backpack pickup gate — a sentry owned by the local player,
+    /// whose owner wears the backpack accessory with no grab cooldown running,
+    /// and whose hitbox overlaps the owner's. The C#'s `Hitbox.Intersects` is
+    /// the strict XNA overlap (touching edges do not intersect).
+    fn can_get_picked_up_by_sentry_backpack(
+        &self,
+        player: Option<&crate::player::Player>,
+        local_owner: u8,
+    ) -> bool {
+        // `:78787-78790` — only sentries.
+        if !self.sentry {
+            return false;
+        }
+        // `:78791-78794` — only the local player's.
+        if self.owner != local_owner {
+            return false;
+        }
+        let Some(p) = player else { return false };
+        // `:78796-78799` — the accessory and the grab cooldown.
+        if !p.acc_sentry_backpack || p.acc_sentry_backpack_grab_cooldown > 0 {
+            return false;
+        }
+        // `:78800-78803` — the hitbox overlap.
+        let (pw, ph) = (crate::player::WIDTH, p.height);
+        let mine = tr_core::whip::Rect::new(
+            self.pos.x as i32, self.pos.y as i32, self.w as i32, self.h as i32,
+        );
+        let theirs = tr_core::whip::Rect::new(p.x as i32, p.y as i32, pw as i32, ph as i32);
+        mine.intersects(theirs)
+    }
+
+    /// `Projectile.SetAsSelectedSentryBackpackTarget` (`Projectile.cs:78807-78810`):
+    /// the grab locks the owner's backpack for 2 ticks.
+    fn set_as_selected_sentry_backpack_target(&self, player: &mut crate::player::Player) {
+        player.acc_sentry_backpack_grab_cooldown = 2;
+    }
+
+    /// `Projectile.AI_Sentries_HeavySlingReposition` (`Projectile.cs:69025-69299`):
+    /// the backpack-carried sentry rides the owner's body. The arms without a
+    /// backpack (`accSentryBackpack` off) kill the slot (`:69028-69032`). The
+    /// per-style anchor arms (`:69036-69076`) and the per-mount arms
+    /// (`:69186-69293`) place the box; the aiStyle-134/137/138 offsets are the
+    /// `flag4`/137/`flag5` blocks (`:69136-69181`).
+    ///
+    /// The port keeps `gravDir = 1` (no gravity potion), so the `player.gravDir`
+    /// multipliers fold to their positive branch; the sleeping/sitting offset
+    /// arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) are not modelled
+    /// (the port's accessor folds them, ANALYSIS). Returns `false` when the
+    /// slot was killed (no backpack) — the caller skips the rest of its arm.
+    fn ai_sentries_heavy_sling_reposition(
+        &mut self,
+        player: &crate::player::Player,
+        ai_style: u16,
+    ) -> bool {
+        // `:69027-69032` — no backpack, the sentry dies.
+        if !player.acc_sentry_backpack {
+            self.kill();
+            return false;
+        }
+        // `:69033-69034` — the transformation-mount and track-rider flags.
+        let flag = player.mount.is_active()
+            && player.mount.kind() >= 0
+            && matches!(player.mount.kind(), 52 | 54 | 55 | 56 | 61); // MountID.Sets.IsTransformationMount, MountID.cs:44
+        let flag2 = player.mount.is_active()
+            && player.mount.data().is_some_and(|d| d.minecart || d.can_ride_minecart_tracks); // Mount.AnyTrackRider, Mount.cs:554-567
+        // `:69035` — `num = Math.Min(21, player.height / 2)` (integer division).
+        let num = 21i32.min(player.height as i32 / 2);
+        let (mcx, mcy) = player.mounted_center();
+        let mounted_center = Vec2::new(mcx, mcy);
+        // `:69036-69050` — the aiStyle-123/84 head anchors (no ported kind
+        // rides this arm today, kept for the citation's completeness).
+        if ai_style == 123 || ai_style == 84 {
+            // `(float)(base.height / 2)` — the C#'s INTEGER division.
+            let mut center = mounted_center
+                + Vec2::new(0.0, -(num as f32 + 20.0 + (self.h as i32 / 2) as f32));
+            center.y += player.gfx_off_y;
+            if ai_style == 84 {
+                center.y += -6.0;
+            }
+            self.set_center(center);
+            if flag2 {
+                let bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h);
+                let rb = player.rotated_relative_point(bottom, 0);
+                self.pos.y = rb.y - self.h;
+                self.pos.x = rb.x - self.w * 0.5;
+            }
+            self.pos = self.pos.floor();
+            return true;
+        }
+        // `:69051-69061` — the Lightning Aura rides the owner's centre.
+        if ai_style == 137 {
+            let mut center = mounted_center;
+            center.y += player.gfx_off_y;
+            self.set_center(center);
+            if flag2 {
+                let (cx, cy) = self.center();
+                let rc = player.rotated_relative_point(Vec2::new(cx, cy), 0);
+                self.set_center(rc);
+            }
+            self.pos = self.pos.floor();
+            return true;
+        }
+        // `:69062-69076` — the Houndius (966) head anchor. Its aiStyle-53 arm
+        // does not call the reposition in this port (the backpack branch there
+        // is still unported), kept for the citation's completeness.
+        if self.kind == HOUNDIUS_SHOOTIUS {
+            let mut center = mounted_center + Vec2::new(0.0, -(num as f32));
+            center.y += player.gfx_off_y;
+            self.set_center(center);
+            if flag2 {
+                let bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h);
+                let rb = player.rotated_relative_point(bottom, 0);
+                self.pos.y = rb.y - self.h;
+                self.pos.x = rb.x - self.w * 0.5;
+            }
+            self.pos = self.pos.floor();
+            return true;
+        }
+        // `:69077-69080` — the general path: scale reset, the half-size anchor
+        // and the offset accumulator.
+        self.scale = 1.0;
+        let mut push_from_origin_hack = 0i32;
+        let mut vector = Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mut vector2 = Vec2::ZERO;
+        // `:69081-69107` — the 308/377 switch arms (no ported kind rides this
+        // general path today; their aiStyle-53 arms keep their own movement).
+        match self.kind {
+            FROST_HYDRA => {
+                if self.sprite_direction == 1 {
+                    vector2 = Vec2::new(-14.0, 0.0);
+                }
+                vector2 += Vec2::new(10.0 * self.sprite_direction as f32, 0.0);
+                if !flag {
+                    vector2.y += -20.0;
+                }
+                vector = Vec2::new(self.w * 0.5, self.h * 0.9);
+            }
+            QUEEN_SPIDER => {
+                vector2 += Vec2::new(self.sprite_direction as f32, 0.0);
+                if !flag {
+                    vector2.y += -20.0;
+                }
+                vector = Vec2::new(self.w * 0.5, self.h * 0.9);
+            }
+            _ => {}
+        }
+        // `:69108-69135` — the 1025 barnacle arm (its aiStyle-197 arm does not
+        // call the reposition in this port; kept for the citation).
+        let flag3 = self.kind == DEAD_CELLS_BARNACLE;
+        if flag3 {
+            vector2 += Vec2::new(player.facing as f32 * -25.0, 4.0);
+            self.rot = if player.facing == 1 {
+                std::f32::consts::FRAC_PI_2
+            } else {
+                -std::f32::consts::FRAC_PI_2
+            };
+            if player.facing == -1 {
+                vector2.x += player.facing as f32 * 4.0;
+            }
+            if flag {
+                self.rot = std::f32::consts::PI;
+                vector2.x += player.facing as f32 * 17.0;
+            }
+            if player.height < crate::player::HEIGHT {
+                self.rot = std::f32::consts::PI;
+                self.scale = 0.5;
+                vector2.y += 5.0;
+                let num2 = player.full_rotation.abs() / std::f32::consts::FRAC_PI_2;
+                vector2 += Vec2::new(player.facing as f32 * -4.0, 8.0) * num2;
+            }
+            self.rot += player.full_rotation;
+        }
+        // `:69136-69144` — the Ballista (aiStyle 134) rides 14 px above the
+        // centre, or 10 px below it on a transformation mount.
+        let flag4 = ai_style == 134;
+        if flag4 {
+            vector2 = Vec2::new(0.0, -14.0);
+            if flag {
+                vector2.y += 24.0;
+            }
+        }
+        // `:69145-69158` — the Flame Burst Tower (aiStyle 130) arm (its own AI
+        // is unported, S1-D-4b-3; kept for the citation).
+        if ai_style == 130 {
+            vector2 = Vec2::new(player.facing as f32 * 10.0, -11.0);
+            if self.direction != player.facing {
+                vector2.x += self.direction as f32 * -2.0;
+            }
+            vector = Vec2::new(self.w * 0.5, self.h);
+            if flag {
+                vector2.x += player.facing as f32 * -14.0;
+                vector2.y += 25.0;
+            }
+        }
+        // `:69159-69181` — the Explosive Trap (aiStyle 138): the side anchor
+        // and the sideways rotation.
+        let flag5 = ai_style == 138;
+        if flag5 {
+            if !flag {
+                vector2 = Vec2::new(player.facing as f32 * -9.0, 0.0);
+                if player.facing == -1 {
+                    vector2.y += 2.0;
+                }
+            }
+            self.rot = if player.facing == 1 { 4.712389 } else { std::f32::consts::FRAC_PI_2 };
+            if flag {
+                vector2.y += 5.0;
+                self.rot = 0.0;
+            }
+            self.rot += player.full_rotation;
+        }
+        // `:69182-69185` — the trap on the Cute Fishron mount (43) pushes out.
+        if flag5 && player.mount.is_active() && player.mount.kind() == 43 {
+            push_from_origin_hack = 12;
+        }
+        // `:69186-69293` — the per-mount placement switch. The C# switches on
+        // `player.mount.Type` unconditionally (no `Active` guard); an inactive
+        // mount's type is −1 (`Mount.Reset`, `Mount.cs:678`), so the default
+        // arm is the unmounted body anchor — the port's `kind()` matches.
+        match player.mount.kind() {
+            55 => {
+                // `:69193-69218` — the Bee mount: the sentry sits on the
+                // player's top.
+                self.set_bottom(Vec2::new(player.x + crate::player::WIDTH * 0.5, player.y));
+                let mut num6 = 10;
+                let mut num7 = 0;
+                let mut num8 = 0;
+                let num9 = player.mount.frame();
+                if num9 == 0 || (11..=12).contains(&num9) || (15..=16).contains(&num9) {
+                    num8 = 2;
+                }
+                if flag5 {
+                    self.scale = 0.5;
+                    num6 = 9;
+                    num7 = 2;
+                }
+                if flag4 {
+                    num7 += 8;
+                }
+                self.pos.y += (num6 + num8) as f32;
+                self.pos.x += (-num7 * player.facing) as f32;
+                let bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h) + vector2;
+                self.set_bottom(bottom);
+            }
+            61 => {
+                // `:69219-69241` — the Drill mount.
+                self.set_bottom(Vec2::new(player.x + crate::player::WIDTH * 0.5, player.y));
+                let mut num4 = 10;
+                let mut num5 = 0;
+                if flag5 {
+                    self.scale = 0.5;
+                    num4 = 20;
+                    num5 = 4;
+                    self.rot += player.facing as f32 * std::f32::consts::FRAC_PI_2;
+                }
+                if flag3 {
+                    num5 = 10;
+                    num4 = 16;
+                    self.rot -= player.facing as f32 * std::f32::consts::FRAC_PI_2;
+                }
+                self.pos.y += num4 as f32;
+                self.pos.x += (-num5 * player.facing) as f32;
+                let bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h) + vector2;
+                self.set_bottom(bottom);
+            }
+            56 => {
+                // `:69242-69273` — the Unicorn mount: the dash pose rides the
+                // top, otherwise the side.
+                let bottom = if player.dash > 0 && player.dash_delay < 0 {
+                    Vec2::new(player.x + crate::player::WIDTH * 0.5, player.y)
+                        + Vec2::new(4.0 * player.facing as f32, 3.0)
+                        + Vec2::new(0.0, -2.0)
+                } else if player.facing > 0 {
+                    Vec2::new(player.x, player.y + player.height * 0.5) + Vec2::new(9.0, 0.0)
+                } else {
+                    Vec2::new(player.x + crate::player::WIDTH, player.y + player.height * 0.5)
+                        + Vec2::new(-10.0, 0.0)
+                };
+                self.set_bottom(bottom);
+                if flag5 {
+                    self.scale = 0.5;
+                    vector2.y += 8.0;
+                    vector2.x += player.facing as f32 * 4.0;
+                    self.rot += std::f32::consts::PI;
+                }
+                if flag3 {
+                    vector2.y -= 4.0;
+                    vector2.x += player.facing as f32 * 12.0;
+                }
+                let num3 = if (3..=5).contains(&player.mount.frame()) { 0 } else { 2 };
+                let bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h)
+                    + vector2
+                    + Vec2::new(0.0, num3 as f32);
+                let rb = player.rotated_relative_point(bottom, 0);
+                self.set_bottom(rb);
+            }
+            54 => {
+                // `:69274-69283` — the Pigron mount.
+                if flag5 {
+                    vector2.y += 1.0;
+                    self.scale = 0.5;
+                }
+                let (mtx, mty) = player.mounted_top();
+                let bottom = Vec2::new(mtx, mty)
+                    + Vec2::new(-12.0 * player.facing as f32, 16.0)
+                    + vector2;
+                let rb = player.rotated_relative_point(bottom, 0);
+                self.set_bottom(rb);
+            }
+            52 => {
+                // `:69284-69292` — the Turtle mount.
+                let (mtx, mty) = player.mounted_top();
+                let mut bottom = Vec2::new(mtx, mty) + Vec2::new(-4.0 * player.facing as f32, 10.0);
+                self.set_bottom(bottom);
+                if flag4 {
+                    self.pos.y += 4.0;
+                }
+                bottom = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h) + vector2;
+                let rb = player.rotated_relative_point(bottom, 0);
+                self.set_bottom(rb);
+            }
+            _ => {
+                // `:69188-69192` — the default body anchor: the mounted centre
+                // plus the offset, the headgear-row lift, then the rotated
+                // relative point.
+                self.set_center(mounted_center + vector2);
+                // `Main.OffsetsPlayerHeadgear[bodyFrame.Y / bodyFrame.Height]`
+                // (`Main.cs:66638-66660`) — the X half is 0 for every row, so
+                // only the Y lift rides; `+ (0, -2)` then `* (0, gravDir)`
+                // zeroes X and keeps Y (gravDir = 1).
+                let headgear_y = crate::player::offsets_player_headgear_y(player.body_frame as usize);
+                self.pos.y += headgear_y - 2.0;
+                let p = self.pos + vector;
+                let rp = player.rotated_relative_point(p, push_from_origin_hack);
+                self.pos = rp - vector;
+            }
+        }
+        // `:69294-69297` — a transformation mount adds the gfx offset.
+        if flag {
+            self.pos.y += player.gfx_off_y;
+        }
+        // `:69298` — the floor snap.
+        self.pos = self.pos.floor();
+        true
+    }
+
+    /// `Entity.Center`'s setter (`Entity.cs`): place the box so its centre
+    /// lands on `c`.
+    fn set_center(&mut self, c: Vec2) {
+        self.pos = c - Vec2::new(self.w * 0.5, self.h * 0.5);
+    }
+
+    /// `Entity.Bottom`'s setter (`Entity.cs`): place the box so its
+    /// bottom-centre lands on `b`.
+    fn set_bottom(&mut self, b: Vec2) {
+        self.pos = Vec2::new(b.x - self.w * 0.5, b.y - self.h);
+    }
+
+    /// `Projectile.AI_134_Ballista_FindTarget` (`Projectile.cs:68409-68454`):
+    /// the Ballista's target pick — the owner's whip target first (when
+    /// chaseable, in range, outside the dead-bottom cone and behind line of
+    /// sight), else the nearest eligible NPC. The dead-bottom cone rejects a
+    /// target that is steeply below the tower (`|dir.X| < |dir.Y| *
+    /// deadBottomAngle && dir.Y > 0`). Returns the NPC index or −1.
+    fn ai_134_ballista_find_target(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        shot_range: f32,
+        dead_bottom_angle: f32,
+        shooting_spot: Vec2,
+        player_target: i32,
+    ) -> i32 {
+        // `:68411-68435` — the whip-target arm.
+        let mut best: i32 = -1;
+        if player_target >= 0 {
+            if let Some(n) = npcs.get(player_target as usize) {
+                if n.can_be_chased_by() {
+                    let nc = npc_center(n);
+                    let dist = shooting_spot.distance(nc);
+                    if dist <= shot_range {
+                        let dir = safe_normalize_or(nc - shooting_spot, Vec2::new(0.0, 1.0));
+                        let in_cone = dir.x.abs() < dir.y.abs() * dead_bottom_angle && dir.y > 0.0;
+                        if !in_cone
+                            && (best == -1
+                                || dist < shooting_spot.distance(npc_center(&npcs[best as usize])))
+                            && can_hit_line(world, shooting_spot.x, shooting_spot.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+                        {
+                            best = player_target;
+                        }
+                    }
+                }
+            }
+            if best != -1 {
+                return best;
+            }
+        }
+        // `:68436-68453` — the full scan.
+        for (j, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let nc = npc_center(n);
+            let dist = shooting_spot.distance(nc);
+            if dist > shot_range {
+                continue;
+            }
+            let dir = safe_normalize_or(nc - shooting_spot, Vec2::new(0.0, 1.0));
+            let in_cone = dir.x.abs() < dir.y.abs() * dead_bottom_angle && dir.y > 0.0;
+            if !in_cone
+                && (best == -1 || dist < shooting_spot.distance(npc_center(&npcs[best as usize])))
+                && can_hit_line(world, shooting_spot.x, shooting_spot.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+            {
+                best = j as i32;
+            }
+        }
+        best
+    }
+
+    /// `Projectile.AI_137_LightningAura_CanHit` (`Projectile.cs:70470-70500`):
+    /// the aura's zap reach — a clear line from the aura's top (+20 px) to the
+    /// target, or a two-segment arc around a blocker (the midpoint pushed
+    /// ±90° by 20% of the span). The `CollisionVisualizer` calls are debug
+    /// draws (no-op in release).
+    fn ai_137_lightning_aura_can_hit(&self, world: &World, target_position: Vec2) -> bool {
+        // `:70472-70475` — a solid target tile refuses.
+        if solid_tile(world, target_position.x as i32 / 16, target_position.y as i32 / 16) {
+            return false;
+        }
+        // `:70476-70477` — the direct line from the top + 20.
+        let vector = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y) + Vec2::new(0.0, 20.0);
+        let mut flag = can_hit_line(world, vector.x, vector.y, 0.0, 0.0, target_position.x, target_position.y, 0.0, 0.0);
+        if !flag {
+            // `:70480-70488` — the +90° arc.
+            let v = target_position - vector;
+            let spinningpoint = safe_normalize_or(v, Vec2::new(0.0, 1.0));
+            let vector2 = vector.lerp(target_position, 0.5);
+            let vector3 = vector2 + rotate(spinningpoint, std::f32::consts::FRAC_PI_2) * v.length() * 0.2;
+            if can_hit_line(world, vector.x, vector.y, 0.0, 0.0, vector3.x, vector3.y, 0.0, 0.0)
+                && can_hit_line(world, vector3.x, vector3.y, 0.0, 0.0, target_position.x, target_position.y, 0.0, 0.0)
+            {
+                flag = true;
+            }
+            // `:70489-70497` — the −90° arc.
+            if !flag {
+                let vector4 = vector2 + rotate(spinningpoint, -std::f32::consts::FRAC_PI_2) * v.length() * 0.2;
+                if can_hit_line(world, vector.x, vector.y, 0.0, 0.0, vector4.x, vector4.y, 0.0, 0.0)
+                    && can_hit_line(world, vector4.x, vector4.y, 0.0, 0.0, target_position.x, target_position.y, 0.0, 0.0)
+                {
+                    flag = true;
+                }
+            }
+        }
+        flag
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -10535,6 +11041,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3
         | EXPLOSIVE_TRAP_EXPLOSION_1 | EXPLOSIVE_TRAP_EXPLOSION_2 => 4,
         EXPLOSIVE_TRAP_EXPLOSION_3 => 5,
+        // The Ballista towers' 6-frame sheet (`Main.cs:8461-8463`) — `AI_134`'s
+        // reload frame (`Projectile.cs:68612`, `1 + ai[1] / 5`) and its idle
+        // frame 0 (`:68561`) read it.
+        BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2 | BALLISTRA_TOWER_3 => 6,
+        // The Lightning Auras' sheets (`Main.cs:8464-8466`): the T1/T2 auras
+        // animate 6 frames, the T3 aura 8 — `AI_137`'s 8-tick frame machine
+        // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
+        LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
+        LIGHTNING_AURA_3 => 8,
         _ => 1,
     }
 }
@@ -11281,6 +11796,63 @@ pub(crate) fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
 fn safe_normalize(v: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         Vec2::ZERO
+    } else {
+        v.normalize()
+    }
+}
+
+/// `Utils.AngleLerp(curAngle, targetAngle, amount)` (`Utils.cs:2033-2051`):
+/// the short-way angular lerp the Ballista's aim rides (`Projectile.cs:68583`/
+/// `:68607`). The result wraps through [`wrap_angle`] — XNA's
+/// `MathHelper.WrapAngle` (the `IEEERemainder` form, which keeps +π as +π;
+/// the `npc::angle_lerp` rem_euclid wrap folds it to −π, a boundary difference
+/// the Ballista's facing-−1 init rotation `π` would hit).
+fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
+    use std::f32::consts::TAU;
+    let angle = if target < cur {
+        let wrapped = target + TAU;
+        if wrapped - cur > cur - target {
+            cur + (target - cur) * amount
+        } else {
+            cur + (wrapped - cur) * amount
+        }
+    } else {
+        if !(target > cur) {
+            return cur;
+        }
+        let wrapped = target - TAU;
+        if target - cur > cur - wrapped {
+            cur + (wrapped - cur) * amount
+        } else {
+            cur + (target - cur) * amount
+        }
+    };
+    wrap_angle(angle)
+}
+
+/// `Searches.Chain(new Searches.Down/Up(..), _cachedConditions_notNull,
+/// _cachedConditions_solid)`'s per-tile predicate (`Projectile.cs:68914`/
+/// `:68920`): `Conditions.NotNull` (`Conditions.cs:112-118`, the tile exists)
+/// AND `Conditions.IsSolid` (`:84-98`, `WorldGen.InWorld(x, y, 10)` then
+/// `active() && Main.tileSolid[type]`). Note `Main.tileSolid` INCLUDES
+/// platforms (`tileSolidTop` is a subset) — unlike [`solid_block`] this does
+/// NOT exclude them, and it carries no slope/half-brick term. The `InWorld`
+/// fluff margin sits inside the bounds (`WorldGen.cs:9688-9695`).
+fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
+    // `Conditions.IsSolid`'s `WorldGen.InWorld(x, y, 10)` guard.
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 10 {
+        return false;
+    }
+    world.tile(x, y).is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`) with an
+/// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
+/// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
+/// default instead of collapsing to zero.
+fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+    if v == Vec2::ZERO || v.is_nan() {
+        default_value
     } else {
         v.normalize()
     }
@@ -13670,157 +14242,537 @@ impl ProjectilePool {
                                 // SKIPPED - no sound, dust or gore layer in the pool.
                                 self.slots[i].sentry_turret_step(world);
                         }
+                        134 => {
+                            // `AI_134_Ballista` (`Projectile.cs:68510-68651`):
+                            // the DD2 Ballista sentry (677/678/679). The C#
+                            // order: the constants + the owner's set/panic
+                            // reads, the init latch, the backpack gate + the
+                            // sling reposition, the ai[0]==1 reload/aim state,
+                            // the ai[0]==2 fire state, then the gravity tail.
+                            // The arm draws no `Main.rand` (the targeting and
+                            // the shot are deterministic).
+                            let (p_facing, p_squire_t2, p_squire_t3, p_panic, p_minion_target) =
+                                player.as_deref().map_or((1, false, false, false, -1), |pl| {
+                                    (pl.facing, pl.set_squire_t2, pl.set_squire_t3, pl.ballista_panic, pl.minion_attack_target_npc)
+                                });
+                            // `GetBallistraShotDelay` (`:68653-68669`): 160
+                            // stock, 100 with setSquireT3, 60 with ballistaPanic,
+                            // 30 with both.
+                            let mut shot_delay = 160.0f32;
+                            if p_squire_t3 { shot_delay = 100.0; }
+                            if p_panic { shot_delay = 60.0; }
+                            if p_panic && p_squire_t3 { shot_delay = 30.0; }
+                            // `:68512-68520` — the constants. num3 (shot speed)
+                            // is 16, or 21 with setSquireT2 (`:68521-68524`).
+                            let shot_range = 900.0f32;
+                            let dead_bottom_angle = 0.75f32;
+                            let shot_speed = if p_squire_t2 { 21.0 } else { 16.0 };
+                            let num4 = 1i32; // the fire-state frame base
+                            let num5 = 5i32; // the reload-frame count
+                            let num6 = 5i32; // the frame divisor (num2 = num6)
+                            // `:68514`/`:68527-68530` — the firing centre is
+                            // captured BEFORE the backpack reposition; the T1
+                            // tower (677) drops it 4 px.
+                            let (ccx, ccy) = self.slots[i].center();
+                            let mut center = Vec2::new(ccx, ccy);
+                            if self.slots[i].kind == BALLISTRA_TOWER_1 { center.y -= 4.0; }
+                            // `:68531-68541` — the init latch (the C# runs it
+                            // BEFORE the pickup gate).
+                            if self.slots[i].ai[0] == 0.0 {
+                                let projectile = &mut self.slots[i];
+                                projectile.direction = p_facing;
+                                projectile.sprite_direction = p_facing;
+                                projectile.ai[0] = 1.0;
+                                projectile.ai[1] = shot_delay;
+                                if projectile.direction == -1 {
+                                    projectile.rot = std::f32::consts::PI;
+                                }
+                            }
+                            // `:68542-68546` — the backpack pickup gate.
+                            let pickup = self.slots[i].ai[2] == 0.0
+                                && self.slots[i].can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
+                            let flag = self.slots[i].ai[2] == 1.0 || pickup;
+                            let mut shot: Option<(f32, f32, f32, f32)> = None;
+                            let mut killed = false;
+                            {
+                                let projectile = &mut self.slots[i];
+                                // `:68548-68558` — the backpack branch.
+                                if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:68550`, `:78807-78810`): the 2-tick
+                                    // grab lockout — the C# re-arms it EVERY
+                                    // carried tick, not only on the pickup.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
+                                    if pickup {
+                                        projectile.ai[2] = 1.0;
+                                    }
+                                    if projectile.ai[0] == 1.0 && projectile.ai[1] == 0.0 {
+                                        projectile.direction = p_facing;
+                                        projectile.sprite_direction = p_facing;
+                                    }
+                                    projectile.vel = Vec2::ZERO;
+                                    if let Some(pl) = player.as_deref() {
+                                        if !projectile.ai_sentries_heavy_sling_reposition(pl, 134) {
+                                            killed = true;
+                                        }
+                                    } else {
+                                        projectile.kill();
+                                        killed = true;
+                                    }
+                                }
+                                if !killed {
+                                    if projectile.ai[0] == 1.0 {
+                                        // `:68559-68609` — the reload/aim state.
+                                        projectile.frame = 0;
+                                        let mut flag2 = false;
+                                        if p_panic && projectile.ai[1] > 60.0 { projectile.ai[1] = 60.0; }
+                                        if p_panic && p_squire_t3 && projectile.ai[1] > 30.0 { projectile.ai[1] = 30.0; }
+                                        if projectile.ai[1] > 0.0 {
+                                            projectile.ai[1] -= 1.0;
+                                        } else {
+                                            flag2 = true;
+                                        }
+                                        let num7 = projectile.ai_134_ballista_find_target(world, npcs, shot_range, dead_bottom_angle, center, p_minion_target);
+                                        if num7 != -1 {
+                                            let v = safe_normalize_or(npc_center(&npcs[num7 as usize]) - center, Vec2::new(0.0, 1.0));
+                                            projectile.rot = angle_lerp(projectile.rot, v.y.atan2(v.x), 0.08);
+                                            if projectile.rot > std::f32::consts::FRAC_PI_2 || projectile.rot < -std::f32::consts::FRAC_PI_2 {
+                                                projectile.direction = -1;
+                                            } else {
+                                                projectile.direction = 1;
+                                            }
+                                            if flag2 && projectile.owner == local_owner {
+                                                projectile.direction = csign(v.x) as i32;
+                                                projectile.ai[0] = 2.0;
+                                                projectile.ai[1] = 0.0;
+                                            }
+                                        } else {
+                                            let target_angle = if projectile.direction == -1 { std::f32::consts::PI } else { 0.0 };
+                                            projectile.rot = angle_lerp(projectile.rot, target_angle, 0.05);
+                                        }
+                                    } else if projectile.ai[0] == 2.0 {
+                                        // `:68610-68642` — the fire state.
+                                        projectile.frame = num4 + (projectile.ai[1] / num6 as f32) as i32;
+                                        if projectile.ai[1] == num6 as f32 {
+                                            // The tracked shot sound (`:68615`)
+                                            // is skipped — no sound layer.
+                                            let mut vector = Vec2::new(projectile.direction as f32, 0.0);
+                                            let num8 = projectile.ai_134_ballista_find_target(world, npcs, shot_range, dead_bottom_angle, center, p_minion_target);
+                                            if num8 != -1 {
+                                                vector = safe_normalize_or(npc_center(&npcs[num8 as usize]) - center, Vec2::new(projectile.direction as f32, 0.0));
+                                            }
+                                            projectile.rot = vector.y.atan2(vector.x);
+                                            if projectile.rot > std::f32::consts::FRAC_PI_2 || projectile.rot < -std::f32::consts::FRAC_PI_2 {
+                                                projectile.direction = -1;
+                                            } else {
+                                                projectile.direction = 1;
+                                            }
+                                            let vector2 = vector * shot_speed;
+                                            if projectile.owner == local_owner {
+                                                // `:68634` — the 680 bolt from
+                                                // the captured centre;
+                                                // `NewProjectile` centres the
+                                                // box (`:10876-10877`).
+                                                shot = Some((center.x, center.y, vector2.x, vector2.y));
+                                            }
+                                        }
+                                        projectile.ai[1] += 1.0;
+                                        if projectile.ai[1] >= (num5 * num6) as f32 {
+                                            projectile.ai[0] = 1.0;
+                                            projectile.ai[1] = shot_delay;
+                                        }
+                                    }
+                                    projectile.sprite_direction = projectile.direction;
+                                    // `:68644-68650` — the gravity tail.
+                                    if flag {
+                                        projectile.tile_collide = false;
+                                    } else {
+                                        projectile.tile_collide = true;
+                                        projectile.vel.y += 0.2;
+                                    }
+                                }
+                            }
+                            if let Some((x, y, mut vx, mut vy)) = shot {
+                                let (damage, kb, owner) = {
+                                    let p = &self.slots[i];
+                                    (p.damage, p.knock_back, p.owner)
+                                };
+                                // `NewProjectile`'s aiStyle-1 spawn clamp
+                                // (`Projectile.cs:10895-10902`): while any
+                                // component sits at/beyond ±16 (Y below −16),
+                                // both decay ×0.97. The gate is `>= 16f`, so
+                                // even the 16-px level shot decays once
+                                // (15.52); the 21-px setSquireT2 shot decays
+                                // nine times under it.
+                                while vx >= 16.0 || vx <= -16.0 || vy >= 16.0 || vy < -16.0 {
+                                    vx *= 0.97;
+                                    vy *= 0.97;
+                                }
+                                let _ = self.spawn_with_data_ai_owned(
+                                    BALLISTA_SHOT, owner, x - 8.0, y - 8.0, vx, vy, damage, kb, 0.0, 0.0,
+                                );
+                            }
+                            // `HandleMovement`: the DD2 blocked-move arm
+                            // (`:17986-17990`), `flag6 = false` (`:17561-17563`).
+                            if !killed {
+                                self.slots[i].dd2_sentry_step(world);
+                            }
+                        }
+                        137 => {
+                            // `AI_137_LightningAura` (`Projectile.cs:68854-69023`):
+                            // the DD2 Lightning Aura sentry (688/689/690). The
+                            // C# order: the knockback pin + the monk set reads,
+                            // the backpack gate + the sling reposition, the
+                            // ai[0] zap-period counter, the localAI[0] ground
+                            // scan + resize, the 8-tick frame machine, the dust
+                            // loops (skipped), then the gravity tail.
+                            //
+                            // RNG: the arm's only `Main.rand` draws are the
+                            // three cosmetic dust loops' gating rolls
+                            // (`Next(6)`/`NextVector2Unit` at `:68961`/`:68965`,
+                            // `Next(10)` at `:69005`) — the pool has no dust
+                            // layer, so those loops and their draws are SKIPPED
+                            // (the sentry/dust precedent, ANALYSIS). The arm
+                            // body itself draws nothing.
+                            let (p_monk_t2, p_monk_t3) = player.as_deref().map_or((false, false), |pl| (pl.set_monk_t2, pl.set_monk_t3));
+                            // `:68856-68870` — the constants. num (scan tiles)
+                            // 10 → 14 with setMonkT3; num3 (zap period) 30 → 25
+                            // with setMonkT2; num5 (min height tiles) 4 → 8 with
+                            // setMonkT3. num2 = 999 (max width), num4 = 40.
+                            let mut num = 10i32;
+                            let num2 = 999i32;
+                            let mut num3 = 30i32;
+                            // num4 = 40 (`:68859`) feeds only the skipped dust
+                            // loops (`:68958`/`:68968`) — not carried.
+                            let mut num5 = 4i32;
+                            self.slots[i].knock_back = 0.0;
+                            if p_monk_t2 { num3 -= 5; }
+                            if p_monk_t3 { num = 14; num5 = 8; }
+                            // `:68871-68875` — the backpack pickup gate.
+                            let pickup = self.slots[i].ai[2] == 0.0
+                                && self.slots[i].can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
+                            if pickup {
+                                self.slots[i].ai[2] = 1.0;
+                            }
+                            let flag = self.slots[i].ai[2] == 1.0;
+                            let mut killed = false;
+                            let mut early_return = false;
+                            {
+                                let projectile = &mut self.slots[i];
+                                // `:68878-68885` — the backpack branch.
+                                if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:68880`): re-armed every carried tick.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
+                                    projectile.vel = Vec2::ZERO;
+                                    if let Some(pl) = player.as_deref() {
+                                        if !projectile.ai_sentries_heavy_sling_reposition(pl, 137) {
+                                            killed = true;
+                                        }
+                                    } else {
+                                        projectile.kill();
+                                        killed = true;
+                                    }
+                                }
+                                if !killed {
+                                    // `:68886-68907` — the zap-period counter.
+                                    // The `ai[0] == 0` arm scans for a chaseable
+                                    // NPC in the box to gate the zap SOUND
+                                    // (`:68905`, skipped — no sound layer); the
+                                    // counter wrap is the state the port keeps.
+                                    projectile.ai[0] += 1.0;
+                                    if projectile.ai[0] >= num3 as f32 {
+                                        projectile.ai[0] = 0.0;
+                                    }
+                                    // `:68908-68947` — the one-shot ground scan
+                                    // and resize.
+                                    if projectile.local_ai[0] == 0.0 {
+                                        projectile.local_ai[0] = 1.0;
+                                        projectile.vel = Vec2::ZERO;
+                                        let (cx, cy) = projectile.center();
+                                        let origin = (cx as i32 / 16, cy as i32 / 16);
+                                        // `Searches.Down(500)` + notNull + solid
+                                        // (`:68914`, `Searches.cs:60-70`,
+                                        // `Conditions.cs:84-98`/`:112-118`).
+                                        let mut result: Option<(i32, i32)> = None;
+                                        for d in 0..500 {
+                                            let y = origin.1 + d;
+                                            if y >= world.height { break; }
+                                            if aura_solid_at(world, origin.0, y) {
+                                                result = Some((origin.0, y));
+                                                break;
+                                            }
+                                        }
+                                        match result {
+                                            None => {
+                                                // `:68916-68918` — no ground:
+                                                // drop 16 px and return from
+                                                // AI(). The C# `return` leaves
+                                                // AI() only — HandleMovement
+                                                // still runs in Update() after
+                                                // it, so the movement below is
+                                                // NOT skipped (the slot stays
+                                                // active and falls).
+                                                projectile.pos.y += 16.0;
+                                                early_return = true;
+                                            }
+                                            Some(result) => {
+                                                // `Searches.Up(num)` from
+                                                // (result.X, result.Y - 1)
+                                                // (`:68920-68923`).
+                                                let mut result2: Option<(i32, i32)> = None;
+                                                for u in 0..num {
+                                                    let y = (result.1 - 1) - u;
+                                                    if aura_solid_at(world, result.0, y) {
+                                                        result2 = Some((result.0, y));
+                                                        break;
+                                                    }
+                                                }
+                                                let result2 = result2.unwrap_or((origin.0, origin.1 - num - 1));
+                                                // `:68924-68928` — a half-brick
+                                                // ground (blockType == 1) lifts
+                                                // the anchor 8 px.
+                                                let mut num6 = 0i32;
+                                                if world.tile(result.0, result.1).is_some_and(|t| t.half_brick()) {
+                                                    num6 += 8;
+                                                }
+                                                // `:68929-68946` — the box resize.
+                                                let center_w = Vec2::new(result.0 as f32 * 16.0 + 8.0, result.1 as f32 * 16.0 + num6 as f32);
+                                                let vector_w = Vec2::new(result2.0 as f32 * 16.0 + 8.0, result2.1 as f32 * 16.0);
+                                                let mut height = (center_w.y - vector_w.y) as i32;
+                                                if height > num * 16 { height = num * 16; }
+                                                if height < num5 * 16 { height = num5 * 16; }
+                                                height *= 2;
+                                                let mut width = height;
+                                                if width > num2 { width = num2; }
+                                                projectile.h = height as f32;
+                                                projectile.w = width as f32;
+                                                projectile.set_center(center_w);
+                                            }
+                                        }
+                                    }
+                                    if !early_return {
+                                        // `:68948-68955` — the 8-tick frame
+                                        // machine, wrapping at projFrames.
+                                        projectile.frame_counter += 1;
+                                        if projectile.frame_counter >= 8 {
+                                            projectile.frame_counter = 0;
+                                            projectile.frame += 1;
+                                            if projectile.frame >= proj_frames(projectile.kind) as i32 {
+                                                projectile.frame = 0;
+                                            }
+                                        }
+                                        // `:68956-69015` — the light cast and the
+                                        // three dust loops are SKIPPED (no light
+                                        // or dust layer; their `Main.rand` draws
+                                        // go with them — ANALYSIS).
+                                        // `:69016-69022` — the gravity tail.
+                                        if flag {
+                                            projectile.tile_collide = false;
+                                        } else {
+                                            projectile.tile_collide = true;
+                                            projectile.vel.y += 0.2;
+                                        }
+                                    }
+                                }
+                            }
+                            // `HandleMovement`: the DD2 blocked-move arm
+                            // (`:17986-17990`), `flag6 = false` (`:17564-17566`).
+                            // It runs even on the ground-scan early return (the
+                            // C# `return` leaves AI(), not Update()).
+                            if !killed {
+                                self.slots[i].dd2_sentry_step(world);
+                            }
+                        }
                         138 => {
                             // `AI_138_ExplosiveTrap` (`Projectile.cs:69301-69374`):
                             // the DD2 Explosive Trap sentry (691/692/693). The
                             // C# order: the facing pin, the constants, the
-                            // backpack gate, the frame machine, the 3-tick
-                            // scan cooldown, the box scan + explosion spawn,
-                            // then the gravity tail.
+                            // backpack gate + the sling reposition, the frame
+                            // machine, the 3-tick scan cooldown, the box scan +
+                            // explosion spawn, then the gravity tail. The arm
+                            // draws no `Main.rand`.
+                            let (p_huntress_t2, p_huntress_t3) =
+                                player.as_deref().map_or((false, false), |pl| (pl.set_huntress_t2, pl.set_huntress_t3));
                             let mut shot: Option<(u16, f32, f32, i32, f32, u8)> = None;
+                            let mut killed = false;
                             {
                                 let projectile = &mut self.slots[i];
                                 // `:69303` — `spriteDirection = (direction = 1)`.
                                 projectile.sprite_direction = 1;
                                 projectile.direction = 1;
                                 // `:69304-69316` — the explosion kind per tier
-                                // and the scan box half-size.
-                                let (explosion_kind, box_half) = match projectile.kind {
-                                    EXPLOSIVE_TRAP_2 => (EXPLOSIVE_TRAP_EXPLOSION_2, 48.0),
-                                    EXPLOSIVE_TRAP_3 => (EXPLOSIVE_TRAP_EXPLOSION_3, 48.0),
-                                    _ => (EXPLOSIVE_TRAP_EXPLOSION_1, 48.0),
+                                // and the scan box half-size (num2 = 48).
+                                let explosion_kind = match projectile.kind {
+                                    EXPLOSIVE_TRAP_2 => EXPLOSIVE_TRAP_EXPLOSION_2,
+                                    EXPLOSIVE_TRAP_3 => EXPLOSIVE_TRAP_EXPLOSION_3,
+                                    _ => EXPLOSIVE_TRAP_EXPLOSION_1,
                                 };
+                                let mut box_half = 48.0f32;
                                 // `GetExplosiveTrapCooldown` (`:69376-69388`):
-                                // 90 stock, 60 with `setHuntressT2`, 30 with
-                                // `setHuntressT3`. The Player has no huntress
-                                // set flags yet, so the stock 90 holds —
-                                // ponytail: add the T2/T3 overrides when the
-                                // armor sets land.
-                                let cooldown = 90.0;
-                                // The backpack gate (`:69317-69331`) is
-                                // unreachable in this port: no
-                                // `accSentryBackpack` support, so
-                                // `CanGetPickedUpBySentryBackpack`
-                                // (`:78785-78805`) is false and `ai[2]` stays
-                                // 0 — the `flag` branch (the sling reposition,
-                                // the 20 px inflate, the 14 px box drop and
-                                // the `tileCollide = false` return) never
-                                // runs. ponytail: no sentry-backpack support -
-                                // add when the Player gains `accSentryBackpack`.
-                                // The `Lighting.AddLight` (`:69332`) has no
-                                // pool layer — skipped (ANALYSIS).
-                                // The frame machine (`:69333-69340`): 12 ticks
-                                // per frame, wrapping at `projFrames`.
-                                projectile.frame_counter += 1;
-                                if projectile.frame_counter >= 12 {
-                                    projectile.frame_counter = 0;
-                                    projectile.frame += 1;
-                                    if projectile.frame >= proj_frames(projectile.kind) as i32 {
-                                        projectile.frame = 0;
-                                    }
-                                }
-                                // The scan cooldown (`:69341-69344`).
-                                if projectile.local_ai[0] > 0.0 {
-                                    projectile.local_ai[0] -= 1.0;
-                                }
-                                // The scan + fire (`:69345-69366`): only the
-                                // local owner scans; the box is
-                                // `Utils.CenteredRectangle(Center + (0, -48),
-                                // 144x144)` (`Utils.cs:947-950`, the `(int)`
-                                // truncation), inflated by `num3` (0 without
-                                // the backpack).
-                                if projectile.local_ai[0] <= 0.0
-                                    && projectile.owner == local_owner
+                                // 90 stock, 60 with setHuntressT2, 30 with
+                                // setHuntressT3.
+                                let mut cooldown = 90.0f32;
+                                if p_huntress_t2 { cooldown = 60.0; }
+                                if p_huntress_t3 { cooldown = 30.0; }
+                                // `:69307`/`:69326` — the box inflate (num3) is
+                                // 0, or 20 with the backpack.
+                                let mut num3 = 0i32;
+                                // `:69317-69321` — the backpack pickup gate.
+                                if projectile.ai[2] == 0.0
+                                    && projectile.can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner)
                                 {
-                                    projectile.local_ai[0] = 3.0;
-                                    let (cx, cy) = projectile.center();
-                                    let size = box_half * 3.0;
-                                    let rx = (cx - size / 2.0) as i32;
-                                    let ry = (cy - box_half - size / 2.0) as i32;
-                                    let rw = size as i32;
-                                    let rh = size as i32;
-                                    // `Rectangle.Intersects` — strict overlap,
-                                    // touching edges do not intersect.
-                                    let found = npcs.iter().any(|n| {
-                                        if !n.can_be_chased_by() {
-                                            return false;
+                                    projectile.ai[2] = 1.0;
+                                }
+                                let flag = projectile.ai[2] == 1.0;
+                                // `:69323-69331` — the backpack branch.
+                                if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:69325`): re-armed every carried tick.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
+                                    num3 = 20;
+                                    projectile.vel = Vec2::ZERO;
+                                    box_half -= 14.0;
+                                    if let Some(pl) = player.as_deref() {
+                                        if !projectile.ai_sentries_heavy_sling_reposition(pl, 138) {
+                                            killed = true;
                                         }
-                                        let (nw, nh) = n.size();
-                                        let (nx, ny) = (n.x as i32, n.y as i32);
-                                        nx < rx + rw
-                                            && rx < nx + nw as i32
-                                            && ny < ry + rh
-                                            && ry < ny + nh as i32
-                                    });
-                                    if found {
-                                        // The tracked sound (`:69362`) is
-                                        // skipped — no sound layer.
-                                        projectile.local_ai[0] = cooldown;
-                                        // `:69364` — the blast spawns at
-                                        // `Center + (0, -48)` with zero
-                                        // velocity, the trap's damage and
-                                        // knock back; `NewProjectile` centres
-                                        // the box (`:10876-10877`).
-                                        shot = Some((
-                                            explosion_kind,
-                                            cx - 72.0,
-                                            cy - box_half - 72.0,
-                                            projectile.damage,
-                                            projectile.knock_back,
-                                            projectile.owner,
-                                        ));
+                                    } else {
+                                        projectile.kill();
+                                        killed = true;
                                     }
                                 }
-                                // The gravity tail (`:69367-69373`): without
-                                // the backpack the trap collides and falls.
-                                projectile.tile_collide = true;
-                                projectile.vel.y += 0.2;
+                                if !killed {
+                                    // The `Lighting.AddLight` (`:69332`) has no
+                                    // pool layer — skipped (ANALYSIS).
+                                    // The frame machine (`:69333-69340`): 12 ticks
+                                    // per frame, wrapping at `projFrames`.
+                                    projectile.frame_counter += 1;
+                                    if projectile.frame_counter >= 12 {
+                                        projectile.frame_counter = 0;
+                                        projectile.frame += 1;
+                                        if projectile.frame >= proj_frames(projectile.kind) as i32 {
+                                            projectile.frame = 0;
+                                        }
+                                    }
+                                    // The scan cooldown (`:69341-69344`).
+                                    if projectile.local_ai[0] > 0.0 {
+                                        projectile.local_ai[0] -= 1.0;
+                                    }
+                                    // The scan + fire (`:69345-69366`): only the
+                                    // local owner scans; the box is
+                                    // `Utils.CenteredRectangle(Center + (0,
+                                    // -num2), num2*3)` (`Utils.cs:947-950`, the
+                                    // `(int)` truncation), inflated by num3.
+                                    if projectile.local_ai[0] <= 0.0
+                                        && projectile.owner == local_owner
+                                    {
+                                        projectile.local_ai[0] = 3.0;
+                                        let (cx, cy) = projectile.center();
+                                        let size = box_half * 3.0;
+                                        let mut rect = tr_core::whip::Rect::new(
+                                            (cx - size / 2.0) as i32,
+                                            (cy - box_half - size / 2.0) as i32,
+                                            size as i32,
+                                            size as i32,
+                                        );
+                                        rect.inflate(num3, num3);
+                                        // `Rectangle.Intersects` — strict overlap,
+                                        // touching edges do not intersect.
+                                        let found = npcs.iter().any(|n| {
+                                            if !n.can_be_chased_by() {
+                                                return false;
+                                            }
+                                            let (nw, nh) = n.size();
+                                            rect.intersects(tr_core::whip::Rect::new(
+                                                n.x as i32, n.y as i32, nw as i32, nh as i32,
+                                            ))
+                                        });
+                                        if found {
+                                            // The tracked sound (`:69362`) is
+                                            // skipped — no sound layer.
+                                            projectile.local_ai[0] = cooldown;
+                                            // `:69364` — the blast spawns at
+                                            // `Center + (0, -num2)` with zero
+                                            // velocity, the trap's damage and
+                                            // knock back; `NewProjectile` centres
+                                            // the box (`:10876-10877`).
+                                            shot = Some((
+                                                explosion_kind,
+                                                cx - 72.0,
+                                                cy - box_half - 72.0,
+                                                projectile.damage,
+                                                projectile.knock_back,
+                                                projectile.owner,
+                                            ));
+                                        }
+                                    }
+                                    // The gravity tail (`:69367-69373`).
+                                    if flag {
+                                        projectile.tile_collide = false;
+                                    } else {
+                                        projectile.tile_collide = true;
+                                        projectile.vel.y += 0.2;
+                                    }
+                                }
                             }
                             if let Some((kind, x, y, damage, kb, owner)) = shot {
                                 let _ = self.spawn_with_data_ai_owned(
                                     kind, owner, x, y, 0.0, 0.0, damage, kb, 0.0, 0.0,
                                 );
                             }
-                            // `HandleMovement` (`:17587`'s `TileCollision` with
-                            // `flag6 = false`, the 691-693 switch arm at
-                            // `:17567-17569`): a blocked move takes the DD2
-                            // sentry arm (`:17986-17990`) — one last step into
-                            // the tile, then `velocity = Zero` (no kill, no
-                            // bounce); a free move integrates via
-                            // `UpdatePosition` (`:19858`/`:20445`).
-                            // RNG: the AI arm itself draws nothing. The
-                            // blocked-move chain's tile-cut prologue
-                            // (`:17910-17948`) would draw `Main.rand.Next(3)`
-                            // (`:17948`) for this friendly, damage > 0,
-                            // `CanCutTiles()`-true (`:15329`) trap — the pool
-                            // skips the whole tile-cut chain (no 484 /
-                            // cracked-brick cutting layer, like the sentry
-                            // steps above), so that draw is skipped too
-                            // (ANALYSIS).
-                            let before = self.slots[i].vel;
-                            let tc = crate::collision::tile_collision(
-                                world,
-                                [self.slots[i].pos.x, self.slots[i].pos.y],
-                                [before.x, before.y],
-                                self.slots[i].w,
-                                self.slots[i].h,
-                                false,
-                                false,
-                            );
-                            self.slots[i].vel = Vec2::new(tc.vel[0], tc.vel[1]);
-                            let vel = self.slots[i].vel;
-                            self.slots[i].pos += vel;
-                            if vel != before {
-                                self.slots[i].vel = Vec2::ZERO;
+                            // `HandleMovement`: the DD2 blocked-move arm
+                            // (`:17986-17990`), `flag6 = false` (`:17567-17569`).
+                            if !killed {
+                                self.slots[i].dd2_sentry_step(world);
                             }
                         }
-                        // aiStyle 139 (`AI_139_ExplosiveTrapExplosion`,
-                        // `Projectile.cs:69390-69414`) — the blast the 138 arm
-                        // spawns — is UNPORTED this round (S1-D-4b-2 scope):
-                        // the blast rides its `proj_data` row (the alpha-255
-                        // fade-in and the frame-wrap kill are missing) and
-                        // holds until its `timeLeft` expires; its `Damage_PVE`
-                        // half already works through the shared pass.
+                        139 => {
+                            // `AI_139_ExplosiveTrapExplosion`
+                            // (`Projectile.cs:69390-69414`): the trap blasts
+                            // (694/695/696) — the 25-per-tick alpha fade, the
+                            // one-shot latch and the 3-tick frame machine whose
+                            // wrap kills. The arm draws no `Main.rand`.
+                            let frames = proj_frames(self.slots[i].kind) as i32;
+                            let projectile = &mut self.slots[i];
+                            // `:69394-69398` — the alpha fade.
+                            projectile.alpha -= 25;
+                            if projectile.alpha < 0 {
+                                projectile.alpha = 0;
+                            }
+                            // `:69399-69402` — the one-shot latch.
+                            if projectile.local_ai[0] == 0.0 {
+                                projectile.local_ai[0] = 1.0;
+                            }
+                            // `:69403-69411` — the wrap kills and returns.
+                            let mut dead = false;
+                            projectile.frame_counter += 1;
+                            if projectile.frame_counter >= 3 {
+                                projectile.frame_counter = 0;
+                                projectile.frame += 1;
+                                if projectile.frame >= frames {
+                                    dead = true;
+                                }
+                            }
+                            if dead {
+                                self.kill(i);
+                            } else {
+                                // The `PlotTileLine` light cast (`:69412-69413`)
+                                // has no pool layer — skipped (ANALYSIS).
+                                // `HandleMovement`: `tileCollide = false`, so
+                                // only `UpdatePosition`'s `position += velocity`
+                                // runs (`:19858`/`:20445`) — the blast's velocity
+                                // is zero.
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
+                        }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
                             // `AI_062` (`Projectile.cs:29314-29316`'s
@@ -25732,10 +26684,12 @@ mod sentry_tests {
 
 #[cfg(test)]
 mod s1_d_4b_2_trap_tests {
-    //! S1-D-4b-2 — the aiStyle-138 Explosive Trap dispatch
-    //! (`Projectile.cs:69301-69374`): the dispatch pins + the key state
-    //! transitions (the fall, the frame machine, the scan cooldown and the
-    //! tier→blast mapping). The 139 blast arm is out of this round's scope.
+    //! S1-D-4b-2 — the sentry-backpack family's per-style dispatch tests:
+    //! aiStyle 138 (Explosive Trap, `Projectile.cs:69301-69374`), 139 (the
+    //! blast, `:69390-69414`), 134 (Ballista, `:68510-68651`) and 137
+    //! (Lightning Aura, `:68854-69023`), plus the shared
+    //! `CanGetPickedUpBySentryBackpack`/`AI_Sentries_HeavySlingReposition`
+    //! (`:78785-78810`/`:69025-69299`) and the `accSentryBackpack` accessory.
     use super::*;
     use crate::npc::{Npc, NpcKind};
     use crate::player::Player;
@@ -25858,6 +26812,345 @@ mod s1_d_4b_2_trap_tests {
             }
             let blasts = pool.slots.iter().filter(|s| s.active && s.kind == blast_kind).count();
             assert_eq!(blasts, 1, "the cooldown gates the next scan");
+        }
+    }
+
+    /// The huntress-set cooldown overrides (`GetExplosiveTrapCooldown`,
+    /// `:69376-69388`): setHuntressT2 → 60, setHuntressT3 → 30.
+    #[test]
+    fn s1_d_4b_2_the_trap_cooldown_follows_the_huntress_set() {
+        for (t2, t3, expected) in [(false, false, 90.0), (true, false, 60.0), (true, true, 30.0)] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.set_huntress_t2 = t2;
+            p.set_huntress_t3 = t3;
+            let trap = pool
+                .spawn_with_data_ai_owned(EXPLOSIVE_TRAP_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs = vec![npc_at(NpcKind::Zombie, 300.0, 250.0)];
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[trap].local_ai[0], expected, "t2={t2} t3={t3}");
+        }
+    }
+
+    /// The backpack pickup (`CanGetPickedUpBySentryBackpack`, `:78785-78805`):
+    /// a trap overlapping its backpack-wearing owner latches `ai[2] = 1`, arms
+    /// the 2-tick grab cooldown (`SetAsSelectedSentryBackpackTarget`, `:78809`),
+    /// rides the owner (`AI_Sentries_HeavySlingReposition`, `:69025-69299`) and
+    /// stops colliding/falling (`:69367-69370`). Without the accessory the gate
+    /// stays false and the trap falls.
+    #[test]
+    fn s1_d_4b_2_the_trap_is_picked_up_by_the_sentry_backpack() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.acc_sentry_backpack = true;
+        // The trap on the owner's centre so the hitboxes overlap.
+        let (pcx, pcy) = p.center();
+        let trap = pool
+            .spawn_with_data_ai_owned(EXPLOSIVE_TRAP_1, 0, pcx - 8.0, pcy - 8.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[trap].ai[2], 1.0, "the pickup latches ai[2]");
+        assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "the 2-tick grab lockout");
+        assert!(!pool.slots[trap].tile_collide, ":69369 — the carried trap does not collide");
+        assert_eq!(pool.slots[trap].vel, Vec2::ZERO, ":69328 — velocity zeroed");
+        // The reposition floors the box onto the owner's side (`:69164`, the
+        // facing-1 anchor `(direction * -9, 0)`), so it no longer falls.
+        let y_after = pool.slots[trap].pos.y;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!((pool.slots[trap].pos.y - y_after).abs() < 1.0, "the carried trap holds its ride");
+        // Without the accessory the gate is false: the trap falls.
+        let mut pool2 = ProjectilePool::new();
+        let mut p2 = player(&w);
+        p2.acc_sentry_backpack = false;
+        let trap2 = pool2
+            .spawn_with_data_ai_owned(EXPLOSIVE_TRAP_1, 0, pcx - 8.0, pcy - 8.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        tick(&mut pool2, &mut w, &mut p2, &mut npcs);
+        assert_eq!(pool2.slots[trap2].ai[2], 0.0, "no backpack, no pickup");
+        assert!(pool2.slots[trap2].tile_collide);
+        assert_eq!(pool2.slots[trap2].vel.y, 0.2, "the trap falls");
+    }
+
+    /// The backpack pickup on the Ballista and the Aura: both latch `ai[2] = 1`
+    /// on the owner overlap, stop colliding, and ride the owner — the Ballista
+    /// 14 px above the mounted centre (`:69139`), the Aura ON the mounted
+    /// centre (`:69053`). The grab cooldown re-arms every carried tick
+    /// (`:68550`/`:68880`).
+    #[test]
+    fn s1_d_4b_2_the_ballista_and_aura_ride_the_backpack() {
+        for kind in [BALLISTRA_TOWER_1, LIGHTNING_AURA_1] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.acc_sentry_backpack = true;
+            let (pcx, pcy) = p.center();
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, pcx - 8.0, pcy - 8.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs: Vec<Npc> = Vec::new();
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[slot].ai[2], 1.0, "kind {kind}: the pickup latches");
+            assert!(!pool.slots[slot].tile_collide, "kind {kind}: the carried sentry does not collide");
+            assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "kind {kind}: the grab lockout");
+            // The ride: the aura centres on the owner; the ballista sits above.
+            let (cx, cy) = pool.slots[slot].center();
+            if kind == LIGHTNING_AURA_1 {
+                // The aura's ground scan may resize/recentre it after the
+                // reposition (the C# order: reposition, then the scan) — in an
+                // empty world the scan finds no ground and drops it 16 px, so
+                // only the x anchor is pinned here.
+                assert!((cx - pcx).abs() < 16.0, "the aura rides the owner's column: {cx} vs {pcx}");
+            } else {
+                assert!(cy < pcy, "the ballista rides above the centre: {cy} vs {pcy}");
+            }
+            // The carried sentry holds (no fall).
+            let y_after = pool.slots[slot].pos.y;
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert!((pool.slots[slot].pos.y - y_after).abs() < 17.0, "kind {kind}: no gravity fall");
+            assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "kind {kind}: the lockout re-arms");
+        }
+    }
+
+    /// The 139 blast arm (`AI_139_ExplosiveTrapExplosion`, `:69390-69414`): the
+    /// alpha fades 25/tick from 255, the one-shot latch flips `localAI[0]`, and
+    /// the 3-tick frame machine kills on the wrap (the T1/T2 blasts' 4 frames →
+    /// 12 ticks, the T3 blast's 5 → 15).
+    #[test]
+    fn s1_d_4b_2_the_blast_fades_and_dies_on_the_frame_wrap() {
+        for (kind, frames) in [
+            (EXPLOSIVE_TRAP_EXPLOSION_1, 4),
+            (EXPLOSIVE_TRAP_EXPLOSION_2, 4),
+            (EXPLOSIVE_TRAP_EXPLOSION_3, 5),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let blast = pool
+                .spawn_with_data_ai_owned(kind, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            assert_eq!(pool.slots[blast].alpha, 255, "the row's alpha");
+            let mut npcs: Vec<Npc> = Vec::new();
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[blast].alpha, 230, ":69394 — the 25 fade");
+            assert_eq!(pool.slots[blast].local_ai[0], 1.0, ":69399-69402 — the latch");
+            assert_eq!(pool.slots[blast].frame_counter, 1);
+            // The frame advances every 3rd tick; the wrap kills on the
+            // `frames`-th advance — tick `frames * 3` (the first tick already
+            // ran above).
+            let life = frames * 3;
+            for _ in 0..(life - 2) {
+                tick(&mut pool, &mut w, &mut p, &mut npcs);
+                assert!(pool.slots[blast].active, "alive before the wrap");
+            }
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert!(!pool.slots[blast].active, "the frame wrap kills at tick {life}");
+        }
+    }
+
+    /// The 134 Ballista arm reaches its dispatch (`AI_134_Ballista`,
+    /// `:68510-68651`): the init latch sets `ai[0] = 1`, `ai[1] = 160` (the
+    /// stock `GetBallistraShotDelay`) and the owner's facing; the reload state
+    /// counts `ai[1]` down and the gravity tail falls. Without the arm the slot
+    /// would sit still at `ai[0] = 0`.
+    #[test]
+    fn s1_d_4b_2_the_ballista_dispatches_and_reloads() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let tower = pool
+            .spawn_with_data_ai_owned(BALLISTRA_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tower].ai[0], 1.0, ":68534 — the init latch");
+        // ai[1] = 160 at the init, then the reload state decrements it the same
+        // tick (`:68571-68574`) → 159.
+        assert_eq!(pool.slots[tower].ai[1], 159.0, "the 160-tick reload, decremented");
+        assert!(pool.slots[tower].tile_collide, ":68649");
+        assert_eq!(pool.slots[tower].vel.y, 0.2, ":68650 — the gravity tick");
+        assert_eq!(pool.slots[tower].frame, 0, ":68561 — the idle frame");
+    }
+
+    /// The Ballista fires its 680 bolt (`:68610-68642`): with a target in range
+    /// the reload state flips to the fire state (`ai[0] = 2`) when the counter
+    /// hits 0, and at `ai[1] == 5` the bolt spawns at the captured centre with
+    /// the 16-px shot speed (21 with setSquireT2). The bolt is the aiStyle-1
+    /// 680 row (`penetrate = 4`, local-immunity −1).
+    #[test]
+    fn s1_d_4b_2_the_ballista_fires_its_bolt() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let tower = pool
+            .spawn_with_data_ai_owned(BALLISTRA_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        // Pre-arm the fire state at the shot tick: ai[0] = 2, ai[1] = 5.
+        pool.slots[tower].ai[0] = 2.0;
+        pool.slots[tower].ai[1] = 5.0;
+        // A chaseable NPC to the right, in the 900-px range and outside the
+        // dead-bottom cone. The zombie's 18x40 box centres at (609, y + 20);
+        // y = 303 puts it exactly level with the T1 tower's firing centre
+        // (313, 323), so the aim is the pure (1, 0) and the shot's vx is
+        // exactly 16 — the spawn clamp's `>= 16f` gate fires.
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 303.0)];
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        let bolt = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == BALLISTA_SHOT)
+            .expect("the Ballista fires its 680 bolt");
+        // The 16-px shot decays once at the `NewProjectile` aiStyle-1 spawn
+        // clamp (`:10895-10902`, the `>= 16f` gate): 16 * 0.97 = 15.52.
+        let len = (bolt.vel.x * bolt.vel.x + bolt.vel.y * bolt.vel.y).sqrt();
+        assert!((len - 15.52).abs() < 0.01, "the clamped shot speed: {len}");
+        assert!(bolt.vel.x > 0.0, "the bolt flies toward the target");
+        assert_eq!(bolt.owner, 0);
+        assert_eq!(bolt.max_penetrate, 4, "the 680 row's penetrate");
+        // The fire state advances and re-arms after 25 ticks (5 * 5).
+        assert_eq!(pool.slots[tower].ai[1], 6.0, ":68637 — the counter advances");
+    }
+
+    /// The Ballista's set/panic reload overrides (`GetBallistraShotDelay`,
+    /// `:68653-68669`): setSquireT3 → 100, ballistaPanic → 60, both → 30.
+    #[test]
+    fn s1_d_4b_2_the_ballista_reload_follows_the_squire_set_and_panic() {
+        for (t3, panic, expected) in [
+            (false, false, 159.0),
+            (true, false, 99.0),
+            (false, true, 59.0),
+            (true, true, 29.0),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.set_squire_t3 = t3;
+            p.ballista_panic = panic;
+            let tower = pool
+                .spawn_with_data_ai_owned(BALLISTRA_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs: Vec<Npc> = Vec::new();
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[tower].ai[1], expected, "t3={t3} panic={panic}");
+        }
+    }
+
+    /// The 137 Lightning Aura arm reaches its dispatch (`AI_137_LightningAura`,
+    /// `:68854-69023`): the knockback pins to 0, the one-shot ground scan
+    /// (`localAI[0]`) resizes the box to the ground-to-ceiling span and the
+    /// zap-period counter wraps at 30 (25 with setMonkT2). Without the arm the
+    /// slot would sit still at its 16x16 row.
+    #[test]
+    fn s1_d_4b_2_the_lightning_aura_dispatches_and_resizes() {
+        // A world with a stone floor at row 40 and a ceiling at row 20.
+        let mut w = tr_core::World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in [20, 40] {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let mut p = player(&w);
+        // The aura at tile (30, 30): centre (488, 488).
+        let aura = pool
+            .spawn_with_data_ai_owned(LIGHTNING_AURA_1, 0, 480.0, 480.0, 0.0, 0.0, 10, 4.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[aura].knock_back, 0.0, ":68861 — the knockback pin");
+        assert_eq!(pool.slots[aura].local_ai[0], 1.0, ":68909-68910 — the scan latch");
+        // The ground scan: Down(500) from row 30 finds the floor at row 40;
+        // Up(10) from row 39 finds the ceiling at row 20. The span is
+        // (40*16) - (20*16) = 320, clamped to num*16 = 160, then doubled → 320;
+        // the width follows the height (capped at 999).
+        assert_eq!(pool.slots[aura].h, 320.0, "the resized height");
+        assert_eq!(pool.slots[aura].w, 320.0, "the width follows the height");
+        // The zap counter: ai[0] = 1 after the first tick.
+        assert_eq!(pool.slots[aura].ai[0], 1.0, ":68886 — the counter");
+        // The frame machine advances every 8th tick.
+        for _ in 0..7 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[aura].frame, 1, "the 8th tick flips the frame");
+    }
+
+    /// The aura's monk-set overrides (`:68862-68870`): setMonkT2 drops the zap
+    /// period to 25; setMonkT3 raises the scan band to 14 tiles and the min
+    /// height to 8 tiles.
+    #[test]
+    fn s1_d_4b_2_the_aura_period_follows_the_monk_set() {
+        for (t2, t3, period) in [(false, false, 30.0), (true, false, 25.0), (true, true, 25.0)] {
+            let mut w = tr_core::World::new("t".into(), 64, 800);
+            // A floor far below so the scan resizes but the counter is the test.
+            for x in 0..64 {
+                let i = w.index(x, 60);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            let mut pool = ProjectilePool::new();
+            let mut p = player(&w);
+            p.set_monk_t2 = t2;
+            p.set_monk_t3 = t3;
+            let aura = pool
+                .spawn_with_data_ai_owned(LIGHTNING_AURA_1, 0, 480.0, 480.0, 0.0, 0.0, 10, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut npcs: Vec<Npc> = Vec::new();
+            // Run to the wrap: the counter resets to 0 at the period.
+            for _ in 0..(period as usize) {
+                tick(&mut pool, &mut w, &mut p, &mut npcs);
+            }
+            assert_eq!(pool.slots[aura].ai[0], 0.0, "t2={t2} t3={t3} wraps at {period}");
+        }
+    }
+
+    /// RNG-order proof: the four AI arms' bodies draw no `Main.rand`. The
+    /// 134/138/139 arms are deterministic; the 137 arm's only draws are the
+    /// skipped cosmetic dust loops. A tick of each leaves the shared stream's
+    /// seed untouched (the `FastRandom` seed is the stream state). No NPC is
+    /// present, so the shared `Damage_PVE` pass's `DamageVar` roll (a hit-side
+    /// draw, not the AI arm's) never runs — this isolates the AI arms' draws.
+    #[test]
+    fn s1_d_4b_2_the_sentry_arms_draw_no_rng() {
+        for kind in [BALLISTRA_TOWER_1, LIGHTNING_AURA_1, EXPLOSIVE_TRAP_1, EXPLOSIVE_TRAP_EXPLOSION_1] {
+            let mut w = tr_core::World::new("t".into(), 64, 800);
+            for x in 0..64 {
+                let i = w.index(x, 60);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            let mut pool = ProjectilePool::new();
+            let mut p = player(&w);
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 480.0, 480.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            // Pre-arm the Ballista's fire state so its shot path runs too.
+            if kind == BALLISTRA_TOWER_1 {
+                pool.slots[slot].ai[0] = 2.0;
+                pool.slots[slot].ai[1] = 5.0;
+            }
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            let before = rng.seed;
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            assert_eq!(rng.seed, before, "kind {kind} drew no RNG");
         }
     }
 

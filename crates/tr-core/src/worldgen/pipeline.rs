@@ -100,16 +100,112 @@ pub(crate) struct Streams<'a> {
     /// placement site hands its event to it — the C#'s `AddBuriedChest`
     /// inline roll.
     pub(crate) chest_stock: Option<&'a mut super::chest_stock::ChestStockHook<'a>>,
+    /// The worldgen progress/controller hook (S1-E-17) — `None` on the plain
+    /// `generate` path (the tr-core tests and every pre-S1-E-17 caller),
+    /// `Some` when the app drives the generation through the loading screen
+    /// (`generate_with_progress`). The hook is the `WorldGenerator` pass-loop
+    /// seam: `run` calls `begin_step`/`end_step` around each step exactly
+    /// where `WorldGenerator.RunPass` calls `progress.Start(weight)` /
+    /// `progress.End()` (`WorldGenerator.cs:498`/`:507`). No RNG draw rides
+    /// the hook — the stream contract is untouched.
+    pub(crate) progress: Option<&'a mut dyn GenProgressHook>,
 }
 
-impl<'a> Streams<'a> {
-    pub(crate) fn new(seed: u64) -> Streams<'a> {
-        Streams {
+/// The owned RNG state of the pipeline — the world seed plus the three
+/// contract streams. No borrows, so the resumable [`GenerationRunner`] holds
+/// it across frames; [`Streams::from_core`] wraps it with the per-call
+/// borrowed hooks. The field layout mirrors [`Streams`]'s RNG half exactly.
+#[derive(Clone)]
+pub(crate) struct StreamCore {
+    seed: u64,
+    pub(crate) rng: Rng,
+    pub(crate) drng: Rng,
+    pub(crate) srng: Rng,
+}
+
+impl StreamCore {
+    pub(crate) fn new(seed: u64) -> StreamCore {
+        StreamCore {
             seed,
             rng: Rng(seed ^ 0xA076_1D64_78BD_642F),
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
+        }
+    }
+
+    /// The per-pass stream — the port's model of the vanilla per-pass
+    /// re-seed (`WorldGenerator.cs:497`). See [`Streams::pass_rng`].
+    #[allow(dead_code)]
+    pub(crate) fn pass_rng(&self, name: &str) -> Rng {
+        Rng(self.seed ^ fnv1a64(name))
+    }
+}
+
+/// The pass-loop progress seam (`WorldGenerator.GenerateWorld`/`RunPass`,
+/// `WorldGenerator.cs:419-515`): the driver the loading screen's
+/// `GenerationProgress` + `Controller` implement. `run` calls the pair around
+/// every executed step; `should_abort` is the `QueuedAbort` check the C#
+/// loop runs at the top of each iteration (`:433-437`).
+pub trait GenProgressHook {
+    /// `GenerateWorld`'s `this._progress.TotalWeight = ...Sum(p.Weight)`
+    /// (`WorldGenerator.cs:424`) — called once before the first step with
+    /// the sum of the executed steps' weights (the port's step model: each
+    /// executed step banks its vanilla slot's weight once, so the total is
+    /// exactly what `begin_step` will hand out — `TotalProgress` reaches
+    /// 1.0 on completion).
+    fn begin_generation(&mut self, total_weight: f64);
+    /// `RunPass`'s `this._progress.Start(pass.Weight)` (`WorldGenerator.cs:498`)
+    /// — `name` is the executed step's display name (`EXECUTED_PIPELINE`'s
+    /// `name`; the message table `worldgen::progress::step_message` keys on
+    /// it), `weight` its vanilla slot's `PassLegacy._weightMap` entry (1.0
+    /// where the map has none).
+    fn begin_step(&mut self, name: &str, weight: f64);
+    /// `RunPass`'s `this._progress.End()` (`WorldGenerator.cs:507`).
+    fn end_step(&mut self);
+    /// `GenerateWorld`'s loop-top `if (this._controller.QueuedAbort)`
+    /// (`WorldGenerator.cs:433-437`) — true stops the pipeline before the
+    /// next step applies.
+    fn should_abort(&self) -> bool;
+}
+
+impl<'a> Streams<'a> {
+    pub(crate) fn new(seed: u64) -> Streams<'a> {
+        let core = StreamCore::new(seed);
+        Streams {
+            seed: core.seed,
+            rng: core.rng,
+            drng: core.drng,
+            srng: core.srng,
             chest_stock: None,
+            progress: None,
+        }
+    }
+
+    /// Wrap an owned RNG core with the per-call borrowed hooks — the
+    /// resumable runner's `advance` builds one of these per step.
+    pub(crate) fn from_core(
+        core: StreamCore,
+        chest_stock: Option<&'a mut super::chest_stock::ChestStockHook<'a>>,
+        progress: Option<&'a mut dyn GenProgressHook>,
+    ) -> Streams<'a> {
+        Streams {
+            seed: core.seed,
+            rng: core.rng,
+            drng: core.drng,
+            srng: core.srng,
+            chest_stock,
+            progress,
+        }
+    }
+
+    /// The owned RNG half — the resumable runner persists this across frames
+    /// after each step (the borrowed hooks drop with the `Streams`).
+    pub(crate) fn core(&self) -> StreamCore {
+        StreamCore {
+            seed: self.seed,
+            rng: self.rng.clone(),
+            drng: self.drng.clone(),
+            srng: self.srng.clone(),
         }
     }
 
@@ -2604,44 +2700,270 @@ pub(crate) fn boot_statics(world: &mut World) {
 /// pass's config view (`WorldGenerator.cs:501`) and apply. The config read
 /// draws no RNG; today's adapters ignore the view (the shape-level passes
 /// keep their own pinned constants).
+/// The pipeline's outcome — `WorldGenerator.GenerateWorld`'s return
+/// (`WorldGenerator.cs:463`: `return !flag`, flag = the QueuedAbort break).
+/// `Completed` on the plain `generate` path (no hook can abort).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenOutcome {
+    Completed,
+    Aborted,
+}
+
+/// The `WorldGen.Reset()` seed-flag tail (`WorldGen.cs:11125-11127`,
+/// `:11216-11223`): the derived combo booleans plus the `crimsonLeft`
+/// half-roll. Vanilla draws it from the pre-pass `genRand`; the port gives
+/// it its own `pass_rng("Reset")` stream so every existing per-pass draw
+/// schedule is byte-identical for a classic world. Shared by the one-shot
+/// [`run`] and the resumable [`GenerationRunner`] so both draw it exactly
+/// once, identically.
+fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
+    let mut gv = GenVars::default();
+    let mut reset_rng = core.pass_rng("Reset");
+    gv.crimson_left = reset_rng.range(0, 2) == 1;
+    gv.flip_infections = opts.flags.flip_infections();
+    gv
+}
+
+/// `GenerateWorld`'s TotalWeight (`WorldGenerator.cs:424`) — the sum over the
+/// enabled passes; the port sums the executed steps' weights (disabled steps
+/// never run, `:488-495`'s Skipped arm).
+fn total_weight(opts: &GenOptions) -> f64 {
+    EXECUTED_PIPELINE
+        .iter()
+        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+        .map(|s| {
+            VANILLA_CHAIN
+                .iter()
+                .find(|p| p.name == s.vanilla)
+                .map_or(1.0, |p| p.weight)
+        })
+        .sum()
+}
+
+/// One step's apply with the `RunPass` bookends (`WorldGenerator.cs:498`/
+/// `:507`): the disabled-pass skip (`:488-495`), the trace, `begin_step`
+/// (`Start(pass.Weight)`), the adapter, `end_step` (`End()`). Returns false
+/// when the step was skipped. The hook draws no RNG — the step's stream
+/// schedule is byte-identical with or without it. Shared by [`run`] and
+/// [`GenerationRunner::advance`] so the two cannot drift.
+fn apply_step(
+    step: &Step,
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    noise: &Noise,
+    config: &WorldGenConfig,
+) -> bool {
+    // `DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): a disabled
+    // pass returns a `Skipped` result without applying — no tiles and no
+    // draws from its stream. The port's steps own their streams, so a
+    // skipped step is simply not called.
+    if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
+        log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+        return false;
+    }
+    // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
+    // per `GenPassResult`) — the executed-step log names the step, its
+    // vanilla slot and that slot's progress weight.
+    let row = VANILLA_CHAIN.iter().find(|p| p.name == step.vanilla);
+    let weight = row.map_or(1.0, |p| p.weight);
+    log::debug!(
+        "worldgen pass '{}' (vanilla '{}', weight {:.4})",
+        step.name,
+        step.vanilla,
+        weight
+    );
+    if let Some(h) = streams.progress.as_mut() {
+        h.begin_step(step.name, weight);
+    }
+    let pass_config = config.pass(step.name);
+    (step.f)(world, gv, streams, opts, noise, &pass_config);
+    if let Some(h) = streams.progress.as_mut() {
+        h.end_step();
+    }
+    true
+}
+
 pub(crate) fn run(
     world: &mut World,
     streams: &mut Streams,
     opts: &GenOptions,
     noise: &Noise,
     config: &WorldGenConfig,
-) {
-    let mut gv = GenVars::default();
-    // The `WorldGen.Reset()` seed-flag tail (`WorldGen.cs:11125-11127`,
-    // `:11216-11223`): the derived combo booleans plus the `crimsonLeft`
-    // half-roll. Vanilla draws it from the pre-pass `genRand`; the port
-    // gives it its own `pass_rng("Reset")` stream so every existing
-    // per-pass draw schedule is byte-identical for a classic world.
-    let mut reset_rng = streams.pass_rng("Reset");
-    gv.crimson_left = reset_rng.range(0, 2) == 1;
-    gv.flip_infections = opts.flags.flip_infections();
+) -> GenOutcome {
+    let mut gv = reset_genvars(&streams.core(), opts);
+    if let Some(h) = streams.progress.as_mut() {
+        h.begin_generation(total_weight(opts));
+    }
     for step in EXECUTED_PIPELINE {
-        // `DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): a
-        // disabled pass returns a `Skipped` result without applying
-        // (`WorldGenerator.cs:488-495`) — no tiles and no draws from its
-        // stream. The port's steps own their streams, so a skipped step is
-        // simply not called.
-        if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
-            log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
-            continue;
+        // `GenerateWorld`'s loop-top abort check (`WorldGenerator.cs:433-437`):
+        // `QueuedAbort` breaks before the next pass applies. No hook on the
+        // plain path — nothing can abort.
+        if streams
+            .progress
+            .as_ref()
+            .is_some_and(|h| h.should_abort())
+        {
+            return GenOutcome::Aborted;
         }
-        // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
-        // per `GenPassResult`) — the executed-step log names the step, its
-        // vanilla slot and that slot's progress weight.
-        let row = VANILLA_CHAIN.iter().find(|p| p.name == step.vanilla);
-        log::debug!(
-            "worldgen pass '{}' (vanilla '{}', weight {:.4})",
-            step.name,
-            step.vanilla,
-            row.map_or(1.0, |p| p.weight)
+        apply_step(step, world, &mut gv, streams, opts, noise, config);
+    }
+    GenOutcome::Completed
+}
+
+/// One [`GenerationRunner::advance`] result — the resumable twin of
+/// [`GenOutcome`] with a "still working" state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenStep {
+    /// More steps remain; call `advance` again.
+    Running,
+    /// Every step applied (`WorldGenerator.GenerateWorld`'s `return true`).
+    Completed,
+    /// `QueuedAbort` stopped the loop (`WorldGenerator.cs:433-437`); the
+    /// world is partial and must not be saved (`WorldGen.cs:6594-6598`).
+    Aborted,
+}
+
+/// The resumable worldgen driver — the port of the `WorldGenerator` pass
+/// loop (`WorldGenerator.cs:419-464`) as an incremental state machine the
+/// loading screen pumps one step per frame. The C# runs the loop on a worker
+/// thread (`WorldGen.CreateNewWorld`'s `Task.Factory.StartNew`,
+/// `WorldGen.cs:6621-6624`); the port advances it on the frame thread between
+/// draws, which is behaviour-equivalent for the deterministic pipeline (the
+/// steps draw from their own name-mixed streams, so the interleaving with
+/// draws changes no generated byte — proven by
+/// `s1_e_17_the_runner_matches_the_one_shot_world`).
+///
+/// The runner owns the world, the cross-pass `GenVars`, the RNG streams, the
+/// noise, the config and the options — everything `run` keeps on its stack —
+/// so `advance` resumes exactly where the last step left off. The progress
+/// hook and the chest-stock hook are borrowed per `advance` call (the App
+/// owns them), matching `Streams`'s borrowed-hook shape.
+pub struct GenerationRunner {
+    world: World,
+    gv: GenVars,
+    /// The owned RNG core; the borrowed hooks attach per `advance` call.
+    core: StreamCore,
+    noise: Noise,
+    config: WorldGenConfig,
+    opts: GenOptions,
+    /// The next step index into `EXECUTED_PIPELINE`.
+    cursor: usize,
+    /// `begin_generation` fired once (the TotalWeight setup).
+    started: bool,
+    /// A terminal result already reached (advance is a no-op after it).
+    finished: Option<GenStep>,
+}
+
+impl GenerationRunner {
+    /// The boot `generate_with_chest_stock` runs before the loop: the world,
+    /// the seed flags, the boot statics, the noise, the config, the streams
+    /// and the Reset GenVars. No step has applied yet.
+    pub fn new(opts: &GenOptions) -> GenerationRunner {
+        let width = opts.width.max(512);
+        let height = opts.height.max(512);
+        let mut world = World::new(opts.name.clone(), width, height);
+        world.seeds = opts.flags;
+        world.micro_seeds = opts.micro_flags;
+        boot_statics(&mut world);
+        let core = StreamCore::new(opts.seed);
+        let gv = reset_genvars(&core, opts);
+        GenerationRunner {
+            world,
+            gv,
+            core,
+            noise: Noise { seed: opts.seed },
+            config: WorldGenConfig::parse(),
+            opts: opts.clone(),
+            cursor: 0,
+            started: false,
+            finished: None,
+        }
+    }
+
+    /// Advance one executed step (skipping disabled passes), with the
+    /// `RunPass` progress bookends and the loop-top abort check. The hooks
+    /// are borrowed for this call only. Returns `Running` while steps
+    /// remain, `Completed`/`Aborted` once the loop ends.
+    pub fn advance<'h>(
+        &mut self,
+        progress: Option<&'h mut dyn GenProgressHook>,
+        chest_stock: Option<&'h mut super::chest_stock::ChestStockHook<'h>>,
+    ) -> GenStep {
+        if let Some(done) = self.finished {
+            return done;
+        }
+        // Attach the borrowed hooks to the owned RNG core for this call only.
+        let mut streams = Streams::from_core(self.core.clone(), chest_stock, progress);
+        // `GenerateWorld`'s TotalWeight setup, once (`WorldGenerator.cs:424`).
+        if !self.started {
+            if let Some(h) = streams.progress.as_mut() {
+                h.begin_generation(total_weight(&self.opts));
+            }
+            self.started = true;
+        }
+        // The loop-top abort check (`WorldGenerator.cs:433-437`).
+        if streams
+            .progress
+            .as_ref()
+            .is_some_and(|h| h.should_abort())
+        {
+            self.finished = Some(GenStep::Aborted);
+            return GenStep::Aborted;
+        }
+        // Skip disabled passes without consuming a frame (the C#'s Skipped
+        // arm applies no tiles and draws no RNG, `:488-495`).
+        while self.cursor < EXECUTED_PIPELINE.len()
+            && pass_disabled_by_special_seeds(
+                EXECUTED_PIPELINE[self.cursor].vanilla,
+                self.opts.micro_flags,
+            )
+        {
+            log::debug!(
+                "worldgen pass '{}' skipped (dualDungeons)",
+                EXECUTED_PIPELINE[self.cursor].name
+            );
+            self.cursor += 1;
+        }
+        if self.cursor >= EXECUTED_PIPELINE.len() {
+            self.finished = Some(GenStep::Completed);
+            return GenStep::Completed;
+        }
+        let step = &EXECUTED_PIPELINE[self.cursor];
+        apply_step(
+            step,
+            &mut self.world,
+            &mut self.gv,
+            &mut streams,
+            &self.opts,
+            &self.noise,
+            &self.config,
         );
-        let pass_config = config.pass(step.name);
-        (step.f)(world, &mut gv, streams, opts, noise, &pass_config);
+        // Persist the advanced RNG state; drop the borrowed hooks.
+        self.core = streams.core();
+        self.cursor += 1;
+        if self.cursor >= EXECUTED_PIPELINE.len() {
+            self.finished = Some(GenStep::Completed);
+            return GenStep::Completed;
+        }
+        GenStep::Running
+    }
+
+    /// The generated world (partial until `Completed`).
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    /// Take the world once generation is done (the save path consumes it).
+    pub fn into_world(self) -> World {
+        self.world
+    }
+
+    /// The fraction of executed steps applied — a coarse progress the
+    /// loading screen can show before the weighted hook takes over.
+    pub fn steps_done(&self) -> usize {
+        self.cursor
     }
 }
 
@@ -3276,6 +3598,49 @@ mod tests {
         assert!(
             count(&dual, 1) > 1000,
             "every other pass still ran — the world is populated"
+        );
+    }
+
+    // --- S1-E-17: the progress hook -----------------------------------------
+    // (the byte-identity + abort tests live in `worldgen::tests` —
+    // `s1_e_17_the_progress_hook_does_not_change_the_world` /
+    // `s1_e_17_queued_abort_stops_the_pipeline`, over the real
+    // `GenerationProgress`.)
+
+    /// The message table covers the executed steps whose vanilla pass sets
+    /// a `progress.Message`, and every entry resolves through the text seam
+    /// (the `Lang.gen[i]` → `LegacyWorldGen.i` mapping, `Lang.cs:475-477`).
+    #[test]
+    fn the_step_message_table_resolves_through_the_text_seam() {
+        use super::super::progress::{step_message, PassMessage};
+        // The terrain pair shares TerrainPass's one message
+        // (TerrainPass.cs:59).
+        assert!(matches!(
+            step_message("terrain height map"),
+            Some(PassMessage::Gen(0))
+        ));
+        assert!(matches!(
+            step_message("terrain fill"),
+            Some(PassMessage::Gen(0))
+        ));
+        // A keyed row (WorldGen.cs:11584).
+        assert!(matches!(
+            step_message("ocean sand"),
+            Some(PassMessage::Key("WorldGeneration.OceanSand"))
+        ));
+        // Steps with no message assignment in their pass body keep the
+        // previous pass's message (the C# `_message` persistence).
+        assert!(step_message("plan biome spans").is_none());
+        assert!(step_message("micro grass").is_none());
+        // The resolution shape: Gen(i) reads LegacyWorldGen.i.
+        let text = |k: &str| format!("<{k}>");
+        assert_eq!(
+            PassMessage::Gen(42).resolve(&text),
+            "<LegacyWorldGen.42>"
+        );
+        assert_eq!(
+            PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
+            "<WorldGeneration.LivingTrees>"
         );
     }
 }

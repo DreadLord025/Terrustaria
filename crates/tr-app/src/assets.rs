@@ -917,6 +917,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/IconMixedSeed",
         "UI/IconPlayedBefore",
         "UI/IconNewlyGenerated",
+        // S1-E-17: the loading screen's bar frames (`UIGenProgressBar.cs:34-37`).
+        "UI/WorldGen/Outer_Corrupt",
+        "UI/WorldGen/Outer_Crimson",
+        "UI/WorldGen/Outer_Random",
+        "UI/WorldGen/Outer_Lower",
         "UI/CharCreation/CategoryPanel",
         "UI/CharCreation/CategoryPanelBorder",
         "UI/CharCreation/CategoryPanelHighlight",
@@ -1939,6 +1944,10 @@ pub struct Lookups {
     pub ui_icon_played_before: Option<tr_render::SheetRect>,
     /// `UI/IconNewlyGenerated` 24x28 (`:221`; unused — fresh entries only).
     pub ui_icon_newly_generated: Option<tr_render::SheetRect>,
+    /// S1-E-17: the loading bar's outer frames — `UIGenProgressBar.cs:34-37`
+    /// requests `Images/UI/WorldGen/Outer_{Corrupt,Crimson,Random,Lower}`.
+    /// Index order: 0 Corrupt, 1 Crimson, 2 Random, 3 Lower.
+    pub worldgen_outer: [Option<tr_render::SheetRect>; 4],
     /// `UI/CharCreation/CategoryPanel` 44x44 (`UIColoredImageButton.cs:41`).
     pub cc_panel: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanelBorder` 44x44 (`UIColoredImageButton.cs:52`).
@@ -2396,6 +2405,12 @@ impl Lookups {
             ui_icon_mixed_seed: atlas.sheet("UI/IconMixedSeed").copied(),
             ui_icon_played_before: atlas.sheet("UI/IconPlayedBefore").copied(),
             ui_icon_newly_generated: atlas.sheet("UI/IconNewlyGenerated").copied(),
+            worldgen_outer: [
+                atlas.sheet("UI/WorldGen/Outer_Corrupt").copied(),
+                atlas.sheet("UI/WorldGen/Outer_Crimson").copied(),
+                atlas.sheet("UI/WorldGen/Outer_Random").copied(),
+                atlas.sheet("UI/WorldGen/Outer_Lower").copied(),
+            ],
             cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
             cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
             cc_panel_highlight: atlas
