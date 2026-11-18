@@ -10904,8 +10904,9 @@ Deviations and notes:
     take their positive branch (no gravity potion in the port); the sleeping/sitting
     offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
     The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
-    but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
-    reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    but their own AI arms (53/197/130) do not call the reposition yet — 134/137/138 reach
+    it, and since S1-D-4b-3 the 123 pair (the 641/643 sentries) and the 642 beam's
+    carried ride (`:31414-31417`, the aiStyle-84 head anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
     C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
     `_type = -1`; the port's `dismount()` likewise resets the kind).
   - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
@@ -10936,6 +10937,65 @@ Deviations and notes:
     precedent), so that draw is skipped with it; the aura is on `CanCutTiles`'s refusal
     list (`:15329`) anyway. The blocked-move path is the DD2 sentry arm (`:17986-17990`,
     the `dd2_sentry_step` helper): one last step into the tile, `velocity = Zero`, no kill.
+- **S1-D-4b-3 (2026-11-18) ported aiStyle 123 — the floating-turret pair** (`AI_123_FloatingTurrets`,
+  `Projectile.cs:37051-37264`): the **641** Moon Lord turret and the **643** Rainbow Crystal, plus
+  their two shot families' type arms — the **642** beam (`ai_moonlord_turret_laser`, the aiStyle-84
+  `type == 642` arm `:31411-31421` + `:31523-31537` + `:31553-31618`) and the **644** shard
+  (`ai_rainbow_crystal_shard`, the aiStyle-112 `type == 644` arm `:34235-34362`), the `Kill()`
+  sweeps (`:72068-72093` — the turret kills the owner's beams, the crystal kills the owner's
+  shards) and the shard's resize-and-`Damage` burst (`:34343-34361` at tick 30, `:72155-72176`
+  in `Kill()` — the 60×60 box, `penetrate = maxPenetrate = -1`, the `damage_pve_boxed` seam, the
+  restore keeps `maxPenetrate` at −1 exactly as the C# leaves it). The 642/644 rows are new
+  (`:6904-6915`/`:6941-6952`); the 641/643 rows gained their dropped `alpha = 255`
+  (`:6924`/`:6937`); `proj_frames(643) = 8` (`Main.cs:8476`).
+  - **RNG — the dust gates' draws stay on the stream.** Unlike the 134/137/138 arms (no draws),
+    the 123 heads roll cosmetic dust gates every tick; the port consumes them on the pass's
+    `UpdateProjectiles` stream in the C#'s order (the `ai_leaf_blower`/`ai_nebula_arcanum`
+    precedent): the turret's two `Next(2)` gates (`:37071`/`:37082`) with the taken branches'
+    `RotatedByRandom` pairs (`Utils.cs:1697-1700` — two `NextDouble`s each) + `Next(10,21)`
+    (first loop only) + `NextFloat`, then the `ai[0] < 0` cooldown's `SelectRandom` `Next(2)`
+    (`:37098`, drawn inside the branch as the C# evaluates the argument); the crystal's
+    `Next(15)` only at `alpha == 0` (`:37121` — the gate short-circuits ahead of the draw) plus
+    the taken branch's pair + `NextFloat`. The crystal's fire draws the `RandomVector2` pair
+    once (`:37252`, `Utils.cs:2431-2434`) then per scatter shard (j > 0) a `RotatedByRandom(π/4)`
+    pair + the reach `NextFloat` (`:37260`); j == 0 draws nothing. The 642 beam's tip dust
+    (`:31643-31657`) draws two `Next(2)` + `NextDouble` iterations + the `Next(5)` gate's
+    taken `NextDouble`. The 644 shard's first tick draws `NextFloat` + `Next(2)`
+    (`:34251-34252`), every tick the four `Next(10)` dust gates + the `Next(10)` sparkle gate
+    (`:34269`/`:34282`/`:34293`) whose taken branch draws three `NextFloat`s + the
+    `RandomVector2` pair + the radius `NextFloat` + (in-world, non-solid only) the velocity
+    `NextFloat` (`:34295-34320`); the burst (`DoRainbowCrystalStaffExplosion`,
+    `:78574-78614`) draws the `RotatedByRandom(π)` pair + `Next(7,13)` + 2×count + 4×count
+    `NextFloat`s. The `CloneDust` internal `NewDust` rolls go with the dust layer (the
+    `particles.rs` precedent). Proven by the scripted-stream census tests
+    (`s1_d_4b_3_the_head_dust_gates_draw_in_the_csharp_order`,
+    `s1_d_4b_3_the_fire_and_shard_draws_keep_their_stream_positions`) and the seed-untouched
+    lock-path test.
+  - **The shard's `friendly` default is false — the contact gate is carried.** The 644 row
+    sets no `friendly` (`:6941-6952`, the C# default `:788`), so the shard deals nothing on
+    contact; only the burst window flips it true and restores it after
+    (`:34345`/`:34360`, `:72160`/`:72175`). The port's `damage_pve`/`damage_pve_boxed` passes
+    historically ran every slot regardless of the flag (a recorded deviation); the
+    `!this.friendly` early return (`:12611`) is carried **for the 644 alone** — every other
+    arm keeps its pre-existing behaviour (the no-behaviour-change freeze).
+  - **The shard's idStatic −1 stamp blocks forever.** The 644 row's stock
+    `idStaticNPCHitCooldown = -1` (`:466`) rides the C#'s `GameUpdateCount + (uint)cooldown`
+    wrap (`:13972`) — the port's `damage_pve_boxed` idStatic application gained the
+    `penetrate != 1` gate + the wrapping stamp (the burst's `maxPenetrate = -1` opens it);
+    a burst-hit NPC is immune to the 644 type for the rest of the run, so the tick-60 death
+    burst deals nothing to it (the census test pins this).
+  - **The disco hue rides the app's cycle.** The crystal's shard `ai0` is
+    `Main.rgbToHsl(DiscoR/G/B).X` (`:37262`); the pool reads it through `set_disco` (the
+    `set_wind` seam), fed per tick from `App.disco` (`world_sim/projectiles.rs`).
+  - **Skips**: the light casts (`:37070`/`:34246-34247`/`:34265`/`:31658-31659`), the dust
+    spawns themselves, the `netUpdate` writes, the 642's `CutTiles` line arm (`:15206` —
+    the tile-cut chain skip) and the `GetProjectileSource_FromThis` bookkeeping. The 642's
+    `Colliding` line arm (`:15942-15954`) IS ported (the `check_aabb_v_line_collision`
+    helper gained its width parameter — the `…2` wrapper keeps its 0.0001f). The 641's
+    `drawLayer = 1` (`:6925`) is a draw-side field with no pool consumer.
+  - **120/130 deferred**: the Stardust Guardian's aiStyle-120 arm (`:44634-44964`) and the
+    Flame Burst Tower's aiStyle-130 arm (`:68107-68361`) stay unported — the next round of
+    S1-D-4b-3; their rows keep holding position (the ROADMAP row carries the split).
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -17427,6 +17487,27 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The rope back-draw pass (S1-G-1 wave B, 2026-11-18)
+
+`crates/tr-app/src/render/ropes.rs` ports `TileDrawing.DrawTile_BackRope`
+(`TileDrawing.cs:3766-3784`) and its probes `WorldGen.GetRopeEnds`/`IsRope`
+(`WorldGen.cs:70026-70104`) verbatim: the `InWorld(x, y, 1)` gate, the
+`(tileY + tileX) % 3 * 18` connector row at sheet X 90, the sheet/paint key
+taken from the TOP rope tile (`Main.tile[tileX, topRopeY]`, `:3776-3780`),
+the CELL's raw `tileLight` (no `GetFinalLight` ghost), and the C#'s own
+quirks: a rope tile answers `IsRope == true` with both ends -1 (so the draw
+finds no tile and draws nothing), the `topRopeY = tileX` init at `:3772` is
+dead (IsRope assigns its outs at entry), and the no-top-end down scan walks
+absolute rows `j - 1` capped at `rangeToCheck + 1` (`:70051`).
+
+Deliberate state: **PORTED-UNWIRED**. The tiles pass does not call the hook
+yet — wave A (vines, `task/S1-G-1a`) owns `render/tiles.rs`; the call sites
+(`DrawBasicTile` `:1511-1514` before the platform sprite,
+`DrawTile_MinecartTrack` `:3792`) land with that merge. No pixels change
+until then (the module is pure additions + one `mod` line), so no screenshot
+A/B is possible or needed yet; the rope tiles' own vertical segments already
+draw through the generic `DrawSingleTile` pass. The 13 `render::ropes`
+tests pin the scan maths, the rect/paint sourcing and the dispatch gate.
 ## The combat accessory family (S1-C-12 wave B, 2026-11-18)
 
 `crates/tr-app/src/accessory_combat.rs` ports the combat/damage arms of

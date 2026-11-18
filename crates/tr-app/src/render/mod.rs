@@ -11,6 +11,7 @@ pub(crate) mod entities;
 pub(crate) mod foliage;
 pub(crate) mod liquids;
 pub(crate) mod player_layers;
+pub(crate) mod ropes;
 pub(crate) mod screen_fx;
 pub(crate) mod sky;
 pub(crate) mod tiles;
