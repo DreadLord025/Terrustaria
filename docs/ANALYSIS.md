@@ -13964,6 +13964,59 @@ same precedent S1-D-4c set for the vortex styles — and the contract
 stays "arm them, never remove the rows": every style keeps its
 `proj_data` row and gains its dispatch arm.
 
+**Slice-D audit (2026-11-18, `task/S1-D-4b-14-styles-d`, code-only mode).**
+The slice-D assignment (styles 133/134/137/138, fallback 157) ran under a
+user directive reserving the CPU: no cargo/rustc/rustfmt/test runs, no
+dotnet, no graphify — file reads/writes + git only. Each style was located
+in `Projectile.cs`'s `AI()` dispatch and its whole machine re-read against
+the port:
+
+* **133** (`:36435-36498`) — `ai_dark_mage_raise` matches the 673's ramp
+  (hand-check: tick 1 → `ai[0]=1`, `GetLerpValue(0,20,1)=0.05`,
+  `alpha=(int)(0.95*255)=242`; `ai[0]=20..59` → alpha 0; `ai[0]=79` →
+  0.05 → 242; `ai[0]=80` → Kill then `Opacity=0` → alpha 255 — the C#
+  assigns Opacity after the kill arm, the port keeps that order). The
+  674 heal arm has no ported row (documented in the arm).
+* **134** (`AI_134_Ballista` `:68510-68651`) — the dispatch arm matches:
+  the 160/100/60/30 delay ladder (`:68653-68669`), the init latch before
+  the pickup gate, the captured firing centre (677's −4 px), the
+  0.08/0.05 `AngleLerp` aim, the fire state at `ai[1]==5`, the
+  `1 + (int)(ai[1]/5)` frame and the 25-tick cycle; the 680 bolt's
+  aiStyle-1 spawn clamp decays the 16-px shot once (15.52) and the 21-px
+  setSquireT2 shot nine times (21 → 15.9648…) — hand-checked ×0.97 ladder.
+* **137** (`AI_137_LightningAura` `:68854-69023`) — the knockback pin,
+  the monk-set constants (10→14 tiles, 30→25 period, 4→8 min tiles), the
+  `Searches.Down(500)`/`Up(num)` scans, the half-brick +8 lift, the
+  height clamp ×2 + 999 width cap, the 8-tick frame machine, and the
+  ground-scan early return that leaves `AI()` but not `Update()` (the
+  movement still runs) — all match.
+* **138** (`AI_138_ExplosiveTrap` `:69301-69374`) — the facing pin, the
+  tier→blast switch, the backpack branch (num3=20, num2 48→34), the
+  12-tick frame machine, the 3-tick scan cooldown, the 144×144
+  `CenteredRectangle` at `Center+(0,−num2)` inflated by num3, the
+  90/60/30 huntress cooldown and the gravity tail — all match.
+* **157** (`AI_157_SharpTears` `:51358-51494`) — the 961 parameter row
+  (fade-in 10, fade-out from 10, kill at 20, 5 frames), the phase gates
+  read before the counter advance, the negative-age arm, the one-shot
+  rotation + `Main.rand.Next(5)` frame roll (kept — visible state) and
+  the ±0.1/−0.2 `Opacity` ramps — all match.
+
+**RNG argument:** 133/134/138 draw no `Main.rand` in their arm bodies
+(the 134 targeting/shot are deterministic); 137's only draws are the
+three cosmetic dust loops' gating rolls (`:68961`/`:68965`, `:69005` —
+the `:68982` loop is `k < 0`, dead code in the C# too), skipped with the
+dust layer per the standing precedent; 157 keeps its single `Next(5)`
+frame roll on the pass's stream and skips only the dust-loop draws. No
+stream order changes.
+
+**Deferrals (code-only mode):** no builds/tests were run — verification
+was C# line-by-line re-reading + hand arithmetic against the existing
+`s1_d_4b_1_tests`/`s1_d_4b_2_trap_tests`/`s1_d_4b_5_tests` pins. No new
+code landed: the five styles were already armed by the DONE rows
+-1/-2/-5, so a new `projectile_styles_d.rs` module would have duplicated
+landed arms (AGENTS "avoid duplicating an existing implementation").
+The remaining unarmed styles are **26/67/120/123/130** (S1-D-4b-3/-7/-8).
+
 S1-D-4b-1 ports the four self-contained styles:
 
 * **aiStyle 70 — the Flairon Bubble** (`Projectile.cs:30304-30354`):
