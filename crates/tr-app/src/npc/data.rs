@@ -1465,6 +1465,165 @@ impl NpcKind {
         })
     }
 
+    /// The C#'s `aiStyle` for this kind - the first dispatch axis of
+    /// `NPC.AI` (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain).
+    /// Every row is the `SetDefaults` assignment for the kind's vanilla
+    /// `NPCID` (the citation is the `this.aiStyle = N;` line). S1-D-2.
+    pub fn ai_style(self) -> u8 {
+        match self {
+            // aiStyle 0 - NPC.cs:10248, :10262, :10498, :13507, :13801, :16657
+            NpcKind::SleepingAngler | NpcKind::WebbedStylist | NpcKind::SleepingGolfer | NpcKind::BoundWizard |
+            NpcKind::BoundMechanic | NpcKind::BoundGoblin => 0,
+            // aiStyle 1 - NPC.cs:8576
+            NpcKind::Slime => 1,
+            // aiStyle 2 - NPC.cs:8590, :10650
+            NpcKind::DemonEye | NpcKind::WanderingEye => 2,
+            // aiStyle 3 - NPC.cs:8603, :9040, :9312, :11726, :11739, :11752, :11765, :11778, :12933, :13133, :13860, :13876, :13902, :13916, :13959, :13986, :15053, :15065, :15148, :15192, :15204, :15217, :15228, :15241, :15326, :15350, :15389, :15649, :15663, :15677, :15719, :15732, :15760
+            NpcKind::Zombie | NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::GoblinThief | NpcKind::GoblinWarrior |
+            NpcKind::GoblinArcher | NpcKind::GoblinPeon | NpcKind::GoblinSummoner | NpcKind::MartianOfficer |
+            NpcKind::GrayGrunt | NpcKind::MartianEngineer | NpcKind::GigaZapper | NpcKind::MartianWalker |
+            NpcKind::BrainScrambler | NpcKind::RayGunner | NpcKind::Scutlix | NpcKind::VortexRifleman |
+            NpcKind::VortexSoldier | NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab |
+            NpcKind::Predictor | NpcKind::StardustSpiderBig | NpcKind::StardustSoldier | NpcKind::SolarDrakomire |
+            NpcKind::SolarSelenian | NpcKind::SolarSpearman | NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate |
+            NpcKind::PirateArcher | NpcKind::PirateCorsair | NpcKind::PirateCaptain | NpcKind::Scarecrow1 |
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow3 | NpcKind::Scarecrow4 | NpcKind::Scarecrow5 |
+            NpcKind::Scarecrow6 | NpcKind::Scarecrow7 | NpcKind::Scarecrow8 | NpcKind::Scarecrow9 |
+            NpcKind::Scarecrow10 | NpcKind::Splinterling => 3,
+            // aiStyle 4 - NPC.cs:8707
+            NpcKind::EyeOfCthulhu => 4,
+            // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead | NpcKind::ServantOfCthulhu => 5,
+            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :15010, :15269, :15287, :15305
+            NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
+            NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
+            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
+            NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
+            NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
+            NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
+            NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
+            NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
+            // aiStyle 9 - NPC.cs:9097, :9139, :15703
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
+            // aiStyle 11 - NPC.cs:9170
+            NpcKind::SkeletronHead => 11,
+            // aiStyle 12 - NPC.cs:9187
+            NpcKind::SkeletronHand => 12,
+            // aiStyle 14 - NPC.cs:9378, :9409, :9543, :9629
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => 14,
+            // aiStyle 15 - NPC.cs:9392
+            NpcKind::KingSlime => 15,
+            // aiStyle 16 - NPC.cs:9465, :9508, :9615
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
+            // aiStyle 22 - NPC.cs:13194
+            NpcKind::Poltergeist => 22,
+            // aiStyle 26 - NPC.cs:12982, :13179, :15078, :15121
+            NpcKind::NebulaBeast | NpcKind::StardustSpiderSmall | NpcKind::HeadlessHorseman | NpcKind::Hellhound => 26,
+            // aiStyle 27 - NPC.cs:10347
+            NpcKind::WallOfFlesh => 27,
+            // aiStyle 28 - NPC.cs:10365
+            NpcKind::WallOfFleshEye => 28,
+            // aiStyle 29 - NPC.cs:10382
+            NpcKind::Hungry => 29,
+            // aiStyle 30 - NPC.cs:10526
+            NpcKind::Retinazer => 30,
+            // aiStyle 31 - NPC.cs:10543
+            NpcKind::Spazmatism => 31,
+            // aiStyle 32 - NPC.cs:10560
+            NpcKind::SkeletronPrime => 32,
+            // aiStyle 33 - NPC.cs:10592
+            NpcKind::PrimeSaw => 33,
+            // aiStyle 34 - NPC.cs:10607
+            NpcKind::PrimeVice => 34,
+            // aiStyle 35 - NPC.cs:10577
+            NpcKind::PrimeCannon => 35,
+            // aiStyle 36 - NPC.cs:10622
+            NpcKind::PrimeLaser => 36,
+            // aiStyle 37 - NPC.cs:10664
+            NpcKind::TheDestroyer => 37,
+            // aiStyle 38 - NPC.cs:10809, :10823, :10837
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 38,
+            // aiStyle 39 - NPC.cs:15360
+            NpcKind::SolarSroller => 39,
+            // aiStyle 43 - NPC.cs:11859
+            NpcKind::QueenBee => 43,
+            // aiStyle 45 - NPC.cs:12167
+            NpcKind::Golem => 45,
+            // aiStyle 46 - NPC.cs:12184
+            NpcKind::GolemHead => 46,
+            // aiStyle 47 - NPC.cs:12198
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 47,
+            // aiStyle 48 - NPC.cs:12212
+            NpcKind::GolemHeadFree => 48,
+            // aiStyle 51 - NPC.cs:12384
+            NpcKind::Plantera => 51,
+            // aiStyle 54 - NPC.cs:12443
+            NpcKind::BrainOfCthulhu => 54,
+            // aiStyle 55 - NPC.cs:12460
+            NpcKind::Creeper => 55,
+            // aiStyle 57 - NPC.cs:13119
+            NpcKind::MourningWood => 57,
+            // aiStyle 58 - NPC.cs:13146
+            NpcKind::Pumpking => 58,
+            // aiStyle 74 - NPC.cs:13939, :15372
+            NpcKind::MartianDrone | NpcKind::SolarCorite => 74,
+            // aiStyle 75 - NPC.cs:13973, :14000, :14018, :14035, :14655, :15338
+            NpcKind::ScutlixRider | NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon |
+            NpcKind::SolarDrakomireRider | NpcKind::FlyingDutchmanCannon => 75,
+            // aiStyle 76 - NPC.cs:14052
+            NpcKind::MartianSaucerCore => 76,
+            // aiStyle 77 - NPC.cs:14127
+            NpcKind::MoonLordCore => 77,
+            // aiStyle 78 - NPC.cs:14108
+            NpcKind::MoonLordHand => 78,
+            // aiStyle 79 - NPC.cs:14089
+            NpcKind::MoonLordHead => 79,
+            // aiStyle 80 - NPC.cs:14069
+            NpcKind::MartianProbe => 80,
+            // aiStyle 81 - NPC.cs:14146
+            NpcKind::MoonLordFreeEye => 81,
+            // aiStyle 82 - NPC.cs:14166
+            NpcKind::MoonLordLeechBlob => 82,
+            // aiStyle 84 - NPC.cs:14216
+            NpcKind::AncientCultist => 84,
+            // aiStyle 85 - NPC.cs:15026, :15134
+            NpcKind::StardustCellBig | NpcKind::BrainSuckler => 85,
+            // aiStyle 93 - NPC.cs:14637
+            NpcKind::FlyingDutchman => 93,
+            // aiStyle 94 - NPC.cs:14995, :15108, :15179, :15256
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower => 94,
+            // aiStyle 95 - NPC.cs:15040
+            NpcKind::StardustCellSmall => 95,
+            // aiStyle 96 - NPC.cs:15091
+            NpcKind::StardustJellyfishBig => 96,
+            // aiStyle 97 - NPC.cs:15161
+            NpcKind::NebulaFloater => 97,
+            // aiStyle 105 - NPC.cs:16002
+            NpcKind::DD2EterniaCrystal => 105,
+            // aiStyle 106 - NPC.cs:16040
+            NpcKind::DD2LanePortal => 106,
+            // aiStyle 107 - NPC.cs:16061, :16078, :16095, :16112, :16129, :16146, :16163, :16180, :16197, :16282, :16299, :16316, :16333, :16350, :16367, :16384, :16401, :16418, :16435
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 | NpcKind::DD2GoblinBomberT1 |
+            NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 | NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 |
+            NpcKind::DD2JavelinT3 | NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 | NpcKind::DD2WitherBeastT3 |
+            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 | NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 |
+            NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 | NpcKind::DD2WitherBeast => 107,
+            // aiStyle 108 - NPC.cs:16211, :16229, :16247, :16485, :16503
+            NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3 | NpcKind::DD2KoboldFlyerT2 |
+            NpcKind::DD2KoboldFlyerT3 => 108,
+            // aiStyle 109 - NPC.cs:16452, :16470
+            NpcKind::DD2DarkMageT3 | NpcKind::DD2DarkMage => 109,
+            // aiStyle 110 - NPC.cs:16524
+            NpcKind::DD2Betsy => 110,
+            // aiStyle 123 - NPC.cs:17453
+            NpcKind::Deerclops => 123,
+        }
+    }
+
     pub fn ai3_walk_speed(self) -> Option<f32> {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
