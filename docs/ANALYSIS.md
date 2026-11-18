@@ -2065,6 +2065,32 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The item-use sound wave (S1-E-21-itemuse)
+
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
+at `base.Center` with `sItem.useSoundPitch`. The port provisions the data through
+`tools/GenItemData`: `ItemDef.use_sound` indexes the new generated
+`crates/tr-app/src/soundid.rs` (all 506 `SoundID` styles, ctor order), and
+`Audio::play_use_sound` ports the façade (`SoundEngine.cs:93-99`) + the legacy
+case-2 maths (`LegacySoundPlayer.cs:516-644`, `sound.rs::item_use_case2`) + the
+case-42 trackable arm (`:1376-1381`). The use-start seam is
+`world_sim/editing.rs::start_swing_extras` (every swing/shot/consume arm calls it);
+the `SkipsInitialUseSound` gate `{2350, 4870}` (`ItemID.cs:408`) lives in
+`item.rs::initial_use_sound`. RNG contract: the case-2 `Main.rand` draws ride the
+caller's `UpdatePlayers` stream (`Player.ItemCheck` under the `Main.cs:17754`
+swap) and run ONLY after the attenuation gate passed (the C# order); the
+`GetRandomPitch` NextFloat rides the audio-only `sound_style_random` and never
+touches a gameplay stream — pinned by
+`s1_e_21a_the_use_sound_draws_ride_the_passed_stream_only_when_audible`.
+Deliberate deviations: (1) the multi-variation trackables pin the `_0` asset
+(the standing D3 pin — the variation pick rides `LegacySoundStyle.Random`, an
+unobservable stream); (2) the per-style instance stop/re-create pool and the
+53/55/159 playing guards are unmodelled (the standing D4 deviation — repeated
+cues stack); (3) the net-sync arm (`Player.cs:51690-51692`, `NetMessage.SendData
+152`) has no port (single-player); (4) `Main.musicPitch` (styles 26/35/47, none
+named by a `UseSound` row today) reads 0.0. Tile place/break sounds are NOT this
+wave (break landed in S1-E-21c; place is a follow-up).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
@@ -2613,6 +2639,34 @@ and a third was the click gate the geometry feeds):
   (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
   — the port keeps one flat roster — and the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
+* **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
+  (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
+  (1) the draw centred the 14×36 roster inside the grid rect (`UIList.HAlign
+  = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` hit-tested the *uncentred*
+  lattice (+31 px at 1600×900), so hover lit the neighbouring cell and clicks
+  spawned the neighbouring emote; the shared `grid_origin` now feeds both.
+  (2) The "hover highlight" was a wrong port of `EmoteButton.GetFrame`
+  (`:32-36`): frame 2 is the idle blink of the shared 20-tick `_frameCounter`
+  (`UpdateFrame` `:38-44`), not the hover pick — the real hover is the
+  `Images/UI/EmoteBubbleBorder` sheet tinted `Main.OurFavoriteColor`
+  (255,231,69, `Main.cs:66748`) plus the `/EmojiName.*` MouseText
+  (`DrawSelf` `:62-74`); the border sheet was never packed and is now.
+  (3) The bubble draw received raw world coordinates with no camera/zoom
+  transform (vanilla `GetPosition` subtracts `screenPosition` and draws under
+  `GameViewMatrix.ZoomMatrix`, `Main.cs:46455-46459`), so every bubble drew
+  thousands of px offscreen; it also anchored at the head-top instead of
+  `GetPosition`'s `(Top.X − dir·width·0.75, y+2)` bottom-centre origin
+  (`EmoteBubble.cs:206`/`:247-249`) and dropped the direction flip. The
+  lifetime math now matches `Update`'s short-circuit (`--lifeTime > 0 &&
+  ++frameCounter >= 8`, `:179`) and `OnBubbleChange`'s unconditional
+  `lifeTime = 6` on the other same-player bubbles (`:273` — the port used to
+  guard `> 6`). The wheel's Back click hit-tested the bestiary's box (BUG-18's
+  draw-side fix never reached the click arm) and the pick now honours
+  `MakeLocalPlayerEmote`'s dead gate (`:280`). Remaining deliberate gaps: the
+  reverse-gravity arm (`Draw` `:207-212`) stays out with the unported gravity
+  flip, the NPC reactions (`CheckForNPCsToReactToEmoteBubble` `:152-167`) with
+  M4-TOWN, and the button blink rides the world step instead of the UI update
+  (the wheel is only reachable in-game where the world keeps stepping).
 
 Open gaps (deliberately out, each with its reason):
 
@@ -4714,6 +4768,17 @@ turns on with the pets rather than needing a second pass. The remaining
 `S1-E-11` items are `MoveTownNPC`'s failure-reason feedback text
 (`:4694-4828`, the housing query UI reads it), which needs the housing-query
 `Main.mouseNPC` model (`ui/housing.rs:12-14`).
+
+### Stinkbug flags (S1-E-11b, 2026-11-18)
+
+`RoomScan.has_stinkbug`/`has_echo_stinkbug` are added by this change and
+set by `check_tile` from the active tiles 630/631
+(`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
+keeps running and only the flags are written; `check_room` clears both per
+scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
+pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
+the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+ported block (`Main.rand` untouched; the flags are pure tile reads).
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
@@ -8411,6 +8476,74 @@ semantics; the world-hash pins are re-taken (`SEED42_512 = 1586971478`,
 `DEFAULT_WORLD = 4240603701`) and `worldgen/biomes.rs`'s divergence note
 updated — its own `spread_jungle_grass` already carried the C# gate.
 
+### The downward-spread report, re-verified (fix/grass-spread-direction)
+
+A user report ("grass grows INTO the soil below a slope, green veins inside
+dirt") pointed at the same function. Re-verification against
+`WorldGen.cs:74269-74867` + `:75146-75257` found the enclosure gate already
+correct on main (the M5-SPREAD-1 fix above): a probe massif converted grass
+only on exposed faces — the top fringe AND the exposed cliff sides, which is
+vanilla behaviour. **The C# has no "cell above must be open" rule**; the
+surface gate is the 3×3 enclosure scan, so grass legitimately rides down an
+exposed cliff face one column wide. Buried soil (fully solid 3×3) never
+converts. Pinned by `growth::tests::buried_soil_stays_soil_and_exposed_soil_converts`
+and `the_grass_scan_leaves_buried_soil_and_the_draw_count_is_outcome_independent`.
+The screenshot's veins are consistent with the pre-M5-SPREAD-1 inverted gate
+(which converted enclosed subsoil and refused open surfaces).
+
+Two residual divergences in the same slice were fixed on this branch
+(both RNG-free — `spread_grass` and its callees draw nothing, so the
+UnifiedRandom stream's count/order is untouched; the lockstep test above
+pins it):
+
+- **The surface rule wrongly bound the infection grasses.** The port refused
+  every `dirt == 0 && j >= worldSurface` conversion; the C# (`:75162`)
+  exempts grass 23/199/661/662 — corrupt/crimson grass converts dirt at any
+  depth (the enclosure gate still applies). Plain grass 2 / jungle 60 /
+  mushroom 70 / hallow 109 keep the surface rule. Pinned by
+  `the_surface_rule_exempts_the_infection_grasses`.
+- **The `CanBeClearedDuringGeneration` gate was missing** (`:75202` →
+  `:80168-80175`, `skipDualDungeonCheck: true` reduces it to the bare
+  `TileID.Sets.CanBeClearedDuringGeneration` set, `TileID.cs:573` — default
+  true, {396-401, 404, 368, 367, 41, 43, 44, 481-483, 226, 237} false).
+  Restored; dirt 0 / mud 59 / stone 1 / grass 2 are all in the set, so no
+  existing conversion arm changes. The world-hash pins are UNCHANGED
+  (`SEED42_512 = 2673964944`, `DEFAULT_WORLD = 3439477718` — the current
+  post-S1-A-3 values), proving worldgen output is byte-identical.
+
+**Arm audit** (which conversions the enclosure gate binds): every arm of the
+ported `update_world_grass_growth` table routes through `spread_grass`, so
+all were affected by the old inverted gate and all are now correct — plain
+grass 0→2, corrupt 0→23 / mud 59→661, crimson 0→199 / 59→662, the 661/662
+reverse arms (59→661/0→23, 59→662/0→199), jungle 59→60, mushroom 59→70, ash
+57→633. Chlorophyte does NOT ride this function (`spread.rs::hard_update_world`
+→ `convert_cell`, C# `:69646-69685` — no enclosure gate in the C# either;
+chlorophyte legitimately converts buried mud). The moss arm
+(`grow_moss_arm`) and the neon-moss worldgen sweep share `spread_grass` and
+inherit the fixes.
+
+**Genuinely unported arms** (documented divergence, NOT ported here — each
+adds RNG draws the frozen stream does not make): the C# overground body
+(`underground: false`, `:74510-74866`) is a different switch from the
+underground table the port implements for both dispatchers. Unported:
+the halloween pumpkin roll (`:74524-74546`, `Next(75)`); the plant-above
+rolls for grass 2 (`Next(12)` → 3), corrupt 23 (`Next(10)` → 24), crimson
+199 (`Next(10)` → 201), 661/662 (`Next(10)`), hallow 109 (`Next(10)` → 110),
+ash 633 (`Next(10)` → 637) (`:74547-74590`); the 32/352 thorn and 477/492
+golf-grass source remaps (`:74592-74614` — the port's table has no 2/109/
+477/492/32/352 rows, so overground plain-grass spread currently rides the
+underground-style 0→2 row instead); the overground cross-infection scan
+(`:74628-74697` — grass↔evil↔hallow conversions of ALREADY-grassed
+neighbours, 2→23/199, 109→… etc.); the overground jungle/mushroom tree and
+plant arms (`:74704-74813`, `Next(7)`/`Next(500)`/`Next(25)`/`Next(300)`);
+the 226 lihzahrd plant arm (`:74815-74828`); the 633 ash plant + scan
+(`:74829-74865`). The underground body's jungle special arms (plantera
+bulbs 238 `:74414-74495`, jungle roses 236/233, the mushroom cattail/tree
+arm `:74497-74506`) are likewise unported. These are plant-placement and
+cross-grass-conversion features, not soil-direction bugs; porting them
+changes the draw ledger and belongs to a dedicated M5-SPREAD task.
+
+
 ## Chest loot rows + the family probes (M5-CHEST-gen)
 
 The remaining `AddBuriedChest` tail rows landed 2026-11-09 with two
@@ -10362,6 +10495,26 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
+  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
+  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
+  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
+  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
+  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
+  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
+  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
+  light layer; the tracked explode sound (`:69362`) — no sound layer; the
+  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
+  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
+  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
+  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
+  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
+  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
+  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
+  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
+  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
+  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
+  the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -11347,10 +11500,12 @@ and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
 override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
 `GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
 the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
-`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+`Main.OffsetsPlayerHeadgear` composite shift (`Y - 2`). The visible breakage was that the
 chain fed those tables wrong rows; with the rows correct the existing tables are correct
 too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
 duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+(The composite-shift SIGN was later corrected from `2 - Y` to `Y - 2` — see
+"The head/torso gap" below; the row-feeding audit above was unaffected.)
 
 Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
 whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
@@ -11399,6 +11554,52 @@ The port's armor slots are the vanilla body ids 1-4 (copper/iron/silver/gold —
 the `body_slot` of the worn chest piece, `render/entities.rs:1378`); none of
 them is in the `missingHand` list, so the `Players[9]` hand layer is correctly
 absent for the port's armors.
+
+### The head/torso gap (fix/player-head-torso-gap, 2026-11-18)
+
+The composite torso/arms carry a per-body-row Y shift so the shirt follows the
+head's walk bob. Every consumer computes it the same way
+(`PlayerDrawLayers.cs:1217-1219` skin torso, `:1263-1265` back arm,
+`:1940-1942` shirt torso, `:3579-3581` front arm):
+
+```csharp
+Vector2 vector2 = Main.OffsetsPlayerHeadgear[bodyFrame.Y / bodyFrame.Height];
+vector2.Y -= 2f;
+vector += vector2 * -((playerEffect & SpriteEffects.FlipVertically) != 0).ToDirectionInt();
+```
+
+`ToDirectionInt(false)` returns **-1** (`Utils.cs:2010-2017`), so for the
+un-flipped player the multiplier is `+1` and the shift is
+`OffsetsPlayerHeadgear.Y - 2`. The table (`Main.cs:66638-66660`) is `0` on rows
+7-9/14-16 and `2` elsewhere, so the torso/arms sit **2 px UP** on those rows and
+unshifted on the rest; the head and legs never shift. Those zero rows are the
+walk-bob peaks where the head frame's art rides 2 px up inside its 56-px cell,
+and the torso must rise with it or a background band opens under the chin.
+
+The port computed `2 - Y` (the sign inverted), dropping the torso 2 px on the
+zero rows instead of lifting it — a 2-px transparent gap between head and torso
+on every bob peak (body rows 7-9/14-16), most visible mid-walk. The fix flips
+`headgear_composite_shift` to `Y - 2` (`render/player_layers.rs`); the raw
+`headgear_offset` (used by the held-item anchors and the Moon Lord leg rows) is
+unchanged. `t2_player_frame_offsets_match_csharp` /
+`t3_no_head_torso_gap` / `test_dw_1_3` / `test_dw_2_6` now pin the corrected
+sign for all 20 rows. Verified with `TR_HOLD=right TR_ZOOM=2 TR_NO_BG=1`
+walk screenshots: the gap frames (120/130/160/170) show a continuous
+chin→shirt join after the fix.
+
+**Not the sampler / not rounding.** The reported "motion blur" was the same
+gap flickering as the walk cycle crossed the zero rows, not sub-pixel
+smearing: the player pass already snaps every unrotated layer to an integer
+screen pixel (`render/entities.rs::snap_to_screen` via `push_layers`) and the
+world camera is snapped to `round(cam*zoom)/zoom` (`app/frame/draw.rs`), and
+the atlas sampler is nearest (`tr-render/src/sprite.rs`, mag/min/mipmap =
+`Nearest`), matching the C#'s `SamplerState.PointClamp`
+(`Main.cs:2774-2784`, `Graphics/Camera.cs:44`). The C# player layers floor
+their screen position with `(int)` casts / `.Floor()` (e.g.
+`PlayerDrawLayers.cs:2062`, `:1939`), not `Math.Round`; the port's
+integer-snapping is the equivalent crispness guarantee. A zoom-2 capture shows
+uniform 2×2 texel blocks and a discrete ~50-color palette (no linear-filter
+blend gradient), confirming the sprite is already crisp.
 
 **The shoulders on the falling row** — `PlayerDrawSet.cs:1933-1937` reads
 `ArmorIDs.Body.Sets.showsShouldersWhileJumping[body]` into `flag`, and the
@@ -12894,6 +13095,32 @@ World's downed flags, and the Discount Card's
 `(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
+
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
 
 ## The world-format contract (S1-J-8)
 
@@ -15265,11 +15492,65 @@ feed cannot change the fixed-step order or any stream.
   divergence that a later refactor could misread as a *missing* port. The
   Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
   under water where a plain torch goes dark.
-* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+* **Remaining source families.** Projectile (107 call sites), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
-  pool has no light sink, so they stay dropped.
+  pool has no light sink, so they stay dropped. The NPC family is **started**
+  (2 of 80 call sites), see below.
+
+### The NPC family (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/npc_lights.rs::npc_light` ports the aiStyle-8 light tail at
+the end of `NPC.AI` (`NPC.cs:21280-21373`) — the type chain the C# runs after
+`base.position += netOffset` (`:21279`; the feed reads the offset position too,
+restored at `:21374`). It feeds the **same** `EntityLights` pair as the item
+family (one list pair per engine in the C#, not one per family) and shares the
+tile-anchor vocabulary (`entity_lights.rs::XAnchor`/`tile_x`/`tile_y`); both
+feeds run in the frame pass (`app/frame/draw.rs`), after the step, in `Main.npc`
+slot order. Of the NPC family's **80 `Lighting.AddLight` call sites, 2 landed**:
+
+* **`NPC.cs:21360` — the Desert Djinn (533)**: `AddLight(base.Top, 0.6f, 0.6f,
+  0.3f)`. `base.Top` is `(position.X + width/2f, position.Y)` (`Entity.cs:86-91`)
+  — centre x, top y — and the `Vector2` overload truncates the quotient per
+  axis (`Lighting.cs:140-143`); the port models it as `XAnchor::Top`. The kind
+  itself landed with this task: `SetDefaults` 28x62 / damage 40 / defense 20 /
+  lifeMax 220 / kb 0 / value 1200 (`NPC.cs:14974-14987`), `FindFrame` case 533's
+  8-row hover cycle + the cast windup's `+8` row bank (`:69978-69992`,
+  `npcFrameCount[533]` = 16, `Main.cs:67082`), and the AI cycle's own constants
+  (`CasterParams::DESERT_DJINN`): the single `ai[0] == 180` trigger sets
+  `ai[1] = 181` (`:21031-21038`) and the wrap fires at 360 (`:21079-21082`),
+  not the standard 100/200/300 → 30 / 650.
+* **`NPC.cs:21365` — the aiStyle-8 else arm**: `AddLight(base.Center, 0.6f,
+  0.6*0.65f, 0.6*0.4f)` — the Fire Imp (24) is the port's only remaining
+  aiStyle-8 kind. The arm's `Main.rand.Next(6)` dust half (`:21366-21372`) is
+  skipped wholesale (the RNG rule below).
+
+**What stays dropped, exactly:**
+
+* The 29/45/32 arms (`:21280-21300`) are **dust-only** — no `AddLight` — so the
+  sorcerer/Tim/Dark Caster stay dark; nothing to port until the dust system.
+* The Djinn's curse volley (`:21117-21230`) draws `Main.rand`
+  (`:21140-21141`'s target-tile rolls, `:21195-21196`'s velocity jitter) — the
+  whole volley is skipped (`shoot_tick: None`), so the Djinn never fires and
+  the `Main.rand` stream stays untouched. The teleport half of its cycle is
+  RNG-shared with the standard casters and rides the existing
+  `find_teleport_spot` draws in the same order.
+* The aiStyle-23 chain (`:25239-25250`) lights types **83 = CursedHammer** and
+  **179 = CrimsonAxe** (`NPCID.cs:10843`/`:11035`) plus a fallback — neither
+  kind is in the port's roster (PrimeVice 130 rides aiStyle 34,
+  DD2KoboldFlyerT3 575 aiStyle 108; they never reach that chain). The three
+  arms wait for those kinds.
+* The remaining **76 NPC call sites** (the aiStyle-9 sphere glow `:21561`, the
+  boss AIs' lights, the `UpdateNPC` tail's torch/buff lights `:90841-92412`,
+  etc.) are not ported; each needs its AI family or a rand-bearing dust arm
+  first.
+
+Tests: `npc_lights.rs` pins the Djinn's Top-anchor tile + colour (incl. the
+centre-x vs left-edge difference and negative-coordinate truncation), the Fire
+Imp's else-arm centre light, and the dark casters; `npc.rs`'s
+`the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
+the skipped volley; the protocol round-trip roster grew 198 → 199.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
@@ -15530,6 +15811,47 @@ manager. Porting the transport would require vendoring Steamworks (its DLL sits
 unused beside the tree) and would not change the port's own wire, so the ROADMAP
 keeps it as this documented divergence rather than a build item.
 
+## The Steam Cloud save exclusion (S1-J-6, 2026-11-18)
+
+Steam Cloud is a platform service, not game logic: it stores the same save
+bytes the local path writes, keyed to the Steam account instead of the disk.
+The port targets local saves, and the C# itself gates every cloud arm behind
+the social module — so the exclusion loses nothing the vanilla does without
+Steam.
+
+Where the gate lives in the C#:
+
+* `SocialAPI.Initialize` (called once from `Program.cs:222`) picks the mode —
+  `SocialMode.Steam` for the client, Steam only with `-steam` for the dedicated
+  server (`Social/SocialAPI.cs:36-52`; the enum is `None`/`Steam`/`WeGame`,
+  `Social/SocialMode.cs:3-8`). Only the `SocialMode.Steam` arm loads
+  `SocialAPI.Cloud` (`LoadSteam`, `Social/SocialAPI.cs:107`; WeGame loads its
+  own at `:126`); under `SocialMode.None` the field stays `null`. The Steam
+  module (`Social/Steam/CloudSocialModule.cs`, 108 lines) is a pure
+  `SteamRemoteStorage` wrapper (`GetFileCount` `:29`, `FileWriteStreamOpen`
+  `:43`, `FileRead` `:76`) — there is no cloud code outside `Social/**`.
+* Every cloud arm in the save/load path checks that field and short-circuits
+  without it: `WorldFile.LoadWorld` sets "Cloud inaccessible" and fails the
+  load (`IO/WorldFile.cs:653-657`); `_SaveWorld` returns without saving
+  (`:872-875`); `GetAllMetadata` opens the cloud stream only on the `cloudSave`
+  branch (`:194`); `Player.LoadPlayer` returns an empty `PlayerFileData`
+  (`Player.cs:55061-55063`) and `Player.GetFileData` returns `null`
+  (`:55864-55866`). `FileUtilities` routes cloud reads/writes through
+  `SocialAPI.Cloud` only when it is non-null, else falls to the local branch
+  (`Utilities/FileUtilities.cs:16-18`, `:107-109`, `:134-136`).
+* The front end never offers cloud without the module: the cloud world/player
+  list entries are only added when `SocialAPI.Cloud != null`
+  (`Main.cs:3972-3978`, `:4018-4024`), the new-world cloud default is
+  `SocialAPI.Cloud != null && SocialAPI.Cloud.EnabledByDefault` (`:5490`,
+  `:48163`), and cloud deletion is guarded the same way (`:4809-4811`).
+
+The port's `save_world` (`crates/tr-app/src/app/saveglue.rs:88`) writes the
+world + player sidecar + map to local paths only — exactly the C#'s
+`SocialMode.None` behaviour, where the same gates leave only the local arms
+reachable. This closes research/42's risk 42-5 ("Cloud save is missing") as a
+non-goal rather than a gap, alongside the ROADMAP Non-goals `Social/**`
+exclusion and the S1-I-6 transport divergence above.
+
 ## The Pumpkin Moon family (S1-F-13b, 2026-11-17)
 
 The 16 wave kinds land on `S1-F-13b-pumpkin-family` (phases: the identity
@@ -15687,3 +16009,275 @@ change); each new range was verified against the decompiled source line by line:
   :14257-14263, which is where the Rust fn's arms live).
 * crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
   the enum declaration plus body spans :3-9, ending at the closing brace on :9).
+
+## The duplicate entity health bar (fix/duplicate-entity-health-bars, 2026-11-18)
+
+Every damaged NPC showed TWO bars: a bogus red strip ABOVE the hitbox and the
+faithful green one below. The duplicate was an uncited ad-hoc block inside
+`render/entities.rs`'s `draw_npcs` (a dark backing quad plus a
+`[0.85, 0.15, 0.15]` fill at `[n.x, n.y - 9]` whenever `hp < max_hp`).
+The C# world pass draws no NPC bar at all — `Main.DrawNPC`
+(`Main.cs:22469`) / `DrawNPCDirect` never call `DrawHealthBar`; the only
+NPC bar is `Main.DrawInterface_14_EntityHealthBars` (`Main.cs:45810`),
+ported by `draw_npc_health_bars`. `combat_text::draw` was NOT the
+duplicate: it draws only the floating damage text (`Main.cs:62340-62396`).
+The ad-hoc block is deleted; the interface pass is the single source.
+
+The surviving pass was also brought pixel-exact with `Main.DrawHealthBar`
+(`Main.cs:21909-22000`) and the ordinary arm (`:46021-46024`):
+
+* The C# keeps a 2 px seam below 34 filled pixels (Hb2 columns 2..4 at the
+  fill edge, Hb1 columns 32..34 capping it, `:21976-21990`); the port used
+  the 34+ two-sheet butt for every ratio. `combat_text::bar_slices` now
+  carries both layouts in the C# draw order, pinned by
+  `the_bar_slices_match_the_csharp_seam_layout`.
+* `num3 += Main.NPCAddHeight(npc)` (`:46023`) now shifts the bar's Y
+  (the port already had `npc_add_height` verbatim for the draw anchors).
+* `Lighting.Brightness` is the channel MEAN times GlobalBrightness
+  (`Lighting.cs:118-122`), not the max channel; the pass now reads the
+  light through `LightStyle::shade` (which carries GlobalBrightness and
+  the blind drop) and clamps the tint AND alpha into [0,255]
+  (`Main.cs:21947-21969` — with brightness 1.2 the product can exceed 1).
+* The boss-scale 1.5 list (`Main.cs:45839-45922`) covered only King Slime
+  and the Eye; every shipped boss id now scales (Skeletron + hands, the WoF
+  pair, the Twins, Prime + limbs, Queen Bee, the Golem family, Plantera,
+  the Brain, Betsy, the Dark Mages, the Ogres, the Cultist).
+* The gate now carries `ShowLife` (`NPC.cs:6832-6842`:
+  `dontTakeDamage ? dontTakeDamageStillShowLife : true` — only type 412
+  defaults the override, `NPC.cs:15279-15280`) and the cultist ritual
+  exclusion (`Main.cs:45928`'s `ai[0] != 5` term), plus the
+  `position += netOffset` draw wrapper (`:45831`). A damaged town NPC
+  DOES show its bar — the C# gate is `life != lifeMax && ShowLife`, with
+  no townNPC term.
+
+Still approximate (unchanged by this fix): the Destroyer's smoothed shared
+bar and the worm families' `DrawInterface_Healthbar_Worm` stay with the
+open S1-D-6b row; `npc.gfxOffY` (unported on NPCs) and the flipped-gravity
+mirror (`Main.cs:21923-21927`; the port has no gravity-flip state) are
+absent; `HealthBarDrawSettings` is fixed at the default 1.
+
+## The corner chat HUD (fix/chat-corner-display)
+
+The bug: typed messages were invisible until the chat was opened. Cause:
+`ui::draw_chat` returned early on `!chat.open` **before** the log walk, so
+the always-on corner HUD was never drawn - a "never-called" failure, not a
+zero-alpha one. The C# splits the two halves: the blinker/input strip live
+inside `if (Main.drawingPlayerChat)` (`Main.cs:40932-40996`) but
+`Main.chatMonitor.DrawChat(Main.drawingPlayerChat)` runs unconditionally
+(`:40997`), and `RemadeChatMonitor.DrawChat` gates each line on
+`drawingPlayerChat | CanBeShownWhenChatIsClosed` (`:79`).
+
+The fix ports the missing state and tick:
+
+- `ChatLine.time_left` = `ChatMessageContainer._timeLeft`, armed to 600 by
+  `SetContents` (`ChatMessageContainer.cs:33`) on every `new_text`;
+  `can_be_shown_when_chat_is_closed()` is `_timeLeft > 0` (`:23`).
+- `ChatMonitor::update` = `RemadeChatMonitor.Update` (`:115-129`) ->
+  `ChatMessageContainer.Update` (`:45-52`), ticked by the new `chat_phase`
+  at the `Main.cs:17282` site: after the gated `DoUpdateInWorld`
+  (`:17278-17281`), under the `!paused` arm (the `CanPauseGame` early
+  return `:17194-17199` precedes it), so stepper-blocked frames decay the
+  timers but the pause freezes them. The frame-order pins gained the
+  `chat` phase at that position.
+- `visible_lines(open)` = the `DrawChat` window: `_showCount = 10`
+  (`RemadeChatMonitor.cs:25`, was the port's invented 20), newest first,
+  and closed the walk **breaks** at the first expired container (`:79-82`)
+  - an expired line hides the rows behind it, it is not skipped.
+- The row anchor is the C# constant `(88, screenHeight - 30 - 28 - i*22)`
+  (`RemadeChatMonitor.cs:83`), extracted as `ui::chat_row_anchor`.
+- The blinker now advances only while the input is open (the C# block sits
+  inside `drawingPlayerChat`, `Main.cs:40932-40946`); the port previously
+  ticked it every drawn frame.
+
+Vanilla "fade" note: there is **no alpha decay** - the line draws at its
+stored full colour until the 600-tick (10 s) timer expires, then only the
+open chat shows it. The old `LegacyChatMonitor` has the same binary
+`showTime > 0` gate (`LegacyChatMonitor.cs:194`).
+
+Deliberate deviations (unchanged by this fix, recorded here): the port's
+lines carry flat text - no `WordwrapStringSmart` wrap (`LineCount` is
+always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
+(`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
+hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
+not a scrollable 500-line view.
+
+## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
+
+`crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
+(LegacyLighting.cs, 1442 lines) - the pre-1.2 engine the White/Retro/Trippy modes
+select (`Lighting.Mode` setter, `Lighting.cs:45-56`). The port is ADDITIVE: the
+modern Color engine (`lighting/mod.rs` + `blur.rs`) is byte-identical - its maths,
+RNG draws and the S1-G-10 `NON_VISIBLE_PADDING = 18` are untouched, and
+`presenting_legacy_then_modern_recompute_is_byte_identical` proves a LightMap that
+served a legacy present recomputes the exact modern result afterwards.
+
+Ported paths (citations in place):
+- `ProcessArea` (`:302-369`): the renderCount cycle - pre-render at
+  `count > RenderPhases`, swipe passes at counts 0/1/2, the publish at count 2,
+  the camera shift + sky reseed at counts 3..phases. `RenderPhases` reads the
+  S1-B-6 `GfxQuality::render_phases` field (`Main.cs:17085-17101`).
+- `PreRenderPhase` (`:648-849`): working-set clear, the scanner export over the
+  expanded rect clamped to `[5, maxTiles-1]`, the mask flags, the lit-cell bound,
+  the AddLight dictionary merge, the area snapshots, `renderCount = 0`.
+- `DoColors` (`:851-1085`): the blue wave (`0.97..1.0` by `0.0001`), the White
+  factors (`neg 0.9 / neg2 0.54 / neg3 0.8`, `wet_r = 0.95*neg*wave`), the
+  Retro/Trippy subtractive factors (`0.04/0.16/0.08` + the buff deltas), the
+  nightVision/blind/blackout/headcovered arms, and the four swipe-pass bounds.
+- The swipes: White `doColors_Mode1_Swipe` (`:1192-1271`, multiplicative carry,
+  the `0.0185` cutoff, the neighbour gate, R2-only - no colour bleed), Retro
+  `Mode2` (`:1273-1329`, subtractive, no neighbour gate), Trippy `Mode3`
+  (`:1331-1435`, per-channel subtractive with the `<= 0` done gate; the
+  StopLight subtraction is additive to the channel decay and the B channel has
+  no wet arm - both C# quirks kept).
+- `CopyFullyProcessedDataOver` (`:538-621`) incl. the inner-guard quirk (the
+  condition reads the x delta, the subtraction the y delta, `:583/608`),
+  `ShiftUnProcessedDataOver` (`:473-536`, the +/-5-tile jump guard),
+  `UpdateLightToSkyColor` (`:435-471`, the unconditional-R quirk at `:459`),
+  `Clear` (`:623-646`), `AddLight` (`:258-300`, the 2000 cap, the non-RGB mean
+  collapse), `GetColor` (`:211-219`).
+- The legacy seed gate is the GLOBAL `(int)Main.worldSurface`
+  (`TileLightScanner.cs:92`) and `UnderworldLayer = maxTilesY - 200`
+  (`Main.cs:2790`); the legacy mask keeps the C# `!tile.inActive()` conjunct
+  (`TileLightScanner.cs:68`) the modern blur mask does not have - an actuated
+  block is air to the legacy swipes. The per-type arms reuse the shared
+  `tile_light` port.
+
+RNG streams (order exact, seeds pinned - the S1-A-6 precedent):
+- `_swipeRandom`: `NextSeed()` after EVERY swipe pass (`:1082`), wet cells draw
+  `WithModifier((ulong)(i*1000+j)).Next(98,100)*0.01f` (`:1250-1251`). Vanilla
+  seeds it `CreateWithRandomSeed()` (`:1440`, session-nondeterministic); the
+  port pins seed 0.
+- The legacy engine's own `TileLightScanner._random` advances once per
+  PreRenderPhase (`Update()`, `:723`), NOT once per frame like the modern path;
+  seeded from the frame's `LightParams.rng_seed` on first use.
+
+Deliberate deviations:
+- `FastParallel.For` chunks run as ONE sequential chunk per pass. The C# swipes
+  wrap their body in `try/catch` (`:1091/1196/1277/1335`), so an out-of-bounds
+  inner index aborts the rest of that thread's chunk; writes never cross outer
+  indices, so chunking cannot change cell values - only the abort extent, which
+  the single chunk reproduces for the sequential case.
+- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) is not
+  ported - it is the map system's own lighting pass (`Main.Map.UpdateLighting`),
+  gated on `mapEnabled && renderCount == 3`; the port's map lighting rides the
+  modern map pass. The netplay `mapTime = 1` poke (`:341-344`) is likewise out.
+- The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
+  `Player.gross`, neither ported; the gate is false in the port.
+- Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
+  selector (Color selects the NEW engine, `Lighting.cs:40-44`); only the Mode
+  1/2/3 swipes are ported. The Mode-0 water/honey decay table (`:874-929`) is
+  kept in the factor block for completeness.
+- `Player.nightVision/blackout/headcovered` are not ported fields; the driver
+  passes `false` (the `blind` flag is wired). The factor arms are code-complete.
+- The G6 `WorldFrameKey`'s `anim` slot carries `anim_time` in the legacy modes
+  (the engine re-publishes every frame); the key's contents are unchanged.
+
+Tests: 12 in `legacy.rs` - the Retro falloff table (hand-derived 0.04 steps +
+the 0.16 solid gate), White's multiplicative carry / no-bleed / 0.0185 cutoff /
+wet RNG draw, per-mode engine goldens on a fixed 96x96 torch world, cycle
+determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
+byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
+lava/water decay.
+
+## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
+
+Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
+whole animation sheet squashed into one frame-sized box (or spilled the cell).
+
+Cursor: the `bestiary_open` branch of `ui::draw_hud` returned before the
+global `cursor::draw` tail. The C# bestiary is a fancy-UI state:
+`DrawInterface_12_IngameFancyUI` (`Main.cs:46148-46158`) returns false for
+it, stopping the layer loop before layer 36's cursor; `IngameFancyUI.Draw`
+draws the cursor itself after the state (`IngameFancyUI.cs:220-223`,
+`Main.DrawCursor(Main.DrawThickCursor())`). The fix draws the cursor inside
+the bestiary branch before the early return - the same structure.
+
+Icon: `draw_portrait` passed `(frames_x=1, frames_y=1, frame=0)` to
+`draw_sheet_frame`, sampling the entire NPC animation strip as one rect.
+`UnlockableNPCEntryIcon.Draw` (`UnlockableNPCEntryIcon.cs:194-207`) draws
+`DrawNPCDirect` with the NPC's single `npc.frame`; frame geometry from
+`FindFrame`/`SetFrameSize` (`:100-109`, `:185`; the division itself
+`NPC.cs:66666`/`:66694` - `frame.Height = tex.Height /
+Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
+`frames_y = sheet_h / frame_h` rows (the `.round()` is an inverse
+derivation of the integer row count, not a `Math.Round` port) and applies
+the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
+
+Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
+stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
+Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
+GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
+the `OverflowHidden` clip of the 68 px inner box
+(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
+CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
+port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
+(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
+inset and centring are faithful; only the scale/clip mechanism is approximate.
+
+## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
+
+The Settings menu's Save & Exit row armed `pending = Some(SaveAndExit)` then
+called `close()`, which clears `pending` (`ingame_options.rs`); no caller
+ever drained it, so the button only closed the window. The C# row
+(`IngameOptions.cs:296-305`) does `Close()` + `menuMode = 10` +
+`gameMenu = true` + `WorldGen.SaveAndQuit()`; `SaveAndQuit`
+(`WorldGen.cs:6701-6719`) plays sound 11, resets the invasion bar
+(`:6705-6708`) and queues `SaveAndQuitCallBack` (:6664-6687`:
+`Player.SavePlayer` + `WorldFile.SaveWorld` on the `netMode == 0` arm,
+sound 10, fast-forward flags cleared, `menuMode = 0`).
+
+The fix wires the row to `App::save_and_quit` (`saveglue.rs`): sound 11 ->
+invasion reset -> the existing `save_world` funnel (world + player sidecar +
+map + achievements) -> sound 10 -> fast-forward flags -> reopen the main menu
+(the `net_disconnect` shape). Deliberate deviation: the C# mode-10 "saving"
+screen exists only to cover the ThreadPool async save; the port's synchronous
+single-player save has no window to cover, so mode 10 is skipped (documented
+in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
+`ResetFocus` halves covered by the `game_menu` audio listener). The
+multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
+the MP pause-menu flow lands. The Settings panel layout deviations remain a
+follow-up round.
+
+## The C#-written golden fixture (S1-J-3)
+
+`assets/test/golden.wld` (3666 bytes) and `assets/test/golden.plr` (3840 bytes)
+are written by the **real decompiled save path** through
+`tools/WldFixtureHarness`: `extract.ps1` slices the save-path method bodies
+verbatim out of `decompiled/` (`WorldFile.SetTempToOngoing` +
+`SaveWorld_Version2` and every section writer, `WorldFile.cs:1040-1758`;
+`Player.Serialize`, `Player.cs:54750+`; `Tile`, `TileEntity.Write` + the
+per-kind `WriteExtraData`, the bestiary/creative/town/banner/DD2/spawn/treetops
+`Save` bodies, `Item.Serialize`), and `Program.cs` builds the smallest real
+world — a fixed 40x30 tile array, every value a literal, no genRand — plus a
+fresh player. The shims (`Shims/*.cs`) carry only the global statics the bodies
+read, at the C# types/defaults; no serialization logic is reimplemented.
+
+**The one substitution:** `DateTime.UtcNow` -> `FixtureClock.UtcNow` (pinned
+2026-11-18T00:00:00Z). The vanilla writers stamp the wall clock
+(`SaveWorldFlags:1251`, `Player.Serialize:54909`); a reproducible fixture
+cannot carry it. Everything else is byte-for-byte the decompiled body. The
+importance bitmap is parsed from the real `Main.cs` at runtime (direct
+assignments + for-loop ranges + `AddEchoFurnitureTile`), not transcribed.
+Regen: `powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`; two runs are
+byte-identical.
+
+**Byte-compare result** (`s1_j_3_*` in `wld/mod.rs`, `player_file.rs`):
+- The port decodes every section of the fixture (all eleven pointers land
+  exactly; the app-side fix-ups keep 2 signs, 11 tile entities, 2 plates).
+- Re-write is **byte-identical for sections 2..10** (tiles, chests, signs,
+  NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
+  **and the footer**; the prologue framing + importance bitmap match with the
+  pointer table zeroed.
+- The header/flags block diverges in **exactly the unowned fields**, pinned
+  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
+  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
+  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
+  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
+  (no `.wld` store), the tree-top variations (no store) and the world-gen
+  manifest JSON (the port writes the empty string). These are documented
+  divergences, not faked parity.
+- The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
+  (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
+  character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
+  writer's own byte parity stays S1-J-5's.

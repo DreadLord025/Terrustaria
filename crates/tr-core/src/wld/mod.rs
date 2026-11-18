@@ -2729,4 +2729,292 @@ mod tests {
             world.sandstorm_intended_severity
         );
     }
+
+    // --- S1-J-3: the C#-written golden fixture -------------------------------
+    //
+    // `assets/test/golden.wld` is written by the REAL decompiled save path
+    // (`WorldFile.SetTempToOngoing` + `SaveWorld_Version2`, the eleven sections)
+    // through `tools/WldFixtureHarness` — a `dotnet` harness that extracts the
+    // verbatim method bodies from `decompiled/` and shims only the global
+    // statics (the S1-J-1 / S1-A-1 oracle pattern). The tile array is a small
+    // hand-built deterministic scene (no worldgen RNG); the only substitution in
+    // the extracted bodies is `DateTime.UtcNow` -> a pinned instant, because a
+    // reproducible fixture cannot carry the wall clock. See the harness README
+    // and ANALYSIS "The C#-written golden fixture (S1-J-3)".
+    //
+    // These tests pin the port against that real C# output: every section the
+    // port models re-writes byte-for-byte; the header/flags block's unowned
+    // fields are the documented divergences (not faked).
+
+    /// The C#-written `.wld` fixture (`tools/WldFixtureHarness`, regen with
+    /// `dotnet run --project tools/WldFixtureHarness -- assets/test`).
+    const GOLDEN_WLD: &[u8] = include_bytes!("../../../../assets/test/golden.wld");
+
+    /// Load the fixture the way the app does (`app/mod.rs:3511-3522`): the
+    /// parser plus the three world-state fix-ups, then materialize the save bag
+    /// from the loaded state (`saveglue.rs::wld_sections`'s `from_world` halves).
+    fn golden_loaded() -> LoadedWorld {
+        let mut loaded = parse_with_sections(GOLDEN_WLD).expect("the C# fixture parses");
+        sections::signs::apply_loaded(&mut loaded.world, &loaded.sections.signs);
+        sections::tile_entities::apply_loaded(&mut loaded.world, &loaded.sections.tile_entities);
+        sections::pressure_plates::apply_loaded(&mut loaded.world, &loaded.sections.pressure_plates);
+        loaded
+    }
+
+    fn golden_bag(loaded: &LoadedWorld) -> SectionData {
+        let mut data = loaded.sections.clone();
+        data.signs = sections::signs::from_world(&loaded.world);
+        data.tile_entities = sections::tile_entities::from_world(&loaded.world);
+        data.pressure_plates = sections::pressure_plates::from_world(&loaded.world);
+        data
+    }
+
+    /// The eleven section bodies of a file, split at its pointer table (the
+    /// prologue is `[0..pointers[0]]`, section i is `[pointers[i-1]..pointers[i]]`).
+    fn section_bodies(bytes: &[u8]) -> Vec<&[u8]> {
+        let table = SectionTable::open(bytes).expect("table");
+        let mut out = Vec::with_capacity(11);
+        let mut start = 0usize;
+        for &end in &table.pointers {
+            out.push(&bytes[start..end]);
+            start = end;
+        }
+        out
+    }
+
+    #[test]
+    fn s1_j_3_the_csharp_fixture_decodes_every_section() {
+        let loaded = golden_loaded();
+        let w = &loaded.world;
+        // The world head (SaveWorldHeader) — the identity fields S1-J-2 owns.
+        assert_eq!(w.name, "S1J3Golden");
+        assert_eq!(w.seed, 12345);
+        assert_eq!(w.generator_version, 1400159338497);
+        assert_eq!(w.world_id, 123456789);
+        assert_eq!(
+            w.unique_id,
+            [0x67, 0x45, 0x23, 0x01, 0xab, 0x89, 0xef, 0xcd, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef],
+            "Guid.ToByteArray's mixed-endian layout"
+        );
+        assert_eq!((w.width, w.height), (40, 30));
+        assert_eq!(loaded.version, 326);
+        // The flags block's owned scalars (SaveWorldFlags).
+        assert_eq!(w.spawn_x, 20);
+        assert_eq!(w.world_surface, 12.0);
+        assert_eq!(w.rock_layer, 20.0);
+        assert_eq!(w.time, 12345.0);
+        assert!(w.day_time);
+        assert_eq!(w.moon_phase, 3);
+        assert_eq!(w.moon_type, 2);
+        assert_eq!(w.hell_back_style, 1);
+        assert!(w.blood_moon && w.hard_mode);
+        assert!(w.downed_eoc && w.downed_slime_king && w.downed_goblins && w.saved_goblin);
+        assert!(w.downed_deerclops && w.unlocked_slime_rainbow_spawn);
+        assert!(w.shadow_orb_smashed);
+        assert_eq!(w.shadow_orb_count, 2);
+        assert_eq!(w.altars_smashed, 1);
+        assert!(w.raining);
+        assert_eq!(w.rain_time, 500);
+        assert_eq!(w.max_raining, 0.5);
+        assert_eq!(w.sundial_cooldown, 3);
+        assert_eq!(w.moondial_cooldown, 2);
+        assert!(w.fast_forward_to_dawn);
+        assert_eq!(w.corrupt_bg_style, 1);
+        assert_eq!(w.jungle_bg_style, 2);
+        assert_eq!(w.hallow_bg_style, 3);
+        assert_eq!(w.crimson_bg_style, 4);
+        assert_eq!(w.mushroom_bg_style, 5);
+        // The eight payload sections (LoadChests..LoadCreativePowers).
+        let s = &loaded.sections;
+        assert_eq!(s.chests.len(), 2);
+        assert_eq!(s.chests[0].name, "Golden Chest");
+        assert_eq!(s.chests[0].slots[0], sections::WldChestSlot { stack: 50, kind: 2, prefix: 0 });
+        assert_eq!(s.chests[0].slots[1], sections::WldChestSlot { stack: 99, kind: 8, prefix: 81 });
+        // The banned item (type 58, ItemsThatShouldNotBeInInventory) wrote as air.
+        assert_eq!(s.chests[0].slots[2], sections::WldChestSlot::default());
+        assert_eq!(s.signs.len(), 2);
+        assert_eq!(s.signs[0].text, "Hello golden world");
+        assert_eq!(s.npcs.town.len(), 2);
+        assert_eq!(s.npcs.town[0].net_id, 22); // Guide
+        assert_eq!(s.npcs.town[0].given_name, "Guido");
+        assert_eq!(s.npcs.town[0].variation_index, 2);
+        assert_eq!(s.npcs.towers.len(), 1);
+        assert_eq!(s.npcs.towers[0].net_id, 422); // Vortex tower
+        assert_eq!(s.npcs.shimmered, vec![22]);
+        assert_eq!(s.tile_entities.len(), 11); // one per TE kind
+        assert_eq!(s.pressure_plates.len(), 2);
+        assert_eq!(s.town_rooms.len(), 1);
+        assert_eq!(s.town_rooms[0], sections::WldTownRoom { npc_id: 22, x: 6, y: 20 });
+        assert_eq!(s.bestiary.kills, vec![("BlueSlime".into(), 3), ("Guide".into(), 1)]);
+        assert_eq!(s.bestiary.sights, vec!["GreenSlime".to_string(), "Merchant".to_string()]);
+        assert_eq!(s.bestiary.chats, vec!["Guide".to_string()]);
+        assert_eq!(s.creative_powers.records.len(), 6);
+        // The tile grid: the four wire colours, the liquids, the coatings.
+        assert!(w.wires.get(16, 24, crate::wiring::WireColor::Red));
+        assert!(w.wires.get(17, 24, crate::wiring::WireColor::Blue));
+        assert!(w.wires.get(18, 24, crate::wiring::WireColor::Green));
+        assert!(w.wires.get(19, 24, crate::wiring::WireColor::Yellow));
+        assert_eq!(w.tile(28, 22).unwrap().liquid, 200);
+        assert!(w.tile(28, 22).unwrap().flags & crate::tile::FLAG_LIQUID_LAVA != 0);
+        assert!(w.tile(30, 22).unwrap().flags & crate::tile::FLAG_LIQUID_SHIMMER != 0);
+        assert_eq!(w.tile(23, 23).unwrap().wall, 300); // the >255 wall
+    }
+
+    #[test]
+    fn s1_j_3_the_modeled_sections_rewrite_byte_identical_to_the_csharp() {
+        // The core S1-J-3 contract: the port reads the real C# file and re-writes
+        // every section it models byte-for-byte. Sections 2..10 (tiles, chests,
+        // signs, NPCs, tile entities, plates, town rooms, bestiary, creative
+        // powers) and the footer are byte-identical; the prologue's pointer table
+        // and the header/flags block carry the documented unowned-field
+        // divergences (the next test pins those exactly).
+        let loaded = golden_loaded();
+        let bag = golden_bag(&loaded);
+        let rewritten = to_bytes(&loaded.world, &bag, 1).expect("re-write");
+        let f = section_bodies(GOLDEN_WLD);
+        let r = section_bodies(&rewritten);
+        // Sections 2..10 are byte-identical (the nine payload sections).
+        for i in 2..11 {
+            assert_eq!(f[i], r[i], "section {i} must re-write byte-identical to the C#");
+        }
+        // The footer (SaveFooter: bool true, name, WorldId) is byte-identical.
+        let ffooter = &GOLDEN_WLD[SectionTable::open(GOLDEN_WLD).unwrap().pointers[10]..];
+        let rfooter = &rewritten[SectionTable::open(&rewritten).unwrap().pointers[10]..];
+        assert_eq!(ffooter, rfooter, "the footer must re-write byte-identical");
+        // The prologue's framing (version, metadata, count, tile-count+bitmap)
+        // matches; only the backfilled pointer values differ (the flags block's
+        // length differs by the unowned fields). Compare the prologue with the
+        // pointer table zeroed on both sides.
+        let mut fp = f[0].to_vec();
+        let mut rp = r[0].to_vec();
+        fp[26..70].fill(0);
+        rp[26..70].fill(0);
+        assert_eq!(fp, rp, "the prologue framing + importance bitmap match");
+    }
+
+    #[test]
+    fn s1_j_3_the_header_flags_divergences_are_exactly_the_unowned_fields() {
+        // The header/flags block is NOT byte-identical: the port writes its
+        // unowned fields at the C# default. This test pins the divergence set
+        // exactly (a field-by-field walk in SaveWorldFlags order), so a future
+        // change that owns one of these fields — or breaks an owned one — is
+        // caught. The documented divergences (ANALYSIS "The C#-written golden
+        // fixture"): CreationTime (unowned), spawnTileY (derived from the tiles
+        // on load, compute_spawn_y), the seven ore tiers (the .wld flags writer
+        // writes zeros; the port keeps them on the .trwld side), the banner
+        // kill/claimable counts (no .wld store), the tree-top variations (no
+        // store) and the world-gen manifest JSON (the port writes the empty
+        // string). Every OTHER field re-writes byte-identical.
+        let loaded = golden_loaded();
+        let bag = golden_bag(&loaded);
+        let rewritten = to_bytes(&loaded.world, &bag, 1).expect("re-write");
+        let f = section_bodies(GOLDEN_WLD);
+        let r = section_bodies(&rewritten);
+        let mut fr = crate::binio::Reader::new(f[1]);
+        let mut rr = crate::binio::Reader::new(r[1]);
+        let mut diffs: Vec<String> = Vec::new();
+        macro_rules! cmp {
+            ($name:expr, $m:ident) => {{
+                let fv = fr.$m();
+                let rv = rr.$m();
+                if fv != rv { diffs.push($name.to_string()); }
+            }};
+        }
+        // world head — all owned, all identical.
+        cmp!("name", cs_string); cmp!("seed", cs_string); cmp!("generatorVersion", u64);
+        for _ in 0..16 { cmp!("guid", u8); }
+        cmp!("worldId", i32);
+        for n in ["left","right","top","bottom","maxTilesY","maxTilesX"] { cmp!(n, i32); }
+        // flags
+        cmp!("GameMode", i32);
+        for n in ["drunk","getGood","tenth","dontStarve","notTheBees","remix","noTraps","zenith","skyblock"] { cmp!(n, boolean); }
+        cmp!("CreationTime", u64); cmp!("LastPlayed", u64);
+        cmp!("moonType", u8);
+        for _ in 0..3 { cmp!("treeX", i32); }
+        for _ in 0..4 { cmp!("treeStyle", i32); }
+        for _ in 0..3 { cmp!("caveBackX", i32); }
+        for _ in 0..4 { cmp!("caveBackStyle", i32); }
+        cmp!("iceBackStyle", i32); cmp!("jungleBackStyle", i32); cmp!("hellBackStyle", i32);
+        cmp!("spawnTileX", i32); cmp!("spawnTileY", i32);
+        cmp!("worldSurface", f64); cmp!("rockLayer", f64); cmp!("time", f64);
+        cmp!("dayTime", boolean); cmp!("moonPhase", i32); cmp!("bloodMoon", boolean); cmp!("eclipse", boolean);
+        cmp!("dungeonX", i32); cmp!("dungeonY", i32); cmp!("crimson", boolean);
+        for n in ["downedBoss1","downedBoss2","downedBoss3","downedQueenBee","downedMech1","downedMech2","downedMech3","downedMechAny","downedPlant","downedGolem","downedSlimeKing","savedGoblin","savedWizard","savedMech","downedGoblins","downedClown","downedFrost","downedPirates"] { cmp!(n, boolean); }
+        cmp!("shadowOrbSmashed", boolean); cmp!("spawnMeteor", boolean); cmp!("shadowOrbCount", u8); cmp!("altarCount", i32);
+        cmp!("hardMode", boolean); cmp!("afterPartyOfDoom", boolean);
+        cmp!("invasionDelay", i32); cmp!("invasionSize", i32); cmp!("invasionType", i32); cmp!("invasionX", f64);
+        cmp!("slimeRainTime", f64); cmp!("sundialCooldown", u8);
+        cmp!("raining", boolean); cmp!("rainTime", i32); cmp!("maxRain", f32);
+        cmp!("Cobalt", i32); cmp!("Mythril", i32); cmp!("Adamantite", i32);
+        for n in ["treeBG1","corruptBG","jungleBG","snowBG","hallowBG","crimsonBG","desertBG","oceanBG"] { cmp!(n, u8); }
+        cmp!("cloudBGActive", i32); cmp!("numClouds", i16); cmp!("windSpeedTarget", f32);
+        let fa = fr.i32().unwrap(); let ra = rr.i32().unwrap();
+        assert_eq!(fa, ra, "angler count");
+        for _ in 0..fa { fr.cs_string(); } for _ in 0..ra { rr.cs_string(); }
+        cmp!("savedAngler", boolean); cmp!("anglerQuest", i32); cmp!("savedStylist", boolean);
+        cmp!("savedTaxCollector", boolean); cmp!("savedGolfer", boolean);
+        cmp!("invasionSizeStart", i32); cmp!("cultistDelay", i32);
+        // BannerSystem.Save: the counts differ at index 1 (the fixture's banner).
+        let fkc = fr.i16().unwrap(); let rkc = rr.i16().unwrap();
+        assert_eq!(fkc, rkc);
+        for i in 0..fkc {
+            let a = fr.i32().unwrap(); let b = rr.i32().unwrap();
+            if a != b { diffs.push(format!("killCount[{i}]")); }
+        }
+        let fcc = fr.i16().unwrap(); let rcc = rr.i16().unwrap();
+        assert_eq!(fcc, rcc);
+        for i in 0..fcc {
+            let a = fr.u16().unwrap(); let b = rr.u16().unwrap();
+            if a != b { diffs.push(format!("claimable[{i}]")); }
+        }
+        cmp!("fastForwardDawn", boolean);
+        for n in ["downedFishron","downedMartians","downedCultist","downedMoonlord","downedHalloweenKing","downedHalloweenTree","downedChristmasIceQueen","downedChristmasSantank","downedChristmasTree","downedTowerSolar","downedTowerVortex","downedTowerNebula","downedTowerStardust","TowerActiveSolar","TowerActiveVortex","TowerActiveNebula","TowerActiveStardust","LunarApocalypse"] { cmp!(n, boolean); }
+        cmp!("partyManual", boolean); cmp!("partyGenuine", boolean); cmp!("partyCooldown", i32);
+        let fp = fr.i32().unwrap(); let rp = rr.i32().unwrap();
+        assert_eq!(fp, rp);
+        for _ in 0..fp { fr.i32(); } for _ in 0..rp { rr.i32(); }
+        cmp!("sandstormHappening", boolean); cmp!("sandstormTimeLeft", i32); cmp!("sandstormSeverity", f32); cmp!("sandstormIntended", f32);
+        cmp!("savedBartender", boolean); cmp!("DD2T1", boolean); cmp!("DD2T2", boolean); cmp!("DD2T3", boolean);
+        for n in ["mushroomBG","underworldBG","treeBG2","treeBG3","treeBG4"] { cmp!(n, u8); }
+        cmp!("combatBook", boolean);
+        cmp!("lanternCooldown", i32); cmp!("lanternGenuine", boolean); cmp!("lanternManual", boolean); cmp!("lanternNextGenuine", boolean);
+        let ft = fr.i32().unwrap(); let rt = rr.i32().unwrap();
+        assert_eq!(ft, rt);
+        for i in 0..ft {
+            let a = fr.i32().unwrap(); let b = rr.i32().unwrap();
+            if a != b { diffs.push(format!("treeTop[{i}]")); }
+        }
+        cmp!("forceHalloweenToday", boolean); cmp!("forceXMasToday", boolean);
+        cmp!("Copper", i32); cmp!("Iron", i32); cmp!("Silver", i32); cmp!("Gold", i32);
+        cmp!("boughtCat", boolean); cmp!("boughtDog", boolean); cmp!("boughtBunny", boolean);
+        cmp!("downedEmpress", boolean); cmp!("downedQueenSlime", boolean); cmp!("downedDeerclops", boolean);
+        for n in ["unlockedSlimeBlue","unlockedMerchant","unlockedDemo","unlockedPartyGirl","unlockedDyeTrader","unlockedTruffle","unlockedArmsDealer","unlockedNurse","unlockedPrincess"] { cmp!(n, boolean); }
+        cmp!("combatBookTwo", boolean); cmp!("peddlersSatchel", boolean);
+        for n in ["unlockedSlimeGreen","unlockedSlimeOld","unlockedSlimePurple","unlockedSlimeRainbow","unlockedSlimeRed","unlockedSlimeYellow","unlockedSlimeCopper"] { cmp!(n, boolean); }
+        cmp!("fastForwardDusk", boolean); cmp!("moondialCooldown", u8);
+        cmp!("forceHalloweenForever", boolean); cmp!("forceXMasForever", boolean);
+        cmp!("vampireSeed", boolean); cmp!("infectedSeed", boolean);
+        cmp!("meteorShowerCount", i32); cmp!("coinRain", i32);
+        cmp!("teamBasedSpawns", boolean);
+        let fe = fr.u8().unwrap(); let re = rr.u8().unwrap();
+        assert_eq!(fe, re);
+        for _ in 0..fe { fr.i16(); fr.i16(); } for _ in 0..re { rr.i16(); rr.i16(); }
+        cmp!("dualDungeons", boolean); cmp!("moreLightning", boolean); cmp!("noLightning", boolean);
+        cmp!("manifest", cs_string);
+        // Both walks consume their whole section.
+        assert_eq!(fr.pos(), f[1].len());
+        assert_eq!(rr.pos(), r[1].len());
+        // The exact divergence set — the unowned fields, nothing else.
+        assert_eq!(
+            diffs,
+            vec![
+                "CreationTime", "spawnTileY",
+                "Cobalt", "Mythril", "Adamantite",
+                "killCount[1]", "claimable[1]", "treeTop[0]",
+                "Copper", "Iron", "Silver", "Gold",
+                "manifest",
+            ],
+            "the header/flags divergences must be exactly the documented unowned fields"
+        );
+    }
 }

@@ -759,14 +759,11 @@ pub fn draw_hud(
     // strip + the log while open, the blinker advancing per drawn frame.
     draw_chat(r, lookups, screen, chat_state);
 
-    // `EmoteBubble.DrawAll` + the `UIEmotesMenu` state (M6-EMOTE-1).
-    let (pc, pdir) = player
-        .map(|p| {
-            let (cx, cy) = p.center();
-            (Vec2::new(cx, cy), p.facing)
-        })
-        .unwrap_or((Vec2::new(camera.x, camera.y), 1));
-    emotes::draw(r, lookups, screen, emotes_state, pc, pdir, mouse_pos);
+    // `EmoteBubble.DrawAll` + the `UIEmotesMenu` state (M6-EMOTE-1). The
+    // bubbles ride the world→UI transform (`GameViewMatrix.ZoomMatrix`,
+    // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
+    // not a pre-baked screen position.
+    emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
     // the open inventory's top row, before the slots.
@@ -799,6 +796,12 @@ pub fn draw_hud(
     // the HUD behind it).
     if bestiary_open {
         bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
+        // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
+        // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself
+        // after the state (`IngameFancyUI.cs:220-223`, `Main.DrawCursor`), so the
+        // early return must not skip the cursor pass.
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
         return;
     }
 
@@ -1163,6 +1166,33 @@ fn hover_item_for<'a>(
 mod tests {
     use super::*;
 
+    /// The corner chat's row anchor (`RemadeChatMonitor.cs:83`):
+    /// `(88, screenHeight - 30 - 28 - row*22)` — x=88, the newest row 58 px
+    /// above the bottom edge, each older row 22 px higher. The input strip
+    /// sits at `(88, screenHeight - 30)` (`Main.cs:40987`), so row 0 is one
+    /// 28 px gap above it.
+    #[test]
+    fn the_chat_rows_anchor_at_the_csharp_constants() {
+        let screen_y = 900.0;
+        assert_eq!(chat_row_anchor(screen_y, 0), Vec2::new(88.0, 842.0));
+        assert_eq!(chat_row_anchor(screen_y, 1), Vec2::new(88.0, 820.0));
+        assert_eq!(chat_row_anchor(screen_y, 9), Vec2::new(88.0, 644.0));
+        // The literal C# arithmetic: screenHeight - 30 - 28 - num5 * 22.
+        for row in 0..10usize {
+            assert_eq!(
+                chat_row_anchor(screen_y, row).y,
+                screen_y - 30.0 - 28.0 - row as f32 * 22.0
+            );
+        }
+        // The closed-chat draw reads the always-visible set: a fresh line
+        // draws with the input closed (the regression — the old guard
+        // returned before the log walk when `!chat.open`).
+        let mut chat = crate::chat::ChatMonitor::default();
+        chat.new_text("corner line", [255, 255, 255]);
+        assert!(!chat.open);
+        assert_eq!(chat.visible_lines(chat.open).count(), 1);
+    }
+
     #[test]
     fn in_rect_is_inclusive_exclusive_like_rectangle_contains() {
         // `UIElement.cs:354-357`: `Rectangle.Contains` includes the left/top
@@ -1347,46 +1377,54 @@ mod tests {
     }
 }
 
-/// The chat draw (`Main.cs:40928-40997` + `RemadeChatMonitor.DrawChat`):
-/// the blinker advances once per drawn frame, the closed chat draws nothing
-/// (the port has no `CanBeShownWhenChatIsClosed` sources), the open chat
-/// draws the log at `(88, screenHeight - 58)` upward 22 px per line and the
-/// input strip with the `|` cursor.
+/// `RemadeChatMonitor.DrawChat`'s row anchor (`RemadeChatMonitor.cs:83`):
+/// `new Vector2(88f, Main.screenHeight - 30 - 28 - num5 * 22)` — the
+/// bottom-left corner above the hotbar, newest row lowest, 22 px apart.
+fn chat_row_anchor(screen_y: f32, row: usize) -> Vec2 {
+    Vec2::new(88.0, screen_y - 30.0 - 28.0 - row as f32 * 22.0)
+}
+
+/// The chat draw (`Main.DrawPlayerChat`, `Main.cs:40923-40999` +
+/// `RemadeChatMonitor.DrawChat`): the blinker and the input strip live
+/// inside the `drawingPlayerChat` arm only (`:40932-40996`), but
+/// `chatMonitor.DrawChat(Main.drawingPlayerChat)` runs **unconditionally**
+/// (`:40997`) — the fresh lines stay visible in the corner while the input
+/// is closed, gated per line by `CanBeShownWhenChatIsClosed`
+/// (`ChatMessageContainer.cs:23`). Rows anchor at
+/// `(88, screenHeight - 30 - 28 - i*22)` (`RemadeChatMonitor.cs:83`),
+/// the input strip at `(88, screenHeight - 30)` (`Main.cs:40987`).
 fn draw_chat(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     screen: Vec2,
     chat: &mut crate::chat::ChatMonitor,
 ) {
-    // `textBlinkerCount`/`textBlinkerState` (`:40928-40944`) — 20-frame
-    // toggle, like the menu input screens.
-    chat.blink_timer = chat.blink_timer.wrapping_add(1);
-    if chat.blink_timer >= 20 {
-        chat.blink_timer = 0;
-        chat.blink_on = !chat.blink_on;
+    // `textBlinkerCount`/`textBlinkerState` (`:40932-40946`) — 20-frame
+    // toggle, like the menu input screens, advanced only while the input
+    // is open (the whole blinker block sits inside `drawingPlayerChat`).
+    if chat.open {
+        chat.blink_timer = chat.blink_timer.wrapping_add(1);
+        if chat.blink_timer >= 20 {
+            chat.blink_timer = 0;
+            chat.blink_on = !chat.blink_on;
+        }
     }
-    if !chat.open {
-        return;
-    }
-    // `RemadeChatMonitor.DrawChat` (`:55-96`): the newest-first log, 22 px
-    // rows, capped by the port's 20-line window (`_showCount`'s screen-fit
-    // stand-in).
-    for (i, line) in chat.messages.iter().take(20).enumerate() {
+    // `RemadeChatMonitor.DrawChat` (`:55-97`): the newest-first log, 22 px
+    // rows, `_showCount = 10` (`:25`); closed, the walk breaks at the
+    // first line whose 600-tick timer expired (`:79-82`) — see
+    // `ChatMonitor::visible_lines`.
+    for (i, line) in chat.visible_lines(chat.open).enumerate() {
         let c = [
             line.color[0] as f32 / 255.0,
             line.color[1] as f32 / 255.0,
             line.color[2] as f32 / 255.0,
             1.0,
         ];
-        text::hud_text(
-            r,
-            lookups,
-            88.0,
-            screen.y - 58.0 - i as f32 * 22.0,
-            1.0,
-            c,
-            &line.text,
-        );
+        let anchor = chat_row_anchor(screen.y, i);
+        text::hud_text(r, lookups, anchor.x, anchor.y, 1.0, c, &line.text);
+    }
+    if !chat.open {
+        return;
     }
     // The `Text_Back` strip (`:40947-40976`): a head piece (the sheet minus
     // 100 px), 300 px middle tiles, then the trimmed tail — the source runs

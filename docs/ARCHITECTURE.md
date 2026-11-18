@@ -99,7 +99,12 @@ an agent needs before touching code.
   (surface, hell, wall, emissive, liquid) and blurs them. Surface light seeds up to each
   column's own first solid tile (`World::column_surface`), which keeps hills above the
   average `worldSurface` in sunlight. The finished map is cached by rect, sky colour,
-  hell glow, flicker and `World::revision`.
+  hell glow, flicker and `World::revision`. `legacy.rs` (S1-E-19 wave A) is the
+  additive `LegacyLighting` port — the White/Retro/Trippy engine (`LegacyLighting.cs`):
+  the renderCount cycle, the scanner reseed, the per-mode swipes; the frame driver
+  (`app/frame/draw.rs`) selects it by the lighting-mode setting and publishes its
+  presented colours into the shared `LightMap` (`present_legacy`), leaving the modern
+  Color compute untouched.
 - `tile_light/` — the per-type light seeding: `mod.rs` (the surface/hell/wall entry
   points), `palette.rs` (`FastRandom`, torch/hsl/paint colour maths), `scanner.rs` (the
   case-for-case port of `TileLightScanner.ApplyTileLight`, 147 top-level cases).

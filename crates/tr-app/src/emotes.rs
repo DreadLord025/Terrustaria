@@ -193,6 +193,18 @@ pub struct EmoteSystem {
     /// The `UIEmotesMenu` wheel state: open + the scroll offset.
     pub menu_open: bool,
     pub scroll: i32,
+    /// The shared `EmoteButton._frameCounter` (`EmoteButton.cs:20`,
+    /// `UpdateFrame` `:38-44`): every button on the page ticks the same
+    /// 0..19 counter (the page is rebuilt on open, so they all start at 0
+    /// together — `UIEmotesMenu.OnActivate` `:30-44`). The port rides the
+    /// world step (`update_all`) instead of the UI update; the wheel is
+    /// only reachable in-game where the world keeps stepping.
+    pub button_tick: i32,
+    /// The hovered cell (`EmoteButton._hovered`, `MouseOver`/`MouseOut`
+    /// `:77-88`) — the port's hover-edge tracker for the sound-12 cue
+    /// (`loop.rs`'s `CursorMoved`, the Bug-17 front-end pattern); the draw
+    /// derives its highlight from the pointer directly (house style).
+    pub hover: Option<i32>,
 }
 
 impl EmoteSystem {
@@ -202,6 +214,10 @@ impl EmoteSystem {
     pub fn open(&mut self) {
         self.menu_open = true;
         self.scroll = 0;
+        // The rebuilt page's buttons all start their frame counter at 0
+        // (`InitializePage`'s fresh `EmoteButton`s, `EmoteButton.cs:20`).
+        self.button_tick = 0;
+        self.hover = None;
     }
 
     /// `UIEmotesMenu`'s close (`IngameFancyUI.Close` `:162-188` / the pick and
@@ -209,6 +225,7 @@ impl EmoteSystem {
     pub fn close(&mut self) {
         self.menu_open = false;
         self.scroll = 0;
+        self.hover = None;
     }
 
     /// The wheel scroll (`UIList.ScrollWheel`, `UIList.cs:107-114`): the offset
@@ -225,19 +242,9 @@ impl EmoteSystem {
 }
 
 impl EmoteSystem {
-    /// `EmoteBubble.NewBubble` (`:116-131`): a 360-tick bubble on the
-    /// local player.
+    /// `EmoteBubble.NewBubble` (`:116-131`) + `MakeLocalPlayerEmote`'s
+    /// 360-tick arm (`:284`): a bubble on the local player.
     pub fn new_bubble(&mut self, emote: i32) {
-        // `MakeLocalPlayerEmote`'s dead gate (`:282`).
-        if self.bubbles.iter().any(|b| b.anchored_to_player) {
-            // `OnBubbleChange` (`:255-268`): the same-anchor bubbles fade
-            // out (the 6-tick pop).
-            for b in &mut self.bubbles {
-                if b.anchored_to_player && b.life_time > 6 {
-                    b.life_time = 6;
-                }
-            }
-        }
         self.next_id += 1;
         self.bubbles.push(EmoteBubble {
             id: self.next_id,
@@ -248,20 +255,48 @@ impl EmoteSystem {
             frame: 0,
             frame_counter: 0,
         });
+        // `OnBubbleChange` (`:262-276`): every OTHER bubble on the same
+        // player pops out — the C# assigns `lifeTime = 6` unconditionally
+        // (`:273`), even for a bubble already inside its closing pop.
+        for b in &mut self.bubbles {
+            if b.anchored_to_player && b.id != self.next_id {
+                b.life_time = 6;
+            }
+        }
     }
 
-    /// `EmoteBubble.UpdateAll` (`:46-63`): the lifetime tick, the 8-tick
-    /// frame flip over the 2 animation frames, the expired cleanup.
+    /// `EmoteBubble.UpdateAll` (`:46-63`) over `Update` (`:177-187`): the
+    /// lifetime tick with the short-circuit frame advance (`--lifeTime > 0
+    /// && ++frameCounter >= 8`, `frameSpeed = 8` `:32`) and the expired
+    /// cleanup. Also drives the wheel buttons' shared 20-tick frame counter
+    /// (`EmoteButton.UpdateFrame` `:38-44`).
     pub fn update_all(&mut self) {
         for b in &mut self.bubbles {
             b.life_time -= 1;
-            b.frame_counter += 1;
-            if b.frame_counter >= 8 {
-                b.frame_counter = 0;
-                b.frame = (b.frame + 1) % 2;
+            if b.life_time > 0 {
+                b.frame_counter += 1;
+                if b.frame_counter >= 8 {
+                    b.frame_counter = 0;
+                    b.frame += 1;
+                    if b.frame >= 2 {
+                        b.frame = 0;
+                    }
+                }
             }
         }
         self.bubbles.retain(|b| b.life_time > 0);
+        self.button_tick += 1;
+        if self.button_tick >= 20 {
+            self.button_tick = 0;
+        }
+    }
+
+    /// `EmoteButton.GetFrame`'s hover-frame pick (`:32-36`): frame 1 while
+    /// the shared counter is in the second half of its 20-tick cycle
+    /// (`_frameCounter >= 10`) — the button's idle blink, NOT the hover
+    /// highlight (that is the border tint, `DrawSelf` `:63-69`).
+    pub fn button_frame(&self) -> i32 {
+        i32::from(self.button_tick >= 10)
     }
 }
 
@@ -308,6 +343,80 @@ mod tests {
             sys.update_all();
         }
         assert!(sys.bubbles.is_empty());
+    }
+
+    #[test]
+    fn the_bubble_lives_exactly_360_ticks() {
+        // `MakeLocalPlayerEmote`'s `NewBubble(emoteId, anchor, 360)`
+        // (`EmoteBubble.cs:284`) + `Update`'s `--lifeTime` (`:179`) and
+        // `UpdateAll`'s `lifeTime <= 0` cleanup (`:54`): the bubble is
+        // still alive after 359 ticks and gone on the 360th — not before.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(0);
+        for _ in 0..359 {
+            sys.update_all();
+        }
+        assert_eq!(sys.bubbles.len(), 1, "359 ticks: still alive");
+        assert_eq!(sys.bubbles[0].life_time, 1);
+        sys.update_all();
+        assert!(sys.bubbles.is_empty(), "the 360th tick expires it");
+    }
+
+    #[test]
+    fn the_frame_advance_stops_at_expiry_and_flips_every_8_ticks() {
+        // `Update` (`EmoteBubble.cs:177-187`): `--lifeTime > 0 &&
+        // ++frameCounter >= 8` — the frame counter short-circuits once the
+        // lifetime is spent, and the frame wraps 0 → 1 → 0.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(0);
+        for tick in 1..=16 {
+            sys.update_all();
+            let b = &sys.bubbles[0];
+            assert_eq!(b.frame, (tick / 8) % 2, "tick {tick}");
+        }
+        // Fade the bubble to its last tick and pin the frozen counter.
+        sys.bubbles[0].life_time = 1;
+        sys.bubbles[0].frame_counter = 3;
+        sys.update_all();
+        assert!(sys.bubbles.is_empty());
+    }
+
+    #[test]
+    fn the_second_bubble_pops_the_first_even_mid_pop() {
+        // `OnBubbleChange` (`EmoteBubble.cs:262-276`): every other bubble
+        // on the same player gets `lifeTime = 6` unconditionally (`:273`)
+        // — including one already inside its closing pop.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(0);
+        sys.bubbles[0].life_time = 3; // already popping out
+        sys.new_bubble(4);
+        assert_eq!(sys.bubbles[0].life_time, 6, "reset to the full pop");
+        assert_eq!(sys.bubbles[1].life_time, 360, "the new one untouched");
+    }
+
+    #[test]
+    fn the_button_blink_is_a_20_tick_cycle_not_the_hover() {
+        // `EmoteButton.UpdateFrame` (`:38-44`) + `GetFrame` (`:32-36`):
+        // `++_frameCounter >= 20` wraps; frame 1 while `>= 10`. The wheel's
+        // buttons share the counter (the page rebuild starts them all at 0).
+        let mut sys = EmoteSystem::default();
+        sys.open();
+        assert_eq!(sys.button_frame(), 0);
+        for _ in 0..10 {
+            sys.update_all();
+        }
+        assert_eq!(sys.button_frame(), 1);
+        for _ in 0..10 {
+            sys.update_all();
+        }
+        assert_eq!(sys.button_tick, 0);
+        assert_eq!(sys.button_frame(), 0);
+        // Each open rebuilds the page (`UIEmotesMenu.OnActivate` `:30-44`).
+        for _ in 0..12 {
+            sys.update_all();
+        }
+        sys.open();
+        assert_eq!(sys.button_frame(), 0);
     }
 
     #[test]

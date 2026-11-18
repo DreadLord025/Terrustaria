@@ -451,6 +451,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_45",
         "NPC_32",
         "NPC_24",
+        // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
+        "NPC_533",
         "NPC_30",
         "NPC_25",
         "NPC_33",
@@ -782,6 +784,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
         "Extra_48",
+        // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
+        // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
+        // hover highlight tints it `Main.OurFavoriteColor`.
+        "UI/EmoteBubbleBorder",
         // The two inventory button sheets (`Main.DrawInventory`'s
         // `DrawBestiaryIcon`/`DrawEmoteBubblesButton`, `Main.cs:41012-41013`),
         // both horizontal 2-frame strips.
@@ -1622,7 +1628,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 175] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1646,6 +1652,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
         // after the lane gate so the earlier slots keep their indexes.
         558, 559, 560, 565, 569, 570, 571,
         572, 573, 574, 575, 576, 577,
+        // The Desert Djinn (S1-E-5) — appended last so the earlier slots
+        // keep their indexes.
+        533,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -1886,6 +1895,10 @@ pub struct Lookups {
     pub ui_text_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
+    /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
+    /// (`EmoteButton._textureBorder`, `EmoteButton.cs:25`) — black idle,
+    /// `Main.OurFavoriteColor` hovered (`DrawSelf`, `:62-69`).
+    pub ui_emote_border: Option<tr_render::SheetRect>,
     /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
     pub ui_hue: Option<tr_render::SheetRect>,
     /// `Images/ColorBar`: the value-bar / sat-lum-alpha track
@@ -2342,6 +2355,8 @@ impl Lookups {
                 atlas.sheet("NPC_575").copied(),
                 atlas.sheet("NPC_576").copied(),
                 atlas.sheet("NPC_577").copied(),
+                // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
+                atlas.sheet("NPC_533").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
@@ -2354,6 +2369,7 @@ impl Lookups {
             ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
+            ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),
