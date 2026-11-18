@@ -240,6 +240,10 @@ pub struct World {
     /// hands' tether reads) — the skeletron_x/y pair.
     pub skeletron_x: f32,
     pub skeletron_y: f32,
+    /// `FindFirstNPC(35)`'s `ai[3]` mirror (S1-E-14b): the Dark Caster's
+    /// `aiStyle 8` arm reads the first active Skeletron head's red-hat
+    /// latch (`NPC.cs:20820-20827`); false with no live head.
+    pub skeletron_red_hat: bool,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -548,6 +552,7 @@ impl World {
             prime_x: 0.0,
             prime_y: 0.0,
             skeletron_y: 0.0,
+            skeletron_red_hat: false,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
