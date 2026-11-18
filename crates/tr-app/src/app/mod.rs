@@ -288,6 +288,13 @@ pub(crate) struct App {
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
+    /// `InGameNotificationsTracker._notifications`
+    /// (`UI/InGameNotificationsTracker.cs:13`) — the achievement-unlock
+    /// popups (S1-E-26 wave A). The `OnAchievementCompleted` subscriber
+    /// (`AddCompleted`, `:75-81`) appends here; `Update` (`Main.cs:17045`)
+    /// ticks it and `DrawInterface_13_AchievementCompletePopups`
+    /// (`Main.cs:44779-44783`) draws it.
+    pub(crate) notifications: ui::notifications::NotificationsTracker,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -541,6 +548,10 @@ pub(crate) struct App {
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
+    /// `Main.mouseLeftRelease`'s in-world arm — the left button's release
+    /// edge the achievement popup's click reads (`InGamePopups.cs:124`'s
+    /// `Main.mouseLeft && Main.mouseLeftRelease`), consumed per frame.
+    pub(crate) ui_left_release: bool,
     /// `Main.buffAlpha[Player.maxBuffs]` (`Main.cs:668`-ish): the buff bar's
     /// per-slot icon alpha (`Main.DrawBuffIcon`).
     pub(crate) buff_alpha: [f32; crate::buffs::MAX_BUFFS],
@@ -1652,6 +1663,50 @@ impl App {
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         true
+    }
+
+    /// The `OnAchievementCompleted` subscribers (`AchievementManager.cs:39`,
+    /// fired from `AchievementCompleted` `:180-187`), drained once per frame
+    /// after the update branch:
+    ///
+    /// - `InGameNotificationsTracker.AddCompleted`
+    ///   (`UI/InGameNotificationsTracker.cs:75-81`): the unlock popup, behind
+    ///   the `Main.netMode != 2` gate — the port's `NetRole::Host` server
+    ///   role (the `audio.rs` S1-E-24 convention).
+    /// - `AchievementInitializer.OnAchievementCompleted`
+    ///   (`Initializers/AchievementInitializer.cs:728-735`): the
+    ///   `Achievements.Completed` chat line with the `[a:NAME]` tag
+    ///   (`AchievementTagHandler.GenerateTag`) through `Main.NewText` (white,
+    ///   `PlaySound(12)` — the port's `Menu_Tick` cue), then the tracked
+    ///   `SoundID.AchievementComplete` when no instance is already playing
+    ///   (`SoundEngine.FindActiveSound`'s guard).
+    pub(crate) fn drain_achievement_completions(&mut self) {
+        let completed = self.achievements.take_completed_events();
+        if completed.is_empty() {
+            return;
+        }
+        // `Main.netMode != 2` (`InGameNotificationsTracker.cs:77`).
+        let not_server = !matches!(self.net, NetRole::Host(_));
+        for name in completed {
+            if not_server {
+                let icon = achievements::AchievementManager::icon_index(name).unwrap_or(0);
+                let title = crate::lang::text(&ui::achievements::name_key(name));
+                self.notifications.add_completed(name, icon, title);
+            }
+            // `Main.NewText(Language.GetTextValue("Achievements.Completed",
+            // AchievementTagHandler.GenerateTag(achievement)))` (`:730`).
+            let tag = format!("[a:{name}]");
+            let line = crate::lang::text_args("Achievements.Completed", &[tag]);
+            self.chat.new_text(line, [255, 255, 255]);
+            // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
+            self.audio.play("Menu_Tick");
+            // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
+            // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
+            let style = crate::achievements::achievement_complete_style();
+            if self.audio.find_active_tracked(&style).is_none() {
+                self.audio.play_tracked_global(style);
+            }
+        }
     }
 
     /// The edit-to-map-queue hook: the edited tile's 3x3 ring queues for
@@ -3211,6 +3266,9 @@ impl App {
                 let mask = crate::env::achievements_categories().unwrap_or(0xF);
                 [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
             },
+            // `InGameNotificationsTracker`'s static list starts empty
+            // (`InGameNotificationsTracker.cs:109-112`).
+            notifications: ui::notifications::NotificationsTracker::default(),
             emotes: {
                 // `TR_EMOTES` opens the wheel for the screenshot runs.
                 let mut sys = emotes::EmoteSystem::default();
@@ -3331,6 +3389,7 @@ impl App {
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,
+            ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,

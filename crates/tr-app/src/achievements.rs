@@ -266,6 +266,21 @@ impl Condition {
     }
 }
 
+/// `SoundID.AchievementComplete` (`SoundID.cs:842`,
+/// `CreateTrackable("achievement_complete")` `:1597`): one variation, volume
+/// 1, no pitch variance, `SoundType.Sound`, uncapped — the tracked style the
+/// completion subscriber plays (`AchievementInitializer.cs:731-734`).
+pub fn achievement_complete_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "achievement_complete",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Sound,
+        max_tracked_instances: 0,
+    }
+}
+
 /// The C# hooks' increment: `Value++`/`Value += x` on an int or float
 /// condition (`AchievementsHelper.cs:403-427`).
 #[derive(Clone, Copy)]
@@ -283,6 +298,14 @@ pub struct AchievementManager {
     /// (`App::bind_achievements_save_path`) so a headless test App never
     /// touches the real `achievements.trdat`.
     pub save_path: Option<PathBuf>,
+    /// `AchievementManager.OnAchievementCompleted` (`AchievementManager.cs:39`,
+    /// fired from `AchievementCompleted` `:180-187`): the names of the rows
+    /// completed since the last drain, in registry order. The C# fires the
+    /// event once per completing row (`Achievement.OnConditionComplete`,
+    /// `Achievement.cs:93-108`); the port queues them here and the App drains
+    /// the queue into the notification tracker + the chat/sound subscriber
+    /// (`App::drain_achievement_completions`).
+    pub completed_events: Vec<&'static str>,
 }
 
 impl AchievementManager {
@@ -297,6 +320,7 @@ impl AchievementManager {
                 .map(|(id, row)| Achievement::from_row(row, id as u16))
                 .collect(),
             save_path: None,
+            completed_events: Vec::new(),
         }
     }
 
@@ -313,6 +337,7 @@ impl AchievementManager {
     /// (`CustomIntCondition.cs:15-32`, `CustomFloatCondition.cs:14-33`).
     fn notify_with(&mut self, kind: CondKind, amount: NotifyAmount) -> Option<&'static str> {
         let mut done = None;
+        let mut newly_completed: Vec<&'static str> = Vec::new();
         for a in &mut self.list {
             if a.completed {
                 continue;
@@ -355,14 +380,28 @@ impl AchievementManager {
             if touched && a.is_completed() {
                 a.completed = true;
                 done = Some(a.name);
+                newly_completed.push(a.name);
             }
         }
-        // `AchievementCompleted` (`AchievementManager.cs:180-187`): the manager
-        // saves the moment an achievement completes.
-        if done.is_some() {
+        // `AchievementCompleted` (`AchievementManager.cs:180-187`): Save()
+        // then the `OnAchievementCompleted` event — once per completing row
+        // (`Achievement.cs:103-106` fires `OnCompleted` for every row whose
+        // last condition closed, not only the last one in the list). The
+        // event queue is the port's subscriber seam (`App::
+        // drain_achievement_completions`).
+        for name in newly_completed {
             self.save();
+            self.completed_events.push(name);
         }
         done
+    }
+
+    /// Drains the `OnAchievementCompleted` queue — the App's subscriber
+    /// (`InGameNotificationsTracker.AddCompleted` +
+    /// `AchievementInitializer.OnAchievementCompleted`) consumes it once per
+    /// frame. Returns the names in completion order.
+    pub fn take_completed_events(&mut self) -> Vec<&'static str> {
+        std::mem::take(&mut self.completed_events)
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent(int)` (`:186-196`) — the
@@ -830,6 +869,39 @@ mod tests {
             m.list.iter().map(|a| a.conditions.len()).sum::<usize>(),
             180
         );
+    }
+
+    /// S1-E-26 wave A: `Achievement.OnConditionComplete`
+    /// (`Achievement.cs:93-108`) fires `OnCompleted` for EVERY row whose last
+    /// condition closed on the event — the manager's `AchievementCompleted`
+    /// (`AchievementManager.cs:180-187`) saves + raises the event per row.
+    /// The old port returned only the last completion; the event queue keeps
+    /// them all, in registry order.
+    #[test]
+    fn one_event_completing_two_rows_queues_both() {
+        let mut m = AchievementManager::registry();
+        // The gel-family CreateMany's last two ids: the first 22 kills close
+        // GELATIN_WORLD_TOUR's CreateMany conditions, then id 50 closes BOTH
+        // SLIPPERY_SHINOBI (its only condition, `AchievementInitializer.cs:
+        // 139-141`) and GELATIN_WORLD_TOUR's 23rd — id -4 closes the 24th.
+        for id in [
+            -5, -6, 1, 81, 71, -3, 147, 138, -10, 59, 16, -7, 244, -8, -1, -2, 184, 204, 225,
+            -9, 141, 183, -4,
+        ] {
+            m.notify(CondKind::NpcKilled(id));
+        }
+        m.take_completed_events(); // drain the warm-up completions
+        // King Slime (50) is SLIPPERY_SHINOBI's row AND GELATIN_WORLD_TOUR's
+        // remaining CreateMany condition — one kill, two completions.
+        assert_eq!(m.notify(CondKind::NpcKilled(50)), Some("GELATIN_WORLD_TOUR"));
+        assert_eq!(
+            m.take_completed_events(),
+            ["SLIPPERY_SHINOBI", "GELATIN_WORLD_TOUR"],
+            "registry order, every completing row fires"
+        );
+        // The queue drained — a repeat kill fires nothing.
+        assert_eq!(m.notify(CondKind::NpcKilled(50)), None);
+        assert!(m.take_completed_events().is_empty());
     }
 
     #[test]

@@ -1109,6 +1109,30 @@ impl App {
         }
     }
 
+    /// `IngameFancyUI.OpenAchievementsAndGoto` (`UI/IngameFancyUI.cs`):
+    /// `OpenAchievements()` (the in-game arm is `IngameFancyUI.OpenUIState`)
+    /// then `UIAchievementsMenu.GotoAchievement` — `UIList.Goto` sets
+    /// `ViewPosition` to the row's `Top.Pixels`. The port opens the overlay
+    /// with every category on (`OnActivate`'s `SetState(true)`) and scrolls
+    /// to the row's index in the visible list.
+    pub(crate) fn open_achievements_and_goto(&mut self, name: &str) {
+        self.achievements_open = true;
+        self.achievements_categories = [true; 4];
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+        let idx = rows
+            .iter()
+            .position(|&i| self.achievements.list[i].name == name)
+            .unwrap_or(0);
+        let (sw, sh) = self.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), self.menu.is_some());
+        let list = ui::achievements::list_rect(&panel);
+        // `Goto`'s `ViewPosition = _items[i].Top.Pixels` — the row's top in
+        // the inner list (`row_rect`'s lattice), clamped to the scroll range.
+        let top = ui::achievements::row_rect(&list, idx)[1] - list[1];
+        let max = ui::achievements::max_scroll(rows.len(), &list);
+        self.achievements_scroll = top.clamp(0.0, max);
+    }
+
     /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
     /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
     /// vanilla control; the port's wheel is the documented stand-in).

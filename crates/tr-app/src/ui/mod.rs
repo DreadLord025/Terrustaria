@@ -4,6 +4,7 @@
 pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
+pub(crate) mod bestiary_draw_offsets;
 pub(crate) mod emotes;
 pub mod framework;
 pub mod cards;
@@ -21,6 +22,7 @@ pub mod housing;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
+pub mod notifications;
 pub mod panel;
 pub mod pointer;
 pub mod resources;
