@@ -7,6 +7,7 @@ mod app;
 mod assets;
 mod achievements;
 mod achievements_data;
+mod accessory_combat;
 mod audio;
 mod bank;
 mod banners;
