@@ -889,6 +889,13 @@ pub struct Npc {
     /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
     /// `num88` after a teleport; the shoot fires at the params' tick).
     pub cast_windup: i32,
+    /// `NPC.aiAction` (`NPC.cs:6449`, the int default 0): the AI's frame
+    /// hint — `FindFrame`'s default row picks frame 4 while it holds 1
+    /// (`NPC.cs:66697-66704`). The aiStyle-41 hop family writes 1 on the
+    /// grounded windup ticks (`NPC.cs:30112`) and never clears it inside
+    /// the arm (the C# quirk is kept).
+    #[allow(dead_code)] // the FindFrame row reader lands with the style-41 wiring
+    pub ai_action: i32,
     /// `NPC.directionY` (`NPC.cs:6441`, the default 1): the vertical facing.
     /// `FaceTarget` writes it (`:77649`) and the steering tails read it
     /// (`AI_109`'s `:66154-66185`).
@@ -2023,6 +2030,7 @@ impl Npc {
             despawn_timer: -1,
             caster_counter: 0,
             cast_windup: 0,
+            ai_action: 0,
             direction_y: 1,
             // `SetDefaults`' `ClearTarget()` (`NPC.cs:8539`,
             // `:42924-42927`): the fresh NPC targets the 255 sentinel.

@@ -53,6 +53,7 @@ mod npc;
 mod npc_chat;
 mod revenge;
 mod npc_ai;
+mod npc_ai_style41;
 mod npc_target;
 mod npc_buffs;
 mod persist;
