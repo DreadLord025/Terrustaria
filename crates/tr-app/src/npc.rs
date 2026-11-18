@@ -6930,64 +6930,27 @@ impl Npc {
         }
     }
 
-    /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
-    /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
-    /// `wants_sphere`: the Goblin Sorcerer → the Chaos Ball 30 (`:21238`),
-    /// Tim → its ChaosBallTim clone 665 (`:21242`, folded into `ChaosBall`
-    /// — identical stats and name), the Dark Caster → the Water Sphere 33
-    /// (`:21246`), the Fire Imp → the Burning Sphere 25 at `ai[1] == 10`
-    /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
-    /// semantics (`:80771`).
+    /// S1-D-3: the aiStyle-8 caster family through the faithful
+    /// `npc_ai_bat::ai_style_8_step` (`NPC.cs:20817-21376`). The seam folds
+    /// the port's `caster_counter`/`cast_windup` mirrors into `ai[0]`/`ai[1]`
+    /// around the step (the step owns the whole C# state machine: the red-hat
+    /// latch, `TargetClosest`, the deferred teleport, the triggers, the windup
+    /// countdown and the shoot point). The shoot intent drains into
+    /// `wants_sphere` — the Goblin Sorcerer → Chaos Ball 30 (`:21238`), Tim →
+    /// ChaosBallTim 665 (`:21242`, folded into `ChaosBall`), the Dark Caster →
+    /// Water Sphere 33 (`:21246`, `ai[3] = flag4`), the Fire Imp → Burning
+    /// Sphere 25 at `ai[1] == 10` (`:21164-21173`). The spawn point keeps
+    /// `NPC.NewNPC`'s `Bottom` semantics (`:80770`). The Poltergeist (aiStyle
+    /// 22) rides this arm as its documented stand-in and stays shotless (the
+    /// step's standard shoot match has no arm for it).
     fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `AI()`'s aiStyle-8 head (`NPC.cs:20819-20827`): the Dark
-        // Caster latches `localAI[3] = 1` while a live Skeletron head's
-        // `ai[3] == 1` (`FindFirstNPC(35)` — the sim's write-through
-        // mirror). No reset arm exists in the C#: the latch sticks.
-        if self.kind == NpcKind::DarkCaster && world.skeletron_red_hat {
-            self.local_ai[3] = 1.0;
-        }
-        let (pcx, pcy) = player.center();
-        let params = match self.kind {
-            NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
-            NpcKind::DesertDjinn => crate::npc_ai::CasterParams::DESERT_DJINN,
-            _ => crate::npc_ai::CasterParams::STANDARD,
-        };
-        let mut phase = crate::npc_ai::CasterPhase {
-            counter: self.caster_counter,
-            windup: self.cast_windup,
-        };
-        let shot = crate::npc_ai::caster_cycle(self, world, pcx, pcy, rng, params, &mut phase);
-        self.caster_counter = phase.counter;
-        self.cast_windup = phase.windup;
-        if shot {
-            let (w, _) = self.size();
-            let (sx, sy) = match self.kind {
-                // `:21238`/`:21242`/`:21246`: `(pos.X + width/2, pos.Y - 8)`.
-                NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
-                    (self.x + w * 0.5, self.y - 8.0)
-                }
-                // `:21171`: `(pos.X + width/2 + direction*8, pos.Y + 20)`.
-                NpcKind::FireImp => (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0),
-                _ => return,
-            };
-            // `:21246`: the Dark Caster's sphere carries
-            // `ai[3] = flag4 ? 1 : 0` — the red-hat state propagates to
-            // the Water Sphere 33 (`RedHatSkeletronAdjustmentsEnabled`'s
-            // `ai[3]` arm, `NPC.cs:66676-66679`).
-            let sphere_ai3 = if self.kind == NpcKind::DarkCaster
-                && self.red_hat_skeletron_adjustments_enabled()
-            {
-                1.0
-            } else {
-                0.0
-            };
-            let sphere = match self.kind {
-                NpcKind::GoblinSorcerer | NpcKind::Tim => NpcKind::ChaosBall,
-                NpcKind::DarkCaster => NpcKind::WaterSphere,
-                NpcKind::FireImp => NpcKind::BurningSphere,
-                _ => return,
-            };
-            self.wants_sphere.push((sphere, sx, sy, sphere_ai3));
+        self.ai[0] = self.caster_counter as f32;
+        self.ai[1] = self.cast_windup as f32;
+        let shot = crate::npc_ai_bat::ai_style_8_step(self, world, player, rng);
+        self.caster_counter = self.ai[0] as i32;
+        self.cast_windup = self.ai[1] as i32;
+        if let Some(shot) = shot {
+            self.wants_sphere.push((shot.kind, shot.x, shot.y, shot.ai3));
         }
     }
 
