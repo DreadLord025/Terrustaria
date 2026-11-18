@@ -212,6 +212,23 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
     app.swing_aim = (mouse_world - Vec2::new(cx, cy))
         .y
         .atan2((mouse_world - Vec2::new(cx, cy)).x);
+    // `Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays the
+    // item's `UseSound` at `base.Center` right after `ApplyItemAnimation`
+    // (`:51680`) — this seam is the port's use-start (every swing/shot/
+    // consume arm calls it). Single-player: the `whoAmI == Main.myPlayer`
+    // arm always plays (`:51694`); the net-sync arm (`:51690-51692`) has no
+    // port. The case-2 `Main.rand` draws ride the `UpdatePlayers` stream
+    // (`Player.ItemCheck` under the `Main.cs:17754` swap) and run only when
+    // the attenuation gate passed — inside `play_use_sound`.
+    if let Some((style_index, pitch_offset)) = crate::item::initial_use_sound(held_kind) {
+        app.audio.play_use_sound(
+            style_index,
+            cx,
+            cy,
+            pitch_offset,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    }
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind

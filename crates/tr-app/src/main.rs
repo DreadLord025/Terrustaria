@@ -84,6 +84,7 @@ mod shop;
 mod shimmer;
 mod signs;
 mod sound;
+mod soundid;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

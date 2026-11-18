@@ -120,8 +120,18 @@ impl App {
         // the settings screen's edits become the live table.
         self.keybinds = self.settings.keybinds.clone();
         self.map_binds = self.settings.map_binds.clone();
-        self.light_mode = tr_core::lighting::LightMode::ALL
+        let new_mode = tr_core::lighting::LightMode::ALL
             [(self.settings.light_mode as usize).min(3)];
+        if new_mode != self.light_mode {
+            // The `Lighting.Mode` setter (`Lighting.cs:29-61`) resets
+            // `renderCount`; the settings path also clears the presented
+            // values so no previous mode's light survives (S1-E-19).
+            if let Some(engine) = self.legacy_light.as_mut() {
+                engine.set_mode(new_mode);
+                engine.clear();
+            }
+        }
+        self.light_mode = new_mode;
         if !self.zoom_pinned {
             self.zoom = self.settings.zoom;
         }

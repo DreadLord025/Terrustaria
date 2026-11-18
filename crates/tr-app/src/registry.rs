@@ -95,6 +95,10 @@ static ITEM_CORRECTIONS: [ItemDef; 1] = [
             mount_type: -1,
             paint: 0,
             paint_coating: 0,
+            // `DefaultToStaff` (`Item.cs:48015-48022`): `UseSound = SoundID.Item43`
+            // — SOUND_STYLES index 168 (`SoundID.cs:1426`, ctor order).
+            use_sound: Some(168),
+            use_sound_pitch: 0.0,
         },
 ];
 

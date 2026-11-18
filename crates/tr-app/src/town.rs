@@ -484,6 +484,65 @@ mod tests {
         assert_eq!(rooms.occupants_at((80, 120)), vec![GUIDE_ID]);
     }
 
+    #[test]
+    fn the_household_status_follows_the_room_book() {
+        // `GetHouseholdStatus` (`TownRoomManager.cs:130-142`) across the full
+        // lifecycle: 0 → 2 (SetRoom) → 0 (KickOut) → 2 (SetRoom again) →
+        // 0 (Clear), with `homeless` overriding every state (`:133-135`).
+        let mut rooms = TownRooms::new();
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 0);
+        rooms.set_room(GUIDE_ID, 65, 105);
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 2);
+        rooms.kick_out(GUIDE_ID);
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 0);
+        rooms.set_room(GUIDE_ID, 80, 120);
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 2);
+        assert_eq!(rooms.household_status(true, GUIDE_ID), 1);
+        rooms.clear();
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 0);
+        // Another NPC's room never answers for this one (`HasRoomQuick` is
+        // keyed by type, `:33-36`).
+        rooms.set_room(TOWN_CAT_ID, 80, 120);
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 0);
+        assert_eq!(rooms.household_status(false, TOWN_CAT_ID), 2);
+    }
+
+    #[test]
+    fn the_occupants_list_keeps_the_registration_order() {
+        // `AddOccupantsToList` (`TownRoomManager.cs:22-31`): every pair whose
+        // room sits exactly on the tile, in list order; a moved-out NPC no
+        // longer answers at its old spot (`SetRoom:63-70` removes the pair).
+        let mut rooms = TownRooms::new();
+        assert!(rooms.occupants_at((80, 120)).is_empty());
+        rooms.set_room(GUIDE_ID, 80, 120);
+        rooms.set_room(TOWN_CAT_ID, 80, 120); // a pet may share (`:153-156`)
+        rooms.set_room(17, 90, 130); // elsewhere
+        assert_eq!(rooms.occupants_at((80, 120)), vec![GUIDE_ID, TOWN_CAT_ID]);
+        assert_eq!(rooms.occupants_at((90, 130)), vec![17]);
+        rooms.set_room(GUIDE_ID, 90, 130);
+        assert_eq!(rooms.occupants_at((80, 120)), vec![TOWN_CAT_ID]);
+        assert_eq!(rooms.occupants_at((90, 130)), vec![17, GUIDE_ID]);
+        rooms.kick_out(TOWN_CAT_ID);
+        assert!(rooms.occupants_at((80, 120)).is_empty());
+    }
+
+    #[test]
+    fn the_pet_categories_match_the_id_table() {
+        // `housing_category` (`NPC.SetDefaults` writes 1 for the town pets —
+        // 637/638 `:17224`, 656 `:17308`, 670 `:17494`, 678-684 `:17607`).
+        for id in [637, 638, 656, 670, 678, 679, 680, 681, 682, 683, 684] {
+            assert_eq!(housing_category(id), 1, "pet {id}");
+            assert!(can_npcs_live_with_each_other(id, GUIDE_ID));
+            assert!(can_npcs_live_with_each_other(GUIDE_ID, id));
+            assert!(!can_npcs_live_with_each_other(id, 637), "pets conflict");
+        }
+        for id in [17, 18, 19, 20, 22, 37, 227, 228, 229, 368, 369, 441, 550, 588, 633, 663] {
+            assert_eq!(housing_category(id), 0, "common {id}");
+        }
+        // Two common NPCs never share (`TownRoomManager.cs:153-156`).
+        assert!(!can_npcs_live_with_each_other(GUIDE_ID, 17));
+    }
+
     // --- the room state (`TownRoomManager`) -------------------------------
 
     /// A town NPC at a pixel position with a home tile.

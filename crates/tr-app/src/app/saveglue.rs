@@ -326,6 +326,48 @@ impl App {
         self.achievements.save_path = tr_core::save::achievements_path();
     }
 
+    /// `WorldGen.SaveAndQuit` (`WorldGen.cs:6701-6719`) + its
+    /// `SaveAndQuitCallBack` (`WorldGen.cs:6664-6687`), run synchronously —
+    /// the Settings window's Save & Exit row (`IngameOptions.cs:296-305`:
+    /// `Close()` + `Main.menuMode = 10` + `Main.gameMenu = true` +
+    /// `WorldGen.SaveAndQuit()`). The C# queues the callback on the thread
+    /// pool behind the mode-10 "saving" screen; the port saves inline and
+    /// lands straight on `menuMode = 0` (the main menu), the same menu-reopen
+    /// shape `net_disconnect` uses. The tracked-sound stop /
+    /// `CaptureInterface.ResetFocus` halves are not modelled; the frame's
+    /// audio listener flips to menu mode off `menu.is_some()`
+    /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
+    pub(crate) fn save_and_quit(&mut self) {
+        // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
+        self.audio.play("Menu_Close");
+        // `WorldGen.cs:6705-6708`: the invasion bar resets.
+        self.invasion_progress = -1;
+        self.invasion_progress_display_left = 0;
+        self.invasion_progress_alpha = 0.0;
+        self.invasion_progress_icon = 0;
+        // `SaveAndQuitCallBack` (`WorldGen.cs:6669-6677`): StopPlayTimer +
+        // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
+        // `Main.netMode == 0` arm) — the port's one save funnel writes the
+        // world, the player sidecar and the explored map together.
+        // `Rain.ClearRain` (`:6672`) is visual-only; the save already
+        // snapshotted the live rain into the file payload above.
+        self.save_world();
+        // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
+        self.audio.play("Menu_Open");
+        // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
+        self.world.fast_forward_to_dawn = false;
+        self.world.fast_forward_to_dusk = false;
+        // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
+        // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
+        // flag, `frame.rs:256`).
+        if self.menu.is_none() {
+            self.menu = Some(crate::menu::Menu::new(
+                self.settings.clone(),
+                self.player_name.clone(),
+            ));
+        }
+    }
+
     /// `MapHelper.SaveMap` (`MapHelper.cs:3007`): write `<world>.map` next to the
     /// world. Gated on `Main.mapEnabled` (`MapHelper.cs:3009`).
     pub(crate) fn save_map(&self) {

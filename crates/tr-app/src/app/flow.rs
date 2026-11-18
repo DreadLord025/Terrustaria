@@ -2364,6 +2364,7 @@ pub(crate) mod front_flow_tests {
             stats_acc: StatsAcc::default(),
             debug_cache: DebugCache::default(),
             light_mode: LightMode::Color,
+            legacy_light: None,
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
             demon_torch: 1.0,

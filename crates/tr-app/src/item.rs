@@ -63,6 +63,21 @@ pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
 }
 
+/// `Player.ItemCheck_StartActualUse`'s sound gate (`Player.cs:51681-51682`):
+/// `sItem.UseSound != null && !ItemID.Sets.SkipsInitialUseSound[sItem.type]`
+/// — the set is `{2350, 4870}` (`ItemID.cs:408`, the Recall Potion / Potion
+/// of Return: their cue plays at the teleport, not the use start). Returns
+/// the kind's `SOUND_STYLES` index + `useSoundPitch`
+/// (`Player.cs:51696`'s `PlaySound(sItem.UseSound, base.Center,
+/// sItem.useSoundPitch)`), `None` when the use start is silent.
+pub(crate) fn initial_use_sound(kind: u16) -> Option<(u16, f32)> {
+    if matches!(kind, 2350 | 4870) {
+        return None;
+    }
+    let d = registry::get(kind)?;
+    Some((d.use_sound?, d.use_sound_pitch))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ItemSlot {
     pub(crate) kind: u16,
@@ -427,6 +442,93 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
+    /// (`Item.cs`'s `SetDefaults` cases + the `DefaultTo*` helpers) resolve
+    /// through `SOUND_STYLES` to the legacy `(SoundId 2, Style)` pair, and
+    /// the `SkipsInitialUseSound` gate keeps 2350/4870 silent at the use
+    /// start (`Player.cs:51681-51682`, `ItemID.cs:408`).
+    #[test]
+    fn s1_e_21a_the_item_use_cue_selection_follows_the_vanilla_rows() {
+        let style_of = |kind: u16| {
+            let (idx, _) = initial_use_sound(kind).expect("the kind plays at the use start");
+            let s = &crate::soundid::SOUND_STYLES[idx as usize];
+            (s.sound_id, s.style, s.name)
+        };
+        // The Copper Pickaxe 1 (`Item.cs:1401`) and the Iron Broadsword 4
+        // (`:1437`) → SoundID.Item1 (`SoundID.cs:1384`).
+        assert_eq!(style_of(1), (2, 1, "Item1"));
+        assert_eq!(style_of(4), (2, 1, "Item1"));
+        // The Mushroom 5 (`Item.cs:1444`) → Item2 (`:1385`).
+        assert_eq!(style_of(5), (2, 2, "Item2"));
+        // The Lesser Healing Potion 28 — `DefaultToHealingPotion`'s Item3
+        // (`Item.cs:48572`, `SoundID.cs:1386`).
+        assert_eq!(style_of(28), (2, 3, "Item3"));
+        // The Wooden Bow 39 — `DefaultToBow`'s Item5 (`Item.cs:48427`,
+        // `SoundID.cs:1388`).
+        assert_eq!(style_of(39), (2, 5, "Item5"));
+        // The Storm Tiger Staff 4607 — its own case row's Item44
+        // (`Item.cs:38142`, `SoundID.cs:1427`); the `DefaultToStaff` helper's
+        // Item43 (`Item.cs:48021`) rides the 6171 correction below.
+        assert_eq!(style_of(4607), (2, 44, "Item44"));
+        // The whips — `DefaultToWhip`'s Item152 (`Item.cs:47819`,
+        // `SoundID.cs:1536`).
+        assert_eq!(style_of(4672), (2, 152, "Item152"));
+        // Abigail's Flower 5114 → the AbigailSummon trackable
+        // (`SoundID.cs:1699`).
+        assert_eq!(style_of(5114).2, "AbigailSummon");
+        assert_eq!(crate::soundid::SOUND_STYLES[440].sound_id, 42);
+        // The hand-written 6171 correction rides the staff sound too
+        // (`registry.rs`'s ITEM_CORRECTIONS, `Item.cs:47551`).
+        assert_eq!(style_of(6171), (2, 43, "Item43"));
+        // The Paladin's Hammer 1513 keeps its -0.5 pitch offset
+        // (`Item.cs:18499`).
+        let (_, pitch) = initial_use_sound(1513).unwrap();
+        assert_eq!(pitch, -0.5);
+        // The gate: 2350 (Recall Potion) / 4870 (Potion of Return) skip the
+        // initial sound (`ItemID.cs:408`); the null rows play nothing —
+        // the Compass 393 (`DefaultToVoiceOverrideAccessory`,
+        // `Item.cs:47788`) and the golf clubs (`:48524`).
+        assert_eq!(initial_use_sound(2350), None);
+        assert_eq!(initial_use_sound(4870), None);
+        assert_eq!(initial_use_sound(393), None);
+        assert_eq!(initial_use_sound(4039), None);
+        // The Dirt Block 2 has no UseSound row (`Item.cs:1406-1416`).
+        assert_eq!(initial_use_sound(2), None);
+    }
+
+    #[test]
+    fn s1_e_21a_every_use_sound_style_resolves_to_a_registered_cue() {
+        // Every distinct `use_sound` index the generated table names must
+        // land on a cue the bank registers: the id-2 family → `Item_<style>`
+        // in SFX_CUES (plus 18/19, the style-1 remap targets), the id-42
+        // trackables → the pinned first variation in ITEM_CUSTOM_CUES.
+        for d in crate::itemdata::ITEMS.iter() {
+            let Some(idx) = d.use_sound else { continue };
+            let s = &crate::soundid::SOUND_STYLES[idx as usize];
+            if s.sound_id == 42 {
+                let base = s.trackable.unwrap();
+                let cue = if s.variations == 1 {
+                    base.to_string()
+                } else {
+                    format!("{base}_0")
+                };
+                assert!(
+                    crate::audio::ITEM_CUSTOM_CUES.contains(&cue.as_str()),
+                    "item {}'s trackable {cue} is unregistered",
+                    d.id
+                );
+            } else {
+                assert_eq!(s.sound_id, 2, "item {}'s style id", d.id);
+                let cue = format!("Item_{}", s.style);
+                assert!(
+                    crate::audio::sfx_cue_registered(&cue),
+                    "item {}'s cue {cue} is unregistered",
+                    d.id
+                );
+            }
+        }
+    }
 
     #[test]
     fn s1_f_10_item_slot_clone_and_refresh_snapshot() {
