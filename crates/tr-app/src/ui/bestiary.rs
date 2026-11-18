@@ -1724,6 +1724,13 @@ mod tests {
         assert!(super::super::bestiary_draw_offsets::no_gravity(422));
         // Demon Eye (2) does NOT set noGravity in SetDefaults -> bottom-anchor.
         assert!(!super::super::bestiary_draw_offsets::no_gravity(2));
+        // Compound-arm floater (fireflies 583-585, `type == 583 || 584 || 585`).
+        assert!(super::super::bestiary_draw_offsets::no_gravity(583));
+        // Range-arm floater (`type >= 595 && type <= 601`).
+        assert!(super::super::bestiary_draw_offsets::no_gravity(595));
+        // AI-only non-floater: Hornet (48, aiStyle 14) sets noGravity only in
+        // its runtime AI block, NOT SetDefaults -> bottom-anchor in the cache.
+        assert!(!super::super::bestiary_draw_offsets::no_gravity(48));
     }
 
     #[test]

@@ -221,57 +221,58 @@ def no_gravity_table():
 
     `UnlockableNPCEntryIcon.UpdatePosition` (`UnlockableNPCEntryIcon.cs:112-123`)
     centres the icon when `_npcCache.noGravity` is set, else bottom-anchors it.
-    The cache runs `SetDefaults` only (no AI), so the floater set is exactly the
-    types whose `SetDefaults` type-block OR shared aiStyle-block sets
-    `this.noGravity = true`. Parsed from `decompiled/Terraria/NPC.cs` by
-    brace-matching each `(this.type == N)` / `(this.aiStyle == N)` block; a type
-    inherits its aiStyle's flag when its own block does not set one.
+    The cache runs `SetDefaults` ONLY (no AI), so the floater set is exactly the
+    types whose `SetDefaults` arm sets `this.noGravity = true`. Parsed from the
+    `SetDefaults` method body of `decompiled/Terraria/NPC.cs` (brace-matched),
+    walking every `if/else-if (this.type ...)` arm — including the compound
+    `type == A || type == B` arms and the `type >= A && type <= B` range arms.
+    There are NO aiStyle blocks inside SetDefaults (the runtime AI()'s aiStyle
+    blocks set noGravity only at runtime, which the icon cache never runs), so
+    no aiStyle inheritance is applied.
     """
     npc_src = (ROOT / "decompiled" / "Terraria" / "NPC.cs").read_text(encoding="utf-8")
-
-    def blocks(pat):
-        out = {}
-        for m in re.finditer(pat, npc_src):
-            key = int(m.group(1))
-            j = npc_src.index("{", m.start())
-            d = 0
-            k = j
-            while k < len(npc_src):
-                if npc_src[k] == "{":
-                    d += 1
-                elif npc_src[k] == "}":
-                    d -= 1
-                    if d == 0:
-                        break
-                k += 1
-            out.setdefault(key, []).append(npc_src[j + 1 : k])
-        return out
-
-    type_blocks = blocks(r"(?:else )?if \(this\.type == (\d+)\)\s*\{")
-    ai_blocks = blocks(r"if \(this\.aiStyle == (\d+)\)\s*\{")
-    type_ai = {}
-    for t, bodies in type_blocks.items():
-        for b in bodies:
-            m = re.search(r"this\.aiStyle = (\d+);", b)
-            if m:
-                type_ai[t] = int(m.group(1))
-    # Only the SetDefaults stats aiStyle blocks (carry base.width), not the AI
-    # dispatch ones.
-    ng_ai = set(
-        a
-        for a, bodies in ai_blocks.items()
-        if any("this.noGravity = true" in b and "base.width" in b for b in bodies)
-    )
+    m = re.search(r"public void SetDefaults\(int Type.*?\)\s*\{", npc_src, re.S)
+    j = npc_src.index("{", m.start())
+    d = 0
+    k = j
+    while k < len(npc_src):
+        if npc_src[k] == "{":
+            d += 1
+        elif npc_src[k] == "}":
+            d -= 1
+            if d == 0:
+                break
+        k += 1
+    body = npc_src[j + 1 : k]
     ng = set()
-    for t, bodies in type_blocks.items():
-        if any("this.noGravity = true" in b for b in bodies):
-            ng.add(t)
-        elif type_ai.get(t) in ng_ai:
-            ng.add(t)
+    for mm in re.finditer(r"(?:else )?if \(([^)]*this\.type[^)]*)\)\s*\{", body):
+        cond = mm.group(1)
+        jj = body.index("{", mm.start())
+        dd = 0
+        kk = jj
+        while kk < len(body):
+            if body[kk] == "{":
+                dd += 1
+            elif body[kk] == "}":
+                dd -= 1
+                if dd == 0:
+                    break
+            kk += 1
+        blk = body[jj + 1 : kk]
+        if "this.noGravity = true" not in blk:
+            continue
+        ids = set(int(x) for x in re.findall(r"==\s*(\d+)", cond))
+        for a in re.findall(r">=\s*(\d+)", cond):
+            for b in re.findall(r"<=\s*(\d+)", cond):
+                if int(a) <= int(b):
+                    ids.update(range(int(a), int(b) + 1))
+        ng |= ids
     rows = ", ".join(str(t) for t in sorted(ng))
     return (
         "/// The `NPC.noGravity` set from `NPC.SetDefaults` (NPC.cs): the types\n"
-        "/// whose type-block or shared aiStyle-block sets `noGravity = true`.\n"
+        "/// whose SetDefaults arm sets `noGravity = true` (compound `||` and\n"
+        "/// `>=`/`<=` range arms included). The icon cache runs SetDefaults only,\n"
+        "/// so runtime-AI noGravity (e.g. Demon Eye) does NOT count.\n"
         "/// `UnlockableNPCEntryIcon.UpdatePosition` (`:112-123`) centres these\n"
         "/// (floaters) and bottom-anchors the rest. GENERATED — do not hand-edit.\n"
         f"pub static NO_GRAVITY: &[i32] = &[{rows}];\n\n"
