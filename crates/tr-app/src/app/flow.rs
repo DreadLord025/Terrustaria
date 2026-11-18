@@ -2993,6 +2993,11 @@ pub(crate) mod front_flow_tests {
     #[test]
     fn tr_ui_vk_presets_the_keyboard_now() {
         // Task 5 parsed `vk` without presetting; Task 6's variant is live.
+        // The label reads the process-global language twice (preset + the
+        // assert's `enter_character_name()`); take the lang test lock and
+        // pin English so a sibling culture flip cannot land between them.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         app.preset_ui(TrUiPreset::Keyboard);
         let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {

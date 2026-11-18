@@ -32,6 +32,7 @@ pub mod text;
 pub mod tooltip;
 pub mod uistate;
 pub mod world_creation;
+pub(crate) mod world_load;
 pub mod world_select;
 
 use glam::Vec2;

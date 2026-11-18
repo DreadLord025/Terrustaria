@@ -15921,3 +15921,35 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The loading screen (S1-E-17, round 1)
+
+`crates/tr-app/src/ui/world_load.rs` ports the loading screen's pure half:
+`UIGenProgressBar`'s progress math (`UIGenProgressBar.cs:51-55`, `:68-80`,
+`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`).
+Deliberate deviations, all pending the S1-G-13 render-target seam:
+
+- **The "smoothing" is a verbatim copy in 1.4.5.8.** `DrawSelf` assigns
+  `_visualOverallProgress = _targetOverallProgress` (and the current pair)
+  directly (`UIGenProgressBar.cs:68-69`) — no lerp exists in this version.
+  The port keeps both field pairs and pins the copy in a test so a later
+  smoothing lerp cannot land silently.
+- **Unwired.** No `FrontScreen` arm, no draw-pass change: world creation
+  still saves and reopens world select (`app/session.rs:50-62`). The
+  `finish_creating_world` hand-off to a live `UIWorldLoad` needs the
+  worldgen pipeline to expose `GenerationProgress` and become
+  resumable/cancellable (research/19 L1) plus the S1-G-13 seam for the
+  bar's four `Outer_*` textures and `CaptureManager`.
+- **The drunk-world `Main.rand` arms are deferred.** The evil-texture
+  flicker (`UIGenProgressBar.cs:63-67`) and the random-digit message
+  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them before the
+  draw seam exists would perturb that stream's call order (the RNG-order
+  invariant). The ported `draw_frame` takes the evil flags as inputs.
+- **`GetStatusText`'s `0.0%` formatting** uses Rust's `{:.1}` on the ×100
+  value. .NET rounds half-away-from-zero, Rust half-to-even; the tie input
+  (a scaled `x.x5`) is not binary-representable, so the two agree on every
+  pass-ratio value the game produces.
+- `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
+  (`GameTipsDisplay`), out of this round's scope; the gamepad squiggle
+  (`:122-127`) and F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug
+  pieces that ride the same deferred wiring.

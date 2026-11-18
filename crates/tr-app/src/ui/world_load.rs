@@ -1,0 +1,477 @@
+//! The world-loading screen's state + progress math — `UIWorldLoad`
+//! (`GameContent/UI/States/UIWorldLoad.cs:16-137`) and its
+//! `UIGenProgressBar` (`GameContent/UI/Elements/UIGenProgressBar.cs:8-126`).
+//!
+//! S1-E-17 round 1: the pure math and the load-state machine only — the
+//! bar's sprite draw (the `Outer_Corrupt`/`Outer_Crimson`/`Outer_Random`/
+//! `Outer_Lower` textures, `UIGenProgressBar.cs:32-38`, `:83-84`) and the
+//! `CaptureManager` screenshot capture are deferred to the S1-G-13
+//! render-target seam. Nothing here is wired into the draw pass yet.
+
+use tr_core::scene::get_lerp_value;
+
+/// The worldgen progress snapshot — `GenerationProgress`'s three fields the
+/// loading screen reads (`UIWorldLoad.cs:83-85`: `TotalProgress`, `Value`,
+/// `Message`). Doubles in C#; the draw side casts to float
+/// (`UIWorldLoad.cs:83-84`), which [`GenProgressBar::draw_frame`] mirrors.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct GenerationProgress {
+    /// `GenerationProgress.TotalProgress` — the whole worldgen's fraction.
+    pub total_progress: f64,
+    /// `GenerationProgress.Value` — the current pass's fraction.
+    pub value: f64,
+    /// `GenerationProgress.Message` — the current pass's label.
+    pub message: String,
+}
+
+/// `UIGenProgressBar` (`UIGenProgressBar.cs:8-126`) — the two target/visual
+/// progress pairs and the bar-width constants. The visual fields are kept
+/// even though the 1.4.5.8 `DrawSelf` assigns them straight from the targets
+/// (`:68-69` — no smoothing lerp in this version); the fields exist in the
+/// source and the port mirrors them 1:1.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct GenProgressBar {
+    visual_overall_progress: f32,
+    target_overall_progress: f32,
+    visual_current_progress: f32,
+    target_current_progress: f32,
+}
+
+/// `UIGenProgressBar._smallBarWidth = 508` / `_longBarWidth = 570`
+/// (`UIGenProgressBar.cs:26-28`).
+pub(crate) const SMALL_BAR_WIDTH: i32 = 508;
+pub(crate) const LONG_BAR_WIDTH: i32 = 570;
+
+/// The per-frame geometry `UIGenProgressBar.DrawSelf` computes
+/// (`UIGenProgressBar.cs:68-80`) — the inputs the deferred sprite draw will
+/// consume at the S1-G-13 seam.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GenBarFrame {
+    /// `(int)(_visualOverallProgress * (float)_longBarWidth)` after
+    /// `DrawFilling2`'s even round-down (`:71`, `:118-121`).
+    pub overall_width: i32,
+    /// `(int)(_visualCurrentProgress * (float)_smallBarWidth)` after the
+    /// same round-down (`:72`, `:118-121`).
+    pub current_width: i32,
+    /// The long bar's `Color.PackedValue` (`:74-77`): random-evil
+    /// `4292696893`, crimson `4286836223`, corrupt `4283888223`.
+    pub overall_color: u32,
+    /// The small bar's fixed `Color.PackedValue = 4290947159` (`:79`).
+    pub current_color: u32,
+}
+
+impl GenProgressBar {
+    /// `SetProgress` (`UIGenProgressBar.cs:51-55`): only the targets move;
+    /// the visual pair follows on the next draw (`:68-69`). Current first,
+    /// overall second — the source's assignment order.
+    pub(crate) fn set_progress(&mut self, overall_progress: f32, current_progress: f32) {
+        self.target_current_progress = current_progress;
+        self.target_overall_progress = overall_progress;
+    }
+
+    /// `DrawSelf`'s math head (`UIGenProgressBar.cs:68-80`) minus the
+    /// `spriteBatch.Draw` calls (deferred to S1-G-13). The drunk-world evil
+    /// flicker (`:63-67`, two/three `Main.rand.Next` rolls) is deliberately
+    /// not ported: it draws from `Main.rand` and wiring it before the draw
+    /// seam exists would perturb that stream's order (docs/ANALYSIS.md).
+    /// `evil_crimson` = `WorldGen.crimson`, `random_evil` =
+    /// `WorldGen.generatingRandomEvil` (`:61-62`).
+    pub(crate) fn draw_frame(&mut self, evil_crimson: bool, random_evil: bool) -> GenBarFrame {
+        // `:68-69` — the 1.4.5.8 version copies the targets verbatim.
+        self.visual_overall_progress = self.target_overall_progress;
+        self.visual_current_progress = self.target_current_progress;
+        // `:71-72` — float multiply, C# `(int)` truncation toward zero.
+        let completed_width = (self.visual_overall_progress * LONG_BAR_WIDTH as f32) as i32;
+        let completed_width2 = (self.visual_current_progress * SMALL_BAR_WIDTH as f32) as i32;
+        GenBarFrame {
+            overall_width: filling_even_width(completed_width),
+            current_width: filling_even_width(completed_width2),
+            // `:74-77` — flag2 ? 4292696893 : (flag ? 4286836223 : 4283888223).
+            overall_color: if random_evil {
+                4292696893
+            } else if evil_crimson {
+                4286836223
+            } else {
+                4283888223
+            },
+            current_color: 4290947159, // `:79`
+        }
+    }
+}
+
+/// `DrawFilling2`'s head (`UIGenProgressBar.cs:118-121`): an odd completed
+/// width loses one pixel so the fill stays on 2 px steps. (`DrawFilling`,
+/// `:90-93`, rounds the same way.)
+pub(crate) fn filling_even_width(completed_width: i32) -> i32 {
+    if completed_width % 2 != 0 {
+        completed_width - 1
+    } else {
+        completed_width
+    }
+}
+
+/// `Color.Lerp(value1, value2, amount)` (XNA) as the bars use it —
+/// `Color.Lerp(color, Color.Black, 0.5f)` (`UIGenProgressBar.cs:78`, `:80`):
+/// a per-byte `MathHelper.Lerp` (unclamped float lerp) truncated to byte by
+/// the `Color(byte, byte, byte, byte)` ctor. The packed values are XNA's
+/// ABGR (`0xAARRGGBB` reversed in memory).
+pub(crate) fn lerp_color_packed(value1: u32, value2: u32, amount: f32) -> u32 {
+    let mut out = 0u32;
+    for shift in [0, 8, 16, 24] {
+        let a = ((value1 >> shift) & 0xFF) as f32;
+        let b = ((value2 >> shift) & 0xFF) as f32;
+        let lerped = (a + (b - a) * amount) as u8;
+        out |= (lerped as u32) << shift;
+    }
+    out
+}
+
+/// `UIWorldLoad`'s state (`UIWorldLoad.cs:16-137`): the progress bar, the
+/// cached `_progress` reference (taken once per `Draw`, `:69`), the
+/// `QueuedAbort` flag the Update's Inventory trigger sets (`:54-58`, on
+/// `WorldGenerator.CurrentController`), and the bar's vertical position the
+/// Update lerps by screen height (`:60-61`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct WorldLoadState {
+    /// `_progressBar` (`:18`).
+    pub bar: GenProgressBar,
+    /// `_progress` (`:22`) — `None` while `WorldGenerator.
+    /// CurrentGenerationProgress` is null; `Draw` then skips the whole
+    /// screen (`:70-73`).
+    pub progress: Option<GenerationProgress>,
+    /// `WorldGenerator.CurrentController.QueuedAbort` (`:54-58`, read at
+    /// `:86`). The controller itself (the abortable worldgen thread) is the
+    /// deferred piece; the flag's UI behaviour is ported here.
+    pub queued_abort: bool,
+    /// `_progressBar.Top.Pixels` — 270 from the ctor (`:26`), re-lerped
+    /// every Update (`:60`).
+    pub bar_top: f32,
+    /// `_progressMessage.Top.Pixels` — always `bar_top - 70` (`:31`, `:61`).
+    pub message_top: f32,
+}
+
+/// The secret-seed message overrides `DrawSelf` reads (`UIWorldLoad.cs:93`,
+/// `:104`, `:108`): `WorldGen.drunkWorldGen` / `notTheBees` /
+/// `getGoodWorldGen` plus the two gates (`placingTraps`, `noTrapsWorldGen`)
+/// and `Main.zenithWorld`. The drunk arm's random-digit message (`:95-102`)
+/// rolls `Main.rand` and is deferred with the draw wiring (ANALYSIS).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct WorldLoadFlags {
+    pub drunk_world_gen: bool,
+    pub not_the_bees: bool,
+    pub get_good_world_gen: bool,
+    pub no_traps_world_gen: bool,
+    pub placing_traps: bool,
+    pub zenith_world: bool,
+}
+
+impl WorldLoadState {
+    /// The `UIWorldLoad` ctor (`UIWorldLoad.cs:24-35`): bar top 270, the
+    /// message header copies the style 70 px above (`:30-31`).
+    pub(crate) fn new() -> Self {
+        Self {
+            bar_top: 270.0,
+            message_top: 200.0,
+            ..Self::default()
+        }
+    }
+
+    /// `Update`'s screen-height lerp (`UIWorldLoad.cs:60-61`):
+    /// `MathHelper.Lerp(270, 370, Utils.GetLerpValue(600, 700,
+    /// Main.screenHeight, clamped: true))`, message 70 px above.
+    pub(crate) fn update_layout(&mut self, screen_height: f32) {
+        let t = get_lerp_value(600.0, 700.0, screen_height, true);
+        self.bar_top = 270.0 + (370.0 - 270.0) * t;
+        self.message_top = self.bar_top - 70.0;
+    }
+
+    /// `Update`'s Inventory-abort arm (`UIWorldLoad.cs:54-58`): the trigger
+    /// queues the abort once (the `!QueuedAbort` gate) and plays legacy
+    /// sound 11. Returns whether the abort was newly queued so the caller
+    /// owns the `SoundEngine.PlaySound(11)` side effect.
+    pub(crate) fn queue_abort_on_inventory(&mut self, inventory_trigger: bool) -> bool {
+        if inventory_trigger && !self.queued_abort {
+            self.queued_abort = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `Draw`'s progress latch (`UIWorldLoad.cs:69`): `_progress =
+    /// WorldGenerator.CurrentGenerationProgress`. `None` hides the screen
+    /// (`:70-73` — `base.Draw` only runs when the snapshot exists).
+    pub(crate) fn set_progress(&mut self, progress: Option<GenerationProgress>) {
+        self.progress = progress;
+    }
+
+    /// Whether `Draw` renders anything (`UIWorldLoad.cs:70-73`).
+    pub(crate) fn draws(&self) -> bool {
+        self.progress.is_some()
+    }
+
+    /// `DrawSelf`'s message assembly + `SetProgress` feed
+    /// (`UIWorldLoad.cs:78-116`), in source order: the snapshot's fields
+    /// (zero/empty when null, `:78-85`), the `UI.Canceling` override when
+    /// the abort is queued (`:86-89`), the bar feed (`:91`), then the
+    /// secret-seed overrides — bees (`:104-107`) and the get-good reversal
+    /// (`:108-116`). The drunk random-digit arm (`:93-103`) is deferred
+    /// (see [`WorldLoadFlags`]); `Main.gameTips` (`:117-118`) is research-19
+    /// M3, out of this round's scope.
+    pub(crate) fn draw_self_message(&mut self, flags: WorldLoadFlags) -> String {
+        let (overall, current, mut text) = match &self.progress {
+            Some(p) => (p.total_progress as f32, p.value as f32, p.message.clone()),
+            None => (0.0, 0.0, String::new()),
+        };
+        if self.progress.is_some() && self.queued_abort {
+            // `:86-89` — Language.GetTextValue("UI.Canceling").
+            text = crate::lang::text("UI.Canceling");
+        }
+        // `:91-92` — the bar feed and the header text land before the
+        // secret-seed overrides rewrite the header only.
+        self.bar.set_progress(overall, current);
+        if flags.not_the_bees && !flags.zenith_world {
+            // `:104-107`.
+            text = crate::lang::text("UI.WorldGenEasterEgg_GeneratingBees");
+        }
+        if flags.get_good_world_gen && (!flags.no_traps_world_gen || !flags.placing_traps) {
+            // `:108-116` — the message reversed character by character.
+            text = text.chars().rev().collect();
+        }
+        text
+    }
+
+    /// `GetStatusText` (`UIWorldLoad.cs:129-136`): `"{0:0.0%} - {Message} -
+    /// {1:0.0%}"`, or `"0.0% - ... - 0.0%"` with no snapshot. The percent
+    /// formatting rides [`format_percent_tenth`].
+    pub(crate) fn status_text(&self) -> String {
+        match &self.progress {
+            None => "0.0% - ... - 0.0%".to_string(),
+            Some(p) => format!(
+                "{} - {} - {}",
+                format_percent_tenth(p.total_progress),
+                p.message,
+                format_percent_tenth(p.value)
+            ),
+        }
+    }
+}
+
+/// .NET's `"0.0%"` custom format on the progress doubles
+/// (`UIWorldLoad.cs:133`, `:135`): ×100, one decimal, `%` appended. .NET
+/// rounds the scaled value half-away-from-zero; the tie input (a scaled
+/// `x.x5`) is not representable in binary floating point, so the
+/// `format!("{:.1}")` half-to-even path agrees on every value the game can
+/// produce (the progress fractions are pass-count ratios).
+pub(crate) fn format_percent_tenth(value: f64) -> String {
+    format!("{:.1}%", value * 100.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn progress(total: f64, value: f64, message: &str) -> GenerationProgress {
+        GenerationProgress {
+            total_progress: total,
+            value,
+            message: message.to_string(),
+        }
+    }
+
+    /// `SetProgress` (`:51-55`) moves targets only; the visual pair follows
+    /// on the draw copy (`:68-69`) — the 1.4.5.8 "smoothing" is a verbatim
+    /// assignment, pinned here so a later lerp cannot sneak in unnoticed.
+    #[test]
+    fn set_progress_moves_targets_and_draw_copies_verbatim() {
+        let mut bar = GenProgressBar::default();
+        bar.set_progress(0.25, 0.5);
+        assert_eq!(bar.target_overall_progress, 0.25);
+        assert_eq!(bar.target_current_progress, 0.5);
+        assert_eq!(bar.visual_overall_progress, 0.0);
+        assert_eq!(bar.visual_current_progress, 0.0);
+        let frame = bar.draw_frame(false, false);
+        assert_eq!(bar.visual_overall_progress, 0.25);
+        assert_eq!(bar.visual_current_progress, 0.5);
+        // `(int)(0.25 * 570) = 142` (even), `(int)(0.5 * 508) = 254`.
+        assert_eq!(frame.overall_width, 142);
+        assert_eq!(frame.current_width, 254);
+    }
+
+    /// `:71-72` truncation then `DrawFilling2`'s odd round-down
+    /// (`:118-121`): `(int)(0.333 * 570) = 189 -> 188`,
+    /// `(int)(0.333 * 508) = 169 -> 168`.
+    #[test]
+    fn widths_truncate_then_round_down_to_even() {
+        let mut bar = GenProgressBar::default();
+        bar.set_progress(0.333, 0.333);
+        let frame = bar.draw_frame(false, false);
+        assert_eq!(frame.overall_width, 188);
+        assert_eq!(frame.current_width, 168);
+        assert_eq!(filling_even_width(0), 0);
+        assert_eq!(filling_even_width(1), 0);
+        assert_eq!(filling_even_width(2), 2);
+        assert_eq!(filling_even_width(571), 570);
+    }
+
+    /// Full progress fills the exact bar widths (`:71-72` at 1.0).
+    #[test]
+    fn full_progress_fills_the_bars() {
+        let mut bar = GenProgressBar::default();
+        bar.set_progress(1.0, 1.0);
+        let frame = bar.draw_frame(false, false);
+        assert_eq!(frame.overall_width, LONG_BAR_WIDTH);
+        assert_eq!(frame.current_width, SMALL_BAR_WIDTH);
+    }
+
+    /// The packed-colour selection (`:74-79`): random evil wins over
+    /// crimson; the small bar is fixed.
+    #[test]
+    fn bar_colors_match_the_packed_constants() {
+        let mut bar = GenProgressBar::default();
+        let corrupt = bar.draw_frame(false, false);
+        assert_eq!(corrupt.overall_color, 4283888223);
+        let crimson = bar.draw_frame(true, false);
+        assert_eq!(crimson.overall_color, 4286836223);
+        let random = bar.draw_frame(true, true);
+        assert_eq!(random.overall_color, 4292696893);
+        assert_eq!(random.current_color, 4290947159);
+        // Color.Lerp(color, Color.Black, 0.5f) (`:78`, `:80`): each RGB
+        // byte halves; Color.Black is (0,0,0,255) so alpha stays 255.
+        let half = lerp_color_packed(corrupt.overall_color, 0xFF000000, 0.5);
+        assert_eq!(
+            half & 0xFF,
+            ((corrupt.overall_color & 0xFF) as f32 * 0.5) as u32
+        );
+        assert_eq!((half >> 24) & 0xFF, 255);
+    }
+
+    /// The ctor + Update layout (`:26`, `:31`, `:60-61`): 270 at <=600 px,
+    /// 370 at >=700 px, the clamped midpoint 320 at 650; the message header
+    /// always rides 70 px above.
+    #[test]
+    fn layout_lerps_270_to_370_over_screen_height() {
+        let mut state = WorldLoadState::new();
+        assert_eq!(state.bar_top, 270.0);
+        assert_eq!(state.message_top, 200.0);
+        state.update_layout(500.0);
+        assert_eq!(state.bar_top, 270.0);
+        state.update_layout(650.0);
+        assert_eq!(state.bar_top, 320.0);
+        assert_eq!(state.message_top, 250.0);
+        state.update_layout(800.0);
+        assert_eq!(state.bar_top, 370.0);
+        assert_eq!(state.message_top, 300.0);
+    }
+
+    /// The Inventory-abort arm (`:54-58`): queues once, the sound fires once
+    /// (the return value), a held trigger does not re-queue.
+    #[test]
+    fn inventory_trigger_queues_abort_once() {
+        let mut state = WorldLoadState::new();
+        assert!(!state.queue_abort_on_inventory(false));
+        assert!(!state.queued_abort);
+        assert!(state.queue_abort_on_inventory(true));
+        assert!(state.queued_abort);
+        assert!(!state.queue_abort_on_inventory(true));
+    }
+
+    /// `Draw`'s null gate (`:69-73`) and `DrawSelf`'s zero defaults
+    /// (`:78-80`): no snapshot -> nothing draws, the bar still receives
+    /// (0, 0) when DrawSelf runs.
+    #[test]
+    fn null_progress_hides_the_screen_and_zeroes_the_bar() {
+        let mut state = WorldLoadState::new();
+        assert!(!state.draws());
+        let text = state.draw_self_message(WorldLoadFlags::default());
+        assert_eq!(text, "");
+        assert_eq!(state.bar.target_overall_progress, 0.0);
+        assert_eq!(state.bar.target_current_progress, 0.0);
+        state.set_progress(Some(progress(0.5, 0.25, "Generating")));
+        assert!(state.draws());
+    }
+
+    /// `DrawSelf`'s feed + message (`:83-92`): the snapshot's floats reach
+    /// the bar, the message is the pass label.
+    #[test]
+    fn draw_self_feeds_the_bar_and_message() {
+        let mut state = WorldLoadState::new();
+        state.set_progress(Some(progress(0.5, 0.25, "Generating structures")));
+        let text = state.draw_self_message(WorldLoadFlags::default());
+        assert_eq!(text, "Generating structures");
+        assert_eq!(state.bar.target_overall_progress, 0.5);
+        assert_eq!(state.bar.target_current_progress, 0.25);
+    }
+
+    /// The `UI.Canceling` override (`:86-89`) — needs lang init like the
+    /// other localization tests (`world_creation.rs:1430`).
+    #[test]
+    fn queued_abort_overrides_the_message() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut state = WorldLoadState::new();
+        state.set_progress(Some(progress(0.5, 0.25, "Generating")));
+        state.queue_abort_on_inventory(true);
+        let text = state.draw_self_message(WorldLoadFlags::default());
+        assert_eq!(text, crate::lang::text("UI.Canceling"));
+        assert!(!text.is_empty());
+    }
+
+    /// The bees override (`:104-107`) and its zenith gate; the get-good
+    /// reversal (`:108-116`) and its noTraps+placingTraps gate.
+    #[test]
+    fn secret_seed_message_overrides() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut state = WorldLoadState::new();
+        state.set_progress(Some(progress(0.0, 0.0, "abc")));
+        let bees = WorldLoadFlags {
+            not_the_bees: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            state.draw_self_message(bees),
+            crate::lang::text("UI.WorldGenEasterEgg_GeneratingBees")
+        );
+        let bees_zenith = WorldLoadFlags {
+            zenith_world: true,
+            ..bees
+        };
+        assert_eq!(state.draw_self_message(bees_zenith), "abc");
+        let good = WorldLoadFlags {
+            get_good_world_gen: true,
+            ..Default::default()
+        };
+        assert_eq!(state.draw_self_message(good), "cba");
+        // noTraps && placingTraps -> no reversal (`:108`).
+        let good_traps = WorldLoadFlags {
+            no_traps_world_gen: true,
+            placing_traps: true,
+            ..good
+        };
+        assert_eq!(state.draw_self_message(good_traps), "abc");
+        // noTraps but not placing traps -> reversal returns (`:108`).
+        let good_no_traps = WorldLoadFlags {
+            placing_traps: false,
+            ..good_traps
+        };
+        assert_eq!(state.draw_self_message(good_no_traps), "cba");
+    }
+
+    /// `GetStatusText` (`:129-136`): both arms, tenth-percent formatting.
+    #[test]
+    fn status_text_formats_tenth_percents() {
+        let mut state = WorldLoadState::new();
+        assert_eq!(state.status_text(), "0.0% - ... - 0.0%");
+        state.set_progress(Some(progress(0.5, 0.1234, "Resetting")));
+        assert_eq!(state.status_text(), "50.0% - Resetting - 12.3%");
+        assert_eq!(format_percent_tenth(0.0), "0.0%");
+        assert_eq!(format_percent_tenth(1.0), "100.0%");
+        assert_eq!(format_percent_tenth(0.1236), "12.4%");
+        assert_eq!(format_percent_tenth(0.1234), "12.3%");
+    }
+}
