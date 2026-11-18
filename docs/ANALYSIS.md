@@ -10469,26 +10469,64 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
-- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
-  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
-  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
-  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
-  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
-  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
-  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
-  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
-  light layer; the tracked explode sound (`:69362`) — no sound layer; the
-  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
-  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
-  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
-  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
-  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
-  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
-  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
-  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
-  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
-  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
-  the tile, `velocity = Zero`, no kill.
+- **S1-D-4b-2 (2026-11-18) ported the sentry-backpack family** — aiStyle **138**
+  (Explosive Trap, `AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`), **139** (the
+  blast, `AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick alpha fade, the
+  one-shot latch, the 3-tick frame-wrap kill), **134** (Ballista, `AI_134_Ballista`,
+  `:68510-68651`) and **137** (Lightning Aura, `AI_137_LightningAura`, `:68854-69023`),
+  plus the shared `CanGetPickedUpBySentryBackpack`/`SetAsSelectedSentryBackpackTarget`
+  (`:78785-78810`) and `AI_Sentries_HeavySlingReposition` (`:69025-69299`). The blast
+  kinds 694/695/696 ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139,
+  alpha 255, the local-immunity 30 pair); the Ballista's 680 bolt gained its row
+  (`:7253-7262` — 16x16, aiStyle 1, penetrate 4, local-immunity −1) and the towers/auras
+  their `proj_frames` (`Main.cs:8461-8466`).
+  - **The backpack accessory is wired.** `Player.accSentryBackpack` (the four slings
+    6172/6175/6176/6177, `Player.cs:14507`/`:14565`/`:14573`/`:14577`), the grab cooldown
+    (`accSentryBackpackGrabCooldown`, `Update_SentryBackpack` `:28428-28434`, decremented
+    in `world_sim/player.rs` beside the ammo cycler) and the DD2 set flags
+    (`setSquireT2/T3`, `setHuntressT2/T3`, `setMonkT2/T3` from `ArmorSetBonuses.Benefits`
+    `:68-118`, `ballistaPanic` from buff 205 `:11843-11846`) re-derive per tick after
+    `ResetEffects` clears them. The 6175 Scout Sling's +5% all-class damage and the 6177
+    Harness's `noKnockback` ride along; the 6176 `accGolemSentryBackpack` half and the
+    6175 `aggro -= 400` half have no port consumer (the Golem-backpack crit arm
+    `Projectile.cs:12930` and the aggro system are unported). The DD2 sets' `maxTurrets++`
+    halves land in `Player::update`'s armor-set block.
+  - **The reposition's gravDir folds to 1.** `AI_Sentries_HeavySlingReposition`'s
+    `player.gravDir` multipliers (`:69038`/`:69064`/`:69111`/`:69139`/`:69147`/`:69169`)
+    take their positive branch (no gravity potion in the port); the sleeping/sitting
+    offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
+    The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
+    but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
+    reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    C# does (`Mount.cs:389` keeps the last type when inactive).
+  - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
+    `:69412-69413`) — no pool light layer; the tracked sounds (`:68615`/`:68905`/`:69362`)
+    — no sound layer; the aura's three dust loops (`:68959-69015`) and their `Main.rand`
+    gating rolls (`Next(6)`/`NextVector2Unit`/`Next(10)`) — no dust layer (the
+    `ai_volcano`/`ai_eye_fire` precedent). The 680 bolt's aiStyle-1 per-type flight
+    (`AI_001`'s `type == 680` arms `:57471-57478`/`:57658-57661`) rides the generic arrow
+    flight — the per-type `AI_001` table is S1-D-4b-8. The aura's `Colliding` arm
+    (`:15800-15814`, the `AI_137_LightningAura_CanHit` reach test) and the blast's
+    `StatusNPC` Oiled debuff (`:11434-11437`) + the aura's full armor-penetration
+    (`:13232-13235`) are damage-side arms under the S1-C-8 `Colliding`/`StatusNPC` skip —
+    the shared `Damage_PVE` pass uses the plain box overlap. `AI_137_LightningAura_CanHit`
+    (`:70470-70500`) is ported as a helper for that future wiring.
+  - **The reposition-kill edge follows the port's dead-slot convention.** In C#, when
+    the backpack accessory is removed mid-carry, `AI_Sentries_HeavySlingReposition`
+    calls `Kill()` (`:69030`) but the calling arm's remaining body still runs on the
+    dead slot (a Ballista can even fire one last bolt that tick — the spawn gate reads
+    only `owner == Main.myPlayer`). The port's arms stop at the kill (`killed` flag),
+    the same "a dead slot pays nothing further" convention the pool documents at its
+    AI-dispatch guard — the dead slot's writes are unobservable (the spawn seam fully
+    resets a recycled slot). The accessory-removal tick is the only reachable case.
+  - **RNG**: the four AI arm bodies draw no `Main.rand` (proven by the seed-untouched
+    test `s1_d_4b_2_the_sentry_arms_draw_no_rng`). The blocked-move chain's tile-cut
+    prologue (`:17910-17948`) would draw `Main.rand.Next(3)` (`:17948`) for a friendly,
+    damage > 0, `CanCutTiles()`-true sentry, but the pool skips the whole tile-cut chain
+    (no 484/cracked-brick cutting layer, the `sentry_hydra_step`/`sentry_turret_step`
+    precedent), so that draw is skipped with it; the aura is on `CanCutTiles`'s refusal
+    list (`:15329`) anyway. The blocked-move path is the DD2 sentry arm (`:17986-17990`,
+    the `dd2_sentry_step` helper): one last step into the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 

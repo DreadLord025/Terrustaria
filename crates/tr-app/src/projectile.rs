@@ -9035,8 +9035,9 @@ impl Projectile {
         // `:69036-69050` — the aiStyle-123/84 head anchors (no ported kind
         // rides this arm today, kept for the citation's completeness).
         if ai_style == 123 || ai_style == 84 {
+            // `(float)(base.height / 2)` — the C#'s INTEGER division.
             let mut center = mounted_center
-                + Vec2::new(0.0, -(num as f32 + 20.0 + self.h * 0.5));
+                + Vec2::new(0.0, -(num as f32 + 20.0 + (self.h as i32 / 2) as f32));
             center.y += player.gfx_off_y;
             if ai_style == 84 {
                 center.y += -6.0;
@@ -9177,10 +9178,10 @@ impl Projectile {
         if flag5 && player.mount.is_active() && player.mount.kind() == 43 {
             push_from_origin_hack = 12;
         }
-        // `:69186-69293` — the per-mount placement switch. The port reads
-        // `mount.Type` unconditionally here (the C# does too — an inactive
-        // mount keeps its last type, `Mount.cs:389`); the default arm is the
-        // unmounted body anchor.
+        // `:69186-69293` — the per-mount placement switch. The C# switches on
+        // `player.mount.Type` unconditionally (no `Active` guard); an inactive
+        // mount's type is −1 (`Mount.Reset`, `Mount.cs:678`), so the default
+        // arm is the unmounted body anchor — the port's `kind()` matches.
         match player.mount.kind() {
             55 => {
                 // `:69193-69218` — the Bee mount: the sentry sits on the
@@ -11800,6 +11801,35 @@ fn safe_normalize(v: Vec2) -> Vec2 {
     }
 }
 
+/// `Utils.AngleLerp(curAngle, targetAngle, amount)` (`Utils.cs:2033-2051`):
+/// the short-way angular lerp the Ballista's aim rides (`Projectile.cs:68583`/
+/// `:68607`). The result wraps through [`wrap_angle`] — XNA's
+/// `MathHelper.WrapAngle` (the `IEEERemainder` form, which keeps +π as +π;
+/// the `npc::angle_lerp` rem_euclid wrap folds it to −π, a boundary difference
+/// the Ballista's facing-−1 init rotation `π` would hit).
+fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
+    use std::f32::consts::TAU;
+    let angle = if target < cur {
+        let wrapped = target + TAU;
+        if wrapped - cur > cur - target {
+            cur + (target - cur) * amount
+        } else {
+            cur + (wrapped - cur) * amount
+        }
+    } else {
+        if !(target > cur) {
+            return cur;
+        }
+        let wrapped = target - TAU;
+        if target - cur > cur - wrapped {
+            cur + (wrapped - cur) * amount
+        } else {
+            cur + (target - cur) * amount
+        }
+    };
+    wrap_angle(angle)
+}
+
 /// `Searches.Chain(new Searches.Down/Up(..), _cachedConditions_notNull,
 /// _cachedConditions_solid)`'s per-tile predicate (`Projectile.cs:68914`/
 /// `:68920`): `Conditions.NotNull` (`Conditions.cs:112-118`, the tile exists)
@@ -14246,34 +14276,38 @@ impl ProjectilePool {
                             let (ccx, ccy) = self.slots[i].center();
                             let mut center = Vec2::new(ccx, ccy);
                             if self.slots[i].kind == BALLISTRA_TOWER_1 { center.y -= 4.0; }
+                            // `:68531-68541` — the init latch (the C# runs it
+                            // BEFORE the pickup gate).
+                            if self.slots[i].ai[0] == 0.0 {
+                                let projectile = &mut self.slots[i];
+                                projectile.direction = p_facing;
+                                projectile.sprite_direction = p_facing;
+                                projectile.ai[0] = 1.0;
+                                projectile.ai[1] = shot_delay;
+                                if projectile.direction == -1 {
+                                    projectile.rot = std::f32::consts::PI;
+                                }
+                            }
                             // `:68542-68546` — the backpack pickup gate.
                             let pickup = self.slots[i].ai[2] == 0.0
                                 && self.slots[i].can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
-                            if pickup {
-                                self.slots[i].ai[2] = 1.0;
-                                // `SetAsSelectedSentryBackpackTarget` (`:68550`,
-                                // `:78807-78810`): the 2-tick grab lockout.
-                                if let Some(pl) = player.as_deref_mut() {
-                                    self.slots[i].set_as_selected_sentry_backpack_target(pl);
-                                }
-                            }
-                            let flag = self.slots[i].ai[2] == 1.0;
+                            let flag = self.slots[i].ai[2] == 1.0 || pickup;
                             let mut shot: Option<(f32, f32, f32, f32)> = None;
                             let mut killed = false;
                             {
                                 let projectile = &mut self.slots[i];
-                                // `:68531-68541` — the init latch.
-                                if projectile.ai[0] == 0.0 {
-                                    projectile.direction = p_facing;
-                                    projectile.sprite_direction = p_facing;
-                                    projectile.ai[0] = 1.0;
-                                    projectile.ai[1] = shot_delay;
-                                    if projectile.direction == -1 {
-                                        projectile.rot = std::f32::consts::PI;
-                                    }
-                                }
                                 // `:68548-68558` — the backpack branch.
                                 if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:68550`, `:78807-78810`): the 2-tick
+                                    // grab lockout — the C# re-arms it EVERY
+                                    // carried tick, not only on the pickup.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
+                                    if pickup {
+                                        projectile.ai[2] = 1.0;
+                                    }
                                     if projectile.ai[0] == 1.0 && projectile.ai[1] == 0.0 {
                                         projectile.direction = p_facing;
                                         projectile.sprite_direction = p_facing;
@@ -14303,7 +14337,7 @@ impl ProjectilePool {
                                         let num7 = projectile.ai_134_ballista_find_target(world, npcs, shot_range, dead_bottom_angle, center, p_minion_target);
                                         if num7 != -1 {
                                             let v = safe_normalize_or(npc_center(&npcs[num7 as usize]) - center, Vec2::new(0.0, 1.0));
-                                            projectile.rot = crate::npc::angle_lerp(projectile.rot, v.y.atan2(v.x), 0.08);
+                                            projectile.rot = angle_lerp(projectile.rot, v.y.atan2(v.x), 0.08);
                                             if projectile.rot > std::f32::consts::FRAC_PI_2 || projectile.rot < -std::f32::consts::FRAC_PI_2 {
                                                 projectile.direction = -1;
                                             } else {
@@ -14316,7 +14350,7 @@ impl ProjectilePool {
                                             }
                                         } else {
                                             let target_angle = if projectile.direction == -1 { std::f32::consts::PI } else { 0.0 };
-                                            projectile.rot = crate::npc::angle_lerp(projectile.rot, target_angle, 0.05);
+                                            projectile.rot = angle_lerp(projectile.rot, target_angle, 0.05);
                                         }
                                     } else if projectile.ai[0] == 2.0 {
                                         // `:68610-68642` — the fire state.
@@ -14360,11 +14394,22 @@ impl ProjectilePool {
                                     }
                                 }
                             }
-                            if let Some((x, y, vx, vy)) = shot {
+                            if let Some((x, y, mut vx, mut vy)) = shot {
                                 let (damage, kb, owner) = {
                                     let p = &self.slots[i];
                                     (p.damage, p.knock_back, p.owner)
                                 };
+                                // `NewProjectile`'s aiStyle-1 spawn clamp
+                                // (`Projectile.cs:10895-10902`): while any
+                                // component sits at/beyond ±16 (Y below −16),
+                                // both decay ×0.97. The gate is `>= 16f`, so
+                                // even the 16-px level shot decays once
+                                // (15.52); the 21-px setSquireT2 shot decays
+                                // nine times under it.
+                                while vx >= 16.0 || vx <= -16.0 || vy >= 16.0 || vy < -16.0 {
+                                    vx *= 0.97;
+                                    vy *= 0.97;
+                                }
                                 let _ = self.spawn_with_data_ai_owned(
                                     BALLISTA_SHOT, owner, x - 8.0, y - 8.0, vx, vy, damage, kb, 0.0, 0.0,
                                 );
@@ -14410,9 +14455,6 @@ impl ProjectilePool {
                                 && self.slots[i].can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
                             if pickup {
                                 self.slots[i].ai[2] = 1.0;
-                                if let Some(pl) = player.as_deref_mut() {
-                                    self.slots[i].set_as_selected_sentry_backpack_target(pl);
-                                }
                             }
                             let flag = self.slots[i].ai[2] == 1.0;
                             let mut killed = false;
@@ -14421,6 +14463,11 @@ impl ProjectilePool {
                                 let projectile = &mut self.slots[i];
                                 // `:68878-68885` — the backpack branch.
                                 if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:68880`): re-armed every carried tick.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
                                     projectile.vel = Vec2::ZERO;
                                     if let Some(pl) = player.as_deref() {
                                         if !projectile.ai_sentries_heavy_sling_reposition(pl, 137) {
@@ -14580,13 +14627,15 @@ impl ProjectilePool {
                                     && projectile.can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner)
                                 {
                                     projectile.ai[2] = 1.0;
-                                    if let Some(pl) = player.as_deref_mut() {
-                                        projectile.set_as_selected_sentry_backpack_target(pl);
-                                    }
                                 }
                                 let flag = projectile.ai[2] == 1.0;
                                 // `:69323-69331` — the backpack branch.
                                 if flag {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:69325`): re-armed every carried tick.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
                                     num3 = 20;
                                     projectile.vel = Vec2::ZERO;
                                     box_half -= 14.0;
@@ -26826,6 +26875,46 @@ mod s1_d_4b_2_trap_tests {
         assert_eq!(pool2.slots[trap2].vel.y, 0.2, "the trap falls");
     }
 
+    /// The backpack pickup on the Ballista and the Aura: both latch `ai[2] = 1`
+    /// on the owner overlap, stop colliding, and ride the owner — the Ballista
+    /// 14 px above the mounted centre (`:69139`), the Aura ON the mounted
+    /// centre (`:69053`). The grab cooldown re-arms every carried tick
+    /// (`:68550`/`:68880`).
+    #[test]
+    fn s1_d_4b_2_the_ballista_and_aura_ride_the_backpack() {
+        for kind in [BALLISTRA_TOWER_1, LIGHTNING_AURA_1] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.acc_sentry_backpack = true;
+            let (pcx, pcy) = p.center();
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, pcx - 8.0, pcy - 8.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs: Vec<Npc> = Vec::new();
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[slot].ai[2], 1.0, "kind {kind}: the pickup latches");
+            assert!(!pool.slots[slot].tile_collide, "kind {kind}: the carried sentry does not collide");
+            assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "kind {kind}: the grab lockout");
+            // The ride: the aura centres on the owner; the ballista sits above.
+            let (cx, cy) = pool.slots[slot].center();
+            if kind == LIGHTNING_AURA_1 {
+                // The aura's ground scan may resize/recentre it after the
+                // reposition (the C# order: reposition, then the scan) — in an
+                // empty world the scan finds no ground and drops it 16 px, so
+                // only the x anchor is pinned here.
+                assert!((cx - pcx).abs() < 16.0, "the aura rides the owner's column: {cx} vs {pcx}");
+            } else {
+                assert!(cy < pcy, "the ballista rides above the centre: {cy} vs {pcy}");
+            }
+            // The carried sentry holds (no fall).
+            let y_after = pool.slots[slot].pos.y;
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert!((pool.slots[slot].pos.y - y_after).abs() < 17.0, "kind {kind}: no gravity fall");
+            assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "kind {kind}: the lockout re-arms");
+        }
+    }
+
     /// The 139 blast arm (`AI_139_ExplosiveTrapExplosion`, `:69390-69414`): the
     /// alpha fades 25/tick from 255, the one-shot latch flips `localAI[0]`, and
     /// the 3-tick frame machine kills on the wrap (the T1/T2 blasts' 4 frames →
@@ -26903,17 +26992,21 @@ mod s1_d_4b_2_trap_tests {
         pool.slots[tower].ai[0] = 2.0;
         pool.slots[tower].ai[1] = 5.0;
         // A chaseable NPC to the right, in the 900-px range and outside the
-        // dead-bottom cone (level with the tower).
-        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 300.0)];
+        // dead-bottom cone. The zombie's 18x40 box centres at (609, y + 20);
+        // y = 303 puts it exactly level with the T1 tower's firing centre
+        // (313, 323), so the aim is the pure (1, 0) and the shot's vx is
+        // exactly 16 — the spawn clamp's `>= 16f` gate fires.
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 303.0)];
         tick(&mut pool, &mut w, &mut p, &mut npcs);
         let bolt = pool
             .slots
             .iter()
             .find(|s| s.active && s.kind == BALLISTA_SHOT)
             .expect("the Ballista fires its 680 bolt");
-        // The T1 tower's centre drops 4 px (`:68527-68530`): (313, 323).
+        // The 16-px shot decays once at the `NewProjectile` aiStyle-1 spawn
+        // clamp (`:10895-10902`, the `>= 16f` gate): 16 * 0.97 = 15.52.
         let len = (bolt.vel.x * bolt.vel.x + bolt.vel.y * bolt.vel.y).sqrt();
-        assert!((len - 16.0).abs() < 0.01, "the 16-px shot speed: {len}");
+        assert!((len - 15.52).abs() < 0.01, "the clamped shot speed: {len}");
         assert!(bolt.vel.x > 0.0, "the bolt flies toward the target");
         assert_eq!(bolt.owner, 0);
         assert_eq!(bolt.max_penetrate, 4, "the 680 row's penetrate");
