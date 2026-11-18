@@ -16692,12 +16692,28 @@ byte-identical.
 
 ## The tile-place sound wave (S1-E-21 wave B, 2026-11-18)
 
-`editing::place_cue` resolves `tr_core::edit::place_tile_sound` (the
-`WorldGen.PlaceTile` placement-sound switch, `WorldGen.cs:60263-60282`)
-to the port's pinned asset + volume: 127 (Actuator) -> Item30, 314 (Logic
-Sensor) -> Item52 (case 2 halves it to 0.35, LegacySoundPlayer.cs:567-569),
-330-333 (coin piles) -> Coins (sound 18), default -> Dig_0 (sound 0).
-place_tile plays it at the tile centre. Item_30 joins the bank. The Dig
-case-0 Next(3) variation + Next(-10,11)*0.01 pitch stay the pinned Dig_0
-(audio-only D3 deviation, same as the break side). PlaceObject (:51441),
-PlaceThing_Tiles_PlaceIt (:40124), PlaceWall (:75141) play sound 0 in C#.
+`tr_core::edit::place_tile_sound` ports `WorldGen.PlaceTile`'s tail sound
+switch (`WorldGen.cs:60263-60282`): 127 (Actuator) -> SoundID.Item30
+(`SoundID.cs:1413`), 314 (minecart track) -> SoundID.Item52 (`:1435`),
+330-333 (coin piles) -> the legacy id 18 (Coins), default -> the legacy
+id 0 (Dig). None of the special kinds is a `CustomPlace` registration, so
+the switch covers the `TileObject` route too (whose C# plays the plain 0:
+`Player.PlaceThing_Tiles_PlaceIt` `Player.cs:40124`, `WorldGen.PlaceObject`
+`:51441`). `WorldGen.PlaceWall` (`:75141`) plays the 0 as well —
+`place_wall_item` now rides the same faithful play instead of the pinned
+`Dig_0`. `Audio::play_place_sound` plays the cue: the Item arms delegate to
+wave A's `play_use_sound` (the `SoundEngine.cs:93-99` façade — the
+`GetRandomPitch` NextFloat on the audio-only `sound_style_random`, the
+case-2 `Main.rand.Next(-6,7)*0.01` pitch after the gate, style 52's ×0.35
+volume `LegacySoundPlayer.cs:567-569`); the int arms (`SoundEngine.cs:102`
+— no `GetRandomPitch` draw) play Coins with no draws (case 18 `:865-869`)
+or the case-0 Dig (`:440-452`): `Main.rand.Next(3)` picks Dig_0/1/2, then
+`Next(-10,11)*0.01` sets the pitch — both draws ride the caller's
+`UpdatePlayers` stream (placement runs from `Player.ItemCheck` under the
+`Main.cs:17754` swap, the `break_tile` precedent) and only AFTER the
+attenuation gate passed. `Item_30` joins the bank. Deviations: the
+`SoundInstanceDig` stop/re-create pool is the standing D4 (fresh source per
+play); the wire/actuator placement feedback (`wire_placed_feedback`,
+`WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
+wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
+`s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.

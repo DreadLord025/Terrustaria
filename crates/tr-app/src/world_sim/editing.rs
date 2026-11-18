@@ -1989,8 +1989,15 @@ pub(crate) fn can_place_wall(app: &App, tx: i32, ty: i32) -> bool {
 pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
     if edit::place_wall(&mut app.world, tx, ty, wall) {
         app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-        app.audio
-            .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+        // `WorldGen.PlaceWall` plays the plain 0 (`WorldGen.cs:75141`) — the
+        // case-0 variation + pitch ride the `UpdatePlayers` stream
+        // (`Player.ItemCheck` under the `Main.cs:17754` swap).
+        app.audio.play_place_sound(
+            (0, 1),
+            tx as f32 * TILE_PX,
+            ty as f32 * TILE_PX,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
         app.request_edit(tx, ty, 3, wall);
         app.world_key = None;
     }
@@ -3694,23 +3701,11 @@ fn try_replanting_herbs(app: &mut App, tx: i32, ty: i32, herb_style: i32) {
     }
 }
 
-/// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`),
-/// resolved to the port's pinned asset + volume. The switch itself is
-/// `tr_core::edit::place_tile_sound` (the `SoundCue` pair); this maps it to
-/// the bank: 127 -> Item30, 314 -> Item52 (case 2 halves it to 0.35,
-/// `LegacySoundPlayer.cs:567-569`), 330-333 -> Coins (sound 18), default ->
-/// Dig_0 (sound 0; the case-0 `Next(3)` variation + pitch jitter stay the
-/// port's pinned audio-only D3 deviation, same as the break side). S1-E-21
-/// wave B.
-fn place_cue(kind: u16) -> (&'static str, f32) {
-    match edit::place_tile_sound(kind) {
-        (2, 30) => ("Item_30", 1.0),
-        (2, 52) => ("Item_52", 0.35),
-        (18, _) => ("Coins", 1.0),
-        _ => ("Dig_0", 1.0),
-    }
-}
-
+/// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`)
+/// is `tr_core::edit::place_tile_sound` (the `SoundCue` pair); the play
+/// itself — the case-0 `Next(3)` variation + pitch jitter included — rides
+/// [`crate::audio::Audio::play_place_sound`] (the faithful legacy cases,
+/// S1-E-21 wave B).
 pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
     // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
@@ -3737,9 +3732,22 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         let _ = app.achievements.notify_custom_int("Do", 1);
     }
     app.liquids.wake_around(&app.world, tx, ty, 3);
-    let (cue, vol) = place_cue(kind);
-    app.audio
-        .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, vol);
+    // The placement cue: `tr_core::edit::place_tile_sound` is the
+    // `WorldGen.PlaceTile` tail switch (`WorldGen.cs:60263-60282` — 127 →
+    // Item30, 314 → Item52, 330-333 → Coins, default Dig); the
+    // `TileObject`-routed kinds play the plain 0
+    // (`Player.PlaceThing_Tiles_PlaceIt`, `Player.cs:40124`) and the special
+    // kinds never route there (no `CustomPlace` def). The case-0
+    // `Main.rand.Next(3)` variation + `Next(-10, 11) * 0.01` pitch
+    // (`LegacySoundPlayer.cs:442-450`) ride the `UpdatePlayers` stream —
+    // placement runs from `Player.ItemCheck` under the `Main.cs:17754` swap
+    // (the `break_tile` precedent) — and only when audible.
+    app.audio.play_place_sound(
+        edit::place_tile_sound(kind),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
@@ -4230,24 +4238,33 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-    /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`).
+    /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`)
+    /// — the per-type cue selection the play path
+    /// (`Audio::play_place_sound`) resolves; the RNG contract of the play
+    /// is pinned in `audio.rs::s1_e_21b_*`.
     #[test]
     fn s1_e_21b_the_placement_cue_follows_the_tile_type() {
-        assert_eq!(place_cue(127), ("Item_30", 1.0)); // Actuator
-        assert_eq!(place_cue(314), ("Item_52", 0.35)); // Logic Sensor (case 2 x0.35)
-        assert_eq!(place_cue(330), ("Coins", 1.0));
-        assert_eq!(place_cue(331), ("Coins", 1.0));
-        assert_eq!(place_cue(332), ("Coins", 1.0));
-        assert_eq!(place_cue(333), ("Coins", 1.0));
-        assert_eq!(place_cue(0), ("Dig_0", 1.0)); // dirt
-        assert_eq!(place_cue(4), ("Dig_0", 1.0)); // torch
-        assert_eq!(place_cue(21), ("Dig_0", 1.0)); // chest
-        assert_eq!(place_cue(128), ("Dig_0", 1.0)); // not 127
-        // The tr-core switch is the source of truth.
+        // 127 (Actuator) → SoundID.Item30 (`SoundID.cs:1413`).
         assert_eq!(edit::place_tile_sound(127), (2, 30));
+        // 314 (minecart track) → SoundID.Item52 (`SoundID.cs:1435`).
         assert_eq!(edit::place_tile_sound(314), (2, 52));
-        assert_eq!(edit::place_tile_sound(330), (18, 1));
-        assert_eq!(edit::place_tile_sound(0), (0, 1));
+        // 330-333 (coin piles) → the legacy id 18 (Coins, `:60277`).
+        for kind in 330..=333 {
+            assert_eq!(edit::place_tile_sound(kind), (18, 1));
+        }
+        // The default → the legacy id 0 (Dig, `:60280`).
+        assert_eq!(edit::place_tile_sound(0), (0, 1)); // dirt
+        assert_eq!(edit::place_tile_sound(4), (0, 1)); // torch
+        assert_eq!(edit::place_tile_sound(21), (0, 1)); // chest
+        assert_eq!(edit::place_tile_sound(128), (0, 1)); // not 127
+        assert_eq!(edit::place_tile_sound(329), (0, 1)); // not a coin pile
+        assert_eq!(edit::place_tile_sound(334), (0, 1));
+        // The special kinds are not `CustomPlace` registrations — the
+        // `TileObject` route (the plain 0, `Player.cs:40124`) never claims
+        // them, so the tail switch's per-type cues hold for both routes.
+        for kind in [127u16, 314, 330, 331, 332, 333] {
+            assert!(!tr_core::tileobject::routes_through_tile_object(kind, 0));
+        }
     }
 
     /// BUG-16: the killed trunk cell's drop — the wood of the tree's family
