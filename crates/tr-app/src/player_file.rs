@@ -51,8 +51,13 @@ pub const ENCRYPTION_KEY: [u8; 16] = [
 /// `FileMetadata.MAGIC_NUMBER` (`FileMetadata.cs:8`): `"relogic"` in the low
 /// 56 bits; the top byte is the `FileType`.
 const FILE_METADATA_MAGIC: u64 = 0x6369_676F_6C65_72;
-/// `FileType.Player` (`FileType.cs:8`).
-const FILE_TYPE_PLAYER: u64 = 1;
+/// `FileType.Player` (`FileType.cs:8`): the enum is `None=0, Map=1, World=2,
+/// Player=3`, so a player file's metadata top byte is **3**. S1-J-3's C#-written
+/// `.plr` fixture exposed the old value `1` (which is `Map`): the reader rejected
+/// every real vanilla character with `WrongFileType`, and the writer stamped the
+/// wrong type. `FileMetadata.Read(reader, FileType.Player)` (`Player.cs:55082`)
+/// validates exactly this byte.
+const FILE_TYPE_PLAYER: u64 = 3;
 /// The section set this port writes: the current vanilla release **326**
 /// (`Player.InternalSavePlayerFile` writes the literal `326`,
 /// `Player.cs:54738`). S1-J-5 raised this from the old subset's 279; the
@@ -689,6 +694,35 @@ pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), Play
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- S1-J-3: the C#-written .plr fixture reads ----------------------------
+    // `assets/test/golden.plr` is written by the REAL decompiled
+    // `Player.Serialize` (Player.cs:54750+) through `tools/WldFixtureHarness`,
+    // with the real AES-CBC envelope. The fixture exposed FILE_TYPE_PLAYER=1
+    // (Map) where the C# enum says Player=3 — the reader rejected every real
+    // vanilla character. Read parity only; the .plr writer stays S1-J-5's.
+    #[test]
+    fn s1_j_3_the_csharp_plr_fixture_reads() {
+        let raw = include_bytes!("../../../assets/test/golden.plr");
+        let plain = cbc_decrypt(raw);
+        let version = i32::from_le_bytes(plain[0..4].try_into().unwrap());
+        assert_eq!(version, 326);
+        let magic = u64::from_le_bytes(plain[4..12].try_into().unwrap());
+        assert_eq!((magic >> 56) & 0xFF, 3, "FileType.Player (FileType.cs:8)");
+        let file = read_player_bytes(&plain).expect("the C# .plr fixture must read");
+        assert_eq!(file.name, "Golden");
+        assert_eq!(file.difficulty, 0);
+        assert_eq!(file.hair, 1);
+        assert_eq!((file.life, file.life_max), (100, 100));
+        assert_eq!((file.mana, file.mana_max), (20, 20));
+        assert_eq!(file.inventory[0], (3507, 1, 0)); // copper shortsword
+        assert_eq!(file.inventory[1], (3509, 1, 0)); // copper axe
+        assert_eq!(file.inventory[2], (3506, 1, 0)); // copper pickaxe
+        assert_eq!(file.inventory[3], (2, 50, 0));
+        assert_eq!(file.inv_favorites, 1 << 3);
+        assert_eq!(file.hair_color, [215, 90, 55]);
+        assert_eq!(file.skin_color, [255, 125, 90]);
+    }
 
     fn sample() -> PlayerFileWrite {
         let mut inventory = [(0i32, 0i32, 0u8); 58];
