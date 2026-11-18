@@ -16774,16 +16774,26 @@ Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
 derivation of the integer row count, not a `Math.Round` port) and applies
 the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
 
-Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
-stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
-Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
-GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
-the `OverflowHidden` clip of the 68 px inner box
-(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
-CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
-port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
-(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
-inset and centring are faithful; only the scale/clip mechanism is approximate.
+The interim `portrait_fit` uniform scale-down stand-in is GONE
+(fix/bestiary-per-npc-scale, 2026-11-18): the per-NPC
+`NPCID.Sets.NPCBestiaryDrawOffset` table landed as a generated static table
+(`tools/gen_bestiary_draw_offsets.py` -> `ui/bestiary_draw_offsets.rs`, 666
+rows; sources `NPCID.cs:393-412` merge order + `GetRedigitEntries`
+`:414-770`, `GetGroxEntries` `:772-786`, `GetLeinforsEntries` `:788-...`,
+struct defaults `:15-42`). `portrait_layout` applies
+Scale/PortraitScale/Position/PortraitPositionX-YOverride/Frame per
+`UnlockableNPCEntryIcon.cs:52-82` + `UpdatePosition` `:112-123` (floor
+included); the 68 px inner box clips via `SpriteRenderer::push_clip`
+(`UIBestiaryEntryButton.cs:30-38` `OverflowHidden`, the info-page card the
+same per `UIBestiaryNPCEntryPortrait.cs:20-28` with `isPortrait: true`
+`:56`). `CustomTexturePath` portraits (`UI/Bestiary/NPCs/NPC_*`, 25 ids)
+are packed in `STATIC_SHEET_NAMES` and drawn centred per `:197-201`.
+`Rotation` rides `push_ui_sprite_rot` about the frame centre
+(`DrawNPCDirect`'s centre-origin draw). Remaining approximation: the
+`Direction`/`SpriteDirection` horizontal flip (`Main.cs:23123-23127`,
+default -1) is not modelled — the UI pipeline has no flip seam yet; the
+`Velocity`-driven hover animation is likewise still frame 0 at rest
+(faithful for the idle icon, `Velocity` rows animate only while hovered).
 
 ## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
 
