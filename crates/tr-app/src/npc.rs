@@ -3256,6 +3256,18 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) —
+            // the Spazmatism (126), the style's only user. S1-D-3
+            // aiStyle-31: the machine lives in `npc_ai_style31.rs`;
+            // the classic solo env (no twin list / Mech Queen / expert
+            // / getGood — the module's stand-in notes).
+            31 => crate::npc_ai_style31::spazmatism_ai(
+                self,
+                world,
+                player,
+                rng,
+                &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+            ),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         self.find_frame();
@@ -3321,10 +3333,18 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            // The Retinazer (325) rides the aiStyle-57 machine; the
-            // Spazmatism (326) is an aiStyle-3 fighter (the walker).
+            // The Retinazer (125) rides the aiStyle-57 machine; the
+            // Spazmatism (126) is claimed by the aiStyle-31 axis above
+            // (S1-D-3 aiStyle-31) — this arm keeps the kind match
+            // exhaustive and routes to the same machine.
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
-            NpcKind::Spazmatism => self.update_spazmatism(world, player),
+            NpcKind::Spazmatism => crate::npc_ai_style31::spazmatism_ai(
+                self,
+                world,
+                player,
+                rng,
+                &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+            ),
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
@@ -12258,28 +12278,6 @@ impl Npc {
         if self.vy > 10.0 {
             self.vy = 10.0;
         }
-    }
-
-    /// The Spazmatism (326) — the Twins' ground fighter: the C#'s aiStyle-3
-    /// family (`AI_003_Fighters`, `NPC.cs:55856+`) with the cap-2 group's
-    /// walk speed (`:57554-57578`).
-    fn update_spazmatism(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        let speed = NpcKind::Spazmatism.ai3_walk_speed().unwrap_or(2.0);
-        crate::npc_ai::walker_step(
-            self,
-            world,
-            pcx,
-            pcy,
-            crate::npc_ai::WalkerParams {
-                speed,
-                jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
-            },
-            GRAVITY,
-            MAX_FALL,
-        );
     }
 
     fn update_twin(&mut self, world: &World, player: &Player) {
