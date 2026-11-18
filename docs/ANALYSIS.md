@@ -15990,34 +15990,82 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
-## The loading screen (S1-E-17, round 1)
+## The loading screen + capture mode (S1-E-17)
 
-`crates/tr-app/src/ui/world_load.rs` ports the loading screen's pure half:
+`crates/tr-app/src/ui/world_load.rs` ports the loading screen:
 `UIGenProgressBar`'s progress math (`UIGenProgressBar.cs:51-55`, `:68-80`,
-`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`).
-Deliberate deviations, all pending the S1-G-13 render-target seam:
+`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`),
+plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
++ the `Outer_*` frames, `UIHeader.cs:46-62`'s four-corner Death-font header).
+`crates/tr-app/src/capture.rs` ports the capture family
+(`CaptureManager.cs`, `CaptureInterface.cs`, `CaptureCamera.cs`,
+`CaptureSettings.cs`, `CaptureBiome.cs`). Deliberate deviations:
 
 - **The "smoothing" is a verbatim copy in 1.4.5.8.** `DrawSelf` assigns
   `_visualOverallProgress = _targetOverallProgress` (and the current pair)
   directly (`UIGenProgressBar.cs:68-69`) — no lerp exists in this version.
   The port keeps both field pairs and pins the copy in a test so a later
   smoothing lerp cannot land silently.
-- **Unwired.** No `FrontScreen` arm, no draw-pass change: world creation
-  still saves and reopens world select (`app/session.rs:50-62`). The
-  `finish_creating_world` hand-off to a live `UIWorldLoad` needs the
-  worldgen pipeline to expose `GenerationProgress` and become
-  resumable/cancellable (research/19 L1) plus the S1-G-13 seam for the
-  bar's four `Outer_*` textures and `CaptureManager`.
+- **Wired (round 2).** `FrontScreen::WorldLoad` is the sixth front screen;
+  `finish_creating_world` (`app/session.rs`) starts the generation job and
+  opens the screen (`WorldGen.CreateNewWorld`, `WorldGen.cs:6607-6625`);
+  `update_world_load` polls the result and hops to the world select
+  (`worldGenCallback`'s `menuMode = 6`, `:6599-6602` → `Main.cs:49468-49472`).
+  The generation runs on a worker thread (`app/worldgen_job.rs`, the C#'s
+  `Task.Factory.StartNew`) through the `GenProgressHook` seam
+  (`tr_core::worldgen::pipeline`); the progress/controller pair is the
+  `WorldGenerator.CurrentGenerationProgress`/`CurrentController` statics
+  (`WorldGenerator.cs:398-400`). The bar's four `Outer_*` textures load
+  (`assets.rs`, `UIGenProgressBar.cs:34-37`). The Inventory trigger queues
+  the abort (`UIWorldLoad.cs:54-58`); the abort arm skips the save
+  (`WorldGen.cs:6595-6598`).
 - **The drunk-world `Main.rand` arms are deferred.** The evil-texture
   flicker (`UIGenProgressBar.cs:63-67`) and the random-digit message
-  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them before the
-  draw seam exists would perturb that stream's call order (the RNG-order
-  invariant). The ported `draw_frame` takes the evil flags as inputs.
+  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them would perturb
+  that stream's call order (the RNG-order invariant). The ported
+  `draw_frame` takes the evil flags as inputs.
+- **`placingTraps` stays false.** It is a pass-runtime static
+  (`WorldGen.cs:18662`) the port's compact pipeline never sets; the
+  get-good message reversal's `noTraps && placingTraps` gate
+  (`UIWorldLoad.cs:108`) therefore always takes the reversal arm on a
+  For-the-Worthy world.
 - **`GetStatusText`'s `0.0%` formatting** uses Rust's `{:.1}` on the ×100
   value. .NET rounds half-away-from-zero, Rust half-to-even; the tie input
   (a scaled `x.x5`) is not binary-representable, so the two agree on every
   pass-ratio value the game produces.
 - `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
-  (`GameTipsDisplay`), out of this round's scope; the gamepad squiggle
-  (`:122-127`) and F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug
-  pieces that ride the same deferred wiring.
+  (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
+  F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+
+### The capture mode (S1-E-17)
+
+`crates/tr-app/src/capture.rs` ports the capture family's state machines
+1:1: the `CaptureManager` facade (`CaptureManager.cs:8-114`), the
+`CaptureInterface` selection UI (the three modes — edge selection, drag
+bounds, change settings — the toolbar, the camera countdown,
+`CaptureInterface.cs:15-1607`), the `CaptureCamera` chunk queue / scaling /
+blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
+(`CaptureSettings.cs:6-28`) and `CaptureBiome`'s style table + biome pick
+(`CaptureBiome.cs:3-246`). The App owns the one `CaptureManager.Instance`
+(`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
+sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`) and
+`update_scene` reads `is_capturing()` for the `Main.UpdateSceneMetrics`
+gate (`Main.cs:62518-62521`). Deviations:
+
+- **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
+  (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
+  through the layer targets; the port's `CaptureRenderer` trait is a no-op
+  stub until the render-target family lands, so a started capture drains
+  its queue without producing pixels. The selection UI, the countdown and
+  the `IsCapturing` gate are live; the write-out waits on the targets.
+- **The capture toggle rides F6, not F4.** The vanilla binds
+  `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
+  debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
+- **The fullscreen-map selection arm is a gap.** `GetMapCoords`
+  (`CaptureInterface.cs:1318-1458`) needs the map renderer's texture
+  geometry; the port's selection modes run the world arm only.
+- **`Player.ghost`/`gravDir` and `Main.treeX` are unported**, so the
+  capture input's ghost/gravity gates read false and `GetPurityForPlayer`
+  takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
+- **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
+  the toolbar's open-folder button plays its cue only.
