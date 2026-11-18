@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 
+mod accessory_defense;
 mod ammo;
 mod angler;
 mod app;
@@ -12,6 +13,8 @@ mod bank;
 mod banners;
 mod bestiary;
 mod biome;
+mod buff_effects;
+mod buff_effects_misc;
 mod buffs;
 mod buff_effects_accessory;
 mod chat;
@@ -50,6 +53,7 @@ mod npc;
 mod npc_chat;
 mod revenge;
 mod npc_ai;
+mod npc_target;
 mod npc_buffs;
 mod persist;
 mod grapple;

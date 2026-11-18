@@ -184,6 +184,9 @@ pub fn get_random_pitch(variance: f32, next_float: f32) -> f32 {
 pub fn legacy_family_pitch(family: Family, rng: &mut dyn FnMut(i32, i32) -> i32) -> f32 {
     match family {
         Family::Dig => rng(-10, 11) as f32 * 0.01,
+        // Case 17 (`:862`): the run-step roll — the same window as the dig
+        // arm, drawn from the same `Main.rand` (S1-E-21 wave D).
+        Family::Run => rng(-10, 11) as f32 * 0.01,
         Family::Item(cue) => match cue {
             53 => rng(-20, -11) as f32 * 0.02,
             55 => -(rng(-20, -11) as f32) * 0.02,
@@ -202,6 +205,8 @@ pub enum Family {
     Dig,
     /// `type == 2` — the item family, keyed by the style id (`:611`).
     Item(i32),
+    /// `type == 17` — the run/footstep case (`:854-864`, the `:862` roll).
+    Run,
 }
 
 /// One `LegacySoundPlayer.PlaySound` case-2 (item) play's decisions
@@ -280,6 +285,76 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
         pitch -= 0.8;
     }
     (num, tweak, pitch)
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-3 (NPC hit) play's decisions
+/// (`LegacySoundPlayer.cs:646-672`, S1-E-21 wave C): the volume tweak the
+/// case applies to the attenuated gain and the instance pitch BEFORE the
+/// caller's `pitchOffset` (the final `Clamp(pitch + pitchOffset, -1, 1)` is
+/// `:1410`). `rng` mirrors `Main.rand` — the strike sites pass the stage's
+/// named stream (`Player.ItemCheck`/`Projectile.Damage` run under the
+/// `Main.cs:17754`/`:17775` swaps). The C# reaches this switch only after
+/// the attenuation walk passed (`:390-436`), so the caller must gate on
+/// audibility BEFORE drawing.
+///
+/// `playing_57` is the `SoundInstanceNpcHit[57].State == Playing` read
+/// (`:651-654`): while the Moon Lord's hit voice is live, a new 57 play
+/// returns `null` BEFORE the pitch draw. `None` models that refusal. The
+/// stop/re-create pool itself (`:663-666`) is the standing D4 deviation.
+pub fn npc_hit_case3(
+    style: i32,
+    playing_57: bool,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> Option<(f32, f32)> {
+    let mut tweak = 1.0f32;
+    // `:647-650` — styles 20..54 play at half volume.
+    if (20..=54).contains(&style) {
+        tweak *= 0.5;
+    }
+    // `:651-654` — the 57 playing guard returns before any draw.
+    if style == 57 && playing_57 {
+        return None;
+    }
+    // `:655-662` — 57 plays at ×0.6, 55/56 at ×0.5.
+    if style == 57 {
+        tweak *= 0.6;
+    }
+    if style == 55 || style == 56 {
+        tweak *= 0.5;
+    }
+    // `:670` — one `Main.rand.Next(-10, 11) * 0.01` pitch draw.
+    let pitch = rng(-10, 11) as f32 * 0.01;
+    Some((tweak, pitch))
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-4 (NPC killed) play's decisions
+/// (`LegacySoundPlayer.cs:673-695`, S1-E-21 wave C) — the death-side peer
+/// of [`npc_hit_case3`]. `playing_10` is the
+/// `SoundInstanceNpcKilled[10].State == Playing` read (`:686-689`): while
+/// the Wall of Flesh's death voice is live a new 10 play returns `null`
+/// BEFORE the pitch draw. Unlike case 3 the pool entry is overwritten
+/// without a Stop (`:690`), the standing D4 deviation either way.
+pub fn npc_killed_case4(
+    style: i32,
+    playing_10: bool,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> Option<(f32, f32)> {
+    let mut tweak = 1.0f32;
+    // `:674-677` — styles 23..57 play at half volume.
+    if (23..=57).contains(&style) {
+        tweak *= 0.5;
+    }
+    // `:678-685` — 61 and 62 play at ×0.6.
+    if style == 61 || style == 62 {
+        tweak *= 0.6;
+    }
+    // `:686-689` — the 10 playing guard returns before any draw.
+    if style == 10 && playing_10 {
+        return None;
+    }
+    // `:693` — one `Main.rand.Next(-10, 11) * 0.01` pitch draw.
+    let pitch = rng(-10, 11) as f32 * 0.01;
+    Some((tweak, pitch))
 }
 
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
@@ -496,6 +571,62 @@ fn s1_e_22_get_random_pitch_is_the_variance_walk() {
     assert_eq!(get_random_pitch(0.2, 0.0), -0.1, "the draw-0 floor");
     assert_eq!(get_random_pitch(0.2, 1.0), 0.1, "the draw-1 ceiling");
     assert_eq!(get_random_pitch(0.2, 0.5), 0.0, "the draw-0.5 centre");
+}
+
+#[test]
+fn s1_e_21c_npc_hit_case3_tweaks_the_volume_and_guards_57() {
+    // `LegacySoundPlayer.cs:646-672`: styles 20..54 ×0.5, 55/56 ×0.5,
+    // 57 ×0.6 — one Next(-10, 11) * 0.01 pitch draw each (`:670`).
+    for style in [1, 19, 20, 54, 55, 56, 58] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-10, 11), "style {style}'s pitch window");
+            5
+        };
+        let (tweak, pitch) = npc_hit_case3(style, false, &mut roll).unwrap();
+        let want = if (20..=54).contains(&style) || style == 55 || style == 56 { 0.5 } else { 1.0 };
+        assert!((tweak - want).abs() < 1e-6, "style {style}");
+        assert!((pitch - 0.05).abs() < 1e-6);
+    }
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-10, 11));
+        -10
+    };
+    let (tweak, pitch) = npc_hit_case3(57, false, &mut roll).unwrap();
+    assert!((tweak - 0.6).abs() < 1e-6, "the 57 arm's ×0.6");
+    assert!((pitch - (-0.1)).abs() < 1e-6);
+    // The 57 playing guard (`:651-654`) returns BEFORE the pitch draw.
+    let mut roll = |_: i32, _: i32| panic!("the guarded play draws nothing");
+    assert_eq!(npc_hit_case3(57, true, &mut roll), None);
+    // Other styles ignore the 57 slot's state.
+    let mut roll = |_: i32, _: i32| 0;
+    assert!(npc_hit_case3(1, true, &mut roll).is_some());
+}
+
+#[test]
+fn s1_e_21c_npc_killed_case4_tweaks_the_volume_and_guards_10() {
+    // `LegacySoundPlayer.cs:673-695`: styles 23..57 ×0.5, 61/62 ×0.6 —
+    // one Next(-10, 11) * 0.01 pitch draw each (`:693`).
+    for style in [1, 22, 23, 57, 58, 61, 62] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-10, 11), "style {style}'s pitch window");
+            0
+        };
+        let (tweak, pitch) = npc_killed_case4(style, false, &mut roll).unwrap();
+        let want = if (23..=57).contains(&style) {
+            0.5
+        } else if style == 61 || style == 62 {
+            0.6
+        } else {
+            1.0
+        };
+        assert!((tweak - want).abs() < 1e-6, "style {style}");
+        assert_eq!(pitch, 0.0);
+    }
+    // The 10 playing guard (`:686-689`) returns BEFORE the pitch draw.
+    let mut roll = |_: i32, _: i32| panic!("the guarded play draws nothing");
+    assert_eq!(npc_killed_case4(10, true, &mut roll), None);
+    let mut roll = |_: i32, _: i32| 0;
+    assert!(npc_killed_case4(10, false, &mut roll).is_some());
 }
 
 #[test]

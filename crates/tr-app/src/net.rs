@@ -114,6 +114,31 @@ pub mod id {
     /// (`MessageBuffer.cs:3564-3569`).
     pub const PROGRESSION_EVENT: u8 = 98;
 
+    // ---- S1-I-1 wave A: the join bundle's missing ids ----
+    // The `SyncConnectedPlayer`/`SyncOnePlayer`/`SendNPCHousesAndTravelShop`/
+    // `SendAnglerQuest`/`SendCreditsRollRemainingTimeToPlayer`/
+    // `SendAllMarkersToPlayer` push (`NetMessage.cs:2806-2822`, `:2885-2968`,
+    // `:2824-2852`). Bodies + codecs only; the send-path fan-out is S1-I-4.
+    pub const TOGGLE_PVP: u8 = 30; // MessageID.cs:71 / NetMessage.cs:856-859 / MessageBuffer.cs:1851-1867
+    /// `42 Unknown42` (`MessageID.cs:95`) — the mana sync
+    /// (`NetMessage.cs:961-965`, `MessageBuffer.cs:2290-2306`).
+    pub const PLAYER_MANA: u8 = 42;
+    pub const TEAM_CHANGE: u8 = 45; // MessageID.cs:102 / NetMessage.cs:970-974 / MessageBuffer.cs:2325-2364
+    /// `60 Unknown60` (`MessageID.cs:133`) — the NPC household banner
+    /// (`NetMessage.cs:1067-1072`, `MessageBuffer.cs:2695-2739`; sent by
+    /// `SendNPCHousesAndTravelShop`, `NetMessage.cs:2845`).
+    pub const NPC_HOUSE: u8 = 60;
+    pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
+    pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
+    pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
+    pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
+    /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
+    /// roll's remaining time (`NetMessage.cs:1591-1594`,
+    /// `CreditsRollEvent.cs:27-33`, `MessageBuffer.cs:4238-4249`).
+    pub const MISC_EVENT_VALUES: u8 = 140;
+    pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
+    pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1379,6 +1404,131 @@ pub struct ChestName {
     pub name: String,
 }
 
+// ---- S1-I-1 wave A: the join bundle's payload bodies ----
+
+/// `msg 30 TogglePVP`'s body (`NetMessage.cs:856-859`): the player id then
+/// `Player.hostile`. The server overrides the id to the sender
+/// (`MessageBuffer.cs:1853-1857`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TogglePvp {
+    pub player_id: u8,
+    pub hostile: bool,
+}
+
+/// `msg 42 Unknown42`'s body (`NetMessage.cs:961-965`): the player id,
+/// `statMana` and `statManaMax`, both `short` (`MessageBuffer.cs:2290-2306`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerMana {
+    pub player_id: u8,
+    pub mana: i16,
+    pub max_mana: i16,
+}
+
+/// `msg 45 TeamChange`'s body (`NetMessage.cs:970-974`): the player id then
+/// `Player.team` as a byte (`MessageBuffer.cs:2325-2336`). `157
+/// TeamChangeFromUI` shares the body but adds the team-spawn tail
+/// (`:2355-2363`); it is not a join-bundle id and stays unported.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TeamChange {
+    pub player_id: u8,
+    pub team: u8,
+}
+
+/// `msg 60 Unknown60`'s body (`NetMessage.cs:1067-1072`): the NPC slot, its
+/// `homeTileX`/`homeTileY` (`short`s) and the household status byte —
+/// `WorldGen.TownManager.GetHouseholdStatus` (`NetMessage.cs:2845`; the
+/// reader's arms: 1 = homeless/kick-out, 2 = room set,
+/// `MessageBuffer.cs:2708-2737`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcHouse {
+    pub npc: i16,
+    pub home_x: i16,
+    pub home_y: i16,
+    pub status: u8,
+}
+
+/// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
+/// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
+/// `short` item types (`MessageBuffer.cs:3118-3126`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TravelShop {
+    pub items: Vec<i16>,
+}
+
+/// `Main.TravelShopMaxSlots` (`Main.cs:67029`).
+pub const TRAVEL_SHOP_MAX_SLOTS: usize = 40;
+
+/// `msg 74 AnglerQuest`'s body (`NetMessage.cs:1145-1148`): `Main.anglerQuest`
+/// as a byte and whether the recipient's name is in
+/// `Main.anglerWhoFinishedToday` (`MessageBuffer.cs:3147-3153` sets
+/// `anglerQuestFinished`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AnglerQuest {
+    pub quest: u8,
+    pub finished: bool,
+}
+
+/// `msg 126 SyncRevengeMarker`'s body — `RevengeMarker.WriteSelfTo`
+/// (`CoinLossRevengeSystem.cs:275-286`), read field-for-field by
+/// `AddMarkerFromReader` (`:321-324`). Sent by `SendCoinLossRevengeMarker`
+/// (`NetMessage.cs:2621-2625`); the join push is `SendAllMarkersToPlayer`
+/// (`CoinLossRevengeSystem.cs:498-507`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RevengeMarker {
+    pub unique_id: i32,
+    pub x: f32,
+    pub y: f32,
+    pub npc_net_id: i32,
+    pub npc_hp_percent: f32,
+    pub npc_type: i32,
+    pub npc_ai_style: i32,
+    pub coins_value: i32,
+    pub base_value: f32,
+    pub spawned_from_statue: bool,
+}
+
+/// `msg 140 SetMiscEventValues`'s body (`NetMessage.cs:1591-1594`): a kind
+/// byte then an `int`. The join bundle only sends kind 0 — the credits roll's
+/// remaining frames (`CreditsRollEvent.cs:27-33`); kinds 1/2 are the server's
+/// slime transforms (`MessageBuffer.cs:4250-4260`) and stay unported.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MiscEventValue {
+    pub kind: u8,
+    pub value: i32,
+}
+
+/// `TrackedProjectileReference.Write/Read`
+/// (`DataStructures/TrackedProjectileReference.cs:22-26`, `:33-37`): the
+/// projectile key as an `int` then the type as a `short`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrackedProjectileRef {
+    pub key: i32,
+    pub kind: i16,
+}
+
+/// `msg 142 SyncProjectileTrackers`'s body (`NetMessage.cs:1603-1610`): the
+/// player id, then `piggyBankProjTracker` and `voidLensChest`
+/// (`Player.cs:2872-2874`), each one `TrackedProjectileReference`
+/// (`MessageBuffer.cs:4282-4297`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProjectileTrackers {
+    pub player_id: u8,
+    pub piggy_bank: TrackedProjectileRef,
+    pub void_lens: TrackedProjectileRef,
+}
+
+/// `msg 147 SyncLoadout`'s body (`NetMessage.cs:1624-1628`): the player id,
+/// the `CurrentLoadoutIndex` byte, then `hideVisibleAccessory` packed into one
+/// `ushort` by `WriteAccessoryVisibility` (`NetMessage.cs:1882-1893` — bit `i`
+/// per slot, `Player.cs:1708`'s `bool[10]`); the reader unpacks it
+/// (`MessageBuffer.cs:4494-4501`) after `TrySwitchingLoadout` (`:4336`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SyncLoadout {
+    pub player_id: u8,
+    pub loadout: u8,
+    pub hide_accessory: u16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1462,6 +1612,20 @@ pub enum C2s {
     /// `53 AddNPCBuff` - a client applied a buff to an NPC
     /// (`NPC.AddBuff`'s `netMode == 1` send, `NPC.cs:89932-89935`).
     AddNpcBuff(AddNpcBuff),
+    /// `30 TogglePVP` - a client flipped its PvP flag
+    /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
+    TogglePvp(TogglePvp),
+    /// `42 Unknown42` - a client's mana sync (`Player.cs`'s mana sends;
+    /// `MessageBuffer.cs:2290-2306`).
+    PlayerMana(PlayerMana),
+    /// `45 TeamChange` - a client changed team (`MessageBuffer.cs:2325-2364`).
+    TeamChange(TeamChange),
+    /// `142 SyncProjectileTrackers` - a client's piggy-bank / void-lens
+    /// trackers (`MessageBuffer.cs:4282-4297` relays them).
+    ProjectileTrackers(ProjectileTrackers),
+    /// `147 SyncLoadout` - a client switched loadout
+    /// (`MessageBuffer.cs:4328-4343` relays it).
+    SyncLoadout(SyncLoadout),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1550,6 +1714,41 @@ pub enum S2c {
     /// `69 ChestName` - a renamed chest, the `33` rename's relay
     /// (`MessageBuffer.cs:1977`, `:3059-3078`).
     ChestName(ChestName),
+    /// `30 TogglePVP` - a peer's PvP flag, relayed by the host
+    /// (`MessageBuffer.cs:1862`).
+    TogglePvp(TogglePvp),
+    /// `42 Unknown42` - a peer's mana (`NetMessage.cs:961-965`; the join
+    /// bundle's `SyncOnePlayer` push, `:2904`).
+    PlayerMana(PlayerMana),
+    /// `45 TeamChange` - a peer's team, relayed by the host
+    /// (`MessageBuffer.cs:2342`; join push `NetMessage.cs:2903`).
+    TeamChange(TeamChange),
+    /// `60 Unknown60` - an NPC's household banner, the join bundle's
+    /// `SendNPCHousesAndTravelShop` push (`NetMessage.cs:2845`).
+    NpcHouse(NpcHouse),
+    /// `72 TravelMerchantItems` - the travel shop's stock, sent when the
+    /// traveller is housed (`NetMessage.cs:2848-2851`, `:2645-2651`).
+    TravelShop(TravelShop),
+    /// `74 AnglerQuest` - today's angler quest, the join bundle's
+    /// `SendAnglerQuest` push (`NetMessage.cs:2653-2673`).
+    AnglerQuest(AnglerQuest),
+    /// `126 SyncRevengeMarker` - one coin-loss revenge marker, the join
+    /// bundle's `SendAllMarkersToPlayer` push
+    /// (`CoinLossRevengeSystem.cs:498-507`).
+    RevengeMarker(RevengeMarker),
+    /// `135 DeadPlayer` - a peer died: the join bundle sends it when
+    /// `statLife <= 0` (`NetMessage.cs:2897-2900`); the client raises
+    /// `immuneAlpha` to 255 (`MessageBuffer.cs:4195-4203`).
+    DeadPlayer { player_id: u8 },
+    /// `140 SetMiscEventValues` - kind 0, the credits roll's remaining time
+    /// (`CreditsRollEvent.cs:27-33`, join push `NetMessage.cs:2818`).
+    MiscEventValue(MiscEventValue),
+    /// `142 SyncProjectileTrackers` - a peer's trackers (join push
+    /// `NetMessage.cs:2907`, relay `MessageBuffer.cs:4294`).
+    ProjectileTrackers(ProjectileTrackers),
+    /// `147 SyncLoadout` - a peer's loadout (join push
+    /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
+    SyncLoadout(SyncLoadout),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1631,6 +1830,11 @@ impl C2s {
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
+            Self::TogglePvp(_) => id::TOGGLE_PVP,
+            Self::PlayerMana(_) => id::PLAYER_MANA,
+            Self::TeamChange(_) => id::TEAM_CHANGE,
+            Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
+            Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1689,6 +1893,16 @@ impl C2s {
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
+            Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
+            Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
+            Self::ProjectileTrackers(t) => w
+                .u8(t.player_id)
+                .i32(t.piggy_bank.key)
+                .i16(t.piggy_bank.kind)
+                .i32(t.void_lens.key)
+                .i16(t.void_lens.kind),
+            Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -1775,6 +1989,35 @@ impl C2s {
                 npc: r.i16()?,
                 buff_type: r.u16()?,
                 time: r.i16()?,
+            }),
+            id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
+                player_id: r.u8()?,
+                hostile: r.bool()?,
+            }),
+            id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
+                player_id: r.u8()?,
+                mana: r.i16()?,
+                max_mana: r.i16()?,
+            }),
+            id::TEAM_CHANGE => Self::TeamChange(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
+            id::PROJECTILE_TRACKERS => Self::ProjectileTrackers(ProjectileTrackers {
+                player_id: r.u8()?,
+                piggy_bank: TrackedProjectileRef {
+                    key: r.i32()?,
+                    kind: r.i16()?,
+                },
+                void_lens: TrackedProjectileRef {
+                    key: r.i32()?,
+                    kind: r.i16()?,
+                },
+            }),
+            id::SYNC_LOADOUT => Self::SyncLoadout(SyncLoadout {
+                player_id: r.u8()?,
+                loadout: r.u8()?,
+                hide_accessory: r.u16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -1916,6 +2159,17 @@ impl S2c {
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
             Self::ChestName(_) => id::CHEST_NAME,
+            Self::TogglePvp(_) => id::TOGGLE_PVP,
+            Self::PlayerMana(_) => id::PLAYER_MANA,
+            Self::TeamChange(_) => id::TEAM_CHANGE,
+            Self::NpcHouse(_) => id::NPC_HOUSE,
+            Self::TravelShop(_) => id::TRAVEL_SHOP,
+            Self::AnglerQuest(_) => id::ANGLER_QUEST,
+            Self::RevengeMarker(_) => id::REVENGE_MARKER,
+            Self::DeadPlayer { .. } => id::DEAD_PLAYER,
+            Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
+            Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
+            Self::SyncLoadout(_) => id::SYNC_LOADOUT,
         }
     }
 
@@ -2026,6 +2280,38 @@ impl S2c {
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
             Self::ChestName(c) => w.i16(c.chest).i16(c.x).i16(c.y).str(&c.name),
+            Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
+            Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
+            Self::NpcHouse(h) => w.i16(h.npc).i16(h.home_x).i16(h.home_y).u8(h.status),
+            Self::TravelShop(s) => {
+                let mut w = w;
+                for item in &s.items {
+                    w = w.i16(*item);
+                }
+                w
+            }
+            Self::AnglerQuest(q) => w.u8(q.quest).bool(q.finished),
+            Self::RevengeMarker(m) => w
+                .i32(m.unique_id)
+                .f32(m.x)
+                .f32(m.y)
+                .i32(m.npc_net_id)
+                .f32(m.npc_hp_percent)
+                .i32(m.npc_type)
+                .i32(m.npc_ai_style)
+                .i32(m.coins_value)
+                .f32(m.base_value)
+                .bool(m.spawned_from_statue),
+            Self::DeadPlayer { player_id } => w.u8(*player_id),
+            Self::MiscEventValue(v) => w.u8(v.kind).i32(v.value),
+            Self::ProjectileTrackers(t) => w
+                .u8(t.player_id)
+                .i32(t.piggy_bank.key)
+                .i16(t.piggy_bank.kind)
+                .i32(t.void_lens.key)
+                .i16(t.void_lens.kind),
+            Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2161,6 +2447,72 @@ impl S2c {
                 x: r.i16()?,
                 y: r.i16()?,
                 name: r.str()?,
+            }),
+            id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
+                player_id: r.u8()?,
+                hostile: r.bool()?,
+            }),
+            id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
+                player_id: r.u8()?,
+                mana: r.i16()?,
+                max_mana: r.i16()?,
+            }),
+            id::TEAM_CHANGE => Self::TeamChange(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
+            id::NPC_HOUSE => Self::NpcHouse(NpcHouse {
+                npc: r.i16()?,
+                home_x: r.i16()?,
+                home_y: r.i16()?,
+                status: r.u8()?,
+            }),
+            id::TRAVEL_SHOP => {
+                // `MessageBuffer.cs:3121-3124`: exactly TravelShopMaxSlots shorts.
+                let mut items = Vec::with_capacity(TRAVEL_SHOP_MAX_SLOTS);
+                for _ in 0..TRAVEL_SHOP_MAX_SLOTS {
+                    items.push(r.i16()?);
+                }
+                Self::TravelShop(TravelShop { items })
+            }
+            id::ANGLER_QUEST => Self::AnglerQuest(AnglerQuest {
+                quest: r.u8()?,
+                finished: r.bool()?,
+            }),
+            id::REVENGE_MARKER => Self::RevengeMarker(RevengeMarker {
+                unique_id: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                npc_net_id: r.i32()?,
+                npc_hp_percent: r.f32()?,
+                npc_type: r.i32()?,
+                npc_ai_style: r.i32()?,
+                coins_value: r.i32()?,
+                base_value: r.f32()?,
+                spawned_from_statue: r.bool()?,
+            }),
+            id::DEAD_PLAYER => Self::DeadPlayer {
+                player_id: r.u8()?,
+            },
+            id::MISC_EVENT_VALUES => Self::MiscEventValue(MiscEventValue {
+                kind: r.u8()?,
+                value: r.i32()?,
+            }),
+            id::PROJECTILE_TRACKERS => Self::ProjectileTrackers(ProjectileTrackers {
+                player_id: r.u8()?,
+                piggy_bank: TrackedProjectileRef {
+                    key: r.i32()?,
+                    kind: r.i16()?,
+                },
+                void_lens: TrackedProjectileRef {
+                    key: r.i32()?,
+                    kind: r.i16()?,
+                },
+            }),
+            id::SYNC_LOADOUT => Self::SyncLoadout(SyncLoadout {
+                player_id: r.u8()?,
+                loadout: r.u8()?,
+                hide_accessory: r.u16()?,
             }),
             _ => return None,
         })
@@ -4023,6 +4375,291 @@ mod tests {
         match S2c::decode(p[2], &mut NetReader::new(&p[3..])).expect("decode") {
             S2c::ProgressionEvent { event_id } => assert_eq!(event_id, 29),
             other => panic!("expected 98, got {:?}", other.msg_id()),
+        }
+    }
+
+    // ---- S1-I-1 wave A: per-id round trips for the join bundle ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn s1_i_1_toggle_pvp_round_trips() {
+        // `NetMessage.cs:856-859`: (byte)number + Player.hostile.
+        let t = TogglePvp {
+            player_id: 7,
+            hostile: true,
+        };
+        let f = S2c::TogglePvp(t).encode();
+        assert_eq!(f[2], 30);
+        assert_eq!(&f[3..], &[7, 1]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TogglePvp(d) => assert_eq!(d, t),
+            other => panic!("expected 30, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TogglePvp(t).encode();
+        assert_eq!(c[2], 30);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TogglePvp(d) => assert_eq!(d, t),
+            other => panic!("expected 30, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_player_mana_round_trips() {
+        // `NetMessage.cs:961-965`: (byte)number + (short)statMana + (short)statManaMax.
+        let m = PlayerMana {
+            player_id: 3,
+            mana: 180,
+            max_mana: 200,
+        };
+        let f = S2c::PlayerMana(m).encode();
+        assert_eq!(f[2], 42);
+        let mut body = vec![3];
+        body.extend_from_slice(&180i16.to_le_bytes());
+        body.extend_from_slice(&200i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerMana(d) => assert_eq!(d, m),
+            other => panic!("expected 42, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerMana(m).encode();
+        assert_eq!(c[2], 42);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerMana(d) => assert_eq!(d, m),
+            other => panic!("expected 42, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_team_change_round_trips() {
+        // `NetMessage.cs:970-974`: (byte)number + (byte)Player.team.
+        let t = TeamChange {
+            player_id: 2,
+            team: 4,
+        };
+        let f = S2c::TeamChange(t).encode();
+        assert_eq!(f[2], 45);
+        assert_eq!(&f[3..], &[2, 4]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TeamChange(d) => assert_eq!(d, t),
+            other => panic!("expected 45, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TeamChange(t).encode();
+        assert_eq!(c[2], 45);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TeamChange(d) => assert_eq!(d, t),
+            other => panic!("expected 45, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_npc_house_round_trips() {
+        // `NetMessage.cs:1067-1072`: (short)npc + (short)homeTileX +
+        // (short)homeTileY + (byte)householdStatus.
+        let h = NpcHouse {
+            npc: 17,
+            home_x: 4200,
+            home_y: 1100,
+            status: 2,
+        };
+        let f = S2c::NpcHouse(h).encode();
+        assert_eq!(f[2], 60);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.extend_from_slice(&4200i16.to_le_bytes());
+        body.extend_from_slice(&1100i16.to_le_bytes());
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcHouse(d) => assert_eq!(d, h),
+            other => panic!("expected 60, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_travel_shop_round_trips() {
+        // `NetMessage.cs:1134-1141`: TravelShopMaxSlots = 40 shorts
+        // (`Main.cs:67029`), no count prefix (`MessageBuffer.cs:3121-3124`).
+        let s = TravelShop {
+            items: (0..TRAVEL_SHOP_MAX_SLOTS as i16).map(|i| i * 7).collect(),
+        };
+        let f = S2c::TravelShop(s.clone()).encode();
+        assert_eq!(f[2], 72);
+        assert_eq!(f.len(), 3 + 2 * TRAVEL_SHOP_MAX_SLOTS);
+        let mut body = Vec::new();
+        for item in &s.items {
+            body.extend_from_slice(&item.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TravelShop(d) => assert_eq!(d, s),
+            other => panic!("expected 72, got {:?}", other.msg_id()),
+        }
+        // A truncated shop (39 slots) must not decode.
+        assert!(S2c::decode(72, &mut NetReader::new(&body[..78])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1_angler_quest_round_trips() {
+        // `NetMessage.cs:1145-1148`: (byte)Main.anglerQuest +
+        // anglerWhoFinishedToday.Contains(name).
+        let q = AnglerQuest {
+            quest: 13,
+            finished: true,
+        };
+        let f = S2c::AnglerQuest(q).encode();
+        assert_eq!(f[2], 74);
+        assert_eq!(&f[3..], &[13, 1]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::AnglerQuest(d) => assert_eq!(d, q),
+            other => panic!("expected 74, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_revenge_marker_round_trips() {
+        // `CoinLossRevengeSystem.cs:275-286` (WriteSelfTo) vs `:321-324`
+        // (AddMarkerFromReader): int, Vector2, int, float, int, int, int,
+        // float, bool.
+        let m = RevengeMarker {
+            unique_id: 9,
+            x: 1234.5,
+            y: 678.25,
+            npc_net_id: 44,
+            npc_hp_percent: 0.75,
+            npc_type: 26,
+            npc_ai_style: 3,
+            coins_value: 50000,
+            base_value: 12.5,
+            spawned_from_statue: true,
+        };
+        let f = S2c::RevengeMarker(m).encode();
+        assert_eq!(f[2], 126);
+        let mut body = Vec::new();
+        body.extend_from_slice(&9i32.to_le_bytes());
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&678.25f32.to_le_bytes());
+        body.extend_from_slice(&44i32.to_le_bytes());
+        body.extend_from_slice(&0.75f32.to_le_bytes());
+        body.extend_from_slice(&26i32.to_le_bytes());
+        body.extend_from_slice(&3i32.to_le_bytes());
+        body.extend_from_slice(&50000i32.to_le_bytes());
+        body.extend_from_slice(&12.5f32.to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::RevengeMarker(d) => assert_eq!(d, m),
+            other => panic!("expected 126, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_dead_player_round_trips() {
+        // `NetMessage.cs:1569-1571`: (byte)number, nothing else.
+        let f = S2c::DeadPlayer { player_id: 5 }.encode();
+        assert_eq!(f[2], 135);
+        assert_eq!(&f[3..], &[5]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DeadPlayer { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 135, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_misc_event_value_round_trips() {
+        // `NetMessage.cs:1591-1594`: (byte)number + (int)number2; the join
+        // bundle's kind 0 is the credits roll (`CreditsRollEvent.cs:27-33`).
+        let v = MiscEventValue {
+            kind: 0,
+            value: 28800,
+        };
+        let f = S2c::MiscEventValue(v).encode();
+        assert_eq!(f[2], 140);
+        let mut body = vec![0];
+        body.extend_from_slice(&28800i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MiscEventValue(d) => assert_eq!(d, v),
+            other => panic!("expected 140, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_projectile_trackers_round_trips() {
+        // `NetMessage.cs:1603-1610`: (byte)number + two
+        // TrackedProjectileReference.Write bodies — (int)Key + (short)type
+        // (`TrackedProjectileReference.cs:22-26`).
+        let t = ProjectileTrackers {
+            player_id: 6,
+            piggy_bank: TrackedProjectileRef {
+                key: 123456,
+                kind: 700,
+            },
+            void_lens: TrackedProjectileRef {
+                key: -2,
+                kind: 701,
+            },
+        };
+        let f = S2c::ProjectileTrackers(t).encode();
+        assert_eq!(f[2], 142);
+        let mut body = vec![6];
+        body.extend_from_slice(&123456i32.to_le_bytes());
+        body.extend_from_slice(&700i16.to_le_bytes());
+        body.extend_from_slice(&(-2i32).to_le_bytes());
+        body.extend_from_slice(&701i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ProjectileTrackers(d) => assert_eq!(d, t),
+            other => panic!("expected 142, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ProjectileTrackers(t).encode();
+        assert_eq!(c[2], 142);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ProjectileTrackers(d) => assert_eq!(d, t),
+            other => panic!("expected 142, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_sync_loadout_round_trips() {
+        // `NetMessage.cs:1624-1628`: (byte)number + (byte)CurrentLoadoutIndex
+        // + the hideVisibleAccessory ushort (`WriteAccessoryVisibility`,
+        // `:1882-1893`: bit i per bool[10] slot).
+        let hide: u16 = (1 << 0) | (1 << 3) | (1 << 9);
+        let l = SyncLoadout {
+            player_id: 4,
+            loadout: 2,
+            hide_accessory: hide,
+        };
+        let f = S2c::SyncLoadout(l).encode();
+        assert_eq!(f[2], 147);
+        let mut body = vec![4, 2];
+        body.extend_from_slice(&hide.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SyncLoadout(d) => assert_eq!(d, l),
+            other => panic!("expected 147, got {:?}", other.msg_id()),
+        }
+        let c = C2s::SyncLoadout(l).encode();
+        assert_eq!(c[2], 147);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SyncLoadout(d) => assert_eq!(d, l),
+            other => panic!("expected 147, got {:?}", other.msg_id()),
+        }
+        // The visibility packing itself: bool[10] -> ushort -> bool[10].
+        let mut flags = [false; 10];
+        flags[0] = true;
+        flags[3] = true;
+        flags[9] = true;
+        let mut packed: u16 = 0;
+        for (i, f) in flags.iter().enumerate() {
+            if *f {
+                packed |= 1 << i;
+            }
+        }
+        assert_eq!(packed, hide);
+        for (i, f) in flags.iter().enumerate() {
+            assert_eq!((packed & (1 << i)) != 0, *f);
         }
     }
 }
