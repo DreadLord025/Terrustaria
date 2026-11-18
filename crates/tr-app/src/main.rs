@@ -12,6 +12,7 @@ mod bank;
 mod banners;
 mod bestiary;
 mod biome;
+mod buff_effects;
 mod buffs;
 mod chat;
 mod chest;
