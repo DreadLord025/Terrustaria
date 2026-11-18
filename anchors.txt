@@ -114,6 +114,9 @@ crates/tr-app/src/world_sim/npcs.rs|fn update_npcs|S1-E-18p29 - NPC death pass c
 crates/tr-app/src/bestiary.rs|pub fn completion_percent|S1-E-18p29 - completion_percent denominator is port's roster (CommonEnemyUICollectionInfoProvider.cs:39-46)
 crates/tr-app/src/lang.rs|fn refresh_global_substitutions|S1-L-12b - 65 global substitutions producer refreshed from live app state (Lang.cs:100-167)
 crates/tr-app/src/lang.rs|fn global_substitutions_resolve_world_player_and_npc_tokens|S1-L-12b - key global substitution tokens resolve via LanguageManager
+crates/tr-app/src/lang.rs|fn npc_producers_answer_given_or_type_name|S1-L-12b - NPC producers answer GivenOrTypeName (NPC.cs:6727,6743-6753,7408-7418), unset when absent
+crates/tr-app/src/lang.rs|fn input_trigger_producers_read_the_live_binds|S1-L-12b - input trigger tags read the keyboard profile binds (PlayerInput.cs:819-841,1942-1990)
+crates/tr-app/src/lang.rs|fn the_refresh_covers_all_65_producers|S1-L-12b - the refresh sets all 41 non-NPC producers of Lang.cs:102-166 (24 NPC keys stay null-unset)
 crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
 crates/tr-core/src/wiring.rs|the_wire_rolls_come_from_the_unified_random_stream|S1-L-6c - the wiring RNG is UnifiedRandom (the C# Main.rand generator), seeded per world via seed_rand
 crates/tr-app/src/item.rs|fn s1_f_10_item_slot_clone_and_refresh_snapshot|S1-F-10 - ItemSlot clone/refresh snapshot and CommonMaxStack 9999 default
