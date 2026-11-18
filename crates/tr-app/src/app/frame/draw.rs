@@ -48,6 +48,25 @@ impl App {
         screen: Vec2,
         m_h: f32,
     ) -> Option<(tr_render::sprite::RenderStats, TileDrawStats)> {
+            // S1-G-13: `Main.Draw`'s `EnsureRenderTargetContent` head call
+            // (`Main.cs:61644`, `:58152-58158`) — allocate/refresh the
+            // render-target family (`Main.InitTargets`, `:58160-58216`)
+            // when absent or the backbuffer resized. The port runs HiDef
+            // (the non-XNA default, `Main.cs:67047`) with
+            // `SupportWideScreen = false` (`:67046`). Allocation only: no
+            // draw pass consumes the layers yet — the frame path below is
+            // unchanged (ANALYSIS "The render-target family (S1-G-13)").
+            if let Some(gpu) = self.gpu.as_ref() {
+                tr_render::RenderTargetFamily::ensure(
+                    &mut self.targets,
+                    &gpu.device,
+                    gpu.config.format,
+                    (gpu.config.width, gpu.config.height),
+                    true,
+                    false,
+                    tr_render::RENDER_TARGET_MAX_HIDEF,
+                );
+            }
             // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
             // high-refresh displays.
             let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
@@ -105,6 +124,9 @@ impl App {
             // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
             // `:43298`). The removals drain in the tick.
             let right_release = std::mem::take(&mut self.ui_right_release);
+            // `Main.mouseLeftRelease` — the achievement popup's click edge
+            // (`InGamePopups.cs:124`), consumed per frame like the right one.
+            let left_release = std::mem::take(&mut self.ui_left_release);
             let vampire_seed = self
                 .world
                 .micro_seeds
@@ -127,6 +149,11 @@ impl App {
             let debug_items = self.items.len();
             let debug_projectiles = self.projectiles.active_count();
             let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
+            // The achievement popup's click target (`InGamePopups.cs:138`'s
+            // `OpenAchievementsAndGoto`) — parked here because the goto
+            // mutates `self` while the draw destructure holds its fields;
+            // applied after the gpu block (S1-E-26 wave A).
+            let mut popup_goto: Option<&'static str> = None;
 
             {
                 let App {
@@ -1412,6 +1439,34 @@ impl App {
                             menu.is_some(),
                         );
                     }
+                    // `DrawInterface_13_AchievementCompletePopups`
+                    // (`Main.cs:44779-44783`, `:46143-46146`): the unlock
+                    // toasts draw over the interface — after the fancy UI
+                    // (layer 12) and the achievements overlay, before the
+                    // entity health bars (layer 14). The menu twin
+                    // (`Main.cs:48457`) draws them over the legacy menu too;
+                    // the port's popups only ever exist in-world (the drain
+                    // runs on the world branch and `SaveAndQuit` clears the
+                    // tracker, `WorldGen.cs:6714`). S1-E-26 wave A.
+                    if menu.is_none() && front.is_none() && !crate::env::no_hud() {
+                        if let Some(name) = ui::notifications::draw(
+                            renderer,
+                            lookups,
+                            screen,
+                            &mut self.notifications,
+                            self.mouse_pos,
+                            self.mouse_text_color,
+                            left_release,
+                        ) {
+                            // `OnMouseOver` → `IngameFancyUI.
+                            // OpenAchievementsAndGoto` (`InGamePopups.cs:138`,
+                            // `UI/IngameFancyUI.cs`): open the overlay and
+                            // scroll the list to the row (`UIList.Goto`'s
+                            // `ViewPosition = item.Top.Pixels`) — applied
+                            // after the gpu block releases the field borrows.
+                            popup_goto = Some(name);
+                        }
+                    }
                     // Task 6b: upload the revealed tiles into the world-sized map texture
                     // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                     // and the minimap on the view centre (`Main.cs:55420-55421`,
@@ -1742,6 +1797,12 @@ impl App {
                     gpu.queue.present(frame);
                 }
             }
+        // The popup click's `OpenAchievementsAndGoto` (S1-E-26 wave A) —
+        // the field borrows are released, so the overlay open + scroll lands
+        // for the next frame's draw.
+        if let Some(name) = popup_goto {
+            self.open_achievements_and_goto(name);
+        }
         Some((stats, tile_stats))
     }
 }

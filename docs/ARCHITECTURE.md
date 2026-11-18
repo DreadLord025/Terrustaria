@@ -150,6 +150,13 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
+- `growth.rs` + `growth/trees.rs` — the `WorldGen.UpdateWorld` runtime growth ticks
+  (herbs, grass/spread, vines/moss, shells, pumpkins, dye plants, the dispatchers).
+  S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
+  `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
+  `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
+  `empty_tile_check`, the tree-invalidity kill) — verbatim move, public seams
+  re-exported from `growth`.
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets
@@ -161,9 +168,11 @@ an agent needs before touching code.
   and `KillTile_GetItemDrops` empty-group tables. See `ANALYSIS.md#s1-f-7-wave-a`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
-  (`framing::reframe_area`), so edits do not need a full-world framing pass. Placement
-  routes the registry kinds (`place_item_tile`, incl. the seed `PlaceAlch` branch and the
-  planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
+  (`framing::reframe_area`), so edits do not need a full-world framing pass. The
+  tile-placement family lives in `edit/place.rs` (S1-K-4, extracted verbatim):
+  `place_tile`, `place_item_tile` (incl. the seed `PlaceAlch` branch and the
+  planter box 380), re-exported at `edit::` so every caller seam is unchanged.
+  Breaking runs the per-type KillTile cascade (`check_object`'s arms —
   doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
   `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
   events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
