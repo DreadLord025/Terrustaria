@@ -15822,3 +15822,92 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
+
+`tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
+(`TileObjectData.cs:2110-5014`) statement-by-statement and emits all 389
+registered tiles (578 defs) into `crates/tr-core/src/tileobject/registry.rs`,
+retiring the 33 hand-written defs. The generator reproduces the copy-on-write
+builder chain (module sharing via `CopyFrom`, the `_hasOwn*` no-op-compare
+setters, `Calculate`'s liquid-death fold, `LinkedAlternates` propagation,
+`addTile`/`addSubTile`/`addAlternate`/`addBaseTile` cursor resets) and two C#
+bugs verbatim:
+
+* **`FullCopyFrom` empties the sub-tiles** (`TileObjectData.cs:1722-1741` +
+  `TileObjectSubTilesModule.cs:17-27`): the copy ctor loops `i < this.data.Count`
+  over the FRESH list (Count 0, capacity != count), so tiles 83/84
+  (`FullCopyFrom(82)`/`(83)`, :4785-4788) and 389 (`FullCopyFrom(388)`, :2323)
+  resolve NO sub-tiles in vanilla. The hand defs wrongly carried 82's sub-tiles
+  into 83/84; the generated table reproduces the bug.
+* **`AnchorAlternateTiles` compares against `tileInvalid`** (:449) — a no-op
+  write when the alternate list equals the INVALID list (a C# typo, reproduced).
+
+The shared-reference alternates/sub-tile cycles (C# heap references;
+`GetTileData` :5126-5161 is single-level index-based and never recurses) emit
+acyclic: top-level defs keep their lists verbatim, alternate/sub-tile nodes
+carry their scalar fields with EMPTY nested lists — behaviourally identical for
+every consumer (`can_place`/`place`/`get_tile_data` read only the base's lists
+and one resolution level).
+
+### Divergences vs the 33 hand defs (the C# wins)
+
+Field-level diff of the hand-resolved baseline against the generated table
+(the regression dump). Every row is the C# chain's truth; the hand def was wrong:
+
+| Tile / def | Field | Hand | Generated (C#) | C# cite |
+|---|---|---|---|---|
+| safe 97 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3589-3590 |
+| safe 97 | StyleHorizontal | true | false | Style2x2 never sets it (:3451-3460) |
+| sink 172 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3576-3583 |
+| sink 172 | StyleHorizontal | true | false | Style2x2 never sets it |
+| void vault 491 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style3x3 :3100, no override :3798-3800 |
+| void vault 491 | StyleHorizontal | true | false | Style3x3 never sets it (:3097-3105) |
+| candelabra 100 | StyleHorizontal | true | false | Style2x2 never sets it (:3594-3606) |
+| lamp 93 | WaterPlacement | Allowed | NotAllowed | :2407-2408 WaterDeath=true + fold |
+| lamp 93 | StyleLineSkip | 1 | 2 | :2405 |
+| dresser 88 | LavaPlacement | Allowed | NotAllowed | :3204 LavaDeath=false keeps the baked NotAllowed |
+| dresser 88 | HookCheckIfCanPlace | none | Chest.FindEmptyChest (-1,0,true) | :3201 |
+| chest 21 | HookCheckIfCanPlace metadata | (0,0,false) | (-1,0,true) | :3464 (name now generated) |
+| bed 79 alt1 | CoordinateHeights | [16,18] | [16,16] | Style4x2 alternate copies the preset, not the bed override (:2564-2566) |
+| bed 79 alt1 | CoordinatePaddingFix | (0,-2) | (0,0) | same — the alternate is the Style4x2 base |
+| bathtub 90 alt1 | whole def | base_def() 1x1 | full Style4x2 4x2 PlaceRight | :2564-2566 copies newTile (the full def) |
+| hanging lantern 42 alt1 | whole def | base_def() 1x1 | full Style1x2Top 1x2 + platform anchor | :2444-2447 copies newTile |
+| large piles 187 sub0-8,29-34 | StyleWrapLimit | 0 | 35 | :3296 set on newTile before the sub-tile CopyFrom |
+| herbs 83/84 sub1-6 | present | 6 sub-tiles | empty (FullCopyFrom bug) | :4785-4788 + TileObjectSubTilesModule.cs:17-27 |
+| table 14 | sub-tiles | empty | 13, 25 | :3182-3190 |
+| tile 220 (Solidifier) | registered | absent | present (Style3x3) | :4048 |
+
+Plus the sub-tile families the hand slice left empty (now generated): doors
+10/11 sub 19/48, work bench 18 sub 14/43, candle 33 sub 25/39/41, chandelier 34
+sub 32/46/48, chair 15 sub 16/47 + 51..67, bed 79 sub 8/42 + 56..64, piano 87
+sub 15/42, dresser 88 sub 9/42, bookcase 101 sub 4/43, clock 104 sub 17/43,
+candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
+
+### Consumer switch (minimal, behaviour-preserving)
+
+* `edit::place_item_tile` gates on `tileobject::routes_through_tile_object`
+  (`CustomPlace(type, style)` + the 82/227/4 exclusions, `Player.cs:39771-39772`),
+  NOT mere registration — the natural objects (pots 28, small piles 185,
+  platforms 19, plants, torches 4, dye plants 227) keep the legacy
+  `WorldGen.PlaceTile` route. The large piles 186/187 ARE `CustomPlace`-true and
+  ride the TileObject route.
+* `editing::legacy_precheck_applies` mirrors that gate; alch seeds (82/83/84)
+  bypass the neighbour pre-check because `BlockPlacementForAssortedThings`
+  forces `canPlace = true` for them (`Player.cs:41294-41296`).
+* `editing::cell_drops` reads the generated `KILL_TILE_NO_CELL_DROP` table (the
+  `KillTile_GetItemDrops` empty case group, `WorldGen.cs:63988-66090`) instead of
+  `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
+  orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
+
+### Wave B (remaining, documented callbacks)
+
+The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
+`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
+(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
+(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
+tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
+`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
+defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
+the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
+test lands with that wiring.
