@@ -799,6 +799,12 @@ pub fn draw_hud(
     // the HUD behind it).
     if bestiary_open {
         bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
+        // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
+        // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself
+        // after the state (`IngameFancyUI.cs:220-223`, `Main.DrawCursor`), so the
+        // early return must not skip the cursor pass.
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
         return;
     }
 

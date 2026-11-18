@@ -981,10 +981,6 @@ pub fn update_world_grass_growth(
     }
 }
 
-/// `WorldGen.SpreadGrass` (:75146-75270), the slice: the guards (the dirt
-/// type match, the surface rule `j >= worldSurface && dirt == 0`, the +-1
-/// solid-neighbour scan with the lava exception, the flower-27 exclusion)
-/// + the write. The infection Convert()/wall arms ride the next slice.
 /// `WorldGen.GrowTreeSettings.Profiles.TryGetFromTreeId` (`:3853-3884`): the
 /// tree tile kind to its profile (the gem trees 583-589, the sakura 596, the
 /// willow 616, the ash 634).
@@ -1051,15 +1047,39 @@ fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_floor: u16) {
     }
 }
 
+/// `WorldGen.SpreadGrass` (`WorldGen.cs:75146-75257`), the runtime slice
+/// (`repeat: false` — the growth tick never recurses): the `InWorld(10)` and
+/// dirt-type guards (`:75150`), the surface rule with the infection-grass
+/// exemption (`:75154-75165`), the 3×3 enclosure scan with the lava exception
+/// (`:75186-75201`), the `CanBeClearedDuringGeneration` gate (`:75202`), the
+/// flower-27 exclusions (`:75202-75205`) and the conversion dispatch / plain
+/// write (`:75206-75225`). RNG-free: every guard reads tiles only, so the
+/// caller's draw count/order never depends on whether a cell converts.
+///
+/// The generation-time branch (`isGeneratingOrLoadingWorld`, the beach/centre
+/// exclusion for 23/199) rides the worldgen-local copies
+/// (`worldgen/evil.rs::spread_evil_grass`, `worldgen/biomes.rs::
+/// spread_jungle_grass`); the paint/coating `color` argument and the
+/// `SquareTileFrame` re-frame are the port's documented deviations (ANALYSIS).
 pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
+    // `!InWorld(i, j, 10)` (`:75150`).
+    if i < 10 || j < 10 || i >= world.width as i32 - 10 || j >= world.height as i32 - 10 {
+        return;
+    }
     let Some(t) = world.tile(i, j) else {
         return;
     };
     if !t.active() || t.kind != dirt {
         return;
     }
-    // The surface rule (:75166-75169).
-    if dirt == 0 && j as f64 >= world.world_surface {
+    // The surface rule (`:75154-75165`): at runtime the C#'s else-if only
+    // fires for the NON-infection grasses — `grass != 199 && grass != 23 &&
+    // grass != 661 && grass != 662` — so plain grass 2 (and jungle 60 /
+    // mushroom 70 / hallow 109 / ash 633) never converts dirt 0 at or below
+    // `worldSurface`, while the infection grasses convert dirt at any depth.
+    // (The earlier slice applied the rule to every grass, freezing the
+    // corrupt/crimson dirt spread below the surface line.)
+    if !matches!(grass, 23 | 199 | 661 | 662) && dirt == 0 && j as f64 >= world.world_surface {
         return;
     }
     // The +-1 enclosure scan with the lava exception (:75186-75201): the C#'s
@@ -1086,6 +1106,14 @@ pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
         }
     }
     if enclosed {
+        return;
+    }
+    // `!CanBeClearedDuringGeneration(type, i, j, skipDualDungeonCheck: true)`
+    // (`:75202` → `:80168-80175`): with the dual-dungeon check skipped the
+    // gate is the bare `TileID.Sets.CanBeClearedDuringGeneration` set
+    // (`TileID.cs:573` — default true, the listed kinds false). The same
+    // gate `worldgen/biomes.rs`'s `spread_jungle_grass` carries.
+    if !crate::tiledata::SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind) {
         return;
     }
     // The flower-27 exclusions (:75204-75206).
@@ -2606,6 +2634,163 @@ mod tests {
             w.tile(10, 20).is_some_and(|t| t.kind == 0),
             "the lava box refused"
         );
+    }
+
+    /// `SpreadGrass`'s surface rule + enclosure gate together pin the spread
+    /// DIRECTION (`WorldGen.cs:75162`, `:75186-75201`): a buried soil cell
+    /// whose whole 3×3 box is solid never converts, whichever grass touches
+    /// it — grass grows along exposed surfaces (including exposed cliff faces,
+    /// which the C# allows: there is no "cell above must be empty" rule), not
+    /// into enclosed subsoil. The exposed surface neighbour converts.
+    #[test]
+    fn buried_soil_stays_soil_and_exposed_soil_converts() {
+        // A dirt massif: rows 100..140 solid dirt, columns 90..110. The grass
+        // fringe sits on the top row; `worldSurface` below everything so the
+        // surface rule is not the gate under test.
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 150.0;
+        for x in 90..=110 {
+            for y in 100..=140 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
+        // The grass fringe on the exposed top row.
+        for x in 90..=110 {
+            let i = w.index(x, 100);
+            w.tiles[i].kind = 2;
+        }
+        // Buried cells adjacent to grass: below the fringe, beside a future
+        // side conversion — every one has a fully solid 3×3 box.
+        spread_grass(&mut w, 100, 101, 0, 2); // directly below the grass
+        spread_grass(&mut w, 100, 110, 0, 2); // deep inside the massif
+        spread_grass(&mut w, 99, 101, 0, 2); // diagonal below the fringe edge
+        assert_eq!(w.tile(100, 101).unwrap().kind, 0, "buried below grass stays dirt");
+        assert_eq!(w.tile(100, 110).unwrap().kind, 0, "deep subsoil stays dirt");
+        assert_eq!(w.tile(99, 101).unwrap().kind, 0, "buried diagonal stays dirt");
+        // The exposed surface neighbour (air above) converts.
+        let i = w.index(112, 100);
+        w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w, 112, 100, 0, 2);
+        assert_eq!(w.tile(112, 100).unwrap().kind, 2, "exposed soil converts");
+        // An exposed CLIFF face converts too — the C# gate is the enclosure
+        // scan, not an above-cell test: a dirt column edge with air to the
+        // side is a surface the grass may ride down.
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 150.0;
+        for x in 90..=100 {
+            for y in 100..=140 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
+        let i = w.index(100, 100);
+        w.tiles[i].kind = 2;
+        // (100,101): dirt below the grass on the cliff edge — air at x=101.
+        spread_grass(&mut w, 100, 101, 0, 2);
+        assert_eq!(
+            w.tile(100, 101).unwrap().kind,
+            2,
+            "the exposed cliff face converts (vanilla allows the side fringe)"
+        );
+        // One column in from the edge the same cell is buried and refuses.
+        assert_eq!(w.tile(99, 101).unwrap().kind, 0);
+        spread_grass(&mut w, 99, 101, 0, 2);
+        assert_eq!(w.tile(99, 101).unwrap().kind, 0, "the buried cell refuses");
+    }
+
+    /// The growth-tick 3×3 scan (`UpdateWorld_GrassGrowth` `:74381-74404` →
+    /// `SpreadGrass`) never converts enclosed subsoil, and the pass consumes
+    /// the same RNG draws whether a neighbour converts or not — the plant
+    /// roll (`:74356`) fires before the scan and `SpreadGrass` itself draws
+    /// nothing, so the draw count/order is independent of the eligibility
+    /// outcome.
+    #[test]
+    fn the_grass_scan_leaves_buried_soil_and_the_draw_count_is_outcome_independent() {
+        // Two identical dirt massifs with a corrupt-grass source on top; the
+        // cell below the source is exposed to a cave pocket in one world and
+        // fully buried in the other. The cell above the SOURCE stays open in
+        // both, so the plant-above roll (`Next(2)`, plant 24) draws the same.
+        let build = |pocket: bool| {
+            let mut w = World::new("t".into(), 200, 200);
+            w.world_surface = 150.0;
+            for x in 90..=110 {
+                for y in 100..=140 {
+                    let i = w.index(x, y);
+                    w.tiles[i] =
+                        Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+                }
+            }
+            let i = w.index(100, 100);
+            w.tiles[i].kind = 23; // the corrupt-grass source on the surface
+            if pocket {
+                // A cave pocket beside the target cell (100,101) exposes it.
+                let i = w.index(99, 101);
+                w.tiles[i] = Tile::default();
+            }
+            w
+        };
+        let mut open = build(true);
+        let mut buried = build(false);
+        let mut rng_a = UnifiedRandom::new(77);
+        let mut rng_b = UnifiedRandom::new(77);
+        for _ in 0..50 {
+            update_world_grass_growth(&mut open, 100, 100, 99, 102, 99, 102, true, &mut rng_a);
+            update_world_grass_growth(&mut buried, 100, 100, 99, 102, 99, 102, true, &mut rng_b);
+        }
+        assert_eq!(
+            open.tile(100, 101).unwrap().kind,
+            23,
+            "the pocket-exposed neighbour converted"
+        );
+        assert_eq!(
+            buried.tile(100, 101).unwrap().kind,
+            0,
+            "the buried neighbour stayed dirt"
+        );
+        // No grass anywhere below the surface row in the buried world.
+        for x in 90..=110 {
+            for y in 101..=140 {
+                assert_eq!(buried.tile(x, y).unwrap().kind, 0, "buried subsoil ({x},{y})");
+            }
+        }
+        // The streams advanced identically: same draw count AND same values.
+        for _ in 0..16 {
+            assert_eq!(rng_a.next(), rng_b.next(), "the draw streams stay in lockstep");
+        }
+    }
+
+    /// The surface rule's infection exemption (`WorldGen.cs:75162`): the
+    /// `j >= worldSurface && dirt == 0` refusal fires only for the
+    /// non-infection grasses — the corrupt/crimson grasses (23/199/661/662)
+    /// convert dirt at any depth (the enclosure gate still applies), while
+    /// plain grass 2 refuses below the surface line.
+    #[test]
+    fn the_surface_rule_exempts_the_infection_grasses() {
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 105.0; // the cells sit BELOW the surface line
+        let i = w.index(100, 120);
+        w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w, 100, 120, 0, 2);
+        assert_eq!(w.tile(100, 120).unwrap().kind, 0, "plain grass refuses below the surface");
+        spread_grass(&mut w, 100, 120, 0, 23);
+        assert_eq!(w.tile(100, 120).unwrap().kind, 23, "the corruption converts at depth");
+        let i = w.index(102, 120);
+        w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+        spread_grass(&mut w, 102, 120, 0, 199);
+        assert_eq!(w.tile(102, 120).unwrap().kind, 199, "the crimson converts at depth");
+        // The enclosure gate still binds the infections: a fully solid box
+        // refuses even the corruption.
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 105.0;
+        for dx in -1i32..=1 {
+            for dy in -1i32..=1 {
+                let i = w.index(100 + dx, 120 + dy);
+                w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
+        spread_grass(&mut w, 100, 120, 0, 23);
+        assert_eq!(w.tile(100, 120).unwrap().kind, 0, "the enclosed corruption refuses");
     }
 
     use super::*;

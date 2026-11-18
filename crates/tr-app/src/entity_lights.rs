@@ -13,6 +13,11 @@
 //! they belong to the item-visual dust pass, which needs the dust system
 //! (S1-E-2/S1-E-3, other branches). Skipping an arm wholesale leaves the
 //! `Main.rand` stream untouched, so the fixed-step order stays exact.
+//!
+//! The NPC family (`npc_lights.rs::npc_light`, `NPC.AI`'s aiStyle-8 light
+//! tail) feeds the **same** [`EntityLights`] pair — there is one list pair
+//! per engine in the C#, not one per source family. Both feeds run in the
+//! frame pass (`app/frame/draw.rs`) and share the tile-anchor helpers below.
 
 use glam::Vec2;
 use tr_core::lighting::{DynamicLight, LightParams};
@@ -85,32 +90,39 @@ impl EntityLights {
     }
 }
 
-/// Where the C# reads the light's tile x from. The three forms are **not**
+/// Where the C# reads the light's tile x from. The forms are **not**
 /// interchangeable for negative coordinates (`(int)(v/16)` truncates the
-/// quotient, `(int)v / 16` truncates first).
+/// quotient, `(int)v / 16` truncates first). Shared with the NPC family
+/// (`npc_lights.rs`) — one anchor vocabulary for every `AddLight` source.
 #[derive(Clone, Copy, PartialEq)]
-enum XAnchor {
+pub(crate) enum XAnchor {
     /// `(int)((position.X + width / 2f) / 16f)` — the common arm.
     Center,
     /// `(int)((position.X + width) / 16f)` — the right edge.
     Right,
     /// `(int)Center.X / 16` — truncate before dividing.
     CenterTruncated,
+    /// `base.Top` (`Entity.cs:86-91`): `(position.X + width / 2f,
+    /// position.Y)`, then the `Lighting.AddLight(Vector2, ...)` overload's
+    /// `(int)(v / 16f)` per axis (`Lighting.cs:140-143`) — centre x, top y,
+    /// truncate the quotient.
+    Top,
 }
 
 #[inline]
-fn tile_x(pos: Vec2, size: f32, anchor: XAnchor) -> i32 {
+pub(crate) fn tile_x(pos: Vec2, size: f32, anchor: XAnchor) -> i32 {
     match anchor {
-        XAnchor::Center => ((pos.x + size / 2.0) / TILE_PX) as i32,
+        XAnchor::Center | XAnchor::Top => ((pos.x + size / 2.0) / TILE_PX) as i32,
         XAnchor::Right => ((pos.x + size) / TILE_PX) as i32,
         XAnchor::CenterTruncated => (pos.x + size / 2.0) as i32 / 16,
     }
 }
 
 #[inline]
-fn tile_y(pos: Vec2, size: f32, anchor: XAnchor) -> i32 {
+pub(crate) fn tile_y(pos: Vec2, size: f32, anchor: XAnchor) -> i32 {
     match anchor {
         XAnchor::CenterTruncated => (pos.y + size / 2.0) as i32 / 16,
+        XAnchor::Top => (pos.y / TILE_PX) as i32,
         _ => ((pos.y + size / 2.0) / TILE_PX) as i32,
     }
 }
