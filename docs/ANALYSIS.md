@@ -17128,6 +17128,33 @@ and documents that the **caller holds `test_lock`** for the whole test (the
 lock is not reentrant); the tooltip/buff-tooltip registration tests and
 `npc_chat::init_lang` now take the guard.
 
+**Follow-up (fix/ingame-options-culture-flake):** five more
+`ui/ingame_options.rs` tests still read the culture without the guard —
+`the_value_bar_geometry_is_the_c_sharp_scaled_track` (the 1045-vs-979 flake:
+`color_bar_right_x` shifts 60 px in English but 126 in the long cultures,
+`IngameOptions.cs:1071`), `refresh_button_latches_the_hover_and_the_layout`
+(`measure_button` reads `Lang.inter[62]`),
+`save_and_exit_click_saves_the_world_and_returns_to_the_menu`,
+`the_keybinds_row_opens_the_in_game_keybinding_screen` (culture-shifted
+`left_row_rect`) and `a_toggle_click_applies_the_setting_to_the_app`
+(`right_row_rect`). Under parallel load a sibling's `lang::init`/
+`set_language` flipped the culture between their geometry reads and their
+assertions. Each now takes the same house guard — `crate::lang::test_lock()`
+acquired **once** at the top of the test (never twice: the mutex is
+non-reentrant and a double acquire self-deadlocks the whole gate) plus
+`lang::init(GameCulture::English)` to pin the culture for the test's whole
+run. The six previously-guarded tests that used a bare
+`lang::set_language(English)` were switched to `lang::init(English)` under
+the same single guard: on an empty manager `set_language` marks the culture
+active **without loading any sources**, and every later `init` then
+early-returns in its trailing `set_language` (culture unchanged,
+`localization/mod.rs:196-200`), leaving all texts as bare keys for the rest
+of the process — the second half of the flake (only the tests asserting
+real key resolution failed; bare-key-vs-bare-key comparisons passed
+vacuously, and `--test-threads=1` passed because an `init` test happened to
+run first). No game logic or value-bar maths changed — test synchronization
+only.
+
 **Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
 centred hit box, the per-category right anchors + bar shift, the 0.75 bar
 geometry (133x12, the -3 centre, the 60 px colour offset), the per-row draw
