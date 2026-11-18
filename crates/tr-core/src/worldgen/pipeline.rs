@@ -3362,4 +3362,47 @@ mod tests {
             "every other pass still ran — the world is populated"
         );
     }
+
+    // --- S1-E-17: the progress hook -----------------------------------------
+    // (the byte-identity + abort tests live in `worldgen::tests` —
+    // `s1_e_17_the_progress_hook_does_not_change_the_world` /
+    // `s1_e_17_queued_abort_stops_the_pipeline`, over the real
+    // `GenerationProgress`.)
+
+    /// The message table covers the executed steps whose vanilla pass sets
+    /// a `progress.Message`, and every entry resolves through the text seam
+    /// (the `Lang.gen[i]` → `LegacyWorldGen.i` mapping, `Lang.cs:475-477`).
+    #[test]
+    fn the_step_message_table_resolves_through_the_text_seam() {
+        use super::super::progress::{step_message, PassMessage};
+        // The terrain pair shares TerrainPass's one message
+        // (TerrainPass.cs:59).
+        assert!(matches!(
+            step_message("terrain height map"),
+            Some(PassMessage::Gen(0))
+        ));
+        assert!(matches!(
+            step_message("terrain fill"),
+            Some(PassMessage::Gen(0))
+        ));
+        // A keyed row (WorldGen.cs:11584).
+        assert!(matches!(
+            step_message("ocean sand"),
+            Some(PassMessage::Key("WorldGeneration.OceanSand"))
+        ));
+        // Steps with no message assignment in their pass body keep the
+        // previous pass's message (the C# `_message` persistence).
+        assert!(step_message("plan biome spans").is_none());
+        assert!(step_message("micro grass").is_none());
+        // The resolution shape: Gen(i) reads LegacyWorldGen.i.
+        let text = |k: &str| format!("<{k}>");
+        assert_eq!(
+            PassMessage::Gen(42).resolve(&text),
+            "<LegacyWorldGen.42>"
+        );
+        assert_eq!(
+            PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
+            "<WorldGeneration.LivingTrees>"
+        );
+    }
 }

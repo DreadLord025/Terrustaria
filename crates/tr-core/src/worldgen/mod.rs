@@ -1260,8 +1260,10 @@ mod tests {
         let summed: f64 = hook.steps.iter().map(|(_, w)| w).sum();
         assert_eq!(hook.progress.total_weight, summed);
         assert_eq!(hook.progress.total_progress(), 1.0);
-        // The first bookend is the Terrain slot (`WorldGen.cs:11504`).
-        assert_eq!(hook.steps[0].0, "Terrain");
+        // The first bookend is the terrain height-map step — the port's
+        // first half of the Terrain slot (`WorldGen.cs:11504`); the hook
+        // receives the executed step's name (the message table's key).
+        assert_eq!(hook.steps[0].0, "terrain height map");
     }
 
     /// `QueuedAbort` stops the loop before the next step applies
