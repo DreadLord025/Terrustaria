@@ -4621,7 +4621,7 @@ the existing rows byte-identical (`gen_loot.py --check` green).
 
 - RedHat's 36/32 paths are unreachable at runtime — the port's `Npc` has
   no `localAI` (the ai[3] paths for 35/33 work); the field port is
-  follow-up S1-E-14b.
+  follow-up S1-E-14b. (RESOLVED 2026-11-18 by S1-E-14b, see below.)
 - The mech-flags fill is a deliberate hardmode behavior change: mech
   spawner drops become possible.
 - The generator splices whole methods — 24 registrations, not 12;
@@ -4656,6 +4656,43 @@ M4-LOOT-2 (7 rows already on main), kept for row stability, inert at runtime
 (`spawn_loot` passes `is_master: false`); a dedicated fix should change all
 32 together. 15 `OneFromOptions` rows referencing unported items remain
 warn-and-emit (the established policy).
+
+Follow-up S1-E-14b (2026-11-18, `task/S1-E-14b`, COMPLETED): `Npc.local_ai:
+[f32; 4]` ports `NPC.localAI = new float[NPC.maxAI]` (`NPC.cs:6447`, maxAI =
+4) and the RedHat 36/32 state-machine paths become reachable:
+
+- `Npc::red_hat_skeletron_adjustments_enabled` (`npc.rs`) = the C# predicate
+  (`NPC.cs:66671-66682`): 35/33 read `ai[3] == 1`, 36/32 read
+  `local_ai[3] == 1`, everything else false.
+- Hand 36 (`update_skeletron_hand`): mirrors the head's `ai[3]` into
+  `local_ai[3]` each tick (`NPC.cs:22313-22316`); the head check rides the
+  sim's `World.skeletron_red_hat` write-through (the `skeletron_x/y` anchor
+  shape).
+- Dark Caster 32 (`update_caster`): the aiStyle-8 head latches
+  `local_ai[3] = 1` while `FindFirstNPC(35)`'s `ai[3] == 1`
+  (`NPC.cs:20820-20827`, mirrored by `World.skeletron_red_hat`); the C# has
+  no reset arm — the latch sticks. `FindFrame`'s `:77050-77053` banks the
+  latched caster 3 rows down (the Skeletron-pose strip).
+- The sphere spawn carries the latch: `wants_sphere` grows a 4th `ai[3]`
+  slot = `NPC.NewNPC`'s `ai3` argument (`NPC.cs:21246`'s `flag4 ? 1 : 0`);
+  every other caller passes 0. The Water Sphere 33's `ai[3]` path works
+  end-to-end.
+- `spawn_loot` feeds the live `npc.local_ai` to the seam (was `[0.0; 4]`).
+
+Deviations kept: the head 35's `ai[3]` stays the port's live hands-count
+stand-in (the sim write-through, `NPC.cs:21962-21970`'s expert `num168`
+scan) — the C# head's `ai[3]` is the red-hat latch set by
+`NPC.RedHatSkeletron`/`SpawnSkeletron(redHatMode)` (`NPC.cs:80394-80470`,
+the killClothier trigger unported); `skeletron_red_hat` mirrors that same
+slot, so the 36/32 paths activate exactly when the port's head slot reads
+1. The other AIs keep their bespoke named localAI stand-ins
+(`caster_counter`, the WoF/KingSlime/brain fields) — the generic vector is
+not retro-fitted onto them (behaviour frozen). No RNG draws added or
+reordered: the new arms are pure reads/writes. Acceptance:
+`s1_e_14b_red_hat_36_32_local_ai_state_machine` (npc.rs) — the full
+10-case predicate matrix on real Npcs, the hand mirror, the caster latch +
+stickiness + frame +3, the latched sphere's `ai[3] = 1`, and the loot-seam
+`Cond::RedHatSkeletron` reachability for 36/32.
 
 ## Buff slots (M2-BUFF-1)
 

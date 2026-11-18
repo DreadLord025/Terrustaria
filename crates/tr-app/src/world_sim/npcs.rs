@@ -3237,12 +3237,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        for (kind, sx, sy) in n.wants_sphere.drain(..) {
+        for (kind, sx, sy, ai3) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // `NPC.NewNPC`'s `ai3` argument (`NPC.cs:21246`'s
+            // `flag4 ? 1 : 0` — the Dark Caster's red-hat sphere).
+            ball.ai[3] = ai3;
             // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
             // no direction argument, the ctor's `spriteDirection = -1`,
             // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
@@ -3361,6 +3364,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
             head.ai[3] = hands_alive;
+            // S1-E-14b: the `FindFirstNPC(35)` mirror the hand's
+            // `localAI[3]` copy (`NPC.cs:22315`) and the Dark Caster's
+            // `aiStyle 8` latch (`NPC.cs:20820-20827`) read — the head's
+            // live `ai[3]` (the port's hands-count stand-in; the red-hat
+            // head model deviation is recorded in ANALYSIS).
+            app.world.skeletron_red_hat = head.ai[3] == 1.0;
+        }
+        if !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+        {
+            app.world.skeletron_red_hat = false;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -4300,11 +4316,12 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             has_player_target: true,
             // The slime-body rain / statue-mimic style (`ai[1]`) and the
             // RedHat Skeletron state (`ai[3]`) ride the live ai vector
-            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). The port's
-            // `Npc` has no `localAI` vector — the 36/32 `localAI[3]` paths
-            // stay zeros until the port models it.
+            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). S1-E-14b:
+            // the 36/32 `localAI[3]` paths ride the ported `local_ai`
+            // vector (the hand mirrors the head, `NPC.cs:22315`; the Dark
+            // Caster latches from `FindFirstNPC(35)`, `:20820-20827`).
             ai: npc.ai,
-            local_ai: [0.0; 4],
+            local_ai: npc.local_ai,
             // `HasGivenName` = the non-empty name (`NPC.cs:6741`); the empty
             // string maps to `None` (Decision D2).
             given_name: (!npc.given_name.is_empty()).then_some(npc.given_name.as_str()),
@@ -9353,7 +9370,7 @@ mod tower_mob_tests {
             }
         }
         assert!(saw > 0, "the small spider spawns");
-        let (kind, _sx, _sy) = n.wants_sphere[0];
+        let (kind, _sx, _sy, _ai3) = n.wants_sphere[0];
         assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
         // It fires no projectile.
         assert!(n.wants_hostile_shot.is_empty(), "no projectile");
