@@ -11,7 +11,7 @@ use crate::world::World;
 mod place;
 pub use place::{place_alch, place_item_tile, place_tile};
 mod wall;
-pub use wall::{break_wall, place_wall};
+pub use wall::{break_wall, kill_wall_sound, place_wall};
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon
 /// control lines. Vanilla refuses it in every removal/replacement path:

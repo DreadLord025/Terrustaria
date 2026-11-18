@@ -1958,14 +1958,24 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
     let Some(wall) = edit::break_wall(&mut app.world, tx, ty) else {
         return;
     };
+    // `WorldGen.KillWall` plays BEFORE the dust and the drop
+    // (`WorldGen.cs:60385` precedes `KillWall_DropItems` `:60400`): the
+    // cue table's draws ride the `UpdatePlayers` stream (the hammer break
+    // runs in `Player.PickWall`, `Player.cs:45949`, under the
+    // `Main.cs:17754` swap) ahead of the drop's own rolls (S1-E-21i).
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    app.audio.play_wall_break_sound(
+        edit::kill_wall_sound(wall),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        rng,
+    );
     if let Some(id) = registry::by_wall(wall) {
         // The wall break runs in `Player.ItemCheck` — the `UpdatePlayers`
         // stream.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         spawn_item_drop(&mut app.items, rng, id, 1, tx, ty);
     }
-    app.audio
-        .play_at("Dig_2", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
     app.request_edit(tx, ty, 2, 0);
     app.world_key = None;
 }
@@ -3911,6 +3921,16 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
             // the click is consumed.
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
+            // the pitch draw rides the `UpdatePlayers` stream — the tile
+            // use runs in `Player.ItemCheck` (`Main.cs:17754`).
+            for (px, py) in app.wiring.take_switch_clicks() {
+                app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
@@ -4016,8 +4036,27 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         return false;
     };
     if let Some(cue) = cue {
-        app.audio
-            .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+        // S1-E-21i — the door open/close plays upgrade to the faithful
+        // case-8/9 pitched path (`WorldGen.OpenDoor` `WorldGen.cs:37727` /
+        // `CloseDoor` `:31908`; `LegacySoundPlayer.cs:728-749`'s one
+        // `Next(-20, 21) * 0.01` draw). The interaction runs in
+        // `Player.ItemCheck` — the `UpdatePlayers` stream (`Main.cs:17754`).
+        // The other cues (the dial's Item_4) keep the plain play.
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        match cue {
+            "Door_Opened" => {
+                app.audio
+                    .play_door_sound(true, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            "Door_Closed" => {
+                app.audio
+                    .play_door_sound(false, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            _ => {
+                app.audio
+                    .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+            }
+        }
     }
     for (id, x, y) in drops {
         // The tile-interaction drops ride the `UpdatePlayers` stream (the
@@ -4205,8 +4244,12 @@ fn cell_blocked_by_entity(player: Option<&Player>, npcs: &[Npc], x: i32, y: i32)
 }
 
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
-/// 3 place wall.
-pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) {
+/// 3 place wall. Returns the wall id a kind-2 break removed — the C# replay
+/// runs the full `KillWall` (`MessageBuffer.cs:1177`), whose sound arm plays
+/// on the receiver too; the caller plays the cue on the bare `Main.rand`
+/// stream (the message handler runs outside every swap, `Main.cs:16895`'s
+/// `NpcStrike` precedent — S1-E-21i).
+pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) -> Option<u16> {
     match kind {
         0 => {
             // Vanilla suppresses item drops on the replication side
@@ -4219,6 +4262,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
                 edit::kill_tile(world, x, y, true);
             }
+            None
         }
         1 => {
             // Replicated placements take the same route as the local player.
@@ -4227,14 +4271,14 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             // random/direction; the generic edit message cannot, so the
             // registry route converges with style 0 / facing right.
             edit::place_item_tile(world, x, y, tile, 0, 1);
+            None
         }
-        2 => {
-            edit::break_wall(world, x, y);
-        }
+        2 => edit::break_wall(world, x, y),
         3 => {
             edit::place_wall(world, x, y, tile);
+            None
         }
-        _ => {}
+        _ => None,
     }
 }
 

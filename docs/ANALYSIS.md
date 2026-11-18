@@ -17625,3 +17625,142 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The world-sounds wave (S1-E-21i, 2026-11-18)
+
+**Code-only mode**: this wave was implemented without invoking any compiler —
+no cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The seven `s1_e_21i_*` witness tests are WRITTEN, NOT RUN; the
+branch `task/S1-E-21i-world-sounds` is pushed unmerged for a verification pass.
+
+### Census (what this wave covers, what it skips)
+
+The WorldGen/Wiring world-event `PlaySound` sites, after the landed waves
+(item-use A, tile-place B, NPC-hit C, footsteps D, tile-break table S1-E-21c)
+and the sibling-owned scopes (ambience E21e, player E21f, NPC E21g, projectile
+E21h):
+
+- **Wall break** — `WorldGen.KillWall_PlaySounds` (`WorldGen.cs:60423-60441`),
+  played from `KillWall` (`:60385`) BEFORE the dust (`:60391-60394`) and the
+  drop (`:60400`). The port's `break_wall` played a hardcoded `Dig_2` — replaced
+  by `tr_core::edit::kill_wall_sound` + `Audio::play_wall_break_sound`.
+- **Wiring switch clicks** — `Wiring.HitSwitch`'s seven
+  `SoundEngine.PlaySound(28, ...)` sites (`Wiring.cs:267` the 135/314/423/428/
+  442/476 family, `:272` the wide 440 at `i*16+16, j*16+16`, `:285` the lever
+  136, `:310` the timer 144, `:323` the 441/468 flags/buttons at the clicked
+  cell, `:339` the 467 gem lock ONLY when `frameX/36 == 4`, `:375` the 132/411
+  else-arm). The mine (210) and the geyser (443) are silent (`:288-296` carry
+  no play). The port's `hit_switch` had a D19 "unported" comment on the
+  else-arm — now queued.
+- **Doors** — `WorldGen.OpenDoor` (`WorldGen.cs:37727`, `PlaySound(8)`) and
+  `CloseDoor` (`:31908`, `PlaySound(9)`), success-path only. The port already
+  played `Door_Opened`/`Door_Closed` through the plain `play_at` (no pitch);
+  upgraded to `Audio::play_door_sound`'s case-8/9 pitched path.
+- **Skipped (already landed + wired)**: the liquid-change cues (S1-E-25),
+  the chest/menu cues (`chest.rs`), the tile-break table (`kill_cue`,
+  S1-E-21c — untouched, its D3 pin stands).
+
+### The plays and their RNG streams
+
+Every play gates attenuation FIRST (`LegacySoundPlayer.cs:369-436` precedes
+the type switch) and only then draws; the draws ride the CALLER's `Main.rand`
+stage stream, never the wiring stand-in `Wiring::rand` (that stream is the
+device-effects substitute — cannons/traps/teleport rolls):
+
+| Site | C# | Stream |
+| --- | --- | --- |
+| Hammer wall break | `Player.PickWall` `Player.cs:45949` | `UpdatePlayers` (`Main.cs:17754`) |
+| Player switch bridge / minecart trip / tile-use click | `Collision.SwitchTiles` (`Player.cs:28274`), `Minecart.HitTrackSwitch` (`Minecart.cs:1281-1288`), `Player.cs:32174-32178` | `UpdatePlayers` |
+| Weighted pressure plates | `PressurePlateHelper.Update` (`Main.cs:17763-17765`) | `UpdatePressurePlates` |
+| NPC switch bridge | `NPC.cs:90504` | `UpdateNPCs` (`Main.cs:17767`) |
+| Wiring tick (timer expiries) + logic sensors | `Wiring.UpdateMech` (`WorldGen.cs:71509`) + `TileEntity.PerformUpdates` (`:71510`) inside `UpdateWorld` | `UpdateWorldGen` (`Main.cs:17802-17805`) |
+| Net replays (`17` wall break `MessageBuffer.cs:1177`, `59` switch `:2682-2693`, the rigged chest `:1887-1893`) | message handlers run outside every swap (`Main.cs:16895` NpcStrike precedent) | `rngs.global()` (the bare stream) |
+
+The case maths, per arm:
+
+- **13 Shatter** (`:783-792`): NO draws, no pitch.
+- **6 Grass** (`:706-716`): one `Next(-30, 31) * 0.01` (`:714`) —
+  `sound::Family::Grass`.
+- **3 style 25** (`SoundID.NPCHit25`, `SoundID.cs:1281`): wave C's style
+  façade — the audio-only `GetRandomPitch` NextFloat (drawn even at variance
+  0, `SoundEngine.cs:99`), the ×0.5 volume arm and one `Next(-10, 11)` pitch
+  draw (`:670`), delegated to `play_npc_hit_sound("NPC_Hit_25", …)`.
+- **0 Dig** (`:440-452`): wave B's case-0 path — the `Next(3)` variation pick
+  + `Next(-10, 11) * 0.01`, delegated to `play_place_sound((0, 1), …)`.
+- **8/9 doors** (`:728-749`): one shared `Next(-20, 21) * 0.01`
+  (`:736`/`:747`) — `sound::Family::Door`. The int overload
+  (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch`.
+- **28 Mech** (`:997-1007`): the `SoundInstanceMech[0].State == Playing`
+  guard (`:998-1001`) returns BEFORE the one `Next(-10, 11) * 0.01` (`:1005`)
+  — `sound::mech_case28(playing_0, rng)`. The play overwrites the slot
+  WITHOUT a Stop (`:1002`); the port models the slot as
+  `mech_slots: [Option<Sink>; 1]` and detaches the old sink. `Mech_0` joins
+  `SFX_CUES` (id 28; `SoundMech[0]` loads `Sounds/Mech_0`,
+  `LegacySoundPlayer.cs:22`/`:176`).
+
+The wiring queue is the `take_statue_spawns` event-queue seam:
+`Wiring::switch_clicks: Vec<(i32, i32)>` fills in play order inside
+`hit_switch` (world pixels; the queue itself draws NOTHING), and each app
+drain site plays on its own stage's stream immediately after the triggering
+pass — the C# draws mid-walk, the port drains at the pass tail (the same
+deviation wave C recorded for the projectile strikes).
+
+### Deliberate deviations / deferrals
+
+- **The `KillWall` fail-path plays are missing.** The C# plays the sound table
+  even when the break fails (`KillWall_CheckFailure` `:60410-60421`: the
+  dungeon walls `{7,8,9,94-99}` before Skeletron, wall 87 before Golem —
+  `Main.cs:10598-10606`; `Player.PickWall` calls `KillWall(fail: true)` on
+  every sub-100 damage tick, `Player.cs:45957`). The port's `break_wall` has
+  no fail parameter and no hit-tile damage model, so the cue rides the
+  successful break only. The fail gating needs the `hitTile` damage
+  accumulator + the progression flags — a follow-up, not this wave.
+- **The explosion wall-walk plays are deferred (E21h-owned).**
+  `Projectile.ExplodeTiles`' 3×3 wall walk calls `WorldGen.KillWall`
+  (`Projectile.cs:78745`) under the `UpdateProjectiles` swap
+  (`Main.cs:17775`); the port's walk (`projectile.rs` explode_bomb) calls
+  `tr_core::edit::break_wall` directly with no sound. That file belongs to
+  the projectile wave — recorded here, not touched.
+- **The load-rig `TR_TOGGLES` path stays log-only** (`app/mod.rs`
+  `apply_tr_toggles`): no player exists at load, the C# `gameMenu`/loading
+  gate would refuse the positioned plays anyway.
+- **The wiring arm order differs from the C#.** The port groups
+  135/314/423/428/442/476 first and puts 210/443 before the 132/411 else-arm;
+  the click pushes match each arm's C# position semantics regardless (441/468
+  click at the clicked cell, NOT the derived trip corner; 467 only on the
+  trigger variant).
+- **The `kill_cue` D3 pin is untouched.** The landed tile-break wave's
+  pinned/no-jitter mapping (`editing.rs::kill_cue`) stays as-is; the new
+  wall/door/switch paths use the pitched RNG contract instead.
+- **The case-28 playing guard is device-bound.** Headless (no output device)
+  `emit` returns `None`, the slot stays empty and the guard never trips —
+  every audible click draws, matching the fresh-instance behaviour. With a
+  device, a live click refuses the next one draw-free (the C# semantics).
+- **The door cue strings are unchanged** (`Door_Opened`/`Door_Closed`) — the
+  existing `interaction_events` tests keep passing their shape; only the
+  play path gained the pitch draw.
+- **One borrow re-fetch in `world_sim/player.rs`**: the accessory buff-arms
+  call re-fetches `stream(UpdatePlayers)` instead of reusing the tick's `rng`
+  binding (the switch-click drains borrowed the pool in between) — the
+  stream identity and the draw order are unchanged.
+
+### Witness tests (written, NOT run)
+
+- `tr-core/edit/wall.rs::s1_e_21i_kill_wall_sound_table_arms` — every arm's
+  membership verbatim + the window boundaries (87/94 outside 88..93).
+- `tr-core/wiring.rs::s1_e_21i_hit_switch_queues_the_mech_clicks_per_type` —
+  the seven sites' positions, the 440 corner, the 467 variant gate, the
+  silent 210/443 and non-switch tiles, the queue draws nothing from the
+  wiring stream.
+- `sound.rs::s1_e_21i_the_grass_and_door_pitch_windows` — the exact windows
+  and the 0.01 scale.
+- `sound.rs::s1_e_21i_mech_case28_guards_before_the_pitch_draw` — the guarded
+  play draws nothing (a panicking roll closure), the fresh slot draws one.
+- `audio.rs::s1_e_21i_the_wall_break_draws_ride_the_passed_stream_only_when_audible`
+  — per-arm draw counts against a witness stream (13: zero, 6: one, 3/25:
+  one, 0: two), muted/out-of-range draw-free, the bank rows registered.
+- `audio.rs::s1_e_21i_the_door_pitch_draws_ride_the_passed_stream` — one
+  `Next(-20, 21)` per open/close, muted/out-of-range draw-free.
+- `audio.rs::s1_e_21i_the_switch_click_draws_ride_the_passed_stream` — one
+  `Next(-10, 11)` per click, two clicks two draws headless, muted/out-of-range
+  draw-free.
