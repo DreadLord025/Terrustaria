@@ -68,6 +68,12 @@ pub struct RoomScan {
     /// `WorldGen.roomTiles` — the tiles the room flood reached. The score
     /// reads it through `Housing_CheckIfInRoom` (`WorldGen.cs:6031-6039`).
     pub room_tiles: std::collections::HashSet<(i32, i32)>,
+    /// `WorldGen.roomHasStinkbug` (`WorldGen.cs:4306`): the room holds a
+    /// stinkbug cage (tile 630, `CheckRoom:6189-6193`).
+    pub has_stinkbug: bool,
+    /// `WorldGen.roomHasEchoStinkbug` (`WorldGen.cs:4308`): the room holds an
+    /// echo stinkbug cage (tile 631, `CheckRoom:6194-6198`).
+    pub has_echo_stinkbug: bool,
 }
 
 /// `WorldGen.IsOpenDoorAnchorFrame` (`WorldGen.cs:69171-69184`): an active
@@ -362,6 +368,9 @@ pub fn check_room(world: &World, x: i32, y: i32) -> Result<RoomScan, RoomFailure
         num_tiles: 0,
         house_tiles: Vec::new(),
         room_tiles: std::collections::HashSet::new(),
+        // `StartRoomCheck:6047-6048` clears both stinkbug flags per scan.
+        has_stinkbug: false,
+        has_echo_stinkbug: false,
     };
     let mut visited = std::collections::HashSet::new();
     let mut stack = vec![(x, y)];
@@ -449,6 +458,16 @@ fn check_tile(
                         || (t.frame_x >= 36 && t.frame_y == 0)))
             {
                 return Ok(false);
+            }
+            // `CheckRoom:6189-6198`: the stinkbug cages flag the room. They
+            // are not solid, so the fill keeps running past them — only the
+            // flags are written (the C#'s `feedback.Stinkbug`/`EchoStinkbug`
+            // report but do not stop the scan).
+            if t.kind == 630 {
+                scan.has_stinkbug = true;
+            }
+            if t.kind == 631 {
+                scan.has_echo_stinkbug = true;
             }
         }
     }
@@ -591,6 +610,29 @@ mod tests {
                 "the cell above the spot is in the room"
             );
         }
+    }
+
+    #[test]
+    fn the_stinkbug_cages_flag_the_room() {
+        // `CheckRoom:6189-6198`: tile 630 sets `roomHasStinkbug`, 631 sets
+        // `roomHasEchoStinkbug`; `StartRoomCheck:6047-6048` clears both per
+        // scan, so a cage-free room reads false again.
+        let mut w = ground();
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        let clean = check_room(&w, 55, 105).expect("the room scans");
+        assert!(!clean.has_stinkbug && !clean.has_echo_stinkbug);
+        // A stinkbug cage on the floor beside the furniture.
+        let i = w.index(56, 107);
+        w.tiles[i] = Tile { kind: 630, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let scan = check_room(&w, 55, 105).expect("the cage does not stop the scan");
+        assert!(scan.has_stinkbug, "tile 630 flags the room");
+        assert!(!scan.has_echo_stinkbug);
+        // Swap to the echo cage: only the echo flag.
+        w.tiles[i].kind = 631;
+        let scan = check_room(&w, 55, 105).expect("the echo cage scans");
+        assert!(!scan.has_stinkbug, "the flag is per-scan, not sticky");
+        assert!(scan.has_echo_stinkbug, "tile 631 flags the echo room");
     }
 
     #[test]

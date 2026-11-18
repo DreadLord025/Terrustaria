@@ -759,14 +759,11 @@ pub fn draw_hud(
     // strip + the log while open, the blinker advancing per drawn frame.
     draw_chat(r, lookups, screen, chat_state);
 
-    // `EmoteBubble.DrawAll` + the `UIEmotesMenu` state (M6-EMOTE-1).
-    let (pc, pdir) = player
-        .map(|p| {
-            let (cx, cy) = p.center();
-            (Vec2::new(cx, cy), p.facing)
-        })
-        .unwrap_or((Vec2::new(camera.x, camera.y), 1));
-    emotes::draw(r, lookups, screen, emotes_state, pc, pdir, mouse_pos);
+    // `EmoteBubble.DrawAll` + the `UIEmotesMenu` state (M6-EMOTE-1). The
+    // bubbles ride the world→UI transform (`GameViewMatrix.ZoomMatrix`,
+    // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
+    // not a pre-baked screen position.
+    emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
     // the open inventory's top row, before the slots.
@@ -799,6 +796,12 @@ pub fn draw_hud(
     // the HUD behind it).
     if bestiary_open {
         bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
+        // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
+        // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself
+        // after the state (`IngameFancyUI.cs:220-223`, `Main.DrawCursor`), so the
+        // early return must not skip the cursor pass.
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
         return;
     }
 
