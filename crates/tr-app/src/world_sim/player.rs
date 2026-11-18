@@ -930,6 +930,25 @@ let spawned = app.projectiles.spawn_hook(
                     rng,
                 );
             }
+            if let Some(req) = p.take_retaliate() {
+                // S1-C-7 wave B — the fall/petrify lane's retaliate block
+                // (`Player.cs:38401-38517`): those hits run inside
+                // `Player.Update` under the `UpdatePlayers` swap
+                // (`Main.cs:17754`) on the General counter (a Retaliate
+                // member), so the drain rides the same stream. The lava/tile
+                // lanes pass `retaliate_lane = false` (their counters are not
+                // Retaliate members) and never queue.
+                let expert = p.buffs.expert_mode;
+                crate::hurt_modifiers::drain_retaliate(
+                    p,
+                    &mut app.projectiles,
+                    &mut app.npcs,
+                    req,
+                    app.local_id as u8,
+                    expert,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             if let Some(cue) = p.take_death_sound() {
                 let (px, py) = p.center();
                 app.audio.play_at(cue, px, py, 1.0);

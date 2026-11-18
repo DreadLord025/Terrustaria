@@ -258,7 +258,11 @@ pub fn apply_touch_damage(
         // `Hurt`'s default `true` — the hazard tiles pass no `dodgeable`
         // override in the C# (`Player.cs:28982-29019`'s call chain), so a black
         // belt eats spike damage (research S1-C-1 §1.4).
-        outcome.damaged = player.hurt(dmg, cx, rng, true);
+        // `Crit: false` and the `ImmunityCooldownID.TileContactDamage` counter
+        // (`Player.cs:28981`) — TileContactDamage is NOT in `Sets.Retaliate`
+        // (`ImmunityCooldownID.cs:49`), so the S1-C-7 wave B retaliate lane
+        // stays off (vanilla spike hits never retaliate).
+        outcome.damaged = player.hurt_inner(dmg, cx, true, rng, true, false, None, false);
     }
     let flag = raw > 0 && !outcome.damaged;
     if !flag {

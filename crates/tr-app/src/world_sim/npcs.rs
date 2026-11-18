@@ -2775,6 +2775,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
+    // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
+    // `:38396-38517`): the accepted contact hit queued its retaliate request
+    // (`hurt_inner`'s tail) and possibly a dismount-on-hit; the C# rolls the
+    // block inline under the `UpdateNPCs` swap (`Main.cs:17767`), the port
+    // drains at the pass tail on the same stream (the S1-E-21c batch
+    // convention, ANALYSIS "The hurt modifiers"). The drain sits after the
+    // switch-tile scan — that scan still draws the scoped `npcs_rng`
+    // binding, so the retaliate rolls re-borrow the stream last.
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_dismount(p, &app.world);
+    }
+    if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
+        let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::hurt_modifiers::drain_retaliate(
+            app.player.as_mut().unwrap(),
+            &mut app.projectiles,
+            &mut app.npcs,
+            req,
+            app.local_id as u8,
+            expert,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
+    }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
     // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4
     // day/dead arm (`:20071-20074`) is the only writer so far, so this is the

@@ -887,8 +887,9 @@ pub struct Player {
     /// 1184,2402`): armed per tick in the fold from items 963/984
     /// (`:15060`/`:15064`), 6189 (`:14633`), 3223 (`:15087` — the C# carries
     /// the `Item` reference, the port's bool is the armed-flag equivalent) and
-    /// buff 59 (`:10075-10077`); `long_invince` is consume-only here, its
-    /// arming sources (6187 et al.) ride C-7. `ResetEffects` clears them every
+    /// buff 59 (`:10075-10077`); `long_invince` arms from the Star Veil 862
+    /// (`:15147`, S1-C-7 wave B) — its other sources (6187 et al.) ride later
+    /// waves. `ResetEffects` clears them every
     /// frame (`:18440/:18617/:18661-18662`/`:18719`) and the `Hurt` roll block
     /// (`:38214-38241`) consumes them.
     pub black_belt: bool,
@@ -905,6 +906,29 @@ pub struct Player {
     /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
     /// chain); 2221's `manaMagnet` half is its own unported family.
     pub magic_cuffs: bool,
+    /// The S1-C-7 wave B retaliate family (`Player.Hurt`, `Player.cs:38401-
+    /// 38517`). The C# carries `Item` references (`starCloakItem`,
+    /// `honeyCombItem`, the four `starCloakItem_*OverrideItem`s); the port
+    /// folds them to armed bools (the `brain_of_confusion` convention) — the
+    /// references only feed `GetProjectileSource_Accessory`, which the port
+    /// has no entity-source model for. The cloak's star type defaults to 726
+    /// and the override checks run in the C#'s order starVeil (725) →
+    /// beeCloak (724) → manaCloak (723) → snakeCloak (1133), LAST wins
+    /// (`:38437-38456`). Arming rows: 532 (`:15585`), 862 starVeil +
+    /// longInvince (`:15146-15148`), 1247 beeCloak + honeyComb
+    /// (`:14961-14963`), 4001 manaCloak + manaFlower (`:14461-14462`), 6186
+    /// snakeCloak (`:14622-14623`); the honeyComb family 1132 (`:15074`),
+    /// 1578 (+panic, `:15078`), 1249 (`:14881`), 3251 (`:14874`), 6184
+    /// (`:14613`); strongBees 3333 (`:15346`). `ResetEffects` clears:
+    /// `:18322` (strongBees), `:18386` (honeyCombItem), `:18714-18718` (the
+    /// cloak + overrides).
+    pub star_cloak: bool,
+    pub star_veil_override: bool,
+    pub bee_cloak_override: bool,
+    pub mana_cloak_override: bool,
+    pub snake_cloak_override: bool,
+    pub honey_comb: bool,
+    pub strong_bees: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1212,6 +1236,23 @@ pub struct Player {
     /// `pending_hurt_sound` convention). The C# `CombatText.NewText` rect is
     /// the player's own hitbox at the hurt position.
     pending_mana_effect: Option<i32>,
+    /// S1-C-7 wave B: the accepted-hurt retaliation request (`Player.Hurt`'s
+    /// `ImmunityCooldownID.Sets.Retaliate` block, `Player.cs:38401-38517`).
+    /// `hurt_inner` has no NPC list / projectile pool, so it records the
+    /// hit-moment snapshot (final post-floor `num2` + position/center/
+    /// velocity BEFORE the knockback `:38519`) and the drain
+    /// (`hurt_modifiers::drain_retaliate`, the `world_sim` seams) rolls the
+    /// block on the hit lane's stream — the `pending_mana_effect` convention.
+    /// The C# gates on the PRE-hit `flag` (not immune) AND the Retaliate-set
+    /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
+    /// carries the membership (the lava/tile lanes pass false).
+    pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
+    /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
+    /// the damage source was a projectile of `ProjectileID.Sets.
+    /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
+    /// mount is active. `Mount.TryDismount` needs `&World`, so the tick hands
+    /// the request over (the `pending_switch_trip` convention).
+    pending_dismount: bool,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1836,6 +1877,13 @@ impl Player {
             shadow_dodge: false,
             long_invince: false,
             magic_cuffs: false,
+            star_cloak: false,
+            star_veil_override: false,
+            bee_cloak_override: false,
+            mana_cloak_override: false,
+            snake_cloak_override: false,
+            honey_comb: false,
+            strong_bees: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -1932,6 +1980,8 @@ impl Player {
             hermes_step_sound: (17, -1, 9),
             pending_step_sound: None,
             pending_mana_effect: None,
+            pending_retaliate: None,
+            pending_dismount: false,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2310,6 +2360,21 @@ impl Player {
         self.pending_mana_effect.take()
     }
 
+    /// S1-C-7 wave B: takes the accepted-hurt retaliation request
+    /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
+    /// `num2` + pre-knockback position/center/velocity). The caller owns the
+    /// NPC list + projectile pool + the hit lane's RNG
+    /// (`hurt_modifiers::drain_retaliate`).
+    pub(crate) fn take_retaliate(&mut self) -> Option<crate::hurt_modifiers::RetaliateRequest> {
+        self.pending_retaliate.take()
+    }
+
+    /// S1-C-7 wave B: takes the dismount-on-hit request (`Player.cs:38396-
+    /// 38400`) — the caller owns `&World` (`try_dismount`).
+    pub(crate) fn take_dismount_request(&mut self) -> bool {
+        std::mem::take(&mut self.pending_dismount)
+    }
+
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
     /// handoff — the caller owns the pool).
     pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkSpawn> {
@@ -2473,6 +2538,8 @@ impl Player {
         self.pending_sticky_dust.clear();
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
+        self.pending_retaliate = None;
+        self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -2922,7 +2989,37 @@ impl Player {
         rng: &mut dyn tr_core::loot::DropRng,
         dodgeable: bool,
     ) -> bool {
-        self.hurt_inner(amount, from_x, true, rng, dodgeable)
+        // Every single-player C# `Hurt` lane passes `Crit: false` and no
+        // projectile source (contact `Player.cs:31423`, lava `:27708`, tile
+        // `:28981`, fall/petrify `:25223/:25352/:25370`); the projectile lane
+        // (`Projectile.cs:14868`, also `Crit: false`) carries its type through
+        // `hurt_with_source` for the dismount-on-hit gate (`:38396-38400`).
+        self.hurt_inner(amount, from_x, true, rng, dodgeable, false, None, true)
+    }
+
+    /// The projectile-source `Hurt` (`PlayerDeathReason.ByProjectile`,
+    /// `Projectile.cs:14868`): identical to [`Player::hurt`] plus the source
+    /// projectile's type — the dismount-on-hit gate (`Player.cs:38396-38400`)
+    /// reads `damageSource.SourceProjectileType`. `Crit: false` like the C#
+    /// caller.
+    pub(crate) fn hurt_with_source(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        source_projectile: u16,
+    ) -> bool {
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            Some(source_projectile),
+            true,
+        )
     }
 
     /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the whole
@@ -3027,6 +3124,9 @@ impl Player {
         knock_back: bool,
         rng: &mut dyn tr_core::loot::DropRng,
         dodgeable: bool,
+        crit: bool,
+        source_projectile: Option<u16>,
+        retaliate_lane: bool,
     ) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
@@ -3078,12 +3178,23 @@ impl Player {
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
         // cuffs below restore it, NOT the reduced `num2` (`:38247`).
+        // `Player.cs:38247-38251`: `num2` is computed from the PRE-crit
+        // `Damage`, THEN `if (Crit) num *= 2` doubles the raw `num` the cuffs
+        // restore (and the MP-only PVP return recompute `:38562-38565`).
+        // Every single-player C# caller passes `Crit: false` (contact
+        // `:31423`, projectile `Projectile.cs:14868`, lava `:27708`, tile
+        // `:28981`, fall/petrify `:25223/:25352/:25370`); the crit-true
+        // callers are the PVP pair (`Player.cs:44098`, `Projectile.cs:14672`)
+        // — unreachable here, so the port's callers all pass false and the
+        // flag rides for parity + the maths test.
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
+        let raw = if crit { raw * 2 } else { raw };
         // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
         // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
         // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
-        // at `:38248-38251`; the port's callers carry no crit flag yet), the
+        // at `:38248-38251`; every ported caller passes `crit = false`, the
+        // single-player C# lanes all do), the
         // mana restores and caps at `statManaMax2`, then `ManaEffect(num3)`
         // queues the HealMana text (the NetMessage 43 send is MP-only).
         if self.magic_cuffs {
@@ -3115,13 +3226,61 @@ impl Player {
         self.hurt_cd = iframes as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
+        // `Player.cs:38396-38400`: the dismount-on-hit — the damage source's
+        // projectile type is in `ProjectileID.Sets.DismountsPlayersOnHit`
+        // (`ProjectileID.cs:546`: 877/878/879, the three golf-ball returns)
+        // and a mount is active → `Mount.TryDismount(this)`. The port's
+        // `try_dismount` needs `&World`, so the request queues for the
+        // `world_sim` drain (the `pending_switch_trip` convention).
+        if let Some(kind) = source_projectile {
+            if matches!(kind, 877 | 878 | 879) && self.mount.is_active() {
+                self.pending_dismount = true;
+            }
+        }
+        // `Player.cs:38401`: `(whoAmI == Main.myPlayer && ImmunityCooldownID.
+        // Sets.Retaliate[cooldownCounter]) & flag` — `flag` is the PRE-hit
+        // not-immune state (`:38208`), which holds for every hit that reaches
+        // this tail. The Retaliate set is {General, BossNoCheese,
+        // PaladinsShield} (`ImmunityCooldownID.cs:49`); the port's collapsed
+        // lane keeps the membership through `retaliate_lane` — the contact
+        // and projectile lanes (General/BossNoCheese) and the fall/petrify
+        // defaults pass true, the lava (`Lava`, `:27708`) and tile-contact
+        // (`TileContactDamage`, `:28981`) lanes pass false (NOT members —
+        // vanilla lava/spike hits never retaliate). The block needs the NPC
+        // list + projectile pool + the hit lane's RNG: `hurt_modifiers::
+        // drain_retaliate` rolls it at the `world_sim` seams with the final
+        // post-floor damage (the C# `num2` after `:38378-38381`).
+        if retaliate_lane {
+            // The hit-moment snapshot: the C# block runs BEFORE `Hurt`'s own
+            // knockback (`:38519-38524`), so the dart's `velocity * 0.3`, the
+            // stars' aim and the bees' spawn read the pre-knockback state.
+            self.pending_retaliate = Some(crate::hurt_modifiers::RetaliateRequest {
+                damage: amount,
+                x: self.x,
+                y: self.y,
+                center: self.center(),
+                vx: self.vx,
+                vy: self.vy,
+            });
+        }
         // `Player.Hurt`'s tail (`Player.cs:38525`): the hurt cue. The C#'s
         // voice system picks the family (`voiceVariant` 1 = the legacy
         // "Player Hit" id 1, 2 = the female id 20, 3 = the default trackable)
         // — the port has no voice setting, so the default variant 1 stands
         // (`Player.cs:56045`).
         self.pending_hurt_sound = Some("Player_Hit_0");
-        if knock_back && !self.no_knockback {
+        // The knockback gate (`Player.cs:38519`): `!noKnockback &&
+        // hitDirection != 0 && (!mount.Active || !mount.Cart)` — a mounted
+        // CART rider takes no pop (the cart keeps the rails); every other
+        // mount does. The C# dismount-on-hit (`:38396-38400`) runs BEFORE
+        // this gate, so a golf-ball return pops the rider off the cart and
+        // the knockback lands the same hit; the port's deferred drain
+        // (ANALYSIS, wave B) dismounts at the pass tail, so the cart rider's
+        // pop is suppressed on the hit tick instead (recorded deviation).
+        if knock_back
+            && !self.no_knockback
+            && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()))
+        {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
             } else {
@@ -3151,7 +3310,7 @@ impl Player {
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
         // black-belt dodge eats fall damage in the vanilla (research S1-C-1
         // §1.4).
-        self.hurt_inner(amount, cx, false, rng, true)
+        self.hurt_inner(amount, cx, false, rng, true, false, None, true)
     }
 
     /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
@@ -3374,8 +3533,9 @@ impl Player {
             // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
             // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
             // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
-            // Comb) carry only the boost, and so does `159`/`3225` (the
-            // Aglet-style `jumpSpeedBoost` rows).
+            // Comb) carry the boost AND `honeyCombItem` (`:14871-14882`,
+            // S1-C-7 wave B); `159`/`3225` (the Aglet-style `jumpSpeedBoost`
+            // rows) carry only the boost.
             399 | 1250 => {
                 self.has_jump_options[ExtraJump::Cloud.index()] = true;
                 self.jump_boost = true;
@@ -3396,7 +3556,23 @@ impl Player {
                 self.has_jump_options[ExtraJump::Sail.index()] = true;
                 self.jump_boost = true;
             }
-            159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+            159 | 3225 => self.jump_boost = true,
+            // The Honey Comb 1249 (`Player.cs:14878-14882`): `jumpBoost` +
+            // `honeyCombItem` only.
+            1249 => {
+                self.jump_boost = true;
+                self.honey_comb = true;
+            }
+            // The Honey Balloon 3251 (`:14871-14877`): the same pair PLUS
+            // `noFallDmg` (its `hasLuck_LuckyHorseshoe` half `:14876` has no
+            // port field - deferred). The `noFallDmg` row lives HERE, not in
+            // the horseshoe arm below: this arm matches first, so a 3251
+            // pattern there would be unreachable.
+            3251 => {
+                self.jump_boost = true;
+                self.honey_comb = true;
+                self.no_fall_dmg = true;
+            }
             // The base boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
             // `:15017-15020` Sailfish - `accRunSpeed = 6f`).
             54 | 1579 | 3200 => self.acc_run_speed = 6.0,
@@ -3556,8 +3732,9 @@ impl Player {
             285 => self.move_speed += 0.05,
             212 => self.move_speed += 0.1,
             // `Player.cs:15029-15033` + the horseshoe balloons: the fall
-            // damage immunity.
-            158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
+            // damage immunity. (3251's row lives in its Honey Balloon arm
+            // above - a pattern here would be unreachable.)
+            158 | 1250 | 1251 | 1252 | 3250 | 3252 => self.no_fall_dmg = true,
             // `Player.cs:15025-15028` - the Cobalt Shield.
             156 => self.no_knockback = true,
             // The sentry-backpack slings (`ApplyEquipFunctional`,
@@ -3607,6 +3784,53 @@ impl Player {
             // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
             // (`:14951`) is a separate unported family.
             1595 | 2221 => self.magic_cuffs = true,
+            // The S1-C-7 wave B retaliate family (`Player.Hurt`
+            // `:38401-38517`): the star cloak + its four override kinds, the
+            // honeycomb family and the strong-bee flag. The C# carries Item
+            // references; the port's bools are the armed-flag equivalents
+            // (the `brain_of_confusion` convention).
+            // Star Cloak 532 (`:15583-15586`).
+            532 => self.star_cloak = true,
+            // Star Veil 862 (`:15144-15149`): the cloak + `longInvince` +
+            // the starVeil override (star type 725).
+            862 => {
+                self.star_cloak = true;
+                self.long_invince = true;
+                self.star_veil_override = true;
+            }
+            // Bee Cloak 1247 (`:14959-14964`): the cloak + the honeycomb +
+            // the beeCloak override (star type 724).
+            1247 => {
+                self.star_cloak = true;
+                self.honey_comb = true;
+                self.bee_cloak_override = true;
+            }
+            // Mana Cloak 4001 (`:14459-14463`): `manaFlower` + the cloak +
+            // the manaCloak override (star type 723). The port folds
+            // `manaFlower` to its -0.08 `manaCost` row (the 555 convention).
+            4001 => {
+                self.mana_cost -= 0.08;
+                self.star_cloak = true;
+                self.mana_cloak_override = true;
+            }
+            // Serpent's Coil 6186 (`:14620-14624`): the cloak + the
+            // snakeCloak override (star type 1133). (`accSnakeBand` is its
+            // own unported family.)
+            6186 => {
+                self.star_cloak = true;
+                self.snake_cloak_override = true;
+            }
+            // Honey Comb 1132 (`:15072-15075`).
+            1132 => self.honey_comb = true,
+            // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
+            // The port has no `panic` field — the hurt buff `AddBuff(63,
+            // 480)` (`:38237-38240`) stays deferred (ANALYSIS, wave B).
+            1578 => self.honey_comb = true,
+            // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
+            // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
+            6184 => self.honey_comb = true,
+            // Hive Pack 3333 (`:15344-15347`): `strongBees`.
+            3333 => self.strong_bees = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
             // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
             // (The `Item.lifeRegen` rows are generic now — the loop after
@@ -3961,6 +4185,17 @@ impl Player {
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
+        // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
+        // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
+        // (`:18386`), `starCloakItem` + the four overrides = null
+        // (`:18714-18718`). The accessory rows below re-arm per tick.
+        self.star_cloak = false;
+        self.star_veil_override = false;
+        self.bee_cloak_override = false;
+        self.mana_cloak_override = false;
+        self.snake_cloak_override = false;
+        self.honey_comb = false;
+        self.strong_bees = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -4909,7 +5144,7 @@ impl Player {
         let stoned = self.buffs.find_buff_index(156).is_some();
         if stoned && !self.last_stoned {
             let cx = self.x + WIDTH * 0.5;
-            self.hurt_inner(20, cx, false, rng, true);
+            self.hurt_inner(20, cx, false, rng, true, false, None, true);
         }
         self.last_stoned = stoned;
 
@@ -4969,7 +5204,7 @@ impl Player {
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
                     let cx = self.x + WIDTH * 0.5;
-                    self.hurt_inner(dmg, cx, false, rng, true);
+                    self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
                     self.hurt_cd = 0.0;
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
@@ -7774,8 +8009,11 @@ impl Player {
                 // The lava hit rolls the dodge block like any `Hurt` — the
                 // stream rides in from the `UpdatePlayers` stage through the
                 // update chain, `dodgeable` keeps `Hurt`'s default `true`
-                // (research S1-C-1 §1.4).
-                if self.hurt(80, cx, rng, true) {
+                // (research S1-C-1 §1.4). `Crit: false` and the
+                // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
+                // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
+                // the S1-C-7 wave B retaliate lane stays off.
+                if self.hurt_inner(80, cx, true, rng, true, false, None, false) {
                     // The Hurt return `num81 > 0.0` gates the OnFire grant
                     // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants
                     // out of scope). `AddBuff` applies the expert ×2 itself (24
@@ -8588,6 +8826,9 @@ mod tests {
             false,
             &mut tr_core::UnifiedRandom::default(),
             true,
+            false,
+            None,
+            true,
         );
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
@@ -8600,6 +8841,9 @@ mod tests {
             p.x - 10.0,
             false,
             &mut tr_core::UnifiedRandom::default(),
+            true,
+            false,
+            None,
             true,
         );
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
@@ -8623,6 +8867,9 @@ mod tests {
             p.x - 10.0,
             false,
             &mut tr_core::UnifiedRandom::default(),
+            true,
+            false,
+            None,
             true
         ));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
@@ -10469,6 +10716,164 @@ mod tests {
     }
 
     #[test]
+    fn s1_c_7b_the_crit_doubles_the_raw_num_not_the_reduced_damage() {
+        // `Player.cs:38246-38251`: `num2` is computed from the PRE-crit
+        // `Damage` (`:38247`), THEN `if (Crit) num *= 2` — the cuffs restore
+        // the doubled raw `num`, the life loss stays the pre-crit reduction.
+        let mut p = player_with_accessory(1595);
+        p.mana = 0;
+        p.mana_max = 200;
+        p.stat_defense = 10; // 20 - 5 = 15 either way
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        assert!(p.hurt_inner(
+            20,
+            p.x + 100.0,
+            true,
+            &mut tr_core::UnifiedRandom::default(),
+            true,
+            true, // Crit
+            None,
+            true
+        ));
+        assert_eq!(p.hp, hp - 15, "num2 used the pre-crit Damage");
+        assert_eq!(p.mana, 40, "the cuffs restore the crit-doubled num");
+        assert_eq!(p.take_mana_effect(), Some(40));
+    }
+
+    #[test]
+    fn s1_c_7b_an_accepted_hit_queues_the_retaliate_with_the_final_damage() {
+        // `Player.cs:38401`: the Retaliate gate's `flag` is the PRE-hit
+        // not-immune state — the port queues only on an accepted hit, with
+        // the final post-floor `num2` (`:38378-38383`).
+        let mut p = player_with_accessory(0);
+        p.stat_defense = 10;
+        p.endurance = 0.5; // (20 - 5) * 0.5 = 7.5 → 7
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let (px, py) = (p.x, p.y);
+        let center = p.center();
+        let (pvx, pvy) = (p.vx, p.vy);
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let req = p.take_retaliate().expect("the accepted hit queues");
+        assert_eq!(req.damage, 7, "the post-floor num2");
+        assert_eq!((req.x, req.y), (px, py), "the hit-moment position");
+        assert_eq!(req.center, center);
+        // The snapshot carries the PRE-knockback velocity (`:38430`'s dart
+        // reads it before `Hurt`'s own `:38519` knockback overwrites it).
+        assert_eq!((req.vx, req.vy), (pvx, pvy));
+        assert_eq!(p.vx, -4.5, "the knockback landed on the live player");
+        assert!(p.take_retaliate().is_none(), "the request is a one-shot");
+        // The iframe-swallowed hit queues nothing.
+        assert!(!p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.take_retaliate().is_none());
+        // A dodged hit queues nothing either (the C# returns before :38401).
+        let mut q = player_with_accessory(963); // the black belt
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        struct AlwaysZero;
+        impl tr_core::loot::DropRng for AlwaysZero {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        assert!(!q.hurt(20, q.x + 100.0, &mut AlwaysZero, true));
+        assert!(q.take_retaliate().is_none());
+    }
+
+    #[test]
+    fn s1_c_7b_the_dismount_on_hit_queues_only_for_the_set_while_mounted() {
+        // `Player.cs:38396-38400` + `ProjectileID.cs:546`: the source type
+        // must be in {877, 878, 879} AND `mount.Active`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(2, false), "the slime mount equips");
+        for kind in [877u16, 878, 879] {
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt_with_source(
+                10,
+                p.x + 100.0,
+                &mut tr_core::UnifiedRandom::default(),
+                true,
+                kind
+            ));
+            assert!(p.take_dismount_request(), "kind {kind} dismounts");
+        }
+        // Outside the set: no request.
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt_with_source(
+            10,
+            p.x + 100.0,
+            &mut tr_core::UnifiedRandom::default(),
+            true,
+            100
+        ));
+        assert!(!p.take_dismount_request());
+        // The plain hurt lanes carry no projectile source.
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(!p.take_dismount_request());
+        // Unmounted: the set member queues nothing.
+        assert!(p.dismount(&w, false));
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt_with_source(
+            10,
+            p.x + 100.0,
+            &mut tr_core::UnifiedRandom::default(),
+            true,
+            877
+        ));
+        assert!(!p.take_dismount_request());
+    }
+
+    #[test]
+    fn s1_c_7b_the_retaliate_family_arms_from_the_equips_and_clears() {
+        // `ApplyEquipFunctional`'s retaliate rows (S1-C-7 wave B): the cloak
+        // family, the honeycomb family and the strong-bee flag; the
+        // `ResetEffects` clears (`:18322/:18386/:18714-18718`) re-fold.
+        let p = player_with_accessory(532);
+        assert!(p.star_cloak && !p.star_veil_override);
+        let p = player_with_accessory(862);
+        assert!(p.star_cloak && p.star_veil_override);
+        assert!(p.long_invince, "the Star Veil arms longInvince (:15147)");
+        let p = player_with_accessory(1247);
+        assert!(p.star_cloak && p.bee_cloak_override && p.honey_comb);
+        let p = player_with_accessory(4001);
+        assert!(p.star_cloak && p.mana_cloak_override);
+        assert!((p.mana_cost - 0.92).abs() < 1e-4, "the manaFlower -0.08 row");
+        let p = player_with_accessory(6186);
+        assert!(p.star_cloak && p.snake_cloak_override);
+        for kind in [1132u16, 1578, 6184, 1249, 3251] {
+            let p = player_with_accessory(kind);
+            assert!(p.honey_comb, "kind {kind} arms the honeycomb");
+        }
+        let p = player_with_accessory(1249);
+        assert!(p.jump_boost, "the Honey Comb keeps its jump boost");
+        let p = player_with_accessory(3251);
+        assert!(p.jump_boost && p.no_fall_dmg, "the Honey Balloon's halves");
+        let p = player_with_accessory(3333);
+        assert!(p.strong_bees);
+        // The fold clears without the sources.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1247;
+        p.update(&w, PlayerInput::default());
+        assert!(p.star_cloak && p.honey_comb && p.bee_cloak_override);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.star_cloak && !p.honey_comb && !p.bee_cloak_override);
+        assert!(!p.strong_bees && !p.snake_cloak_override);
+    }
+
+    #[test]
     fn the_godmode_power_swallows_hits_death_and_refills() {
         // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
         // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
@@ -10537,7 +10942,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
         assert_eq!(p.vx, 0.0, "the shield eats the knockback");
         // Without the shield: the knockback lands.
         let mut p = player_with_accessory(0);
@@ -10545,7 +10950,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
         assert!(p.vx != 0.0);
     }
 
