@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 
+mod accessory_defense;
 mod ammo;
 mod angler;
 mod app;
