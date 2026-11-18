@@ -17343,6 +17343,34 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The combat accessory family (S1-C-12 wave B, 2026-11-18)
+
+`crates/tr-app/src/accessory_combat.rs` ports the combat/damage arms of
+`Player.ApplyEquipFunctional` as per-item fns behind one seam hook,
+`apply_combat_accessory(kind, p) -> bool` — wave A (`task/S1-C-12a`) owns the
+`UpdateEquip` grant loop in `player.rs` and will call the hook per slot; the
+module is deliberately disjoint from that region so the two waves cannot
+collide. Arms + citations: the four class emblems +15% (`Player.cs:15428-15443`),
+the Avenger Emblem +12% all four (`:15444-15450`), the Destroyer Emblem +8
+crit/+10% (`:14912-14921` — 1301 is `ItemID.DestroyerEmblem`; the existing
+`player.rs` match arm mislabels it "Celestial Stone"), the Putrid Scent +5
+crit/+5% (`:14636-14646`), the Flesh Knuckles aggro-only row (`:14647-14650`),
+the Power/Mechanical/Berserker gloves and the Fire Gauntlet (`:15299-15305`,
+`:15369-15376`, `:14411-14417`, `:15306-15314`), plus the sky-stone flag arms
+(`:15412-15423`) and the `UpdateEquips` bundle (`:12989-13003`).
+
+Deviations (documented-skipped halves, same precedents as the `player.rs`
+match): `aggro ±400` (Putrid Scent/Flesh Knuckles/Berserker Glove) has no port
+field or multiplayer aggro consumer; `autoReuseGlove`/`meleeScaleGlove` have no
+port fields (the Titan Glove row precedent); the Fire Gauntlet's `magmaStone`
+has no port consumer and its on-hit fire rides the hurt pipeline (C-7, out of
+scope). Two real deltas the module carries for the wave-A wiring: the bundle
+fn adds the missing `minionKB += 0.5f` (`:13002` — the current `player.rs`
+fold at `:3643-3655` omits it) and keeps `kbGlove = true` on the glove rows
+(the current match omits it). No RNG rides any arm; no fixed-step order
+change. Tests: 10 per-accessory modifier tests in the module (spawn baselines
+from `player.rs:1608-1621`).
+
 ## The vine strip pass (S1-G-1 wave A, 2026-11-18)
 
 `crates/tr-app/src/render/vines.rs` ports `TileDrawing.DrawVines` /
