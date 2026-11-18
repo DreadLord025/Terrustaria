@@ -178,6 +178,12 @@ an agent needs before touching code.
   events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
   the app's break sources — the mining tick, `break_tile`, the replicated break and
   explosions.
+- `edit/wall.rs` (S1-K-4 round 2) — the background-wall edit family moved verbatim
+  out of `edit.rs`: `break_wall` (`WorldGen.KillWall`), `place_wall`
+  (`WorldGen.PlaceWall`) and the `after_wall_edit` hook (revision bump + chunk mark
+  + `framing::reframe_area(_, _, 2, true)` — no column-surface recompute). Both fns
+  are re-exported from `edit`, so `edit::break_wall`/`edit::place_wall` callers are
+  unchanged; behaviour frozen (world-hash pins + edit tests green).
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
