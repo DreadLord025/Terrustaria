@@ -16345,7 +16345,9 @@ Documented deviations, all deliberate:
   aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
   own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
   = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
-  rows). Each stand-in cites its machine's own constants.
+  rows). Each stand-in cites its machine's own constants. (Slice B retired
+  the two bosses' stand-ins — see "The Pumpkin Moon bosses" below; the
+  aiStyle-26/22 stand-ins remain for slice A.)
 - **The unported wave kinds still consume**: the frost family (F-13c) and
   the wave-20 unported bosses draw their vanilla rolls and spawn nothing
   (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
@@ -16363,6 +16365,98 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The Pumpkin Moon bosses (S1-F-13b2 slice B, 2026-11-18)
+
+The Mourning Wood (325, aiStyle 57) and the Pumpking (327, aiStyle 58) leave
+the S1-F-13b hover stand-ins for their named machines —
+`npc_ai_pumpkin_boss.rs` (`mourning_wood_step` / `pumpking_step`), the style
+axis in `npc.rs::update_rng` claiming `57 if kind == MourningWood` /
+`58 if kind == Pumpking` (the aiStyle-26/22 kinds ride slice A; the
+Retinazer's own `update_retinazer` — aiStyle 30 per its SetDefaults row,
+`NPC.cs:10526` — is untouched).
+
+Ported verbatim with in-place citations:
+
+* **The Wood** (`NPC.cs:32761-33043`, the type-325 arms): the hp-band
+  `num836` 2/3/4 (`:32771-32778`), the dawn flee 8 + `EncourageDespawn(10)`
+  (`:32787-32791`), the idle counter's hp-multiplied ticks and the 300-tick
+  `Next(1,3)`/`Next(3,5)` pick (`:32792-32816`), the stomp (flaming wood 325,
+  15-tick, speed 10, ±20×0.01 jitters, 50 dmg, `:32846-32865`), the spin
+  (Greek fires 326-328, the 8th ticks strictly inside (60,240), the
+  10+|dx|×0.004 cap-14 lob with the −|dx|×0.3 aim lift, 40 dmg,
+  `:32893-32920`), the beam (30-tick, speed 16, ±20×0.001, 75 dmg,
+  `:32922-32941`), the barrage (10-tick, the 12+|dx|×0.002 cap-16 lob,
+  ±30×0.005, 50 dmg, `:32942-32969`), the horizontal damp/approach
+  (`:32970-32992`) and the vertical hover — the player-overlap drop, the
+  80×20 `Collision.SolidCollision` probe at bottom−20 and the rise/fall
+  ramps (`:32993-33042`). Every shot aims the player's TOP-centre
+  (`position.Y`, not the centre) from centre+30y.
+* **The Pumpking** (`NPC.cs:33044-33197`): the `localAI` frame cycle
+  (`:33046-33055`), the 300-tick `Next(3)` mode pick (`:33061-33069`), the
+  mode-0 Greek-fire lob — every 30th tick past 30, gated on
+  `!WorldGen.SolidTile(origin/16)` with the `(dy + Next(50,201))×0.2`
+  flattening (`:33070-33085`), the one-time init (`:33087-33104`), the
+  dead/2000-px flee retarget (`:33105-33117`), the dawn fall
+  (`:33118-33122`), the hover — the 200-px-over-centre aim, `num875` 6 (mode
+  1 bands 8/10/12 by distance) on the `/15` lerp, the 300-tick gate
+  (`:33123-33169`), the scythe charge (16-speed `/50` lerp, 600 ticks or
+  mode≠1 exits, `:33170-33185`), the flee (+0.1 sink, ×0.95 decays,
+  `EncourageDespawn(500)`, `:33186-33195`) and the `vx×−0.02` rotation tilt
+  (`:33196`). Both machines end with the `noTileCollide` integration
+  (`NPC.cs:90495-90498`).
+
+**The RNG draw ORDER (the slice's critical invariant).** C# evaluates a
+call's named arguments in TEXTUAL order, and in all three Greek-fire calls
+(`:32913`, `:32962`, `:33083`) `Type: Main.rand.Next(326, 329)` sits AFTER
+`SpeedX:`/`SpeedY:` — so each shot draws aim-x jitter → aim-y jitter →
+SpeedX jitter → SpeedY jitter → **kind LAST**. The module runs that order
+and 19 `s1_f_13b2_*` tests pin it: stream-equality witnesses replay every
+draw by hand on a fresh `UnifiedRandom` (the idle pick, the stomp jitters,
+the spin/barrage/lob five-draw sequences with the kind FIFTH, the mode
+`Next(3)`, the solid-origin gate suppressing ALL five draws) and assert
+`rng == witness` after each machine tick — plus the wiring test through
+`update_rng`, proving the UpdateNPCs stream order survives the axis.
+
+Documented deviations, all deliberate:
+
+* **The lights are skipped** — `Lighting.AddLight` (`:32781`/`:32785` for
+  the Wood's two type arms, `:33059` for the Pumpking): no entity-light
+  layer on these machines yet (the Retinazer port's precedent); no
+  `Main.rand` draws in them, so the stream is untouched.
+* **The type-344 dust arm is skipped** (`:32821-32825`, the Everscream's
+  `Dust.NewDust` — the only rand-drawing line in the skipped region): the
+  kind is unported (S1-F-13c), the arm is unreachable for type 325, and
+  skipping it keeps the stream exact for the ported kinds.
+* **The type-344 (Everscream) branches are not ported** — the kind does not
+  exist in the roster (S1-F-13c); only the type-325 arms run (the idle's
+  low-hp pick reads {3,4}; the 344 kind always falls to the else arm's
+  {1,2} pick, `:32806-32812`).
+* **The Pumpking's two PumpkingBlade (328, aiStyle 59) spawns are deferred**
+  (`:33093-33103`): the blade kind is unported. `NPC.NewNPC` draws no
+  `Main.rand` outside the `getGoodWorld` variant roll (`NPC.cs:80752`),
+  which the port's spawn plumbing does not model (`variants.rs`), so
+  skipping the two calls keeps the stream exact; the blades land with
+  their kind.
+* **The `player13` re-reads after retargets** (`:33090`/`:33108`/`:33139`)
+  are kept as `ptop`/centre refreshes even where the lob arm already ran
+  this tick (the `#[allow(unused_assignments)]` arms) — the 1:1 shape.
+
+**Test-world note.** `Collision.SolidCollision` clamps its sample rows to
+`maxTilesY − 40` (`Collision.cs:2712-2713`), so the module's probe tests run
+in a 200-tile-tall world — a 120-tall one would clamp row 100 away and the
+floor probe would never fire.
+
+**Verification status — tests written, NOT yet run (code-only mode,
+2026-11-18).** The user reserved the CPU: no cargo/rustc/test invocation on
+this slice. The port was verified by line-by-line re-reading of the C#
+blocks (`NPC.cs:32761-33043`/`:33044-33197`, the `WorldGen.SolidTile`
+catch semantics `:70115-70131`, `EncourageDespawn` `:7249-7256`, the
+noTileCollide integration `:90490-90503`) and by hand-tracing every test's
+math (including the f32 rounding edge cases). The 19 `s1_f_13b2_*` tests
+run in the lead's compile window before the merge — the catalog command
+plus the anchors tripwire gate the landing.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
