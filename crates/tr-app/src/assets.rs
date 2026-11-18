@@ -784,6 +784,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
         "Extra_48",
+        // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
+        // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
+        // hover highlight tints it `Main.OurFavoriteColor`.
+        "UI/EmoteBubbleBorder",
         // The two inventory button sheets (`Main.DrawInventory`'s
         // `DrawBestiaryIcon`/`DrawEmoteBubblesButton`, `Main.cs:41012-41013`),
         // both horizontal 2-frame strips.
@@ -1891,6 +1895,10 @@ pub struct Lookups {
     pub ui_text_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
+    /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
+    /// (`EmoteButton._textureBorder`, `EmoteButton.cs:25`) — black idle,
+    /// `Main.OurFavoriteColor` hovered (`DrawSelf`, `:62-69`).
+    pub ui_emote_border: Option<tr_render::SheetRect>,
     /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
     pub ui_hue: Option<tr_render::SheetRect>,
     /// `Images/ColorBar`: the value-bar / sat-lum-alpha track
@@ -2361,6 +2369,7 @@ impl Lookups {
             ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
+            ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),

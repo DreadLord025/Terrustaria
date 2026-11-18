@@ -2613,6 +2613,34 @@ and a third was the click gate the geometry feeds):
   (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
   — the port keeps one flat roster — and the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
+* **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
+  (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
+  (1) the draw centred the 14×36 roster inside the grid rect (`UIList.HAlign
+  = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` hit-tested the *uncentred*
+  lattice (+31 px at 1600×900), so hover lit the neighbouring cell and clicks
+  spawned the neighbouring emote; the shared `grid_origin` now feeds both.
+  (2) The "hover highlight" was a wrong port of `EmoteButton.GetFrame`
+  (`:32-36`): frame 2 is the idle blink of the shared 20-tick `_frameCounter`
+  (`UpdateFrame` `:38-44`), not the hover pick — the real hover is the
+  `Images/UI/EmoteBubbleBorder` sheet tinted `Main.OurFavoriteColor`
+  (255,231,69, `Main.cs:66748`) plus the `/EmojiName.*` MouseText
+  (`DrawSelf` `:62-74`); the border sheet was never packed and is now.
+  (3) The bubble draw received raw world coordinates with no camera/zoom
+  transform (vanilla `GetPosition` subtracts `screenPosition` and draws under
+  `GameViewMatrix.ZoomMatrix`, `Main.cs:46455-46459`), so every bubble drew
+  thousands of px offscreen; it also anchored at the head-top instead of
+  `GetPosition`'s `(Top.X − dir·width·0.75, y+2)` bottom-centre origin
+  (`EmoteBubble.cs:206`/`:247-249`) and dropped the direction flip. The
+  lifetime math now matches `Update`'s short-circuit (`--lifeTime > 0 &&
+  ++frameCounter >= 8`, `:179`) and `OnBubbleChange`'s unconditional
+  `lifeTime = 6` on the other same-player bubbles (`:273` — the port used to
+  guard `> 6`). The wheel's Back click hit-tested the bestiary's box (BUG-18's
+  draw-side fix never reached the click arm) and the pick now honours
+  `MakeLocalPlayerEmote`'s dead gate (`:280`). Remaining deliberate gaps: the
+  reverse-gravity arm (`Draw` `:207-212`) stays out with the unported gravity
+  flip, the NPC reactions (`CheckForNPCsToReactToEmoteBubble` `:152-167`) with
+  M4-TOWN, and the button blink rides the world step instead of the UI update
+  (the wheel is only reachable in-game where the world keeps stepping).
 
 Open gaps (deliberately out, each with its reason):
 
@@ -4714,6 +4742,17 @@ turns on with the pets rather than needing a second pass. The remaining
 `S1-E-11` items are `MoveTownNPC`'s failure-reason feedback text
 (`:4694-4828`, the housing query UI reads it), which needs the housing-query
 `Main.mouseNPC` model (`ui/housing.rs:12-14`).
+
+### Stinkbug flags (S1-E-11b, 2026-11-18)
+
+`RoomScan.has_stinkbug`/`has_echo_stinkbug` are added by this change and
+set by `check_tile` from the active tiles 630/631
+(`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
+keeps running and only the flags are written; `check_room` clears both per
+scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
+pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
+the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+ported block (`Main.rand` untouched; the flags are pure tile reads).
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
@@ -8410,6 +8449,74 @@ inherits the same function, so both moved. Fixed 2026-11-09 with the C#
 semantics; the world-hash pins are re-taken (`SEED42_512 = 1586971478`,
 `DEFAULT_WORLD = 4240603701`) and `worldgen/biomes.rs`'s divergence note
 updated — its own `spread_jungle_grass` already carried the C# gate.
+
+### The downward-spread report, re-verified (fix/grass-spread-direction)
+
+A user report ("grass grows INTO the soil below a slope, green veins inside
+dirt") pointed at the same function. Re-verification against
+`WorldGen.cs:74269-74867` + `:75146-75257` found the enclosure gate already
+correct on main (the M5-SPREAD-1 fix above): a probe massif converted grass
+only on exposed faces — the top fringe AND the exposed cliff sides, which is
+vanilla behaviour. **The C# has no "cell above must be open" rule**; the
+surface gate is the 3×3 enclosure scan, so grass legitimately rides down an
+exposed cliff face one column wide. Buried soil (fully solid 3×3) never
+converts. Pinned by `growth::tests::buried_soil_stays_soil_and_exposed_soil_converts`
+and `the_grass_scan_leaves_buried_soil_and_the_draw_count_is_outcome_independent`.
+The screenshot's veins are consistent with the pre-M5-SPREAD-1 inverted gate
+(which converted enclosed subsoil and refused open surfaces).
+
+Two residual divergences in the same slice were fixed on this branch
+(both RNG-free — `spread_grass` and its callees draw nothing, so the
+UnifiedRandom stream's count/order is untouched; the lockstep test above
+pins it):
+
+- **The surface rule wrongly bound the infection grasses.** The port refused
+  every `dirt == 0 && j >= worldSurface` conversion; the C# (`:75162`)
+  exempts grass 23/199/661/662 — corrupt/crimson grass converts dirt at any
+  depth (the enclosure gate still applies). Plain grass 2 / jungle 60 /
+  mushroom 70 / hallow 109 keep the surface rule. Pinned by
+  `the_surface_rule_exempts_the_infection_grasses`.
+- **The `CanBeClearedDuringGeneration` gate was missing** (`:75202` →
+  `:80168-80175`, `skipDualDungeonCheck: true` reduces it to the bare
+  `TileID.Sets.CanBeClearedDuringGeneration` set, `TileID.cs:573` — default
+  true, {396-401, 404, 368, 367, 41, 43, 44, 481-483, 226, 237} false).
+  Restored; dirt 0 / mud 59 / stone 1 / grass 2 are all in the set, so no
+  existing conversion arm changes. The world-hash pins are UNCHANGED
+  (`SEED42_512 = 2673964944`, `DEFAULT_WORLD = 3439477718` — the current
+  post-S1-A-3 values), proving worldgen output is byte-identical.
+
+**Arm audit** (which conversions the enclosure gate binds): every arm of the
+ported `update_world_grass_growth` table routes through `spread_grass`, so
+all were affected by the old inverted gate and all are now correct — plain
+grass 0→2, corrupt 0→23 / mud 59→661, crimson 0→199 / 59→662, the 661/662
+reverse arms (59→661/0→23, 59→662/0→199), jungle 59→60, mushroom 59→70, ash
+57→633. Chlorophyte does NOT ride this function (`spread.rs::hard_update_world`
+→ `convert_cell`, C# `:69646-69685` — no enclosure gate in the C# either;
+chlorophyte legitimately converts buried mud). The moss arm
+(`grow_moss_arm`) and the neon-moss worldgen sweep share `spread_grass` and
+inherit the fixes.
+
+**Genuinely unported arms** (documented divergence, NOT ported here — each
+adds RNG draws the frozen stream does not make): the C# overground body
+(`underground: false`, `:74510-74866`) is a different switch from the
+underground table the port implements for both dispatchers. Unported:
+the halloween pumpkin roll (`:74524-74546`, `Next(75)`); the plant-above
+rolls for grass 2 (`Next(12)` → 3), corrupt 23 (`Next(10)` → 24), crimson
+199 (`Next(10)` → 201), 661/662 (`Next(10)`), hallow 109 (`Next(10)` → 110),
+ash 633 (`Next(10)` → 637) (`:74547-74590`); the 32/352 thorn and 477/492
+golf-grass source remaps (`:74592-74614` — the port's table has no 2/109/
+477/492/32/352 rows, so overground plain-grass spread currently rides the
+underground-style 0→2 row instead); the overground cross-infection scan
+(`:74628-74697` — grass↔evil↔hallow conversions of ALREADY-grassed
+neighbours, 2→23/199, 109→… etc.); the overground jungle/mushroom tree and
+plant arms (`:74704-74813`, `Next(7)`/`Next(500)`/`Next(25)`/`Next(300)`);
+the 226 lihzahrd plant arm (`:74815-74828`); the 633 ash plant + scan
+(`:74829-74865`). The underground body's jungle special arms (plantera
+bulbs 238 `:74414-74495`, jungle roses 236/233, the mushroom cattail/tree
+arm `:74497-74506`) are likewise unported. These are plant-placement and
+cross-grass-conversion features, not soil-direction bugs; porting them
+changes the draw ledger and belongs to a dedicated M5-SPREAD task.
+
 
 ## Chest loot rows + the family probes (M5-CHEST-gen)
 
@@ -12963,6 +13070,32 @@ World's downed flags, and the Discount Card's
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
 
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
@@ -15941,3 +16074,62 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
+
+Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
+whole animation sheet squashed into one frame-sized box (or spilled the cell).
+
+Cursor: the `bestiary_open` branch of `ui::draw_hud` returned before the
+global `cursor::draw` tail. The C# bestiary is a fancy-UI state:
+`DrawInterface_12_IngameFancyUI` (`Main.cs:46148-46158`) returns false for
+it, stopping the layer loop before layer 36's cursor; `IngameFancyUI.Draw`
+draws the cursor itself after the state (`IngameFancyUI.cs:220-223`,
+`Main.DrawCursor(Main.DrawThickCursor())`). The fix draws the cursor inside
+the bestiary branch before the early return - the same structure.
+
+Icon: `draw_portrait` passed `(frames_x=1, frames_y=1, frame=0)` to
+`draw_sheet_frame`, sampling the entire NPC animation strip as one rect.
+`UnlockableNPCEntryIcon.Draw` (`UnlockableNPCEntryIcon.cs:194-207`) draws
+`DrawNPCDirect` with the NPC's single `npc.frame`; frame geometry from
+`FindFrame`/`SetFrameSize` (`:100-109`, `:185`; the division itself
+`NPC.cs:66666`/`:66694` - `frame.Height = tex.Height /
+Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
+`frames_y = sheet_h / frame_h` rows (the `.round()` is an inverse
+derivation of the integer row count, not a `Math.Round` port) and applies
+the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
+
+Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
+stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
+Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
+GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
+the `OverflowHidden` clip of the 68 px inner box
+(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
+CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
+port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
+(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
+inset and centring are faithful; only the scale/clip mechanism is approximate.
+
+## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
+
+The Settings menu's Save & Exit row armed `pending = Some(SaveAndExit)` then
+called `close()`, which clears `pending` (`ingame_options.rs`); no caller
+ever drained it, so the button only closed the window. The C# row
+(`IngameOptions.cs:296-305`) does `Close()` + `menuMode = 10` +
+`gameMenu = true` + `WorldGen.SaveAndQuit()`; `SaveAndQuit`
+(`WorldGen.cs:6701-6719`) plays sound 11, resets the invasion bar
+(`:6705-6708`) and queues `SaveAndQuitCallBack` (:6664-6687`:
+`Player.SavePlayer` + `WorldFile.SaveWorld` on the `netMode == 0` arm,
+sound 10, fast-forward flags cleared, `menuMode = 0`).
+
+The fix wires the row to `App::save_and_quit` (`saveglue.rs`): sound 11 ->
+invasion reset -> the existing `save_world` funnel (world + player sidecar +
+map + achievements) -> sound 10 -> fast-forward flags -> reopen the main menu
+(the `net_disconnect` shape). Deliberate deviation: the C# mode-10 "saving"
+screen exists only to cover the ThreadPool async save; the port's synchronous
+single-player save has no window to cover, so mode 10 is skipped (documented
+in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
+`ResetFocus` halves covered by the `game_menu` audio listener). The
+multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
+the MP pause-menu flow lands. The Settings panel layout deviations remain a
+follow-up round.
