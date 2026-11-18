@@ -2036,8 +2036,9 @@ pub(crate) mod front_flow_tests {
         // one), so the fixture entry carries a path (`app/flow.rs:845`).
         let mut app = flow_app(None, Vec::new(), Vec::new());
         open_world_select(&mut app, vec![world_entry("W1")]);
+        let dir = crate::test_world_helpers::test_scratch("flow-delete-gate");
         for w in &mut app.worlds {
-            w.path = Some(std::env::temp_dir().join("terrustaria-delete-gate.trwld"));
+            w.path = Some(dir.join("terrustaria-delete-gate.trwld"));
         }
         frames(&mut app, 13);
         assert!(!app.pointer.clicks_disabled());
@@ -2049,6 +2050,7 @@ pub(crate) mod front_flow_tests {
             matches!(app.menu, Some(ref m) if m.page == menu::Page::ConfirmDeleteWorld),
             "Delete parks the mode-9 confirm page"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -2478,9 +2480,7 @@ pub(crate) mod front_flow_tests {
         // (`IO/FavoritesFile.cs:27-36`) saves a store beside the character, not
         // inside it; the next re-list (a re-entry into the screen) reads it
         // back. Before the fix the click only flipped the in-memory flag.
-        let dir = std::env::temp_dir().join("tr-flow-char-fav");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_world_helpers::test_scratch("flow-char-fav");
         let path = dir.join("Belsin.plr");
         let mut inventory = [(0i32, 0i32, 0u8); 58];
         inventory[0] = (3507, 1, 0);
