@@ -742,6 +742,16 @@ let spawned = app.projectiles.spawn_hook(
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // S1-E-7 wave C: the accessory/set-bonus buff arms
+            // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
+            // same `UpdateBuffs` slot chain, in its own module so waves A/B
+            // can edit the `player.rs` effect region without collision.
+            crate::buff_effects_accessory::update_accessory_buff_arms(
+                p,
+                &mut app.projectiles,
+                &app.npcs,
+                rng,
+            );
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port

@@ -13,6 +13,7 @@ mod banners;
 mod bestiary;
 mod biome;
 mod buffs;
+mod buff_effects_accessory;
 mod chat;
 mod chest;
 mod collision;
