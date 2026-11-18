@@ -946,6 +946,16 @@ struct NebulaSubshot {
     damage: i32,
 }
 
+/// `AI_123_FloatingTurrets`' fire request (`Projectile.cs:37237`/`:37262`):
+/// the turret's single 642 beam (`ai0` = the start heading, `ai1` = the
+/// turret's key) or the crystal's three 644 shards (`ai0` = the disco hue,
+/// `ai1` = the crystal's key). The key and the owner ride out through the
+/// dispatch (the NebulaSubshot pattern).
+enum FloatingTurretShot {
+    Laser { x: f32, y: f32, vx: f32, vy: f32, ai0: f32 },
+    Crystal { shards: [(f32, f32); 3], hue: f32 },
+}
+
 /// The Last Prism holder's 6× laser spawn (`Projectile.cs:66622-66626`:
 /// kind 632 at `this.damage`, `this.knockBack`, `ai0 = m` (0..5), `ai1 =
 /// this.key`). The six shots share everything but `ai[0]`, so the arm hands
@@ -2384,8 +2394,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:6916-6938` — the turret pair's `alpha = 255`
+            // fade-in rides the state group (the 641's `drawLayer = 1` is a
+            // draw-side field with no pool consumer); `ignoreWater` rides
+            // the sentry flag's tail below.
             MOONLORD_TURRET | RAINBOW_CRYSTAL => {
-                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
+                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6904-6915` — the turret's beam (642): 18x18,
+            // aiStyle 84 (the `AI_084` laser family), `penetrate = -1`,
+            // `tileCollide = false`, `alpha = 255`, local-immunity 10.
+            MOONLORD_TURRET_LASER => {
+                (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 10, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6941-6952` — the crystal's shard (644): 14x14,
+            // aiStyle 112, `penetrate = 1`, `timeLeft = 900`,
+            // `tileCollide = false`, `ignoreWater`, `alpha = 255`, the
+            // idStatic pair with the stock −1 cooldown (`:466`).
+            RAINBOW_CRYSTAL_EXPLOSION => {
+                (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, true, -1, 255, 1.0))
             }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -2592,7 +2619,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         ignore_water: ((minion || sentry)
             && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
-            || matches!(kind, VILE_BASE | VILE_TIP),
+            || matches!(kind, VILE_BASE | VILE_TIP)
+            // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
+            || kind == RAINBOW_CRYSTAL_EXPLOSION,
     })
 }
 
@@ -2640,7 +2669,17 @@ pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
 pub const SPIDER_EGG: u16 = 378;
 pub const MOONLORD_TURRET: u16 = 641;
+/// `ProjectileID.MoonlordTurretLaser` (642) — the turret's beam
+/// (`Projectile.cs:6904-6915`: 18x18, aiStyle 84, `penetrate = -1`,
+/// `alpha = 255`, `tileCollide = false`, local-immunity 10).
+pub const MOONLORD_TURRET_LASER: u16 = 642;
 pub const RAINBOW_CRYSTAL: u16 = 643;
+/// `ProjectileID.RainbowCrystalExplosion` (644) — the crystal's shard
+/// (`Projectile.cs:6941-6952`: 14x14, aiStyle 112, `penetrate = 1`,
+/// `timeLeft = 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
+/// `usesIDStaticNPCImmunity` with the stock `idStaticNPCHitCooldown = -1`,
+/// `Projectile.cs:466` — the block-forever sentinel).
+pub const RAINBOW_CRYSTAL_EXPLOSION: u16 = 644;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
 pub const FLAME_BURST_TOWER_2: u16 = 665;
 pub const FLAME_BURST_TOWER_3: u16 = 667;
@@ -9419,6 +9458,484 @@ impl Projectile {
         flag
     }
 
+    /// `Projectile.AI_123_FloatingTurrets` (`Projectile.cs:37051-37264`):
+    /// the Moon Lord turret (641) and the Rainbow Crystal (643) — the
+    /// aiStyle-123 sentry pair. The C# order: the per-kind heads (the
+    /// turret's alpha fade + spin, the crystal's alpha fade + 3-tick frame
+    /// machine + the two `localAI` counters), the backpack gate + the sling
+    /// reposition, the `ai[0] < 0` cooldown (the turret's per-tick `ai[1]`
+    /// unwinds against it), the `ai[0] == 0` target acquire (the owner's
+    /// whip target first, then the nearest chaseable NPC inside 1000 px
+    /// behind `CanHitLine`), the held-target validation, the fire-delay
+    /// count (10 ticks for the turret, 5 for the crystal) and the shot.
+    /// Returns the fire request (`None` = no shot this tick).
+    ///
+    /// RNG (`Main.rand`, the pass's `UpdateProjectiles` stream): the heads'
+    /// cosmetic dust gates are DRAWN even though the dust layer is skipped
+    /// (the `ai_leaf_blower`/`ai_nebula_arcanum` precedent, ANALYSIS) — the
+    /// turret draws `Next(2)` twice (`:37071`/`:37082`), each taken branch
+    /// consuming the `RotatedByRandom` pair + `Next(10,21)` (only the first
+    /// loop) + `NextFloat` (`:37073-37078`/`:37084-37089`), then while
+    /// `ai[0] < 0` the `SelectRandom`'s `Next(2)` (`:37098`,
+    /// `Utils.cs:2459-2462` — drawn BEFORE the branch test, exactly as the
+    /// C# evaluates the argument). The crystal draws `Next(15)` only at
+    /// `alpha == 0` (`:37121`, the gate short-circuits ahead of the draw)
+    /// plus the taken branch's `RotatedByRandom` pair + `NextFloat`
+    /// (`:37127`). The crystal's fire rolls the spawn point's
+    /// `RandomVector2` pair (`:37252`, `Utils.cs:2431-2434` — two
+    /// `NextDouble`s) once, then per spread shard `j > 0` a
+    /// `RotatedByRandom` pair + `NextFloat` (`:37260`); `j == 0` draws
+    /// nothing. The turret's fire draws nothing. The fire rolls are gated
+    /// on `owner == Main.myPlayer` (`:37235`/`:37247`) — the non-local owner
+    /// returns before them.
+    ///
+    /// Skips (ANALYSIS "Minions & sentries"): the `Lighting.AddLight`
+    /// (`:37070`), the dust spawns themselves, the `netUpdate` writes and
+    /// the `GetProjectileSource_FromThis` bookkeeping. Both shots carry
+    /// `ai1 = this.key` (`:37237`/`:37262`) — the dispatcher rides the
+    /// slot's `key_of` raw bits out, the NebulaSubshot pattern.
+    fn ai_floating_turrets(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        local_owner: u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+        disco_hue: f32,
+    ) -> Option<FloatingTurretShot> {
+        // `:37053-37056` — the flags, the 1000-px scan range (num) and the
+        // velocity pin.
+        let flag = self.kind == MOONLORD_TURRET;
+        let flag2 = self.kind == RAINBOW_CRYSTAL;
+        let num = 1000.0f32;
+        self.vel = Vec2::ZERO;
+        let mut player = player;
+        if flag {
+            // `:37059-37069` — the alpha fade-in, the facing latch and the
+            // spin (2π/120 per tick against the facing), the opacity scale.
+            self.alpha -= 5;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            if self.direction == 0 {
+                self.direction = player.as_ref().map_or(1, |p| p.facing);
+            }
+            self.rot -= self.direction as f32 * (std::f32::consts::PI * 2.0) / 120.0;
+            self.scale = opacity_of(self.alpha);
+            // `:37070` — the light cast: SKIPPED (no light layer).
+            // `:37071-37081` — the 229 dust loop: the gate + the taken
+            // branch's draws stay on the stream, the spawn is skipped.
+            if rng.next_range(0, 2) == 0 {
+                let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+                let _ = rng.next_range(10, 21); // `:37076` position radius
+                let _ = rng.next_float(); // `:37078` scale
+            }
+            // `:37082-37092` — the 240 dust loop: same shape, no radius
+            // draw (the position pins at 30, `:37087`).
+            if rng.next_range(0, 2) == 0 {
+                let _ = (rng.next_float(), rng.next_float());
+                let _ = rng.next_float(); // `:37089` scale
+            }
+            // `:37093-37100` — the cooldown dust: the `SelectRandom`'s
+            // `Next(2)` draws inside the branch (`:37098`); the spawn and
+            // the `customData` write are skipped.
+            if self.ai[0] < 0.0 {
+                let _ = rng.next_range(0, 2);
+            }
+        }
+        if flag2 {
+            // `:37104-37112` — the alpha fade-in and the facing latch.
+            self.alpha -= 5;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            if self.direction == 0 {
+                self.direction = player.as_ref().map_or(1, |p| p.facing);
+            }
+            // `:37113-37120` — the 3-tick frame machine, wrapping at
+            // `projFrames[643] = 8` (`Main.cs:8476`).
+            self.frame_counter += 1;
+            if self.frame_counter >= 3 {
+                self.frame_counter = 0;
+                self.frame += 1;
+                if self.frame >= proj_frames(self.kind) as i32 {
+                    self.frame = 0;
+                }
+            }
+            // `:37121-37129` — the 261 dust window: the `alpha == 0` gate
+            // short-circuits BEFORE the `Next(15)` draw; the taken branch's
+            // `RotatedByRandom` pair + `NextFloat` stay on the stream.
+            if self.alpha == 0 && rng.next_range(0, 15) == 0 {
+                let _ = (rng.next_float(), rng.next_float());
+                let _ = rng.next_float(); // `:37127` position radius
+            }
+            // `:37130-37135` — the 60-tick wrap counter and the age.
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] >= 60.0 {
+                self.local_ai[0] = 0.0;
+            }
+            self.local_ai[1] += 1.0;
+        }
+        // `:37137-37149` — the backpack gate + the carried branch. The C#
+        // sets `ai[2]` before the carried test, so the pickup tick already
+        // rides the sling (the 134 arm's `flag` fold).
+        let pickup = self.ai[2] == 0.0
+            && self.can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
+        if pickup {
+            self.ai[2] = 1.0;
+        }
+        if self.ai[2] == 1.0 {
+            // `SetAsSelectedSentryBackpackTarget` (`:37144`): re-armed
+            // every carried tick.
+            if let Some(pl) = player.as_deref_mut() {
+                self.set_as_selected_sentry_backpack_target(pl);
+            }
+            self.vel = Vec2::ZERO;
+            self.tile_collide = false;
+            let alive = if let Some(pl) = player.as_deref() {
+                self.ai_sentries_heavy_sling_reposition(pl, 123)
+            } else {
+                self.kill();
+                false
+            };
+            if !alive {
+                return None;
+            }
+        }
+        // `:37150-37157` — the cooldown: `ai[0]` climbs toward 0 and the
+        // turret's `ai[1]` unwinds π/8/50 per tick against the facing.
+        if self.ai[0] < 0.0 {
+            self.ai[0] += 1.0;
+            if flag {
+                self.ai[1] -= self.direction as f32 * (std::f32::consts::PI / 8.0) / 50.0;
+            }
+        }
+        // `:37158-37195` — the acquire: the owner's whip target first
+        // (`OwnerMinionAttackTargetNPC`, chaseable + in range + LOS), then
+        // the full nearest scan when it supplied no answer.
+        if self.ai[0] == 0.0 {
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let mut num3: i32 = -1;
+            let mut num4 = num;
+            let player_target = player.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
+            if player_target >= 0 {
+                if let Some(n) = npcs.get(player_target as usize) {
+                    if n.can_be_chased_by() {
+                        let nc = npc_center(n);
+                        let num5 = center.distance(nc);
+                        if num5 < num4
+                            && can_hit_line(world, center.x, center.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+                        {
+                            num4 = num5;
+                            num3 = player_target;
+                        }
+                    }
+                }
+            }
+            if num3 < 0 {
+                for (i, n) in npcs.iter().enumerate() {
+                    if !n.can_be_chased_by() {
+                        continue;
+                    }
+                    let nc = npc_center(n);
+                    let num6 = center.distance(nc);
+                    if num6 < num4
+                        && can_hit_line(world, center.x, center.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+                    {
+                        num4 = num6;
+                        num3 = i as i32;
+                    }
+                }
+            }
+            if num3 != -1 {
+                self.ai[0] = 1.0;
+                self.ai[1] = num3 as f32;
+                return None;
+            }
+        }
+        // `:37196-37207` — no lock: return; a dead target clears the lock.
+        if !(self.ai[0] > 0.0) {
+            return None;
+        }
+        let num7 = self.ai[1] as i32;
+        let target_ok = npcs
+            .get(num7 as usize)
+            .is_some_and(|n| n.can_be_chased_by());
+        if !target_ok {
+            self.ai[0] = 0.0;
+            self.ai[1] = 0.0;
+            return None;
+        }
+        // `:37208-37221` — the fire-delay count: 10 ticks for the turret,
+        // 5 for the crystal (the stock 30 covers no ported kind).
+        self.ai[0] += 1.0;
+        let num8 = if flag { 10.0 } else if flag2 { 5.0 } else { 30.0 };
+        if !(self.ai[0] >= num8) {
+            return None;
+        }
+        // `:37222-37228` — the aim: `DirectionTo` (the NaN aim falls to
+        // UnitY), its rotation and the side sign.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let target = &npcs[num7 as usize];
+        let mut vector3 = safe_normalize_or(npc_center(target) - center, Vec2::new(0.0, 1.0));
+        if vector3.is_nan() {
+            vector3 = Vec2::new(0.0, 1.0);
+        }
+        let num9 = vector3.y.atan2(vector3.x);
+        let num10: i32 = if vector3.x > 0.0 { 1 } else { -1 };
+        let mut shot = None;
+        if flag {
+            // `:37229-37239` — the turret fires the 642 beam along the aim
+            // with `ai0 = num9 + side·π/6` (the beam's start heading) and
+            // `ai1 = this.key` (the dispatcher's `key_of`).
+            self.direction = num10;
+            self.ai[0] = -20.0;
+            self.ai[1] = num9 + num10 as f32 * std::f32::consts::PI / 6.0;
+            if self.owner == local_owner {
+                shot = Some(FloatingTurretShot::Laser {
+                    x: center.x,
+                    y: center.y,
+                    vx: vector3.x,
+                    vy: vector3.y,
+                    ai0: self.ai[1],
+                });
+            }
+        }
+        if !flag2 {
+            return shot;
+        }
+        // `:37244-37250` — the crystal's fire state; the non-local owner
+        // returns before the spawn rolls.
+        self.direction = num10;
+        self.ai[0] = -20.0;
+        if self.owner != local_owner {
+            return None;
+        }
+        // `:37251-37252` — the spawn point: a random point inside the
+        // target's box (`RandomVector2` draws X then Y), relative to the
+        // crystal's centre.
+        let (tw, th) = target.size();
+        let rx = rng.next_float();
+        let ry = rng.next_float();
+        let vector4 = Vec2::new(target.x + tw * rx, target.y + th * ry) - center;
+        // `:37253-37263` — the three 644 shards: `j == 0` aims at the point
+        // + the target's velocity × 30; `j > 0` scatters around it by the
+        // distance-lerped reach. `GetLerpValue(800, 200, dist)` runs with
+        // the default `clamped = false` (`Utils.cs:315`, `:37257` passes
+        // three arguments) — the raw `(t - from) / (to - from)` ramp, NOT
+        // the port's clamped `get_lerp_value`; past 800 px the reach falls
+        // below 0.1 exactly as the C#'s does.
+        let mut shards = [(0.0f32, 0.0f32); 3];
+        for j in 0..3usize {
+            let mut other = center + vector4;
+            other += Vec2::new(target.vx, target.vy) * 30.0;
+            let ramp = (center.distance(other) - 800.0) / (200.0 - 800.0);
+            // `MathHelper.Lerp(0.1f, 0.75f, ramp)`.
+            let num11 = 0.1 + (0.75 - 0.1) * ramp;
+            if j > 0 {
+                // `RotatedByRandom(π/4)` — two `NextDouble`s
+                // (`Utils.cs:1697-1700`), then the reach `NextFloat`.
+                let a = rng.next_float() * 0.7853981852531433
+                    - rng.next_float() * 0.7853981852531433;
+                other = center + rotate(vector4, a) * (rng.next_float() * num11 + 0.5);
+            }
+            shards[j] = (other.x, other.y);
+        }
+        shot = Some(FloatingTurretShot::Crystal {
+            shards,
+            hue: disco_hue,
+        });
+        shot
+    }
+
+    /// `AI()`'s aiStyle-84 type-642 arm (`Projectile.cs:31411-31421`,
+    /// `:31482-31485`, `:31523-31537`, `:31553-31559`, `:31577-31581`,
+    /// `:31592-31618`, `:31640-31659`): the Moon Lord turret's beam. The
+    /// beam hangs on its turret's centre (the `TryGetActive(641)` key probe
+    /// — a failed probe falls into the `:31424-31427` kill), rides the
+    /// backpack sling when the turret is carried (`:31414-31417`, the
+    /// aiStyle-84 head anchor of `AI_Sentries_HeavySlingReposition`), and
+    /// unwinds its heading by `-turret.direction · (π/3)/50` per tick. The
+    /// 50-tick life scales `sin(age·π/50)·10` capped at 1; the length is the
+    /// width-0 two-sample `LaserScan` fold (one ray, `laser_ray_len`)
+    /// smoothed at 0.5.
+    ///
+    /// RNG: the tip dust (`:31643-31657`) is SKIPPED but its draws stay on
+    /// the stream — two iterations of `Next(2)` + `NextDouble`
+    /// (`:31645-31646`), then the `Next(5)` gate and the taken branch's
+    /// `NextDouble` (`:31652-31654`). The `PlotTileLine` light and the
+    /// `CutTiles` arm (`:15206`) have no pool layer — skipped (ANALYSIS).
+    fn ai_moonlord_turret_laser(
+        &mut self,
+        world: &World,
+        parent: Option<(Vec2, i32, bool)>,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:31380-31383` — the aiStyle-84 head guard.
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        // `:31411`/`:31424-31427` — the key probe; a miss kills.
+        let Some((parent_center, parent_direction, carried)) = parent else {
+            self.kill();
+            return;
+        };
+        // `:31413` — the beam centres on the turret.
+        self.set_center(parent_center);
+        // `:31414-31417` — the carried turret drags the beam through the
+        // aiStyle-84 sling anchor (`:69036-69050`).
+        if carried {
+            if let Some(pl) = player {
+                if !self.ai_sentries_heavy_sling_reposition(pl, 84) {
+                    return;
+                }
+            } else {
+                self.kill();
+                return;
+            }
+        }
+        // `:31418-31420` — the heading unwind against the turret's facing.
+        let vector75 = rotate(
+            Vec2::new(self.ai[0].cos(), self.ai[0].sin()),
+            -(parent_direction as f32) * (std::f32::consts::PI / 3.0) / 50.0,
+        );
+        self.ai[0] = vector75.y.atan2(vector75.x);
+        self.vel = safe_normalize_or(vector75, Vec2::ZERO);
+        // `:31482-31485` — the second NaN/zero guard.
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        // `:31523-31537` — the 50-tick life and the sin scale curve.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] >= 50.0 {
+            self.kill();
+            return;
+        }
+        self.scale = (self.local_ai[0] * std::f32::consts::PI / 50.0).sin() * 10.0;
+        if self.scale > 1.0 {
+            self.scale = 1.0;
+        }
+        // `:31553-31559` — the rotation tail (no `ai[0]` offset for 642).
+        let num671 = self.vel.y.atan2(self.vel.x);
+        self.rot = num671 - std::f32::consts::FRAC_PI_2;
+        self.vel = Vec2::new(num671.cos(), num671.sin());
+        // `:31577-31581`/`:31592-31599` — num672 = 2 samples at width 0:
+        // both trace the same ray, so the average is one `laser_ray_len`
+        // walk capped at 2400 (the 632 precedent).
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let num674 = laser_ray_len(world, center, self.vel, 2400.0);
+        // `:31600`/`:31618` — amount 0.5 (the 632's 0.75 is its own arm).
+        self.local_ai[1] += (num674 - self.local_ai[1]) * 0.5;
+        // `:31640-31659` — the tip dust: SKIPPED, the draws kept. Two
+        // iterations of `Next(2)` + `NextDouble`, then the `Next(5)` gate
+        // and the taken branch's `NextDouble`.
+        for _ in 0..2 {
+            let _ = rng.next_range(0, 2);
+            let _ = rng.next_float();
+        }
+        if rng.next_range(0, 5) == 0 {
+            let _ = rng.next_float();
+        }
+    }
+
+    /// `AI()`'s aiStyle-112 type-644 arm (`Projectile.cs:34235-34362`): the
+    /// Rainbow Crystal's shard. The one-shot `localAI[0]` scale roll +
+    /// facing flip, the `localAI[1]/40` spin, the 8-per-tick alpha fade, the
+    /// `Opacity/2 · localAI[0]` scale, the 60-tick life and the tick-30
+    /// burst (the resize-and-`Damage` half rides the pool, the
+    /// `damage_pve_boxed` seam). Returns `true` when the tick-30 burst
+    /// fires (the local owner's box damage the dispatch runs).
+    ///
+    /// RNG: the first tick draws `NextFloat` + `Next(2)`
+    /// (`:34251-34252`); every tick the two 2-iteration `Next(10)` dust
+    /// gates (`:34269`/`:34282`, the taken branches spawn dust only — no
+    /// further explicit draws), then the `Next(10)` sparkle gate
+    /// (`:34293`): the taken branch draws three `NextFloat`s
+    /// (`:34295-34297`), the `RandomVector2` pair (`:34298`), the radius
+    /// `NextFloat` (`:34303`) and — only when the point is in-world and
+    /// non-solid — the velocity `NextFloat` (`:34320`). The dust spawns,
+    /// the `CloneDust` internal `NewDust` rolls (the dust precedent,
+    /// ANALYSIS) and the light casts (`:34246-34247`/`:34265`) are skipped.
+    /// The tick-30 `DoRainbowCrystalStaffExplosion` draws ride
+    /// [`rainbow_crystal_explosion_draws`].
+    fn ai_rainbow_crystal_shard(
+        &mut self,
+        world: &World,
+        parent_center: Option<Vec2>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> bool {
+        // `:34240-34248` — the `TryGetActive(643)` probe: a miss zeroes
+        // `ai[1]`; the hit's `PlotTileLine` light is skipped.
+        if parent_center.is_none() {
+            self.ai[1] = 0.0;
+        }
+        // `:34249-34253` — the one-shot scale roll and facing flip.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = rng.next_float() * 0.8 + 0.8;
+            self.direction = if rng.next_range(0, 2) > 0 { 1 } else { -1 };
+        }
+        // `:34254` — the spin.
+        self.rot = self.local_ai[1] / 40.0 * (std::f32::consts::PI * 2.0) * self.direction as f32;
+        // `:34255-34262` — the alpha fade-in.
+        if self.alpha > 0 {
+            self.alpha -= 8;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:34267-34292` — the two 2-iteration dust gates (draws only).
+        for _ in 0..2 {
+            let _ = rng.next_range(0, 10);
+        }
+        for _ in 0..2 {
+            let _ = rng.next_range(0, 10);
+        }
+        // `:34293-34332` — the sparkle gate.
+        if rng.next_range(0, 10) == 0 {
+            let _ = rng.next_float(); // num838 (`:34295`)
+            let _ = rng.next_float(); // fadeIn (`:34296`)
+            let _ = rng.next_float(); // num839 (`:34297`)
+            // `RandomVector2(-1, 1)` — two draws (`:34298`).
+            let vx = 2.0 * rng.next_float() - 1.0;
+            let vy = 2.0 * rng.next_float() - 1.0;
+            let mut vector141 = Vec2::new(vx, vy);
+            if vector141 != Vec2::ZERO {
+                vector141 = vector141.normalize();
+            }
+            vector141 *= 20.0 + rng.next_float() * 100.0; // `:34303`
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let vec = center + vector141;
+            // `:34305-34314` — `ToTileCoordinates` truncates; InWorld +
+            // SolidTile gate the spawn (and its velocity draw).
+            let (tx, ty) = (vec.x as i32 / 16, vec.y as i32 / 16);
+            let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+            let flag56 = in_world && !solid_tile(world, tx, ty);
+            if flag56 {
+                let _ = rng.next_float(); // `:34320` velocity
+                // The `CloneDust`'s internal `NewDust` rolls are skipped
+                // with the dust layer (ANALYSIS).
+            }
+        }
+        // `:34333-34335` — the scale, the velocity pin, the age.
+        self.scale = opacity_of(self.alpha) / 2.0 * self.local_ai[0];
+        self.vel = Vec2::ZERO;
+        self.local_ai[1] += 1.0;
+        // `:34336-34339` — the 60-tick life. The `Kill()`'s own burst rides
+        // the pool's death hook (`floating_turret_kill`).
+        if self.local_ai[1] >= 60.0 {
+            self.kill();
+        }
+        // `:34340-34361` — the tick-30 burst: the explosion draws run for
+        // every owner; the box damage only for the local one (the port
+        // simulates local-owned slots only, so the gate folds true).
+        if self.local_ai[1] == 30.0 {
+            ProjectilePool::rainbow_crystal_explosion_draws(rng);
+            return true;
+        }
+        false
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -11050,6 +11567,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The Rainbow Crystal's 8-frame sheet (`Main.cs:8476`) — `AI_123`'s
+        // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
+        // The turret 641 has no `projFrames` row (the stock 1).
+        RAINBOW_CRYSTAL => 8,
         _ => 1,
     }
 }
@@ -12010,6 +12531,13 @@ pub struct ProjectilePool {
     /// the set when a hook latches (`Projectile.cs:52772` →
     /// `Player.UpdateBlacklistedTilesForGrappling` `:6210-6248`).
     hook_blacklist: HashMap<u8, Vec<(i32, i32)>>,
+    /// `Main.DiscoR/G/B` (`Main.cs:959-961`, the `DoUpdate_AnimateDiscoRGB`
+    /// cycle `:19591`): the aiStyle-123 crystal's shard hue rides
+    /// `Main.rgbToHsl(new Color(DiscoR, DiscoG, DiscoB)).X`
+    /// (`Projectile.cs:37262`). The app feeds it per tick through
+    /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
+    /// `DiscoR = 255` with G/B at 0.
+    disco: [u8; 3],
 }
 
 impl Default for ProjectilePool {
@@ -12286,6 +12814,7 @@ impl ProjectilePool {
             hook_grap_count: 0,
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
+            disco: [255, 0, 0],
         }
     }
 
@@ -12320,6 +12849,13 @@ impl ProjectilePool {
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
         self.wind_speed = wind_speed;
+    }
+
+    /// `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll sees it
+    /// (`Projectile.cs:37262`). The app's `DoUpdate_AnimateDiscoRGB` cycle
+    /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
+    pub fn set_disco(&mut self, disco: [u8; 3]) {
+        self.disco = disco;
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -13765,6 +14301,32 @@ impl ProjectilePool {
                                 self.slots[i]
                                     .ai_last_prism_laser(&*world, origin, parent);
                             }
+                            // The Moon Lord turret's beam (642, S1-D-4b-3):
+                            // the `:31411-31421` key-linked arm — the
+                            // turret's centre/facing/carried state ride in
+                            // through the `key_parent` probe.
+                            MOONLORD_TURRET_LASER => {
+                                let parent = self
+                                    .key_parent(self.slots[i].ai[1], MOONLORD_TURRET)
+                                    .map(|p| {
+                                        (
+                                            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                                            p.direction,
+                                            p.ai[2] == 1.0, // IsSentryBeingCarried, `:78780-78783`
+                                        )
+                                    });
+                                self.slots[i].ai_moonlord_turret_laser(
+                                    &*world,
+                                    parent,
+                                    player.as_deref(),
+                                    rng,
+                                );
+                                // `HandleMovement`: `tileCollide = false`
+                                // (`:6912`) — `UpdatePosition` integrates
+                                // the unit heading (`:19858`/`:20445`).
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
                             _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
                         },
                         85 => {
@@ -14241,6 +14803,114 @@ impl ProjectilePool {
                                 // `HitTiles` and the 1025 gore/dust burst (`:40248-40316`) are
                                 // SKIPPED - no sound, dust or gore layer in the pool.
                                 self.slots[i].sentry_turret_step(world);
+                        }
+                        123 => {
+                            // `AI_123_FloatingTurrets`
+                            // (`Projectile.cs:37051-37264`, S1-D-4b-3): the
+                            // Moon Lord turret (641) / Rainbow Crystal
+                            // (643) pair. The arm's dust gates and fire
+                            // rolls draw on the pass's `UpdateProjectiles`
+                            // stream in the C#'s order (the arm's doc
+                            // comment carries the census).
+                            let disco_hue = crate::ui::color::rgb_to_hsl([
+                                self.disco[0],
+                                self.disco[1],
+                                self.disco[2],
+                                255,
+                            ])
+                            .0 as f32;
+                            let shot = self.slots[i].ai_floating_turrets(
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                                disco_hue,
+                            );
+                            let (damage, kb, owner_id) = {
+                                let p = &self.slots[i];
+                                (p.damage, p.knock_back, p.owner)
+                            };
+                            let key = self.key_of(i) as u32;
+                            match shot {
+                                // `:37237` — the 642 beam at the turret's
+                                // centre along the aim; `ai1 = this.key`.
+                                // `NewProjectile` centres the box
+                                // (`:10876-10877`).
+                                Some(FloatingTurretShot::Laser { x, y, vx, vy, ai0 }) => {
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        MOONLORD_TURRET_LASER,
+                                        owner_id,
+                                        x - 9.0,
+                                        y - 9.0,
+                                        vx,
+                                        vy,
+                                        damage,
+                                        kb,
+                                        ai0,
+                                        f32::from_bits(key),
+                                    );
+                                }
+                                // `:37262` — the three 644 shards at zero
+                                // velocity; `ai0` = the disco hue,
+                                // `ai1 = this.key`. The 644 row sets no
+                                // `friendly` (`:6941-6952` — the C# default
+                                // false, `:788`): the shard deals nothing
+                                // on contact, only its burst window flips
+                                // the flag (`:34345`/`:72160`).
+                                Some(FloatingTurretShot::Crystal { shards, hue }) => {
+                                    for (x, y) in shards {
+                                        if let Some(s) = self.spawn_with_data_ai_owned(
+                                            RAINBOW_CRYSTAL_EXPLOSION,
+                                            owner_id,
+                                            x - 7.0,
+                                            y - 7.0,
+                                            0.0,
+                                            0.0,
+                                            damage,
+                                            kb,
+                                            hue,
+                                            f32::from_bits(key),
+                                        ) {
+                                            self.slots[s].friendly = false;
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6923`/`:6936`) — only `UpdatePosition`'s
+                            // `position += velocity` runs
+                            // (`:19858`/`:20445`); the arm pins the
+                            // velocity to zero, so the sentry holds.
+                            if self.slots[i].active {
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
+                        }
+                        112 => {
+                            // `AI()`'s aiStyle-112 type-644 arm
+                            // (`Projectile.cs:34235-34362`, S1-D-4b-3): the
+                            // Rainbow Crystal's shard. The parent probe
+                            // rides `key_parent`; the tick-30 burst's box
+                            // damage runs through the boxed seam.
+                            let parent_center = self
+                                .key_parent(self.slots[i].ai[1], RAINBOW_CRYSTAL)
+                                .map(|p| Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5));
+                            let burst = self.slots[i].ai_rainbow_crystal_shard(world, parent_center, rng);
+                            if burst && self.slots[i].owner == local_owner {
+                                let dolls = doll_flags(player.as_deref());
+                                let luck =
+                                    player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                                self.rainbow_crystal_burst(i, npcs, dolls, rng, luck);
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6948`) — `UpdatePosition` integrates the
+                            // pinned-zero velocity.
+                            if self.slots[i].active {
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
                         }
                         134 => {
                             // `AI_134_Ballista` (`Projectile.cs:68510-68651`):
@@ -15035,7 +15705,144 @@ impl ProjectilePool {
                 // runs at the same death hook the blast does.
                 let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
+                // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
+                // shots, the shard runs its death burst.
+                self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
             }
+        }
+    }
+
+    /// `Projectile.DoRainbowCrystalStaffExplosion`
+    /// (`Projectile.cs:78574-78614`): the shard burst's dust — SKIPPED (no
+    /// dust layer), but every explicit `Main.rand` draw stays on the stream
+    /// in the C#'s order: the `RotatedByRandom(π)` pair (`:78576`,
+    /// `Utils.cs:1697-1700`), the `Next(7, 13)` count (`:78577`), then per
+    /// ring-1 particle two `NextFloat`s (`:78585`/`:78588`) and per ring-2
+    /// particle four (`:78601`/`:78602`/`:78604`/`:78605`). The
+    /// `CloneDust` internal `NewDust` rolls go with the dust layer (the
+    /// dust precedent, ANALYSIS).
+    fn rainbow_crystal_explosion_draws(rng: &mut dyn tr_core::loot::DropRng) {
+        let _ = (rng.next_float(), rng.next_float());
+        let num = rng.next_range(7, 13);
+        for _ in 0..num {
+            let _ = (rng.next_float(), rng.next_float());
+        }
+        for _ in 0..num {
+            let _ = (
+                rng.next_float(),
+                rng.next_float(),
+                rng.next_float(),
+                rng.next_float(),
+            );
+        }
+    }
+
+    /// The 644 shard's resize-and-`Damage` burst
+    /// (`Projectile.cs:34343-34361` inline at tick 30, `:72158-72175` in
+    /// `Kill()`): `friendly = true`, the box grows to 60×60 recentred on
+    /// the old centre, `penetrate = maxPenetrate = -1`, `Damage()` walks
+    /// the resized box (the `damage_pve_boxed` seam, the gem-bolt AoE
+    /// precedent), then `penetrate`, the box and the `friendly` flag
+    /// restore (`:34355-34360`/`:72170-72175`) — `maxPenetrate` stays −1,
+    /// exactly as the C# leaves it. The flag's window is observable: the
+    /// 644's contact gate in `damage_pve` reads it, so the shard deals
+    /// nothing outside its bursts.
+    fn rainbow_crystal_burst(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let (center, old_w, old_h, old_penetrate) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.w,
+                p.h,
+                p.penetrate,
+            )
+        };
+        let p = &mut self.slots[slot];
+        // `:34345`/`:72160` — the burst window's friendly flip.
+        p.friendly = true;
+        p.w = 60.0;
+        p.h = 60.0;
+        p.pos = center - Vec2::splat(30.0);
+        p.penetrate = -1;
+        p.max_penetrate = -1;
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        let p = &mut self.slots[slot];
+        // `:34360`/`:72175` — the flag restores with the box.
+        p.friendly = false;
+        p.penetrate = old_penetrate;
+        p.w = old_w;
+        p.h = old_h;
+        p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+    }
+
+    /// `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`,
+    /// `:72155-72176`): the turret's death kills the owner's live 642
+    /// beams, the crystal's death kills the owner's live 644 shards (each
+    /// shard's own `Kill()` burst fires immediately, the C#'s nested
+    /// order), and the shard's death runs its explosion draws + the
+    /// local-owner box burst. The `blast_spawned` flag keeps the shard
+    /// burst once per death (the sweep-killed shards never reach the
+    /// update loop's death site). The `owner == Main.myPlayer` gates fold
+    /// to the simulated-slot set (the pool only updates local-owned
+    /// slots).
+    fn floating_turret_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let (kind, owner) = {
+            let p = &self.slots[slot];
+            (p.kind, p.owner)
+        };
+        match kind {
+            // `:72068-72080` — the turret sweeps its beams.
+            MOONLORD_TURRET => {
+                for j in 0..self.slots.len() {
+                    if self.slots[j].active
+                        && self.slots[j].owner == owner
+                        && self.slots[j].kind == MOONLORD_TURRET_LASER
+                    {
+                        self.kill(j);
+                    }
+                }
+            }
+            // `:72081-72093` — the crystal sweeps its shards; each shard's
+            // `Kill()` runs its own burst inline (`:72155-72176`).
+            RAINBOW_CRYSTAL => {
+                for j in 0..self.slots.len() {
+                    if self.slots[j].active
+                        && self.slots[j].owner == owner
+                        && self.slots[j].kind == RAINBOW_CRYSTAL_EXPLOSION
+                    {
+                        self.kill(j);
+                        if !self.slots[j].blast_spawned {
+                            self.slots[j].blast_spawned = true;
+                            Self::rainbow_crystal_explosion_draws(rng);
+                            self.rainbow_crystal_burst(j, npcs, dolls, rng, luck);
+                        }
+                    }
+                }
+            }
+            // `:72155-72176` — the shard's own death burst.
+            RAINBOW_CRYSTAL_EXPLOSION => {
+                if !self.slots[slot].blast_spawned {
+                    self.slots[slot].blast_spawned = true;
+                    Self::rainbow_crystal_explosion_draws(rng);
+                    self.rainbow_crystal_burst(slot, npcs, dolls, rng, luck);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -15581,8 +16388,18 @@ impl ProjectilePool {
             if !self.target_allowed(slot, p, idx as u16) {
                 continue;
             }
-            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12608`) — ahead of
-            // the immunity gate, exactly like the C#'s early `return`.
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12611`): the
+            // `!this.friendly` early return. The port's pass historically
+            // ran every slot regardless of the flag (the hostile shots'
+            // NPC damage rides it too — a recorded deviation); the 644
+            // shard is the first kind whose C# row leaves `friendly`
+            // false (`:6941-6952`, the `:788` default) while its burst
+            // window flips it (`:34345`/`:72160`), so the gate is carried
+            // for it alone — the other arms keep their pre-existing
+            // behaviour (the no-behaviour-change freeze).
+            if p.kind == RAINBOW_CRYSTAL_EXPLOSION && !p.friendly {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -15625,6 +16442,29 @@ impl ProjectilePool {
             } else if skip_box_test {
                 // The flail state-0 ellipse already decided the hit.
                 true
+            } else if p.kind == MOONLORD_TURRET_LASER {
+                // `Colliding`'s type-642 arm (`Projectile.cs:15942-15954`):
+                // the base-rect overlap above OR the beam line — the
+                // centre to `centre + velocity · localAI[1]` at width
+                // `30 · scale` (`CheckAABBvLineCollision`,
+                // `Collision.cs:273-369`).
+                let (nw, nh) = n.size();
+                let base_hit = proj_rect.intersects(tr_core::whip::Rect::new(
+                    n.x as i32, n.y as i32, nw as i32, nh as i32,
+                ));
+                if base_hit {
+                    true
+                } else {
+                    let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                    let end = c + p.vel * p.local_ai[1];
+                    crate::collision::check_aabb_v_line_collision(
+                        [n.x, n.y],
+                        [nw, nh],
+                        [c.x, c.y],
+                        [end.x, end.y],
+                        30.0 * p.scale,
+                    )
+                }
             } else {
                 // `Damage_PVE_Inner`'s `Colliding(projRectangle, npc.getRect())`
                 // (`:12654`): the projectile's damage box against the NPC's
@@ -15784,11 +16624,18 @@ impl ProjectilePool {
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
+            } else if uses_id_static && max_penetrate != 1 {
+                // `:13967-13973` — the idStatic application's
+                // `penetrate != 1 || appliesImmunityTimeOnSingleHits` gate
+                // (no ported row sets the override flag — the three C#
+                // setters `:2568`/`:3754`/`:10643` are unported kinds),
+                // then the stamp `GameUpdateCount + (uint)cooldown` — a −1
+                // cooldown wraps to u32::MAX (the block-forever sentinel,
+                // the 644 shard burst's stock pair).
                 npcs[idx].immune[owner] = 0;
                 self.id_static.insert(
                     (self.slots[slot].kind, idx as u16),
-                    self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
+                    self.update_count.wrapping_add(self.slots[slot].id_static_hit_cooldown as u32 as u64),
                 );
             } else if max_penetrate != 1 {
                 npcs[idx].immune[owner] = OWNER_IMMUNE_TICKS;
@@ -21059,11 +21906,12 @@ mod magic_data_tests {
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
         // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
         // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
-        // and the hostile lasers (461/537/642), plus the flame jet 187 and
-        // 502. The unported-kind spawn must still reach the caller as `None`,
-        // never an inert slot.
+        // and the hostile lasers (461/537), plus the flame jet 187 and
+        // 502. The 642 left the list with S1-D-4b-3 (the turret beam's
+        // row). The unported-kind spawn must still reach the caller as
+        // `None`, never an inert slot.
         for kind in [
-            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 642, 187, 502,
+            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
@@ -27322,6 +28170,536 @@ mod use_path_tests {
         n.max_hp = 40;
         n.hp = 40;
         n
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_3_tests {
+    //! S1-D-4b-3 — the floating-turret pair's per-style dispatch tests:
+    //! aiStyle 123 (`AI_123_FloatingTurrets`, `Projectile.cs:37051-37264` —
+    //! the 641 Moon Lord turret / the 643 Rainbow Crystal), the turret's
+    //! 642 beam (the aiStyle-84 type arm, `:31411-31421` + `:31523-31659`)
+    //! and the crystal's 644 shard (the aiStyle-112 type arm,
+    //! `:34235-34362`), plus the `Kill()` sweeps (`:72068-72093`) and the
+    //! shard burst (`:34343-34361`/`:72155-72176`).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_turrets = 4;
+        p.max_turrets_old = 4;
+        p
+    }
+
+    /// The scripted stream: every draw is recorded as (min, max) for
+    /// `Next` or (−1, −1) for `NextFloat`; the rolls replay in order and
+    /// default to 0 / 0.0 once the script runs out (the DodgeScript
+    /// pattern, widened to floats).
+    struct Script {
+        rolls: Vec<f32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn new(rolls: &[f32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return 0;
+            }
+            self.rolls.remove(0) as i32
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws.push((-1, -1));
+            if self.rolls.is_empty() {
+                return 0.0;
+            }
+            self.rolls.remove(0)
+        }
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut tr_core::World,
+        p: &mut Player,
+        npcs: &mut [Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// The 123 arm reaches its dispatch: the turret's alpha fades 5/tick
+    /// (`:37059-37063`), the scale rides the opacity (`:37069`), the spin
+    /// runs against the facing (`:37068`) and the velocity pins to zero
+    /// (`:37056`). Without the arm the slot would sit at alpha 0.
+    #[test]
+    fn s1_d_4b_3_the_turret_dispatches_fades_and_spins() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let t = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots[t].alpha, 255, "the 641 row's alpha (`:6924`)");
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        assert_eq!(pool.slots[t].alpha, 250, ":37059 — the fade");
+        assert_eq!(pool.slots[t].vel, Vec2::ZERO, ":37056 — the pin");
+        // The facing latches from the owner (default 1), the spin is
+        // -2π/120 per tick.
+        let expected_rot = -(std::f32::consts::PI * 2.0) / 120.0;
+        assert!((pool.slots[t].rot - expected_rot).abs() < 1e-6, ":37068");
+        assert!(
+            (pool.slots[t].scale - opacity_of(250)).abs() < 1e-6,
+            ":37069 — scale = Opacity"
+        );
+    }
+
+    /// The crystal's head (`:37104-37135`): the alpha fade, the 3-tick
+    /// frame machine wrapping at `projFrames[643] = 8` (`Main.cs:8476`),
+    /// the 60-tick `localAI[0]` wrap and the `localAI[1]` age.
+    #[test]
+    fn s1_d_4b_3_the_crystal_dispatches_and_animates() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let c = pool
+            .spawn_with_data_ai_owned(RAINBOW_CRYSTAL, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        }
+        assert_eq!(pool.slots[c].alpha, 240, ":37104 — 3 fades");
+        assert_eq!(pool.slots[c].frame, 1, ":37113-37119 — the 3rd tick flips");
+        assert_eq!(pool.slots[c].frame_counter, 0);
+        assert_eq!(pool.slots[c].local_ai[0], 3.0, ":37130");
+        assert_eq!(pool.slots[c].local_ai[1], 3.0, ":37135");
+        assert_eq!(proj_frames(RAINBOW_CRYSTAL), 8, "Main.cs:8476");
+        // The wrap: 21 more ticks → 24 total, frame 8 wraps to 0.
+        for _ in 0..21 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        }
+        assert_eq!(pool.slots[c].frame, 0, "the 24th tick wraps 8 → 0");
+    }
+
+    /// The acquire (`:37158-37195`): a chaseable NPC in the 1000-px range
+    /// commits `ai[0] = 1`, `ai[1] = index` and returns without firing.
+    #[test]
+    fn s1_d_4b_3_the_turret_acquires_the_nearest_npc() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let t = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 300.0)];
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        assert_eq!(pool.slots[t].ai[0], 1.0, ":37190");
+        assert_eq!(pool.slots[t].ai[1], 0.0, ":37191 — the NPC index");
+        assert!(
+            !pool.slots.iter().any(|s| s.active && s.kind == MOONLORD_TURRET_LASER),
+            "the acquire tick does not fire (:37193's return)"
+        );
+    }
+
+    /// The turret fires its 642 beam on the 10th lock tick
+    /// (`:37208-37239`): `ai[0] = -20`, `ai[1] = angle + side·π/6`, the
+    /// beam spawns at the turret's centre along the aim with `ai0` = the
+    /// stored heading and `ai1` = the turret's key; the beam's own arm
+    /// then hangs it on the turret and starts the 50-tick life.
+    #[test]
+    fn s1_d_4b_3_the_turret_fires_its_beam_after_ten_ticks() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let t = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        // A zombie level with the turret's centre (316, 316): the zombie's
+        // 18x40 box centres at (609, y + 20), so y = 296.
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 296.0)];
+        for _ in 0..10 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        }
+        assert_eq!(pool.slots[t].ai[0], -20.0, ":37232 — the cooldown");
+        assert!(
+            (pool.slots[t].ai[1] - std::f32::consts::PI / 6.0).abs() < 1e-4,
+            ":37233 — the level aim + π/6"
+        );
+        let beam = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == MOONLORD_TURRET_LASER)
+            .expect("the turret fires its 642 beam");
+        assert_eq!(beam.owner, 0);
+        assert_eq!(beam.damage, 10);
+        // The beam's first tick already ran its arm: centred on the turret
+        // (`:31413`), age 1 (`:31526`), the sin scale (`:31532`).
+        assert_eq!(beam.local_ai[0], 1.0, ":31526");
+        let (bx, by) = (beam.pos.x + beam.w * 0.5, beam.pos.y + beam.h * 0.5);
+        // The centre rides the turret + one integration of the unit
+        // heading (the arm's `UpdatePosition`).
+        assert!((bx - 316.0).abs() < 2.0 && (by - 316.0).abs() < 2.0, "hangs on the turret");
+        assert!(beam.uses_local_immunity && beam.local_hit_cooldown == 10, ":6913-6914");
+        // The `ai1` key probe resolves: the beam survives its second tick.
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        assert!(pool.slots.iter().any(|s| s.active && s.kind == MOONLORD_TURRET_LASER));
+    }
+
+    /// The crystal fires three 644 shards on the 5th lock tick
+    /// (`:37244-37263`): `ai[0] = -20`, the shards spawn at zero velocity
+    /// with `ai0` = the disco hue and `ai1` = the crystal's key; the first
+    /// shard aims at the random box point + the target velocity × 30.
+    #[test]
+    fn s1_d_4b_3_the_crystal_fires_three_shards_after_five_ticks() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let c = pool
+            .spawn_with_data_ai_owned(RAINBOW_CRYSTAL, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 296.0)];
+        // The fire rolls: RandomVector2 (0.5, 0.5) then two scatter pairs
+        // (0.0, 0.0 → angle 0) + reach 0.0 → ×0.5.
+        let mut rng = Script::new(&[0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        for _ in 0..5 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        }
+        assert_eq!(pool.slots[c].ai[0], -20.0, ":37245");
+        // The j=0 shard spawns ON the target's box point but deals nothing
+        // on contact — the 644 row's `friendly` stays false (`:6941-6952`
+        // sets no friendly, the C# default `:788`); only the burst window
+        // flips it. All three shards survive their first tick.
+        let shards: Vec<_> = pool
+            .slots
+            .iter()
+            .filter(|s| s.active && s.kind == RAINBOW_CRYSTAL_EXPLOSION)
+            .collect();
+        assert_eq!(shards.len(), 3, ":37253 — the three-shard loop");
+        assert!(!shards[0].friendly, "the 644 row's friendly default (:788)");
+        assert_eq!(npcs[0].hp, 40, "no contact damage while unfriendly");
+        // The disco default (255, 0, 0) → hue 0.
+        assert_eq!(shards[0].ai[0], 0.0, ":37262 — rgbToHsl(255,0,0).X = 0");
+        assert_eq!(shards[0].vel, Vec2::ZERO, ":37262 — SpeedX/Y = 0");
+        assert_eq!(shards[0].damage, 10);
+        assert!(shards[0].uses_id_static_immunity, ":6951");
+        assert_eq!(shards[0].id_static_hit_cooldown, -1, ":466 — the stock −1");
+        assert_eq!(shards[0].time_left, 900 - 1, ":6947 — 900, one tick spent");
+        // j == 0: centre (316, 316) + vector4 = the box point (600 + 18·0.5,
+        // 296 + 40·0.5) = (609, 316) → the shard centre lands there.
+        let (sx, sy) = (shards[0].pos.x + 7.0, shards[0].pos.y + 7.0);
+        assert!((sx - 609.0).abs() < 0.01 && (sy - 316.0).abs() < 0.01, "j=0 aims at the box point");
+        // j > 0 at angle 0, reach 0.5: centre + vector4 × 0.5.
+        let (sx1, sy1) = (shards[1].pos.x + 7.0, shards[1].pos.y + 7.0);
+        assert!((sx1 - (316.0 + 293.0 * 0.5)).abs() < 0.01, "j=1 scatters at ×0.5");
+        assert!((sy1 - 316.0).abs() < 0.01);
+    }
+
+    /// RNG census — the turret head draws its two `Next(2)` dust gates
+    /// every tick (`:37071`/`:37082`), the taken branches consume their
+    /// explicit draws, and the `ai[0] < 0` cooldown adds the
+    /// `SelectRandom`'s `Next(2)` (`:37098`). The crystal draws nothing
+    /// while its alpha > 0 (the `:37121` gate short-circuits).
+    #[test]
+    fn s1_d_4b_3_the_head_dust_gates_draw_in_the_csharp_order() {
+        // Turret, both gates taken (rolls 0, 0): gate, RotatedByRandom
+        // pair, Next(10,21), NextFloat; gate, pair, NextFloat.
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        pool.spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = Script::new(&[0.0, 0.0]);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(
+            rng.draws,
+            vec![
+                (0, 2), (-1, -1), (-1, -1), (10, 21), (-1, -1),
+                (0, 2), (-1, -1), (-1, -1), (-1, -1),
+            ],
+            ":37071-37092 — the two taken dust loops"
+        );
+        // Both gates refused (rolls 1, 1): only the two Next(2)s.
+        let mut rng = Script::new(&[1.0, 1.0]);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(rng.draws, vec![(0, 2), (0, 2)]);
+        // The cooldown tick adds the SelectRandom Next(2) (:37098).
+        pool.slots[0].ai[0] = -5.0;
+        let mut rng = Script::new(&[1.0, 1.0]);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(rng.draws, vec![(0, 2), (0, 2), (0, 2)], ":37098");
+        // Crystal, alpha > 0: no draws at all.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai_owned(RAINBOW_CRYSTAL, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0);
+        let mut rng = Script::new(&[]);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert!(rng.draws.is_empty(), ":37121 — the alpha gate short-circuits");
+        // Crystal at alpha 0, gate taken (roll 0): Next(15) + the pair +
+        // the radius NextFloat.
+        pool.slots[0].alpha = 0;
+        let mut rng = Script::new(&[0.0]);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(rng.draws, vec![(0, 15), (-1, -1), (-1, -1), (-1, -1)]);
+    }
+
+    /// RNG census — the crystal's fire draws the `RandomVector2` pair
+    /// once (`:37252`) then two `RotatedByRandom` pairs + two reach
+    /// `NextFloat`s (`:37260`, j > 0 only); each shard's first tick draws
+    /// its `NextFloat` + `Next(2)` (`:34251-34252`), the four `Next(10)`
+    /// dust gates and the `Next(10)` sparkle gate
+    /// (`:34269`/`:34282`/`:34293`), all refused here. The shards'
+    /// unfriendly contact (`:12611`) rolls nothing.
+    #[test]
+    fn s1_d_4b_3_the_fire_and_shard_draws_keep_their_stream_positions() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        pool.spawn_with_data_ai_owned(RAINBOW_CRYSTAL, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0);
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 296.0)];
+        // The fire rolls, then each of the three shards' first-tick rolls
+        // (NextFloat + Next(2)=1 + 5 refused Next(10)s). The j=0 shard
+        // spawns on the target but its unfriendly contact gate skips the
+        // hit — no DamageVar, no death.
+        let mut rolls: Vec<f32> = vec![0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        for _ in 0..3 {
+            rolls.extend_from_slice(&[0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+        }
+        let mut rng = Script::new(&rolls);
+        for _ in 0..5 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        }
+        // The fire block: 2 (RandomVector2) + 3 + 3 (two scatter pairs +
+        // two reaches).
+        let fire = &rng.draws[..8];
+        assert_eq!(
+            fire,
+            &[(-1, -1), (-1, -1), (-1, -1), (-1, -1), (-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+            ":37252/:37260 — eight NextDouble-position draws"
+        );
+        // Each shard's first tick: NextFloat, Next(2), 4× Next(10), Next(10).
+        let per_shard = &rng.draws[8..15];
+        assert_eq!(
+            per_shard,
+            &[(-1, -1), (0, 2), (0, 10), (0, 10), (0, 10), (0, 10), (0, 10)],
+            ":34251-34293 — the shard's first-tick census"
+        );
+        assert_eq!(rng.draws.len(), 8 + 3 * 7, "no extra draws — the unfriendly contact rolls nothing");
+    }
+
+    /// The shard's life (`:34333-34361`): the 8/tick alpha fade, the
+    /// `localAI[1]/40` spin, the tick-30 burst (the explosion draws + the
+    /// 60×60 box damage) and the tick-60 kill (whose `Kill()` burst rides
+    /// the death hook). The burst hits an NPC inside the 60×60 box.
+    #[test]
+    fn s1_d_4b_3_the_shard_bursts_at_thirty_and_dies_at_sixty() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        // The shard pre-armed at age 29, alpha 8, scale roll done.
+        let s = pool
+            .spawn_with_data_ai_owned(RAINBOW_CRYSTAL_EXPLOSION, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        pool.slots[s].local_ai[0] = 1.0;
+        pool.slots[s].local_ai[1] = 29.0;
+        pool.slots[s].alpha = 8;
+        pool.slots[s].friendly = false; // the 644 row's default (:788)
+        // A zombie OUTSIDE the shard's 14×14 box (300-314) but INSIDE the
+        // 60×60 burst box (277-337): the 18x40 box at (320, 290).
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 320.0, 290.0)];
+        let hp0 = npcs[0].hp;
+        // The tick-30 draws: the 4 dust gates + the sparkle gate refused
+        // (rolls 1), then the explosion's RotatedByRandom pair + the
+        // Next(7,13) count (roll 7 → 7 particles → 14 + 28 floats), then
+        // the burst hit's DamageVar roll.
+        let mut rolls = vec![1.0; 5];
+        rolls.extend_from_slice(&[0.0, 0.0, 7.0]);
+        rolls.extend(std::iter::repeat(0.0).take(14 + 28));
+        let mut rng = Script::new(&rolls);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(pool.slots[s].local_ai[1], 30.0, ":34335");
+        assert_eq!(pool.slots[s].alpha, 0, ":34257 — the fade floors at 0");
+        assert!(npcs[0].hp < hp0, "the tick-30 burst damages through the 60×60 box");
+        // The box restored (`:34356-34359`), maxPenetrate stays −1
+        // (`:34353` — never restored).
+        assert_eq!((pool.slots[s].w, pool.slots[s].h), (14.0, 14.0));
+        assert_eq!(pool.slots[s].max_penetrate, -1, ":34353");
+        assert_eq!(pool.slots[s].penetrate, 1, ":34355 — restored");
+        // The explosion census: pair + Next(7,13) + 7×2 + 7×4 floats,
+        // then the hit's DamageVar.
+        let burst_draws = &rng.draws[5..];
+        assert_eq!(burst_draws.len(), 2 + 1 + 14 + 28 + 1, ":78576-78605 + DamageVar");
+        assert_eq!(burst_draws[2], (7, 13), ":78577");
+        assert_eq!(burst_draws[45], (-15, 16), "the burst hit's DamageVar");
+        // The idStatic −1 stamp blocks the NPC for the shard type's life
+        // (`:13972`'s (uint)(−1) wrap) — the death burst deals nothing.
+        let hp1 = npcs[0].hp;
+        // Run to the 60-tick kill; the death burst fires once more.
+        for _ in 0..29 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[1.0; 5]));
+        }
+        assert_eq!(pool.slots[s].local_ai[1], 59.0);
+        let mut rolls = vec![1.0; 5];
+        rolls.extend_from_slice(&[0.0, 0.0, 7.0]);
+        rolls.extend(std::iter::repeat(0.0).take(14 + 28));
+        let mut rng = Script::new(&rolls);
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert!(!pool.slots[s].active, ":34338 — the 60-tick kill");
+        assert!(pool.slots[s].blast_spawned, "the Kill() burst ran (:72157)");
+        assert_eq!(rng.draws.len(), 5 + 2 + 1 + 14 + 28, "the death burst's census (no DamageVar — idStatic-blocked)");
+        assert_eq!(npcs[0].hp, hp1, "the −1 idStatic stamp blocks the re-hit");
+    }
+
+    /// The `Kill()` sweeps (`:72068-72093`): the turret's death kills the
+    /// owner's live beams; the crystal's death kills the owner's live
+    /// shards (each shard's own burst fires inline).
+    #[test]
+    fn s1_d_4b_3_the_sentry_deaths_sweep_their_shots() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let t = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let c = pool
+            .spawn_with_data_ai_owned(RAINBOW_CRYSTAL, 0, 400.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let beam = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET_LASER, 0, 320.0, 300.0, 1.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let shard = pool
+            .spawn_with_data_ai_owned(RAINBOW_CRYSTAL_EXPLOSION, 0, 420.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        // A foreign owner's beam survives the sweep.
+        let foreign = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET_LASER, 1, 340.0, 300.0, 1.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.slots[t].time_left = 1;
+        pool.slots[c].time_left = 1;
+        // The shard's first-tick rolls + the death burst's rolls.
+        let mut rolls = vec![0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        rolls.extend_from_slice(&[0.0, 0.0, 7.0]);
+        rolls.extend(std::iter::repeat(0.0).take(14 + 28));
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&rolls));
+        assert!(!pool.slots[t].active && !pool.slots[c].active, "the sentries expired");
+        assert!(!pool.slots[beam].active, ":72074-72077 — the beam swept");
+        assert!(!pool.slots[shard].active, ":72087-72090 — the shard swept");
+        assert!(pool.slots[shard].blast_spawned, "the swept shard's Kill() burst ran");
+        assert!(pool.slots[foreign].active || pool.slots[foreign].owner != 0, "the foreign beam is not swept");
+    }
+
+    /// The backpack branch (`:37137-37149`): the pickup gates on the
+    /// accessory + the hitbox overlap, `ai[2]` latches, the grab cooldown
+    /// re-arms every carried tick and the sling's aiStyle-123 head anchor
+    /// (`:69036-69050`) rides the owner's mounted centre.
+    #[test]
+    fn s1_d_4b_3_the_backpack_carries_the_turret() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.acc_sentry_backpack = true;
+        // The turret overlapping the player's box.
+        let t = pool
+            .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, p.x, p.y, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        assert_eq!(pool.slots[t].ai[2], 1.0, ":37139 — the pickup latch");
+        assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, ":78809 — the grab lock");
+        assert!(!pool.slots[t].tile_collide, ":37147");
+        // The head anchor: centre.y = mounted.y − (min(21, h/2) + 20 + 16).
+        let (mcx, mcy) = p.mounted_center();
+        let num = 21i32.min(p.height as i32 / 2);
+        let expected_y = mcy - (num as f32 + 20.0 + 16.0) + p.gfx_off_y;
+        let (_, cy) = pool.slots[t].center();
+        assert!((cy - expected_y).abs() < 1.0, ":69038-69041 — the head anchor");
+        let _ = mcx;
+        // Without the backpack the carried sentry dies (:69028-69032).
+        p.acc_sentry_backpack = false;
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut Script::new(&[]));
+        assert!(!pool.slots[t].active, "the sling kills without the backpack");
+    }
+
+    /// The 642/644 rows carry their verbatim `SetDefaults` slices
+    /// (`:6904-6915`/`:6941-6952`) and the 641/643 rows their `alpha = 255`.
+    #[test]
+    fn s1_d_4b_3_the_rows_carry_the_csharp_set_defaults() {
+        let laser = proj_data(MOONLORD_TURRET_LASER).unwrap();
+        assert_eq!((laser.w, laser.h), (18.0, 18.0));
+        assert_eq!(laser.ai_style, 84);
+        assert_eq!(laser.penetrate, -1);
+        assert_eq!(laser.alpha, 255);
+        assert!(!laser.tile_collide);
+        assert!(laser.uses_local_immunity);
+        assert_eq!(laser.local_hit_cooldown, 10);
+        let shard = proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap();
+        assert_eq!((shard.w, shard.h), (14.0, 14.0));
+        assert_eq!(shard.ai_style, 112);
+        assert_eq!(shard.penetrate, 1);
+        assert_eq!(shard.time_left, 900);
+        assert!(!shard.tile_collide);
+        assert!(shard.ignore_water);
+        assert_eq!(shard.alpha, 255);
+        assert!(shard.uses_id_static_immunity);
+        assert_eq!(shard.id_static_hit_cooldown, -1);
+        for kind in [MOONLORD_TURRET, RAINBOW_CRYSTAL] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!(d.alpha, 255, "kind {kind} (:6924/:6937)");
+            assert_eq!(d.ai_style, 123);
+            assert!(d.sentry);
+        }
+    }
+
+    /// The seed-untouched proof: the arm bodies' gameplay state advances
+    /// identically under two different streams when no draw is taken
+    /// (the acquire/lock path draws only the refused dust gates).
+    #[test]
+    fn s1_d_4b_3_the_lock_path_is_stream_position_stable() {
+        let run = |seed: u64| {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let t = pool
+                .spawn_with_data_ai_owned(MOONLORD_TURRET, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 296.0)];
+            let mut rng = tr_core::tile_light::FastRandom::new(seed);
+            for _ in 0..9 {
+                tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+            }
+            (pool.slots[t].ai, pool.slots[t].alpha, pool.slots[t].rot)
+        };
+        assert_eq!(run(7), run(99), "the lock path's state is stream-independent");
     }
 }
 

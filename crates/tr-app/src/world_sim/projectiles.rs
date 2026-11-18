@@ -175,6 +175,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
+    // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
+    let disco = app.disco;
+    app.projectiles.set_disco(disco);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
