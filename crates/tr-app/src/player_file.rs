@@ -8,15 +8,18 @@
 //! exactly AES-128). The port writes the same section order so vanilla save
 //! editors and the vanilla client can read the port's characters.
 //!
-//! **S1-J-5 increment 1: through `voidVaultInfo`.** `Player.Serialize`
-//! (`Player.cs:54750-54933`) is ported from the name through the void-vault
-//! info byte (`:54863`): the header fixes (`team` `:54757`, `hideMisc`
+//! **S1-J-5 increment 2: through `hideInfo`.** `Player.Serialize`
+//! (`Player.cs:54750-54933`) is ported from the name through `hideInfo`
+//! (`:54893`): the header fixes (`team` `:54757`, `hideMisc`
 //! `:54770`, the dead 324 bool `:54780`, the 322 armour/dye favourited bools
-//! `:54816`/`:54822`) plus the sections after the inventory — `miscEquips`/
+//! `:54816`/`:54822`), the sections after the inventory — `miscEquips`/
 //! `miscDyes` (`:54831-54837`), the four banks (`:54838-54862`) and
-//! `voidVaultInfo` (`:54863`). The tail after `:54863` (buffs, spawn points,
-//! hideInfo, loadouts, creative tracker, …) is the NEXT S1-J-5 round; a
-//! vanilla reader of a port file stops cleanly at the vault byte until then.
+//! `voidVaultInfo` (`:54863`) — plus the buffs (`:54864-54876`, 44 slots at
+//! `maxBuffs`, `:57106`), the spawn-point list (`:54877-54888`, the -1
+//! sentinel), `hbLocked` (`:54889`) and `hideInfo[13]` (`:54890-54893`).
+//! The tail after `:54893` (angler, DpadRadial, loadouts, creative tracker,
+//! …) is the NEXT S1-J-5 round; a vanilla reader of a port file stops
+//! cleanly at the last hideInfo bool until then.
 //!
 //! **Default-value policy.** The port models only the character-card state
 //! (name, difficulty, appearance, life/mana, the 58-slot inventory and its
@@ -29,10 +32,12 @@
 //!
 //! **Backward compat.** The port's own pre-S1-J-5 files were a *subset* mirror
 //! stamped release 279 (truncated after the inventory, missing `team` /
-//! `hideMisc` / the 324 bool / the armour-dye favourites). They are not valid
-//! vanilla 279 files, so the C# gates cannot read them;
-//! [`read_legacy_port_subset`] keeps them loadable as a documented port-only
-//! shim (see `docs/ANALYSIS.md`).
+//! `hideMisc` / the 324 bool / the armour-dye favourites), and its
+//! increment-1 files end at `voidVaultInfo` with no buffs tail. Neither is a
+//! valid vanilla file at its stamp, so the C# gates cannot read them;
+//! [`read_legacy_port_subset`] and the increment-1 retry in
+//! [`read_player_bytes`] keep them loadable as documented port-only shims
+//! (see `docs/ANALYSIS.md`).
 
 use std::path::{Path, PathBuf};
 
@@ -61,7 +66,7 @@ const FILE_TYPE_PLAYER: u64 = 3;
 /// The section set this port writes: the current vanilla release **326**
 /// (`Player.InternalSavePlayerFile` writes the literal `326`,
 /// `Player.cs:54738`). S1-J-5 raised this from the old subset's 279; the
-/// emitted span currently runs through `voidVaultInfo` (`Serialize:54863`).
+/// emitted span currently runs through `hideInfo` (`Serialize:54893`).
 const RELEASE: i32 = 326;
 
 /// The release the port's *pre-S1-J-5* subset writer stamped. Those files are
@@ -80,9 +85,9 @@ const ITEM_ID_COUNT: i32 = 6196;
 const PLAYER_VARIANT_COUNT: i32 = 12;
 
 /// The read `.plr` — the character-card state the port models. The reader
-/// walks `Deserialize` (`Player.cs:55134`) through `voidVaultInfo`
-/// (`:55501-55504`) with the C# version gates, consuming and dropping every
-/// field the port does not model; the tail past `:55504` is a later round.
+/// walks `Deserialize` (`Player.cs:55134`) through `hideInfo`
+/// (`:55616-55623`) with the C# version gates, consuming and dropping every
+/// field the port does not model; the tail past `:55623` is a later round.
 pub struct PlayerFile {
     pub name: String,
     pub difficulty: u8,
@@ -213,7 +218,7 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
     let revision = r.u32().ok_or(PlayerFileError::Truncated("revision"))?;
     let favorite_bits = r.u64().ok_or(PlayerFileError::Truncated("fav"))?;
     let is_favorite = favorite_bits == 1;
-    match read_player_fields(&mut r, version, revision, is_favorite) {
+    match read_player_fields(&mut r, version, revision, is_favorite, false) {
         Ok(f) => Ok(f),
         // The port's own pre-S1-J-5 subset files are stamped 279 but are
         // truncated after the inventory and miss `hideMisc`; the C# gates
@@ -222,6 +227,16 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
             let mut r2 = Reader::new(plain);
             r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("legacy"))?;
             read_legacy_port_subset(&mut r2, revision, is_favorite)
+        }
+        // The port's own S1-J-5 increment-1 files are stamped 326 but end at
+        // `voidVaultInfo` (`Serialize:54863`) — no buffs/spawn/hideInfo tail.
+        // The C# `Deserialize` would run off the end; retry stopping at the
+        // vault byte so those dev characters still load (port-only shim,
+        // same pattern as the 279 one above — see `docs/ANALYSIS.md`).
+        Err(PlayerFileError::Truncated(_)) if version == RELEASE => {
+            let mut r2 = Reader::new(plain);
+            r2.skip(4 + 20).ok_or(PlayerFileError::Truncated("inc1"))?;
+            read_player_fields(&mut r2, version, revision, is_favorite, true)
         }
         Err(e) => Err(e),
     }
@@ -242,11 +257,14 @@ fn read_item_triple(r: &mut Reader, what: &'static str) -> Result<(), PlayerFile
 /// and dropped so the cursor stays aligned through the tail. Gates below 135
 /// are always true in the accepted range and are read unconditionally (the
 /// gate is cited); gates that can vary within the range are kept.
+/// `through_vault_only` is the port-only increment-1 retry (stop at
+/// `voidVaultInfo`, `:55504`) — never set for genuine vanilla files.
 fn read_player_fields(
     r: &mut Reader,
     version: i32,
     revision: u32,
     is_favorite: bool,
+    through_vault_only: bool,
 ) -> Result<PlayerFile, PlayerFileError> {
     if version > 326 {
         return Err(PlayerFileError::LaterVersion(version));
@@ -374,13 +392,84 @@ fn read_player_fields(
     if version >= 199 {
         let _void_vault = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?; // `:55501-55504`
     }
-    // S1-J-5 increment 1 stops here: everything the port models sits at or
-    // before `voidVaultInfo`, so the walk may end — the `Serialize` tail
-    // (buffs `:54864`, spawn points `:54877`, … `:54933`) is a later round and
-    // is simply left unconsumed. `LoadPlayer_LastMinuteFixes` (`:55830`)
+    if through_vault_only {
+        // The port-only retry for increment-1 files (see `read_player_bytes`).
+        return Ok(finish_player_file(
+            name, difficulty, skin_variant, hair, life, life_max, mana, mana_max,
+            colors, inventory, inv_favorites, is_favorite, revision,
+        ));
+    }
+    // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
+    // buffs (`:55578-55599`, gate 11): the slot count is 10 below 74, 22,
+    // and 44 at >= 252 (`Player.maxBuffs`, `Player.cs:57106`). The zero-type
+    // compaction (`num28--; num27--`, `:55593-55597`) still consumes exactly
+    // `count` (type, time) pairs — each iteration advances either the read
+    // index or shrinks the target. The port models no buffs; drop them.
+    if version >= 11 {
+        let mut count: i32 = if version < 74 { 10 } else { 22 };
+        if version >= 252 {
+            count = 44;
+        }
+        let mut i: i32 = 0;
+        while i < count {
+            let buff_type = r.i32().ok_or(PlayerFileError::Truncated("buffType"))?;
+            r.i32().ok_or(PlayerFileError::Truncated("buffTime"))?;
+            if buff_type == 0 {
+                i -= 1;
+                count -= 1;
+            }
+            i += 1;
+        }
+    }
+    // spawn points (`:55600-55611`, ungated): up to 200 records, each
+    // (spX, spY, spI, spN); spX == -1 is the end sentinel.
+    for _ in 0..200 {
+        let sp_x = r.i32().ok_or(PlayerFileError::Truncated("spawnX"))?;
+        if sp_x == -1 {
+            break;
+        }
+        r.i32().ok_or(PlayerFileError::Truncated("spawnY"))?;
+        r.i32().ok_or(PlayerFileError::Truncated("spawnI"))?;
+        r.cs_string().ok_or(PlayerFileError::Truncated("spawnN"))?;
+    }
+    if version >= 16 {
+        r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
+    }
+    if version >= 115 {
+        for _ in 0..13 {
+            r.boolean().ok_or(PlayerFileError::Truncated("hideInfo"))?; // `:55616-55623`
+        }
+    }
+    // Increment 2 stops here: the rest of the `Deserialize` tail (angler
+    // `:55624`, DpadRadial, builderAccStatus, …) is a later round and is
+    // simply left unconsumed. `LoadPlayer_LastMinuteFixes` (`:55830`)
     // clamps skinVariant to the variant set.
+    Ok(finish_player_file(
+        name, difficulty, skin_variant, hair, life, life_max, mana, mana_max,
+        colors, inventory, inv_favorites, is_favorite, revision,
+    ))
+}
+
+/// The shared tail of both walk depths: the `LoadPlayer_LastMinuteFixes`
+/// skinVariant clamp (`Player.cs:55830`) and the `PlayerFile` assembly.
+#[allow(clippy::too_many_arguments)]
+fn finish_player_file(
+    name: String,
+    difficulty: u8,
+    skin_variant: u8,
+    hair: i32,
+    life: i32,
+    life_max: i32,
+    mana: i32,
+    mana_max: i32,
+    colors: [[u8; 3]; 7],
+    inventory: [(i32, i32, u8); 58],
+    inv_favorites: u64,
+    is_favorite: bool,
+    revision: u32,
+) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
-    Ok(PlayerFile {
+    PlayerFile {
         name,
         difficulty,
         skin_variant,
@@ -400,7 +489,7 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
-    })
+    }
 }
 
 /// The port's pre-S1-J-5 **subset** reader (release 279): the same prefix as
@@ -525,7 +614,7 @@ pub struct PlayerFileWrite {
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54740`): release 326, the
 /// `FileMetadata`, then `Serialize` (`Player.cs:54750`) from the name through
-/// `voidVaultInfo` (`:54863`) — S1-J-5 increment 1. Encrypted like `:54736`'s
+/// `hideInfo` (`:54893`) — S1-J-5 increment 2. Encrypted like `:54736`'s
 /// CryptoStream.
 pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
     cbc_encrypt(&serialize_plaintext(file))
@@ -533,12 +622,12 @@ pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
 
 /// The unencrypted release-326 prologue (`InternalSavePlayerFile:54738-54739`:
 /// the `i32 326` + `FileMetadata`) plus `Player.Serialize` (`Player.cs:54750`)
-/// from the name through `voidVaultInfo` (`:54863`).
+/// from the name through `hideInfo` (`:54893`).
 ///
 /// Every field the port does not model is written at its fresh-vanilla default
 /// (the `Player` ctor `:56036-56096` + the field initializers), never omitted —
 /// see the module-level default-value policy. The `Serialize` tail
-/// (`:54864-54933`) is the next S1-J-5 round.
+/// (`:54894-54933`) is the next S1-J-5 round.
 pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     let mut w = Writer::new();
     w.i32(RELEASE); // `InternalSavePlayerFile:54738` writes the literal 326.
@@ -553,7 +642,7 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // never opens — so re-saving a character cannot clear its star.
     w.u64(0); // the favorites (see the sidecar above)
 
-    // --- Player.Serialize (`Player.cs:54752-54863`) ------------------------
+    // --- Player.Serialize (`Player.cs:54752-54893`) ------------------------
     w.cs_string(&file.name); // `:54752`
     w.u8(file.difficulty); // `:54753`
     w.u64(0); // `:54754` playTime.Ticks — the port tracks no play time (Zero)
@@ -647,11 +736,31 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // voidVaultInfo: one BitsByte (`:54863`), default 0 (`Player.cs:1590`);
     // read at >= 199 (`Deserialize:55501-55504`).
     w.u8(0);
-    // S1-J-5 increment 1 ends here. The `Serialize` tail (`:54864-54933`:
-    // buffs, spawn points, hbLocked, hideInfo, angler, DpadRadial,
-    // builderAccStatus, bartender, dead, lastTimePlayerWasSaved, golfer,
-    // creativeTracker, temp slots, creative powers, super cart, loadouts,
-    // voice, refunds, dialogues) is the next round.
+    // --- S1-J-5 increment 2: buffs through hideInfo (`:54864-54893`) ------
+    // buffs: maxBuffs = 44 (`Player.cs:57106`) x (buffType, buffTime)
+    // (`:54864-54876`). Fresh buffType/buffTime are all-zero (`:1510-1512`)
+    // and `Main.buffNoSave[0]` is false, so the else arm writes the (0, 0)
+    // pair — byte-identical to the no-save arm.
+    for _ in 0..44 {
+        w.i32(0); // buffType[i]
+        w.i32(0); // buffTime[i]
+    }
+    // spawn points (`:54877-54888`): spN is a fresh null string[200]
+    // (`Player.cs:2488`), so the first iteration writes the -1 sentinel
+    // and breaks — one i32, no coordinates.
+    w.i32(-1);
+    // hbLocked (`:54889`): default false (`Player.cs:1436`).
+    w.boolean(false);
+    // hideInfo[13] (`:54890-54893`): a fresh `bool[13]` (`Player.cs:812`),
+    // all false.
+    for _ in 0..13 {
+        w.boolean(false);
+    }
+    // Increment 2 ends here. The rest of the `Serialize` tail
+    // (`:54894-54933`: angler, DpadRadial, builderAccStatus, bartender,
+    // dead, lastTimePlayerWasSaved, golfer, creativeTracker, temp slots,
+    // creative powers, super cart, loadouts, voice, refunds, dialogues)
+    // is the next round.
     w.into_inner()
 }
 
@@ -863,12 +972,12 @@ mod tests {
         assert_eq!(file321.inv_favorites, file.inv_favorites);
     }
 
-    /// S1-J-5 golden layout: the plaintext through `voidVaultInfo` matches the
+    /// S1-J-5 golden layout: the plaintext through `hideInfo` matches the
     /// C# `Serialize` field order byte-for-byte at the documented offsets
-    /// (`Player.cs:54738-54863`), with every unmodelled field at its fresh
+    /// (`Player.cs:54738-54893`), with every unmodelled field at its fresh
     /// default. The inventory is the sample's; everything else is pinned.
     #[test]
-    fn golden_layout_through_void_vault_info() {
+    fn golden_layout_through_hide_info() {
         let plain = serialize_plaintext(&sample());
         // prologue: i32 release, u64 magic, u32 revision, u64 favorites.
         assert_eq!(&plain[0..4], &326i32.to_le_bytes()); // `:54738`
@@ -943,9 +1052,48 @@ mod tests {
             assert_eq!(r.take(10).unwrap(), &[0; 10]);
         }
         assert_eq!(r.u8().unwrap(), 0); // voidVaultInfo `:54863`
-        // Increment 1 ends exactly at the vault byte — the Serialize tail is
-        // the next round, so nothing follows.
+        // --- increment 2: buffs through hideInfo (`:54864-54893`) ---------
+        // buffs `:54864-54876`: 44 (maxBuffs, `:57106`) x (0, 0) pairs.
+        assert_eq!(r.take(44 * 8).unwrap(), vec![0u8; 44 * 8].as_slice());
+        // spawn points `:54877-54888`: fresh spN[0] == null (`:2488`) writes
+        // the -1 sentinel and breaks — exactly one i32.
+        assert_eq!(r.i32().unwrap(), -1);
+        // hbLocked `:54889`: false (`:1436`).
+        assert_eq!(r.u8().unwrap(), 0);
+        // hideInfo[13] `:54890-54893`: fresh bool[13] (`:812`), all false.
+        assert_eq!(r.take(13).unwrap(), &[0; 13]);
+        // Increment 2 ends exactly at the last hideInfo bool — the rest of
+        // the Serialize tail (`:54894-54933`) is the next round.
         assert_eq!(r.pos(), plain.len());
+        // The C#-written fixture (tools/WldFixtureHarness, real Serialize)
+        // is byte-identical to the port over the owned tail block. In the
+        // fixture the buffs start at 2402 (24 prologue + 87 header + 120
+        // armor + 60 dye + 580 inventory + 50 misc + 1080 banks + 400 bank4
+        // + 1 vault) and hideInfo ends at 2772 (+ 352 buffs + 4 sentinel
+        // + 1 hbLocked + 13 hideInfo); the port's own tail is its final 370
+        // bytes.
+        let fixture = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
+        // In the fixture the span through hideInfo ends at 24 + 155 + 60 +
+        // 150 + 696 + 50 + 1080 + 400 + 1 + 352 + 4 + 1 + 13 = 2772; the
+        // port's own tail (buffs..hideInfo) is the final 370 bytes.
+        let port_tail = &plain[plain.len() - 370..];
+        assert_eq!(port_tail, &fixture[2402..2772], "buffs..hideInfo byte parity with the C# fixture");
+    }
+
+    /// The port's own S1-J-5 increment-1 files (release 326, ending at
+    /// `voidVaultInfo`, no buffs tail) still load through the retry in
+    /// `read_player_bytes`.
+    #[test]
+    fn the_increment_one_files_still_load() {
+        // The increment-1 layout is the current one minus the final 370
+        // bytes (44x8 buffs + 4 spawn sentinel + 1 hbLocked + 13 hideInfo).
+        let plain = serialize_plaintext(&sample());
+        let inc1 = &plain[..plain.len() - 370];
+        let file = match read_player_bytes(inc1) { Ok(f) => f, Err(e) => panic!("inc1 read err: {e:?}") };
+        assert_eq!(file.name, "Belsin");
+        assert_eq!(file.inventory, sample().inventory);
+        assert_eq!(file.inv_favorites, sample().inv_favorites);
+        assert_eq!(file.life_max, 100);
     }
 
     /// The port's own pre-S1-J-5 subset files (release 279, truncated after
