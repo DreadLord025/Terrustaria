@@ -2112,6 +2112,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:7153-7162` — the Flame Burst shots (664/666/668):
+            // 16x16, aiStyle 131, `alpha = 255`, the local-immunity pair with
+            // `localNPCHitCooldown = -1` (one hit per NPC for the shot's life).
+            // `friendly` rides the pool default; the stock `timeLeft = 3600`
+            // (`:787`) and `penetrate = 1` (`:775`). S1-D-4b-9.
+            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 => (
+                16.0, 16.0, 131, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2 | BALLISTRA_TOWER_3 => {
                 (26.0, 54.0, 134, 1, 36000, 0, false, false, false, RESET_STATE)
             }
@@ -2346,6 +2355,14 @@ pub const RAINBOW_CRYSTAL: u16 = 643;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
 pub const FLAME_BURST_TOWER_2: u16 = 665;
 pub const FLAME_BURST_TOWER_3: u16 = 667;
+/// `ProjectileID.DD2FlameBurstTowerT1Shot` (664) — the Flame Burst Tower's
+/// shot (`Projectile.cs:7153-7162`: 16x16, aiStyle 131, `alpha = 255`,
+/// local-immunity −1). S1-D-4b-9.
+pub const FLAME_BURST_SHOT_1: u16 = 664;
+/// `ProjectileID.DD2FlameBurstTowerT2Shot` (666).
+pub const FLAME_BURST_SHOT_2: u16 = 666;
+/// `ProjectileID.DD2FlameBurstTowerT3Shot` (668).
+pub const FLAME_BURST_SHOT_3: u16 = 668;
 pub const BALLISTRA_TOWER_1: u16 = 677;
 pub const BALLISTRA_TOWER_2: u16 = 678;
 pub const BALLISTRA_TOWER_3: u16 = 679;
@@ -2440,6 +2457,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3
         | EXPLOSIVE_TRAP_EXPLOSION_1 | EXPLOSIVE_TRAP_EXPLOSION_2 => 4,
         EXPLOSIVE_TRAP_EXPLOSION_3 => 5,
+        // The Flame Burst towers' sheets (`Main.cs:8458-8460`): T1 animates 7
+        // frames, T2/T3 9 — `AI_130`'s fire frame (`Projectile.cs:68331`,
+        // `1 + ai[1] / 4`) and its idle frame 0 (`:68307`) slice them.
+        FLAME_BURST_TOWER_1 => 7,
+        FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 => 9,
         // The Ballista towers' 6-frame sheet (`Main.cs:8461-8463`) — `AI_134`'s
         // reload frame (`Projectile.cs:68612`, `1 + ai[1] / 5`) and its idle
         // frame 0 (`:68561`) read it.
