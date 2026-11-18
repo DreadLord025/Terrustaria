@@ -435,7 +435,7 @@ impl LegacyLighting {
         params: &LightParams,
         inputs: &LegacyInputs,
         lights: &[DynamicLight],
-        map_export: Option<&mut MapLightExport<'_>>,
+        mut map_export: Option<&mut MapLightExport<'_>>,
     ) {
         // The between-frame `AddLight` accumulation (`Lighting.cs:157-163`).
         for l in lights {
@@ -628,11 +628,17 @@ impl LegacyLighting {
         let color_or_white = self.mode < 2;
         for i in value5..value6 {
             let lx = i - self.requested[0] + off;
+            // `:398`: the COLUMN is read once, BEFORE the inner loop — an
+            // out-of-range column throws (→ the `:355` catch aborts the
+            // whole walk) even when the y range is empty.
+            if lx < 0 || lx >= self.sw {
+                return;
+            }
             for j in value7..value8 {
                 let ly = j - self.requested[2] + off;
                 // The C# `array[...]` / `Main.tile[i, j]` reads throw on an
                 // out-of-range index → the `:355` catch aborts the walk.
-                if lx < 0 || lx >= self.sw || ly < 0 || ly >= self.sh {
+                if ly < 0 || ly >= self.sh {
                     return;
                 }
                 let Some(tile) = world.tile(i, j) else {
@@ -1869,5 +1875,277 @@ mod tests {
         let wet = engine2.get_color(44, 48)[0];
         // Three air steps left to the water edge, then the wet gate.
         assert!(wet < seed - 3.0 * 0.04, "water must decay faster: {wet}");
+    }
+
+    // ---- S1-E-19 wave B: the minimap light export (tests-as-code, code-only
+    // mode — written, not run; see ANALYSIS "The legacy minimap light export").
+
+    /// Drive `frames` ProcessArea calls, attaching a fresh enabled export
+    /// seam every frame (the `frame/draw.rs` driver shape). Returns the
+    /// per-frame `update_map` results — `Some` exactly on the frames the
+    /// `:349` gate fired.
+    fn drive_with_export(
+        engine: &mut LegacyLighting,
+        w: &World,
+        inputs: &LegacyInputs,
+        tiles: &mut [crate::map::MapTile],
+        map_time: &mut i32,
+        map_time_max: i32,
+        enabled: bool,
+        frames: usize,
+    ) -> Vec<Option<Rect>> {
+        let (pos, size) = camera();
+        let params = LightParams::default();
+        let mut out = Vec::new();
+        for _ in 0..frames {
+            let mut e = MapLightExport::new(tiles, map_time, map_time_max, enabled);
+            engine.process_area(w, pos, size, &params, inputs, &[], Some(&mut e));
+            out.push(e.update_map);
+        }
+        out
+    }
+
+    #[test]
+    fn map_export_keeps_the_rng_streams() {
+        // The module-note witness: the export draws NO random numbers, so a
+        // run with the seam attached every frame must present byte-identical
+        // light AND leave both RNG seeds where the seam-less run left them.
+        // Wet cells beside the torch force real `WithModifier`/`Next(98,100)`
+        // swipe draws (`:1250-1251`), so the witness is not vacuous.
+        let mut w = torch_world();
+        for x in [46, 47] {
+            let i = w.index(x, 48);
+            w.tiles[i].liquid = 255; // water (no lava flag)
+        }
+        let (pos, size) = camera();
+        let params = LightParams::default();
+        let inputs = LegacyInputs::default();
+        let mut a = LegacyLighting::new(LightMode::White);
+        let mut b = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut exported = false;
+        for _ in 0..20 {
+            a.process_area(&w, pos, size, &params, &inputs, &[], None);
+            let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+            b.process_area(&w, pos, size, &params, &inputs, &[], Some(&mut e));
+            exported |= e.update_map.is_some();
+        }
+        assert!(exported, "the seam must actually fire during the run");
+        assert!(
+            tiles.iter().any(|t| t.light > 0),
+            "the export must reveal map tiles"
+        );
+        assert_eq!(a.swipe_rng.seed, b.swipe_rng.seed, "swipe stream unchanged");
+        assert_eq!(
+            a.scanner_rng.map(|r| r.seed),
+            b.scanner_rng.map(|r| r.seed),
+            "scanner stream unchanged"
+        );
+        let (x0, y0, ww, hh) = a.get_area();
+        for y in y0..y0 + hh {
+            for x in x0..x0 + ww {
+                assert_eq!(
+                    a.get_color(x, y).map(f32::to_bits),
+                    b.get_color(x, y).map(f32::to_bits),
+                    "presented light diverged at {x},{y}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn map_export_gates_on_delay_count_and_render_count() {
+        // `ProcessArea` `:334-358`: a fresh engine (count 99) pre-renders on
+        // call 1 (count 0); the shift branch (`else if`, any count != 2 with
+        // a camera anchor) runs from call 2. `mapDelay` starts 2
+        // (`Main.cs:66504`) and counts down on calls 2/4; the export gate
+        // additionally needs `renderCount == 3`, so the first export fires
+        // on call 9 (the first count-3 frame after the delay expired). With
+        // `mapTimeMax = 0` the re-arm keeps the gate open, so call 14 (count
+        // 3 again, 5-frame cycle) exports a second time.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let out = drive_with_export(
+            &mut engine,
+            &w,
+            &LegacyInputs::default(),
+            &mut tiles,
+            &mut map_time,
+            0,
+            true,
+            14,
+        );
+        let fired: Vec<usize> = out
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(fired, vec![8, 13], "exports only on the count-3 shift frames");
+        assert_eq!(map_time, 0, "the re-arm reads mapTimeMax = 0 (`:373`)");
+        // The window is the requested rect clamped into the 40 inset
+        // (`:383-394`): the 96-wide world folds [37..60] onto [40, 56).
+        assert_eq!(out[8], Some([40, 40, 16, 16]));
+        assert!(tiles.iter().any(|t| t.light > 0), "the torch reveals");
+    }
+
+    #[test]
+    fn map_export_disabled_gate_writes_nothing() {
+        // `Main.mapEnabled == false` (`:349`): the countdown still runs and
+        // the re-arm never happens — no tiles, no `updateMap`.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let out = drive_with_export(
+            &mut engine,
+            &w,
+            &LegacyInputs::default(),
+            &mut tiles,
+            &mut map_time,
+            3,
+            false,
+            14,
+        );
+        assert!(out.iter().all(|r| r.is_none()), "no export while disabled");
+        assert_eq!(map_time, 0, "no re-arm while disabled");
+        assert!(tiles.iter().all(|t| t.light == 0), "no tile writes");
+    }
+
+    #[test]
+    fn map_export_net_connecting_pins_map_time_to_one() {
+        // `:341-344`: `Netplay.Connection.StatusMax > 0` pokes `mapTime = 1`
+        // on EVERY shift frame, before the gate — so the count-3 frame sees
+        // 1, not 0, and never exports while connecting.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let inputs = LegacyInputs {
+            net_connecting: true,
+            ..Default::default()
+        };
+        let out = drive_with_export(
+            &mut engine, &w, &inputs, &mut tiles, &mut map_time, 0, true, 14,
+        );
+        assert!(out.iter().all(|r| r.is_none()), "no export while connecting");
+        assert_eq!(map_time, 1, "the poke lands on the last shift frame");
+    }
+
+    /// A 200x150 air world, surface at y=40, camera centred on tile (100,60)
+    /// in a 320x240 backbuffer: the export window folds to [90,111)x[52,68)
+    /// (all below the surface, so the sky-air arm never fires).
+    fn export_world() -> (World, [f32; 2], [f32; 2]) {
+        let mut w = World::new("export".into(), 200, 150);
+        w.world_surface = 40.0;
+        (w, [1440.0, 840.0], [320.0, 240.0])
+    }
+
+    /// One ProcessArea call to set the requested rect / margins / array, then
+    /// hand-seed the PRESENTED cells the export reads (`:403-415`).
+    fn seed_presented(engine: &mut LegacyLighting, w: &World, pos: [f32; 2], size: [f32; 2]) {
+        engine.process_area(
+            w,
+            pos,
+            size,
+            &LightParams::default(),
+            &LegacyInputs::default(),
+            &[],
+            None,
+        );
+        // (100,60): max channel 0.5. (98,60): byte 19 after White's 1.5x.
+        // (97,60): byte 18 — the floor's `b > 18` boundary.
+        for (x, r) in [(100, 0.5f32), (98, 0.05), (97, 0.048)] {
+            let lx = x - engine.requested[0] + engine.off_screen_tiles;
+            let ly = 60 - engine.requested[2] + engine.off_screen_tiles;
+            let s = &mut engine.states[(lx * engine.sh + ly) as usize];
+            s.r = r;
+            s.g = r * 0.4;
+            s.b = r * 0.2;
+        }
+    }
+
+    #[test]
+    fn map_export_white_brightens_and_floors_at_22() {
+        // `TryUpdatingMapWithLight` `:403-431` directly: White's 1.5x
+        // (`:416-419`), the byte truncation (`:420`), the revealed-floor 22
+        // (`:425-428`), the re-arm FIRST (`:373`) and the `updateMap` rect
+        // (`:432`). Below-surface air keeps the exported byte (the map's
+        // background arm only forces 255 above the surface).
+        let (w, pos, size) = export_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        // (96,60) is revealed at light 10 but dark now → the floor lifts it.
+        assert!(crate::map::update_map_lighting(&w, &mut tiles, 96, 60, 10));
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 7, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        assert_eq!(map_time, 7, "the re-arm happens first (`:373`)");
+        assert_eq!(e.update_map, Some([90, 52, 21, 16]), "`:432`");
+        // 0.5 * 1.5 * 255 = 191.25 → 191.
+        assert_eq!(tiles[w.index(100, 60)].light, 191);
+        // 0.05 * 1.5 * 255 = 19.125 → 19 → the `b > 18` floor lifts to 22.
+        assert_eq!(tiles[w.index(98, 60)].light, 22);
+        // 0.048 * 1.5 * 255 = 18.36 → 18 — NOT > 18, unrevealed → stays 18.
+        assert_eq!(tiles[w.index(97, 60)].light, 18);
+        // Dark + revealed (old light 10 > 0) → floor 22, max(10, 22) = 22.
+        assert_eq!(tiles[w.index(96, 60)].light, 22);
+        assert!(e.changed.contains(&(96, 60)), "the floor lift is a change");
+        // Dark + unrevealed → `UpdateLighting(0)` refuses (`WorldMap.cs:52-55`).
+        assert_eq!(tiles[w.index(95, 60)].light, 0);
+        assert!(!e.changed.contains(&(95, 60)));
+        // The changed list is x-outer, y-inner (`:396-399`).
+        let first = e.changed.iter().position(|&(x, _)| x == 96).unwrap();
+        let last = e.changed.iter().rposition(|&(x, _)| x == 96).unwrap();
+        assert!(e.changed[first..=last].iter().all(|&(x, _)| x == 96));
+    }
+
+    #[test]
+    fn map_export_retro_keeps_the_raw_byte() {
+        // Retro (`Mode >= 2`) skips the 1.5x brighten (`IsColorOrWhiteMode`,
+        // `:204`): 0.5 * 255 = 127.5 → 127, and 0.05 * 255 = 12.75 → 12 stays
+        // below the floor's `b > 18` gate.
+        let (w, pos, size) = export_world();
+        let mut engine = LegacyLighting::new(LightMode::Retro);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        assert_eq!(tiles[w.index(100, 60)].light, 127);
+        assert_eq!(tiles[w.index(98, 60)].light, 12);
+    }
+
+    #[test]
+    fn map_export_sky_air_keeps_the_22_ambient() {
+        // `:421-424`: above the surface, inactive + wall 0 + liquid 0 forces
+        // b = 22 regardless of the presented light. A wet cell fails the
+        // `liquid == 0` conjunct and keeps its own byte — that pair proves
+        // the arm, not just the revealed-floor 22. The map's sky-background
+        // arm (`MapHelper.GetBackgroundType`) publishes sky cells at 255.
+        let (mut w, _, _) = export_world();
+        w.world_surface = 100.0; // the whole window is now above the surface
+        // (95,60): water — the sky-air arm must NOT fire here.
+        let wet = w.index(95, 60);
+        w.tiles[wet].liquid = 255;
+        let pos = [1440.0, 840.0];
+        let size = [320.0, 240.0];
+        let mut engine = LegacyLighting::new(LightMode::White);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        // Dark dry sky air reveals (the arm's 22 > 0); the wet dark cell
+        // keeps b = 0 and stays unrevealed (`WorldMap.cs:52-55`).
+        assert!(tiles[w.index(94, 60)].light > 0, "sky air reveals at 22+");
+        assert!(e.changed.contains(&(94, 60)));
+        assert_eq!(tiles[wet].light, 0, "the wet cell skips the sky-air arm");
+        assert!(!e.changed.contains(&(95, 60)));
+        assert_eq!(e.update_map, Some([90, 52, 21, 16]));
     }
 }

@@ -17019,10 +17019,11 @@ Deliberate deviations:
   inner index aborts the rest of that thread's chunk; writes never cross outer
   indices, so chunking cannot change cell values - only the abort extent, which
   the single chunk reproduces for the sequential case.
-- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) is not
-  ported - it is the map system's own lighting pass (`Main.Map.UpdateLighting`),
-  gated on `mapEnabled && renderCount == 3`; the port's map lighting rides the
-  modern map pass. The netplay `mapTime = 1` poke (`:341-344`) is likewise out.
+- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) was not
+  ported in wave A - it is the map system's own lighting pass
+  (`Main.Map.UpdateLighting`), gated on `mapEnabled && renderCount == 3`.
+  **Ported in wave B** (see "The legacy minimap light export (S1-E-19 wave B)"
+  below), including the netplay `mapTime = 1` poke (`:341-344`).
 - The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
   `Player.gross`, neither ported; the gate is false in the port.
 - Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
@@ -17588,3 +17589,91 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The legacy minimap light export (S1-E-19 wave B, 2026-11-18, code-only mode)
+
+**Code-only mode**: this wave was finished under a user directive of file
+reads/writes + git only - NO cargo/rustc/rustfmt/test runs, no dotnet, no
+graphify. The tests below are **tests-as-code: written, NOT run**; the wave-A
+legacy goldens and the full-suite verification are deferred to the next
+build-capable pass. No compiler was invoked.
+
+`crates/tr-core/src/lighting/legacy.rs` gains `try_updating_map_with_light`
+(`TryUpdatingMapWithLight`, `LegacyLighting.cs:371-433`) and the `ProcessArea`
+gate block (`:341-358`) runs INLINE in `process_area` - before `PreRenderPhase`
+resets the count, so the `renderCount == 3` gate sees the C# value. The export
+is split along the C#'s own seam:
+
+- `MapLightExport<'a>` borrows the `Main.Map` tile array (`WorldMap._tiles`),
+  the `Main.mapTime` counter (`Main.cs:803`), `mapTimeMax` (`Main.cs:801`) and
+  the `Main.mapEnabled` gate (`Main.cs:813`). The app's `WorldMap` hands it out
+  through `legacy_light_export` (`tr-app/src/map.rs`); the frame driver
+  (`app/frame/draw.rs`) attaches it only while a legacy mode is active and
+  pushes the returned `changed` list into the map texture's dirty queue
+  (`push_dirty`, the `MapRenderer.QueueChange` analog).
+- The gate order is verbatim (`:340-358`): `ShiftUnProcessedDataOver` -> the
+  `Netplay.Connection.StatusMax > 0` poke `mapTime = 1` (`:341-344`, wired
+  from `App.net_status_max`) -> the `mapDelay` countdown (`:345-348`) -> the
+  `mapTime == 0 && mapEnabled && renderCount == 3` gate (`:349`). `mapDelay`
+  lives ON THE ENGINE (`Main.mapDelay`, `Main.cs:229`, static ctor `= 2` at
+  `:66504`, world-load re-arm `WorldGen.cs:6947`); `enter_loaded_world` calls
+  `reset_map_delay` (`app/mod.rs`).
+- The export body (`:373-432`): the re-arm `mapTime = mapTimeMax` happens
+  FIRST (`:373`); the window is the camera's SCALED view
+  (`Camera.ScaledPosition/ScaledSize`, `Camera.cs:12-14` - the
+  `GameViewMatrix.Translation` offset, `SpriteViewMatrix.cs:149-153`'s
+  `Utils.Round` banker's rounding, computed in the driver from `world_zoom`)
+  intersected with the requested rect, both clamped with the C#'s max-first
+  `Utils.Clamp` (`Utils.cs:223-234`, the shared `wind::cs_clamp`). The walk is
+  x-outer/y-inner over the PRESENTED `R/G/B`: max channel, White's 1.5x
+  brighten (`IsColorOrWhiteMode`, `Mode < 2`, `:204`/`:416-419`), the
+  `(byte)Math.Min(255f, num4 * 255f)` truncation (`:420`), the sky-air 22
+  ambient (`:421-424`), the revealed-floor 22 (`:425-428`), then
+  `Main.Map.UpdateLighting` (the shared `crate::map::update_map_lighting`,
+  `WorldMap.cs:49-63`). `Main.updateMap` (`:432`) rides the seam's
+  `update_map` field.
+- The C# `try/catch` (`:351-357`) becomes abort-on-out-of-bounds early
+  returns: the re-arm at `:373` happens first either way, tiles written
+  before the abort persist and `updateMap` stays untouched. The state COLUMN
+  is bounds-checked once per `i` BEFORE the inner loop (`:398` reads
+  `_states[...]` before the `j` loop) - an out-of-range column aborts even
+  when the y range is empty.
+
+Map-side split (`tr-app`): while a legacy mode is active the frame's map
+phase runs only the per-frame `Main.mapTime` countdown
+(`WorldMap::tick_map_time`, `Main.cs:61818-61821`); the modern
+`ExportToMiniMap` countdown/reveal stays inside `WorldMap::update` for Color
+mode. The legacy engine owns the export itself - exactly the C# split
+(`LightingEngine.ExportToMiniMap` vs `LegacyLighting.TryUpdatingMapWithLight`).
+
+**RNG streams are untouched by construction**: `TryUpdatingMapWithLight`
+draws NO random numbers (the whole `:371-433` body is reads, clamps, byte
+maths and map writes). The swipe stream keeps its exact order - `NextSeed()`
+after every swipe pass (`:1082`), `WithModifier((ulong)(i*1000+j))` +
+`Next(98,100)` per wet decay draw (`:1250-1251`) - and the scanner stream
+keeps its one `NextSeed()` per `PreRenderPhase` (`:723`). The export runs
+between the shift and the sky reseed inside `process_area`, adding no draws
+before, between or after them. The witness test
+`map_export_keeps_the_rng_streams` drives 20 frames with wet cells beside
+the torch (real swipe draws) and asserts byte-identical presented light plus
+identical `swipe_rng`/`scanner_rng` seeds against a seam-less run.
+
+Deliberate deviations / deferred callers:
+- `Main.updateMap`'s CONSUMER (`Main.cs:61886-61894`, `MapRenderer.DrawToMap`
+  of the rect) is not separately ported: the port's texture upload rides the
+  per-tile dirty list (`push_dirty` -> `prepare`), which covers the same
+  changed tiles. The rect itself is carried on the seam for parity.
+- `BlackFadeCameraTeleport`'s `mapTime < 5 -> 5` poke (`Main.cs:62552-62555`)
+  has no port caller (the teleport fade is unported); the seam's `map_time`
+  borrow is where it will land.
+- The `gameMenu` re-arm `mapTime = mapTimeMax` (`Main.cs:61822-61825`) is a
+  menu-state concern outside this wave; the in-game countdown is exact.
+
+Tests-as-code (written, NOT run - code-only mode): 7 new
+`legacy::tests::map_export_*` (the RNG-stream witness, the delay/count/
+renderCount gate schedule, the disabled gate, the netplay pin, White's
+1.5x + floor-22 + byte truncation + changed-list order, Retro's raw byte,
+the sky-air 22 arm with a wet-cell counterexample) + 1 `tr-app`
+`s1_e_19b_the_legacy_light_export_seam_borrows_tiles_and_counter` (the seam
+borrows, the countdown floor, the re-arm and tile-write persistence). The
+12 wave-A goldens are untouched and must stay green when later run.
