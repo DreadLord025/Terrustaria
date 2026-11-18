@@ -100,11 +100,22 @@ COND_NAMES = {
     "RedHatSkeletron": "RedHatSkeletron",
 }
 
-# The `Populate → RegisterBosses → RegisterBoss_X` two-level nesting: only the
-# two methods this slice registers splice through (the emitted diff stays
-# exactly the new registrations; the rest of the boss subtree keeps its
-# pre-existing unspliced state).
-FOLLOW_METHODS = {"RegisterBoss_Skeletron", "RegisterBoss_MoonLord"}
+# The `Populate → RegisterBosses → RegisterBoss_X` two-level nesting: every
+# boss method the C# `RegisterBosses` calls is spliced through (S1-E-14a —
+# the whole boss subtree, not just the first two). The emitted registrations
+# stay in the C# statement order; each followed method gets a fresh local
+# scope so its `short type = N;` id local does not leak across methods.
+FOLLOW_METHODS = {
+    "RegisterBoss_EOC", "RegisterBoss_BOC", "RegisterBoss_EOW",
+    "RegisterBoss_QueenBee", "RegisterBoss_Skeletron", "RegisterBoss_WOF",
+    "RegisterBoss_AncientCultist", "RegisterBoss_MoonLord",
+    "RegisterBoss_LunarTowers", "RegisterBoss_Betsy", "RegisterBoss_Golem",
+    "RegisterBoss_DukeFishron", "RegisterBoss_SkeletronPrime",
+    "RegisterBoss_TheDestroyer", "RegisterBoss_Twins", "RegisterBoss_Plantera",
+    "RegisterBoss_KingSlime", "RegisterBoss_FrostMoon",
+    "RegisterBoss_PumpkinMoon", "RegisterBoss_HallowBoss",
+    "RegisterBoss_QueenSlime", "RegisterBoss_Deerclops",
+}
 
 
 def body_of(src, sig):

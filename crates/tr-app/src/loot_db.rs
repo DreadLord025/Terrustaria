@@ -120,6 +120,37 @@ mod tests {
     }
 
     #[test]
+    fn s1_e_14a_the_boss_subtree_registrations_are_spliced() {
+        // S1-E-14a: gen_loot.py's FOLLOW_METHODS now spans every RegisterBoss_X
+        // the C# RegisterBosses calls (ItemDropDatabase.cs:655 subtree), not
+        // just Skeletron/MoonLord. Pin that each newly-spliced boss's rules
+        // are REGISTERED (rules_for_npc non-empty) and that a representative
+        // common drop reports. Boss bags ride DropLocalPerClientAndResetsMoney
+        // whose report_droprates is the empty default (no display data yet),
+        // so assert registration via rules_for_npc, not the bag's rate row.
+        let db = database();
+        // Eye of Cthulhu (4): RegisterBoss_EOC spliced — common 1360 reports.
+        assert!(!db.rules_for_npc(4).is_empty(), "EoC rules registered");
+        assert!(db.report_droprates(4).iter().any(|r| r.item_id == 1360), "EoC common 1360");
+        // King Slime (50): RegisterBoss_KingSlime spliced.
+        assert!(!db.rules_for_npc(50).is_empty(), "King Slime rules registered");
+        // Golem (245): RegisterBoss_Golem spliced — common 1371 reports.
+        assert!(!db.rules_for_npc(245).is_empty(), "Golem rules registered");
+        assert!(db.report_droprates(245).iter().any(|r| r.item_id == 1371), "Golem common 1371");
+        // Moon Lord (398): RegisterBoss_MoonLord spliced — common 3595 reports.
+        assert!(!db.rules_for_npc(398).is_empty(), "Moon Lord rules registered");
+        assert!(db.report_droprates(398).iter().any(|r| r.item_id == 3595), "Moon Lord common 3595");
+        // Plantera (262): RegisterBoss_Plantera spliced.
+        assert!(!db.rules_for_npc(262).is_empty(), "Plantera rules registered");
+        // Duke Fishron (370): RegisterBoss_DukeFishron spliced.
+        assert!(!db.rules_for_npc(370).is_empty(), "Duke Fishron rules registered");
+        // The Destroyer (134): RegisterBoss_TheDestroyer spliced.
+        assert!(!db.rules_for_npc(134).is_empty(), "Destroyer rules registered");
+        // Skeletron Prime (125): RegisterBoss_SkeletronPrime spliced — common 1368.
+        assert!(db.report_droprates(125).iter().any(|r| r.item_id == 1368), "Prime common 1368");
+    }
+
+    #[test]
     fn the_database_registers_the_slime_families_and_the_zombies() {
         // `RegisterToNPC(1, Gel)` expands to the negative net-id family
         // (`PrepareNPCNetIDsByTypeDictionary` + `RegisterToNPC`'s loop,
