@@ -17625,3 +17625,66 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The kill-cascade module split (S1-K-4 round 3, task/S1-K-4c-kill-split, 2026-11-18)
+
+**Code-only mode.** This round ran with NO compiler invoked — no cargo,
+rustc, rustfmt, dotnet or test runs; only file reads/writes and git. The
+behaviour-frozen refactor proof is therefore a **mechanical byte-proof**, not
+a test run: every moved line was extracted from the `origin/main` blob
+(`git show origin/main:crates/tr-core/src/edit.rs`, LF-normalized; the
+worktree copy is CRLF and content-identical, verified line-by-line before
+the move) and string-compared against the new file. Build/test verification
+(world-hash pins, `generation_is_reproducible_for_a_seed`, the workspace
+suite) is **deferred to the merge gate** per the task contract.
+
+**The move.** `edit.rs` 6 695 → 2 027 lines; the kill family lands in
+`edit/kill.rs` (4 703 lines): the event records (`ObjectDrop`, `PotEvent`,
+`HerbEvent`, `PileLootEvent`, `TreeDropEvent`, `TileKill`), the ring-depth
+cap + `SQUARE_FRAME_ORDER`, `kill_tile`/`kill_tile_cascading`,
+`actuation_square_frame`/`square_tile_frame_gen`/`square_tile_frame_default`/
+`square_tile_frame`, `tree_drop_record`, `destroy_object_guarded`,
+`kill_plan_cells`, `solid_tile`/`solid_tile_allow_bottom_slope`/`solid_tile2`,
+`CheckPlan` + `check_object` + every `check_*` arm (tree/palm/orb/piggy/lamp/
+clock/bookcase/lantern/bed/candelabra/3x3/chandelier/doors/3x2/chair/bench/
+chest/sunflower/pot/piles/on-table/alch), `any_lava`, `pot_break_sound`,
+`SoundCue`/`KillSounds`/`kill_tile_sound`, `remove_tile`, `can_kill_tile`,
+and 65 tests (the tree/BUG-16, `can_kill_tile` refusals, DW-3.x cascade,
+DW-2.x herb/sunflower/pot/pile/clay-pot arms, the sound table and the orb
+tests). Stays in the parent: `WALL_UNBREAKABLE`, `ALCH_SOILS` (shared with
+`edit/place.rs`), `place_tile_sound`, the wire/actuator family, the
+interact/doors/sit/sleep family and the shared helpers (`touch`,
+`after_edit`, `liquid_flags`, `is_locked_door`, `ensure_frame_important`,
+`validate_tile_square`) — a child module sees its parent's private items,
+so those seams need no visibility change.
+
+**The byte-proof (four checks, all passed).** The build script assembled
+both files from the blob lines and aborted on any mismatch before writing:
+1. every verbatim line of `kill.rs` equals its blob source line (4 662 lines
+   across 15 ranges: prod 22-1983, 1999-2064, 2066-2079, 2098-2194,
+   2196-2680; tests 3644-3770, 3772-3879, 4168-4197, 4242-4403, 4428-4609,
+   4645-4728, 5198-5266, 5288-5460, 5462-6477, 6608-6694);
+2. the moved lines reproduce in order with no additions/deletions;
+3. the new `edit.rs` equals the blob minus the moved ranges and the
+   relocated `td` alias, plus the re-export block and exactly two seam
+   lines;
+4. kept-line count conservation (2 032 kept + 9 re-export lines).
+An independent on-disk re-verification re-located all 15 ranges inside the
+written `kill.rs` and re-compared them to the blob: identical.
+
+**The only deltas** (everything else is byte-identical): the new `//!`
+header + `use super::{…}` imports in `kill.rs`; `mod kill;` + the re-exports
+in `edit.rs` (`pub use kill::{actuation_square_frame, can_kill_tile,
+kill_tile, kill_tile_sound, pot_break_sound, square_tile_frame_default,
+HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent, SoundCue,
+TileKill, TreeDropEvent}` + `pub(crate) use kill::{remove_tile, solid_tile,
+solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen}`);
+`pub(super)` on the two shared test helpers `set_object_cell`/`open_the_door`
+(the round-2 `ground_world` precedent); the `td` alias travels with the
+moved code (no kept line uses it); blank-line runs at the deletion seams
+collapsed to single blanks (the original had none; no code line touched).
+All external callers (`world_sim/editing.rs`, `world_sim/player.rs`,
+`wiring.rs`, `growth.rs`, `smart_cursor.rs`, `torch.rs`, `tileobject.rs`,
+the worldgen temple passes, `liquid.rs`, the app break sources) keep their
+`edit::` paths unchanged. The `anchors.txt` S1-E-21c row re-points to
+`edit/kill.rs`; a new S1-K-4c row is added.

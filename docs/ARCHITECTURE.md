@@ -184,6 +184,17 @@ an agent needs before touching code.
   + `framing::reframe_area(_, _, 2, true)` — no column-surface recompute). Both fns
   are re-exported from `edit`, so `edit::break_wall`/`edit::place_wall` callers are
   unchanged; behaviour frozen (world-hash pins + edit tests green).
+- `edit/kill.rs` (S1-K-4 round 3) — the KillTile destruction cascade moved verbatim
+  out of `edit.rs`: `kill_tile`/`square_tile_frame*`/`actuation_square_frame`, every
+  `check_*` arm, `solid_tile`/`solid_tile2`/`remove_tile`, `can_kill_tile`, the event
+  records (`TileKill`/`ObjectDrop`/`PotEvent`/`HerbEvent`/`PileLootEvent`/`TreeDropEvent`)
+  and the `KillTile_PlaySounds` table (`kill_tile_sound`/`KillSounds`/`SoundCue`/
+  `pot_break_sound`), plus 65 tests. All pub seams re-exported at `edit::` (the
+  `pub(crate)` helpers via `pub(crate) use`), so every caller is unchanged; the shared
+  helpers (`touch`/`after_edit`/`liquid_flags`/`is_locked_door`/`ALCH_SOILS`) stay in
+  the parent. Byte-proven against `origin/main` in code-only mode (no compiler
+  invoked); build/test verification deferred to the merge gate — ANALYSIS "The
+  kill-cascade module split (S1-K-4 round 3)".
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
