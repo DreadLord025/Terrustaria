@@ -13107,6 +13107,40 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+## The magic cuffs (S1-C-7 wave A, 2026-11-18)
+
+`Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
+`player.rs::hurt_inner`, slotted between the defense reduction (`:38247`) and
+the endurance step (`:38304`): `num3 = (int)(num * 1f)` is the RAW incoming
+damage (the C# `num` at `:38246` — the defense-reduced `num2` never feeds it),
+`statMana += num3` capped at `statManaMax2` (`:38295-38298`), and
+`ManaEffect(num3)` (`:4531-4538`) queues the HealMana combat text with the
+UNCAPPED amount. The port hands the amount over via `pending_mana_effect` /
+`take_mana_effect` (the `pending_hurt_sound` convention); the drain in
+`world_sim/player.rs` spawns `combat_text::spawn_amount` at the player's own
+hitbox with `HEAL_MANA = (100, 100, 255)` (`CombatText.cs:228`), the placement
+`Next` draws riding the `UpdatePlayers` stream like the melee-hit text
+(`world_sim/editing.rs`). The flag folds per tick: the Magic Cuffs (1595,
+`ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+`:14949-14953`) arm `magic_cuffs`; `ResetEffects` clears it (`:18599`).
+
+Documented gaps, all deliberate:
+
+- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): the port's hurt callers
+  carry no crit flag end-to-end (research/04 deviation 10), so the restore is
+  always the un-doubled raw damage. The slot's order is preserved — the double
+  would land on `raw` before the cuffs arm.
+- **The +40 `statManaMax2` stat rows** (1595/2221 `:14925-14928`, and the
+  982/6188/6189 band's +40/+60 regen `:14929-14934`) ride **S1-C-12** (the
+  accessory stat chain) — the flag arms here, the stat grants land there.
+- **2221's `manaMagnet` half** (`:14951`) is its own unported family (the mana-
+  star attraction radius); only the `magicCuffs` grant lands.
+- **The NetMessage 43 send** (`ManaEffect`'s `:4534-4537`) is MP-only, out with
+  the port's single-player scope.
+- **The respawn clears the pending text** (`respawn`'s pending strip) — the C#
+  `CombatText` pool is global and survives death; the port's queue is per-hit
+  one-shot state, drained the same tick, so nothing observable diverges.
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
