@@ -342,6 +342,29 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The NPC `AI` lights (S1-E-5): the aiStyle-8 tail
+                    // (`NPC.cs:21280-21373`) runs per live NPC per update in
+                    // `Main.npc` slot order; the port collects the same
+                    // sources here after the step, in the same slot order.
+                    // The C# adds `netOffset` around the chain (`:21279`/
+                    // `:21374`) — the feed reads the offset position too.
+                    // No arm draws `Main.rand` (the dust halves are skipped,
+                    // `npc_lights.rs`), so the placement relative to the sim
+                    // leaves the stream untouched.
+                    for n in npcs.iter() {
+                        if n.hp <= 0 {
+                            continue;
+                        }
+                        let (w, h) = n.size();
+                        if let Some((x, y, rgb)) = crate::npc_lights::npc_light(
+                            n.kind,
+                            Vec2::new(n.x, n.y) + n.net_offset,
+                            w,
+                            h,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -883,6 +906,8 @@ impl App {
                         lookups,
                         npcs,
                         light,
+                        &style,
+                        anim_time,
                         draw_cam,
                         world_zoom,
                         screen,

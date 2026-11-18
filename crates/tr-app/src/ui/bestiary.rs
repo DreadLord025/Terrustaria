@@ -512,6 +512,13 @@ fn portrait_data(
         (NpcKind::Tim, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::DarkCaster, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::FireImp, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        // The Desert Djinn: the 16-frame NPC_533 strip's own row height.
+        (NpcKind::DesertDjinn, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 30.0, h, white)
+        }
         (NpcKind::ChaosBall, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::BurningSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::WaterSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
