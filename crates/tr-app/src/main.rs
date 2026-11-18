@@ -50,6 +50,7 @@ mod npc;
 mod npc_chat;
 mod revenge;
 mod npc_ai;
+mod npc_ai_frost_mob;
 mod npc_target;
 mod npc_buffs;
 mod persist;
