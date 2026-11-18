@@ -2106,8 +2106,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:6916-6938` — the turret pair's `alpha = 255`
+            // fade-in rides the state group (the 641's `drawLayer = 1` is a
+            // draw-side field with no pool consumer); `ignoreWater` rides
+            // the sentry flag's tail below.
             MOONLORD_TURRET | RAINBOW_CRYSTAL => {
-                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
+                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6904-6915` — the turret's beam (642): 18x18,
+            // aiStyle 84 (the `AI_084` laser family), `penetrate = -1`,
+            // `tileCollide = false`, `alpha = 255`, local-immunity 10.
+            MOONLORD_TURRET_LASER => {
+                (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 10, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6941-6952` — the crystal's shard (644): 14x14,
+            // aiStyle 112, `penetrate = 1`, `timeLeft = 900`,
+            // `tileCollide = false`, `ignoreWater`, `alpha = 255`, the
+            // idStatic pair with the stock −1 cooldown (`:466`).
+            RAINBOW_CRYSTAL_EXPLOSION => {
+                (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, true, -1, 255, 1.0))
             }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -2314,7 +2331,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         ignore_water: ((minion || sentry)
             && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
-            || matches!(kind, VILE_BASE | VILE_TIP),
+            || matches!(kind, VILE_BASE | VILE_TIP)
+            // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
+            || kind == RAINBOW_CRYSTAL_EXPLOSION,
     })
 }
 
@@ -2342,7 +2361,17 @@ pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
 pub const SPIDER_EGG: u16 = 378;
 pub const MOONLORD_TURRET: u16 = 641;
+/// `ProjectileID.MoonlordTurretLaser` (642) — the turret's beam
+/// (`Projectile.cs:6904-6915`: 18x18, aiStyle 84, `penetrate = -1`,
+/// `alpha = 255`, `tileCollide = false`, local-immunity 10).
+pub const MOONLORD_TURRET_LASER: u16 = 642;
 pub const RAINBOW_CRYSTAL: u16 = 643;
+/// `ProjectileID.RainbowCrystalExplosion` (644) — the crystal's shard
+/// (`Projectile.cs:6941-6952`: 14x14, aiStyle 112, `penetrate = 1`,
+/// `timeLeft = 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
+/// `usesIDStaticNPCImmunity` with the stock `idStaticNPCHitCooldown = -1`,
+/// `Projectile.cs:466` — the block-forever sentinel).
+pub const RAINBOW_CRYSTAL_EXPLOSION: u16 = 644;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
 pub const FLAME_BURST_TOWER_2: u16 = 665;
 pub const FLAME_BURST_TOWER_3: u16 = 667;
@@ -2449,6 +2478,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The Rainbow Crystal's 8-frame sheet (`Main.cs:8476`) — `AI_123`'s
+        // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
+        // The turret 641 has no `projFrames` row (the stock 1).
+        RAINBOW_CRYSTAL => 8,
         _ => 1,
     }
 }
