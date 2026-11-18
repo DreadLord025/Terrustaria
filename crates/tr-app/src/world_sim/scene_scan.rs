@@ -356,6 +356,13 @@ fn apply_scene_forces(
 /// sandstorm state read here are same-frame fresh, no longer the one-draw-frame
 /// lag the old draw-block wind tick produced.
 pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
+    // `Main.UpdateSceneMetrics`'s capture gate (`Main.cs:62518-62521`):
+    // `if (CaptureManager.Instance.IsCapturing) return;` — the scene
+    // metrics freeze while a capture renders (the chunk draws read the
+    // parked metrics, not a live rescan). S1-E-17.
+    if app.capture.is_capturing() {
+        return;
+    }
     let App {
         world,
         player,

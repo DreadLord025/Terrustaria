@@ -333,6 +333,12 @@ impl App {
             self.update_menu_music();
         }
 
+        // S1-E-17: the loading screen's per-frame update (`UIWorldLoad.Update`
+        // + the `worldGenCallback` completion tail) — the progress latch and
+        // the result poll run before the draw, exactly as the C# `UpdateMenu`
+        // drives `MenuUI.Update` ahead of `DoDraw`.
+        self.update_world_load();
+
         // The front end's Play tail (`UIWorldListItem.PlayGame` →
         // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
         // boundary — after the front screens' clicks parked it and before the
@@ -409,11 +415,20 @@ impl App {
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
             self.update_world_frame(dt, screen);
+            // S1-E-17: `CaptureManager.Instance.Update` at the interface-pass
+            // call site (`Main.cs:46187` world / `:62166` map) — the capture
+            // selection UI is an in-game interface, so it rides the world
+            // branch (the front end never draws it).
+            self.update_capture(screen);
         }
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.
         self.draw_half_pre_snapshots(dt);
+        // S1-E-17: `CaptureManager.Instance.DrawTick()` at the `DoDraw` head
+        // (`Main.cs:61729`) — the countdown advances and a started capture
+        // drains one chunk (the GPU render is the S1-G-13 seam).
+        self.capture_draw_tick();
         // S1-B-8 — the draw region (`Main.DoDraw`'s body): the pre-snapshot
         // locals, the destructure and the gpu block live in
         // `frame/draw.rs::draw_region`, verbatim; it yields the frame's stats.

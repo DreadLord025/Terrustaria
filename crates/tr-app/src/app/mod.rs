@@ -6,6 +6,7 @@
 //! `loop.rs`, the frame orchestrator `frame.rs`. (A7: extracted from
 //! `main.rs`.)
 
+pub(crate) mod capture_driver;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;
 pub(crate) mod filters;
@@ -18,6 +19,7 @@ pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
+pub(crate) mod worldgen_job;
 
 // The RNG helpers live in `frame` with their main consumer, but the world
 // simulation and the sky reach them through the app root.
@@ -396,6 +398,18 @@ pub(crate) struct App {
     /// → `Main.LoadWorld`, BUG-04): the file the world swap loads at the next
     /// frame boundary. `None` while no world is pending.
     pub(crate) play_world: Option<PathBuf>,
+    /// S1-E-17: the live world-generation job (`WorldGen.CreateNewWorld`'s
+    /// task + the `WorldGenerator.CurrentController`/`CurrentGenerationProgress`
+    /// statics, `WorldGenerator.cs:398-400`). `Some` while `FrontScreen::WorldLoad`
+    /// is up; the frame polls it and the completion tail hops to the world
+    /// select (`worldGenCallback`, `WorldGen.cs:6599-6602`).
+    pub(crate) world_gen_job: Option<worldgen_job::WorldGenJob>,
+    /// S1-E-17: the capture-mode singleton (`CaptureManager.Instance`,
+    /// `CaptureManager.cs:10`, `:110-113`). The interface + camera state
+    /// machines; the GPU render half is the S1-G-13 seam. `update_scene`
+    /// reads `is_capturing()` for the `Main.UpdateSceneMetrics` gate
+    /// (`Main.cs:62518-62521`).
+    pub(crate) capture: crate::capture::CaptureManager,
     pub(crate) player_name: String,
     pub(crate) net: NetRole,
     /// Players of other machines streaming from the host/client.
@@ -1832,6 +1846,11 @@ impl App {
             // (`UIWorldSelect.cs:110-116`) sets `Main.newWorldName` and the
             // state; the draft rode in from the table row.
             FrontScreen::WorldCreation(_) => {}
+            // `UIWorldLoad.OnActivate` (`UIWorldLoad.cs:37-44`) is the
+            // gamepad snap point only (out of scope, §J.3) — no re-list.
+            // The generation job is started by `finish_creating_world`
+            // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
+            FrontScreen::WorldLoad(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -3000,6 +3019,8 @@ impl App {
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
+            world_gen_job: None,
+            capture: crate::capture::CaptureManager::default(),
             invasion_spawn_timer: 0.0,
             spawn_no_cycle: false,
             attack_cd: 0.0,
