@@ -393,6 +393,44 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The Player `AddLight` family (S1-E-5,
+                    // `player_lights.rs`): the `UpdateBuffs` buff arms
+                    // (`Player.cs:9995`/`:10215`/`:10316`/`:10466`), the
+                    // `UpdateEquips` accessory walk (`:15224-15262`) and
+                    // `ItemCheck_EmitHeldItemLight` (`:49810-50194`) —
+                    // the C# runs them in that order inside
+                    // `Player.Update` (`:25566`/`:25633`/`:31827`); the
+                    // port collects them here after the step, like the
+                    // item/NPC feeds above, feeding the SAME
+                    // `EntityLights` pair. No ported arm draws
+                    // `Main.rand` — every rand-bearing dust branch is
+                    // skipped wholesale — so the placement leaves the
+                    // UpdatePlayers stream untouched. The dead player
+                    // is skipped like the dead NPCs (the port's death
+                    // path clears the buffs; vanilla's residual light
+                    // while dead needs the unported death visuals).
+                    if let Some(p) = player.as_ref().filter(|p| !p.dead) {
+                        let held_kind = inventory
+                            .get(*selected)
+                            .filter(|s| s.count > 0)
+                            .map_or(0, |s| s.kind);
+                        // The rest anchor's `heldItemFrame.Width` — the
+                        // same icon width the draw layer reads
+                        // (`render/entities.rs::held_item_quad`).
+                        let held_frame_w = lookups
+                            .item_icon(held_kind)
+                            .map_or(0.0, |(_, w, _)| w);
+                        for (x, y, rgb) in crate::player_lights::player_lights(
+                            p,
+                            held_kind,
+                            held_frame_w,
+                            p.zones,
+                            world,
+                            &params,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
