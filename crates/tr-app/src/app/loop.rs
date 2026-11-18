@@ -498,6 +498,12 @@ impl ApplicationHandler for App {
                             crate::debug_panel::end_drag(self);
                         }
                         self.mine_down = pressed;
+                        if !pressed {
+                            // `Main.mouseLeftRelease` — the release edge the
+                            // achievement popup's click reads
+                            // (`InGamePopups.cs:124`), consumed per frame.
+                            self.ui_left_release = true;
+                        }
                         if pressed {
                             self.ui_left_press = true;
                             // The debug panel's click (the self-contained

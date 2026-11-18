@@ -2339,6 +2339,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // S1-D-8 (research/39 "Phase A"): the read-only snapshot seam. The
+    // carrier-link scan family below (the parts' core lookup + the core's
+    // part check) reads this per-tick view instead of re-borrowing
+    // `app.npcs` per scan; the writes land on the scanning NPC alone. The
+    // pass mirrors its own `hp = 0` kills into the view (`snap.kill`) so
+    // later scans in the family see the deaths exactly as the live
+    // `hp > 0` reads did — the scan predicates/order are unchanged.
+    let mut snap = crate::world_sim::npc_snapshot::NpcSnapshot::build(&app.npcs);
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
     // PRE-pass: each 397/396/400/401 finds ITS core (the `ai[3]` link,
@@ -2366,21 +2374,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             } else {
                 NpcKind::MoonLordCore
             };
-            carrier_uid = app
-                .npcs
-                .iter()
-                .find(|m| m.kind == want && m.hp > 0)
-                .map(|m| m.uid)
-                .unwrap_or(0);
+            carrier_uid = snap.first_living_kind_uid(want).unwrap_or(0);
             app.npcs[i].carrier_uid = carrier_uid;
         }
-        let core = app
-            .npcs
-            .iter()
-            .position(|m| m.uid == carrier_uid && m.uid != 0 && m.hp > 0);
+        let core = snap.position_living_uid(carrier_uid);
         match core {
             Some(ci) => {
-                let (ccx, ccy) = app.npcs[ci].center();
+                let row = &snap.rows()[ci];
+                let (ccx, ccy) = (row.cx, row.cy);
                 app.npcs[i].carrier_x = ccx;
                 app.npcs[i].carrier_y = ccy;
                 app.npcs[i].carrier_timer = 1.0;
@@ -2390,6 +2391,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].moon_core_alive = false;
                 app.npcs[i].carrier_timer = 0.0;
                 app.npcs[i].hp = 0;
+                // Mirror the kill into the read-only view: a later part's
+                // fallback find / the core's alive check must not see it
+                // (the live `hp > 0` reads didn't either).
+                snap.kill(i);
             }
         }
     }
@@ -2414,7 +2419,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dead = false;
                 continue;
             }
-            let alive = app.npcs.iter().any(|m| m.uid as i32 == uid && m.hp > 0);
+            let alive = snap.any_living_uid(uid);
             if !alive {
                 lost = true;
             } else {
@@ -2974,13 +2979,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
-        // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
-        // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
-        // guard: the kinds with no row play nothing).
+        // `NPC.checkDead` plays `this.DeathSound` at `base.position`
+        // (`NPC.cs:78186-78194`) — the kind's own death cue through the
+        // faithful case-4 path (S1-E-21 wave C): the volume arms + the
+        // `Main.rand.Next(-10, 11) * 0.01` pitch draw. The C# runs
+        // `checkDead` inside `StrikeNPC` (the striking stage's stream);
+        // the port batches deaths into the NPC pass, so the draw rides
+        // the `UpdateNPCs` stream (`Main.cs:17767`) — the recorded
+        // deviation (ANALYSIS, S1-E-21c). The C#'s `null` guard: the
+        // kinds with no row play nothing.
         if let Some(cue) = npc.kind.death_sound() {
-            let (w, h) = npc.size();
-            app.audio
-                .play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
         }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
@@ -3232,12 +3242,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        for (kind, sx, sy) in n.wants_sphere.drain(..) {
+        for (kind, sx, sy, ai3) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // `NPC.NewNPC`'s `ai3` argument (`NPC.cs:21246`'s
+            // `flag4 ? 1 : 0` — the Dark Caster's red-hat sphere).
+            ball.ai[3] = ai3;
             // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
             // no direction argument, the ctor's `spriteDirection = -1`,
             // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
@@ -3356,6 +3369,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
             head.ai[3] = hands_alive;
+            // S1-E-14b: the `FindFirstNPC(35)` mirror the hand's
+            // `localAI[3]` copy (`NPC.cs:22315`) and the Dark Caster's
+            // `aiStyle 8` latch (`NPC.cs:20820-20827`) read — the head's
+            // live `ai[3]` (the port's hands-count stand-in; the red-hat
+            // head model deviation is recorded in ANALYSIS).
+            app.world.skeletron_red_hat = head.ai[3] == 1.0;
+        }
+        if !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+        {
+            app.world.skeletron_red_hat = false;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -4295,11 +4321,12 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             has_player_target: true,
             // The slime-body rain / statue-mimic style (`ai[1]`) and the
             // RedHat Skeletron state (`ai[3]`) ride the live ai vector
-            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). The port's
-            // `Npc` has no `localAI` vector — the 36/32 `localAI[3]` paths
-            // stay zeros until the port models it.
+            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). S1-E-14b:
+            // the 36/32 `localAI[3]` paths ride the ported `local_ai`
+            // vector (the hand mirrors the head, `NPC.cs:22315`; the Dark
+            // Caster latches from `FindFirstNPC(35)`, `:20820-20827`).
             ai: npc.ai,
-            local_ai: [0.0; 4],
+            local_ai: npc.local_ai,
             // `HasGivenName` = the non-empty name (`NPC.cs:6741`); the empty
             // string maps to `None` (Decision D2).
             given_name: (!npc.given_name.is_empty()).then_some(npc.given_name.as_str()),
@@ -4422,6 +4449,73 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
+    /// `DeathSound` (`NPC.cs:78186-78194`) plays through the case-4 path
+    /// with exactly one `Next(-10, 11)` pitch draw (`LegacySoundPlayer.cs:693`)
+    /// on the `UpdateNPCs` stream (`Main.cs:17767` — the port's death seam
+    /// runs in the NPC pass, the recorded ANALYSIS deviation); the other
+    /// streams stay untouched.
+    #[test]
+    fn s1_e_21c_the_death_play_draws_one_pitch_on_the_npc_stream() {
+        use crate::app::RngKey;
+        // The wiring: a lone dead zombie's pass plays exactly one cue
+        // (the death play — the control app with no NPC plays none).
+        let mut control = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut npc = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        npc.hp = 0; // dead: the retain drops it and plays the death cue
+        app.npcs.push(npc);
+        let before = app.audio.played_count();
+        let control_before = control.audio.played_count();
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            control.audio.played_count() - control_before,
+            0,
+            "the empty pass plays nothing"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the zombie's death cue played once"
+        );
+        assert!(app.npcs.is_empty(), "the dead NPC was retained out");
+        // The stream contract: the death play on the `UpdateNPCs` stream
+        // pays exactly the one case-4 pitch draw
+        // (`LegacySoundPlayer.cs:693`) — the death events (loot, gores)
+        // legitimately share the stream, so pin the play itself against
+        // a witness clone.
+        let mut witness = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        let _pitch = witness.next_range(-10, 11);
+        let pre: Vec<_> = RngKey::ALL
+            .iter()
+            .filter(|&&k| k != RngKey::UpdateNpcs)
+            .map(|&k| (k, app.rngs.stream(k).clone()))
+            .collect();
+        assert_eq!(
+            app.audio.play_npc_death_sound(
+                "NPC_Killed_2",
+                100.0,
+                100.0,
+                app.rngs.stream(RngKey::UpdateNpcs),
+            ),
+            Some("NPC_Killed_2")
+        );
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs),
+            &witness,
+            "the death play paid exactly the case-4 pitch draw"
+        );
+        for (k, pre) in &pre {
+            assert_eq!(
+                app.rngs.stream(*k),
+                pre,
+                "{} untouched by the death play",
+                k.name()
+            );
+        }
     }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
@@ -9348,7 +9442,7 @@ mod tower_mob_tests {
             }
         }
         assert!(saw > 0, "the small spider spawns");
-        let (kind, _sx, _sy) = n.wants_sphere[0];
+        let (kind, _sx, _sy, _ai3) = n.wants_sphere[0];
         assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
         // It fires no projectile.
         assert!(n.wants_hostile_shot.is_empty(), "no projectile");
@@ -11429,12 +11523,16 @@ mod dw3_tests {
         );
 
         // The twin: the same death through the loot fns directly, from the
-        // pristine stream — the NPCLoot order (coins, then the rule engine,
-        // then the velocity/prefix draws) replays byte-for-byte.
+        // pristine stream — the C# order is the death sound FIRST
+        // (`NPC.checkDead` `NPC.cs:78193`, one case-4 pitch draw
+        // `LegacySoundPlayer.cs:693` — S1-E-21 wave C), then the NPCLoot
+        // order (coins, then the rule engine, then the velocity/prefix
+        // draws); the replay is byte-for-byte.
         let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         twin.world = crate::test_world_helpers::ground();
         twin.world.compute_column_surface();
         twin.player = Some(crate::player::Player::spawn(&twin.world));
+        let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
         spawn_coins(&mut twin, &slime);
         spawn_loot(&mut twin, &slime);
         assert_eq!(
