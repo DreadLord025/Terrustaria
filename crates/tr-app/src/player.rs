@@ -887,6 +887,15 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
+    /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+    /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
+    /// `Hurt` (`:38291-38303`) restores the RAW incoming damage (the C# `num`,
+    /// pre-defense, crit-doubled) as mana, capped at `statManaMax2`, and calls
+    /// `ManaEffect` (`:4531-4538`) — the port queues the HealMana combat text.
+    /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
+    /// chain); 2221's `manaMagnet` half is its own unported family.
+    pub magic_cuffs: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1173,6 +1182,27 @@ pub struct Player {
     /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
     /// `Player.KillMe` queues (`Player.cs:38868`).
     pending_death_sound: Option<&'static str>,
+    /// `Player.runSoundDelay` (`Player.cs:1860`): the footstep cooldown —
+    /// `SpawnFastRunParticles` sets it to `hermesStepSound.IntendedCooldown`
+    /// (`:20215`), `Player.Update` ticks it down (`:24706-24708`).
+    pub(crate) run_sound_delay: i32,
+    /// `Player.hermesStepSound` (`Player.cs:2572`, `DataStructures/SoundPlaySet`):
+    /// the fast-run footstep cue — `(SoundType, SoundStyle, IntendedCooldown)`.
+    /// `PlayerFrame` re-derives it every frame: the default 17/-1/9
+    /// (`Player.cs:35947-35949`), the Moon Lord legs override 2/24/6
+    /// (`:35959-35964`). Vanilla has no per-tile-type footstep cues — the
+    /// grass/stone/snow sounds are the tile-break families (wave C).
+    pub(crate) hermes_step_sound: (u16, i16, i32),
+    /// `Player.SpawnFastRunParticles`' play (`Player.cs:20214`): the queued
+    /// `(SoundType, SoundStyle, position.X, position.Y)` — the caller owns
+    /// the audio device and the `UpdatePlayers` stream.
+    pending_step_sound: Option<(u16, i16, f32, f32)>,
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`): the mana-restore combat
+    /// text the cuffs arm queues from `Hurt` (`:38291-38303`) — the caller
+    /// owns `Main.combatText`, so the Player hands the amount over (the
+    /// `pending_hurt_sound` convention). The C# `CombatText.NewText` rect is
+    /// the player's own hitbox at the hurt position.
+    pending_mana_effect: Option<i32>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1776,6 +1806,7 @@ impl Player {
             brain_of_confusion: false,
             shadow_dodge: false,
             long_invince: false,
+            magic_cuffs: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -1867,6 +1898,11 @@ impl Player {
             pending_switch_trip: None,
             pending_hurt_sound: None,
             pending_death_sound: None,
+            run_sound_delay: 0,
+            // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
+            hermes_step_sound: (17, -1, 9),
+            pending_step_sound: None,
+            pending_mana_effect: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2227,6 +2263,18 @@ impl Player {
         self.pending_death_sound.take()
     }
 
+    /// Takes the queued footstep play (`Player.SpawnFastRunParticles`,
+    /// `Player.cs:20214`) — `(SoundType, SoundStyle, position.X, position.Y)`.
+    pub(crate) fn take_step_sound(&mut self) -> Option<(u16, i16, f32, f32)> {
+        self.pending_step_sound.take()
+    }
+
+    /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
+    /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
+    pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
+        self.pending_mana_effect.take()
+    }
+
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
     /// handoff — the caller owns the pool).
     pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkSpawn> {
@@ -2389,6 +2437,7 @@ impl Player {
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
         self.pending_sticky_kill = None;
+        self.pending_mana_effect = None;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -2991,8 +3040,24 @@ impl Player {
             }
         }
         // `Player.Hurt`'s defense reduction (the classic
-        // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
+        // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
+        // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
+        // cuffs below restore it, NOT the reduced `num2` (`:38247`).
+        let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
+        // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
+        // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
+        // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
+        // at `:38248-38251`; the port's callers carry no crit flag yet), the
+        // mana restores and caps at `statManaMax2`, then `ManaEffect(num3)`
+        // queues the HealMana text (the NetMessage 43 send is MP-only).
+        if self.magic_cuffs {
+            self.mana += raw;
+            if self.mana > self.mana_max {
+                self.mana = self.mana_max;
+            }
+            self.pending_mana_effect = Some(raw);
+        }
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
@@ -3501,6 +3566,12 @@ impl Player {
             3097 => self.dash_type = 2,
             6189 => self.mystic_sash_dodge = true,
             3223 => self.brain_of_confusion = true,
+            // The Magic Cuffs (1595, `ApplyEquipFunctional`
+            // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
+            // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
+            // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
+            // (`:14951`) is a separate unported family.
+            1595 | 2221 => self.magic_cuffs = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
             // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
             // (The `Item.lifeRegen` rows are generic now — the loop after
@@ -3852,6 +3923,9 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
+        // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
+        // accessory rows below re-arm it from the live items each tick.
+        self.magic_cuffs = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -4902,6 +4976,12 @@ impl Player {
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
 
+        // `Player.cs:24706-24708`: the footstep cooldown ticks down (the
+        // C# runs it before `PlayerFrame` `:28286`, which reads the value).
+        if self.run_sound_delay > 0 {
+            self.run_sound_delay -= 1;
+        }
+
         self.update_frames(world);
 
         // `Player.cs:27618-27635`: the release flags recompute at the end of
@@ -4975,6 +5055,17 @@ impl Player {
     /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
         let held = self.frame_inputs;
+        // `:35947-35949`: `PlayerFrame` re-derives the fast-run footstep cue
+        // every frame — the default is the legacy Run (17, style -1, cooldown
+        // 9); the Moon Lord legs (140) swap in the Item-24 click at cooldown 6
+        // (`:35959-35964`). The port's legs read is `legs_armor` (the C#'s
+        // `:35767` effective-legSlot assignment has no port producer yet —
+        // the override is coded, unreachable until the armor visuals land).
+        self.hermes_step_sound = if self.legs_armor == 140 {
+            (2, 24, 6)
+        } else {
+            (17, -1, 9)
+        };
         // `:35756-35762`: the swim window ticks down and dies out of water.
         if self.swim_time > 0 {
             self.swim_time -= 1;
@@ -5913,6 +6004,20 @@ impl Player {
             if !self.has_jump_options[i] {
                 self.can_jump_again[i] = false;
             }
+        }
+    }
+
+    /// `Player.SpawnFastRunParticles`' sound half (`Player.cs:20205-20216`):
+    /// the fast-run footstep — `runSoundDelay == 0` and grounded plays
+    /// `hermesStepSound` at `position` (the top-left, NOT the centre) and
+    /// re-arms the cooldown (`:20212-20215`). The caller drains the queue
+    /// through `Audio::play_step_sound`. The dust trails (`:20217-20300`:
+    /// the wings-3/rocket-6, sailDash, shoe-dye arms) are visual seams.
+    fn spawn_fast_run_particles(&mut self) {
+        if self.run_sound_delay == 0 && self.vy == 0.0 {
+            let (sound_type, style, cooldown) = self.hermes_step_sound;
+            self.pending_step_sound = Some((sound_type, style, self.x, self.y));
+            self.run_sound_delay = cooldown;
         }
     }
 
@@ -7015,6 +7120,9 @@ impl Player {
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
     fn horizontal_movement(&mut self) {
+        // `Player.cs:19779`: the fast-run threshold — halfway between the
+        // boot top speed and the base run speed.
+        let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
         // `Player.cs:19818-19833`: the boost applies before any input reads
         // the velocity, then clamps.
         if self.track_boost != 0.0 {
@@ -7147,6 +7255,11 @@ impl Player {
                     self.vx = 0.0;
                 }
             }
+            // `:19987-19990`: past the fast-run threshold, grounded and
+            // unmounted — the Hermes-boot footstep + dust trail.
+            if self.vx < -fast_run_threshold && self.vy == 0.0 && !self.mount.is_active() {
+                self.spawn_fast_run_particles();
+            }
         } else if self.control_right && self.vx < self.acc_run_speed && self.dash_delay >= 0 {
             // `:19992-20005`: the mirror arm.
             if self.vy == 0.0 || self.wings_logic > 0 {
@@ -7165,6 +7278,10 @@ impl Player {
                 } else {
                     self.vx = 0.0;
                 }
+            }
+            // `:20017-20020`: the mirror fast-run arm.
+            if self.vx > fast_run_threshold && self.vy == 0.0 && !self.mount.is_active() {
+                self.spawn_fast_run_particles();
             }
         } else if self.cart_mounted && self.vx.abs() >= 1.0 {
             // `:20023-20058`: the cart coast — friction only off-track (rails
@@ -10131,6 +10248,178 @@ mod tests {
         // The death queues its own cue (`Player.cs:38868`).
         p.start_death(&w, false, false);
         assert_eq!(p.take_death_sound(), Some("Player_Killed"));
+    }
+
+    /// S1-E-21 wave D — the fast-run footstep queue
+    /// (`Player.SpawnFastRunParticles`, `Player.cs:20205-20216`): past the
+    /// `(accRunSpeed + maxRunSpeed) / 2` threshold (`:19779`), grounded and
+    /// unmounted, the boot run queues `hermesStepSound` at the top-left
+    /// position (`:20214`) and re-arms the 9-tick cooldown (`:20215`);
+    /// `Player.Update` ticks it down (`:24706-24708`). The per-cue selection
+    /// is `PlayerFrame`'s (`:35947-35964`): default Run 17/-1/9, the Moon
+    /// Lord legs (140) Item 2/24/6. Vanilla has NO per-tile-type footstep
+    /// cues — grass/stone/snow are the tile-break families (wave C).
+    #[test]
+    fn s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "landed first");
+        assert_eq!(p.hermes_step_sound, (17, -1, 9), "the default cue");
+        // Below the threshold (no boots yet: acc == max == 3, threshold 3):
+        // the fast-run gate refuses.
+        p.vx = -2.5;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.take_step_sound().is_none(), "2.5 < 3.0: no footstep");
+        // Past the threshold (the Hermes boots lift accRunSpeed to 6 every
+        // tick — `Player.cs:15005-15008` — so the threshold is 4.5): the cue
+        // queues at the top-left position, cooldown 9.
+        p.equipped[3] = 54;
+        p.update(&w, PlayerInput::default());
+        p.vx = -5.0;
+        let (x0, y0) = (p.x, p.y);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        let (sound_type, style, sx, sy) = p.take_step_sound().expect("the footstep queued");
+        assert_eq!((sound_type, style), (17, -1));
+        assert_eq!((sx, sy), (x0, y0), "the position is captured pre-movement");
+        // The cooldown re-armed to 9, then the same tick's `:24706-24708`
+        // decrement brought it to 8 (the C# order: movement, then Update).
+        assert_eq!(p.run_sound_delay, 8);
+        for _ in 0..8 {
+            p.update(
+                &w,
+                PlayerInput {
+                    left: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.take_step_sound().is_none(), "the cooldown blocks replays");
+        }
+        assert_eq!(p.run_sound_delay, 0);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        // The movement re-fired at delay 0, then the decrement: 9 → 8.
+        assert!(p.take_step_sound().is_some(), "re-armed after the cooldown");
+        assert_eq!(p.run_sound_delay, 8);
+        // Airborne: the `velocity.Y == 0` gate refuses (`:20212`).
+        p.run_sound_delay = 0;
+        p.vy = 1.0;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.take_step_sound().is_none(), "airborne: no footstep");
+        // The Moon Lord legs override the cue selection (`:35959-35964`).
+        p.legs_armor = 140;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.hermes_step_sound, (2, 24, 6), "the legs-140 override");
+        p.run_sound_delay = 0;
+        p.vx = -5.0;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        let (sound_type, style, _, _) = p.take_step_sound().expect("the override cue");
+        assert_eq!((sound_type, style), (2, 24));
+        assert_eq!(p.run_sound_delay, 5, "the override cooldown 6, minus the tick");
+        // Back to the default when the legs come off.
+        p.legs_armor = 0;
+        p.update_frames(&w);
+        assert_eq!(p.hermes_step_sound, (17, -1, 9));
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_arm_from_the_two_cuffs_and_clear() {
+        // `ApplyEquipFunctional`: the Magic Cuffs 1595 (`Player.cs:14936-
+        // 14939`) and the Celestial Cuffs 2221 (`:14949-14953`) arm
+        // `magicCuffs`; `ResetEffects` clears it per frame (`:18599`) and the
+        // fold re-arms from the live items.
+        let p = player_with_accessory(1595);
+        assert!(p.magic_cuffs);
+        let p = player_with_accessory(2221);
+        assert!(p.magic_cuffs, "the Celestial Cuffs arm the same flag");
+        let p = player_with_accessory(0);
+        assert!(!p.magic_cuffs);
+        // Armed while equipped, cleared by the next fold without the source.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1595;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magic_cuffs);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magic_cuffs, "the next fold without the source clears it");
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_restore_the_raw_damage_and_queue_the_text() {
+        // `Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): `num3` is the RAW
+        // incoming damage (`num`, `:38246` — NOT the defense-reduced `num2`),
+        // `statMana += num3` and `ManaEffect(num3)` queues the text.
+        let mut p = player_with_accessory(1595);
+        p.mana = 0;
+        p.mana_max = 100;
+        p.stat_defense = 10; // reduces the hit to 15 — the restore stays 20
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 15, "the life loss is the reduced amount");
+        assert_eq!(p.mana, 20, "the restore is the raw pre-defense damage");
+        assert_eq!(p.take_mana_effect(), Some(20));
+        assert!(p.take_mana_effect().is_none(), "the text is a one-shot");
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_cap_the_restore_at_the_mana_max() {
+        // `Player.cs:38295-38298`: `if (statMana > statManaMax2) statMana =
+        // statManaMax2`. The `ManaEffect` amount stays the uncapped `num3`.
+        let mut p = player_with_accessory(2221);
+        p.mana = 95;
+        p.mana_max = 100;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.mana, 100, "capped at statManaMax2");
+        assert_eq!(p.take_mana_effect(), Some(20), "the text keeps the raw num3");
+    }
+
+    #[test]
+    fn s1_c_7_without_the_cuffs_the_hit_restores_nothing() {
+        let mut p = player_with_accessory(0);
+        p.mana = 10;
+        p.mana_max = 100;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.mana, 10);
+        assert!(p.take_mana_effect().is_none());
     }
 
     #[test]

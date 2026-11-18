@@ -34,7 +34,7 @@ an agent needs before touching code.
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
-| NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
+| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Gores: the pool, `NewGore`, the `Update` walk | `tr-core/src/gore.rs`, `gore_id.rs` (`GoreID.Sets`); the collision seam in `gore_seam.rs` (App); the `gores` fixed-step stage in `app/frame.rs` |
@@ -178,6 +178,12 @@ an agent needs before touching code.
   events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
   the app's break sources — the mining tick, `break_tile`, the replicated break and
   explosions.
+- `edit/wall.rs` (S1-K-4 round 2) — the background-wall edit family moved verbatim
+  out of `edit.rs`: `break_wall` (`WorldGen.KillWall`), `place_wall`
+  (`WorldGen.PlaceWall`) and the `after_wall_edit` hook (revision bump + chunk mark
+  + `framing::reframe_area(_, _, 2, true)` — no column-surface recompute). Both fns
+  are re-exported from `edit`, so `edit::break_wall`/`edit::place_wall` callers are
+  unchanged; behaviour frozen (world-hash pins + edit tests green).
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from

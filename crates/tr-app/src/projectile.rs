@@ -12010,6 +12010,14 @@ pub struct ProjectilePool {
     /// the set when a hook latches (`Projectile.cs:52772` →
     /// `Player.UpdateBlacklistedTilesForGrappling` `:6210-6248`).
     hook_blacklist: HashMap<u8, Vec<(i32, i32)>>,
+    /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
+    /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
+    /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
+    /// by the world sim which owns the audio + the `UpdateProjectiles`
+    /// stream (the `take_cart_sounds` precedent). The C# draws the pitch
+    /// mid-damage-walk; the port defers the draws to the pass tail — the
+    /// recorded deviation (ANALYSIS, S1-E-21c).
+    pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
 }
 
 impl Default for ProjectilePool {
@@ -12286,6 +12294,7 @@ impl ProjectilePool {
             hook_grap_count: 0,
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
+            pending_npc_hit_sounds: Vec::new(),
         }
     }
 
@@ -13038,6 +13047,15 @@ impl ProjectilePool {
             }
         }
         out
+    }
+
+    /// S1-E-21 wave C — the landed strikes' hit-sound intents
+    /// (`NPC.StrikeNPC` `NPC.cs:81544-81553`, reached from
+    /// `Projectile.Damage` `Projectile.cs:13649`): the world sim drains and
+    /// plays them through `Audio::play_npc_hit_sound` on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`).
+    pub fn drain_npc_hit_sounds(&mut self) -> Vec<(&'static str, f32, f32)> {
+        std::mem::take(&mut self.pending_npc_hit_sounds)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -15663,6 +15681,15 @@ impl ProjectilePool {
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
+            // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
+            // wave C): the landed strike queues the kind's `HitSound` at
+            // `base.position` — the world sim plays it on the
+            // `UpdateProjectiles` stream.
+            if landed {
+                if let Some(cue) = npcs[idx].kind.hit_sound() {
+                    self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
+                }
+            }
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner_idx] = 0;
@@ -15781,6 +15808,13 @@ impl ProjectilePool {
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
+            // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
+            // wave C) — the boxed walk queues it like the plain PVE pass.
+            if landed {
+                if let Some(cue) = npcs[idx].kind.hit_sound() {
+                    self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
+                }
+            }
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
