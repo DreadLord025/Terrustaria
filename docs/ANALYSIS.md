@@ -17625,3 +17625,137 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Golem family (S1-D-3, 2026-11-18)
+
+**Audit verdict: PARTIAL → core ported. Code-only mode — no compiler
+invoked** (no cargo/rustc/rustfmt/tests; the witness tests are WRITTEN,
+NOT RUN). The task brief's "AI_064" label is wrong: the family's arms are
+aiStyles **45/46/47/48** (`AI_064` is the critter arm). Ids
+(`ID/NPCID.cs:11167-11175`): Golem 245, GolemHead 246, GolemFistLeft 247,
+GolemFistRight 248, GolemHeadFree 249; `SetDefaults` rows
+`NPC.cs:12163-12220`.
+
+**The layout.** The numeric cores live in the NEW
+`crates/tr-app/src/npc_ai_golem.rs` (pure fns, world-free, each cited
+against its C# block; 14 witness tests pin hand-computed values). The
+kind-gated seam is `npc.rs::update_golem_rng` (the v1 `update_golem`
+becomes a scratch-stream wrapper so the direct-call tests keep their
+2-arg shape; the sim dispatch rides the real `UnifiedRandom` — the house
+`update`/`update_rng` pattern). The generic aiStyle arms for other kinds
+are untouched.
+
+**Per-block verdicts (v1 → S1-D-3).**
+
+- *Body `AI_045_Golem` (`NPC.cs:19505-19780`)* — PARTIAL, now faithful:
+  the spawn init had the fist kinds SWAPPED (247 LEFT at −84, 248 RIGHT
+  at +78, `:19522-19523`); the charge ran a flat +1 where the C# carries
+  the `num4` ladder (+2 per dead part, +1 damaged, +4 under half, +8
+  under a third, ×num, `:19643-19676`); the cap flip now also resets
+  `frameCounter` (`:19680`); the slam launch sets the fly-through flag
+  and the balance-scaled −12.1·(num+9)/10 floor −19.1 (`:19682-19701`);
+  the flight sink/cap take the (num+1)/2 factor (`:19727-19763`); the
+  dead-target fly-through + the two release checks (`:19527-19534`,
+  `:19627-19637`) and the Manhattan-3000 despawn (`:19771-19779`, via
+  `encourage_despawn(0)` — the sim's retain removes it without the death
+  chain, the C#'s `active = false` shape) were missing; the body NEVER
+  FELL — it now rides the depth-scaled 0.3 gravity
+  (`UpdateNPC_UpdateGravity`, `:90878-90936`) with the 10 fall cap and
+  the tile collision (the family's only gravity kind — `SetDefaults`
+  245 has no noGravity).
+- *Attached head (aiStyle 46, `:31129-31346`)* — PARTIAL, now faithful:
+  the v1 ran an invented +9-accel/±7-clamp tether; the C# snaps the RAW
+  delta inside 100 px (rotation 0) and normalises to 100 beyond with
+  `rotation = vx * 0.1` (`:31146-31164`). The fireballs were pushed as
+  RAW deltas — now normalised to 8 (`:31193-31198`). The phase write
+  moved to the END of the arm (`:31338-31345` — the arms read the
+  CURRENT ai[0]); the phase-0 cadence carries the mouth-window
+  2·(num−1)/3 vs (num−1)/2 extras (`:31178-31187`); the beam trigger's
+  `60 + Main.rand.Next(600)` is RESTORED (one draw per phase-1 tick,
+  `:31278` — the v1 folded it to a flat 300); the beam ladder takes the
+  (num+3)/4 factor (`:31261-31277`).
+- *Fists `AI_047_GolemFist` (`:19231-19503`)* — PARTIAL, now faithful:
+  the anchor folds the body's FULL velocity (the v1 dropped Y —
+  `World.golem_vy` added, `:19258`); the follow/contact/dash ladders
+  take the (num+3)/4 factor and the num-scaled contact step; the
+  rotations were FLIPPED — the follow arm's default is the NEGATED
+  atan2 with 247 taking the plain one (`:19324-19328`), the launch and
+  state-3 arms mirror it (`:19385-19389`, `:19497-19500`); the dash's
+  past-the-player fly-through release (`:19423-19444`) and the
+  `>700 || collideX || collideY` exit (`:19445`) now run (the collide
+  flags come from the seam's own tile-collision pass); the state-3
+  hover (12-speed aim, 0.4 step, triple sign-cross add,
+  `:19451-19501`) is ported for completeness — NO writer of `ai[0] = 3`
+  exists in this decompilation for 247/248 (reachable only by an
+  external write).
+- *Free head (aiStyle 48, `:31351-31586`)* — PARTIAL, now faithful: the
+  v1's spring+clamp hover becomes the C#'s 7-speed aim at
+  player−(0,300) with the 0.05 converge + sign-cross double
+  (`:31378-31417`); the fireball ladder carries all four BODY-hp
+  DOUBLE tiers 80/60/20/10 % (`:31418-31435`, the v1 had only 10 %);
+  the barrage ladder's seven tiers mix DOUBLE (/1.25, /1.5) and INTEGER
+  (/2../6) divisions — the World now carries the raw
+  `golem_hp`/`golem_max_hp` (a ratio cannot reproduce the integer
+  tiers); flag54 (the BODY's blocked line) adds num·10, truncates
+  `(int)(dmg·1.5)` and scales the speed ×2.5 (`:31551-31554`); the
+  `100 + Main.rand.Next(4800)` trigger is RESTORED (one draw per tick,
+  `:31506`); the blocked-line lead draws `NextFloat()` X THEN Y per
+  beam (`:31555-31556`). The `dontTakeDamage` SetDefaults shield never
+  clears (`:12219`).
+
+**The enrage gate** (all four arms): `GetMyBalance` solo 1
+(`:18483-18491`), +2 body/+3 parts on getGoodWorld, ×2 when
+`(!ZoneLihzhardTemple && !ZoneJungle) || Center.Y < worldSurface*16`
+(`:19513-19516` et al.). `Zones` gains `temple` (fed by
+`SceneMetrics.zone_lihzhard_temple`, wall 87, `SceneMetrics.cs:694`);
+the torch-luck skip gate still runs on dungeon only (the pre-existing
+deviation stands — the temple flag now EXISTS but the luck table's
+`:17923` gate is not widened by this task).
+
+**The sim seam.** Both anchor passes (`world_sim/npcs.rs`) write
+`golem_vy`/`golem_hp`/`golem_max_hp` + the part-alive scan
+(`:19544-19566`'s flags); the body's `dontTakeDamage = head-alive`
+shield (`:19567`) and the `golemBoss < 0` part self-kill stay in the
+post-pass (the AI arms also carry the hp=0 guard for the direct-call
+tests). The EyeBeam's `timeLeft = 300` override (`:31307`/`:31333`/
+`:31568`) joins the shot drain's timed-spawn arm. The temple wire gate
+(`Player.cs:46932-46942`) now reads `world.downed_golem` — the v1
+comment claimed the flag did not exist and kept the wall-87 arm closed
+forever; the flag exists (the death chain writes it).
+
+**Deliberate deviations / skips.**
+
+- **getGoodWorld** has no port field — the enrage bonus and the charge
+  +100 pass `false` (the documented getGood skip pattern).
+- **Dust/sound/gore** rows are skipped with their RNG draws (the body's
+  dead-part dust `:19589-19624`, the fist dash's `Next(2)` dust
+  `:19417-19422` + Item14, the landing's Item14 + gore `:19706-19719`,
+  the free head's 228 dust `:31572-31585`) — the port's standing
+  cosmetic-skip pattern; the gameplay RNG draws (the two beam triggers,
+  the blocked lead) are restored in the C#'s order.
+- **noTileCollide** rides `local_ai[1]` (body) / `local_ai[0]` (fists) —
+  the port's `Npc` has no dedicated field; the seam integrates manually
+  (free step while the flag rides, `player::collides_rect` tile
+  collision otherwise). The collision response is the port's
+  axis-separated zeroing (the C#'s `Collision.TileCollision` slope/step
+  machinery is not modelled — the same standing deviation as the other
+  manual-collision machines).
+- **The gravity wet/honey/shimmer overrides** (`:90890-90925`) need wet
+  flags the port's NPC does not carry — the dry 0.3 depth factor only.
+- **The fist state-3** has no C# writer (ported for reachable-state
+  completeness, see above).
+- **The part spawn** keeps the sim resolver's Bottom convention
+  (`NewNPC`'s `Bottom = (X, Y)`, `NPC.cs:80771`) — the C# passes the
+  offsets as the spawn X/Y; the one-tick tether snap absorbs the
+  difference (the pre-existing resolver shape, unchanged).
+- **Multiplayer balance** (`GetMyBalance`'s scaled-player count) is
+  solo-only by construction (the port is single-player).
+
+**Verification.** Code-only: every seam call site was checked against
+the actual signatures by read/grep (the module's 20 fns, the World
+fields, `can_hit`'s 9-arg shape, `collides_rect`, `encourage_despawn`,
+the dispatch's `&mut Player` → `&Player` coercion); the C# blocks were
+re-read line-by-line (the rotations, the nesting of the slam's else-if,
+the release checks, the pin order, the lead draws). The 14 new witness
+tests + the 7 updated golem tests + the extended wire-gate test are
+WRITTEN, NOT RUN — **no compiler invoked**.

@@ -3413,12 +3413,13 @@ fn can_do_wire_stuff_here(app: &App, tx: i32, ty: i32) -> bool {
     if t.wall == 350 {
         return false;
     }
-    // `!NPC.downedGolemBoss` (`:46927`): the temple wall refuses the wires
-    // until the Golem is downed. The port has the Golem's parts but no
-    // world's downed-Golem flag, so the arm stays closed — the vanilla's
-    // pre-Golem state. The dual-dungeons temple check of the same gate
+    // `!NPC.downedGolemBoss` (`Player.cs:46932-46942`): the temple wall
+    // refuses the wires until the Golem is downed. S1-D-3: the flag DOES
+    // exist (`world.downed_golem`, the body's death chain writes it) —
+    // the v1 comment claimed it did not and kept the arm closed forever.
+    // The dual-dungeons temple check of the same gate
     // (`Main.dualDungeonsSeed`) has no ported seed.
-    if t.wall == 87 {
+    if !app.world.downed_golem && t.wall == 87 {
         return false;
     }
     true
@@ -6545,7 +6546,9 @@ mod tests {
     }
 
     /// `Player.CanDoWireStuffHere` (`Player.cs:46920-46943`): the temple wall
-    /// (87) refuses the wires while the Golem lives.
+    /// (87) refuses the wires while the Golem lives — and ACCEPTS them once
+    /// `downedGolemBoss` rides (S1-D-3: the flag exists; the v1 kept the arm
+    /// closed forever). WRITTEN NOT RUN (the S1-D-3 round ran code-only).
     #[test]
     fn the_temple_wall_refuses_the_wires() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -6556,6 +6559,10 @@ mod tests {
         app.world.tiles[i].wall = 87;
         assert!(!use_wiring_tool(&mut app, 10, 19));
         assert!(!app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
+        // The Golem downed: the same wall now wires (`:46932`'s gate opens).
+        app.world.downed_golem = true;
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
     }
 
     #[test]

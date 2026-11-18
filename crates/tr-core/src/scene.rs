@@ -262,8 +262,9 @@ pub const ZONE_SCAN_SIZE: (i32, i32) = (1920 / 16 + 25 * 2 - 1, 1200 / 16 + 25 *
 
 /// The biome-zone flags the player reads as a Copy snapshot — the torch-luck
 /// verdict table's inputs (`Player.ZoneSnow`-family, `Player.cs:17924-18036`).
-/// `ZoneLihzhardTemple` is unmodelled (no jungle-temple content in the port),
-/// so the C# skip gate `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on
+/// `ZoneLihzhardTemple` rides `SceneMetrics.zone_lihzhard_temple` since
+/// S1-D-3 (the Golem's enrage gate reads it, `NPC.cs:19513`); the torch-luck
+/// skip gate `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) still runs on
 /// dungeon only — deviation recorded in ANALYSIS.
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Zones {
@@ -276,6 +277,10 @@ pub struct Zones {
     /// `ZoneGlowshroom` — `EnoughTilesForGlowingMushroom` (`:698-701`).
     pub glowshroom: bool,
     pub dungeon: bool,
+    /// `ZoneLihzhardTemple` (`SceneMetrics.cs:694`, wall 87) — the Golem
+    /// family's enrage gate input (`NPC.cs:19513`/`:31136`/`:19238`/
+    /// `:31359`).
+    pub temple: bool,
 }
 
 /// The static thresholds from `SceneMetrics`'s static ctor (`:922-943`).
@@ -437,6 +442,7 @@ impl SceneMetrics {
             jungle: self.zone_jungle,
             glowshroom: self.enough_tiles_for_glowing_mushroom(),
             dungeon: self.zone_dungeon,
+            temple: self.zone_lihzhard_temple,
         }
     }
 
