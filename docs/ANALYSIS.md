@@ -16828,3 +16828,43 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The buff misc block (S1-E-7 wave D, 2026-11-18)
+
+`crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
+MOUNT/PET/MISC block (`Player.cs:11400-12069`, plus the pet family's head
+`:11005-11241` and the mount arm `:9881-9913`) as a PURE effect table:
+`apply_misc_effect_arm` folds one slot's writes into a `MiscEffects`
+accumulator (the wave-B `buff_effects.rs` pattern), so the module is
+disjoint from waves A/B/C — no `player.rs`/`buffs.rs` edits, the buff
+timer engine untouched. Deliberate deviations:
+
+- **Wiring deferred**: the accumulator is not yet copied onto the live
+  `Player` fields — the `player.rs` scan wiring is the waves' merge step
+  (same admission as wave B's `DebuffEffects`). Until then the module is
+  test-only; no runtime behaviour changes.
+- **Pet spawns are requests**: `pet_spawns` records `(kind, dx)` at the
+  entity centre (the buff-341 ±10·direction offset, `:12242-12253`); the
+  `NewProjectile` call itself rides the wiring step (the pet projectile
+  AIs/draw are M4-PROJ territory). The spawn GATE (owned count == 0) is exact
+  from the `UpdateProjectileCaches` recount.
+- **Crystal Leaf dedupe**: the arm's kill-every-226-beyond-the-first pool
+  walk (`:11663-11673`) is recorded as `crystal_leaf_dedupe`; the walk
+  rides the wiring step. The count gates (spawn at 0, dedupe at >1) are exact.
+- **Rabid's RNG** (`:11324-11327`): the `Next(1200)` → `Next(6)` →
+  `Next(60,100)` triple rides the caller's `UnifiedRandom` in the C#
+  order; the two inner draws happen ONLY on the 1/1200 hit. Tests mirror the
+  stream and check the truncating `(int)(60f * scale * mult)` durations.
+- **Shimmering's tile scan** (`:11807-11816`) is ported verbatim against a
+  caller-supplied `SolidTile3` predicate (the table stays world-free); the
+  underworld-layer gate and the 60/6/DelBuff outcomes are exact.
+- **Webbed** records the full lockdown (velocity epsilon, jumpHeight 0,
+  gravity 0, moveSpeed 0, dash/dashType 0, noKnockback, hook removal) as
+  accumulator fields; the existing `player.rs` webbed arm keeps its
+  current behaviour until the wiring step reconciles the two.
+- **WellFed/hunger `pickSpeed` sign**: the deltas are kept signed like the
+  C# (WellFed subtracts, Hungry/Starving add — a lower pickSpeed mines
+  faster); the wiring step maps them onto `pick_speed_bonus` with the
+  port's sign convention.
+- **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
+  block covers 71, 73-79 only, verbatim.
