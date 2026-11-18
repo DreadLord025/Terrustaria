@@ -1210,6 +1210,44 @@ mod tests {
     }
 
     #[test]
+    fn the_housing_chain_is_rng_free_and_deterministic() {
+        // Determinism proof (S1-E-11d): the C# `MoveTownNPC` → `StartRoomCheck`
+        // → `RoomNeeds` → `ScoreRoom` → `CheckSpecialTownNPCSpawningConditions`
+        // chain draws ZERO `Main.rand` (grep of WorldGen.cs:4685-4841,
+        // :5679-5992, :6041-6237, :4970-4998 finds no `rand`/`Random` call —
+        // the only `genRand` in the range is `StartMeteorShower:6241`, outside
+        // the room check). The port mirrors this by taking no RNG parameter:
+        // every function is pure over (world, npcs, rooms), so it cannot
+        // consume a draw. Running the whole chain twice on identical inputs
+        // yields identical state, and a seeded stream is untouched.
+        let mut w = ground();
+        build_furnished_room(&mut w, 60, 100, 12, 9);
+        build_furnished_room(&mut w, 90, 100, 12, 9);
+        let mut stream = tr_core::UnifiedRandom::new(1234);
+        let before: Vec<i32> = (0..8).map(|_| stream.next_max(1_000_000)).collect();
+        // Re-seed an identical stream: the housing chain must not advance it.
+        let mut probe = tr_core::UnifiedRandom::new(1234);
+        let mut run = || {
+            let mut npc = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+            npc.look_for_home_timeout = 500;
+            let mut npcs = vec![npc];
+            let mut rooms = TownRooms::new();
+            rooms.set_room(GUIDE_ID, 65, 106);
+            let mut chat = crate::chat::ChatMonitor::default();
+            let ok = try_moving_npc(&w, &mut npcs, &mut rooms, 95, 105, 0, false, &mut chat);
+            (ok, npcs[0].home, npcs[0].look_for_home_timeout, rooms.rooms().to_vec())
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "identical inputs give identical housing state");
+        assert!(a.0);
+        // The probe stream still yields the same first draws: nothing in the
+        // chain touched it (it was never passed in).
+        let after: Vec<i32> = (0..8).map(|_| probe.next_max(1_000_000)).collect();
+        assert_eq!(before, after, "the housing chain consumes no RNG draws");
+    }
+
+    #[test]
     fn move_town_npc_scores_for_the_moved_npcs_type() {
         with_english(|| {
             // `:4772-4776`: `n >= 0` overrides the prioritized type. A pet

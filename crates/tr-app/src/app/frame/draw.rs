@@ -1347,6 +1347,12 @@ impl App {
                             // `Player.HasNPCBannerBuff`'s table — the Monster
                             // Banner's hover list (`Main.cs:21360-21388`).
                             &self.scene_metrics.npc_banner_buff,
+                            // `Main.mouseNPCIndex/mouseNPCType` — the carried
+                            // housing head (`Main.cs:45200-45216`).
+                            ui::housing::MouseNpc {
+                                index: self.mouse_npc_index,
+                                ty: self.mouse_npc_type,
+                            },
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

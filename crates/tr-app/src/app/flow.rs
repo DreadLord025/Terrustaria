@@ -2295,6 +2295,8 @@ pub(crate) mod front_flow_tests {
             music: audio::MusicSystem::new(None),
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
+            mouse_npc_index: -1,
+            mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,

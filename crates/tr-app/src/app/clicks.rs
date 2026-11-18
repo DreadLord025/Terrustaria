@@ -1132,6 +1132,85 @@ impl App {
             (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
     }
 
+    /// `DrawInterface_38_MouseCarriedObject`'s click tail
+    /// (`Main.cs:45217-45246`): with a housing head on the cursor, the right
+    /// release drops it (sound 12) and the left release runs the query or
+    /// the relocation at the clicked world tile. The head suppresses the
+    /// slot clicks (`Player.mouseInterface = true`, `:45221`).
+    fn handle_carried_housing_head(&mut self, left: bool, right_edge: bool) {
+        // `:45205-45211`: a carried NPC that died or changed type falls back
+        // to the housing query before the click resolves.
+        if self.mouse_npc_index >= 0 {
+            let live = self
+                .npcs
+                .get(self.mouse_npc_index as usize)
+                .is_some_and(|n| n.kind.net_id() == self.mouse_npc_type);
+            if !live {
+                self.mouse_npc_index = -1;
+                self.mouse_npc_type = 0;
+            }
+        }
+        // `:45223-45227`: the right release drops the head, sound 12.
+        if right_edge {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            self.mouse_npc_index = -1;
+            self.mouse_npc_type = -1;
+        }
+        // `:45228-45231`: only the left release acts.
+        if !left {
+            return;
+        }
+        // `:45232-45236`: the click's world tile — `Main.MouseScreen` through
+        // the zoom, plus the screen position, over 16.
+        let (sw, sh) = self.screen_size();
+        let world_x = self.camera.x + (self.mouse_pos.x - sw * 0.5) / self.zoom;
+        let world_y = self.camera.y + (self.mouse_pos.y - sh * 0.5) / self.zoom;
+        let x = (world_x / tr_core::TILE_PX) as i32;
+        let y = (world_y / tr_core::TILE_PX) as i32;
+        // `:45237-45241`: the housing query (`mouseNPCType == 0`).
+        if self.mouse_npc_type == 0 {
+            let prioritized = self
+                .town_arrival
+                .prioritized
+                .map_or(0, |k| k.net_id());
+            crate::town::perform_housing_check(
+                &self.world,
+                &self.npcs,
+                x,
+                y,
+                prioritized,
+                false,
+                &mut self.chat,
+            );
+            return;
+        }
+        // `:45242-45246`: the relocation of the carried NPC.
+        let n = self.mouse_npc_index;
+        if n >= 0 {
+            let mut rooms = std::mem::take(&mut self.town_rooms);
+            let moved = crate::town::try_moving_npc(
+                &self.world,
+                &mut self.npcs,
+                &mut rooms,
+                x,
+                y,
+                n as usize,
+                false,
+                &mut self.chat,
+            );
+            self.town_rooms = rooms;
+            if moved {
+                // `Main.TryMovingNPC:45176-45178`: clear the head, sound 12.
+                self.mouse_npc_index = -1;
+                self.mouse_npc_type = -1;
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                // `moveRoom:4850`'s transient prioritized write is consumed
+                // and zeroed by the same `SpawnTownNPC` (`:5461`).
+                self.town_arrival.prioritized = None;
+            }
+        }
+    }
+
     pub(crate) fn handle_inventory_clicks(&mut self) {
         let left = self.ui_left_press;
         let right_edge = self.ui_right_press;
@@ -1144,6 +1223,57 @@ impl App {
         self.ui_right_press = false;
         if !left && !right {
             return;
+        }
+        // `DrawNPCHousesInUI`'s cell click (`Main.cs:42058-42070`): the
+        // housing page's heads pick up onto the cursor — the "?" cell arms
+        // the housing query, an NPC head arms its relocation. Runs inside
+        // `DrawInventory`, i.e. before the carried-head pass below, and
+        // consumes the press (`mouseLeftRelease = false`, `:42069`).
+        if left
+            && self.inventory_open
+            && self.equip_page == 1
+            && (self.mouse_item.kind == 0 || self.mouse_item.count == 0)
+        {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let base_y = ui::inventory::equip_page_base_y(screen.y, self.main_m_h());
+            let cells = ui::housing::layout(
+                &ui::housing::heads_for(&self.npcs),
+                [screen.x, screen.y],
+                base_y,
+                0.85,
+            );
+            if let Some((head, npc)) =
+                ui::housing::hover(&cells, [self.mouse_pos.x, self.mouse_pos.y], 0.85)
+            {
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:42060`)
+                if head == ui::housing::HOUSING_QUERY {
+                    // `SetMouseNPC_ToHousingQuery()` (`:42063`).
+                    self.mouse_npc_index = -1;
+                    self.mouse_npc_type = 0;
+                } else if let Some(i) = npc {
+                    // `SetMouseNPC(num7, Main.npc[num7].type)` (`:42067`).
+                    self.mouse_npc_index = i as i32;
+                    self.mouse_npc_type = self.npcs[i].kind.net_id();
+                }
+                return;
+            }
+        }
+        // `DrawInterface_38_MouseCarriedObject` (`Main.cs:45182-45247`): the
+        // carried housing head. A carried item drops it (`:45185-45187`);
+        // otherwise the head rides the cursor and the world click runs the
+        // housing query / relocation. Checked before every inventory arm —
+        // the C# runs it after `DrawInventory`, so a carried head consumes
+        // the click instead of the slots (`Player.mouseInterface`, `:45221`).
+        if self.mouse_npc_type > -1 {
+            if self.mouse_item.count > 0 {
+                // `SetMouseNPC(-1, -1)` (`:45187`).
+                self.mouse_npc_index = -1;
+                self.mouse_npc_type = -1;
+            } else {
+                self.handle_carried_housing_head(left, right_edge);
+                return;
+            }
         }
         // `Main.DrawPVPIcons`'s click handling (`Main.cs:42678-42694`, `:42724-42767`):
         // the PVP toggle and the six team cells. Both sit inside the open
@@ -4679,5 +4809,160 @@ mod s1_h_7_tests {
             pick.prefix, expected,
             "the crafted item keeps the rolled prefix"
         );
+    }
+}
+
+#[cfg(test)]
+mod housing_query_tests {
+    use super::*;
+    use crate::npc::NpcKind;
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot { kind, name: registry::name(kind), count, prefix: 0 }
+    }
+
+    fn inv_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    // ------------------------------------------------------------------
+    // S1-E-11d — the `Main.mouseNPC` housing query / relocation model.
+    // ------------------------------------------------------------------
+
+    /// The housing page's cells at the deterministic 1280x720 screen
+    /// (`m_h = 0`): `equip_page_base_y` = 174, the query cell at
+    /// `(1280 - 64 - 28, 174)` = `(1188, 174)`, 44.2 px wide (52 * 0.85).
+    fn housing_cells(app: &App) -> Vec<ui::housing::Cell> {
+        let (sw, sh) = app.screen_size();
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        ui::housing::layout(
+            &ui::housing::heads_for(&app.npcs),
+            [sw, sh],
+            base_y,
+            0.85,
+        )
+    }
+
+    /// An open housing page with one housed Guide and two furnished rooms.
+    fn housing_app() -> App {
+        let mut app = inv_app();
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 100, 12, 9);
+        crate::test_world_helpers::build_furnished_room(&mut world, 90, 100, 12, 9);
+        app.world = world;
+        app.equip_page = 1;
+        app.equip_page_selected = 1;
+        let mut guide = crate::npc::Npc::new(NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, 1, 0.0);
+        guide.home = Some((65, 106));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        app.town_rooms.set_room(22, 65, 106);
+        app
+    }
+
+    /// Aim the pointer at a world tile through the camera + zoom
+    /// (`Main.cs:45232-45235`'s inverse).
+    fn aim_at_tile(app: &mut App, tx: i32, ty: i32) {
+        let (sw, sh) = app.screen_size();
+        let wx = tx as f32 * 16.0 + 8.0;
+        let wy = ty as f32 * 16.0 + 8.0;
+        app.mouse_pos = Vec2::new(
+            (wx - app.camera.x) * app.zoom + sw * 0.5,
+            (wy - app.camera.y) * app.zoom + sh * 0.5,
+        );
+    }
+
+    #[test]
+    fn the_housing_query_cell_arms_the_query_and_the_world_click_reports() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = housing_app();
+        // Click the "?" cell (`Main.cs:42061-42063`).
+        let cells = housing_cells(&app);
+        let query = cells.iter().find(|c| c.head == ui::housing::HOUSING_QUERY).unwrap();
+        app.mouse_pos = Vec2::new(query.x + 10.0, query.y + 10.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, 0));
+        // The world click on the second (empty) furnished room: "This
+        // housing is suitable." (`Main.PerformHousingCheck`,
+        // `Main.cs:45162-45170`). The Guide's own room is occupied for the
+        // query — `MoveTownNPC` passes `n = -1`, so `ScoreRoom(-1, type)`
+        // counts his home as an occupant.
+        app.camera = Vec2::new(95.0 * 16.0, 105.0 * 16.0);
+        aim_at_tile(&mut app, 95, 105);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.chat.messages[0].text, "This housing is suitable.");
+        // The query head stays armed (the C# keeps it until right-click).
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, 0));
+        // The Guide's own room reports the occupancy (`WorldGen.cs:4807-4809`).
+        aim_at_tile(&mut app, 65, 105);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.chat.messages[0].text, "This housing is already occupied.");
+        // A solid-tile click reports the failure (`WorldGen.cs:4707-4708`).
+        aim_at_tile(&mut app, 30, 130);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.chat.messages[0].text, "This is a solid block!");
+        // The right release drops the head (`Main.cs:45223-45227`).
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, -1));
+    }
+
+    #[test]
+    fn the_npc_head_relocates_the_guide_to_the_clicked_room() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = housing_app();
+        // Click the Guide's head cell (`Main.cs:42067`).
+        let cells = housing_cells(&app);
+        let guide_cell = cells.iter().find(|c| c.npc == Some(0)).unwrap();
+        app.mouse_pos = Vec2::new(guide_cell.x + 10.0, guide_cell.y + 10.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (0, 22));
+        // Click into the second room (`Main.TryMovingNPC`, `:45172-45180`).
+        app.camera = Vec2::new(95.0 * 16.0, 105.0 * 16.0);
+        aim_at_tile(&mut app, 95, 105);
+        app.npcs[0].look_for_home_timeout = 900;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let (hx, hy) = app.npcs[0].home.expect("rehoused");
+        assert!((91..=100).contains(&hx), "the scored spot: {hx}");
+        assert!((101..=108).contains(&hy), "hy {hy}");
+        assert_eq!(app.npcs[0].look_for_home_timeout, 0);
+        assert_eq!(app.town_rooms.has_room(22), Some((hx, hy)));
+        // The head cleared on success (`:45176`).
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, -1));
+    }
+
+    #[test]
+    fn the_carried_head_drops_on_a_carried_item_and_a_closed_inventory() {
+        let mut app = housing_app();
+        app.mouse_npc_index = 0;
+        app.mouse_npc_type = 22;
+        // A carried item drops the head (`Main.cs:45185-45187`).
+        app.mouse_item = slot(71, 5);
+        app.refresh_mouse_npc();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, -1));
+        // A closed inventory drops it (`Main.cs:45666`).
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_npc_index = -1;
+        app.mouse_npc_type = 0;
+        app.inventory_open = false;
+        app.refresh_mouse_npc();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, -1));
+        // A dead/changed NPC downgrades to the query (`Main.cs:45205-45211`).
+        app.inventory_open = true;
+        app.mouse_npc_index = 0;
+        app.mouse_npc_type = 17; // the slot holds a Guide, not a Merchant
+        app.refresh_mouse_npc();
+        assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, 0));
     }
 }

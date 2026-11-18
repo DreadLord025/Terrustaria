@@ -703,6 +703,10 @@ pub fn draw_hud(
     // `Player.HasNPCBannerBuff`'s table (`Player.cs:44197`): the banner list
     // the Monster Banner's buff tooltip prints (`Main.cs:21360-21388`).
     npc_banner_buff: &[bool],
+    // `Main.mouseNPCIndex/mouseNPCType` (`Main.cs:751-753`): the housing
+    // head riding the cursor (`DrawInterface_38_MouseCarriedObject`,
+    // `Main.cs:45200-45216`).
+    mouse_npc: housing::MouseNpc,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1046,6 +1050,19 @@ pub fn draw_hud(
             pulse.cursor_scale,
             [1.0; 4],
         );
+    } else if mouse_npc.carried() {
+        // `DrawInterface_38_MouseCarriedObject`'s else arm
+        // (`Main.cs:45198-45216`): the carried housing head at cursorScale.
+        let (_, head) = housing::carried_head(mouse_npc, npcs);
+        if let Some(head) = head {
+            housing::draw_carried(
+                r,
+                lookups,
+                head,
+                [mouse_pos.x, mouse_pos.y],
+                pulse.cursor_scale,
+            );
+        }
     }
 
     // Boss bar: `BigProgressBarHelper.DrawFancyBar` (`BigProgressBarHelper.cs:25-57`,
@@ -1086,7 +1103,13 @@ pub fn draw_hud(
     };
     let housing_hover_text: Option<String> = open_housing
         .and_then(|(head, npc)| housing::label(head, npc, npcs));
-    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() || housing_hover_text.is_some() {
+    // `MouseTextInner`'s carried-head gate (`Main.cs:20192`:
+    // `mouseNPCType > -1` returns) + `DrawInterface_38`'s
+    // `Main.mouseText = false` (`:45222`): no hover text while a housing
+    // head rides the cursor.
+    let hover_item: Option<&ItemSlot> = if mouse_npc.carried() {
+        None
+    } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
     } else if inventory_open {
         match open_hover {
@@ -1127,10 +1150,10 @@ pub fn draw_hud(
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
     );
-    if let Some(text) = pvp_hover_text {
+    if let Some(text) = pvp_hover_text.filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }
-    if let Some(text) = &housing_hover_text {
+    if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
