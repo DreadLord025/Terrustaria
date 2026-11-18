@@ -243,6 +243,8 @@ pub(crate) struct NpcAssets {
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
     pub(crate) goblin_sorcerer: Option<BgTex>,
+    /// `NPC_533` — the Desert Djinn caster.
+    pub(crate) desert_djinn: Option<BgTex>,
     /// `NPC_143/144/145` — the Frost Legion strips (4/5/7 frames of 26x40).
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
@@ -508,6 +510,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         hornet: npc_tex(atlas, "NPC_42"),
         meteor_head: npc_tex(atlas, "NPC_23"),
         goblin_sorcerer: npc_tex(atlas, "NPC_29"),
+        desert_djinn: npc_tex(atlas, "NPC_533"),
         snowman_gangsta: npc_tex(atlas, "NPC_143"),
         snow_balla: npc_tex(atlas, "NPC_144"),
         mystery_snowman: npc_tex(atlas, "NPC_145"),
@@ -2381,12 +2384,13 @@ pub(crate) fn draw_npcs(
             }
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
             // The casters: the humanoid sheets — the sorcerer's strip is 3
-            // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
-            // `Main.cs:67082`), the display box the zombie's 38x48 shape.
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+            // frames, the Dark Caster's 6, the Desert Djinn's 3 (`Main.npcFrameCount`
+            // 29/32/45/533, `Main.cs:67082`), the display box the zombie's 38x48 shape.
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::DesertDjinn => {
                 let (tex, count) = match n.kind {
                     NpcKind::GoblinSorcerer => (assets.goblin_sorcerer.as_ref(), 3),
                     NpcKind::Tim => (assets.tim.as_ref(), 3),
+                    NpcKind::DesertDjinn => (assets.desert_djinn.as_ref(), 3),
                     _ => (assets.dark_caster.as_ref(), 6),
                 };
                 humanoid_draw(tex, count, n, w, h)

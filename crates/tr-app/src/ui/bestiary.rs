@@ -512,6 +512,7 @@ fn portrait_data(
         (NpcKind::Tim, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::DarkCaster, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::FireImp, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::DesertDjinn, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::ChaosBall, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::BurningSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::WaterSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),

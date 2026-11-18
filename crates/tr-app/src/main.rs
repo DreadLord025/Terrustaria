@@ -23,6 +23,7 @@ mod dye;
 mod emotes;
 mod env;
 mod entity_lights;
+mod npc_lights;
 mod input_map;
 mod inv;
 mod luck;

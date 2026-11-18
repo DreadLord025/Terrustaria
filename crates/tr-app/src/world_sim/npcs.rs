@@ -2526,6 +2526,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
                     n.update_rng(world, player, step, npcs_rng);
+                    // NPC light emission (S1-E-5): collect AddLight sources from NPC AI.
+                    // C# calls Lighting.AddLight in NPC.AI methods; the per-frame list is
+                    // swapped at end of frame (LightingEngine.cs:228-233).
+                    let (w, h) = n.size();
+                    if let Some((x, y, rgb)) = crate::npc_lights::npc_light(
+                        n.kind,
+                        Vec2::new(n.x, n.y),
+                        w,
+                        h,
+                        npcs_rng,
+                    ) {
+                        app.entity_lights.add(x, y, rgb);
+                    }
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.

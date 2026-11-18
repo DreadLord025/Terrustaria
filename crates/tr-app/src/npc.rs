@@ -429,6 +429,10 @@ pub enum NpcKind {
     /// `NPCID.FireImp` (24) — the underworld caster (`aiStyle 8`,
     /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune).
     FireImp,
+    /// `NPCID.DesertDjinn` (533) — the desert caster (`aiStyle 8`,
+    /// `NPC.cs:21358`: 24x40, 200 HP, value 2000; emits light at `base.Top`
+    /// with colour (0.6, 0.6, 0.3) — `Lighting.AddLight(base.Top, 0.6, 0.6, 0.3)`).
+    DesertDjinn,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
     /// folds here (identical stats and name, `NPC.cs:17398`).
@@ -981,6 +985,7 @@ impl NpcKind {
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
+            NpcKind::DesertDjinn => 62,
             NpcKind::ChaosBall => 19,
             NpcKind::BurningSphere => 20,
             NpcKind::WaterSphere => 21,
@@ -1207,6 +1212,7 @@ impl NpcKind {
             54 => NpcKind::Plantera,
             55 => NpcKind::BrainOfCthulhu,
             56 => NpcKind::Creeper,
+            62 => NpcKind::DesertDjinn,
             63 => NpcKind::BoundGoblin,
             64 => NpcKind::GoblinTinkerer,
             73 => NpcKind::Golem,
@@ -2152,6 +2158,8 @@ impl NpcKind {
             NpcKind::Tim => (18.0, 40.0),
             NpcKind::DarkCaster => (18.0, 40.0),
             NpcKind::FireImp => (18.0, 40.0),
+            // `NPCID.DesertDjinn` (533) — caster AI style 8, 18x40 like FireImp.
+            NpcKind::DesertDjinn => (18.0, 40.0),
             // The spheres: the cases 30/25/33 are 16x16.
             NpcKind::ChaosBall => (16.0, 16.0),
             NpcKind::BurningSphere => (16.0, 16.0),
@@ -2233,6 +2241,8 @@ impl NpcKind {
             NpcKind::Hornet => 42,
             NpcKind::MeteorHead => 23, // `NPCID.MeteorHead` (the net id's correction, S1-F-3)
             NpcKind::FireImp => 24,
+            // `NPCID.DesertDjinn` (533)
+            NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -2644,6 +2654,8 @@ impl NpcKind {
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
             NpcKind::ServantOfCthulhu => 8,
+            // DesertDjinn: lifeMax 220 (`NPC.cs:14981`).
+            NpcKind::DesertDjinn => 220,
         }
     }
 
@@ -2717,6 +2729,8 @@ impl NpcKind {
             NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 20,
             NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinSummoner => 80,
+            // DesertDjinn: damage 40 (NPC.cs:14979)
+            NpcKind::DesertDjinn => 40,
             // The frost trio: 50/65/55.
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
@@ -2883,6 +2897,8 @@ impl NpcKind {
             // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::ServantOfCthulhu => 12,
+            // DesertDjinn: lifeMax 220 (NPC.cs:14981)
+            NpcKind::DesertDjinn => 220,
         }
     }
 }
@@ -4478,6 +4494,8 @@ impl Npc {
             NpcKind::GoblinThief | NpcKind::GoblinArcher => 6,
             NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinSorcerer => 2,
+            // `NPCID.DesertDjinn` (533) — caster defense 16 (`NPC.cs:9121`)
+            NpcKind::DesertDjinn => 16,
             // The frost trio: 20/26/22.
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
@@ -4626,6 +4644,8 @@ impl Npc {
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
+            // `NPCID.DesertDjinn` (533) — caster defense 16 (`NPC.cs:9121`)
+            NpcKind::DesertDjinn => 16,
             // The spheres: defense 0.
             NpcKind::ChaosBall => 0,
             NpcKind::BurningSphere => 0,
@@ -4891,6 +4911,7 @@ impl Npc {
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
+            NpcKind::DesertDjinn => 200.0, // caster value like GoblinSorcerer
             // The spheres carry no value.
             NpcKind::ChaosBall => 0.0,
             NpcKind::BurningSphere => 0.0,
@@ -5507,7 +5528,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
                 self.update_caster(world, player, rng)
             }
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
@@ -7010,12 +7031,12 @@ impl Npc {
                     self.frame = 0;
                 }
             }
-            // The casters (`FindFrame`'s case 29/32/45 group,
+            // The casters (`FindFrame`'s case 29/32/45/533 group,
             // `NPC.cs:77019-77054`): the pose machine — row 0 stands, row 1
             // is the cast windup (`ai[1] > 0`), row 2 airborne. The Dark
             // Caster's Skeletron pose (`localAI[3]`, `:77050-77053`) rides
             // the skeleton-head work.
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::DesertDjinn => {
                 self.frame = if self.vy != 0.0 {
                     2
                 } else if self.cast_windup > 0 {
@@ -15969,6 +15990,8 @@ impl Npc {
             NpcKind::GolemFistRight => 63,
             NpcKind::GolemHeadFree => 64,
             NpcKind::Deerclops => 65,
+            // `NPCID.DesertDjinn` (533) — hash id (unique; 550 is the next free slot).
+            NpcKind::DesertDjinn => 550,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;

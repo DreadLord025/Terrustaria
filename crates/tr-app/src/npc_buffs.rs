@@ -223,7 +223,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Hornet => &[20],
         // The casters/spheres: no debuff-immunity rows in the data (the
         // Fire Imp's `lavaImmune` rides the liquid system).
-        NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => &[],
+        NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => &[],
         NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[],
         // The swimmers: no debuff-immunity rows.
         NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => &[],
