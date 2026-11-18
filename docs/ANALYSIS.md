@@ -15989,3 +15989,38 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
+
+Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
+whole animation sheet squashed into one frame-sized box (or spilled the cell).
+
+Cursor: the `bestiary_open` branch of `ui::draw_hud` returned before the
+global `cursor::draw` tail. The C# bestiary is a fancy-UI state:
+`DrawInterface_12_IngameFancyUI` (`Main.cs:46148-46158`) returns false for
+it, stopping the layer loop before layer 36's cursor; `IngameFancyUI.Draw`
+draws the cursor itself after the state (`IngameFancyUI.cs:220-223`,
+`Main.DrawCursor(Main.DrawThickCursor())`). The fix draws the cursor inside
+the bestiary branch before the early return - the same structure.
+
+Icon: `draw_portrait` passed `(frames_x=1, frames_y=1, frame=0)` to
+`draw_sheet_frame`, sampling the entire NPC animation strip as one rect.
+`UnlockableNPCEntryIcon.Draw` (`UnlockableNPCEntryIcon.cs:194-207`) draws
+`DrawNPCDirect` with the NPC's single `npc.frame`; frame geometry from
+`FindFrame`/`SetFrameSize` (`:100-109`, `:185`; the division itself
+`NPC.cs:66666`/`:66694` - `frame.Height = tex.Height /
+Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
+`frames_y = sheet_h / frame_h` rows (the `.round()` is an inverse
+derivation of the integer row count, not a `Math.Round` port) and applies
+the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
+
+Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
+stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
+Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
+GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
+the `OverflowHidden` clip of the 68 px inner box
+(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
+CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
+port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
+(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
+inset and centring are faithful; only the scale/clip mechanism is approximate.
