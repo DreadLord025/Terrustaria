@@ -271,6 +271,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Fire Imp",
     },
+    BestiaryEntryDef {
+        credit_id: "DesertDjinn",
+        net_id: 533,
+        kind: NpcKind::DesertDjinn,
+        variant: None,
+        quick_unlock: false,
+        name: "Desert Djinn",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
