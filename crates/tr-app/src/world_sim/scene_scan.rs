@@ -9,9 +9,9 @@
 
 use glam::Vec2;
 
-use tr_core::World;
+use tr_core::scene::{is_desert_biome_sand, ocean_depths, SceneMetrics, ZONE_SCAN_SIZE};
 use tr_core::scene::{Sandstorm, SceneState};
-use tr_core::scene::{SceneMetrics, ZONE_SCAN_SIZE, is_desert_biome_sand, ocean_depths};
+use tr_core::World;
 
 use crate::app::App;
 use crate::npc::{Npc, NpcKind};
@@ -356,13 +356,6 @@ fn apply_scene_forces(
 /// sandstorm state read here are same-frame fresh, no longer the one-draw-frame
 /// lag the old draw-block wind tick produced.
 pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
-    // `Main.UpdateSceneMetrics`'s capture gate (`Main.cs:62518-62521`):
-    // `if (CaptureManager.Instance.IsCapturing) return;` — the scene
-    // metrics freeze while a capture renders (the chunk draws read the
-    // parked metrics, not a live rescan). S1-E-17.
-    if app.capture.is_capturing() {
-        return;
-    }
     let App {
         world,
         player,
@@ -432,70 +425,85 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         (view_max.x / 16.0).floor() as i32 + 2 + 28,
         (view_max.y / 16.0).floor() as i32 + 2 + 28,
     );
-    let mut metrics = scan_scene_full(
-        world,
-        center,
-        rain.is_raining(),
-        sandstorm.happening,
-        player.as_ref().is_some_and(|p| p.shimmer_wet),
-        Some(visual_area),
-        npcs,
-    );
+    // `Main.UpdateSceneMetrics`'s capture gate (`Main.cs:62518-62521`):
+    // `if (CaptureManager.Instance.IsCapturing) return;` — ONLY the metrics
+    // scan freezes while a capture renders (the chunk draws read the parked
+    // `Main.SceneMetrics`, not a live rescan). The C# gate sits inside
+    // `UpdateSceneMetrics` alone: `Sandstorm.EmitDust` above (it consumes
+    // the dust RNG), `SceneState.Update` and the visuals/sound driver below
+    // all keep running against the parked metrics. S1-E-17.
+    let capturing = app.capture.is_capturing();
+    let mut metrics = if capturing {
+        app.scene_metrics.clone()
+    } else {
+        scan_scene_full(
+            world,
+            center,
+            rain.is_raining(),
+            sandstorm.happening,
+            player.as_ref().is_some_and(|p| p.shimmer_wet),
+            Some(visual_area),
+            npcs,
+        )
+    };
     // `SceneMetrics.AddPlayerEffects` (`SceneMetrics.cs:747+`) plus the
     // `ScreenObstruction`/`ScreenDarkness` inputs. Vanilla reads them off
     // `PerspectivePlayer` / `Main.npc[]`; the port has neither field, so the
-    // driver fills the metrics directly.
-    if let Some(p) = player.as_ref() {
-        // `Player.headcovered` (`Player.cs:11826-11829`): buff 163.
-        metrics.headcovered = p.buffs.find_buff_index(163).is_some();
-        // `Player.DoUnbreakableWallScan` (`Player.cs:28606-28619`) behind the
-        // `Main.dualDungeonsSeed` gate (`:28608`).
-        metrics.inside_unbreakable_walls = world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::DUAL_DUNGEONS)
-            && tr_core::scene::inside_unbreakable_walls(
-                world,
-                (metrics.center[0] as i32) >> 4,
-                (metrics.center[1] as i32) >> 4,
+    // driver fills the metrics directly. These fills sit inside
+    // `UpdateSceneMetrics` past the capture gate — frozen with the scan.
+    if !capturing {
+        if let Some(p) = player.as_ref() {
+            // `Player.headcovered` (`Player.cs:11826-11829`): buff 163.
+            metrics.headcovered = p.buffs.find_buff_index(163).is_some();
+            // `Player.DoUnbreakableWallScan` (`Player.cs:28606-28619`) behind
+            // the `Main.dualDungeonsSeed` gate (`:28608`).
+            metrics.inside_unbreakable_walls = world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+                && tr_core::scene::inside_unbreakable_walls(
+                    world,
+                    (metrics.center[0] as i32) >> 4,
+                    (metrics.center[1] as i32) >> 4,
+                );
+            // `DangerousDungeonCurse` (`DangerousDungeonCurse.cs:5-55`).
+            metrics.curse_progress_needed = tr_core::scene::curse_progress_needed(
+                metrics.zone_lihzhard_temple,
+                metrics.zone_hallow,
+                metrics.zone_dungeon,
+                metrics.zone_jungle,
+                metrics.zone_crimson || metrics.zone_corrupt,
             );
-        // `DangerousDungeonCurse` (`DangerousDungeonCurse.cs:5-55`).
-        metrics.curse_progress_needed = tr_core::scene::curse_progress_needed(
-            metrics.zone_lihzhard_temple,
-            metrics.zone_hallow,
-            metrics.zone_dungeon,
-            metrics.zone_jungle,
-            metrics.zone_crimson || metrics.zone_corrupt,
-        );
-        metrics.curse_progress_safely = tr_core::scene::curse_progress_safely(
-            world.downed_mech_boss_any() || world.downed_queen_slime,
-            world.downed_skeletron || world.hard_mode,
-            world.downed_queen_bee,
-            // `NPC.downedBoss2` — the Eater of Worlds / Brain.
-            world.downed_eow,
-            // `NPC.downedSlimeKing || NPC.downedBoss1` (the Eye).
-            world.downed_slime_king || world.downed_eoc,
-        );
+            metrics.curse_progress_safely = tr_core::scene::curse_progress_safely(
+                world.downed_mech_boss_any() || world.downed_queen_slime,
+                world.downed_skeletron || world.hard_mode,
+                world.downed_queen_bee,
+                // `NPC.downedBoss2` — the Eater of Worlds / Brain.
+                world.downed_eow,
+                // `NPC.downedSlimeKing || NPC.downedBoss1` (the Eye).
+                world.downed_slime_king || world.downed_eoc,
+            );
+        }
+        // `ScreenDarkness.Update`'s `Main.npc[]` walk (`:17-32`): only the two
+        // kinds with an arm matter, and only while active. Duke Fishron (370)
+        // is not a ported `NpcKind` yet, so only the Wall of Flesh row exists.
+        metrics.screen_darkness_npcs = npcs
+            .iter()
+            .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::WallOfFlesh))
+            .map(|n| {
+                let (cx, cy) = n.center();
+                tr_core::scene::ScreenDarknessNpc {
+                    npc_type: 113,
+                    center: [cx, cy],
+                    // The C# fields this arm reads are `ai[0]`/`ai[2]` on the
+                    // 370 row and `localAI[1]` on this one; the port folds the
+                    // WoF abandonment ramp into `ai[0]` (`npc.rs:9160`).
+                    ai0: n.ai[0],
+                    ai2: n.ai[2],
+                    local_ai1: n.ai[0],
+                }
+            })
+            .collect();
     }
-    // `ScreenDarkness.Update`'s `Main.npc[]` walk (`:17-32`): only the two
-    // kinds with an arm matter, and only while active. Duke Fishron (370) is
-    // not a ported `NpcKind` yet, so only the Wall of Flesh row exists.
-    metrics.screen_darkness_npcs = npcs
-        .iter()
-        .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::WallOfFlesh))
-        .map(|n| {
-            let (cx, cy) = n.center();
-            tr_core::scene::ScreenDarknessNpc {
-                npc_type: 113,
-                center: [cx, cy],
-                // The C# fields this arm reads are `ai[0]`/`ai[2]` on the
-                // 370 row and `localAI[1]` on this one; the port folds the
-                // WoF abandonment ramp into `ai[0]` (`npc.rs:9160`).
-                ai0: n.ai[0],
-                ai2: n.ai[2],
-                local_ai1: n.ai[0],
-            }
-        })
-        .collect();
     // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
     // manage calls read is the pre-update value — vanilla flips it at `:62`,
     // after `ApplyVisuals` inside `Update`.
@@ -1046,6 +1054,40 @@ mod tests {
         assert_eq!(out.pass_index, tr_render::PassId::GRAVEYARD.0);
         assert_eq!(out.target_pos, [4800.0, 800.0], "metrics.center = camera");
         assert_eq!(out.screen_resolution, [1280.0, 720.0]);
+    }
+
+    /// The narrowed capture gate (`Main.cs:62518-62521` sits inside
+    /// `UpdateSceneMetrics` alone): while capturing, the metrics scan is
+    /// skipped (the parked `Main.SceneMetrics` feeds the driver) but
+    /// `SceneState.Update` and the visuals driver keep running — only the
+    /// old over-broad whole-`update_scene` return froze them.
+    #[test]
+    fn s1_e_17_capturing_freezes_the_scan_but_not_the_scene_update() {
+        let mut app = graveyard_app();
+        // Park a live graveyard scan first.
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.scene_state.graveyard_visual_intensity, 1.0);
+        let parked = app.scene_metrics.clone();
+        // Start a capture (the queue machine's active flag is the gate).
+        let settings = crate::capture::CaptureSettings {
+            area: crate::capture::CaptureRect::new(0, 0, 10, 10),
+            ..Default::default()
+        };
+        app.capture.capture(settings).unwrap();
+        assert!(app.capture.is_capturing());
+        // Remove the tombstones: a live rescan would drop the graveyard
+        // zone; the frozen scan must keep the parked metrics.
+        fill(&mut app.world, 260, 30, 280, 50, 0);
+        app.scene_state.skip_transitions = true; // the load-frame snap flag
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        // The scan froze: the parked metrics survived the tile removal.
+        assert_eq!(app.scene_metrics, parked, "no rescan while capturing");
+        // SceneState.Update + the driver still ran (skip flipped, output fed).
+        assert!(!app.scene_state.skip_transitions, "SceneState.Update ran");
+        assert_eq!(
+            app.filter_driver.output.expect("the driver ran").pass_index,
+            tr_render::PassId::GRAVEYARD.0,
+        );
     }
 
     #[test]

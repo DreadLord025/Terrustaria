@@ -2,11 +2,10 @@
 //! (`GameContent/UI/States/UIWorldLoad.cs:16-137`) and its
 //! `UIGenProgressBar` (`GameContent/UI/Elements/UIGenProgressBar.cs:8-126`).
 //!
-//! S1-E-17 round 1: the pure math and the load-state machine only — the
-//! bar's sprite draw (the `Outer_Corrupt`/`Outer_Crimson`/`Outer_Random`/
-//! `Outer_Lower` textures, `UIGenProgressBar.cs:32-38`, `:83-84`) and the
-//! `CaptureManager` screenshot capture are deferred to the S1-G-13
-//! render-target seam. Nothing here is wired into the draw pass yet.
+//! S1-E-17: wired as `FrontScreen::WorldLoad` — the generation worker
+//! (`app/worldgen_job.rs`) feeds the progress through the `GenProgressHook`
+//! seam; the sprite draw below paints the bar + header. The
+//! `CaptureManager` GPU chunk render is the S1-G-13 render-target seam.
 
 use tr_core::scene::get_lerp_value;
 
@@ -246,6 +245,10 @@ impl WorldLoadState {
         }
         if flags.get_good_world_gen && (!flags.no_traps_world_gen || !flags.placing_traps) {
             // `:108-116` — the message reversed character by character.
+            // The C# walks UTF-16 code units (`Text.Substring(num, 1)`);
+            // `chars()` walks Unicode scalars — they differ only on
+            // surrogate-pair characters (emoji etc.), which the gen
+            // messages never contain (ANALYSIS "The loading screen").
             text = text.chars().rev().collect();
         }
         text
@@ -269,12 +272,13 @@ impl WorldLoadState {
 
 /// .NET's `"0.0%"` custom format on the progress doubles
 /// (`UIWorldLoad.cs:133`, `:135`): ×100, one decimal, `%` appended. .NET
-/// rounds the scaled value half-away-from-zero; the tie input (a scaled
-/// `x.x5`) is not representable in binary floating point, so the
-/// `format!("{:.1}")` half-to-even path agrees on every value the game can
-/// produce (the progress fractions are pass-count ratios).
+/// rounds the scaled value half-away-from-zero — a tie IS representable
+/// (e.g. `0.0625` → `6.25%` → `"6.3%"`), where Rust's `{:.1}` half-to-even
+/// would print `"6.2%"`. Rides the shared
+/// [`tr_core::generation_progress::format_percent`] so the status text and
+/// the `Message` `{0:0.0%}` substitution can never disagree.
 pub(crate) fn format_percent_tenth(value: f64) -> String {
-    format!("{:.1}%", value * 100.0)
+    tr_core::generation_progress::format_percent(value)
 }
 
 // --- The draw (UIWorldLoad.Draw + UIGenProgressBar.DrawSelf) ------------------
@@ -352,17 +356,18 @@ pub(crate) fn draw(
         screen.x,
         [0.0; 4],
     );
-    draw_header(r, lookups, header_rect, &text, state.flags.tenth_anniversary_world_gen && !state.flags.zenith_world);
+    draw_header(
+        r,
+        lookups,
+        header_rect,
+        &text,
+        state.flags.tenth_anniversary_world_gen && !state.flags.zenith_world,
+    );
 }
 
 /// `UIGenProgressBar.DrawSelf`'s sprite half (`UIGenProgressBar.cs:70-84`):
 /// the two `DrawFilling2` bars, then the outer frame + the lower strip.
-fn draw_bar(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    rect: [f32; 4],
-    frame: GenBarFrame,
-) {
+fn draw_bar(r: &mut SpriteRenderer, lookups: &assets::Lookups, rect: [f32; 4], frame: GenBarFrame) {
     let (x, y) = (rect[0], rect[1]);
     // `:74-78` — the long bar: filled = the evil colour, separator =
     // Lerp(color, Black, 0.5), empty = (48,48,48). DrawFilling2 at
@@ -425,7 +430,12 @@ fn draw_bar(
             r,
             lookups,
             &sheet,
-            [x - 8.0 + 44.0, y + 60.0, sheet.width as f32, sheet.height as f32],
+            [
+                x - 8.0 + 44.0,
+                y + 60.0,
+                sheet.width as f32,
+                sheet.height as f32,
+            ],
             [1.0, 1.0, 1.0, 1.0],
         );
     }
@@ -712,5 +722,9 @@ mod tests {
         assert_eq!(format_percent_tenth(1.0), "100.0%");
         assert_eq!(format_percent_tenth(0.1236), "12.4%");
         assert_eq!(format_percent_tenth(0.1234), "12.3%");
+        // The exactly-representable tie: 0.0625 * 100 = 6.25. .NET's "0.0%"
+        // rounds half-away-from-zero ("6.3%"); Rust's {:.1} half-to-even
+        // would print "6.2%" — the shared tr_core formatter must win.
+        assert_eq!(format_percent_tenth(0.0625), "6.3%");
     }
 }

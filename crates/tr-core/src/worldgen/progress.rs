@@ -8,7 +8,8 @@
 //!
 //! The port's step adapters draw no RNG for progress (the feed is pure
 //! bookkeeping — the world bytes are identical with and without it, pinned
-//! by `the_progress_feed_changes_no_world_bytes`), so the messages land at
+//! by `s1_e_17_the_progress_hook_does_not_change_the_world`
+//! (`worldgen/mod.rs`)), so the messages land at
 //! the step boundaries with the C#'s per-pass wording. The per-pass
 //! `progress.Set` fractions inside the pass bodies are the faithful-pass
 //! work (the compact-model steps have no inner loops to report); the

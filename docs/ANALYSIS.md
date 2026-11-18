@@ -16140,10 +16140,33 @@ plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
   get-good message reversal's `noTraps && placingTraps` gate
   (`UIWorldLoad.cs:108`) therefore always takes the reversal arm on a
   For-the-Worthy world.
-- **`GetStatusText`'s `0.0%` formatting** uses Rust's `{:.1}` on the ×100
-  value. .NET rounds half-away-from-zero, Rust half-to-even; the tie input
-  (a scaled `x.x5`) is not binary-representable, so the two agree on every
-  pass-ratio value the game produces.
+- **`GetStatusText`'s `0.0%` formatting rides the shared
+  `tr_core::generation_progress::format_percent`** (`(v*1000).round()/10`,
+  half-away-from-zero — .NET's `"0.0%"` custom specifier). An earlier round
+  used Rust's `{:.1}` (half-to-even) and claimed the tie input was not
+  binary-representable; that claim was false — e.g. `0.0625` scales to
+  exactly `6.25`, where .NET prints `6.3%` and `{:.1}` prints `6.2%`. Both
+  the status text and the `Message` `{0:0.0%}` substitution now use the one
+  formatter, pinned by the `0.0625 → "6.3%"` test.
+- **The get-good message reversal walks Unicode scalars, not UTF-16 code
+  units.** The C# reverses via `Text.Substring(num, 1)` per UTF-16 unit
+  (`UIWorldLoad.cs:110-115`); the port's `chars().rev()` reverses whole
+  scalars. The two differ only for surrogate-pair characters (emoji, rare
+  CJK extensions), which the `Lang.gen`/`WorldGeneration.*` messages never
+  contain — ASCII and the localized messages are identical in practice.
+- **`worldGenCallback` plays sound 10 twice; the port plays the completion
+  one only.** The C# plays `SoundEngine.PlaySound(10)` at entry AND exit
+  (`WorldGen.cs:6592`/`:6603`); the port plays `Menu_Open` on the completion
+  poll (`app/session.rs::update_world_load`, `:6603`). The entry cue is
+  deferred: the worker thread has no audio seam, and playing it on the
+  frame thread at job start would shift the cue's frame relative to the
+  C# task-start ordering — a documented deviation, not a silent drop.
+- **`CreateNewWorld` reseeds `Main.rand`; the port does not.** The C#
+  assigns `Main.rand = new UnifiedRandom(Main.ActiveWorldFileData.Seed)`
+  (`WorldGen.cs:6612`) before the task starts. The port keeps its `Main.rand`
+  stream untouched (the RNG-order invariant): reseeding at world creation
+  would change every subsequent menu/gameplay roll's provenance. Documented
+  deviation; revisit with the faithful `UnifiedRandom` port.
 - `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
   (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
   F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
@@ -16161,7 +16184,7 @@ plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
 
 `crates/tr-app/src/capture.rs` ports the capture family's state machines
 1:1: the `CaptureManager` facade (`CaptureManager.cs:8-114`), the
-`CaptureInterface` selection UI (the three modes — edge selection, drag
+`CaptureInterface` selection state machine (the three modes — edge selection, drag
 bounds, change settings — the toolbar, the camera countdown,
 `CaptureInterface.cs:15-1607`), the `CaptureCamera` chunk queue / scaling /
 blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
@@ -16170,14 +16193,29 @@ blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
 (`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
 sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`) and
 `update_scene` reads `is_capturing()` for the `Main.UpdateSceneMetrics`
-gate (`Main.cs:62518-62521`). Deviations:
+gate (`Main.cs:62518-62521`) — narrowed to the metrics scan alone: the
+`Sandstorm.EmitDust` (it consumes the dust RNG), `SceneState.Update` and
+the visuals/sound driver keep running against the parked metrics, exactly
+as the C# gate sits inside `UpdateSceneMetrics` only. Deviations:
+
+- **The selection UI has no sprite draw yet — state only.** The
+  `CaptureInterface` state machine (modes, toolbar actions, countdown) is
+  ported and live, but `capture.rs` has no sprite-draw function: the
+  selection rectangle, the toolbar buttons and the countdown digits do
+  not render on screen. The UI draw lands with the S1-G-13 render-target
+  seam (the GPU chunk render needs the same targets); until then capture
+  mode is driven blind (F6 toggle + the state machine). Earlier
+  ROADMAP/PORT_MAP wording calling the selection UI "live" meant the
+  state machine only — corrected.
 
 - **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
   (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
   through the layer targets; the port's `CaptureRenderer` trait is a no-op
   stub until the render-target family lands, so a started capture drains
-  its queue without producing pixels. The selection UI, the countdown and
-  the `IsCapturing` gate are live; the write-out waits on the targets.
+  its queue without producing pixels. The selection state machine, the
+  countdown and the `IsCapturing` metrics gate are live (the selection
+  UI's sprite draw is NOT — see the bullet above); the write-out waits on
+  the targets.
 - **The capture toggle rides F6, not F4.** The vanilla binds
   `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
   debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
