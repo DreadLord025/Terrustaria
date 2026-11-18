@@ -94,7 +94,7 @@ render-target cache.
 | 9. `DrawTrees` (:8052) | PORTED | `foliage.rs::draw_tree_foliage` | Canopy + branch + leaf gores; sway per `DrawGrass`. |
 | 10. `DrawGrass`/`DrawAnyDirectionalGrass` (:8326/:8383) | PARTIAL | `tiles.rs:786-799`, `838-851` | WindyGrass inlined; `AnyDirectionalGrass` (tile 184) has no separate pass. |
 | 11. `DrawMultiTileGrass(…InWind)` (:8738/:8916) | PARTIAL | `tiles.rs:721-751` | Sunflower ported per-cell; the general 2×n multi-tile grass pass is not. |
-| 12. `DrawMultiTileVines(…InWind)`/`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip` (:8829-9238) | MISSING | — | No vine strip passing. |
+| 12. `DrawMultiTileVines(…InWind)`/`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip` (:8829-9238) | PARTIAL | `render/vines.rs` (S1-G-1 wave A, 2026-11-18) | `DrawVines`/`DrawVineStrip` + the root crawl ported term-for-term (the sway ladder, the grid push, the anchor walk, the 638 glowmask); the strips draw after the foliage pass. `DrawReverseVines`/`DrawRisingVineStrip` (549) and `DrawMultiTileVines(…InWind)` still MISSING. Deviations: ANALYSIS "The vine strip pass" (LitNature shader, biomeSight dust). |
 | 13. `DrawTeleportationPylons` (:8639) | MISSING | — | Point collected only (tile 597 → `TileCounterType.TeleportationPylon`). |
 | 14. `DrawMasterTrophies` (:8597) | MISSING | — | |
 | 15. `DrawVoidLenses` (:8708) | MISSING | — | |
@@ -126,7 +126,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Chests** — `CacheSpecialDraws_Part2` :4287-4330 (`TileID.Sets.BasicChest`) | rewrites `addFrX/addFrY` per sub-cell, `tileHeight = 18` on the bottom row, **+38/+76 row by `Main.chest[i].frame`** (opening animation), Demon/Chest glow rect for 21 columns 48/49 | no chest arm anywhere in `render/tiles.rs` (no `chest` symbol in the pass) | **MISSING** |
 | **Plants / herbs (SwaysInWindBasic, 83, 227, 529/530, 485/489/490...)** — `DrawGrass` :8326, `ShouldSwayInWind` :7702 | sway transform `pos + (cycle, |cycle|)`, rotation `cycle*0.1` about `(tileWidth/2, 16-tileTop)` | `tiles.rs:786-799` (default-size), `:800-824` (non-16×16), `wind.rs::cycle` | **PORTED inline** (z-order deviation) |
 | **Sunflower 113 / multi-tile grass** — `DrawMultiTileGrassInWind` :8916-9041 | 2×4 object swayed as one about the bottom-centre anchor, `_sunflowerWindCounter` cadence `1/420 + num*5/420` (:374, :7719 area) | `tiles.rs::sunflower_sway` :216-253 + tests :1552/:1605/:1624; `wind.rs::advance_sunflower_counter` :768 | **PORTED (per-cell approximation)** — general `DrawMultiTileGrass` not |
-| **Vines / reverse vines / vine strips** — :8829-9238, `CrawlToTopOfVineAndAddSpecialPoint` :744 | strip passes with `ClimbCatTail`, average/highest grid push, `GetAverageWindGridPush` :9195 | none | **MISSING** |
+| **Vines / reverse vines / vine strips** — :8829-9238, `CrawlToTopOfVineAndAddSpecialPoint` :744 | strip passes with `ClimbCatTail`, average/highest grid push, `GetAverageWindGridPush` :9195 | `render/vines.rs` (S1-G-1 wave A): `DrawVines`/`DrawVineStrip` + the crawl + `BottomEdgeCanBeAttachedTo` | **PARTIAL** — the hanging-vine strip pass ported (10 `s1_g_1a_*` tests); reverse vines (549) + multi-tile vines still missing |
 | **Ropes (BackRope 149?/`DrawTile_BackRope` :3766)** — dispatched for `typeCache == 380 \|\| Platforms[type]` :1511 | rope sprite drawn behind the platform/planter cell | no call site | **MISSING** |
 | **Cacti 80/227** — `rectangle.Y += 54/108/162` :1132-1145 | biome row on the plain flat rect only | `drawdata.rs::cactus_source_y_offset` :1184 + `apply_world_corrections` :1231-1234, consumed in `flat_src_uv` :1189 (BUG-19b) | **PORTED** |
 | **Trees (5, 583-589, 596, 616, 634, 72 shroom cap, 323 palm)** — `DrawTrees` :8052, `GetTreeBiome` :1735, `GetTreeVariant` :1778, `GetPalmTreeVariant` :3491, shroom-cap sprite :994-1006 | 20×20 trunks on a 22 px grid, canopy/branch sheets by biome+variant+`tileColor`, shroom cap overlay | `foliage.rs::draw_tree_foliage` + `resolve_tile_frame` is_tree arm; the trunk biome probe is `drawdata::tree_biome`/`tree_variant` via `tree::trunk_sheet_offset_at` (S1-F-9 wave A, 2026-11-18 — was a 100-row any-non-tree approximation); shroom cap MISSING | **PARTIAL** — trunk biome/variant selection PORTED; the canopy style's per-region `TreeTops.GetTreeStyle` randomisation stays a documented deviation (`tree.rs::Foliage::for_ground`) |
@@ -169,8 +169,10 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
   `sunflower_sway_gates_freeze_the_flower` :1624,
   `test_BUG19b_the_cactus_flat_draw_carries_the_biome_row_shift` :1671,
   `test_DW_4_3_unframed_tile_draws_nothing` :1719.
-- **No test covers**: platform glow/slope side-fills, chests, vine strips, back-rope,
-  the animator, `DrawSpecialTilesLegacy`, the paint recolor. There is no renderer-level
+- **No test covers**: platform glow/slope side-fills, chests, back-rope,
+  the animator, `DrawSpecialTilesLegacy`, the paint recolor. The vine strip
+  pass now has the `s1_g_1a_*` suite (`render/vines.rs`, S1-G-1 wave A).
+  There is no renderer-level
   golden-image test for `draw_tiles` (only the `TR_SHOT` SHA256 double-run practice).
 
 ## Deviations & risks

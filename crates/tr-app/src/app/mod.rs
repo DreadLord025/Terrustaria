@@ -808,6 +808,11 @@ pub(crate) struct App {
     /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
     /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
     pub(crate) sunflower_wind_step: FixedStepper,
+    /// `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
+    /// strips' own sway counter (`DrawVineStrip` reads it, `:9041`). C#
+    /// advances it in the same `TileDrawing.Update` as the sunflower's, so
+    /// it rides the same 60 Hz accumulator (S1-G-1).
+    pub(crate) vine_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
@@ -3523,6 +3528,7 @@ impl App {
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
+            vine_wind_counter: 0.0,
             leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
