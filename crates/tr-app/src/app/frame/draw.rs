@@ -179,6 +179,7 @@ impl App {
                     grass_wind_counter,
                     sunflower_wind_counter,
                     sunflower_wind_step,
+                    vine_wind_counter,
                     leaves,
                     items,
                     swing,
@@ -581,6 +582,13 @@ impl App {
                             sunflower_wind_counter,
                             wind.speed_current,
                         );
+                        // `_vineWindCounter` advances in the same
+                        // `TileDrawing.Update` (`TileDrawing.cs:375`), so it
+                        // rides the same 60 Hz step (S1-G-1).
+                        tr_core::wind::advance_vine_counter(
+                            vine_wind_counter,
+                            wind.speed_current,
+                        );
                     });
 
                     // `TileDrawing.Update`'s WindGrid chain (`TileDrawing.cs:377-378`,
@@ -662,6 +670,35 @@ impl App {
                                     (grass_wind_counter.to_bits() as u32)
                                         ^ (tree_wind_counter.to_bits() as u32)
                                         ^ (sunflower_wind_counter.to_bits() as u32)
+                                        ^ (vine_wind_counter.to_bits() as u32)
+                                } else {
+                                    0
+                                })
+                                // S1-G-1: the vine strips' `GetWindGridPush`
+                                // (`TileDrawing.cs:9076-9078`) decays on the
+                                // grid clock even in calm air — a player's
+                                // stamp keeps moving pixels for 20 ticks with
+                                // no other key input changing. The clock
+                                // rides the key only when a vine thread is
+                                // in the view rect (the pass's only grid
+                                // consumer), so vine-free worlds keep the
+                                // old cache behaviour bit-for-bit.
+                                ^ (if wind.sway_enabled && {
+                                    let vh = screen * 0.5 / *zoom;
+                                    let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                                    let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                                    let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                                    let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                                    (vy0..=vy1).any(|ty| {
+                                        (vx0..=vx1).any(|tx| {
+                                            world.tile(tx, ty).is_some_and(|t| {
+                                                t.active()
+                                                    && crate::render::vines::is_vine_thread(t.kind)
+                                            })
+                                        })
+                                    })
+                                } {
+                                    wind.wind_grid.key()
                                 } else {
                                     0
                                 })
@@ -844,6 +881,7 @@ impl App {
                             *tree_wind_counter,
                             *sunflower_wind_counter,
                             &mut leaf_spawns,
+                            *vine_wind_counter,
                         );
                         *world_key = Some(key);
                     }

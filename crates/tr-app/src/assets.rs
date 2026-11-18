@@ -1514,6 +1514,10 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_299",
     "Glow_300",
     "Glow_325",
+    // The shimmer-vine glowmask (`GetTileDrawData` case 638,
+    // `TileDrawing.cs:6080-6084`) — the vine strip pass draws it over the
+    // segment (`DrawVineStrip`, `:9125-9128`, S1-G-1).
+    "Glow_327",
     "Glow_334",
     "Glow_335",
     // The named single-sheet textures.
