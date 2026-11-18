@@ -4431,14 +4431,14 @@ pub(crate) fn spawn_ctx_from(
 }
 
 #[cfg(test)]
-mod tr_hooks {
+pub(crate) mod tr_hooks {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// Serializes env-var mutation across the binary's parallel test threads:
     /// `load_world`'s pins are process-global reads, so any test that sets or
     /// removes a `TR_*` variable must hold this lock for the whole call.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Runs `f` with `name` set to `value`, then removes it — the `TR_PLACE`/
     /// `TR_TOGGLE`/`TR_TILES` parsers moved into `crate::env` as env-reading

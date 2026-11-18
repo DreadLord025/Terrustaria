@@ -16490,6 +16490,52 @@ determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
 byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
 lava/water decay.
 
+### Wave B: the per-mode screenshots (S1-E-19 wave B, 2026-11-18)
+
+Eight baselines in `docs/screenshots/`, two runs SHA256-equal each (a pristine
+`Terrustaria.trwld` copy per run — the autosave caveat above; the shot exits
+via `std::process::exit(0)` before any save). Harness: `TR_SHOT`,
+`TR_SHOT_FRAME=120`, `TR_DAY=0.5`, `TR_NO_BG=1`, `TR_NOHUD=1`, `TR_DEBUG=0`,
+zoom 1.0 (the 1600x900 headless default), `TR_LIGHT_MODE=<mode>`; the surface
+scene is `TR_CAM=400,390` (the seed-1 stand-in's surface line ~400 at x=400),
+the cave scene `TR_CAM=400,440` + the `TR_TILES` fixture
+`380,428,40,24;385,448,4,0,0;400,448,4,0,0;415,448,4,0,0` (a 40x24 air box
+with three torches on its floor).
+
+| mode | surface SHA256 | cave SHA256 |
+| --- | --- | --- |
+| color | `0E532C5BE2BD341C3BBAB0EA425184AA23E8F7458A11B2AD43F9C4166164C2F3` | `F4CA493C8619061C1BA07630FFC3E9907F2455D8BB1655A8E415D19EF0C8E167` |
+| white | `5A6E74365009B7FD2251AA7CD7EE717596C06E3EBB75519DDF0BACA449909A00` | `DF4F757E0DF3E0FB9446F1B9A77744C8CCCECE4AE210C82C1915F08AD3C50F50` |
+| retro | `8A2892D26C5004CBAF674C62AECFEB6C97950A403768CA0BE70DACCC85ADCE59` | `D543B656D0BD50744025BAD8EAB83CA953D21BF863A429F5C5350EB221567515` |
+| trippy | `FDF0E8E53C5C7D5D19CDB7363D6D0165E1514B1ADDB841B8DAC517B1D68F3C5C` | `B7FFE52458DCA456638827A09297FF46E09908FB9F34CFBC4F39C22C99212F52` |
+
+Observations (cave scene, the torch ring right of the centre torch, screen
+row at torch height; mean-of-RGB per tile step): Retro's subtractive carry
+(−0.04/air) out-reaches White's ×0.9 at distance — 5..8 tiles out Retro reads
+130/101/54/43 vs White 87/47/19/15 and Color 113/56/24/18; Trippy's
+per-channel subtraction kills B first (8 tiles out: (36,19,0) — the RGB
+fringe), matching `doColors_Mode3_Swipe`'s independent `<= 0` gates
+(`:1331-1435`). White's LIGHT field is grey (the `white_engine_golden`'s
+every-cell-grey assertion); the warm cast on lit dirt is the texture's own
+colour under grey light — the no-bleed property is the light, not the tint.
+The surface scene shows the engines' different reach: Color leaves the
+sealed caves below the surface black, while the legacy engines light cave
+pockets through the shafts — their `OffScreenTiles = 35` working area
+(`Lighting.cs:45-56`) vs the modern engine's 28/18 padding carries sunlight
+further down; both shapes are the C#'s. No engine defect found — the modes
+render distinctly and match the C# expectations.
+
+**The wave-B harness defect (fixed, not an engine change).** The first shot
+matrix came out Color-identical for all four modes: `App::new` seeds
+`light_mode` from `TR_LIGHT_MODE` (`mod.rs:3361`), but the boot
+`apply_settings()` (`main.rs:199`) then re-read `settings.light_mode`
+(the config's Color) and clobbered the pin. Fix: `apply_settings` re-reads
+`env::light_mode()` first (the `TR_ZOOM`/`zoom_pinned` precedent), and
+`env::light_mode` became a live read (the `TR_SUNDIAL` precedent) so the
+settings-screen close path cannot drop a live pin either. Test
+`s1_e_19b_light_mode_pin_survives_apply_settings` (settings_ui.rs) pins the
+boot order, the repeat-apply and the no-pin config fallback.
+
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
 Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
