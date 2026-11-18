@@ -15687,3 +15687,49 @@ change); each new range was verified against the decompiled source line by line:
   :14257-14263, which is where the Rust fn's arms live).
 * crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
   the enum declaration plus body spans :3-9, ending at the closing brace on :9).
+
+## The duplicate entity health bar (fix/duplicate-entity-health-bars, 2026-11-18)
+
+Every damaged NPC showed TWO bars: a bogus red strip ABOVE the hitbox and the
+faithful green one below. The duplicate was an uncited ad-hoc block inside
+`render/entities.rs`'s `draw_npcs` (a dark backing quad plus a
+`[0.85, 0.15, 0.15]` fill at `[n.x, n.y - 9]` whenever `hp < max_hp`).
+The C# world pass draws no NPC bar at all — `Main.DrawNPC`
+(`Main.cs:22469`) / `DrawNPCDirect` never call `DrawHealthBar`; the only
+NPC bar is `Main.DrawInterface_14_EntityHealthBars` (`Main.cs:45810`),
+ported by `draw_npc_health_bars`. `combat_text::draw` was NOT the
+duplicate: it draws only the floating damage text (`Main.cs:62340-62396`).
+The ad-hoc block is deleted; the interface pass is the single source.
+
+The surviving pass was also brought pixel-exact with `Main.DrawHealthBar`
+(`Main.cs:21909-22000`) and the ordinary arm (`:46021-46024`):
+
+* The C# keeps a 2 px seam below 34 filled pixels (Hb2 columns 2..4 at the
+  fill edge, Hb1 columns 32..34 capping it, `:21976-21990`); the port used
+  the 34+ two-sheet butt for every ratio. `combat_text::bar_slices` now
+  carries both layouts in the C# draw order, pinned by
+  `the_bar_slices_match_the_csharp_seam_layout`.
+* `num3 += Main.NPCAddHeight(npc)` (`:46023`) now shifts the bar's Y
+  (the port already had `npc_add_height` verbatim for the draw anchors).
+* `Lighting.Brightness` is the channel MEAN times GlobalBrightness
+  (`Lighting.cs:118-122`), not the max channel; the pass now reads the
+  light through `LightStyle::shade` (which carries GlobalBrightness and
+  the blind drop) and clamps the tint AND alpha into [0,255]
+  (`Main.cs:21947-21969` — with brightness 1.2 the product can exceed 1).
+* The boss-scale 1.5 list (`Main.cs:45839-45922`) covered only King Slime
+  and the Eye; every shipped boss id now scales (Skeletron + hands, the WoF
+  pair, the Twins, Prime + limbs, Queen Bee, the Golem family, Plantera,
+  the Brain, Betsy, the Dark Mages, the Ogres, the Cultist).
+* The gate now carries `ShowLife` (`NPC.cs:6832-6842`:
+  `dontTakeDamage ? dontTakeDamageStillShowLife : true` — only type 412
+  defaults the override, `NPC.cs:15279-15280`) and the cultist ritual
+  exclusion (`Main.cs:45928`'s `ai[0] != 5` term), plus the
+  `position += netOffset` draw wrapper (`:45831`). A damaged town NPC
+  DOES show its bar — the C# gate is `life != lifeMax && ShowLife`, with
+  no townNPC term.
+
+Still approximate (unchanged by this fix): the Destroyer's smoothed shared
+bar and the worm families' `DrawInterface_Healthbar_Worm` stay with the
+open S1-D-6b row; `npc.gfxOffY` (unported on NPCs) and the flipped-gravity
+mirror (`Main.cs:21923-21927`; the port has no gravity-flip state) are
+absent; `HealthBarDrawSettings` is fixed at the default 1.
