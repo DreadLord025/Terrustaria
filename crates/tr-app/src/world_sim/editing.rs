@@ -2565,7 +2565,13 @@ fn cell_drops(
             ctx,
             main_rng,
         ),
-        _ if tr_core::tileobject::def_for_tile(hit.kind).is_some() => Vec::new(),
+        // S1-F-7: the gate is the C# `KillTile_GetItemDrops` empty case group
+        // (`WorldGen.cs:63988-66090`), generated as `KILL_TILE_NO_CELL_DROP` —
+        // NOT mere registration. The wooden slice used `def_for_tile(...).is_some()`,
+        // which only matched because every registered kind happened to be in the
+        // empty group; the full registry registers torches/platforms/orbs/plants
+        // that DO drop per-cell, so the gate must read the actual C# group.
+        _ if tr_core::tileobject::kill_tile_no_cell_drop(hit.kind) => Vec::new(),
         _ => registry::tile_drop(hit.kind, hit.frame_y)
             .into_iter()
             .map(|id| (id, 1))
@@ -3294,13 +3300,23 @@ fn item_gate_blocks(kind: u16, count: u32) -> bool {
 }
 
 /// The routing decision of `use_tile_item`: the legacy neighbour/overlap
-/// pre-checks (`can_place`) gate only kinds without a `TileObjectData`
-/// registry entry — registry kinds are judged by `TileObject.CanPlace`
-/// inside the dispatcher (the anchors decide — vanilla furniture can sit on
-/// platforms or over the player, and `BlockPlacementIfOverPlayers`,
-/// `Player.cs:41427`, covers none of the wooden set).
-fn legacy_precheck_applies(kind: u16) -> bool {
-    tr_core::tileobject::def_for_tile(kind).is_none()
+/// pre-checks (`can_place`) gate only kinds that do NOT ride the
+/// `TileObject.CanPlace` route — those are judged by the anchors inside the
+/// dispatcher (vanilla furniture can sit on platforms or over the player, and
+/// `BlockPlacementIfOverPlayers`, `Player.cs:41427`, covers none of the wooden
+/// set). S1-F-7: the gate is the C# `CustomPlace` flag with the 82/227/4
+/// exclusions (`routes_through_tile_object`), not mere registration — the full
+/// registry registers the natural objects (pots/piles/plants/platforms/torches)
+/// which keep the legacy pre-checks exactly as vanilla.
+///
+/// The alch seeds (82/83/84) are the exception: `BlockPlacementForAssortedThings`
+/// forces `canPlace = true` for them (`Player.cs:41294-41296`,
+/// `if (Main.tileAlch[createTile]) canPlace = true;`) BEFORE the cut rule, so
+/// the neighbour pre-check never gates a seed — the assorted block's cut rule
+/// and `PlaceAlch`'s soil/liquid rules decide instead.
+fn legacy_precheck_applies(kind: u16, style: i32) -> bool {
+    !tr_core::tileobject::routes_through_tile_object(kind, style)
+        && !tr_core::tileobject::tile_alch(kind)
 }
 
 /// What `TileObject.CanPlace` receives in vanilla (`Player.cs:39772`):
@@ -3517,6 +3533,9 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
+    // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
+    // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
+    let style = registry::place_style(held.kind);
     // The plant rules of `PlaceThing_Tiles_BlockPlacementForAssortedThings`
     // (`Player.cs:41036-41360`) run on the non-`TileObject` placement route
     // before the can-place chain — seeds (82) are forced onto that route by
@@ -3527,7 +3546,7 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     // other item takes the `flag2` tileCut rule (:41298-41331) — the kill
     // plants nothing, so the clicked seed then places itself through the
     // normal route below and is consumed.
-    if assorted_placement_route(kind) {
+    if assorted_placement_route(kind, style) {
         if staff_of_regrowth(held.kind) {
             if !adjust_plants(app, tx, ty) {
                 return false;
@@ -3536,7 +3555,7 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
             return false;
         }
     }
-    if legacy_precheck_applies(kind) && !can_place(app, tx, ty) {
+    if legacy_precheck_applies(kind, style) && !can_place(app, tx, ty) {
         return false;
     }
     place_tile(app, tx, ty, kind)
@@ -3545,10 +3564,12 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
 /// The C# placement route the plant rules ride (`Player.cs:39771-39772`):
 /// `TileObjectData.CustomPlace(tileToCreate, placeStyle) && tileToCreate != 82
 /// && tileToCreate != 227 && tileToCreate != 4` sends 82/227/4 to the legacy
-/// route even when registered. The port's registry matches `CustomPlace`, and
-/// 227/4 are unregistered — so the predicate is "unregistered or 82".
-fn assorted_placement_route(kind: u16) -> bool {
-    tr_core::tileobject::def_for_tile(kind).is_none() || kind == 82
+/// route even when registered. S1-F-7: the predicate is the negation of the
+/// shared registry-route gate (`routes_through_tile_object`) — the natural
+/// objects (pots 28, piles 185/186/187, plants, platforms 19) are registered
+/// but `CustomPlace`-false, so they ride this legacy route too.
+fn assorted_placement_route(kind: u16, style: i32) -> bool {
+    !tr_core::tileobject::routes_through_tile_object(kind, style)
 }
 
 /// The held-item gate of `staffOfRegrowthBonus` (`Player.cs:41038-41041`, the
@@ -4728,23 +4749,37 @@ mod tests {
     // (b) the registry-bypass condition of `use_tile_item`.
     #[test]
     fn registry_kinds_bypass_the_legacy_prechecks() {
-        // The wooden set is registered (`def_for_tile`): the legacy
-        // neighbour/overlap pre-checks must not gate it — the verdict belongs
-        // to `TileObject.CanPlace` inside the dispatcher (`Player.cs:39772`).
+        // The wooden set rides the `TileObject.CanPlace` route (`CustomPlace`
+        // true, `Player.cs:39772`): the legacy neighbour/overlap pre-checks
+        // must not gate it — the verdict belongs to the dispatcher.
         for tile in [10, 11, 14, 15, 18, 21] {
-            assert!(!legacy_precheck_applies(tile), "tile {tile} registered");
+            assert!(!legacy_precheck_applies(tile, 0), "tile {tile} registry route");
         }
-        // Unregistered kinds keep the legacy pre-checks.
+        // Unregistered kinds keep the legacy pre-checks. Torch 4 is registered
+        // now (S1-F-7) but explicitly excluded from the TileObject route
+        // (`Player.cs:39772`), so it keeps the legacy pre-checks too.
         for tile in [0, 1, 4] {
-            assert!(legacy_precheck_applies(tile), "tile {tile} legacy");
+            assert!(legacy_precheck_applies(tile, 0), "tile {tile} legacy");
+        }
+        // S1-F-7: the natural objects split by their `CustomPlace` flag — pots
+        // 28, small piles 185, platforms 19 and saplings 3 are registered but
+        // `CustomPlace`-false (legacy pre-checks); dye plants 227 are excluded
+        // by kind. The LARGE piles 186/187 are `CustomPlace`-true and ride the
+        // TileObject route (the `Check3x2` cascade judges them).
+        for tile in [28, 185, 19, 3, 227] {
+            assert!(tr_core::tileobject::def_for_tile(tile).is_some(), "tile {tile} registered");
+            assert!(legacy_precheck_applies(tile, 0), "tile {tile} legacy (CustomPlace false / excluded)");
+        }
+        for tile in [186, 187] {
+            assert!(!legacy_precheck_applies(tile, 0), "tile {tile} registry route (CustomPlace true)");
         }
         // The bypass keys on the *tile* kind the held item maps to: the work
         // bench item (36) places tile 18 and bypasses; dirt (2) places tile 0
         // and does not.
         assert_eq!(registry::place_tile(36), Some(18));
-        assert!(!legacy_precheck_applies(registry::place_tile(36).unwrap()));
+        assert!(!legacy_precheck_applies(registry::place_tile(36).unwrap(), 0));
         assert_eq!(registry::place_tile(2), Some(0));
-        assert!(legacy_precheck_applies(registry::place_tile(2).unwrap()));
+        assert!(legacy_precheck_applies(registry::place_tile(2).unwrap(), 0));
     }
 
     // (c) the style/facing resolution `place_tile` feeds the dispatcher.
@@ -6269,11 +6304,12 @@ mod tests {
 
     #[test]
     fn test_DW_1_1_seeds_plant_through_the_app_route() {
-        // The routing flip: tile 82 is registered now, so the legacy
-        // neighbour/overlap pre-checks no longer gate the seed — vanilla
-        // excludes it from the TileObject route (`Player.cs:39772`) and
-        // `PlaceAlch`'s soil/liquid rules decide instead.
-        assert!(!legacy_precheck_applies(82));
+        // The routing: tile 82 is registered but excluded from the TileObject
+        // route (`Player.cs:39772`, `tileToCreate != 82`); the legacy neighbour
+        // pre-check does NOT gate the seed either — `BlockPlacementForAssortedThings`
+        // forces `canPlace = true` for alch kinds (`Player.cs:41294-41296`), so
+        // the assorted cut rule and `PlaceAlch`'s soil/liquid rules decide.
+        assert!(!legacy_precheck_applies(82, 0));
         // The registry resolves the seed's tile and placeStyle.
         assert_eq!(registry::place_tile(307), Some(82));
         assert_eq!(registry::place_style(307), 0);
@@ -6466,7 +6502,7 @@ mod tests {
     fn test_DW_1_3_planter_box_items_place_through_the_app_route() {
         // The planter boxes keep the legacy pre-checks (no registry entry)
         // and land in the case-380 write with `frameY = 18 * placeStyle`.
-        assert!(legacy_precheck_applies(380));
+        assert!(legacy_precheck_applies(380, 0));
         let mut app = flow_app(None, vec![], vec![]);
         app.world = object_world();
         app.inventory[app.selected] = slot(3215, 3); // Day Bloom Planter Box

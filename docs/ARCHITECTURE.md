@@ -150,11 +150,15 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
-- `tileobject.rs` — the `TileObjectData` registry as flat const data (approach A; a
-  full-registry generator is the follow-up): per-kind `TileObjectDef`s with geometry/
-  anchors/styles, `TileObject.CanPlace`/`Place` (`can_place`/`place`) and the shared
-  tile sets (`TILE_CUT`, `TILE_TABLE`, `IS_A_DRIP_TILE`, `IS_VINE`). See
-  `ANALYSIS.md#tile-objects-m14-to`.
+- `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
+  `Place` (`can_place`/`place`), the `CustomPlace` routing gate
+  (`custom_place`/`routes_through_tile_object`), and the shared tile sets
+  (`TILE_CUT`, `TILE_TABLE`, `IS_A_DRIP_TILE`, `IS_VINE`). The registry DATA is
+  **generated** (S1-F-7 wave A): `tileobject/registry.rs` (do not edit) by
+  `tools/GenTileObjectData/gen.py`, which interprets `TileObjectData.Initialize`
+  (`TileObjectData.cs:2110-5014`) 1:1 — all 389 registered tiles (604 defs) with
+  geometry/anchors/styles/alternates/sub-tiles, plus the `Main.tileFrameImportant`
+  and `KillTile_GetItemDrops` empty-group tables. See `ANALYSIS.md#s1-f-7-wave-a`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
   (`framing::reframe_area`), so edits do not need a full-world framing pass. Placement
