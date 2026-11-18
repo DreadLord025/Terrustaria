@@ -4519,6 +4519,10 @@ ticks), the defense/damage tiers (30/60 at <50%, 20/45 at <75%) through
 the new `defense_override`/`damage_override` fields (the contact path
 prefers the override), the justHit recoil (the hurt cooldown stands in
 for the C# flag), the wall's death deactivates the minion.
+**Re-audited 2026-11-18 (S1-D-3 aiStyle-29 round): the live arm is an
+approximation, not verbatim — see "The Hungry aiStyle-29 re-port
+(S1-D-3)" below; the faithful module `npc_ai_style29.rs` is landed
+UNWIRED, the live `update_hungry` keeps running until the wiring round.**
 
 **The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
 the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
@@ -4531,6 +4535,79 @@ wall's band); the expert burst block (the hp-scaled spawn odds) and the
 is cosmetic and skipped. The bestiary `card_at` now matches the draw's
 centred lattice — the stale top-left guard dropped cards once the
 roster's rows overflowed the panel.
+
+### The Hungry aiStyle-29 re-port (S1-D-3, code-only mode)
+
+The 2026-11-18 aiStyle-29 round re-read the whole arm (`NPC.cs:26209-26404`)
+against the live `npc.rs::update_hungry` (M4-BOSS-6b, claimed "verbatim"
+in the section above). The arm IS ported, but approximately — the escape
+clause's line-by-line audit found these defect classes:
+
+* **Missing anchor offset** — `num389 = wof.position.X + (float)(wof.width / 2)`
+  (`:26280`, INTEGER half-width); the live arm uses `World.wof_x` alone
+  (the wall's left edge), shifting every Hungry's leash centre ~50 px.
+* **Missing gate/call** — `TargetClosest()` (`:26220`) never runs in the
+  live arm; the new module rides `npc_target::target_closest` (S1-D-3p).
+* **Missing per-tick reset** — `damage = defDamage` (`:26223`); the live
+  arm's `damage_override = None` at full hp happens to match, but the
+  tier write skips `GetAttackDamage_ScaledByDifficulty` (`:26253`,
+  `NPC.cs:7036-7039` — the classic `EnemyDamageMultiplier.Sample(1)` is
+  exactly 1: the curve's Journey 0.5→0.5 / Master 3→3 keys,
+  `GameDifficultyData.cs:84`, `GameDifficultyLevel.cs:18`).
+* **Invented defense clear** — the live arm sets `defense_override = None`
+  at full hp; the C# writes defense ONLY in the two tiers (`:26228`/`:26241`)
+  and restores `defDefense` only in the expert block (`:26257`). A Hungry
+  that drops from <75% back to full hp keeps def 20 in the C#.
+* **f32-ratio vs f64-int ladder** — the live arm reads the sim's
+  precomputed `World.wof_hp_ratio` (f32); the C# compares
+  `(double)life < (double)lifeMax * k` (`:26225`/`:26238`) — boundary
+  ticks can tier differently.
+* **Missing third recoil arm** — `ai[1] < 0 → ai[1] = 0` (`:26389-26392`);
+  the live arm lets a negative pause run forever (never chases again).
+* **Missing sprite/rotation writes** — `spriteDirection = ±1` and the
+  left arm's `+ 3.14f` (`:26393-26402`, the literal 3.14, not π); a
+  dead-centre aim (`num391 == 0`) keeps the previous flip AND rotation.
+  The live arm writes neither the flip nor the offset. (BUG-07's audit
+  cited `:26393` for the Hungry's own-aim flip; the live arm never
+  implemented it.)
+* **Float vs integer half-extents** — the aim deltas use
+  `(float)(width / 2)` on BOTH entities (`:26294-26295`); the live arm
+  uses `center()`'s float halves. Identical for the even 30×30/20×42
+  boxes, divergent for odd sizes.
+* **Operation order** — `ai[2]++` runs AFTER the anchor reads (`:26284`);
+  the dive's `(int)(num387 * 1.3f)` truncates (`:26287`); the flip
+  double-add is `num386 * 2.5f` (expert accel rides it), not a hardcoded
+  0.25; `justHit` writes BEFORE the wall-presence gate (`:26211-26219`).
+
+The faithful port is `crates/tr-app/src/npc_ai_style29.rs`
+(`style29_step` + `Style29Context`), landed **code-only mode**: no
+compiler invoked, the 12 witness tests are written not run. It is
+**UNWIRED** — `update_rng`'s style axis does not claim 29 yet, the live
+`update_hungry` keeps running byte-identical. The wiring round adds the
+`29 =>` dispatch arm and the context plumbing: the wall's raw
+`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the sim's
+`World.wof_*` write-through carries presence/x/dir today), the INT band
+statics (`Main.wofDrawAreaTop/Bottom` are `int`, `Main.cs:757`/`:759` —
+the port's `World.wof_draw_top/bottom` are f32), the `justHit` per-tick
+flag (the live arm's `hurt_cd > 0` stand-in re-arms the pause for the
+whole cooldown, not one tick) and `whoAmI` (`Npc::slot`).
+
+Deviations (documented, same conventions as the sibling style-28 round):
+`active = false` → the port's hp-0 death convention; the arm does not
+integrate (noTileCollide — `UpdateNPC` owns the step, the live arm
+integrates inline); `Lighting.AddLight(centre/16, 0.3, 0.2, 0.1)`
+(`:26403`) rides the S1-E-5 entity-light family; the expert arms are
+ported verbatim behind `ctx.expert` (the port is single-difficulty, the
+wiring passes false) including the `:26341` INT-division quirk
+(`life / lifeMax` truncates to 0 or 1 — at any hp below lifeMax ALL four
+speed-cap bands fire; kept verbatim, not "fixed").
+
+RNG by construction: the arm draws no `Main.rand.Next` — every pacing
+value is a deterministic counter (`ai[1]` the recoil, `ai[2]` the dive)
+or an hp-band comparison, and `TargetClosest` is a deterministic
+Manhattan scan; the fn takes no RNG parameter and the witness test
+`the_arm_is_deterministic_without_an_rng` pins two identical inputs to
+identical state over 300 ticks.
 
 ## The Eye of Cthulhu (M4-BOSS-1)
 
