@@ -13193,6 +13193,29 @@ Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
 the next round, so a port `.plr` is byte-comparable with vanilla **through the
 vault byte** only until then.
 
+**Increment 2 (S1-J-5b, 2026-11-18).** The writer/reader now run through
+`hideInfo` (`Serialize:54893` / `Deserialize:55623`): buffs (`:54864-54876` —
+44 pairs, `maxBuffs` `Player.cs:57106`; fresh `buffType`/`buffTime` are all-zero
+`:1510-1512` and `Main.buffNoSave[0]` is false, so the (0,0) else-arm bytes are
+identical to the no-save arm), the spawn list (`:54877-54888` — fresh
+`spN[0] == null` `:2488` writes only the `-1` sentinel), `hbLocked`
+(`:54889`, default false `:1436`) and `hideInfo[13]` (`:54890-54893`, fresh
+`bool[13]` `:812`). The reader gates mirror `Deserialize:55578-55623`, including
+the buff-count 44/22/10 version gates and the zero-type compaction
+(`:55593-55597`, which still consumes exactly `count` pairs). **Second shim**:
+the increment-1 port files are stamped 326 but end at the vault byte, so the
+C# gates would truncate in the buffs; `read_player_bytes` retries release-326
+truncations with `through_vault_only` (stop at `:55504`), the same port-only
+pattern as the 279 shim. Genuine vanilla 326 files never take it (they always
+carry the buffs tail). `golden_layout_through_hide_info` pins every byte and
+byte-compares the 370-byte tail with `assets/test/golden.plr` at offsets
+2402-2772. A port `.plr` is now byte-comparable with vanilla **through the last
+hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
+RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
+port zero-pads to the block boundary — invisible to field readers, but the
+final encrypted block differs from vanilla; full-envelope parity is a separate
+concern.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
@@ -16296,12 +16319,15 @@ Deviations:
 
 - **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
   (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
-  through the layer targets; the port's `CaptureRenderer` trait is a no-op
-  stub until the render-target family lands, so a started capture drains
-  its queue without producing pixels. The selection state machine, the
-  countdown and the `IsCapturing` metrics gate are live (the selection
-  UI's sprite draw is NOT — see the bullet above); the write-out waits on
-  the targets.
+  through the layer targets; the render-target FAMILY now exists
+  (`tr_render::RenderTargetFamily`, `App.targets` — S1-G-13, ANALYSIS
+  "The render-target family (S1-G-13)"), but the chunk render through it
+  is not wired: the port's `CaptureRenderer` trait is still a no-op
+  stub, so a started capture drains its queue without producing pixels.
+  The selection state machine, the countdown and the `IsCapturing`
+  metrics gate are live (the selection UI's sprite draw is NOT — see the
+  bullet above); the write-out waits on the per-layer render callbacks +
+  `DrawCapture`.
 - **The capture toggle rides F6, not F4.** The vanilla binds
   `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
   debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
@@ -16313,6 +16339,91 @@ Deviations:
   takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
 - **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
   the toolbar's open-folder button plays its cue only.
+
+## The render-target family (S1-G-13, 2026-11-18)
+
+`crates/tr-render/src/targets.rs` ports the render-target FAMILY
+infrastructure — the seam `Main.DrawCapture` and the per-layer offscreen
+caching wait on. What landed, 1:1:
+
+- **`InitTargets`' size math** (`Main.cs:58167-58181`,
+  `init_target_layout`): `val = MaxWorldViewSize.X` (1920, `:677-681` /
+  `:66714`) clamps BOTH axes (`:58173-58174` — the C# uses `.X` for the
+  height clamp too); `SupportWideScreen && HiDef` raises it to 4096
+  (`:58169-58172`); `offScreenRange` starts at 192 and shrinks to
+  `(_renderTargetMaxSize - num) / 2` (C# int division) when the padded
+  width would overflow (`:58176-58179`). `_renderTargetMaxSize` is 4096
+  HiDef / 2048 Reach (`SetGraphicsProfileInternal`, `:3708-3718`).
+- **All ten targets in creation order** (`:58187-58196`,
+  `RenderTargetFamily::init`): the seven world-space
+  `WorldSceneLayerTarget`s (water, backWater, tile, tile2, wall,
+  background, backgroundSwap — `Main.cs:765-777`) at the padded size,
+  then skyTarget / screenTarget / screenTargetSwap at the raw backbuffer
+  size (`:781-785`). `ReleaseTargets` (`:58093-58150`) is Rust `Drop`;
+  `EnsureRenderTargetContent` (`:58152-58158`) is
+  `RenderTargetFamily::ensure` — called at the draw head
+  (`frame/draw.rs`, the `Main.Draw` wrapper's first step, `:61644`).
+- **`WorldSceneLayerTarget`** (`Graphics/WorldSceneLayerTarget.cs:7-70`):
+  `UpdateContent` (`:43-64`) computes the camera override (screen size =
+  target − 2·offScreenRange, position = `Utils.Round(center − size/2)` —
+  banker's rounding, `Utils.cs:112-115` — zoom = 1), clears the target
+  transparent and records `_position = screenPosition − (osr, osr)`
+  (`:57`); `IsPartiallyOffscreen` (`:17-34`) with the zero-position quirk
+  (a never-rendered layer counts as offscreen) and the strict `>`
+  margin test on both axes.
+- **`RenderToTargets` scheduling** (`Main.cs:57277-57327`,
+  `render_to_targets_plan`): the `renderCount` phase arms (1 → water;
+  2 → backWater + backgroundSwap + the pending flag; 3 → wall + tile +
+  tile2; the count is driven by the lighting engine,
+  `LightingEngine.cs:90-103`), then the fixed partial-offscreen re-render
+  order tile → tile2 → backWater → background (apply the pending swap,
+  RE-CHECK, then maybe re-render — `:57311-57318`) → wall → water. The
+  unreachable `renderNow` arms of the else-if chain are ported verbatim.
+- **`ApplyPendingBackgroundTargetSwap`** (`:58047-58054`): the
+  `Utils.Swap` + flag clear; the phase-2 arm sets the flag (`:57291`).
+- **The skyTarget gate** (`:62021-62027`, `sky_target_active`):
+  `(CanCapture || ForegroundSunlightEffects) && !drawToScreen &&
+  !mapFullscreen && !onlyDrawFancyUI && Lighting.NotRetro`.
+- **The `drawToScreen`/`targetSet` transition** (`:61751-61766`,
+  `target_transition`): Release on leaving the target path, Init on
+  entering, Keep otherwise.
+
+Deviations / scope (deliberate):
+
+- **No draw pass consumes the layers yet.** The frame path is unchanged:
+  the port keeps its single G6-cached world range + the
+  `render_world_fx` screen ping-pong (`sprite.rs`), and the family is
+  allocated but not rendered into by the world passes. The per-layer
+  render callbacks (`RenderTiles`/`RenderWallsAndBlacks`/`RenderWater`/
+  `RenderBackground*`, `Main.cs:57329-58091`), the skyTarget bind in the
+  sky pass (`:62025`) and the composite draws (`:63333`, `:62213`,
+  `:62196`, `:62308`) are the follow-up half of S1-G-13 — moving the
+  existing passes onto the layers is a draw-pass-order change and needs
+  its own A/B (the draw-pass order is frozen this round). The G6
+  `WorldFrameKey` is untouched.
+- **`IsContentLost` has no wgpu equivalent** — device loss recreates
+  everything; `ensure` re-inits on absence or backbuffer-size change
+  (the null-check half of `:58154`).
+- **The `InitTargets` catch arm** (`:58203-58215`: fall back to Retro
+  lighting + map off on allocation failure) is not ported — wgpu texture
+  creation aborts the process on failure instead of throwing.
+- **`Lighting.UpdateEveryFrame`** (`Lighting.cs:77-86`) is not yet a
+  live input: the port always runs the cached path, so
+  `target_transition` is ported + tested but the frame only ever takes
+  the Init/Keep arms. The Retro/UpdateEveryFrame drawToScreen branch
+  stays the research/02 deviation.
+- **The capture seam stays a stub** (`app/capture_driver.rs`'s
+  `PendingCaptureRenderer`): the family exists, but `Main.DrawCapture`
+  (`:56673-57066`) rendering chunks through it is the consumer half —
+  documented in "The loading screen + capture mode" above.
+
+Tests: 17 in `targets.rs` — the layout math (1080p HiDef/Reach, small
+window, the X-cap-on-both-axes clamp, wide-HiDef), `IsPartiallyOffscreen`
+(zero position, strict boundary, per-axis), the banker's camera override,
+the phase arms + offscreen order + swap-cancel, the sky gate's six
+inputs, the transition arms, and four headless-GPU tests (family sizes,
+update_content position/clear readback, the background swap exchange,
+ensure's size-change re-init).
 
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 

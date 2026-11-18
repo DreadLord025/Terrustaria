@@ -98,6 +98,15 @@ pub(crate) struct App {
     /// its texture only exists while WaterDistortion is wanted and water is in
     /// view).
     pub(crate) water_mask: Option<tr_render::WaterMask>,
+    /// S1-G-13: the render-target family (`Main.InitTargets`,
+    /// `Main.cs:58160-58216`) — seven world-space `WorldSceneLayerTarget`
+    /// caches + skyTarget/screenTarget/screenTargetSwap. Allocated by the
+    /// `EnsureRenderTargetContent` call at the draw head
+    /// (`Main.cs:61644`/`:58152-58158`); no draw pass consumes the layers
+    /// yet (the port's single cached world range is unchanged — ANALYSIS
+    /// "The render-target family (S1-G-13)"). The capture mode's
+    /// `DrawCapture` chunk render is the consumer this seam waits for.
+    pub(crate) targets: Option<tr_render::RenderTargetFamily>,
     /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
     /// fades and the filter driver reads its intensities.
     pub(crate) scene_state: tr_core::scene::SceneState,
@@ -2981,6 +2990,7 @@ impl App {
                 dust
             },
             water_mask: None,
+            targets: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
             filter_driver: crate::app::filters::FilterDriver::new(),

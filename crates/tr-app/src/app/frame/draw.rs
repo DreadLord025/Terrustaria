@@ -48,6 +48,25 @@ impl App {
         screen: Vec2,
         m_h: f32,
     ) -> Option<(tr_render::sprite::RenderStats, TileDrawStats)> {
+            // S1-G-13: `Main.Draw`'s `EnsureRenderTargetContent` head call
+            // (`Main.cs:61644`, `:58152-58158`) — allocate/refresh the
+            // render-target family (`Main.InitTargets`, `:58160-58216`)
+            // when absent or the backbuffer resized. The port runs HiDef
+            // (the non-XNA default, `Main.cs:67047`) with
+            // `SupportWideScreen = false` (`:67046`). Allocation only: no
+            // draw pass consumes the layers yet — the frame path below is
+            // unchanged (ANALYSIS "The render-target family (S1-G-13)").
+            if let Some(gpu) = self.gpu.as_ref() {
+                tr_render::RenderTargetFamily::ensure(
+                    &mut self.targets,
+                    &gpu.device,
+                    gpu.config.format,
+                    (gpu.config.width, gpu.config.height),
+                    true,
+                    false,
+                    tr_render::RENDER_TARGET_MAX_HIDEF,
+                );
+            }
             // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
             // high-refresh displays.
             let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
