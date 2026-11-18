@@ -344,7 +344,7 @@ fn draw_card(
     }
     let state = crate::bestiary::unlock_state(entry, tracker);
     if state.known() {
-        draw_portrait(r, lookups, entry, cx, cy, inner[3]);
+        draw_portrait(r, lookups, entry, cx, cy, inner[2], inner[3]);
     } else if let Some(locked) = lookups.ui_bestiary_locked {
         // `UIBestiaryEntryIcon.DrawSelf`'s locked branch (`:44-56`): the
         // texture at white * 0.15, centred.
@@ -400,6 +400,7 @@ fn draw_portrait(
     entry: &crate::bestiary::BestiaryEntryDef,
     cx: f32,
     cy: f32,
+    box_w: f32,
     box_h: f32,
 ) {
     // `sheet_i` is the derived slot `portrait_data` reports; the sheet
@@ -410,15 +411,47 @@ fn draw_portrait(
         return;
     };
     let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
+    // The icon box bounds the sprite: the non-floater's bottom anchor keeps
+    // an 8 px inset (`UpdatePosition`, `:120`), so the height budget is the
+    // box minus that inset. Vanilla sizes big NPCs down through
+    // `NPCID.Sets.NPCBestiaryDrawOffset`'s `Scale`/`PortraitScale`
+    // (`UnlockableNPCEntryIcon.cs:52-59`); the fit keeps the same intent —
+    // nothing spills out of the cell.
+    let budget_h = if floats { box_h } else { box_h - 8.0 };
+    let (w, h) = portrait_fit(w, h, box_w, budget_h);
     let (x, y) = if floats {
         (cx - w * 0.5, cy - h * 0.5)
     } else {
         let top = cy + box_h * 0.5;
         (cx - w * 0.5, top - h - 8.0)
     };
-    // `(1, 1, 0)`: the portrait draws the entry's whole sheet into its box
-    // (the frame split is what the *button* sheets need, §14).
-    draw_sheet_frame(r, lookups, &sheet, 1, 1, 0, [x, y, w, h], tint);
+    // `DrawNPCDirect` draws the NPC's single `npc.frame` rect
+    // (`UnlockableNPCEntryIcon.cs:194-207`), never the whole animation
+    // sheet: `FindFrame` leaves `frame.Height` at one frame and the idle
+    // icon rests on frame 0 (`Update`, `:100-109`). The sheet's row count
+    // comes from the frame height `portrait_data` reports.
+    let frames_y = portrait_frames_y(sheet.height, frame_h);
+    draw_sheet_frame(r, lookups, &sheet, 1, frames_y, 0, [x, y, w, h], tint);
+}
+
+/// The sheet's vertical frame count for a portrait: `sheet.height /
+/// frame.Height` (`NPC.SetFrameSize`/`FindFrame`, used by
+/// `UnlockableNPCEntryIcon.Update`, `UnlockableNPCEntryIcon.cs:100-109`).
+/// At least one frame; a single-frame sheet stays whole.
+fn portrait_frames_y(sheet_h: u32, frame_h: f32) -> usize {
+    if frame_h > 0.0 {
+        ((sheet_h as f32 / frame_h).round() as usize).max(1)
+    } else {
+        1
+    }
+}
+
+/// Scale a portrait down (never up) so it fits its icon box — the intent of
+/// `NPCID.Sets.NPCBestiaryDrawOffset`'s `Scale`/`PortraitScale`
+/// (`UnlockableNPCEntryIcon.cs:52-59`) without the per-NPC table.
+fn portrait_fit(w: f32, h: f32, box_w: f32, box_h: f32) -> (f32, f32) {
+    let s = (box_w / w).min(box_h / h).min(1.0);
+    (w * s, h * s)
 }
 
 /// The portrait parameters — the `NpcAssets` table's sizes
@@ -1141,7 +1174,7 @@ fn draw_info_page(
             push_whole(r, lookups, &back, inner, [1.0; 4]);
         }
         if state.known() {
-            draw_portrait(r, lookups, entry, px + size * 0.5, py + size * 0.5, size);
+            draw_portrait(r, lookups, entry, px + size * 0.5, py + size * 0.5, size, size);
         } else if let Some(locked) = lookups.ui_bestiary_locked {
             push_whole(r, lookups, &locked, inner, [0.15; 4]);
         }
@@ -1494,6 +1527,53 @@ mod tests {
                 assert_eq!(entry_sheet(&lk, entry).is_some(), tabled, "{}", entry.name);
             }
         }
+    }
+
+    #[test]
+    fn portrait_source_rect_is_one_animation_frame() {
+        // `UnlockableNPCEntryIcon.Draw` (`UnlockableNPCEntryIcon.cs:194-207`)
+        // draws the NPC's single `npc.frame`, not the whole animation sheet.
+        // The 8-row NPC_419 strip at frame height 56 must slice to 8 rows,
+        // and frame 0's source rect covers exactly the sheet's first 56 px.
+        let sheet = tr_render::SheetRect {
+            x: 100,
+            y: 200,
+            width: 22,
+            height: 8 * 56,
+            plain_frame: (0, 0),
+        };
+        assert_eq!(portrait_frames_y(sheet.height, 56.0), 8);
+        // A single-frame sheet stays whole; a bad frame height falls back to 1.
+        assert_eq!(portrait_frames_y(48, 48.0), 1);
+        assert_eq!(portrait_frames_y(448, 0.0), 1);
+        let uv = sheet_frame_uv(&sheet, (8192, 8192), 1, 8, 0);
+        assert_eq!(
+            uv,
+            [
+                100.0 / 8192.0,
+                200.0 / 8192.0,
+                122.0 / 8192.0,
+                256.0 / 8192.0
+            ]
+        );
+    }
+
+    #[test]
+    fn portrait_dest_fits_the_icon_cell() {
+        // The 140x140 Golem portrait must shrink into the grid's inner 68 px
+        // cell (the non-floater's height budget keeps the 8 px bottom inset,
+        // `UnlockableNPCEntryIcon.cs:120`); a small sprite stays unscaled.
+        let (w, h) = portrait_fit(140.0, 140.0, 68.0, 68.0 - 8.0);
+        assert_eq!((w, h), (60.0, 60.0));
+        assert!(w <= 68.0 && h <= 60.0);
+        // Fits without scaling: the 38x48 humanoid in the same cell.
+        assert_eq!(portrait_fit(38.0, 48.0, 68.0, 60.0), (38.0, 48.0));
+        // Wide sheet (the 160x110 brain) scales by the width bound.
+        let (w, h) = portrait_fit(160.0, 110.0, 68.0, 60.0);
+        assert!(w <= 68.0 + 1e-4 && h <= 60.0 + 1e-4);
+        assert!((w / h - 160.0 / 110.0).abs() < 1e-4, "aspect kept");
+        // Never scaled up.
+        assert_eq!(portrait_fit(20.0, 20.0, 68.0, 60.0), (20.0, 20.0));
     }
 
     #[test]

@@ -799,6 +799,10 @@ pub fn draw_hud(
     // the HUD behind it).
     if bestiary_open {
         bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        // `Main.DrawInterface_36_Cursor` (`Main.cs:45254-45330`) runs after the
+        // fancy UI states, so `Main.DrawCursor` (`Main.cs:47982`) draws over
+        // the bestiary too — the early return must not skip the cursor pass.
+        cursor::draw(r, lookups, cursor_state, mouse_pos);
         return;
     }
 
