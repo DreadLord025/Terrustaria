@@ -2339,6 +2339,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // S1-D-8 (research/39 "Phase A"): the read-only snapshot seam. The
+    // carrier-link scan family below (the parts' core lookup + the core's
+    // part check) reads this per-tick view instead of re-borrowing
+    // `app.npcs` per scan; the writes land on the scanning NPC alone. The
+    // pass mirrors its own `hp = 0` kills into the view (`snap.kill`) so
+    // later scans in the family see the deaths exactly as the live
+    // `hp > 0` reads did — the scan predicates/order are unchanged.
+    let mut snap = crate::world_sim::npc_snapshot::NpcSnapshot::build(&app.npcs);
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
     // PRE-pass: each 397/396/400/401 finds ITS core (the `ai[3]` link,
@@ -2366,21 +2374,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             } else {
                 NpcKind::MoonLordCore
             };
-            carrier_uid = app
-                .npcs
-                .iter()
-                .find(|m| m.kind == want && m.hp > 0)
-                .map(|m| m.uid)
-                .unwrap_or(0);
+            carrier_uid = snap.first_living_kind_uid(want).unwrap_or(0);
             app.npcs[i].carrier_uid = carrier_uid;
         }
-        let core = app
-            .npcs
-            .iter()
-            .position(|m| m.uid == carrier_uid && m.uid != 0 && m.hp > 0);
+        let core = snap.position_living_uid(carrier_uid);
         match core {
             Some(ci) => {
-                let (ccx, ccy) = app.npcs[ci].center();
+                let row = &snap.rows()[ci];
+                let (ccx, ccy) = (row.cx, row.cy);
                 app.npcs[i].carrier_x = ccx;
                 app.npcs[i].carrier_y = ccy;
                 app.npcs[i].carrier_timer = 1.0;
@@ -2390,6 +2391,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].moon_core_alive = false;
                 app.npcs[i].carrier_timer = 0.0;
                 app.npcs[i].hp = 0;
+                // Mirror the kill into the read-only view: a later part's
+                // fallback find / the core's alive check must not see it
+                // (the live `hp > 0` reads didn't either).
+                snap.kill(i);
             }
         }
     }
@@ -2414,7 +2419,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dead = false;
                 continue;
             }
-            let alive = app.npcs.iter().any(|m| m.uid as i32 == uid && m.hp > 0);
+            let alive = snap.any_living_uid(uid);
             if !alive {
                 lost = true;
             } else {

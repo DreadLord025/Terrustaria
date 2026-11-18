@@ -2987,8 +2987,19 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
 
 **No arm — default 16×16** (the case has no unconditional static part):
 
-- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
-  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- ~~`5` (`:4645-4649`)~~ — **S1-F-9 wave A (2026-11-18)**: the static 20×20 arm
+  and the `tileFrameX += 176 * (GetTreeBiome + 1)` rewrite are ported
+  (`drawdata.rs::tree_variant`/`tree_biome`/`tree_frame_x_offset`, the case-5
+  arm + `apply_world_corrections`). `GetTreeVariant`'s jungle
+  surface/underground split (variant 5 below `Main.worldSurface`,
+  TileDrawing.cs:1789-1794) and `GetTreeBiome`'s marker-frame column shifts +
+  start-kind walk (`:1735-1776`) are faithful; the renderer's trunk probe
+  `tree::trunk_sheet_offset_at` delegates to it (the old 100-row
+  any-non-tree walk missed variant 5, the column shifts and the start-kind
+  stop rule). The app still routes kind 5 through the dedicated tree path
+  before `draw_data`, so the table arm remains dead in the app but complete.
+  Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
+  (`tree.rs::Foliage::for_ground` deviation stands).
 - `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
@@ -13156,6 +13167,40 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+## The magic cuffs (S1-C-7 wave A, 2026-11-18)
+
+`Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
+`player.rs::hurt_inner`, slotted between the defense reduction (`:38247`) and
+the endurance step (`:38304`): `num3 = (int)(num * 1f)` is the RAW incoming
+damage (the C# `num` at `:38246` — the defense-reduced `num2` never feeds it),
+`statMana += num3` capped at `statManaMax2` (`:38295-38298`), and
+`ManaEffect(num3)` (`:4531-4538`) queues the HealMana combat text with the
+UNCAPPED amount. The port hands the amount over via `pending_mana_effect` /
+`take_mana_effect` (the `pending_hurt_sound` convention); the drain in
+`world_sim/player.rs` spawns `combat_text::spawn_amount` at the player's own
+hitbox with `HEAL_MANA = (100, 100, 255)` (`CombatText.cs:228`), the placement
+`Next` draws riding the `UpdatePlayers` stream like the melee-hit text
+(`world_sim/editing.rs`). The flag folds per tick: the Magic Cuffs (1595,
+`ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+`:14949-14953`) arm `magic_cuffs`; `ResetEffects` clears it (`:18599`).
+
+Documented gaps, all deliberate:
+
+- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): the port's hurt callers
+  carry no crit flag end-to-end (research/04 deviation 10), so the restore is
+  always the un-doubled raw damage. The slot's order is preserved — the double
+  would land on `raw` before the cuffs arm.
+- **The +40 `statManaMax2` stat rows** (1595/2221 `:14925-14928`, and the
+  982/6188/6189 band's +40/+60 regen `:14929-14934`) ride **S1-C-12** (the
+  accessory stat chain) — the flag arms here, the stat grants land there.
+- **2221's `manaMagnet` half** (`:14951`) is its own unported family (the mana-
+  star attraction radius); only the `magicCuffs` grant lands.
+- **The NetMessage 43 send** (`ManaEffect`'s `:4534-4537`) is MP-only, out with
+  the port's single-player scope.
+- **The respawn clears the pending text** (`respawn`'s pending strip) — the C#
+  `CombatText` pool is global and survives death; the port's queue is per-hit
+  one-shot state, drained the same tick, so nothing observable diverges.
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
@@ -16889,6 +16934,35 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
+
+Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
+per scanning NPC, re-borrowing the mutable store for read-only lookups. This round
+introduces the seam for ONE scan family — the carrier-link scans in
+`world_sim/npcs.rs`'s `update_npcs` pre-passes (the Moon Lord parts' core lookup
+`NPC.cs:41642`/`:42098`, the unlinked part's family-core/head fallback find, and the
+core's part-alive check `:41251-41269`):
+
+- `crates/tr-app/src/world_sim/npc_snapshot.rs::NpcSnapshot` — a per-tick read-only
+  view built once (`NpcSnapshot::build(&app.npcs)`) before the family, copying only
+  the scan-visible fields (`uid`, `kind`, `hp`, the `Npc::center()` pair). The scans
+  (`position_living_uid`, `first_living_kind_uid`, `any_living_uid`) take `&self`, so
+  the compiler forbids them touching the mutable store; the family's writes land on
+  the scanning NPC alone.
+- The one intra-family mutation the live reads could observe — the pre-pass's own
+  `hp = 0` kill of a part whose core died — is mirrored by the owning pass through
+  `NpcSnapshot::kill(idx)`; later scans in the family see the death exactly as the
+  live `hp > 0` reads did. Centres stay valid: the family never moves an NPC.
+- Behaviour frozen: no predicate, order, constant or RNG change. Proof: the existing
+  Moon-Lord NPC tests, the `worldgen/world_hash.rs` pins, and two seam-equivalence
+  tests (`npc_snapshot::tests::the_snapshot_scans_match_the_live_slice_scans`,
+  `the_kill_mirror_matches_the_live_hp_write`) that compare every snapshot query
+  against the live-slice scan it replaces. Full workspace green.
+- **Left (not this round)**: the other scan families (saucer/scutlix/dutchman carrier
+  scans, the projectile pool's `npcs.iter()` sites, the separation/target-selection
+  families) and the spatial hash — the ROADMAP S1-D-8 row stays 🟡 until then. No
+  spatial hash was introduced; the scan count is unchanged (the seam only changes
+  what the scans borrow, not how many there are).
 ## The join-bundle message ids (S1-I-1 wave A, 2026-11-18)
 
 Wave A of the message-id remap ports the JOIN bundle's eleven missing ids as
