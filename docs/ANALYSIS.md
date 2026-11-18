@@ -17688,3 +17688,50 @@ All external callers (`world_sim/editing.rs`, `world_sim/player.rs`,
 the worldgen temple passes, `liquid.rs`, the app break sources) keep their
 `edit::` paths unchanged. The `anchors.txt` S1-E-21c row re-points to
 `edit/kill.rs`; a new S1-K-4c row is added.
+
+
+### S1-K-4c independent re-verification (worker restart, same day, code-only mode)
+
+A restarted worker re-proved the committed split (`1ca35274`) from scratch,
+without compiling, using only file reads and git — the K-4d `fc /b` +
+full-file-reconstruction method:
+
+1. **Block proof.** Every top-level item of the `origin/main` blob
+   (`git show origin/main:crates/tr-core/src/edit.rs`, 270 023 bytes, LF,
+   SHA256 `0b66ec0d7941fe5721678acadca297d7477ff3ddd1471e4648ebd0e17bc2d72c`)
+   was located inside the written `edit/kill.rs` as an exact contiguous
+   line run: **61 code items + 82 test items/helpers** matched byte-exactly
+   (65 `#[test]` functions + 17 helpers/consts; the remaining 33 tests stay
+   in `edit.rs` — 98 = 65 + 33, an exact partition, no duplicates). Merged
+   with their separator/section-comment lines the moved content is **12
+   contiguous ranges, 4 687 lines**: origin 8, 21-1984, 1998-2080,
+   2097-2681, 3643-3880, 4167-4198, 4241-4404, 4427-4610, 4644-4729,
+   5197-5267, 5287-6478, 6608-6694 → kill.rs 13, 15-1978, 1978-2060,
+   2060-2644, 2655-2892, 2892-2923, 2923-3086, 3086-3269, 3269-3354,
+   3354-3424, 3424-4615, 4616-4702 (adjacent ranges share their single
+   blank separator line). All 108 `.cs:` cite lines ride along unchanged.
+2. **Seam audit.** `kill.rs` carries exactly 24 non-verbatim lines: the
+   8-line `//!` header, the `use super::{after_edit, is_locked_door,
+   liquid_flags, touch, ALCH_SOILS, WALL_UNBREAKABLE}` + `Tile`/`td`/`World`
+   imports, the `#[cfg(test)] mod tests` scaffold (imports of the parent's
+   `pub(super)` helpers + `place_item_tile`/`place_tile`) and the closing
+   brace. `edit.rs` gains only `mod kill;` + the two re-export blocks
+   (lines 14-22) and `pub(super)` on `set_object_cell`/`open_the_door`
+   (lines 1334/1357). One test, `unbreakable_wall_blocks_wall_and_tile_edits`,
+   deliberately stays in `edit.rs` (it exercises `break_wall`, the K-4b
+   family); `place_tile_sound` stays as well (the place-side cue).
+3. **Full-file reconstruction.** Removing the 9 seam lines from the new
+   `edit.rs`, reverting the two `pub(super)` seams and re-inserting the 12
+   ranges at their origin anchors reproduces the origin blob **byte for
+   byte**: 270 023 bytes, `fc /b` reports no differences, SHA256 of the
+   reconstruction equals the origin SHA256
+   (`0b66ec0d7941fe5721678acadca297d7477ff3ddd1471e4648ebd0e17bc2d72c`).
+4. **Canary emulation.** All 396 `anchors.txt` rows resolve against the
+   written tree (0 failures), including the re-pointed S1-E-21c row and the
+   new S1-K-4c row on `edit/kill.rs`.
+
+Still code-only: no cargo/rustc/rustfmt/tests/graphify invoked; the
+compile/test gate remains deferred to the merge step. Merger line-ranges
+for conflict resolution: `edit.rs` seams at 14-22 (re-exports) and
+1334/1357 (`pub(super)` helpers); `kill.rs` is a new file — a sibling
+touching the kill family should merge into it, not re-add to `edit.rs`.
