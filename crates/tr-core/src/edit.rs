@@ -2808,11 +2808,15 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
 /// direction (`Player.direction`: -1 left, 1 right). `false` = refused, the
 /// world is unchanged.
 pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32, dir: i32) -> bool {
-    // Registry route (`Player.cs:39770-39772`): a registered `TileObjectData`
-    // def goes through `TileObject.CanPlace`/`Place` — except tile 82, which
-    // vanilla routes to the legacy `PlaceTile` even though `TileObjectData`
-    // registers it (the herb entry exists for the cascade gateway and frames).
-    if kind != 82 {
+    // Registry route (`Player.cs:39771-39772`): `TileObjectData.CustomPlace
+    // (tileToCreate, placeStyle) && tileToCreate != 82 && tileToCreate != 227
+    // && tileToCreate != 4` sends the kind through `TileObject.CanPlace`/
+    // `Place`. S1-F-7: the gate is the C# `CustomPlace` flag (the style-resolved
+    // `UsesCustomCanPlace`), NOT mere registration — the full registry registers
+    // the natural objects too (pots 28, piles 185/186/187, plants, platforms 19,
+    // torches 4, dye plants 227), and those keep the legacy `WorldGen.PlaceTile`
+    // route exactly as vanilla (`CustomPlace` false, or the 82/227/4 exclusions).
+    if crate::tileobject::routes_through_tile_object(kind, style) {
         if let Some(def) = crate::tileobject::def_for_tile(kind) {
             let Some(instance) = crate::tileobject::can_place(world, x, y, def, style, dir, None)
             else {
