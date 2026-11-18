@@ -2487,11 +2487,12 @@ impl App {
         if let Some(n) = crate::env::coins() {
             coins = n;
         }
-        // `TR_DASH=<1|2|3|6>` pins `Player.dashType` — the granting items land
-        // with M3-EQUIP-3 (Tabi/EoC Shield/Master Ninja Gear).
+        // `TR_DASH=<1|2|3|6>` pins `Player.dashType` through the `pinned_dash`
+        // stand-in (the accessory granters - Tabi/EoC Shield/Master Ninja
+        // Gear - arm it for real now; the pin survives the per-tick clear).
         if let Some(d) = crate::env::dash_type() {
             if let Some(p) = player.as_mut() {
-                p.dash_type = d.clamp(0, 6);
+                p.pinned_dash = d.clamp(0, 6);
             }
         }
         // `TR_MOUNT=<id|name>` pins a mount (the granting saddle items are

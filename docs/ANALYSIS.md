@@ -7444,6 +7444,53 @@ M3-EQUIP-4's plumbing; M3-PREFIX's `GrantPrefixBenefits` landed — the
 grant pass), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
+
+### The UpdateEquip seam (S1-C-12 wave A, 2026-11-18)
+
+The dispatch is now a named seam, not an inline match: `Player::update_equips`
+(`player.rs`) ports `UpdateEquips`' functional-accessory loop
+(`Player.cs:12946-12952`) — for the slots 3..10,
+`is_item_slot_unlocked_and_usable` (`:12579-12604`) gates the slot, then
+`apply_equip_functional(slot, kind)` (`:14368`) runs the per-kind grant chain
+(the old inline match moved verbatim). The `:12922` gates ride along: `IsAir`
+(kind 0), the `item.accessory` demand of `UpdateEquips_CanItemGrantBenefits`
+(`:12869-12890` — the slots 3..9) and the accessory-only
+`GrantPrefixBenefits` (`:12924-12927`). `GetEffectiveArmor` (`:5684-5710`)
+collapses to `equipped[slot]` — no loadout system in the port.
+
+Wave A landed the movement-speed family on the seam: Hermes 54 / Flurry 1579 /
+Sailfish 3200 (`accRunSpeed = 6f`, `:15005-15020`), the Aglet 285 (+5%) and the
+Anklet of the Wind 212 (+10%) (`:15114-15121`), the Amphibian Boots 3990
+(`:14399-14404`: 6f + `autoJump` + `jumpSpeedBoost += 1.6` + `extraFall += 10`
+— the new `jump_speed_boost` field folds at `UpdateJumpHeight` `:19618`), the
+Fairy Boots 3993 (`:14418-14421`), the Sand Boots 4055 (`:14422-14425`,
+`desertBoots`), and the dash granters Tabi 977 / EoC Shield 3097 / Master Ninja
+Gear 984 (`dashType` 1/2/1, `:15050-15067` — `ResetEffects`' `dashType = 0`
+`:18659` now clears per tick before the set/accessory re-arm; `TR_DASH` moved
+to `pinned_dash`). The debuff multiply `moveSpeed *= strongestMoveSpeedDebuff`
+moved to its C# site (`:26004`, after `UpdateEquips` `:25633`) — the accessory
+`moveSpeed` adds now ride the Slow/Chilled debuff too.
+
+Deviations (deliberate):
+* `IsItemSlotUnlockedAndUsable`: slot 8 reads `extraAccessory && expert_mode`
+  (the new `Player.extra_accessory` field — the Demon Heart's use-grant
+  `:45197` is unported, so it stays false in play); slot 9 stays locked (no
+  master difficulty); the `Main.gameMenu` escape arms read false in the sim.
+* The `expertOnly` gate (`:12922`/`:14370-14373`) is unmodelled: `ItemDef`
+  carries no `expert_only` and every ported grant kind is classic.
+* The generic defense/lifeRegen loop still sums every `equipped[..10]` kind
+  regardless of slot type — the slot-typed `GrantArmorBenefits` gate
+  (head/body/leg in 0/1/2) is its own pass.
+* `oldStyleParkour` (`:26007`'s accRunSpeed-debuff escape, item 6190) and
+  `spikedBoots` (`:15066`, the wall cling) have no port fields — skipped.
+* The buff effect arms (`UpdateBuffs`' remaining rows) stay E-7's scope; the
+  hurt pipeline stays C-7's — untouched here.
+
+Tests (`player.rs`): `the_movement_speed_accessories_stack_their_rows` (the
+per-item table incl. the tiers), `the_speed_prefixes_ride_the_accessory_slot`
+(`:14015-14030`), `the_slow_debuff_damps_the_accessory_speeds` (`:26004-26009`
+order), `the_dash_accessories_arm_the_dash_type`,
+`the_equip_dispatch_gates_the_slots`.
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -12515,10 +12562,10 @@ so the set is exactly the town kinds).
   `ResetEffects` clears them every tick (`:18365-18366`). The gate reads the
   per-tick `Player.equipped` snapshot (`world_sim/player.rs` fills it from
   `App.equip.armor`), so the previous inventory-wide scan — a doll sitting in the
-  bag used to arm the easter egg — is gone. The snapshot is the closest the
-  current equip model gets: the vanilla skips locked accessory slots through
-  `IsItemSlotUnlockedAndUsable`, which the port does not model (every slot is
-  treated as unlocked, the default character's 5 + the Demon Heart's 6th).
+  bag used to arm the easter egg — is gone. Since S1-C-12 wave A the vanilla's
+  `IsItemSlotUnlockedAndUsable` gate is ported on the `update_equips` seam
+  (slot 8 needs the Demon Heart flag + expert, slot 9 stays locked — see
+  "The UpdateEquip seam"); `doll_flags` itself still reads the raw snapshot.
 * The Flymeal (5129) and the Tax Collector's Stick of Doom (3351) are the only
   melee items the C# whitelists against town NPCs (`:44274`). Both are hitbox
   melee items with no `shoot`, so the melee arm is their only damage path.
@@ -17410,3 +17457,42 @@ the send-path pass (S1-I-4), so the live net message order is unchanged. The
 per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
 the exact C# body bytes and the decode round trip; the travel shop test also
 pins the fixed 40-slot length (a 39-slot body fails to decode).
+## The buff misc block (S1-E-7 wave D, 2026-11-18)
+
+`crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
+MOUNT/PET/MISC block (`Player.cs:11400-12069`, plus the pet family's head
+`:11005-11241` and the mount arm `:9881-9913`) as a PURE effect table:
+`apply_misc_effect_arm` folds one slot's writes into a `MiscEffects`
+accumulator (the wave-B `buff_effects.rs` pattern), so the module is
+disjoint from waves A/B/C — no `player.rs`/`buffs.rs` edits, the buff
+timer engine untouched. Deliberate deviations:
+
+- **Wiring deferred**: the accumulator is not yet copied onto the live
+  `Player` fields — the `player.rs` scan wiring is the waves' merge step
+  (same admission as wave B's `DebuffEffects`). Until then the module is
+  test-only; no runtime behaviour changes.
+- **Pet spawns are requests**: `pet_spawns` records `(kind, dx)` at the
+  entity centre (the buff-341 ±10·direction offset, `:12242-12253`); the
+  `NewProjectile` call itself rides the wiring step (the pet projectile
+  AIs/draw are M4-PROJ territory). The spawn GATE (owned count == 0) is exact
+  from the `UpdateProjectileCaches` recount.
+- **Crystal Leaf dedupe**: the arm's kill-every-226-beyond-the-first pool
+  walk (`:11663-11673`) is recorded as `crystal_leaf_dedupe`; the walk
+  rides the wiring step. The count gates (spawn at 0, dedupe at >1) are exact.
+- **Rabid's RNG** (`:11324-11327`): the `Next(1200)` → `Next(6)` →
+  `Next(60,100)` triple rides the caller's `UnifiedRandom` in the C#
+  order; the two inner draws happen ONLY on the 1/1200 hit. Tests mirror the
+  stream and check the truncating `(int)(60f * scale * mult)` durations.
+- **Shimmering's tile scan** (`:11807-11816`) is ported verbatim against a
+  caller-supplied `SolidTile3` predicate (the table stays world-free); the
+  underworld-layer gate and the 60/6/DelBuff outcomes are exact.
+- **Webbed** records the full lockdown (velocity epsilon, jumpHeight 0,
+  gravity 0, moveSpeed 0, dash/dashType 0, noKnockback, hook removal) as
+  accumulator fields; the existing `player.rs` webbed arm keeps its
+  current behaviour until the wiring step reconciles the two.
+- **WellFed/hunger `pickSpeed` sign**: the deltas are kept signed like the
+  C# (WellFed subtracts, Hungry/Starving add — a lower pickSpeed mines
+  faster); the wiring step maps them onto `pick_speed_bonus` with the
+  port's sign convention.
+- **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
+  block covers 71, 73-79 only, verbatim.
