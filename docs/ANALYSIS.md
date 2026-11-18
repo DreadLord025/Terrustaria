@@ -16717,3 +16717,33 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
+
+Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
+per scanning NPC, re-borrowing the mutable store for read-only lookups. This round
+introduces the seam for ONE scan family — the carrier-link scans in
+`world_sim/npcs.rs`'s `update_npcs` pre-passes (the Moon Lord parts' core lookup
+`NPC.cs:41642`/`:42098`, the unlinked part's family-core/head fallback find, and the
+core's part-alive check `:41251-41269`):
+
+- `crates/tr-app/src/world_sim/npc_snapshot.rs::NpcSnapshot` — a per-tick read-only
+  view built once (`NpcSnapshot::build(&app.npcs)`) before the family, copying only
+  the scan-visible fields (`uid`, `kind`, `hp`, the `Npc::center()` pair). The scans
+  (`position_living_uid`, `first_living_kind_uid`, `any_living_uid`) take `&self`, so
+  the compiler forbids them touching the mutable store; the family's writes land on
+  the scanning NPC alone.
+- The one intra-family mutation the live reads could observe — the pre-pass's own
+  `hp = 0` kill of a part whose core died — is mirrored by the owning pass through
+  `NpcSnapshot::kill(idx)`; later scans in the family see the death exactly as the
+  live `hp > 0` reads did. Centres stay valid: the family never moves an NPC.
+- Behaviour frozen: no predicate, order, constant or RNG change. Proof: the existing
+  Moon-Lord NPC tests, the `worldgen/world_hash.rs` pins, and two seam-equivalence
+  tests (`npc_snapshot::tests::the_snapshot_scans_match_the_live_slice_scans`,
+  `the_kill_mirror_matches_the_live_hp_write`) that compare every snapshot query
+  against the live-slice scan it replaces. Full workspace green.
+- **Left (not this round)**: the other scan families (saucer/scutlix/dutchman carrier
+  scans, the projectile pool's `npcs.iter()` sites, the separation/target-selection
+  families) and the spatial hash — the ROADMAP S1-D-8 row stays 🟡 until then. No
+  spatial hash was introduced; the scan count is unchanged (the seam only changes
+  what the scans borrow, not how many there are).
