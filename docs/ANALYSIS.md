@@ -4617,9 +4617,34 @@ the existing rows byte-identical (`gen_loot.py --check` green).
   half-body emission would drop C# rows.
 - NamedNPC's key comparison rides the `get_text_value` seam.
 
-Follow-up S1-E-14a records the pre-existing generator limitation the
-splice exposed: the `RegisterBoss_*` subtree at `ItemDropDatabase.cs:655`
-is not spliced (the 655-site boss-subtree gap).
+Follow-up S1-E-14a (2026-11-18, `task/S1-E-14a`, COMPLETED): `gen_loot.py`'s
+`FOLLOW_METHODS` spans all 22 `RegisterBoss_X` the C# `RegisterBosses` calls
+(`ItemDropDatabase.cs:655` subtree). Stage 1 spliced +136 boss rows
+(1445→1581); stage 2's rule-reference model (Rule objects + `§gN§` markers
+resolved to each object's FINAL chain state at method end) closed the
+remaining rule-local gaps — `LeadingConditionRule x = …` + post-registration
+`x.OnSuccess(…)` mutations, `IItemDropRule` bind-then-mutate, local aliasing
+(Plantera `:420-433`, Twins `:464-473`), `OneFromRulesRule`,
+`DropOneByOne.Parameters` — reaching **1599 registrations**. The C# chain
+RETURN semantics (`Chains.cs:93-103`: `.OnSuccess(A).OnFailedRoll(B)` chains
+B onto A) fixed KingSlime `:409`, Skeletron `:568`, DukeFishron `:674-675`,
+FrostMoon `:380/:386`. All 5 `OneFromRulesRule` C# sites now supply the
+`chance_denominator` ctor arg (Golem `:661`, Plantera `:433`, MourningWood
+`:355`, Pumpking `:365`, Deerclops `:539`). Engine: `LeadingConditionRule.report_droprates`
+(`LeadingConditionRule.cs:22-26`, was the empty default) + per-kind chain
+report scaling (`Chains.cs:24-30` failed-roll `1-rate` vs `:50-56/:76-82`
+success/conditions `rate`) — report-only C#-parity fixes, drop-roll
+untouched. `s1_e_14a_the_boss_subtree_registrations_are_spliced` pins
+post-splice-only rows (EoC NotExpert 2112/1299 + a real `try_dropping`
+attempt) + 7 per-boss id/chance/forced-pick/gate tests. Non-boss rows
+byte-identical (1386, sequence-identical); the one changed old row is the
+Skeletron chain-return fix. Documented deviation: the 32 master-mode rows
+(`MasterModeDropOnAllPlayers`) carry denominator 1, not the C#
+`_masterModeDropRng` = 4 (`ItemDropDatabase.cs:15`) — pre-existing since
+M4-LOOT-2 (7 rows already on main), kept for row stability, inert at runtime
+(`spawn_loot` passes `is_master: false`); a dedicated fix should change all
+32 together. 15 `OneFromOptions` rows referencing unported items remain
+warn-and-emit (the established policy).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -14042,8 +14067,12 @@ report with the C#'s formulas — `CommonDrop`'s
 `1 - (1 - numerator/denominator)^rerolls`, `OneFromOptionsDrop`'s shared
 per-option rate, the nested rules' (expert/master/extra-gel) pairs, and
 `DropOneByOne`'s chunk-scaled stack range. `Chains.ReportDroprates`
-(`Chains.cs:24-30`) scales the chained rule's feed by `1 - the parent's own
-rate`. `ItemDropDatabase::report_droprates` is
+scales per chain kind (`Chains.cs:24-30`: `TryIfFailedRandomRoll` feeds
+`1 - the parent's own rate`; `:50-56`/`:76-82`: `TryIfSucceeded` and
+`TryIfDoesntFillConditions` feed the parent's rate itself — corrected
+2026-11-18 with S1-E-14a, the earlier port scaled every kind by `1 - rate`).
+`LeadingConditionRule` reports its chains at rate 1
+(`LeadingConditionRule.cs:22-26`, S1-E-14a). `ItemDropDatabase::report_droprates` is
 `BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`): the
 NPC's rules report their rows with a fresh feed (the rate 1.0) and the
 globals stay out.
@@ -14058,7 +14087,11 @@ Scope notes: the C#'s condition lists (`DropRateInfo.conditions`) and the
 chains' `hideLootReport` flag are not modelled by the port, so the rows
 carry no condition text and the chained rows always print; the town-NPC and
 critter providers, the search filters, the sorting, the flavour and the MP
-kill-sync ride the town/MP subsystems.
+kill-sync ride the town/MP subsystems. `MasterModeDropOnAllPlayers` sites
+pass `this._masterModeDropRng` (`ItemDropDatabase.cs:15` = 4) but the
+generated rows carry the factory default 1 (pre-existing since M4-LOOT-2,
+kept for row stability — S1-E-14a leaves it unchanged; the per-player
+master-drop chance is 1/1 instead of 1/4 until a dedicated fix).
 
 ## The hurting-tile family (S1-E-13a, 2026-11-14)
 

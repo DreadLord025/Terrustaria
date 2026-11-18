@@ -22,10 +22,21 @@ Handled forms (everything else is skipped with a warning):
 
 Skipped (no port system yet): nothing — the NamedNPC/RedHatSkeletron conditions
 and the FromOptionsWithoutRepeats/MechBossSpawners/SlimeBody/StatueMimic rule
-classes emit since S1-E-14. `RegisterBoss_Skeletron`/`RegisterBoss_MoonLord`
-splice through the `Populate → RegisterBosses → RegisterBoss_X` two-level
-nesting (FOLLOW_METHODS); the rest of the boss subtree stays unspliced (its
-rows are a separate coverage gap, kept out of the emitted diff).
+classes emit since S1-E-14. Every `RegisterBoss_X` the C# `RegisterBosses`
+calls splices through the `Populate → RegisterBosses → RegisterBoss_X`
+two-level nesting (FOLLOW_METHODS, S1-E-14a — all 22 boss methods), INCLUDING
+the boss methods' rule-local patterns: `LeadingConditionRule x = ...` +
+post-registration `x.OnSuccess(...)` mutations, `IItemDropRule r = ...`
+value/register-bound locals, local-into-local aliasing (Plantera/Twins), the
+C# chain RETURN semantics (`.OnSuccess(A).OnFailedRoll(B)` chains B onto A,
+`Chains.cs:93-103` — KingSlime/Skeletron/FrostMoon), `OneFromRulesRule`
+(the chanceDenominator ctor arg, `OneFromRulesRule.cs:13-18`) and the Lunar
+Towers' `DropOneByOne.Parameters` struct copy + `(int)(x * 1.5f)` casts
+(`ItemDropDatabase.cs:615-634`). The `hideLootReport: true` named arg is
+dropped (the port's ChainRule does not model it — ANALYSIS). Only the
+pre-existing non-boss skips remain (RegisterIceMimic's pool helper, the
+NeverTrue 594 locals, OneFromOptions rows whose items the port's item table
+does not carry — those still emit with a warning).
 """
 import re
 import sys
@@ -100,11 +111,22 @@ COND_NAMES = {
     "RedHatSkeletron": "RedHatSkeletron",
 }
 
-# The `Populate → RegisterBosses → RegisterBoss_X` two-level nesting: only the
-# two methods this slice registers splice through (the emitted diff stays
-# exactly the new registrations; the rest of the boss subtree keeps its
-# pre-existing unspliced state).
-FOLLOW_METHODS = {"RegisterBoss_Skeletron", "RegisterBoss_MoonLord"}
+# The `Populate → RegisterBosses → RegisterBoss_X` two-level nesting: every
+# boss method the C# `RegisterBosses` calls is spliced through (S1-E-14a —
+# the whole boss subtree, not just the first two). The emitted registrations
+# stay in the C# statement order; each followed method gets a fresh local
+# scope so its `short type = N;` id local does not leak across methods.
+FOLLOW_METHODS = {
+    "RegisterBoss_EOC", "RegisterBoss_BOC", "RegisterBoss_EOW",
+    "RegisterBoss_QueenBee", "RegisterBoss_Skeletron", "RegisterBoss_WOF",
+    "RegisterBoss_AncientCultist", "RegisterBoss_MoonLord",
+    "RegisterBoss_LunarTowers", "RegisterBoss_Betsy", "RegisterBoss_Golem",
+    "RegisterBoss_DukeFishron", "RegisterBoss_SkeletronPrime",
+    "RegisterBoss_TheDestroyer", "RegisterBoss_Twins", "RegisterBoss_Plantera",
+    "RegisterBoss_KingSlime", "RegisterBoss_FrostMoon",
+    "RegisterBoss_PumpkinMoon", "RegisterBoss_HallowBoss",
+    "RegisterBoss_QueenSlime", "RegisterBoss_Deerclops",
+}
 
 
 def body_of(src, sig):
@@ -260,6 +282,11 @@ class Gen:
 
     def parse_rule_base(self, expr, where, locals_=None):
         expr = expr.strip()
+        # A rule-local referenced as an option/chain target (`itemDropRule`,
+        # `leadingConditionRule2`): emit a marker resolved to its FINAL render
+        # at method end (the C# mutates the same object after registration).
+        if locals_ and expr in locals_ and isinstance(locals_[expr], Rule):
+            return f"§{locals_[expr].name}§"
         m = re.fullmatch(r"ItemDropRule\.(\w+)\((.*)\)", expr, re.S)
         if m:
             return self.sugar(m.group(1), m.group(2), where, locals_)
@@ -472,12 +499,26 @@ class Gen:
             items = ", ".join(re.findall(r"-?\d+", a[2]))
             return f"one_from_options_not_scaling_with_luck({a[0]}, &[{items}])"
         if cls == "OneFromRulesRule":
+            # `OneFromRulesRule(int chanceDenominator, params IItemDropRule[])`
+            # (`OneFromRulesRule.cs:13-18`): the first arg is the chance gate,
+            # the rest the options (the salvaged 16eadf18 ctor).
             parts = split_args(args)
-            rust = [self.parse_rule(x, where, locals_) for x in parts]
+            rust = [self.parse_rule(x, where, locals_) for x in parts[1:]]
             if any(r is None for r in rust):
                 self.warn(f"{where}: OneFromRulesRule with a skipped sub-rule")
                 return None
-            return f"OneFromRulesRule::new(vec![{', '.join(rust)}])"
+            return f"OneFromRulesRule::new({parts[0]}, vec![{', '.join(rust)}])"
+        if cls == "DropOneByOne":
+            # `new DropOneByOne(itemId, parameters)` (`DropOneByOne.cs:37-42`)
+            # — the Lunar Towers' parameters local (`ItemDropDatabase.cs:615-634`).
+            a = split_args(args)
+            p = locals_.get(a[1]) if locals_ else None
+            if not isinstance(p, tuple) or p[0] != "__params__":
+                self.warn(f"{where}: DropOneByOne without a parameters local")
+                return None
+            d = p[1]
+            fields = ", ".join(f"{PARAMS_FIELD[k]}: {d[k]}" for k in PARAMS_FIELD)
+            return f"DropOneByOne::new({a[0]}, DropOneByOneParams {{ {fields} }})"
         if cls == "FromOptionsWithoutRepeatsDropRule":
             # `FromOptionsWithoutRepeatsDropRule.cs` — the temp-list
             # `Next(count)`/`RemoveAt` loop (S1-E-14); `dropCount` first, the
@@ -555,9 +596,88 @@ class Gen:
             rule = f"{fn_name}({rule}, {sub_rust})"
         return rule
 
-    def statement(self, expr, gen, locals_):
+    def _boss_register(self, expr, gen, locals_, where):
+        """Boss-scope registration via the reference model (build_rule). The
+        entry is registered as a `§gN§` marker resolved to its final render at
+        method end, so post-registration mutations and local aliasing land."""
+        expr, chains = extract_chains(expr.rstrip(";"))
+        expr = expr.strip().rstrip(";")
+        args = match_call(expr + ";", "RegisterToNPC")
+        if args is not None:
+            a = split_args(args)
+            r = build_rule(self, a[1], where, locals_)
+            if r is None:
+                return
+            self._apply_boss_chains(r, chains, where, locals_)
+            nid_arg = a[0]
+            if isinstance(locals_.get(nid_arg), int):
+                nid_arg = locals_[nid_arg]
+            nid = int(nid_arg)
+            ids = [nid] + (self.families.get(nid, []) if nid > 0 else [])
+            self.emit_rule_for(ids, f"§{r.name}§", gen)
+            return
+        for name in ("RegisterToMultipleNPCs", "RegisterToMultipleNPCsNotRemixSeed",
+                     "RegisterToMultipleNPCsRemixSeed"):
+            args = match_call(expr + ";", name)
+            if args is None:
+                continue
+            a = split_args(args)
+            entry, ids = self._multiple_entry(a, locals_)
+            r = build_rule(self, entry, where, locals_) if entry else None
+            if r is None:
+                return
+            if name == "RegisterToMultipleNPCs":
+                root = r
+            else:
+                cond = "NotRemixSeedHardmode" if name.endswith("NotRemixSeed") else "RemixSeed"
+                root = Rule(f"leading_condition(Cond::{cond})")
+                root.chains.append(("success", f"§{r.name}§"))
+            self._apply_boss_chains(root, chains, where, locals_)
+            for nid in ids:
+                expand = [nid] + (self.families.get(nid, []) if nid > 0 else [])
+                self.emit_rule_for(expand, f"§{root.name}§", gen)
+            return
+        if re.fullmatch(r"new Conditions\.\w+\((-?\d+)?\)", expr):
+            return   # a discarded expression statement (`ItemDropDatabase.cs:348-349`)
+        self.warn(f"{where}: unhandled boss registration")
+
+    def _multiple_entry(self, a, locals_):
+        """Split `RegisterToMultipleNPCs` args into (entry-expr, ids)."""
+        ids, entry = [], None
+        for x in a:
+            x = re.sub(r"^\w+: ", "", x)
+            m = re.fullmatch(r"new int\[\d*\]\s*\{([^}]*)\}", x, re.S)
+            if m:
+                ids += [int(v) for v in re.findall(r"-?\d+", m.group(1))]
+            elif x in locals_ and isinstance(locals_[x], list):
+                ids += locals_[x]
+            elif x in locals_ and isinstance(locals_[x], int):
+                ids += [locals_[x]]
+            elif entry is None:
+                entry = x
+            else:
+                ids += [int(x)]
+        return entry, ids
+
+    def _apply_boss_chains(self, root, chains, where, locals_):
+        cur = root
+        for kind, sub in chains:
+            sub_r = build_rule(self, sub, where, locals_)
+            if sub_r is None:
+                self.warn(f"{where}: chain {kind} skipped ({sub[:60]})")
+                continue
+            cur.chains.append((kind, f"§{sub_r.name}§"))
+            cur = sub_r
+
+    def statement(self, expr, gen, locals_, boss_scope=False):
         expr = expr.strip()
         where = expr[:70]
+        # Boss scope: build the entry through the reference model so inline
+        # `.OnSuccess(X).OnFailedRoll(Y)` chains with the C# return semantics
+        # (Y onto X, `Chains.cs:99-103`) and rule-locals alias correctly.
+        if boss_scope:
+            self._boss_register(expr, gen, locals_, where)
+            return
         # The chains may hang off the register call itself (`RegisterToNPC(...) 
         # .OnFailedRoll(...)` returns the entry).
         expr, chains = extract_chains(expr.rstrip(";"))
@@ -656,11 +776,115 @@ class Gen:
 
 
 ARRAY_RE = re.compile(r"int\[\] (\w+) = new int\[\d*\]\s*\{([^}]*)\};")
-LOCAL_COND_RE = re.compile(r"[\w.]+ (\w+) = new Conditions\.(\w+)\(\);")
+# `Conditions.X c = new Conditions.X();` and the arg-bearing
+# `Conditions.FromCertainWaveAndAbove c = new ...(15);` (`ItemDropDatabase.cs:377`).
+LOCAL_COND_RE = re.compile(r"[\w.]+ (\w+) = new Conditions\.(\w+)\((-?\d+)?\);")
+
+CHAIN_FN = {
+    "success": "chain_on_success",
+    "failed_roll": "chain_on_failed_roll",
+    "failed_conditions": "chain_on_failed_conditions",
+}
+
+# The C# `DropOneByOne.Parameters` field -> the port's `DropOneByOneParams`
+# field (`DropOneByOne.cs:7-29`, `loot.rs` DropOneByOneParams).
+PARAMS_FIELD = {
+    "ChanceNumerator": "chance_numerator",
+    "ChanceDenominator": "chance_denominator",
+    "MinimumItemDropsCount": "min_drops_count",
+    "MaximumItemDropsCount": "max_drops_count",
+    "MinimumStackPerChunkBase": "min_stack_per_chunk_base",
+    "MaximumStackPerChunkBase": "max_stack_per_chunk_base",
+    "BonusMinDropsPerChunkPerPlayer": "bonus_min_per_player",
+    "BonusMaxDropsPerChunkPerPlayer": "bonus_max_per_player",
+}
 
 
-def process_stream(g, statements, gen, locals_, src=None):
+_ANON = [0]
+# Every rule object (named local or anonymous) created while splicing a boss
+# method, keyed by its generated name; markers `§gN§` resolve through it.
+RULE_ENV = {}
+
+
+class Rule:
+    """A C# rule object (`LeadingConditionRule x = ...; IItemDropRule r = ...;`
+    or an anonymous `new LeadingConditionRule(...)` a chain mutates).
+
+    The C# mutates the SAME object after registration (`x.OnSuccess(...)`),
+    chains one local into another (`leader.OnSuccess(leader2)`) BEFORE leader2's
+    own chains are added (`RegisterBoss_Plantera`/`_Twins`), and a chain returns
+    the CHAINED rule so `.OnSuccess(X).OnFailedRoll(Y)` puts X on the leader and
+    Y on X (`RegisterBoss_KingSlime:409`, `Chains.cs:99-103`). The port models
+    that with a mutable base + ordered chain list rendered at method end; a
+    `§gN§` marker embedded in another rule resolves to that object's FINAL
+    render, so the aliasing is preserved.
+    """
+
+    def __init__(self, base):
+        _ANON[0] += 1
+        self.name = f"g{_ANON[0]}"
+        self.base = base          # rust expr, may carry §gN§ markers
+        self.chains = []          # (kind, sub-marker), in C# order
+        RULE_ENV[self.name] = self
+
+    def render(self):
+        s = self.base
+        for kind, sub in self.chains:
+            s = f"{CHAIN_FN[kind]}({s}, {sub})"
+        return s
+
+
+def resolve_markers(s):
+    """Expand every `§gN§` to RULE_ENV[gN]'s render until none remain. The boss
+    aliasing is a DAG (a leader chains a leader2 created later; no cycles), so
+    this terminates; a guard bounds it defensively."""
+    for _ in range(400):
+        m = re.search(r"§(g\d+)§", s)
+        if not m:
+            return s
+        r = RULE_ENV.get(m.group(1))
+        if r is None:
+            raise RuntimeError(f"unresolved rule marker {m.group(0)}")
+        s = s[: m.start()] + r.render() + s[m.end():]
+    raise RuntimeError("rule-marker resolution did not converge (cycle?)")
+
+
+def build_rule(g, expr, where, locals_):
+    """Parse a rule expression into a Rule object, applying its inline chains
+    with the C# return semantics (each `.OnX(sub)` chains sub onto the current
+    receiver, then the receiver becomes sub). Returns the BASE rule (the value
+    of the expression). A local reference reuses that local's object."""
+    expr, chains = extract_chains(expr.strip())
+    expr = expr.strip()
+    if locals_ and expr in locals_ and isinstance(locals_[expr], Rule):
+        cur = locals_[expr]
+        base = cur
+    else:
+        rust = g.parse_rule_base(expr, where, locals_)
+        if rust is None:
+            return None
+        base = Rule(rust)
+        cur = base
+    for kind, sub in chains:
+        sub_r = build_rule(g, strip_hide(sub), where, locals_)
+        if sub_r is None:
+            g.warn(f"{where}: chain {kind} skipped ({sub[:60]})")
+            continue
+        cur.chains.append((kind, f"§{sub_r.name}§"))
+        cur = sub_r
+    return base
+
+
+def strip_hide(sub_args):
+    """Drop the `hideLootReport: true` named arg (the port's ChainRule does
+    not model it — ANALYSIS 'drop-rate report'); keep the rule expression."""
+    parts = [p for p in split_args(sub_args) if not p.startswith("hideLootReport")]
+    return ", ".join(parts)
+
+
+def process_stream(g, statements, gen, locals_, src=None, boss_scope=False):
     """Parse one method's statement stream with its local scope."""
+    start = len(gen)
     for st in statements:
         m = ARRAY_RE.search(st)
         if m and re.fullmatch(ARRAY_RE, st):
@@ -668,7 +892,10 @@ def process_stream(g, statements, gen, locals_, src=None):
             continue
         m = LOCAL_COND_RE.fullmatch(st)
         if m:
-            locals_[m.group(1)] = f"Cond::{m.group(2)}"
+            arg = m.group(3)
+            locals_[m.group(1)] = (
+                f"Cond::{m.group(2)}({arg})" if arg else f"Cond::{m.group(2)}"
+            )
             continue
         # `short type = 35;` — the per-method npc-id local (the boss methods
         # register through it; `RegisterToNPC(type, ...)` resolves below).
@@ -685,9 +912,123 @@ def process_stream(g, statements, gen, locals_, src=None):
             if meth is None:
                 print(f"generator: method {m.group(1)} not found")
                 continue
-            process_stream(g, split_statements(meth), gen, {}, src)
+            process_stream(g, split_statements(meth), gen, {}, src, boss_scope=True)
             continue
-        g.statement(st, gen, locals_)
+        if boss_scope and handle_boss_local(g, st, gen, locals_, src):
+            continue
+        g.statement(st, gen, locals_, boss_scope=boss_scope)
+    # Render the rule-local markers this method introduced (the C# mutations
+    # all land within the method; the registered rows keep their C# order).
+    if boss_scope:
+        for i in range(start, len(gen)):
+            gen[i] = resolve_markers(gen[i])
+
+
+def handle_boss_local(g, st, gen, locals_, src):
+    """The boss methods' rule-local declarations / mutations / registrations.
+
+    Returns True when the statement was consumed. Forms (all in
+    `RegisterBoss_*`, `ItemDropDatabase.cs:312-676`):
+      LeadingConditionRule x = new LeadingConditionRule(cond);
+      IItemDropRule r = ItemDropRule.Common(...);          (a value local)
+      IItemDropRule r = this.RegisterToNPC/Multiple(...);  (register + bind)
+      x.OnSuccess/OnFailedRoll/OnFailedConditions(sub[, hideLootReport]);
+      DropOneByOne.Parameters p = new ... { ... };  p2 = p;  p2.F = expr;
+    """
+    # LeadingConditionRule local.
+    m = re.fullmatch(r"LeadingConditionRule (\w+) = new LeadingConditionRule\((.*)\);", st)
+    if m:
+        cond = g.cond_arg(m.group(2), st[:70], locals_)
+        if cond is None or not cond.startswith("Cond::"):
+            return False
+        locals_[m.group(1)] = Rule(f"leading_condition({cond})")
+        return True
+    # DropOneByOne.Parameters initializer.
+    m = re.fullmatch(r"DropOneByOne\.Parameters (\w+) = new DropOneByOne\.Parameters \{(.*)\};", st, re.S)
+    if m:
+        d = {}
+        for field, val in re.findall(r"(\w+)\s*=\s*(-?\d+)", m.group(2)):
+            d[field] = int(val)
+        locals_[m.group(1)] = ("__params__", d)
+        return True
+    # Parameters struct copy: `DropOneByOne.Parameters parameters2 = parameters;`.
+    m = re.fullmatch(r"(?:DropOneByOne\.Parameters )?(\w+) = (\w+);", st)
+    if m and isinstance(locals_.get(m.group(2)), tuple):
+        locals_[m.group(1)] = ("__params__", dict(locals_[m.group(2)][1]))
+        return True
+    # Parameters field assignment: `parameters2.Field = expr;`.
+    m = re.fullmatch(r"(\w+)\.(\w+) = (.*);", st)
+    if m and isinstance(locals_.get(m.group(1)), tuple):
+        d = locals_[m.group(1)][1]
+        rhs = m.group(3).strip()
+        mi = re.fullmatch(r"-?\d+", rhs)
+        if mi:
+            d[m.group(2)] = int(rhs)
+            return True
+        # `(int)((float)parameters.X * 1.5f)` — the C# truncating cast.
+        mc = re.fullmatch(r"\(int\)\(\(float\)(\w+)\.(\w+) \* 1\.5f\)", rhs)
+        if mc and isinstance(locals_.get(mc.group(1)), tuple):
+            base = locals_[mc.group(1)][1][mc.group(2)]
+            d[m.group(2)] = int(base * 1.5)
+            return True
+        return False
+    # IItemDropRule local bound to a register call (register + bind the entry).
+    m = re.fullmatch(r"IItemDropRule (\w+) = (this\.RegisterTo(?:NPC|MultipleNPCs)\(.*\));", st)
+    if m:
+        name, rhs = m.group(1), m.group(2)
+        inner = rhs[len("this."):-1]               # strip `this.` and trailing `)`
+        call, args = inner.split("(", 1)
+        a = split_args(args)
+        if call == "RegisterToNPC":
+            entry = a[1]
+            nid_arg = a[0]
+            if isinstance(locals_.get(nid_arg), int):
+                nid_arg = locals_[nid_arg]
+            nid = int(nid_arg)
+            ids = [nid] + (g.families.get(nid, []) if nid > 0 else [])
+        else:
+            _, ids = g.multiple_npc_args(a, st[:70], locals_)
+            entry = None
+            for x in a:
+                x = re.sub(r"^\w+: ", "", x)
+                if not re.fullmatch(r"new int\[\d*\]\s*\{[^}]*\}", x, re.S) \
+                        and x not in locals_ and not re.fullmatch(r"-?\d+", x):
+                    entry = x
+                    break
+        r = build_rule(g, entry, st[:70], locals_) if entry else None
+        if r is None:
+            return False
+        locals_[name] = r
+        for nid in ids:
+            expand = [nid] + (g.families.get(nid, []) if nid > 0 else [])
+            g.emit_rule_for(expand, f"§{r.name}§", gen)
+        return True
+    # IItemDropRule value local (a rule expression, not registered here).
+    m = re.fullmatch(r"IItemDropRule (\w+) = (.*);", st)
+    if m and not m.group(2).startswith("this."):
+        r = build_rule(g, m.group(2), st[:70], locals_)
+        if r is None:
+            return False
+        locals_[m.group(1)] = r
+        return True
+    # Mutation of a rule local: `x.OnSuccess(sub[, hideLootReport: true]);`,
+    # possibly with a chained tail (`x.OnSuccess(A).OnFailedRoll(B)` — the C#
+    # chain returns A, so B chains onto A, `Chains.cs:93-103`).
+    m = re.match(r"(\w+)\.(OnSuccess|OnFailedRoll|OnFailedConditions)\(", st)
+    if m and isinstance(locals_.get(m.group(1)), Rule):
+        base, chains = extract_chains(st.rstrip(";"))
+        if base.strip() != m.group(1):
+            return False
+        cur = locals_[m.group(1)]
+        for kind, sub in chains:
+            sub_r = build_rule(g, strip_hide(sub), st[:70], locals_)
+            if sub_r is None:
+                g.warn(f"{st[:70]}: chain {kind} skipped")
+                continue
+            cur.chains.append((kind, f"§{sub_r.name}§"))
+            cur = sub_r
+        return True
+    return False
 
 
 def main():
@@ -711,8 +1052,9 @@ def main():
         "    normalvs_expert_one_from_options, normalvs_expert_one_from_options_not_scaling_with_luck,",
         "    not_scaling_with_luck, one_from_options, one_from_options_not_scaling_with_luck,",
         "    scaling_with_only_bad_luck, status_immunity_item, with_rerolls, Cond,",
-        "    chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,",
-        "    DropBasedOnMasterMode, FromOptionsWithoutRepeatsDropRule,",
+        "    chain_on_failed_conditions, chain_on_failed_roll, chain_on_success, CommonDrop,",
+        "    DropBasedOnExpertMode, DropBasedOnMasterMode, DropOneByOne, DropOneByOneParams,",
+        "    FromOptionsWithoutRepeatsDropRule,",
         "    ItemDropDatabase, ItemDropWithCondition, MechBossSpawnersDropRule, NamedNPC,",
         "    OneFromRulesRule, SlimeBodyItemDropRule, StatueMimicItemDropRule,",
         "};",

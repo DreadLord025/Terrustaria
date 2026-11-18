@@ -297,11 +297,12 @@ impl DropRateInfoChainFeed {
     }
 }
 
-/// `Chains.ReportDroprates` (`Chains.cs:24-30`): every chain attempt
-/// reports its rule with the parent's rate scaled by `1 - the parent's own
-/// rate`. The C#'s `hideLootReport` flag (the chains that stay out of the
-/// report) is not modelled by the port's `ChainRule` — the chained rows are
-/// always reported.
+/// `Chains.ReportDroprates` (`Chains.cs:24-30`, `:50-56`, `:76-82`): the
+/// chain attempt's own scaling — `TryIfFailedRandomRoll` reports its rule
+/// with the feed scaled by `1 - the parent's own rate`; `TryIfSucceeded` and
+/// `TryIfDoesntFillConditions` scale by the parent's rate itself. The C#'s
+/// `hideLootReport` flag (the chains that stay out of the report) is not
+/// modelled by the port's `ChainRule` — the chained rows are always reported.
 fn report_chained_rules(
     chains: &[ChainRule],
     personal_drop_rate: f32,
@@ -309,9 +310,11 @@ fn report_chained_rules(
     feed: &DropRateInfoChainFeed,
 ) {
     for chain in chains {
-        chain
-            .rule
-            .report_droprates(drops, &feed.with(1.0 - personal_drop_rate));
+        let scale = match chain.kind {
+            ChainKind::OnFailedRoll => 1.0 - personal_drop_rate,
+            ChainKind::OnSuccess | ChainKind::OnDoesntFillConditions => personal_drop_rate,
+        };
+        chain.rule.report_droprates(drops, &feed.with(scale));
     }
 }
 
@@ -1886,6 +1889,11 @@ impl ItemDropRule for LeadingConditionRule {
     fn chained_rules(&self) -> &[ChainRule] {
         &self.chains
     }
+    /// `LeadingConditionRule.ReportDroprates` (`LeadingConditionRule.cs:22-26`):
+    /// the gate drops nothing itself; its chains report at the rate 1.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        report_chained_rules(&self.chains, 1.0, drops, feed);
+    }
     fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
         self.condition.can_drop(info)
     }
@@ -1969,15 +1977,20 @@ impl ItemDropRule for DropPerPlayerOnThePlayer {
 }
 impl_chains!(DropPerPlayerOnThePlayer);
 
-/// `OneFromRulesRule` (`OneFromRulesRule.cs`): one passing sub-rule's drops.
+/// `OneFromRulesRule` (`OneFromRulesRule.cs:5-61`): the chance gate, then ONE
+/// randomly-picked option resolved through the resolver.
 pub struct OneFromRulesRule {
+    pub chance_denominator: i32,
     pub rules: Vec<Box<dyn ItemDropRule>>,
     chains: Vec<ChainRule>,
 }
 
 impl OneFromRulesRule {
-    pub fn new(rules: Vec<Box<dyn ItemDropRule>>) -> Box<Self> {
+    /// The `OneFromRulesRule(int chanceDenominator, params IItemDropRule[])`
+    /// ctor (`OneFromRulesRule.cs:13-18`).
+    pub fn new(chance_denominator: i32, rules: Vec<Box<dyn ItemDropRule>>) -> Box<Self> {
         Box::new(Self {
+            chance_denominator,
             rules,
             chains: Vec::new(),
         })
@@ -1993,17 +2006,35 @@ impl ItemDropRule for OneFromRulesRule {
         info: &mut DropAttemptInfo,
         out: &mut Vec<DropRequest>,
     ) -> DropAttemptResult {
-        // The C# picks the first rule whose `TryDroppingItem` reports success
-        // (`OneFromRulesRule.TryDroppingItem`: the sequential walk).
-        for rule in &self.rules {
-            let result = resolve_rule(rule.as_ref(), info, out);
-            if result.state == DropResultState::Success {
-                return result;
+        // `OneFromRulesRule.TryDroppingItem` (`OneFromRulesRule.cs:33-49`):
+        // `rng.Next(chanceDenominator) == 0` gates, then `rng.Next(options.Length)`
+        // picks ONE option and resolves it (a nested rule, so its own chains and
+        // condition run); the result is Success regardless of the option's outcome.
+        if info.rng.next_range(0, self.chance_denominator) == 0 {
+            let pick = info.rng.next_range(0, self.rules.len() as i32);
+            if let Some(rule) = self.rules.get(pick as usize) {
+                resolve_rule(rule.as_ref(), info, out);
+            }
+            DropAttemptResult {
+                state: DropResultState::Success,
+            }
+        } else {
+            DropAttemptResult {
+                state: DropResultState::FailedRandomRoll,
             }
         }
-        DropAttemptResult {
-            state: DropResultState::FailedRandomRoll,
+    }
+
+    /// `OneFromRulesRule.ReportDroprates` (`OneFromRulesRule.cs:51-60`): each
+    /// option reports at `(1/optionCount) * (1/denominator) * parent`; the chains
+    /// report at the rule's own rate.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let num = 1.0 / self.chance_denominator as f32;
+        let multiplier = (1.0 / self.rules.len() as f32) * num;
+        for rule in &self.rules {
+            rule.report_droprates(drops, &feed.with(multiplier));
         }
+        report_chained_rules(self.chained_rules(), num, drops, feed);
     }
 }
 impl_chains!(OneFromRulesRule);
