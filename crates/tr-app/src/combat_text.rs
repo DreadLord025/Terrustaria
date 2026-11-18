@@ -38,6 +38,10 @@ pub const OTHERS_DAMAGED_HOSTILE: [u8; 4] = [102, 64, 32, 102];
 /// `CombatText.OthersDamagedHostileCrit = DamagedHostileCrit * 0.4f`
 /// (`CombatText.cs:226`).
 pub const OTHERS_DAMAGED_HOSTILE_CRIT: [u8; 4] = [102, 40, 12, 102];
+/// `CombatText.HealMana` — `new Color(100, 100, 255, 255)`
+/// (`CombatText.cs:228`); `Player.ManaEffect` spawns with it
+/// (`Player.cs:4533`).
+pub const HEAL_MANA: [u8; 4] = [100, 100, 255, 255];
 
 /// The bar sheets decode at their retail 36x12 size
 /// (`TextureAssets.Hb1`/`Hb2` = `Images/HealthBar1|2`, `AssetInitializer.cs:404-405`).
