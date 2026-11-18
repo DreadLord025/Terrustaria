@@ -4853,6 +4853,71 @@ pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
 the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
 ported block (`Main.rand` untouched; the flags are pure tile reads).
 
+## Town housing (S1-E-11d, 2026-11-18)
+
+`MoveTownNPC`'s failure-reason feedback and the `Main.mouseNPC` housing-query
+model — the last `S1-E-11` **Left** item.
+
+- **`MoveTownNPC`** (`WorldGen.cs:4685-4841`) is `town::move_town_npc`: the
+  `StartRoomCheck` → `RoomNeeds` → stinkbug → `ScoreRoom` → special-conditions
+  chain, each failure printing its reason through
+  `Main.NewText(…, 255, 240, 20)` (the port's `chat.new_text` with
+  `COLOR_SERVER_MESSAGE`). The six room-check reasons map to their
+  `TownNPCHousingFailureReasons` rows (`:4699-4719`); the furniture gate names
+  the missing pieces through `Game.HouseMissing_{n}` in the
+  torch/door/table/chair order (`:4729-4762`) and arms the two
+  `builtHouseWith*` statics (`:4757`/`:4761` — returned per call in
+  `MoveTownNpcOutcome`, since no C# code reads them); the stinkbug gates are
+  pet-exempt (`:4777-4799`, `town::is_town_pet` = `NPCID.Sets.IsTownPet`,
+  `NPCID.cs:10118`); the score's failure text picks
+  occupied→`inter[41]` / evil→`inter[42]` / no-standing-space→its row /
+  else→`inter[40]` (`:4803-4823`); the moved NPC's special conditions append
+  `inter[55] + " " + TypeName` (`:4829-4839`).
+- **The support seams** in `tr-core::housing`: `score_room_report` returns
+  `ScoreRoom`'s globals (`hiScore`, `bestX/bestY`, `roomOccupied`, `roomEvil`,
+  `roomHasStandingSpace`, `:5864-5894`/`:5932-5935`) — `score_room` is now a
+  thin wrapper; `room_needs_flags` returns the four `RoomNeeds` flags
+  (`:4292-4298`); `check_special_town_npc_spawning_conditions` ports the
+  Truffle's mushroom gate (`:4970-4998`, `MushroomTileThreshold = 100`,
+  `SceneMetrics.cs:935`, `Main.NoFunctionalSurface` = `worldSurface <= 30`,
+  `Main.cs:2636`).
+- **The query/relocation UI**: `Main.mouseNPCIndex/mouseNPCType`
+  (`Main.cs:751-753`) ride the App; the housing page's cell click arms them
+  (`DrawNPCHousesInUI:42058-42070`), the carried head draws through
+  `ui::housing::draw_carried` (`DrawInterface_38:45214-45216`) and suppresses
+  the hover text (`MouseTextInner:20192`), the world click runs
+  `town::perform_housing_check` (`Main.cs:45162-45170`) or
+  `town::try_moving_npc` (`Main.cs:45172-45180` → `moveRoom:4843-4855`), and
+  the right release / a carried item / a closed inventory / a dead NPC drop
+  or downgrade the head (`:45185-45227`, `:45666`). `try_moving_npc` marks the
+  NPC homeless first so its own old home no longer occupies the target
+  (`moveRoom:4851`), then re-checks at the click point and writes the
+  **scored** spot (`SpawnTownNPC:5456-5457`'s `bestX/bestY`), clearing the
+  timer and the despawn path (`:5452`/`:5459`).
+
+Deviations:
+- **The `RichRoomCheckFeedback` particle pass is not ported**
+  (`Main.cs:45165`, `DataStructures/RichRoomCheckFeedback.cs`). Its
+  `StopOnFail = false` verdict is discarded, its `DisplayText` is off and its
+  only statics are the dead `builtHouseWith*` flags, so the observable
+  behaviour is the single WithText-shaped `move_town_npc` call. The particle
+  visualisation (the cyan/red room-scan and score sprites) lands with the
+  particle-system task.
+- **The Truffle unlock** (`NPC.unlockedTruffleSpawn`) has no ported field
+  (the save writes `false`, `wld/sections/flags.rs:217`) and no Truffle kind
+  exists, so `move_town_npc`/`try_moving_npc` pass `false` — the special-
+  conditions arm is vacuous for the ported roster but lands 1:1 for when the
+  Truffle arrives.
+- **Determinism**: the whole `MoveTownNPC` → `StartRoomCheck` → `RoomNeeds` →
+  `ScoreRoom` → `CheckSpecialTownNPCSpawningConditions` chain draws **zero**
+  `Main.rand` (grep of `WorldGen.cs:4685-4841`, `:5679-5992`, `:6041-6237`,
+  `:4970-4998`, `:5617-5627`, `:5814-5829` finds no `rand`/`Random` call — the
+  only `genRand` nearby is `StartMeteorShower:6241`, outside the room check).
+  The port mirrors this by taking no RNG parameter: every function is pure
+  over `(world, npcs, rooms)`. `town::tests::the_housing_chain_is_rng_free_and_deterministic`
+  runs the chain twice on identical inputs (identical state) and proves a
+  seeded stream is untouched.
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
@@ -17190,6 +17255,32 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## Buff effect table (S1-E-7 wave B)
+
+The `UpdateBuffs` DEBUFF block (`Player.cs:10049-10317`, 47 arms) is ported
+as a PURE effect table in `crates/tr-app/src/buff_effects.rs`:
+`apply_debuff_effect_arm` folds one arm's writes into a `DebuffEffects`
+accumulator (flags OR-ed, stats added per slot — the C# chain's sequential
+semantics, incl. Dryad's Ward's per-slot `thorns < 1` clamp and Lifeforce's
+double integer division `statLifeMax / 5 / 20 * 20`). Deliberate deviations:
+
+* **Disjoint-wave shape**: wave A (`task/S1-E-7a`) edits the `player.rs`
+  potion-block arms; wave B adds no `player.rs` code. The scan wiring
+  (copying the accumulator onto the live fields per active slot) rides wave
+  A's merge. Until then the module is test-only — no behaviour change, no RNG
+  or fixed-step-order change.
+* **Inferno's aura scan deferred** (`:10224-10263`): the NPC loop (AddBuff
+  323/120 + 20 damage on `infernoCounter % 60 == 0`) and the PvP twin need
+  the world roster; the constants (`INFERNO_DEBUFF_ID/RADIUS/DAMAGE/DEBUFF_TIME`),
+  the flag, the light RGB and the cadence bit are ported.
+* **The two `Lighting.AddLight` sites record RGB only** (`:10215`, `:10316`);
+  the tile coords ride the wiring. Note the C# asymmetry: Inferno uses
+  `(int)(Center.X / 16f)` while Electrified uses `(int)Center.X / 16` — they
+  differ for negative centers; the wiring must keep each form.
+* **Stinky's `talkNPC = -1`** is recorded as `talk_npc_reset` (the port has
+  no open-dialogue field yet; the luck flag is already live in `player.rs`).
+
+Tests: 19 `s1_e_7b_*` per-buff tests in the module.
 ## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
 
 The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
