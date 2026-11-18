@@ -13193,6 +13193,29 @@ Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
 the next round, so a port `.plr` is byte-comparable with vanilla **through the
 vault byte** only until then.
 
+**Increment 2 (S1-J-5b, 2026-11-18).** The writer/reader now run through
+`hideInfo` (`Serialize:54893` / `Deserialize:55623`): buffs (`:54864-54876` —
+44 pairs, `maxBuffs` `Player.cs:57106`; fresh `buffType`/`buffTime` are all-zero
+`:1510-1512` and `Main.buffNoSave[0]` is false, so the (0,0) else-arm bytes are
+identical to the no-save arm), the spawn list (`:54877-54888` — fresh
+`spN[0] == null` `:2488` writes only the `-1` sentinel), `hbLocked`
+(`:54889`, default false `:1436`) and `hideInfo[13]` (`:54890-54893`, fresh
+`bool[13]` `:812`). The reader gates mirror `Deserialize:55578-55623`, including
+the buff-count 44/22/10 version gates and the zero-type compaction
+(`:55593-55597`, which still consumes exactly `count` pairs). **Second shim**:
+the increment-1 port files are stamped 326 but end at the vault byte, so the
+C# gates would truncate in the buffs; `read_player_bytes` retries release-326
+truncations with `through_vault_only` (stop at `:55504`), the same port-only
+pattern as the 279 shim. Genuine vanilla 326 files never take it (they always
+carry the buffs tail). `golden_layout_through_hide_info` pins every byte and
+byte-compares the 370-byte tail with `assets/test/golden.plr` at offsets
+2402-2772. A port `.plr` is now byte-comparable with vanilla **through the last
+hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
+RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
+port zero-pads to the block boundary — invisible to field readers, but the
+final encrypted block differs from vanilla; full-envelope parity is a separate
+concern.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
