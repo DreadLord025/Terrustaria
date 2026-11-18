@@ -9050,8 +9050,34 @@ several vanilla details are deliberately not carried:
   (`100 + Next(4800)`, `:31506`) fold to flat averages (300 / 1500) —
   the RNG stream discipline shared with the other folded cadences.
 - **The fists' `collideX/collideY` dash exit** (`NPC.cs:19445`): the
-  port's sim carries no per-NPC tile-collision flags, so the dash ends
-  on the 700-px anchor distance only.
+  S1-D-3 axis port (`npc_ai_style47.rs`) carries the C#'s structure —
+  the wind-up resets both flags (`:19357-19358`) and the dash exit
+  checks `num2 > 700 || collideX || collideY` (`:19445`) — but the fists
+  integrate raw (`noTileCollide`), so the flags never set and the dash
+  still ends on the 700-px anchor distance only.
+- **The fist anchor's velocity.Y fold** (`NPC.cs:19258`): the C# adds
+  the body's full `velocity` to the anchor; the World hoist carries only
+  `golem_vx`, so the Y term folds out (the pre-existing seam shape).
+- **The fist spawn-kind mirror** (`NPC.cs:19522-19523`): the C# spawns
+  247 (the left fist) at −84 and 248 (the right) at +78; the port's body
+  pushes `GolemFistRight` at −84 and `GolemFistLeft` at +78 — the kinds
+  at each other's offsets, so the fists cross the body to their
+  kind-correct anchors. PRESERVED as a pre-existing deviation (S1-D-3):
+  the spawn wiring is untestable in code-only mode; the fists' AI itself
+  is kind-keyed correctly either way.
+- **The S1-D-3 aiStyle-47 landing (code-only mode, 2026-11-18,
+  `task/S1-D-3-aistyle47`)**: the fists moved off the kind-keyed
+  `update_golem` arm onto the aiStyle axis (`npc_ai_style47.rs`). The
+  port fixes the pre-axis deltas — the state-0 rotation arms were
+  swapped vs the C#'s type-247 fold (`:19324-19328`), the 60-cadence
+  never called `TargetClosest` (`:19307`, now the `npc_target` helper),
+  and the dash aimed from the pre-snap centre instead of the snapped
+  anchor (`:19379`); the anchor offsets now fold `scale` (`:19258-19259`).
+  The spawn-kind mirror above stays. The arm is RNG-free by
+  construction: its only `Main.rand` draws are the skipped dust arms
+  (`:19341`/`:19343`/`:19417`/`:19420`). The witness tests are written
+  but NOT run — code-only mode (no cargo/rustc/rustfmt invoked); the
+  branch pushes unmerged for a later verified landing.
 - **The fist's state 3** (the `ai[0] == 3` hover, `:19450-19503`): no
   port code sets `ai[0] = 3` for the fists — the arm is dead in the
   vanilla AI itself and is not carried.
