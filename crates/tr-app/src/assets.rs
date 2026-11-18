@@ -783,6 +783,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
+        // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
+        // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
+        // panel's back splices (`TextureAssets.ChatBack`,
+        // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
+        "Chat",
+        "Chat_Back",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1931,6 +1937,14 @@ pub struct Lookups {
     pub ach_categories: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat` (`TextureAssets.Chat`, `AssetInitializer.cs:563`):
+    /// the town-NPC hover bubble (`Main.DrawNPCChatBubble`,
+    /// `Main.cs:43135-43161`).
+    pub ui_chat_bubble: Option<tr_render::SheetRect>,
+    /// `Images/Chat_Back` (`TextureAssets.ChatBack`,
+    /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
+    /// splices (`NPCChatPanel.cs:71-72`).
+    pub ui_chat_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2425,6 +2439,8 @@ impl Lookups {
             ach_inner_bottom_large: atlas.sheet("UI/Achievement_InnerPanelBottom_Large").copied(),
             ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
+            ui_chat_bubble: atlas.sheet("Chat").copied(),
+            ui_chat_back: atlas.sheet("Chat_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),

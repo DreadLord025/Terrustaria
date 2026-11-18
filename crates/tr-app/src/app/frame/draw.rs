@@ -1380,6 +1380,10 @@ impl App {
                                 index: self.mouse_npc_index,
                                 ty: self.mouse_npc_type,
                             },
+                            // The town-chatter UI (S1-E-10b) — the panel
+                            // draws while the talk latch holds.
+                            self.talk_npc,
+                            &self.npc_chat_text,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

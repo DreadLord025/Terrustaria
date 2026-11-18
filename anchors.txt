@@ -343,6 +343,9 @@ crates/tr-core/src/world.rs|pub fn report_pumpkin_moon_kill|S1-F-13b - the Pumpk
 crates/tr-app/src/npc_chat.rs|fn get_chat|S1-E-10 — town NPC chatter/dialogue selection (NPC.GetChat port)
 crates/tr-app/src/npc_chat.rs|struct ChatContext|S1-E-10 — town NPC chatter/dialogue selection (state passed to chat ladder)
 crates/tr-app/src/npc_chat.rs|struct Flags|S1-E-10 — town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
+crates/tr-app/src/ui/npc_chat.rs|fn draw_panel|S1-E-10b - the town-chatter UI half: NPCChatPanel.Draw (NPCChatPanel.cs:52-86) ports the ChatBack splices (:71-72), the 460px/10-line wrapped text at +(20,20) stepping 30 in (mouseTextColor*2+255)/3 grey (:63-64, DrawText :215-235) and the Close button row (DrawButtons :88-162, CloseChat NPCInteractions.cs:271-287); code-only mode, tests written not run
+crates/tr-app/src/ui/npc_chat.rs|fn draw_bubble|S1-E-10b - the town-chatter hover bubble: Main.DrawNPCChatBubble (Main.cs:43135-43161) under the emote world->UI transform, the -(width/2+8) offset flipping with spriteDirection, the cat ai[0]==5 -18 sit and the mouseTextColor tint; the hover pick stands in for HoverOverNPCs' currentNPCShowingChatBubble (:43069)
+crates/tr-app/src/app/clicks.rs|fn handle_npc_chat_clicks|S1-E-10b - the chatter panel's Close click: NPCChatPanel.DrawButtons' hover edge sound 12 (:157-160) and press consume (:152) -> CloseChat.Interact -> Main.CloseNPCChatOrSign (Main.cs:40680-40692): SetTalkNPC(-1), npcChatText="", sound 11, _lastHovered reset (:267)
 crates/tr-app/src/lang.rs|fn dialog|S1-E-10 — town NPC chatter/dialogue selection (LegacyDialog lookup)
 crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 — town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
 crates/tr-core/src/gore.rs|pub struct Gore|S1-E-4 - gore particle system port
