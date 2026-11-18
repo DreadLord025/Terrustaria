@@ -19,12 +19,37 @@ pub const COLOR_ERROR: [u8; 3] = [250, 0, 0];
 /// `RemadeChatMonitor.cs:13` — the log keeps 500 lines.
 const MESSAGE_CAP: usize = 500;
 
+/// `ChatMessageContainer.cs:33` — `SetContents` arms `_timeLeft = 600`:
+/// ten seconds of corner visibility at the 60 Hz update rate. The vanilla
+/// "fade" is this binary visibility gate, not an alpha decay — the line
+/// draws at full color until the timer hits zero, then only the open chat
+/// shows it (`CanBeShownWhenChatIsClosed`, `ChatMessageContainer.cs:23`).
+pub const MESSAGE_SHOW_TIME: u32 = 600;
+
+/// `RemadeChatMonitor.cs:25` — `_showCount = 10`: the draw window, open or
+/// closed (the screen-fit `showCount` recompute is `LegacyChatMonitor`'s,
+/// not the monitor `Main` installs — `Main.cs:67239`).
+pub const SHOW_COUNT: usize = 10;
+
 /// One `ChatMessageContainer` — the parsed text and its flat color (the
 /// port's lines carry no `[c:...]` snippet markup yet).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChatLine {
     pub text: String,
     pub color: [u8; 3],
+    /// `ChatMessageContainer._timeLeft` (`ChatMessageContainer.cs:19`):
+    /// the corner-visibility countdown, armed to [`MESSAGE_SHOW_TIME`] on
+    /// insertion and decremented once per game update by
+    /// [`ChatMonitor::update`].
+    pub time_left: u32,
+}
+
+impl ChatLine {
+    /// `ChatMessageContainer.CanBeShownWhenChatIsClosed`
+    /// (`ChatMessageContainer.cs:23`): `_timeLeft > 0`.
+    pub fn can_be_shown_when_chat_is_closed(&self) -> bool {
+        self.time_left > 0
+    }
 }
 
 /// The chat state: the monitor log plus the open-input pair
@@ -46,15 +71,51 @@ pub struct ChatMonitor {
 
 impl ChatMonitor {
     /// `RemadeChatMonitor.AddNewMessage` (`:40-52`): insert at the head,
-    /// trim past the 500-line cap.
+    /// trim past the 500-line cap. The container's `SetContents`
+    /// (`ChatMessageContainer.cs:27-35`) arms the 600-tick visibility
+    /// timer — the new line belongs to the always-visible corner set
+    /// immediately.
     pub fn new_text(&mut self, text: impl Into<String>, color: [u8; 3]) {
-        self.messages.insert(0, ChatLine {
-            text: text.into(),
-            color,
-        });
+        self.messages.insert(
+            0,
+            ChatLine {
+                text: text.into(),
+                color,
+                time_left: MESSAGE_SHOW_TIME,
+            },
+        );
         while self.messages.len() > MESSAGE_CAP {
             self.messages.pop();
         }
+    }
+
+    /// `RemadeChatMonitor.Update` (`:115-129`) → each container's
+    /// `ChatMessageContainer.Update` (`ChatMessageContainer.cs:45-52`):
+    /// one tick off every live `_timeLeft`, once per game update
+    /// (`Main.cs:17282` — after the gated `DoUpdateInWorld`, so it runs
+    /// on stepper-blocked frames but not while the game or focus pause
+    /// holds). The width-limit re-parse has no port equivalent (the lines
+    /// carry flat text, no word wrap yet).
+    pub fn update(&mut self) {
+        for line in &mut self.messages {
+            if line.time_left > 0 {
+                line.time_left -= 1;
+            }
+        }
+    }
+
+    /// `RemadeChatMonitor.DrawChat`'s visible window (`:55-97`): the
+    /// newest [`SHOW_COUNT`] lines while the input is open; closed, the
+    /// walk **breaks** at the first expired container
+    /// (`!(drawingPlayerChat | CanBeShownWhenChatIsClosed)`, `:79-82`) —
+    /// an old line hides the newer-window tail behind it, exactly like
+    /// the source. `_startChatLine` scroll offset and multi-line
+    /// containers are not ported (every line is one row).
+    pub fn visible_lines(&self, drawing_player_chat: bool) -> impl Iterator<Item = &ChatLine> {
+        self.messages
+            .iter()
+            .take(SHOW_COUNT)
+            .take_while(move |line| drawing_player_chat || line.can_be_shown_when_chat_is_closed())
     }
 
     /// `DoUpdate_HandleChat`'s send arm (`Main.cs:18355-18364`): the
@@ -356,5 +417,106 @@ mod tests {
         broadcast_death(&mut chat, "Belsin was slain...");
         assert_eq!(chat.messages[0].text, "Belsin was slain...");
         assert_eq!(chat.messages[0].color, COLOR_DEATH);
+    }
+
+    /// The corner-HUD regression: a pushed message joins the always-visible
+    /// set immediately — `SetContents` arms `_timeLeft = 600`
+    /// (`ChatMessageContainer.cs:33`), so `CanBeShownWhenChatIsClosed`
+    /// (`:23`) is true and `DrawChat(false)` draws it at full alpha.
+    #[test]
+    fn a_new_message_is_corner_visible_with_the_full_timer() {
+        let mut chat = ChatMonitor::default();
+        chat.send(
+            "hello corner",
+            "Belsin",
+            &mut tr_core::UnifiedRandom::new(1),
+            &mut crate::emotes::EmoteSystem::default(),
+        );
+        assert_eq!(chat.messages[0].time_left, MESSAGE_SHOW_TIME);
+        assert!(chat.messages[0].can_be_shown_when_chat_is_closed());
+        // The closed-chat draw window carries the line (the HUD reads this
+        // iterator — `ui::draw_chat` via `visible_lines(chat.open)`).
+        let visible: Vec<_> = chat.visible_lines(false).collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].text, "Belsin hello corner");
+        // The vanilla draw is full-color: the container carries no alpha
+        // decay (`RemadeChatMonitor.cs:83` draws `Color` as stored).
+        assert_eq!(visible[0].color, [255, 255, 255]);
+    }
+
+    /// `ChatMessageContainer.Update` (`:45-52`): one tick per update, the
+    /// line stays corner-visible for exactly 600 updates (10 s at 60 Hz),
+    /// then the closed chat hides it while the open chat keeps it.
+    #[test]
+    fn the_corner_visibility_expires_after_600_updates() {
+        let mut chat = ChatMonitor::default();
+        chat.new_text("fading line", COLOR_DEATH);
+        for i in 1..=599 {
+            chat.update();
+            assert_eq!(chat.messages[0].time_left, MESSAGE_SHOW_TIME - i);
+            assert!(
+                chat.messages[0].can_be_shown_when_chat_is_closed(),
+                "still visible at update {i}"
+            );
+        }
+        assert_eq!(chat.visible_lines(false).count(), 1);
+        // The 600th update zeroes the timer — the corner walk hides it.
+        chat.update();
+        assert_eq!(chat.messages[0].time_left, 0);
+        assert!(!chat.messages[0].can_be_shown_when_chat_is_closed());
+        assert_eq!(chat.visible_lines(false).count(), 0);
+        // The open chat's scrollback is intact (`drawingPlayerChat` bypasses
+        // the gate, `RemadeChatMonitor.cs:79`).
+        assert_eq!(chat.visible_lines(true).count(), 1);
+        // The timer never underflows (`if (_timeLeft > 0)`, `:47`).
+        chat.update();
+        assert_eq!(chat.messages[0].time_left, 0);
+    }
+
+    /// `RemadeChatMonitor.DrawChat` (`:76-97`): the window is `_showCount =
+    /// 10` (`:25`), and the closed walk **breaks** at the first expired
+    /// container (`:79-82`) — an expired line hides everything behind it,
+    /// it is not skipped over.
+    #[test]
+    fn the_closed_window_breaks_at_the_first_expired_line() {
+        let mut chat = ChatMonitor::default();
+        // 12 lines, newest first: "line 11" .. "line 0".
+        for i in 0..12 {
+            chat.new_text(format!("line {i}"), COLOR_DEATH);
+        }
+        // Open: exactly the 10-line window, newest first.
+        let open: Vec<_> = chat.visible_lines(true).map(|l| l.text.clone()).collect();
+        assert_eq!(open.len(), SHOW_COUNT);
+        assert_eq!(open[0], "line 11");
+        assert_eq!(open[9], "line 2");
+        // Expire "line 8" (index 3) only: the closed walk draws indices
+        // 0..2 then breaks — indices 4+ stay hidden behind the expired row.
+        chat.messages[3].time_left = 0;
+        let closed: Vec<_> = chat.visible_lines(false).map(|l| l.text.clone()).collect();
+        assert_eq!(closed, ["line 11", "line 10", "line 9"]);
+        // Expire the newest line: nothing shows in the corner at all.
+        chat.messages[0].time_left = 0;
+        assert_eq!(chat.visible_lines(false).count(), 0);
+        // The open chat still shows its full 10-line window.
+        assert_eq!(chat.visible_lines(true).count(), SHOW_COUNT);
+    }
+
+    /// A fresh line inserted in front of expired ones re-opens the corner
+    /// window up to the first expired row (the same `:79-82` break).
+    #[test]
+    fn a_fresh_line_shows_even_when_older_lines_expired() {
+        let mut chat = ChatMonitor::default();
+        chat.new_text("old line", COLOR_DEATH);
+        for _ in 0..MESSAGE_SHOW_TIME {
+            chat.update();
+        }
+        assert_eq!(chat.visible_lines(false).count(), 0);
+        chat.new_text("new line", COLOR_WORLD);
+        let closed: Vec<_> = chat.visible_lines(false).map(|l| l.text.clone()).collect();
+        assert_eq!(closed, ["new line"]);
+        assert_eq!(chat.messages[0].time_left, MESSAGE_SHOW_TIME);
+        // The expired line stays in the scrollback (the 500-line log).
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.visible_lines(true).count(), 2);
     }
 }

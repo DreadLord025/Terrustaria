@@ -438,8 +438,31 @@ pub struct CasterParams {
     pub post_teleport_windup: i32,
     /// The shoot tick — the windup countdown fires the sphere when it
     /// reaches it (`num89` = 25 for the standard casters, `:21115`; the
-    /// Fire Imp checks `ai[1] == 10`, `:21166`).
-    pub shoot_tick: i32,
+    /// Fire Imp checks `ai[1] == 10`, `:21166`). `None` for the Desert
+    /// Djinn: its windup fires the curse volley on the `% 30` ticks
+    /// (`:21117-21119`), not on a fixed countdown tick — and that volley
+    /// draws `Main.rand` (`:21140-21141`/`:21195-21196`), so the port
+    /// skips it wholesale (S1-E-5's RNG rule) and never shoots.
+    pub shoot_tick: Option<i32>,
+    /// The `ai[0]` shot-trigger tick and the windup it sets — the
+    /// standard casters trigger at 100/200/300 with `ai[1] = 30`
+    /// (`:21069-21073`); the Djinn triggers once at 180 with
+    /// `ai[1] = 181` (`:21031-21038`).
+    pub trigger: CasterTrigger,
+    /// The `ai[0]` wrap threshold — 650 for the standard casters
+    /// (`:21083`); the Djinn wraps early at 360 (`:21079-21082`'s
+    /// `ai[0] = 650`, which the very next `>= 650` block turns into the
+    /// teleport attempt).
+    pub wrap_at: i32,
+}
+
+/// `AI_008`'s per-kind `ai[0]` shot trigger (`NPC.cs:21011-21074`).
+#[derive(Clone, Copy, Debug)]
+pub enum CasterTrigger {
+    /// The else group's three ticks, each setting `ai[1] = 30`.
+    Standard,
+    /// The Djinn's single tick 180, setting `ai[1] = 181`.
+    Djinn,
 }
 
 impl CasterParams {
@@ -448,13 +471,27 @@ impl CasterParams {
     pub const STANDARD: Self = Self {
         teleport_radius: 20,
         post_teleport_windup: 20,
-        shoot_tick: 25,
+        shoot_tick: Some(25),
+        trigger: CasterTrigger::Standard,
+        wrap_at: 650,
     };
     /// The Fire Imp (`:21090-21093`'s `num88 = 5`, `:21166`'s shoot tick).
     pub const FIRE_IMP: Self = Self {
         teleport_radius: 5,
         post_teleport_windup: 5,
-        shoot_tick: 10,
+        shoot_tick: Some(10),
+        trigger: CasterTrigger::Standard,
+        wrap_at: 650,
+    };
+    /// The Desert Djinn (`NPC.cs:21031-21038`'s 180/181 trigger,
+    /// `:21079-21082`'s 360 wrap, `:21089`'s `num88 = 20` default; the
+    /// curse volley's `% 30` shots draw `Main.rand` and are skipped).
+    pub const DESERT_DJINN: Self = Self {
+        teleport_radius: 20,
+        post_teleport_windup: 20,
+        shoot_tick: None,
+        trigger: CasterTrigger::Djinn,
+        wrap_at: 360,
     };
 }
 
@@ -587,8 +624,24 @@ pub fn caster_cycle(
         phase.counter = 500;
     }
     phase.counter += 1;
-    if phase.counter == 100 || phase.counter == 200 || phase.counter == 300 {
-        phase.windup = 30;
+    match params.trigger {
+        CasterTrigger::Standard => {
+            if phase.counter == 100 || phase.counter == 200 || phase.counter == 300 {
+                phase.windup = 30;
+            }
+        }
+        // `:21031-21038` — the Djinn's single 180 trigger sets the long
+        // 181-tick windup (the curse volley's five `% 30` shots).
+        CasterTrigger::Djinn => {
+            if phase.counter == 180 {
+                phase.windup = 181;
+            }
+        }
+    }
+    // `:21079-21082` — the Djinn's early wrap feeds the same `>= 650`
+    // teleport block below.
+    if phase.counter >= params.wrap_at && params.wrap_at < 650 {
+        phase.counter = 650;
     }
     if phase.counter >= 650 {
         phase.counter = 1;
@@ -637,10 +690,12 @@ pub fn caster_cycle(
     } else {
         npc.vy = 0.0;
     }
-    // The windup countdown + the shoot tick (`:21113-21175`).
+    // The windup countdown + the shoot tick (`:21113-21175`). The Djinn's
+    // `% 30` curse volley (`:21117-21119`) draws `Main.rand` and is skipped
+    // wholesale — `shoot_tick: None` never fires.
     if phase.windup > 0 {
         phase.windup -= 1;
-        if phase.windup == params.shoot_tick {
+        if Some(phase.windup) == params.shoot_tick {
             return true;
         }
     }
