@@ -1382,6 +1382,19 @@ impl App {
                     }
                     npc.hurt_cd = 0.18;
                     self.net_npcs_dirty = true;
+                    // The C# runs the full `StrikeNPC_Inner` on the client
+                    // (`MessageBuffer.cs:1797`), which plays `this.HitSound`
+                    // at `base.position` (`NPC.cs:81551-81553`) — S1-E-21
+                    // wave C. `CheckBytes` runs from `Main.Update`
+                    // (`Main.cs:16895`) outside every `SwapRandom`, so the
+                    // pitch draw rides the bare-`Main.rand` stand-in.
+                    if st.damage >= 0 {
+                        if let Some(cue) = npc.kind.hit_sound() {
+                            let (x, y) = (npc.x, npc.y);
+                            let rng = self.rngs.global();
+                            self.audio.play_npc_hit_sound(cue, x, y, rng);
+                        }
+                    }
                 }
             }
             // `case 23` — one NPC's state. The client keeps a slot-keyed

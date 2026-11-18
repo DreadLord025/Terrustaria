@@ -2979,13 +2979,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
-        // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
-        // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
-        // guard: the kinds with no row play nothing).
+        // `NPC.checkDead` plays `this.DeathSound` at `base.position`
+        // (`NPC.cs:78186-78194`) — the kind's own death cue through the
+        // faithful case-4 path (S1-E-21 wave C): the volume arms + the
+        // `Main.rand.Next(-10, 11) * 0.01` pitch draw. The C# runs
+        // `checkDead` inside `StrikeNPC` (the striking stage's stream);
+        // the port batches deaths into the NPC pass, so the draw rides
+        // the `UpdateNPCs` stream (`Main.cs:17767`) — the recorded
+        // deviation (ANALYSIS, S1-E-21c). The C#'s `null` guard: the
+        // kinds with no row play nothing.
         if let Some(cue) = npc.kind.death_sound() {
-            let (w, h) = npc.size();
-            app.audio
-                .play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
         }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
@@ -4444,6 +4449,73 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
+    /// `DeathSound` (`NPC.cs:78186-78194`) plays through the case-4 path
+    /// with exactly one `Next(-10, 11)` pitch draw (`LegacySoundPlayer.cs:693`)
+    /// on the `UpdateNPCs` stream (`Main.cs:17767` — the port's death seam
+    /// runs in the NPC pass, the recorded ANALYSIS deviation); the other
+    /// streams stay untouched.
+    #[test]
+    fn s1_e_21c_the_death_play_draws_one_pitch_on_the_npc_stream() {
+        use crate::app::RngKey;
+        // The wiring: a lone dead zombie's pass plays exactly one cue
+        // (the death play — the control app with no NPC plays none).
+        let mut control = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut npc = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        npc.hp = 0; // dead: the retain drops it and plays the death cue
+        app.npcs.push(npc);
+        let before = app.audio.played_count();
+        let control_before = control.audio.played_count();
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            control.audio.played_count() - control_before,
+            0,
+            "the empty pass plays nothing"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the zombie's death cue played once"
+        );
+        assert!(app.npcs.is_empty(), "the dead NPC was retained out");
+        // The stream contract: the death play on the `UpdateNPCs` stream
+        // pays exactly the one case-4 pitch draw
+        // (`LegacySoundPlayer.cs:693`) — the death events (loot, gores)
+        // legitimately share the stream, so pin the play itself against
+        // a witness clone.
+        let mut witness = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        let _pitch = witness.next_range(-10, 11);
+        let pre: Vec<_> = RngKey::ALL
+            .iter()
+            .filter(|&&k| k != RngKey::UpdateNpcs)
+            .map(|&k| (k, app.rngs.stream(k).clone()))
+            .collect();
+        assert_eq!(
+            app.audio.play_npc_death_sound(
+                "NPC_Killed_2",
+                100.0,
+                100.0,
+                app.rngs.stream(RngKey::UpdateNpcs),
+            ),
+            Some("NPC_Killed_2")
+        );
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs),
+            &witness,
+            "the death play paid exactly the case-4 pitch draw"
+        );
+        for (k, pre) in &pre {
+            assert_eq!(
+                app.rngs.stream(*k),
+                pre,
+                "{} untouched by the death play",
+                k.name()
+            );
+        }
     }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
@@ -11588,12 +11660,16 @@ mod dw3_tests {
         );
 
         // The twin: the same death through the loot fns directly, from the
-        // pristine stream — the NPCLoot order (coins, then the rule engine,
-        // then the velocity/prefix draws) replays byte-for-byte.
+        // pristine stream — the C# order is the death sound FIRST
+        // (`NPC.checkDead` `NPC.cs:78193`, one case-4 pitch draw
+        // `LegacySoundPlayer.cs:693` — S1-E-21 wave C), then the NPCLoot
+        // order (coins, then the rule engine, then the velocity/prefix
+        // draws); the replay is byte-for-byte.
         let mut twin = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         twin.world = crate::test_world_helpers::ground();
         twin.world.compute_column_surface();
         twin.player = Some(crate::player::Player::spawn(&twin.world));
+        let _death_pitch = twin.rngs.stream(RngKey::UpdateNpcs).next_range(-10, 11);
         spawn_coins(&mut twin, &slime);
         spawn_loot(&mut twin, &slime);
         assert_eq!(

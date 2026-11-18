@@ -65,6 +65,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_8", 3),
     ("NPC_Hit_9", 3),
     ("NPC_Hit_11", 3),
+    // The Headless Horseman's hit cue (`NPC.cs:12978`'s `NPCHit12`,
+    // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
+    ("NPC_Hit_12", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
     ("NPC_Hit_39", 3),
@@ -84,6 +87,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_12", 4),
     ("NPC_Killed_14", 4),
     ("NPC_Killed_15", 4),
+    // The Headless Horseman's death cue (`NPC.cs:12987`'s `NPCDeath18`,
+    // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
+    ("NPC_Killed_18", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
     ("NPC_Killed_42", 4),
@@ -282,7 +288,7 @@ const SFX_CUES: &[(&str, u32)] = &[
 /// The C#'s trackable styles pick a random variation
 /// (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:33-38`); the port plays
 /// the first one (the `_0` file) — the same asset family, a fixed member.
-const NPC_CUSTOM_CUES: &[&str] = &[
+pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     "dd2_betsy_death_0",
     "dd2_betsy_hurt_0",
     "dd2_crystal_cart_impact_0",
@@ -364,6 +370,29 @@ pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
     SFX_CUES.iter().any(|(n, _)| *n == cue)
 }
 
+/// S1-E-21 wave C — resolve an NPC hit/death cue name to its
+/// `LegacySoundStyle` row (`crate::soundid::SOUND_STYLES`): the legacy
+/// `NPC_Hit_N`/`NPC_Killed_N` asset maps to `NPCHitN`/`NPCDeathN`
+/// (`SoundID.cs`), the `Sounds/Custom/` trackable pins (`dd2_*_0`,
+/// `deerclops_hit_0`) map back to their style through the `trackable`
+/// field. `None` = an unregistered name (a bank gap).
+pub(crate) fn npc_sound_style(
+    cue: &str,
+    prefix: &str,
+    sound_id: u8,
+) -> Option<&'static crate::soundid::SoundStyleDef> {
+    if let Some(n) = cue.strip_prefix(prefix) {
+        let style: i32 = n.parse().ok()?;
+        return crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.sound_id == sound_id && s.style == style);
+    }
+    let base = cue.strip_suffix("_0").unwrap_or(cue);
+    crate::soundid::SOUND_STYLES
+        .iter()
+        .find(|s| s.sound_id == 42 && s.trackable == Some(base))
+}
+
 fn sound_type(cue: &str) -> u32 {
     SFX_CUES
         .iter()
@@ -443,6 +472,15 @@ pub struct Audio {
     /// The C# seeds it with `Environment.TickCount` (an unobservable stream);
     /// the port seeds a fixed 1 (ANALYSIS, S1-E-25).
     style_random: tr_core::unified_random::UnifiedRandom,
+    /// The `SoundInstanceNpcHit[59]` slots (`LegacySoundPlayer.cs:74`): the
+    /// live instance per family entry — case 3's playing guard reads 57
+    /// (`:651`) and the play replaces the picked slot's instance (`:663-667`'s
+    /// Stop + CreateInstance), S1-E-21 wave C.
+    npc_hit_slots: [Option<rodio::Sink>; 59],
+    /// The `SoundInstanceNpcKilled[]` slots (`LegacySoundPlayer.cs:78`,
+    /// `SoundID.NPCDeathCount` long) — case 4's playing guard reads 10
+    /// (`:686`); the play overwrites the slot WITHOUT a Stop (`:690`).
+    npc_killed_slots: HashMap<usize, rodio::Sink>,
     /// The `SoundInstanceThunder[6]` slots (`LegacySoundPlayer.cs:113`): the
     /// live instance per family entry — case 43's re-roll loop reads them
     /// (`:456-464`) and the play replaces the picked slot's instance
@@ -553,6 +591,8 @@ impl Audio {
                 server: false,
             },
             style_random: tr_core::unified_random::UnifiedRandom::new(1),
+            npc_hit_slots: std::array::from_fn(|_| None),
+            npc_killed_slots: HashMap::new(),
             thunder_slots: [None, None, None, None, None, None],
             splash_slots: [None, None, None, None, None, None],
             zombie_slots: HashMap::new(),
@@ -851,13 +891,13 @@ impl Audio {
 
     /// The shared output tail of the pitched play paths: prepare (attenuate +
     /// resample for the pitch) and append one panned source to a fresh sink.
-    /// Headless (no output device) this is a no-op past `prepare`.
-    fn emit(&self, name: &str, x: f32, y: f32, volume_scale: f32, pitch: f32) {
-        let Some(prepared) = self.prepare(name, x, y, volume_scale, pitch) else {
-            return;
-        };
-        let Some(handle) = &self.handle else { return };
-        let Ok(sink) = rodio::Sink::try_new(handle) else { return };
+    /// Headless (no output device) this is a no-op past `prepare`. Returns
+    /// the sink so the slot-tracked families can model the C# instance
+    /// arrays (`SoundInstanceNpcHit`/`SoundInstanceNpcKilled`).
+    fn emit(&self, name: &str, x: f32, y: f32, volume_scale: f32, pitch: f32) -> Option<rodio::Sink> {
+        let prepared = self.prepare(name, x, y, volume_scale, pitch)?;
+        let handle = self.handle.as_ref()?;
+        let sink = rodio::Sink::try_new(handle).ok()?;
         let (left, right) = sound::pan_gains(prepared.pan);
         let buf = rodio::buffer::SamplesBuffer::new(
             prepared.channels,
@@ -872,6 +912,140 @@ impl Audio {
             right: prepared.volume * right,
             channel: 0,
         });
+        Some(sink)
+    }
+
+    /// S1-E-21 wave C — `NPC.StrikeNPC`'s hit-sound arm
+    /// (`NPC.cs:81544-81553`: `SoundEngine.PlaySound(this.HitSound,
+    /// base.position)`), also the eel-whip DoT tick's `HitSound` at
+    /// `base.Center` (`:91852`). `cue` is the kind's
+    /// [`crate::npc::NpcKind::hit_sound`] asset name.
+    ///
+    /// The façade (`SoundEngine.cs:93-99`) consumes the `GetRandomPitch`
+    /// NextFloat on the audio-only `sound_style_random` (every `NPCHitN`
+    /// style has variance 0 — the draw still happens), then the attenuation
+    /// gate (`LegacySoundPlayer.cs:369-436`), then case 3 (`:646-672`): the
+    /// 20..54/55/56 ×0.5 and 57 ×0.6 volume arms, the 57 playing guard
+    /// (`SoundInstanceNpcHit[57]`, `:651-654`) and the ONE
+    /// `Main.rand.Next(-10, 11) * 0.01` pitch draw (`:670`). The caller
+    /// passes the striking stage's named stream — `UpdatePlayers` for the
+    /// melee strike (`Main.cs:17754`), `UpdateProjectiles` for
+    /// `Projectile.Damage` (`:17775`), the bare-`Main.rand` stand-in for the
+    /// net-message strikes (`Main.cs:16895` runs outside every swap). The
+    /// play stops and re-creates the family slot's instance (`:663-667`).
+    ///
+    /// The DD2/Deerclops trackables ride case 42 (`:1376-1381`): no volume
+    /// tweak, no pitch draw, the style's own `Volume` (DeerclopsHit 0.3) —
+    /// the port pins the first variation like wave A (the D3 pin).
+    /// Returns the cue played; `None` when the gate or the 57 guard refused.
+    pub fn play_npc_hit_sound(
+        &mut self,
+        cue: &'static str,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // Resolve against the loaded bank's static names — an unregistered
+        // name is a bank gap (the wave-A convention).
+        if !sfx_cue_registered(cue) && !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        let style = npc_sound_style(cue, "NPC_Hit_", 3)?;
+        // `SoundEngine.cs:99` — the NextFloat draw is consumed even at
+        // variance 0 (`SoundStyle.cs:42`), before the legacy gate.
+        let draw = self.sound_style_random.next_float();
+        let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
+            .is_none()
+        {
+            return None;
+        }
+        let (volume_scale, pitch) = if style.sound_id == 42 {
+            // Case 42 (`:1376-1381`): the caller's offset only (`:1410`).
+            (style.volume, pitch_offset.clamp(-1.0, 1.0))
+        } else {
+            let playing_57 = self.npc_hit_slots[57].as_ref().is_some_and(|s| !s.empty());
+            let (tweak, pitch) = sound::npc_hit_case3(style.style, playing_57, &mut |lo, hi| {
+                rng.next_range(lo, hi)
+            })?;
+            (
+                style.volume * tweak,
+                (pitch + pitch_offset).clamp(-1.0, 1.0),
+            )
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if style.sound_id == 3 {
+            // `:663-667` — Stop the slot's old instance, then re-create.
+            let idx = style.style as usize;
+            if let Some(old) = self.npc_hit_slots[idx].take() {
+                old.stop();
+            }
+            self.npc_hit_slots[idx] = self.emit(cue, x, y, volume_scale, pitch);
+        } else {
+            let _ = self.emit(cue, x, y, volume_scale, pitch);
+        }
+        Some(cue)
+    }
+
+    /// S1-E-21 wave C — `NPC.checkDead`'s death-sound arm
+    /// (`NPC.cs:78186-78194`: `SoundEngine.PlaySound(legacySoundStyle,
+    /// base.position)` — the kind's `DeathSound`; the 229 shimmer-variant
+    /// override to `NPCDeath6` has no ported kind, the invasion pirate 229
+    /// is unported). `cue` is [`crate::npc::NpcKind::death_sound`].
+    ///
+    /// Same façade as [`Audio::play_npc_hit_sound`], then case 4
+    /// (`LegacySoundPlayer.cs:673-695`): the 23..57 ×0.5 and 61/62 ×0.6
+    /// volume arms, the 10 playing guard (`SoundInstanceNpcKilled[10]`,
+    /// `:686-689`) and the ONE `Main.rand.Next(-10, 11) * 0.01` pitch draw
+    /// (`:693`). The port's death seam runs in the NPC pass, so the caller
+    /// passes the `UpdateNPCs` stream (`Main.cs:17767`). Unlike case 3 the
+    /// slot is overwritten WITHOUT a Stop (`:690`) — the old voice plays
+    /// out (the sink is detached).
+    pub fn play_npc_death_sound(
+        &mut self,
+        cue: &'static str,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if !sfx_cue_registered(cue) && !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
+        let draw = self.sound_style_random.next_float();
+        let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
+            .is_none()
+        {
+            return None;
+        }
+        let (volume_scale, pitch) = if style.sound_id == 42 {
+            (style.volume, pitch_offset.clamp(-1.0, 1.0))
+        } else {
+            let playing_10 = self
+                .npc_killed_slots
+                .get(&10)
+                .is_some_and(|s| !s.empty());
+            let (tweak, pitch) = sound::npc_killed_case4(style.style, playing_10, &mut |lo, hi| {
+                rng.next_range(lo, hi)
+            })?;
+            (
+                style.volume * tweak,
+                (pitch + pitch_offset).clamp(-1.0, 1.0),
+            )
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if style.sound_id == 4 {
+            // `:690` — the array entry is replaced with no Stop.
+            if let Some(sink) = self.emit(cue, x, y, volume_scale, pitch) {
+                if let Some(old) = self.npc_killed_slots.insert(style.style as usize, sink) {
+                    old.detach();
+                }
+            }
+        } else {
+            let _ = self.emit(cue, x, y, volume_scale, pitch);
+        }
+        Some(cue)
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue
@@ -2382,6 +2556,118 @@ mod tests {
         for name in ["dd2_goblin_hurt_0", "deerclops_hit_0", "deerclops_death"] {
             assert!(NPC_CUSTOM_CUES.contains(&name), "{name} in the custom list");
         }
+    }
+
+    /// S1-E-21 wave C — the NPC hit play's RNG contract
+    /// (`LegacySoundPlayer.cs:646-672`): exactly one
+    /// `Main.rand.Next(-10, 11) * 0.01` pitch draw (`:670`) on the caller's
+    /// stream, only after the attenuation gate passed; the GetRandomPitch
+    /// NextFloat rides the audio-only stream; the trackables (case 42)
+    /// draw nothing from the gameplay stream.
+    #[test]
+    fn s1_e_21c_the_npc_hit_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        // An audible play draws exactly one Next(-10, 11).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        let cue = audio.play_npc_hit_sound("NPC_Hit_1", 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Hit_1"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!((-0.1..=0.1).contains(&(roll as f32 * 0.01)));
+        // Muted (soundVolume 0): the gate refuses before the switch —
+        // no gameplay draw (`:369-372` precedes `:646`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_hit_sound("NPC_Hit_1", 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+        // Out of attenuation range: also draw-free (`:390-397`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_hit_sound("NPC_Hit_1", 5000.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
+        // A trackable hit (case 42, `:1376-1381`): no gameplay draw, the
+        // pinned first variation.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_hit_sound("dd2_goblin_hurt_0", 0.0, 0.0, &mut rng),
+            Some("dd2_goblin_hurt_0")
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+    }
+
+    /// S1-E-21 wave C — the NPC death play's RNG contract
+    /// (`LegacySoundPlayer.cs:673-695`): one `Next(-10, 11)` pitch draw
+    /// (`:693`) after the gate; the muted play draws nothing.
+    #[test]
+    fn s1_e_21c_the_npc_death_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_npc_death_sound("NPC_Killed_2", 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_2")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_death_sound("NPC_Killed_2", 0.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek);
+        // The Deerclops' death trackable: no gameplay draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_npc_death_sound("deerclops_death", 0.0, 0.0, &mut rng),
+            Some("deerclops_death")
+        );
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21 wave C — the per-type cue selection rides the generated
+    /// style table: the legacy asset name maps to `NPCHitN`/`NPCDeathN`
+    /// (`SoundID.cs`), the trackable pins map back through the `trackable`
+    /// field, and the case-3/4 volume arms reach the played style.
+    #[test]
+    fn s1_e_21c_the_hit_and_death_cues_resolve_their_style_rows() {
+        let hit1 = npc_sound_style("NPC_Hit_1", "NPC_Hit_", 3).unwrap();
+        assert_eq!((hit1.sound_id, hit1.style), (3, 1));
+        let hit57 = npc_sound_style("NPC_Hit_57", "NPC_Hit_", 3).unwrap();
+        assert_eq!((hit57.sound_id, hit57.style), (3, 57));
+        let death10 = npc_sound_style("NPC_Killed_10", "NPC_Killed_", 4).unwrap();
+        assert_eq!((death10.sound_id, death10.style), (4, 10));
+        // The trackables: the `_0` pin maps back to its style; the
+        // Deerclops' hit carries the 0.3 style volume (`SoundID.cs`'s
+        // `WithVolume(0.3f)`).
+        let gob = npc_sound_style("dd2_goblin_hurt_0", "NPC_Hit_", 3).unwrap();
+        assert_eq!((gob.sound_id, gob.variations), (42, 6));
+        let deer = npc_sound_style("deerclops_hit_0", "NPC_Hit_", 3).unwrap();
+        assert_eq!(deer.sound_id, 42);
+        assert!((deer.volume - 0.3).abs() < 1e-6);
+        let deer_death = npc_sound_style("deerclops_death", "NPC_Killed_", 4).unwrap();
+        assert_eq!((deer_death.sound_id, deer_death.variations), (42, 1));
+        // The two bank-gap closures: the Headless Horseman's rows.
+        assert!(sfx_cue_registered("NPC_Hit_12"));
+        assert!(sfx_cue_registered("NPC_Killed_18"));
+        // An unknown name resolves to nothing (a bank gap, never a guess).
+        assert!(npc_sound_style("NPC_Hit_999", "NPC_Hit_", 3).is_none());
     }
 
     /// S1-E-21 wave B — the tile-place play's RNG contract: the case-0

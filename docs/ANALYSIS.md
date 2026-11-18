@@ -15101,10 +15101,89 @@ Deliberate deviations:
    the first file of the family (the `_0` asset) — the same asset family, a
    fixed member. The C#'s own pick comes from a clock-seeded static random,
    so it is not reproducible there either.
-2. The legacy per-sound pitch and the per-family instance reuse (the C#'s
-   `SoundNpcHit[n]` pool) stay unported — the research's open sound gaps.
+2. ~~The legacy per-sound pitch and the per-family instance reuse (the C#'s
+   `SoundNpcHit[n]` pool) stay unported~~ — **closed by wave C below**
+   (2026-11-18): the case-3/4 maths, the pitch draws and the slot pools are
+   ported.
 3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
+
+## The NPC hit/death sound plays (S1-E-21 wave C, 2026-11-18)
+
+Wave C ports the **playback** half of the NPC hit/death sounds — the S1-E-21a
+table stayed, but the plays were flat `play_at` calls with no case maths, no
+pitch and no volume arms. Now:
+
+- `sound.rs::npc_hit_case3` ports `LegacySoundPlayer.cs:646-672` (case 3):
+  styles 20..54 ×0.5 (`:647-650`), the 57 playing guard returns before any
+  draw (`:651-654`), 57 ×0.6 (`:655-658`), 55/56 ×0.5 (`:659-662`), one
+  `Main.rand.Next(-10, 11) * 0.01` pitch draw (`:670`).
+- `sound.rs::npc_killed_case4` ports case 4 (`:673-695`): styles 23..57 ×0.5
+  (`:674-677`), 61/62 ×0.6 (`:678-685`), the 10 playing guard (`:686-689`),
+  one `Next(-10, 11) * 0.01` pitch draw (`:693`).
+- `audio.rs::play_npc_hit_sound` / `play_npc_death_sound` run the façade
+  (`SoundEngine.cs:93-99`): the `GetRandomPitch` NextFloat on the audio-only
+  `sound_style_random` (variance 0 for every NPC style — the draw still
+  happens), the attenuation gate (`LegacySoundPlayer.cs:369-436`) BEFORE any
+  gameplay draw, then the case maths. The final
+  `Clamp(pitch + pitchOffset, -1, 1)` is `:1410`. The style row comes from
+  the generated `soundid.rs` table through `npc_sound_style` (the asset name
+  → `NPCHitN`/`NPCDeathN`, the trackable `_0` pins → their style, so the
+  Deerclops' hit rides its 0.3 style volume).
+- The instance pools: `npc_hit_slots[59]` (`SoundNpcHit` is
+  `new Asset<SoundEffect>[59]`, `LegacySoundPlayer.cs:74`) stops + re-creates
+  the slot's sink (`:663-667`); `npc_killed_slots` (a map over
+  `SoundID.NPCDeathCount = 69`, `SoundID.cs:1383`) overwrites WITHOUT a Stop
+  (`:690` — the old sink detaches and plays out), exactly the two cases'
+  different semantics. Headless nothing plays, so the guards never trip —
+  the engine's fresh-instance-table behaviour.
+
+The call sites and their named streams (`Main.SwapRandom`,
+`Main.cs:17749-17809`):
+
+| Site | C# | Port | Stream |
+| --- | --- | --- | --- |
+| Melee strike | `NPC.StrikeNPC` `NPC.cs:81544-81553` via `Player.ItemCheck_MeleeHitNPCs` | `world_sim/editing.rs` (the landed strike) | `UpdatePlayers` (`Main.cs:17754`) |
+| Projectile strike | `Projectile.Damage` → `StrikeNPC` (`Projectile.cs:13649`) | `projectile.rs::damage_pve`/`damage_pve_boxed` queue → `world_sim/projectiles.rs` drain | `UpdateProjectiles` (`Main.cs:17775`) |
+| Death | `NPC.checkDead` `NPC.cs:78186-78194` (**`base.position`** — the old port played at the centre citing `:91852`, which is actually the eel-whip DoT's `HitSound` site) | `world_sim/npcs.rs` death retain | `UpdateNPCs` (`Main.cs:17767`) — see deviation 2 |
+| Net client strike | `MessageBuffer.cs:1797` runs the full `StrikeNPC_Inner` on the client | `app/netglue.rs` `S2c::NpcStrike` | the bare-`Main.rand` stand-in (`Main.Update` `Main.cs:16895` → `Netplay.UpdateInMainThread` runs outside every swap) |
+
+The host's own strike path plays nothing: the C#'s `netMode == 2` guard
+(`LegacySoundPlayer.cs:386`) — the port's listener carries `server: true` on
+the Host role (S1-E-24).
+
+Deliberate deviations (wave C):
+
+1. **Death-stream placement.** The C# runs `checkDead` inside `StrikeNPC`,
+   so the death pitch draw rides the *striking* stage's stream
+   (`UpdatePlayers`/`UpdateProjectiles`). The port batches deaths into the
+   NPC pass's retain, so the draw rides `UpdateNPCs` instead. One draw per
+   death, same window; the stream assignment differs (the port's death
+   batching predates this wave — M4-NPC).
+2. **Projectile draw position.** The C# draws the hit pitch mid-damage-walk
+   (between the strike and the loot/immunity rolls); the port's pool cannot
+   reach the audio, so the strikes queue `(cue, x, y)` intents
+   (`drain_npc_hit_sounds`, the `take_cart_sounds` precedent) and the pass
+   tail plays them — the draws land after the walk's other rolls instead of
+   interleaved. Same count, same window, same stream; the interleave differs.
+3. The trackable `_0` variation pin (deviation 1 of S1-E-21a above) and the
+   unported pet-hurt switch arm (`NPC.cs:81490-81549`, the type-1
+   `ai[1]` cases — the port ships no pet kinds) stay.
+4. The 229 shimmer-variant death override (`NPC.cs:78187-78190`,
+   `NPCDeath6`) has no ported kind — the invasion Pirate 229 is unported.
+
+Tests: `s1_e_21c_npc_hit_case3_tweaks_the_volume_and_guards_57`,
+`s1_e_21c_npc_killed_case4_tweaks_the_volume_and_guards_10` (sound.rs — the
+volume arms + the guard-before-draw contract),
+`s1_e_21c_the_npc_hit_draws_ride_the_passed_stream_only_when_audible`,
+`s1_e_21c_the_npc_death_draws_ride_the_passed_stream_only_when_audible`,
+`s1_e_21c_the_hit_and_death_cues_resolve_their_style_rows` (audio.rs — the
+one-draw-after-the-gate proof, the case-42 draw-free contract, the style
+resolution), `s1_e_21c_every_kind_hit_and_death_cue_resolves` (npc.rs — all
+199 kinds' cues resolve to a bank asset + a style row; closed the
+`NPC_Hit_12`/`NPC_Killed_18` bank gaps),
+`s1_e_21c_the_death_play_draws_one_pitch_on_the_npc_stream`
+(world_sim/npcs.rs — the sim wiring + the stream pin).
 
 
 ## The tile-break sound table (S1-E-21c, 2026-11-16)
