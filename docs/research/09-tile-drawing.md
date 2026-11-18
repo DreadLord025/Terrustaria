@@ -108,8 +108,8 @@ render-target cache.
 | Record | `TileDrawInfo` class, out-params filled by `GetTileDrawData` :4529-4535 | `TileDrawData` struct (`drawdata.rs:24-68`) | PORTED (shape parity) |
 | Default | 16×16, `tileTop=0`, `addFrX/Y=0`, effects none; `addFrY = Main.tileFrame[type]*38` :4533 | `DrawData::default()` :70-104, `add_fr_y = tile_frame*38` :122 | PORTED |
 | Static table | ~490 `case` labels, ≈376 tile ids (:4540-6044) | ~119 match arms, ≈113 tile ids (`draw_data.rs:129-1021`) | PARTIAL — ~30 % of ids; the rest fall to the 16×16 default by design (`drawdata.rs:1005-1007`, `:2072`). |
-| Animated rows | `Main.tileFrame[type]` advanced by the animator | `tile_frame` always 0 | MISSING (animator) — every animated tile draws row 0. |
-| World probes in-table | palm biome 323 (:4670), dye plants 227 (:5063-5078), `GetTreeBiome`/`GetTreeVariant` (:1735/:1778) | `apply_world_corrections` + `palm_tree_biome`/`palm_frame_y`/`cactus_type`/`dye_frame_x_offset`; **S1-F-9 wave A**: `tree_variant`/`tree_biome`/`tree_frame_x_offset` + case 5's static arm and correction (2026-11-18) | PARTIAL — tree probes PORTED (incl. the jungle underground variant 5); the animator is still out |
+| Animated rows | `Main.tileFrame[type]` advanced by the animator (`Main.AnimateTiles`, `Main.cs:18516-19304`) | `TileAnimator` (`drawdata_anim.rs`, S1-F-9b); production `tile_frame` still 0 until wired | PARTIAL — animator ported 2026-11-18 (16 tests), renderer wiring deferred. |
+| World probes in-table | palm biome 323 (:4670), dye plants 227 (:5063-5078), `GetTreeBiome`/`GetTreeVariant` (:1735/:1778) | `apply_world_corrections` :1200-1243 + `palm_tree_biome`/`palm_frame_y`/`cactus_type`/`dye_frame_x_offset`; **S1-F-9 wave A**: `tree_variant`/`tree_biome`/`tree_frame_x_offset` + case 5's static arm and correction (2026-11-18) | PARTIAL — tree probes PORTED (incl. the jungle underground variant 5). |
 | `DrawSingleTile` positional switch (:1020-1159) | `vector` nudges, `rectangle.Y` mutation, `finalColor` revisions, `skip` arms | `draw_dx/dy`, `src_y_shift`, `light_scale`, `src_alpha`, `skip_draw`, `no_width_adjust` + renderer arms `tiles.rs:800-867` | PORTED except parking list below. |
 | Glow textures (`glowTexture`/`glowSourceRect`/`glowColor` out params) | per-case in `GetTileDrawData` :6049+ | `draw_tile_flames` :1409 | PARTIAL — the `Main.tileGlowMask` table arm is the only consumer; the per-case glow rects are gone. |
 
@@ -191,7 +191,10 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
    docs.
 4. **Animator absent (`tile_frame ≡ 0`)** — `behavioural`. Affects every animated tile
    (furniture, torches, campfires, jellyfish blocks, starry glass). ROADMAP admits it
-   ("animator not ported"), no ticket.
+   ("animator not ported"). **Update 2026-11-18 (S1-F-9b):** `Main.AnimateTiles`
+   (`Main.cs:18516-19304`) + `AnimateTiles_WeatherVane` (`:19306-19329`) ported into
+   `crates/tr-core/src/drawdata_anim.rs` (`TileAnimator`, 16 per-case tests); the
+   production feed into `draw_data` is still 0 — wiring is the remaining half.
 5. **Chest frame rewrite missing** — `behavioural`. `Main.chest[i].frame` (+0/+38/+76,
    `tileHeight=18`) never reaches the source rect, so opening chests do not animate and the
    bottom row is 16 px tall instead of 18. **Not admitted in ROADMAP.**
