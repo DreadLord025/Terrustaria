@@ -535,6 +535,14 @@ pub(crate) struct App {
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     pub(crate) mouse_item: ItemSlot,
+    /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
+    /// slot whose head rides the cursor for a housing relocation; −1 with
+    /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
+    pub(crate) mouse_npc_index: i32,
+    /// `Main.mouseNPCType` (`Main.cs:753`, default −1): the carried head's
+    /// NPC type (0 = the housing query's "?"). `SetMouseNPC`
+    /// (`Main.cs:3176-3185`) writes the pair.
+    pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
@@ -1116,6 +1124,34 @@ impl App {
 
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
+    }
+
+    /// `Main.mouseNPC`'s per-frame lifecycle
+    /// (`DrawInterface_38_MouseCarriedObject`, `Main.cs:45182-45211` +
+    /// `DrawInterface_25`'s closed-inventory clear, `:45664-45667`):
+    /// a carried item drops the head (`:45185-45187`), a closed inventory
+    /// drops it (`:45666`), and a carried NPC that died or changed type
+    /// downgrades to the housing query (`:45205-45211`). Runs once per
+    /// frame beside `resolve_equip_page`; the click handler re-checks the
+    /// item arm after its own pickups so the drop is same-frame.
+    pub(crate) fn refresh_mouse_npc(&mut self) {
+        if self.mouse_item.count > 0 || !self.inventory_open {
+            // `SetMouseNPC(-1, -1)` (`Main.cs:3176-3180`).
+            self.mouse_npc_index = -1;
+            self.mouse_npc_type = -1;
+            return;
+        }
+        if self.mouse_npc_index >= 0 {
+            let live = self
+                .npcs
+                .get(self.mouse_npc_index as usize)
+                .is_some_and(|n| n.kind.net_id() == self.mouse_npc_type);
+            if !live {
+                // `SetMouseNPC_ToHousingQuery()` (`Main.cs:3182-3185`).
+                self.mouse_npc_index = -1;
+                self.mouse_npc_type = 0;
+            }
+        }
     }
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
@@ -3348,6 +3384,8 @@ impl App {
             music: audio::MusicSystem::new(assets::content_dir()),
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
+            mouse_npc_index: -1,
+            mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,
