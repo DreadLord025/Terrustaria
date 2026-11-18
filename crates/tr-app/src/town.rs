@@ -1248,6 +1248,44 @@ mod tests {
     }
 
     #[test]
+    fn the_look_for_home_timeout_decays_one_per_tick_and_gates_the_scan() {
+        // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the timer decays
+        // one per tick (`world_sim/npcs.rs:2694-2696`); the 2-second home
+        // scan skips a non-zero timer (`:2799`, the C#'s `:5621`/`:71635`
+        // gates). Driven through `update_npcs` so the cadence is the real
+        // sim's, not a re-implementation.
+        let mut world = ground();
+        build_furnished_room(&mut world, 60, 100, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 72.0 * 16.0;
+        player.y = 108.0 * 16.0;
+        app.player = Some(player);
+        let mut guide = town_npc(crate::npc::NpcKind::Guide, 72.0 * 16.0, 108.0 * 16.0, None);
+        guide.hp = guide.max_hp;
+        guide.look_for_home_timeout = 3;
+        app.npcs.push(guide);
+        // Three ticks: 3 → 2 → 1 → 0, one per tick.
+        for expected in [2, 1, 0] {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            assert_eq!(app.npcs[0].look_for_home_timeout, expected);
+        }
+        // The scan cadence is 2 s (`town_look_timer`): re-arm the timer and
+        // run past the boundary — the gated Guide finds no home.
+        app.npcs[0].look_for_home_timeout = 600;
+        app.town_look_timer = 1.99;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].home, None, "the timer gates the scan");
+        assert_eq!(app.npcs[0].look_for_home_timeout, 599);
+        // Clear the timer and cross the boundary again: the room is found.
+        app.npcs[0].look_for_home_timeout = 0;
+        app.town_look_timer = 1.99;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].home.is_some(), "the ungated scan finds the room");
+    }
+
+    #[test]
     fn move_town_npc_scores_for_the_moved_npcs_type() {
         with_english(|| {
             // `:4772-4776`: `n >= 0` overrides the prioritized type. A pet

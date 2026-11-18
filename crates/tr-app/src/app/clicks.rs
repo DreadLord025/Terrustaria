@@ -1204,6 +1204,9 @@ impl App {
                 self.mouse_npc_index = -1;
                 self.mouse_npc_type = -1;
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                // `SpawnTownNPC`'s relocation arm fires NO_HOBO (progression
+                // 8, `WorldGen.cs:5460`).
+                let _ = self.notify_progression_net(8);
                 // `moveRoom:4850`'s transient prioritized write is consumed
                 // and zeroed by the same `SpawnTownNPC` (`:5461`).
                 self.town_arrival.prioritized = None;
