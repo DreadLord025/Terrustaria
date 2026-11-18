@@ -650,7 +650,17 @@ pub(crate) fn draw_tiles(
                 let mut tile_frame = None;
                 if active && marker.is_none() {
                     let trunk_offset = if is_tree && tile.frame_x >= 0 && tile.frame_y >= 0 {
-                        tree::trunk_sheet_offset_at(world, tx, ty) as i16
+                        // `GetTileDrawData` case 5's biome sheet section
+                        // (TileDrawing.cs:4645-4649) via the GetTreeBiome
+                        // probe; variant trunks keep their own sheets.
+                        tree::trunk_sheet_offset_at(
+                            world,
+                            tx,
+                            ty,
+                            tile.kind,
+                            tile.frame_x,
+                            tile.frame_y,
+                        ) as i16
                     } else {
                         0
                     };
