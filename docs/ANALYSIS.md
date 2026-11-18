@@ -4800,10 +4800,59 @@ turns on with the pets rather than needing a second pass. The remaining
 set by `check_tile` from the active tiles 630/631
 (`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
 keeps running and only the flags are written; `check_room` clears both per
-scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
-pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
-the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+scan (`StartRoomCheck:6047-6048`). The consumers landed with the relocation
+round below (`MoveTownNPC`'s pet-exempt rejection `:4777-4799`); the arrival
+gate (`:5431`) still rides the arrival path. No RNG draws in any
 ported block (`Main.rand` untouched; the flags are pure tile reads).
+
+## Town housing relocation (S1-E-11c, 2026-11-18)
+
+`WorldGen.MoveTownNPC` (`WorldGen.cs:4685-4841`) is `town::move_town_npc`:
+the validation ladder in source order — the room scan, the furniture needs,
+the stinkbug refusals, the score's occupied/evil/no-standing-space ladder and
+the special-conditions refusal. Each rung's `Main.NewText` line lands in
+`MoveTownNpcFeedback.messages` (color `(255, 240, 20)` =
+`ChatColors.ServerMessage`) only under `display_text`; `stop_on_fail` ends
+the walk at the first refusal. The feedback flags are
+`RoomCheckFeedback::{WITH_TEXT, WITHOUT_TEXT, RICH}` —
+`NoRoomCheckFeedback.cs:9-11`/`:84-85` and `RichRoomCheckFeedback`'s
+both-false pair (the rich spread/score overlay itself is not modelled).
+
+- The six-reason switch (`:4699-4719`) maps `RoomFailure` onto the
+  `TownNPCHousingFailureReasons.*` keys; the default is `Lang.inter[40]`.
+- The missing-furniture text (`:4729-4767`) reads the new
+  `RoomFurniture::of` (the four `RoomNeeds` flags `:5681-5720`) and formats
+  `Game.HouseMissing_<n>` over torch/door/table/chair in order; the
+  `builtHouseWithNoFurniture`/`NoLight` latches (`:4755-4762`, reset by
+  `clearWorld` `:7030-7031`) ride `BuiltHouseFlags`.
+- The stinkbug refusals (`:4777-4798`) exempt `NPCID.Sets.IsTownPet`
+  (`NPCID.cs:10118`, `town::is_town_pet`).
+- `score_room` now returns `RoomScore` — `hi_score`, `best`, plus the
+  `roomEvil` (`:5886-5889`, the CLAMPED count) and `roomHasStandingSpace`
+  (`:5932-5935`, flagged per candidate BEFORE the shared-room/chest/column
+  adjustments) outputs the `hiScore <= 0` ladder (`:4805-4826`) reads:
+  occupied → `inter[41]`, evil → `inter[42]`, no standing space → the key,
+  else `inter[40]`. The occupied arm is `room_occupancy` with `ignoreNPC = -1`
+  (the C# passes -1 at `:4801`, so even the asking NPC's own home counts).
+- The special-conditions refusal (`:4829-4837`) is
+  `housing::check_special_town_npc_spawning_conditions`
+  (`CheckSpecialTownNPCSpawningConditions` `:4970-4998`): only the Truffle
+  (160) has a condition — the surface-depth gate plus ≥ 100 mushroom tiles
+  (70/71/72/528, `SceneMetrics.MushroomTileThreshold` `SceneMetrics.cs:935`)
+  over the tested bounds; the text is `Lang.inter[55] + " " + TypeName`.
+
+Constants-off / reachability: the port ships no Truffle kind (160) and no
+town-pet kind, so the special-conditions refusal is pinned at the gate level
+(`the_truffle_gate_matches_the_source`) and the pet exemption runs through
+the housing query's prioritized type; `NPC.unlockedTruffleSpawn` and
+`Main.NoFunctionalSurface` have no port state (both false). A failed scan
+leaves the C#'s `hiScore` at its previous global value; the port models 0
+(the reset value) — only reachable under the non-stopping rich feedback,
+which prints nothing. The housing-query UI (`Main.mouseNPC`,
+`ui/housing.rs:12-14`) and `Main.TryMovingNPC`'s mouse/sound tail
+(`Main.cs:45172-45180`) remain out; the ladder itself is callable and tested
+per reason. No RNG draws; the fixed-step order and `npc.rs` AI dispatch are
+untouched.
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)

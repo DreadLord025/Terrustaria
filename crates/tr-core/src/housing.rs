@@ -214,20 +214,33 @@ fn tile_type_count_by_category(
     }
 }
 
+/// `WorldGen.ScoreRoom`'s outputs (`WorldGen.cs:5858-5992`): the C# writes
+/// them into the `WorldGen.hiScore`/`bestX`/`bestY`/`roomEvil`/
+/// `roomHasStandingSpace` globals; the port returns them. `roomOccupied`
+/// (`:5864`/`:5870`) needs the NPC list and lives with the caller
+/// (`town.rs::room_occupancy`), which sets `hi_score = -1` itself (`:5871`).
+pub struct RoomScore {
+    /// `WorldGen.hiScore` — 0 when no spot qualified, ≤ −250 on the evil
+    /// rejection (`:5890-5893`), else the best spot's score.
+    pub hi_score: i32,
+    /// `WorldGen.bestX`/`bestY` — only set while `hi_score > 0`.
+    pub best: Option<(i32, i32)>,
+    /// `WorldGen.roomEvil` (`:5886-5889`): the clamped evil count was > 0.
+    pub room_evil: bool,
+    /// `WorldGen.roomHasStandingSpace` (`:5932-5935`): some candidate scored
+    /// above 0 before the shared-room/chest/column adjustments — even one
+    /// that later fails the room-membership test.
+    pub room_has_standing_space: bool,
+}
+
 /// `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`): the room's score and its
 /// best home spot.
 ///
-/// The C# writes the result into the `WorldGen.hiScore`/`bestX`/`bestY`
-/// globals; the port returns them. The occupancy half
-/// (`ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`) needs the NPC list
-/// and lives with the caller (`town.rs`); `shared_room_x` is the C#'s
-/// `WorldGen.sharedRoomX` — the home of a NPC the room may be shared with —
-/// and drives the `:5936-5939` adjustment.
-pub fn score_room(
-    world: &World,
-    scan: &RoomScan,
-    shared_room_x: Option<i32>,
-) -> Option<(i32, i32, i32)> {
+/// The occupancy half (`ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`)
+/// needs the NPC list and lives with the caller (`town.rs`); `shared_room_x`
+/// is the C#'s `WorldGen.sharedRoomX` — the home of a NPC the room may be
+/// shared with — and drives the `:5936-5939` adjustment.
+pub fn score_room(world: &World, scan: &RoomScan, shared_room_x: Option<i32>) -> RoomScore {
     let mut hi_score = 0;
     // `:5877-5883`: the evil count over the tested area lowers the base.
     let (tx1, tx2, ty1, ty2) = tested_room_bounds(world, scan);
@@ -236,12 +249,20 @@ pub fn score_room(
     if evil < 50 {
         evil = 0;
     }
+    // `:5886-5889`: `roomEvil` reads the clamped count.
+    let room_evil = evil > 0;
     let base = 50 - evil;
     if base <= -250 {
-        // `:5889-5892`: the room is rejected outright.
-        return None;
+        // `:5890-5893`: the room is rejected outright, hiScore = the base.
+        return RoomScore {
+            hi_score: base,
+            best: None,
+            room_evil,
+            room_has_standing_space: false,
+        };
     }
-    let mut best: Option<(i32, i32, i32)> = None;
+    let mut room_has_standing_space = false;
+    let mut best: Option<(i32, i32)> = None;
     // `:5897-5899`: the room's own area.
     for i in (scan.x1 + 1)..scan.x2 {
         for j in (scan.y1 + 2)..(scan.y2 + 2) {
@@ -297,6 +318,11 @@ pub fn score_room(
                     }
                 }
             }
+            // `:5932-5935`: standing space is flagged BEFORE the shared-room
+            // and chest/column adjustments, for every candidate.
+            if num > 0 {
+                room_has_standing_space = true;
+            }
             // `:5936-5939`: a spot next to the shared room scores 1.
             if let Some(shared) = shared_room_x {
                 if num >= 1 && (shared - i).abs() < 3 {
@@ -333,18 +359,52 @@ pub fn score_room(
             }
             if in_room && housing_check_if_in_room(scan, i, j - 1) {
                 hi_score = num;
-                best = Some((i, j, num));
+                best = Some((i, j));
             }
         }
     }
-    best
+    RoomScore {
+        hi_score,
+        best,
+        room_evil,
+        room_has_standing_space,
+    }
 }
 
-/// `WorldGen.RoomNeeds` (`:5717-5756`): the house-tile table against the
+/// `WorldGen.RoomNeeds`' four flags (`:5681-5720`): `roomTorch`, `roomDoor`,
+/// `roomTable`, `roomChair` — each set when any tile of its
+/// `TileID.Sets.RoomNeeds.*` set sits in the room's `houseTile` table.
+/// `MoveTownNPC` reads them for the missing-furniture text (`:4731-4753`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct RoomFurniture {
+    pub torch: bool,
+    pub door: bool,
+    pub table: bool,
+    pub chair: bool,
+}
+
+impl RoomFurniture {
+    /// `WorldGen.RoomNeeds` (`WorldGen.cs:5679-5730`).
+    pub fn of(house_tiles: &[u16]) -> Self {
+        let has = |types: &[u16]| house_tiles.iter().any(|k| types.contains(k));
+        Self {
+            torch: has(TORCH_TYPES),
+            door: has(DOOR_TYPES),
+            table: has(TABLE_TYPES),
+            chair: has(CHAIR_TYPES),
+        }
+    }
+
+    /// `WorldGen.canSpawn` (`:5721-5729`): all four present.
+    pub fn complete(&self) -> bool {
+        self.torch && self.door && self.table && self.chair
+    }
+}
+
+/// `WorldGen.RoomNeeds` (`:5679-5730`): the house-tile table against the
 /// four furniture sets — all present means a valid home.
 pub fn room_needs(house_tiles: &[u16]) -> bool {
-    let has = |types: &[u16]| house_tiles.iter().any(|k| types.contains(k));
-    has(CHAIR_TYPES) && has(TABLE_TYPES) && has(TORCH_TYPES) && has(DOOR_TYPES)
+    RoomFurniture::of(house_tiles).complete()
 }
 
 /// `StartRoomCheck` (`WorldGen.cs:6041-6117`): the 8-neighborhood flood
@@ -512,6 +572,50 @@ pub fn start_room_check(world: &World, x: i32, y: i32) -> bool {
     check_room(world, x, y).is_ok()
 }
 
+/// `SceneMetrics.MushroomTileThreshold` (`SceneMetrics.cs:935`).
+const MUSHROOM_TILE_THRESHOLD: i32 = 100;
+
+/// `WorldGen.CheckSpecialTownNPCSpawningConditions` (`WorldGen.cs:4970-4998`):
+/// only the Truffle (type 160) has a special condition — a surface room
+/// needs the unlock, and the tested area must hold ≥ 100 mushroom tiles
+/// (70/71/72/528). `unlocked_truffle_spawn` is `NPC.unlockedTruffleSpawn`
+/// (false in the port, no unlock path yet) and `no_functional_surface` is
+/// `Main.NoFunctionalSurface` (the secret seeds; false in a normal world).
+pub fn check_special_town_npc_spawning_conditions(
+    world: &World,
+    scan: &RoomScan,
+    npc_type: i32,
+    unlocked_truffle_spawn: bool,
+    no_functional_surface: bool,
+) -> bool {
+    if npc_type == 160 {
+        // `:4972-4977`: below the surface without the unlock refuses.
+        if !unlocked_truffle_spawn
+            && scan.y2 as f64 > world.world_surface
+            && !no_functional_surface
+        {
+            return false;
+        }
+        // `:4978-4990`: the mushroom count over the tested bounds
+        // (`startX + 1 ..< endX`, `startY + 2 ..< endY + 2`).
+        let (tx1, tx2, ty1, ty2) = tested_room_bounds(world, scan);
+        let mut num = 0;
+        for i in (tx1 + 1)..tx2 {
+            for j in (ty1 + 2)..(ty2 + 2) {
+                if world
+                    .tile(i, j)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 70 | 71 | 72 | 528))
+                {
+                    num += 1;
+                }
+            }
+        }
+        // `:4991-4995`.
+        return num >= MUSHROOM_TILE_THRESHOLD;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,7 +703,9 @@ mod tests {
         let mut w = ground();
         carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
         let scan = check_room(&w, 55, 105).expect("the room scans");
-        let (bx, by, score) = score_room(&w, &scan, None).expect("the room scores");
+        let scored = score_room(&w, &scan, None);
+        let (bx, by) = scored.best.expect("the room scores");
+        let score = scored.hi_score;
         assert!(score > 0, "the score: {score}");
         assert!(bx >= scan.x1 && bx <= scan.x2, "the x is inside the room");
         assert!(by >= scan.y1 && by <= scan.y2, "the y is inside the room");
@@ -742,5 +848,63 @@ mod tests {
             check_room(&w, 55, 105),
             Err(RoomFailure::StartedInASolidTile)
         ));
+    }
+
+    #[test]
+    fn the_score_reports_evil_and_standing_space() {
+        // `:5865-5866` reset both flags; `:5886-5889` sets roomEvil only when
+        // the CLAMPED evil count is > 0 (a few evil tiles below 50 read
+        // false), and `:5932-5935` flags standing space per candidate.
+        let mut w = ground();
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        let scan = check_room(&w, 55, 105).unwrap();
+        let clean = score_room(&w, &scan, None);
+        assert!(clean.hi_score > 0);
+        assert!(!clean.room_evil);
+        assert!(clean.room_has_standing_space);
+        // A handful of ebonstone (25): evil = 5 < 50 → clamped to 0.
+        for x in 45..50 {
+            let i = w.index(x, 119);
+            w.tiles[i].kind = 25;
+        }
+        let scan = check_room(&w, 55, 105).unwrap();
+        let few = score_room(&w, &scan, None);
+        assert!(!few.room_evil, "evil below the 50 clamp reads false");
+        // A field of ebonstone across the tested area: evil ≥ 50.
+        for x in 10..100 {
+            for y in 110..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 25, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let scan = check_room(&w, 55, 105).unwrap();
+        let evil = score_room(&w, &scan, None);
+        assert!(evil.room_evil, "the corruption flags roomEvil");
+        assert!(evil.hi_score <= 0, "the evil room does not score");
+    }
+
+    #[test]
+    fn the_truffle_gate_matches_the_source() {
+        // `CheckSpecialTownNPCSpawningConditions` (`:4970-4998`).
+        let mut w = ground(); // world_surface defaults to height/4 = 50
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        let scan = check_room(&w, 55, 105).unwrap();
+        // Every non-Truffle type passes outright.
+        assert!(check_special_town_npc_spawning_conditions(&w, &scan, 22, false, false));
+        // The Truffle: room below the surface, no unlock → refused.
+        assert!(!check_special_town_npc_spawning_conditions(&w, &scan, 160, false, false));
+        // The unlock opens the surface gate, but the mushroom count is 0.
+        assert!(!check_special_town_npc_spawning_conditions(&w, &scan, 160, true, false));
+        // NoFunctionalSurface skips the depth gate — still needs mushrooms.
+        assert!(!check_special_town_npc_spawning_conditions(&w, &scan, 160, false, true));
+        // 100 glowing-mushroom tiles (70) inside the tested area → passes.
+        for n in 0..100 {
+            let i = w.index(20 + n % 20, 60 + n / 20);
+            w.tiles[i] = Tile { kind: 70, frame_x: 0, frame_y: 0, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        assert!(check_special_town_npc_spawning_conditions(&w, &scan, 160, false, true));
+        assert!(check_special_town_npc_spawning_conditions(&w, &scan, 160, true, false));
     }
 }
