@@ -256,9 +256,10 @@ mod tests {
         assert!(!app.capture.interface.active);
     }
 
-    /// The `IsCapturing` scene-metrics gate (`Main.cs:62518-62521`): a
-    /// started capture freezes `update_scene`. The camera's active flag is
-    /// the gate's input.
+    /// The `IsCapturing` draw-side scene-metrics gate (`Main.cs:62518-62521`):
+    /// a started capture parks the metrics scan (the update-side freeze is the
+    /// DoUpdate gate, `Main.cs:16886-16890`, in frame.rs). The camera's active
+    /// flag is the gate's input; this test pins the draw-tick drain + clear.
     #[test]
     fn s1_e_17_a_started_capture_gates_the_scene_metrics() {
         let mut app = flow_app(None, vec![], vec![]);

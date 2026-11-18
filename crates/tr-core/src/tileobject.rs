@@ -1,9 +1,16 @@
 //! `TileObjectData` + `TileObject`: the multi-tile placement registry, `CanPlace`
-//! and `Place`, ported 1:1 for the wooden set (work bench, table, chair, door,
-//! chest).
+//! and `Place`, ported 1:1.
 //!
-//! Adding an object = one data entry in [`TABLE`]; the system below reads only
-//! the table (full registry generator is a follow-up).
+//! **S1-F-7 wave A**: the registry DATA is GENERATED —
+//! `tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
+//! (`TileObjectData.cs:2110-5014`) statement-by-statement (the copy-on-write
+//! builder chain: `newTile`/`newSubTile`/`newAlternate` cursors, `CopyFrom`
+//! module sharing, `addTile`/`addSubTile`/`addAlternate`/`addBaseTile`,
+//! `Calculate`'s liquid-death fold, `LinkedAlternates` propagation) and emits
+//! all 389 registered tiles (604 defs incl. alternates/sub-tiles) into
+//! `tileobject/registry.rs`. The 33 hand-written defs are retired; the system
+//! below reads only the generated [`TABLE`]/[`BY_KIND`]. Regenerate with
+//! `python tools/GenTileObjectData/gen.py` (`--check` verifies no drift).
 //!
 //! # C#→Rust map (DW-1.5)
 //!
@@ -27,7 +34,10 @@
 //! | `AnchorAlternateTiles` :434 | `anchor_alternate_tiles` |
 //! | `AnchorValidWalls` :473 | `anchor_valid_walls` |
 //! | `WaterPlacement` / `LavaPlacement` | `water_placement` / `lava_placement` |
-//! | `HookCheckIfCanPlace` / `HookPlaceOverride` | `hook_check_if_can_place` / `hook_place_override` |
+//! | `WaterDeath` / `LavaDeath` :508/:541 | `water_death` / `lava_death` |
+//! | `UsesCustomCanPlace` / `UsesGlobalLiquidChecks` :144/:157 | `uses_custom_can_place` / `uses_global_liquid_checks` |
+//! | `GetStyleOverride` :728 | `get_style_override` (the tag; resolution is wave B) |
+//! | `HookCheckIfCanPlace` / `HookPlaceOverride` / `HookPostPlaceMyPlayer` | `hook_check_if_can_place` / `hook_place_override` / `hook_post_place_my_player` |
 //! | `CoordinateHeights` :1417 | `coordinate_heights` |
 //! | `CoordinateWidth` :1503 / `CoordinatePadding` :1537 | `coordinate_width` / `coordinate_padding` |
 //! | `CoordinatePaddingFix` | `coordinate_padding_fix` |
@@ -40,30 +50,28 @@
 //! Not ported (follow-ups, by design):
 //! - **Draw fields** (`DrawYOffset`, `DrawStyleOffset`, `DrawStepDown`,
 //!   `DrawFlipHorizontal/Vertical`, `DrawFrameOffsets`,
-//!   `StyleWrapLimitVisualOverride`): render-only; multi-tile drawing already
-//!   works from saved frames (TILE-DRAW-1).
-//! - **`UsesCustomCanPlace` / `UsesGlobalLiquidChecks`**: read by
-//!   `Player.PlaceThing` routing and liquid-death checks, not by
-//!   `CanPlace`/`Place`; lands with Phase 2's dispatcher.
-//! - **Chest hooks** (`Chest.FindEmptyChest` TileObjectData.cs:3464,
-//!   `Chest.AfterPlacement_Hook` :3465): the M3-CHEST-UI seam — the chest is a
-//!   pure tile object here (no `Chest` entity, no item storage). The hook
-//!   *branches* in `can_place`/`place` are ported; the wooden chest carries
-//!   `None`.
-//! - **SubTiles data** (styles 13/14/16/19/25/43/47/48, 51-67 of the wooden
-//!   tiles, `TileObjectData.cs:2246/2286/3182-3190/4151-4172`): the resolution
-//!   mechanism is ported ([`get_tile_data`]); the wooden slice places style 0
-//!   only, so the entries carry empty subtile lists. Full registry follow-up.
+//!   `StyleWrapLimitVisualOverride`): render-only (S1-F-9 DrawData scope); the
+//!   generator parses them (they ride the same copy-on-write machinery) but
+//!   does not emit them.
+//! - **Runtime hook bodies** (`Chest.FindEmptyChest` TileObjectData.cs:3464,
+//!   `Chest.AfterPlacement_Hook` :3465, `WorldGen.PlantCheck_CanPlaceHook`,
+//!   the `TE*` tile-entity hooks): the generated defs carry the C# method NAME
+//!   in [`PlacementHook::callback`] with `hook: None` — a documented callback
+//!   seam. The bodies read runtime state (chests, tile entities, plants)
+//!   outside this task; the hook *branches* in `can_place`/`place` are ported.
+//!   The M3-CHEST-UI seam is unchanged: the chest is a pure tile object here.
+//! - **`GetStyleOverride` resolution** (the frameY-based `GetTileData(Tile)`
+//!   overload :5196-5261): the tag is generated data; the tile-based resolution
+//!   is a framing/cascade consumer (wave B).
 //! - **Random styles** (`Main.rand` path TileObject.cs:787-793, the
 //!   `randomCache` stickiness :764-781 and `SpecificRandomStyles` :794-825):
-//!   every wooden def has `RandomStyleRange = 0`, so the resolved `random` is
-//!   always `-1`; the `forced_random` path is ported, the `Main.rand` path
-//!   needs app-side RNG (Phase 2 wiring).
+//!   the `forced_random` path is ported; the `Main.rand` path needs app-side
+//!   RNG (Phase 2 wiring). The `RandomStyleRange`/`SpecificRandomStyles` DATA
+//!   is generated for every def.
 //! - **`onlyCheck`/preview** (`TileObjectPreviewData.placementCache`,
 //!   `objectPreview`, the anchor `Rectangle` bookkeeping TileObject.cs:219-321):
 //!   dead code when `onlyCheck=false` (verified by reading; the rectangle and
 //!   `num10`/`num11` are not read after :332). Smart-cursor/preview is app work.
-//! - **`GetStyleOverride`**: no wooden def uses it.
 //!
 //! Hand-extracted tile tables (the `GenTileData` generator cannot emit
 //! `Main.`-prefixed assignments — see `torch.rs`'s module doc for the same
@@ -75,6 +83,33 @@
 
 use crate::tile::Tile;
 use crate::world::World;
+
+/// The GENERATED registry (S1-F-7 wave A): `tools/GenTileObjectData/gen.py`
+/// interprets `TileObjectData.Initialize` (`TileObjectData.cs:2110-5014`) 1:1
+/// and emits every `addTile` def — width/height, style wrap/multiplier/line-skip,
+/// coordinate rules, anchors, alternation, sub-tiles — plus the
+/// `Main.tileFrameImportant` and `KillTile_GetItemDrops` empty-group tables.
+/// Never hand-edit `registry.rs`; regenerate (`gen.py --check` verifies it).
+#[path = "tileobject/registry.rs"]
+mod registry;
+
+pub use registry::{BY_KIND, FRAME_IMPORTANT, KILL_TILE_NO_CELL_DROP, TABLE};
+
+/// `TileObjectData.GetStyleOverride` (`TileObjectData.cs:728-748`, the three
+/// implementations :5294-5327). The frameY-based resolution is the tile-based
+/// `GetTileData(Tile)` overload (:5196-5261) — a framing/cascade consumer
+/// (wave B); wave A carries the tag as data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GetStyleOverride {
+    #[default]
+    None,
+    /// `GetStyle_Detritus` (:5294-5301): `frameY >= 36` -> `SubTiles[0]`.
+    Detritus,
+    /// `GetStyle_SmallPiles` (:5303-5310): `frameY >= 18` -> `SubTiles[0]`.
+    SmallPiles,
+    /// `GetStyle_Stalactite` (:5312-5327): `frameY >= 90/72/36` -> `SubTiles[2/1/0]`.
+    Stalactite,
+}
 
 /// `Microsoft.Xna.Framework.Point16` as used by `TileObjectData` (tile coords).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -189,6 +224,13 @@ pub type PlacementHookFn = fn(&World, i32, i32, u16, i32, i32, i32) -> i32;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PlacementHook {
     pub hook: Option<PlacementHookFn>,
+    /// The C# hook method name (`Chest.FindEmptyChest`,
+    /// `WorldGen.PlantCheck_CanPlaceHook`, the `TE*` hooks, ...). Wave A keeps
+    /// the runtime hooks as documented callbacks: `hook` stays `None` for the
+    /// generated defs and this name records which body the consumer must wire
+    /// (the hook bodies read runtime state — chests, tile entities, plants —
+    /// outside this task). The wooden slice's hand defs carried `None` here.
+    pub callback: &'static str,
     pub bad_return: i32,
     pub bad_response: i32,
     pub processed_coordinates: bool,
@@ -198,6 +240,7 @@ impl PlacementHook {
     /// `PlacementHook.Empty` (`PlacementHook.cs:51-54`).
     pub const EMPTY: Self = Self {
         hook: None,
+        callback: "",
         bad_return: 0,
         bad_response: 0,
         processed_coordinates: false,
@@ -232,8 +275,29 @@ pub struct TileObjectDef {
     pub anchor_valid_walls: &'static [u16],
     pub water_placement: LiquidPlacement,
     pub lava_placement: LiquidPlacement,
+    /// `WaterDeath` (`TileObjectData.cs:508-539`) — the liquid-death flag
+    /// `Calculate` (:1827-1830) folds into `WaterPlacement` and
+    /// `CheckWaterDeath` (:5073-5095) reads. Generated.
+    pub water_death: bool,
+    /// `LavaDeath` (`TileObjectData.cs:541-572`) — folded into `LavaPlacement`
+    /// by `Calculate` (:1823-1826); `CheckLavaDeath` (:5097-5119) reads it.
+    pub lava_death: bool,
+    /// `UsesCustomCanPlace` (:144-155) — the `CustomPlace(type, style)` routing
+    /// flag (:5016-5037): `Player.PlaceThing_Tiles_TryPlacing`
+    /// (`Player.cs:39771`) sends only these kinds through `TileObject.CanPlace`.
+    pub uses_custom_can_place: bool,
+    /// `UsesGlobalLiquidChecks` (:157-168) — `ApplyNaturalObjectRules`
+    /// (:1847-1851) sets it; `CheckWaterDeath`/`CheckLavaDeath` then read the
+    /// global `Main.tile*Death` tables instead of the def's flags.
+    pub uses_global_liquid_checks: bool,
+    /// `GetStyleOverride` (:728-748) — the frameY-based style resolver tag.
+    pub get_style_override: GetStyleOverride,
     pub hook_check_if_can_place: PlacementHook,
     pub hook_place_override: PlacementHook,
+    /// `HookPostPlaceMyPlayer` (:684-704) — the tile-entity / chest
+    /// after-placement hook (`CallPostPlacementPlayerHook` :5269-5283).
+    /// Documented callback seam (wave A): the body reads runtime state.
+    pub hook_post_place_my_player: PlacementHook,
     pub coordinate_heights: &'static [i32],
     pub coordinate_width: i32,
     pub coordinate_padding: i32,
@@ -283,164 +347,6 @@ pub struct TileObjectInstance {
     pub random: i32,
 }
 
-/// The wooden slice of the registry.
-///
-/// Every entry is the hand-resolved result of its `InitializeTileObjects`
-/// builder chain: the base defaults come from `SetupBaseObject`
-/// (`TileObjectData.cs:1743-1803`) and `Initialize` (:2117-2133), and
-/// `LavaDeath=true` is pre-folded into `lava_placement = NotAllowed` exactly
-/// like `Calculate` does (:1821-1831).
-pub const TABLE: &[TileObjectDef] = &[
-    DOOR_CLOSED,
-    DOOR_OPEN,
-    TABLE_WOOD,
-    CHAIR,
-    WORK_BENCH,
-    CHEST,
-    SUNFLOWER,
-    POTS,
-    CLAY_POT,
-    IMMATURE_HERBS,
-    MATURE_HERBS,
-    BLOOMING_HERBS,
-    SMALL_PILES,
-    LARGE_PILES,
-    LARGE_PILES2,
-    CANDLE,
-    CANDELABRA,
-    CHANDELIER,
-    HANGING_LANTERN,
-    LAMP,
-    BOOKCASE,
-    PIANO,
-    DRESSER,
-    SINK,
-    GRANDFATHER_CLOCK,
-    BED,
-    BATHTUB,
-    // The banks (M3-STORE-1): the piggy 29, the safe 97, the forge 463,
-    // the vault 491.
-    PIGGY_BANK,
-    SAFE,
-    DEFENDERS_FORGE,
-    VOID_VAULT,
-    // The extractinators (M7-EXTRACT-1): the silt 219, the chlorophyte 642.
-    SILT_EXTRACTINATOR,
-    CHLOROPHYTE_EXTRACTINATOR,
-];
-
-// -- piggy bank (tile 29) — `TileObjectData.cs:2801-2811` + Style2x1 --------
-/// `Style2x1` (:2798-2808) with the table anchor swap (`:2805`: `AnchorBottom
-/// = new AnchorData(AnchorType.Table, newTile.Width, 0)`); item 87, value
-/// 10000 (`Item.cs:2407-2416`). The kill rides `Check2x1`'s case-29 arm
-/// (`WorldGen.cs:47003-47013`).
-const PIGGY_BANK: TileObjectDef = TileObjectDef {
-    kind: 29,
-    width: 2,
-    height: 1,
-    origin: Point16::new(0, 0),
-    anchor_bottom: AnchorData::new(anchor_type::TABLE, 2, 0),
-    coordinate_heights: &[16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true, // `Main.cs:7656`'s list
-    interaction: Interaction::Bank(-2),
-    ..base_def()
-};
-
-// -- safe (tile 97) — `TileObjectData.cs:3590` (a plain Style2x2 copy) ------
-/// `Style2x2` (:3451-3460) with no overrides (`TileObjectData.cs:3588-3590`);
-/// item 346, value 200000 (`Item.cs:5438-5449`).
-const SAFE: TileObjectDef = TileObjectDef {
-    kind: 97,
-    width: 2,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    interaction: Interaction::Bank(-3),
-    ..base_def()
-};
-
-// -- defender's forge (tile 463) — `TileObjectData.cs:3402-3406` + Style3x4 --
-/// `Style3x4` with `DrawYOffset = 2` (`:3405` — draw-only, unported here);
-/// item 3813, rare 3, value 100000 (`Item.cs:33745-33754`).
-const DEFENDERS_FORGE: TileObjectDef = TileObjectDef {
-    kind: 463,
-    width: 3,
-    height: 4,
-    origin: Point16::new(1, 3),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    interaction: Interaction::Bank(-4),
-    ..base_def()
-};
-
-// -- void vault (tile 491) — `TileObjectData.cs:3797-3800` + Style3x3 --------
-/// `Style3x3` with `DrawYOffset = 2` (`:3799` — draw-only); item 4076, rare
-/// 3, value 100000 (`Item.cs:35741-35752`). The placed tile opens bank4
-/// regardless of holding the Void Lens (`Player.cs:33127-33133` — the only
-/// gate is `disableVoidBag`).
-const VOID_VAULT: TileObjectDef = TileObjectDef {
-    kind: 491,
-    width: 3,
-    height: 3,
-    origin: Point16::new(1, 2),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    interaction: Interaction::Bank(-5),
-    ..base_def()
-};
-
-// -- silt extractinator (tile 219) / chlorophyte extractinator (tile 642) -----
-// M7-EXTRACT-1 — `TileObjectData.cs:4042-4045`:
-//     newTile.CopyFrom(TileObjectData.Style3x3);
-//     newTile.DrawYOffset = 2;
-//     addTile(219);                      // and the identical 642 at :4043-4045
-// `Style3x3` itself is `:4015-4031` (width 3, height 3, origin (1, 2),
-// AnchorBottom SolidTile|SolidWithTop|SolidSide over the width, custom
-// CanPlace, CoordinateHeights {16,16,16}, CoordinateWidth 16, Padding 2,
-// LavaDeath). No alternates, no hooks, `StyleHorizontal` stays false (the
-// module default `:1800`). Items: 997 Extractinator (`ItemID.cs:3677`) and
-// 5296 Chlorophyte Extractinator (`ItemID.cs:12275`); `Main.tileFrameImportant`
-// for both (`Main.cs:7401-7402`).
-//
-/// `Style3x3` + `DrawYOffset = 2`, the silt extractinator (tile 219, item 997).
-const SILT_EXTRACTINATOR: TileObjectDef = TileObjectDef {
-    kind: 219,
-    width: 3,
-    height: 3,
-    origin: Point16::new(1, 2),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    frame_important: true,
-    interaction: Interaction::Extractinator,
-    ..base_def()
-};
-
-/// `Style3x3` + `DrawYOffset = 2`, the chlorophyte extractinator (tile 642,
-/// item 5296) — the same def with the cheaper ×0.33 use time
-/// (`Player.cs:41673-41677`) applied by the app's extraction arm.
-const CHLOROPHYTE_EXTRACTINATOR: TileObjectDef = TileObjectDef {
-    kind: 642,
-    ..SILT_EXTRACTINATOR
-};
-
 /// `Main.tileAlch` (`Main.cs:7806-7808`): the three herb-stage tiles the legacy
 /// `WorldGen.PlaceTile` dispatcher routes to `PlaceAlch` (`WorldGen.cs:60177-60181`).
 pub const TILE_ALCH: &[u16] = &[82, 83, 84];
@@ -474,8 +380,14 @@ const fn base_def() -> TileObjectDef {
         anchor_valid_walls: &[],
         water_placement: LiquidPlacement::Allowed,
         lava_placement: LiquidPlacement::NotAllowed,
+        water_death: false,
+        lava_death: false,
+        uses_custom_can_place: false,
+        uses_global_liquid_checks: false,
+        get_style_override: GetStyleOverride::None,
         hook_check_if_can_place: PlacementHook::EMPTY,
         hook_place_override: PlacementHook::EMPTY,
+        hook_post_place_my_player: PlacementHook::EMPTY,
         coordinate_heights: &[16],
         coordinate_width: 0,
         coordinate_padding: 0,
@@ -538,764 +450,57 @@ const IS_A_TREE_TRUNK: &[u16] = &[
 /// axe tile the smart-cursor axe step ignores (the fallen log 488).
 const IGNORE_SMART_AXE: &[u16] = &[488];
 
-/// `TileObjectData.anchorInvalidTiles` shared by the chest
-/// (`TileObjectData.cs:2112-2116`, applied at :3466).
-const CHEST_ANCHOR_INVALID: &[u16] = &[127, 138, 664, 665, 484, 711, 712, 713, 714, 715, 716];
-
-const ANCHOR_SWTSS: u16 =
-    anchor_type::SOLID_TILE | anchor_type::SOLID_WITH_TOP | anchor_type::SOLID_SIDE;
-
-// -- door, closed (tile 10) — `TileObjectData.cs:2223-2247` ------------------
-
-/// Base def (`:2223-2235`).
-const DOOR_CLOSED_BASE: TileObjectDef = TileObjectDef {
-    width: 1,
-    height: 3,
-    origin: Point16::new(0, 0),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_wrap_limit: 36,
-    style_line_skip: 3,
-    frame_important: true, // `Main.cs:7637`
-    interaction: Interaction::Door,
-    ..base_def()
-};
-
-/// Click-point alternates: the door can be targeted on any of its three tiles
-/// (`:2236-2241`, both `addAlternate(0)` — `Style` stays 0).
-const DOOR_CLOSED_ALT_MID: TileObjectDef = TileObjectDef {
-    origin: Point16::new(0, 1),
-    ..DOOR_CLOSED_BASE
-};
-const DOOR_CLOSED_ALT_BOT: TileObjectDef = TileObjectDef {
-    origin: Point16::new(0, 2),
-    ..DOOR_CLOSED_BASE
-};
-const DOOR_CLOSED: TileObjectDef = TileObjectDef {
-    kind: 10,
-    alternates: &[DOOR_CLOSED_ALT_MID, DOOR_CLOSED_ALT_BOT],
-    ..DOOR_CLOSED_BASE
-};
-
-// -- door, open (tile 11) — `TileObjectData.cs:2248-2291` --------------------
-
-/// Base def (`:2248-2261`): 2 wide, opens to the right (`PlaceRight`).
-const DOOR_OPEN_BASE: TileObjectDef = TileObjectDef {
-    width: 2,
-    height: 3,
-    origin: Point16::new(0, 0),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_wrap_limit: 36,
-    style_line_skip: 2,
-    direction: TileObjectDirection::PlaceRight,
-    frame_important: true, // `Main.cs:7638`
-    interaction: Interaction::Door,
-    ..base_def()
-};
-
-/// Right-open click points (`:2262-2267`, both `addAlternate(0)`).
-const DOOR_OPEN_RIGHT_MID: TileObjectDef = TileObjectDef {
-    origin: Point16::new(0, 1),
-    ..DOOR_OPEN_BASE
-};
-const DOOR_OPEN_RIGHT_BOT: TileObjectDef = TileObjectDef {
-    origin: Point16::new(0, 2),
-    ..DOOR_OPEN_BASE
-};
-/// Left-open variants: origin on the right column, anchors follow the hinge
-/// column (`checkStart 1`), `Direction = PlaceLeft`, `Style = 1`
-/// (`:2268-2285`, three `addAlternate(1)`).
-const DOOR_OPEN_LEFT_TOP: TileObjectDef = TileObjectDef {
-    origin: Point16::new(1, 0),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    direction: TileObjectDirection::PlaceLeft,
-    style: 1,
-    ..DOOR_OPEN_BASE
-};
-const DOOR_OPEN_LEFT_MID: TileObjectDef = TileObjectDef {
-    origin: Point16::new(1, 1),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    direction: TileObjectDirection::PlaceLeft,
-    style: 1,
-    ..DOOR_OPEN_BASE
-};
-const DOOR_OPEN_LEFT_BOT: TileObjectDef = TileObjectDef {
-    origin: Point16::new(1, 2),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 1),
-    direction: TileObjectDirection::PlaceLeft,
-    style: 1,
-    ..DOOR_OPEN_BASE
-};
-const DOOR_OPEN: TileObjectDef = TileObjectDef {
-    kind: 11,
-    alternates: &[
-        DOOR_OPEN_RIGHT_MID,
-        DOOR_OPEN_RIGHT_BOT,
-        DOOR_OPEN_LEFT_TOP,
-        DOOR_OPEN_LEFT_MID,
-        DOOR_OPEN_LEFT_BOT,
-    ],
-    ..DOOR_OPEN_BASE
-};
-
-// -- work bench (tile 18) — `TileObjectData.cs:2818-2825` + Style2x1 ---------
-
-/// `Style2x1` preset (`:2798-2808`) with the bench's 18 px rows (`:2820`) and
-/// `StyleWrapLimitVisualOverride = 56` (`:2819`, draw-only — not ported).
-const WORK_BENCH: TileObjectDef = TileObjectDef {
-    kind: 18,
-    width: 2,
-    height: 1,
-    origin: Point16::new(0, 0),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true, // `Main.cs:7653`
-    ..base_def()
-};
-
-// -- table (tile 14) — `TileObjectData.cs:3169-3191` + Style3x2 --------------
-
-/// `Style3x2` preset (`:3169-3179`) with the 18 px bottom row (`:3181`).
-/// Sub-tiles for styles 13 (liquid variant, `:3182-3185`) and 25 (1-tall
-/// variant, `:3186-3190`) exist in C# — full-registry follow-up.
-const TABLE_WOOD: TileObjectDef = TileObjectDef {
-    kind: 14,
-    width: 3,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true, // `Main.cs:7641`
-    ..base_def()
-};
-
-// -- chair (tile 15) — `TileObjectData.cs:4141-4173` + Style1x2 --------------
-
-/// `Style1x2` preset (`:4131-4140`) with the chair overrides (`:4142-4147`):
-/// 18 px bottom row, `PlaceLeft` base, wrap 2 / multiplier 2 (left and right
-/// frames are adjacent columns), `CoordinatePaddingFix` (0, 2).
-const CHAIR_BASE: TileObjectDef = TileObjectDef {
-    width: 1,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 1, 0),
-    coordinate_heights: &[16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    coordinate_padding_fix: Point16::new(0, 2),
-    style_wrap_limit: 2,
-    style_multiplier: 2,
-    style_horizontal: true,
-    direction: TileObjectDirection::PlaceLeft,
-    frame_important: true, // `Main.cs:7649`
-    interaction: Interaction::Chair,
-    ..base_def()
-};
-
-/// The `PlaceRight` alternate (`:4148-4150`, `addAlternate(1)` → `Style = 1`).
-const CHAIR_RIGHT: TileObjectDef = TileObjectDef {
-    direction: TileObjectDirection::PlaceRight,
-    style: 1,
-    ..CHAIR_BASE
-};
-const CHAIR: TileObjectDef = TileObjectDef {
-    kind: 15,
-    alternates: &[CHAIR_RIGHT],
-    ..CHAIR_BASE
-};
-
-// -- chest (tile 21) — `TileObjectData.cs:3461-3470` + Style2x2 --------------
-
-/// `Style2x2` preset (`:3451-3460`) with the chest overrides (`:3461-3469`):
-/// 18 px bottom row, horizontal styles, `LavaDeath = false`, the
-/// `AnchorInvalidTiles` list, and the bottom anchor WITHOUT `AnchorType.Table`
-/// (`:3469` — a chest will not hang off a table edge). The C# hooks
-/// `Chest.FindEmptyChest` (:3464) / `Chest.AfterPlacement_Hook` (:3465) are the
-/// M3-CHEST-UI seam: the chest stays a pure tile object here.
-///
-/// `LavaDeath = false` (:3468) never touches placement: `SetupBaseObject`
-/// defaults `LavaPlacement = NotAllowed` (:1768) and `Calculate` (:1821-1831)
-/// folds death -> placement only when the death flag is *true*, so the chest
-/// keeps the base default — vanilla refuses to place a chest in lava
-/// (`TileObject.CanPlace` → `LiquidPlace`, TileObject.cs:342).
-const CHEST: TileObjectDef = TileObjectDef {
-    kind: 21,
-    width: 2,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
-    frame_important: true, // `Main.cs:7656`
-    ..base_def()
-};
-
-// -- sunflower (tile 27) — `TileObjectData.cs:4851-4864` ----------------------
-
-/// The 2x4 sunflower (`:4851-4864`): Origin(0,3), `AnchorBottom = SolidTile`
-/// over the whole width, 18 px bottom row, `AnchorValidTiles` grass family,
-/// `RandomStyleRange = 3` (the three sheet variants resolve through
-/// `CalculatePlacementStyle` + `can_place`'s random slot), `LavaDeath = true`
-/// (folded to `lava_placement = NotAllowed`) and water refused. `DrawYOffset`
-/// is not set; draw-only fields stay unported (module doc).
-const SUNFLOWER: TileObjectDef = TileObjectDef {
-    kind: 27,
-    width: 2,
-    height: 4,
-    origin: Point16::new(0, 3),
-    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 2, 0),
-    anchor_valid_tiles: &[2, 477, 109, 60, 492, 633],
-    coordinate_heights: &[16, 16, 16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    random_style_range: 3,
-    water_placement: LiquidPlacement::NotAllowed,
-    frame_important: true, // `Main.cs:7663`
-    ..base_def()
-};
-
-// -- loot pots (tile 28) — `TileObjectData.cs:3553-3559` + Style2x2 -----------
-
-/// `Style2x2` preset (`:3451-3460`: 2x2, Origin(0,1), heights 16/16) with the
-/// pot overrides (`:3554-3558`): `ApplyNaturalObjectRules()` (UsesCustomCanPlace
-/// /UsesGlobalLiquidChecks — routing/liquid-death flags, not ported), the
-/// bottom anchor WITHOUT `AnchorType.Table`, horizontal styles, wrap 3.
-const POTS: TileObjectDef = TileObjectDef {
-    kind: 28,
-    width: 2,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    style_wrap_limit: 3,
-    frame_important: true, // `Main.cs:7664`
-    ..base_def()
-};
-
-// -- clay pot (tile 78) — `TileObjectData.cs:2384-2388` + StyleOnTable1x1 -----
-
-/// `StyleOnTable1x1` preset (`:2324-2334`: 1x1, Table anchor, heights 16) with
-/// the pot overrides (`:2385-2387`): the anchor widened to solid/full-top/
-/// table/side and `LavaDeath = false`. As with the chest (:3468), setting only
-/// `LavaDeath = false` never re-allows lava placement — `SetupBaseObject`
-/// defaults `LavaPlacement = NotAllowed` (:1768) and `Calculate` (:1821-1831)
-/// folds death -> placement only when the flag is true, so the baked
-/// `NotAllowed` stands and the pot refuses lava (`TileObject.cs:342`).
-const CLAY_POT: TileObjectDef = TileObjectDef {
-    kind: 78,
-    width: 1,
-    height: 1,
-    origin: Point16::ZERO,
-    anchor_bottom: AnchorData::new(
-        anchor_type::SOLID_TILE
-            | anchor_type::SOLID_WITH_TOP
-            | anchor_type::TABLE
-            | anchor_type::SOLID_SIDE,
-        1,
-        0,
-    ),
-    coordinate_heights: &[16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    frame_important: true, // `Main.cs:7682`
-    ..base_def()
-};
-
-// -- herbs (tiles 82/83/84) — `TileObjectData.cs:4738-4788` + StyleAlch -------
-
-/// `StyleAlch` with the style-0 anchor set (`:4738-4756`): 1x1, 20 px row,
-/// `AnchorBottom = SolidTile | AlternateTile` over `AnchorAlternateTiles {78}`,
-/// water refused, `LavaDeath = true` (folded to `lava_placement =
-/// NotAllowed`). The herb stage is the tile TYPE (82 immature / 83 mature /
-/// 84 blooming) and the herb KIND is `frameX = 18 * kind` (`PlaceAlch`
-/// `WorldGen.cs:45470-45475`) — the registry entry exists for the kill
-/// cascade's gateway and the frames, because the seed route bypasses
-/// `TileObject.CanPlace` (`Player.cs:39772` excludes 82).
-///
-/// Draw-only fields stay unported (module doc): `DrawYOffset = -2`,
-/// `DrawFlipHorizontal = true`.
-const HERB_BASE: TileObjectDef = TileObjectDef {
-    width: 1,
-    height: 1,
-    origin: Point16::ZERO,
-    anchor_bottom: AnchorData::new(
-        anchor_type::SOLID_TILE | anchor_type::ALTERNATE_TILE,
-        1,
-        0,
-    ),
-    anchor_valid_tiles: &[2, 477, 109, 492],
-    anchor_alternate_tiles: &[78],
-    coordinate_heights: &[20],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    water_placement: LiquidPlacement::NotAllowed,
-    frame_important: true, // `Main.cs:7685`
-    ..base_def()
-};
-
-/// Sub-styles 1-6 (`:4757-4783`) — each `CopyFrom(StyleAlch)` plus its soil
-/// set and liquid overrides. Style 4 (water: 53/116) allows water; style 5
-/// (ash: 57/633) allows lava and drops `LavaDeath`; style 6 (snow) allows
-/// water.
-const HERB_1: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[60],
-    ..HERB_BASE
-};
-const HERB_2: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[0, 59],
-    ..HERB_BASE
-};
-const HERB_3: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[199, 203, 25, 23],
-    ..HERB_BASE
-};
-const HERB_4: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[53, 116],
-    water_placement: LiquidPlacement::Allowed,
-    ..HERB_BASE
-};
-const HERB_5: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[57, 633],
-    lava_placement: LiquidPlacement::Allowed,
-    ..HERB_BASE
-};
-const HERB_6: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[147, 161, 163, 164, 200],
-    water_placement: LiquidPlacement::Allowed,
-    ..HERB_BASE
-};
-
-/// Tile 82 (`:4784`): the base def carries style 0, sub-tiles 1-6 resolve
-/// through `get_tile_data` exactly like C# `SubTiles[style]` (:5136-5144).
-const IMMATURE_HERBS: TileObjectDef = TileObjectDef {
-    kind: 82,
-    subtiles: &[
-        (1, &HERB_1),
-        (2, &HERB_2),
-        (3, &HERB_3),
-        (4, &HERB_4),
-        (5, &HERB_5),
-        (6, &HERB_6),
-    ],
-    ..HERB_BASE
-};
-
-/// Tile 83 — `FullCopyFrom(82)` (`:4785-4786`).
-const MATURE_HERBS: TileObjectDef = TileObjectDef {
-    kind: 83,
-    frame_important: true, // `Main.cs:7686`
-    ..IMMATURE_HERBS
-};
-
-/// Tile 84 — `FullCopyFrom(83)` (`:4787-4788`).
-const BLOOMING_HERBS: TileObjectDef = TileObjectDef {
-    kind: 84,
-    frame_important: true, // `Main.cs:7687`
-    ..MATURE_HERBS
-};
-
-// -- small piles (tile 185) — `TileObjectData.cs:4975-4985` + Style1x1/2x1 ----
-
-/// The `SubTiles[0]` of the small piles (`:4981-4984`): a `Style2x1` copy
-/// (`:2798-2808`) with wrap 53 — selected whenever the tile's `frameY >= 18`
-/// (`GetStyle_SmallPiles` :5303-5310; the frameY-based override is the
-/// tile-based `GetTileData(Tile)` overload, phase-2 cascade material — the
-/// `(type, style)` overload indexes `SubTiles[0]` directly, :5136-5144).
-const SMALL_PILES_2X1: TileObjectDef = TileObjectDef {
-    width: 2,
-    height: 1,
-    origin: Point16::ZERO,
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    style_wrap_limit: 53,
-    frame_important: true, // `Main.cs:7415`
-    ..base_def()
-};
-
-/// Tile 185 (`:4975-4981`): a `Style1x1` copy (`:4238-4250`) — which carries
-/// the shared 11-id `AnchorInvalidTiles` (`:4244` → the list built at
-/// `:2112-2116`, the same list the chest uses) — plus `StyleHorizontal`,
-/// `ApplyNaturalObjectRules()` (not ported) and `GetStyleOverride` (see the
-/// sub-tile above). `LavaDeath = true` folds to `lava_placement = NotAllowed`.
-const SMALL_PILES: TileObjectDef = TileObjectDef {
-    kind: 185,
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 1, 0),
-    anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
-    coordinate_heights: &[16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    subtiles: &[(0, &SMALL_PILES_2X1)],
-    frame_important: true, // `Main.cs:7415`
-    ..base_def()
-};
-
-// -- large piles (tiles 186/187) — `TileObjectData.cs:3285-3312` + Style3x2 ---
-
-/// The large-pile `Style3x2` copy with the shared overrides (`:3286-3290` /
-/// `:3301-3304`): `LavaDeath = false` (baked `lava_placement = NotAllowed`
-/// stands — the Calculate fold only applies when the flag is true) and
-/// `DrawYOffset = 2` (draw-only, unported).
-const LARGE_PILES_BASE: TileObjectDef = TileObjectDef {
-    width: 3,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    ..base_def()
-};
-
-/// 186's snow/ice sub-styles (`:3291-3294`): 26-31 sit on the snow family,
-/// 32-34 on ice/mushroom grass.
-const LARGE_PILES_SNOW: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[147, 161, 163, 200, 164, 162, 224],
-    ..LARGE_PILES_BASE
-};
-const LARGE_PILES_ICE: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[59, 70],
-    ..LARGE_PILES_BASE
-};
-
-/// Tile 186 (`:3285-3295`): the base def (styles 0-25 carry no valid-tile
-/// list — any solid anchor passes) plus the two sub-style groups.
-const LARGE_PILES: TileObjectDef = TileObjectDef {
-    kind: 186,
-    subtiles: &[
-        (26, &LARGE_PILES_SNOW),
-        (27, &LARGE_PILES_SNOW),
-        (28, &LARGE_PILES_SNOW),
-        (29, &LARGE_PILES_SNOW),
-        (30, &LARGE_PILES_SNOW),
-        (31, &LARGE_PILES_SNOW),
-        (32, &LARGE_PILES_ICE),
-        (33, &LARGE_PILES_ICE),
-        (34, &LARGE_PILES_ICE),
-    ],
-    frame_important: true, // `Main.cs:7416`
-    ..LARGE_PILES_BASE
-};
-
-/// 187's sub-styles (`:3305-3311`): 0-5 jungle grass family, 6-8 ash family,
-/// 29-34 the sand family.
-const LARGE_PILES2_JUNGLE: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[59, 60, 226],
-    ..LARGE_PILES_BASE
-};
-const LARGE_PILES2_ASH: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[57, 58, 75, 76],
-    ..LARGE_PILES_BASE
-};
-const LARGE_PILES2_SAND: TileObjectDef = TileObjectDef {
-    anchor_valid_tiles: &[
-        53, 397, 396, 112, 398, 400, 234, 399, 401, 116, 402, 403,
-    ],
-    ..LARGE_PILES_BASE
-};
-
-/// Tile 187 (`:3301-3312`): `Style3x2` + `StyleWrapLimit = 35`,
-/// `LavaDeath = false`, three sub-style groups.
-const LARGE_PILES2: TileObjectDef = TileObjectDef {
-    kind: 187,
-    style_wrap_limit: 35,
-    subtiles: &[
-        (0, &LARGE_PILES2_JUNGLE),
-        (1, &LARGE_PILES2_JUNGLE),
-        (2, &LARGE_PILES2_JUNGLE),
-        (3, &LARGE_PILES2_JUNGLE),
-        (4, &LARGE_PILES2_JUNGLE),
-        (5, &LARGE_PILES2_JUNGLE),
-        (6, &LARGE_PILES2_ASH),
-        (7, &LARGE_PILES2_ASH),
-        (8, &LARGE_PILES2_ASH),
-        (29, &LARGE_PILES2_SAND),
-        (30, &LARGE_PILES2_SAND),
-        (31, &LARGE_PILES2_SAND),
-        (32, &LARGE_PILES2_SAND),
-        (33, &LARGE_PILES2_SAND),
-        (34, &LARGE_PILES2_SAND),
-    ],
-    frame_important: true, // `Main.cs:7417`
-    ..LARGE_PILES_BASE
-};
-
-// -- candle (33) + water candle (49) — `TileObjectData.cs:2334-2358` ---------
-
-/// `StyleOnTable1x1` (`:2325-2334`): 1x1 on a table surface, heights {20}.
-/// The water candle (49) shares the def (`:2351-2357` — heights {20},
-/// `DrawYOffset -4`; the draw case covers the offset).
-const CANDLE: TileObjectDef = TileObjectDef {
-    kind: 33,
-    width: 1,
-    height: 1,
-    anchor_bottom: AnchorData::new(anchor_type::TABLE, 1, 0),
-    coordinate_heights: &[20],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    frame_important: true,
-    interaction: Interaction::Candle,
-    ..base_def()
-};
-
-// -- candelabra (100) — `TileObjectData.cs:3600-3606` ------------------------
-// Style2x2 (`:3451-3461`) + `StyleWrapLimitVisualOverride 56` (draw-only),
-// `StyleLineSkip 2`, `DrawYOffset 2` (preview-only). Sub-tiles 25/42/40 are
-// the metal/lava variants — the style-0 wooden slice only.
-const CANDELABRA: TileObjectDef = TileObjectDef {
-    kind: 100,
-    width: 2,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS | anchor_type::TABLE, 2, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    style_line_skip: 2,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- chandelier (34) — `TileObjectData.cs:3139-3160` -------------------------
-// `Style3x3` (`:3095-3106`: 3x3, origin (1,2), AnchorBottom SWTSS 3) hangs:
-// the origin moves to the top-centre cell, the bottom anchor empties, and the
-// top anchor takes one solid/side tile in the centre column (checkStart 1).
-const CHANDELIER: TileObjectDef = TileObjectDef {
-    kind: 34,
-    width: 3,
-    height: 3,
-    origin: Point16::new(1, 0),
-    anchor_top: AnchorData::new(anchor_type::SOLID_TILE | anchor_type::SOLID_SIDE, 1, 1),
-    anchor_bottom: AnchorData::EMPTY,
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: false,
-    style_wrap_limit: 37,
-    style_line_skip: 2,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- hanging lantern (42) — `TileObjectData.cs:2441-2461` --------------------
-// `Style1x2Top` (`:2432-2441`: 1x2, origin (0,0), `AnchorTop = SolidTile |
-// SolidSide | PlanterBox`) + the platform alternate (`addAlternate(0)`,
-// `DrawYOffset -10` preview-only).
-const HANGING_LANTERN: TileObjectDef = TileObjectDef {
-    kind: 42,
-    width: 1,
-    height: 2,
-    origin: Point16::new(0, 0),
-    anchor_top: AnchorData::new(
-        anchor_type::SOLID_TILE | anchor_type::SOLID_SIDE | anchor_type::PLANTER_BOX,
-        1,
-        0,
-    ),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    frame_important: true,
-    alternates: &[TileObjectDef {
-        anchor_top: AnchorData::new(anchor_type::PLATFORM, 1, 0),
-        ..base_def()
-    }],
-    ..base_def()
-};
-
-// -- lamp (93) — `TileObjectData.cs:2403-2418` -------------------------------
-// `Style1xX` (`:2392-2403`: 1x3, origin (0,2), AnchorBottom SWTSS 1);
-// `StyleWrapLimitVisualOverride 37` is draw-only. Sub-tiles 23/42/40 are the
-// metal variants.
-const LAMP: TileObjectDef = TileObjectDef {
-    kind: 93,
-    width: 1,
-    height: 3,
-    origin: Point16::new(0, 2),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 1, 0),
-    coordinate_heights: &[16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- bookcase (101) — `TileObjectData.cs:3384-3400` --------------------------
-// `Style3x4` (`:3384-3393`): 3x4, origin (1,3), AnchorBottom SWTSS 3.
-const BOOKCASE: TileObjectDef = TileObjectDef {
-    kind: 101,
-    width: 3,
-    height: 4,
-    origin: Point16::new(1, 3),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- piano (87) — `TileObjectData.cs:3240-3249` ------------------------------
-// `Style3x2` (the table's preset, `:3179-3191`) with the default heights.
-const PIANO: TileObjectDef = TileObjectDef {
-    kind: 87,
-    width: 3,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- dresser (88) — `TileObjectData.cs:3199-3209` ----------------------------
-// Style3x2 + the chest's invalid-anchor tiles + `LavaDeath = false`
-// (the placement hooks are the M3-CHEST-UI seam).
-const DRESSER: TileObjectDef = TileObjectDef {
-    kind: 88,
-    width: 3,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
-    lava_placement: LiquidPlacement::Allowed,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- sink (172) — `TileObjectData.cs:3577-3583` ------------------------------
-// Style2x2 + the 18px bottom row (`StyleWrapLimitVisualOverride 53` is
-// draw-only).
-const SINK: TileObjectDef = TileObjectDef {
-    kind: 172,
-    width: 2,
-    height: 2,
-    origin: Point16::new(0, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    ..base_def()
-};
-
-// -- grandfather clock (104) — `TileObjectData.cs:3024-3035` -----------------
-// `Style2xX` (`:2861-2870`: 2x3, origin (1,2), AnchorBottom SWTSS 2,
-// horizontal) grown to 5 tall with the origin moved to the top-left cell and
-// `DrawYOffset 2` (preview-only).
-const GRANDFATHER_CLOCK: TileObjectDef = TileObjectDef {
-    kind: 104,
-    width: 2,
-    height: 5,
-    origin: Point16::new(0, 4),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
-    coordinate_heights: &[16, 16, 16, 16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    style_horizontal: true,
-    frame_important: true,
-    interaction: Interaction::Clock,
-    ..base_def()
-};
-
-// -- bed (79) — `TileObjectData.cs:2606-2645` --------------------------------
-// `Style4x2` (`:2555-2568`: 4x2, origin (1,1), AnchorBottom SWTSS 4,
-// `PlaceLeft` + the `PlaceRight` alternate, `StyleMultiplier/WrapLimit 2`) +
-// the 18px bottom row + `CoordinatePaddingFix (0, -2)`. Sub-tiles 8/42/56-64
-// are the other bed colours.
-const BED_BASE: TileObjectDef = TileObjectDef {
-    width: 4,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 4, 0),
-    coordinate_heights: &[16, 18],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    coordinate_padding_fix: Point16::new(0, -2),
-    direction: TileObjectDirection::PlaceLeft,
-    style_horizontal: true,
-    style_wrap_limit: 2,
-    style_multiplier: 2,
-    frame_important: true,
-    interaction: Interaction::Bed,
-    ..base_def()
-};
-const BED: TileObjectDef = TileObjectDef {
-    kind: 79,
-    alternates: &[TileObjectDef {
-        direction: TileObjectDirection::PlaceRight,
-        style: 1, // `addAlternate(1)` (`TileObjectData.cs:2567`)
-        ..BED_BASE
-    }],
-    ..BED_BASE
-};
-
-// -- bathtub (90) — `TileObjectData.cs:2568-2605` ----------------------------
-// `Style4x2` verbatim (heights {16,16}, no padding fix).
-const BATHTUB: TileObjectDef = TileObjectDef {
-    kind: 90,
-    width: 4,
-    height: 2,
-    origin: Point16::new(1, 1),
-    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 4, 0),
-    coordinate_heights: &[16, 16],
-    coordinate_width: 16,
-    coordinate_padding: 2,
-    direction: TileObjectDirection::PlaceLeft,
-    style_horizontal: true,
-    style_wrap_limit: 2,
-    style_multiplier: 2,
-    frame_important: true,
-    alternates: &[TileObjectDef {
-        direction: TileObjectDirection::PlaceRight,
-        style: 1, // `addAlternate(1)`
-        ..base_def()
-    }],
-    ..base_def()
-};
-
 /// `TileObjectData.GetTileData(type)` — the tile's base definition
 /// (`TileObjectData.cs:5126-5194` without the sub-tile/alternate walk).
 pub fn def_for_tile(kind: u16) -> Option<&'static TileObjectDef> {
-    TABLE.iter().find(|def| def.kind == kind)
+    // `_data[type]` (`TileObjectData.cs:5136`) — the generated per-kind table.
+    BY_KIND.get(kind as usize).copied().flatten()
+}
+
+/// `TileObjectData.CustomPlace(type, style)` (`TileObjectData.cs:5016-5037`):
+/// the placement-routing flag — a registered def whose style-resolved
+/// `UsesCustomCanPlace` is true. `Player.PlaceThing_Tiles_TryPlacing`
+/// (`Player.cs:39771`) gates the `TileObject.CanPlace` route on this (with the
+/// explicit 82/227/4 exclusions), NOT on mere registration: the natural
+/// objects (pots 28, piles 185/186/187, plants, platforms 19) are registered
+/// but route through the legacy `WorldGen.PlaceTile`.
+pub fn custom_place(kind: u16, style: i32) -> bool {
+    let Some(def) = def_for_tile(kind) else {
+        return false;
+    };
+    if style < 0 {
+        return false;
+    }
+    // :5027-5035 — the style's sub-tile flag wins when present.
+    if let Some((_, sub)) = def.subtiles.iter().find(|(s, _)| *s as i32 == style) {
+        return sub.uses_custom_can_place;
+    }
+    def.uses_custom_can_place
+}
+
+/// `Main.tileFrameImportant[kind]` — the generated static table (the port's
+/// `World.frame_important` is a per-world mirror; this is the boot truth).
+pub fn frame_important(kind: u16) -> bool {
+    FRAME_IMPORTANT.get(kind as usize).copied().unwrap_or(false)
+}
+
+/// The `Player.PlaceThing_Tiles_TryPlacing` registry-route gate
+/// (`Player.cs:39771-39772`): `TileObjectData.CustomPlace(tileToCreate,
+/// placeStyle) && tileToCreate != 82 && tileToCreate != 227 && tileToCreate
+/// != 4`. The kinds that pass ride `TileObject.CanPlace`/`Place`; everything
+/// else (the natural objects — pots, piles, plants, platforms, torches, dye
+/// plants — and the unregistered kinds) keeps the legacy `WorldGen.PlaceTile`
+/// route with the app's neighbour/overlap pre-checks. S1-F-7: the gate is the
+/// `CustomPlace` flag, not mere registration (the full registry registers the
+/// natural objects too).
+pub fn routes_through_tile_object(kind: u16, style: i32) -> bool {
+    kind != 82 && kind != 227 && kind != 4 && custom_place(kind, style)
+}
+
+/// `WorldGen.KillTile_GetItemDrops`' empty case group (`WorldGen.cs:63988-66090`):
+/// the kind drops nothing per-cell (its loot rides the `Check*` cascade record).
+pub fn kill_tile_no_cell_drop(kind: u16) -> bool {
+    KILL_TILE_NO_CELL_DROP.get(kind as usize).copied().unwrap_or(false)
 }
 
 /// `TileObjectData.GetTileData(type, style, alternate)` for an already-resolved
@@ -2320,6 +1525,10 @@ pub fn object_tiles_at(world: &World, x: i32, y: i32) -> Option<ObjectTiles> {
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
     use super::*;
+    /// The SolidTile|SolidWithTop|SolidSide anchor shorthand the hand defs
+    /// used (the generated table spells the numeric flags out).
+    const ANCHOR_SWTSS: u16 =
+        anchor_type::SOLID_TILE | anchor_type::SOLID_WITH_TOP | anchor_type::SOLID_SIDE;
     use crate::tile::FLAG_ACTIVE;
     use crate::world::World;
 
@@ -2398,7 +1607,14 @@ mod tests {
         assert_eq!(table.anchor_bottom.tile_count, 3); // Style3x2 :3172
         assert_eq!(table.coordinate_heights, &[16, 18]); // :3181
         assert!(table.style_horizontal); // :3177
-        assert!(table.subtiles.is_empty(), "subtile data is a follow-up");
+        // S1-F-7: the generated table carries the C# sub-tiles — style 13 (the
+        // liquid variant, :3182-3185) and style 25 (the 1-tall variant,
+        // :3186-3190). The hand slice left these empty (a follow-up then).
+        assert_eq!(
+            table.subtiles.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+            vec![13, 25]
+        );
+        assert_eq!(get_tile_data(&table, 25, 0).unwrap().height, 1); // :3187
 
         let door = def_for_tile(10).unwrap();
         assert_eq!((door.width, door.height), (1, 3)); // :2223-2224
@@ -3237,6 +2453,7 @@ mod tests {
             height: 1,
             hook_check_if_can_place: PlacementHook {
                 hook: Some(hook_reject),
+                callback: "",
                 bad_return: -1,
                 bad_response: 0,
                 processed_coordinates: false,
@@ -3256,6 +2473,7 @@ mod tests {
             height: 1,
             hook_place_override: PlacementHook {
                 hook: Some(hook_accept),
+                callback: "",
                 bad_return: -1,
                 bad_response: 0,
                 processed_coordinates: false,
@@ -3267,6 +2485,7 @@ mod tests {
             height: 1,
             hook_place_override: PlacementHook {
                 hook: Some(hook_reject),
+                callback: "",
                 bad_return: -1,
                 bad_response: 0,
                 processed_coordinates: false,
@@ -3555,10 +2774,17 @@ mod tests {
         assert_eq!(get_tile_data(herb, 4, 0).unwrap().water_placement, LiquidPlacement::Allowed);
         assert_eq!(get_tile_data(herb, 5, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
         assert_eq!(get_tile_data(herb, 6, 0).unwrap().water_placement, LiquidPlacement::Allowed);
-        // 83/84 are FullCopyFrom chains — the sub-tiles ride along.
+        // 83/84 are `FullCopyFrom(82)`/`FullCopyFrom(83)` chains (:4785-4788).
+        // S1-F-7 divergence (C# wins): `FullCopyFrom`'s sub-tile copy ctor loops
+        // `i < this.data.Count` over the FRESH list (Count 0 —
+        // TileObjectSubTilesModule.cs:17-27), so the copy's sub-tile list is
+        // EMPTY in vanilla. The hand defs wrongly carried 82's sub-tiles along;
+        // the generated table reproduces the C# bug: 83/84 resolve no sub-tiles,
+        // so style 5 stays the base def (LavaPlacement NotAllowed).
         for kind in [83u16, 84] {
             let def = def_for_tile(kind).unwrap();
-            assert_eq!(get_tile_data(def, 5, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
+            assert!(def.subtiles.is_empty(), "FullCopyFrom empties the sub-tiles (C# bug)");
+            assert_eq!(get_tile_data(def, 5, 0).unwrap().lava_placement, LiquidPlacement::NotAllowed);
         }
         // Small piles: style 0 IS the 2x1 sub-tile (SubTiles[0] non-null,
         // :4981-4984); any other style falls back to the 1x1 base.
@@ -3775,9 +3001,12 @@ mod tests {
                 AnchorData::new(ANCHOR_SWTSS, 3, 0)
             );
         }
-        // The tiles were NOT registered before this task — the anonymous
-        // neighbours stay absent.
-        assert!(def_for_tile(220).is_none());
+        // S1-F-7: the full registry registers the Solidifier 220 too
+        // (`TileObjectData.cs:4048`, Style3x3 + DrawYOffset 2) — the hand slice
+        // had only the two extractinators. A genuinely unregistered neighbour
+        // (Palladium ore 221) stays absent.
+        assert!(def_for_tile(220).is_some());
+        assert!(def_for_tile(221).is_none());
     }
 
     #[test]
@@ -3821,5 +3050,195 @@ mod tests {
                 assert!(!w.tile(9 + sub_x, 17 + sub_y).unwrap().active());
             }
         }
+    }
+
+    // ---- S1-F-7 wave A: per-family spot tests of the GENERATED registry ------
+    //
+    // Each family pins the static fields straight from the C# builder chain
+    // (the generator interprets `Initialize` 1:1; these are the regression
+    // anchors for the families the task names). The full-table snapshot is the
+    // `tileobject_registry_freeze` integration test; the regen-idempotence is
+    // `tools/GenTileObjectData/test_gen.py`.
+
+    /// Platforms (tile 19 + the 427/435..439 variants): the `Initialize` prelude
+    /// (`TileObjectData.cs:2127-2160`) — 1x1, 16-px cell, horizontal styles,
+    /// multiplier/wrap 27, `LavaDeath=true` folded to `LavaPlacement NotAllowed`,
+    /// `UsesCustomCanPlace=false` (the legacy `WorldGen.PlaceTile` case-19 route).
+    #[test]
+    fn s1_f_7_platforms_match_the_csharp_prelude() {
+        for kind in [19u16, 427, 435, 436, 437, 438, 439] {
+            let def = def_for_tile(kind).unwrap_or_else(|| panic!("platform {kind} registered"));
+            assert_eq!((def.width, def.height), (1, 1), "kind {kind}");
+            assert_eq!(def.origin, Point16::ZERO, "kind {kind}");
+            assert_eq!(def.coordinate_width, 16, "kind {kind}");
+            assert_eq!(def.coordinate_padding, 2, "kind {kind}");
+            assert_eq!(def.coordinate_heights, &[16], "kind {kind}");
+            assert!(def.style_horizontal, "kind {kind}");
+            assert_eq!(def.style_multiplier, 27, "kind {kind}"); // :2131/:2144/:2155
+            assert_eq!(def.style_wrap_limit, 27, "kind {kind}"); // :2132/:2145/:2156
+            assert_eq!(def.lava_placement, LiquidPlacement::NotAllowed, "kind {kind}"); // LavaDeath fold
+            assert!(!def.uses_custom_can_place, "kind {kind}"); // :2133/:2146/:2157
+            assert!(def.frame_important, "kind {kind}");
+            // `PlatformFrameWidth()` (:5121-5124) = `_data[19].CoordinateFullWidth`.
+            assert_eq!(def.coordinate_full_width(), 18, "kind {kind}");
+        }
+        // The platform sub-tiles 13/43/47 (:2138) allow lava (the prelude's
+        // newSubTile LavaDeath=false + LavaPlacement=Allowed).
+        let platform = def_for_tile(19).unwrap();
+        for style in [13u16, 43, 47] {
+            let sub = get_tile_data(platform, style as i32, 0).unwrap();
+            assert_eq!(sub.lava_placement, LiquidPlacement::Allowed, "sub {style}");
+        }
+    }
+
+    /// Torches (tile 4): `StyleTorch` (`TileObjectData.cs:4577-4628`) — 1x1,
+    /// 20-px cell, multiplier/wrap 6, `FlattenAnchors`, water/lava death, and the
+    /// three wall/side alternates (left/right/tree-anchor + wall).
+    #[test]
+    fn s1_f_7_torches_match_the_csharp_style_torch() {
+        let torch = def_for_tile(4).unwrap();
+        assert_eq!((torch.width, torch.height), (1, 1)); // :4577-4578
+        assert_eq!(torch.coordinate_width, 20); // :4583
+        assert_eq!(torch.coordinate_padding, 2); // :4584
+        assert_eq!(torch.coordinate_heights, &[20]); // :4581
+        assert!(torch.flatten_anchors); // :4580
+        assert_eq!(torch.style_multiplier, 6); // :4585
+        assert_eq!(torch.style_wrap_limit, 6); // :4586
+        assert!(torch.style_horizontal); // :4587
+        assert_eq!(torch.water_placement, LiquidPlacement::NotAllowed); // :4588 + WaterDeath fold
+        assert_eq!(torch.lava_placement, LiquidPlacement::NotAllowed); // :4589
+        assert!(torch.water_death); // :4590
+        assert!(torch.lava_death); // :4591
+        assert!(torch.uses_custom_can_place); // :4592
+        // The three alternates (:4596-4606): left-anchor (style 1), right-anchor
+        // (style 2), wall-anchor (style 0). The side anchors carry the tree/
+        // alternate-tile set {124, 561, 574..578}.
+        assert_eq!(torch.alternates.len(), 3);
+        let left = &torch.alternates[0];
+        assert_eq!(left.style, 1);
+        assert_eq!(left.anchor_left.ty, 1 | 8 | 0x10 | 0x20); // SolidTile|SolidSide|Tree|AlternateTile
+        assert_eq!(left.anchor_alternate_tiles, &[124, 561, 574, 575, 576, 577, 578]);
+        let right = &torch.alternates[1];
+        assert_eq!(right.style, 2);
+        assert_eq!(right.anchor_right.ty, 1 | 8 | 0x10 | 0x20);
+        let wall = &torch.alternates[2];
+        assert_eq!(wall.style, 0);
+        assert!(wall.anchor_wall);
+        // The torch sub-tiles 8/11/17 (:4607-4627) allow water AND lava.
+        for style in [8u16, 11, 17] {
+            let sub = get_tile_data(torch, style as i32, 0).unwrap();
+            assert_eq!(sub.water_placement, LiquidPlacement::Allowed, "sub {style}");
+            assert_eq!(sub.lava_placement, LiquidPlacement::Allowed, "sub {style}");
+        }
+    }
+
+    /// Doors (tiles 10/11): the closed door's three click-point alternates and
+    /// the open door's five (right-open ×2 + left-open ×3), style wrap 36.
+    #[test]
+    fn s1_f_7_doors_match_the_csharp_alternation() {
+        let closed = def_for_tile(10).unwrap();
+        assert_eq!((closed.width, closed.height), (1, 3)); // :2223-2224
+        assert_eq!(closed.style_wrap_limit, 36); // :2234
+        assert_eq!(closed.style_line_skip, 3); // :2235
+        assert!(!closed.style_horizontal); // :2233
+        assert_eq!(closed.alternates.len(), 2); // :2236-2241
+        assert_eq!(closed.alternates[0].origin, Point16::new(0, 1));
+        assert_eq!(closed.alternates[1].origin, Point16::new(0, 2));
+        // The closed-door sub-tiles 19/48 (:2242-2246) allow lava.
+        for style in [19u16, 48] {
+            let sub = get_tile_data(closed, style as i32, 0).unwrap();
+            assert_eq!(sub.lava_placement, LiquidPlacement::Allowed, "sub {style}");
+        }
+
+        let open = def_for_tile(11).unwrap();
+        assert_eq!((open.width, open.height), (2, 3)); // :2248-2249
+        assert_eq!(open.style_line_skip, 2); // :2260
+        assert_eq!(open.direction, TileObjectDirection::PlaceRight); // :2261
+        assert_eq!(open.alternates.len(), 5); // :2262-2285
+        // Right-open click points (style 0), then left-open (style 1, PlaceLeft,
+        // hinge-column anchors checkStart 1).
+        for (i, alt) in open.alternates.iter().enumerate() {
+            let (style, dir) = if i < 2 { (0, TileObjectDirection::PlaceRight) }
+                else { (1, TileObjectDirection::PlaceLeft) };
+            assert_eq!(alt.style, style, "alt {i}");
+            assert_eq!(alt.direction, dir, "alt {i}");
+        }
+        assert_eq!(open.alternates[2].origin, Point16::new(1, 0)); // :2269
+        assert_eq!(open.alternates[2].anchor_top.check_start, 1); // :2270
+    }
+
+    /// Chairs (tile 15): `Style1x2` + the chair overrides
+    /// (`TileObjectData.cs:4141-4173`) — wrap/multiplier 2, padding fix (0,2),
+    /// the PlaceRight alternate, and the sub-tile families 16/47 + 51..67.
+    #[test]
+    fn s1_f_7_chairs_match_the_csharp_style_1x2() {
+        let chair = def_for_tile(15).unwrap();
+        assert_eq!((chair.width, chair.height), (1, 2)); // Style1x2 :4131-4132
+        assert_eq!(chair.origin, Point16::new(0, 1)); // :4133
+        assert_eq!(chair.coordinate_heights, &[16, 18]); // :4142
+        assert_eq!(chair.coordinate_padding_fix, Point16::new(0, 2)); // :4146
+        assert_eq!(chair.style_wrap_limit, 2); // :4144
+        assert_eq!(chair.style_multiplier, 2); // :4145
+        assert_eq!(chair.direction, TileObjectDirection::PlaceLeft); // :4143
+        assert_eq!(chair.alternates.len(), 1); // :4148-4150
+        assert_eq!(chair.alternates[0].direction, TileObjectDirection::PlaceRight);
+        assert_eq!(chair.alternates[0].style, 1);
+        // The sub-tiles: 16/47 (the lava-allowed variants, :4151-4155) and
+        // 51..67 (the toilet family, :4156-4172).
+        let sub_styles: Vec<u16> = chair.subtiles.iter().map(|(s, _)| *s).collect();
+        assert!(sub_styles.contains(&16) && sub_styles.contains(&47));
+        for s in 51..=67u16 {
+            assert!(sub_styles.contains(&s), "toilet sub-tile {s}");
+        }
+        assert_eq!(get_tile_data(chair, 16, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
+    }
+
+    /// S1-F-7a regression: sub-tiles carry their OWN alternates lists —
+    /// `GetTileData` does `alternate--` then indexes the RESOLVED sub-tile's
+    /// Alternates (TileObjectData.cs:5148-5157). Dropping them refused the
+    /// Obsidian Chair (item 1459, tile 15 style 16) right-facing placement
+    /// and lost the torch wall-anchor alternate.
+    #[test]
+    fn s1_f_7a_sub_tile_alternates_resolve() {
+        // Chair style 16 (Obsidian, :4151-4155): alternate 1 is the
+        // PlaceRight variant (style 1) — the CanPlace direction filter's
+        // only right-facing candidate for that style.
+        let chair = def_for_tile(15).unwrap();
+        let right = get_tile_data(chair, 16, 1).unwrap();
+        assert_eq!(right.direction, TileObjectDirection::PlaceRight);
+        assert_eq!(right.style, 1);
+        // Torch sub-tile 8 (:4607-4627, CopyFrom of the torch base):
+        // alternate 3 is the wall-anchor variant (:4596-4606).
+        let torch = def_for_tile(4).unwrap();
+        let wall = get_tile_data(torch, 8, 3).unwrap();
+        assert!(wall.anchor_wall);
+    }
+
+    /// Chests (tile 21): `Style2x2` + the chest overrides
+    /// (`TileObjectData.cs:3461-3470`) — 18-px bottom row, horizontal styles,
+    /// the 11-id invalid-anchor list, the bottom anchor WITHOUT Table, and the
+    /// `Chest.FindEmptyChest`/`AfterPlacement_Hook` callback seams.
+    #[test]
+    fn s1_f_7_chests_match_the_csharp_style_2x2() {
+        let chest = def_for_tile(21).unwrap();
+        assert_eq!((chest.width, chest.height), (2, 2)); // Style2x2 :3451-3452
+        assert_eq!(chest.origin, Point16::new(0, 1)); // :3462
+        assert_eq!(chest.coordinate_heights, &[16, 18]); // :3463
+        assert!(chest.style_horizontal); // :3467
+        // :3469 — the bottom anchor drops the preset's AnchorType.Table.
+        assert_eq!(chest.anchor_bottom.ty, 1 | 2 | 8); // SolidTile|SolidWithTop|SolidSide
+        assert_eq!(chest.anchor_bottom.tile_count, 2);
+        // :3466 — the shared 11-id invalid list (:2112-2116).
+        assert_eq!(chest.anchor_invalid_tiles, &[127, 138, 664, 665, 484, 711, 712, 713, 714, 715, 716]);
+        // :3468 sets only LavaDeath=false — the baked NotAllowed stands.
+        assert_eq!(chest.lava_placement, LiquidPlacement::NotAllowed);
+        assert!(!chest.lava_death);
+        // The hook callback seams (:3464-3465): the names are generated data,
+        // the bodies stay runtime callbacks (wave A).
+        assert_eq!(chest.hook_check_if_can_place.callback, "Chest.FindEmptyChest");
+        assert_eq!(chest.hook_check_if_can_place.bad_return, -1);
+        assert!(chest.hook_check_if_can_place.processed_coordinates);
+        assert_eq!(chest.hook_post_place_my_player.callback, "Chest.AfterPlacement_Hook");
+        assert!(chest.hook_check_if_can_place.hook.is_none(), "the body is a wave-B callback");
     }
 }

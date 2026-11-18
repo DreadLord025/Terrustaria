@@ -178,6 +178,15 @@ The Rust `proj_data` table binds **60 distinct aiStyles** across 172 arm groups
 (229 kinds). The **19 styles below have a data row but no dispatch arm** (88/108 wired S1-D-4c), so those
 projectiles hold position and never animate, damage or expire:
 
+> **Update 2026-11-18 (S1-D-4b-2):** the sentry-backpack family — styles **134**
+> (Ballista), **137** (Lightning Aura), **138** (Explosive Trap) and **139** (the
+> trap blast, kinds 694/695/696) — is now armed, with the shared
+> `CanGetPickedUpBySentryBackpack`/`AI_Sentries_HeavySlingReposition` helpers and
+> the `accSentryBackpack` accessory wired. The rows below are kept for the audit
+> trail; the struck-through severities mark the landed styles. (Several other
+> rows — 2/23/66/70/79/80/133/157/158/187/189 — landed with S1-D-4b-1/4/5/6 and
+> are likewise stale; the S1-D-4b parent row tracks the remainder.)
+
 | style | Rust kinds (ids) | C# behaviour | Severity |
 | --- | --- | --- | --- |
 | 2 | DUTCHMAN_SHELL (240) | aiStyle-2 machine: wind, per-type dust/rotation (23205-23689) | behavioural |
@@ -192,9 +201,9 @@ projectiles hold position and never animate, damage or expire:
 | 123 | MOONLORD_TURRET (641), RAINBOW_CRYSTAL (643) | `AI_123_FloatingTurrets` (34966) | behavioural |
 | 130 | FLAME_BURST_TOWER_1/2/3 (663/…) | `AI_130_FlameBurstTower` (36310) | behavioural |
 | 133 | DARK_MAGE_MARKER (673) | the marker fade/scale (36435) | behavioural |
-| 134 | BALLISTRA_TOWER_1/2/3 (677/…) | `AI_134_Ballista` (36499) | behavioural |
-| 137 | LIGHTNING_AURA_1/2/3 (688/…) | `AI_137_LightningAura` (36511) | behavioural |
-| 138 | EXPLOSIVE_TRAP_1/2/3 (691/…) | `AI_138_ExplosiveTrap` (36515) | behavioural |
+| 134 | BALLISTRA_TOWER_1/2/3 (677/…) | `AI_134_Ballista` (36499) | ~~behavioural~~ **armed S1-D-4b-2** |
+| 137 | LIGHTNING_AURA_1/2/3 (688/…) | `AI_137_LightningAura` (36511) | ~~behavioural~~ **armed S1-D-4b-2** |
+| 138 | EXPLOSIVE_TRAP_1/2/3 (691/…) | `AI_138_ExplosiveTrap` (36515) | ~~behavioural~~ **armed S1-D-4b-2** |
 | 157 | DEERCLOPS_ICE_SPIKE (961) | `AI_157_SharpTears` (36591) | behavioural |
 | 158 | BABY_BIRD (759) | `AI_158_BabyBird` (48757) | behavioural |
 | 187 | SHADOW_HAND (965) | `AI_187_ShadowHand` (42502) | behavioural |

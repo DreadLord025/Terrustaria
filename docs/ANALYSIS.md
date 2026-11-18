@@ -10495,26 +10495,65 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
-- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
-  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
-  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
-  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
-  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
-  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
-  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
-  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
-  light layer; the tracked explode sound (`:69362`) — no sound layer; the
-  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
-  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
-  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
-  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
-  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
-  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
-  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
-  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
-  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
-  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
-  the tile, `velocity = Zero`, no kill.
+- **S1-D-4b-2 (2026-11-18) ported the sentry-backpack family** — aiStyle **138**
+  (Explosive Trap, `AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`), **139** (the
+  blast, `AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick alpha fade, the
+  one-shot latch, the 3-tick frame-wrap kill), **134** (Ballista, `AI_134_Ballista`,
+  `:68510-68651`) and **137** (Lightning Aura, `AI_137_LightningAura`, `:68854-69023`),
+  plus the shared `CanGetPickedUpBySentryBackpack`/`SetAsSelectedSentryBackpackTarget`
+  (`:78785-78810`) and `AI_Sentries_HeavySlingReposition` (`:69025-69299`). The blast
+  kinds 694/695/696 ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139,
+  alpha 255, the local-immunity 30 pair); the Ballista's 680 bolt gained its row
+  (`:7253-7262` — 16x16, aiStyle 1, penetrate 4, local-immunity −1) and the towers/auras
+  their `proj_frames` (`Main.cs:8461-8466`).
+  - **The backpack accessory is wired.** `Player.accSentryBackpack` (the four slings
+    6172/6175/6176/6177, `Player.cs:14507`/`:14565`/`:14573`/`:14577`), the grab cooldown
+    (`accSentryBackpackGrabCooldown`, `Update_SentryBackpack` `:28428-28434`, decremented
+    in `world_sim/player.rs` beside the ammo cycler) and the DD2 set flags
+    (`setSquireT2/T3`, `setHuntressT2/T3`, `setMonkT2/T3` from `ArmorSetBonuses.Benefits`
+    `:68-118`, `ballistaPanic` from buff 205 `:11843-11846`) re-derive per tick after
+    `ResetEffects` clears them. The 6175 Scout Sling's +5% all-class damage and the 6177
+    Harness's `noKnockback` ride along; the 6176 `accGolemSentryBackpack` half and the
+    6175 `aggro -= 400` half have no port consumer (the Golem-backpack crit arm
+    `Projectile.cs:12930` and the aggro system are unported). The DD2 sets' `maxTurrets++`
+    halves land in `Player::update`'s armor-set block.
+  - **The reposition's gravDir folds to 1.** `AI_Sentries_HeavySlingReposition`'s
+    `player.gravDir` multipliers (`:69038`/`:69064`/`:69111`/`:69139`/`:69147`/`:69169`)
+    take their positive branch (no gravity potion in the port); the sleeping/sitting
+    offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
+    The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
+    but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
+    reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
+    `_type = -1`; the port's `dismount()` likewise resets the kind).
+  - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
+    `:69412-69413`) — no pool light layer; the tracked sounds (`:68615`/`:68905`/`:69362`)
+    — no sound layer; the aura's three dust loops (`:68959-69015`) and their `Main.rand`
+    gating rolls (`Next(6)`/`NextVector2Unit`/`Next(10)`) — no dust layer (the
+    `ai_volcano`/`ai_eye_fire` precedent). The 680 bolt's aiStyle-1 per-type flight
+    (`AI_001`'s `type == 680` arms `:57471-57478`/`:57658-57661`) rides the generic arrow
+    flight — the per-type `AI_001` table is S1-D-4b-8. The aura's `Colliding` arm
+    (`:15800-15814`, the `AI_137_LightningAura_CanHit` reach test) and the blast's
+    `StatusNPC` Oiled debuff (`:11434-11437`) + the aura's full armor-penetration
+    (`:13232-13235`) are damage-side arms under the S1-C-8 `Colliding`/`StatusNPC` skip —
+    the shared `Damage_PVE` pass uses the plain box overlap. `AI_137_LightningAura_CanHit`
+    (`:70470-70500`) is ported as a helper for that future wiring.
+  - **The reposition-kill edge follows the port's dead-slot convention.** In C#, when
+    the backpack accessory is removed mid-carry, `AI_Sentries_HeavySlingReposition`
+    calls `Kill()` (`:69030`) but the calling arm's remaining body still runs on the
+    dead slot (a Ballista can even fire one last bolt that tick — the spawn gate reads
+    only `owner == Main.myPlayer`). The port's arms stop at the kill (`killed` flag),
+    the same "a dead slot pays nothing further" convention the pool documents at its
+    AI-dispatch guard — the dead slot's writes are unobservable (the spawn seam fully
+    resets a recycled slot). The accessory-removal tick is the only reachable case.
+  - **RNG**: the four AI arm bodies draw no `Main.rand` (proven by the seed-untouched
+    test `s1_d_4b_2_the_sentry_arms_draw_no_rng`). The blocked-move chain's tile-cut
+    prologue (`:17910-17948`) would draw `Main.rand.Next(3)` (`:17948`) for a friendly,
+    damage > 0, `CanCutTiles()`-true sentry, but the pool skips the whole tile-cut chain
+    (no 484/cracked-brick cutting layer, the `sentry_hydra_step`/`sentry_turret_step`
+    precedent), so that draw is skipped with it; the aura is on `CanCutTiles`'s refusal
+    list (`:15329`) anyway. The blocked-move path is the DD2 sentry arm (`:17986-17990`,
+    the `dd2_sentry_step` helper): one last step into the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -16234,6 +16273,104 @@ Deviations:
   takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
 - **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
   the toolbar's open-folder button plays its cue only.
+
+## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
+
+`tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
+(`TileObjectData.cs:2110-5014`) statement-by-statement and emits all 389
+registered tiles (604 defs) into `crates/tr-core/src/tileobject/registry.rs`,
+retiring the 33 hand-written defs. The generator reproduces the copy-on-write
+builder chain (module sharing via `CopyFrom`, the `_hasOwn*` no-op-compare
+setters, `Calculate`'s liquid-death fold, `LinkedAlternates` propagation,
+`addTile`/`addSubTile`/`addAlternate`/`addBaseTile` cursor resets) and two C#
+bugs verbatim:
+
+* **`FullCopyFrom` empties the sub-tiles** (`TileObjectData.cs:1722-1741` +
+  `TileObjectSubTilesModule.cs:17-27`): the copy ctor loops `i < this.data.Count`
+  over the FRESH list (Count 0, capacity != count), so tiles 83/84
+  (`FullCopyFrom(82)`/`(83)`, :4785-4788) and 389 (`FullCopyFrom(388)`, :2323)
+  resolve NO sub-tiles in vanilla. The hand defs wrongly carried 82's sub-tiles
+  into 83/84; the generated table reproduces the bug.
+* **`AnchorAlternateTiles` compares against `tileInvalid`** (:449) — a no-op
+  write when the alternate list equals the INVALID list (a C# typo, reproduced).
+
+The shared-reference alternates/sub-tile cycles (C# heap references; `CopyFrom`
+shares the lists, then `addAlternate`/`addSubTile` appends) emit acyclic:
+top-level defs AND sub-tile nodes keep their OWN alternates lists verbatim —
+`GetTileData` (`TileObjectData.cs:5148-5157`) does `alternate--` then indexes the
+RESOLVED sub-tile's Alternates, so dropping them refused placements the C#
+accepts (S1-F-7a: chair style 16 right-facing, torch sub8 wall-anchor; 69
+sub-tiles carry non-empty alternates). Alternate NODES are leaves (scalar
+fields + empty nested lists): their deeper nested lists are the cycle depth no
+consumer reads — `GetTileData` resolves only one level past the sub-tile and
+`can_place`/`custom_place` read the base's lists plus one resolution level.
+Verified over the interpreted graph: every sub-tile alternate target is a pure
+leaf (never a top/sub-tile object, no self-references), so top -> sub ->
+alternate-leaf emission is acyclic (the DFS test in `test_gen.py`). Sub-tiles'
+nested sub-tile lists are likewise not emitted (the deeper C# cycles; no
+consumer resolves a sub-tile's sub-tiles).
+
+### Divergences vs the 33 hand defs (the C# wins)
+
+Field-level diff of the hand-resolved baseline against the generated table
+(the regression dump). Every row is the C# chain's truth; the hand def was wrong:
+
+| Tile / def | Field | Hand | Generated (C#) | C# cite |
+|---|---|---|---|---|
+| safe 97 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3589-3590 |
+| safe 97 | StyleHorizontal | true | false | Style2x2 never sets it (:3451-3460) |
+| sink 172 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3576-3583 |
+| sink 172 | StyleHorizontal | true | false | Style2x2 never sets it |
+| void vault 491 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style3x3 :3100, no override :3798-3800 |
+| void vault 491 | StyleHorizontal | true | false | Style3x3 never sets it (:3097-3105) |
+| candelabra 100 | StyleHorizontal | true | false | Style2x2 never sets it (:3594-3606) |
+| lamp 93 | WaterPlacement | Allowed | NotAllowed | :2407-2408 WaterDeath=true + fold |
+| lamp 93 | StyleLineSkip | 1 | 2 | :2405 |
+| dresser 88 | LavaPlacement | Allowed | NotAllowed | :3204 LavaDeath=false keeps the baked NotAllowed |
+| dresser 88 | HookCheckIfCanPlace | none | Chest.FindEmptyChest (-1,0,true) | :3201 |
+| chest 21 | HookCheckIfCanPlace metadata | (0,0,false) | (-1,0,true) | :3464 (name now generated) |
+| bed 79 alt1 | CoordinateHeights | [16,18] | [16,16] | Style4x2 alternate copies the preset, not the bed override (:2564-2566) |
+| bed 79 alt1 | CoordinatePaddingFix | (0,-2) | (0,0) | same — the alternate is the Style4x2 base |
+| bathtub 90 alt1 | whole def | base_def() 1x1 | full Style4x2 4x2 PlaceRight | :2564-2566 copies newTile (the full def) |
+| hanging lantern 42 alt1 | whole def | base_def() 1x1 | full Style1x2Top 1x2 + platform anchor | :2444-2447 copies newTile |
+| large piles 187 sub0-8,29-34 | StyleWrapLimit | 0 | 35 | :3296 set on newTile before the sub-tile CopyFrom |
+| herbs 83/84 sub1-6 | present | 6 sub-tiles | empty (FullCopyFrom bug) | :4785-4788 + TileObjectSubTilesModule.cs:17-27 |
+| table 14 | sub-tiles | empty | 13, 25 | :3182-3190 |
+| tile 220 (Solidifier) | registered | absent | present (Style3x3) | :4048 |
+
+Plus the sub-tile families the hand slice left empty (now generated): doors
+10/11 sub 19/48, work bench 18 sub 14/43, candle 33 sub 25/39/41, chandelier 34
+sub 32/46/48, chair 15 sub 16/47 + 51..67, bed 79 sub 8/42 + 56..64, piano 87
+sub 15/42, dresser 88 sub 9/42, bookcase 101 sub 4/43, clock 104 sub 17/43,
+candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
+
+### Consumer switch (minimal, behaviour-preserving)
+
+* `edit::place_item_tile` gates on `tileobject::routes_through_tile_object`
+  (`CustomPlace(type, style)` + the 82/227/4 exclusions, `Player.cs:39771-39772`),
+  NOT mere registration — the natural objects (pots 28, small piles 185,
+  platforms 19, plants, torches 4, dye plants 227) keep the legacy
+  `WorldGen.PlaceTile` route. The large piles 186/187 ARE `CustomPlace`-true and
+  ride the TileObject route.
+* `editing::legacy_precheck_applies` mirrors that gate; alch seeds (82/83/84)
+  bypass the neighbour pre-check because `BlockPlacementForAssortedThings`
+  forces `canPlace = true` for them (`Player.cs:41294-41296`).
+* `editing::cell_drops` reads the generated `KILL_TILE_NO_CELL_DROP` table (the
+  `KillTile_GetItemDrops` empty case group, `WorldGen.cs:63988-66090`) instead of
+  `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
+  orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
+
+### Wave B (remaining, documented callbacks)
+
+The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
+`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
+(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
+(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
+tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
+`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
+defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
+the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
+test lands with that wiring.
 
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
