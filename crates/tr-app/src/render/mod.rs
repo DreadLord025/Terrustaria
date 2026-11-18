@@ -13,6 +13,10 @@ pub(crate) mod liquids;
 pub(crate) mod player_layers;
 pub(crate) mod screen_fx;
 pub(crate) mod sky;
+// S1-G-1e: UNWIRED special-tile slice (DrawSpecialTilesLegacy + chest frames
+// + platform slope side-fills) — the draw_tiles seam is contested by the
+// in-flight S1-G-1 siblings; wiring is the family's merge step.
+pub(crate) mod special_tiles;
 pub(crate) mod tiles;
 pub(crate) mod wires;
 
