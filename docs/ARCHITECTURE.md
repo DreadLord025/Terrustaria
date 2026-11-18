@@ -150,13 +150,17 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
-- `growth.rs` + `growth/trees.rs` — the `WorldGen.UpdateWorld` runtime growth ticks
-  (herbs, grass/spread, vines/moss, shells, pumpkins, dye plants, the dispatchers).
+- `growth.rs` + `growth/trees.rs` + `growth/pumpkins.rs` — the `WorldGen.UpdateWorld` runtime growth ticks
+  (herbs, grass/spread, vines/moss, shells, dye plants, the dispatchers).
   S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
   `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
   `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
   `empty_tile_check`, the tree-invalidity kill) — verbatim move, public seams
-  re-exported from `growth`.
+  re-exported from `growth`. S1-K-3e split out the pumpkin family into
+  `growth/pumpkins.rs` (`place_pumpkin`, `grow_pumpkin`, `halloween_pumpkins`
+  — the M5-SEED-2 holiday sweep + its two helpers) — verbatim move, public
+  seams re-exported from `growth` (code-only mode, byte-proof, cargo gate
+  deferred — ANALYSIS "S1-K-3e").
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets
