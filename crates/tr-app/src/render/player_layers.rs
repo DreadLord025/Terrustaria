@@ -308,11 +308,17 @@ pub(crate) fn headgear_offset(frame: u32) -> f32 {
     crate::player::offsets_player_headgear_y(frame as usize)
 }
 
-/// The shift the composite consumers apply: `vector2.Y -= 2; vector += vector2
-/// * -1` for the un-flipped case (`PlayerDrawLayers.cs:1217-1219`) — so the
-/// torso and both arm stacks sit 2 px lower on the zero rows, legs never shift.
+/// The shift the composite consumers apply (`PlayerDrawLayers.cs:1217-1219`,
+/// `:1263-1265`, `:1940-1942`, `:3579-3581`): `vector2.Y -= 2; vector +=
+/// vector2 * -(FlipVertically).ToDirectionInt()`. `ToDirectionInt(false)` is
+/// `-1` (`Utils.cs:2010-2017`), so for the un-flipped player the multiplier is
+/// `+1` and the shift is `OffsetsPlayerHeadgear.Y - 2` — the torso and both arm
+/// stacks sit 2 px HIGHER on the zero-headgear rows (7-9/14-16, the walk-bob
+/// peaks where the head frame's art rides 2 px up) and unshifted elsewhere;
+/// legs and head never shift. The port used to compute `2 - Y`, dropping the
+/// torso 2 px on those rows and opening a background band under the chin.
 pub(crate) fn headgear_composite_shift(frame: u32) -> f32 {
-    2.0 - headgear_offset(frame)
+    headgear_offset(frame) - 2.0
 }
 
 /// The held-item slot for the starter player: `weaponDrawOrder` defaults to
@@ -573,7 +579,8 @@ pub(crate) fn apply_player_rotation(sprites: &mut [LayerSprite], pivot: [f32; 2]
 /// `DrawPlayer_12_Skin_Composite` → `13_Leggings` → `14_Shoes` →
 /// `17_TorsoComposite` → `21_Head` (`LegacyPlayerRenderer.cs:195-215`): the
 /// body parts in original order. The composite torso/arm sprites take the
-/// head-gear shift (`PlayerDrawLayers.cs:1217-1219`); legs and head do not.
+/// head-gear shift (`PlayerDrawLayers.cs:1217-1219` — `Y - 2`, i.e. 2 px UP on
+/// the zero rows); legs and head do not.
 pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
     let mut out = Vec::with_capacity(12);
     let flip = s.facing < 0.0;
@@ -1592,7 +1599,7 @@ mod tests {
             assert_eq!(headgear_offset(row), expect_y, "row {row} headgear Y");
             assert_eq!(
                 headgear_composite_shift(row),
-                2.0 - expect_y,
+                expect_y - 2.0,
                 "row {row} composite shift"
             );
         }
@@ -1851,8 +1858,10 @@ mod tests {
         for frame in [0u32, 6, 10, 13, 17, 19] {
             assert_eq!(headgear_offset(frame), 2.0, "raw frame {frame}");
         }
-        // Composite consumers shift by `2 − y` (`PlayerDrawLayers.cs:1217-1219`).
-        assert_eq!(headgear_composite_shift(7), 2.0);
+        // Composite consumers shift by `y - 2` (`PlayerDrawLayers.cs:1217-1219`:
+        // `vector2.Y -= 2` then `* -ToDirectionInt(false) = * 1`): the zero rows
+        // lift the torso 2 px, the 2-rows stay put.
+        assert_eq!(headgear_composite_shift(7), -2.0);
         assert_eq!(headgear_composite_shift(0), 0.0);
     }
 
@@ -2501,15 +2510,17 @@ mod tests {
     #[test]
     fn test_dw_2_6_headgear_bob_scope() {
         let a = fixture();
-        // Frame 7: the zero row — torso/arms sit 2 px lower, legs do not move.
+        // Frame 7: the zero row — the head frame's art rides 2 px up, so the
+        // torso/arms follow 2 px UP (`Y - 2 = -2`, `PlayerDrawLayers.cs:1217-1219`);
+        // legs and head do not move.
         let s7 = PlayerCompositeState {
             body_frame: 7,
             ..state()
         };
         let body = body_layers(&s7, &a);
         let by = |p: PlayerPart| body.iter().find(|s| s.part == p).unwrap().pos[1];
-        assert_eq!(by(PlayerPart::TorsoSkin), 202.0);
-        assert_eq!(by(PlayerPart::BackArmSkin), 202.0);
+        assert_eq!(by(PlayerPart::TorsoSkin), 198.0);
+        assert_eq!(by(PlayerPart::BackArmSkin), 198.0);
         assert_eq!(by(PlayerPart::LegsSkin), 200.0);
         assert_eq!(by(PlayerPart::Head), 200.0);
         // Frame 0: no shift anywhere.
@@ -2989,8 +3000,9 @@ mod player_draw_tests {
 
     /// t2 — C# per-frame Y offsets: the head never moves
     /// (`PlayerDrawLayers.cs:2061-2068` — no headgear shift), the legs never
-    /// shift, the torso and arms sit `2 - OffsetsPlayerHeadgear.Y` lower
-    /// (`:1217-1219`; `Main.cs:66638-66662`: rows 7-9/14-16 are 0, else 2).
+    /// shift, the torso and arms sit `OffsetsPlayerHeadgear.Y - 2` higher
+    /// (`:1217-1219`: `vector2.Y -= 2` then `* -ToDirectionInt(false) = * 1`;
+    /// `Main.cs:66638-66662`: rows 7-9/14-16 are 0, else 2).
     #[test]
     fn t2_player_frame_offsets_match_csharp() {
         for row in 0..20u32 {
@@ -3010,7 +3022,7 @@ mod player_draw_tests {
             assert_eq!(head_y, 1000.0, "C# :2061-2068 the head never shifts (row {})", row);
             assert_eq!(legs_y, 1000.0, "the legs never shift (row {})", row);
             let zero_headgear = matches!(row, 7..=9 | 14..=16);
-            let want = if zero_headgear { 1002.0 } else { 1000.0 };
+            let want = if zero_headgear { 998.0 } else { 1000.0 };
             assert_eq!(
                 torso_y, want,
                 "C# Main.cs:66638-66662 + :1217-1219 torso shift row {}",
@@ -3020,10 +3032,10 @@ mod player_draw_tests {
         }
     }
 
-    /// t3 — no head/torso gap across the walk band (rows 7..=19): the torso
-    /// sits at most 2 px below the head (the vanilla compensation), so the
-    /// head's 56-px frame always overlaps the torso's — the diff number is
-    /// pinned per row.
+    /// t3 — no head/torso gap across the walk band (rows 7..=19): on the
+    /// zero-headgear rows the torso sits 2 px ABOVE the head anchor (the
+    /// vanilla compensation — the head frame's art rides 2 px up there), so
+    /// the shirt always meets the chin; the diff number is pinned per row.
     #[test]
     fn t3_no_head_torso_gap() {
         for row in 7..=19u32 {
@@ -3040,7 +3052,7 @@ mod player_draw_tests {
             let zero_headgear = matches!(row, 7..=9 | 14..=16);
             assert_eq!(
                 diff,
-                if zero_headgear { 2.0 } else { 0.0 },
+                if zero_headgear { -2.0 } else { 0.0 },
                 "C# walk row {}: head-torso offset must be exactly the vanilla shift (no empty band)",
                 row
             );
