@@ -17625,3 +17625,54 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure
+function (`style28_step`) over `Npc` + a `Style28Context` seam. The
+only kind on the style is `NPCID.WallofFleshEye` (114,
+`ID/NPCID.cs:10905`; `SetDefaults` `NPC.cs:10361-10377`: 100x100,
+damage 50, defense 0, lifeMax 8000, noGravity/noTileCollide/behindTiles,
+kb 0, scale 1.2, value 80000) - there are no per-type branches inside
+the arm. **Code-only mode**: no cargo/rustc/rustfmt/tests were run; the
+9 witness tests are written, not executed, and the dispatch claim (the
+`28 =>` arm in `update_rng` replacing `update_wof_eye`) is the
+follow-up wiring round - every other file is byte-identical except the
+`mod` line and the docs.
+
+Faithfulness points the port keeps (and the live `update_wof_eye`
+misses - the wiring round must retire it, not merge with it):
+
+- `position.X = Main.npc[wofNPCIndex].position.X` (`:26066`) is a
+  LITERAL copy; the live arm subtracts `width/2`.
+- The band midpoint `(wofDrawAreaBottom + wofDrawAreaTop) / 2`
+  (`:26069`) is INTEGER division (`Main.cs:757`/`:759` are
+  `int`); the `- height/2` sits outside the `?:` (`:26070`).
+- The pacing counters are `localAI[1]`/`localAI[2]` (`:26126`+),
+  not `ai[1]`/`ai[2]`; the ladder compares in f64
+  (`(double)life < (double)lifeMax * k`, `:26127`+).
+- The `CanHit` sight gate (`:26167`) returns BEFORE the counters
+  reset - a blocked tick keeps its accumulator.
+- The aim rotation multiplies the delta by the distance (`:26097-
+  26098`, a C# quirk; the angle is unchanged, the order is kept); the
+  rotation aim uses INTEGER player half-extents (`:26093`) while the
+  shot aim uses FLOAT halves (`:26198`).
+- The shot spawns one velocity step ahead of the centre (`:26203-
+  26205`); the normaliser has no epsilon floor.
+- The arm does not integrate `position += velocity` - the eye is
+  noTileCollide, `UpdateNPC` integrates after `AI()` (`NPC.cs:90498`).
+
+Documented stand-ins: `active = false` (`:26057`) rides the port's
+hp-0 death convention; `realLife = wofNPCIndex` (`:26060`) rides the
+`wof_life` mirror until a WoF carrier lands (the port's carrier
+machinery is worm-keyed); `Main.netMode == 1`/`Main.expertMode` ride
+the context flags; the `EverLastingTicker` stamp passes 0 (the same
+stand-in as `update_zombie`, S1-D-3p).
+
+**RNG by construction**: the C# arm (`NPC.cs:26053-26208`) draws no
+`Main.rand.Next` - the pacing is deterministic counters and hp-band
+comparisons - so `style28_step` takes no RNG parameter and cannot
+perturb any stream; the witness
+`the_arm_is_deterministic_without_an_rng` pins identical inputs to
+identical state including the shot.
