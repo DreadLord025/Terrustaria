@@ -1690,6 +1690,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `Projectile.cs:3219-3227` — the Flying Dutchman's shell (240):
+            // 16x16, aiStyle 2, `penetrate = -1`, `alpha = 255` (the arm's
+            // `ai[0] > 2f` gate turns it invisible on tick 3). The C#'s
+            // `hostile = true` rides the hostile spawn sites, not the row.
             DUTCHMAN_SHELL => (
                 16.0,
                 16.0,
@@ -1700,7 +1704,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // The DD2 families' weapons (`Projectile.cs`'s SetDefaults): the
             // javelin throwers' spears 662/685 (16x16, aiStyle 1, penetrate
@@ -4381,7 +4385,7 @@ impl Projectile {
         }
     }
 
-    /// `AI()`'s aiStyle-2 branch (`Projectile.cs:23205-23688`) — the thrown
+    /// `AI()`'s aiStyle-2 branch (`Projectile.cs:23205-23689`) — the thrown
     /// family the starting weapons fire: the shuriken (3), the throwing knife
     /// (48), the snowball (166), the Wand of Sparking's spark (954) and the
     /// Dutchman's shell (240). The branch is the wind head
@@ -4395,18 +4399,55 @@ impl Projectile {
     /// `:23219-23244`, the 909/162/281/240/497/861/306/304 visual blocks) are
     /// SKIPPED — the pool has no dust/gore/sound layer — while the state each
     /// of them writes is ported where the trajectory reads it (`ai[0]`, the
-    /// `alpha`/`frame` markers, the `damage * 0.9f` decay of 304).
+    /// `alpha`/`frame` markers, the `damage * 0.9f` decay of 304). The skipped
+    /// effects take their `Main.rand` gating rolls with them (the 93 dust
+    /// `Next(5)` `:23211`, the 968 dust loop's 16 `NextFloat` `:23229-23231`,
+    /// the 162/281/240 gore `Next(61,64)` `:23312`/`:23357`/`:23402`, the
+    /// spark dust `Next(100)` `:23541`, the 54 dust `Next(20)` `:23685`) —
+    /// the `ai_volcano`/yoyo precedent (ANALYSIS: no roll is consumed for an
+    /// unrendered effect).
     ///
-    /// `rng` is the update pass's named stream: the type-93 arm's
-    /// `28 + Main.rand.Next(6)` delay is the branch's only trajectory roll
-    /// (`:23662-23665`).
-    fn ai_style2(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng, wind: f32) {
+    /// `rng` is the update pass's named stream: the 909 frame roll
+    /// (`1 + Main.rand.Next(6)`, `:23268`) and the type-93 arm's
+    /// `28 + Main.rand.Next(6)` delay (`:23662-23665`) are the branch's
+    /// behaviour rolls, in the C#'s order.
+    ///
+    /// `npcs` feeds the snowball's town-NPC refusal (`:23570-23577`); the
+    /// 861's `Main.myPlayer == this.owner` gate folds to the pool's `simulated`
+    /// test (only the owner's machine runs the arm at all).
+    fn ai_style2(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        wind: f32,
+    ) {
         // `:23207-23210` — `Main.windPhysics`'s head (the general tail at
         // `:16777` applies the same term again to every eligible style, and
         // aiStyle 2 is on `ShouldUseWindPhysics`'s list `:22110-22132`, and
         // the general tail sits at `:16777`).
         if wind != 0.0 {
             self.vel.x += wind * WIND_PHYSICS_STRENGTH;
+        }
+        // `:23219-23239` — the 968 head: the one-shot dust burst's state
+        // latch (the 8-dust loop SKIPPED, its 16 rolls with it), the
+        // `alpha - 50` fade and the `frame = (int)ai[1]` pin. This head owns
+        // no `ai[0]` counter — the 968 is absent from the per-kind chain
+        // below, so it falls to the default tail arm, which counts the age
+        // and applies the 20-tick gravity (`:23659-23675`).
+        if self.kind == 968 {
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = 1.0;
+            }
+            self.alpha = (self.alpha - 50).max(0);
+            self.frame = self.ai[1] as i32;
+        }
+        // `:23240-23244` — the 304 spawn latch: `localAI[0]++` and alpha 0
+        // (the shell-style invisible start the 30-tick decay ramps out of).
+        if self.kind == 304 && self.local_ai[0] == 0.0 {
+            self.local_ai[0] += 1.0;
+            self.alpha = 0;
         }
         // `:23245-23256` — the rotation ladder.
         if self.kind == 1085 {
@@ -4416,24 +4457,33 @@ impl Projectile {
         } else {
             self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.03 * self.direction as f32;
         }
-        // `:23219-23244`'s type 968 is the one arm that leaves `ai[0]` alone
-        // (its clock rides `localAI[0]`); every other arm counts the age here.
-        if self.kind != 968 {
-            self.ai[0] += 1.0;
-        }
         match self.kind {
-            // `:23257-23275` — the 38-tick arm.
+            // `:23257-23275` — the 38-tick arm: the frame roll latches
+            // `ai[1] = 1 + rand.Next(6)` once (the `netUpdate` flag is MP
+            // bookkeeping, skipped) and `frame = ai[1] - 1` pins the sheet
+            // row every tick after.
             909 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 38.0 {
                     self.vel.y += 0.4;
                     self.vel.x *= 0.97;
                 }
+                if self.ai[1] == 0.0 {
+                    self.ai[1] = 1.0 + rng.next_range(0, 6) as f32;
+                }
+                if self.ai[1] > 0.0 {
+                    self.frame = self.ai[1] as i32 - 1;
+                }
             }
             // `:23276-23365` — the 18-tick pair (the "spent" alpha marker and
             // the `SoundID.Item14` latch are the ported state; the dust/gore
-            // of the `ai[0] == 3f` burst are SKIPPED).
+            // of the `ai[0] == 3f` burst are SKIPPED, the gore's
+            // `Next(61,64)` roll with them).
             162 | 281 => {
-                self.ai[1] = self.ai[1].max(1.0);
+                if self.ai[1] == 0.0 {
+                    self.ai[1] = 1.0;
+                }
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 18.0 {
                     self.vel.y += 0.28;
                     self.vel.x *= 0.99;
@@ -4443,18 +4493,11 @@ impl Projectile {
                 }
             }
             // `:23366-23410` — the Dutchman's shell: the 16-tick arm.
-            240 => {
-                self.ai[1] = self.ai[1].max(1.0);
-                if self.ai[0] >= 16.0 {
-                    self.vel.y += 0.18;
-                    self.vel.x *= 0.991;
-                }
-                if self.ai[0] > 2.0 {
-                    self.alpha = 0;
-                }
-            }
-            // `:23411-23428` — the 30-tick arm that aims while rising.
+            240 => self.ai_dutchman_shell(),
+            // `:23411-23428` — the 30-tick arm that aims while rising (the
+            // per-tick dust 27 is SKIPPED — it rolls nothing).
             497 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 30.0 {
                     self.vel.x *= 0.99;
                     self.vel.y += 0.5;
@@ -4462,9 +4505,45 @@ impl Projectile {
                     self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
                 }
             }
-            // `:23429-23494` — the glow-stick: the ground friction, the
-            // `velocity.X` dead zone, the `Kill()` at rest and the +0.1 fall.
+            // `:23429-23494` — the glow-stick: the owner pickup timer, the
+            // ground friction, the `velocity.X` dead zone, the `Kill()` at
+            // rest, the +0.1 fall and the two-mode frame/rotation machine.
+            // The C# arm owns no `ai[0]` counter (its clock is `localAI[0]`).
             861 => {
+                // `:23431-23448` — the `Main.myPlayer == this.owner` block:
+                // the 30-tick pickup grace, then any live player whose
+                // hitbox overlaps picks the stick up (`Kill`). The port has
+                // a single player and the pool's `simulated` gate already
+                // pins the arm to the owner's machine, so the 255-slot scan
+                // folds to the owner test: the `whoAmI != owner` arm is
+                // unreachable and `!(localAI[0] < 30)` is the whole gate.
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] > 30.0 {
+                    self.local_ai[0] = 30.0;
+                }
+                if self.local_ai[0] >= 30.0 {
+                    if let Some(p) = player {
+                        if !p.dead {
+                            let mine = tr_core::whip::Rect::new(
+                                self.pos.x as i32,
+                                self.pos.y as i32,
+                                self.w as i32,
+                                self.h as i32,
+                            );
+                            let theirs = tr_core::whip::Rect::new(
+                                p.x as i32,
+                                p.y as i32,
+                                crate::player::WIDTH as i32,
+                                p.height as i32,
+                            );
+                            if mine.intersects(theirs) {
+                                self.kill();
+                            }
+                        }
+                    }
+                }
+                // `:23449-23465` — the friction, the dead zone, the rest
+                // kill and the fall.
                 if self.vel.y == 0.0 {
                     self.vel.x *= 0.95;
                 } else {
@@ -4474,64 +4553,138 @@ impl Projectile {
                     self.vel.x = 0.0;
                 }
                 if self.vel.x == 0.0 && self.vel.y == 0.0 {
-                    self.active = false;
-                    self.time_left = 0;
+                    self.kill();
                 }
                 self.vel.y += 0.1;
+                // `:23466-23493` — the frame machine: the `ai[1] == 1`
+                // spent stick resets to frame 0 and keeps the shared spin;
+                // the flying stick animates frames 1..projFrames-1 at 5
+                // ticks per frame and aims along the velocity (+π/4, the
+                // left-facing +π/2 flip).
+                if self.ai[1] == 1.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0;
+                    self.rot +=
+                        (self.vel.x.abs() + self.vel.y.abs()) * 0.03 * self.direction as f32;
+                } else {
+                    if self.frame == 0 {
+                        self.frame = 1;
+                    }
+                    self.frame_counter += 1;
+                    if self.frame_counter > 4 {
+                        self.frame_counter = 0;
+                        self.frame += 1;
+                        if self.frame >= proj_frames(self.kind) as i32 {
+                            self.frame = 1;
+                        }
+                    }
+                    self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
+                    self.sprite_direction = if self.vel.x < 0.0 { -1 } else { 1 };
+                    if self.sprite_direction == -1 {
+                        self.rot += std::f32::consts::FRAC_PI_2;
+                    }
+                }
             }
-            // `:23495-23502` — the always-on +0.25 fall.
-            249 => self.vel.y += 0.25,
+            // `:23495-23502` — the always-on +0.25 fall (the `ai[0] >= 0f`
+            // gate is verbatim — a negative spawn payload delays it).
+            249 => {
+                self.ai[0] += 1.0;
+                if self.ai[0] >= 0.0 {
+                    self.vel.y += 0.25;
+                }
+            }
             // `:23503-23510` — the 5-tick arm.
             347 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 5.0 {
                     self.vel.y += 0.25;
                 }
             }
             // `:23511-23519` — the 18-tick `0.995`/`+0.2` arm.
             501 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 18.0 {
                     self.vel.x *= 0.995;
                     self.vel.y += 0.2;
                 }
             }
-            // `:23520-23556` — the spark family: the alpha-out kill at
-            // `ai[0] >= 60f` (the C#'s `ai[0] - 20f >= 40f`) and the
-            // `+0.1f`/`0.99` fall past tick 20 (the dust is SKIPPED).
+            // `:23520-23556` — the spark family: the fade-out kill inside
+            // the `ai[0] > 3f` window (`ai[0] - 20f >= 40f` = tick 60, the
+            // kill does NOT return — the gravity tail still runs) and the
+            // `+0.1f`/`0.99` fall past tick 20. The dust window's 10×/40-tick
+            // fade ramps and the `Next(100)` gate are SKIPPED — no dust
+            // layer, the roll goes with them.
             504 | 954 | 979 => {
                 self.alpha = 255;
+                self.ai[0] += 1.0;
+                if self.ai[0] > 3.0 {
+                    if self.ai[0] > 20.0 && self.ai[0] - 20.0 >= 40.0 {
+                        self.kill();
+                    }
+                }
                 if self.ai[0] >= 20.0 {
                     self.vel.x *= 0.99;
                     self.vel.y += 0.1;
                 }
-                if self.ai[0] >= 60.0 {
-                    self.active = false;
-                    self.time_left = 0;
-                }
             }
             // `:23557-23565` — the 10-tick arm.
             69 | 70 | 621 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 10.0 {
                     self.vel.y += 0.25;
                     self.vel.x *= 0.99;
                 }
             }
-            // `:23566-23596` — the snowball's 20-tick arm (the town-NPC /
-            // other-player kill of `:23568-23588` is SKIPPED: the pool's
-            // friendly-refusal pass owns the town-NPC rules).
+            // `:23566-23596` — the snowball's 20-tick arm. The
+            // `owner == Main.myPlayer && ai[1] == 1f` block kills the
+            // snowball on a town-NPC overlap (`:23570-23577` — the Rotten
+            // Egg's refusal); the `netMode == 1` other-player scan
+            // (`:23578-23588`) is MP-only and skipped. The C# `return`
+            // leaves AI() only — HandleMovement still runs (`:17015`).
             166 => {
+                if self.ai[1] == 1.0 {
+                    let mine = tr_core::whip::Rect::new(
+                        self.pos.x as i32,
+                        self.pos.y as i32,
+                        self.w as i32,
+                        self.h as i32,
+                    );
+                    for n in npcs {
+                        if n.hp <= 0 || !n.kind.is_town_npc() {
+                            continue;
+                        }
+                        let (nw, nh) = n.size();
+                        let theirs = tr_core::whip::Rect::new(
+                            n.x as i32,
+                            n.y as i32,
+                            nw as i32,
+                            nh as i32,
+                        );
+                        if mine.intersects(theirs) {
+                            self.kill();
+                            self.kill_step(world);
+                            return;
+                        }
+                    }
+                }
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 20.0 {
                     self.vel.y += 0.3;
                     self.vel.x *= 0.98;
                 }
             }
-            // `:23597-23609` — the 60-tick arm.
+            // `:23597-23609` — the 60-tick arm (the `ai[0] == 0f` one-shot
+            // `SoundID.Item1` is SKIPPED — no sound layer).
             300 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 60.0 {
                     self.vel.y += 0.2;
                     self.vel.x *= 0.99;
                 }
             }
-            // `:23610-23631` — the fading, `pi/4`-oriented arm.
+            // `:23610-23631` — the fading, `pi/4`-oriented arm (the four
+            // trail dust are SKIPPED — they roll nothing). The C# arm owns
+            // no `ai[0]` counter.
             306 => {
                 self.alpha = (self.alpha - 50).max(0);
                 self.rot = self.vel.y.atan2(self.vel.x) + 0.785;
@@ -4539,6 +4692,7 @@ impl Projectile {
             // `:23632-23649` — the 30-tick decay: the alpha ramp, the 0.9
             // damage/knockback decay and the `alpha >= 255` kill.
             304 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 30.0 {
                     self.alpha += 10;
                     self.damage = (self.damage as f32 * 0.9) as i32;
@@ -4547,12 +4701,14 @@ impl Projectile {
                         self.active = false;
                         self.time_left = 0;
                     }
-                } else {
+                }
+                if self.ai[0] < 30.0 {
                     self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
                 }
             }
             // `:23650-23658` — the 15-tick arm.
             370 | 371 | 936 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 15.0 {
                     self.vel.y += 0.3;
                     self.vel.x *= 0.98;
@@ -4566,6 +4722,7 @@ impl Projectile {
                 } else {
                     20.0
                 };
+                self.ai[0] += 1.0;
                 if self.ai[0] >= delay {
                     if self.kind == 93 {
                         self.ai[0] = 40.0;
@@ -10572,16 +10729,29 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    /// `AI()`'s aiStyle-2 block (`Projectile.cs:23205-23690`) — the Flying
-    /// Dutchman's cannon shell (240): the shell is invisible (the alpha 0)
-    /// and bursts into dust and gore when its `ai[0]` reaches 3.
-    ///
-    /// The dust and the gore are SKIPPED — no dust/gore layer.
+    /// `AI()`'s aiStyle-2 block (`Projectile.cs:23366-23410`) — the Flying
+    /// Dutchman's cannon shell (240): the `SoundID.Item14` one-shot latch,
+    /// the 16-tick gravity delay (`+0.18f` / `×0.991f`) and the alpha-0
+    /// invisibility the `ai[0] > 2f` gate opens on the third tick (the shell
+    /// spawns at alpha 255, `SetDefaults` `:3226`). The `ai[0] == 3f` dust
+    /// and gore burst is SKIPPED — no dust/gore layer, the gore's
+    /// `Next(61,64)` roll goes with it.
     fn ai_dutchman_shell(&mut self) {
-        // `:23367` — the shell is invisible.
-        self.alpha = 0;
-        // `:23368-23416` — the burst at `ai[0] == 3` (the dust and the gore
-        // are skipped).
+        // `:23368-23372` — the sound latch (the sound itself is skipped).
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+        }
+        // `:23373-23378` — the age counter and the 16-tick fall.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 16.0 {
+            self.vel.y += 0.18;
+            self.vel.x *= 0.991;
+        }
+        // `:23379-23409` — the shell turns invisible past tick 2 (the
+        // `ai[0] == 3f` burst is skipped).
+        if self.ai[0] > 2.0 {
+            self.alpha = 0;
+        }
     }
 
     /// `AI()`'s aiStyle-79 block (`Projectile.cs:30791-30910`) — the Martian
@@ -11050,6 +11220,17 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The glow-stick's 4-frame sheet (`Main.cs:8664`) — the aiStyle-2
+        // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
+        // it, back to frame 1.
+        861 => 4,
+        // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
+        // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
+        // one of its rows.
+        909 => 6,
+        // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
+        // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
+        968 => 24,
         _ => 1,
     }
 }
@@ -13594,19 +13775,16 @@ impl ProjectilePool {
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
                         157 => self.slots[i].ai_sharp_tears(world, rng),
-                        // The aiStyle-2 Flying Dutchman shell
-                        // (`:23366-23417`): the shell is invisible.
+                        // The aiStyle-2 thrown family
+                        // (`Projectile.cs:23205-23689`): the wind head, the
+                        // per-kind gravity ladder and the fall clamp. The
+                        // 909 frame roll and the type-93 delay roll draw
+                        // the pass's named stream, and the wind head reads
+                        // the pool's `Main.windSpeedCurrent`. The 240 shell
+                        // arm rides inside `ai_style2`'s per-kind ladder.
                         2 => {
-                            // `:23366-23410` — the shell's own invisibility
-                            // arm rides ahead of the shared flight.
-                            if self.slots[i].kind == DUTCHMAN_SHELL {
-                                self.slots[i].ai_dutchman_shell();
-                            }
-                            // The type-93 delay roll draws the pass's named
-                            // stream, and the wind head reads the pool's
-                            // `Main.windSpeedCurrent`.
                             let wind = self.wind_speed;
-                            self.slots[i].ai_style2(world, rng, wind);
+                            self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind);
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
@@ -20573,7 +20751,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 45] = [
+    const BASELINE_ROWS: [u16; 44] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -20612,7 +20790,6 @@ mod widened_state_tests {
         SCRAMBLER_SHOT,
         PIRATE_ARROW,
         MARTIAN_RAY,
-        DUTCHMAN_SHELL,
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
@@ -20720,6 +20897,11 @@ mod widened_state_tests {
         // leaves the reset sweep as well.
         let spike = proj_data(DEERCLOPS_ICE_SPIKE).unwrap_or_else(|| panic!("the spike lost its row"));
         assert_eq!(spike.alpha, 255, "`alpha = 255` (`:9083`)");
+        // S1-D-4b-8: the Dutchman's shell (`:3226`) writes `alpha = 255` in
+        // its `SetDefaults` arm — the aiStyle-2 arm's `ai[0] > 2f` gate
+        // turns it invisible on tick 3 — so it leaves the reset sweep too.
+        let shell = proj_data(DUTCHMAN_SHELL).unwrap_or_else(|| panic!("the shell lost its row"));
+        assert_eq!(shell.alpha, 255, "`alpha = 255` (`:3226`)");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -27975,8 +28157,9 @@ mod s1_d_4b_5_tests {
 #[cfg(test)]
 mod s1_d_4b_5e_tests {
     use super::*;
-    /// S1-D-4b-5e — the aiStyle-2 shell (`Projectile.cs:23366-23417`): the
-    /// shell is invisible.
+    /// S1-D-4b-5e — the aiStyle-2 shell (`Projectile.cs:23366-23410`): the
+    /// shell spawns at alpha 255 (`SetDefaults` `:3226`) and turns invisible
+    /// on the third tick (the `ai[0] > 2f` gate).
     #[test]
     fn s1_d_4b_5e_the_dutchman_shell_is_invisible() {
         let mut shell = Projectile {
@@ -27986,7 +28169,400 @@ mod s1_d_4b_5e_tests {
             ..Default::default()
         };
         shell.ai_dutchman_shell();
-        assert_eq!(shell.alpha, 0, "the shell is invisible");
+        assert_eq!(shell.ai[0], 1.0, "the age counter");
+        assert_eq!(shell.ai[1], 1.0, "the sound latch");
+        assert_eq!(shell.alpha, 255, "still visible on tick 1");
+        shell.ai_dutchman_shell();
+        assert_eq!(shell.alpha, 255, "still visible on tick 2");
+        shell.ai_dutchman_shell();
+        assert_eq!(shell.alpha, 0, "the shell is invisible from tick 3");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_8_tests {
+    //! S1-D-4b-8 — the aiStyle-2 thrown family completed
+    //! (`Projectile.cs:23205-23689`): the per-type state machines the first
+    //! landing left out (the 909 frame roll, the 968 head, the 861 pickup +
+    //! frame machine, the 304 spawn latch, the 166 town-NPC refusal) and the
+    //! exact per-arm `ai[0]` increment semantics. The dust/gore/sound blocks
+    //! are documented skips; their `Main.rand` rolls go with them (ANALYSIS).
+
+    use super::*;
+
+    /// A counting stream over the golden `FastRandom` — the RNG proof reads
+    /// how many draws each arm consumes, in the C#'s order.
+    struct CountingRng {
+        inner: tr_core::tile_light::FastRandom,
+        ranges: usize,
+        floats: usize,
+    }
+    impl CountingRng {
+        fn new() -> Self {
+            Self { inner: tr_core::tile_light::FastRandom::new(7), ranges: 0, floats: 0 }
+        }
+    }
+    impl tr_core::loot::DropRng for CountingRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges += 1;
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            self.inner.next_float()
+        }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// [`world`] with a dirt floor from row 30 — the town-NPC spawn scan
+    /// needs ground under its feet.
+    fn ground_world() -> World {
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn just(kind: u16) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            w: 10.0,
+            h: 10.0,
+            direction: 1,
+            time_left: 18000,
+            ..Default::default()
+        }
+    }
+
+    /// One arm tick with no player and no NPCs — the plain-flight shape.
+    fn tick(p: &mut Projectile, w: &World, rng: &mut CountingRng) {
+        p.ai_style2(w, &[], None, rng, 0.0);
+    }
+
+    /// The dispatch test: every aiStyle-2 row the pool carries reaches the
+    /// arm through `match data.ai_style` — one tick moves the age counter
+    /// (or the shell's alpha gate) exactly as the C# arm does.
+    #[test]
+    fn s1_d_4b_8_the_style2_rows_dispatch_to_the_arm() {
+        let mut w = world();
+        for kind in [SHURIKEN, THROWING_KNIFE, SNOWBALL, SPARK, DUTCHMAN_SHELL] {
+            assert_eq!(proj_data(kind).unwrap().ai_style, 2, "kind {kind}");
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_owned(kind, 0, 100.0, 100.0, 4.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row");
+            let mut rng = CountingRng::new();
+            let mut npcs: Vec<Npc> = Vec::new();
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+            let p = &pool.slots[slot];
+            assert_eq!(p.ai[0], 1.0, "kind {kind}: the arm counted the age");
+            assert_eq!(rng.ranges, 0, "kind {kind}: no roll on tick 1");
+            assert_eq!(rng.floats, 0, "kind {kind}: no float on tick 1");
+        }
+    }
+
+    /// `:23257-23275` — the 909: the frame roll latches once
+    /// (`1 + Next(6)`), `frame = ai[1] - 1` pins every tick, and the
+    /// 38-tick gravity delay holds. RNG: exactly one draw, on tick 1.
+    #[test]
+    fn s1_d_4b_8_the_909_rolls_its_frame_once() {
+        let w = world();
+        let mut p = just(909);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(rng.ranges, 1, "the one frame roll");
+        assert!((1.0..=6.0).contains(&p.ai[1]), "ai[1] = {}", p.ai[1]);
+        assert_eq!(p.frame, p.ai[1] as i32 - 1, "the pinned row");
+        let latched = p.ai[1];
+        for _ in 0..36 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(rng.ranges, 1, "no re-roll");
+        assert_eq!(p.ai[1], latched);
+        assert_eq!(p.ai[0], 37.0);
+        assert_eq!(p.vel.y, 0.0, "no gravity before tick 38");
+        tick(&mut p, &w, &mut rng);
+        assert!((p.vel.y - 0.4).abs() < 1e-6, "the +0.4 tick");
+        assert!((p.vel.x - 0.0).abs() < 1e-6);
+    }
+
+    /// `:23219-23239` + the default tail — the 968: the one-shot latch, the
+    /// 50/tick alpha fade floored at 0, `frame = (int)ai[1]`, and the tail's
+    /// 20-tick gravity (the 968 has no chain arm). The 8-dust burst's 16
+    /// `NextFloat` rolls are skipped with the dust.
+    #[test]
+    fn s1_d_4b_8_the_968_fades_and_pins_its_frame() {
+        let w = world();
+        let mut p = just(968);
+        p.alpha = 255;
+        p.ai[1] = 7.0;
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the latch");
+        assert_eq!(p.alpha, 205, "255 - 50");
+        assert_eq!(p.frame, 7, "the ai[1] pin");
+        assert_eq!(p.ai[0], 1.0, "the tail counts the age");
+        assert_eq!(rng.floats, 0, "the dust rolls are skipped");
+        for _ in 0..4 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(p.alpha, 5, "205 - 4*50");
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 0, "floored at 0");
+        assert_eq!(p.local_ai[0], 1.0, "the latch holds");
+        assert_eq!(proj_frames(968), 24, "Main.cs:8706");
+    }
+
+    /// `:23429-23494` — the 861 glow-stick: the 0.995 air friction, the
+    /// +0.1 fall, the 5-tick frame machine wrapping at `projFrames` back to
+    /// 1, and the velocity aim (+π/4, the left-facing +π/2 flip).
+    #[test]
+    fn s1_d_4b_8_the_861_animates_and_aims() {
+        let w = world();
+        let mut p = just(861);
+        p.vel = Vec2::new(4.0, 2.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the arm owns no ai[0] counter");
+        assert!((p.vel.x - 4.0 * 0.995).abs() < 1e-6, "the air friction");
+        assert!((p.vel.y - 2.1).abs() < 1e-6, "the fall");
+        assert_eq!(p.frame, 1, "frame 0 lifts to 1");
+        assert_eq!(p.sprite_direction, 1);
+        let expect_rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_4;
+        assert!((p.rot - expect_rot).abs() < 1e-5, "rot = {}", p.rot);
+        // Five ticks per frame: the wrap lands on tick 10 (frame 2 -> 3),
+        // and frame 4 wraps back to 1 at projFrames = 4 (Main.cs:8664).
+        for _ in 0..14 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(proj_frames(861), 4);
+        assert!((1..=3).contains(&p.frame), "frame = {}", p.frame);
+        // The left-facing flip.
+        p.vel = Vec2::new(-4.0, 0.0);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.sprite_direction, -1);
+        let expect_rot = p.vel.y.atan2(p.vel.x)
+            + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        assert!((p.rot - expect_rot).abs() < 1e-5);
+        // The spent stick (`ai[1] == 1`) resets to frame 0 and keeps the
+        // shared spin instead of the aim.
+        p.ai[1] = 1.0;
+        p.frame = 3;
+        p.frame_counter = 4;
+        let rot_before = p.rot;
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.frame_counter, 0);
+        assert!(p.rot > rot_before, "the spin keeps accumulating");
+    }
+
+    /// `:23449-23464` — the 861 at rest: the 0.95 ground friction, the 0.5
+    /// dead zone and the `Kill()` when both axes are zero.
+    #[test]
+    fn s1_d_4b_8_the_861_dies_at_rest() {
+        let w = world();
+        let mut p = just(861);
+        p.vel = Vec2::new(0.4, 0.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.vel.x, 0.0, "0.4 * 0.95 < 0.5 -> the dead zone");
+        assert!(!p.active, "the rest kill");
+        assert!((p.vel.y - 0.1).abs() < 1e-6, "the fall still runs after Kill");
+    }
+
+    /// `:23431-23448` — the 861 pickup: the 30-tick grace, then the owner's
+    /// hitbox overlap kills the stick (the single-player fold of the
+    /// 255-slot scan).
+    #[test]
+    fn s1_d_4b_8_the_861_is_picked_up_after_thirty_ticks() {
+        let w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        let mut p = just(861);
+        p.pos = Vec2::new(100.0, 100.0);
+        p.vel = Vec2::new(2.0, 0.0);
+        let mut rng = CountingRng::new();
+        for _ in 0..29 {
+            p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+            // Keep the stick on the player while it decelerates.
+            p.pos = Vec2::new(100.0, 100.0);
+            p.vel = Vec2::new(2.0, 0.0);
+        }
+        assert!(p.active, "the grace period holds");
+        assert_eq!(p.local_ai[0], 29.0);
+        p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+        assert!(!p.active, "tick 30 picks the stick up");
+        assert_eq!(p.local_ai[0], 30.0, "the cap");
+    }
+
+    /// `:23240-23244` + `:23632-23649` — the 304: the spawn latch (alpha 0),
+    /// the aim while rising, then the 30-tick decay (+10 alpha, ×0.9 damage
+    /// and knockback) and the `alpha >= 255` kill.
+    #[test]
+    fn s1_d_4b_8_the_304_latches_fades_and_decays() {
+        let w = world();
+        let mut p = just(304);
+        p.alpha = 255;
+        p.damage = 100;
+        p.knock_back = 10.0;
+        p.vel = Vec2::new(3.0, -4.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the spawn latch");
+        assert_eq!(p.alpha, 0, "the invisible start");
+        let expect_rot = (-4.0f32).atan2(3.0) + 1.57;
+        assert!((p.rot - expect_rot).abs() < 1e-5, "the aim while rising");
+        for _ in 0..28 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(p.ai[0], 29.0);
+        assert_eq!(p.damage, 100, "no decay before tick 30");
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 10);
+        assert_eq!(p.damage, 90, "(int)(100 * 0.9)");
+        assert!((p.knock_back - 9.0).abs() < 1e-5);
+        // 25 more decay ticks: alpha 10 + 25*10 = 260 >= 255 kills it.
+        for _ in 0..25 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert!(!p.active, "the alpha-out kill");
+    }
+
+    /// `:23566-23596` — the 166 snowball: the `ai[1] == 1` Rotten Egg mode
+    /// kills it on a town-NPC overlap (the C# `return` leaves AI() only —
+    /// the movement step still runs); without the overlap the 20-tick
+    /// gravity delay holds.
+    #[test]
+    fn s1_d_4b_8_the_snowball_refuses_the_town_npc() {
+        let w = ground_world();
+        let mut guide = Npc::spawn_guide(&w, 30).expect("the Guide spawns");
+        guide.x = 100.0;
+        guide.y = 100.0;
+        let npcs = [guide];
+        let mut p = just(SNOWBALL);
+        p.pos = Vec2::new(104.0, 104.0);
+        p.ai[1] = 1.0;
+        let mut rng = CountingRng::new();
+        p.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!(!p.active, "the town-NPC overlap kills the egg");
+        assert_eq!(p.ai[0], 0.0, "the return precedes the age counter");
+        // The plain snowball (`ai[1] == 0`) passes the same NPC.
+        let mut p2 = just(SNOWBALL);
+        p2.pos = Vec2::new(104.0, 104.0);
+        p2.vel = Vec2::new(4.0, 0.0);
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!(p2.active);
+        assert_eq!(p2.ai[0], 1.0);
+        for _ in 0..18 {
+            p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        }
+        assert_eq!(p2.vel.y, 0.0, "no gravity before tick 20");
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!((p2.vel.y - 0.3).abs() < 1e-6);
+        assert!((p2.vel.x - 4.0 * 0.98).abs() < 1e-6);
+    }
+
+    /// `:23520-23556` — the spark family: alpha pinned at 255, the fade-out
+    /// kill at tick 60 (the kill does not return — the gravity tail runs),
+    /// the +0.1/0.99 fall past tick 20. The dust window's `Next(100)` roll
+    /// is skipped with the dust.
+    #[test]
+    fn s1_d_4b_8_the_spark_fades_out_at_sixty() {
+        let w = world();
+        for kind in [504u16, 954, 979] {
+            let mut p = just(kind);
+            p.vel = Vec2::new(4.0, 0.0);
+            let mut rng = CountingRng::new();
+            for _ in 0..59 {
+                tick(&mut p, &w, &mut rng);
+            }
+            assert!(p.active, "kind {kind}: alive at 59");
+            assert_eq!(p.alpha, 255);
+            assert_eq!(rng.ranges, 0, "kind {kind}: the dust roll is skipped");
+            tick(&mut p, &w, &mut rng);
+            assert!(!p.active, "kind {kind}: the tick-60 kill");
+            assert!(p.vel.y > 0.0, "kind {kind}: the gravity tail still ran");
+        }
+    }
+
+    /// `:23659-23680` — the type-93 tail: the delay re-rolls every tick
+    /// (`28 + Next(6)`), the threshold pins `ai[0] = 40`, and the five
+    /// rising kinds aim at `atan2 + 1.57`. RNG: one draw per tick, always.
+    #[test]
+    fn s1_d_4b_8_the_93_rerolls_its_delay_every_tick() {
+        let w = world();
+        let mut p = just(93);
+        p.vel = Vec2::new(3.0, -4.0);
+        let mut rng = CountingRng::new();
+        for i in 1..=40 {
+            tick(&mut p, &w, &mut rng);
+            assert_eq!(rng.ranges, i, "one draw per tick");
+            if p.ai[0] < 40.0 && i < 34 {
+                let expect_rot = p.vel.y.atan2(p.vel.x) + 1.57;
+                assert!((p.rot - expect_rot).abs() < 1e-4, "the rising aim");
+            }
+        }
+        assert!(p.ai[0] >= 40.0, "the pin holds past the max delay 33");
+        assert!(p.vel.y > -4.0, "the gravity kicked in");
+    }
+
+    /// `:23610-23631` — the 306: the 50/tick fade floored at 0 and the
+    /// `atan2 + 0.785` aim; the arm owns no `ai[0]` counter.
+    #[test]
+    fn s1_d_4b_8_the_306_fades_without_an_age_counter() {
+        let w = world();
+        let mut p = just(306);
+        p.alpha = 120;
+        p.vel = Vec2::new(3.0, 4.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 70);
+        assert_eq!(p.ai[0], 0.0, "no age counter");
+        let expect_rot = 4.0f32.atan2(3.0) + 0.785;
+        assert!((p.rot - expect_rot).abs() < 1e-5);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 20);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 0, "floored");
+    }
+
+    /// `:23207-23210` — the wind head adds `windSpeedCurrent * 0.1` before
+    /// anything else; `:23681-23684` — the 32 px/tick fall clamp.
+    #[test]
+    fn s1_d_4b_8_the_wind_head_and_the_fall_clamp() {
+        let w = world();
+        let mut p = just(SHURIKEN);
+        p.vel = Vec2::new(0.0, 40.0);
+        let mut rng = CountingRng::new();
+        p.ai_style2(&w, &[], None, &mut rng, 2.0);
+        assert!((p.vel.x - 0.2).abs() < 1e-6, "the wind head");
+        assert_eq!(p.vel.y, 32.0, "the clamp");
     }
 }
 
