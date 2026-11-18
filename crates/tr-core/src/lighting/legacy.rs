@@ -541,17 +541,32 @@ impl LegacyLighting {
             y1 -= num2;
         }
         let (sw, sh) = (self.sw, self.sh);
-        // The outer guard (`:573-577` / `:598-602`).
-        if sw <= x1 + num {
-            x1 = sw - num - 1;
-        }
-        // The inner guard (`:582-586` / `:607-611`): condition on `num`,
-        // subtraction on `num2` — verbatim.
+        let rgb = self.rgb;
+        // The outer x bound is ASYMMETRIC (`:573` vs `:598`): the RGB branch
+        // starts from the FRESH `maxLightArrayX` (un-subtracted), the non-RGB
+        // branch from `num4` (already `-= num` above). Both then clamp by
+        // `sw - num - 1`. The inner y guard (`:582-586` / `:607-611`) is the
+        // shared quirk: condition on `num`, subtraction on `num2`.
+        let x1_rgb = {
+            let mut b = max_x;
+            if sw <= b + num {
+                b = sw - num - 1;
+            }
+            b
+        };
+        let x1_nonrgb = {
+            let mut b = x1;
+            if sw <= b + num {
+                b = sw - num - 1;
+            }
+            b
+        };
+        let mut y1 = y1;
         if sh <= y1 + num {
             y1 = sh - num2 - 1;
         }
-        let rgb = self.rgb;
-        for i in x0..x1 {
+        let x_end = if rgb { x1_rgb } else { x1_nonrgb };
+        for i in x0..x_end {
             let src_i = i + num;
             if src_i < 0 || src_i >= sw {
                 continue;
@@ -883,8 +898,9 @@ impl LegacyLighting {
                 out0 = out1;
             }
             // `:1074-1081`: the mode swipe. Mode 0 is unreachable through the
-            // selector (Color uses the new engine) — the default arm keeps
-            // the Mode-1 behaviour the C# `_ =>` fallthrough would pick.
+            // selector (Color uses the new engine) — the C# `_ =>` fallthrough
+            // picks Mode 0 (`:1080`); the port keeps the Mode-1 behaviour for
+            // the unreachable default arm (documented, no reachable effect).
             swipe_pass(
                 &mut self.states,
                 self.sw,
@@ -1457,6 +1473,45 @@ mod tests {
         assert!(seed[0] > seed[2], "trippy keeps the torch colour {seed:?}");
         let right = engine.get_color(49, 48);
         assert_eq!(right[0], seed[0] - 0.04);
+        assert_eq!(right[1], seed[1] - 0.04);
+        assert_eq!(right[2], seed[2] - 0.04);
+    }
+
+    #[test]
+    fn trippy_moving_camera_publishes_the_full_rgb_width() {
+        // CopyFullyProcessedDataOver's outer x bound is ASYMMETRIC: the RGB
+        // branch (`:573`) starts from the fresh `maxLightArrayX`, the non-RGB
+        // branch (`:598`) from `num4` (already `-= num`). A rightward camera
+        // move (num in 1..16) must still publish the rightmost columns in
+        // Trippy (the only reachable _rgb legacy mode); the flattened bound
+        // left them stale. Drive a cycle, shift the camera right 3 tiles,
+        // run another cycle, and assert the presented area is fully fresh
+        // (no stale zero column at the right edge that GetColor expands into).
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::Trippy);
+        run_cycle(&mut engine, &w, &LegacyInputs::default());
+        let (pos, size) = camera();
+        let shifted = [pos[0] + 3.0 * 16.0, pos[1]];
+        let params = LightParams::default();
+        let inputs = LegacyInputs::default();
+        let mut prerendered = false;
+        for _ in 0..32 {
+            engine.process_area(&w, shifted, size, &params, &inputs, &[]);
+            if engine.render_count == 0 {
+                prerendered = true;
+            }
+            if prerendered && engine.render_count == 2 {
+                break;
+            }
+        }
+        assert!(prerendered && engine.render_count == 2, "shifted cycle published");
+        // The torch seed must still be presented after the shift (it sits
+        // inside the expanded rect), and the column immediately right of the
+        // seed must carry the subtracted fresh value, not a stale zero.
+        let seed = engine.get_color(48, 48);
+        assert!(seed[0] > seed[2], "trippy keeps colour after shift {seed:?}");
+        let right = engine.get_color(49, 48);
+        assert_eq!(right[0], seed[0] - 0.04, "right column must be fresh, not stale");
         assert_eq!(right[1], seed[1] - 0.04);
         assert_eq!(right[2], seed[2] - 0.04);
     }
