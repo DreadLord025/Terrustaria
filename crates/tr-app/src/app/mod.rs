@@ -480,6 +480,12 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
+    /// counter, wrapping at 3600 (`Main.cs:64558-64562`).
+    pub(crate) net_play_counter: u32,
+    /// `Main.lastItemUpdate` (`Main.cs:64572-64576`): the round-robin slot the
+    /// 1 Hz `21` heartbeat walks.
+    pub(crate) last_item_update: usize,
     /// The `27` projectile sync: the last-sent state per key (the
     /// change-detection diff) and the per-projectile send budget in ticks
     /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
@@ -3366,6 +3372,8 @@ impl App {
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
+            net_play_counter: 0,
+            last_item_update: 0,
             net_proj_last: HashMap::new(),
             net_proj_spam: HashMap::new(),
             net_npc_slots: Vec::new(),
