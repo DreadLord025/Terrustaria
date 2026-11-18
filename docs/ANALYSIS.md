@@ -17625,3 +17625,50 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The spore pair (S1-D-3 aiStyle-50, code-only)
+
+`crates/tr-app/src/npc_ai_style50.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 50)` arm (`NPC.cs:31651-31716`) — the FungiSpore
+261 (`SetDefaults` `:12364-12378`) and the Spore 265 (`:12423-12437`), the
+1-HP contact hazards. CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the
+14 witness tests are written, not run. Wiring deferred (the BlazingWheel
+precedent, `npc_ai_style21.rs`): no `NpcKind::FungiSpore`/`Spore` exists,
+so the style axis (`npc.rs:3255`) has no arm to claim; only the one-line
+`mod npc_ai_style50;` seam landed.
+
+- **The arm is RNG-free by construction**: `:31651-31716` has no `Next`;
+  neither does `TargetClosest` (`:77652-77781`, `npc_target.rs`) nor
+  `EncourageDespawn` (`:7249-7256`). `ai_style50` takes NO RNG parameter;
+  a `UnifiedRandom` state-pin test witnesses it.
+- **The one per-tick draw is the light, not the AI**:
+  `UpdateNPC_CastLights` runs BEFORE `AI()` (`:90320` vs `:90423`); its
+  254..=261 arm (`:92384-92396`) draws one `Main.rand.Next(28, 42)`
+  (`:92386`) for the FungiSpore ONLY — the Spore 265 is outside the range
+  and lights nothing anywhere. `fungi_spore_light` takes the RNG and
+  draws exactly that one range (test-pinned against a clone).
+- **The dust arms are skipped wholesale** (the `npc_lights.rs`
+  precedent): the Spore's 15-dust `Next(3)` loop (`:87226-87236`) and the
+  FungiSpore's 165-dust loops (`:89055-89070`) need the unported dust
+  system; `spore_hit_dust_plan` ports the branch structure and counts
+  only, drawing nothing, so the stream stays untouched. The Spore's gate
+  is `life >= 0` (`:87222`, note `>=` — a just-zeroed life draws nothing);
+  the FungiSpore never gores (`type != 261` gate, `:89071`). The generic
+  `HitEffect` prologue (`:81656-81858`) is inert for both kinds (townNPC/
+  daybreak/686/690/594/661 checks all false).
+- **Seams**: `Npc` has no `no_tile_collide` field — the arm's per-tick
+  write (false for 261, true for 265) is returned in `Style50Outcome`;
+  the FungiSpore's contact death (`:31657-31662`) sets `hp = 0` and
+  returns `died_on_contact` (the caller owes `HitEffect(0, 100.0)` +
+  `checkDead()`; `checkDead` `:78040-78149` has no spore branch). The
+  `despawnEncouraged` flag (`:7255`) has no port field — the established
+  `encourage_despawn` seam. `Main.expertMode` is a parameter (the port is
+  single-difficulty normal, `world.rs:727`); the expert double-damp
+  (two ×0.98) and double-accel (two +0.1) are pinned by tests.
+- **No frame helper**: `FindFrame` (`:66684-77370`) has no case 261/265
+  and the post-switch tail is aiStyle-39 only (`:77292`) — the frame
+  never advances; both kinds are single-frame (`Main.cs:67110`, the
+  260-269 row of the `:67082` array), pinned by the frame-count consts.
+- **Not this system**: the *projectile* aiStyle 50 (the spore cloud,
+  `Projectile.cs`) is unrelated and untouched; ANALYSIS's earlier
+  "style-50" mention is that projectile row.
