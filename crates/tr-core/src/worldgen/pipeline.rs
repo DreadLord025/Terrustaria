@@ -100,6 +100,42 @@ pub(crate) struct Streams<'a> {
     /// placement site hands its event to it — the C#'s `AddBuriedChest`
     /// inline roll.
     pub(crate) chest_stock: Option<&'a mut super::chest_stock::ChestStockHook<'a>>,
+    /// The worldgen progress/controller hook (S1-E-17) — `None` on the plain
+    /// `generate` path (the tr-core tests and every pre-S1-E-17 caller),
+    /// `Some` when the app drives the generation through the loading screen
+    /// (`generate_with_progress`). The hook is the `WorldGenerator` pass-loop
+    /// seam: `run` calls `begin_step`/`end_step` around each step exactly
+    /// where `WorldGenerator.RunPass` calls `progress.Start(weight)` /
+    /// `progress.End()` (`WorldGenerator.cs:498`/`:507`). No RNG draw rides
+    /// the hook — the stream contract is untouched.
+    pub(crate) progress: Option<&'a mut dyn GenProgressHook>,
+}
+
+/// The pass-loop progress seam (`WorldGenerator.GenerateWorld`/`RunPass`,
+/// `WorldGenerator.cs:419-515`): the driver the loading screen's
+/// `GenerationProgress` + `Controller` implement. `run` calls the pair around
+/// every executed step; `should_abort` is the `QueuedAbort` check the C#
+/// loop runs at the top of each iteration (`:433-437`).
+pub trait GenProgressHook {
+    /// `GenerateWorld`'s `this._progress.TotalWeight = ...Sum(p.Weight)`
+    /// (`WorldGenerator.cs:424`) — called once before the first step with
+    /// the sum of the executed steps' weights (the port's step model: each
+    /// executed step banks its vanilla slot's weight once, so the total is
+    /// exactly what `begin_step` will hand out — `TotalProgress` reaches
+    /// 1.0 on completion).
+    fn begin_generation(&mut self, total_weight: f64);
+    /// `RunPass`'s `this._progress.Start(pass.Weight)` (`WorldGenerator.cs:498`)
+    /// — `name` is the executed step's display name (`EXECUTED_PIPELINE`'s
+    /// `name`; the message table `worldgen::progress::step_message` keys on
+    /// it), `weight` its vanilla slot's `PassLegacy._weightMap` entry (1.0
+    /// where the map has none).
+    fn begin_step(&mut self, name: &str, weight: f64);
+    /// `RunPass`'s `this._progress.End()` (`WorldGenerator.cs:507`).
+    fn end_step(&mut self);
+    /// `GenerateWorld`'s loop-top `if (this._controller.QueuedAbort)`
+    /// (`WorldGenerator.cs:433-437`) — true stops the pipeline before the
+    /// next step applies.
+    fn should_abort(&self) -> bool;
 }
 
 impl<'a> Streams<'a> {
@@ -110,6 +146,7 @@ impl<'a> Streams<'a> {
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
             chest_stock: None,
+            progress: None,
         }
     }
 
@@ -2604,13 +2641,22 @@ pub(crate) fn boot_statics(world: &mut World) {
 /// pass's config view (`WorldGenerator.cs:501`) and apply. The config read
 /// draws no RNG; today's adapters ignore the view (the shape-level passes
 /// keep their own pinned constants).
+/// The pipeline's outcome — `WorldGenerator.GenerateWorld`'s return
+/// (`WorldGenerator.cs:463`: `return !flag`, flag = the QueuedAbort break).
+/// `Completed` on the plain `generate` path (no hook can abort).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenOutcome {
+    Completed,
+    Aborted,
+}
+
 pub(crate) fn run(
     world: &mut World,
     streams: &mut Streams,
     opts: &GenOptions,
     noise: &Noise,
     config: &WorldGenConfig,
-) {
+) -> GenOutcome {
     let mut gv = GenVars::default();
     // The `WorldGen.Reset()` seed-flag tail (`WorldGen.cs:11125-11127`,
     // `:11216-11223`): the derived combo booleans plus the `crimsonLeft`
@@ -2620,7 +2666,33 @@ pub(crate) fn run(
     let mut reset_rng = streams.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // `GenerateWorld`'s TotalWeight setup (`WorldGenerator.cs:424`) — the
+    // sum over the enabled passes; the port sums the executed steps'
+    // weights (disabled steps never run, `:488-495`'s Skipped arm).
+    if let Some(h) = streams.progress.as_mut() {
+        let total: f64 = EXECUTED_PIPELINE
+            .iter()
+            .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+            .map(|s| {
+                VANILLA_CHAIN
+                    .iter()
+                    .find(|p| p.name == s.vanilla)
+                    .map_or(1.0, |p| p.weight)
+            })
+            .sum();
+        h.begin_generation(total);
+    }
     for step in EXECUTED_PIPELINE {
+        // `GenerateWorld`'s loop-top abort check (`WorldGenerator.cs:433-437`):
+        // `QueuedAbort` breaks before the next pass applies. No hook on the
+        // plain path — nothing can abort.
+        if streams
+            .progress
+            .as_ref()
+            .is_some_and(|h| h.should_abort())
+        {
+            return GenOutcome::Aborted;
+        }
         // `DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): a
         // disabled pass returns a `Skipped` result without applying
         // (`WorldGenerator.cs:488-495`) — no tiles and no draws from its
@@ -2634,15 +2706,27 @@ pub(crate) fn run(
         // per `GenPassResult`) — the executed-step log names the step, its
         // vanilla slot and that slot's progress weight.
         let row = VANILLA_CHAIN.iter().find(|p| p.name == step.vanilla);
+        let weight = row.map_or(1.0, |p| p.weight);
         log::debug!(
             "worldgen pass '{}' (vanilla '{}', weight {:.4})",
             step.name,
             step.vanilla,
-            row.map_or(1.0, |p| p.weight)
+            weight
         );
+        // `RunPass`'s progress bookends (`WorldGenerator.cs:498`/`:507`):
+        // `Start(pass.Weight)` before the apply, `End()` after. The hook
+        // draws no RNG — the step's stream schedule is byte-identical with
+        // or without it.
+        if let Some(h) = streams.progress.as_mut() {
+            h.begin_step(step.name, weight);
+        }
         let pass_config = config.pass(step.name);
         (step.f)(world, &mut gv, streams, opts, noise, &pass_config);
+        if let Some(h) = streams.progress.as_mut() {
+            h.end_step();
+        }
     }
+    GenOutcome::Completed
 }
 
 #[cfg(test)]
