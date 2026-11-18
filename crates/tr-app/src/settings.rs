@@ -233,6 +233,13 @@ pub struct Settings {
     /// (`Main.cs:49973-49979`). Vanilla key `"FlashyEffectsInterface"`
     /// (`Put` `:4216`, `Get` `:4351`).
     pub flashy_effects_interface: bool,
+    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:269`, default
+    /// **true** at `:66513`): the Interface page's "Hover Text Boxes" row
+    /// (`IngameOptions.cs:832-840`). Vanilla key
+    /// `"SettingsEnabled_OpaqueBoxBehindTooltips"` (`Put` `Main.cs:4155`,
+    /// `Get` `:4542`). With it off the item tooltip draws its lines without
+    /// the `DrawInvBG` box (`Main.cs:20398-20403`).
+    pub opaque_tooltip_box: bool,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the 14 gameplay
     /// binds of the menuMode 27 list, in the vanilla's declaration order
     /// (`cUp, cLeft, cDown, cRight, ...` — **not** the typing order).
@@ -311,6 +318,7 @@ impl Default for Settings {
             portrait_preference: 0,               // Main.cs:2331 (Detailed)
             boss_bar_text: true,                  // BigProgressBarSystem.cs:259
             flashy_effects_interface: true,       // Main.cs:66578
+            opaque_tooltip_box: true,             // Main.cs:66513
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
         }
@@ -640,6 +648,11 @@ impl Settings {
                 // Main.FlashyEffectsInterface)` (`Main.cs:4216`, read back at
                 // `:4351`).
                 "FlashyEffectsInterface" => me.flashy_effects_interface = boolean(value),
+                // `configuration.Put("SettingsEnabled_OpaqueBoxBehindTooltips",
+                // ...)` (`Main.cs:4155`, read back at `:4542`).
+                "SettingsEnabled_OpaqueBoxBehindTooltips" => {
+                    me.opaque_tooltip_box = boolean(value)
+                }
                 // The 14 gameplay binds (`Main.cs:4582-4595`) and the 6 map
                 // binds (`:4596-4600`). A name the reader does not know keeps
                 // the row's default, like the vanilla `Get` leaving the field
@@ -702,6 +715,7 @@ impl Settings {
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
              \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
+             \"SettingsEnabled_OpaqueBoxBehindTooltips\": {},\n  \
              \"MinimapFrame\": \"{}\"{}\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -776,6 +790,7 @@ impl Settings {
             self.portrait_preference,
             self.boss_bar_text,
             self.flashy_effects_interface,
+            self.opaque_tooltip_box,
             self.minimap_frame,
             self.bind_block(),
         )

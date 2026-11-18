@@ -27,6 +27,11 @@ pub enum Action {
     /// `Main.MenuUI.SetState(Main.AchievementsMenu)` — the port opens the
     /// `UIAchievementsMenu` overlay over the live menu (M6-ACH-2).
     Achievements,
+    /// The in-world keybinds screen's Back/Escape (`IngameFancyUI.Close`,
+    /// `IngameFancyUI.cs:162-188`): the menu closes and gameplay resumes —
+    /// only reachable on the menu the options window's Keybinds row opened
+    /// (`Menu::in_game_keybinds`).
+    ReturnToWorld,
 }
 
 /// One settings row. Every variant is a `Main`/`ItemSlot` field the screens toggle.
@@ -142,6 +147,11 @@ impl Menu {
         match &item.act {
             Act::None => Action::None,
             Act::Nav(page) => {
+                // The in-world keybinds screen's Back row returns to gameplay
+                // (`IngameFancyUI.Close`) instead of opening menuMode 11.
+                if self.in_game_keybinds {
+                    return Action::ReturnToWorld;
+                }
                 self.nav_to(*page);
                 Action::None
             }
@@ -176,6 +186,9 @@ impl Menu {
                 // `Lang.menu[131]`'s row: the App opens the
                 // `UIAchievementsMenu` overlay (M6-ACH-2).
                 Action::Achievements => Action::Achievements,
+                // No row carries it — only the in-game keybinds' Back/Escape
+                // arms produce it.
+                Action::ReturnToWorld => Action::ReturnToWorld,
             },
             Act::Toggle(toggle) => {
                 self.toggle(*toggle);
@@ -420,6 +433,11 @@ impl Menu {
                 return Action::None;
             }
             K::Escape => {
+                // The in-world keybinds screen closes back to gameplay
+                // (`IngameFancyUI.Close`'s GoBack).
+                if self.in_game_keybinds {
+                    return Action::ReturnToWorld;
+                }
                 // The confirm pages walk no parent: vanilla's gamepad Back
                 // (`flag5`) ORs into the No branch (`Main.cs:49435-49438`,
                 // `:49687-49690`, `:49464-49467`), so Escape resolves the No

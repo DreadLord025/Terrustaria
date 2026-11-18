@@ -2018,6 +2018,16 @@ impl App {
                 self.save_world();
                 event_loop.exit();
             }
+            // The in-world keybinds screen's Back/Escape
+            // (`IngameFancyUI.Close`, `IngameFancyUI.cs:162-188`): the menu
+            // closes with the settings sync (`close_menu`) and gameplay
+            // resumes — `Main.inFancyUI = false`, no front-end page opens.
+            // The close reopens the inventory for every state but the emotes
+            // wheel (`:176-184`'s `flag` → `Main.playerInventory = true`).
+            Action::ReturnToWorld => {
+                self.close_menu();
+                self.inventory_open = true;
+            }
             Action::Singleplayer => {
                 // `Main.cs:48981-48987`: menuMode 1 -> `OpenCharacterSelectUI`
                 // (888) — the real screen flow replaces the old "Single
