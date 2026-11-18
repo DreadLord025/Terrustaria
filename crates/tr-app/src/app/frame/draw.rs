@@ -165,6 +165,7 @@ impl App {
                     scratch,
                     debug_cache,
                     light_mode,
+                    legacy_light,
                     has_liquids,
                     liquids,
                     waterfall,
@@ -342,10 +343,45 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The NPC `AI` lights (S1-E-5): the aiStyle-8 tail
+                    // (`NPC.cs:21280-21373`) runs per live NPC per update in
+                    // `Main.npc` slot order; the port collects the same
+                    // sources here after the step, in the same slot order.
+                    // The C# adds `netOffset` around the chain (`:21279`/
+                    // `:21374`) — the feed reads the offset position too.
+                    // No arm draws `Main.rand` (the dust halves are skipped,
+                    // `npc_lights.rs`), so the placement relative to the sim
+                    // leaves the stream untouched.
+                    for n in npcs.iter() {
+                        if n.hp <= 0 {
+                            continue;
+                        }
+                        let (w, h) = n.size();
+                        if let Some((x, y, rgb)) = crate::npc_lights::npc_light(
+                            n.kind,
+                            Vec2::new(n.x, n.y) + n.net_offset,
+                            w,
+                            h,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
                     let mut style = LightStyle::for_mode(*light_mode);
+                    // S1-E-19: White/Retro/Trippy select the LEGACY engine
+                    // (`Lighting.Mode` setter, `Lighting.cs:45-56`); the style
+                    // transforms become pass-throughs — the engine itself
+                    // produces the mode's light (White's luminance collapse,
+                    // Retro's subtractive falloff, Trippy's per-channel
+                    // falloff). Color keeps the modern engine and its style.
+                    let legacy_active = *light_mode != tr_core::lighting::LightMode::Color;
+                    if legacy_active {
+                        style.grayscale = false;
+                        style.levels = 0;
+                        style.perturb = 0.0;
+                    }
                     // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
                     // the Darkness debuff's `blind` flag drops GlobalBrightness
                     // 1.2 → 1.0 while it lasts.
@@ -470,6 +506,57 @@ impl App {
                         self.entity_lights.end_frame();
                     }
 
+                    // S1-E-19: `Lighting.LightTiles` (`Main.cs:62145`, after
+                    // the waterfall walk at `:61841`) — the legacy engine's
+                    // `ProcessArea` for White/Retro/Trippy. The camera inputs
+                    // are `Camera.UnscaledPosition/Size` (`Camera.cs:8-10`):
+                    // the port's `draw_cam` is the view centre and `screen`
+                    // the backbuffer, so the unscaled top-left is
+                    // `draw_cam - screen/2`. The `AddLight` list is the
+                    // one-frame-delayed union the modern compute reads.
+                    if legacy_active {
+                        scratch.all_lights.clear();
+                        scratch.all_lights.extend_from_slice(&scratch.waterfall_lights);
+                        scratch.all_lights.extend_from_slice(self.entity_lights.visible());
+                        let mut legacy_water_style =
+                            crate::biome::calculate_water_style(world, *camera);
+                        if let Some(n) = crate::env::water_style() {
+                            legacy_water_style = n.min(14);
+                        }
+                        let legacy_inputs = tr_core::lighting::legacy::LegacyInputs {
+                            render_phases: self.gfx_quality.render_phases,
+                            water_style: legacy_water_style as u8,
+                            // The buff flags beyond `blind` are not ported
+                            // (`Player.nightVision/blackout/headcovered`).
+                            night_vision: false,
+                            blind: player.as_ref().is_some_and(|p| p.blind),
+                            blackout: false,
+                            headcovered: false,
+                            game_paused: self.game_paused,
+                        };
+                        let engine = legacy_light.get_or_insert_with(|| {
+                            tr_core::lighting::legacy::LegacyLighting::new(*light_mode)
+                        });
+                        let want_mode = match *light_mode {
+                            tr_core::lighting::LightMode::White => 1,
+                            tr_core::lighting::LightMode::Retro => 2,
+                            tr_core::lighting::LightMode::Trippy => 3,
+                            _ => 0,
+                        };
+                        if engine.mode() != want_mode {
+                            engine.set_mode(*light_mode);
+                        }
+                        engine.process_area(
+                            world,
+                            [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
+                            [screen.x, screen.y],
+                            &params,
+                            &legacy_inputs,
+                            &scratch.all_lights,
+                        );
+                        engine.present_into(light);
+                    }
+
                     // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
                     // itself lives on the shared world tick now
                     // (`world_sim::weather::update_world_tick`, ×`Main.dayRate`,
@@ -556,7 +643,14 @@ impl App {
                         hell_glow: params.hell_glow.to_bits(),
                         light_params: params.identity(),
                         light_mode: *light_mode as u32,
-                        anim: if style.perturb > 0.0 {
+                        anim: if style.perturb > 0.0 || legacy_active {
+                            // S1-E-19: the legacy engine advances its blue
+                            // wave / swipe RNG every frame and re-publishes
+                            // its presented values, so the world range must
+                            // rebuild per frame in the legacy modes — the
+                            // G6 key's contents are unchanged, only this
+                            // legacy-mode input rides the existing `anim`
+                            // slot.
                             anim_time.to_bits()
                         } else {
                             // `TileDrawing.GetWindCycle`: the sway is zero below
@@ -883,6 +977,8 @@ impl App {
                         lookups,
                         npcs,
                         light,
+                        &style,
+                        anim_time,
                         draw_cam,
                         world_zoom,
                         screen,

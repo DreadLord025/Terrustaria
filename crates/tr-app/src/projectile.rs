@@ -2399,6 +2399,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3 => {
                 (16.0, 16.0, 138, -1, 36000, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:7354-7365` — the trap explosions (694-696):
+            // 144x144, aiStyle 139, `penetrate = -1`, `tileCollide = false`,
+            // `alpha = 255` and the local-immunity pair (30); the stock
+            // `timeLeft = 3600` (`:787`). `friendly` rides the pool default.
+            EXPLOSIVE_TRAP_EXPLOSION_1
+            | EXPLOSIVE_TRAP_EXPLOSION_2
+            | EXPLOSIVE_TRAP_EXPLOSION_3 => (
+                144.0, 144.0, 139, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 30, false, -1, 255, 1.0),
+            ),
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
             DEAD_CELLS_BARNACLE_SHOT => (14.0, 14.0, 28, 1, 3600, 2, true, false, false, RESET_STATE), // Projectile.cs:9717
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
@@ -2638,6 +2648,13 @@ pub const LIGHTNING_AURA_3: u16 = 690;
 pub const EXPLOSIVE_TRAP_1: u16 = 691;
 pub const EXPLOSIVE_TRAP_2: u16 = 692;
 pub const EXPLOSIVE_TRAP_3: u16 = 693;
+/// `ProjectileID.DD2ExplosiveTrapT1Explosion` (694) — the aiStyle-139 blast
+/// the trap spawns (`Projectile.cs:69304`/`:69364`).
+pub const EXPLOSIVE_TRAP_EXPLOSION_1: u16 = 694;
+/// `ProjectileID.DD2ExplosiveTrapT2Explosion` (695).
+pub const EXPLOSIVE_TRAP_EXPLOSION_2: u16 = 695;
+/// `ProjectileID.DD2ExplosiveTrapT3Explosion` (696).
+pub const EXPLOSIVE_TRAP_EXPLOSION_3: u16 = 696;
 pub const HOUNDIUS_SHOOTIUS: u16 = 966;
 pub const HOUNDIUS_SHOOTIUS_FIREBALL: u16 = 967;
 pub const DEAD_CELLS_BARNACLE: u16 = 1025;
@@ -10512,6 +10529,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
+        // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
+        // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.
+        EXPLOSIVE_TRAP_1 | EXPLOSIVE_TRAP_2 | EXPLOSIVE_TRAP_3
+        | EXPLOSIVE_TRAP_EXPLOSION_1 | EXPLOSIVE_TRAP_EXPLOSION_2 => 4,
+        EXPLOSIVE_TRAP_EXPLOSION_3 => 5,
         _ => 1,
     }
 }
@@ -13647,6 +13670,157 @@ impl ProjectilePool {
                                 // SKIPPED - no sound, dust or gore layer in the pool.
                                 self.slots[i].sentry_turret_step(world);
                         }
+                        138 => {
+                            // `AI_138_ExplosiveTrap` (`Projectile.cs:69301-69374`):
+                            // the DD2 Explosive Trap sentry (691/692/693). The
+                            // C# order: the facing pin, the constants, the
+                            // backpack gate, the frame machine, the 3-tick
+                            // scan cooldown, the box scan + explosion spawn,
+                            // then the gravity tail.
+                            let mut shot: Option<(u16, f32, f32, i32, f32, u8)> = None;
+                            {
+                                let projectile = &mut self.slots[i];
+                                // `:69303` — `spriteDirection = (direction = 1)`.
+                                projectile.sprite_direction = 1;
+                                projectile.direction = 1;
+                                // `:69304-69316` — the explosion kind per tier
+                                // and the scan box half-size.
+                                let (explosion_kind, box_half) = match projectile.kind {
+                                    EXPLOSIVE_TRAP_2 => (EXPLOSIVE_TRAP_EXPLOSION_2, 48.0),
+                                    EXPLOSIVE_TRAP_3 => (EXPLOSIVE_TRAP_EXPLOSION_3, 48.0),
+                                    _ => (EXPLOSIVE_TRAP_EXPLOSION_1, 48.0),
+                                };
+                                // `GetExplosiveTrapCooldown` (`:69376-69388`):
+                                // 90 stock, 60 with `setHuntressT2`, 30 with
+                                // `setHuntressT3`. The Player has no huntress
+                                // set flags yet, so the stock 90 holds —
+                                // ponytail: add the T2/T3 overrides when the
+                                // armor sets land.
+                                let cooldown = 90.0;
+                                // The backpack gate (`:69317-69331`) is
+                                // unreachable in this port: no
+                                // `accSentryBackpack` support, so
+                                // `CanGetPickedUpBySentryBackpack`
+                                // (`:78785-78805`) is false and `ai[2]` stays
+                                // 0 — the `flag` branch (the sling reposition,
+                                // the 20 px inflate, the 14 px box drop and
+                                // the `tileCollide = false` return) never
+                                // runs. ponytail: no sentry-backpack support -
+                                // add when the Player gains `accSentryBackpack`.
+                                // The `Lighting.AddLight` (`:69332`) has no
+                                // pool layer — skipped (ANALYSIS).
+                                // The frame machine (`:69333-69340`): 12 ticks
+                                // per frame, wrapping at `projFrames`.
+                                projectile.frame_counter += 1;
+                                if projectile.frame_counter >= 12 {
+                                    projectile.frame_counter = 0;
+                                    projectile.frame += 1;
+                                    if projectile.frame >= proj_frames(projectile.kind) as i32 {
+                                        projectile.frame = 0;
+                                    }
+                                }
+                                // The scan cooldown (`:69341-69344`).
+                                if projectile.local_ai[0] > 0.0 {
+                                    projectile.local_ai[0] -= 1.0;
+                                }
+                                // The scan + fire (`:69345-69366`): only the
+                                // local owner scans; the box is
+                                // `Utils.CenteredRectangle(Center + (0, -48),
+                                // 144x144)` (`Utils.cs:947-950`, the `(int)`
+                                // truncation), inflated by `num3` (0 without
+                                // the backpack).
+                                if projectile.local_ai[0] <= 0.0
+                                    && projectile.owner == local_owner
+                                {
+                                    projectile.local_ai[0] = 3.0;
+                                    let (cx, cy) = projectile.center();
+                                    let size = box_half * 3.0;
+                                    let rx = (cx - size / 2.0) as i32;
+                                    let ry = (cy - box_half - size / 2.0) as i32;
+                                    let rw = size as i32;
+                                    let rh = size as i32;
+                                    // `Rectangle.Intersects` — strict overlap,
+                                    // touching edges do not intersect.
+                                    let found = npcs.iter().any(|n| {
+                                        if !n.can_be_chased_by() {
+                                            return false;
+                                        }
+                                        let (nw, nh) = n.size();
+                                        let (nx, ny) = (n.x as i32, n.y as i32);
+                                        nx < rx + rw
+                                            && rx < nx + nw as i32
+                                            && ny < ry + rh
+                                            && ry < ny + nh as i32
+                                    });
+                                    if found {
+                                        // The tracked sound (`:69362`) is
+                                        // skipped — no sound layer.
+                                        projectile.local_ai[0] = cooldown;
+                                        // `:69364` — the blast spawns at
+                                        // `Center + (0, -48)` with zero
+                                        // velocity, the trap's damage and
+                                        // knock back; `NewProjectile` centres
+                                        // the box (`:10876-10877`).
+                                        shot = Some((
+                                            explosion_kind,
+                                            cx - 72.0,
+                                            cy - box_half - 72.0,
+                                            projectile.damage,
+                                            projectile.knock_back,
+                                            projectile.owner,
+                                        ));
+                                    }
+                                }
+                                // The gravity tail (`:69367-69373`): without
+                                // the backpack the trap collides and falls.
+                                projectile.tile_collide = true;
+                                projectile.vel.y += 0.2;
+                            }
+                            if let Some((kind, x, y, damage, kb, owner)) = shot {
+                                let _ = self.spawn_with_data_ai_owned(
+                                    kind, owner, x, y, 0.0, 0.0, damage, kb, 0.0, 0.0,
+                                );
+                            }
+                            // `HandleMovement` (`:17587`'s `TileCollision` with
+                            // `flag6 = false`, the 691-693 switch arm at
+                            // `:17567-17569`): a blocked move takes the DD2
+                            // sentry arm (`:17986-17990`) — one last step into
+                            // the tile, then `velocity = Zero` (no kill, no
+                            // bounce); a free move integrates via
+                            // `UpdatePosition` (`:19858`/`:20445`).
+                            // RNG: the AI arm itself draws nothing. The
+                            // blocked-move chain's tile-cut prologue
+                            // (`:17910-17948`) would draw `Main.rand.Next(3)`
+                            // (`:17948`) for this friendly, damage > 0,
+                            // `CanCutTiles()`-true (`:15329`) trap — the pool
+                            // skips the whole tile-cut chain (no 484 /
+                            // cracked-brick cutting layer, like the sentry
+                            // steps above), so that draw is skipped too
+                            // (ANALYSIS).
+                            let before = self.slots[i].vel;
+                            let tc = crate::collision::tile_collision(
+                                world,
+                                [self.slots[i].pos.x, self.slots[i].pos.y],
+                                [before.x, before.y],
+                                self.slots[i].w,
+                                self.slots[i].h,
+                                false,
+                                false,
+                            );
+                            self.slots[i].vel = Vec2::new(tc.vel[0], tc.vel[1]);
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                            if vel != before {
+                                self.slots[i].vel = Vec2::ZERO;
+                            }
+                        }
+                        // aiStyle 139 (`AI_139_ExplosiveTrapExplosion`,
+                        // `Projectile.cs:69390-69414`) — the blast the 138 arm
+                        // spawns — is UNPORTED this round (S1-D-4b-2 scope):
+                        // the blast rides its `proj_data` row (the alpha-255
+                        // fade-in and the frame-wrap kill are missing) and
+                        // holds until its `timeLeft` expires; its `Damage_PVE`
+                        // half already works through the shared pass.
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
                             // `AI_062` (`Projectile.cs:29314-29316`'s
@@ -25554,6 +25728,139 @@ mod sentry_tests {
             "the lowest timeLeft wipable dies"
         );
     }
+}
+
+#[cfg(test)]
+mod s1_d_4b_2_trap_tests {
+    //! S1-D-4b-2 — the aiStyle-138 Explosive Trap dispatch
+    //! (`Projectile.cs:69301-69374`): the dispatch pins + the key state
+    //! transitions (the fall, the frame machine, the scan cooldown and the
+    //! tier→blast mapping). The 139 blast arm is out of this round's scope.
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_turrets = 4;
+        p.max_turrets_old = 4;
+        p
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player, npcs: &mut [Npc]) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// The 138 arm reaches its dispatch: the trap falls (`:69373`,
+    /// `velocity.Y += 0.2` then `UpdatePosition`), keeps `tileCollide = true`
+    /// (`:69372`) and pins the facing to 1 (`:69303`). Without the arm the
+    /// slot would sit still at vel 0 with the stock frame 0.
+    #[test]
+    fn s1_d_4b_2_the_trap_dispatches_falls_and_animates() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let trap = pool
+            .spawn_with_data_ai_owned(EXPLOSIVE_TRAP_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(pool.slots[trap].tile_collide, ":69372 — the trap collides");
+        assert_eq!(pool.slots[trap].sprite_direction, 1, ":69303");
+        assert_eq!(pool.slots[trap].direction, 1, ":69303");
+        assert_eq!(pool.slots[trap].vel.y, 0.2, ":69373 — the gravity tick");
+        assert_eq!(pool.slots[trap].pos.y, 300.2, "UpdatePosition integrates");
+        // The 12-tick frame machine (`:69333-69340`): frame 0 holds for 11
+        // ticks, flips to 1 on the 12th, wraps 4 → 0 on the 48th.
+        for _ in 0..10 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[trap].frame, 0, "11 ticks — still frame 0");
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[trap].frame, 1, "the 12th tick flips the frame");
+        assert_eq!(pool.slots[trap].frame_counter, 0);
+        for _ in 0..36 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[trap].frame, 0, "the 48th tick wraps 4 -> 0");
+    }
+
+    /// The scan + fire (`:69345-69366`): a chaseable NPC inside the 144x144
+    /// box centred 48 px above the trap fires the tier's blast at
+    /// `Center + (0, -48)` (the box recentred by `NewProjectile`,
+    /// `:10876-10877`), pins the 90-tick cooldown (`GetExplosiveTrapCooldown`,
+    /// `:69378`) and carries the trap's damage/knock back. The tier switch
+    /// (`:69308-69316`) maps 691→694, 692→695, 693→696.
+    #[test]
+    fn s1_d_4b_2_the_trap_fires_its_tier_blast_on_a_box_hit() {
+        for (trap_kind, blast_kind) in [
+            (EXPLOSIVE_TRAP_1, EXPLOSIVE_TRAP_EXPLOSION_1),
+            (EXPLOSIVE_TRAP_2, EXPLOSIVE_TRAP_EXPLOSION_2),
+            (EXPLOSIVE_TRAP_3, EXPLOSIVE_TRAP_EXPLOSION_3),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let trap = pool
+                .spawn_with_data_ai_owned(trap_kind, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            // The box: centre (308, 260), 144x144 → x 236..380, y 188..332.
+            let mut npcs = vec![npc_at(NpcKind::Zombie, 300.0, 250.0)];
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            let blast = pool
+                .slots
+                .iter()
+                .position(|s| s.active && s.kind == blast_kind)
+                .unwrap_or_else(|| panic!("trap {trap_kind} fired blast {blast_kind}"));
+            let b = &pool.slots[blast];
+            // Centre (308, 308) + (0, -48) − 72 (the 144 box recentre) — the
+            // shot rides the pre-movement centre, the AI runs before
+            // `HandleMovement`.
+            assert!((b.pos.x - 236.0).abs() < 1e-3, "blast x {}", b.pos.x);
+            assert!((b.pos.y - (308.0 - 48.0 - 72.0)).abs() < 1e-3, "blast y {}", b.pos.y);
+            assert_eq!(b.vel, Vec2::ZERO, ":69364 — zero velocity");
+            assert_eq!(b.damage, 10);
+            assert_eq!(b.knock_back, 0.5);
+            assert_eq!(b.owner, 0);
+            // The cooldown pins at 90 (`:69363` + `:69378`).
+            assert_eq!(pool.slots[trap].local_ai[0], 90.0, "the 90-tick cooldown");
+            // No second blast while the cooldown holds.
+            for _ in 0..5 {
+                tick(&mut pool, &mut w, &mut p, &mut npcs);
+            }
+            let blasts = pool.slots.iter().filter(|s| s.active && s.kind == blast_kind).count();
+            assert_eq!(blasts, 1, "the cooldown gates the next scan");
+        }
+    }
+
 }
 
 #[cfg(test)]

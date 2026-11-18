@@ -2763,6 +2763,12 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // `NPCID.DesertDjinn` (533) — the desert caster hovers like the
+        // other casters (`spawn_hover`; aiStyle 8).
+        crate::npc::NpcKind::DesertDjinn => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         // The Pumpkin Moon family (`S1-F-13b` Phase 2): the wave roster's
         // seed follows their machines — the walkers (the ten Scarecrows,
         // Splinterling, the Headless Horseman and the Hellhound, whose

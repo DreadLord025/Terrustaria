@@ -1146,11 +1146,17 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
                         app.ingame_options.close();
                         app.achievements_open = true;
                     }
-                    // `:252-256` / `:300-310`: the keybinding screen is M7-UI-5
-                    // and the save-and-quit path is the front-end flow's; both
-                    // stay on `pending` for the caller.
-                    LeftAction::Keybinds | LeftAction::SaveAndExit => {
+                    // `:252-256`: the keybinding screen is M7-UI-5 — stays
+                    // on `pending` for the caller.
+                    LeftAction::Keybinds => {
                         app.ingame_options.close();
+                    }
+                    // `IngameOptions.cs:296-305`: Close() + menuMode 10 +
+                    // gameMenu = true + `WorldGen.SaveAndQuit()` — the save
+                    // and the return to the main menu (`WorldGen.cs:6664-6719`).
+                    LeftAction::SaveAndExit => {
+                        app.ingame_options.close();
+                        app.save_and_quit();
                     }
                     LeftAction::Category(_) => unreachable!(),
                 }
@@ -1766,6 +1772,36 @@ mod tests {
         // Save & Exit is the one `Lang.inter` row (`:311`).
         assert_eq!(LEFT_ROWS[7].inter, Some(35));
         assert!(LEFT_ROWS[..7].iter().all(|r| r.menu.is_some()));
+    }
+
+    /// The Save & Exit row's click runs `WorldGen.SaveAndQuit`
+    /// (`IngameOptions.cs:296-305` → `WorldGen.cs:6664-6719`): the window
+    /// closes, the world file is written and the main menu comes back
+    /// (`SaveAndQuitCallBack`'s `Main.menuMode = 0`, `WorldGen.cs:6682`).
+    /// The old arm only closed the window — the button did nothing.
+    #[test]
+    fn save_and_exit_click_saves_the_world_and_returns_to_the_menu() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let dir = std::env::temp_dir()
+            .join(format!("tr-save-and-exit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("exit.trwld");
+        let _ = std::fs::remove_file(&path);
+        app.world_path = path.clone();
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.menu = None;
+        app.ingame_options.open = true;
+        let screen = Vec2::new(1600.0, 900.0);
+        // The centre of the Save & Exit row (LEFT_ROWS[7], `Lang.inter[35]`).
+        let r = left_row_rect(screen, 7);
+        let mouse = Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert!(click(&mut app, screen, mouse), "the row consumes the click");
+        assert!(!app.ingame_options.open, "`IngameOptions.Close()` (`:301`)");
+        assert!(path.exists(), "`WorldFile.SaveWorld` (`WorldGen.cs:6675`)");
+        assert!(app.menu.is_some(), "`Main.menuMode = 0` (`WorldGen.cs:6682`)");
+        assert_eq!(app.invasion_progress, -1, "`WorldGen.cs:6705`");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The left column's slot count is the C#'s `num7` (`:178-179`):
