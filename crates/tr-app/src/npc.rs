@@ -945,6 +945,22 @@ pub struct Npc {
     /// the previous tick's `position.X` — equality flips the direction and
     /// arms the 60-tick no-retarget cooldown.
     pub frost_stuck_x: f32,
+    /// The `oldPosition.X` the aiStyle-26 machine reads (`NPC.cs:62441`'s
+    /// `position.X == oldPosition.X`): the C# latches `oldPosition` AFTER
+    /// the AI (`Collision_MoveWhileDry`, `NPC.cs:92605`), so the equality
+    /// means "did not move last tick". The port's `update_rng` latches
+    /// `old_x` BEFORE the AI, so `unicorn_step` carries its own end-of-tick
+    /// latch — the `frost_stuck_x` precedent above (S1-F-13b2 slice A).
+    pub unicorn_stuck_x: f32,
+    /// `NPC.gfxOffY` (`NPC.cs:6095`): the render-side step-up lift
+    /// accumulator — `AI_026_Unicorns`' inline step-up adds the lift here
+    /// (`NPC.cs:62792`); the `UpdateNPC` head decays it by
+    /// `(1 + |vx|/3) * stepSpeed` per tick, clamped ±16 (`:90397-90420`).
+    /// Slice A records the writes; the decay/render arms ride slice B.
+    pub gfx_off_y: f32,
+    /// `NPC.stepSpeed` (`NPC.cs:6097`): the step-up lift's decay rate —
+    /// 1 for lifts under 9 px, 2 above (`NPC.cs:62794-62801`).
+    pub step_speed: f32,
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
@@ -2041,6 +2057,13 @@ impl Npc {
             old_vy: 0.0,
             dark_mage_local: [0.0; 3],
             frost_stuck_x: 0.0,
+            // `Entity.oldPosition`'s field default (0,0) (`Entity.cs:14`):
+            // the C# leaves it zero until the first `UpdateCollision`
+            // latches it (`NPC.cs:92605`), so a fresh NPC at x != 0 reads
+            // "moved" on its first aiStyle-26 tick — verbatim.
+            unicorn_stuck_x: 0.0,
+            gfx_off_y: 0.0,
+            step_speed: 0.0,
             wants_sphere: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
@@ -3603,12 +3626,16 @@ impl Npc {
             | NpcKind::Scarecrow10
             | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
             // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
-            // (`AI_026_Unicorns`, `NPC.cs:62366+`) — their named machines ride
-            // the S1-F-13b2 row; until it lands the wave arm's documented
-            // stand-in is the walker family at the C#'s own chase cap
-            // (`num10 = 6f`, `:62622` — `ai3_walk_speed`'s family row).
+            // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
+            // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
+            // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
+            // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
+            // other aiStyle-26 kinds keep their own routings below — this
+            // arm is kind-scoped, not a style-axis claim. The gallop dust
+            // (with its draws), the FindFrame 315/329 arms and the
+            // AddLight ride slice B (module docs + ANALYSIS).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                self.update_skeleton(world, player, dt)
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             }
             // The Poltergeist (330): aiStyle 22 — the port's own caster
             // machine (the Fire Imp family; `update_caster`'s shot arm's
@@ -22656,8 +22683,9 @@ mod s1_f_13b_tests {
         // the five stat pairs' `num85` caps (305/310 → 2f, 306/311 → 1.25f,
         // 307/312 → 2.25f, 308/313 → 1.5f, 309/314 → 1f) — plus Splinterling
         // in the cap-2 group (`:57554-57578`). The Headless Horseman (315) and
-        // the Hellhound (329) ride their aiStyle-26 stand-in cap
-        // (`num10 = 6f`, `:62622`) while their named machine rides S1-F-13b2.
+        // the Hellhound (329) ride the named aiStyle-26 machine
+        // (`npc_ai_unicorn.rs`, S1-F-13b2 slice A); this row pins its chase
+        // cap — the machine's own `num10 = 6f` (`NPC.cs:62617`).
         let expected: [(NpcKind, f32); 13] = [
             (NpcKind::Scarecrow1, 2.0),
             (NpcKind::Scarecrow2, 1.25),
@@ -22744,10 +22772,13 @@ mod s1_f_13b_tests {
     #[test]
     fn s1_f_13b_the_family_machines_route_to_their_stand_ins() {
         // DW-2.5's routing: the wave roster rides live — the 11 aiStyle-3
-        // walkers and the two aiStyle-26 kinds walk on the walker family (the
-        // speed rows pin their caps), the Mourning Wood and the Pumpking
-        // hover, and the Poltergeist rides the caster stand (it holds still —
-        // its shot arm returns until the named machine lands with S1-F-13b2).
+        // walkers walk on the walker family (the speed rows pin their
+        // caps); the Headless Horseman and the Hellhound ride the named
+        // aiStyle-26 machine (`npc_ai_unicorn.rs`, S1-F-13b2 slice A —
+        // same 6f cap, its own `num10`); the Mourning Wood and the
+        // Pumpking hover, and the Poltergeist rides the caster stand (it
+        // holds still — its shot arm returns until the named machine
+        // lands with S1-F-13b2's other slices).
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -22759,6 +22790,9 @@ mod s1_f_13b_tests {
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
+        // The aiStyle-26 machine only retargets inside the pumpkin moon
+        // (`NPC.cs:62583-62590`) — outside it, it encourages despawn.
+        w.pumpkin_moon = true;
         let mut player = crate::player::Player::spawn(&w);
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;

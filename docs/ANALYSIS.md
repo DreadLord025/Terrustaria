@@ -16407,10 +16407,10 @@ rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
 and the render sheets resolving with the C#'s `npcFrameCount`.
 
 Documented deviations, all deliberate:
-- **The five bespoke machines ride stand-ins** until S1-F-13b2: the
-  Headless Horseman (315) and the Hellhound (329) — aiStyle 26
-  (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
-  C#'s own chase cap (`num10 = 6f`, `:62622`); the Poltergeist (330) —
+- **The bespoke machines**: the Headless Horseman (315) and the Hellhound
+  (329) — aiStyle 26 (`AI_026_Unicorns`, `NPC.cs:62366-62924`) — landed
+  their named machine with S1-F-13b2 slice A (`npc_ai_unicorn.rs`, see
+  "The aiStyle-26 machine" below); the Poltergeist (330) —
   aiStyle 22 — rides the port's caster machine (its shot arm's `_ => return`
   leaves it shotless until the named machine lands); the MourningWood (325,
   aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
@@ -16434,6 +16434,79 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The aiStyle-26 machine (S1-F-13b2 slice A, 2026-11-18)
+
+`npc_ai_unicorn.rs::unicorn_step` ports `AI_026_Unicorns`
+(`NPC.cs:62366-62924`, the caller arm `:25631-25634`) for the Headless
+Horseman (315) and the Hellhound (329), wired kind-scoped in
+`update_kind_ai` — NOT a global aiStyle-26 axis claim (423 rides its own
+`update_nebula_beast`, M4-EVENT-9; 155/410/546 are unported kinds). The
+port is block-by-block verbatim: the turn flag + stuck windows
+(`:62373-62469` — the non-short-circuit `|`, the >300 wrap, the justHit
+reset, netUpdate at exactly 30, the <200-px clear), the Horseman's
+481st-tick pumpkin lob (`:62409-62440` — `localAI[0]++ >= 480f`
+post-increment), the 155/329 hop with INTEGER `width / 2` centres
+(`:62558-62564` — 315 never hops), the moon-gated chase/wander split
+(`:62581-62616` — outside the pumpkin moon `EncourageDespawn(10)` replaces
+`TargetClosest`), the walk core (`:62617-62740` — 315 runs its OWN
+cap/approach block `:62651-62684` AND the shared block `:62717-62739`:
+0.07+0.07 first tick; 329's ±0.1 band nudge + 0.07 = 0.17), the inline
+step-up (`:62741-62805`) and the jump probe (`:62806-62903` — `flag7`
+false for 315/329 folds the below-1 conjunct away).
+
+**Tests written, not run — code-only mode** (no cargo/rustc invoked this
+slice; verification was a line-by-line re-read of the C#). 10
+`s1_f_13b2_*` tests pin the windows, the double accel, the wander flips,
+the hop, the wall-height jump rows, the step-up lift, the lob's payload
+and its three-draw witness stream, and the untouched stream between lobs.
+
+RNG order (the `UpdateNPCs` stream, `Main.cs:17767-17769`): the only
+ported draws are the lob's three, in C# order — the
+`NextVector2Circular(40, 40)` angle `NextFloat` (`NPC.cs:62417` →
+`Utils.cs:1261-1264`, `2π·f` with f64 `Math.Cos/Sin` cast to f32,
+`:1665-1668`), the radial `NextFloat` (`Utils.cs:1268`), then
+`NextFloatDirection() * 3f` (`Utils.cs:1203-1206`). The gallop-dust arm
+(`:62431-62438`: `Next(3)` + two `NextFloat`) is deferred WITH its draws
+(the `npc_lights.rs` S1-E-5 precedent); the Hellhound and every non-fire
+tick draw nothing. `target_closest` is deterministic.
+
+Documented deviations, all deliberate:
+- **The stuck latch**: the C# reads `oldPosition.X` latched AFTER the AI
+  (`Collision_MoveWhileDry`, `NPC.cs:92605`); the port's `update_rng`
+  latches `old_x` BEFORE it, so the machine carries its own end-of-tick
+  `unicorn_stuck_x` latch (the `frost_stuck_x` precedent,
+  `npc.rs:6623-6627`), init 0.0 = `Entity.oldPosition`'s field default
+  (`Entity.cs:14`).
+- **`justHit` → `hurt_cd > 0`**: the house stand-in (the port has no
+  per-tick justHit flag).
+- **Target 255 on the first tick**: `target_player()` maps the
+  still-unresolved slot to the session player; the C# would index the
+  inactive slot-255 dummy at the world origin for exactly that tick
+  (`ClearTarget`, `NPC.cs:42924-42927`). The lob's `num3 != 255` gate is
+  verbatim — a never-resolved target suppresses the shot but still resets
+  the counter.
+- **The gravity seam**: the movement tail integrates the port's
+  GRAVITY/MAX_FALL (0.4/8.0) like `walker_step`; the C#'s depth-scaled
+  0.3/10 (`UpdateNPC_UpdateGravity`, `:90878+`) rides the port-wide
+  gravity seam.
+- **The lob is dropped until projectile 1001 lands**: `proj_data` has no
+  HorsemanPumpkin (1001) row (`projectile/data.rs`'s `_ => return None`),
+  so the pool silently drops the `wants_hostile_shot_ai` request (the
+  documented house pattern, `projectile.rs:1321-1324`). The request stays
+  faithful; the row is out of slice A's scope.
+- **Deferred to slice B**: the gallop dust visuals WITH their RNG draws,
+  the `FindFrame` case-315/329 sprite arms (`NPC.cs:74465` /
+  `:74375-74403` — the kinds ride `walker_frame` today), the Horseman's
+  `Lighting.AddLight(Center, 0.4, 0.36, 0.2)` (`:62420`), and the
+  `gfxOffY` decay/render arms (`:90397-90420` — slice A records the
+  step-up writes into the new `gfx_off_y`/`step_speed` fields,
+  `NPC.cs:6095`/`:6097`).
+- **The 22/57/58 arms are untouched**: the Poltergeist's caster stand and
+  the MourningWood/Pumpking hovers keep their S1-F-13b stand-ins (other
+  workers' slices); the `ai3_walk_speed` 6.0 rows stay as the cap pins
+  the family tests read.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
