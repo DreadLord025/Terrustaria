@@ -514,6 +514,27 @@ pub struct Player {
     pub stardust_minion: bool,
     pub bats_of_light: bool,
     pub baby_bird: bool,
+    /// AI_026 slice A (S1-D-4b-10) — the 14 flyer pets' keep-alive flags
+    /// (`Player.cs`'s `eater`/`skeletron`/`hornet`/`tiki`/`wisp`/
+    /// `zephyrfish`/`petFlag*` fields). `AI_026`'s per-type blocks
+    /// (`Projectile.cs:58284-58910`) clear the flag when the owner dies and
+    /// pin `timeLeft = 2` while it stands. The grant side (the pet
+    /// buff/item pass, `Player.cs`'s `UpdateBuffs` pet arms) is unported —
+    /// the flags stay false until it lands (ANALYSIS "AI_026 slice A").
+    pub eater: bool,
+    pub skeletron: bool,
+    pub hornet: bool,
+    pub tiki: bool,
+    pub wisp: bool,
+    pub zephyrfish: bool,
+    pub pet_flag_baby_shark: bool,
+    pub pet_flag_lil_harpy: bool,
+    pub pet_flag_glittery_butterfly: bool,
+    pub pet_flag_queen_bee_pet: bool,
+    pub pet_flag_duke_fishron_pet: bool,
+    pub pet_flag_moon_lord_pet: bool,
+    pub pet_flag_dd2_betsy_pet: bool,
+    pub pet_flag_pufferfish: bool,
     pub dead_cells_mushroom_boi_minion: bool,
     pub palworld_cattiva_minion: bool,
     pub palworld_foxsparks_minion: bool,
@@ -1716,6 +1737,21 @@ impl Player {
             stardust_minion: false,
             bats_of_light: false,
             baby_bird: false,
+            // AI_026 slice A's pet keep-alive flags (see the field block).
+            eater: false,
+            skeletron: false,
+            hornet: false,
+            tiki: false,
+            wisp: false,
+            zephyrfish: false,
+            pet_flag_baby_shark: false,
+            pet_flag_lil_harpy: false,
+            pet_flag_glittery_butterfly: false,
+            pet_flag_queen_bee_pet: false,
+            pet_flag_duke_fishron_pet: false,
+            pet_flag_moon_lord_pet: false,
+            pet_flag_dd2_betsy_pet: false,
+            pet_flag_pufferfish: false,
             dead_cells_mushroom_boi_minion: false,
             palworld_cattiva_minion: false,
             palworld_foxsparks_minion: false,
