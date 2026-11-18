@@ -16828,3 +16828,25 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The rope back-draw pass (S1-G-1 wave B, 2026-11-18)
+
+`crates/tr-app/src/render/ropes.rs` ports `TileDrawing.DrawTile_BackRope`
+(`TileDrawing.cs:3766-3784`) and its probes `WorldGen.GetRopeEnds`/`IsRope`
+(`WorldGen.cs:70026-70104`) verbatim: the `InWorld(x, y, 1)` gate, the
+`(tileY + tileX) % 3 * 18` connector row at sheet X 90, the sheet/paint key
+taken from the TOP rope tile (`Main.tile[tileX, topRopeY]`, `:3776-3780`),
+the CELL's raw `tileLight` (no `GetFinalLight` ghost), and the C#'s own
+quirks: a rope tile answers `IsRope == true` with both ends -1 (so the draw
+finds no tile and draws nothing), the `topRopeY = tileX` init at `:3772` is
+dead (IsRope assigns its outs at entry), and the no-top-end down scan walks
+absolute rows `j - 1` capped at `rangeToCheck + 1` (`:70051`).
+
+Deliberate state: **PORTED-UNWIRED**. The tiles pass does not call the hook
+yet — wave A (vines, `task/S1-G-1a`) owns `render/tiles.rs`; the call sites
+(`DrawBasicTile` `:1511-1514` before the platform sprite,
+`DrawTile_MinecartTrack` `:3792`) land with that merge. No pixels change
+until then (the module is pure additions + one `mod` line), so no screenshot
+A/B is possible or needed yet; the rope tiles' own vertical segments already
+draw through the generic `DrawSingleTile` pass. The 13 `render::ropes`
+tests pin the scan maths, the rect/paint sourcing and the dispatch gate.
