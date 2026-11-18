@@ -2085,6 +2085,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 20x30, `friendly = true` (the arm re-pins it per tick, `:49587`),
             // the idStatic-10 pair and the manual fall-through decision.
             VAMPIRE_FROG => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            // The aiStyle-67 pets, slice B (S1-D-4b-12): the Crimson Heart
+            // (`Projectile.cs:5413-5424`) — 20x20, `scale = 0.8f`,
+            // `ignoreWater`, the stock tileCollide true and no immunity pair;
+            // the Dirtiest Block (`:9637-9647`) — 16x16; the Boulder Pet
+            // (`:9987-9997`) — 32x32. All three: `penetrate = -1`,
+            // `netImportant`, `timeLeft *= 5`, `friendly = true` (the arm
+            // re-pins it false per tick, `:49562`), no minion slice.
+            CRIMSON_HEART => (20.0, 20.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
             // ignoreWater (the stock true / false).
@@ -2330,7 +2340,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry,
+        net_important: minion
+            || sentry
+            // The slice-B pets set `netImportant` themselves
+            // (`Projectile.cs:5419`/`:9643`/`:9993`).
+            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -2340,7 +2354,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
-            || matches!(kind, VILE_BASE | VILE_TIP),
+            || matches!(kind, VILE_BASE | VILE_TIP)
+            // The slice-B pets set `ignoreWater` themselves
+            // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
+            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -2369,6 +2386,13 @@ pub const SOULSCOURGE_PIRATE: u16 = 394;
 pub const PIRATE_CAPTAIN: u16 = 395;
 /// `ProjectileID.VampireFrog` (`ProjectileID.cs:2070`) — the aiStyle-67 frog.
 pub const VAMPIRE_FROG: u16 = 758;
+/// `ProjectileID.CrimsonHeart` (`ProjectileID.cs:1554`) — the aiStyle-67
+/// pet, slice B (S1-D-4b-12).
+pub const CRIMSON_HEART: u16 = 500;
+/// `ProjectileID.DirtiestBlock` (`ProjectileID.cs:2590`).
+pub const DIRTIEST_BLOCK: u16 = 1018;
+/// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
+pub const BOULDER_PET: u16 = 1056;
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
@@ -2480,6 +2504,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
+        // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
+        // keep the init default 1 (no override in `Main.cs:8444-8727`).
+        CRIMSON_HEART => 4,
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
         // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.
