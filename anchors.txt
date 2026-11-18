@@ -431,3 +431,56 @@ crates/tr-app/src/app/net_npc_sync.rs|pub(crate) fn server_relay_strike|S1-I-4b 
 crates/tr-app/src/app/net_npc_sync.rs|pub(crate) fn add_buff|S1-I-4b -- NPC.cs:89926-89983: the client 53 precedes the mutation/early-return, the server 54 follows only a written buff
 crates/tr-app/src/app/net_npc_sync.rs|pub(crate) fn npc_sync_tick|S1-I-4b -- Main.cs:17948-17952 + NPC.cs:90513-90515: the net_tick hook walks slots in order, UpdateNetworkCode then netUpdate=false
 
+crates/tr-app/src/buffs.rs|fn add_buff_determine_buff_time_to_add|cite-repair - GameDifficultyData.cs cite points at the static ctor declaring DebuffTimeMultiplier
+crates/tr-app/src/map.rs|fn tile_revealed|cite-repair - WorldMap.cs cite points at the IsRevealed method
+crates/tr-app/src/projectile.rs|fn whip_on_hit|cite-repair - Projectile.cs cite un-reversed to the aiStyle-165 on-hit arms
+crates/tr-core/src/tileobject.rs|enum LiquidPlacement|cite-repair - LiquidPlacement.cs cite points at the enum declaration
+crates/tr-app/src/world_sim/editing.rs|crate::combat_text::spawn(|COMBAT-UI-1 -- NPC.cs:81250-81264: a landed strike spawns the combat text with the post-defence number (NPC.cs:81239) and the crit flag
+crates/tr-app/src/combat_text.rs|pub fn draw(|COMBAT-UI-2 -- Main.cs:62340-62396: the combat-text draw (Combat_Text/Combat_Crit fonts, four 1 px shadow passes, scale*alpha tint)
+crates/tr-app/src/render/entities.rs|pub(crate) fn draw_npc_health_bars(|COMBAT-UI-3 -- Main.cs:21909-21990 + 45835/46018: the ordinary NPC health bar (Hb1/Hb2, width 36*ratio min 3, green->red, light*0.95)
+crates/tr-app/src/combat_text.rs|fn the_damage_shown_is_the_post_defense_value(|COMBAT-UI-4 -- the damage number is the post-defence strike value, crit doubles before the cast (NPC.cs:81239)
+crates/tr-app/src/eoc_fight.rs|pub fn enters_spin_phase|EOC-FIGHT-1 -- NPC.cs:20270-20284: the 50%/65% hp gate into the spin phases
+crates/tr-app/src/eoc_fight.rs|pub fn dash_velocity|EOC-FIGHT-2 -- NPC.cs:20140-20158,20478-20496: the 6.0 / 6.8 px-tick dive velocities
+crates/tr-app/src/eoc_fight.rs|pub fn servant_due|EOC-FIGHT-3 -- NPC.cs:20128-20138: the servant burst cadence (110 classic / 44 expert)
+crates/tr-app/src/eoc_fight.rs|pub fn flees_at_dawn|EOC-FIGHT-4 -- NPC.cs:20066-20073: Main.IsItDay() | dead -> the climb-away and EncourageDespawn(10)
+crates/tr-app/src/world_sim/editing.rs|use_suspicious_looking_eye|EOC-FIGHT-5 -- Player.cs:43759-43771: the Suspicious Looking Eye's night + SummonItemCheck gates and NPC.SpawnOnPlayer(4)
+crates/tr-app/src/world_sim/items.rs|pending -= take|ITEMS-2 вЂ” Player.GetItem's slot walk fills to Item.CommonMaxStack (9999) and leaves the surplus in the world (Player.cs:39493-39518, Player.cs:35085-35087)
+crates/tr-app/src/item.rs|const FRICTION_X: f32 = 0.95|ITEMS-4 вЂ” WorldItem.MoveInWorld's air physics: gravity 0.1/maxFall 7 (WorldItem.cs:363-364), velocity.X *= 0.95 + the <0.1 snap (:854-860), the flush stop of Collision.TileCollision (Collision.cs:2446-2451)
+crates/tr-app/src/world_sim/editing.rs|mod item_mechanics|ITEMS-1/3 вЂ” the item-mechanics slice: KillTileв†’drop (WorldGen.cs:64057-64062, :63947-63958), pickupв†’stack, torch placement (Player.cs:39580)
+crates/tr-core/src/liquid.rs|set_skip|liquids - the Tile.skipLiquid port (Liquid.cs:586-587/:1083-1105/:1173)
+crates/tr-core/src/liquid.rs|liquid_sim|liquids - the flow verification suite (fall/spread/obsidian/mass)
+crates/tr-app/src/render/entities.rs|fn generic_anchor_shift_y|offsets - the NPC and boss draw anchors follow the C# collapse (Main.cs:25511-25512: the Draw origin cancels halfSize, pivot-only) and the Zombie NPCAddHeight misattribution is removed (Main.cs:22037-22039 is the Devourer's 7/8/9)
+crates/tr-app/src/assets.rs|"Player_0_13",|player-draw: arm-stack sheets packed (Players[5]/[8]/[13])
+crates/tr-app/src/render/entities.rs|shirt: sky_tex(atlas, "Player_0_6", None)|player-draw: shirt sheet full-width for the FrontShirt arm cells
+crates/tr-app/src/render/player_layers.rs|fn t1_player_arm_layer_order_matches_csharp|player-draw: arm layer order pinned to PlayerDrawLayers.cs:1238->1257/:239
+crates/tr-app/src/render/player_layers.rs|fn t2_player_frame_offsets_match_csharp|player-draw: headgear shift pinned per walk row (Main.cs:66638-66662)
+crates/tr-app/src/render/player_layers.rs|fn t3_no_head_torso_gap|player-draw: head-torso offset pinned gapless across the walk band
+crates/tr-app/src/render/player_layers.rs|fn t4_player_sleeve_sheets_are_packed|player-draw: sleeve/under-arm sheets pinned packed (C# :1346-1362/:3698-3705)
+crates/tr-app/src/ui/char_select.rs|fn inner_list|WAVE2/F1 вЂ” the select screens' UIList scroll offset: `_innerList.Top = -GetValue()` (UIList.cs:181) applied to the rows, the viewport left fixed
+crates/tr-app/src/ui/char_select.rs|pub fn scroll_wheel(scroll: f32, delta: i32|WAVE2/F1 вЂ” the list wheel: `ViewPosition -= ScrollWheelValue` at 120 px/notch, clamped by SetView (UIList.cs:107-114, UIScrollbar.cs:45/75)
+crates/tr-app/src/ui/char_select.rs|fn scrollbar_press|WAVE2/F1 вЂ” the UIScrollbar drag latch and track jump (UIScrollbar.cs:126-143)
+crates/tr-app/src/ui/panel.rs|fn scrollbar_handle_at|WAVE2/F1 вЂ” GetHandleRectangle at an arbitrary view position (UIScrollbar.cs:85-94), feeding both the draw and the drag hit-test
+crates/tr-app/src/app/flow.rs|fn front_wheel|WAVE2/F1 вЂ” the front screens' wheel route into the live UIList (UIList.cs:107-114 via UserInterface.cs:219-222)
+crates/tr-app/src/app/flow.rs|fn select_layout|WAVE2/F1 вЂ” one scrolled layout for front_hit, the click tables and the draw (Review Focus 2)
+crates/tr-app/src/ui/char_select.rs|fn f1_the_last_cards_delete_hits_delete_not_new|WAVE2/F1 вЂ” the A6 numeric pin: the last card's Delete is Delete, never New
+crates/tr-app/src/app/flow.rs|fn f1_delete_on_a_card_without_a_save_file_explains_instead_of_dropping_the_click|WAVE2/F1 вЂ” the dead-delete notice (front_hint) instead of a silent drop
+crates/tr-app/src/player_file.rs|fn favorite_marker_path|WAVE2/F3 вЂ” the character favourite is the `<stem>.trfav` sidecar beside the `.plr` (the FavoritesFile stand-in), never the re-writable file's metadata bit
+crates/tr-app/src/player_file.rs|fn set_favorite_marker|WAVE2/F3 вЂ” the star click's store write/remove: `FileData.SetFavorite` -> `FavoritesFile.SaveFavorite` (IO/FileData.cs:48-54, IO/FavoritesFile.cs:27-36) applied to the character marker
+crates/tr-app/src/app/flow.rs|set_favorite_marker(|WAVE2/F3 вЂ” `CardAction::ToggleFavorite` saves the character star immediately (was in-memory only, A8)
+crates/tr-app/src/ui/save_list.rs|is_favorite_marker|WAVE2/F3 вЂ” the `.plr` listing reads the favourite sidecar back into the card (`list_players`), ORing a legacy header bit
+crates/tr-app/src/app/flow.rs|fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it|WAVE2/F3 вЂ” the star-click pin: click -> `.trfav` on disk -> re-list shows the star -> second click removes it
+crates/tr-app/src/ui/save_list.rs|fn the_player_favourite_marker_survives_a_resave_and_reads_back|WAVE2/F3 вЂ” the re-save pin: rewriting the `.plr` keeps the star, un-favouriting clears it, the favourite sorts first
+crates/tr-app/src/ui/world_creation.rs|fn evil_row_label|ui-texts - the world-evil row reads `Lang.misc[103]/[101]/[102]` (`LegacyMisc.103` Random, `.101` Corruption, `.102` Crimson вЂ” UIWorldCreation.cs:454-464, Lang.cs:484) instead of `Lang.menu[101..103]`, which are the language options "Background Off"/"Select language"/"Language"; row order Random/Corruption/Crimson (and the size/difficulty enum order) is unchanged
+crates/tr-app/src/ui/world_creation.rs|fn back_label|ui-texts - the world-creation Back/Create fat buttons resolve `UI.Back`/`UI.Create` (UIWorldCreation.cs:637/:650) through the new `back_label`/`create_label` helpers instead of the "Back"/"Create" literals
+crates/tr-app/src/menu/pages.rs|fn confirm_delete_player_items|ui-texts - the menuMode 5 and 9 delete confirms read `Lang.menu[46]` + " " + name + "?" and the `Lang.menu[104]`/`[105]` Yes/No rows (Main.cs:49422-49425, :49676-49679) instead of literals; the per-function C# comments were un-rotated
+crates/tr-app/src/menu/pages.rs|fn confirm_discard_items|ui-texts - the menuMode 40 discard confirm reads `UI.PlayerCreateDiscardWarningWithName` (`{0}`), `вЂ¦NoName`, `вЂ¦Yes`, `вЂ¦No` (Main.cs:49441-49452) instead of literals
+crates/tr-app/src/ui/housing.rs|fn label|ui-texts - the housing-query tooltip reads `Lang.inter[8]` (`LegacyInterface.8` = "Housing Query", Main.cs:42053) instead of the unresolved `Inter.8` key that printed itself
+crates/tr-app/src/app/flow.rs|fn apply_front_flow|ui-texts - the seed keyboard title reads `UI.EnterSeed` (UIWorldCreation.cs:706) through `ui::keyboard::enter_seed` instead of the literal "Enter Seed (Leave Blank For Random)"
+crates/tr-app/src/world_sim/npcs.rs|talk_to_npc|wire-npc-chat - the right-click talk action (Main.cs:42993-43083 + Player.cs:27494-27503)
+crates/tr-app/src/npc_chat.rs|chat_box_rect|wire-npc-chat - the chat dialog's minimal renderer (NPCChatPanel.cs:65-68)
+crates/tr-core/src/wld/sections/flags.rs|_tempRaining|wld-roundtrip - the .wld flags block writes/reads the rain snapshot from World.raining/rain_time/max_raining (SaveWorldFlags:1312-1314, LoadWorldFlags:2127-2129, SetOngoingToTemps:159-162), so a saved .wld keeps an in-progress rain
+crates/tr-core/src/wld/sections/flags.rs|_tempSandstormHappening|wld-roundtrip - the sandstorm quad rides the flags block from World.sandstorm_* (SaveWorldFlags:1369-1372, LoadWorldFlags:2277-2283 before the <174 zero arm), restored into scene::Sandstorm on load
+crates/tr-core/src/world.rs|sandstorm_happening|wld-roundtrip - Sandstorm.Happening/TimeLeft/Severity/IntendedSeverity (Sandstorm.cs:14-20) stored on World as the .wld flags block file payload
+crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_tiles_identical|wld-roundtrip - whole-file save->load contract: the tile grid (every SaveWorldTiles:1432 header bit, the paints, the liquids, the four wires) comes back identical
+crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_weather_snapshot|wld-roundtrip - the weather snapshot round-trips through the .wld flags block (the RED->GREEN test of the new section)
+crates/tr-core/src/worldgen/caves.rs|fn surface_caves|worldgen-caves - the SurfaceCaves pass (WorldGen.cs:12162-12270) ported on its own pass_rng stream: the four surface-opening TileRunner groups; the copper/iron bands verified against WorldGen.cs:13399-13460

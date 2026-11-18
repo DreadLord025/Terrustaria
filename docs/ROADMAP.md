@@ -841,3 +841,96 @@ covering tests, severity-graded deviations and sized task seeds. The atlas
 
 
 
+
+## Folded pending ROADMAP entries (S1-I-4b sync fold, 2026-11-19)
+Landed tasks whose ROADMAP notes were parked in roadmap-pending/; folded verbatim by the merger.
+
+# ROADMAP pending update вЂ” cite-repair
+
+| Status | Task | Description | Size | Seev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| вњ… **DONE 2026-11-17** | рџџЎ cite-repair | Four broken C# citations repaired comment-only вЂ” `GameDifficultyData.cs:96-100` в†’ `:81-92` (static ctor, `DebuffTimeMultiplier` on `:89`), `WorldMap.cs:406-409` в†’ `:44-47` (`IsRevealed`), `Projectile.cs:14258-13956` в†’ `:13904-14263` (reversed; the per-type whip switch through the aiStyle-165 retarget), `LiquidPlacement.cs:5-10` в†’ `:3-9` (enum declaration) | XS | вЂ” | вЂ” | вЂ” | `cs-cite.py` PASS on all four files, 0 OUT-OF-RANGE |
+
+---
+
+**Verification performed:**
+- `python cs-cite.py <each of the 4 files> --repo <worktree>` вЂ” VERDICT: PASS, 0 OUT-OF-RANGE, 0 FILE-MISSING for every file
+- Comment-only edits: `git diff --stat` shows 4 files changed, 4 insertions(+), 4 deletions(-)
+- No cargo run (another agent held the build lock; nothing but comments changed)
+
+**Files changed in this task:**
+- `crates/tr-app/src/buffs.rs`, `crates/tr-app/src/map.rs`, `crates/tr-app/src/projectile.rs`, `crates/tr-core/src/tileobject.rs` (one comment line each)
+
+# Combat UI (COMBAT-UI) - pending roadmap rows
+
+- **COMBAT-UI-1 (done, S)** - `Terraria.CombatText` (`CombatText.cs:1-232`): the 100-slot pool, `NewText` spawn (lifeTime 60 / 120 crit / 40 dot, `vy=-7`, crit `vy*=2` and `vx=rand(-25,26)*0.05`, gravDir mirror), `Update` (alpha +/-0.05 in [0.6,1], `vy*=0.92` twice on crit, `vx*=0.93`, scale ramp 0.1->1.0, shrink-out with the crit +0.07), the palette (`:221-230`) and the `DoDraw` pass (`Main.cs:62340-62396`) with the preloaded `Combat_Text`/`Combat_Crit` fonts. Spawn wired in `world_sim/editing.rs` after `strike_melee` with the post-defence number and the crit flag; draw wired in `app/frame.rs`. Evidence: 6 pure tests (`combat_text.rs`), UPDATED the stale citations `Item.cs:52960-52965` -> `Item.cs:2727` and `Main.cs:80246` -> `NPC.cs:80243-80258` in `editing.rs`.
+- **COMBAT-UI-3 (done, S)** - the ordinary NPC health bar: `DrawInterface_14_EntityHealthBars`' gate (`life != lifeMax`, `Main.cs:45835`) over `DrawHealthBar` (`:21909-21990`) - width `(int)(36*ratio)` min 3, 12 px `Hb1`/`Hb2` strips, green->red after `num -= 0.1f`, `alpha = Lighting.Brightness * 0.95`, anchored `x + width/2 - 18`, `y + height + 10`. Boss-scale 1.5 only for the ported King Slime/EoC. Evidence: 3 pure tests (`bar_rect`, `bar_color`, `full_health_mobs_draw_no_bar`).
+- **Not in this task:** the full `BigProgressBarInfo` boss-bar table (THIN) and the `nameOver` hover-name fade.
+
+# Eye of Cthulhu fight (EOC-FIGHT) - pending roadmap row
+
+- **EOC-FIGHT (done, M)** - the classic aiStyle-4 phase loop: `ai[0]` 0 hover/dive (`NPC.cs:20075-20286`, 600-tick hover, 3-dash chains of 150 ticks, the 110-tick servant burst), 1/2 spin (100 ticks each, rotation ramp to 0.5, gore/dust at the 1->2 hand-off), 3 final dash machine (`defense = 0`, damage 23 via `GetAttackDamage_LerpBetweenFinalValues(23,18)`, 200-tick hover, 6.8 dives, 130-tick chains). The hp gate into the spin is 50% classic / 65% expert (`:20270-20274`); dawn flee is `Main.IsItDay() | dead` -> `velocity.Y -= 0.04` + `EncourageDespawn(10)` (`:20066-20073`, the port rises then distance-culls). The pure seam `crates/tr-app/src/eoc_fight.rs` owns the thresholds/speeds/cadence/gate and has 4 tests (`phase2_threshold`, `dash_velocity_pinned`, `servants_on_schedule`, `the_eye_flees_at_dawn`). Spawn path: item 43 gated on night + no live EoC (`Player.cs:43759-43771`).
+- **OUT OF SLICE (disclosed):** the boss drop table / treasure bag / trophy (`NPC.DropItem`/`NPCLoot`), the expert-only `ai[1] == 3/4/5` rage sub-states, the `getGoodWorld` arms and the 2x2 minimap head icon polish.
+
+# INTENT: ROADMAP rows for the item-mechanics slice (task/items)
+
+Append to `docs/ROADMAP.md` в†’ "Task catalog" (the same table shape as the
+`S1-C-*` rows):
+
+| вњ… ITEMS-1 | `KillTile` must drop the tile's item exactly like `KillTile_GetItemDrops` (dirt/grass в†’ Dirt Block 2, stone в†’ 3, torch в†’ 8, вЂ¦) and spawn it through `KillTile_DropItems` at `x*16, y*16, 16, 16` | S | B | research/07-item-core.md | вЂ” | break-a-tile test pinning the item id вЂ” **DONE 2026-11-17** (`task/items`): `registry::tile_drop` already carried the style-0 map; `break_tile` в†’ `break_drop_events` в†’ `items::spawn_item_drop` spawns it. Test `item_mechanics::breaking_dirt_drops_dirt_item` pins `tile_drop(0, 0) == Some(2)` and the one-block drop |
+| вњ… ITEMS-2 | Pickup must clamp a merge at `Item.CommonMaxStack` (9999) and leave the surplus on the ground: `update_items` used to add the whole stack into the slot (`world_sim/items.rs`, `count += drop_count`) | S | B+P | research/07-item-core.md | вЂ” | merge test pinning `maxStack` вЂ” **DONE 2026-11-17** (`task/items`): the slot walk mirrors `Player.GetItem`'s `GetItem_FillIntoOccupiedSlot` (`Player.cs:39493-39518`), taking `maxStack - count` per slot and writing the leftover back into the drop (`PickupItem`'s `ReplaceWith`, `:35085-35087`). Test `item_mechanics::pickup_merges_to_maxstack` (9999 cap + a 7-stack remainder drop) |
+| вњ… ITEMS-3 | Placing a tile item must consume exactly one from the held stack and write the tile (the torch: item 8 в†’ tile 4) | S | B | research/07-item-core.md | вЂ” | place test pinning the tile kind and the stack вЂ” **DONE 2026-11-17** (`task/items`): the route `use_tile_item` в†’ `place_tile` в†’ `place_item_and_consume` already held; test `item_mechanics::placing_torch_consumes_item_and_spawns_tile` |
+| вњ… ITEMS-4 | Dropped-item physics must use the `WorldItem.cs:363-364` constants (`gravity = 0.1f`, `maxFallSpeed = 7f`), the `MoveInWorld` friction `velocity.X *= 0.95f` with the `< 0.1` snap (`:854-860`) and the `Collision.TileCollision` flush stop (no restitution) вЂ” the port ran 0.3 / 6.0 and bounced (`-v*0.35`, `-v*0.3`) | S | B+P | research/07-item-core.md | вЂ” | gravity/friction/rest test вЂ” **DONE 2026-11-17** (`task/items`): `item.rs`'s `GRAVITY`/`MAX_FALL`/`FRICTION_X`/`FRICTION_EPSILON` + the zeroed collision axes; test `item_mechanics::dropped_item_lies_on_ground_with_csharp_physics`. The longer 0.1-gravity arc retuned the `test_store_1_the_void_lens_routes_pickups_into_bank4` window (40 в†’ 200 ticks) |
+
+## NOT PORTED (out of this slice вЂ” no row claimed here)
+
+Doors (`OpenDoor`/`CloseDoor`/`ChangeDoorState`), chest opening + the chest UI
+(`Chest.OpenChest`/`ChestUI`), torch light emission and the wall-torch styles,
+MP item ownership/`grabDelay`, the `goldRing`/`manaMagnet`/`lifeMagnet`/
+`treasureMagnet` grab-range rows, death drops (`Player.DropItems`/
+`DropItemsOnDeath`/`DropCoins`), the `Item.NewItem` velocity spread
+(`Item.cs:49740-49746`), slopes/wet items in the drop physics, and the
+`favorited`/`uniqueStack`/coin-merge slot order.
+
+S1-L-14 follow-up | вњ… | вњ… | the skipLiquid clause ported (the found gap) + the liquid_sim suite: water_falls_per_csharp, water_spreads_to_csharp_thickness, water_plus_lava_is_obsidian, mass_conserved; 45 liquid tests green
+
+offsets | вЂ” | вњ… | the offsets audit recomputed the four draw-offset claims against the C# and fixed the confirmed ones in the render anchor: EoC was +48 px (halfSize carried as a translation, Main.cs:25511-25512 cancels it), Zombie +13 px (the wrongly shared NPCAddHeight 13 arm, Main.cs:22037-22039 is the Devourer's 7/8/9 only), Guide +4 px, DemonEye -10 px; 3 offset_fix tests RED-then-GREEN and the full tr-app regression green
+
+# player-draw вЂ” roadmap row (pending)
+
+- id: player-draw (arm layering + walk-cycle offsets)
+- base: 25e5f6d0 (task/player-draw)
+- symptom C1: standing вЂ” both arms behind the torso (user build 15:22).
+- root cause: `Player_0_6` (shirt) was packed 80 px wide, so `arm_stack`'s
+  `FrontShirt` piece (C# `PlayerDrawLayers.cs:3704` draws `Players[skinVar, 6]`
+  at `compFrontArmFrame`) sampled column 1 (torso art) over the arm; the
+  under-skin/under-shirt/shirt-sleeve sheets (`Players[5]/[8]/[13]`,
+  `:1348`/`:1357`/`:1359`/`:3702-3703`) were requested by `make_player_assets`
+  but absent from `STATIC_SHEET_NAMES`, so the sleeve pieces never drew.
+- fix: +`Player_0_5`/`Player_0_8`/`Player_0_13` in the atlas list;
+  `Player_0_6` uncropped; tests t1-t4 pin the C# order and offsets.
+- symptom C2: head/torso gap on part of the walk frames вЂ” NOT reproduced at
+  25e5f6d0: t2/t3 pin the C# offsets (head 0, torso/arms +2 on rows 7-9/14-16,
+  `Main.cs:66638-66662`, `PlayerDrawLayers.cs:1217-1219`) and they pass.
+- verification: `cargo test -p tr-app -- player_draw` (t1-t4 green),
+  `cargo build -p tr-app`, `cs-cite` on the touched files.
+
+# ROADMAP pending row вЂ” WAVE2/F1 (`task/ui-delete`). Merge into
+# `docs/ROADMAP.md` after review; `docs/ROADMAP.md` is not edited by this branch.
+
+| вњ… S1-H-13 | **The char/world select list never scrolled** вЂ” `card_layout` had no scroll offset, `Layout` had no offset field, the wheel had no front-screen branch and the drawn scrollbar was hit-tested by nobody, so every card past the `UIList` viewport was dead (already with 4 cards at 1280x720, 6 at 1600x900, 8 at 1920x1080) and the click on the last card's **Delete** landed on the fat **New** button instead (`hit_id=1` in the A6 harness) | M | B | research/18-ui-framework.md; `COORD\UI-INPUT-RUST.md` В§4g/В§5.3; `COORD\UI-INPUT-CS.md` | вЂ” | `f1_*` tests pin the A6 geometry вЂ” **DONE 2026-11-17** (`task/ui-delete`, WAVE2/F1): the C# `UIList`/`UIScrollbar` pair is ported at the select screens вЂ” `Layout.scroll` + `Layout::inner_list` implement `_innerList.Top.Set(0f - GetValue(), 0f)` (`UIList.cs:181`) so the rows move while the viewport (the draw clip and the hit-test filter) stays the `UIList` rect (`UIList.cs:59`, `UIList.cs:16-19`); `max_scroll`/`clamp_scroll` are `SetView`'s `[0, maxViewSize - viewSize]` (`UIScrollbar.cs:75`); `scroll_wheel` is `ViewPosition -= evt.ScrollWheelValue` at XNA's 120 units per detent (`UIList.cs:112`, `PlayerInput.cs:898-899`); `panel::scrollbar_rects_at`/`scrollbar_handle_at`/`scrollbar_drag_value`/`scrollbar_jump_value` are `GetHandleRectangle` (`UIScrollbar.cs:85-94`) plus the drag (`:109-112`) and track-jump (`:137-141`) arms, and the drawn handle now follows the value (`draw_scrollbar`'s `pos`); `App::front_wheel`/`front_scrollbar_press`/`front_scrollbar_drag` wire the wheel (`app/loop.rs`'s `MouseWheel`), the press (which the bar takes, `evt.Target == this`, so no card click fires) and the held drag (`CursorMoved`); the offset resets in `enter_front` (a fresh `UIState` builds a fresh `UIList`, `UIScrollbar.cs:17`). Bonus fix in the same click path: the silent drop of `CardAction::Delete(i)` for the session card (`deletable: false`) and the path-less fake world now answers with the port's own `front_hint` notice instead of nothing. Tests `f1_*` (11: the A6 numbers at 1280x720/1600x900/1920x1080 вЂ” the last card's Delete is `Delete`, never `New`; the wheel step and clamp; the handle rect at three positions; the grab/track-jump/drag arithmetic; the world twin; the two app-level flow tests). Pre-existing, unrelated: `button_labels_match_the_hover_table` / `button_labels_and_sheets_match_the_card` fail in an isolated filtered run because `lang::init` only runs from `main.rs` (proven identical at base 25e5f6d0 by stashing the diff) |
+
+# ROADMAP pending row вЂ” WAVE2/F3 (`task/ui-favourite`). Merge into `docs/ROADMAP.md`
+# after review; `docs/ROADMAP.md` is not edited by this branch. New id: S1-H-16 is the
+# next free slot after S1-H-15 in the Stage-1H (UI) run; renumber on fold if the Lead
+# assigns another one.
+
+| вњ… S1-H-16 | **The character star never reached the disk** вЂ” `FavoriteButtonClick`'s port (`app/flow.rs`'s `ToggleFavorite`) flipped only the in-memory `PlayerEntry.is_favorite`; `PlayerFileWrite` had no favourite field and the writer hardcoded the metadata flags to `0`, so the star reset on every re-list (leaving the screen was enough) and a future `.plr` re-save could never carry it. The C# does not store it in the `.plr` either: `FileData.ToggleFavorite` -> `SetFavorite` -> `FavoritesFile.SaveFavorite` writes a separate store synchronously (`IO/FileData.cs:38-54`, `IO/FavoritesFile.cs:27-36`), and `FileMetadata.IsFavorite` is dead there too (`:41` only ever writes `false`) | M | B | research/19-ui-screens-frontend.md; `COORD\UI-PERSIST-RUST.md` В§0/В§3/В§4; `COORD\UI-PERSIST-CS.md` | вЂ” | `favo*` tests: click -> marker on disk -> re-list reads it; re-save keeps it; un-favourite clears it; favourite sorts first вЂ” **DONE 2026-11-17** (`task/ui-favourite`, WAVE2/F3): the character favourite is now a `<stem>.trfav` sidecar beside the `.plr` вЂ” the same carrier the world already used (`save_list::world_entry`'s `path.with_extension("trfav")`), chosen over writing the in-file bit because it (a) leaves the release-279 `.plr` byte layout untouched, (b) needs no character re-save on a click, and (c) structurally kills the clobber trap: `write_player_bytes` rebuilds the metadata from defaults, but it never touches the sibling marker, so any future re-save keeps the star. `player_file::favorite_marker_path`/`is_favorite_marker`/`set_favorite_marker` are the store (`FavoritesFile.IsFavorite`/`SaveFavorite`), `flow.rs`'s `ToggleFavorite` calls the setter (the click now writes/removes the zero-byte marker like the world's `:900-911`), and `save_list::list_players` ORs the marker into the card (`FileData.cs:35`'s ctor pull), keeping a foreign header bit readable; the writer's `w.u64(0)` comment now names the sidecar as the live carrier. The sort (`sort_players`, `UICharacterSelect.cs:150`) and the card star (`char_select.rs:785-788`) needed no change once the flag survives. Tests `favo*` (2 behavioural, RED-watched by restoring the pre-fix wiring: `cargo test -p tr-app favo` -> 18 passed / 2 failed, then 20 passed). Not ported: the single `favorites.json` store (one marker per player instead), the cloud store, and an `erase_player` marker cleanup (the UI refuses to delete a starred card; the C# clears the entry in `PlayerFileData.cs:57`/`:94`) |
+
+ui-texts | вЂ” | вњ… | the A4 texts audit's WRONG/MISSING strings are aligned with the decompile: the world-creation **evil row** now reads `Lang.misc[103/101/102]` (Random/Corruption/Crimson, UIWorldCreation.cs:454-464) instead of `Lang.menu[101..103]` ("Background Off"/"Select language"/"Language" вЂ” the three wrong labels the player saw), the world-creation **Back/Create** buttons resolve `UI.Back`/`UI.Create` (UIWorldCreation.cs:637/:650), the four menu **delete/discard** dialogs resolve `Lang.menu[46]/[104]/[105]` and `UI.PlayerCreateDiscardWarning*` (Main.cs:49422-49452, :49676-49679), the **seed keyboard** title resolves `UI.EnterSeed` (UIWorldCreation.cs:706) and the **housing-query** tooltip resolves `Lang.inter[8]` (Main.cs:42053 вЂ” it printed the raw `Inter.8` key). No row order changed: `SIZE_ROW_IDS`/`DIFFICULTY_ROW_IDS`/`EVIL_ROW_IDS` and their enum ids stay as A4 verified them (enum-order MATCH). 6 tests pin the English values **and** the ru-RU values (a literal would stay English), RED-watched by restoring the pre-fix sources. Still open (port renders no such control): `UI.Legendary` (no FTW flag on the world list), `UI.CopySeed`/`UI.SeedCopied`, `UI.WorldNewlyGenerated`/`UI.WorldHasBeenPlayed`, `UI.PreviewArmor*` (the five preview buttons)
+
+S1-E-10b | вњ… | вњ… | wiring: world_sim/editing.rs:1558 (the live right-click dispatch, chestв†’tileв†’chatв†’shop per Main.cs:43077's tileInteractionHappened rule); tests: the_talk_action_returns_the_guides_chat_for_a_town_npc, the_talk_action_returns_none_for_a_non_town_npc, the_chat_box_rect_matches_the_csharp_geometry; 182 shop/chest tests stay green after the arm reorder
+
+wld-roundtrip: no ROADMAP task row вЂ” the slice is the .wld save->load losslessness audit (all 11 sections + the missing weather snapshot). Follow-ups recorded in docs/ANALYSIS.md "Deviations": the native `.trwld` sandstorm quad (a format bump), `LoadDummies` + the <122 gate for the tile-entity section, and the pre-88 world format (`LoadWorld_Version1_Old_BeforeRelease88`, 521 lines).
+
+worldgen-caves | вЂ” | вњ… | the worldgen-caves slice: the SurfaceCaves pass (WorldGen.cs:12162-12270) ported on its own pass_rng stream - the four surface-opening TileRunner groups with the C# draw order; the copper/iron OresAndShinies bands verified against WorldGen.cs:13399-13460 and pinned (depth ranges, vein size bounds); 4 worldgen_caves tests RED-then-GREEN, the worldgen module 278/0, build 0

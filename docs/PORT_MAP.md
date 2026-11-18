@@ -417,3 +417,131 @@ line-by-line index (the graphs already give you file + line).
 | `NPC.SetDefaults`'s pumpkin if-chains (305-314 `NPC.cs:12929-12977`, 315/325/326/327/329/330 `:13115-13203`) + `NPCID.cs:11287-11337`'s net ids | `crates/tr-app/src/npc.rs` (the 16 `NpcKind` variants, `PumpkinDefaults`/`pumpkin_moon_defaults()`, the sound/debuff tables, `to_u16`/`from_u16` vanilla ids) | done (S1-F-13b; the five bespoke machines = S1-F-13b2) |
 | `SpawnAnNPC`'s moon arms' `SpawnNPC(spawnTileX*16+8, spawnTileY*16, type)` → `NewNPC` `Bottom` (`NPC.cs:3224-3548`, `:80772`) | `crates/tr-app/src/spawner.rs` (`moon_wave_kind` + the moon arms' spawn mapping) + `crates/tr-app/src/npc.rs` (the AI dispatch: the 11 walkers on `AI_003`'s scarecrow arm `:57816-57840`, the five stand-ins citing their machines' constants) | done (S1-F-13b; the machines = S1-F-13b2) |
 | `Main.DrawPlayerChat` (`Main.cs:40923-40999`) + `RemadeChatMonitor` (`DrawChat` :55-108, `Update` :115-129, `_showCount=10` :25) + `ChatMessageContainer` (`_timeLeft=600` :33, `CanBeShownWhenChatIsClosed` :23, `Update` :45-52) | `crates/tr-app/src/chat.rs` (`ChatLine.time_left`, `MESSAGE_SHOW_TIME`/`SHOW_COUNT`, `ChatMonitor::update`/`visible_lines`) + `ui/mod.rs` (`draw_chat`/`chat_row_anchor` - the log draws with the input closed) + `app/frame/world.rs` (`chat_phase`, the `Main.cs:17282` tick under the `!paused` arm) | done (fix/chat-corner-display; the scroll offset `_startChatLine`, word-wrap `LineCount` and snippet hover/click stay unported - ANALYSIS "The corner chat HUD (fix/chat-corner-display)") |
+
+## Folded pending PORT_MAP entries (S1-I-4b sync fold, 2026-11-19)
+Landed tasks whose PORT_MAP rows were parked in portmap-pending/; folded verbatim by the merger.
+
+# PORT_MAP pending entry вЂ” cite-repair
+
+Comment-only citation repair of four C# ranges. The ports themselves are unchanged; each row corrects the cited C# lines to the code that is actually being mirrored.
+
+| C# source (under `Terraria/`) | Rust target | State |
+| --- | --- | --- |
+| `GameDifficultyData.cs:81-92` (static ctor; `DebuffTimeMultiplier` on `:89`) | `crates/tr-app/src/buffs.rs` (`add_buff_determine_buff_time_to_add`) | repaired (cite-repair) |
+| `WorldMap.cs:44-47` (`IsRevealed`) | `crates/tr-app/src/map.rs` (`tile_revealed`) | repaired (cite-repair) |
+| `Projectile.cs:13904-14263` (per-type whip switch `:13904-13956` + `MinionAttackTargetNPC` write `:14257-14263`) | `crates/tr-app/src/projectile.rs` (`whip_on_hit`) | repaired (cite-repair) |
+| `LiquidPlacement.cs:3-9` (enum declaration) | `crates/tr-core/src/tileobject.rs` (`LiquidPlacement`) | repaired (cite-repair) |
+
+---
+
+**Notes:**
+- Four ranges were wrong before: `96-100` in a 93-line file, `406-409` in a 291-line file and `5-10` in a 9-line file were all out of range; `14258-13956` was reversed.
+- Comment-only: no code, no tests touched, nothing built.
+
+| `CombatText.cs:1-232` + `Main.cs:62340-62396` (the combat-text spawn/update/draw) | `crates/tr-app/src/combat_text.rs` (`CombatText`, `spawn`/`spawn_amount`, `update`/`update_all`, `draw`) + spawn hook in `world_sim/editing.rs` + draw hook in `app/frame.rs` | done (COMBAT-UI-1/2: 9 pure tests pin the crit lifetime/velocity, palette, alpha oscillation, velocity decay, 60-tick life, post-defence number) |
+| `Main.DrawHealthBar` (`Main.cs:21909-21990`) + `DrawInterface_14_EntityHealthBars` (`:45810-46060`) - the ordinary NPC health bar | `crates/tr-app/src/combat_text.rs` (`bar_rect`/`health_bar_rect`/`bar_color`, `BAR_WIDTH/HEIGHT/GAP`) + `render/entities.rs::draw_npc_health_bars` (`Hb1`/`Hb2` sheets from `assets.rs`) | done (COMBAT-UI-3: rect/colour/full-health gates pinned by 3 tests; boss-scale 1.5 for King Slime/EoC only) |
+
+| `NPC.cs:19960-20796` (`AI()`'s `aiStyle == 4` block) + `SetDefaults` case 4 (`NPC.cs:8699-8715`) - the Eye of Cthulhu's phase machine | `crates/tr-app/src/npc.rs::Npc::update_eye_of_cthulhu` + the pure seam `crates/tr-app/src/eoc_fight.rs` (`enters_spin_phase`, `dash_speed`/`dash_velocity`, `servant_period`/`servant_due`, `flees_at_dawn`) | done (EOC-FIGHT: classic phases 0/1/2/3, the 110-tick servant burst, dawn climb-away; 4 pure tests pin the thresholds/speeds/cadence/gate) |
+| `Player.cs:43759-43771` (the Suspicious Looking Eye) + `NPC.SpawnOnPlayer(plr, 4)` | `crates/tr-app/src/world_sim/editing.rs::use_suspicious_looking_eye` + `crates/tr-app/src/npc.rs::spawn_eye_of_cthulhu` | done (night + one-EoC-alive gates, consume, spawn 600 px above; the spawn/consume test lives in `loot_summon_tests`) |
+
+# INTENT: PORT_MAP rows for the item-mechanics slice (task/items)
+
+Append the rows below to `docs/PORT_MAP.md` в†’ section **Game / presentation
+(`crates/tr-app`)** вЂ” next to the existing `Item.cs, GetItemSettings.cs,
+NewItemOwnership.cs` row (`crates/tr-app/src/item.rs`, `partial`), which these
+rows refine. Do not duplicate that row; replace or extend it.
+
+| C# source (under `Terraria/`) | Rust target | State |
+| --- | --- | --- |
+| `Player.GrabItems` + `Player.GetItemGrabRange` (`Player.cs:34905-34960`, `:35128-35168`) вЂ” the `defaultItemGrabRange = 42` px box, the magnet pull and the `Hitbox.Intersects` direct pickup | `crates/tr-app/src/item.rs` (`ItemDrop::update`'s `MAGNET_RADIUS = 42.0` + `PICKUP_DELAY`), `crates/tr-app/src/world_sim/items.rs::update_items` | partial (ITEMS-2 вЂ” the port is SP-only: no `playerIndexTheItemIsReservedFor`/`goldRing`/`manaMagnet`/`lifeMagnet`/`treasureMagnet` grab-range bonuses, and the `PICKUP_DELAY = 0.35` s stand-in replaces `WorldItem.DefaultGrabDelay = 100` ticks. The MP reservation rides `net_reserved`) |
+| `Player.GetItem` + `Player.GetItem_FillIntoOccupiedSlot` + `Player.PickupItem` (`Player.cs:35043-35098`, `:39330-39385`, `:39485-39518`) вЂ” the 50-slot walk, `Item.CanStack` (same type AND prefix), the `maxStack` clamp and the surplus left as a world drop | `crates/tr-app/src/item.rs::slot_for_pickup`, `crates/tr-app/src/world_sim/items.rs::update_items` (the pending/moved slot walk) | done (ITEMS-2 вЂ” `Item.CommonMaxStack = 9999`, `Item.cs:49966`, is what `registry::max_stack` carries; the coins/ammo-slot routing and the `favorited` slot order stay app-side) |
+| `WorldItem.UpdateItem` + `WorldItem.MoveInWorld` (`WorldItem.cs:338-419`, `:772-1065`) вЂ” the air physics (`gravity = 0.1f`, `maxFallSpeed = 7f`), the `velocity.X *= 0.95f` friction with the `< 0.1` rest snap, the `Collision.TileCollision` flush stop | `crates/tr-app/src/item.rs` (`GRAVITY`/`MAX_FALL`/`FRICTION_X`/`FRICTION_EPSILON`, `ItemDrop::update`) | partial (ITEMS-4 вЂ” the air case only: the wet/honey/shimmer gravity rows, slopes and conveyor belts are their own rows; the shimmer half is ported in `ItemDrop::update_shimmer`) |
+| `WorldGen.KillTile_DropItems` + `WorldGen.KillTile_GetItemDrops` (`WorldGen.cs:63947-63958`, `:63964-66090`) вЂ” the per-tile drop table, `dropItemStack`, the `Item.NewItem(x*16, y*16, 16, 16)` spawn | `crates/tr-app/src/registry.rs::tile_drop`, `crates/tr-app/src/world_sim/editing.rs::break_tile` в†’ `break_drop_events` в†’ `items::spawn_item_drop` | partial (ITEMS-1 вЂ” the soil/blocks/plants slice with the `tile_drop` style-0 map; the tree family rides `KillTile_GetTreeDrops`, the pot loot rides `SpawnThingsFromPot` вЂ” both separate rows) |
+| `Player.PlaceThing` + `Item.createTile`/`Item.placeStyle` (`Player.cs:39580-41470`; `Item.cs:33745-33754`, field `:173`) + the one-item consume on a successful place | `crates/tr-app/src/registry.rs::place_tile`/`place_style`, `crates/tr-app/src/world_sim/editing.rs::use_tile_item` в†’ `place_tile` в†’ `place_item_and_consume` | partial (ITEMS-3 вЂ” the tile route incl. the torch (8 в†’ tile 4); the `TileObject` dispatcher styles and the wall/paint routes are their own rows) |
+
+## Ported by this slice (do not re-implement)
+
+- `Player.PickupItem`'s stacking, the `maxStack` clamp and the world-surplus
+  rule (`world_sim/items.rs`).
+- `WorldItem`'s air gravity/friction/rest (`item.rs`).
+- `KillTile` в†’ item drop for the soil/block/plant tables (`registry::tile_drop`
+  + `break_tile`).
+- Item в†’ tile placement with the one-item consume (`use_tile_item`).
+
+## NOT PORTED (this slice's out-of-slice list, each its own row/task)
+
+1. **Doors** вЂ” `WorldGen.OpenDoor`/`CloseDoor`/`ChangeDoorState`
+   (`WorldGen.cs:37710-37890`), `Player.OpenDoor`/`HitDoor`, the `TileID.Sets.OpenDoorID`
+   pair and the door `Check*` cascade: no door state machine exists in the port;
+   tiles 10/11 only break/place.
+2. **Chests** вЂ” `Chest.OpenChest`/`ChestUI` (`Chest.cs:100-260`, `Main.cs:20300+`):
+   `chest_open`/loot windows, the `chest` field write on click and the
+   `chest_holds_items` break refusal are present as a stub, the UI is not.
+3. **Torch presentation** вЂ” `Player.ItemCheck_EmitHeldItemLight`, the wall-torch
+   variants (`ItemID.Sets.TorchStyle`), `TileObjectData` torch support checks and
+   the flicker light rows: the placed tile carries no light source in the port.
+4. **Item ownership / grab delay in MP** вЂ” `NewItemOwnership`,
+   `playerIndexTheItemIsReservedFor`, `WorldItem.DefaultGrabDelay = 100`
+   (`WorldItem.cs:110`): the port has the host-side reservation map only.
+5. **Grab-range accessories** вЂ” `goldRing`/`manaMagnet`/`lifeMagnet`/
+   `treasureMagnet` and the star/heart/mana pickup arms of `PickupItem`
+   (`Player.cs:35055-35099`).
+6. **Death drops** вЂ” `Player.DropItems`/`DropItemsOnDeath` (`Player.cs:54302+`),
+   `DropCoins`, the tombstone spawn: death currently drops nothing.
+7. **Item.NewItem's spawn velocity spread** вЂ” the port pops at
+   `vx в€€ [-1.4, 1.4]`, `vy в€€ [-3.4, -2.2]` instead of the C#'s
+   `rand(-30..31)*0.1` / `rand(-40..-15)*0.1` (`Item.cs:49740-49746`).
+8. **Slopes, conveyors and wet items** вЂ” `Collision.SlopeCollision`, the
+   conveyor push (ported), the wet/honey/shimmer gravity rows
+   (`WorldItem.cs:380-396`): the drop physics is the air case.
+9. **Prefix merge refinement** вЂ” `Item.CanStack` is prefix equality; the
+   `favorited`/`uniqueStack`/coin-merge (`DoCoins`) and the emergency
+   stacking of `PickupReplacementTime` are app-side or unported.
+10. **Sell/buy of drops** вЂ” `Player.SellItem`'s per-item math lives in
+    `shop.rs` (S1-C-11); the world-drop `GetItemExpectedPrice` path is untouched.
+
+| Liquid.cs:983-1158 (UpdateLiquid) + :449-964 (Update) | crates/tr-core/src/liquid.rs (S1-E-25's engine; verified + the skipLiquid clause) | done (liquids) |
+| Liquid.cs:1225-1443 (LiquidCheck/CreateLiquidMergeTile/GetLiquidMergeTypes) | crates/tr-core/src/liquid.rs::liquid_check/create_liquid_merge_tile/get_liquid_merge_types | done (liquids) |
+
+| Main.cs:25511-25512 (the DrawNPC generic anchor collapsed вЂ” origin = halfSize is pivot-only) | crates/tr-app/src/render/entities.rs | fixed (offsets - the NPC and boss draw anchors) |
+
+# player-draw вЂ” C# -> Rust map (pending)
+
+| C# | Rust | note |
+| --- | --- | --- |
+| `PlayerDrawLayers.cs:1238->1257` (12_Skin_Composite: skin torso, legs, back arm) | `crates/tr-app/src/render/player_layers.rs` `body_layers` (TorsoSkin -> LegsSkin -> BackArmSkin) | pinned by `t1_player_arm_layer_order_matches_csharp` |
+| `LegacyPlayerRenderer.cs:194/208/214/239` (12_Skin -> 17_Torso -> 21_Head -> 28_ArmOverItem) | `assemble_layers` (body -> item -> front-arm stack) | pinned by t1 (both directions) |
+| `Main.cs:66638-66662` (`OffsetsPlayerHeadgear`, rows 7-9/14-16 = 0) + `PlayerDrawLayers.cs:1217-1219` (composite shift `2 - Y`) | `player_layers.rs` `headgear_offset`/`headgear_composite_shift` + `body_layers`/`arm_stack` shift | pinned by t2/t3: head 0, torso/arms +2 on the zero rows |
+| `PlayerDrawLayers.cs:1346-1362` (back stack `Players[5]/[8]/[13]`) + `:3695-3705` (front stack `Players[7]/[8]/[13]/[6]`) | `assets.rs` `STATIC_SHEET_NAMES` (+Player_0_5/0_8/0_13) + `entities.rs` `make_player_assets` (shirt uncropped) | the fix: the sleeve/under-arm sheets now pack; `Player_0_6` full width restores the FrontShirt arm cells |
+| `PlayerDrawLayers.cs:3704` (`Players[6]` at `compFrontArmFrame`) | `player_layers.rs` `arm_stack` FrontShirt at the arm cell | was sampling torso column 1 through the 80-px crop |
+
+# PORT_MAP pending row вЂ” WAVE2/F1 (`task/ui-delete`). Merge into `docs/PORT_MAP.md`
+# (UI section) after review; `anchors.txt` / `docs/PORT_MAP.md` are not edited by
+# this branch.
+
+| C# source (under `Terraria/`) | Rust target | State |
+| --- | --- | --- |
+| `UIList` scroll (`GameContent/UI/Elements/UIList.cs:107-114` `ScrollWheel`, `:116-128` `RecalculateChildren`, `:130-137` `UpdateScrollbar`, `:177-184` `DrawSelf`'s `_innerList.Top.Set(0f - GetValue(), 0f)`) + `UIScrollbar` (`GameContent/UI/Elements/UIScrollbar.cs:37-49` `ViewPosition`/`CanScroll`, `:72-78` `SetView`, `:85-94` `GetHandleRectangle`, `:103-124` `DrawSelf` with the drag arm `:109-112`, `:126-149` `LeftMouseDown`/`LeftMouseUp`) | `crates/tr-app/src/ui/char_select.rs` (`Layout::inner_list`, `Layout::with_scroll`, `max_scroll`/`clamp_scroll`/`scroll_wheel`, `wheel_target`, `scrollbar_press`, `scrollbar_drag`; `elements`/`draw_card` build the rows from the translated inner list while the viewport stays the `UIList` rect), `crates/tr-app/src/ui/world_select.rs` (same rows/draw for the world cards), `crates/tr-app/src/ui/panel.rs` (`scrollbar_rects_at`, `scrollbar_handle_at`, `scrollbar_drag_value`, `scrollbar_jump_value`, `draw_scrollbar`'s `pos`), `crates/tr-app/src/app/flow.rs` (`App::select_layout`, `App::front_wheel`, `App::front_scrollbar_press`, `App::front_scrollbar_drag`), `crates/tr-app/src/app/loop.rs` (the wheel arm and the press/release/move wiring), `crates/tr-app/src/app/mod.rs` (`front_scroll`, `front_scroll_drag`, reset in `enter_front`) | done (WAVE2/F1 вЂ” the wheel scrolls at 120 px/notch, the bar drags/jumps, and the last card's Delete is reachable at 1280x720/1600x900/1920x1080; 11 `f1_*` tests pin the A6 numbers). Not ported: `UIList.Goto` (`:68-78`), `ManualSortMethod` (`:50`), the hover cue (`UIScrollbar.cs:115-120`), per-screen scroll memory (the offset resets on `SetState`, as the C# rebuilds the list) |
+
+# PORT_MAP pending rows вЂ” WAVE2/F3 (`task/ui-favourite`). Merge into `docs/PORT_MAP.md`
+# after review; `anchors.txt` / `docs/PORT_MAP.md` are not edited by this branch.
+
+| C# source (under `Terraria/`) | Rust target | State |
+| --- | --- | --- |
+| `IO/FavoritesFile.cs:27-36` `SaveFavorite` (`:34` `_data[Type][GetFileName()] = IsFavorite`, `:35` `Save()`), `:48-58` `IsFavorite`, :62-70 `Save`; `IO/FileData.cs:35` (ctor pull), `:38-41` `ToggleFavorite`, `:48-54` `SetFavorite`; `GameContent/UI/Elements/UICharacterListItem.cs:264-283` `FavoriteButtonClick` | `crates/tr-app/src/player_file.rs` (`favorite_marker_path`, `is_favorite_marker`, `set_favorite_marker` вЂ” the `<stem>.trfav` sidecar store beside the `.plr`), `crates/tr-app/src/app/flow.rs` (`CardAction::ToggleFavorite` writes/removes the marker at click time), `crates/tr-app/src/ui/save_list.rs` (`list_players` reads it into `PlayerEntry.is_favorite`) | done (WAVE2/F3 вЂ” the favourite is stored outside the character file, exactly like the world's `.trfav` and the C# `favorites.json`; the `.plr` format is untouched and a re-save cannot clear the star). Deviations: one marker file per player (`favorites.json` is one JSON store), no cloud store (`SocialAPI.Cloud == null`), no `favorites.json` migration, and a header bit written by a foreign tool is honoured on read but not re-written |
+| `IO/FileMetadata.cs:26` (flags write: `IsFavorite` bit 0, writer always emits 0 because `:41` defaults it `false`), `FileMetadata.cs:80` (read) | `crates/tr-app/src/player_file.rs` (`write_player_bytes`'s favourites `w.u64(0)` вЂ” the comment now points at the sidecar as the live carrier; the metadata bit stays dead like the C#) | done (WAVE2/F3 вЂ” swapping the hardcoded 0 for a real bit was considered and rejected: it would force a `.plr` re-save per click and re-introduce the clobber trap; the writer now documents the sidecar instead) |
+| `Main.LoadPlayers` (`Main.cs:4001-4030`), `Main.ErasePlayer` (`:4772-4791`), `UICharacterSelect.UpdatePlayersList` (`UICharacterSelect.cs:146-157`'s `orderby IsFavorite`) | `crates/tr-app/src/ui/save_list.rs` (`list_players`, `erase_player`, `sort_players`), `crates/tr-app/src/player_file.rs` (the `.plr` reader/writer the listing calls) | stale row fix: PORT_MAP's "no `.plr` reader; metadata stand-ins" predates the realised reader вЂ” the reader/writer exist, and the favourite stand-in is now the `<stem>.trfav` marker (the other metadata stand-ins вЂ” creation time, game mode вЂ” are unchanged). `erase_player` still leaves the marker: the UI blocks deleting a favourite card (`DeleteBlocked`), and the C# `PlayerFileData` `.ClearEntry` (`:57`/`:94`) has no port path here |
+
+| UIWorldCreation.cs:454-464 (`Lang.misc[103]/[101]/[102]` вЂ” Random/Corruption/Crimson) | crates/tr-app/src/ui/world_creation.rs (`evil_row_label`) | fixed (ui-texts вЂ” the row read `Lang.menu[101..103]` = "Background Off"/"Select language"/"Language") |
+| UIWorldCreation.cs:637/:650 (`Language.GetText("UI.Back")` / `Language.GetText("UI.Create")`) | crates/tr-app/src/ui/world_creation.rs (`back_label`/`create_label`) | fixed (ui-texts вЂ” the two fat buttons were plain "Back"/"Create" literals) |
+| Main.cs:49422-49425 + :49676-49679 (`Lang.menu[46]` + name + "?" and `Lang.menu[104]`/`[105]`) | crates/tr-app/src/menu/pages.rs (`confirm_delete_player_items`/`confirm_delete_world_items`) | fixed (ui-texts вЂ” the delete confirms drew literals "Delete {}?"/"Yes"/"No") |
+| Main.cs:49441-49452 (`UI.PlayerCreateDiscardWarningWithName`/`вЂ¦NoName`/`вЂ¦Yes`/`вЂ¦No`) | crates/tr-app/src/menu/pages.rs (`confirm_discard_items`) | fixed (ui-texts вЂ” the discard confirm drew four literals; `{0}` now goes through `lang::text_args`) |
+| Main.cs:42053 (`Lang.inter[8]` вЂ” "Housing Query") | crates/tr-app/src/ui/housing.rs (`label`) | fixed (ui-texts вЂ” the tooltip asked for the non-existent `Inter.8` key and printed "Inter.8") |
+| UIWorldCreation.cs:706 (`Language.GetTextValue("UI.EnterSeed")`) | crates/tr-app/src/app/flow.rs (`apply_front_flow` в†’ `ui::keyboard::enter_seed`) | fixed (ui-texts вЂ” the seed keyboard title was a literal) |
+
+| Main.cs:42993-43083 (the right-click talk arm + Player.cs:27494-27503 the close rule) | crates/tr-app/src/world_sim/npcs.rs::talk_to_npc | done (wire-npc-chat) |
+| NPCChatPanel.cs:65-68 (the chat panel box + DrawText origin :217/:246) | crates/tr-app/src/npc_chat.rs::chat_box_rect, chat_box_height, format_chat_lines | done (wire-npc-chat) |
+
+| `IO/WorldFile.cs` `SaveWorldFlags:1238`/`LoadWorldFlags:1981` weather snapshot вЂ” the rain triple (`:1312-1314`, read `:2127-2129`) and the sandstorm quad (`:1369-1372`, read `:2277-2283`), snapshotted by `SetTempToOngoing:1053-1059` and restored by `SetOngoingToTemps:159-172` | `crates/tr-core/src/wld/sections/flags.rs` (`write`/`read` over `World.{raining, rain_time, max_raining}` and `World.sandstorm_*`) + `crates/tr-app/src/app/saveglue.rs::save_world` (the live `App.rain`/`App.sandstorm` snapshot) + `crates/tr-app/src/app/mod.rs::App::new` (the restore) вЂ” wld-roundtrip, done 2026-11-17 | done |
+
+| WorldGen.cs:12162-12270 (SurfaceCaves: the four surface-opening TileRunner groups) | crates/tr-core/src/worldgen/caves.rs | done (worldgen-caves - the cave slice; the Caverer group deferred) |
