@@ -11347,10 +11347,12 @@ and already match: `PlayerDrawSet.CreateCompositeData`'s front-arm switch
 override at row 5 (`:1975`), `UpdateCompositeArm`'s stretch columns 7/8 (`:2246-2274`),
 `GetCompositeOffset_BackArm (6,2)` / `_FrontArm (-5,0)` applied to BOTH the position and
 the origin (`PlayerDrawLayers.cs:4082-4090`, `:1272-1277`) and the
-`Main.OffsetsPlayerHeadgear` composite shift (`2 - Y`). The visible breakage was that the
+`Main.OffsetsPlayerHeadgear` composite shift (`Y - 2`). The visible breakage was that the
 chain fed those tables wrong rows; with the rows correct the existing tables are correct
 too. `render/player_layers.rs` now reads the headgear table from `player.rs` instead of
 duplicating it, and `every_row_the_frame_chain_can_emit_has_draw_tables` pins all 20 rows.
+(The composite-shift SIGN was later corrected from `2 - Y` to `Y - 2` — see
+"The head/torso gap" below; the row-feeding audit above was unaffected.)
 
 Deviations, all `TODO`-flagged in the code rather than silently approximated: the inputs
 whose granting equipment has no port field yet stay coded but unreachable — Sandstorm in a
@@ -11399,6 +11401,52 @@ The port's armor slots are the vanilla body ids 1-4 (copper/iron/silver/gold —
 the `body_slot` of the worn chest piece, `render/entities.rs:1378`); none of
 them is in the `missingHand` list, so the `Players[9]` hand layer is correctly
 absent for the port's armors.
+
+### The head/torso gap (fix/player-head-torso-gap, 2026-11-18)
+
+The composite torso/arms carry a per-body-row Y shift so the shirt follows the
+head's walk bob. Every consumer computes it the same way
+(`PlayerDrawLayers.cs:1217-1219` skin torso, `:1263-1265` back arm,
+`:1940-1942` shirt torso, `:3579-3581` front arm):
+
+```csharp
+Vector2 vector2 = Main.OffsetsPlayerHeadgear[bodyFrame.Y / bodyFrame.Height];
+vector2.Y -= 2f;
+vector += vector2 * -((playerEffect & SpriteEffects.FlipVertically) != 0).ToDirectionInt();
+```
+
+`ToDirectionInt(false)` returns **-1** (`Utils.cs:2010-2017`), so for the
+un-flipped player the multiplier is `+1` and the shift is
+`OffsetsPlayerHeadgear.Y - 2`. The table (`Main.cs:66638-66660`) is `0` on rows
+7-9/14-16 and `2` elsewhere, so the torso/arms sit **2 px UP** on those rows and
+unshifted on the rest; the head and legs never shift. Those zero rows are the
+walk-bob peaks where the head frame's art rides 2 px up inside its 56-px cell,
+and the torso must rise with it or a background band opens under the chin.
+
+The port computed `2 - Y` (the sign inverted), dropping the torso 2 px on the
+zero rows instead of lifting it — a 2-px transparent gap between head and torso
+on every bob peak (body rows 7-9/14-16), most visible mid-walk. The fix flips
+`headgear_composite_shift` to `Y - 2` (`render/player_layers.rs`); the raw
+`headgear_offset` (used by the held-item anchors and the Moon Lord leg rows) is
+unchanged. `t2_player_frame_offsets_match_csharp` /
+`t3_no_head_torso_gap` / `test_dw_1_3` / `test_dw_2_6` now pin the corrected
+sign for all 20 rows. Verified with `TR_HOLD=right TR_ZOOM=2 TR_NO_BG=1`
+walk screenshots: the gap frames (120/130/160/170) show a continuous
+chin→shirt join after the fix.
+
+**Not the sampler / not rounding.** The reported "motion blur" was the same
+gap flickering as the walk cycle crossed the zero rows, not sub-pixel
+smearing: the player pass already snaps every unrotated layer to an integer
+screen pixel (`render/entities.rs::snap_to_screen` via `push_layers`) and the
+world camera is snapped to `round(cam*zoom)/zoom` (`app/frame/draw.rs`), and
+the atlas sampler is nearest (`tr-render/src/sprite.rs`, mag/min/mipmap =
+`Nearest`), matching the C#'s `SamplerState.PointClamp`
+(`Main.cs:2774-2784`, `Graphics/Camera.cs:44`). The C# player layers floor
+their screen position with `(int)` casts / `.Floor()` (e.g.
+`PlayerDrawLayers.cs:2062`, `:1939`), not `Math.Round`; the port's
+integer-snapping is the equivalent crispness guarantee. A zoom-2 capture shows
+uniform 2×2 texel blocks and a discrete ~50-color palette (no linear-filter
+blend gradient), confirming the sprite is already crisp.
 
 **The shoulders on the falling row** — `PlayerDrawSet.cs:1933-1937` reads
 `ArmorIDs.Body.Sets.showsShouldersWhileJumping[body]` into `flag`, and the
