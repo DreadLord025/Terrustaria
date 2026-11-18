@@ -2907,11 +2907,48 @@ falls through silently. `C# ref tileFrameX/Y` rewrites are expressed as
 the source rectangle from the final frame (`TileDrawing.cs:1007`).
 
 **Animation state.** `tile_frame` is `Main.tileFrame[kind]`; the animator is
-not ported, so the production call passes 0 — exactly the vanilla t=0 state.
-All `tile_frame * N` formulas are ported verbatim and activate unchanged when
-the animator lands. The default `addFrY = Main.tileFrame[type] * 38`
+ported in `crates/tr-core/src/drawdata_anim.rs` (S1-F-9 wave B, below) but not
+yet wired, so the production call still passes 0 — exactly the vanilla t=0
+state. All `tile_frame * N` formulas are ported verbatim and activate unchanged
+when the wiring lands. The default `addFrY = Main.tileFrame[type] * 38`
 (`TileDrawing.cs:4533`) is ported as the same formula. `tile_frame = 0` was
 verified against the C# per formula (transcription tests in `drawdata.rs`).
+
+### S1-F-9b animated-tile animator (2026-11-18)
+
+`crates/tr-core/src/drawdata_anim.rs` ports `Main.AnimateTiles`
+(`Main.cs:18516-19304`, called once per client update at `Main.cs:17150` after
+`DoUpdate_AnimateWalls`) as `TileAnimator::animate_tiles(wind_for_visuals,
+rand, generating_or_loading)`:
+
+- State: `tile_frame`/`tile_frame_counter` `[i32; TILE_COUNT]` ≡
+  `Main.tileFrame`/`Main.tileFrameCounter` (`Main.cs:1596-1597`, allocated
+  `new int[TileID.Count]` `:66976-66977`, world-load reset `:8393-8394`) plus
+  `weather_vane_bobframe` ≡ `Main.weatherVaneBobframe` (`:2237`).
+- Every arm keeps its C# idiom exactly — the four spellings (`counter > limit`
+  vs `>= limit` × `frame >= wrap` vs `> wrap`) differ by one tick of period and
+  are kept as four helpers, not normalised. The pre-increment arms (133 etc.)
+  are semantically identical to the post-increment `>=` form and share it.
+- Mirrors: 665 ← 12 (both arrays), 696 ← 31 (frame only), 271/581 ← 270,
+  355 ← 354. The 340..=344 loop, the counter-only wraps (507/508 at `20*8`,
+  485 at 20, 491 at 40, 597 at 64) and the frame-only 412 (240) are verbatim.
+- **RNG:** tiles 453/456 draw `Main.rand.Next(3)` gated on
+  `!WorldGen.isGeneratingOrLoadingWorld` (`:19109`/`:19118`); the weather-vane
+  bob roll draws `rand.NextFloat()` (`:19325`). All three take the caller's
+  `UnifiedRandom` (the exact `Main.rand` stream) in source order — no framing
+  RNG is touched (`framing.rs` untouched). Tests replay the counters
+  draw-for-draw against a cloned stream.
+- Weather vane (`AnimateTiles_WeatherVane`, `:19306-19329`): the decompiled
+  `tileFrameCounter[490] -= 6 * tileFrameCounter[490]` (`:19316`) is kept
+  verbatim (it is NOT a modulo — it negates to −5×); the direction-hold gates
+  at frames 0/6 and the `++bobframe == 8` reset are 1:1.
+- **Deliberate deviations:** (1) renderer wiring deferred — `draw_data` still
+  receives 0 until a follow-up feeds `TileAnimator::animation_row(kind)` in
+  (kept out of this wave to stay disjoint from wave A's `drawdata.rs` edits);
+  (2) `AnimateTiles_CritterCages` (`:19303`, body `:13511+`) not ported — it
+  animates the separate `Main.bunnyCageFrame[]` cage-entity arrays behind the
+  `Main.critterCage` proximity gate, part of the still-missing tile-620
+  deferred special pass (research/09), not `tileFrame[]`.
 
 ### Status of every switch case (`TileDrawing.cs:4540-6032`)
 
