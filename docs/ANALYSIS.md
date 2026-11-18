@@ -15578,6 +15578,47 @@ manager. Porting the transport would require vendoring Steamworks (its DLL sits
 unused beside the tree) and would not change the port's own wire, so the ROADMAP
 keeps it as this documented divergence rather than a build item.
 
+## The Steam Cloud save exclusion (S1-J-6, 2026-11-18)
+
+Steam Cloud is a platform service, not game logic: it stores the same save
+bytes the local path writes, keyed to the Steam account instead of the disk.
+The port targets local saves, and the C# itself gates every cloud arm behind
+the social module — so the exclusion loses nothing the vanilla does without
+Steam.
+
+Where the gate lives in the C#:
+
+* `SocialAPI.Initialize` (called once from `Program.cs:222`) picks the mode —
+  `SocialMode.Steam` for the client, Steam only with `-steam` for the dedicated
+  server (`Social/SocialAPI.cs:36-52`; the enum is `None`/`Steam`/`WeGame`,
+  `Social/SocialMode.cs:3-8`). Only the `SocialMode.Steam` arm loads
+  `SocialAPI.Cloud` (`LoadSteam`, `Social/SocialAPI.cs:107`; WeGame loads its
+  own at `:126`); under `SocialMode.None` the field stays `null`. The Steam
+  module (`Social/Steam/CloudSocialModule.cs`, 108 lines) is a pure
+  `SteamRemoteStorage` wrapper (`GetFileCount` `:29`, `FileWriteStreamOpen`
+  `:43`, `FileRead` `:76`) — there is no cloud code outside `Social/**`.
+* Every cloud arm in the save/load path checks that field and short-circuits
+  without it: `WorldFile.LoadWorld` sets "Cloud inaccessible" and fails the
+  load (`IO/WorldFile.cs:653-657`); `_SaveWorld` returns without saving
+  (`:872-875`); `GetAllMetadata` opens the cloud stream only on the `cloudSave`
+  branch (`:194`); `Player.LoadPlayer` returns an empty `PlayerFileData`
+  (`Player.cs:55061-55063`) and `Player.GetFileData` returns `null`
+  (`:55864-55866`). `FileUtilities` routes cloud reads/writes through
+  `SocialAPI.Cloud` only when it is non-null, else falls to the local branch
+  (`Utilities/FileUtilities.cs:16-18`, `:107-109`, `:134-136`).
+* The front end never offers cloud without the module: the cloud world/player
+  list entries are only added when `SocialAPI.Cloud != null`
+  (`Main.cs:3972-3978`, `:4018-4024`), the new-world cloud default is
+  `SocialAPI.Cloud != null && SocialAPI.Cloud.EnabledByDefault` (`:5490`,
+  `:48163`), and cloud deletion is guarded the same way (`:4809-4811`).
+
+The port's `save_world` (`crates/tr-app/src/app/saveglue.rs:88`) writes the
+world + player sidecar + map to local paths only — exactly the C#'s
+`SocialMode.None` behaviour, where the same gates leave only the local arms
+reachable. This closes research/42's risk 42-5 ("Cloud save is missing") as a
+non-goal rather than a gap, alongside the ROADMAP Non-goals `Social/**`
+exclusion and the S1-I-6 transport divergence above.
+
 ## The Pumpkin Moon family (S1-F-13b, 2026-11-17)
 
 The 16 wave kinds land on `S1-F-13b-pumpkin-family` (phases: the identity
