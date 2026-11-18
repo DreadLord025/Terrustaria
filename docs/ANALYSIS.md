@@ -4743,6 +4743,17 @@ turns on with the pets rather than needing a second pass. The remaining
 (`:4694-4828`, the housing query UI reads it), which needs the housing-query
 `Main.mouseNPC` model (`ui/housing.rs:12-14`).
 
+### Stinkbug flags (S1-E-11b, 2026-11-18)
+
+`RoomScan.has_stinkbug`/`has_echo_stinkbug` are added by this change and
+set by `check_tile` from the active tiles 630/631
+(`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
+keeps running and only the flags are written; `check_room` clears both per
+scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
+pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
+the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+ported block (`Main.rand` untouched; the flags are pure tile reads).
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
@@ -13039,6 +13050,32 @@ World's downed flags, and the Discount Card's
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
 
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
@@ -16017,3 +16054,62 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
+
+Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
+whole animation sheet squashed into one frame-sized box (or spilled the cell).
+
+Cursor: the `bestiary_open` branch of `ui::draw_hud` returned before the
+global `cursor::draw` tail. The C# bestiary is a fancy-UI state:
+`DrawInterface_12_IngameFancyUI` (`Main.cs:46148-46158`) returns false for
+it, stopping the layer loop before layer 36's cursor; `IngameFancyUI.Draw`
+draws the cursor itself after the state (`IngameFancyUI.cs:220-223`,
+`Main.DrawCursor(Main.DrawThickCursor())`). The fix draws the cursor inside
+the bestiary branch before the early return - the same structure.
+
+Icon: `draw_portrait` passed `(frames_x=1, frames_y=1, frame=0)` to
+`draw_sheet_frame`, sampling the entire NPC animation strip as one rect.
+`UnlockableNPCEntryIcon.Draw` (`UnlockableNPCEntryIcon.cs:194-207`) draws
+`DrawNPCDirect` with the NPC's single `npc.frame`; frame geometry from
+`FindFrame`/`SetFrameSize` (`:100-109`, `:185`; the division itself
+`NPC.cs:66666`/`:66694` - `frame.Height = tex.Height /
+Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
+`frames_y = sheet_h / frame_h` rows (the `.round()` is an inverse
+derivation of the integer row count, not a `Math.Round` port) and applies
+the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
+
+Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
+stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
+Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
+GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
+the `OverflowHidden` clip of the 68 px inner box
+(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
+CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
+port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
+(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
+inset and centring are faithful; only the scale/clip mechanism is approximate.
+
+## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
+
+The Settings menu's Save & Exit row armed `pending = Some(SaveAndExit)` then
+called `close()`, which clears `pending` (`ingame_options.rs`); no caller
+ever drained it, so the button only closed the window. The C# row
+(`IngameOptions.cs:296-305`) does `Close()` + `menuMode = 10` +
+`gameMenu = true` + `WorldGen.SaveAndQuit()`; `SaveAndQuit`
+(`WorldGen.cs:6701-6719`) plays sound 11, resets the invasion bar
+(`:6705-6708`) and queues `SaveAndQuitCallBack` (:6664-6687`:
+`Player.SavePlayer` + `WorldFile.SaveWorld` on the `netMode == 0` arm,
+sound 10, fast-forward flags cleared, `menuMode = 0`).
+
+The fix wires the row to `App::save_and_quit` (`saveglue.rs`): sound 11 ->
+invasion reset -> the existing `save_world` funnel (world + player sidecar +
+map + achievements) -> sound 10 -> fast-forward flags -> reopen the main menu
+(the `net_disconnect` shape). Deliberate deviation: the C# mode-10 "saving"
+screen exists only to cover the ThreadPool async save; the port's synchronous
+single-player save has no window to cover, so mode 10 is skipped (documented
+in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
+`ResetFocus` halves covered by the `game_menu` audio listener). The
+multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
+the MP pause-menu flow lands. The Settings panel layout deviations remain a
+follow-up round.
