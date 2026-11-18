@@ -146,6 +146,10 @@ impl App {
             let debug_items = self.items.len();
             let debug_projectiles = self.projectiles.active_count();
             let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
+            // S1-G-1 wave D: the void lens's `Update` gate
+            // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
+            // the field destructuring (the pass borrows `entity_lights` mutably).
+            let game_paused_for_specials = self.game_paused;
 
             {
                 let App {
@@ -865,6 +869,39 @@ impl App {
                             &mut leaf_spawns,
                         );
                         *world_key = Some(key);
+                    }
+
+                    // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
+                    // false)`'s pylon / trophy / void-lens passes
+                    // (`TileDrawing.cs:423-425`). The sprites ride the
+                    // always-rebuilt world-effect range (screen space, like
+                    // the leaf gores), so the G6-cached world range and its
+                    // key stay untouched; the C# draws them between the tile
+                    // layers — the port's fused pass keeps the documented
+                    // z-order approximation (ANALYSIS "The pylon/trophy/
+                    // void-lens passes"). The `tileFrameCounter[597]/[491]`
+                    // stand-ins are the update-count wraps (`Main.cs:19284`,
+                    // `:19227` — the animator is unported).
+                    {
+                        let special_env = crate::render::pylons::SpecialEnv {
+                            global_time: anim_time % 3600.0,
+                            pylon_counter: self.game_update_count % 64,
+                            lens_counter: self.game_update_count % 40,
+                            show_invisible: crate::env::show_invisible(),
+                        };
+                        crate::render::pylons::draw_pylons_trophies_void(
+                            renderer,
+                            world,
+                            light,
+                            &style,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            anim_time,
+                            &special_env,
+                            game_paused_for_specials,
+                            &mut self.entity_lights,
+                        );
                     }
 
                     // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
