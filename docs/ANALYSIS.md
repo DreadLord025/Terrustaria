@@ -16828,3 +16828,53 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+
+## The tile-crack overlay (S1-G-1 wave C, 2026-11-18)
+
+`crates/tr-app/src/render/tile_cracks.rs` ports `Main.DrawTileCracks`
+(`Main.cs:61533-61626`) 1:1: the book-type filter + the `<20` damage floor
+(`:61543-61551`), `WorldGen.InWorld` fluff-0 (`WorldGen.cs:9688-9695`), the
+active-block/wall visibility arms (`:61558-61566`), the door/solid/solid-top/
+tree/glowing-mushroom shape classification (`:61571-61598`, the 22 px tree
+frame windows verbatim), the slope/half-brick skip (`:61599`), the
+20/40/60/80 damage ladder (`:61601-61617`), the `crackStyle*18` /
+`(4+crackStyle/2)*18` source rects on the 18 px grid (`:61618-61622`) and the
+`Lighting.GetColor` tint at `x*16-(int)screenPosition.X` (`:61623`). The draw
+sites are `TileDrawing.cs:732-733` (`hitReplace` then `hitTile`, crack type 1)
+and `WallDrawing.cs:203-204` (crack type 2). The `TileCracks` sheet joins the
+static atlas loads (`assets.rs`, the `WiresNew`/`Actuator` seam) — one atlas,
+one pipeline, unchanged.
+
+Deviations (deliberate):
+- **Single-accumulator projection.** The C# keeps 500-entry `hitTile` /
+  `hitReplace` books with per-hit `AddDamage` steps and 60-tick TTL decay
+  (`HitTile.cs`). The port's mining is one `mine_target` + `mine_timer`
+  accumulator (`world_sim/editing.rs`); `mining_crack_record` maps it linearly
+  onto the C# 0..100 damage (`mine_timer / mine_hardness * 100`, truncated
+  like the int accumulator). At most one crack draws at a time; `hitReplace`
+  draws nothing until replacement mining lands. The wall arm already emits
+  `CRACK_WALL` records when the mined cell has no active block.
+- **World-seeded crack style.** `HitTileObject.Clear` rolls
+  `rand.Next(4)` re-rolled against the static `lastCrack` (`HitTile.cs:40-45`)
+  from a `DateTime.Now.Ticks`-seeded stream. The port keeps the roll + the
+  no-repeat loop verbatim but seeds `App.mine_crack_rng` with the world seed
+  (the determinism rule, same deviation class as `NamedRngs::global`). The
+  roll fires once per dig target (the C# rolls on slot reuse).
+- **Invisible-block conjuncts vacuous.** `ShouldShowInvisibleBlocksAndWalls`
+  (`Main.cs:58023-58030`) reads the echo monolith / `CanSeeInvisibleBlocks`;
+  neither exists in the port and `Tile` carries no invisible bits, so the
+  `(flag || !invisible…)` conjuncts are always true.
+- **Draw site.** The C# draws inside the solid tile layer; the port hooks the
+  per-frame world range right after the cached tile pass (`frame/draw.rs`) —
+  the damage timer advances every frame, so the crack cannot ride the
+  G6-cached range. The `WorldFrameKey` is untouched; the existing tile draw
+  order and framing are unchanged.
+- The C#'s `type == 72` arm (`:61591`) is kept verbatim but unreachable: 72 is
+  in `TileID.Sets.IsATreeTrunk` (bits 71-77), so the tree arm claims it first.
+
+Tests: `s1_g_1c_*` (7) — the damage ladder, the 18 px rects + tree column
+shift, the shape classification (incl. every tree exclusion window), the
+no-repeat style roll + seed determinism, the timer→damage projection, the
+full per-record draw-gate walk (`crack_draw_plan`) and the hook's one-record
+projection.

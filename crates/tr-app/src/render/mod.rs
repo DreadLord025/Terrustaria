@@ -13,6 +13,7 @@ pub(crate) mod liquids;
 pub(crate) mod player_layers;
 pub(crate) mod screen_fx;
 pub(crate) mod sky;
+pub(crate) mod tile_cracks;
 pub(crate) mod tiles;
 pub(crate) mod wires;
 
