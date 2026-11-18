@@ -2987,8 +2987,19 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
 
 **No arm — default 16×16** (the case has no unconditional static part):
 
-- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
-  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- ~~`5` (`:4645-4649`)~~ — **S1-F-9 wave A (2026-11-18)**: the static 20×20 arm
+  and the `tileFrameX += 176 * (GetTreeBiome + 1)` rewrite are ported
+  (`drawdata.rs::tree_variant`/`tree_biome`/`tree_frame_x_offset`, the case-5
+  arm + `apply_world_corrections`). `GetTreeVariant`'s jungle
+  surface/underground split (variant 5 below `Main.worldSurface`,
+  TileDrawing.cs:1789-1794) and `GetTreeBiome`'s marker-frame column shifts +
+  start-kind walk (`:1735-1776`) are faithful; the renderer's trunk probe
+  `tree::trunk_sheet_offset_at` delegates to it (the old 100-row
+  any-non-tree walk missed variant 5, the column shifts and the start-kind
+  stop rule). The app still routes kind 5 through the dedicated tree path
+  before `draw_data`, so the table arm remains dead in the app but complete.
+  Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
+  (`tree.rs::Foliage::for_ground` deviation stands).
 - `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
@@ -13133,6 +13144,40 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+## The magic cuffs (S1-C-7 wave A, 2026-11-18)
+
+`Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
+`player.rs::hurt_inner`, slotted between the defense reduction (`:38247`) and
+the endurance step (`:38304`): `num3 = (int)(num * 1f)` is the RAW incoming
+damage (the C# `num` at `:38246` — the defense-reduced `num2` never feeds it),
+`statMana += num3` capped at `statManaMax2` (`:38295-38298`), and
+`ManaEffect(num3)` (`:4531-4538`) queues the HealMana combat text with the
+UNCAPPED amount. The port hands the amount over via `pending_mana_effect` /
+`take_mana_effect` (the `pending_hurt_sound` convention); the drain in
+`world_sim/player.rs` spawns `combat_text::spawn_amount` at the player's own
+hitbox with `HEAL_MANA = (100, 100, 255)` (`CombatText.cs:228`), the placement
+`Next` draws riding the `UpdatePlayers` stream like the melee-hit text
+(`world_sim/editing.rs`). The flag folds per tick: the Magic Cuffs (1595,
+`ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+`:14949-14953`) arm `magic_cuffs`; `ResetEffects` clears it (`:18599`).
+
+Documented gaps, all deliberate:
+
+- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): the port's hurt callers
+  carry no crit flag end-to-end (research/04 deviation 10), so the restore is
+  always the un-doubled raw damage. The slot's order is preserved — the double
+  would land on `raw` before the cuffs arm.
+- **The +40 `statManaMax2` stat rows** (1595/2221 `:14925-14928`, and the
+  982/6188/6189 band's +40/+60 regen `:14929-14934`) ride **S1-C-12** (the
+  accessory stat chain) — the flag arms here, the stat grants land there.
+- **2221's `manaMagnet` half** (`:14951`) is its own unported family (the mana-
+  star attraction radius); only the `magicCuffs` grant lands.
+- **The NetMessage 43 send** (`ManaEffect`'s `:4534-4537`) is MP-only, out with
+  the port's single-player scope.
+- **The respawn clears the pending text** (`respawn`'s pending strip) — the C#
+  `CombatText` pool is global and survives death; the port's queue is per-hit
+  one-shot state, drained the same tick, so nothing observable diverges.
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
@@ -13229,6 +13274,29 @@ writer never emitted ids in that band, so old saves read identically).
 Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
 the next round, so a port `.plr` is byte-comparable with vanilla **through the
 vault byte** only until then.
+
+**Increment 2 (S1-J-5b, 2026-11-18).** The writer/reader now run through
+`hideInfo` (`Serialize:54893` / `Deserialize:55623`): buffs (`:54864-54876` —
+44 pairs, `maxBuffs` `Player.cs:57106`; fresh `buffType`/`buffTime` are all-zero
+`:1510-1512` and `Main.buffNoSave[0]` is false, so the (0,0) else-arm bytes are
+identical to the no-save arm), the spawn list (`:54877-54888` — fresh
+`spN[0] == null` `:2488` writes only the `-1` sentinel), `hbLocked`
+(`:54889`, default false `:1436`) and `hideInfo[13]` (`:54890-54893`, fresh
+`bool[13]` `:812`). The reader gates mirror `Deserialize:55578-55623`, including
+the buff-count 44/22/10 version gates and the zero-type compaction
+(`:55593-55597`, which still consumes exactly `count` pairs). **Second shim**:
+the increment-1 port files are stamped 326 but end at the vault byte, so the
+C# gates would truncate in the buffs; `read_player_bytes` retries release-326
+truncations with `through_vault_only` (stop at `:55504`), the same port-only
+pattern as the 279 shim. Genuine vanilla 326 files never take it (they always
+carry the buffs tail). `golden_layout_through_hide_info` pins every byte and
+byte-compares the 370-byte tail with `assets/test/golden.plr` at offsets
+2402-2772. A port `.plr` is now byte-comparable with vanilla **through the last
+hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
+RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
+port zero-pads to the block boundary — invisible to field readers, but the
+final encrypted block differs from vanilla; full-envelope parity is a separate
+concern.
 
 ## The world-format contract (S1-J-8)
 
@@ -16333,12 +16401,15 @@ Deviations:
 
 - **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
   (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
-  through the layer targets; the port's `CaptureRenderer` trait is a no-op
-  stub until the render-target family lands, so a started capture drains
-  its queue without producing pixels. The selection state machine, the
-  countdown and the `IsCapturing` metrics gate are live (the selection
-  UI's sprite draw is NOT — see the bullet above); the write-out waits on
-  the targets.
+  through the layer targets; the render-target FAMILY now exists
+  (`tr_render::RenderTargetFamily`, `App.targets` — S1-G-13, ANALYSIS
+  "The render-target family (S1-G-13)"), but the chunk render through it
+  is not wired: the port's `CaptureRenderer` trait is still a no-op
+  stub, so a started capture drains its queue without producing pixels.
+  The selection state machine, the countdown and the `IsCapturing`
+  metrics gate are live (the selection UI's sprite draw is NOT — see the
+  bullet above); the write-out waits on the per-layer render callbacks +
+  `DrawCapture`.
 - **The capture toggle rides F6, not F4.** The vanilla binds
   `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
   debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
@@ -16350,6 +16421,91 @@ Deviations:
   takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
 - **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
   the toolbar's open-folder button plays its cue only.
+
+## The render-target family (S1-G-13, 2026-11-18)
+
+`crates/tr-render/src/targets.rs` ports the render-target FAMILY
+infrastructure — the seam `Main.DrawCapture` and the per-layer offscreen
+caching wait on. What landed, 1:1:
+
+- **`InitTargets`' size math** (`Main.cs:58167-58181`,
+  `init_target_layout`): `val = MaxWorldViewSize.X` (1920, `:677-681` /
+  `:66714`) clamps BOTH axes (`:58173-58174` — the C# uses `.X` for the
+  height clamp too); `SupportWideScreen && HiDef` raises it to 4096
+  (`:58169-58172`); `offScreenRange` starts at 192 and shrinks to
+  `(_renderTargetMaxSize - num) / 2` (C# int division) when the padded
+  width would overflow (`:58176-58179`). `_renderTargetMaxSize` is 4096
+  HiDef / 2048 Reach (`SetGraphicsProfileInternal`, `:3708-3718`).
+- **All ten targets in creation order** (`:58187-58196`,
+  `RenderTargetFamily::init`): the seven world-space
+  `WorldSceneLayerTarget`s (water, backWater, tile, tile2, wall,
+  background, backgroundSwap — `Main.cs:765-777`) at the padded size,
+  then skyTarget / screenTarget / screenTargetSwap at the raw backbuffer
+  size (`:781-785`). `ReleaseTargets` (`:58093-58150`) is Rust `Drop`;
+  `EnsureRenderTargetContent` (`:58152-58158`) is
+  `RenderTargetFamily::ensure` — called at the draw head
+  (`frame/draw.rs`, the `Main.Draw` wrapper's first step, `:61644`).
+- **`WorldSceneLayerTarget`** (`Graphics/WorldSceneLayerTarget.cs:7-70`):
+  `UpdateContent` (`:43-64`) computes the camera override (screen size =
+  target − 2·offScreenRange, position = `Utils.Round(center − size/2)` —
+  banker's rounding, `Utils.cs:112-115` — zoom = 1), clears the target
+  transparent and records `_position = screenPosition − (osr, osr)`
+  (`:57`); `IsPartiallyOffscreen` (`:17-34`) with the zero-position quirk
+  (a never-rendered layer counts as offscreen) and the strict `>`
+  margin test on both axes.
+- **`RenderToTargets` scheduling** (`Main.cs:57277-57327`,
+  `render_to_targets_plan`): the `renderCount` phase arms (1 → water;
+  2 → backWater + backgroundSwap + the pending flag; 3 → wall + tile +
+  tile2; the count is driven by the lighting engine,
+  `LightingEngine.cs:90-103`), then the fixed partial-offscreen re-render
+  order tile → tile2 → backWater → background (apply the pending swap,
+  RE-CHECK, then maybe re-render — `:57311-57318`) → wall → water. The
+  unreachable `renderNow` arms of the else-if chain are ported verbatim.
+- **`ApplyPendingBackgroundTargetSwap`** (`:58047-58054`): the
+  `Utils.Swap` + flag clear; the phase-2 arm sets the flag (`:57291`).
+- **The skyTarget gate** (`:62021-62027`, `sky_target_active`):
+  `(CanCapture || ForegroundSunlightEffects) && !drawToScreen &&
+  !mapFullscreen && !onlyDrawFancyUI && Lighting.NotRetro`.
+- **The `drawToScreen`/`targetSet` transition** (`:61751-61766`,
+  `target_transition`): Release on leaving the target path, Init on
+  entering, Keep otherwise.
+
+Deviations / scope (deliberate):
+
+- **No draw pass consumes the layers yet.** The frame path is unchanged:
+  the port keeps its single G6-cached world range + the
+  `render_world_fx` screen ping-pong (`sprite.rs`), and the family is
+  allocated but not rendered into by the world passes. The per-layer
+  render callbacks (`RenderTiles`/`RenderWallsAndBlacks`/`RenderWater`/
+  `RenderBackground*`, `Main.cs:57329-58091`), the skyTarget bind in the
+  sky pass (`:62025`) and the composite draws (`:63333`, `:62213`,
+  `:62196`, `:62308`) are the follow-up half of S1-G-13 — moving the
+  existing passes onto the layers is a draw-pass-order change and needs
+  its own A/B (the draw-pass order is frozen this round). The G6
+  `WorldFrameKey` is untouched.
+- **`IsContentLost` has no wgpu equivalent** — device loss recreates
+  everything; `ensure` re-inits on absence or backbuffer-size change
+  (the null-check half of `:58154`).
+- **The `InitTargets` catch arm** (`:58203-58215`: fall back to Retro
+  lighting + map off on allocation failure) is not ported — wgpu texture
+  creation aborts the process on failure instead of throwing.
+- **`Lighting.UpdateEveryFrame`** (`Lighting.cs:77-86`) is not yet a
+  live input: the port always runs the cached path, so
+  `target_transition` is ported + tested but the frame only ever takes
+  the Init/Keep arms. The Retro/UpdateEveryFrame drawToScreen branch
+  stays the research/02 deviation.
+- **The capture seam stays a stub** (`app/capture_driver.rs`'s
+  `PendingCaptureRenderer`): the family exists, but `Main.DrawCapture`
+  (`:56673-57066`) rendering chunks through it is the consumer half —
+  documented in "The loading screen + capture mode" above.
+
+Tests: 17 in `targets.rs` — the layout math (1080p HiDef/Reach, small
+window, the X-cap-on-both-axes clamp, wide-HiDef), `IsPartiallyOffscreen`
+(zero position, strict boundary, per-axis), the banker's camera override,
+the phase arms + offscreen order + swap-cancel, the sky gate's six
+inputs, the transition arms, and four headless-GPU tests (family sizes,
+update_content position/clear readback, the background swap exchange,
+ensure's size-change re-init).
 
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 
@@ -16754,3 +16910,65 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
+
+Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
+per scanning NPC, re-borrowing the mutable store for read-only lookups. This round
+introduces the seam for ONE scan family — the carrier-link scans in
+`world_sim/npcs.rs`'s `update_npcs` pre-passes (the Moon Lord parts' core lookup
+`NPC.cs:41642`/`:42098`, the unlinked part's family-core/head fallback find, and the
+core's part-alive check `:41251-41269`):
+
+- `crates/tr-app/src/world_sim/npc_snapshot.rs::NpcSnapshot` — a per-tick read-only
+  view built once (`NpcSnapshot::build(&app.npcs)`) before the family, copying only
+  the scan-visible fields (`uid`, `kind`, `hp`, the `Npc::center()` pair). The scans
+  (`position_living_uid`, `first_living_kind_uid`, `any_living_uid`) take `&self`, so
+  the compiler forbids them touching the mutable store; the family's writes land on
+  the scanning NPC alone.
+- The one intra-family mutation the live reads could observe — the pre-pass's own
+  `hp = 0` kill of a part whose core died — is mirrored by the owning pass through
+  `NpcSnapshot::kill(idx)`; later scans in the family see the death exactly as the
+  live `hp > 0` reads did. Centres stay valid: the family never moves an NPC.
+- Behaviour frozen: no predicate, order, constant or RNG change. Proof: the existing
+  Moon-Lord NPC tests, the `worldgen/world_hash.rs` pins, and two seam-equivalence
+  tests (`npc_snapshot::tests::the_snapshot_scans_match_the_live_slice_scans`,
+  `the_kill_mirror_matches_the_live_hp_write`) that compare every snapshot query
+  against the live-slice scan it replaces. Full workspace green.
+- **Left (not this round)**: the other scan families (saucer/scutlix/dutchman carrier
+  scans, the projectile pool's `npcs.iter()` sites, the separation/target-selection
+  families) and the spatial hash — the ROADMAP S1-D-8 row stays 🟡 until then. No
+  spatial hash was introduced; the scan count is unchanged (the seam only changes
+  what the scans borrow, not how many there are).
+## The join-bundle message ids (S1-I-1 wave A, 2026-11-18)
+
+Wave A of the message-id remap ports the JOIN bundle's eleven missing ids as
+wire bodies + `C2s`/`S2c` codecs in `crates/tr-app/src/net.rs` — the first
+dependency tier of `SyncConnectedPlayer` (`NetMessage.cs:2806-2822`) /
+`SyncOnePlayer` (`:2885-2960`) / `SendNPCHousesAndTravelShop` (`:2824-2852`) /
+`SendAnglerQuest` (`:2653-2673`) /
+`CreditsRollEvent.SendCreditsRollRemainingTimeToPlayer`
+(`CreditsRollEvent.cs:27-33`) / `SendAllMarkersToPlayer`
+(`CoinLossRevengeSystem.cs:498-507`):
+
+- `30 TogglePVP` — `(byte)plr + hostile` (`NetMessage.cs:856-859`).
+- `42 Unknown42` — the mana sync, `(byte)plr + (short)statMana + (short)statManaMax` (`:961-965`). Named `PLAYER_MANA` for readability; the C# name is `Unknown42` (`MessageID.cs:95`).
+- `45 TeamChange` — `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id and stays unported.
+- `60 Unknown60` — the NPC household banner, `(short)npc + (short)homeX + (short)homeY + (byte)status` (`:1067-1072`); the status is `WorldGen.TownManager.GetHouseholdStatus` (`:2845`). Named `NPC_HOUSE`.
+- `72 TravelMerchantItems` — exactly `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`) `(short)` item types, no count prefix (`:1134-1141`, reader `MessageBuffer.cs:3121-3124`).
+- `74 AnglerQuest` — `(byte)Main.anglerQuest + anglerWhoFinishedToday.Contains(recipient name)` (`:1145-1148`); the wire's bool is per-recipient, the client stores it as `anglerQuestFinished` (`MessageBuffer.cs:3147-3153`).
+- `126 SyncRevengeMarker` — `RevengeMarker.WriteSelfTo` (`CoinLossRevengeSystem.cs:275-286`): int uniqueID, Vector2 location, int npcNetID, float hpPercent, int npcType, int aiStyle, int coinsValue, float baseValue, bool spawnedFromStatue; the reader mirrors it field-for-field (`:321-324`).
+- `135 DeadPlayer` — `(byte)plr` only (`:1569-1571`); sent when `statLife <= 0` (`:2897-2900`), the client raises `immuneAlpha` to 255 (`MessageBuffer.cs:4195-4203`).
+- `140 SetMiscEventValues` — `(byte)kind + (int)value` (`:1591-1594`); the join bundle sends kind 0 only (the credits roll's remaining frames). Kinds 1/2 (the server-side slime transforms, `MessageBuffer.cs:4250-4260`) decode but have no port application.
+- `142 SyncProjectileTrackers` — `(byte)plr` + two `TrackedProjectileReference` bodies, each `(int)Key + (short)type` (`TrackedProjectileReference.cs:22-26`/`:33-37`).
+- `147 SyncLoadout` — `(byte)plr + (byte)CurrentLoadoutIndex` + the `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one `(ushort)` — bit `i` per slot (`WriteAccessoryVisibility`, `NetMessage.cs:1882-1893`; unpack `MessageBuffer.cs:4494-4501`).
+
+Deliberate scope boundary: **bodies + codecs only**. The two `netglue`
+dispatchers carry explicit parked arms for the new variants — nothing sends
+them and the client/host apply-and-relay sites (`MessageBuffer.cs:1851-1867`,
+`:2290-2306`, `:2325-2364`, `:2695-2739`, `:3118-3126`, `:3147-3153`,
+`:4043-4048`, `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land with
+the send-path pass (S1-I-4), so the live net message order is unchanged. The
+per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
+the exact C# body bytes and the decode round trip; the travel shop test also
+pins the fixed 40-slot length (a 39-slot body fails to decode).
