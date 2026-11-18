@@ -2065,6 +2065,32 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The item-use sound wave (S1-E-21-itemuse)
+
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
+at `base.Center` with `sItem.useSoundPitch`. The port provisions the data through
+`tools/GenItemData`: `ItemDef.use_sound` indexes the new generated
+`crates/tr-app/src/soundid.rs` (all 506 `SoundID` styles, ctor order), and
+`Audio::play_use_sound` ports the façade (`SoundEngine.cs:93-99`) + the legacy
+case-2 maths (`LegacySoundPlayer.cs:516-644`, `sound.rs::item_use_case2`) + the
+case-42 trackable arm (`:1376-1381`). The use-start seam is
+`world_sim/editing.rs::start_swing_extras` (every swing/shot/consume arm calls it);
+the `SkipsInitialUseSound` gate `{2350, 4870}` (`ItemID.cs:408`) lives in
+`item.rs::initial_use_sound`. RNG contract: the case-2 `Main.rand` draws ride the
+caller's `UpdatePlayers` stream (`Player.ItemCheck` under the `Main.cs:17754`
+swap) and run ONLY after the attenuation gate passed (the C# order); the
+`GetRandomPitch` NextFloat rides the audio-only `sound_style_random` and never
+touches a gameplay stream — pinned by
+`s1_e_21a_the_use_sound_draws_ride_the_passed_stream_only_when_audible`.
+Deliberate deviations: (1) the multi-variation trackables pin the `_0` asset
+(the standing D3 pin — the variation pick rides `LegacySoundStyle.Random`, an
+unobservable stream); (2) the per-style instance stop/re-create pool and the
+53/55/159 playing guards are unmodelled (the standing D4 deviation — repeated
+cues stack); (3) the net-sync arm (`Player.cs:51690-51692`, `NetMessage.SendData
+152`) has no port (single-player); (4) `Main.musicPitch` (styles 26/35/47, none
+named by a `UseSound` row today) reads 0.0. Tile place/break sounds are NOT this
+wave (break landed in S1-E-21c; place is a follow-up).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
@@ -2613,6 +2639,34 @@ and a third was the click gate the geometry feeds):
   (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
   — the port keeps one flat roster — and the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
+* **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
+  (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
+  (1) the draw centred the 14×36 roster inside the grid rect (`UIList.HAlign
+  = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` hit-tested the *uncentred*
+  lattice (+31 px at 1600×900), so hover lit the neighbouring cell and clicks
+  spawned the neighbouring emote; the shared `grid_origin` now feeds both.
+  (2) The "hover highlight" was a wrong port of `EmoteButton.GetFrame`
+  (`:32-36`): frame 2 is the idle blink of the shared 20-tick `_frameCounter`
+  (`UpdateFrame` `:38-44`), not the hover pick — the real hover is the
+  `Images/UI/EmoteBubbleBorder` sheet tinted `Main.OurFavoriteColor`
+  (255,231,69, `Main.cs:66748`) plus the `/EmojiName.*` MouseText
+  (`DrawSelf` `:62-74`); the border sheet was never packed and is now.
+  (3) The bubble draw received raw world coordinates with no camera/zoom
+  transform (vanilla `GetPosition` subtracts `screenPosition` and draws under
+  `GameViewMatrix.ZoomMatrix`, `Main.cs:46455-46459`), so every bubble drew
+  thousands of px offscreen; it also anchored at the head-top instead of
+  `GetPosition`'s `(Top.X − dir·width·0.75, y+2)` bottom-centre origin
+  (`EmoteBubble.cs:206`/`:247-249`) and dropped the direction flip. The
+  lifetime math now matches `Update`'s short-circuit (`--lifeTime > 0 &&
+  ++frameCounter >= 8`, `:179`) and `OnBubbleChange`'s unconditional
+  `lifeTime = 6` on the other same-player bubbles (`:273` — the port used to
+  guard `> 6`). The wheel's Back click hit-tested the bestiary's box (BUG-18's
+  draw-side fix never reached the click arm) and the pick now honours
+  `MakeLocalPlayerEmote`'s dead gate (`:280`). Remaining deliberate gaps: the
+  reverse-gravity arm (`Draw` `:207-212`) stays out with the unported gravity
+  flip, the NPC reactions (`CheckForNPCsToReactToEmoteBubble` `:152-167`) with
+  M4-TOWN, and the button blink rides the world step instead of the UI update
+  (the wheel is only reachable in-game where the world keeps stepping).
 
 Open gaps (deliberately out, each with its reason):
 
@@ -4714,6 +4768,17 @@ turns on with the pets rather than needing a second pass. The remaining
 `S1-E-11` items are `MoveTownNPC`'s failure-reason feedback text
 (`:4694-4828`, the housing query UI reads it), which needs the housing-query
 `Main.mouseNPC` model (`ui/housing.rs:12-14`).
+
+### Stinkbug flags (S1-E-11b, 2026-11-18)
+
+`RoomScan.has_stinkbug`/`has_echo_stinkbug` are added by this change and
+set by `check_tile` from the active tiles 630/631
+(`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
+keeps running and only the flags are written; `check_room` clears both per
+scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
+pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
+the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+ported block (`Main.rand` untouched; the flags are pure tile reads).
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
@@ -10430,6 +10495,26 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
+  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
+  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
+  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
+  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
+  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
+  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
+  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
+  light layer; the tracked explode sound (`:69362`) — no sound layer; the
+  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
+  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
+  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
+  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
+  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
+  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
+  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
+  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
+  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
+  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
+  the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -13017,6 +13102,32 @@ World's downed flags, and the Discount Card's
 `(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
+
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
 
 ## The world-format contract (S1-J-8)
 
@@ -15997,6 +16108,182 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
+
+`tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
+(`TileObjectData.cs:2110-5014`) statement-by-statement and emits all 389
+registered tiles (604 defs) into `crates/tr-core/src/tileobject/registry.rs`,
+retiring the 33 hand-written defs. The generator reproduces the copy-on-write
+builder chain (module sharing via `CopyFrom`, the `_hasOwn*` no-op-compare
+setters, `Calculate`'s liquid-death fold, `LinkedAlternates` propagation,
+`addTile`/`addSubTile`/`addAlternate`/`addBaseTile` cursor resets) and two C#
+bugs verbatim:
+
+* **`FullCopyFrom` empties the sub-tiles** (`TileObjectData.cs:1722-1741` +
+  `TileObjectSubTilesModule.cs:17-27`): the copy ctor loops `i < this.data.Count`
+  over the FRESH list (Count 0, capacity != count), so tiles 83/84
+  (`FullCopyFrom(82)`/`(83)`, :4785-4788) and 389 (`FullCopyFrom(388)`, :2323)
+  resolve NO sub-tiles in vanilla. The hand defs wrongly carried 82's sub-tiles
+  into 83/84; the generated table reproduces the bug.
+* **`AnchorAlternateTiles` compares against `tileInvalid`** (:449) — a no-op
+  write when the alternate list equals the INVALID list (a C# typo, reproduced).
+
+The shared-reference alternates/sub-tile cycles (C# heap references; `CopyFrom`
+shares the lists, then `addAlternate`/`addSubTile` appends) emit acyclic:
+top-level defs AND sub-tile nodes keep their OWN alternates lists verbatim —
+`GetTileData` (`TileObjectData.cs:5148-5157`) does `alternate--` then indexes the
+RESOLVED sub-tile's Alternates, so dropping them refused placements the C#
+accepts (S1-F-7a: chair style 16 right-facing, torch sub8 wall-anchor; 69
+sub-tiles carry non-empty alternates). Alternate NODES are leaves (scalar
+fields + empty nested lists): their deeper nested lists are the cycle depth no
+consumer reads — `GetTileData` resolves only one level past the sub-tile and
+`can_place`/`custom_place` read the base's lists plus one resolution level.
+Verified over the interpreted graph: every sub-tile alternate target is a pure
+leaf (never a top/sub-tile object, no self-references), so top -> sub ->
+alternate-leaf emission is acyclic (the DFS test in `test_gen.py`). Sub-tiles'
+nested sub-tile lists are likewise not emitted (the deeper C# cycles; no
+consumer resolves a sub-tile's sub-tiles).
+
+### Divergences vs the 33 hand defs (the C# wins)
+
+Field-level diff of the hand-resolved baseline against the generated table
+(the regression dump). Every row is the C# chain's truth; the hand def was wrong:
+
+| Tile / def | Field | Hand | Generated (C#) | C# cite |
+|---|---|---|---|---|
+| safe 97 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3589-3590 |
+| safe 97 | StyleHorizontal | true | false | Style2x2 never sets it (:3451-3460) |
+| sink 172 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3576-3583 |
+| sink 172 | StyleHorizontal | true | false | Style2x2 never sets it |
+| void vault 491 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style3x3 :3100, no override :3798-3800 |
+| void vault 491 | StyleHorizontal | true | false | Style3x3 never sets it (:3097-3105) |
+| candelabra 100 | StyleHorizontal | true | false | Style2x2 never sets it (:3594-3606) |
+| lamp 93 | WaterPlacement | Allowed | NotAllowed | :2407-2408 WaterDeath=true + fold |
+| lamp 93 | StyleLineSkip | 1 | 2 | :2405 |
+| dresser 88 | LavaPlacement | Allowed | NotAllowed | :3204 LavaDeath=false keeps the baked NotAllowed |
+| dresser 88 | HookCheckIfCanPlace | none | Chest.FindEmptyChest (-1,0,true) | :3201 |
+| chest 21 | HookCheckIfCanPlace metadata | (0,0,false) | (-1,0,true) | :3464 (name now generated) |
+| bed 79 alt1 | CoordinateHeights | [16,18] | [16,16] | Style4x2 alternate copies the preset, not the bed override (:2564-2566) |
+| bed 79 alt1 | CoordinatePaddingFix | (0,-2) | (0,0) | same — the alternate is the Style4x2 base |
+| bathtub 90 alt1 | whole def | base_def() 1x1 | full Style4x2 4x2 PlaceRight | :2564-2566 copies newTile (the full def) |
+| hanging lantern 42 alt1 | whole def | base_def() 1x1 | full Style1x2Top 1x2 + platform anchor | :2444-2447 copies newTile |
+| large piles 187 sub0-8,29-34 | StyleWrapLimit | 0 | 35 | :3296 set on newTile before the sub-tile CopyFrom |
+| herbs 83/84 sub1-6 | present | 6 sub-tiles | empty (FullCopyFrom bug) | :4785-4788 + TileObjectSubTilesModule.cs:17-27 |
+| table 14 | sub-tiles | empty | 13, 25 | :3182-3190 |
+| tile 220 (Solidifier) | registered | absent | present (Style3x3) | :4048 |
+
+Plus the sub-tile families the hand slice left empty (now generated): doors
+10/11 sub 19/48, work bench 18 sub 14/43, candle 33 sub 25/39/41, chandelier 34
+sub 32/46/48, chair 15 sub 16/47 + 51..67, bed 79 sub 8/42 + 56..64, piano 87
+sub 15/42, dresser 88 sub 9/42, bookcase 101 sub 4/43, clock 104 sub 17/43,
+candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
+
+### Consumer switch (minimal, behaviour-preserving)
+
+* `edit::place_item_tile` gates on `tileobject::routes_through_tile_object`
+  (`CustomPlace(type, style)` + the 82/227/4 exclusions, `Player.cs:39771-39772`),
+  NOT mere registration — the natural objects (pots 28, small piles 185,
+  platforms 19, plants, torches 4, dye plants 227) keep the legacy
+  `WorldGen.PlaceTile` route. The large piles 186/187 ARE `CustomPlace`-true and
+  ride the TileObject route.
+* `editing::legacy_precheck_applies` mirrors that gate; alch seeds (82/83/84)
+  bypass the neighbour pre-check because `BlockPlacementForAssortedThings`
+  forces `canPlace = true` for them (`Player.cs:41294-41296`).
+* `editing::cell_drops` reads the generated `KILL_TILE_NO_CELL_DROP` table (the
+  `KillTile_GetItemDrops` empty case group, `WorldGen.cs:63988-66090`) instead of
+  `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
+  orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
+
+### Wave B (remaining, documented callbacks)
+
+The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
+`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
+(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
+(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
+tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
+`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
+defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
+the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
+test lands with that wiring.
+
+## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
+
+`crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
+(LegacyLighting.cs, 1442 lines) - the pre-1.2 engine the White/Retro/Trippy modes
+select (`Lighting.Mode` setter, `Lighting.cs:45-56`). The port is ADDITIVE: the
+modern Color engine (`lighting/mod.rs` + `blur.rs`) is byte-identical - its maths,
+RNG draws and the S1-G-10 `NON_VISIBLE_PADDING = 18` are untouched, and
+`presenting_legacy_then_modern_recompute_is_byte_identical` proves a LightMap that
+served a legacy present recomputes the exact modern result afterwards.
+
+Ported paths (citations in place):
+- `ProcessArea` (`:302-369`): the renderCount cycle - pre-render at
+  `count > RenderPhases`, swipe passes at counts 0/1/2, the publish at count 2,
+  the camera shift + sky reseed at counts 3..phases. `RenderPhases` reads the
+  S1-B-6 `GfxQuality::render_phases` field (`Main.cs:17085-17101`).
+- `PreRenderPhase` (`:648-849`): working-set clear, the scanner export over the
+  expanded rect clamped to `[5, maxTiles-1]`, the mask flags, the lit-cell bound,
+  the AddLight dictionary merge, the area snapshots, `renderCount = 0`.
+- `DoColors` (`:851-1085`): the blue wave (`0.97..1.0` by `0.0001`), the White
+  factors (`neg 0.9 / neg2 0.54 / neg3 0.8`, `wet_r = 0.95*neg*wave`), the
+  Retro/Trippy subtractive factors (`0.04/0.16/0.08` + the buff deltas), the
+  nightVision/blind/blackout/headcovered arms, and the four swipe-pass bounds.
+- The swipes: White `doColors_Mode1_Swipe` (`:1192-1271`, multiplicative carry,
+  the `0.0185` cutoff, the neighbour gate, R2-only - no colour bleed), Retro
+  `Mode2` (`:1273-1329`, subtractive, no neighbour gate), Trippy `Mode3`
+  (`:1331-1435`, per-channel subtractive with the `<= 0` done gate; the
+  StopLight subtraction is additive to the channel decay and the B channel has
+  no wet arm - both C# quirks kept).
+- `CopyFullyProcessedDataOver` (`:538-621`) incl. the inner-guard quirk (the
+  condition reads the x delta, the subtraction the y delta, `:583/608`),
+  `ShiftUnProcessedDataOver` (`:473-536`, the +/-5-tile jump guard),
+  `UpdateLightToSkyColor` (`:435-471`, the unconditional-R quirk at `:459`),
+  `Clear` (`:623-646`), `AddLight` (`:258-300`, the 2000 cap, the non-RGB mean
+  collapse), `GetColor` (`:211-219`).
+- The legacy seed gate is the GLOBAL `(int)Main.worldSurface`
+  (`TileLightScanner.cs:92`) and `UnderworldLayer = maxTilesY - 200`
+  (`Main.cs:2790`); the legacy mask keeps the C# `!tile.inActive()` conjunct
+  (`TileLightScanner.cs:68`) the modern blur mask does not have - an actuated
+  block is air to the legacy swipes. The per-type arms reuse the shared
+  `tile_light` port.
+
+RNG streams (order exact, seeds pinned - the S1-A-6 precedent):
+- `_swipeRandom`: `NextSeed()` after EVERY swipe pass (`:1082`), wet cells draw
+  `WithModifier((ulong)(i*1000+j)).Next(98,100)*0.01f` (`:1250-1251`). Vanilla
+  seeds it `CreateWithRandomSeed()` (`:1440`, session-nondeterministic); the
+  port pins seed 0.
+- The legacy engine's own `TileLightScanner._random` advances once per
+  PreRenderPhase (`Update()`, `:723`), NOT once per frame like the modern path;
+  seeded from the frame's `LightParams.rng_seed` on first use.
+
+Deliberate deviations:
+- `FastParallel.For` chunks run as ONE sequential chunk per pass. The C# swipes
+  wrap their body in `try/catch` (`:1091/1196/1277/1335`), so an out-of-bounds
+  inner index aborts the rest of that thread's chunk; writes never cross outer
+  indices, so chunking cannot change cell values - only the abort extent, which
+  the single chunk reproduces for the sequential case.
+- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) is not
+  ported - it is the map system's own lighting pass (`Main.Map.UpdateLighting`),
+  gated on `mapEnabled && renderCount == 3`; the port's map lighting rides the
+  modern map pass. The netplay `mapTime = 1` poke (`:341-344`) is likewise out.
+- The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
+  `Player.gross`, neither ported; the gate is false in the port.
+- Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
+  selector (Color selects the NEW engine, `Lighting.cs:40-44`); only the Mode
+  1/2/3 swipes are ported. The Mode-0 water/honey decay table (`:874-929`) is
+  kept in the factor block for completeness.
+- `Player.nightVision/blackout/headcovered` are not ported fields; the driver
+  passes `false` (the `blind` flag is wired). The factor arms are code-complete.
+- The G6 `WorldFrameKey`'s `anim` slot carries `anim_time` in the legacy modes
+  (the engine re-publishes every frame); the key's contents are unchanged.
+
+Tests: 12 in `legacy.rs` - the Retro falloff table (hand-derived 0.04 steps +
+the 0.16 solid gate), White's multiplicative carry / no-bleed / 0.0185 cutoff /
+wet RNG draw, per-mode engine goldens on a fixed 96x96 torch world, cycle
+determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
+byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
+lava/water decay.
+
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
 Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
@@ -16152,3 +16439,47 @@ scales, the Interface/Controls wiring, the map-scale round trip, the colour
 bars' HSL round trips + floors, the new cycles' ladders, the Keybinds
 click→screen mapping and the toggle click→`apply_settings` path; the stale
 pitch/label expectations were corrected to the C# values.
+
+## The C#-written golden fixture (S1-J-3)
+
+`assets/test/golden.wld` (3666 bytes) and `assets/test/golden.plr` (3840 bytes)
+are written by the **real decompiled save path** through
+`tools/WldFixtureHarness`: `extract.ps1` slices the save-path method bodies
+verbatim out of `decompiled/` (`WorldFile.SetTempToOngoing` +
+`SaveWorld_Version2` and every section writer, `WorldFile.cs:1040-1758`;
+`Player.Serialize`, `Player.cs:54750+`; `Tile`, `TileEntity.Write` + the
+per-kind `WriteExtraData`, the bestiary/creative/town/banner/DD2/spawn/treetops
+`Save` bodies, `Item.Serialize`), and `Program.cs` builds the smallest real
+world — a fixed 40x30 tile array, every value a literal, no genRand — plus a
+fresh player. The shims (`Shims/*.cs`) carry only the global statics the bodies
+read, at the C# types/defaults; no serialization logic is reimplemented.
+
+**The one substitution:** `DateTime.UtcNow` -> `FixtureClock.UtcNow` (pinned
+2026-11-18T00:00:00Z). The vanilla writers stamp the wall clock
+(`SaveWorldFlags:1251`, `Player.Serialize:54909`); a reproducible fixture
+cannot carry it. Everything else is byte-for-byte the decompiled body. The
+importance bitmap is parsed from the real `Main.cs` at runtime (direct
+assignments + for-loop ranges + `AddEchoFurnitureTile`), not transcribed.
+Regen: `powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`; two runs are
+byte-identical.
+
+**Byte-compare result** (`s1_j_3_*` in `wld/mod.rs`, `player_file.rs`):
+- The port decodes every section of the fixture (all eleven pointers land
+  exactly; the app-side fix-ups keep 2 signs, 11 tile entities, 2 plates).
+- Re-write is **byte-identical for sections 2..10** (tiles, chests, signs,
+  NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
+  **and the footer**; the prologue framing + importance bitmap match with the
+  pointer table zeroed.
+- The header/flags block diverges in **exactly the unowned fields**, pinned
+  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
+  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
+  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
+  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
+  (no `.wld` store), the tree-top variations (no store) and the world-gen
+  manifest JSON (the port writes the empty string). These are documented
+  divergences, not faked parity.
+- The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
+  (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
+  character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
+  writer's own byte parity stays S1-J-5's.

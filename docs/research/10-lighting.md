@@ -85,7 +85,7 @@ quality thresholds, light stats).
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | Mode selector (Classic/RGB/White/Color) | PORTED | `lighting/params.rs::LightMode` + `LightStyle` (`:12-112`) | 4 modes with labels + `next()` ≈ `Lighting.Mode` setter (`Lighting.cs:29-61`) and `NextLightMode` (`:165-173`). Settings load (`Main.cs:4398-4403`) maps to `settings.rs`/`menu` (11 hits). |
-| Legacy engine (White/Retro/Trippy) | PARTIAL | `params.rs::LightStyle::shade` (`:116-148`) | No port of `LegacyLighting.cs` (1442 lines, `:202`, `DoColors` `:851`, `doColors_Mode0..3_Swipe`). White is a luminance collapse, Retro a 16-level quantise, Trippy a sinusoidal channel mix — approximations of the legacy renderer, not the algorithm. |
+| Legacy engine (White/Retro/Trippy) | PORTED (wave A) | `lighting/legacy.rs::LegacyLighting` + the `app/frame/draw.rs` driver | S1-E-19 wave A (2026-11-18): `ProcessArea`'s renderCount cycle, `PreRenderPhase`'s scanner export, `DoColors`' factors and the Mode 1/2/3 swipes (`LegacyLighting.cs:302-1435`) ported with citations; the swipe RNG order is exact. The old `LightStyle::shade` transforms are bypassed in the legacy modes (the engine produces the light). Remaining: the minimap export (`:371-433`) + WoF gross block (`:678-717`), see ANALYSIS. |
 | `LightingEngine` state machine | PARTIAL | `lighting/mod.rs::LightEngine::compute` (`:48-62`, `:300-424`) | Scan+Blur+Present semantics ported (seed → dynamic-light max → 2 blurs), but the 4-phase rotation (minimap export / scene metrics split over frames) is absent; the whole computation is one call. `Rebuild`/`AddLight`/`Clear` have no counterpart (documented `mod.rs:46-47`). |
 | `LightMap` buffer + blur | PORTED | `lighting/blur.rs::blur/blur_line_v/blur_line_h` (`:42-163`) | Two passes × 4 sweeps, column-then-row order, `0.0185` cutoff, per-channel `done` flags, carried-max update — matches `LightMap.cs:86-250`. Row-major storage vs C# `x*Height+y` (`:252-255`) with serial vertical sweeps (`blur.rs:41`). |
 | `LightMap` decay per medium | PARTIAL | `blur.rs::Mask::decay` (`:26-37`) | Air 0.91 / Solid 0.56 / CrackedBricks 0.8 / Honey / Water-hardcoded-to-style-0. C# `LightingEngine.UpdateLightDecay` (`:147-182`) varies water decay per `Main.waterStyle` (13 arm values); nightVision ×1.03 / blind ×0.95 / blackout+headcovered ×0.85 (`:184-203`) and `airLightDecay`/`solidLightDecay` (`:204-205`) are not in `LightParams` — missing. |
@@ -151,9 +151,12 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
    caller's own light *and* the slice (0.16, not 0.4) and skipped the Glow slices.
    Still open, and not this row: `GetFinalLight`'s shine arm (`Main.shine`,
    `Main.tileShine2` unported) and the minecart-only non-White `colorTint` (`:3788`).
-8. **White/Retro/Trippy are shader approximations** (behavioural, medium) — the 1442-line
-   `LegacyLighting` engine (sky-colour swipe, data shifting, `doColors_Mode*`) is unported;
-   ROADMAP §4 (`:197-198`) claims "4 modes", which is true only of the style descriptors.
+8. **~~White/Retro/Trippy are shader approximations~~** (behavioural, medium) — **CLOSED
+   2026-11-18** (S1-E-19 wave A): the 1442-line `LegacyLighting` engine is ported in
+   `lighting/legacy.rs` (sky-colour reseed, the renderCount cycle, `doColors_Mode1/2/3`
+   swipes); the legacy modes select it through the lighting-mode setting and the
+   `LightStyle::shade` transforms are bypassed there. The minimap light export and the
+   WoF `gross` block remain gated/unported (ANALYSIS "The legacy lighting engine").
 9. **4-phase engine split collapsed** (behavioural, low) — minimap light export and scene
    metrics run in separate phases in C# (`LightingEngine.cs:76-108`); Rust computes light on
    demand per drawn rect, so minimap lighting export ordering differs.
@@ -170,9 +173,10 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
 - **[M] Water-style decay + buff/debuff decay in `LightParams`** — add `water_style`, the
   nightVision/blind/blackout/headcovered multipliers and `airLightDecay`/`solidLightDecay`
   to `params.rs` + `LightKey`, thread into `blur::Mask::decay`; unit-test style 2/6/9 arms.
-- **[M] Legacy-engine golden test for White/Retro/Trippy** — capture `doColors_Mode*` byte
-  output for a fixed light buffer (or hand-derive it) and assert `LightStyle::shade` matches
-  per mode; decide whether the approximations stand or the legacy blit path must be ported.
+- **[M] ~~Legacy-engine golden test for White/Retro/Trippy~~** — done (S1-E-19 wave A,
+  2026-11-18): the legacy blit path IS ported (`lighting/legacy.rs`); 12 goldens pin the
+  Retro falloff table, White's no-bleed/cutoff, per-mode engine output on a fixed world,
+  mode-switch no-leak and the modern-recompute byte-equality.
 - **[S] Exact water jitter** — replace the multiplicative hash with
   `FastRandom::new(seed).with_modifier(index).next_range(98, 100)/100` semantics in
   `blur_line_*`; precedent: `palette.rs` stream test.
