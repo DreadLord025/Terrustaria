@@ -40,25 +40,43 @@ impl App {
         self.enter_front(FrontScreen::CharSelect);
     }
 
-    /// `FinishCreatingWorld` (`UIWorldCreation.cs:845-863`) minus the
-    /// out-of-scope tail: `WorldGen.CreateNewWorld`'s `UIWorldLoad` loading
-    /// screen is not ported (spec §9.4), so the generated world saves and
-    /// world select re-opens (`OpenWorldSelectUI`'s effect, `:52362-52366`).
+    /// `FinishCreatingWorld` (`UIWorldCreation.cs:977-1000`) →
+    /// `WorldGen.CreateNewWorld` (`WorldGen.cs:6607-6625`): the generation
+    /// runs on a worker task while `UIWorldLoad` draws the progress
+    /// (`Main.MenuUI.SetState(new UIWorldLoad())`, `:6616`); the callback's
+    /// `menuMode = 6` tail (`:6599-6602`) reopens the world select on the
+    /// next frame (`Main.cs:49468-49472`). The port starts the job
+    /// (`App.world_gen_job`) and enters the loading screen; the frame's
+    /// `update_world_load` polls the result and hops.
+    ///
     /// The metadata pieces the port's `.trwld` header has no fields for —
-    /// GameMode/evil (`WorldFile.CreateMetadata`, `:848-851`) — are the
-    /// documented deviation the listing reads as Classic.
+    /// GameMode/evil (`WorldFile.CreateMetadata`) — are the documented
+    /// deviation the listing reads as Classic.
     pub(crate) fn finish_creating_world(&mut self, draft: ui::world_creation::NewWorldDraft) {
-        match ui::world_creation::create_world(&draft) {
-            Ok(path) => log::info!("created '{}' -> {}", draft.name.trim(), path.display()),
-            Err(e) => {
-                // `FrontHint`'s not-ported notice carries the failure — the
-                // vanilla flow has no error UI on this hop.
-                self.front_hint = Some(format!("world creation failed: {e:#}"));
+        // `CreateNewWorld`'s `UIWorldSelect.NewlyGeneratedWorld` latch
+        // (`WorldGen.cs:6609`) is the world-select's "new" badge — the port
+        // has no such badge (save_list reads the disk), so nothing parks.
+        match crate::app::worldgen_job::WorldGenJob::start(&draft) {
+            Some(job) => {
+                let mut state = ui::world_load::WorldLoadState::new();
+                state.flags = job.flags;
+                state.evil_crimson = job.crimson;
+                state.random_evil = job.random_evil;
+                self.world_gen_job = Some(job);
+                self.front_backup = None;
+                self.front = None;
+                self.enter_front(FrontScreen::WorldLoad(Box::new(state)));
+            }
+            None => {
+                // The worlds dir cannot resolve — the port's own failure
+                // notice (the vanilla `Main.WorldPath` always resolves).
+                self.front_hint =
+                    Some("world creation failed: cannot resolve the worlds directory".into());
+                self.front_backup = None;
+                self.front = None;
+                self.enter_front(FrontScreen::WorldSelect);
             }
         }
-        self.front_backup = None;
-        self.front = None;
-        self.enter_front(FrontScreen::WorldSelect);
     }
 
     /// The implicit session character as a card entry: the fresh `Player`
@@ -130,6 +148,83 @@ impl App {
             if let Err(e) = ui::save_list::erase_world(&path) {
                 log::warn!("world erase failed: {e:#}");
             }
+        }
+    }
+
+    /// `UIWorldLoad.Update`'s Inventory-abort arm (`UIWorldLoad.cs:54-58`):
+    /// `QueuedAbort = true` once (the `!QueuedAbort` gate) + sound 11. The
+    /// key path calls this on the Inventory press edge; the flag reaches
+    /// the worker through the job's atomic (`WorldGenerator.cs:433-437`).
+    pub(crate) fn world_load_queue_abort(&mut self) {
+        let Some(job) = self.world_gen_job.as_ref() else {
+            return;
+        };
+        if job.queued_abort() {
+            return; // `!WorldGenerator.CurrentController.QueuedAbort` (`:54`)
+        }
+        job.queue_abort();
+        // `SoundEngine.PlaySound(11)` (`:57`).
+        self.audio.play("Menu_Close");
+        // The screen's own flag mirrors the controller's (`:86`'s read).
+        if let Some(FrontScreen::WorldLoad(state)) = self.front.as_mut() {
+            state.queued_abort = true;
+        }
+    }
+
+    /// The loading screen's per-frame update — `UIWorldLoad.Update`
+    /// (`UIWorldLoad.cs:46-65`) + `Draw`'s progress latch (`:69`) + the
+    /// `worldGenCallback` completion tail (`WorldGen.cs:6591-6605`). Runs
+    /// from `frame_shared_setup` while `FrontScreen::WorldLoad` is live:
+    ///
+    /// - the screen-height lerp (`:60-61`),
+    /// - the progress snapshot latch (`:69`, `:83-85`) + the abort-flag
+    ///   mirror (`:86`),
+    /// - the result poll: on completion the job drops and the world select
+    ///   reopens (`menuMode = 6` → `Main.cs:49468-49472`); on abort the
+    ///   partial world is discarded and the select reopens the same way
+    ///   (`worldGenCallback`'s `:6599-6602` runs on both arms).
+    pub(crate) fn update_world_load(&mut self) {
+        if !matches!(self.front, Some(FrontScreen::WorldLoad(_))) {
+            return;
+        }
+        let (_sw, sh) = self.screen_size();
+        // The result poll first — a finished job leaves the screen.
+        let result = self.world_gen_job.as_ref().and_then(|j| j.take_result());
+        if let Some(result) = result {
+            use crate::app::worldgen_job::JobResult;
+            match result {
+                JobResult::Saved(path) => {
+                    log::info!("created world -> {}", path.display());
+                }
+                JobResult::Aborted => {
+                    log::info!("world generation aborted");
+                }
+                JobResult::Failed(e) => {
+                    self.front_hint = Some(format!("world creation failed: {e}"));
+                }
+            }
+            // `worldGenCallback`'s tail (`WorldGen.cs:6599-6604`): the
+            // menu hops to 6, which `UpdateMenu` turns into the world
+            // select (`Main.cs:49468-49472`); `SoundEngine.PlaySound(10)`
+            // (`:6603`).
+            self.world_gen_job = None;
+            self.audio.play("Menu_Open");
+            self.front_backup = None;
+            self.front = None;
+            self.enter_front(FrontScreen::WorldSelect);
+            return;
+        }
+        // Still generating: latch the snapshot + the layout lerp.
+        let snap = self.world_gen_job.as_ref().map(|j| j.snapshot());
+        let aborted = self.world_gen_job.as_ref().is_some_and(|j| j.queued_abort());
+        if let Some(FrontScreen::WorldLoad(state)) = self.front.as_mut() {
+            state.update_layout(sh);
+            state.queued_abort = aborted;
+            state.set_progress(snap.map(|s| ui::world_load::GenerationProgress {
+                total_progress: s.total_progress,
+                value: s.value,
+                message: s.message,
+            }));
         }
     }
 }

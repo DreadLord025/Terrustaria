@@ -148,6 +148,13 @@ pub(crate) struct WorldLoadState {
     pub bar_top: f32,
     /// `_progressMessage.Top.Pixels` — always `bar_top - 70` (`:31`, `:61`).
     pub message_top: f32,
+    /// The secret-seed message overrides' inputs (`UIWorldLoad.cs:93-116`),
+    /// resolved from the live job's seed at start (`WorldGen.Reset`).
+    pub flags: WorldLoadFlags,
+    /// `WorldGen.crimson` (`UIGenProgressBar.cs:61`) — the bar's colour pick.
+    pub evil_crimson: bool,
+    /// `WorldGen.generatingRandomEvil` (`UIGenProgressBar.cs:62`).
+    pub random_evil: bool,
 }
 
 /// The secret-seed message overrides `DrawSelf` reads (`UIWorldLoad.cs:93`,
@@ -163,6 +170,9 @@ pub(crate) struct WorldLoadFlags {
     pub no_traps_world_gen: bool,
     pub placing_traps: bool,
     pub zenith_world: bool,
+    /// `WorldGen.tenthAnniversaryWorldGen` — `UIHeader.DrawSelf`'s HotPink
+    /// arm (`UIHeader.cs:54-57`).
+    pub tenth_anniversary_world_gen: bool,
 }
 
 impl WorldLoadState {
@@ -265,6 +275,235 @@ impl WorldLoadState {
 /// produce (the progress fractions are pass-count ratios).
 pub(crate) fn format_percent_tenth(value: f64) -> String {
     format!("{:.1}%", value * 100.0)
+}
+
+// --- The draw (UIWorldLoad.Draw + UIGenProgressBar.DrawSelf) ------------------
+
+use tr_render::SpriteRenderer;
+
+use crate::assets;
+
+use super::color;
+use super::text::{font_width, push_font_text};
+use super::uistate::{self, Style};
+
+/// `UIWorldLoad.Draw` + `DrawSelf` + the `UIGenProgressBar`/`UIHeader`
+/// children (`UIWorldLoad.cs:67-120`, `UIGenProgressBar.cs:57-86`,
+/// `UIHeader.cs:46-62`). The frame has already latched the progress
+/// snapshot and run `draw_self_message` (the `SetProgress` feed + the
+/// message overrides); this paints the bar and the header.
+///
+/// The drunk-world evil flicker (`UIGenProgressBar.cs:63-67`) and the drunk
+/// random-digit message (`UIWorldLoad.cs:93-103`) roll `Main.rand` — both
+/// deferred with the RNG-order rule (ANALYSIS "The loading screen"); the
+/// bar reads the resolved `evil_crimson`/`random_evil` directly.
+pub(crate) fn draw(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &mut WorldLoadState,
+    screen: glam::Vec2,
+) {
+    // `UIWorldLoad.Draw`'s null gate (`:70-73`): no snapshot, nothing draws.
+    if !state.draws() {
+        return;
+    }
+    // The message `DrawSelf` assembled (the bar feed already ran in
+    // `draw_self_message`; re-run it here so the draw owns the header text
+    // exactly as the C# `DrawSelf` does, `:91-92`).
+    let text = state.draw_self_message(state.flags);
+    // The bar's resolved geometry (`UIGenProgressBar.DrawSelf`, `:68-80`).
+    let frame = state.bar.draw_frame(state.evil_crimson, state.random_evil);
+
+    // `UIGenProgressBar.Recalculate` (`:42-49`): 612x70, HAlign 0.5 /
+    // VAlign 0 (`UIWorldLoad.cs:27-28`), Top = bar_top. The parent is the
+    // screen rect (`UIState`'s full-screen root).
+    let bar_rect = uistate::resolve(
+        [0.0, 0.0, screen.x, screen.y],
+        Style::px(0.0),
+        Style::px(state.bar_top),
+        Style::px(612.0),
+        Style::px(70.0),
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        screen.x,
+        [0.0; 4],
+    );
+    draw_bar(r, lookups, bar_rect, frame);
+
+    // `UIHeader` (`UIWorldLoad.cs:30-31`): CopyStyle the bar, Top -= 70;
+    // the Text setter measures the Death font (`UIHeader.cs:25-27`) so the
+    // header's own width is the text width, HAlign 0.5 centres it.
+    let header_w = match &lookups.death_font {
+        Some(f) => font_width(f, &text, 1.0),
+        None => r.text_width(&text, 1.0),
+    };
+    let header_rect = uistate::resolve(
+        [0.0, 0.0, screen.x, screen.y],
+        Style::px(0.0),
+        Style::px(state.message_top),
+        Style::px(header_w),
+        Style::px(0.0),
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        screen.x,
+        [0.0; 4],
+    );
+    draw_header(r, lookups, header_rect, &text, state.flags.tenth_anniversary_world_gen && !state.flags.zenith_world);
+}
+
+/// `UIGenProgressBar.DrawSelf`'s sprite half (`UIGenProgressBar.cs:70-84`):
+/// the two `DrawFilling2` bars, then the outer frame + the lower strip.
+fn draw_bar(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    frame: GenBarFrame,
+) {
+    let (x, y) = (rect[0], rect[1]);
+    // `:74-78` — the long bar: filled = the evil colour, separator =
+    // Lerp(color, Black, 0.5), empty = (48,48,48). DrawFilling2 at
+    // topLeft + (20,40), height 16, total 570.
+    let overall = color::tint(packed_rgba(frame.overall_color));
+    let overall_sep = color::tint(packed_rgba(lerp_color_packed(
+        frame.overall_color,
+        0xFF000000,
+        0.5,
+    )));
+    draw_filling2(
+        r,
+        [x + 20.0, y + 40.0],
+        16,
+        frame.overall_width,
+        LONG_BAR_WIDTH,
+        overall,
+        overall_sep,
+        color::tint([48, 48, 48, 255]),
+    );
+    // `:79-80` — the small bar: fixed colour, empty = (33,33,33),
+    // topLeft + (50,60), height 8, total 508.
+    let current = color::tint(packed_rgba(frame.current_color));
+    let current_sep = color::tint(packed_rgba(lerp_color_packed(
+        frame.current_color,
+        0xFF000000,
+        0.5,
+    )));
+    draw_filling2(
+        r,
+        [x + 50.0, y + 60.0],
+        8,
+        frame.current_width,
+        SMALL_BAR_WIDTH,
+        current,
+        current_sep,
+        color::tint([33, 33, 33, 255]),
+    );
+    // `:81-84` — the outer frame at (rect.X - 8, rect.Y), the lower strip
+    // at + (44,60). The frame pick: random ? Random : crimson ? Crimson :
+    // Corrupt (`:83`).
+    let outer_idx = if frame.overall_color == 4292696893 {
+        2 // Random
+    } else if frame.overall_color == 4286836223 {
+        1 // Crimson
+    } else {
+        0 // Corrupt
+    };
+    if let Some(sheet) = lookups.worldgen_outer[outer_idx] {
+        super::push_whole(
+            r,
+            lookups,
+            &sheet,
+            [x - 8.0, y, sheet.width as f32, sheet.height as f32],
+            [1.0, 1.0, 1.0, 1.0],
+        );
+    }
+    if let Some(sheet) = lookups.worldgen_outer[3] {
+        super::push_whole(
+            r,
+            lookups,
+            &sheet,
+            [x - 8.0 + 44.0, y + 60.0, sheet.width as f32, sheet.height as f32],
+            [1.0, 1.0, 1.0, 1.0],
+        );
+    }
+}
+
+/// `DrawFilling2` (`UIGenProgressBar.cs:116-125`): three `MagicPixel`
+/// rects — the filled span, the empty remainder, the 2 px separator at the
+/// boundary. The even round-down already ran in `draw_frame`.
+#[allow(clippy::too_many_arguments)]
+fn draw_filling2(
+    r: &mut SpriteRenderer,
+    top_left: [f32; 2],
+    height: i32,
+    completed_width: i32,
+    total_width: i32,
+    filled: [f32; 4],
+    separator: [f32; 4],
+    empty: [f32; 4],
+) {
+    let (x, y) = (top_left[0], top_left[1]);
+    let h = height as f32;
+    // `:122` — the filled span.
+    r.push_ui_rect([x, y], [completed_width as f32, h], filled);
+    // `:123` — the empty remainder.
+    r.push_ui_rect(
+        [x + completed_width as f32, y],
+        [(total_width - completed_width) as f32, h],
+        empty,
+    );
+    // `:124` — the 2 px separator at the boundary.
+    r.push_ui_rect([x + completed_width as f32 - 2.0, y], [2.0, h], separator);
+}
+
+/// `UIHeader.DrawSelf` (`UIHeader.cs:46-62`): the four ±1.2 px black corner
+/// passes, then the colour on top — White, or HotPink on the
+/// tenth-anniversary seed when not zenith (`:54-57`). The Death font, or
+/// the bitmap fallback.
+fn draw_header(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    text: &str,
+    hot_pink: bool,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let (x, y) = (rect[0], rect[1]);
+    let num = 1.2f32;
+    let black = [0.0, 0.0, 0.0, 1.0];
+    // `Color.HotPink` = (255, 105, 180, 255) (XNA's named colour).
+    let top = if hot_pink {
+        color::tint([255, 105, 180, 255])
+    } else {
+        [1.0, 1.0, 1.0, 1.0]
+    };
+    let push = |r: &mut SpriteRenderer, px: f32, py: f32, c: [f32; 4]| match &lookups.death_font {
+        Some(f) => push_font_text(r, f, px, py, 1.0, c, text),
+        None => r.push_text(px, py, 1.0, c, text),
+    };
+    // `:50-53` — the four corners.
+    push(r, x - num, y - num, black);
+    push(r, x + num, y - num, black);
+    push(r, x - num, y + num, black);
+    push(r, x + num, y + num, black);
+    // `:56`/`:60` — the colour pass.
+    push(r, x, y, top);
+}
+
+/// XNA `Color.PackedValue` is ABGR (`0xAABBGGRR`); the renderer tint wants
+/// RGBA bytes. Unpack the four bytes in order.
+fn packed_rgba(packed: u32) -> [u8; 4] {
+    [
+        (packed & 0xFF) as u8,
+        ((packed >> 8) & 0xFF) as u8,
+        ((packed >> 16) & 0xFF) as u8,
+        ((packed >> 24) & 0xFF) as u8,
+    ]
 }
 
 #[cfg(test)]

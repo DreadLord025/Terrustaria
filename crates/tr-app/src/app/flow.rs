@@ -44,6 +44,15 @@ pub(crate) enum FrontScreen {
     /// the card renames and `TR_UI=vk` open it. Boxed: the session's `back`
     /// target is another `FrontScreen`.
     Keyboard(Box<KeyboardSession>),
+    /// S1-E-17's `UIWorldLoad` (`UIWorldLoad.cs:16`) — the world-generation
+    /// progress screen (`WorldGen.CreateNewWorld`, `WorldGen.cs:6613-6616`).
+    /// The payload is the screen's own state (`UIWorldLoad.cs:18-22`'s
+    /// `_progressBar`/`_progressMessage`/`_progress`); the live generation
+    /// job rides `App.world_gen_job` (the `WorldGenerator.CurrentController`
+    /// statics). The completion tail hops to the world select
+    /// (`worldGenCallback`'s `menuMode = 6`, `WorldGen.cs:6599-6602` →
+    /// `Main.cs:49468-49472`).
+    WorldLoad(Box<ui::world_load::WorldLoadState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -235,6 +244,8 @@ pub(crate) enum TrUiPreset {
     WorldNew,
     /// Task 6's keyboard.
     Keyboard,
+    /// S1-E-17's loading screen (`UIWorldLoad`).
+    WorldLoad,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -255,6 +266,7 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "charnew" => TrUiPreset::CharNew,
         "worldnew" => TrUiPreset::WorldNew,
         "vk" => TrUiPreset::Keyboard,
+        "worldload" => TrUiPreset::WorldLoad,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -461,6 +473,20 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.vk_grid,
                     d.mouse,
                     d.frame_count,
+                );
+            }
+            FrontScreen::WorldLoad(state) => {
+                // `Main.MenuUI.Draw`'s `UIWorldLoad` state
+                // (`UIWorldLoad.cs:67-120`): the progress latch (`:69`),
+                // the null-progress hide (`:70-73`), then DrawSelf's bar +
+                // message. The live job's snapshot/flags ride the App (the
+                // `WorldGenerator.Current*` statics); the draw reads them
+                // through the state the frame updated (`update_world_load`).
+                ui::world_load::draw(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
                 );
             }
         }
@@ -811,10 +837,9 @@ impl FrontScreenBehaviours for FrontScreen {
                             if draft.name.is_empty() {
                                 nav = Nav::NameAndCreate(draft.clone());
                             } else {
-                                // `FinishCreatingWorld` (`:845-863`) saves
-                                // before the table's re-list takes over.
+                                // `FinishCreatingWorld` runs below — it opens
+                                // the loading screen itself (S1-E-17).
                                 create_draft = Some(draft.clone());
-                                flow = Some(FlowClick::WorldCreate);
                             }
                         }
                         // `Click_GoBack` -> `GoBack` -> `OpenWorldSelectUI`
@@ -873,18 +898,13 @@ impl FrontScreenBehaviours for FrontScreen {
                         );
                     }
                 }
-                // The Create save (`:845-863`) runs before the table hop; a
-                // failure shows the not-ported notice (the vanilla flow has
-                // no error UI on this hop) and the re-list still happens.
+                // `FinishCreatingWorld` (`UIWorldCreation.cs:977-1000`) →
+                // `WorldGen.CreateNewWorld`: the generation runs on the
+                // worker task and the loading screen opens (S1-E-17); the
+                // completion tail hops to the world select, so no table row
+                // rides this click.
                 if let Some(draft) = create_draft {
-                    match ui::world_creation::create_world(&draft) {
-                        Ok(path) => {
-                            log::info!("created '{}' -> {}", draft.name.trim(), path.display());
-                        }
-                        Err(e) => {
-                            app.front_hint = Some(format!("world creation failed: {e:#}"));
-                        }
-                    }
+                    app.finish_creating_world(draft);
                 }
                 flow
             }
@@ -1032,6 +1052,10 @@ impl FrontScreenBehaviours for FrontScreen {
                 }
                 None
             }
+            // `UIWorldLoad` has no click handlers (`UIWorldLoad.cs` — no
+            // `Click_*`); the abort rides the Inventory trigger in Update
+            // (`:54-58`), the port's key path below.
+            FrontScreen::WorldLoad(_) => None,
         }
     }
 
@@ -1057,6 +1081,20 @@ impl FrontScreenBehaviours for FrontScreen {
                         app.keyboard_enter()
                     }
                     _ => {}
+                }
+            }
+            // `UIWorldLoad.Update`'s Inventory-abort arm
+            // (`UIWorldLoad.cs:54-58`): the Inventory trigger queues the
+            // abort once and plays sound 11. The port reads the press edge
+            // here (the C# polls `Triggers.Current.Inventory` every Update;
+            // the `!QueuedAbort` gate makes the held key a no-op after the
+            // first). The F5 debug arm (`:50-53`) needs `UIWorldGenDebug`
+            // (unported, research-19 L1).
+            FrontScreen::WorldLoad(_) => {
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    if app.is_bound(crate::input_map::Action::Inventory, code) {
+                        app.world_load_queue_abort();
+                    }
                 }
             }
             // The other screens take no keys: the world controls stay parked
@@ -1624,6 +1662,10 @@ pub(crate) mod front_flow_tests {
                 ui::world_creation::NewWorldDraft::new(0, 0),
             )),
             Some(FrontScreen::Keyboard(session())),
+            // S1-E-17: the loading screen joins the invariant matrix.
+            Some(FrontScreen::WorldLoad(Box::new(
+                ui::world_load::WorldLoadState::new(),
+            ))),
         ];
         let backs = [
             None,
@@ -2159,6 +2201,8 @@ pub(crate) mod front_flow_tests {
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
+            world_gen_job: None,
+            capture: crate::capture::CaptureManager::default(),
             invasion_spawn_timer: 0.0,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -2855,6 +2899,129 @@ pub(crate) mod front_flow_tests {
         };
         assert!(!session.request.allow_empty);
         assert_eq!(session.tail, KeyboardTail::WorldNameAndCreate);
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    // --- S1-E-17: the loading screen's flow hops ------------------------------
+
+    /// `FinishCreatingWorld` → `WorldGen.CreateNewWorld`
+    /// (`UIWorldCreation.cs:977-1000`, `WorldGen.cs:6607-6625`): the filled
+    /// Create click starts the worker job and opens `UIWorldLoad` (not the
+    /// world select — the round-1 stand-in reopened the select). The job's
+    /// flags/evil mirror the draft's seed resolution.
+    #[test]
+    fn s1_e_17_create_opens_the_loading_screen_with_a_live_job() {
+        let mut app = world_creation_app();
+        if let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() {
+            draft.name = "LoadTest".into();
+            draft.evil = 2; // Crimson — the bar's colour pick
+        }
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.create[0] + l.create[2] * 0.5,
+            l.create[1] + l.create[3] * 0.5,
+        );
+        app.handle_front_click();
+        let Some(FrontScreen::WorldLoad(state)) = app.front.as_ref() else {
+            panic!("the filled Create opens the loading screen");
+        };
+        assert!(app.world_gen_job.is_some(), "the worker job is live");
+        assert!(state.evil_crimson, "the crimson choice reaches the bar");
+        assert!(!state.random_evil, "an explicit evil is not random");
+        assert!(app.menu.is_none(), "the invariant holds");
+        // The abort path: the Inventory key queues the abort once + sound 11.
+        let before = app.audio.played_count();
+        app.world_load_queue_abort();
+        assert!(app.world_gen_job.as_ref().unwrap().queued_abort());
+        assert_eq!(app.audio.played_count(), before + 1);
+        // A second press is a no-op (the `!QueuedAbort` gate, `:54`).
+        app.world_load_queue_abort();
+        assert_eq!(app.audio.played_count(), before + 1);
+        // Drain the worker so the test leaves no thread running: the abort
+        // was queued before the click returned, so the loop-top poll breaks
+        // after the first pass (`WorldGenerator.cs:433-437`) — no full
+        // generation. `update_world_load` polls the result and hops.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            app.update_world_load();
+            if app.world_gen_job.is_none() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "the worker must finish");
+            std::thread::yield_now();
+        }
+        // The completion tail hops to the world select (`menuMode = 6`).
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(app.world_gen_job.is_none(), "the job drops on completion");
+        // Clean up any generated world file (the abort saves nothing, but
+        // a race where the first pass completed before the abort landed
+        // still saves — the C# has the same race).
+        if let Some(dir) = tr_core::save::default_world_dir() {
+            let _ = std::fs::remove_file(dir.join("LoadTest.trwld"));
+        }
+    }
+
+    /// The abort completion tail: a queued abort drains to `JobResult::Aborted`
+    /// and the screen still hops to the world select (`worldGenCallback`'s
+    /// `menuMode = 6` runs on both arms, `WorldGen.cs:6599-6602`), with no
+    /// world saved.
+    #[test]
+    fn s1_e_17_the_abort_tail_reopens_the_world_select() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A small world through the job's own spawn (the draft path would
+        // generate a 6400x1800 world — too slow for the abort race).
+        let dir = std::env::temp_dir().join(format!("tr-s1-e-17-flow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let opts = tr_core::worldgen::GenOptions {
+            name: "abortflow".into(),
+            width: 512,
+            height: 512,
+            seed: 5,
+            ..Default::default()
+        };
+        let job = crate::app::worldgen_job::WorldGenJob::spawn(
+            opts,
+            dir.join("abortflow.trwld"),
+            ui::world_load::WorldLoadFlags::default(),
+            false,
+            false,
+        );
+        job.queue_abort();
+        app.world_gen_job = Some(job);
+        app.enter_front(FrontScreen::WorldLoad(Box::new(
+            ui::world_load::WorldLoadState::new(),
+        )));
+        // Poll until the abort lands, then the completion tail.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            app.update_world_load();
+            if app.world_gen_job.is_none() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "the abort must finish");
+            std::thread::yield_now();
+        }
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(!dir.join("abortflow.trwld").exists(), "the abort saves nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `TR_UI=worldload` presets the loading screen with a deterministic
+    /// mid-generation snapshot (no worker — the shot is SHA256-stable).
+    #[test]
+    fn s1_e_17_tr_ui_worldload_presets_the_loading_screen() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.preset_ui(TrUiPreset::WorldLoad);
+        let Some(FrontScreen::WorldLoad(state)) = app.front.as_ref() else {
+            panic!("the preset opens the loading screen");
+        };
+        assert!(state.draws(), "the snapshot is latched");
+        assert!(app.world_gen_job.is_none(), "no worker for the screenshot");
+        let p = state.progress.as_ref().unwrap();
+        assert_eq!(p.total_progress, 0.425);
+        assert_eq!(p.value, 0.6);
         assert!(app.menu.is_none(), "the invariant holds");
     }
 
