@@ -17469,6 +17469,64 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The pylon/trophy/void-lens passes (S1-G-1 wave D, 2026-11-18)
+
+`crates/tr-app/src/render/pylons.rs` ports three of
+`TileDrawing.PostDrawTiles(solidLayer: false)`'s deferred families
+(`TileDrawing.cs:414-434`, draw order `:423-425`): `DrawTeleportationPylons`
+(`:8639-8706`), `DrawMasterTrophies` (`:8597-8637`) and `DrawVoidLenses`
+(`:8708-8736` + `VoidLensHelper.cs:11-105`). The collectors take the special
+point's tile coords (the classification switch's gates, `:695-712`: pylon 597
+`frameX % 54 == 0 && frameY == 0`, trophy 617 `frameX % 54 == 0 && frameY % 72
+== 0`, lens 491 `frameX == 18 && frameY == 18`) and produce world-pixel sprite
+records; the hook scans the view rect row-major and pushes them into the
+always-rebuilt world-effect range. The colour math is XNA `Color` semantics —
+every `Lerp`/`operator*` step truncates to bytes (`scale_bytes`/`lerp_bytes`),
+including the alpha (`value3 * 0.7f` scales A 255 -> 178); the tests pin the
+per-step truncation (`s1_g_1d_the_byte_math_truncates_per_step`). The lens's
+`Lighting.AddLight(position, 0.4, 0.2, 0.9)` (`VoidLensHelper.cs:36`) lands in
+the shared `EntityLights` pair behind `!Main.gamePaused`
+(`TileDrawing.cs:8717-8720`), so the engine reads it one frame late like the
+item/NPC feeds.
+
+Deliberate deviations:
+
+* **Z-order + range.** In the vanilla the three passes draw between the
+  non-solid and solid tile layers (`Main.cs:63374` -> `PostDrawTiles`), inside
+  the tile render targets. The port's fused tile pass has no layer seam, so
+  the sprites ride the screen-space fx range (like the leaf gores) after the
+  cached world range — the same documented z-order approximation the inline
+  grass sway uses (`tiles.rs`). This keeps the G6 `WorldFrameKey` and the
+  cached range untouched; the sprites animate per frame in the always-rebuilt
+  range instead.
+* **Dust rolls skipped.** `TeleportPylonsSystem.SpawnInWorldDust`
+  (`TileDrawing.cs:8669-8673`, two `_rand.Next` draws) and
+  `VoidLensHelper.SpawnVoidLensDust` (`VoidLensHelper.cs:40-75`, `Main.rand`)
+  belong to the unported particle pass. Skipping them wholesale leaves both
+  RNG streams untouched (the `entity_lights.rs` rule).
+* **Frame counters.** `Main.tileFrameCounter[597]` wraps at 64 and `[491]` at
+  40 (`Main.cs:19284-19287`/`:19227-19230`, `AnimateTiles`); the animator is
+  unported (`drawdata.rs`'s `tile_frame ≡ 0`), so the pass stands them in with
+  `game_update_count % 64` / `% 40` — same cadence and wrap, phase anchored at
+  world load.
+* **Smart cursor.** The selection-glow arms are ported
+  (`Colors.GetSelectionGlowColor`, `Colors.cs:89-92`, integer halves/thirds;
+  the pylon's column-2 mask and the lens's `Extra_93`), but
+  `Main.InSmartCursorHighlightArea` is unported — the hook feeds
+  `selection_mode = 0`.
+* **Registry.** The `_specialPositions` deferred registry is not ported; the
+  hook re-scans the view rect (the collection order is row-major, matching
+  `Draw`'s loop). The pylon/trophy visibility gate reads the bottom-right cell
+  `(x+1, y+1)` through `IsVisible` (`:1411-1432`) exactly, including the
+  Echo-coating flag (`World::invisible_block`) and `TR_SHOW_INVISIBLE`.
+
+Sheets: `Extra_181` (pylon, 14x8 frames), `Extra_198` (trophy, 1x28),
+`Extra_93` (lens selection mask) join `STATIC_SHEET_NAMES`; `Projectile_734`
+(the lens sprite, 1x8) is packed outside `spawnable_kinds`
+(`VoidLensHelper.cs:79-80` loads it directly). Tests: 8 `s1_g_1d_*` per-pass
+tests in `render/pylons.rs` (gates, bob/ring geometry, byte colours, flip,
+lens frame cadence, light anchor, selection tints).
 ## The pirate family, first slice (S1-D-4b-7)
 
 `AI_067_FreakingPirates` (`Projectile.cs:49121-51201`, dispatch `:30162`) is

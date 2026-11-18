@@ -421,6 +421,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
+        // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
+        // `:8612`) and the void lens's selection mask (`Extra[93]`,
+        // `VoidLensHelper.cs:101`). The lens sprite itself is
+        // `Projectile_734`, packed by `load_static_sheets`' projectile loop.
+        "Extra_181",
+        "Extra_198",
+        "Extra_93",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1132,6 +1140,14 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match load_png(dir, &name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => { /* the shuriken fallback covers it */ }
+        }
+    }
+    // S1-G-1 wave D: the void lens draws `TextureAssets.Projectile[734]`
+    // (`VoidLensHelper.cs:79-80`) even though the projectile itself is
+    // unspawnable — pack its sheet outside `spawnable_kinds`.
+    if !crate::projectile::spawnable_kinds().contains(&734) {
+        if let Ok(img) = load_png(dir, "Projectile_734", SheetLayout::Raw) {
+            images.push(img);
         }
     }
 
