@@ -17282,6 +17282,101 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
+
+`crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
+arms whose C# heads start in `Player.cs:10800-11400` (minus the summon
+keep-alives already in `player.rs::SUMMON_BUFF_ARMS`) plus the weapon imbues
+(`:12013-12044`). Deliberate deviations:
+
+- **Disjoint module by design.** Waves A (`:9875-10048`) and B
+  (`:10049-10300`) edit the `player.rs` effect match; wave C owns a separate
+  module + one dispatch call at the `world_sim/player.rs` post-tick seam
+  (after `update_summon_buff_arms`). Titan (108, `:10164`), Panic (63,
+  `:10130`) and Flipper (109, `:10168`) are accessory buffs but their arms
+  sit in wave B's range — left to B so no effect is applied twice.
+- **Sunflower (146)** is split: the movement half already runs in the
+  `player.rs` match; wave C adds only the missing `sunflower` flag half
+  (`Player.cs:11003`). Together they are 1:1.
+- **Torch God's Favor (376)** is DEFERRED: `TorchGodsFlavor`
+  (`Player.cs:40185-40235`) needs `BiomeTorchPlaceStyle` and the aiStyle-1084
+  torch projectile, neither ported. The arm draws NO RNG in the port (the
+  C# `Main.rand.Next(10)` gate included), so the streams are unchanged.
+- **Pet spawns ride the plain `pool.spawn`** — `proj_data` has no pet rows
+  yet, so the pets occupy their slot (kind/owner/center, damage 0) without
+  the C# `SetDefaults` box/AI. The buff pin (18000), the per-pet flags and
+  the spawn-once gate are 1:1; the pet AI/box lands with the pet-AI task.
+  The C# `petFlag*` bools map onto `Player::pet_flags` indexed by the PET
+  PROJECTILE id (buff 341 sets the 881+934 flags shared with 284/317).
+- **Rabid (148) RNG mirrored exactly**: `Next(1200)`, then only on a hit
+  `Next(6)` + `Next(60,100)`, on the caller's `UpdatePlayers` stage stream;
+  the `(int)(60f * num18 * mult)` truncation is f32 (80 → num18 ≈ 0.80000001
+  → Slow 167 ticks, NOT 168 — pinned by test).
+- **Flag clears at the pass head** stand in for the `ResetEffects` lines
+  (`Player.cs:18413-18600`, `:18486`, `:18707-18708`, `:18758`): the seam
+  runs after `ResetEffects` and before any consumer — observably identical.
+- The `meleeEnchant` on-hit consumers (`Player.cs:44925-45015`) are not
+  ported yet; the flag is the ported half (like `ballista_panic`).
+
+Tests: `buff_effects_accessory::tests::s1_e_7c_*` (13).
+
+## S1-C-12 wave C - the defense/immunity accessory family (2026-11-18)
+
+`crates/tr-app/src/accessory_defense.rs` carries the DEFENSE/IMMUNITY
+accessory rows of `Player.ApplyEquipFunctional` that the port lacked; the
+hook runs right after the main accessory match in `Player::update` (a
+second pass over slots 3..10 - every row is a boolean OR grant with no RNG
+draw, so it is order-identical to the C#'s interleaved rows).
+
+Landed (citations in the module):
+
+* Obsidian Shield 397: `noKnockback` + `fireWalk` (`Player.cs:15209-15213`).
+* Paladin's/Frozen/Hero shields 938/3997/3998: `noKnockback` always,
+  `hasPaladinShield` only at a strict `statLife > statLifeMax2 * 0.25f`
+  (`:15348-15353`).
+* Silver Shield 6183 (`:14605-14609`), Restoration Shield 6188
+  (`:14629-14631`), the Ankh Shield 1613's non-immunity half
+  (`:15552-15554`).
+* The nine `fireWalk` granters: 193, 396, 907, 908/5000, 3999, 4003, 4004,
+  4038 (`:15130-15133`, `:15203-15208`, `:15158-15173`, `:14448-14475`).
+  `touch_damage.rs::apply_touch_damage` now reads `player.fire_walk`
+  instead of the hardcoded `false` (`Collision.cs:3220`'s hot arm). The
+  skipped scan draws NO random numbers - the determinism test pins the
+  stream byte-equal to pristine.
+* New player fields `fire_walk` (`Player.cs:1878`, reset `:18355`) and
+  `has_paladin_shield` (`:1408`, reset `:18777`).
+
+Verified already-ported (pinned by the new per-accessory tests, not
+re-granted): the Cobalt Shield 156 (`player.rs`'s accessory match), all
+`buffImmune` rows via `BUFF_IMMUNITY_ROWS` (`player.rs:401-420`) - hand
+warmer 1921 (Chilled 46 + Frozen 47), pocket mirror 3781 (Stoned 156),
+blindfold 888 (Darkness 22), nazar 891 (Cursed 23), megaphone 890
+(Silenced 35), armor polish 886 (Broken Armor 36), vitamins 892 (Weak 33),
+bezoar 887 (Poisoned 20), the ankh charm/shield 1612/1613 - and every
+`Item.defense` through the generic `GrantArmorBenefits` sum
+(`Player.cs:13121`).
+
+Deliberate deviations / scope cuts:
+
+* The wave brief's "cobalt/palladium/mythril/orichalcum/titanium/
+  chlorophyte shield defenses" and "plantera bulb immunity grants": no
+  such accessories exist in `ItemID.cs` (only CobaltShield 156,
+  ObsidianShield 397, PaladinsShield 938, EoCShield 3097, SquireShield
+  3810, FrozenShield 3997, HeroShield 3998, BouncingShield 4760,
+  SilverShield 6183, RestorationShield 6188, AnkhShield 1613). The real
+  family above is what landed; nothing was invented.
+* `accSilverBracer` (6183/6182, `Player.cs:12970-12974`: `maxTagEffects++`
+  + `tagEffectDuration += 2`) stays out - whip-tag territory (wave B).
+* The Frozen Shield's half-life Ice Barrier buff (`:14888-14891`,
+  `AddBuff(62, 5)`) stays out - buff arms ride E-7.
+* The `waterWalk`/`waterWalk2`/`lavaRose` halves of the boot rows stay
+  out (movement = wave A; `lavaRose` has no consumer). The `lavaMax +=
+  420` halves already ride the main match.
+* The Paladin's Shield multiplayer team-dust arm (`:15354-15365`) and
+  the hurt-side team redirect (`:38190`) stay out (single player / C-7).
+* The Shimmer Cloak 5355's `shimmerImmune` (`:15528-15531`, the
+  `controlDownHold` 45-tick gate `:25074`) stays out - the shimmer float
+  machine (`:23455`) is unported.
 ## Buff effect table (S1-E-7 wave B)
 
 The `UpdateBuffs` DEBUFF block (`Player.cs:10049-10317`, 47 arms) is ported

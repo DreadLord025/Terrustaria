@@ -738,6 +738,15 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// `Player.fireWalk` (`Player.cs:1878`, reset `:18355`): the Obsidian
+    /// Skull family's grant — `Collision.CanTileHurt`'s hot arm skips the
+    /// burning tiles (`Collision.cs:3220`). The granters ride
+    /// `accessory_defense.rs` (S1-C-12 wave C).
+    pub fire_walk: bool,
+    /// `Player.hasPaladinShield` (`Player.cs:1408`, reset `:18777`): the
+    /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
+    /// The hurt-side team redirect (`:38190`) rides C-7.
+    pub has_paladin_shield: bool,
     /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
     /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
     /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
@@ -1255,6 +1264,24 @@ pub struct Player {
     // buff's bonuses (the tooltip's knockback row, `Main.cs:20333-20340`).
     pub kb_glove: bool,
     pub kb_buff: bool,
+    // ---- S1-E-7 wave C: the accessory/set-bonus buff flags
+    // (`buff_effects_accessory.rs`, `Player.cs:10800-11400` + `:12013-12044`).
+    /// `Player.gross` (`Player.cs:10981`): Horrified (37) while the WoF lives.
+    pub gross: bool,
+    /// `Player.tongued` (`Player.cs:10993`): Tongued (38), pinned at 10 ticks.
+    pub tongued: bool,
+    /// `Player.sunflower` (`Player.cs:11003`): the Sunflower-buff flag half
+    /// (the movement half rides the effect match below).
+    pub sunflower: bool,
+    /// `Player.rabid` (`Player.cs:11323`): the Feral Bite (148) flag.
+    pub rabid: bool,
+    /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
+    /// weapon-imbuement id 1..8 (0 = none).
+    pub melee_enchant: u8,
+    /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
+    /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
+    /// sets the 881 and 934 flags shared with buffs 284/317).
+    pub pet_flags: [bool; PROJ_COUNT],
     // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
@@ -1744,6 +1771,8 @@ impl Player {
             seat_pos_offset: (0.0, 0.0),
             seat_y_offset: 0,
             no_knockback: false,
+            fire_walk: false,
+            has_paladin_shield: false,
             // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
             // OnFire regen row's source (`Player.cs:18983-18992`).
             vampirism: world
@@ -1917,6 +1946,12 @@ impl Player {
             minion_kb: 0.0,
             kb_glove: false,
             kb_buff: false,
+            gross: false,
+            tongued: false,
+            sunflower: false,
+            rabid: false,
+            melee_enchant: 0,
+            pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,
@@ -4329,6 +4364,10 @@ impl Player {
         self.desert_boots = false;
         self.rocket_boots = 0;
         self.no_knockback = false;
+        // `:18355`/`:18777`: `fireWalk = false` / `hasPaladinShield = false`
+        // — the wave-C pass (`accessory_defense.rs`) re-grants per tick.
+        self.fire_walk = false;
+        self.has_paladin_shield = false;
         self.has_jump_options = [false; 9];
         // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
         // — the granting wing re-sets all three below, so taking the wings off
@@ -4340,6 +4379,13 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // S1-C-12 wave C — the defense/immunity accessory rows kept in
+        // their own module (the Obsidian/Paladin-family shields' knockback
+        // + fire-walk grants, `Player.cs:14605-14631`/`:15209-15213`/
+        // `:15348-15353`/`:15552-15554` + the fireWalk granters). Boolean
+        // OR grants with no RNG draw — a second pass over the same slots
+        // is order-identical to the C#'s interleaved rows.
+        crate::accessory_defense::apply_defense_accessories(self);
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
