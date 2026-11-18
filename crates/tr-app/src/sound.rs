@@ -184,6 +184,9 @@ pub fn get_random_pitch(variance: f32, next_float: f32) -> f32 {
 pub fn legacy_family_pitch(family: Family, rng: &mut dyn FnMut(i32, i32) -> i32) -> f32 {
     match family {
         Family::Dig => rng(-10, 11) as f32 * 0.01,
+        // Case 17 (`:862`): the run-step roll — the same window as the dig
+        // arm, drawn from the same `Main.rand` (S1-E-21 wave D).
+        Family::Run => rng(-10, 11) as f32 * 0.01,
         Family::Item(cue) => match cue {
             53 => rng(-20, -11) as f32 * 0.02,
             55 => -(rng(-20, -11) as f32) * 0.02,
@@ -202,6 +205,8 @@ pub enum Family {
     Dig,
     /// `type == 2` — the item family, keyed by the style id (`:611`).
     Item(i32),
+    /// `type == 17` — the run/footstep case (`:854-864`, the `:862` roll).
+    Run,
 }
 
 /// One `LegacySoundPlayer.PlaySound` case-2 (item) play's decisions

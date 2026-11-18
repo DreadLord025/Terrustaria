@@ -16717,3 +16717,45 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The footstep sound wave (S1-E-21 wave D, 2026-11-18)
+
+**Source correction:** vanilla 1.4.5.8 has NO per-tile-type player footstep
+cues. The whole decompile carries no `footstep`/`StepSound` surface table and
+no Snow/Stone step assets exist in `Content/Sounds` — the grass (`Grass`,
+sound 6), stone (`Tink`, 21) and dig cues are the tile-break families
+(`WorldGen.KillTile_PlaySounds`, wave C). The only footstep path is the
+Hermes-boot fast run: `Player.SpawnFastRunParticles` (`Player.cs:20205-20216`)
+plays `hermesStepSound` when `runSoundDelay == 0 && velocity.Y == 0`
+(`:20212`) at `position` (the top-left, `:20214`) and re-arms
+`runSoundDelay = IntendedCooldown` (`:20215`). The callers are
+`HorizontalMovement`'s two 0.2x-acceleration arms past the
+`(accRunSpeed + maxRunSpeed) / 2` threshold (`:19779`), grounded and
+unmounted (`:19987-19990`, `:20017-20020`). `PlayerFrame` re-derives the cue
+every frame: default `(SoundType 17, Style -1, Cooldown 9)`
+(`:35947-35949`), the Moon Lord legs (`legs == 140`) override to
+`(2, 24, 6)` (`:35959-35964`). `Player.Update` ticks the delay down
+(`:24706-24708`).
+
+The port: `Player::spawn_fast_run_particles` queues the play
+(`pending_step_sound`), `update_frames` re-derives `hermes_step_sound`, the
+decrement sits after `purge_immune_buffs` and before `update_frames` (the
+C# order), and `world_sim/player.rs` drains the queue through
+`Audio::play_step_sound` with the `UpdatePlayers` stream (`Player.Update`
+runs under the `Main.cs:17754` swap). Case 17 (`LegacySoundPlayer.cs:854-864`)
+plays `Sounds/Run` and rolls `Main.rand.Next(-10, 11) * 0.01` for the pitch
+(`:862`, `sound::Family::Run`) — the draw runs only AFTER the attenuation
+gate passed (`:369-436` precedes the switch); the int overload
+(`SoundEngine.cs:102-108`) draws no `GetRandomPitch` NextFloat. The Item-24
+arm delegates to wave A's `play_use_sound` façade (the audio-only
+`GetRandomPitch` + the case-2 pitch draw after the gate). `Run` and
+`Item_24` join `SFX_CUES`.
+
+Deviations: the `SpawnFastRunParticles` dust trails (`:20217-20300` — the
+wings-3/rocket-6, sailDash and shoe-dye arms) are visual seams, unported;
+the legs-140 override is coded but unreachable — the port's `legs_armor`
+has no producer yet (the C#'s `:35767` effective-legSlot assignment is part
+of the unported armor visuals); the `SoundInstanceRun` stop/re-create pool
+is the standing D4 (a fresh source per play). Tests
+`s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown`,
+`s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream`.

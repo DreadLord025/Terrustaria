@@ -894,6 +894,19 @@ let spawned = app.projectiles.spawn_hook(
                 let (px, py) = p.center();
                 app.audio.play_at(cue, px, py, 1.0);
             }
+            // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
+            // fast-run footstep at the player's top-left position — the
+            // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
+            // the `UpdatePlayers` stream (the `Main.cs:17754` swap covers
+            // `Player.Update`), only after the attenuation gate passed.
+            if let Some((sound_type, style, sx, sy)) = p.take_step_sound() {
+                app.audio.play_step_sound(
+                    (sound_type, style),
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the

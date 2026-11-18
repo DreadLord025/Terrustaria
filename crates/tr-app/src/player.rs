@@ -1160,6 +1160,21 @@ pub struct Player {
     /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
     /// `Player.KillMe` queues (`Player.cs:38868`).
     pending_death_sound: Option<&'static str>,
+    /// `Player.runSoundDelay` (`Player.cs:1860`): the footstep cooldown —
+    /// `SpawnFastRunParticles` sets it to `hermesStepSound.IntendedCooldown`
+    /// (`:20215`), `Player.Update` ticks it down (`:24706-24708`).
+    pub(crate) run_sound_delay: i32,
+    /// `Player.hermesStepSound` (`Player.cs:2572`, `DataStructures/SoundPlaySet`):
+    /// the fast-run footstep cue — `(SoundType, SoundStyle, IntendedCooldown)`.
+    /// `PlayerFrame` re-derives it every frame: the default 17/-1/9
+    /// (`Player.cs:35947-35949`), the Moon Lord legs override 2/24/6
+    /// (`:35959-35964`). Vanilla has no per-tile-type footstep cues — the
+    /// grass/stone/snow sounds are the tile-break families (wave C).
+    pub(crate) hermes_step_sound: (u16, i16, i32),
+    /// `Player.SpawnFastRunParticles`' play (`Player.cs:20214`): the queued
+    /// `(SoundType, SoundStyle, position.X, position.Y)` — the caller owns
+    /// the audio device and the `UpdatePlayers` stream.
+    pending_step_sound: Option<(u16, i16, f32, f32)>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1851,6 +1866,10 @@ impl Player {
             pending_switch_trip: None,
             pending_hurt_sound: None,
             pending_death_sound: None,
+            run_sound_delay: 0,
+            // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
+            hermes_step_sound: (17, -1, 9),
+            pending_step_sound: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2209,6 +2228,12 @@ impl Player {
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
         self.pending_death_sound.take()
+    }
+
+    /// Takes the queued footstep play (`Player.SpawnFastRunParticles`,
+    /// `Player.cs:20214`) — `(SoundType, SoundStyle, position.X, position.Y)`.
+    pub(crate) fn take_step_sound(&mut self) -> Option<(u16, i16, f32, f32)> {
+        self.pending_step_sound.take()
     }
 
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
@@ -4790,6 +4815,12 @@ impl Player {
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
 
+        // `Player.cs:24706-24708`: the footstep cooldown ticks down (the
+        // C# runs it before `PlayerFrame` `:28286`, which reads the value).
+        if self.run_sound_delay > 0 {
+            self.run_sound_delay -= 1;
+        }
+
         self.update_frames(world);
 
         // `Player.cs:27618-27635`: the release flags recompute at the end of
@@ -4863,6 +4894,17 @@ impl Player {
     /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
         let held = self.frame_inputs;
+        // `:35947-35949`: `PlayerFrame` re-derives the fast-run footstep cue
+        // every frame — the default is the legacy Run (17, style -1, cooldown
+        // 9); the Moon Lord legs (140) swap in the Item-24 click at cooldown 6
+        // (`:35959-35964`). The port's legs read is `legs_armor` (the C#'s
+        // `:35767` effective-legSlot assignment has no port producer yet —
+        // the override is coded, unreachable until the armor visuals land).
+        self.hermes_step_sound = if self.legs_armor == 140 {
+            (2, 24, 6)
+        } else {
+            (17, -1, 9)
+        };
         // `:35756-35762`: the swim window ticks down and dies out of water.
         if self.swim_time > 0 {
             self.swim_time -= 1;
@@ -5801,6 +5843,20 @@ impl Player {
             if !self.has_jump_options[i] {
                 self.can_jump_again[i] = false;
             }
+        }
+    }
+
+    /// `Player.SpawnFastRunParticles`' sound half (`Player.cs:20205-20216`):
+    /// the fast-run footstep — `runSoundDelay == 0` and grounded plays
+    /// `hermesStepSound` at `position` (the top-left, NOT the centre) and
+    /// re-arms the cooldown (`:20212-20215`). The caller drains the queue
+    /// through `Audio::play_step_sound`. The dust trails (`:20217-20300`:
+    /// the wings-3/rocket-6, sailDash, shoe-dye arms) are visual seams.
+    fn spawn_fast_run_particles(&mut self) {
+        if self.run_sound_delay == 0 && self.vy == 0.0 {
+            let (sound_type, style, cooldown) = self.hermes_step_sound;
+            self.pending_step_sound = Some((sound_type, style, self.x, self.y));
+            self.run_sound_delay = cooldown;
         }
     }
 
@@ -6902,6 +6958,9 @@ impl Player {
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
     fn horizontal_movement(&mut self) {
+        // `Player.cs:19779`: the fast-run threshold — halfway between the
+        // boot top speed and the base run speed.
+        let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
         // `Player.cs:19818-19833`: the boost applies before any input reads
         // the velocity, then clamps.
         if self.track_boost != 0.0 {
@@ -7034,6 +7093,11 @@ impl Player {
                     self.vx = 0.0;
                 }
             }
+            // `:19987-19990`: past the fast-run threshold, grounded and
+            // unmounted — the Hermes-boot footstep + dust trail.
+            if self.vx < -fast_run_threshold && self.vy == 0.0 && !self.mount.is_active() {
+                self.spawn_fast_run_particles();
+            }
         } else if self.control_right && self.vx < self.acc_run_speed && self.dash_delay >= 0 {
             // `:19992-20005`: the mirror arm.
             if self.vy == 0.0 || self.wings_logic > 0 {
@@ -7052,6 +7116,10 @@ impl Player {
                 } else {
                     self.vx = 0.0;
                 }
+            }
+            // `:20017-20020`: the mirror fast-run arm.
+            if self.vx > fast_run_threshold && self.vy == 0.0 && !self.mount.is_active() {
+                self.spawn_fast_run_particles();
             }
         } else if self.cart_mounted && self.vx.abs() >= 1.0 {
             // `:20023-20058`: the cart coast — friction only off-track (rails
@@ -9857,6 +9925,110 @@ mod tests {
         // The death queues its own cue (`Player.cs:38868`).
         p.start_death(&w, false, false);
         assert_eq!(p.take_death_sound(), Some("Player_Killed"));
+    }
+
+    /// S1-E-21 wave D — the fast-run footstep queue
+    /// (`Player.SpawnFastRunParticles`, `Player.cs:20205-20216`): past the
+    /// `(accRunSpeed + maxRunSpeed) / 2` threshold (`:19779`), grounded and
+    /// unmounted, the boot run queues `hermesStepSound` at the top-left
+    /// position (`:20214`) and re-arms the 9-tick cooldown (`:20215`);
+    /// `Player.Update` ticks it down (`:24706-24708`). The per-cue selection
+    /// is `PlayerFrame`'s (`:35947-35964`): default Run 17/-1/9, the Moon
+    /// Lord legs (140) Item 2/24/6. Vanilla has NO per-tile-type footstep
+    /// cues — grass/stone/snow are the tile-break families (wave C).
+    #[test]
+    fn s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "landed first");
+        assert_eq!(p.hermes_step_sound, (17, -1, 9), "the default cue");
+        // Below the threshold (no boots yet: acc == max == 3, threshold 3):
+        // the fast-run gate refuses.
+        p.vx = -2.5;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.take_step_sound().is_none(), "2.5 < 3.0: no footstep");
+        // Past the threshold (the Hermes boots lift accRunSpeed to 6 every
+        // tick — `Player.cs:15005-15008` — so the threshold is 4.5): the cue
+        // queues at the top-left position, cooldown 9.
+        p.equipped[3] = 54;
+        p.update(&w, PlayerInput::default());
+        p.vx = -5.0;
+        let (x0, y0) = (p.x, p.y);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        let (sound_type, style, sx, sy) = p.take_step_sound().expect("the footstep queued");
+        assert_eq!((sound_type, style), (17, -1));
+        assert_eq!((sx, sy), (x0, y0), "the position is captured pre-movement");
+        // The cooldown re-armed to 9, then the same tick's `:24706-24708`
+        // decrement brought it to 8 (the C# order: movement, then Update).
+        assert_eq!(p.run_sound_delay, 8);
+        for _ in 0..8 {
+            p.update(
+                &w,
+                PlayerInput {
+                    left: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.take_step_sound().is_none(), "the cooldown blocks replays");
+        }
+        assert_eq!(p.run_sound_delay, 0);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        // The movement re-fired at delay 0, then the decrement: 9 → 8.
+        assert!(p.take_step_sound().is_some(), "re-armed after the cooldown");
+        assert_eq!(p.run_sound_delay, 8);
+        // Airborne: the `velocity.Y == 0` gate refuses (`:20212`).
+        p.run_sound_delay = 0;
+        p.vy = 1.0;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.take_step_sound().is_none(), "airborne: no footstep");
+        // The Moon Lord legs override the cue selection (`:35959-35964`).
+        p.legs_armor = 140;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.hermes_step_sound, (2, 24, 6), "the legs-140 override");
+        p.run_sound_delay = 0;
+        p.vx = -5.0;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        let (sound_type, style, _, _) = p.take_step_sound().expect("the override cue");
+        assert_eq!((sound_type, style), (2, 24));
+        assert_eq!(p.run_sound_delay, 5, "the override cooldown 6, minus the tick");
+        // Back to the default when the legs come off.
+        p.legs_armor = 0;
+        p.update_frames(&w);
+        assert_eq!(p.hermes_step_sound, (17, -1, 9));
     }
 
     #[test]
