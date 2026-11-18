@@ -15687,3 +15687,49 @@ change); each new range was verified against the decompiled source line by line:
   :14257-14263, which is where the Rust fn's arms live).
 * crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
   the enum declaration plus body spans :3-9, ending at the closing brace on :9).
+
+
+## The corner chat HUD (fix/chat-corner-display)
+
+The bug: typed messages were invisible until the chat was opened. Cause:
+`ui::draw_chat` returned early on `!chat.open` **before** the log walk, so
+the always-on corner HUD was never drawn - a "never-called" failure, not a
+zero-alpha one. The C# splits the two halves: the blinker/input strip live
+inside `if (Main.drawingPlayerChat)` (`Main.cs:40932-40996`) but
+`Main.chatMonitor.DrawChat(Main.drawingPlayerChat)` runs unconditionally
+(`:40997`), and `RemadeChatMonitor.DrawChat` gates each line on
+`drawingPlayerChat | CanBeShownWhenChatIsClosed` (`:79`).
+
+The fix ports the missing state and tick:
+
+- `ChatLine.time_left` = `ChatMessageContainer._timeLeft`, armed to 600 by
+  `SetContents` (`ChatMessageContainer.cs:33`) on every `new_text`;
+  `can_be_shown_when_chat_is_closed()` is `_timeLeft > 0` (`:23`).
+- `ChatMonitor::update` = `RemadeChatMonitor.Update` (`:115-129`) ->
+  `ChatMessageContainer.Update` (`:45-52`), ticked by the new `chat_phase`
+  at the `Main.cs:17282` site: after the gated `DoUpdateInWorld`
+  (`:17278-17281`), under the `!paused` arm (the `CanPauseGame` early
+  return `:17194-17199` precedes it), so stepper-blocked frames decay the
+  timers but the pause freezes them. The frame-order pins gained the
+  `chat` phase at that position.
+- `visible_lines(open)` = the `DrawChat` window: `_showCount = 10`
+  (`RemadeChatMonitor.cs:25`, was the port's invented 20), newest first,
+  and closed the walk **breaks** at the first expired container (`:79-82`)
+  - an expired line hides the rows behind it, it is not skipped.
+- The row anchor is the C# constant `(88, screenHeight - 30 - 28 - i*22)`
+  (`RemadeChatMonitor.cs:83`), extracted as `ui::chat_row_anchor`.
+- The blinker now advances only while the input is open (the C# block sits
+  inside `drawingPlayerChat`, `Main.cs:40932-40946`); the port previously
+  ticked it every drawn frame.
+
+Vanilla "fade" note: there is **no alpha decay** - the line draws at its
+stored full colour until the 600-tick (10 s) timer expires, then only the
+open chat shows it. The old `LegacyChatMonitor` has the same binary
+`showTime > 0` gate (`LegacyChatMonitor.cs:194`).
+
+Deliberate deviations (unchanged by this fix, recorded here): the port's
+lines carry flat text - no `WordwrapStringSmart` wrap (`LineCount` is
+always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
+(`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
+hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
+not a scrollable 500-line view.

@@ -516,6 +516,21 @@ impl App {
                     crate::world_sim::scene_scan::update_scene(self, dt, screen);
     }
 
+    /// `Main.chatMonitor.Update()` (`Main.cs:17282`): the chat containers'
+    /// `_timeLeft` decay — one tick per game update, **outside** the
+    /// `DoUpdateInWorld` gate (`:17278` wraps only the world body), so it
+    /// runs on stepper-blocked frames too. The `CanPauseGame` early return
+    /// (`:17194-17199`) sits before it, so the in-game pause freezes the
+    /// timers — the `!paused` arm. The front-end/focus returns
+    /// (`:17166-17175`, `:17127-17138`) skip the whole branch already.
+    fn chat_phase(&mut self) {
+    self.phase("chat");
+    // `RemadeChatMonitor.Update` (`:115-129`): every container's
+    // `ChatMessageContainer.Update` (`ChatMessageContainer.cs:45-52`) —
+    // the 600-tick corner-visibility countdown.
+    self.chat.update();
+    }
+
     /// The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6).
     fn gfx_quality_apply(&mut self) {
     // The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6): the
@@ -563,6 +578,9 @@ impl App {
         }
         if step_allowed {
             self.camera_scene_tail(dt, screen);
+        }
+        if !paused {
+            self.chat_phase();
         }
         self.gfx_quality_apply();
     }
