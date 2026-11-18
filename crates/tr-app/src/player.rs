@@ -1226,6 +1226,46 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    /// `Player.accSentryBackpack` (`Player.cs:1250`): the Heavy Sling family
+    /// (6172/6175/6176/6177, `ApplyEquipFunctional` `:14507`/`:14565`/`:14573`/
+    /// `:14577`) — the sentry-backpack pickup gate
+    /// (`Projectile.CanGetPickedUpBySentryBackpack`, `Projectile.cs:78796`).
+    /// `ResetEffects` clears it (`:18481`). The 6176 row's
+    /// `accGolemSentryBackpack` half (`:14574`) has no port consumer yet
+    /// (the Golem-backpack crit arm `Projectile.cs:12930` is unported).
+    pub acc_sentry_backpack: bool,
+    /// `Player.accSentryBackpackGrabCooldown` (`Player.cs:1254`): the 2-tick
+    /// grab lockout `SetAsSelectedSentryBackpackTarget` sets
+    /// (`Projectile.cs:78809`), decremented by `Update_SentryBackpack`
+    /// (`Player.cs:28428-28434`). NOT cleared by `ResetEffects` — a countdown.
+    pub acc_sentry_backpack_grab_cooldown: i32,
+    /// `Player.ballistaPanic` (`Player.cs:2424`): buff 205 (Ballista Panic,
+    /// `UpdateBuffs` `:11843-11846`) — the Ballista's 60/30-tick reload caps
+    /// (`Projectile.cs:68563-68570`, `GetBallistraShotDelay` `:68660-68667`).
+    /// `ResetEffects` clears it (`:18740`).
+    pub ballista_panic: bool,
+    /// `Player.setSquireT2`/`setSquireT3` (`Player.cs:2840`/`:2832`): the
+    /// Squire armor sets (`ArmorSetBonuses.cs:68-72`/`:92-97`, the triples
+    /// `:484`/`:488`) — the Ballista's 21-px shot speed and 100/30-tick
+    /// reloads (`Projectile.cs:68521-68524`, `:68656-68667`). `ResetEffects`
+    /// clears both (`:18747`/`:18751`).
+    pub set_squire_t2: bool,
+    pub set_squire_t3: bool,
+    /// `Player.setHuntressT2`/`setHuntressT3` (`Player.cs:2842`/`:2834`): the
+    /// Huntress armor sets (`ArmorSetBonuses.cs:80-84`/`:106-111`, the triples
+    /// `:486`/`:490`) — the Explosive Trap's 60/30-tick cooldowns
+    /// (`GetExplosiveTrapCooldown`, `Projectile.cs:69376-69388`) and the
+    /// blast's Oiled debuff (`StatusNPC`, `:11434-11437`). `ResetEffects`
+    /// clears both (`:18746`/`:18750`).
+    pub set_huntress_t2: bool,
+    pub set_huntress_t3: bool,
+    /// `Player.setMonkT2`/`setMonkT3` (`Player.cs:2846`/`:2838`): the Monk
+    /// armor sets (`ArmorSetBonuses.cs:86-90`/`:113-118`, the triples
+    /// `:487`/`:491`) — the Lightning Aura's 25-tick zap period and its
+    /// 14-tile/8-tile scan band (`Projectile.cs:68862-68870`). `ResetEffects`
+    /// clears both (`:18748`/`:18752`).
+    pub set_monk_t2: bool,
+    pub set_monk_t3: bool,
     /// `Player.ammoBox` (`Player.cs:1982`): buff 93, the Ammo Box (`:10080`) —
     /// the 1/5 roll arm on ANY ammo (`:53599`).
     pub ammo_box: bool,
@@ -1830,6 +1870,15 @@ impl Player {
             space_gun: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            acc_sentry_backpack: false,
+            acc_sentry_backpack_grab_cooldown: 0,
+            ballista_panic: false,
+            set_squire_t2: false,
+            set_squire_t3: false,
+            set_huntress_t2: false,
+            set_huntress_t3: false,
+            set_monk_t2: false,
+            set_monk_t3: false,
             ammo_box: false,
             ammo_potion: false,
             huntress_ammo_cost90: false,
@@ -3040,6 +3089,16 @@ impl Player {
         self.center()
     }
 
+    /// `Player.MountedTop` (`Player.cs:3349-3360`):
+    /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
+    /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
+    /// keeps `gravDir = 1` and `HeightOffsetHitboxCenter = 0` (no mount height
+    /// offsets), so both fold to the body's top-centre — kept as its own
+    /// accessor so the sentry-backpack reposition cites the C# point.
+    pub fn mounted_top(&self) -> (f32, f32) {
+        (self.x + WIDTH * 0.5, self.y)
+    }
+
     /// `Player.ApplyHeadOffsetFromMount` (`Player.cs:51544-51645`): the
     /// per-mount head offsets — the whole table is the four types 54/55/56/61
     /// (the other mounts fall through to the zero vector), each with its
@@ -3483,6 +3542,20 @@ impl Player {
         // `:18323-18324`: the penetration reset.
         self.armor_penetration = 0;
         self.melee_armor_penetration = 0;
+        // `ResetEffects`' sentry-backpack clears (`Player.cs:18481`,
+        // `:18740`, `:18746-18752`): the accessory flag and the six DD2
+        // armor-set flags re-derive below (the accessory match and the
+        // armor-set block); `ballistaPanic` re-derives in the buff loop.
+        // The grab cooldown is NOT cleared here — it is a countdown
+        // (`Update_SentryBackpack`, `:28428-28434`).
+        self.acc_sentry_backpack = false;
+        self.ballista_panic = false;
+        self.set_squire_t2 = false;
+        self.set_squire_t3 = false;
+        self.set_huntress_t2 = false;
+        self.set_huntress_t3 = false;
+        self.set_monk_t2 = false;
+        self.set_monk_t3 = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18376` + `:18726-18727`: the thorns flag clear.
@@ -3602,6 +3675,50 @@ impl Player {
             if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
                 *slot = true;
             }
+        }
+        // The DD2 sentry armor sets' flags (`ArmorSetBonuses.Benefits`,
+        // `DataStructures/ArmorSetBonuses.cs:68-118`, the registration triples
+        // `:484-491`): the Squire/Huntress/Monk T2/T3 rows each set their tier
+        // flag and raise `maxTurrets` by 1; the T3 rows also set the T2 flag
+        // (`:95`/`:109`/`:116`). The Apprentice rows (`:74-78`/`:99-104`) have
+        // no ported consumer (the aiStyle-140/142 towers are unported) and
+        // stay out. `ResetEffects` clears the flags and the `max_turrets`
+        // base (`:18449`) each tick, so this re-derives per tick.
+        match (armor_head, armor_body, armor_legs) {
+            (3800, 3801, 3802) => {
+                // `:68-72` Benefits.SquireTier2.
+                self.set_squire_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3871, 3872, 3873) => {
+                // `:92-97` Benefits.SquireTier3.
+                self.set_squire_t3 = true;
+                self.set_squire_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3803, 3804, 3805) => {
+                // `:80-84` Benefits.HuntressTier2.
+                self.set_huntress_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3877, 3878, 3879) => {
+                // `:106-111` Benefits.HuntressTier3.
+                self.set_huntress_t3 = true;
+                self.set_huntress_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3806, 3807, 3808) => {
+                // `:86-90` Benefits.MonkTier2.
+                self.set_monk_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3880, 3881, 3882) => {
+                // `:113-118` Benefits.MonkTier3.
+                self.set_monk_t3 = true;
+                self.set_monk_t2 = true;
+                self.max_turrets += 1;
+            }
+            _ => {}
         }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
         // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
@@ -3748,6 +3865,9 @@ impl Player {
                     self.pick_speed_bonus += 0.15;
                 }
                 149 => self.webbed = true, // `BuffID.Webbed`
+                // `:11843-11846` — buff 205 (Ballista Panic): the Ballista's
+                // reload caps (`Projectile.cs:68563-68570`).
+                205 => self.ballista_panic = true,
                 // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
                 // dialogue half is not ported; the luck −0.25 flag is.
                 120 => self.luck_state.stinky = true,
@@ -4007,6 +4127,28 @@ impl Player {
                 158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
                 // `Player.cs:15025-15028` - the Cobalt Shield.
                 156 => self.no_knockback = true,
+                // The sentry-backpack slings (`ApplyEquipFunctional`,
+                // `Player.cs:14506-14508`/`:14564-14579`): the Heavy Sling
+                // (6172) grants the bare flag; the Scout Sling (6175) adds
+                // +5% to all four damage classes (its `aggro -= 400` half has
+                // no port field — skipped, no aggro consumer); the Templar
+                // Sling (6176) also arms `accGolemSentryBackpack` (no port
+                // consumer — the Golem-backpack crit arm is unported); the
+                // Royal Guard's Harness (6177) adds the Cobalt Shield's
+                // knockback immunity.
+                6172 => self.acc_sentry_backpack = true,
+                6175 => {
+                    self.acc_sentry_backpack = true;
+                    self.melee_damage += 0.05;
+                    self.magic_damage += 0.05;
+                    self.ranged_damage += 0.05;
+                    self.minion_damage += 0.05;
+                }
+                6176 => self.acc_sentry_backpack = true,
+                6177 => {
+                    self.acc_sentry_backpack = true;
+                    self.no_knockback = true;
+                }
                 // The dodge family (`ApplyEquipFunctional`): the Black Belt
                 // 963 (`:15059-15062`) and the Master Ninja Gear 984
                 // (`:15063-15067`, whose dash/spiked-boots rows ride the
@@ -7856,6 +7998,84 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.get_armor_penetration(true), 22);
         assert_eq!(p.get_armor_penetration(false), 10);
+    }
+
+    /// S1-D-4b-2 — the sentry-backpack accessory grants (`ApplyEquipFunctional`,
+    /// `Player.cs:14506-14508`/`:14564-14579`): the four slings arm
+    /// `accSentryBackpack`; the Scout Sling (6175) adds +5% to all four damage
+    /// classes and the Royal Guard's Harness (6177) the knockback immunity.
+    /// `ResetEffects` clears the flag each tick (`:18481`), so taking the
+    /// accessory off drops it.
+    #[test]
+    fn the_sentry_backpack_slings_grant_the_flag() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.acc_sentry_backpack, "nothing worn");
+        // The Heavy Sling (6172): the bare flag.
+        p.equipped[3] = 6172;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_sentry_backpack, "6172 grants the flag");
+        // The Scout Sling (6175): the flag + the four +5% damage adds.
+        p.equipped[3] = 6175;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_sentry_backpack);
+        assert!((p.melee_damage - 1.05).abs() < 1e-4, "melee +5%");
+        assert!((p.magic_damage - 1.05).abs() < 1e-4, "magic +5%");
+        assert!((p.ranged_damage - 1.05).abs() < 1e-4, "ranged +5%");
+        assert!((p.minion_damage - 1.05).abs() < 1e-4, "minion +5%");
+        // The Royal Guard's Harness (6177): the flag + noKnockback.
+        p.equipped[3] = 6177;
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_sentry_backpack);
+        assert!(p.no_knockback, "6177 grants the Cobalt Shield's immunity");
+        // Taking it off clears the flag (ResetEffects `:18481`).
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.acc_sentry_backpack, "the flag clears");
+    }
+
+    /// S1-D-4b-2 — the DD2 sentry armor sets' flags (`ArmorSetBonuses.Benefits`,
+    /// `DataStructures/ArmorSetBonuses.cs:68-118`, the triples `:484-491`): each
+    /// T2/T3 set sets its tier flag and raises `maxTurrets` by 1; the T3 rows
+    /// also set the T2 flag. The Ballista Panic buff (205) arms `ballistaPanic`.
+    #[test]
+    fn the_dd2_sentry_sets_grant_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_squire_t2 && !p.set_squire_t3);
+        assert_eq!(p.max_turrets, 1, "the base budget");
+        // The Squire T2 set (3800/3801/3802).
+        p.equipped[0] = 3800;
+        p.equipped[1] = 3801;
+        p.equipped[2] = 3802;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t2 && !p.set_squire_t3);
+        assert_eq!(p.max_turrets, 2, "+1 turret");
+        // The Squire T3 set (3871/3872/3873): both flags.
+        p.equipped[0] = 3871;
+        p.equipped[1] = 3872;
+        p.equipped[2] = 3873;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t3 && p.set_squire_t2, "T3 sets T2 too");
+        assert_eq!(p.max_turrets, 2);
+        // The Huntress T3 (3877/3878/3879) and the Monk T2 (3806/3807/3808).
+        p.equipped[0] = 3877;
+        p.equipped[1] = 3878;
+        p.equipped[2] = 3879;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_huntress_t3 && p.set_huntress_t2);
+        p.equipped[0] = 3806;
+        p.equipped[1] = 3807;
+        p.equipped[2] = 3808;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_monk_t2 && !p.set_monk_t3);
+        // The Ballista Panic buff (205).
+        assert!(!p.ballista_panic);
+        p.buffs.add_buff(205, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.ballista_panic, "buff 205 arms the panic");
     }
 
     /// M3-EQUIP-17 — the life-regen rows feed `extra_regen`.

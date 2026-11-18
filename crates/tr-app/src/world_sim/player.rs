@@ -765,6 +765,15 @@ let spawned = app.projectiles.spawn_hook(
                 p.max_turrets_old = p.max_turrets;
             }
             p.ammo_cycling.tick();
+            // `Player.Update_SentryBackpack` (`Player.cs:28428-28434`, called
+            // at `:24568` right after `Update_AmmoCycler` `:24566`): the
+            // sentry-backpack grab cooldown counts down one per tick. The
+            // pickup gate (`Projectile.CanGetPickedUpBySentryBackpack`,
+            // `Projectile.cs:78796`) reads it; `SetAsSelectedSentryBackpackTarget`
+            // (`:78809`) re-arms it to 2 on a grab.
+            if p.acc_sentry_backpack_grab_cooldown > 0 {
+                p.acc_sentry_backpack_grab_cooldown -= 1;
+            }
             // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
             // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
             // target drops every tick.
