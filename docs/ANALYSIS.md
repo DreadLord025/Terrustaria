@@ -474,8 +474,9 @@ Ported in `tr-core/src/lighting/`:
    holds, and `LightStyle::shade` multiplies every tile tint by it, so the bit-exact
    brightness rides `WorldFrameKey::brightness` — a blind gain/loss invalidates the
    cached world range instead of serving the old tints. The buff bar itself redraws in
-   the uncached UI pass (chat and the emote wheel have no draw path yet, S1-E-26), so
-   this is the only HUD-state input the world range carries today.
+   the uncached UI pass (the chat draws there too; the emote wheel/bubbles now draw —
+   S1-E-26 wave B — and likewise ride the uncached UI pass, so neither needs a key
+   entry), so this is the only HUD-state input the world range carries today.
 
 Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
@@ -10705,6 +10706,90 @@ because the drain runs on the world branch and `SaveAndQuit` clears the list;
 the chat line prints the raw `[a:NAME]` tag (the port's chat carries no
 snippet markup yet, `chat.rs`); the popup's `gameMenu && menuMode == 0` click
 gate is moot for the same reason.
+
+## The emote bubble wheel (S1-E-26 wave B)
+
+**Code-only mode** (2026-11-18, `task/S1-E-26b-emote-ui`): no cargo/rustc/
+rustfmt/tests run — the verification is a line-by-line re-read of the C#
+against the landed port, plus tests-as-code (written, not run).
+
+The emote UI was already ported end-to-end before this wave (M6-EMOTE-1,
+M7-UI-1 phase 4, fix/emote-hover-and-spawn, BUG-18). Wave B re-verified it
+against `EmoteBubble.cs`, `UIEmotesMenu.cs`, `EmoteButton.cs`,
+`EmotesGroupListItem.cs`, `EmojiCommand.cs` and the `Main.cs` call sites,
+and extracted the bubble's frame-selection math into pure helpers so it is
+unit-testable without a renderer (behaviour frozen — the draw now reads the
+helpers, the formulas are unchanged):
+
+- `EmoteBubble::popping` / `shell_column` — `Draw`'s pop gate
+  (`EmoteBubble.cs:204-205`): `lifeTime < 6 || lifeTimeStart - lifeTime < 6`
+  draws the closed shell (column 0) only; otherwise column 1. Over the
+  360-tick life that is 6 opening + 5 closing pop ticks, 349 open.
+- `EmoteBubble::emote_frame` — the sheet cell (`:225`): column
+  `emote*2%8 + frame`, row `1 + emote/4`. The sheet is 8 columns ×
+  `SHEET_ROWS = 2 + (151-1)/4 = 39` rows (`:1071`, `EmoteID.Count = 151`
+  `EmoteID.cs:317`); `Utils.Frame` integer division gives 34×28 frames on
+  the 272×1092 `Extra_48` sheet.
+- `bubble_unflips` — the 87/89 confused/sleep un-flip (`:220-224`): only
+  those two ids clear the horizontal flip and shift 4 px right, applied to
+  the emote sprite after the shell drew with the original flip.
+
+The seams are all in place and were re-checked against the C# order:
+
+- **update** — `EmoteBubble.UpdateAll` (`Main.cs:17142`, `!gamePaused`)
+  ticks the lifetimes in `world_sim/npcs.rs` (`app.emotes.update_all()`):
+  the `--lifeTime > 0 && ++frameCounter >= 8` short-circuit (`:179`), the
+  `lifeTime <= 0` cleanup (`:54`) and the shared 20-tick button counter
+  (`EmoteButton.UpdateFrame` `:38-44`).
+- **draw** — `EmoteBubble.DrawAll` (`Main.cs:46455-46459`,
+  `DrawInterface_1_1_DrawEmoteBubblesInWorld`, under
+  `GameViewMatrix.ZoomMatrix`) + the `UIEmotesMenu` state ride
+  `ui/emotes.rs::draw` in the HUD pass (`ui/mod.rs`, beside the
+  notifications/chat draws). The bubble anchor is `GetPosition`'s entity
+  arm (`:247-249`): `(Top.X − dir·width·0.75, VisualPosition.Y + 2)`,
+  bottom-centre origin (`:206`), floor (`:203`), camera/zoom transform.
+- **input** — the wheel opens from `DrawEmoteBubblesButton`'s click
+  (`Main.cs:42404` → `UIEmotesMenu.OnActivate`, scroll reset), a cell pick
+  fires `EmoteButton.LeftClick` (`:90-95`) → `MakeLocalPlayerEmote`
+  (`EmoteBubble.cs:278-292`, the 360-tick bubble + the dead gate `:280`) +
+  `IngameFancyUI.Close`, Back closes (`UIEmotesMenu.GoBackClick`
+  `:305-309`). Hover is the border tint + sound 12 on the cell-enter edge
+  (`EmoteButton.MouseOver` `:77-82`), the `/EmojiName.*` MouseText
+  (`:70-74`). All in `app/clicks.rs` / `app/loop.rs`.
+
+**Deferrals (single-player focus; MP broadcast arms documented, not
+ported):**
+
+- `NewBubble`/`NewBubbleNPC`'s `netMode == 2` broadcast
+  (`NetMessage.SendData(91, …)`, `EmoteBubble.cs:125-129`/`:144-148`) and
+  `MakeLocalPlayerEmote`'s client `SendData(120)` (`:289`) — the port is
+  single-player (`netMode == 0`), so only the local `NewBubble` arm runs;
+  the receive side (`MessageBuffer.cs:3915`) is out with MP.
+- NPC-anchored bubbles: `NewBubbleNPC` + `PickNPCEmote` and its probes
+  (`:294-1064`), the `emote == -1` NPC-head draw arm (`:227-240`), and
+  `CheckForNPCsToReactToEmoteBubble` (`:152-167`, the town-NPC `ai[0]=19`
+  reaction) — deferred with M4-TOWN / the NPC chat UI (sibling TR-E10b).
+  The port anchors the local player only.
+- The reverse-gravity arm (`Draw` `:207-212`, `ReverseGravitySupport` +
+  vertical flip) — out with the unported gravity flip.
+- The per-group wheel layout (`UIEmotesMenu`'s 7 category lists,
+  `EmotesGroupListItem`'s titles/separators) — the port keeps one flat
+  roster of all 151 ids; the 36 px / 14-col lattice and the scroll clamp
+  match, the grouping is cosmetic.
+- The Don't-Starve hunger emotes (`Player.cs:12118`/`:12137`/`:12179`,
+  ids 147/148/146) — gated on `dontStarveWorld`, deferred with that seed.
+- The `UIEmotesMenu` gamepad link-point navigation (`SetupGamepadPoints2`
+  `:330-464`) — no gamepad model in the port.
+
+Tests-as-code (written, not run): `emotes::tests` gains
+`the_pop_gate_is_the_first_and_last_6_ticks`,
+`the_pop_gate_runs_through_the_lifetime`,
+`the_emote_frame_is_the_c_sharp_cell_formula`,
+`only_87_and_89_unflip_when_facing_right`,
+`the_sheet_geometry_matches_the_frame_division`; `ui::emotes::tests` gains
+`the_button_frame_formula_matches_get_frame`,
+`the_border_origin_is_the_emote_frame_half_size`,
+`the_wheel_opens_picks_and_closes`.
 
 ## The pillar worms (M4-EVENT-14)
 
