@@ -1940,6 +1940,31 @@ A test loads the seven shipped `en-US` files and checks `ItemName.DirtBlock`,
 `CommonItemTooltip.UsesMana` and the `ItemName` category size (>1000). Wiring the strings
 into the HUD, item names and menus is still to do.
 
+### Global substitutions (S1-L-12b)
+
+`lang::refresh_global_substitutions` (`Lang.InitGlobalSubstitutions`, `Lang.cs:100-167`)
+materializes all 65 global `{Name}` producers from live app state each frame
+(`app/frame.rs:101-103`). The C# registers lazy `Func<object>` producers; the port
+computes every value **before** taking the manager lock (the name/text producers —
+`NPC.TypeName` → `Lang.GetNPCNameValue`, `NPC.cs:6727`, and `Language.GetTextValue` —
+resolve through the same manager) and commits the table in one pass. A null producer
+result (an absent NPC) removes the key, so `VariableText` sees it unset. Deliberate
+deviations, all pinned by `lang::s1_l12b_tests`:
+
+- `WorldEvilStone` (`Lang.cs:145`) always answers `Misc.Ebonstone`: the port persists
+  no world-level `WorldGen.crimson` (`world_sim/npcs.rs:954`, `shop.rs`).
+- `DukeFishronDefeated`/`PumpkingDefeated`/`IceQueenDefeated` (`Lang.cs:130,133,134`)
+  answer `false` — the world-file glue writes those flags as constants
+  (`wld/sections/flags.rs:138,142,144`); no live field exists.
+- The input trigger tags (`Lang.cs:146-165`) take the keyboard arm of
+  `GenerateInputTag_ForCurrentGamemode` (`PlayerInput.cs:1942-1949`) — the port is
+  keyboard-only (`UsingGamepad` never true). Bound triggers read the live config binds
+  (`ManageVersion_1_3`'s mapping, `PlayerInput.cs:819-841`); `LockOn`/`HotbarMinus`/
+  `HotbarPlus` are unbound on the keyboard preset (`PlayerInput.cs:2053-2091`) and answer
+  "" (`GenerateRawInputList`'s empty-list arm, `:1980-1983`).
+- `InputTriggerUI_FavoriteItem` (`Lang.cs:149`) answers `"LeftAlt"` —
+  `Main.FavoriteKey.ToString()` (`Main.cs:67177,67196`), a fixed key in vanilla.
+
 ## Audio (M6)
 
 ### XACT banks (`tr-content/xact.rs`)
