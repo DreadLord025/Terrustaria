@@ -297,11 +297,12 @@ impl DropRateInfoChainFeed {
     }
 }
 
-/// `Chains.ReportDroprates` (`Chains.cs:24-30`): every chain attempt
-/// reports its rule with the parent's rate scaled by `1 - the parent's own
-/// rate`. The C#'s `hideLootReport` flag (the chains that stay out of the
-/// report) is not modelled by the port's `ChainRule` — the chained rows are
-/// always reported.
+/// `Chains.ReportDroprates` (`Chains.cs:24-30`, `:50-56`, `:76-82`): the
+/// chain attempt's own scaling — `TryIfFailedRandomRoll` reports its rule
+/// with the feed scaled by `1 - the parent's own rate`; `TryIfSucceeded` and
+/// `TryIfDoesntFillConditions` scale by the parent's rate itself. The C#'s
+/// `hideLootReport` flag (the chains that stay out of the report) is not
+/// modelled by the port's `ChainRule` — the chained rows are always reported.
 fn report_chained_rules(
     chains: &[ChainRule],
     personal_drop_rate: f32,
@@ -309,9 +310,11 @@ fn report_chained_rules(
     feed: &DropRateInfoChainFeed,
 ) {
     for chain in chains {
-        chain
-            .rule
-            .report_droprates(drops, &feed.with(1.0 - personal_drop_rate));
+        let scale = match chain.kind {
+            ChainKind::OnFailedRoll => 1.0 - personal_drop_rate,
+            ChainKind::OnSuccess | ChainKind::OnDoesntFillConditions => personal_drop_rate,
+        };
+        chain.rule.report_droprates(drops, &feed.with(scale));
     }
 }
 
@@ -1885,6 +1888,11 @@ impl LeadingConditionRule {
 impl ItemDropRule for LeadingConditionRule {
     fn chained_rules(&self) -> &[ChainRule] {
         &self.chains
+    }
+    /// `LeadingConditionRule.ReportDroprates` (`LeadingConditionRule.cs:22-26`):
+    /// the gate drops nothing itself; its chains report at the rate 1.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        report_chained_rules(&self.chains, 1.0, drops, feed);
     }
     fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
         self.condition.can_drop(info)

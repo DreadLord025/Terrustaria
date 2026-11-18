@@ -11,8 +11,9 @@ use tr_core::loot::{
     normalvs_expert_one_from_options, normalvs_expert_one_from_options_not_scaling_with_luck,
     not_scaling_with_luck, one_from_options, one_from_options_not_scaling_with_luck,
     scaling_with_only_bad_luck, status_immunity_item, with_rerolls, Cond,
-    chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,
-    DropBasedOnMasterMode, FromOptionsWithoutRepeatsDropRule,
+    chain_on_failed_conditions, chain_on_failed_roll, chain_on_success, CommonDrop,
+    DropBasedOnExpertMode, DropBasedOnMasterMode, DropOneByOne, DropOneByOneParams,
+    FromOptionsWithoutRepeatsDropRule,
     ItemDropDatabase, ItemDropWithCondition, MechBossSpawnersDropRule, NamedNPC,
     OneFromRulesRule, SlimeBodyItemDropRule, StatueMimicItemDropRule,
 };
@@ -1349,6 +1350,9 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(13, boss_bag_by_condition(Cond::LegacyHack_IsBossAndExpert, 3320));
     db.register_to_npc(14, boss_bag_by_condition(Cond::LegacyHack_IsBossAndExpert, 3320));
     db.register_to_npc(15, boss_bag_by_condition(Cond::LegacyHack_IsBossAndExpert, 3320));
+    db.register_to_npc(13, chain_on_success(chain_on_success(leading_condition(Cond::LegacyHack_IsABoss), master_mode_common_drop(4925)), master_mode_drop_on_all_players(4799, 1)));
+    db.register_to_npc(14, chain_on_success(chain_on_success(leading_condition(Cond::LegacyHack_IsABoss), master_mode_common_drop(4925)), master_mode_drop_on_all_players(4799, 1)));
+    db.register_to_npc(15, chain_on_success(chain_on_success(leading_condition(Cond::LegacyHack_IsABoss), master_mode_common_drop(4925)), master_mode_drop_on_all_players(4799, 1)));
     db.register_to_npc(13, by_condition(Cond::LegacyHack_IsBossAndNotExpert, 56, 1, 20, 60, 1));
     db.register_to_npc(14, by_condition(Cond::LegacyHack_IsBossAndNotExpert, 56, 1, 20, 60, 1));
     db.register_to_npc(15, by_condition(Cond::LegacyHack_IsBossAndNotExpert, 56, 1, 20, 60, 1));
@@ -1373,7 +1377,7 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(35, boss_bag(3323));
     db.register_to_npc(35, master_mode_common_drop(4927));
     db.register_to_npc(35, master_mode_drop_on_all_players(4801, 1));
-    db.register_to_npc(35, chain_on_failed_roll(chain_on_failed_roll(by_condition(Cond::NotExpert, 1281, 7, 1, 1, 1), common(1273, 7, 1, 1)), common(1313, 7, 1, 1)));
+    db.register_to_npc(35, chain_on_failed_roll(by_condition(Cond::NotExpert, 1281, 7, 1, 1, 1), chain_on_failed_roll(common(1273, 7, 1, 1), common(1313, 7, 1, 1))));
     db.register_to_npc(35, common(4993, 7, 1, 1));
     db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5624, 1, 1, 1, 1));
     db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5625, 1, 1, 1, 1));
@@ -1399,6 +1403,10 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(398, by_condition(Cond::NotExpert, 3384, 1, 1, 1, 1));
     db.register_to_npc(398, by_condition(Cond::NotExpert, 3460, 1, 70, 90, 1));
     db.register_to_npc(398, chain_on_success(leading_condition(Cond::NotExpert), FromOptionsWithoutRepeatsDropRule::new(2, &[3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480])));
+    db.register_to_npc(517, DropBasedOnExpertMode::new(DropOneByOne::new(3458, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 3, bonus_min_per_player: 0, bonus_max_per_player: 0 }), DropOneByOne::new(3458, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 4, bonus_min_per_player: 1, bonus_max_per_player: 1 })));
+    db.register_to_npc(422, DropBasedOnExpertMode::new(DropOneByOne::new(3456, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 3, bonus_min_per_player: 0, bonus_max_per_player: 0 }), DropOneByOne::new(3456, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 4, bonus_min_per_player: 1, bonus_max_per_player: 1 })));
+    db.register_to_npc(507, DropBasedOnExpertMode::new(DropOneByOne::new(3457, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 3, bonus_min_per_player: 0, bonus_max_per_player: 0 }), DropOneByOne::new(3457, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 4, bonus_min_per_player: 1, bonus_max_per_player: 1 })));
+    db.register_to_npc(493, DropBasedOnExpertMode::new(DropOneByOne::new(3459, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 3, bonus_min_per_player: 0, bonus_max_per_player: 0 }), DropOneByOne::new(3459, DropOneByOneParams { chance_numerator: 1, chance_denominator: 1, min_drops_count: 12, max_drops_count: 20, min_stack_per_chunk_base: 1, max_stack_per_chunk_base: 4, bonus_min_per_player: 1, bonus_max_per_player: 1 })));
     db.register_to_npc(551, boss_bag(3860));
     db.register_to_npc(551, master_mode_common_drop(4948));
     db.register_to_npc(551, master_mode_drop_on_all_players(4817, 1));
@@ -1411,15 +1419,15 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(245, by_condition(Cond::NotExpert, 2110, 7, 1, 1, 1));
     db.register_to_npc(245, by_condition(Cond::NotExpert, 1294, 4, 1, 1, 1));
     db.register_to_npc(245, by_condition(Cond::NotExpert, 6158, 6, 1, 1, 1));
-    db.register_to_npc(245, leading_condition(Cond::NotExpert));
+    db.register_to_npc(245, chain_on_success(leading_condition(Cond::NotExpert), OneFromRulesRule::new(1, vec![chain_on_success(common(1258, 1, 1, 1), common(1261, 1, 60, 180)), common(1122, 1, 1, 1), common(899, 1, 1, 1), common(1248, 1, 1, 1), common(1295, 1, 1, 1), common(1296, 1, 1, 1), common(1297, 1, 1, 1)])));
     db.register_to_npc(245, by_condition(Cond::NotExpert, 2218, 1, 4, 8, 1));
     db.register_to_npc(370, boss_bag(3330));
     db.register_to_npc(370, master_mode_common_drop(4936));
     db.register_to_npc(370, master_mode_drop_on_all_players(4808, 1));
     db.register_to_npc(370, by_condition(Cond::NotExpert, 2588, 7, 1, 1, 1));
     db.register_to_npc(370, by_condition(Cond::NotExpert, 2609, 15, 1, 1, 1));
-    db.register_to_npc(370, chain_on_success(chain_on_success(leading_condition(Cond::NotRemixSeedHardmode), leading_condition(Cond::NotExpert)), one_from_options(1, &[5526, 2624, 2622, 2621, 5478, 3291, 2623])));
-    db.register_to_npc(370, chain_on_success(chain_on_success(leading_condition(Cond::RemixSeed), leading_condition(Cond::NotExpert)), one_from_options(1, &[5526, 2624, 2622, 2621, 5478, 3291, 157])));
+    db.register_to_npc(370, chain_on_success(leading_condition(Cond::NotRemixSeedHardmode), chain_on_success(leading_condition(Cond::NotExpert), one_from_options(1, &[5526, 2624, 2622, 2621, 5478, 3291, 2623]))));
+    db.register_to_npc(370, chain_on_success(leading_condition(Cond::RemixSeed), chain_on_success(leading_condition(Cond::NotExpert), one_from_options(1, &[5526, 2624, 2622, 2621, 5478, 3291, 157]))));
     db.register_to_npc(127, boss_bag(3327));
     db.register_to_npc(127, master_mode_common_drop(4933));
     db.register_to_npc(127, master_mode_drop_on_all_players(4805, 1));
@@ -1434,14 +1442,21 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(134, by_condition(Cond::NotExpert, 1225, 1, 15, 30, 1));
     db.register_to_npc(134, by_condition(Cond::NotExpert, 548, 1, 25, 40, 1));
     db.register_to_npc(134, by_condition(Cond::MechdusaKill, 5382, 1, 1, 1, 1));
+    db.register_to_npc(126, chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::MissingTwin), boss_bag(3326)), chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), common(2106, 7, 1, 1)), common(1225, 1, 15, 30)), common(549, 1, 25, 40))), master_mode_common_drop(4931)), master_mode_drop_on_all_players(4804, 1)));
+    db.register_to_npc(125, chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::MissingTwin), boss_bag(3326)), chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), common(2106, 7, 1, 1)), common(1225, 1, 15, 30)), common(549, 1, 25, 40))), master_mode_common_drop(4931)), master_mode_drop_on_all_players(4804, 1)));
     db.register_to_npc(126, by_condition(Cond::MechdusaKill, 5382, 1, 1, 1, 1));
     db.register_to_npc(125, by_condition(Cond::MechdusaKill, 5382, 1, 1, 1, 1));
     db.register_to_npc(262, boss_bag(3328));
     db.register_to_npc(262, master_mode_common_drop(4934));
     db.register_to_npc(262, master_mode_drop_on_all_players(4806, 1));
+    db.register_to_npc(262, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), chain_on_failed_conditions(chain_on_success(leading_condition(Cond::FirstTimeKillingPlantera), chain_on_success(common(758, 1, 1, 1), common(771, 1, 50, 150))), OneFromRulesRule::new(1, vec![chain_on_success(common(758, 1, 1, 1), common(771, 1, 50, 150)), common(1255, 1, 1, 1), common(788, 1, 1, 1), common(1178, 1, 1, 1), common(1259, 1, 1, 1), common(1155, 1, 1, 1), common(3018, 1, 1, 1), common(5477, 1, 1, 1)]))), common(2109, 7, 1, 1)), common(1141, 1, 1, 1)), common(1182, 20, 1, 1)), common(1305, 50, 1, 1)), common(1157, 4, 1, 1)), common(3021, 10, 1, 1)));
     db.register_to_npc(50, boss_bag(3318));
     db.register_to_npc(50, master_mode_common_drop(4929));
     db.register_to_npc(50, master_mode_drop_on_all_players(4797, 1));
+    db.register_to_npc(50, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), common(2430, 4, 1, 1)), common(2493, 7, 1, 1)), one_from_options(1, &[256, 257, 258])), chain_on_failed_roll(not_scaling_with_luck(2585, 3, 1, 1), common(2610, 1, 1, 1))), common(998, 1, 1, 1)), common(1309, 30, 1, 1)));
+    db.register_to_npc(344, chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::FrostMoonDropGatingChance), by_condition(Cond::FrostMoonDropGateForTrophies, 1962, 1, 1, 1, 1)), chain_on_failed_roll(common(1871, 15, 1, 1), one_from_options(1, &[1916, 1928, 1930]))), master_mode_common_drop(4944)), master_mode_drop_on_all_players(4813, 1)));
+    db.register_to_npc(345, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::FrostMoonDropGatingChance), by_condition(Cond::FrostMoonDropGateForTrophies, 1960, 1, 1, 1, 1)), by_condition(Cond::FromCertainWaveAndAbove(15), 1914, 15, 1, 1, 1)), chain_on_failed_roll(common(1959, 15, 1, 1), one_from_options(1, &[1931, 1946, 1947]))), master_mode_common_drop(4943)), master_mode_drop_on_all_players(4814, 1)));
+    db.register_to_npc(346, chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::FrostMoonDropGatingChance), by_condition(Cond::FrostMoonDropGateForTrophies, 1961, 1, 1, 1, 1)), one_from_options(1, &[1910, 1929])), master_mode_common_drop(4945)), master_mode_drop_on_all_players(4794, 1)));
     db.register_to_npc(338, one_from_options(200, &[1943, 1944, 1945]));
     db.register_to_npc(339, one_from_options(200, &[1943, 1944, 1945]));
     db.register_to_npc(340, one_from_options(200, &[1943, 1944, 1945]));
@@ -1457,15 +1472,19 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(312, chain_on_success(leading_condition(Cond::PumpkinMoonDropGatingChance), one_from_options(10, &[1788, 1789, 1790])));
     db.register_to_npc(313, chain_on_success(leading_condition(Cond::PumpkinMoonDropGatingChance), one_from_options(10, &[1788, 1789, 1790])));
     db.register_to_npc(314, chain_on_success(leading_condition(Cond::PumpkinMoonDropGatingChance), one_from_options(10, &[1788, 1789, 1790])));
+    db.register_to_npc(325, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::PumpkinMoonDropGatingChance), OneFromRulesRule::new(1, vec![common(1829, 1, 1, 1), common(1831, 1, 1, 1), chain_on_success(common(1835, 1, 1, 1), common(1836, 1, 30, 60)), common(1837, 1, 1, 1), common(1845, 1, 1, 1)])), by_condition(Cond::PumpkinMoonDropGateForTrophies, 1855, 1, 1, 1, 1)), by_condition(Cond::IsExpert, 4444, 5, 1, 1, 1)), master_mode_common_drop(4941)), master_mode_drop_on_all_players(4793, 1)));
+    db.register_to_npc(327, chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::PumpkinMoonDropGatingChance), OneFromRulesRule::new(1, vec![chain_on_success(common(1782, 1, 1, 1), common(1783, 1, 50, 100)), chain_on_success(common(1784, 1, 1, 1), common(1785, 1, 25, 50)), common(1811, 1, 1, 1), common(1826, 1, 1, 1), common(1801, 1, 1, 1), common(1802, 1, 1, 1), common(4680, 1, 1, 1), common(1798, 1, 1, 1)])), by_condition(Cond::PumpkinMoonDropGateForTrophies, 1856, 1, 1, 1, 1)), master_mode_common_drop(4942)), master_mode_drop_on_all_players(4812, 1)));
     db.register_to_npc(326, DropBasedOnMasterMode::new(DropBasedOnExpertMode::new(common(1729, 1, 1, 3), common(1729, 1, 1, 4)), common(1729, 1, 2, 4)));
     db.register_to_npc(325, DropBasedOnMasterMode::new(DropBasedOnExpertMode::new(common(1729, 1, 15, 30), common(1729, 1, 25, 40)), common(1729, 1, 30, 50)));
     db.register_to_npc(636, boss_bag(4782));
     db.register_to_npc(636, master_mode_common_drop(4949));
     db.register_to_npc(636, master_mode_drop_on_all_players(4811, 1));
+    db.register_to_npc(636, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), one_from_options(1, &[4923, 4952, 4953, 4914])), common(4823, 15, 1, 1)), common(4778, 4, 3, 3)), common(4715, 50, 1, 1)), common(4784, 7, 1, 1)), common(5075, 20, 1, 1)));
     db.register_to_npc(636, chain_on_success(leading_condition(Cond::EmpressOfLightIsGenuinelyEnraged), common(5005, 1, 1, 1)));
     db.register_to_npc(657, boss_bag(4957));
     db.register_to_npc(657, master_mode_common_drop(4950));
     db.register_to_npc(657, master_mode_drop_on_all_players(4960, 1));
+    db.register_to_npc(657, chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(chain_on_success(leading_condition(Cond::NotExpert), common(4986, 1, 25, 75)), common(4959, 7, 1, 1)), one_from_options(1, &[4982, 4983, 4984])), common(4758, 4, 1, 1)), common(4981, 4, 1, 1)), not_scaling_with_luck(4980, 3, 1, 1)));
     db.register_to_npc(668, boss_bag(5111));
     db.register_to_npc(668, master_mode_common_drop(5110));
     db.register_to_npc(668, master_mode_drop_on_all_players(5090, 1));
@@ -1474,7 +1493,7 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(668, by_condition(Cond::NotExpert, 5101, 3, 1, 1, 1));
     db.register_to_npc(668, by_condition(Cond::NotExpert, 5113, 3, 1, 1, 1));
     db.register_to_npc(668, by_condition(Cond::NotExpert, 5385, 14, 1, 1, 1));
-    db.register_to_npc(668, leading_condition(Cond::NotExpert));
+    db.register_to_npc(668, chain_on_success(leading_condition(Cond::NotExpert), OneFromRulesRule::new(1, vec![one_from_options_not_scaling_with_luck(1, &[5117, 5118, 5119, 5095])])));
     db.register_to_npc(290, expert_gets_rerolls(1513, 15, 1));
     db.register_to_npc(290, expert_gets_rerolls(938, 10, 1));
     db.register_to_npc(287, expert_gets_rerolls(977, 12, 1));

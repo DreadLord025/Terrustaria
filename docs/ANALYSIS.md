@@ -14011,8 +14011,12 @@ report with the C#'s formulas — `CommonDrop`'s
 `1 - (1 - numerator/denominator)^rerolls`, `OneFromOptionsDrop`'s shared
 per-option rate, the nested rules' (expert/master/extra-gel) pairs, and
 `DropOneByOne`'s chunk-scaled stack range. `Chains.ReportDroprates`
-(`Chains.cs:24-30`) scales the chained rule's feed by `1 - the parent's own
-rate`. `ItemDropDatabase::report_droprates` is
+scales per chain kind (`Chains.cs:24-30`: `TryIfFailedRandomRoll` feeds
+`1 - the parent's own rate`; `:50-56`/`:76-82`: `TryIfSucceeded` and
+`TryIfDoesntFillConditions` feed the parent's rate itself — corrected
+2026-11-18 with S1-E-14a, the earlier port scaled every kind by `1 - rate`).
+`LeadingConditionRule` reports its chains at rate 1
+(`LeadingConditionRule.cs:22-26`, S1-E-14a). `ItemDropDatabase::report_droprates` is
 `BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`): the
 NPC's rules report their rows with a fresh feed (the rate 1.0) and the
 globals stay out.
@@ -14027,7 +14031,11 @@ Scope notes: the C#'s condition lists (`DropRateInfo.conditions`) and the
 chains' `hideLootReport` flag are not modelled by the port, so the rows
 carry no condition text and the chained rows always print; the town-NPC and
 critter providers, the search filters, the sorting, the flavour and the MP
-kill-sync ride the town/MP subsystems.
+kill-sync ride the town/MP subsystems. `MasterModeDropOnAllPlayers` sites
+pass `this._masterModeDropRng` (`ItemDropDatabase.cs:15` = 4) but the
+generated rows carry the factory default 1 (pre-existing since M4-LOOT-2,
+kept for row stability — S1-E-14a leaves it unchanged; the per-player
+master-drop chance is 1/1 instead of 1/4 until a dedicated fix).
 
 ## The hurting-tile family (S1-E-13a, 2026-11-14)
 
