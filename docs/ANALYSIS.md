@@ -16336,33 +16336,109 @@ rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
 and the render sheets resolving with the C#'s `npcFrameCount`.
 
 Documented deviations, all deliberate:
-- **The five bespoke machines ride stand-ins** until S1-F-13b2: the
+- **The bespoke machines ride stand-ins** until S1-F-13b2's slices land: the
   Headless Horseman (315) and the Hellhound (329) — aiStyle 26
   (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
-  C#'s own chase cap (`num10 = 6f`, `:62622`); the Poltergeist (330) —
-  aiStyle 22 — rides the port's caster machine (its shot arm's `_ => return`
-  leaves it shotless until the named machine lands); the MourningWood (325,
+  C#'s own chase cap (`num10 = 6f`, `:62622`); the MourningWood (325,
   aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
   own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
   = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
-  rows). Each stand-in cites its machine's own constants.
+  rows). Each stand-in cites its machine's own constants. The Poltergeist
+  (330) left the caster stand with slice C — see the section below.
 - **The unported wave kinds still consume**: the frost family (F-13c) and
   the wave-20 unported bosses draw their vanilla rolls and spawn nothing
   (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
 - **`ImmuneToAllBuffsThatAreNotWhips`** (330) is unmodelled — the port's
-  table carries `SpecificallyImmuneTo` only; noted at the arm, pending
-  S1-F-13b2.
+  table carries `SpecificallyImmuneTo` only; slice C did not carry it (the
+  buff-immunity table is its own port).
 - **The Poltergeist caster-stand test was rewritten** (2026-11-17): the
   pre-existing test asserted `vx == 0.0` at frame 30 from `vx 2.0`, but the
   C#'s verbatim stand is `velocity.X *= 0.93f` with the ±0.1 snap
   (`NPC.cs:20831-20835`) — the exact park is frame 42 (`2.0×0.93³⁰ =
   0.22673497` at frame 30). The test now asserts the iterated decay curve,
-  the exact park and the hold.
+  the exact park and the hold. **Superseded 2026-11-18** by slice C: the
+  Poltergeist half of the routing test now asserts the named machine's
+  dispatch (the flee row's alpha-0 + `EncourageDespawn(10)`, the on-moon
+  anchor latch); the walker/floater halves are untouched.
 - **`pumpkin_moon_type`'s family scoping**: the map returns `Some` only for
   the 16 pumpkin kinds — the frost family's kinds (F-13c) keep consuming
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The Poltergeist's aiStyle-22 machine (S1-F-13b2 slice C, 2026-11-18)
+
+The Poltergeist (type 330) leaves the caster stand for its named machine on
+`task/S1-F-13b2-poltergeist`: `npc_ai_poltergeist.rs::poltergeist_ai` ports
+`NPC.AI()`'s aiStyle-22 arm (`NPC.cs:24666-25234`) with the 330 branches
+only — the off-moon flee gate (`:24670`), the dwell anchor's ±16 px X /
+±40 px Y windows and the 60-tick flip into the −200 dash (`:24722-24764`),
+the 330 row's 0.1 dash creep (`:24774`), the fall gate
+(`Bottom.Y > player.Top.Y` → no gravity, `:24971-24976`), the 330 tail row
+(alpha 0 every tick, the ±4 speed cap, `TargetClosest` on the live moon /
+`EncourageDespawn(10)` off it, the 0.9 opposite-velocity damping,
+`:25148-25168`), the shared X/Y approach tails (0.1 accel with the far-cap
+double-add and the 0.05 near-zero brake; 0.04/0.05/0.03 with the ±1.5
+clamp, `:25169-25233`) and the `noTileCollide` half of `UpdateCollision`
+(the `oldVelocity` capture + flag reset `:92538-92540`, the straight
+integration `:92605-92607`). `FindFrame`'s `case 330`
+(`NPC.cs:74886-74906`) rides its own strip (`Npc::poltergeist_frame`): the
+vx-sign sprite flip, the `vx * 0.15` tilt and the 8-tick row step wrapping
+over the 8-row sheet — the walker stand-in no longer covers 330.
+
+**The ROADMAP's "shot arm" label is a misnomer**: in 1.4.5.8 the type-330
+path through aiStyle-22 carries NO `Projectile.NewProjectile` — the arm's
+shot blocks belong to types 122/169/268 only. The Poltergeist's offence is
+its 90-damage contact body (`SetDefaults`, `:13188-13203`).
+
+**RNG order**: the one draw on the whole 330 path is the flee branch's
+`Main.rand.Next(-1, 2) * 1.5f` while `velocity.X == 0f` (`:24716-24720`),
+riding the caller's `UpdateNPCs` stream. Witness tests pin it: exactly one
+draw per parked-flee tick (clone-and-peek), zero draws across 30 moving
+flee ticks and 600 active ticks — the active machine is draw-free, so the
+`UpdateNPCs` stream order for every mixed roster is unchanged on-moon.
+
+Documented deviations (house pattern, all cited at the arm):
+- `justHit` (`:24682-24685`) folds onto `hurt_cd > 0` (the port's per-tick
+  hurt cooldown, as in the WoF/Deerclops machines).
+- `npcTypeNoAggro` (`:24997-25013`) is constant-false (no aggro table yet)
+  — the scan never runs, as in `npc_target.rs`.
+- `flag36` (`AI_GlobalFiringDistanceCheck`, `:24795`) feeds only the
+  122/268 shot arms — a pure no-op for 330, dropped.
+- `flag30` is constant-false for 330: its only setters are the type-316
+  arm and the 169/268 roof scan, and the `ai[2] >= 30 && num291 == 16`
+  test (`:24743`) is dead C# (`num291` is always 40 there) — `:25030-25038`
+  never fires and is not carried.
+- `TargetClosest` rides the shared `npc_target::target_closest` with the
+  single session player (the S1-D-3p convention, ticker 0).
+
+13 `s1_f_13b2c_*` tests (11 in the module: the anchor latch, the counter
+climb, the 60-tick flip, the dash creep/cap, the left mirror + damping,
+the fall gate/Y approach, the three RNG witnesses, the justHit reset, the
+tile fly-through; 2 in `npc.rs`: the case-330 frame strip and the A/B pin
+`s1_f_13b2c_the_generic_arms_stay_byte_identical` — 20 non-Poltergeist
+kinds (the 13 walkers incl. the aiStyle-26 pair, the two hover floaters,
+the five casters the ghost used to share) replay their pre-slice arms
+verbatim behind the same `update_rng` prelude for 180 ticks each,
+bit-comparing kinematics/ai[]/frame state/player hp AND the RNG stream
+position every tick; a closing divergence witness runs one off-moon
+Poltergeist tick both ways — the named machine's alpha-0 +
+EncourageDespawn(10) vs the stand's untouched alpha-100 — proving the
+gate changed exactly one kind and the comparison has teeth. The dispatch
+seam itself rides the rewritten routing test's Poltergeist half).
+Slices A (aiStyle 26) and B (aiStyles 57/58) remain on their own
+branches — their stand-ins and frame arms are untouched.
+
+**Code-only mode (2026-11-18)**: this slice landed under a no-compiler
+directive — no cargo/rustc/rustfmt/test runs were made; the tests are
+written, NOT run. Verification was C# re-reading: every ported block was
+re-checked against the decompiled source (the arm `:24666-25234`, the
+330 row `:25148-25168`, `FindFrame :74886-74906`, `SetDefaults
+:13188-13203`, `EncourageDespawn :7249-7256`, `UpdateCollision
+:92538-92540`/`:92605-92607`, `npcFrameCount[330]=8` counted out of the
+`Main.cs:67082` initializer). The first `cargo test` after this branch
+merges must confirm the suite; the anchors row is the canary meanwhile.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
