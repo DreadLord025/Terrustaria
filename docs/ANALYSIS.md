@@ -15919,6 +15919,99 @@ which for every aiStyle-3 kind, so it needs its own branch and its own test pass
 **The helper landed with S1-D-3p (2026-11-18)** — see "The shared target selection
 (S1-D-3p)" below; the caller migration is the documented remainder.
 
+## Duke Fishron's machine — the audit + the pure-core gap-fill (S1-D-3 fishron, 2026-11-18)
+
+**Code-only mode**: this round ran with NO compiler invoked — no cargo/rustc/
+rustfmt/tests/graphify; file reads/writes + git only. The witness tests below are
+WRITTEN NOT RUN; verification is the block-by-block re-read of the C# source.
+
+### The verdict table (census-confirmed, not doc-trusted)
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| research/25:157 "AI_069 MISSING" | **CONFIRMED** | grep census over `crates/`: no `NpcKind::DukeFishron`, no aiStyle-69 arm, no `update_fishron`; the only Fishron hits are ancillary |
+| ANALYSIS :16299 "not a ported NpcKind" | **CONFIRMED** | same census |
+| The Cute Fishron mount (id 12) | ported, unrelated | `player.rs` (S1-L-8) — the mount, not the boss |
+| The pet/buff 295 + the boss bag 3330 loot | ported, unrelated | `buff_effects_misc.rs`, `loot_db.rs:148-149` |
+| The `ScreenDarkness` 370 arm (phase 10+ / 9-with-timer) | code-complete but UNEXERCISED | `tr-core/src/scene.rs:1571,1585` — no kind 370 ever exists to feed it |
+| `NPC.downedFishron` | absent | `lang.rs:211-212` notes the missing field |
+
+### What landed: `crates/tr-app/src/npc_ai_fishron.rs` (pure core, wiring deferred)
+
+The WHOLE `AI_069_DukeFishron` machine (`NPC.cs:48774-49754`) ported as pure
+functions over a local `FishronState`/`FishronEnv` — the S1-F-9b pattern (a pure
+module + `#![allow(dead_code)]`, the live wiring a follow-up). The task budget
+targeted the phase-1 charge core; the whole arm fit, so states -1..13 are all in:
+
+* the hp-band stat block + the classic/expert tunables (`:48776-48845`),
+* the target re-pick gate + the dead/far despawn arm (`:48846-48867`),
+* the enrage gate flag6 (`:48868-48875`: y<800, below `worldSurface*16`, or the
+  6400-px interior margins → damage/defense ×2, num2=10, num6+6),
+* the first-tick latch (`:48877-48887`), the rotation tracking (`:48888-48975`),
+  the solid-collision alpha (`:48976-48994`),
+* phase 1: materialize -1 (`:48995-49044`), hover 0 + the cycle picker
+  (`:49045-49173`: ai[3] 0-9 → charge, 10 → bubbles reset 1, 11 → sharknado
+  reset 0; flag6 swaps 2→3; the half-hp flag forces 4), charge 1 (`:49174-49196`,
+  num5 ticks then ai[3]+=2), the bubble volley 2 (`:49197-49267`), the sharknado
+  bolt 3 (`:49268-49290`), the transform 4 (`:49291-49309`),
+* phase 2: hover 5 + picker (`:49310-49441`: 0-5 → charge, 6 → Cthulunado reset
+  1, 7 → aimed sharknado reset 0; the expert 15 % flag2 forces 9 BEFORE the
+  enrage swap — the source's order), charge 6 (`:49442-49464`), the Cthulunado
+  spin 7 (`:49465-49494`), the aimed sharknado 8 (`:49495-49515`), the vanish 9
+  (`:49516-49561`),
+* phase 3: hover 10 + picker (`:49562-49647`: 0/2/3/5/6/7 → charge, 1/4/8 →
+  teleport; the case-3 → state-13 row is DEAD — no table row writes 3, ported
+  as-is), charge 11 (`:49648-49676`, ai[3]++ with NO wrap), the teleport 12
+  (`:49677-49734`, tick-15 re-centre + the 9-wrap), the spin 13
+  (`:49735-49752`),
+* the `dontTakeDamage = !flag7` tail (`:49753`; flag7=false only in -1/4/9/12),
+* `SimpleFlyMovement` (`NPC.cs:77397-77431`) — the sign-reversal double-add,
+* the `SetDefaults` 370 consts (`NPC.cs:13701-13718`: 150×100, dmg 100, def 50,
+  60000 HP).
+
+**RNG by construction**: `AI_069` draws ZERO `Main.rand` values outside the dust
+loops — the charge dust (`:49180`, `:49448`, `:49660`: per dust j,
+`NextDouble()` THEN `Next(3, 8)`, 7 dust per charge tick). The port skips the
+dust, so the core takes no RNG parameter and consumes no stream; the bubble's
+scale draw `Main.rand.Next(80, 121)/100f` (`:49481`) happens on the SPAWNED
+371 and rides the `TrailBubble` request for the wiring to draw in that order.
+
+**The seam**: `fishron_seam_applies(vanilla_type) == (type == 370)` — the ONE
+gate the live dispatch will call once `NpcKind::DukeFishron` lands. No other
+kind's arm is touched; the `NpcKind` roster row + the exhaustive `npc/data.rs`
+tables (`to_u16`/`from_u16`/`ai_style`/`size`/stats) + the bestiary entry + the
+`update_kind_ai` arm are the wiring follow-up (adding the variant forces ~8
+exhaustive-match arms — out of this round's code-only budget).
+
+### Deliberate deviations (documented, not guessed)
+
+* the dust loops (172-water), the `SoundEngine` 29/4 cues and the `oldPos`
+  trail wipes (`:49584-49587`, `:49708-49711`) are skipped — cosmetic;
+* `EncourageDespawn(10)` (`:48857`, `NPC.cs:7249-7256`) — the port has no
+  `NPC.timeLeft` (the King Slime precedent); the request rides `FishronOut`;
+* `TargetClosest` (`:48850`) — the re-pick rides a request; the wiring runs the
+  S1-D-3p `npc_target::target_closest` helper. The pure core keeps the caller's
+  target for the tick (the C# re-reads the player after the re-pick);
+* the 371 Detonating Bubble / 385 Sharknado spawns are REQUESTS
+  (`FishronRequest`) — neither has a port kind yet; the wiring spawns them via
+  the `NPC.NewNPC` bottom-centre convention (the S1-D-3k precedent);
+* `normalize` guards the zero-length aim to (0,0) where XNA divides unguarded
+  (NaN) — differs only on the exact-overlap degenerate case;
+* the MP `Main.netMode != 1` spawn/latch branches take the single-player path
+  (the house convention);
+* the sharknado muzzle (`:49278`) is the component-wise
+  `rotation.ToRotationVector2() * (UnitX * direction)` — only the X term
+  survives: `(cos(rot) * direction * (width+20)/2 + cx, cy)`.
+
+Witness tests (22, WRITTEN NOT RUN): the SetDefaults row, the first-tick latch,
+the 75-tick materialize, the stat bands (classic + expert), the enrage gate,
+both cycle tables + the resets, the half-hp/expert-15% band forcing, the charge
+launch snap, the bubble cadence + muzzle, the two-bolt sharknado, the enrage
+bubble→sharknado swap + the tick-50 entry, the Cthulunado spin + trail, the
+aimed sharknado payload (target+1, enrage flag), the phase-3 charge/teleport
+cycle + the 9-wrap, the dead-player despawn, the double-add, the rotation snap
+band, the 370-only seam gate, and the zero-RNG repeatability pin.
+
 ## The shared target selection (S1-D-3p, 2026-11-18)
 
 `NPC.TargetClosest`/`TryTrackingTarget`/`SetTargetTrackingValues`
@@ -16297,7 +16390,9 @@ Deliberate deviations, recorded rather than guessed:
   folds the WoF ramp into `ai[0]` (`npc.rs:9160-9168`), so `local_ai1` is filled
   from `ai[0]`.
 * Duke Fishron (370) is not a ported `NpcKind` - the phase 10+/9-with-timer arm
-  is code-complete but unexercised until that boss lands.
+  is code-complete but unexercised until that boss lands. (S1-D-3 fishron audit
+  2026-11-18: the machine's pure core landed in `npc_ai_fishron.rs`, wiring
+  deferred - see "Duke Fishron's machine" above.)
 * `ScreenObstruction.Draw`'s `MagicPixel` stand-in is the renderer's built-in
   `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
   `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
