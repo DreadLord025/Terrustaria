@@ -1611,8 +1611,12 @@ mod tests {
         king.hp = 0; // dead on arrival — the kill path runs this tick
         app.npcs.push(king);
 
-        // The twin: the one `Next(3024, 6048)` draw the stop consumes.
+        // The twin: the death sound's case-4 pitch draw FIRST
+        // (`NPC.checkDead` `NPC.cs:78193` precedes `NPCLoot`/`DoDeathEvents`
+        // — one `Next(-10, 11)`, `LegacySoundPlayer.cs:693`, S1-E-21 wave C),
+        // then the one `Next(3024, 6048)` draw the stop consumes.
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
+        let _death_pitch = twin.next_range(-10, 11);
         let want_cooldown = -(twin.next_range(3024, 6048) as f64) * 100.0;
 
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -1624,15 +1628,16 @@ mod tests {
             "the negated-×100 cooldown from the UpdateNPCs draw"
         );
         assert_eq!(
-            want_cooldown, -522_000.0,
-            "the seed-0 draw is 5220 (the twin replay already proved the shape)"
+            want_cooldown, -549_500.0,
+            "the seed-0 sequence: the death pitch draw, then 5495 (the twin replay proved the shape)"
         );
-        // The value pin above already proves the stop's draw is the FIRST
-        // `UpdateNPCs` draw of the death tick (a prior draw would shift the
-        // cooldown off the twin's first `Next(3024, 6048)`). Since P3 the
-        // same tick's NPCLoot half (coins/loot) also draws `UpdateNPCs` —
-        // the stream sits past the twin by the King's loot sequence, pinned
-        // per-group in DW-3.2's loot test.
+        // The value pin above already proves the draw order: the death
+        // sound's one pitch draw precedes the stop's `Next(3024, 6048)`
+        // (a missing/extra prior draw would shift the cooldown off the
+        // twin's replay). Since P3 the same tick's NPCLoot half
+        // (coins/loot) also draws `UpdateNPCs` — the stream sits past the
+        // twin by the King's loot sequence, pinned per-group in DW-3.2's
+        // loot test.
         assert_ne!(
             *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
             twin,

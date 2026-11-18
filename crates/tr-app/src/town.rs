@@ -380,7 +380,293 @@ pub const KICK_OUT_LOOK_FOR_HOME_TIMEOUT: i32 = 3600;
 pub fn move_room(rooms: &mut TownRooms, npc: &mut Npc, spot: (i32, i32)) {
     npc.look_for_home_timeout = 0;
     npc.home = Some(spot);
+    // `SpawnTownNPC`'s relocation arm clears the despawn path too
+    // (`WorldGen.cs:5459`: `homelessDespawn = false`).
+    npc.homeless_despawn = false;
     rooms.set_room(npc.kind.net_id(), spot.0, spot.1);
+}
+
+/// `NPCID.Sets.IsTownPet` (`ID/NPCID.cs:10118`): the eleven town pets. The
+/// set coincides with `housingCategory == 1` ([`housing_category`]), but the
+/// C# reads the two tables separately (`MoveTownNPC:4777` reads IsTownPet).
+pub fn is_town_pet(net_id: i32) -> bool {
+    matches!(net_id, 637 | 638 | 656 | 670 | 678..=684)
+}
+
+/// One scan spot through the public seam — `SpawnTownNPC`'s re-check
+/// (`WorldGen.cs:5419-5438`): the room check, the furniture gate, the
+/// occupancy and the score at exactly `(x, y)`, returning the scored spot.
+pub fn scored_home_at(
+    world: &World,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+    ignore: Option<usize>,
+    asking_net_id: i32,
+) -> Option<(i32, i32)> {
+    scan_spot(world, npcs, x, y, ignore, asking_net_id)
+}
+
+/// `WorldGen.MoveTownNPC`'s verdict plus the two `builtHouseWith*` statics
+/// it sets (`WorldGen.cs:4757`/`:4761`, declared `:4204-4206`). The C# keeps
+/// them as globals reset at world gen (`:7030-7031`); no code reads them, so
+/// the port returns them per call.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MoveTownNpcOutcome {
+    pub ok: bool,
+    pub built_house_with_no_furniture: bool,
+    pub built_house_with_no_light: bool,
+}
+
+/// `WorldGen.MoveTownNPC` (`WorldGen.cs:4685-4841`): the housing query /
+/// relocation validation. Runs `StartRoomCheck` → `RoomNeeds` → the stinkbug
+/// gates → `ScoreRoom` → the special spawning conditions, printing each
+/// failure's reason through `Main.NewText(…, 255, 240, 20)` when
+/// `display_text` (the `NoRoomCheckFeedback.WithText` policy,
+/// `DataStructures/NoRoomCheckFeedback.cs:9-15` — `StopOnFail` is always
+/// true there, so every failure returns at once).
+///
+/// `n` is the `Main.npc[]` index being moved (`None` = the C#'s `n = -1`,
+/// the housing query); `prioritized_net_id` is
+/// `WorldGen.prioritizedTownNPCType`, the type the query scores for.
+///
+/// Deviation (ANALYSIS "Town housing (S1-E-11d)"): the C#'s
+/// `RichRoomCheckFeedback` pass (`StopOnFail = false`, the particle
+/// visualisation, `Main.cs:45165`) is not ported — its verdict is discarded,
+/// its text is off and its only statics are the dead `builtHouseWith*`
+/// flags, so the observable behaviour is this one WithText-shaped call.
+pub fn move_town_npc(
+    world: &World,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+    n: Option<usize>,
+    prioritized_net_id: i32,
+    unlocked_truffle_spawn: bool,
+    display_text: bool,
+    chat: &mut crate::chat::ChatMonitor,
+) -> MoveTownNpcOutcome {
+    let mut out = MoveTownNpcOutcome::default();
+    let mut say = |chat: &mut crate::chat::ChatMonitor, text: String| {
+        if display_text {
+            // `Main.NewText(newText, byte.MaxValue, 240, 20)` (`:4722`).
+            chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+        }
+    };
+    // `:4694-4728`: the room check and its failure reason.
+    let scan = match check_room(world, x, y) {
+        Ok(scan) => scan,
+        Err(reason) => {
+            // `:4698-4719`: `Lang.inter[40]` is the default, the six
+            // reasons override it with their `TownNPCHousingFailureReasons`
+            // rows.
+            let text = match reason {
+                tr_core::housing::RoomFailure::TooManyUnsafeWalls => {
+                    crate::lang::text("TownNPCHousingFailureReasons.RoomHasUnsafeWalls")
+                }
+                tr_core::housing::RoomFailure::HoleInWallIsTooBig => {
+                    crate::lang::text("TownNPCHousingFailureReasons.HoleInWallIsTooBig")
+                }
+                tr_core::housing::RoomFailure::StartedInASolidTile => {
+                    crate::lang::text("TownNPCHousingFailureReasons.RoomCheckStartedInASolidTile")
+                }
+                tr_core::housing::RoomFailure::RoomIsTooBig => {
+                    crate::lang::text("TownNPCHousingFailureReasons.RoomIsTooBig")
+                }
+                tr_core::housing::RoomFailure::RoomIsTooSmall => {
+                    crate::lang::text("TownNPCHousingFailureReasons.RoomIsTooSmall")
+                }
+                tr_core::housing::RoomFailure::TooCloseToWorldEdge => {
+                    crate::lang::text("TownNPCHousingFailureReasons.TooCloseToWorldEdge")
+                }
+            };
+            say(chat, text);
+            return out; // stopOnFail (`:4724-4727`)
+        }
+    };
+    // `:4729-4771`: the furniture gate names what the house is missing, in
+    // the torch/door/table/chair order, through `Game.HouseMissing_{n}`.
+    let furniture = tr_core::housing::room_needs_flags(&scan.house_tiles);
+    if !furniture.complete() {
+        let mut missing: Vec<String> = Vec::new();
+        if !furniture.torch {
+            missing.push(crate::lang::text("Game.HouseLightSource"));
+        }
+        if !furniture.door {
+            missing.push(crate::lang::text("Game.HouseDoor"));
+        }
+        if !furniture.table {
+            missing.push(crate::lang::text("Game.HouseTable"));
+        }
+        if !furniture.chair {
+            missing.push(crate::lang::text("Game.HouseChair"));
+        }
+        let text = crate::lang::text_args(
+            &format!("Game.HouseMissing_{}", missing.len()),
+            &missing,
+        );
+        // `:4755-4762`: the two dead statics.
+        if !furniture.table || !furniture.chair {
+            out.built_house_with_no_furniture = true;
+        }
+        if !furniture.torch {
+            out.built_house_with_no_light = true;
+        }
+        say(chat, text);
+        return out; // stopOnFail (`:4767-4770`)
+    }
+    // `:4772-4776`: the type the room scores for — the moved NPC's own type
+    // wins over the prioritized one.
+    let net_id = match n {
+        Some(i) => npcs[i].kind.net_id(),
+        None => prioritized_net_id,
+    };
+    // `:4777-4799`: the stinkbug gates; a town pet is exempt.
+    let pet = is_town_pet(net_id);
+    if scan.has_stinkbug && !pet {
+        say(
+            chat,
+            crate::lang::text("TownNPCHousingFailureReasons.RoomHasAStinkbug"),
+        );
+        return out;
+    }
+    if scan.has_echo_stinkbug && !pet {
+        say(
+            chat,
+            crate::lang::text("TownNPCHousingFailureReasons.RoomHasAnEchoStinkbug"),
+        );
+        return out;
+    }
+    // `:4800-4828`: the score. `ScoreRoom(-1, type)` — the ignoreNPC is −1
+    // even when moving an NPC, so its own housed home still occupies.
+    let (occupied, shared_room_x) = room_occupancy(&scan, npcs, None, net_id);
+    let report = tr_core::housing::score_room_report(world, &scan, occupied, shared_room_x);
+    if report.hi_score <= 0 {
+        if display_text {
+            // `:4805-4823`: occupied → inter[41], evil → inter[42], no
+            // standing space → its own row, else inter[40].
+            let text = if report.room_occupied {
+                crate::lang::inter(41)
+            } else if report.room_evil {
+                crate::lang::inter(42)
+            } else if !report.room_has_standing_space {
+                crate::lang::text("TownNPCHousingFailureReasons.RoomHasNoStandingSpace")
+            } else {
+                crate::lang::inter(40)
+            };
+            chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+        }
+        return out;
+    }
+    // `:4829-4839`: the moved NPC's special spawning conditions — the
+    // Truffle's mushroom room (`CheckSpecialTownNPCSpawningConditions`).
+    if let Some(i) = n {
+        let npc = &npcs[i];
+        if !tr_core::housing::check_special_town_npc_spawning_conditions(
+            world,
+            &scan,
+            npc.kind.net_id(),
+            unlocked_truffle_spawn,
+        ) {
+            // `:4833`: `Lang.inter[55] + " " + Main.npc[n].TypeName`
+            // (`NPC.TypeName` = `Lang.GetNPCNameValue(netID)`, `NPC.cs:6727`).
+            let text = format!(
+                "{} {}",
+                crate::lang::inter(55),
+                crate::lang::npc_name(npc.kind.net_id())
+            );
+            say(chat, text);
+            return out;
+        }
+    }
+    out.ok = true;
+    out
+}
+
+/// `Main.PerformHousingCheck` (`Main.cs:45162-45170`): the housing query —
+/// `MoveTownNPC(x, y, -1, …)` with text, and on success `Lang.inter[39]`
+/// ("This housing is suitable.") in `ChatColors.ServerMessage`. The Rich
+/// particle pass (`:45165`) is the recorded deviation on [`move_town_npc`].
+pub fn perform_housing_check(
+    world: &World,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+    prioritized_net_id: i32,
+    unlocked_truffle_spawn: bool,
+    chat: &mut crate::chat::ChatMonitor,
+) {
+    let out = move_town_npc(
+        world,
+        npcs,
+        x,
+        y,
+        None,
+        prioritized_net_id,
+        unlocked_truffle_spawn,
+        true,
+        chat,
+    );
+    if out.ok {
+        chat.new_text(crate::lang::inter(39), crate::chat::COLOR_SERVER_MESSAGE);
+    }
+}
+
+/// `Main.TryMovingNPC` (`Main.cs:45172-45180`) + `WorldGen.moveRoom`
+/// (`WorldGen.cs:4843-4855`): validate the target room for the NPC, then
+/// mark it homeless (`:4851`), clear the timer (`:4852`) and re-run the
+/// room check at `(x, y)` — `SpawnTownNPC`'s relocation arm writes the
+/// **scored** spot (`bestX/bestY`, `:5456-5457`), not the click point, and
+/// registers the room (`:4854`). Returns whether the move happened (the
+/// caller clears `Main.mouseNPC` and plays sound 12 on `true`).
+///
+/// The transient `prioritizedTownNPCType = npc.type` write (`:4850`) is
+/// consumed and zeroed by the same `SpawnTownNPC` call (`:5461`); the port
+/// resolves the relocation directly, so the caller zeroes the arrival
+/// ladder's prioritized kind instead (net effect identical).
+pub fn try_moving_npc(
+    world: &World,
+    npcs: &mut [Npc],
+    rooms: &mut TownRooms,
+    x: i32,
+    y: i32,
+    n: usize,
+    unlocked_truffle_spawn: bool,
+    chat: &mut crate::chat::ChatMonitor,
+) -> bool {
+    let out = move_town_npc(
+        world,
+        npcs,
+        x,
+        y,
+        Some(n),
+        0,
+        unlocked_truffle_spawn,
+        true,
+        chat,
+    );
+    if !out.ok {
+        return false;
+    }
+    let net_id = npcs[n].kind.net_id();
+    let old_home = npcs[n].home.unwrap_or((-1, -1));
+    // `moveRoom:4851-4852`: homeless first — the re-check's occupancy scan
+    // skips homeless NPCs (`ScoreRoom_IsThisRoomOccupiedBySomeone:5819`),
+    // so the NPC's own old home no longer occupies the target room.
+    npcs[n].home = None;
+    npcs[n].look_for_home_timeout = 0;
+    // `SpawnTownNPC(x, y)` (`:4853`): the scored spot at the click point.
+    match scored_home_at(world, npcs, x, y, None, net_id) {
+        Some(spot) => move_room(rooms, &mut npcs[n], spot),
+        None => {
+            // The blocked arm still runs `SetRoom(type, homeTileX,
+            // homeTileY)` (`:4854`) with the unchanged home tiles, and the
+            // NPC stays homeless. Unreachable after a passing
+            // `MoveTownNPC` at the same point, kept for the 1:1 shape.
+            rooms.set_room(net_id, old_home.0, old_home.1);
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -769,5 +1055,264 @@ mod tests {
         assert!(src.contains("`TownRoomManager.cs:11-13`"));
         assert!(src.contains("`NPC.cs:6071`"));
         assert!(src.contains("// `SetRoom(npcID, X, Y)` (`TownRoomManager.cs:57-64`)"));
+    }
+
+    // --- `MoveTownNPC` + the housing query (`S1-E-11d`) --------------------
+
+    /// The English rows, pinned by value — the failure texts ride the real
+    /// localization (a broken load answers the bare key and fails loudly).
+    fn with_english<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        f()
+    }
+
+    #[test]
+    fn move_town_npc_accepts_a_furnished_room_and_names_the_failures() {
+        with_english(|| {
+            let mut w = ground();
+            build_furnished_room(&mut w, 60, 100, 12, 9);
+            let mut chat = crate::chat::ChatMonitor::default();
+            // The query (`n = -1`): a good room passes with no text.
+            let out = move_town_npc(&w, &[], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(out.ok, "the furnished room is valid housing");
+            assert!(chat.messages.is_empty());
+            // `PerformHousingCheck`'s success row (`Main.cs:45168`).
+            perform_housing_check(&w, &[], 65, 105, GUIDE_ID, false, &mut chat);
+            assert_eq!(chat.messages[0].text, "This housing is suitable.");
+            assert_eq!(chat.messages[0].color, crate::chat::COLOR_SERVER_MESSAGE);
+
+            // A solid start (`WorldGen.cs:4707-4708`).
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 65, 130, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "This is a solid block!");
+
+            // The world edge (`:4716-4717`) — the vanilla's own placeholder.
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 5, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "We need better text for this!!!");
+
+            // The furniture gate (`:4729-4762`): no furniture at all names
+            // all four pieces through `Game.HouseMissing_4` and arms both
+            // `builtHouseWith*` statics.
+            let mut bare = ground();
+            build_furnished_room_with(&mut bare, 60, 100, 12, 9, &[]);
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&bare, &[], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert!(out.built_house_with_no_furniture && out.built_house_with_no_light);
+            assert_eq!(
+                chat.messages[0].text,
+                "This house is missing a light source, a door, a table, and a chair."
+            );
+            // Chair + table only: the missing pair is the light and the door.
+            let mut half = ground();
+            build_furnished_room_with(&mut half, 60, 100, 12, 9, &[15, 14]);
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&half, &[], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert!(!out.built_house_with_no_furniture, "the furniture is there");
+            assert!(out.built_house_with_no_light);
+            assert_eq!(
+                chat.messages[0].text,
+                "This house is missing a light source and a door."
+            );
+
+            // The occupancy arm (`:4807-4809`): a housed Guide occupies the
+            // room for another category-0 asker → `Lang.inter[41]`.
+            let resident = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[resident], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "This housing is already occupied.");
+
+            // `display_text = false` (the `WithoutText` policy): the verdict
+            // is the same, the chat stays empty.
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 65, 130, None, GUIDE_ID, false, false, &mut chat);
+            assert!(!out.ok);
+            assert!(chat.messages.is_empty());
+        });
+    }
+
+    #[test]
+    fn move_town_npc_rejects_the_stinkbug_rooms_but_not_for_pets() {
+        with_english(|| {
+            let mut w = ground();
+            build_furnished_room(&mut w, 60, 100, 12, 9);
+            let i = w.index(66, 107);
+            w.tiles[i] = tr_core::Tile { kind: 630, frame_x: 0, frame_y: 0, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            // A common NPC is refused (`WorldGen.cs:4778-4788`).
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "This room is infested by a stinkbug!");
+            // A town pet is exempt (`:4777`'s `IsTownPet[type]`).
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 65, 105, None, TOWN_CAT_ID, false, true, &mut chat);
+            assert!(out.ok, "the pet moves into the stinkbug room");
+            assert!(chat.messages.is_empty());
+            // The echo cage refuses too (`:4789-4799`).
+            w.tiles[i].kind = 631;
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &[], 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "This room is infested by a ghostly stinkbug!");
+            assert!(is_town_pet(637) && is_town_pet(684) && !is_town_pet(22));
+        });
+    }
+
+    #[test]
+    fn try_moving_npc_relocates_to_the_scored_spot() {
+        with_english(|| {
+            // Two furnished rooms; the Guide lives in the first and is
+            // moved by a click into the second. The home lands on the
+            // room's scored spot (`SpawnTownNPC:5456-5457`'s bestX/bestY),
+            // not on the click point.
+            let mut w = ground();
+            build_furnished_room(&mut w, 60, 100, 12, 9);
+            build_furnished_room(&mut w, 90, 100, 12, 9);
+            let mut npc = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+            npc.look_for_home_timeout = 1200;
+            npc.homeless_despawn = true;
+            let mut npcs = vec![npc];
+            let mut rooms = TownRooms::new();
+            rooms.set_room(GUIDE_ID, 65, 106);
+            let mut chat = crate::chat::ChatMonitor::default();
+            let moved = try_moving_npc(&w, &mut npcs, &mut rooms, 95, 105, 0, false, &mut chat);
+            assert!(moved, "the second room is valid");
+            let (hx, hy) = npcs[0].home.expect("rehoused");
+            assert!((91..=100).contains(&hx), "the home is in the second room: {hx}");
+            assert!((101..=108).contains(&hy), "hy {hy}");
+            assert_eq!(npcs[0].look_for_home_timeout, 0, "moveRoom clears the timer");
+            assert!(!npcs[0].homeless_despawn, "the despawn path clears");
+            assert_eq!(rooms.has_room(GUIDE_ID), Some((hx, hy)));
+            assert!(chat.messages.is_empty(), "a successful move prints nothing");
+            // The old room is free again: another Guide may take it.
+            assert!(quick_find_home(&w, &npcs, 72, 108, None, GUIDE_ID).is_some());
+
+            // A failed move changes nothing (`Main.cs:45174-45179` only
+            // acts on `true`): solid stone refuses with the reason text.
+            let before_home = npcs[0].home;
+            let before_rooms = rooms.clone();
+            npcs[0].look_for_home_timeout = 77;
+            let mut chat = crate::chat::ChatMonitor::default();
+            let moved = try_moving_npc(&w, &mut npcs, &mut rooms, 30, 130, 0, false, &mut chat);
+            assert!(!moved);
+            assert_eq!(npcs[0].home, before_home);
+            assert_eq!(npcs[0].look_for_home_timeout, 77, "the timer is untouched");
+            assert_eq!(rooms, before_rooms);
+            assert_eq!(chat.messages[0].text, "This is a solid block!");
+        });
+    }
+
+    #[test]
+    fn the_housing_chain_is_rng_free_and_deterministic() {
+        // Determinism proof (S1-E-11d): the C# `MoveTownNPC` → `StartRoomCheck`
+        // → `RoomNeeds` → `ScoreRoom` → `CheckSpecialTownNPCSpawningConditions`
+        // chain draws ZERO `Main.rand` (grep of WorldGen.cs:4685-4841,
+        // :5679-5992, :6041-6237, :4970-4998 finds no `rand`/`Random` call —
+        // the only `genRand` in the range is `StartMeteorShower:6241`, outside
+        // the room check). The port mirrors this by taking no RNG parameter:
+        // every function is pure over (world, npcs, rooms), so it cannot
+        // consume a draw. Running the whole chain twice on identical inputs
+        // yields identical state, and a seeded stream is untouched.
+        let mut w = ground();
+        build_furnished_room(&mut w, 60, 100, 12, 9);
+        build_furnished_room(&mut w, 90, 100, 12, 9);
+        let mut stream = tr_core::UnifiedRandom::new(1234);
+        let before: Vec<i32> = (0..8).map(|_| stream.next_max(1_000_000)).collect();
+        // Re-seed an identical stream: the housing chain must not advance it.
+        let mut probe = tr_core::UnifiedRandom::new(1234);
+        let mut run = || {
+            let mut npc = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+            npc.look_for_home_timeout = 500;
+            let mut npcs = vec![npc];
+            let mut rooms = TownRooms::new();
+            rooms.set_room(GUIDE_ID, 65, 106);
+            let mut chat = crate::chat::ChatMonitor::default();
+            let ok = try_moving_npc(&w, &mut npcs, &mut rooms, 95, 105, 0, false, &mut chat);
+            (ok, npcs[0].home, npcs[0].look_for_home_timeout, rooms.rooms().to_vec())
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "identical inputs give identical housing state");
+        assert!(a.0);
+        // The probe stream still yields the same first draws: nothing in the
+        // chain touched it (it was never passed in).
+        let after: Vec<i32> = (0..8).map(|_| probe.next_max(1_000_000)).collect();
+        assert_eq!(before, after, "the housing chain consumes no RNG draws");
+    }
+
+    #[test]
+    fn the_look_for_home_timeout_decays_one_per_tick_and_gates_the_scan() {
+        // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the timer decays
+        // one per tick (`world_sim/npcs.rs:2694-2696`); the 2-second home
+        // scan skips a non-zero timer (`:2799`, the C#'s `:5621`/`:71635`
+        // gates). Driven through `update_npcs` so the cadence is the real
+        // sim's, not a re-implementation.
+        let mut world = ground();
+        build_furnished_room(&mut world, 60, 100, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 72.0 * 16.0;
+        player.y = 108.0 * 16.0;
+        app.player = Some(player);
+        let mut guide = town_npc(crate::npc::NpcKind::Guide, 72.0 * 16.0, 108.0 * 16.0, None);
+        guide.hp = guide.max_hp;
+        guide.look_for_home_timeout = 3;
+        app.npcs.push(guide);
+        // Three ticks: 3 → 2 → 1 → 0, one per tick.
+        for expected in [2, 1, 0] {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+            assert_eq!(app.npcs[0].look_for_home_timeout, expected);
+        }
+        // The scan cadence is 2 s (`town_look_timer`): re-arm the timer and
+        // run past the boundary — the gated Guide finds no home.
+        app.npcs[0].look_for_home_timeout = 600;
+        app.town_look_timer = 1.99;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].home, None, "the timer gates the scan");
+        assert_eq!(app.npcs[0].look_for_home_timeout, 599);
+        // Clear the timer and cross the boundary again: the room is found.
+        app.npcs[0].look_for_home_timeout = 0;
+        app.town_look_timer = 1.99;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].home.is_some(), "the ungated scan finds the room");
+    }
+
+    #[test]
+    fn move_town_npc_scores_for_the_moved_npcs_type() {
+        with_english(|| {
+            // `:4772-4776`: `n >= 0` overrides the prioritized type. A pet
+            // resident shares with a common asker but not with a pet —
+            // moving the Guide (category 0) into a pet's room is refused,
+            // while the query for the prioritized pet type passes.
+            let mut w = ground();
+            build_furnished_room(&mut w, 60, 100, 12, 9);
+            // The resident is a category-1 pet by net id; the port has no
+            // pet kind, so the occupancy is driven through the asking id.
+            let guide = town_npc(crate::npc::NpcKind::Guide, 65.0 * 16.0, 106.0 * 16.0, Some((65, 106)));
+            let npcs = vec![guide];
+            let mut chat = crate::chat::ChatMonitor::default();
+            // Query as the Guide: same category as the housed Guide → occupied.
+            let out = move_town_npc(&w, &npcs, 65, 105, None, GUIDE_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            // Query as a pet: different category → shares.
+            let out = move_town_npc(&w, &npcs, 65, 105, None, TOWN_CAT_ID, false, true, &mut chat);
+            assert!(out.ok);
+            // Moving the Guide himself: `n >= 0` scores for HIS type even
+            // though the prioritized id says pet (`:4773-4776`) — and his
+            // own housed home occupies (`ScoreRoom(-1, …)` passes no
+            // ignoreNPC), so the move onto his own room is refused.
+            let mut chat = crate::chat::ChatMonitor::default();
+            let out = move_town_npc(&w, &npcs, 65, 105, Some(0), TOWN_CAT_ID, false, true, &mut chat);
+            assert!(!out.ok);
+            assert_eq!(chat.messages[0].text, "This housing is already occupied.");
+        });
     }
 }
