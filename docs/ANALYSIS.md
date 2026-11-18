@@ -17625,3 +17625,72 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## S1-D-3 FindFrame wave A (code-only mode, task/S1-D-3-findframe-a, 2026-11-18)
+
+`crates/tr-app/src/npc_findframe_a.rs` ports `NPC.FindFrame`
+(`NPC.cs:66684-77370`) for **24 LOW-id kinds** the port's `npc.rs`
+`find_frame` match does not carry: the 9 slime variants (16 MotherSlime,
+59 LavaSlime, 71 DungeonSlime, 81 CorruptSlime, 138 IlluminantSlime, 147
+IceSlime, 183 Crimslime, 184 SpikedIceSlime, 225 UmbrellaSlime — the
+case-1 group `NPC.cs:70801-70846`), the 5 demon-eye variants (190
+CataractEye, 191 SleepyEye, 192 DialatedEye, 193 GreenEye, 194 PurpleEye
+— the case-2 group `:73994-74059`) and the 10 walkers (52 DoctorBones,
+53 TheGroom, 132 BaldZombie, 161 ZombieEskimo, 186 PincushionZombie, 187
+SlimedZombie, 188 SwampZombie, 189 TwiggyZombie, 200 FemaleZombie, 223
+ZombieRaincoat — the case-3 group `:76324-76391`). Census against
+`npc.rs::find_frame`: base Slime 1, DemonEye 2, Zombie 3
+(`walker_frame`), KingSlime 4, ServantOfCthulhu 5, EaterOfSouls 6 /
+MeteorHead 23, the bats 49/51/83 + VoodooDemon 67, the worms 7-15
+(single-frame no-op arms) and WanderingEye 133 already have arms and
+are not touched. Wave B (`task/S1-D-3-findframe-b`, `b2952047`) owns the
+25 MID/HIGH-id kinds; 338-352 ride the frost siblings, the pumpkin
+family rides S1-F-13b, and the bosses with in-flight AI keep their arms.
+The kind ids were verified against `NPCID.cs:10709-11127`'s const rows.
+
+**Code-only mode**: this wave ran with NO cargo/rustc/rustfmt/tests —
+the 11 test functions (the 24-row `Main.npcFrameCount` pin plus 10
+sequence pins covering all 24 kinds) are WRITTEN NOT RUN; their
+sequences were hand-derived from the C# literals. The frame counts were
+extracted entry-by-entry from the `Main.cs:67082` 697-entry initializer
+(entry `type` = line `67084 + type/10`, slot `type % 10`) and
+cross-checked against the port's existing anchors (slime 1 = 2, demon
+eye 2 = 2, zombie 3 = 3, KingSlime 4 = 6, bat 49 = 5 — all agree): every
+slime and eye variant carries 2 rows, every walker 3.
+
+Shape and deviations:
+
+- **Wiring deferred** (the `npc_findframe_b.rs`/`drawdata_anim.rs`
+  precedent): the kinds are not in `NpcKind` on this branch, so the
+  machines are pure functions over `FrameState`/`FrameInput`; when a
+  kind joins the roster its `find_frame` arm calls `find_frame_a` and
+  copies row/counter/sprite_dir/rotation back. No arm draws `Main.rand`,
+  so the wiring cannot move an RNG stream.
+- **Row indices, not pixels**: the C#'s `num` (sheet height /
+  `npcFrameCount`, `NPC.cs:66694`) cancels out — the existing `npc.rs`
+  convention.
+- **`aiAction` is carried** (unlike wave B): the slime group reads the
+  `num2` motion class (`NPC.cs:66696-66704`) — rising/falling/moving
+  double the frame clock (`:70829-70832`) and the attack class
+  (`aiAction == 1`, num2 = 4) triples it (`:70833-70836`). The counter
+  zeroes on the step (no remainder kept — `:70840`), faithfully.
+- **Vanilla quirks kept verbatim**: the eye's left-flight rotation adds
+  the literal `3.14f`, not PI (`:74029`, the `npc.rs` DemonEye
+  precedent), and both the flip and the rotation freeze at `vx == 0`;
+  the walker's final band (`:76387-76390`) only zeroes the counter and
+  leaves `frame.Y` alone, so the 32-tick holds row 1 (the
+  `npc.rs::walker_frame` comment); the walker's grounded flip writes
+  only on `direction` ±1 (`:76349-76356`), never on 0.
+- **Group siblings' side effects not carried**: the slime group's
+  `type == 302 || type == 304` spriteDirection snap (`:70824-70827` —
+  the town slimes), the eye group's type-23 dust spawn (`:74007-74013`),
+  the 121/660 `localAI[0]` init (`:74014-74018`) and the 660-only 6-tick
+  cadence (`:74046-74049`) belong to other kinds. The eye group's second
+  flip branch (`:74032-74043`) is dead for this wave's five — its
+  `type == 2` arm is shadowed by the first `if`'s type list and 121/660
+  are not carried — so it is dropped with a citation.
+- **Worktree note**: a concurrent session's uncommitted `S1-D-3ff`
+  SetDefaults/spawn work (`npc.rs`, `npc/data.rs`, `npc_buffs.rs`,
+  `app/netglue.rs`) was present in this worktree during the task; it was
+  left untouched and is NOT part of this branch's commit (only the six
+  wave-A files are staged).
