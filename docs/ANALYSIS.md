@@ -16140,6 +16140,140 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## The loading screen + capture mode (S1-E-17)
+
+`crates/tr-app/src/ui/world_load.rs` ports the loading screen:
+`UIGenProgressBar`'s progress math (`UIGenProgressBar.cs:51-55`, `:68-80`,
+`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`),
+plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
++ the `Outer_*` frames, `UIHeader.cs:46-62`'s four-corner Death-font header).
+`crates/tr-app/src/capture.rs` ports the capture family
+(`CaptureManager.cs`, `CaptureInterface.cs`, `CaptureCamera.cs`,
+`CaptureSettings.cs`, `CaptureBiome.cs`). Deliberate deviations:
+
+- **The "smoothing" is a verbatim copy in 1.4.5.8.** `DrawSelf` assigns
+  `_visualOverallProgress = _targetOverallProgress` (and the current pair)
+  directly (`UIGenProgressBar.cs:68-69`) — no lerp exists in this version.
+  The port keeps both field pairs and pins the copy in a test so a later
+  smoothing lerp cannot land silently.
+- **Wired (round 2).** `FrontScreen::WorldLoad` is the sixth front screen;
+  `finish_creating_world` (`app/session.rs`) starts the generation job and
+  opens the screen (`WorldGen.CreateNewWorld`, `WorldGen.cs:6607-6625`);
+  `update_world_load` polls the result and hops to the world select
+  (`worldGenCallback`'s `menuMode = 6`, `:6599-6602` → `Main.cs:49468-49472`).
+  The generation runs on a worker thread (`app/worldgen_job.rs`, the C#'s
+  `Task.Factory.StartNew`) through the `GenProgressHook` seam
+  (`tr_core::worldgen::pipeline`); the progress/controller pair is the
+  `WorldGenerator.CurrentGenerationProgress`/`CurrentController` statics
+  (`WorldGenerator.cs:398-400`). The bar's four `Outer_*` textures load
+  (`assets.rs`, `UIGenProgressBar.cs:34-37`). The Inventory trigger queues
+  the abort (`UIWorldLoad.cs:54-58`); the abort arm skips the save
+  (`WorldGen.cs:6595-6598`).
+- **The drunk-world `Main.rand` arms are deferred.** The evil-texture
+  flicker (`UIGenProgressBar.cs:63-67`) and the random-digit message
+  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them would perturb
+  that stream's call order (the RNG-order invariant). The ported
+  `draw_frame` takes the evil flags as inputs.
+- **`placingTraps` stays false.** It is a pass-runtime static
+  (`WorldGen.cs:18662`) the port's compact pipeline never sets; the
+  get-good message reversal's `noTraps && placingTraps` gate
+  (`UIWorldLoad.cs:108`) therefore always takes the reversal arm on a
+  For-the-Worthy world.
+- **`GetStatusText`'s `0.0%` formatting rides the shared
+  `tr_core::generation_progress::format_percent`** (`(v*1000).round()/10`,
+  half-away-from-zero — .NET's `"0.0%"` custom specifier). An earlier round
+  used Rust's `{:.1}` (half-to-even) and claimed the tie input was not
+  binary-representable; that claim was false — e.g. `0.0625` scales to
+  exactly `6.25`, where .NET prints `6.3%` and `{:.1}` prints `6.2%`. Both
+  the status text and the `Message` `{0:0.0%}` substitution now use the one
+  formatter, pinned by the `0.0625 → "6.3%"` test.
+- **The get-good message reversal walks Unicode scalars, not UTF-16 code
+  units.** The C# reverses via `Text.Substring(num, 1)` per UTF-16 unit
+  (`UIWorldLoad.cs:110-115`); the port's `chars().rev()` reverses whole
+  scalars. The two differ only for surrogate-pair characters (emoji, rare
+  CJK extensions), which the `Lang.gen`/`WorldGeneration.*` messages never
+  contain — ASCII and the localized messages are identical in practice.
+- **`worldGenCallback` plays sound 10 twice; the port plays the completion
+  one only.** The C# plays `SoundEngine.PlaySound(10)` at entry AND exit
+  (`WorldGen.cs:6592`/`:6603`); the port plays `Menu_Open` on the completion
+  poll (`app/session.rs::update_world_load`, `:6603`). The entry cue is
+  deferred: the worker thread has no audio seam, and playing it on the
+  frame thread at job start would shift the cue's frame relative to the
+  C# task-start ordering — a documented deviation, not a silent drop.
+- **`CreateNewWorld` reseeds `Main.rand`; the port does not.** The C#
+  assigns `Main.rand = new UnifiedRandom(Main.ActiveWorldFileData.Seed)`
+  (`WorldGen.cs:6612`) before the task starts. The port keeps its `Main.rand`
+  stream untouched (the RNG-order invariant): reseeding at world creation
+  would change every subsequent menu/gameplay roll's provenance. Documented
+  deviation; revisit with the faithful `UnifiedRandom` port.
+- `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
+  (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
+  F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
+  preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
+  60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
+  worker thread, so the shot is SHA256-stable; `update_world_load` only
+  re-latches the snapshot while a job is live (a job-less frame keeps the
+  preset's). Baseline `docs/screenshots/s1-e-17-worldload.png`,
+  `TR_SHOT` + `TR_UI=worldload` + `TR_NAME=ShotPin` + `TR_DEBUG=0` +
+  `TR_DAY=1.0`, two runs SHA256-equal
+  (`8f308c82c27b29ad523dfd2baa48dedb5887f55d6514ce1967e6c0e316496b9a`).
+
+### The capture mode (S1-E-17)
+
+`crates/tr-app/src/capture.rs` ports the capture family's state machines
+1:1: the `CaptureManager` facade (`CaptureManager.cs:8-114`), the
+`CaptureInterface` selection state machine (the three modes — edge selection, drag
+bounds, change settings — the toolbar, the camera countdown,
+`CaptureInterface.cs:15-1607`), the `CaptureCamera` chunk queue / scaling /
+blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
+(`CaptureSettings.cs:6-28`) and `CaptureBiome`'s style table + biome pick
+(`CaptureBiome.cs:3-246`). The App owns the one `CaptureManager.Instance`
+(`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
+sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`). The
+capture freeze has TWO halves, both ported: (1) the `DoUpdate` gate
+(`Main.cs:16886-16890`, `if (IsCapturing) { FocusHelper.UpdateFocus; return; }`)
+— while a capture renders the ENTIRE world update skips: `Sandstorm.EmitDust`
+(`:17247`, it consumes the dust RNG), `SceneState.Update` (`:17816`) and the
+whole sim sit AFTER that return. Ported in `frame.rs`: `update_world_frame`
+is gated on `!is_capturing()` (the capture interface itself still updates —
+it rides the interface pass, not DoUpdate's world branch). (2) The
+`UpdateSceneMetrics` gate (`Main.cs:62518-62521`) — the DRAW-SIDE guard for
+the lighting engines' ExportMetrics callers (`LightingEngine.cs:93`,
+`LegacyLighting.cs:722`): `update_scene` reads `is_capturing()` and keeps the
+parked metrics (no rescan) for any draw-side caller that still runs.
+Deviations:
+
+- **The selection UI has no sprite draw yet — state only.** The
+  `CaptureInterface` state machine (modes, toolbar actions, countdown) is
+  ported and live, but `capture.rs` has no sprite-draw function: the
+  selection rectangle, the toolbar buttons and the countdown digits do
+  not render on screen. The UI draw lands with the S1-G-13 render-target
+  seam (the GPU chunk render needs the same targets); until then capture
+  mode is driven blind (F6 toggle + the state machine). Earlier
+  ROADMAP/PORT_MAP wording calling the selection UI "live" meant the
+  state machine only — corrected.
+
+- **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
+  (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
+  through the layer targets; the port's `CaptureRenderer` trait is a no-op
+  stub until the render-target family lands, so a started capture drains
+  its queue without producing pixels. The selection state machine, the
+  countdown and the `IsCapturing` metrics gate are live (the selection
+  UI's sprite draw is NOT — see the bullet above); the write-out waits on
+  the targets.
+- **The capture toggle rides F6, not F4.** The vanilla binds
+  `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
+  debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
+- **The fullscreen-map selection arm is a gap.** `GetMapCoords`
+  (`CaptureInterface.cs:1318-1458`) needs the map renderer's texture
+  geometry; the port's selection modes run the world arm only.
+- **`Player.ghost`/`gravDir` and `Main.treeX` are unported**, so the
+  capture input's ghost/gravity gates read false and `GetPurityForPlayer`
+  takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
+- **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
+  the toolbar's open-folder button plays its cue only.
+
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 
 `tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
