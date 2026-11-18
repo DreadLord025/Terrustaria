@@ -4785,6 +4785,12 @@ a larger defect catalogue:
 * **Missing ambient gate draws** — `Next(5)` (29/45, `:21282`), `Next(3)`
   (32, `:21292`), `Next(6)` (the else group, `:21366`) every tick; 533
   draws none (light only, `:21358-21361`).
+* **Wrong Fire Imp search radius** — the live
+  `CasterParams::FIRE_IMP.teleport_radius = 5`; the C# call (`:21097`)
+  passes only `(destination, num86, num87)`, so `rangeFromTargetTile`
+  takes its DEFAULT 20 (`:18937`) for every type — `num88 = 5`
+  (`:21090-21093`) is only the post-teleport windup `ai[1] = num88`
+  (`:21101`).
 * **Missing `netUpdate` writes** (`:21016`-style trigger marks, `:21105`
   even on a failed search) and the invented inline gravity integration —
   the C# arm RETURNS at `:21375`; the generic `UpdateNPC` tail is the

@@ -173,8 +173,9 @@ fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
 }
 
 /// `NPC.AI_AttemptToFindTeleportSpot` (`NPC.cs:18937-19007`), the
-/// aiStyle-8 call's defaults (`:21097`): range `num88`, telefrag 5 tiles,
-/// fluff 1, not centred, not in-air.
+/// aiStyle-8 call's defaults (`:21097` passes only destination + the
+/// target tile): range 20 (the parameter default — num88 is the windup,
+/// NOT the radius), telefrag 5 tiles, fluff 1, not centred, not in-air.
 ///
 /// Faithful details the live `npc_ai.rs::find_teleport_spot` drops:
 /// * the >2000-px Manhattan bail (`:18944-18948`) — `num3 = 100` skips the
@@ -391,10 +392,15 @@ pub fn caster_ai(npc: &mut Npc, env: &CasterEnv<'_>, rng: &mut UnifiedRandom) ->
         npc.ai[0] = 1.0;
         // `:21086-21087` — `(int)Center.X / 16` (truncate, then int /16).
         let target_tile = (pcx as i32 / 16, pcy as i32 / 16);
-        let num88 = if net_id == 24 { 5 } else { 20 }; // `:21089-21093`
+        // `:21089-21093` — num88 is ONLY the post-teleport windup
+        // (`ai[1] = num88`, `:21101`); the search call `:21097` passes
+        // just (destination, num86, num87), so rangeFromTargetTile takes
+        // its DEFAULT 20 (`:18937`) for EVERY type — the live
+        // CasterParams::FIRE_IMP.teleport_radius = 5 is a defect.
+        let num88 = if net_id == 24 { 5 } else { 20 };
         // `:21094` — 693's book search first (unported skip).
         if let Some((tx, ty)) =
-            find_teleport_spot(env, rng, net_id, (cx, cy), target_tile, num88)
+            find_teleport_spot(env, rng, net_id, (cx, cy), target_tile, 20)
         {
             // `:21101-21103` — the DESTINATION rides ai[2]/ai[3]; the
             // position snap is NEXT tick's arrival block, not here.
