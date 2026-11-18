@@ -12,6 +12,7 @@ pub mod binio;
 pub mod damage;
 pub mod drawdata;
 pub mod dd2;
+pub mod dd2_victory;
 pub mod dust_table;
 pub mod edit;
 pub mod extract;

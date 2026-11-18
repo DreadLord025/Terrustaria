@@ -4243,6 +4243,51 @@ The latches are not saved: `DD2Event.Save` (`:151-156`) writes only the
 three tier flags, so a reload mid-wave starts a fresh invasion's latch
 state, as the C#'s statics do.
 
+## The Old One's Army's victory slice (S1-E-12b)
+
+`tr_core::dd2_victory` ports the win-side decisions of `DD2Event.cs`,
+disjoint from the loss path (a separate slice):
+
+* `victory_medals` / `victory_downed_flags` — `WinInvasionInternal`
+  (`:314-342`): the 3/15/60 medal stacks per tier and the `>= n` downed
+  latches. `DropMedals` (`:802-813`) itself is one
+  `Item.NewItem(..., 3817, n)` per live 548 — the app-side seam spawns it
+  through `world_sim/items.rs`'s pinned `spawn_item_drop_px*` so the
+  `Main.rand` velocity/phase triplet order stays intact.
+* `wave_complete_medals` — `CheckProgress`'s wave-complete rows
+  (`:405-449`), keyed on the NEW wave: t1 5/4→1, t2 7/6/5→6/3/1,
+  t3 7/6/5/4→25/11/3/1.
+* `victory_scene` — `StartVictoryScene` (`:481-505`)'s decision plan:
+  `WonThisRun` latches unconditionally (`:483`), the first 548 flips to
+  `(ai0, ai1) = (2, 2)` and every 549 to `(0, 1)` — but with no crystal
+  the C# returns at `:489-492` before the portal loop, so the plan's
+  portal list is empty. The scene's *presentation* (the CrystalWin
+  filter, the damage tracker's `Stop(won: true)` `:484-487`, the
+  achievement 23 `:338`) is **deferred** — no filter/tracker/achievement
+  port exists yet; the ai flips are the behavioural half.
+* `attempt_skip_wait_time` / `is_stand_active` — the wave-break skip
+  (`:1779-1801`, `:1765-1777`): strict `> 60` clamps the hold to 60; the
+  stand check is `Bottom.Distance((x*16+8, y*16+8)) < 36f` (squared
+  compare, exact f32). The `NPCDeath7` cue and the netMode arms collapse
+  to the single-player call.
+* `should_drop_crystals` — `ShouldDropCrystals` (`:815-912`) verbatim:
+  the one-increment-per-call `lastWave` catch-up, the OLD-budget
+  subtraction while `alreadyDropped > 0`, the three tier wave tables
+  (no default arm — an unlisted wave keeps the old budget), then the
+  `alreadyDropped < toDrop * (kills/required)` f32 pace. The callers are
+  `NPC.checkDead`'s DD2 arms (`NPC.cs:79246`/`:79274`) → one 3822 crystal
+  at `Center` per true.
+
+Deliberate reductions: the `netMode != 0 && expertMode` balance rescale
+(`:901-904`) is constants-off (single-player, no game mode — the same
+reduction as the kill-worth slice). The decisions draw **no RNG**: every
+drop's rolls live inside `Item.NewItem` on the caller's stream; the
+witness test `the_victory_decisions_draw_no_rng` pins a seeded
+`UnifiedRandom` pristine across all of them. The app-side wiring (the
+548/549 sweeps, the medal/crystal spawns, the skip click, the win
+broadcast `DungeonDefenders2.InvasionWin` `:341`) lands with the driver
+slice; this module is the pure seam it calls.
+
 ## The Ancient Cultist (M4-EVENT-6)
 
 The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual
