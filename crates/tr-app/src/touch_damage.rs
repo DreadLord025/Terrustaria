@@ -224,9 +224,10 @@ pub fn apply_touch_damage(
     let dont_starve = world
         .seeds
         .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
-    // The C#'s `player.fireWalk` (the Obsidian Skull) has no ported accessor
-    // yet — the hot arm always fires (`Player.cs:3220`).
-    let fire_walk = false;
+    // `player.fireWalk` (`Player.cs:1878`): the ObsidianSkin buff (1) arms it
+    // per tick (`UpdateBuffs`, `:9878` — S1-E-7 wave A); the Obsidian Skull
+    // accessory row (`:14449+`) has no ported granter yet.
+    let fire_walk = player.fire_walk;
     let Some(hit) = hurt_tiles(
         world,
         player.x,
