@@ -17304,6 +17304,33 @@ and documents that the **caller holds `test_lock`** for the whole test (the
 lock is not reentrant); the tooltip/buff-tooltip registration tests and
 `npc_chat::init_lang` now take the guard.
 
+**Follow-up (fix/ingame-options-culture-flake):** five more
+`ui/ingame_options.rs` tests still read the culture without the guard —
+`the_value_bar_geometry_is_the_c_sharp_scaled_track` (the 1045-vs-979 flake:
+`color_bar_right_x` shifts 60 px in English but 126 in the long cultures,
+`IngameOptions.cs:1071`), `refresh_button_latches_the_hover_and_the_layout`
+(`measure_button` reads `Lang.inter[62]`),
+`save_and_exit_click_saves_the_world_and_returns_to_the_menu`,
+`the_keybinds_row_opens_the_in_game_keybinding_screen` (culture-shifted
+`left_row_rect`) and `a_toggle_click_applies_the_setting_to_the_app`
+(`right_row_rect`). Under parallel load a sibling's `lang::init`/
+`set_language` flipped the culture between their geometry reads and their
+assertions. Each now takes the same house guard — `crate::lang::test_lock()`
+acquired **once** at the top of the test (never twice: the mutex is
+non-reentrant and a double acquire self-deadlocks the whole gate) plus
+`lang::init(GameCulture::English)` to pin the culture for the test's whole
+run. The six previously-guarded tests that used a bare
+`lang::set_language(English)` were switched to `lang::init(English)` under
+the same single guard: on an empty manager `set_language` marks the culture
+active **without loading any sources**, and every later `init` then
+early-returns in its trailing `set_language` (culture unchanged,
+`localization/mod.rs:196-200`), leaving all texts as bare keys for the rest
+of the process — the second half of the flake (only the tests asserting
+real key resolution failed; bare-key-vs-bare-key comparisons passed
+vacuously, and `--test-threads=1` passed because an `init` test happened to
+run first). No game logic or value-bar maths changed — test synchronization
+only.
+
 **Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
 centred hit box, the per-category right anchors + bar shift, the 0.75 bar
 geometry (133x12, the -3 centre, the 60 px colour offset), the per-row draw
@@ -17383,6 +17410,58 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The vine strip pass (S1-G-1 wave A, 2026-11-18)
+
+`crates/tr-app/src/render/vines.rs` ports `TileDrawing.DrawVines` /
+`DrawVineStrip` (`TileDrawing.cs:8890-8901`, `:9034-9132`) plus the root crawl
+`CrawlToTopOfVineAndAddSpecialPoint` (`:744-762`) and its attachment probe
+`WorldGen.BottomEdgeCanBeAttachedTo` (`WorldGen.cs:70440-70458`, now
+`tr_core::torch::bottom_edge_can_be_attached_to` - note the C# bottom edge has
+NO half-brick check, unlike the top edge). The vine cells (52/62/115/205/382/
+528/636/638, `TileID.Sets.VineThreads` `TileID.cs:544`) are skipped inline in
+the row-major pass exactly like the C# draw-area switch (`:536-545`); the
+roots are collected in draw-area row-major order, deduplicated like
+`_vineRootsPositions`, and the strips draw right after the foliage pass - the
+C# `PostDrawTiles` order `DrawTrees` -> `DrawVines` (`:428-429`). The strip
+maths is term-for-term: the unclamped `Lerp(0.2, 1, |wind|/1.2)` factor, the
+`-0.08*num3` rotation ladder (+0.0025 at num2>=2, +0.0075*num3 at num2>=5,
+the wall probe incrementing num2 BEFORE the rotation), the remix-flipped
+surface gate, the `GetWindGridPush(x, i, 20, 0.01)` subtract/-0.78-bounce
+accumulator, the `(rot + PI/2).ToRotationVector2()*16` anchor walk, the
+`(tileWidth/2, halfBrickHeight - tileTop)` origin and the case-638
+`GlowMask[327]` glowmask (`Color.Lerp(White, tileLight, 0.75)`, `:6080-6084`,
+sheet now packed). `_vineWindCounter` (`:375`) rides the sunflower's 60 Hz
+step. The G6 key mixes the vine counter into the existing windy-anim slot and
+adds the `WindGrid` clock ONLY when a vine thread is in the view rect (the
+push decays on the grid clock even in calm air; vine-free worlds keep the
+old cache behaviour bit-for-bit).
+
+Deliberate deviations:
+- The `NextNatureRenderer` LitNature dawn/dusk shader
+  (`NextNatureRenderer.cs:71-145`) is not ported - segments draw plain, like
+  its `DrawWithoutShader` arm (`:111-119`); the `seam_bottom` flag is computed
+  and carried for that future port. Same standing deviation as the tree
+  canopies' nature draw.
+- The `biomeSight` recolour + its `Dust.NewDust` roll (`:9089-9115`) are
+  skipped: the port has no biome sight, and adding the roll would change the
+  draw RNG stream order.
+- The strip applies NO `GetFinalLight` actuation ghost (the C# reads
+  `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
+- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) and multi-tile
+  vine (`DrawMultiTileVines` `:8829-8888`) passes are separate C# passes and
+  stay unported (S1-G-1's remaining waves); their cells keep the old inline
+  draw.
+- The dark-cell merge still covers unlit vine cells (the port's black-quad
+  coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
+  which the vine cells never reach - a documented z-order/coverage
+  approximation of the fused pass, unchanged by this wave.
+
+Tests: `s1_g_1a_*` (10, `render/vines.rs`) - the root crawl + dedup, the
+platform/no-attach/bottom-slope/half-brick attachment gates, the calm straight
+hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
+gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
+hide-not-break.
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
