@@ -276,7 +276,9 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
 - **`world_sim/`** — the fixed-step simulation, each system a free function called in the
   original order: `step.rs` (`FixedStepper`, the one 60 Hz accumulator shared by what used
   to be six identical `while` loops), `player.rs`, `npcs.rs`, `items.rs`,
-  `projectiles.rs`, `editing.rs` (mine/place/walls), `clock.rs` (`Main.time`, day/night),
+  `projectiles.rs`, `editing.rs` (mine/place/walls) + `editing/wiring.rs` (S1-K-4d: the
+  actuation/wire tool family — wrenches/cutter/Actuator/Actuation Rod, moved verbatim,
+  `use_wiring_tool` re-exported from `editing`), `clock.rs` (`Main.time`, day/night),
   `liquids.rs`, `weather.rs`, `camera.rs`.
 - **`menu/`** — the immediate-mode `Main.DrawMenu` port: `mod.rs` (the `Menu` state, item
   hit tests, slider drag), `pages.rs` (each screen's row list and `Page::layout`
