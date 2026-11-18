@@ -476,6 +476,10 @@ pub struct World {
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
+    /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
+    /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
+    /// the port stamps no wall clock; a loaded file's value round-trips.
+    pub creation_time: i64,
 }
 
 impl World {
@@ -647,6 +651,7 @@ impl World {
             unique_id: [0u8; 16],
             world_id: 0,
             last_played: 0,
+            creation_time: 0,
         }
     }
 
@@ -1199,17 +1204,6 @@ impl World {
     #[inline]
     pub fn is_active(&self, x: i32, y: i32) -> bool {
         self.tile(x, y).is_some_and(|t| t.active())
-    }
-
-    /// Approximate surface (first active tile scanning down the middle column).
-    pub fn compute_spawn_y(&mut self) {
-        let x = self.width / 2;
-        for y in 0..self.height {
-            if self.is_active(x, y) {
-                self.spawn_y = (y - 6).max(0);
-                return;
-            }
-        }
     }
 
     pub fn memory_bytes(&self) -> usize {
