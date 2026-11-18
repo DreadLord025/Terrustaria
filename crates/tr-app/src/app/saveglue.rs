@@ -345,6 +345,9 @@ impl App {
         self.invasion_progress_display_left = 0;
         self.invasion_progress_alpha = 0.0;
         self.invasion_progress_icon = 0;
+        // `WorldGen.cs:6714`: `InGameNotificationsTracker.Clear()` — the
+        // unlock toasts never survive onto the menu (S1-E-26 wave A).
+        self.notifications.clear();
         // `SaveAndQuitCallBack` (`WorldGen.cs:6669-6677`): StopPlayTimer +
         // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
         // `Main.netMode == 0` arm) — the port's one save funnel writes the

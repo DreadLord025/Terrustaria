@@ -10451,7 +10451,11 @@ powers/research — each needs its own scope.
   `save_world`. `load_pairs` resets `Condition.frac` to 0 because the text
   format stores only the whole `value` (a `CustomFloat` sub-unit fraction is
   in-memory only until saved). `notify` persists on completion and returns only
-  the last completed achievement (C# fires `OnCompleted` per completion).
+  the last completed achievement name (the caller-facing shape), but since
+  S1-E-26 wave A **every** completing row fires: `notify_with` queues each one
+  into `AchievementManager.completed_events` (Save + event per row,
+  `AchievementManager.cs:180-187`), and `App::drain_achievement_completions`
+  consumes the queue once per frame.
 - **Notify sites (S1-E-18, partial).** `notify_with` applies the C# `Value`-setter
   semantics (clamp `[0,max]`, complete at `max`) with wrappers for progression,
   custom flag/int/float. Wired sites: progression 1/3/5/6/8/9/16, altar smash
@@ -10480,6 +10484,54 @@ powers/research — each needs its own scope.
   `MagicPixel` fill/blip splices; the scroll rides the mouse wheel instead of the
   `UIScrollbar`; the gamepad link points (`SetupGamepadPoints`, ids 3000+) are
   out of scope; there are no UI click sounds.
+
+## The achievement unlock popup (S1-E-26 wave A)
+
+The completion → toast chain is ported: `AchievementManager.AchievementCompleted`
+(`AchievementManager.cs:180-187`) → `OnAchievementCompleted` →
+`InGameNotificationsTracker.AddCompleted` (`UI/InGameNotificationsTracker.cs:75-81`,
+the `netMode != 2` gate) → `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13-148`).
+The port's event seam is `AchievementManager.completed_events` (one entry per
+completing row, registry order — the old "only the last completion" divergence is
+fixed); `App::drain_achievement_completions` (`app/mod.rs`) runs the two
+subscribers once per frame after the update branch:
+
+- the popup (`ui/notifications.rs`): the 300-tick timer (`Update`, `:80-87`),
+  the `Scale`/`Opacity` curves (`:39-66` — the timer counts DOWN, so the
+  `> 285` arm is the 15-tick fade-in and `< 30` the 30-tick fade-out), the
+  `(MeasureString + (58, 10)) * Scale * 1.1` plate (`:100-102`), the icon +
+  border at `num * 0.3` scale with the `(0, 32)` / `(4, h/2)` origins
+  (`:106-108`), the `mouseTextColor` title at anchor `(1, 0.4)` (`:109`) and
+  the `50 * Opacity` anchor push (`:89-93`). The tracker walk
+  (`DrawInGame`, `InGameNotificationsTracker.cs:38-55`) starts at
+  `(screenWidth/2, screenHeight - 40)` and breaks below `-100`.
+- the chat + sound subscriber (`AchievementInitializer.cs:728-735`): the
+  `Achievements.Completed` line with the `[a:NAME]` tag
+  (`AchievementTagHandler.GenerateTag`) through `Main.NewText` (white +
+  `PlaySound(12)`), then the tracked `SoundID.AchievementComplete`
+  (`SoundID.cs:1597`, cue `achievement_complete`) behind the
+  `FindActiveSound == null` guard.
+
+The popup click (`OnMouseOver`, `:117-142`) consumes the left-release edge
+(`App.ui_left_release`), opens the achievements overlay and scrolls to the row
+(`IngameFancyUI.OpenAchievementsAndGoto` → `UIList.Goto`'s
+`ViewPosition = item.Top.Pixels`, `App::open_achievements_and_goto`). The
+update tick rides `frame()` before the world branch (`Main.cs:17045` — menus
+included, capture-frozen); the draw rides after the achievements overlay
+(`DrawInterface_13`, `Main.cs:44779-44783`); `SaveAndQuit` clears the tracker
+(`WorldGen.cs:6714`).
+
+**Deviations:** the join-request popup (`PlayerWantsToJoinGamePopup`) and the
+notifications-area draw (`DrawInIngameOptions`) are unported (no social join
+flow); the gamepad anchor drop (`-25f`) and the `IgnoreMouseInterface` /
+`mouseInterface` gates have no port counterpart (the buff-bar hover's
+documented gap); an expired popup stays in the list at opacity 0 until
+`Clear` — the vanilla quirk (`ShouldBeRemoved` only rides the click, `:141`),
+kept 1:1; the menu-twin draw site (`Main.cs:48457`) is unreachable in the port
+because the drain runs on the world branch and `SaveAndQuit` clears the list;
+the chat line prints the raw `[a:NAME]` tag (the port's chat carries no
+snippet markup yet, `chat.rs`); the popup's `gameMenu && menuMode == 0` click
+gate is moot for the same reason.
 
 ## The pillar worms (M4-EVENT-14)
 
@@ -16707,16 +16759,26 @@ Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
 derivation of the integer row count, not a `Math.Round` port) and applies
 the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
 
-Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
-stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
-Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
-GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
-the `OverflowHidden` clip of the 68 px inner box
-(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
-CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
-port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
-(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
-inset and centring are faithful; only the scale/clip mechanism is approximate.
+The interim `portrait_fit` uniform scale-down stand-in is GONE
+(fix/bestiary-per-npc-scale, 2026-11-18): the per-NPC
+`NPCID.Sets.NPCBestiaryDrawOffset` table landed as a generated static table
+(`tools/gen_bestiary_draw_offsets.py` -> `ui/bestiary_draw_offsets.rs`, 666
+rows; sources `NPCID.cs:393-412` merge order + `GetRedigitEntries`
+`:414-770`, `GetGroxEntries` `:772-786`, `GetLeinforsEntries` `:788-...`,
+struct defaults `:15-42`). `portrait_layout` applies
+Scale/PortraitScale/Position/PortraitPositionX-YOverride/Frame per
+`UnlockableNPCEntryIcon.cs:52-82` + `UpdatePosition` `:112-123` (floor
+included); the 68 px inner box clips via `SpriteRenderer::push_clip`
+(`UIBestiaryEntryButton.cs:30-38` `OverflowHidden`, the info-page card the
+same per `UIBestiaryNPCEntryPortrait.cs:20-28` with `isPortrait: true`
+`:56`). `CustomTexturePath` portraits (`UI/Bestiary/NPCs/NPC_*`, 25 ids)
+are packed in `STATIC_SHEET_NAMES` and drawn centred per `:197-201`.
+`Rotation` rides `push_ui_sprite_rot` about the frame centre
+(`DrawNPCDirect`'s centre-origin draw). Remaining approximation: the
+`Direction`/`SpriteDirection` horizontal flip (`Main.cs:23123-23127`,
+default -1) is not modelled — the UI pipeline has no flip seam yet; the
+`Velocity`-driven hover animation is likewise still frame 0 at rest
+(faithful for the idle icon, `Velocity` rows animate only while hovered).
 
 ## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
 
