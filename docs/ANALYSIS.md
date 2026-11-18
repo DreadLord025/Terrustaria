@@ -2613,6 +2613,34 @@ and a third was the click gate the geometry feeds):
   (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
   — the port keeps one flat roster — and the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
+* **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
+  (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
+  (1) the draw centred the 14×36 roster inside the grid rect (`UIList.HAlign
+  = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` hit-tested the *uncentred*
+  lattice (+31 px at 1600×900), so hover lit the neighbouring cell and clicks
+  spawned the neighbouring emote; the shared `grid_origin` now feeds both.
+  (2) The "hover highlight" was a wrong port of `EmoteButton.GetFrame`
+  (`:32-36`): frame 2 is the idle blink of the shared 20-tick `_frameCounter`
+  (`UpdateFrame` `:38-44`), not the hover pick — the real hover is the
+  `Images/UI/EmoteBubbleBorder` sheet tinted `Main.OurFavoriteColor`
+  (255,231,69, `Main.cs:66748`) plus the `/EmojiName.*` MouseText
+  (`DrawSelf` `:62-74`); the border sheet was never packed and is now.
+  (3) The bubble draw received raw world coordinates with no camera/zoom
+  transform (vanilla `GetPosition` subtracts `screenPosition` and draws under
+  `GameViewMatrix.ZoomMatrix`, `Main.cs:46455-46459`), so every bubble drew
+  thousands of px offscreen; it also anchored at the head-top instead of
+  `GetPosition`'s `(Top.X − dir·width·0.75, y+2)` bottom-centre origin
+  (`EmoteBubble.cs:206`/`:247-249`) and dropped the direction flip. The
+  lifetime math now matches `Update`'s short-circuit (`--lifeTime > 0 &&
+  ++frameCounter >= 8`, `:179`) and `OnBubbleChange`'s unconditional
+  `lifeTime = 6` on the other same-player bubbles (`:273` — the port used to
+  guard `> 6`). The wheel's Back click hit-tested the bestiary's box (BUG-18's
+  draw-side fix never reached the click arm) and the pick now honours
+  `MakeLocalPlayerEmote`'s dead gate (`:280`). Remaining deliberate gaps: the
+  reverse-gravity arm (`Draw` `:207-212`) stays out with the unported gravity
+  flip, the NPC reactions (`CheckForNPCsToReactToEmoteBubble` `:152-167`) with
+  M4-TOWN, and the button blink rides the world step instead of the UI update
+  (the wheel is only reachable in-game where the world keeps stepping).
 
 Open gaps (deliberately out, each with its reason):
 
