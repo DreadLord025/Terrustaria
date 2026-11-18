@@ -70,14 +70,33 @@ pub fn grid_rect(screen: Vec2) -> [f32; 4] {
     ]
 }
 
-/// The emote id under the cursor (the scroll-shifted grid).
+/// The grid's cell origin — the row lattice is centred inside the grid rect
+/// (the `UIList`'s `HAlign = 0.5`, `UIEmotesMenu.cs:66`, over the 14×36 px
+/// roster row). The draw and the hit test share it: before the fix the draw
+/// centred the cells (+31 px at 590−24 wide) while `card_at` read the
+/// uncentred lattice, so hover lit the wrong cell and clicks picked the
+/// neighbouring emote.
+pub fn grid_origin(rect: &[f32; 4]) -> [f32; 2] {
+    [
+        rect[0] + (rect[2] - COLS as f32 * CELL) * 0.5,
+        rect[1],
+    ]
+}
+
+/// The emote id under the cursor (the scroll-shifted grid) — the same
+/// centred lattice the draw uses (`grid_origin`).
 pub fn card_at(screen: Vec2, mouse: Vec2, scroll: i32) -> Option<i32> {
     let rect = grid_rect(screen);
-    if mouse.x < rect[0] || mouse.y < rect[1] {
+    let origin = grid_origin(&rect);
+    let dx = mouse.x - origin[0];
+    let dy = mouse.y - origin[1];
+    // The explicit negative guard: a float→usize cast saturates at 0, which
+    // would make the centring margin hit column 0.
+    if dx < 0.0 || dy < 0.0 {
         return None;
     }
-    let col = ((mouse.x - rect[0]) / CELL) as usize;
-    let row = ((mouse.y - rect[1]) / CELL) as usize;
+    let col = (dx / CELL) as usize;
+    let row = (dy / CELL) as usize;
     if col >= COLS || row >= visible_rows(&rect) {
         return None;
     }
@@ -101,54 +120,102 @@ pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
 
 /// `back_hit` against *this* panel (`UIEmotesMenu.cs:78-86`'s Back) — the
 /// bestiary twin reads the bestiary container, so the wheel keeps its own.
-fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
+pub fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
     let r = back_rect(panel);
     mouse.x >= r[0] && mouse.x <= r[0] + r[2] && mouse.y >= r[1] && mouse.y <= r[1] + r[3]
 }
 
+/// `EmoteBubble.GetPosition`'s entity arm (`EmoteBubble.cs:247-249`):
+/// `(entity.Top.X, VisualPosition.Y) + (-direction*width*0.75, 2)` in world
+/// px — `Top.X` is the hitbox's horizontal centre. Returns the anchor and
+/// the `SpriteEffects.FlipHorizontally` flag (`direction != -1`, `:248`).
+/// The port anchors the local player only; `VisualPosition`'s net/gfx
+/// offsets are not modelled for the local player, and the reverse-gravity
+/// arm (`:207-212`) stays out with the unported gravity flip.
+pub fn bubble_anchor(
+    player_x: f32,
+    player_y: f32,
+    width: f32,
+    facing: i32,
+) -> ([f32; 2], bool) {
+    (
+        [
+            player_x + width * 0.5 - facing as f32 * width * 0.75,
+            player_y + 2.0,
+        ],
+        facing != -1,
+    )
+}
+
 /// The full wheel + bubble draw (`EmoteBubble.DrawAll` + the menu state).
+/// The bubbles ride the world→UI transform (`Main.GameViewMatrix.ZoomMatrix`,
+/// `DrawInterface_1_1_DrawEmoteBubblesInWorld` `Main.cs:46455-46459`) — the
+/// same `(world - camera) * zoom + screen/2` the breath bubbles use
+/// (`ui::resources::draw_breath`); before the fix the raw world coordinates
+/// went straight into the UI batch, putting every bubble thousands of px
+/// offscreen.
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     emotes: &crate::emotes::EmoteSystem,
-    player_center: Vec2,
-    player_dir: i32,
+    player: Option<&crate::player::Player>,
+    camera: Vec2,
+    zoom: f32,
     mouse: Vec2,
+    pulse: super::UiPulse,
 ) {
-    // The bubbles (`EmoteBubble.Draw`, `:209-251`).
-    if let Some(sheet) = lookups.ui_emote_sheet {
+    // The bubbles (`EmoteBubble.Draw`, `EmoteBubble.cs:199-241`).
+    if let (Some(sheet), Some(p)) = (lookups.ui_emote_sheet, player) {
         let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-        let sh = sheet.height as f32 / crate::emotes::SHEET_ROWS as f32;
-        let sw = sheet.width as f32 / 8.0;
-        let mut draw_frame = |col: f32, row: f32, pos: [f32; 2], flip: bool| {
-            let x0 = sheet.x as f32 + sw * col;
-            let y0 = sheet.y as f32 + sh * row;
-            let uv = [x0 / aw, y0 / ah, (x0 + sw) / aw, (y0 + sh) / ah];
-            r.push_ui_sprite(pos, [sw, sh], uv, [1.0; 4]);
-            let _ = flip;
+        // `value.Frame(8, EMOTE_SHEET_VERTICAL_FRAMES, …)` — integer division
+        // (`Utils.Frame`): 272/8 = 34 wide, 1092/39 = 28 tall.
+        let sw = (sheet.width / 8) as f32;
+        let sh = (sheet.height / crate::emotes::SHEET_ROWS as u32) as f32;
+        // `origin = (frame.Width/2, frame.Height)` (`:206`): the bubble
+        // hangs from its bottom centre.
+        let mut draw_frame = |col: i32, row: i32, anchor: [f32; 2], flip: bool| {
+            let x0 = sheet.x as f32 + sw * col as f32;
+            let y0 = sheet.y as f32 + sh * row as f32;
+            let mut uv = [x0 / aw, y0 / ah, (x0 + sw) / aw, (y0 + sh) / ah];
+            if flip {
+                uv = crate::render::player_layers::flip_uv(uv, true);
+            }
+            let pos = [
+                anchor[0] - sw * zoom * 0.5,
+                anchor[1] - sh * zoom,
+            ];
+            r.push_ui_sprite(pos, [sw * zoom, sh * zoom], uv, [1.0; 4]);
         };
         for b in &emotes.bubbles {
-            // The anchor: the player's top-left + the direction offset
-            // (`GetPosition`'s entity arm, `:253-261`) — the port anchors
-            // the local player only.
-            let pos = [
-                player_center.x - 10.0 - player_dir as f32 * 15.0,
-                player_center.y - 44.0,
+            let (mut world, mut flip) =
+                bubble_anchor(p.x, p.y, crate::player::WIDTH, p.facing);
+            // `GetPosition(...).Floor()` (`:203`).
+            world = [world[0].floor(), world[1].floor()];
+            // The 87/89 un-flip (`:220-224`): the confused/sleep emotes keep
+            // their orientation and shift 4 px right instead.
+            if flip && (b.emote == 87 || b.emote == 89) {
+                flip = false;
+                world[0] += 4.0;
+            }
+            let anchor = [
+                (world[0] - camera.x) * zoom + screen.x * 0.5,
+                (world[1] - camera.y) * zoom + screen.y * 0.5,
             ];
             // The pop gate: the first/last 6 ticks draw the closed shell
-            // (`:213-217`).
+            // (`:204-205`).
             let popping = b.life_time < 6 || b.life_time_start - b.life_time < 6;
-            let shell_col = if popping { 0.0 } else { 1.0 };
-            draw_frame(shell_col, 0.0, pos, false);
+            let shell_col = if popping { 0 } else { 1 };
+            draw_frame(shell_col, 0, anchor, flip);
             if popping {
                 continue;
             }
             // The emote sprite: column `emote*2%8 + frame`, row `1 + emote/4`
-            // (`:232-236`).
+            // (`:225`).
             let col = (b.emote * 2) % 8 + b.frame;
             let row = 1 + b.emote / 4;
-            draw_frame(col as f32, row as f32, pos, false);
+            draw_frame(col, row, anchor, flip);
         }
     }
     // The wheel (`UIEmotesMenu`): the shared panel chrome + the grid.
@@ -164,29 +231,88 @@ pub fn draw(
     );
     text::hud_text(r, lookups, panel[0] + 12.0, panel[1] + 10.0, 1.0, [1.0; 4], "Emotes");
     let rect = grid_rect(screen);
+    let origin = grid_origin(&rect);
+    let hovered = card_at(screen, mouse, emotes.scroll);
     if let Some(sheet) = lookups.ui_emote_sheet {
         let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-        let sh = sheet.height as f32 / crate::emotes::SHEET_ROWS as f32;
-        let sw = sheet.width as f32 / 8.0;
+        // The button's true frame size (`EmoteButton`'s ctor `:27-29` reads
+        // `GetFrame().Width/Height` — 34x28), centred in the 36 px lattice
+        // cell (`EmotesGroupListItem.SIZE_PER_EMOTE`, `:15`).
+        let sw = (sheet.width / 8) as f32;
+        let sh = (sheet.height / crate::emotes::SHEET_ROWS as u32) as f32;
         for row in 0..visible_rows(&rect) {
             for col in 0..COLS {
                 let idx = row * COLS + col + emotes.scroll as usize;
                 if idx >= crate::emotes::EMOTE_COUNT as usize {
                     break;
                 }
-                let x = rect[0] + col as f32 * CELL + (rect[2] - COLS as f32 * CELL) * 0.5;
-                let y = rect[1] + row as f32 * CELL;
-                // `EmoteButton.GetFrame` (`:32-36`): the hover picks the
-                // second frame (`emote%4*2 + hover`), row `emote/4 + 1`.
                 let id = idx as i32;
-                let hover = card_at(screen, mouse, emotes.scroll) == Some(id);
-                let fcol = (id % 4) * 2 + if hover { 1 } else { 0 };
+                let cx = origin[0] + col as f32 * CELL + CELL * 0.5;
+                let cy = origin[1] + row as f32 * CELL + CELL * 0.5;
+                let hover = hovered == Some(id);
+                // `EmoteButton.DrawSelf` (`:52-75`): the shell frame
+                // (column 1, row 0), the emote frame, then the border —
+                // black idle, `Main.OurFavoriteColor` (255,231,69,
+                // `Main.cs:66748`) hovered, at `center - (2, 2)`.
+                let shell_x0 = sheet.x as f32 + sw;
+                let shell_y0 = sheet.y as f32;
+                let shell_uv = [
+                    shell_x0 / aw,
+                    shell_y0 / ah,
+                    (shell_x0 + sw) / aw,
+                    (shell_y0 + sh) / ah,
+                ];
+                r.push_ui_sprite(
+                    [cx - sw * 0.5, cy - sh * 0.5],
+                    [sw, sh],
+                    shell_uv,
+                    [1.0; 4],
+                );
+                // `GetFrame` (`:32-36`): `emote%4*2 + (frameCounter >= 10)`,
+                // row `emote/4 + 1` — the second frame is the idle blink,
+                // not the hover pick.
+                let fcol = (id % 4) * 2 + emotes.button_frame();
                 let frow = 1 + id / 4;
                 let x0 = sheet.x as f32 + sw * fcol as f32;
                 let y0 = sheet.y as f32 + sh * frow as f32;
                 let uv = [x0 / aw, y0 / ah, (x0 + sw) / aw, (y0 + sh) / ah];
-                r.push_ui_sprite([x, y], [CELL, CELL], uv, [1.0; 4]);
+                r.push_ui_sprite(
+                    [cx - sw * 0.5, cy - sh * 0.5],
+                    [sw, sh],
+                    uv,
+                    [1.0; 4],
+                );
+                // The border (`Images/UI/EmoteBubbleBorder`, 36x30,
+                // `EmoteButton.cs:25`/`:69`).
+                if let Some(border) = lookups.ui_emote_border {
+                    let tint = if hover {
+                        [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 1.0]
+                    } else {
+                        [0.0, 0.0, 0.0, 1.0]
+                    };
+                    push_whole(
+                        r,
+                        lookups,
+                        &border,
+                        [
+                            cx - 2.0 - border.width as f32 * 0.5,
+                            cy - 2.0 - border.height as f32 * 0.5,
+                            border.width as f32,
+                            border.height as f32,
+                        ],
+                        tint,
+                    );
+                }
             }
+        }
+    }
+    // The hovered emote's name (`EmoteButton.DrawSelf` `:70-74`):
+    // `"/" + Language.GetTextValue("EmojiName." + EmoteID.Search.GetName(id))`
+    // through `Main.MouseText`.
+    if let Some(id) = hovered {
+        if let Some((_, name)) = crate::emotes::EMOTE_NAMES.iter().find(|(i, _)| *i == id) {
+            let label = format!("/{}", crate::lang::text(&format!("EmojiName.{name}")));
+            super::tooltip::draw_mouse_text(r, lookups, mouse, &label, screen, pulse);
         }
     }
     // The Back panel (`UIEmotesMenu.cs:78-87`): `UITextPanel<LocalizedText>(
@@ -238,6 +364,7 @@ mod tests {
         // flat roster against the same lattice.
         let screen = Vec2::new(1600.0, 900.0);
         let grid = grid_rect(screen);
+        let origin = grid_origin(&grid);
         let rows = visible_rows(&grid);
         assert!(rows >= 1);
         for scroll in 0..=(crate::emotes::EMOTE_COUNT as usize).div_ceil(COLS) {
@@ -247,8 +374,8 @@ mod tests {
                     if idx >= crate::emotes::EMOTE_COUNT as usize {
                         continue;
                     }
-                    let cx = grid[0] + col as f32 * CELL + CELL * 0.5;
-                    let cy = grid[1] + row as f32 * CELL + CELL * 0.5;
+                    let cx = origin[0] + col as f32 * CELL + CELL * 0.5;
+                    let cy = origin[1] + row as f32 * CELL + CELL * 0.5;
                     assert_eq!(
                         card_at(screen, Vec2::new(cx, cy), scroll as i32),
                         Some(idx as i32),
@@ -287,15 +414,16 @@ mod tests {
         // until the roster runs out and `card_at` returns None.
         let screen = Vec2::new(1600.0, 900.0);
         let grid = grid_rect(screen);
+        let origin = grid_origin(&grid);
         let last = (crate::emotes::EMOTE_COUNT as usize - 1) / COLS;
         let col = (crate::emotes::EMOTE_COUNT as usize - 1) % COLS;
-        let cx = grid[0] + col as f32 * CELL + CELL * 0.5;
-        let cy = grid[1] + last as f32 * CELL + CELL * 0.5;
+        let cx = origin[0] + col as f32 * CELL + CELL * 0.5;
+        let cy = origin[1] + last as f32 * CELL + CELL * 0.5;
         assert_eq!(
             card_at(screen, Vec2::new(cx, cy), 0),
             Some(crate::emotes::EMOTE_COUNT - 1)
         );
-        let cx2 = grid[0] + (col + 1) as f32 * CELL + CELL * 0.5;
+        let cx2 = origin[0] + (col + 1) as f32 * CELL + CELL * 0.5;
         assert_eq!(card_at(screen, Vec2::new(cx2, cy), 0), None);
     }
 
@@ -326,6 +454,55 @@ mod tests {
         );
         // And the wheel's own box is 20 px above the bestiary's top edge.
         assert_eq!(bestiary[1] - back[1], 20.0);
+    }
+
+    #[test]
+    fn hover_picks_the_drawn_cell_not_the_uncentred_lattice() {
+        // The break: the draw centred the 14x36 roster inside the grid
+        // (`UIList.HAlign = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` read
+        // the uncentred lattice — at 1600x900 the offset is
+        // (566 - 504)/2 = 31 px, so a pointer on a drawn cell resolved its
+        // left neighbour (and the leftmost 31 px lit nothing).
+        let screen = Vec2::new(1600.0, 900.0);
+        let grid = grid_rect(screen);
+        let origin = grid_origin(&grid);
+        assert_eq!(origin[0] - grid[0], (grid[2] - COLS as f32 * CELL) * 0.5);
+        // The drawn centre of cell (3, 1) resolves to id 17.
+        let cx = origin[0] + 3.0 * CELL + CELL * 0.5;
+        let cy = origin[1] + 1.0 * CELL + CELL * 0.5;
+        assert_eq!(card_at(screen, Vec2::new(cx, cy), 0), Some(17));
+        // The centring margin left of the roster is not a cell (the old
+        // float→usize cast saturated the negative offset to column 0).
+        assert_eq!(
+            card_at(screen, Vec2::new(grid[0] + 2.0, origin[1] + 5.0), 0),
+            None
+        );
+        // Every cell edge pair agrees: the point just inside the drawn
+        // cell's left edge hits that cell, just outside hits the previous.
+        let left_edge = origin[0] + 5.0 * CELL;
+        assert_eq!(
+            card_at(screen, Vec2::new(left_edge + 0.5, origin[1] + 5.0), 0),
+            Some(5)
+        );
+        assert_eq!(
+            card_at(screen, Vec2::new(left_edge - 0.5, origin[1] + 5.0), 0),
+            Some(4)
+        );
+        // Scroll shifts the roster, not the lattice.
+        assert_eq!(card_at(screen, Vec2::new(cx, cy), 14), Some(31));
+    }
+
+    #[test]
+    fn the_bubble_anchor_is_the_c_sharp_entity_arm() {
+        // `GetPosition` (`EmoteBubble.cs:247-249`): `(Top.X, y) +
+        // (-direction*width*0.75, 2)`, `Top.X` = x + width/2; flip while
+        // `direction != -1` (`:248`).
+        let (pos, flip) = bubble_anchor(1000.0, 2000.0, 20.0, 1);
+        assert_eq!(pos, [1000.0 + 10.0 - 15.0, 2002.0]);
+        assert!(flip);
+        let (pos, flip) = bubble_anchor(1000.0, 2000.0, 20.0, -1);
+        assert_eq!(pos, [1000.0 + 10.0 + 15.0, 2002.0]);
+        assert!(!flip);
     }
 
     #[test]
