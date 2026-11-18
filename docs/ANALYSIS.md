@@ -15670,3 +15670,20 @@ eclipse, weather, music) are out of this slice.
   floor. The blood-moon and graveyard tint arms are unported (events).
 * Dawn's 53400 sub-threshold (`Main.time >= 53400.0`, the Empress enrage at
   `NPC.cs:46238-46245`) is out of slice: the Empress is not ported.
+
+### Citation repairs (cite-repair)
+
+Four out-of-range C# citations were corrected by comment-only edits (no behaviour
+change); each new range was verified against the decompiled source line by line:
+
+* crates/tr-app/src/buffs.rs:222 -> GameDifficultyData.cs:81-92 (was :96-100;
+  the file is 93 lines and the static ctor at :81-92 is what seeds
+  DebuffTimeMultiplier with Classic 1 / Expert 2 / Master 2.5 at :89).
+* crates/tr-app/src/map.rs:607 -> WorldMap.cs:44-47 (was :406-409; the file is
+  291 lines and IsRevealed at :44-47 is `return this._tiles[x, y].Light > 0`).
+* crates/tr-app/src/projectile.rs:12378 -> Projectile.cs:13904-14263 (was the
+  reversed 14258-13956; the corrected span is the first line of the per-type
+  whip switch through the aiStyle-165 MinionAttackTargetNPC write at
+  :14257-14263, which is where the Rust fn's arms live).
+* crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
+  the enum declaration plus body spans :3-9, ending at the closing brace on :9).
