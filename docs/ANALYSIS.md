@@ -4503,6 +4503,17 @@ locks and never damps), the dead-player abandonment (3 s dead → the
 wall kills itself), the tongue phase (`ai[1]` 2700 with the hp bonuses
 → the 3-4 phase cycle → the Leech spawns) and the Hungry init (11
 minions along the band).
+**Re-audited 2026-11-18 (S1-D-3 aiStyle-27 round, code-only mode): the
+"verbatim" claim above is FALSE — the live arm + the sim write-through
+are an approximation with a catastrophic every-tick respawn loop; see
+"The Wall of Flesh aiStyle-27 re-port (S1-D-3)" below. The faithful
+module `npc_ai_style27.rs` is landed UNWIRED; the live `update_wof`
+keeps running until the wiring round. Corrections to the paragraph
+above: the 160-px clamp was never implemented (only the ease), the
+bottom walk never counted liquid, the classic ladder tops out at 3.25
+(not 2.75 — no threshold produces 2.75; the cumulative sums are
+1.75/2.15/2.65/3.25), and the abandonment timer rides
+`ai[0]`, not the C#'s `localAI[1]`.**
 
 A structural note: the AI arms hold `&World`, so the wall cannot write
 the band — the wall's AI computes the scan targets onto its own
@@ -4531,6 +4542,89 @@ wall's band); the expert burst block (the hp-scaled spawn odds) and the
 is cosmetic and skipped. The bestiary `card_at` now matches the draw's
 centred lattice — the stale top-left guard dropped cards once the
 roster's rows overflowed the panel.
+**Correction (S1-D-3 aiStyle-27 round): the roar timer is NOT
+cosmetic-only — it draws `Main.rand.Next(1000)` every tick and
+`Next(200)` on each roar (`NPC.cs:25717`/`:25719`), so skipping it
+desynchronises the shared RNG stream for every later consumer. The
+faithful module keeps both draws.**
+
+### The Wall of Flesh aiStyle-27 re-port (S1-D-3, code-only mode)
+
+The 2026-11-18 aiStyle-27 round re-read the WHOLE arm
+(`NPC.cs:25635-26052`, located exactly: the `else if (this.aiStyle == 27)`
+block runs to `:26052`, style 28 starts `:26053`) against the live
+`npc.rs::update_wof` (`:7282-7460`) and the sim write-through
+(`world_sim/npcs.rs:3557-3652`), using the f1701eb0 (aiStyle-29) defect
+catalogue as the checklist. Verdict: **the arm is wholesale-approximate
+— the escape clause applies** (the style-28/29 precedent): a faithful
+UNWIRED module lands instead of surgical hunks, because the defects
+span the AI arm AND the sim resolve AND the missing context plumbing.
+
+| # | Defect class (f1701eb0 checklist) | C# cite | Live-port evidence | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 | **Every-tick respawn loop** (catastrophic): the two 114 eyes spawn outside any gate; `wants_hungry`/`wants_leech` never cleared → 11 Hungries + a leech re-spawn every tick | `:26041-26043` (`localAI[0] == 1f` → `2f`, once) | `world_sim/npcs.rs:3594-3604` (eyes unconditional), `:3605-3613` + no flag clear anywhere | DEFECT — module gates the init on `local_ai[0] == 1` |
+| 2 | Missing band clamps + 160-px enforcement | `:25833-25842` | sim comment cites `:25834-25840` but implements only the ease (`:3616-3645`) | DEFECT — module ports both clamps + both 160 arms |
+| 3 | Bottom walk drops the liquid term | `:25746` (`SolidTile \|\| liquid > 0`) | `npc.rs:7347-7351` counts solids only (the top walk has it) | DEFECT — both walks count solid-or-liquid |
+| 4 | Missing `InWorld(x, y, 2)` fluff gate | `:25746`/`:25801` | no bounds-fluff test in either live walk | DEFECT — module gates both inner tests (the `catch` `:25751-25754` is defensive/unreachable behind InWorld — documented, not emulated) |
+| 5 | Missing `TargetClosest` + dead-target nearest-active Euclidean direction pick | `:25899-25921` | `npc.rs:7406-7410` faces by the session player's x, no scan | DEFECT — module rides `npc_target::target_closest` + the `Distance` scan |
+| 6 | Missing `TargetClosest_WOF` (the gross/Horrified re-pick) | `:25933-25936`, `NPC.cs:77668-77682` | never re-targets | DEFECT — module filters the shared scan on `active && !dead && !ghost && gross` (`ctx.player_gross` slice; `TargetCandidate` has no gross field yet) |
+| 7 | INT-division Y pin | `:25843` (`(Bottom+Top)/2 - height/2`, all int; `Main.cs:757`/`:759`) | `npc.rs:7386` f32 halves — odd sums pin 0.5 px off | DEFECT — module divides ints |
+| 8 | Rotation drops the `num363` distance scale; float vs integer halves | `:25960-25963` (deltas ×= distance before Atan2), `:25958-25959`/`:25966`/`:25975` (player `(float)(width/2)` INT halves; wall centre FLOAT `:25957`, comparison halves INT) | `npc.rs:7437-7446` atan2's raw deltas, `center()` float halves | DEFECT — module scales both deltas, uses integer player/comparison halves, keeps the literal `3.14f` |
+| 9 | Missing roar RNG cadence (stream desync) | `:25716-25721` (`Next(1000)` every tick, `Next(200)` on roar) | skipped as "cosmetic" (`npc.rs:7281` doc) | DEFECT — module draws both, in order |
+| 10 | Missing first-tick band reset | `:25642-25647` (`localAI[0] == 0` → both statics −1) | relies on the World's initial −1; a second wall inherits the stale band | DEFECT — module resets |
+| 11 | Missing expert arms (speed bonuses ×5 + `*1.35f+0.35f`; the respawn roll) | `:25871-25894`, `:25983-26039` | absent (documented out, but the "verbatim classic" claim also missed classic pieces) | DEFECT — module ports them verbatim behind `ctx.expert` incl. the three INT floors (`(n*19+400)/20`, `(n*3+60)/4`, `(n+20)/2`) and the 10-cap slot pick |
+| 12 | Missing getGoodWorld arms (demon spawn + `*1.1f+0.2f`) | `:25648-25679`, `:25895-25898` | absent | DEFECT — module ports them behind `ctx.get_good_world` (the `Next(180)` first-operand draw, the 1000-attempt column walk with the per-attempt `Next(-50,51)` pair) |
+| 13 | Check-order: edge kill returns; abandonment on `ai[0]` | `:25637-25640` (NO return), `:25939`/`:25954` (`localAI[1]`) | `npc.rs:7286-7289` returns; `:7422-7430` folds the timer into `ai[0]` | DEFECT — module keeps the C# order, `local_ai[1]` timer |
+| 14 | `NewNPC` Bottom placement missed | `NPC.cs:80770` (`Bottom = (X, Y)` → `position = (X − width/2, Y − height)`) | sim spawns at raw top-left `(X, Y)` (`:3576-3611`) — every minion half a box right, a full box low | DEFECT — `Style27Spawn` carries the exact Bottom payload; the wiring resolve applies the setter |
+| — | Tongue timer + hp bonuses, phase cap 3/4, leech `CountNPCS(117) < 10` gate, `direction * 8` | `:25680-25715` | `npc.rs:7292-7317` + sim `:3568-3586` | FAITHFUL in the live arm (the module keeps it; the spawn payload's integer halves + Start=1 pinned) |
+| — | Classic speed ladder rows 1.5/+0.25/+0.4/+0.5/+0.6, f64 int compares | `:25854-25870` | `npc.rs:7391-7403` | FAITHFUL (the live arm already uses f64 raw ints — unlike the Hungry's f32 ratio) |
+| — | One-sided speed lock + `spriteDirection = direction` | `:25923-25932`, `:25956` | `npc.rs:7411-7419`, `:7431-7432` | FAITHFUL |
+| — | Dead-player abandonment ramp 1/180, recovery −1/30 clamp [0,1], kill at ≥1 | `:25937-25955` | `npc.rs:7422-7430` (wrong slot, right maths) | MATHS FAITHFUL, slot wrong (defect 13) |
+
+The faithful port is `crates/tr-app/src/npc_ai_style27.rs`
+(`style27_step` + `Style27Context` + `Style27Spawn`), landed
+**code-only mode**: no compiler invoked, the 15 witness tests are
+written not run. It is **UNWIRED** — `update_rng`'s style axis does not
+claim 27 yet; the live `update_wof` + the sim write-through keep
+running byte-identical. The wiring round adds the `27 =>` dispatch arm
+and the context plumbing: the INT band statics (the port's
+`World.wof_draw_top/bottom` are f32 — convert or add int shadows), the
+`Player.gross` per-slot slice (`player.rs:1270`, S1-E-7c), the live
+`CountNPCS` counts (117/24/115), the Hungry `ai[0]` collection in slot
+order, the `Main.rand` pass-through (`UnifiedRandom`), and the
+Bottom-placement spawn resolve (`position = (X − width/2, Y − height)`,
+`Start` → the slot-search seed, `ai0` → the minion's `ai[0]`, the
+leech's `vx = direction * 8`).
+
+RNG argument (every `Next` cited, in stream order): classic draws
+exactly `Next(1000)` (`:25717`, every tick — the C# evaluates the
+threshold expression on each compare) then conditionally `Next(200)`
+(`:25719`). getGood prepends `Next(180)` (`:25648`, the first `&&`
+operand — drawn every getGood tick) and, inside the `< 4` demon gate,
+the per-attempt `Next(-50, 51)` pair (`:25663-25664`). Expert appends
+`Next((int)((double)num365 * 0.7))` (`:25999`, every expert tick),
+then — only on a 0 hit with < 10 Hungries — `Next(1 + num366 * 2)`
+(`:26012`), then — only on `<= 1` — the `Next(10)` pick loop
+(`:26017`, ≤ 1000 attempts, breaks on the first free `i*0.1f − 0.05f`
+slot). Nothing else draws: the tongue cycle, band scans, ladder,
+target picks and init spawns are deterministic. `UnifiedRandom` is the
+exact C# stream, so the pass-through preserves the global sequence;
+the stream-clone witness (`the_arm_is_deterministic_under_a_cloned_stream`,
+300 ticks) and the draw-order replay
+(`the_expert_respawn_cadence_draws_every_tick`) are WRITTEN NOT RUN.
+
+Deviations (documented, same conventions as the sibling style-28/29
+rounds): `active = false` → the hp-0 death convention (the edge kill
+does NOT return — the corpse tick keeps running, verbatim);
+`NetUpdateLowPriority` → the `net_update` flag stand-in; the sound-4
+cues (`:25720`/`:25942`) ride S1-E-21 while their RNG draws are kept;
+the band statics ride `&mut i32` in-out fields (the caller owns the
+World write-back); the arm does not integrate (noTileCollide —
+`UpdateNPC` owns the step); the `catch` arms (`:25751-25754`/
+`:25806-25809`) are defensive code behind `InWorld` and are not
+emulated; the dead-target scan's decompiler artifact (the C# re-reads
+`Main.player[this.target]` inside the 255-slot loop, `:25908`) is
+ported as the effective nearest-active-player Euclidean scan.
 
 ## The Eye of Cthulhu (M4-BOSS-1)
 
