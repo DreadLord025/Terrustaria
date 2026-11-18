@@ -2835,8 +2835,24 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     // route exactly as vanilla (`CustomPlace` false, or the 82/227/4 exclusions).
     if crate::tileobject::routes_through_tile_object(kind, style) {
         if let Some(def) = crate::tileobject::def_for_tile(kind) {
-            let Some(instance) = crate::tileobject::can_place(world, x, y, def, style, dir, None)
-            else {
+            // S1-F-7b: `Main.rand` = the world's placement stream
+            // (`World::place_rng`), `randomCache` = the world's stickiness
+            // cache (`TileObject.cs:787`/:819, :764-792). The stream is taken
+            // out for the read-only `can_place` call and restored after.
+            let mut rand = std::mem::take(&mut world.place_rng);
+            let instance = crate::tileobject::can_place(
+                world,
+                x,
+                y,
+                def,
+                style,
+                dir,
+                None,
+                &mut rand,
+                world.tile_object_random_cache,
+            );
+            world.place_rng = rand;
+            let Some(instance) = instance else {
                 return false;
             };
             if !crate::tileobject::place(world, &instance) {
@@ -5471,7 +5487,18 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         let def = crate::tileobject::def_for_tile(219).unwrap();
-        let inst = crate::tileobject::can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        let inst = crate::tileobject::can_place(
+            &w,
+            10,
+            19,
+            def,
+            0,
+            1,
+            None,
+            &mut crate::unified_random::UnifiedRandom::new(0),
+            None,
+        )
+        .unwrap();
         assert!(crate::tileobject::place(&mut w, &inst));
         // Clear the floor cells the object now covers is NOT done by Place; the
         // object's own cells are what the dispatch reads.

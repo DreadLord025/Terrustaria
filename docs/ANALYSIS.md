@@ -16400,17 +16400,58 @@ candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
   `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
   orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
 
-### Wave B (remaining, documented callbacks)
+### Wave B (S1-F-7b, 2026-11-18): the RandomStyleRange runtime hook
 
-The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
-`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
-(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
-(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
-tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
-`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
-defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
-the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
-test lands with that wiring.
+The `Main.rand` random-style path (`TileObject.cs:761-825`) is now ported and
+wired; the rest of wave B stays documented callbacks.
+
+* `tileobject::can_place` takes `rand: &mut UnifiedRandom` (the `Main.rand`
+  stand-in) and `random_cache: Option<RandomCache>`. The draws are verbatim:
+  `Main.rand.Next(RandomStyleRange)` (:787) is spent EVEN when `forcedRandom`
+  overwrites it (:788-791) or the cache sticks (:792); `SpecificRandomStyles`
+  draws a second `Next(len)` (:819) with the same overwrite/stickiness rules
+  (:820-824) and its result replaces `num37`. Draw order: range first, list
+  second — pinned by `s1_f_7b_specific_random_styles_rand_path_and_draw_order`.
+* `RandomCache` ports the read side of `TileObjectPreviewData.randomCache`
+  (`Type`/`Coordinates`/`ObjectStart`/`Random`, TileObject.cs:769-774/:801-806);
+  the staleness compare is `Coordinates + ObjectStart` vs `click - Origin`
+  (:773-780). A fresh cache is ZERO-initialised (`Random = 0`), not `Reset()`'s
+  -1 — `Reset` is never called on the random cache.
+* **Deliberate deviation (documented)**: the `randomCache` WRITEBACK happens
+  only inside `onlyCheck` (`TileObject.cs:826-837`, verified: no other writer
+  in the tree), and the port does not run the preview — so
+  `World::tile_object_random_cache` stays `None` in production and every
+  `CanPlace` draws fresh. The stickiness branch is ported and tested with an
+  injected cache (`s1_f_7b_random_cache_stickiness_still_draws`); it goes live
+  with the smart-cursor preview task.
+* **Stream choice (documented)**: vanilla shares one `Main.rand`; the port
+  keeps per-consumer streams (the house pattern — `craft_rng`, `frame_rng`,
+  S1-A-11). `World::place_rng` is the placement family's dedicated
+  `UnifiedRandom`, seeded from the world seed beside `frame_rng` in
+  `seed_frame_rng`. Its draws never interleave with the framing rolls; the
+  worldgen contract streams are untouched (`place_buried_chest`'s chest 21
+  has `RandomStyleRange = 0`, so the temple pass draws nothing — pinned by
+  the frozen world-hash tests staying green).
+* `SpecificRandomStyles` is null in every generated def (`Initialize` never
+  assigns it); the branch is ported for synthetic defs and future data.
+* Consumers wired: `edit::place_item_tile` (the `Player.cs:39773` route) and
+  `worldgen::temple::place_buried_chest` (`WorldGen.cs:57820`) pass
+  `world.place_rng` + `world.tile_object_random_cache`.
+* RNG-order proof: `s1_f_7b_random_style_range_rng_order` replays a witness
+  `UnifiedRandom` (`next_max(3)` per sunflower placement, 6 seeds x 5 spots)
+  and asserts FULL stream-state equality (seed array + cursor) after every
+  call, plus the placed `frameX = 36 * draw`;
+  `s1_f_7b_place_item_tile_rides_the_world_place_rng` pins the consumer wiring
+  (one draw per placement, twin worlds byte-equal, non-random defs draw
+  nothing, `frame_rng` untouched).
+
+Still wave B (documented callbacks): the tile-based `GetTileData(Tile)` frameY
+resolution (`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/
+`Stalactite` tags :5294-5327) and the runtime hook bodies
+(`Chest.FindEmptyChest`, `WorldGen.PlantCheck_CanPlaceHook`, the `TE*`
+tile-entity hooks). The generated defs carry the C# method NAME in
+`PlacementHook::callback` with `hook: None`; the `GetStyleOverride` tag is
+generated data.
 
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
