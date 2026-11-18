@@ -12,6 +12,7 @@
 //! and the tile-medium classification in [`blur`].
 
 mod blur;
+pub mod legacy;
 mod params;
 
 use std::sync::OnceLock;
@@ -132,6 +133,30 @@ impl LightMap {
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// S1-E-19: serve the legacy engine's presented colours through this map
+    /// (`LegacyLighting.GetColor`, `LegacyLighting.cs:211-219`) without
+    /// touching the modern compute path. The legacy engine owns its own RNG
+    /// streams and state; a later `compute_into` recomputes the modern result
+    /// byte-identically (the cache key is invalidated here).
+    pub(super) fn present_legacy(
+        &mut self,
+        x0: i32,
+        y0: i32,
+        w: i32,
+        h: i32,
+        colors: Vec<[f32; 3]>,
+        lit_tiles: u32,
+    ) {
+        self.x0 = x0;
+        self.y0 = y0;
+        self.w = w;
+        self.h = h;
+        self.colors = colors;
+        self.lit_tiles = lit_tiles;
+        self.cache_key = None;
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Light colour for a tile. Outside the computed rect the world is unlit.

@@ -338,16 +338,22 @@ pub(crate) fn draw_tiles(
     scratch.all_lights.clear();
     scratch.all_lights.extend_from_slice(&scratch.waterfall_lights);
     scratch.all_lights.extend_from_slice(entity_lights.visible());
-    light.compute_into_with_lights(
-        world,
-        x0,
-        y0,
-        x1,
-        y1,
-        params,
-        &scratch.all_lights,
-        waterfall.lights_key() ^ entity_lights.key().rotate_left(17),
-    );
+    // S1-E-19: in the legacy modes the frame pass already ran the legacy
+    // engine's `ProcessArea` and published its presented colours into this
+    // map (`Lighting.LightTiles`, `Main.cs:62145`); the modern blur compute
+    // stays untouched and is skipped — the legacy engine owns the light.
+    if style.mode == tr_core::lighting::LightMode::Color {
+        light.compute_into_with_lights(
+            world,
+            x0,
+            y0,
+            x1,
+            y1,
+            params,
+            &scratch.all_lights,
+            waterfall.lights_key() ^ entity_lights.key().rotate_left(17),
+        );
+    }
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
     if let Some((lx, ly)) = crate::env::light_at() {
