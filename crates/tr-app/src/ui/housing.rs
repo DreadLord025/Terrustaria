@@ -10,8 +10,13 @@
 //! `screenHeight - 80` (`:42044-42058`). This module ports the head resolution
 //! and that layout, plus the hover text (`:42064`: `Main.npc[n].FullName`, or
 //! `Lang.inter[8]` for the query cell). The click (`SetMouseNPC` /
-//! `SetMouseNPC_ToHousingQuery`, `:42065-42071`) is not ported: it needs a
-//! `Main.mouseNPC` housing query, which the port has no model for.
+//! `SetMouseNPC_ToHousingQuery`, `:42065-42071`) lives in
+//! `app/clicks.rs::handle_inventory_clicks`' housing arm; the carried head
+//! (`Main.mouseNPCIndex/mouseNPCType`, `Main.cs:751-753`) rides the App and
+//! draws through [`draw_carried`] (`DrawInterface_38_MouseCarriedObject`,
+//! `Main.cs:45200-45216`); its world click runs the housing query /
+//! relocation (`Main.cs:45237-45246` → `town::perform_housing_check` /
+//! `town::try_moving_npc`).
 
 use tr_render::SpriteRenderer;
 
@@ -216,6 +221,84 @@ pub fn hover(cells: &[Cell], mouse: [f32; 2], scale: f32) -> Option<(usize, Opti
 pub fn hide_pvp_icons(cells: &[Cell], screen_width: f32) -> bool {
     let origin = screen_width - 64.0 - 28.0;
     cells.iter().any(|c| (c.x - origin) <= -144.0)
+}
+
+/// `Main.mouseNPCIndex`/`mouseNPCType` (`Main.cs:751-753`): the head riding
+/// the cursor. `(-1, -1)` = nothing carried, `(-1, 0)` = the housing query
+/// (`SetMouseNPC_ToHousingQuery`, `Main.cs:3182-3185`), `(i, type)` = the
+/// relocation of `Main.npc[i]` (`SetMouseNPC`, `:3176-3180`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MouseNpc {
+    pub index: i32,
+    pub ty: i32,
+}
+
+impl MouseNpc {
+    /// The C#'s `(-1, -1)` default — nothing on the cursor.
+    pub const NONE: MouseNpc = MouseNpc { index: -1, ty: -1 };
+    /// `SetMouseNPC_ToHousingQuery` (`Main.cs:3182-3185`): `(-1, 0)`.
+    pub const QUERY: MouseNpc = MouseNpc { index: -1, ty: 0 };
+
+    /// `Main.cs:45200`: `mouseNPCType <= -1` draws nothing.
+    pub fn carried(&self) -> bool {
+        self.ty > -1
+    }
+}
+
+/// `DrawInterface_38_MouseCarriedObject`'s head resolution
+/// (`Main.cs:45205-45214`): a carried index whose NPC died or changed type
+/// falls back to the housing query; the head is the NPC's own
+/// (`TownNPCProfiles.GetHeadIndexSafe`, `TownNPCProfiles.cs:200-207` — the
+/// port ships no shimmer profiles, so the default head is the whole
+/// resolution) or `NPC.TypeToDefaultHeadIndex(type)` for the query.
+/// Returns the possibly-downgraded pair and the head sheet to draw.
+pub fn carried_head(mouse: MouseNpc, npcs: &[Npc]) -> (MouseNpc, Option<usize>) {
+    let mut mouse = mouse;
+    if mouse.index >= 0 {
+        let live = npcs
+            .get(mouse.index as usize)
+            .is_some_and(|n| n.kind.net_id() == mouse.ty);
+        if !live {
+            // `:45208-45211`: `SetMouseNPC_ToHousingQuery()`.
+            mouse = MouseNpc::QUERY;
+        }
+    }
+    let head = if mouse.index >= 0 {
+        npcs.get(mouse.index as usize).and_then(|n| head_of(n.kind))
+    } else {
+        // `:45214`: the query path reads `TypeToDefaultHeadIndex(type)`
+        // directly — head 0 is the "?" sheet, no `> 0` gate here.
+        let h = type_to_head_index(mouse.ty);
+        (h >= 0 && (h as usize) < HEAD_COUNT).then_some(h as usize)
+    };
+    (mouse, head)
+}
+
+/// `DrawInterface_38_MouseCarriedObject`'s draw (`Main.cs:45214-45216`): the
+/// head sheet at `cursorScale`, centred on
+/// `(mouseX + 26 * scale, mouseY + 26 * scale)` — no 36 px clamp here (that
+/// one is the housing page's cells, `:42086-42090`).
+pub fn draw_carried(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    head: usize,
+    mouse: [f32; 2],
+    cursor_scale: f32,
+) {
+    if let Some(sheet) = lookups.npc_heads.get(head).copied().flatten() {
+        let (w, h) = (sheet.width as f32, sheet.height as f32);
+        if let Some(uv) = lookups.hud_uv(Some(&sheet)) {
+            r.push_ui_sprite(
+                [
+                    mouse[0] + 26.0 * cursor_scale - w * 0.5 * cursor_scale,
+                    mouse[1] + 26.0 * cursor_scale - h * 0.5 * cursor_scale,
+                ],
+                [w * cursor_scale, h * cursor_scale],
+                uv,
+                [1.0; 4],
+            );
+        }
+    }
 }
 
 /// The localized type name of a town kind — the C# reads
@@ -456,5 +539,25 @@ mod tests {
         // A small sheet keeps its own size, centred on the same point.
         let (_, small) = head_rect(&cell, [20.0, 20.0], 0.85);
         assert_eq!(small, [20.0, 20.0]);
+    }
+
+    #[test]
+    fn the_carried_head_resolves_and_downgrades() {
+        // `Main.cs:45200-45214`: nothing carried draws nothing; the query
+        // head is `TypeToDefaultHeadIndex(0)` = 0; a live NPC keeps its own
+        // head; a dead/changed one downgrades to the query.
+        assert!(!MouseNpc::NONE.carried());
+        assert!(MouseNpc::QUERY.carried());
+        let npcs = vec![npc(NpcKind::Guide)];
+        let (m, head) = carried_head(MouseNpc { index: 0, ty: 22 }, &npcs);
+        assert_eq!(m, MouseNpc { index: 0, ty: 22 });
+        assert_eq!(head, Some(1), "the Guide's head");
+        // The slot holds a Guide but the cursor says Merchant (17).
+        let (m, head) = carried_head(MouseNpc { index: 0, ty: 17 }, &npcs);
+        assert_eq!(m, MouseNpc::QUERY);
+        assert_eq!(head, Some(0), "the query's head 0");
+        // An out-of-range index downgrades too.
+        let (m, _) = carried_head(MouseNpc { index: 5, ty: 22 }, &npcs);
+        assert_eq!(m, MouseNpc::QUERY);
     }
 }
