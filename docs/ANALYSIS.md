@@ -2613,6 +2613,34 @@ and a third was the click gate the geometry feeds):
   (`OnActivate`'s rebuild). The C#'s per-group titles/separators are **not** ported
   — the port keeps one flat roster — and the menu-side container split is
   unimplemented (the wheel is reachable only in-game).
+* **The emote wheel had no hover and dead clicks; the bubbles drew offscreen
+  (fix/emote-hover-and-spawn, 2026-11-18).** Three separate breaks:
+  (1) the draw centred the 14×36 roster inside the grid rect (`UIList.HAlign
+  = 0.5`, `UIEmotesMenu.cs:66`) while `card_at` hit-tested the *uncentred*
+  lattice (+31 px at 1600×900), so hover lit the neighbouring cell and clicks
+  spawned the neighbouring emote; the shared `grid_origin` now feeds both.
+  (2) The "hover highlight" was a wrong port of `EmoteButton.GetFrame`
+  (`:32-36`): frame 2 is the idle blink of the shared 20-tick `_frameCounter`
+  (`UpdateFrame` `:38-44`), not the hover pick — the real hover is the
+  `Images/UI/EmoteBubbleBorder` sheet tinted `Main.OurFavoriteColor`
+  (255,231,69, `Main.cs:66748`) plus the `/EmojiName.*` MouseText
+  (`DrawSelf` `:62-74`); the border sheet was never packed and is now.
+  (3) The bubble draw received raw world coordinates with no camera/zoom
+  transform (vanilla `GetPosition` subtracts `screenPosition` and draws under
+  `GameViewMatrix.ZoomMatrix`, `Main.cs:46455-46459`), so every bubble drew
+  thousands of px offscreen; it also anchored at the head-top instead of
+  `GetPosition`'s `(Top.X − dir·width·0.75, y+2)` bottom-centre origin
+  (`EmoteBubble.cs:206`/`:247-249`) and dropped the direction flip. The
+  lifetime math now matches `Update`'s short-circuit (`--lifeTime > 0 &&
+  ++frameCounter >= 8`, `:179`) and `OnBubbleChange`'s unconditional
+  `lifeTime = 6` on the other same-player bubbles (`:273` — the port used to
+  guard `> 6`). The wheel's Back click hit-tested the bestiary's box (BUG-18's
+  draw-side fix never reached the click arm) and the pick now honours
+  `MakeLocalPlayerEmote`'s dead gate (`:280`). Remaining deliberate gaps: the
+  reverse-gravity arm (`Draw` `:207-212`) stays out with the unported gravity
+  flip, the NPC reactions (`CheckForNPCsToReactToEmoteBubble` `:152-167`) with
+  M4-TOWN, and the button blink rides the world step instead of the UI update
+  (the wheel is only reachable in-game where the world keeps stepping).
 
 Open gaps (deliberately out, each with its reason):
 
@@ -10441,6 +10469,26 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
+  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
+  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
+  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
+  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
+  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
+  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
+  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
+  light layer; the tracked explode sound (`:69362`) — no sound layer; the
+  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
+  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
+  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
+  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
+  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
+  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
+  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
+  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
+  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
+  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
+  the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -13021,6 +13069,32 @@ World's downed flags, and the Discount Card's
 `(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
+
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
 
 ## The world-format contract (S1-J-8)
 

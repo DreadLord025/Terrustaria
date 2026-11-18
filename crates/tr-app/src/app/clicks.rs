@@ -1043,18 +1043,32 @@ impl App {
             self.ui_left_press = false;
             return;
         }
-        // The wheel: a pick fires `MakeLocalPlayerEmote` (`:281-286`) and
-        // closes; the Back panel just closes.
+        // The wheel: a pick fires `MakeLocalPlayerEmote` (`EmoteBubble.cs:278-292`)
+        // and closes (`EmoteButton.LeftClick`, `:90-95`); the Back panel just
+        // closes (`UIEmotesMenu.GoBackClick`, `:305-309`).
         if self.emotes.menu_open {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
             if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
-                self.emotes.new_bubble(id);
+                // `MakeLocalPlayerEmote`'s dead gate (`:280`):
+                // `Main.netMode == 2 || !Main.LocalPlayer.dead` — the port's
+                // single-player arm silences a dead player.
+                let dead = self.player.as_ref().is_some_and(|p| p.dead);
+                if !dead {
+                    self.emotes.new_bubble(id);
+                }
+                // `IngameFancyUI.Close` (`:162-188`): the emotes arm keeps
+                // the inventory closed (`flag` stays false for `UIEmotesMenu`).
                 self.emotes.close();
                 self.ui_left_press = false;
                 return;
             }
-            if ui::bestiary::back_hit(screen, self.mouse_pos) {
+            // The wheel's OWN Back (`UIEmotesMenu.cs:78-87`, `Top(-45)`),
+            // not the bestiary's panel it used to borrow (`Top(-25)` on a
+            // different container) — the same BUG-18 mis-box the draw side
+            // fixed and the click side kept.
+            let panel = ui::emotes::panel_rect(screen, true);
+            if ui::emotes::back_hit(&panel, self.mouse_pos) {
                 self.emotes.close();
                 self.ui_left_press = false;
             }
@@ -2146,6 +2160,80 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_wheel_click_spawns_the_drawn_cells_emote() {
+        // The break: `card_at` read the uncentred lattice while the draw
+        // centred the roster (+31 px), so a click on the drawn cell spawned
+        // its neighbour's emote. At the headless 1280x720 the grid origin is
+        // (388, 160); the drawn centre of cell (3, 1) is (514, 214) = id 17.
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.emotes.open();
+        let screen = Vec2::new(1280.0, 720.0);
+        let grid = ui::emotes::grid_rect(screen);
+        let origin = ui::emotes::grid_origin(&grid);
+        let mouse = Vec2::new(
+            origin[0] + 3.0 * ui::emotes::CELL + ui::emotes::CELL * 0.5,
+            origin[1] + ui::emotes::CELL + ui::emotes::CELL * 0.5,
+        );
+        assert_eq!(ui::emotes::card_at(screen, mouse, 0), Some(17));
+        app.mouse_pos = mouse;
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emotes.bubbles.len(), 1, "the pick spawned a bubble");
+        assert_eq!(app.emotes.bubbles[0].emote, 17, "the drawn cell's id");
+        assert_eq!(app.emotes.bubbles[0].life_time, 360, "the vanilla lifetime");
+        assert!(app.emotes.bubbles[0].anchored_to_player);
+        // `EmoteButton.LeftClick` closes the wheel (`IngameFancyUI.Close`);
+        // the emotes arm keeps the inventory closed (`:176-184`).
+        assert!(!app.emotes.menu_open);
+        assert!(!app.inventory_open);
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    #[test]
+    fn a_dead_players_pick_spawns_nothing() {
+        // `MakeLocalPlayerEmote`'s gate (`EmoteBubble.cs:280`):
+        // `Main.netMode == 2 || !Main.LocalPlayer.dead`.
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.player.as_mut().unwrap().dead = true;
+        app.emotes.open();
+        let screen = Vec2::new(1280.0, 720.0);
+        let grid = ui::emotes::grid_rect(screen);
+        let origin = ui::emotes::grid_origin(&grid);
+        app.mouse_pos = Vec2::new(origin[0] + 18.0, origin[1] + 18.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.bubbles.is_empty(), "the dead gate silences it");
+        assert!(!app.emotes.menu_open, "the wheel still closes");
+    }
+
+    #[test]
+    fn the_wheel_back_is_its_own_box_not_the_bestiarys() {
+        // The click side kept BUG-18's mis-box: it hit-tested the
+        // bestiary's Back (`UIBestiaryTest.cs:371`, Top -25 on the 900-wide
+        // 180-top container) instead of the wheel's own (`UIEmotesMenu.cs:83`,
+        // Top -45 on the 590-wide 120-top container). At 1280x720 the wheel
+        // Back spans y 625..675, the bestiary's 605..655 — the 655..675 band
+        // is wheel-only, and x < 495 inside the bestiary's box is not the
+        // wheel's.
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.emotes.open();
+        app.mouse_pos = Vec2::new(640.0, 665.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(!app.emotes.menu_open, "the wheel's own Back closes it");
+        // And the bestiary-only strip does NOT close the wheel.
+        app.emotes.open();
+        app.mouse_pos = Vec2::new(450.0, 630.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.menu_open, "the bestiary's box is not the wheel's");
+        assert!(app.ui_left_press, "the press stays unconsumed");
+    }
+
     #[test]
     fn s1_h_9_the_coin_cell_transfer_resets_the_display_rank() {
         // `ItemSlot.cs:1016`'s tail: after the coin row's transfer the

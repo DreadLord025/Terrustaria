@@ -573,6 +573,26 @@ impl ApplicationHandler for App {
                 } else {
                     self.front_hover_hit = None;
                 }
+                // `EmoteButton.MouseOver`/`MouseOut` (`EmoteButton.cs:77-88`):
+                // sound 12 on the cell-enter edge — the same Bug-17 hover
+                // cue the front screens fire. The highlight itself is
+                // draw-derived (`ui::emotes::draw`'s `card_at`).
+                if self.emotes.menu_open && self.menu.is_none() && self.front.is_none() {
+                    let (sw, sh) = self.screen_size();
+                    let hit = crate::ui::emotes::card_at(
+                        Vec2::new(sw, sh),
+                        self.mouse_pos,
+                        self.emotes.scroll,
+                    );
+                    if hit != self.emotes.hover {
+                        if hit.is_some() {
+                            self.audio.play("Menu_Tick");
+                        }
+                        self.emotes.hover = hit;
+                    }
+                } else {
+                    self.emotes.hover = None;
+                }
                 // The middle-button world-camera drag is suppressed while the map is
                 // fullscreen, like the other world controls (`Player.cs:24798`).
                 if self.mouse_down && !self.map.as_ref().is_some_and(|m| m.open) {
