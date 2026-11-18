@@ -390,10 +390,7 @@ pub(crate) fn void_lens_sprites(
     let x = (env.global_time / 5.0 * (std::f32::consts::PI * 2.0)).cos();
     let mut num = 0.0f32;
     while num < 1.0 {
-        let ring = scale_bytes(
-            scale_bytes([127, 50, 127, 0], 1.0),
-            x * 0.1 + 0.3,
-        );
+        let ring = scale_bytes(scale_bytes([127, 50, 127, 0], 1.0), x * 0.1 + 0.3);
         let rv = rotation_vector((env.global_time / 5.0 + num) * (std::f32::consts::PI * 2.0));
         let r = x * 1.0 + 2.0;
         let (sw, sh) = (fw * 1.1, fh * 1.1);
@@ -510,16 +507,35 @@ pub(crate) fn draw_pylons_trophies_void(
                     }
                     sprites.extend(void_lens_sprites(
                         |lx, ly| light.get(lx, ly),
-                        style, anim_time, env, &sizes, tx, ty, 0,
+                        style,
+                        anim_time,
+                        env,
+                        &sizes,
+                        tx,
+                        ty,
+                        0,
                     ));
                 }
                 Some(597) => sprites.extend(pylon_sprites(
-                    world, |lx, ly| light.get(lx, ly),
-                    style, anim_time, env, &sizes, tx, ty, 0,
+                    world,
+                    |lx, ly| light.get(lx, ly),
+                    style,
+                    anim_time,
+                    env,
+                    &sizes,
+                    tx,
+                    ty,
+                    0,
                 )),
                 Some(617) => sprites.extend(trophy_sprites(
-                    world, |lx, ly| light.get(lx, ly),
-                    style, anim_time, env, &sizes, tx, ty,
+                    world,
+                    |lx, ly| light.get(lx, ly),
+                    style,
+                    anim_time,
+                    env,
+                    &sizes,
+                    tx,
+                    ty,
                 )),
                 _ => {}
             }
@@ -784,7 +800,10 @@ mod tests {
         let c = selection_glow_color(false, 101);
         assert_eq!(c, [50.0 / 255.0, 50.0 / 255.0, 50.0 / 255.0, 101.0 / 255.0]);
         let c2 = selection_glow_color(true, 101);
-        assert_eq!(c2, [101.0 / 255.0, 101.0 / 255.0, 33.0 / 255.0, 101.0 / 255.0]);
+        assert_eq!(
+            c2,
+            [101.0 / 255.0, 101.0 / 255.0, 33.0 / 255.0, 101.0 / 255.0]
+        );
     }
 
     /// The byte helpers truncate at every step (XNA `Color` semantics), not
@@ -798,6 +817,9 @@ mod tests {
         assert_eq!(scale_bytes([25, 25, 25, 0], 0.7), [17, 17, 17, 0]);
         assert_eq!(lerp_bytes([0, 0, 0], [255, 255, 255], 0.8), [204, 204, 204]);
         // (int)(0.8*255) = 204 exactly; a 0.5 lerp of 127 -> 191.
-        assert_eq!(lerp_bytes([127, 127, 127], [255, 255, 255], 0.5), [191, 191, 191]);
+        assert_eq!(
+            lerp_bytes([127, 127, 127], [255, 255, 255], 0.5),
+            [191, 191, 191]
+        );
     }
 }

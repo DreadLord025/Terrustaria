@@ -95,9 +95,9 @@ render-target cache.
 | 10. `DrawGrass`/`DrawAnyDirectionalGrass` (:8326/:8383) | PARTIAL | `tiles.rs:786-799`, `838-851` | WindyGrass inlined; `AnyDirectionalGrass` (tile 184) has no separate pass. |
 | 11. `DrawMultiTileGrass(…InWind)` (:8738/:8916) | PARTIAL | `tiles.rs:721-751` | Sunflower ported per-cell; the general 2×n multi-tile grass pass is not. |
 | 12. `DrawMultiTileVines(…InWind)`/`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip` (:8829-9238) | MISSING | — | No vine strip passing. |
-| 13. `DrawTeleportationPylons` (:8639) | MISSING | — | Point collected only (tile 597 → `TileCounterType.TeleportationPylon`). |
-| 14. `DrawMasterTrophies` (:8597) | MISSING | — | |
-| 15. `DrawVoidLenses` (:8708) | MISSING | — | |
+| 13. `DrawTeleportationPylons` (:8639) | PORTED | `render/pylons.rs::pylon_sprites` | S1-G-1 wave D (`task/S1-G-1d`): the crystal + 6-copy ring, byte colour math, IsVisible gate, selection arm (fed 0). Deviations: fx-range z-order, dust skipped, counter stand-in — ANALYSIS "The pylon/trophy/void-lens passes". |
+| 14. `DrawMasterTrophies` (:8597) | PORTED | `render/pylons.rs::trophy_sprites` | S1-G-1 wave D: the 1×28 row, the frameY/72 flip, the light-tinted ring, Glow-coating white. |
+| 15. `DrawVoidLenses` (:8708) | PORTED | `render/pylons.rs::void_lens_sprites` + `void_lens_light` | S1-G-1 wave D: `VoidLensHelper.cs:11-105` — the -2px anchor, float-mod frame, 3-copy purple ring, the AddLight(0.4,0.2,0.9) into EntityLights; dust skipped. |
 | 16. `PostDrawTiles` (:414) | MISSING | — | |
 | 17. `Update` counters (:367-388) | PORTED | `wind.rs::advance_counter`/`…_tree`/`…_sunflower`/`…_vine` | |
 
@@ -135,7 +135,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Particles/dust from tiles** — `DrawTiles_EmitParticles` :6688-7548, `EmitLivingTreeLeaf` :7549, `EmitAlchemyHerbParticles` :9605 | per-tile sparkle/dust rolls on `Main.TileFrameSeed` | none (leaves only: `tiles.rs:868-914`) | **MISSING** (leaves partial) |
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
 | **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open |
-| **Master trophy / pylon / void lens / critter cage** | dedicated passes | none | **MISSING** |
+| **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
 
 ## Tests
 
