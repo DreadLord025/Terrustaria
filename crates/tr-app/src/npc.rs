@@ -429,6 +429,11 @@ pub enum NpcKind {
     /// `NPCID.FireImp` (24) — the underworld caster (`aiStyle 8`,
     /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune).
     FireImp,
+    /// `NPCID.DesertDjinn` (533) — the desert caster (`aiStyle 8`,
+    /// `NPC.cs:14974-14987`: 28x62, 220 HP, damage 40, defense 20, kb 0,
+    /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0.3) —
+    /// `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`, `NPC.cs:21360`).
+    DesertDjinn,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
     /// folds here (identical stats and name, `NPC.cs:17398`).
@@ -1073,6 +1078,7 @@ impl NpcKind {
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
+            NpcKind::DesertDjinn => 62,
             NpcKind::ChaosBall => 19,
             NpcKind::BurningSphere => 20,
             NpcKind::WaterSphere => 21,
@@ -1173,7 +1179,7 @@ impl NpcKind {
     }
 
     /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
-    /// bijection over the 182-kind roster (`S1-F-1`); the unmatched ids
+    /// bijection over the whole kind roster (`S1-F-1`); the unmatched ids
     /// (the free 62/148/149/152-155 holes) decode to `None`. One live arm
     /// per id: a duplicate is a hard error (`to_u16`'s guard above).
     #[deny(unreachable_patterns)]
@@ -1327,6 +1333,7 @@ impl NpcKind {
             54 => NpcKind::Plantera,
             55 => NpcKind::BrainOfCthulhu,
             56 => NpcKind::Creeper,
+            62 => NpcKind::DesertDjinn,
             63 => NpcKind::BoundGoblin,
             64 => NpcKind::GoblinTinkerer,
             73 => NpcKind::Golem,
@@ -1841,6 +1848,8 @@ impl NpcKind {
             NpcKind::Tim => "NPC_Hit_2",
             NpcKind::DarkCaster => "NPC_Hit_2",
             NpcKind::FireImp => "NPC_Hit_1",
+            // DesertDjinn: `SoundID.NPCHit1` (`NPC.cs:14982`).
+            NpcKind::DesertDjinn => "NPC_Hit_1",
             NpcKind::ChaosBall => "NPC_Hit_3",
             NpcKind::BurningSphere => "NPC_Hit_3",
             NpcKind::WaterSphere => "NPC_Hit_3",
@@ -2049,6 +2058,8 @@ impl NpcKind {
             NpcKind::Tim => "NPC_Killed_2",
             NpcKind::DarkCaster => "NPC_Killed_2",
             NpcKind::FireImp => "NPC_Killed_1",
+            // DesertDjinn: `SoundID.NPCDeath6` (`NPC.cs:14983`).
+            NpcKind::DesertDjinn => "NPC_Killed_6",
             NpcKind::ChaosBall => "NPC_Killed_3",
             NpcKind::BurningSphere => "NPC_Killed_3",
             NpcKind::WaterSphere => "NPC_Killed_3",
@@ -2512,6 +2523,8 @@ impl NpcKind {
             NpcKind::Tim => (18.0, 40.0),
             NpcKind::DarkCaster => (18.0, 40.0),
             NpcKind::FireImp => (18.0, 40.0),
+            // `NPCID.DesertDjinn` (533) — 28x62 (`NPC.cs:14976-14977`).
+            NpcKind::DesertDjinn => (28.0, 62.0),
             // The spheres: the cases 30/25/33 are 16x16.
             NpcKind::ChaosBall => (16.0, 16.0),
             NpcKind::BurningSphere => (16.0, 16.0),
@@ -2614,6 +2627,8 @@ impl NpcKind {
             NpcKind::Hornet => 42,
             NpcKind::MeteorHead => 23, // `NPCID.MeteorHead` (the net id's correction, S1-F-3)
             NpcKind::FireImp => 24,
+            // `NPCID.DesertDjinn` (533)
+            NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3025,6 +3040,8 @@ impl NpcKind {
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
             NpcKind::ServantOfCthulhu => 8,
+            // DesertDjinn: lifeMax 220 (`NPC.cs:14981`).
+            NpcKind::DesertDjinn => 220,
             // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
             // pair rows (`NPC.cs:12929-12977` — 500/400/600/650/450),
             // 315 5000 (`:12978`), 326 1200 (`:13129`), 327 26000
@@ -3114,6 +3131,8 @@ impl NpcKind {
             NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 20,
             NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinSummoner => 80,
+            // DesertDjinn: damage 40 (`NPC.cs:14979`).
+            NpcKind::DesertDjinn => 40,
             // The frost trio: 50/65/55.
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
@@ -4805,6 +4824,8 @@ impl Npc {
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
+            // DesertDjinn: knockBackResist 0 (`NPC.cs:14984`).
+            NpcKind::DesertDjinn => 0.0,
             // The spheres: 0 (the knockback passes through).
             NpcKind::ChaosBall => 0.0,
             NpcKind::BurningSphere => 0.0,
@@ -4937,6 +4958,8 @@ impl Npc {
             NpcKind::GoblinThief | NpcKind::GoblinArcher => 6,
             NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinSorcerer => 2,
+            // `NPCID.DesertDjinn` (533) — defense 20 (`NPC.cs:14980`).
+            NpcKind::DesertDjinn => 20,
             // The frost trio: 20/26/22.
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
@@ -5365,6 +5388,8 @@ impl Npc {
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
+            // DesertDjinn: value 1200 (`NPC.cs:14985`).
+            NpcKind::DesertDjinn => 1200.0,
             // The spheres carry no value.
             NpcKind::ChaosBall => 0.0,
             NpcKind::BurningSphere => 0.0,
@@ -6000,7 +6025,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
                 self.update_caster(world, player, rng)
             }
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
@@ -7578,6 +7603,25 @@ impl Npc {
                 } else {
                     0
                 };
+            }
+            // The Desert Djinn (`FindFrame`'s case 533,
+            // `NPC.cs:69978-69992`): the 8-row hover cycle — the counter
+            // wraps at 48, the row is `(int)(frameCounter / 6)`; the cast
+            // windup (`ai[1] > 0`) banks 8 rows down. The
+            // `velocity.Y == 0 && direction != 0` spriteDirection snap
+            // (`:69979-69982`) rides the port's facing.
+            NpcKind::DesertDjinn => {
+                if self.vy == 0.0 && self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 48.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter / 6.0) as u32;
+                if self.cast_windup > 0 {
+                    self.frame += 8;
+                }
             }
             // The Fire Imp (`NPC.cs:76979-77017`): the 10-frame strip —
             // rows 0..3 walk (5 steps each), the cast pose snaps to row 4
@@ -9309,6 +9353,7 @@ impl Npc {
         let (pcx, pcy) = player.center();
         let params = match self.kind {
             NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
+            NpcKind::DesertDjinn => crate::npc_ai::CasterParams::DESERT_DJINN,
             _ => crate::npc_ai::CasterParams::STANDARD,
         };
         let mut phase = crate::npc_ai::CasterPhase {
@@ -16554,6 +16599,10 @@ impl Npc {
             NpcKind::GolemFistRight => 63,
             NpcKind::GolemHeadFree => 64,
             NpcKind::Deerclops => 65,
+            // `NPCID.DesertDjinn` (533) — the vanilla type id (the same
+            // value `cs_id` rides; unused by every arm above, so the G6
+            // key stays injective for this kind).
+            NpcKind::DesertDjinn => 533,
             // The Pumpkin Moon family (`S1-F-13b`): the vanilla type ids
             // (the same values `to_u16` rides for these kinds) — unused by
             // every arm above, so the G6 key stays injective.
@@ -18080,6 +18129,50 @@ mod tests {
             }
         }
         assert!(shot, "the Fire Imp never fired the Burning Sphere");
+    }
+
+    #[test]
+    fn the_desert_djinn_rides_its_own_trigger_and_wrap() {
+        // `NPC.cs:21031-21038` — the Djinn's single trigger at `ai[0] == 180`
+        // sets `ai[1] = 181` (not the standard 100/200/300 → 30); the wrap
+        // fires at 360 (`:21079-21082`), never at the standard 650. The
+        // curse volley draws `Main.rand` (`:21140-21141`/`:21195-21196`)
+        // and is skipped wholesale — the Djinn never requests a sphere.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let mut djinn = Npc::new(NpcKind::DesertDjinn, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        djinn.hp = djinn.max_hp;
+        assert_eq!(djinn.size(), (28.0, 62.0));
+        assert_eq!(djinn.max_hp, 220);
+        assert_eq!(djinn.defense(), 20);
+        assert_eq!(djinn.value(), 1200.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut saw_trigger = false;
+        let mut wrapped = false;
+        for _ in 0..400 {
+            let before_counter = djinn.caster_counter;
+            djinn.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert!(
+                djinn.wants_sphere.is_empty(),
+                "the Djinn's rand-drawing volley stays skipped"
+            );
+            // The trigger tick: `ai[1] = 181` (`:21035`) then the same
+            // tick's `ai[1]--` (`:21116`) — the windup reads 180 exactly
+            // when the counter sits at 180.
+            if djinn.caster_counter == 180 {
+                assert_eq!(djinn.cast_windup, 180, "the 181 windup minus the same-tick decrement");
+                saw_trigger = true;
+            }
+            if before_counter >= 359 && djinn.caster_counter < 100 {
+                wrapped = true;
+            }
+            assert!(
+                djinn.caster_counter < 650,
+                "the Djinn wraps at 360, never reaches the standard 650"
+            );
+        }
+        assert!(saw_trigger, "the Djinn never hit its 180 trigger");
+        assert!(wrapped, "the Djinn never wrapped at 360");
     }
 
     #[test]
@@ -20027,12 +20120,12 @@ mod tests {
     }
 
     /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 198 kinds — the 8 slime colours are `SlimeVariant`,
+    /// `npc.rs:31-686`: 199 kinds — the 8 slime colours are `SlimeVariant`,
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    const ALL_KINDS: [NpcKind; 198] = [
+    const ALL_KINDS: [NpcKind; 199] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -20147,6 +20240,7 @@ mod tests {
         NpcKind::Tim,
         NpcKind::DarkCaster,
         NpcKind::FireImp,
+        NpcKind::DesertDjinn,
         NpcKind::ChaosBall,
         NpcKind::BurningSphere,
         NpcKind::WaterSphere,
@@ -23463,7 +23557,7 @@ mod s1_f_3_tests {
 
     #[test]
     fn s1_f_3_every_kind_resolves_a_vanilla_cs_id() {
-        // S1-F-3: `cs_id` covers all 182 kinds — the hand table's verified
+        // S1-F-3: `cs_id` covers the whole kind roster — the hand table's verified
         // rows plus the generated loot-db net ids for the rest; a kind the
         // mapping cannot express keeps the `u16::MAX` sentinel (the caps
         // never match it), and the air sentinel is not a kind.
@@ -23471,7 +23565,7 @@ mod s1_f_3_tests {
         let mut sentinel = 0;
         let mut bad: Vec<String> = Vec::new();
         // The kind roster walks the wire-id space (the round-trip test pins
-        // exactly 182 decodable ids).
+        // exactly 199 decodable ids).
         for wire in 0..=u16::MAX {
             let Some(kind) = NpcKind::from_u16(wire) else {
                 continue;
@@ -23496,8 +23590,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            198,
-            "every decodable kind resolves (the wire roster's size — 198 after S1-F-13b)"
+            199,
+            "every decodable kind resolves (the wire roster's size — 199 after S1-E-5's DesertDjinn)"
         );
         assert!(
             covered > 43,
