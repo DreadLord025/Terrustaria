@@ -80,7 +80,7 @@ tools). C# anchors: `decompiled/Terraria/Player.cs:38197-38567` (Hurt),
 | `panic` buff 63 / `setSquireT2` buff 205 (`:38237-38244`) | MISSING | — | No counter buff on hurt. |
 | `stealth = 1f` (`:38245`) | MISSING | `player.rs` has no stealth field | cosmetic/behavioural (Dye/rogue stealth). |
 | Crit ×2 on inbound damage (`:38248-38251`) | NOT-FOUND (by design) | `hurt_inner` has no `crit` parameter | Note the C# doubles only `num` (the raw `Damage` int), which feeds `magicCuffs` (`:38293`) and the PVP return (`:38364`); the amount subtracted from `statLife` is `num2` (`:38383`), NOT the doubled value. The port's callers pass no crit flag at all. |
-| `magicCuffs` mana restore (`:38291-38303`) | MISSING | — | `Player.magic_cuffs` flag not ported; no `ManaEffect`. |
+| `magicCuffs` mana restore (`:38291-38303`) | PORTED (S1-C-7 wave A, 2026-11-18) | `player.rs::hurt_inner` | The raw-`num` restore + `statManaMax2` cap + `ManaEffect` queue land between the defense reduction and the endurance step; items 1595/2221 arm the flag (`:14936-14939`/`:14949-14953`), the drain spawns the HealMana text (`world_sim/player.rs`). Crit ×2 and the +40 mana stat rows stay open (C-12) — ANALYSIS "The magic cuffs". |
 | Endurance step (`:38304`) | PORTED | `player.rs:2274` | `(int)((1 - endurance) * num2)`; `endurance` is folded from sets/accessories (`player.rs:2617-2755`, `:3069`), tests at `player.rs:6067`. |
 | Solar Flare `ConsumeSolarFlare` (`:38305-38320`), beetle orbs (`:38321-38337`) | MISSING | — | No `beetle_orbs`, no 95/96/97 buff handling in `hurt`. |
 | Paladin team share (`:38338-38368`) | MISSING | — | No `defendedByPaladin`; single-player only, but the 25/75 % split and the `TeamDamageShare` cooldown are absent. |

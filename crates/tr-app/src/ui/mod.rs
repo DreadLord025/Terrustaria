@@ -4,6 +4,7 @@
 pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
+pub(crate) mod bestiary_draw_offsets;
 pub(crate) mod emotes;
 pub mod framework;
 pub mod cards;
