@@ -2907,11 +2907,48 @@ falls through silently. `C# ref tileFrameX/Y` rewrites are expressed as
 the source rectangle from the final frame (`TileDrawing.cs:1007`).
 
 **Animation state.** `tile_frame` is `Main.tileFrame[kind]`; the animator is
-not ported, so the production call passes 0 — exactly the vanilla t=0 state.
-All `tile_frame * N` formulas are ported verbatim and activate unchanged when
-the animator lands. The default `addFrY = Main.tileFrame[type] * 38`
+ported in `crates/tr-core/src/drawdata_anim.rs` (S1-F-9 wave B, below) but not
+yet wired, so the production call still passes 0 — exactly the vanilla t=0
+state. All `tile_frame * N` formulas are ported verbatim and activate unchanged
+when the wiring lands. The default `addFrY = Main.tileFrame[type] * 38`
 (`TileDrawing.cs:4533`) is ported as the same formula. `tile_frame = 0` was
 verified against the C# per formula (transcription tests in `drawdata.rs`).
+
+### S1-F-9b animated-tile animator (2026-11-18)
+
+`crates/tr-core/src/drawdata_anim.rs` ports `Main.AnimateTiles`
+(`Main.cs:18516-19304`, called once per client update at `Main.cs:17150` after
+`DoUpdate_AnimateWalls`) as `TileAnimator::animate_tiles(wind_for_visuals,
+rand, generating_or_loading)`:
+
+- State: `tile_frame`/`tile_frame_counter` `[i32; TILE_COUNT]` ≡
+  `Main.tileFrame`/`Main.tileFrameCounter` (`Main.cs:1596-1597`, allocated
+  `new int[TileID.Count]` `:66976-66977`, world-load reset `:8393-8394`) plus
+  `weather_vane_bobframe` ≡ `Main.weatherVaneBobframe` (`:2237`).
+- Every arm keeps its C# idiom exactly — the four spellings (`counter > limit`
+  vs `>= limit` × `frame >= wrap` vs `> wrap`) differ by one tick of period and
+  are kept as four helpers, not normalised. The pre-increment arms (133 etc.)
+  are semantically identical to the post-increment `>=` form and share it.
+- Mirrors: 665 ← 12 (both arrays), 696 ← 31 (frame only), 271/581 ← 270,
+  355 ← 354. The 340..=344 loop, the counter-only wraps (507/508 at `20*8`,
+  485 at 20, 491 at 40, 597 at 64) and the frame-only 412 (240) are verbatim.
+- **RNG:** tiles 453/456 draw `Main.rand.Next(3)` gated on
+  `!WorldGen.isGeneratingOrLoadingWorld` (`:19109`/`:19118`); the weather-vane
+  bob roll draws `rand.NextFloat()` (`:19325`). All three take the caller's
+  `UnifiedRandom` (the exact `Main.rand` stream) in source order — no framing
+  RNG is touched (`framing.rs` untouched). Tests replay the counters
+  draw-for-draw against a cloned stream.
+- Weather vane (`AnimateTiles_WeatherVane`, `:19306-19329`): the decompiled
+  `tileFrameCounter[490] -= 6 * tileFrameCounter[490]` (`:19316`) is kept
+  verbatim (it is NOT a modulo — it negates to −5×); the direction-hold gates
+  at frames 0/6 and the `++bobframe == 8` reset are 1:1.
+- **Deliberate deviations:** (1) renderer wiring deferred — `draw_data` still
+  receives 0 until a follow-up feeds `TileAnimator::animation_row(kind)` in
+  (kept out of this wave to stay disjoint from wave A's `drawdata.rs` edits);
+  (2) `AnimateTiles_CritterCages` (`:19303`, body `:13511+`) not ported — it
+  animates the separate `Main.bunnyCageFrame[]` cage-entity arrays behind the
+  `Main.critterCage` proximity gate, part of the still-missing tile-620
+  deferred special pass (research/09), not `tileFrame[]`.
 
 ### Status of every switch case (`TileDrawing.cs:4540-6032`)
 
@@ -17259,6 +17296,33 @@ and documents that the **caller holds `test_lock`** for the whole test (the
 lock is not reentrant); the tooltip/buff-tooltip registration tests and
 `npc_chat::init_lang` now take the guard.
 
+**Follow-up (fix/ingame-options-culture-flake):** five more
+`ui/ingame_options.rs` tests still read the culture without the guard —
+`the_value_bar_geometry_is_the_c_sharp_scaled_track` (the 1045-vs-979 flake:
+`color_bar_right_x` shifts 60 px in English but 126 in the long cultures,
+`IngameOptions.cs:1071`), `refresh_button_latches_the_hover_and_the_layout`
+(`measure_button` reads `Lang.inter[62]`),
+`save_and_exit_click_saves_the_world_and_returns_to_the_menu`,
+`the_keybinds_row_opens_the_in_game_keybinding_screen` (culture-shifted
+`left_row_rect`) and `a_toggle_click_applies_the_setting_to_the_app`
+(`right_row_rect`). Under parallel load a sibling's `lang::init`/
+`set_language` flipped the culture between their geometry reads and their
+assertions. Each now takes the same house guard — `crate::lang::test_lock()`
+acquired **once** at the top of the test (never twice: the mutex is
+non-reentrant and a double acquire self-deadlocks the whole gate) plus
+`lang::init(GameCulture::English)` to pin the culture for the test's whole
+run. The six previously-guarded tests that used a bare
+`lang::set_language(English)` were switched to `lang::init(English)` under
+the same single guard: on an empty manager `set_language` marks the culture
+active **without loading any sources**, and every later `init` then
+early-returns in its trailing `set_language` (culture unchanged,
+`localization/mod.rs:196-200`), leaving all texts as bare keys for the rest
+of the process — the second half of the flake (only the tests asserting
+real key resolution failed; bare-key-vs-bare-key comparisons passed
+vacuously, and `--test-threads=1` passed because an `init` test happened to
+run first). No game logic or value-bar maths changed — test synchronization
+only.
+
 **Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
 centred hit box, the per-category right anchors + bar shift, the 0.75 bar
 geometry (133x12, the -3 centre, the 60 px colour offset), the per-row draw
@@ -17338,6 +17402,86 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The combat accessory family (S1-C-12 wave B, 2026-11-18)
+
+`crates/tr-app/src/accessory_combat.rs` ports the combat/damage arms of
+`Player.ApplyEquipFunctional` as per-item fns behind one seam hook,
+`apply_combat_accessory(kind, p) -> bool` — wave A (`task/S1-C-12a`) owns the
+`UpdateEquip` grant loop in `player.rs` and will call the hook per slot; the
+module is deliberately disjoint from that region so the two waves cannot
+collide. Arms + citations: the four class emblems +15% (`Player.cs:15428-15443`),
+the Avenger Emblem +12% all four (`:15444-15450`), the Destroyer Emblem +8
+crit/+10% (`:14912-14921` — 1301 is `ItemID.DestroyerEmblem`; the existing
+`player.rs` match arm mislabels it "Celestial Stone"), the Putrid Scent +5
+crit/+5% (`:14636-14646`), the Flesh Knuckles aggro-only row (`:14647-14650`),
+the Power/Mechanical/Berserker gloves and the Fire Gauntlet (`:15299-15305`,
+`:15369-15376`, `:14411-14417`, `:15306-15314`), plus the sky-stone flag arms
+(`:15412-15423`) and the `UpdateEquips` bundle (`:12989-13003`).
+
+Deviations (documented-skipped halves, same precedents as the `player.rs`
+match): `aggro ±400` (Putrid Scent/Flesh Knuckles/Berserker Glove) has no port
+field or multiplayer aggro consumer; `autoReuseGlove`/`meleeScaleGlove` have no
+port fields (the Titan Glove row precedent); the Fire Gauntlet's `magmaStone`
+has no port consumer and its on-hit fire rides the hurt pipeline (C-7, out of
+scope). Two real deltas the module carries for the wave-A wiring: the bundle
+fn adds the missing `minionKB += 0.5f` (`:13002` — the current `player.rs`
+fold at `:3643-3655` omits it) and keeps `kbGlove = true` on the glove rows
+(the current match omits it). No RNG rides any arm; no fixed-step order
+change. Tests: 10 per-accessory modifier tests in the module (spawn baselines
+from `player.rs:1608-1621`).
+
+## The vine strip pass (S1-G-1 wave A, 2026-11-18)
+
+`crates/tr-app/src/render/vines.rs` ports `TileDrawing.DrawVines` /
+`DrawVineStrip` (`TileDrawing.cs:8890-8901`, `:9034-9132`) plus the root crawl
+`CrawlToTopOfVineAndAddSpecialPoint` (`:744-762`) and its attachment probe
+`WorldGen.BottomEdgeCanBeAttachedTo` (`WorldGen.cs:70440-70458`, now
+`tr_core::torch::bottom_edge_can_be_attached_to` - note the C# bottom edge has
+NO half-brick check, unlike the top edge). The vine cells (52/62/115/205/382/
+528/636/638, `TileID.Sets.VineThreads` `TileID.cs:544`) are skipped inline in
+the row-major pass exactly like the C# draw-area switch (`:536-545`); the
+roots are collected in draw-area row-major order, deduplicated like
+`_vineRootsPositions`, and the strips draw right after the foliage pass - the
+C# `PostDrawTiles` order `DrawTrees` -> `DrawVines` (`:428-429`). The strip
+maths is term-for-term: the unclamped `Lerp(0.2, 1, |wind|/1.2)` factor, the
+`-0.08*num3` rotation ladder (+0.0025 at num2>=2, +0.0075*num3 at num2>=5,
+the wall probe incrementing num2 BEFORE the rotation), the remix-flipped
+surface gate, the `GetWindGridPush(x, i, 20, 0.01)` subtract/-0.78-bounce
+accumulator, the `(rot + PI/2).ToRotationVector2()*16` anchor walk, the
+`(tileWidth/2, halfBrickHeight - tileTop)` origin and the case-638
+`GlowMask[327]` glowmask (`Color.Lerp(White, tileLight, 0.75)`, `:6080-6084`,
+sheet now packed). `_vineWindCounter` (`:375`) rides the sunflower's 60 Hz
+step. The G6 key mixes the vine counter into the existing windy-anim slot and
+adds the `WindGrid` clock ONLY when a vine thread is in the view rect (the
+push decays on the grid clock even in calm air; vine-free worlds keep the
+old cache behaviour bit-for-bit).
+
+Deliberate deviations:
+- The `NextNatureRenderer` LitNature dawn/dusk shader
+  (`NextNatureRenderer.cs:71-145`) is not ported - segments draw plain, like
+  its `DrawWithoutShader` arm (`:111-119`); the `seam_bottom` flag is computed
+  and carried for that future port. Same standing deviation as the tree
+  canopies' nature draw.
+- The `biomeSight` recolour + its `Dust.NewDust` roll (`:9089-9115`) are
+  skipped: the port has no biome sight, and adding the roll would change the
+  draw RNG stream order.
+- The strip applies NO `GetFinalLight` actuation ghost (the C# reads
+  `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
+- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) and multi-tile
+  vine (`DrawMultiTileVines` `:8829-8888`) passes are separate C# passes and
+  stay unported (S1-G-1's remaining waves); their cells keep the old inline
+  draw.
+- The dark-cell merge still covers unlit vine cells (the port's black-quad
+  coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
+  which the vine cells never reach - a documented z-order/coverage
+  approximation of the fused pass, unchanged by this wave.
+
+Tests: `s1_g_1a_*` (10, `render/vines.rs`) - the root crawl + dedup, the
+platform/no-attach/bottom-slope/half-brick attachment gates, the calm straight
+hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
+gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
+hide-not-break.
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
