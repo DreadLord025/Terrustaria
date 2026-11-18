@@ -17488,6 +17488,88 @@ is the standing D4 (a fresh source per play). Tests
 `s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown`,
 `s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream`.
 
+## The fighter ambience wave (S1-E-21 wave E, 2026-11-18)
+
+**Code-only mode:** this wave landed under the user's code-only directive —
+no cargo/rustc/rustfmt/test runs, no graphify; file edits + git only. The
+tests below are WRITTEN, NOT RUN; their RNG witnesses were verified with a
+pure-arithmetic JS replica of `UnifiedRandom` (the golden seed-42 vector
+`66,14,12,52` reproduced; seeds 146 → `Next(1000)=0` then `Next(3)=1`,
+1 → `Next(1000)=248`, 34995 → `[0,0]`, 580 → `[732,0]`, 7 → case-14 slot 1,
+case-26 slot 3/pitch 8, case-29 pitch −2, style-489 slot 22). The run is
+pending the mode lift.
+
+The C#: `AI_003_Fighters`' idle counter (`NPC.cs:57034-57149`) ticks
+`ai[3]` at AI time — stuck (`position.X == oldPosition.X`, `:57126`),
+at/over the `num57` cap (60; type 120's 180), or the grounded turnaround
+`flag7` tick up; a facing-aligned walk `|vx| > 0.9` decrements; the
+`num57 * 10` wrap, the `justHit` reset (`:57138`) and the player-hitbox
+reset (`:57146`) zero it. The seven ambient moan arms (`:57336-57367`)
+sit behind `ai[3] < num57 && NotDiscouraged` and `shimmerTransparency < 1f`
+(`:57338`): independent `if`s (NOT else-chained — the type-162
+Frankenstein matches the zombie-family 1000-roll AND its own 500-roll
+arm), each `Main.rand.Next(N) == 0` on the `UpdateNPCs` stream
+(`Main.cs:17767`), playing `PlaySound(14/26/29, (int)position.X,
+(int)position.Y[, Style])` — the int overload (`SoundEngine.cs:102-108`)
+draws no `GetRandomPitch`. The cases: 14 (`LegacySoundPlayer.cs:793-824`)
+one slot draw NO pitch (style 542 pins slot 7 with zero draws, 489/586
+`Next(21, 24)`, default `Next(3)`), ×0.4, overwrite-no-Stop; 26
+(`:969-978`) `Next(3, 5)` + one `Next(-10, 11)` pitch, ×0.9; 29
+(`:1008-1050`) the Style IS the slot, the per-style volume arms, the
+playing guard returns BEFORE the pitch draw. None of 14/26/29 scales with
+ambient volume (`:1444-1457`) — the mute/out-of-range gate precedes every
+draw.
+
+The port: `ambient_sound.rs::fighter_idle_counter` /
+`fighter_ambient_moans` / `fighter_walker_kind` (the plain-walker kinds
+whose `ai[3]` is free) + `Audio::play_fighter_moan` (gate first, then
+`critter_legacy_voice`'s draws on the caller's stream, then `play_critter`
+— detach-not-stop on the slot overwrite). Wiring in `world_sim/npcs.rs`'s
+per-NPC loop: the counter BEFORE `update_rng` (the port's `old_x` still
+holds the prior tick's pre-integration stamp — `update_rng` re-stamps it
+first, `npc.rs:3237`, matching `NPC.cs:92605`'s order), the moans AFTER
+the AI's draws and BEFORE the critter emitter (`NPC.cs:90323`). The
+graveyard term pre-extracts from `scene_metrics.zone_graveyard`.
+`Zombie_0..8`, `Zombie_21..23`, `Zombie_109` join `SFX_CUES`; case 45's
+duck arm lands table-complete (the `NPC.cs:23678-23681` call site awaits
+a duck kind).
+
+**The `NotDiscouraged` gate is ported WHOLE** (`fighter_not_discouraged`,
+`NPC.cs:60300-60330`) — the Lead review caught an earlier five-term
+reduction whose doc claimed the exclusion list was vacuous for the moan
+type sets. It is NOT: the mummies 78-80/630, the face monster 181, and
+31/77/110/291-296 sit in `:60302`'s unconditional exclusion list and
+reach `return true` (`:60329`) even by day above the surface; the
+non-excluded types fall to the switch's default
+`NPCID.Sets.CritterThatCanTurnOnPlayers[npcID]` (`NPCID.cs:10436` — false
+for the zombie 3 / skeleton 21, so for THEM the five scene terms decide,
+which is why the reduction was observationally right for the ported
+roster but wrong as a claim). The full port carries the event terms
+(snow-moon, goblin/pirate/martian invasions, don't-starve), the 631
+`ai[2]` / 411 `ai[1]` arms, the case-list break types and the critter-set
+default. Witness: `s1_e_21e_the_not_discouraged_gate_follows_the_c_table`.
+
+Deviations: `justHit` rides the port's established `hurt_cd > 0` stand-in
+(`npc.rs:13420`) — the counter rests at 0 through the hurt cooldown
+instead of the C#'s single-tick flag; the type-120 `-120` teleport arm
+(`:57142`'s neighbourhood) is unported (its 180 cap row is); the other
+aiStyle-3 machines (the martian shooters, the scutlix rider, …) have
+claimed `ai[3]` for their own state — their idle-counter share lands with
+each machine's migration (`fighter_walker_kind` excludes them); the
+`ai[3] == num57` `netUpdate` flag (`:57142-57145`) has no net seam; the
+duck case-45 call site is deferred (no duck kind); the C#'s
+non-short-circuiting `|` at `:57126` becomes `||` — both sides are pure
+reads, the value is identical. Tests (written, not run):
+`s1_e_21e_the_moan_cases_draw_in_the_c_order`,
+`s1_e_21e_the_idle_counter_follows_the_branch_table`,
+`s1_e_21e_the_moan_arms_roll_in_the_c_order`,
+`s1_e_21e_the_not_discouraged_gate_follows_the_c_table`,
+`s1_e_21e_the_moan_draws_ride_the_passed_stream_after_the_gate` (audio),
+`s1_e_21e_the_moan_wiring_draws_on_the_npc_stream` (the day/night control
+pair: the closed gate is draw-free, the open gate spends exactly
+`Next(1000)` + the case-14 `Next(3)` on `UpdateNpcs`, every other stream
+untouched).
+
 ## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
 
 Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
