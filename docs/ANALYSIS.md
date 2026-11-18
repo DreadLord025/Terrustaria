@@ -5352,8 +5352,10 @@ Deviations:
   and the slime stomp (`:20533-20560`) wait for M2-MOUNT-4 with the other mount combat.
 - **Queen Slime draw** — the render-target swap and the extra passes (`Mount.cs:5536-5544`,
   `:5840-5953`) are not ported; the row draws its base `Extra_204` frames. The WoF
-  goat's `GlowMask[284]` glow pass has no content file (`GlowMask_284` does not exist
-  in `assets/Content/Images`), so the row draws without the glow.
+  goat's `GlowMask[284]` glow pass is data-only: S1-L-8b corrected the sheet name
+  to `Glow_284` (the loader reads `Images/Glow_{id}.xnb`, `AssetInitializer.cs:352-354` —
+  the old `GlowMask_284` spelling matched no file), but the glow draw itself still
+  waits for the mount glow pass.
 - **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
   quick-mount scan walks the inventory only.
 
@@ -5364,6 +5366,59 @@ the animator states, the draw math; S1-L-9 adds the 66-row per-id table, the
 item rows, the SuperCart statics, the `SetMount`/`Dismount` extras, the Chillemt
 damage bonus and the rat's idle band); `TR_SHOT` twin runs SHA256-equal with
 `TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
+
+### Per-id data fidelity (S1-L-8b)
+
+**Code-only mode** — this pass ran with no compiler/test invocation (no
+cargo/rustc/rustfmt); the fixes were re-read against `Mount.cs` line-by-line and
+the tests were **written, not run** (7 new `s1_l_8b_*` tests plus updated pins in
+the cart/SpookyWood tests). What landed, all data-only — the activation logic
+(S1-L-8), the per-tick block and the draw consumers are untouched:
+
+- **Struct/BASE**: `MountData` gains the three missing texture slots
+  (`frontTextureGlow` `Mount.cs:141`, `backTextureExtraGlow` `:137`,
+  `frontTextureExtraGlow` `:145`) as `front_glow_sheet`/`back_extra_glow_sheet`/
+  `front_extra_glow_sheet`; the BASE `light_color` default is `(1,1,1)` — the C#
+  `Vector3.One` (`:259`), not the port's old `(0,0,0)`. Only the three
+  `emitsLight` rows override it (Drill `:1289-1290`, SpookyWood `:1951-1952`,
+  LavaShark `:2159-2160`).
+- **Missing field values**: Drill light `(0.3,0.3,0.4)` + `idleFrameStart` 8
+  (`:1316`); LavaShark light `(0.3,0.15,0.1)`; Bat/Pixie `fatigueMax` 320
+  (`:2426`/`:2490`); mech cart `spawnDust` 213 (`:1488`); fart carts `spawnDust`
+  211 (`:1098`/`:1106`, overwriting the `SetAsMinecart` 213).
+- **Swim bands that copy another band**: Bunny = inAir (`:848-850`), Unicorn
+  (`:1471-1473`), Basilisk (`:1681-1683`), horses (`SetAsHorse` `:2656-2658`),
+  WoF goat (`:2089-2091`) — all had zero swim bands in the port.
+- **Texture-slot corrections**: Bee `backTextureExtra = Mount_BeeWings`
+  (`:1212`); CuteFishron `backTextureGlow = Mount_CuteFishron2` (`:1585`);
+  Drill's three glow strips `Mount_Glow_Drill{Ring,Seat,Diode}`
+  (`:1323`/`:1327`/`:1329`); mech cart's glow is `frontTextureGlow` (`:1531`),
+  not a front-extra; shroom cart's `Extra_116` is `frontTextureGlow` (`:985`);
+  coffin cart `backTexture = frontTexture = Extra_150` (`:1030`); Bat
+  `frontTextureGlow = Glow_370` (`:2474`). The UFO keeps its glow in
+  `frontTextureExtra` — that IS the C# slot (`:1269`).
+- **Fart-cart offsets**: `SetAsMinecart(..., -10, -8)` gives
+  `playerYOffsets = 8 - (-10) + (-8) = 10` (`:2767`) — the port's old
+  `CART_VO_Y_OFFSETS` was `[0;3]`; `yOffset = 13 + (-10) = 3` (`:2772`) was right.
+- **Sheet names now match the content files** (`AssetInitializer.cs:352-354`,
+  `:435-441`): `GlowMask_283/284` → `Glow_283/284`, `MinecartMechMount(Glow)` →
+  `Mount_MinecartMech(Glow)`, `MinecartWoodMount` → `Mount_MinecartWood`,
+  `Mount_FishMinecart` → `Mount_MinecartMineCarp`, `Mount_DesertMinecart` →
+  `Mount_MinecartDesert`. The old spellings matched no `.xnb` — the loader reads
+  `dir/{name}.xnb` with no aliases (`assets.rs` `load_sheet`).
+- **Packing list catches up** (`assets.rs` `STATIC_SHEET_NAMES`): the renamed
+  cart sheets, the new glow strips, and 13 sheets the S1-L-9 rows named but
+  never packed (`Mount_Turtle`, GolfCart's `Extra_96/97`, Flamingo `Extra_149`,
+  SpookyWood `Extra_167`, Santank `Extra_168`, Wolf `Extra_253/254`,
+  Velociraptor `Extra_271/272`, Rat `Extra_273`, Chillemt `Extra_301/302`) — the
+  M4-NPC-3v failure mode (a row names a sheet the atlas lacks → draws nothing).
+  The new test `s1_l_8b_every_named_mount_sheet_is_packed` pins all eight slots
+  of all 66 rows against the list.
+
+Still data-only: the glow/extra draw passes, the Drill light and the per-type
+animator arms wait for M2-MOUNT-2/3/4; filling the fields changes no pixels
+today (the renderer reads `back_sheet`/`front_sheet` only, and the renamed
+cart sheets fix rows whose textures never loaded).
 
 ## Projectile pool (M4-PROJ-1)
 
