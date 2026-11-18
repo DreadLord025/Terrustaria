@@ -20,8 +20,7 @@
 //! `GetHurtTile`) is not modelled — the port's hurt-tile scan covers the same
 //! box with the source's own ±1 margin; `ImmunityCooldownID.TileContactDamage`
 //! collapses into the port's single `hurt_cd` (the port carries one immunity
-//! window, not the C#'s per-source array); the C#'s `player.fireWalk` (the
-//! Obsidian Skull) has no ported accessor, so the hot arm always fires;
+//! window, not the C#'s per-source array);
 //! `Player.shimmering` (the C#'s gate around the whole pass) has no ported
 //! player state, so the pass always runs.
 //!
@@ -76,7 +75,7 @@ pub struct HurtTile {
 /// good world, `Tile 80` (the cactus) only on a Don't Starve world, then the
 /// four set tables. `fire_walk` is the C#'s `player.fireWalk` — the hot arm
 /// is skipped when the player walks on fire (`player == null || !player.fireWalk`,
-/// `:3220`); the port has no Obsidian Skull accessor yet, so it is `false`.
+/// `:3220`); the granters ride `accessory_defense.rs` (S1-C-12 wave C).
 pub fn can_tile_hurt(kind: u16, good_world: bool, dont_starve: bool, fire_walk: bool) -> bool {
     if kind == 230 && !good_world {
         return false;
@@ -224,9 +223,10 @@ pub fn apply_touch_damage(
     let dont_starve = world
         .seeds
         .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
-    // The C#'s `player.fireWalk` (the Obsidian Skull) has no ported accessor
-    // yet — the hot arm always fires (`Player.cs:3220`).
-    let fire_walk = false;
+    // `player.fireWalk` (`Player.cs:1878`) — the Obsidian Skull family's
+    // grant (`accessory_defense.rs`, S1-C-12 wave C) skips the hot arm
+    // (`Collision.cs:3220`).
+    let fire_walk = player.fire_walk;
     let Some(hit) = hurt_tiles(
         world,
         player.x,

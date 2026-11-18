@@ -16,6 +16,7 @@ pub(crate) mod growth;
 pub(crate) mod items;
 pub(crate) mod liquids;
 pub(crate) mod lunar;
+pub(crate) mod npc_snapshot;
 pub(crate) mod npcs;
 pub(crate) mod player;
 pub(crate) mod projectiles;
