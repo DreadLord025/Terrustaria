@@ -2987,8 +2987,19 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
 
 **No arm — default 16×16** (the case has no unconditional static part):
 
-- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
-  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- ~~`5` (`:4645-4649`)~~ — **S1-F-9 wave A (2026-11-18)**: the static 20×20 arm
+  and the `tileFrameX += 176 * (GetTreeBiome + 1)` rewrite are ported
+  (`drawdata.rs::tree_variant`/`tree_biome`/`tree_frame_x_offset`, the case-5
+  arm + `apply_world_corrections`). `GetTreeVariant`'s jungle
+  surface/underground split (variant 5 below `Main.worldSurface`,
+  TileDrawing.cs:1789-1794) and `GetTreeBiome`'s marker-frame column shifts +
+  start-kind walk (`:1735-1776`) are faithful; the renderer's trunk probe
+  `tree::trunk_sheet_offset_at` delegates to it (the old 100-row
+  any-non-tree walk missed variant 5, the column shifts and the start-kind
+  stop rule). The app still routes kind 5 through the dedicated tree path
+  before `draw_data`, so the table arm remains dead in the app but complete.
+  Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
+  (`tree.rs::Foliage::for_ground` deviation stands).
 - `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
