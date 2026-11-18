@@ -189,12 +189,28 @@ pub fn draw(
             r.push_ui_sprite(pos, [sw * zoom, sh * zoom], uv, [1.0; 4]);
         };
         for b in &emotes.bubbles {
-            let (mut world, mut flip) =
+            let (world0, flip0) =
                 bubble_anchor(p.x, p.y, crate::player::WIDTH, p.facing);
             // `GetPosition(...).Floor()` (`:203`).
-            world = [world[0].floor(), world[1].floor()];
+            let world0 = [world0[0].floor(), world0[1].floor()];
+            let anchor = [
+                (world0[0] - camera.x) * zoom + screen.x * 0.5,
+                (world0[1] - camera.y) * zoom + screen.y * 0.5,
+            ];
+            // The pop gate: the first/last 6 ticks draw the closed shell
+            // (`:204-205`). The shell draws FIRST with the original flip at
+            // the unshifted anchor (`:213`), and the pop frames early-return
+            // (`:214-217`) before the 87/89 adjustment.
+            let popping = b.life_time < 6 || b.life_time_start - b.life_time < 6;
+            let shell_col = if popping { 0 } else { 1 };
+            draw_frame(shell_col, 0, anchor, flip0);
+            if popping {
+                continue;
+            }
             // The 87/89 un-flip (`:220-224`): the confused/sleep emotes keep
-            // their orientation and shift 4 px right instead.
+            // their orientation and shift 4 px right instead — applied AFTER
+            // the shell, to the emote sprite only (`:225`).
+            let (mut world, mut flip) = (world0, flip0);
             if flip && (b.emote == 87 || b.emote == 89) {
                 flip = false;
                 world[0] += 4.0;
@@ -203,14 +219,6 @@ pub fn draw(
                 (world[0] - camera.x) * zoom + screen.x * 0.5,
                 (world[1] - camera.y) * zoom + screen.y * 0.5,
             ];
-            // The pop gate: the first/last 6 ticks draw the closed shell
-            // (`:204-205`).
-            let popping = b.life_time < 6 || b.life_time_start - b.life_time < 6;
-            let shell_col = if popping { 0 } else { 1 };
-            draw_frame(shell_col, 0, anchor, flip);
-            if popping {
-                continue;
-            }
             // The emote sprite: column `emote*2%8 + frame`, row `1 + emote/4`
             // (`:225`).
             let col = (b.emote * 2) % 8 + b.frame;
@@ -290,13 +298,17 @@ pub fn draw(
                     } else {
                         [0.0, 0.0, 0.0, 1.0]
                     };
+                    // The border origin is the EMOTE FRAME's half-size
+                    // (17,14), not the border's own (18,15): `EmoteButton.cs:60`
+                    // `origin = frame.Size()/2`, drawn at `vector - One*2`
+                    // (`:69`) -> top-left = center - (19,16).
                     push_whole(
                         r,
                         lookups,
                         &border,
                         [
-                            cx - 2.0 - border.width as f32 * 0.5,
-                            cy - 2.0 - border.height as f32 * 0.5,
+                            cx - 2.0 - sw * 0.5,
+                            cy - 2.0 - sh * 0.5,
                             border.width as f32,
                             border.height as f32,
                         ],
