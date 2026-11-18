@@ -1279,6 +1279,14 @@ mod tests {
 
     #[test]
     fn button_labels_and_sheets_match_the_card() {
+        // The labels resolve through the global `lang` manager, and the
+        // sibling language tests flip it mid-run (`set_language(Russian)`);
+        // take the same guard they do and pin English, or a parallel flip
+        // lands between two reads.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // Labels (`:254-303` — the same `UI.*` table as the character card):
         assert_eq!(button_label(BUTTON_PLAY, false), "Play");
         assert_eq!(button_label(BUTTON_FAVORITE, false), "Favorite");

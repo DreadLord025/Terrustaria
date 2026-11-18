@@ -92,9 +92,24 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // `hardUpdateWorld`'s spread arms ride the same picks (the port
         // runs them unconditionally — the hardmode gate waits for
         // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
-        let sx = rng.next_range(10, world.width - 10);
-        let sy = rng.next_range(world.rock_layer as i32, world.height - 40);
-        tr_core::spread::hard_update_world(world, sx, sy, false, allowed_to_spread, rng);
+        //
+        // The bands are the ones the C#'s own loops pick from
+        // (`WorldGen.genRand.Next(10, Main.maxTilesX - 10)`,
+        // `Next((int)Main.worldSurface - 1, Main.maxTilesY - 20)`,
+        // `WorldGen.cs:71574-71575`/`:71621`). A world too small to hold them
+        // — the headless fixtures run 8x8 and 220x220 — would ask
+        // `UnifiedRandom::next_range` for a reversed band, which is exactly
+        // the `Next(min, max)` guard the C# would trip too. The pick is a
+        // port-only surrogate (`hardUpdateWorld` is called from *inside* those
+        // loops, on cells the loops already chose), so on a degenerate world
+        // the faithful reading of "the pick found no cell" is to skip it.
+        let (sx_lo, sx_hi) = (10, world.width - 10);
+        let (sy_lo, sy_hi) = (world.rock_layer as i32, world.height - 40);
+        if sx_lo < sx_hi && sy_lo < sy_hi {
+            let sx = rng.next_range(sx_lo, sx_hi);
+            let sy = rng.next_range(sy_lo, sy_hi);
+            tr_core::spread::hard_update_world(world, sx, sy, false, allowed_to_spread, rng);
+        }
     });
     app.growth_step.cap_backlog();
 }

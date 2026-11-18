@@ -606,10 +606,21 @@ mod tests {
         );
         // The frame's draw passes: the sky (`:62080`) → the world pass
         // (`:62249`) → the rain/dust (`:62279`/`:62293`) → the wires
-        // (`:62303`) → the projectiles over the wires UI (`:62315`).
+        // (`:62303`) → the projectiles over the wires UI (`:62315`) → the
+        // combat text (`:62340-62396`, the `Main.combatText` walk) → the
+        // ordinary NPC health bars (`DrawInterface_14_EntityHealthBars`,
+        // `:45810`).
         assert_eq!(
             draw_phase_calls(frame),
-            ["sky", "world", "rain", "wires", "projectiles"],
+            [
+                "sky",
+                "world",
+                "rain",
+                "wires",
+                "projectiles",
+                "combat_text",
+                "entity_health_bars"
+            ],
             "the draw passes must follow Main.cs:62249-62326"
         );
     }
