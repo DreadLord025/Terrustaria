@@ -845,9 +845,13 @@ impl SpriteRenderer {
     /// (`Main.cs:27457-27494`); the port pushes those quads into the same
     /// range the other projectile quads ride (`push_ui_sprite_rot`, screen
     /// pixels) tagged with the mode, and `draw_ranges` splits the range into
-    /// contiguous blend runs. `origin` is the sprite-local pivot (already in
-    /// screen pixels) the rotation keeps in place — the C#'s `Draw` origin
-    /// argument, shifted like [`Self::push_sprite_origin_rot`].
+    /// contiguous blend runs. Follows [`Self::push_sprite_origin_rot`]'s
+    /// convention exactly: `pos` is the UNROTATED top-left — for a C#
+    /// `Draw(position, …, origin, scale)` call, `pos = anchor − origin·scale`
+    /// (the `foliage.rs::palm_placement` precedent) — and `origin` is the sprite-local pivot
+    /// already in scaled screen pixels. The top-left is shifted by
+    /// `origin − R(rot)·origin`, so the origin texel lands on `pos + origin`
+    /// (the C#'s `position` anchor).
     pub fn push_ui_sprite_blend(
         &mut self,
         pos: [f32; 2],

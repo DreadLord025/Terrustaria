@@ -876,6 +876,58 @@ TR_THROW=974, frame 20): two identical runs SHA256-equal (`61c19b9b…`), the
 blend frame differs from the base only in the slash's bbox (32 826 px,
 `tools/pixel_diff.py`).
 
+#### The verifier fixes (2026-11-18, code-only pass)
+
+The verifier FAILed the first landing on two placement/tint defects; both are
+fixed in code, tests written but NOT run (user directive: no cargo/rustc/
+rustfmt/test/screenshot runs in this pass — the compile window owns them):
+
+* **D1 — the anchor/origin convention.** `draw_lights_bane` passed the C#'s
+  `position` (the centre anchor, `Main.cs:27474`) as `pos` to
+  `push_ui_sprite_blend`, but the helper wants the UNROTATED TOP-LEFT
+  (`pos = anchor − origin`) and shifts it by `origin − R·origin` itself —
+  every quad landed a full origin away from the anchor, and the two ghosts
+  further off still: XNA's `SpriteBatch.Draw(…, origin, scale, …)` multiplies
+  the texture-space origin by the scale vector, so the `(1, 6)`/`(2, 2)`
+  stretched ghosts (`:27483-27484`) pivot at `half · s · stretch`, not
+  `half · s`. The placement now lives in the pure `lights_bane_quads`
+  (`Main.cs:27477-27492`): per quad `origin = half · s · stretch`,
+  `pos = anchor − origin`, `size = base · stretch` — the
+  `push_sprite_origin_rot` convention (`foliage.rs::palm_placement`
+  precedent: pos = anchor − origin; `frame_quad`'s tl = anchor − R·origin).
+  The blend core (`BlendMode` factors, `draw_blend_runs`, the WGSL) was
+  verified CORRECT and is untouched.
+* **D2 — the ghost tint.** `Color.White * 0.3f * num` (`:27483-27484`) is
+  XNA's TWO byte-truncating multiplies — `(byte)(255f · 0.3f) = 76` per
+  channel (alpha included), then `(byte)(76f · num)` — not one fused
+  `0.3 · num` float (frame 6: 57/255, not 0.225). The port now chains the
+  house helper `ui::color::mul` twice + `tint` (the `bars.rs` precedent).
+* **D3 — the pins.** `lights_bane_tests` grows to 6:
+  `the_batch_layout_matches_the_csharp_draw_order` re-pinned to the
+  two-truncation bytes (57/255 at frame 6, 76/255 at the peak),
+  `the_ghost_tint_truncates_twice_like_xna` pins the byte ladder over the
+  ghost window (frames 0/2/3/4/6/8/10/12 → 0/50/76/76/57/38/19/0), and
+  `the_quads_place_the_origin_texel_on_the_anchor` pins the per-quad
+  pos/origin/size/uv on a synthetic 20×260 sheet at (scale 1, zoom 1) and
+  (scale 2, zoom 1.5), including the `pos + origin = anchor` invariant.
+  WRITTEN NOT RUN — they must go green in the compile window.
+
+**Screenshot re-take DEFERRED to the compile window — REQUIRED BEFORE
+MERGE.** The committed `s1-g-3-lights-bane-{base,blend}.png` predate D1/D2
+and no longer represent the code. Recipe (from the worktree, after
+`cargo build`): run the app on golden.wld with `TR_DAY=1 TR_THROW=974
+TR_SHOT_FRAME=20 TR_NOPLAYER=1 TR_DEBUG=0 TR_SHOT=<path>` twice per variant
+(base = the pre-blend frame, blend = the slash frame) into
+`docs/screenshots/s1-g-3-lights-bane-{base,blend}.png`; the two identical
+runs must be SHA256-equal (`Get-FileHash`), and `tools/pixel_diff.py`
+against the old committed shots must show the change confined to the
+slash's bbox (the ghosts now pivot on the anchor; the tint drops ≤1 LSB).
+Then the full gate: `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` + `cargo test -p tr-app --test
+main_anchors` (judge by the `test result: ok` lines). rustfmt was NOT run
+in this pass either — style matched by hand; run it on the two touched
+files in the compile window.
+
 ## Living trees (M5-LIVING-trees)
 
 `crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
