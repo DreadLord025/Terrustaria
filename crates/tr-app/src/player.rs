@@ -1264,6 +1264,24 @@ pub struct Player {
     // buff's bonuses (the tooltip's knockback row, `Main.cs:20333-20340`).
     pub kb_glove: bool,
     pub kb_buff: bool,
+    // ---- S1-E-7 wave C: the accessory/set-bonus buff flags
+    // (`buff_effects_accessory.rs`, `Player.cs:10800-11400` + `:12013-12044`).
+    /// `Player.gross` (`Player.cs:10981`): Horrified (37) while the WoF lives.
+    pub gross: bool,
+    /// `Player.tongued` (`Player.cs:10993`): Tongued (38), pinned at 10 ticks.
+    pub tongued: bool,
+    /// `Player.sunflower` (`Player.cs:11003`): the Sunflower-buff flag half
+    /// (the movement half rides the effect match below).
+    pub sunflower: bool,
+    /// `Player.rabid` (`Player.cs:11323`): the Feral Bite (148) flag.
+    pub rabid: bool,
+    /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
+    /// weapon-imbuement id 1..8 (0 = none).
+    pub melee_enchant: u8,
+    /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
+    /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
+    /// sets the 881 and 934 flags shared with buffs 284/317).
+    pub pet_flags: [bool; PROJ_COUNT],
     // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
@@ -1928,6 +1946,12 @@ impl Player {
             minion_kb: 0.0,
             kb_glove: false,
             kb_buff: false,
+            gross: false,
+            tongued: false,
+            sunflower: false,
+            rabid: false,
+            melee_enchant: 0,
+            pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,

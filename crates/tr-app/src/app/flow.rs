@@ -2275,6 +2275,8 @@ pub(crate) mod front_flow_tests {
             net_reserved: std::collections::HashMap::new(),
             net_ps_last: crate::net::PlayerState::default(),
             net_beat: 0,
+            net_play_counter: 0,
+            last_item_update: 0,
             net_proj_last: std::collections::HashMap::new(),
             net_proj_spam: std::collections::HashMap::new(),
             net_npc_slots: Vec::new(),
