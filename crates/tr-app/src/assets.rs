@@ -1250,7 +1250,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
     // and `TextureAssets.Actuator` the actuator plate drawn on every
     // actuator-carrying tile.
-    for name in ["WiresNew", "Actuator"] {
+    // `TextureAssets.TileCrack` (`Images/TileCracks`, the mining-progress
+    // crack overlay — `Main.DrawTileCracks`, `Main.cs:61533-61626`,
+    // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
+    for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
             images.push(img);
         }

@@ -88,7 +88,7 @@ render-target cache.
 | 3. `DrawTile_LiquidBehindTile` on solid layer (:524) | PORTED | `render/liquids.rs::draw_tile_liquid_behind` | |
 | 4. Special-point classification switch (:534-723) — vines / MultiTileVine / MultiTileGrass / VoidLens / Pylon / MasterTrophy / AnyDirectionalGrass / WindyGrass | PARTIAL | none (registry) | Inlined: grass+sunflower sway (`tiles.rs:671-751`, `838-851`), trees (`foliage.rs`). The **deferred ordering** is lost — `tiles.rs:671-678` admits the "z-order approximation". |
 | 5. `DrawSingleTile` (:864-1411) | PARTIAL | `tiles.rs::draw_tiles` body | See coverage table; `GetTileDrawData`, the positional switch, flames, half/slice/slope are ported. |
-| 6. `DrawTileCracks` (solid only, :732-733) | MISSING | — | No crack overlay pass. |
+| 6. `DrawTileCracks` (solid only, :732-733) | PORTED | `render/tile_cracks.rs::draw_tile_cracks` | S1-G-1 wave C: `Main.cs:61533-61626` verbatim (the damage ladder, the tree/mushroom shape arms, the 18 px rects, the `Lighting.GetColor` tint); the port's mining accumulator projects onto the `HitTile` damage units. The wall sites (`WallDrawing.cs:203-204`) draw when the wall book fills — the projection already emits `CRACK_WALL` records. Deviations: ANALYSIS "The tile-crack overlay (S1-G-1 wave C)". |
 | 7. `DrawSpecialTilesLegacy` (:736, :7893-8024) | MISSING | — | No SunOrb / in-tile item / item frame / food platter / weapon rack / critter cage. |
 | 8. `DrawEntities_DisplayDolls`/`HatRacks` (:8026/:8039) | MISSING | — | No tile-entity sprite pass. |
 | 9. `DrawTrees` (:8052) | PORTED | `foliage.rs::draw_tree_foliage` | Canopy + branch + leaf gores; sway per `DrawGrass`. |
@@ -231,6 +231,9 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
     Requirement = (255*(1-q)+30q, ×1.1, ×1.2)` and `_medium… = (50*(1-q)+2q, …)` (:479-486)
     vs the port's `HIGH_LIGHT`/`MEDIUM_LIGHT` (`tiles.rs:362-366`). **Not admitted.**
 12. **`DrawTileCracks` missing** — `cosmetic` (the mining/hit overlay).
+    **RESOLVED 2026-11-18 (S1-G-1 wave C)**: `render/tile_cracks.rs` ports the
+    pass; the single-accumulator projection + the world-seeded crack-style
+    roll are the recorded deviations (ANALYSIS "The tile-crack overlay").
 
 ## Task seeds
 
