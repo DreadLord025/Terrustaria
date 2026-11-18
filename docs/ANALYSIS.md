@@ -2907,11 +2907,48 @@ falls through silently. `C# ref tileFrameX/Y` rewrites are expressed as
 the source rectangle from the final frame (`TileDrawing.cs:1007`).
 
 **Animation state.** `tile_frame` is `Main.tileFrame[kind]`; the animator is
-not ported, so the production call passes 0 — exactly the vanilla t=0 state.
-All `tile_frame * N` formulas are ported verbatim and activate unchanged when
-the animator lands. The default `addFrY = Main.tileFrame[type] * 38`
+ported in `crates/tr-core/src/drawdata_anim.rs` (S1-F-9 wave B, below) but not
+yet wired, so the production call still passes 0 — exactly the vanilla t=0
+state. All `tile_frame * N` formulas are ported verbatim and activate unchanged
+when the wiring lands. The default `addFrY = Main.tileFrame[type] * 38`
 (`TileDrawing.cs:4533`) is ported as the same formula. `tile_frame = 0` was
 verified against the C# per formula (transcription tests in `drawdata.rs`).
+
+### S1-F-9b animated-tile animator (2026-11-18)
+
+`crates/tr-core/src/drawdata_anim.rs` ports `Main.AnimateTiles`
+(`Main.cs:18516-19304`, called once per client update at `Main.cs:17150` after
+`DoUpdate_AnimateWalls`) as `TileAnimator::animate_tiles(wind_for_visuals,
+rand, generating_or_loading)`:
+
+- State: `tile_frame`/`tile_frame_counter` `[i32; TILE_COUNT]` ≡
+  `Main.tileFrame`/`Main.tileFrameCounter` (`Main.cs:1596-1597`, allocated
+  `new int[TileID.Count]` `:66976-66977`, world-load reset `:8393-8394`) plus
+  `weather_vane_bobframe` ≡ `Main.weatherVaneBobframe` (`:2237`).
+- Every arm keeps its C# idiom exactly — the four spellings (`counter > limit`
+  vs `>= limit` × `frame >= wrap` vs `> wrap`) differ by one tick of period and
+  are kept as four helpers, not normalised. The pre-increment arms (133 etc.)
+  are semantically identical to the post-increment `>=` form and share it.
+- Mirrors: 665 ← 12 (both arrays), 696 ← 31 (frame only), 271/581 ← 270,
+  355 ← 354. The 340..=344 loop, the counter-only wraps (507/508 at `20*8`,
+  485 at 20, 491 at 40, 597 at 64) and the frame-only 412 (240) are verbatim.
+- **RNG:** tiles 453/456 draw `Main.rand.Next(3)` gated on
+  `!WorldGen.isGeneratingOrLoadingWorld` (`:19109`/`:19118`); the weather-vane
+  bob roll draws `rand.NextFloat()` (`:19325`). All three take the caller's
+  `UnifiedRandom` (the exact `Main.rand` stream) in source order — no framing
+  RNG is touched (`framing.rs` untouched). Tests replay the counters
+  draw-for-draw against a cloned stream.
+- Weather vane (`AnimateTiles_WeatherVane`, `:19306-19329`): the decompiled
+  `tileFrameCounter[490] -= 6 * tileFrameCounter[490]` (`:19316`) is kept
+  verbatim (it is NOT a modulo — it negates to −5×); the direction-hold gates
+  at frames 0/6 and the `++bobframe == 8` reset are 1:1.
+- **Deliberate deviations:** (1) renderer wiring deferred — `draw_data` still
+  receives 0 until a follow-up feeds `TileAnimator::animation_row(kind)` in
+  (kept out of this wave to stay disjoint from wave A's `drawdata.rs` edits);
+  (2) `AnimateTiles_CritterCages` (`:19303`, body `:13511+`) not ported — it
+  animates the separate `Main.bunnyCageFrame[]` cage-entity arrays behind the
+  `Main.critterCage` proximity gate, part of the still-missing tile-620
+  deferred special pass (research/09), not `tileFrame[]`.
 
 ### Status of every switch case (`TileDrawing.cs:4540-6032`)
 
@@ -17198,6 +17235,33 @@ registered file, since `lang::init` early-returns on a non-empty source list)
 and documents that the **caller holds `test_lock`** for the whole test (the
 lock is not reentrant); the tooltip/buff-tooltip registration tests and
 `npc_chat::init_lang` now take the guard.
+
+**Follow-up (fix/ingame-options-culture-flake):** five more
+`ui/ingame_options.rs` tests still read the culture without the guard —
+`the_value_bar_geometry_is_the_c_sharp_scaled_track` (the 1045-vs-979 flake:
+`color_bar_right_x` shifts 60 px in English but 126 in the long cultures,
+`IngameOptions.cs:1071`), `refresh_button_latches_the_hover_and_the_layout`
+(`measure_button` reads `Lang.inter[62]`),
+`save_and_exit_click_saves_the_world_and_returns_to_the_menu`,
+`the_keybinds_row_opens_the_in_game_keybinding_screen` (culture-shifted
+`left_row_rect`) and `a_toggle_click_applies_the_setting_to_the_app`
+(`right_row_rect`). Under parallel load a sibling's `lang::init`/
+`set_language` flipped the culture between their geometry reads and their
+assertions. Each now takes the same house guard — `crate::lang::test_lock()`
+acquired **once** at the top of the test (never twice: the mutex is
+non-reentrant and a double acquire self-deadlocks the whole gate) plus
+`lang::init(GameCulture::English)` to pin the culture for the test's whole
+run. The six previously-guarded tests that used a bare
+`lang::set_language(English)` were switched to `lang::init(English)` under
+the same single guard: on an empty manager `set_language` marks the culture
+active **without loading any sources**, and every later `init` then
+early-returns in its trailing `set_language` (culture unchanged,
+`localization/mod.rs:196-200`), leaving all texts as bare keys for the rest
+of the process — the second half of the flake (only the tests asserting
+real key resolution failed; bare-key-vs-bare-key comparisons passed
+vacuously, and `--test-threads=1` passed because an `init` test happened to
+run first). No game logic or value-bar maths changed — test synchronization
+only.
 
 **Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
 centred hit box, the per-category right anchors + bar shift, the 0.75 bar
