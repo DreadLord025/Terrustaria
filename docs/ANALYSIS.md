@@ -8901,9 +8901,33 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
 - **Item ids are host-Vec indices**, not the C#'s fixed 400 slots: a removal
   shifts the higher indices, and the next tick's `21` diff re-announces them
   (the fixed-slot scheme is M6-NET-5). `22 ItemOwner` is consumed by the
-  client's grab gate but not yet emitted by the host — the port's pickup
+  client's grab gate and emitted in the join burst (below); the port's pickup
   request validates and removes in one step, so no reservation window
   exists yet.
+- **The item send cadence (S1-I-4 wave A — the world-item slice).** The C#
+  never diff-streams item physics: `21 ItemDrop` goes out only on events —
+  spawn (`Item.cs:49644` client request / `:49768` host broadcast), pickup /
+  transform / despawn (`WorldItem.SyncItem`, `WorldItem.cs:612-615`, called
+  from `Player.cs:35109`, `WorldItem.cs:181-182`/`:568`/`:586`/`:620`/`:1199`/
+  `:1847`), plus two steady feeds: the **join burst** — one `21` + one `22`
+  per live slot to the joining client (`MessageBuffer.cs:843-850`) — and the
+  **1 Hz round-robin heartbeat** — every 60th `UpdateServer` tick one slot
+  (`Main.lastItemUpdate`, wrapping at 400) gets an unconditional `21` when it
+  is unreserved (`Main.cs:64570-64580`). The port now carries both
+  (`netglue.rs::host_slot_join_complete` and `net_tick`'s
+  `net_play_counter`/`last_item_update`), with two recorded deviations:
+  (1) the port's 10 Hz change-diff stands in for the event fan-out (the C#
+  sends nothing between events; the port re-sends any changed slot each
+  cadence tick — a superset, never a missing update); (2) the heartbeat walks
+  the live Vec, not the fixed 400 slots, and the server counter advances in
+  batches of 6 per cadence tick instead of once per 60 Hz tick, so the
+  heartbeat lands on the same 1 s grid but the phase is quantised to 100 ms.
+  The `22` join body carries the C# field defaults (255 unreserved,
+  `WorldItem.cs:139`; the grab-delay ints 0, `:22-26`) — the port has no
+  reservation state yet. `151` slot-reuse/expiry (`WorldItem.cs:351`,
+  `Item.cs:49723`) and the `39` ownership request (`WorldItem.cs:256`/`:264`)
+  remain unported (M6-NET-5); the port's removal feed is the vanished-tail
+  diff.
 - **The peer slots are seeded at the world spawn** on first sight (the C#'s
   `Main.player[i]` exists at the spawn before its first `13`), so the first
   snapshot's lag accrues from there rather than from (0, 0).
