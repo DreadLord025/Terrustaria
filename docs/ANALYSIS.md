@@ -7130,6 +7130,40 @@ The micro-biome decorators over the finished world:
   shaft down from the surface into the buried 7×5 chamber with the sword
   tile (197 — the C#'s sword sprite tile; the breakable item drop = the
   follow-up).
+- **The living mahogany trees** (`MahoganyTreeBiome`, `:11-92` — S1-K-2
+  wave A, 2026-11-18): the faithful port of the Micro Biomes pass's
+  mahogany block (`WorldGen.cs:21105-21123`) — the `LivingTreeCount`
+  config roll (Min 6 / Max 11 / WorldWidth, the first executed step to
+  consume its config view; the view keys on the vanilla pass name, read
+  in-step — `apply_step`'s display-name keying is load-bearing for
+  `step_dunes` and stays), up to 20000 `RandomWorldPoint(worldSurface+50,
+  50, 500, 50)` attempts, the 6-wide solid floor find (`Down(200)` +
+  `AreaAnd(6,1)`), the ceiling find (`Up(120)` + `AreaOr(6,1)`) with the
+  30..65-tile headroom gates, the 60×90 `CanPlace` box, the mud-dominance
+  scanner gate (the drunk seed's 1-in-50 skip), the sine-swayed 5-tile
+  trunk segments (383 shell / wall-78 hollow / 2×2 joints), the two side
+  + two top `ShapeBranch` walks (`ShapeBranch.cs:25-75`, the rotated
+  twigs), the blotched `Circle(4)` leaf canopies (384,
+  `Modifiers.Blotches(4,2)`'s two-`NextDouble` + 0.3-spread shape), the
+  four `ShapeRoot` walks (`ShapeRoot.cs:17-54`, the two-`NextFloat` angle
+  jitter) and the style-10 jungle chest (`GetNextJungleChestItem` +
+  `AddBuriedChest`'s solid-floor down-scan). The step draws from its own
+  `pass_rng("Micro Biomes")` stream — no other step's ledger shifts. The
+  framing's 383/384 merge arms (`WorldGen.cs:82077-82082` — 383 merges
+  with MUD, the 191/192 pair's shape) landed in `framing.rs`.
+  `DEFAULT_WORLD` re-pinned 3439477718 → 143177146 (the new tiles plus the
+  downstream tile-dependent passes re-rolling around them); `SEED42_512`
+  unchanged (the sub-vanilla guard skips the block — the C#'s
+  `Next(worldSurface+50, maxTilesY-500)` band collapses there).
+  Deviations: the `SetFrames`/`PlaceWall` framing rides the post-pipeline
+  framing seam; the chest keeps the shared `place_chest` +
+  `stock_placed_chest` stand-in (no special-seed loot arms); the
+  `dualDungeons` origin veto is deferred with the seed. ThinIceBiome
+  stays unported: its snow-dominance gate (`dictionary[147] >
+  dictionary[0]+dictionary[1]` over the 50×50 box, `ThinIceBiome.cs:12-23`)
+  cannot pass in the compact terrain — the snow band is a one-row skin
+  over the ice shell (`terrain.rs:320-330`), so the biome would be dead
+  code until the faithful `Generate Ice Biome` pass lands.
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
