@@ -16024,3 +16024,27 @@ CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
 port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
 (`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
 inset and centring are faithful; only the scale/clip mechanism is approximate.
+
+## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
+
+The Settings menu's Save & Exit row armed `pending = Some(SaveAndExit)` then
+called `close()`, which clears `pending` (`ingame_options.rs`); no caller
+ever drained it, so the button only closed the window. The C# row
+(`IngameOptions.cs:296-305`) does `Close()` + `menuMode = 10` +
+`gameMenu = true` + `WorldGen.SaveAndQuit()`; `SaveAndQuit`
+(`WorldGen.cs:6701-6719`) plays sound 11, resets the invasion bar
+(`:6705-6708`) and queues `SaveAndQuitCallBack` (:6664-6687`:
+`Player.SavePlayer` + `WorldFile.SaveWorld` on the `netMode == 0` arm,
+sound 10, fast-forward flags cleared, `menuMode = 0`).
+
+The fix wires the row to `App::save_and_quit` (`saveglue.rs`): sound 11 ->
+invasion reset -> the existing `save_world` funnel (world + player sidecar +
+map + achievements) -> sound 10 -> fast-forward flags -> reopen the main menu
+(the `net_disconnect` shape). Deliberate deviation: the C# mode-10 "saving"
+screen exists only to cover the ThreadPool async save; the port's synchronous
+single-player save has no window to cover, so mode 10 is skipped (documented
+in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
+`ResetFocus` halves covered by the `game_menu` audio listener). The
+multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
+the MP pause-menu flow lands. The Settings panel layout deviations remain a
+follow-up round.
