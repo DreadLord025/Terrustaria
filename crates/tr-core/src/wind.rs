@@ -514,7 +514,7 @@ impl WindGrid {
 
 /// `Utils.Clamp` (`Utils.cs:223-234`): the C#'s clamp tests the max
 /// first, so a reversed range folds onto the max.
-fn cs_clamp(value: i32, min: i32, max: i32) -> i32 {
+pub(crate) fn cs_clamp(value: i32, min: i32, max: i32) -> i32 {
     if value > max {
         return max;
     }
