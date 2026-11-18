@@ -2987,8 +2987,19 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
 
 **No arm — default 16×16** (the case has no unconditional static part):
 
-- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
-  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- ~~`5` (`:4645-4649`)~~ — **S1-F-9 wave A (2026-11-18)**: the static 20×20 arm
+  and the `tileFrameX += 176 * (GetTreeBiome + 1)` rewrite are ported
+  (`drawdata.rs::tree_variant`/`tree_biome`/`tree_frame_x_offset`, the case-5
+  arm + `apply_world_corrections`). `GetTreeVariant`'s jungle
+  surface/underground split (variant 5 below `Main.worldSurface`,
+  TileDrawing.cs:1789-1794) and `GetTreeBiome`'s marker-frame column shifts +
+  start-kind walk (`:1735-1776`) are faithful; the renderer's trunk probe
+  `tree::trunk_sheet_offset_at` delegates to it (the old 100-row
+  any-non-tree walk missed variant 5, the column shifts and the start-kind
+  stop rule). The app still routes kind 5 through the dedicated tree path
+  before `draw_data`, so the table arm remains dead in the app but complete.
+  Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
+  (`tree.rs::Foliage::for_ground` deviation stands).
 - `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
@@ -16875,3 +16886,36 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The join-bundle message ids (S1-I-1 wave A, 2026-11-18)
+
+Wave A of the message-id remap ports the JOIN bundle's eleven missing ids as
+wire bodies + `C2s`/`S2c` codecs in `crates/tr-app/src/net.rs` — the first
+dependency tier of `SyncConnectedPlayer` (`NetMessage.cs:2806-2822`) /
+`SyncOnePlayer` (`:2885-2960`) / `SendNPCHousesAndTravelShop` (`:2824-2852`) /
+`SendAnglerQuest` (`:2653-2673`) /
+`CreditsRollEvent.SendCreditsRollRemainingTimeToPlayer`
+(`CreditsRollEvent.cs:27-33`) / `SendAllMarkersToPlayer`
+(`CoinLossRevengeSystem.cs:498-507`):
+
+- `30 TogglePVP` — `(byte)plr + hostile` (`NetMessage.cs:856-859`).
+- `42 Unknown42` — the mana sync, `(byte)plr + (short)statMana + (short)statManaMax` (`:961-965`). Named `PLAYER_MANA` for readability; the C# name is `Unknown42` (`MessageID.cs:95`).
+- `45 TeamChange` — `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id and stays unported.
+- `60 Unknown60` — the NPC household banner, `(short)npc + (short)homeX + (short)homeY + (byte)status` (`:1067-1072`); the status is `WorldGen.TownManager.GetHouseholdStatus` (`:2845`). Named `NPC_HOUSE`.
+- `72 TravelMerchantItems` — exactly `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`) `(short)` item types, no count prefix (`:1134-1141`, reader `MessageBuffer.cs:3121-3124`).
+- `74 AnglerQuest` — `(byte)Main.anglerQuest + anglerWhoFinishedToday.Contains(recipient name)` (`:1145-1148`); the wire's bool is per-recipient, the client stores it as `anglerQuestFinished` (`MessageBuffer.cs:3147-3153`).
+- `126 SyncRevengeMarker` — `RevengeMarker.WriteSelfTo` (`CoinLossRevengeSystem.cs:275-286`): int uniqueID, Vector2 location, int npcNetID, float hpPercent, int npcType, int aiStyle, int coinsValue, float baseValue, bool spawnedFromStatue; the reader mirrors it field-for-field (`:321-324`).
+- `135 DeadPlayer` — `(byte)plr` only (`:1569-1571`); sent when `statLife <= 0` (`:2897-2900`), the client raises `immuneAlpha` to 255 (`MessageBuffer.cs:4195-4203`).
+- `140 SetMiscEventValues` — `(byte)kind + (int)value` (`:1591-1594`); the join bundle sends kind 0 only (the credits roll's remaining frames). Kinds 1/2 (the server-side slime transforms, `MessageBuffer.cs:4250-4260`) decode but have no port application.
+- `142 SyncProjectileTrackers` — `(byte)plr` + two `TrackedProjectileReference` bodies, each `(int)Key + (short)type` (`TrackedProjectileReference.cs:22-26`/`:33-37`).
+- `147 SyncLoadout` — `(byte)plr + (byte)CurrentLoadoutIndex` + the `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one `(ushort)` — bit `i` per slot (`WriteAccessoryVisibility`, `NetMessage.cs:1882-1893`; unpack `MessageBuffer.cs:4494-4501`).
+
+Deliberate scope boundary: **bodies + codecs only**. The two `netglue`
+dispatchers carry explicit parked arms for the new variants — nothing sends
+them and the client/host apply-and-relay sites (`MessageBuffer.cs:1851-1867`,
+`:2290-2306`, `:2325-2364`, `:2695-2739`, `:3118-3126`, `:3147-3153`,
+`:4043-4048`, `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land with
+the send-path pass (S1-I-4), so the live net message order is unchanged. The
+per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
+the exact C# body bytes and the decode round trip; the travel shop test also
+pins the fixed 40-slot length (a 39-slot body fails to decode).
