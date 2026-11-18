@@ -17625,3 +17625,79 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Prime Saw's aiStyle-33 arm (S1-D-3 aiStyle-33, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style33.rs` ports `NPC.AI()`'s inline
+`else if (this.aiStyle == 33)` block (`NPC.cs:27943-28244` — there is no
+`AI_033` function) as a pure function (`style33_step`) over `Npc` + a
+`Style33Context` seam. The only kind on the style is `NPCID.PrimeSaw`
+(129, `ID/NPCID.cs:10935`; `SetDefaults` `NPC.cs:10588-10602`: 52×52,
+damage 56, defense 38, lifeMax 9000, noGravity/noTileCollide, kb 0,
+netAlways) — there are no per-type branches inside the arm; the siblings
+ride their own arms (cannon 128 → 35 `:28522`, vice 130 → 34 `:28245`,
+laser 131 → 36 `:28757`). **Code-only mode**: no cargo/rustc/rustfmt/
+tests were run; the 14 witness tests are written, not executed, and the
+dispatch claim (the saw's share of `npc.rs::update_prime_limb`) is the
+follow-up wiring round — every other file is byte-identical except the
+`mod` line and the docs.
+
+Faithfulness points the port keeps (and the live `update_prime_limb`
+misses — the wiring round must replace the saw's share, not merge with
+it):
+
+- The live arm is ONE shared tether drift (invented ±0.07/±0.04 accel,
+  ±8/±3 caps) plus a 300-tick dash timer for all four limbs. The C# saw
+  has SEVEN `ai[2]` states (0/1/2/3/4/5/99) with different maths each;
+  all ported, including the states 4/5 that nothing inside THIS arm ever
+  enters (a sibling arm's write — kept verbatim, `:28186-28243`).
+- The desync hysteresis is STRICT both ways: `> 800` arms state 99,
+  `< 400` disarms (`:27951`/`:27956`) — 800 and 400 themselves hold.
+- The head-gone gate is `!active || aiStyle != 32` (`:27961`) — a head
+  slot holding any other style despawns the limb too; `ai[2] += 10` per
+  tick, `> 50 || Main.netMode != 2` kills (`:27963-27964`), so
+  single-player dies on the FIRST tick and the server counts 10..50.
+- `spriteDirection = -(int)this.ai[0]` (`:27960`) — the TRUNCATED int
+  negation, not a sign test (the live arm's `< 0` ternary agrees only
+  for the ±1 seats the head writes, `:27645`).
+- The hover Y band compares the TOP edge (`base.position.Y`,
+  `:28098`/`:28110`) against head.Y + 320/+260 — a 60-px dead band; the
+  X band compares CENTRES with INTEGER half-widths (`:28122`/`:28134`)
+  and is ASYMMETRIC: the right edge is the head's centre, the left edge
+  headCentre − 250 (NOT the dock's −200·side).
+- The dock aim rotation (`atan2 + 1.57f`, `:28151`) OVERWRITES the chase
+  aim rotation (`atan2 − 1.57f`, `:28047`) at the end of the 0/3 block —
+  both writes kept, in order; the literal `1.57f`, not `FRAC_PI_2`.
+- The chase normalisers DIVIDE by the distance with no epsilon floor
+  (`:28044`, `:28173`, `:28192`) — a zero distance yields the C#'s
+  NaN/Inf verbatim (the live arm floors at 0.001).
+- The three dead-store sqrt reads (`num501` `:28150`, `num504`'s first
+  value `:28158`, `num507`'s reused value `:28237`) are kept and
+  annotated — computed, never read, no observable effect.
+- The arm does NOT integrate `position += velocity` — the saw is
+  noTileCollide, so `UpdateNPC` integrates after `AI()`
+  (`NPC.cs:90498`); the caller owns the step.
+
+Documented stand-ins: `life = -1; HitEffect(); active = false`
+(`:27966-27968`) rides the port's hp-0 death convention with an early
+return (observationally identical — `ai[2]` is 10 or ≥ 60, so no state
+branch matches anyway); the `HitEffect()` call reaches the
+type-128..131 gore arm (`NPC.cs:89433-89469`) whose four
+`Main.rand.Next(61, 64)` picks (`:89452/:89456/:89460/:89464`) are
+COSMETIC gore — the dust/gore skip precedent (S1-E-4's drop sites stay
+a follow-up), so the port draws nothing there. `EncourageDespawn(10)`
+(`:28026`) rides the existing `Npc::encourage_despawn`
+(`NPC.cs:7249-7256` — only ever lowers the window). The head reads
+(`active`/`aiStyle`/`position`/`width`/`ai[1]`) ride the
+`Style33Context` seam — the port's `World.prime_*` write-through carries
+only the position today; `Main.netMode` rides `ctx.net_mode` and the
+`EverLastingTicker` stamp rides `ctx.ticker`.
+
+**RNG by construction**: the C# arm (`NPC.cs:27943-28244`) draws no
+`Main.rand.Next` — every counter is deterministic (`ai[3]` ticks, the
+hp-free state gates) — and the `npc_target::target_closest` helper is
+RNG-free too, so `style33_step` takes no RNG parameter and cannot
+perturb any stream; the witness
+`the_arm_is_deterministic_without_an_rng` pins identical inputs to
+identical state over 50 ticks, and pins that the saw fires no shot
+(`wants_hostile_shot` stays empty — the dash IS the attack).
