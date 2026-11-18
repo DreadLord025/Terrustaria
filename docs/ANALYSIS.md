@@ -4617,9 +4617,24 @@ the existing rows byte-identical (`gen_loot.py --check` green).
   half-body emission would drop C# rows.
 - NamedNPC's key comparison rides the `get_text_value` seam.
 
-Follow-up S1-E-14a records the pre-existing generator limitation the
-splice exposed: the `RegisterBoss_*` subtree at `ItemDropDatabase.cs:655`
-is not spliced (the 655-site boss-subtree gap).
+Follow-up S1-E-14a (2026-11-18, `task/S1-E-14a`): `gen_loot.py`'s
+`FOLLOW_METHODS` now spans all 22 `RegisterBoss_X` the C# `RegisterBosses`
+calls (`ItemDropDatabase.cs:655` subtree), splicing +136 boss rows in C#
+order (1445→1581 registrations). `s1_e_14a_the_boss_subtree_registrations_are_spliced`
+pins post-splice-only rows (EoC NotExpert 2112/1299 + a real `try_dropping`
+attempt; the boss bags via `rules_for_npc`). Remaining generator gaps
+(skipped with a warning, not faked): 88 `LeadingConditionRule`/`rule.OnSuccess`
+local-var statements, 8 `DropOneByOne.Parameters` (LunarTowers), 8 unhandled
+local-var rule refs, 4 `OneFromRulesRule` skipped sub-rules/chains; 15
+`OneFromOptions` rows referencing unported items are warn-and-emit (the
+established policy). Documented deviation: the 15 new master-mode rows
+(`MasterModeDropOnAllPlayers`) carry denominator 1, not the C#
+`_masterModeDropRng` = 4 (`ItemDropDatabase.cs:15`) — a pre-existing generator
+limitation (7 such rows already on main), inert at runtime (`spawn_loot`
+passes `is_master: false`). The salvaged `OneFromRulesRule` chance-gate port
+(`OneFromRulesRule.cs:33-49`) has no construction sites yet (the generator's
+`OneFromRulesRule` handler still emits the old 1-arg form; all 5 C# sites are
+skipped via local-var sub-rules).
 
 ## Buff slots (M2-BUFF-1)
 
