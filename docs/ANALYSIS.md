@@ -17625,3 +17625,73 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The aiStyle-26 tails (S1-F-13b2 slice B, 2026-11-19, code-only mode)
+
+Branch `task/S1-F-13b2-unicorn-b`, disjoint from slice A
+(`task/S1-F-13b2-unicorn`'s `npc_ai_unicorn.rs` + `Npc` field/dispatch
+edits). **Code-only mode: no compiler invoked on this branch** — no
+cargo/rustc/rustfmt/tests run; the `s1_f_13b2b_*` tests are written,
+not run, and the merge verification (the catalog `cargo test` command)
+belongs to the union step. Everything lives in the NEW file
+`crates/tr-app/src/npc_ai_unicorn_b.rs` (pure free functions over
+passed-in state — compiles against `origin/main` alone, sidestepping
+slice A's not-yet-merged `gfx_off_y`/`step_speed` fields and the private
+`frame_counter`), plus the `proj_data` 1001 row
+(`projectile/data.rs`) and its `mod` declaration.
+
+Ported, each with its C# cite in the file:
+- **FindFrame case 315** (`NPC.cs:74465-74497`): the ±1 turn dead-band
+  (runs even wet+airborne, before the reset), the airborne row-0 reset,
+  the |vx|-per-tick gallop at >= 8, wrap past row 10 to row 1.
+- **FindFrame case 329** (`NPC.cs:74375-74403`): falling row 3 / rising
+  row 2 (counter 0, sprite untouched — the breaks precede the
+  `spriteDirection` assignment), the |vx|*0.4 walk at > 4 (strict),
+  clamp rows 2..=9. Row-index convention: the port's `frame: u32` is
+  the C# `frame.Y / num`, so the sheet row height `num` cancels; frame
+  counts 315=11 / 329=10 (`Main.cs:67082`, already in the port's
+  `NPC_FRAME_COUNT`).
+- **The gallop dust** (`NPC.cs:62421-62439`): rows 4..=7 only;
+  `Next(3)` ALWAYS when the gate passes, the two `NextFloat` jitters
+  (x then y) ONLY on the spawn branch, then `NewDustPerfect` type 6
+  with the NPC velocity — the empty-pool internals are seven further
+  draws (`Next(1)`×2, `Next(-20,21)`×2, `Next(3)`, `Next(-20,21)`,
+  `Next(-10,6)` — the type-6 tweak, `Dust.cs:214-221`); post-spawn
+  `scale 0.6 / fadeIn 1.1 / noGravity / noLight`, sentinel included.
+  The draws ride the UpdateNPCs stream IN-STEP at the C# position
+  (after the lob + AddLight, before the stuck counter) — deliberately
+  NOT the deferred spark-queue seam (`player.rs`), whose C# draws
+  happen outside the AI. Stream-replay witness tests clone the stream
+  and require state equality across seeds 0..8 × rows {3,4,7,8}.
+- **AddLight** (`NPC.cs:62420`): `Center`, (0.4, 0.36, 0.2), every
+  Horseman tick; render-side `EntityLights` feed (the `npc_lights.rs`
+  S1-E-5 precedent), no RNG.
+- **gfxOffY decay** (`NPC.cs:90395-90420`): pre-AI, after the
+  old-target/direction latches; `(1 + |vx|/3) * stepSpeed` toward 0,
+  zero-crossing snap, ±16 clamp. Render adds it to the draw Y
+  (`Main.cs:25414` etc.) at union.
+- **Projectile 1001** (`Projectile.cs:9511-9522`): the `proj_data` row
+  (26×26, aiStyle 194, hostile via the spawn seam, `tileCollide=false`,
+  `ignoreWater`, `timeLeft=360`, `alpha=255`, stock penetrate 1).
+
+Union points (the file's module docs carry the full wiring list):
+1. `gfx_off_y_decay` → `Npc::update_rng` ahead of the AI dispatch, on
+   slice A's fields.
+2. `horseman_gallop_dust` → slice A's `if horseman` block at the
+   deferred comment; `unicorn_step` gains `&mut DustPool` + `&SpawnCtx`
+   threaded from the `update_npcs` tick closure (the `audio` pattern).
+3. `horseman_light` → beside `npc_light` in `app/frame/draw.rs`'s NPC
+   light loop.
+4. The FindFrame fns → `Npc::find_frame`'s 315/329 arms (inside
+   `impl Npc`, so the private `frame_counter` needs no accessor).
+5. `horseman_pumpkin_scale` → the lob's FOURTH draw at slice A's queue
+   site (`Projectile.cs:9518`'s `Next(51)` runs at `NewProjectile` time
+   inside the AI); the value rides a new `HostileShotAi.scale` field to
+   the spawned slot. Rolling it at the post-tick drain instead would
+   move the draw past every later NPC's AI draws — a stream deviation,
+   so the row carries the 1f base only.
+
+Still deferred after the union: the aiStyle-194 flight
+(`AI_194_HorsemanPumpkin`, `Projectile.cs:41293`) — until it lands the
+1001 slot spawns with the row's data but no bespoke AI (the pool
+previously dropped the shot entirely for want of the row).
