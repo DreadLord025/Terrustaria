@@ -10362,6 +10362,26 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
+  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
+  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
+  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
+  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
+  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
+  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
+  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
+  light layer; the tracked explode sound (`:69362`) — no sound layer; the
+  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
+  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
+  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
+  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
+  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
+  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
+  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
+  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
+  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
+  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
+  the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
