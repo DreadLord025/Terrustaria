@@ -185,6 +185,9 @@ impl App {
         // page the player selected with the tabs. Recomputed every frame so the
         // auto-jump is undone the moment the cursor stack empties.
         self.resolve_equip_page();
+        // `DrawInterface_38_MouseCarriedObject`'s per-frame head lifecycle
+        // (`Main.cs:45185-45211`) + the closed-inventory clear (`:45666`).
+        self.refresh_mouse_npc();
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
