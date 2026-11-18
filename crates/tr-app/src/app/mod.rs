@@ -658,6 +658,12 @@ pub(crate) struct App {
     pub(crate) stats_acc: StatsAcc,
     pub(crate) debug_cache: DebugCache,
     pub(crate) light_mode: LightMode,
+    /// S1-E-19: the legacy lighting engine (`LegacyLighting.cs`) — the
+    /// White/Retro/Trippy modes' additive path. `None` while Color (the
+    /// modern engine) is active; constructed on the first legacy frame and
+    /// kept across mode switches (the C# `Lighting.LegacyEngine` is a static
+    /// singleton, `Lighting.cs:23`).
+    pub(crate) legacy_light: Option<tr_core::lighting::legacy::LegacyLighting>,
     /// `Main.mouseTextColor`: oscillates 190..=255 each frame, driving torch/lava/shimmer
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
@@ -3332,6 +3338,7 @@ impl App {
             stats_acc: StatsAcc::default(),
             debug_cache: DebugCache::default(),
             light_mode: crate::env::light_mode().unwrap_or(LightMode::Color),
+            legacy_light: None,
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,

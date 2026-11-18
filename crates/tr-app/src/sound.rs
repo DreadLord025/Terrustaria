@@ -204,6 +204,84 @@ pub enum Family {
     Item(i32),
 }
 
+/// One `LegacySoundPlayer.PlaySound` case-2 (item) play's decisions
+/// (`LegacySoundPlayer.cs:516-644`, S1-E-21 wave A): the final style number
+/// after the style-1 variation remap, the volume tweak the case applies to
+/// the attenuated gain, and the instance pitch BEFORE the caller's
+/// `pitchOffset` (the final `Clamp(pitch + pitchOffset, -1, 1)` is `:1410`).
+///
+/// `rng` mirrors `Main.rand` — the item-use wave passes the `UpdatePlayers`
+/// stream (`Player.ItemCheck` runs under the `Main.cs:17754` swap). The C#
+/// reaches this switch only after the attenuation walk passed (`:390-436`),
+/// so the caller must gate on audibility BEFORE drawing.
+///
+/// Not modelled (the port's standing D4 deviation): the per-style instance
+/// stop/re-create (`:580-606`) and the 53/55/159 playing guards — the port
+/// spawns a fresh source per play.
+pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) {
+    let mut num = style;
+    let mut tweak = 1.0f32; // the num2 multipliers
+    // `:517-535` — the per-style volume ifs.
+    match num {
+        176 => tweak *= 0.9,
+        129 => tweak *= 0.6,
+        123 => tweak *= 0.5,
+        124 | 125 => tweak *= 0.65,
+        116 => tweak *= 0.5,
+        _ => {}
+    }
+    // `:537-578` — the first switch: the style-1 variation remap and the
+    // 53/55/37/52/157/158/210 volume arms.
+    match num {
+        1 => {
+            // `int num11 = Main.rand.Next(3);` (`:541`) — 1 → 18, 2 → 19.
+            let roll = rng(0, 3);
+            if roll == 1 {
+                num = 18;
+            }
+            if roll == 2 {
+                num = 19;
+            }
+        }
+        53 | 55 => {
+            tweak *= 0.75;
+            if num == 55 {
+                tweak *= 0.75;
+            }
+        }
+        37 => tweak *= 0.5,
+        52 => tweak *= 0.35,
+        157 => tweak *= 0.7,
+        158 => tweak *= 0.8,
+        210 => tweak *= 0.35,
+        _ => {}
+    }
+    // `:610-634` — the pitch switch (one `Main.rand` draw per play, except
+    // 192's `Projectile.kiteSoundPitch` read — no item-use style is 192).
+    let mut pitch = match num {
+        53 => rng(-20, -11) as f32 * 0.02,
+        55 => -(rng(-20, -11) as f32) * 0.02,
+        132 => rng(-20, 21) as f32 * 0.001,
+        153 => rng(-50, 51) as f32 * 0.003,
+        156 => {
+            tweak *= 0.6; // `:626` — Volume *= 0.6 rides the pitch arm
+            rng(-50, 51) as f32 * 0.002
+        }
+        _ => rng(-6, 7) as f32 * 0.01,
+    };
+    // `:635-639` — the music-box styles play at the music pitch; `:640-643`
+    // — style 169 drops 0.8. (No item-use row names 26/35/47/169 today; the
+    // arms are ported so the table cannot drift silently.)
+    if num == 26 || num == 35 || num == 47 {
+        tweak *= 0.75;
+        pitch = 0.0; // Main.musicPitch — the port's music pitch stand-in
+    }
+    if num == 169 {
+        pitch -= 0.8;
+    }
+    (num, tweak, pitch)
+}
+
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
 ///
 /// XNA applies `Pan` inside XAudio2, which the decompilation does not contain, so
@@ -418,4 +496,49 @@ fn s1_e_22_get_random_pitch_is_the_variance_walk() {
     assert_eq!(get_random_pitch(0.2, 0.0), -0.1, "the draw-0 floor");
     assert_eq!(get_random_pitch(0.2, 1.0), 0.1, "the draw-1 ceiling");
     assert_eq!(get_random_pitch(0.2, 0.5), 0.0, "the draw-0.5 centre");
+}
+
+#[test]
+fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
+    // `LegacySoundPlayer.cs:539-550`: style 1 draws Next(3); 1 → 18, 2 → 19,
+    // then the default pitch arm draws Next(-6, 7) (`:632`).
+    let seq: [(i32, i32); 2] = [(0, 3), (-6, 7)];
+    let mut i = 0;
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), seq[i], "the draw {i}'s window");
+        i += 1;
+        1 // remap roll 1 → style 18
+    };
+    let (num, tweak, pitch) = item_use_case2(1, &mut roll);
+    assert_eq!(num, 18);
+    assert_eq!(tweak, 1.0);
+    assert!((pitch - 1.0 * 0.01).abs() < 1e-6);
+    // The per-style volume arms (`:564-578`): 37 → 0.5, 52 → 0.35,
+    // 157 → 0.7, 158 → 0.8, 210 → 0.35 — one default pitch draw each.
+    for (style, want) in [(37, 0.5f32), (52, 0.35), (157, 0.7), (158, 0.8), (210, 0.35)] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-6, 7), "style {style}'s default pitch window");
+            0
+        };
+        let (num, tweak, pitch) = item_use_case2(style, &mut roll);
+        assert_eq!(num, style);
+        assert!((tweak - want).abs() < 1e-6, "style {style}");
+        assert_eq!(pitch, 0.0);
+    }
+    // Style 156 (`:624-627`): Next(-50, 51) * 0.002 and Volume *= 0.6.
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-50, 51));
+        -50
+    };
+    let (num, tweak, pitch) = item_use_case2(156, &mut roll);
+    assert_eq!(num, 156);
+    assert!((tweak - 0.6).abs() < 1e-6);
+    assert!((pitch - (-50.0 * 0.002)).abs() < 1e-6);
+    // The ifs at `:517-535`: 123/116 → 0.5, 129 → 0.6, 124/125 → 0.65,
+    // 176 → 0.9.
+    for (style, want) in [(123, 0.5f32), (116, 0.5), (129, 0.6), (124, 0.65), (125, 0.65), (176, 0.9)] {
+        let mut roll = |_: i32, _: i32| 0;
+        let (_, tweak, _) = item_use_case2(style, &mut roll);
+        assert!((tweak - want).abs() < 1e-6, "style {style}");
+    }
 }

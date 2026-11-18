@@ -2065,6 +2065,32 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The item-use sound wave (S1-E-21-itemuse)
+
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
+at `base.Center` with `sItem.useSoundPitch`. The port provisions the data through
+`tools/GenItemData`: `ItemDef.use_sound` indexes the new generated
+`crates/tr-app/src/soundid.rs` (all 506 `SoundID` styles, ctor order), and
+`Audio::play_use_sound` ports the façade (`SoundEngine.cs:93-99`) + the legacy
+case-2 maths (`LegacySoundPlayer.cs:516-644`, `sound.rs::item_use_case2`) + the
+case-42 trackable arm (`:1376-1381`). The use-start seam is
+`world_sim/editing.rs::start_swing_extras` (every swing/shot/consume arm calls it);
+the `SkipsInitialUseSound` gate `{2350, 4870}` (`ItemID.cs:408`) lives in
+`item.rs::initial_use_sound`. RNG contract: the case-2 `Main.rand` draws ride the
+caller's `UpdatePlayers` stream (`Player.ItemCheck` under the `Main.cs:17754`
+swap) and run ONLY after the attenuation gate passed (the C# order); the
+`GetRandomPitch` NextFloat rides the audio-only `sound_style_random` and never
+touches a gameplay stream — pinned by
+`s1_e_21a_the_use_sound_draws_ride_the_passed_stream_only_when_audible`.
+Deliberate deviations: (1) the multi-variation trackables pin the `_0` asset
+(the standing D3 pin — the variation pick rides `LegacySoundStyle.Random`, an
+unobservable stream); (2) the per-style instance stop/re-create pool and the
+53/55/159 playing guards are unmodelled (the standing D4 deviation — repeated
+cues stack); (3) the net-sync arm (`Player.cs:51690-51692`, `NetMessage.SendData
+152`) has no port (single-player); (4) `Main.musicPitch` (styles 26/35/47, none
+named by a `UseSound` row today) reads 0.0. Tile place/break sounds are NOT this
+wave (break landed in S1-E-21c; place is a follow-up).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
@@ -16113,6 +16139,84 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
+
+`crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
+(LegacyLighting.cs, 1442 lines) - the pre-1.2 engine the White/Retro/Trippy modes
+select (`Lighting.Mode` setter, `Lighting.cs:45-56`). The port is ADDITIVE: the
+modern Color engine (`lighting/mod.rs` + `blur.rs`) is byte-identical - its maths,
+RNG draws and the S1-G-10 `NON_VISIBLE_PADDING = 18` are untouched, and
+`presenting_legacy_then_modern_recompute_is_byte_identical` proves a LightMap that
+served a legacy present recomputes the exact modern result afterwards.
+
+Ported paths (citations in place):
+- `ProcessArea` (`:302-369`): the renderCount cycle - pre-render at
+  `count > RenderPhases`, swipe passes at counts 0/1/2, the publish at count 2,
+  the camera shift + sky reseed at counts 3..phases. `RenderPhases` reads the
+  S1-B-6 `GfxQuality::render_phases` field (`Main.cs:17085-17101`).
+- `PreRenderPhase` (`:648-849`): working-set clear, the scanner export over the
+  expanded rect clamped to `[5, maxTiles-1]`, the mask flags, the lit-cell bound,
+  the AddLight dictionary merge, the area snapshots, `renderCount = 0`.
+- `DoColors` (`:851-1085`): the blue wave (`0.97..1.0` by `0.0001`), the White
+  factors (`neg 0.9 / neg2 0.54 / neg3 0.8`, `wet_r = 0.95*neg*wave`), the
+  Retro/Trippy subtractive factors (`0.04/0.16/0.08` + the buff deltas), the
+  nightVision/blind/blackout/headcovered arms, and the four swipe-pass bounds.
+- The swipes: White `doColors_Mode1_Swipe` (`:1192-1271`, multiplicative carry,
+  the `0.0185` cutoff, the neighbour gate, R2-only - no colour bleed), Retro
+  `Mode2` (`:1273-1329`, subtractive, no neighbour gate), Trippy `Mode3`
+  (`:1331-1435`, per-channel subtractive with the `<= 0` done gate; the
+  StopLight subtraction is additive to the channel decay and the B channel has
+  no wet arm - both C# quirks kept).
+- `CopyFullyProcessedDataOver` (`:538-621`) incl. the inner-guard quirk (the
+  condition reads the x delta, the subtraction the y delta, `:583/608`),
+  `ShiftUnProcessedDataOver` (`:473-536`, the +/-5-tile jump guard),
+  `UpdateLightToSkyColor` (`:435-471`, the unconditional-R quirk at `:459`),
+  `Clear` (`:623-646`), `AddLight` (`:258-300`, the 2000 cap, the non-RGB mean
+  collapse), `GetColor` (`:211-219`).
+- The legacy seed gate is the GLOBAL `(int)Main.worldSurface`
+  (`TileLightScanner.cs:92`) and `UnderworldLayer = maxTilesY - 200`
+  (`Main.cs:2790`); the legacy mask keeps the C# `!tile.inActive()` conjunct
+  (`TileLightScanner.cs:68`) the modern blur mask does not have - an actuated
+  block is air to the legacy swipes. The per-type arms reuse the shared
+  `tile_light` port.
+
+RNG streams (order exact, seeds pinned - the S1-A-6 precedent):
+- `_swipeRandom`: `NextSeed()` after EVERY swipe pass (`:1082`), wet cells draw
+  `WithModifier((ulong)(i*1000+j)).Next(98,100)*0.01f` (`:1250-1251`). Vanilla
+  seeds it `CreateWithRandomSeed()` (`:1440`, session-nondeterministic); the
+  port pins seed 0.
+- The legacy engine's own `TileLightScanner._random` advances once per
+  PreRenderPhase (`Update()`, `:723`), NOT once per frame like the modern path;
+  seeded from the frame's `LightParams.rng_seed` on first use.
+
+Deliberate deviations:
+- `FastParallel.For` chunks run as ONE sequential chunk per pass. The C# swipes
+  wrap their body in `try/catch` (`:1091/1196/1277/1335`), so an out-of-bounds
+  inner index aborts the rest of that thread's chunk; writes never cross outer
+  indices, so chunking cannot change cell values - only the abort extent, which
+  the single chunk reproduces for the sequential case.
+- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) is not
+  ported - it is the map system's own lighting pass (`Main.Map.UpdateLighting`),
+  gated on `mapEnabled && renderCount == 3`; the port's map lighting rides the
+  modern map pass. The netplay `mapTime = 1` poke (`:341-344`) is likewise out.
+- The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
+  `Player.gross`, neither ported; the gate is false in the port.
+- Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
+  selector (Color selects the NEW engine, `Lighting.cs:40-44`); only the Mode
+  1/2/3 swipes are ported. The Mode-0 water/honey decay table (`:874-929`) is
+  kept in the factor block for completeness.
+- `Player.nightVision/blackout/headcovered` are not ported fields; the driver
+  passes `false` (the `blind` flag is wired). The factor arms are code-complete.
+- The G6 `WorldFrameKey`'s `anim` slot carries `anim_time` in the legacy modes
+  (the engine re-publishes every frame); the key's contents are unchanged.
+
+Tests: 12 in `legacy.rs` - the Retro falloff table (hand-derived 0.04 steps +
+the 0.16 solid gate), White's multiplicative carry / no-bleed / 0.0185 cutoff /
+wet RNG draw, per-mode engine goldens on a fixed 96x96 torch world, cycle
+determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
+byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
+lava/water decay.
+
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
 Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
@@ -16171,3 +16275,47 @@ in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
 multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
 the MP pause-menu flow lands. The Settings panel layout deviations remain a
 follow-up round.
+
+## The C#-written golden fixture (S1-J-3)
+
+`assets/test/golden.wld` (3666 bytes) and `assets/test/golden.plr` (3840 bytes)
+are written by the **real decompiled save path** through
+`tools/WldFixtureHarness`: `extract.ps1` slices the save-path method bodies
+verbatim out of `decompiled/` (`WorldFile.SetTempToOngoing` +
+`SaveWorld_Version2` and every section writer, `WorldFile.cs:1040-1758`;
+`Player.Serialize`, `Player.cs:54750+`; `Tile`, `TileEntity.Write` + the
+per-kind `WriteExtraData`, the bestiary/creative/town/banner/DD2/spawn/treetops
+`Save` bodies, `Item.Serialize`), and `Program.cs` builds the smallest real
+world — a fixed 40x30 tile array, every value a literal, no genRand — plus a
+fresh player. The shims (`Shims/*.cs`) carry only the global statics the bodies
+read, at the C# types/defaults; no serialization logic is reimplemented.
+
+**The one substitution:** `DateTime.UtcNow` -> `FixtureClock.UtcNow` (pinned
+2026-11-18T00:00:00Z). The vanilla writers stamp the wall clock
+(`SaveWorldFlags:1251`, `Player.Serialize:54909`); a reproducible fixture
+cannot carry it. Everything else is byte-for-byte the decompiled body. The
+importance bitmap is parsed from the real `Main.cs` at runtime (direct
+assignments + for-loop ranges + `AddEchoFurnitureTile`), not transcribed.
+Regen: `powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`; two runs are
+byte-identical.
+
+**Byte-compare result** (`s1_j_3_*` in `wld/mod.rs`, `player_file.rs`):
+- The port decodes every section of the fixture (all eleven pointers land
+  exactly; the app-side fix-ups keep 2 signs, 11 tile entities, 2 plates).
+- Re-write is **byte-identical for sections 2..10** (tiles, chests, signs,
+  NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
+  **and the footer**; the prologue framing + importance bitmap match with the
+  pointer table zeroed.
+- The header/flags block diverges in **exactly the unowned fields**, pinned
+  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
+  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
+  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
+  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
+  (no `.wld` store), the tree-top variations (no store) and the world-gen
+  manifest JSON (the port writes the empty string). These are documented
+  divergences, not faked parity.
+- The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
+  (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
+  character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
+  writer's own byte parity stays S1-J-5's.
