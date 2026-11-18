@@ -17625,3 +17625,70 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The ElfArcher shooter (S1-F-13c mob slice B, code-only mode, 2026-11-18)
+
+The ElfArcher (350) stop-and-fire machine — slice D's
+(`task/S1-F-13c-mob-ai`, 5ef9b24b) one deferred AI item — lands as a NEW
+disjoint module `crates/tr-app/src/npc_ai_frost_mob_b.rs` on
+`task/S1-F-13c-mob-ai-b`: `elf_archer_ai` + the 350-only dispatch
+`elf_archer_ai_step`. **Code-only mode**: no cargo/rustc/rustfmt/tests
+were invoked; the 14 witness/unit tests are WRITTEN, NOT RUN.
+
+- **The shared block, 350 terms only**: the C# machine is the shared
+  `AI_003_Fighters` shooter block `NPC.cs:59069-59801` (the type gate
+  `:59069` lists 350 among the goblin/pirate/martian shooters). The port
+  resolves every `this.type ==` term to the 350 path: `flag16`/`flag17`/
+  `flag20` false, `flag18` true, `num160`/`num161` -1, `num162 = 110`
+  (`:59111-59114`), `num163 = 55` (`:59184`), `num164 = 11f` (the `:59214`
+  default — 350 has NO speed override), `num169 = 45` (`:59416-59419`),
+  `num170 = 82` FlamingArrow (the `:59403` default, `ProjectileID.cs:718`),
+  the aim from Center with the `|dx|*0.1f` ballistic lead on Y
+  (`:59309-59344`), the `type != 292` else-arm jitter (`:59392-59396`),
+  the generic single-shot `NewProjectile` (`:59592`), the aim-octant
+  `ai[2]` table (`:59595-59617` fire / `:59689-59711` entry), the wake
+  (`:59619-59623`), the stop damp ×0.9 + sprite mirror (`:59624-59628`),
+  the entry gates + the `< 700f` jittered range (`:59634-59714`) and the
+  walk arm cap 1f / accel 0.07f / brake 0.8f (`:59715-59791` — the
+  defaults; 350 is EXCLUDED from the generic AI_003 walker by `:58322`,
+  so this arm IS its walk). The other kinds' branches are untouched: the
+  martian 381/382 + pirate 214/215/216 arms already live in
+  `npc.rs::update_martian_shooter` (not edited).
+- **RNG by construction**: exactly TWO `Main.rand.Next(-40, 41)` draws
+  per firing site, X-then-Y — the fire (`:59394-59395`, at
+  `ai[2] > 0 && ai[1] == 55`) and the gate-passing entry (`:59652-59653`,
+  drawn BEFORE the range check `:59680`, inside `if (flag21)` so a
+  blocked entry draws nothing). No other 350-path site draws: the
+  scaled-jitter arms `:59330-59390` are other types', `:59531` is
+  426-only, the 292/424 spawn loops never run; type 82 draws nothing at
+  spawn (`Projectile.cs:1625-1631` rand-free, the slot randomiser
+  default-off `:10831`, the per-type switch 206/335/358/406-only
+  `:10905-10925`; its `Next(3)` at `:12284` is `StatusPlayer` — hit-time,
+  the projectile's own future tick). The sites are mutually exclusive
+  per tick (fire needs `ai[2] > 0`, entry `ai[2] <= 0`; the fire's octant
+  write is 1..5). Witnesses: the fire replay (exact shot composition +
+  stream alignment), the entry/out-of-range/blocked-gate zero-or-two
+  pins, and the full 112-tick cycle consuming exactly six draws.
+- **The union note (seam)**: `FrostMobBState` is field-compatible with
+  the sibling's `FrostMobState` (same names/types; `elf_archer(x, y)`
+  matches `FrostMobState::new(ElfArcher, x, y)` — 18×40, scale 1, lifeMax
+  900, `NPC.cs:13444-13456`); `FrostArcherShot` matches `FrostShot`.
+  `FrostArcherTarget` widens the sibling's `FrostTarget` box with
+  `dead`/`stealth`/`item_animation` — the entry gates (`:59634`,
+  `:59641-59644`) read them, so the stealth/swing refusal is CARRIED, not
+  folded like `npc.rs`'s martian stand-in (`Player.stealth` defaults 1f,
+  `Player.cs:1562`, so the refusal only bites a zero-stealth idle
+  player). `justHit`/`confused` ride `ArcherTick` (the wiring maps
+  `Npc::hurt_cd`'s edge / the Confused debuff). The merger may collapse
+  the two state structs or copy field-by-field; the wiring routes 350
+  from the sibling dispatch's no-op arm to `elf_archer_ai_step` and runs
+  `npc_target::target_closest` at `:59206` (every stopped tick).
+- **Deferred, cited**: the AI_003 shared stuck/jump/collision core
+  (`:57120-57402` + the movement tail `:59831+`) — S1-D-3p's full AI_003
+  migration, NOT ported here (the module's `vy == 0` grounded predicate
+  is the C#'s own); the `FindFrame` arm (`:76099+`) — the defaults
+  siblings' render wiring; `netUpdate` stamps (`:59096`/`:59398`/
+  `:59682`) — netcode, no rand; `Main.netMode != 1` (`:59558`) folds to
+  the always-true server/local path. `TargetClosest()` inside the fire
+  arm may re-pick the target mid-cycle — the wiring seam owns that call;
+  the pure fn reads the resolved slot it is handed.
