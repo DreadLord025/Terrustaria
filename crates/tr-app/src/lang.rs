@@ -565,9 +565,21 @@ pub fn item_tooltip_text(id: u16) -> Option<String> {
 }
 
 /// Test-only: register a language source in the process-global manager (the
-/// tooltip's rows read it).
+/// tooltip's rows read it). The real shipped sources load first when the
+/// manager is still empty — otherwise this partial source would become the
+/// *only* registered file (`lang::init` early-returns on a non-empty source
+/// list) and every later `set_language` reload in the same process would
+/// strip the rest of the game's texts down to this fragment.
+///
+/// **The caller must hold [`test_lock`]** for the whole test (registration +
+/// reads): the reload resets every text to its key before re-loading the
+/// files, so an unguarded parallel reader would see bare keys mid-reload.
+/// The lock is not reentrant, so this helper must not take it itself.
 #[cfg(test)]
 pub(crate) fn test_register_source(name: &str, text: &str) {
+    if manager().lock().unwrap().sources().is_empty() {
+        init(GameCulture::English);
+    }
     let mut m = manager().lock().unwrap();
     m.add_source(name, text);
     // `set_language` skips the reload when the culture is unchanged — the

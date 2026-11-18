@@ -153,8 +153,11 @@ impl App {
         // `IngameOptions.Draw`'s per-frame hover/animation state and its
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
-        // like the vanilla's, and before the HUD borrows the state.
-        if let Some(cue) = crate::ui::ingame_options::update(self, self.pointer.left_held()) {
+        // like the vanilla's, and before the HUD borrows the state. The drag
+        // reads `Main.mouseLeft` — the physical left button (`mine_down`), not
+        // the front-end pointer machine's `left_held`, which only tracks the
+        // 888 screens' presses.
+        if let Some(cue) = crate::ui::ingame_options::update(self, self.mine_down) {
             self.audio.play(cue);
         }
         // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the

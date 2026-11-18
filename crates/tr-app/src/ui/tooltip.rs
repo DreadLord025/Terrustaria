@@ -150,6 +150,36 @@ pub fn tooltip_box_rect(mouse: Vec2, w: f32, h: f32, screen: Vec2) -> [f32; 4] {
     ]
 }
 
+/// The item tooltip's box + text origin under the
+/// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` gate (`Main.cs:20381-20403`):
+/// with the box **on** the `(8, 2)` offset, the 18 px clamp margin and the
+/// `DrawInvBG` rect apply ([`tooltip_box_rect`]); with it **off** the text
+/// sits at `mouse + 14 + toolTipDistance` with the plain `num4 = 4` clamp
+/// margin (`Main.cs:20380`) and no box is drawn. Returns
+/// `(box rect or None, text x, text y)`.
+pub fn item_tooltip_layout(
+    mouse: Vec2,
+    w: f32,
+    h: f32,
+    screen: Vec2,
+    opaque_box: bool,
+) -> (Option<[f32; 4]>, f32, f32) {
+    if opaque_box {
+        let rect = tooltip_box_rect(mouse, w, h, screen);
+        return (Some(rect), rect[0] + BOX_INSET.x, rect[1] + BOX_INSET.y);
+    }
+    let mut x = mouse.x + 14.0 + TOOL_TIP_DISTANCE;
+    let mut y = mouse.y + 14.0 + TOOL_TIP_DISTANCE;
+    // `num4 = 4` without the box (`Main.cs:20380`, `:20389-20395`).
+    if x + w + 4.0 > screen.x {
+        x = screen.x - w - 4.0;
+    }
+    if y + h + 4.0 > screen.y {
+        y = screen.y - h - 4.0;
+    }
+    (None, x, y)
+}
+
 /// One `MouseText` line height (`DynamicSpriteFont.MeasureString(...).Y`). The built-in
 /// bitmap fallback draws 8 px glyphs (`SpriteRenderer::push_text`).
 fn line_height(lookups: &assets::Lookups) -> f32 {
@@ -498,6 +528,10 @@ pub fn item_tooltip_lines(
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
 /// plus the item name in its rare colour, with placeholder zeroed stat lines for
 /// weapons (spec §9.3; the real `Item.ToolTip` lines are a later data port).
+/// `opaque_box` is `Main.SettingsEnabled_OpaqueBoxBehindTooltips`
+/// (`Main.cs:20324`): with it off the lines draw without the `DrawInvBG` box
+/// (`Main.cs:20398-20403`).
+#[allow(clippy::too_many_arguments)]
 pub fn draw_item_tooltip(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -506,6 +540,7 @@ pub fn draw_item_tooltip(
     screen: Vec2,
     pulse: UiPulse,
     ctx: TooltipContext<'_>,
+    opaque_box: bool,
 ) {
     let Some(item) = hover else {
         return;
@@ -534,11 +569,11 @@ pub fn draw_item_tooltip(
         w = w.max(hud_text_width(r, lookups, text, 1.0));
         h += lh;
     }
-    let rect = tooltip_box_rect(mouse, w, h, screen);
-    draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
-    // Text origin: the box's top-left plus the `(14, 9)` inset (`Main.cs:20400-20402`).
-    let tx = rect[0] + BOX_INSET.x;
-    let ty = rect[1] + BOX_INSET.y;
+    let (rect, tx, ty) = item_tooltip_layout(mouse, w, h, screen, opaque_box);
+    // `Main.cs:20398-20403`: the box draws only while the setting is on.
+    if let Some(rect) = rect {
+        draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
+    }
     // `Main.cs:20406-20407`: each line colour is multiplied by `mouseTextColor/255`
     // with the raw `mouseTextColor` as its alpha.
     let tint = pulse.text;
@@ -764,6 +799,30 @@ mod tests {
         assert!(r[0] + r[2] <= 1600.0 && r[1] + r[3] <= 900.0);
     }
 
+    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:20381-20403`):
+    /// with the box on, the text origin is the box's `(14, 9)` inset and the
+    /// `(8, 2)` offset applies; with it off there is no box and the text sits
+    /// at `mouse + 14 + toolTipDistance` with the 4 px clamp margin.
+    #[test]
+    fn the_opaque_box_setting_gates_the_tooltip_box() {
+        let mouse = Vec2::new(100.0, 100.0);
+        let screen = Vec2::new(1600.0, 900.0);
+        let (rect, tx, ty) = item_tooltip_layout(mouse, 50.0, 20.0, screen, true);
+        let rect = rect.expect("the box draws while the setting is on");
+        assert_eq!(tx, rect[0] + BOX_INSET.x);
+        assert_eq!(ty, rect[1] + BOX_INSET.y);
+        // mouse + 14 + 6 + the (8, 2) box offset.
+        assert_eq!(tx, 100.0 + 14.0 + 6.0 + 8.0);
+        assert_eq!(ty, 100.0 + 14.0 + 6.0 + 2.0);
+        let (rect, tx, ty) = item_tooltip_layout(mouse, 50.0, 20.0, screen, false);
+        assert!(rect.is_none(), "no box while the setting is off");
+        assert_eq!(tx, 100.0 + 14.0 + 6.0);
+        assert_eq!(ty, 100.0 + 14.0 + 6.0);
+        // The off-arm clamps with the 4 px margin (`num4 = 4`, `:20380`).
+        let (_, tx, _) = item_tooltip_layout(Vec2::new(1590.0, 100.0), 50.0, 20.0, screen, false);
+        assert_eq!(tx, 1600.0 - 50.0 - 4.0);
+    }
+
     #[test]
     fn hovered_slot_none_when_not_over_a_cell() {
         let inv: [ItemSlot; INV] =
@@ -903,12 +962,14 @@ mod tests {
 
     #[test]
     fn s1_e_20_the_hover_name_carries_the_affix_and_the_stack() {
-        // `Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
-        // (`Item.AffixName`, `:1194-1201`) plus the stack suffix.
-        // The language lock: the register→read sequence must be atomic
-        // against the culture-switching tests (the S1-E-17 flow tests init
-        // the language and spawn workers that read it).
+        // The reads below hit the process-global language manager; hold the
+        // guard for the whole test so a sibling's culture reload cannot land
+        // between the registration and the assertions.
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        // `Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+        // (`Item.AffixName`, `:1194-1201`) plus the stack suffix. The guard
+        // above already serialises the register→read sequence against the
+        // culture-switching tests (the S1-E-17 flow tests init the language).
         register_tooltip_language();
         let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
         let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());
@@ -938,10 +999,10 @@ mod tests {
 
     #[test]
     fn s1_e_20_the_per_item_tooltip_text_becomes_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Lang.GetTooltip(item.type)` (`Lang.cs:193-196`) + the row loop
         // (`Main.cs:20958-20972`): the `ItemTooltip.<ItemID name>` language
         // rows, one line each.
-        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         register_tooltip_language();
         let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
         let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());

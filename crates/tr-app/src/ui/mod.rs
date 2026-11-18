@@ -982,6 +982,9 @@ pub fn draw_hud(
                         player,
                         ..Default::default()
                     },
+                    // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the
+                    // options window's "Hover Text Boxes" row.
+                    ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
                 );
             }
         }
@@ -1122,6 +1125,7 @@ pub fn draw_hud(
             held_crit,
             ..Default::default()
         },
+        ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),
     );
     if let Some(text) = pvp_hover_text {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);

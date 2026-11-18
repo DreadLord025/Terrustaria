@@ -52,10 +52,27 @@ pub fn color_lerp_black_to_white(percent: f32) -> [u8; 4] {
 /// `IngameOptions.DrawValueBar` geometry (`IngameOptions.cs:1541-1543`): the
 /// bar's right edge sits on `right_x`, vertically centred on `center_y`.
 /// Returns `(rect, hit)` — `hit` is `rectangle.Inflate((int)(-5f*scale), 0)`
-/// (`IngameOptions.cs:1556`).
+/// (`IngameOptions.cs:1556`). The menu screens draw at scale 1
+/// (`Main.cs:51535`); the in-game window draws at 0.75
+/// (`IngameOptions.cs:116`'s `float scale = 0.75f`) — use
+/// [`value_bar_rects_at`] for that one.
 pub fn value_bar_rects(right_x: f32, center_y: f32) -> ([f32; 4], [f32; 4]) {
-    let rect = [right_x - BAR_W, center_y - BAR_H / 2.0, BAR_W, BAR_H];
-    let hit = [rect[0] + 5.0, rect[1], rect[2] - 10.0, rect[3]];
+    value_bar_rects_at(right_x, center_y, 1.0)
+}
+
+/// [`value_bar_rects`] at the C#'s `scale` (`DrawValueBar`'s second argument):
+/// `vector = (Width, Height) * scale` (`:1544`), the rect is
+/// `(valuePosition.X - vector.X, valuePosition.Y - vector.Y / 2, vector.X,
+/// vector.Y)` with the int truncations of `:1545-1546`, and the hit rect is
+/// `Inflate((int)(-5f * scale), 0)` (`:1556`).
+pub fn value_bar_rects_at(right_x: f32, center_y: f32, scale: f32) -> ([f32; 4], [f32; 4]) {
+    let w = (BAR_W * scale) as i32 as f32;
+    let h = (BAR_H * scale) as i32 as f32;
+    let x = (right_x - w) as i32 as f32;
+    let y = (center_y - h / 2.0) as i32 as f32;
+    let rect = [x, y, w, h];
+    let inflate = (5.0 * scale) as i32 as f32;
+    let hit = [rect[0] + inflate, rect[1], rect[2] - inflate * 2.0, rect[3]];
     (rect, hit)
 }
 
@@ -65,10 +82,19 @@ pub fn value_bar_rects(right_x: f32, center_y: f32) -> ([f32; 4], [f32; 4]) {
 /// divides over the hit geometry — `(mouseX - rect.X) / rect.Width` while the
 /// mouse is inside it (both edges inclusive per `Main.mouseX >= rectangle.X &&
 /// Main.mouseX <= rectangle.X + rectangle.Width`), 0 left of it, 1 right of it.
+/// The scale-1 menu form; the in-game window's 0.75 bars use
+/// [`value_bar_value_at`].
 pub fn value_bar_value(rect: [f32; 4], mouse_x: f32) -> f32 {
+    value_bar_value_at(rect, mouse_x, 1.0)
+}
+
+/// [`value_bar_value`] at the bar's draw scale — the divisor is the inflated
+/// hit rect (`IngameOptions.cs:1556`), not the drawn one.
+pub fn value_bar_value_at(rect: [f32; 4], mouse_x: f32, scale: f32) -> f32 {
     // `rectangle.Inflate((int)(-5f * scale), 0)` (`IngameOptions.cs:1556`).
-    let x = rect[0] + 5.0;
-    let w = rect[2] - 10.0;
+    let inflate = (5.0 * scale) as i32 as f32;
+    let x = rect[0] + inflate;
+    let w = rect[2] - inflate * 2.0;
     // The clamp reproduces the C# branch chain exactly: inside [x, x + w] the
     // ratio already lies in [0, 1]; left of x it is negative (C# returns 0f),
     // right of x + w it exceeds 1 (C# returns 1f).
@@ -76,9 +102,18 @@ pub fn value_bar_value(rect: [f32; 4], mouse_x: f32) -> f32 {
 }
 
 /// Knob centre (`IngameOptions.cs:1566`, drawn with the sheet's centre as
-/// origin): `(rect.x + 5 + 167*value, rect.y + 8)`.
+/// origin): `(rect.x + 5 + 167*value, rect.y + 8)` at scale 1.
 pub fn value_bar_knob(rect: [f32; 4], value: f32) -> [f32; 2] {
-    [rect[0] + 5.0 + BLIPS as f32 * value, rect[1] + 8.0]
+    value_bar_knob_at(rect, value, 1.0)
+}
+
+/// [`value_bar_knob`] at the draw scale: `num2 = rect.X + 5f*scale`,
+/// `num3 = rect.Y + 4f*scale` (`:1550-1551`), the knob at
+/// `(num2 + 167f*scale*perc, num3 + 4f*scale)` (`:1566`).
+pub fn value_bar_knob_at(rect: [f32; 4], value: f32, scale: f32) -> [f32; 2] {
+    let num2 = rect[0] + 5.0 * scale;
+    let num3 = rect[1] + 4.0 * scale;
+    [num2 + BLIPS as f32 * scale * value, num3 + 4.0 * scale]
 }
 
 /// Draws one value bar: the ColorBar sheet, `BLIPS` ColorBlips in
@@ -86,7 +121,9 @@ pub fn value_bar_knob(rect: [f32; 4], value: f32) -> [f32; 2] {
 /// (float)num; num++)` with `num = 167` (`IngameOptions.cs:1549-1555`) draws 167
 /// blips, not 168 — the `Slider_Highlight` overlay tinted `OurFavoriteColor`
 /// while the mouse is inside the hit box (`IngameOptions.cs:1557-1564`), then
-/// the ColorSlider knob.
+/// the ColorSlider knob. The menu screens' scale-1 form
+/// (`Main.cs:51535` passes `1f`); the in-game window uses
+/// [`draw_value_bar_at`] with its 0.75 scale.
 // Drawn by the volume (26) and parallax (28) screens (`menu.rs`).
 pub fn draw_value_bar(
     r: &mut SpriteRenderer,
@@ -96,19 +133,39 @@ pub fn draw_value_bar(
     value: f32,
     mouse: Vec2,
 ) {
-    let (rect, hit) = value_bar_rects(right_x, center_y);
+    draw_value_bar_at(r, lookups, right_x, center_y, value, mouse, 1.0, color_lerp_black_to_white);
+}
+
+/// [`draw_value_bar`] at the C#'s `scale` with its `colorMethod`
+/// (`DrawValueBar(sb, scale, perc, lockState, colorMethod)`,
+/// `IngameOptions.cs:1537-1578`): the blips ride `colorMethod(num4 / 167)`
+/// (`:1554`), the sheets scale with `scale`, and the knob's origin is the
+/// scaled sheet centre. `lockState` is always 0 on the port's callers (the
+/// highlight's `flag || lockState == 1` arm reduces to the hover test).
+#[allow(clippy::too_many_arguments)]
+pub fn draw_value_bar_at(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    right_x: f32,
+    center_y: f32,
+    value: f32,
+    mouse: Vec2,
+    scale: f32,
+    color_method: impl Fn(f32) -> [u8; 4],
+) {
+    let (rect, hit) = value_bar_rects_at(right_x, center_y, scale);
     // `sb.Draw(value, rectangle, Color.White)` (`IngameOptions.cs:1548`).
     if let Some(uv) = lookups.hud_uv(lookups.ui_color_bar.as_ref()) {
         r.push_ui_sprite([rect[0], rect[1]], [rect[2], rect[3]], uv, [1.0; 4]);
     }
     // The gradient blips (`IngameOptions.cs:1550-1555`): one per step, starting
-    // 5 px in and 4 px down.
+    // `5f*scale` in and `4f*scale` down, each `BLIP * scale` in size.
     if let Some(uv) = lookups.hud_uv(lookups.ui_color_blip.as_ref()) {
         for i in 0..BLIPS {
-            let c = color_lerp_black_to_white(i as f32 / BLIPS as f32);
+            let c = color_method(i as f32 / BLIPS as f32);
             r.push_ui_sprite(
-                [rect[0] + 5.0 + i as f32, rect[1] + 4.0],
-                [BLIP_W, BLIP_H],
+                [rect[0] + 5.0 * scale + i as f32 * scale, rect[1] + 4.0 * scale],
+                [BLIP_W * scale, BLIP_H * scale],
                 uv,
                 color::tint(c),
             );
@@ -128,10 +185,10 @@ pub fn draw_value_bar(
     }
     // `TextureAssets.ColorSlider`, centre origin (`IngameOptions.cs:1566`).
     if let Some(uv) = lookups.hud_uv(lookups.ui_color_slider.as_ref()) {
-        let centre = value_bar_knob(rect, value);
+        let centre = value_bar_knob_at(rect, value, scale);
         r.push_ui_sprite(
-            [centre[0] - KNOB_W / 2.0, centre[1] - KNOB_H / 2.0],
-            [KNOB_W, KNOB_H],
+            [centre[0] - KNOB_W * scale / 2.0, centre[1] - KNOB_H * scale / 2.0],
+            [KNOB_W * scale, KNOB_H * scale],
             uv,
             [1.0; 4],
         );

@@ -973,8 +973,12 @@ mod tests {
     }
 
     /// The language resources — the `LegacyDialog` rows live in the shipped
-    /// `decompiled/` json (the S1-L-12d note).
+    /// `decompiled/` json (the S1-L-12d note). The init can reload the
+    /// process-global manager (a sibling test may have left another culture
+    /// active), so it takes the same guard the language readers hold —
+    /// otherwise a parallel reader sees bare keys mid-reload.
     fn init_lang() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
     }
 

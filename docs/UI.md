@@ -83,7 +83,7 @@ readable) and `parse` additionally accepts this port's older spellings
 `UseSmartCursorForCommonBlocks`, `CraftFromNearbyChests`, `LockOnPriority`,
 `ReverseUpDownForArmorSetBonuses`, `DisableLeftShiftTrashCan`, `DisableQuickTrash`,
 `PlayerResourcesSet`, `PortraitPreference`, `ShowBossBarHealthText`,
-`FlashyEffectsInterface`, `MinimapFrame`.
+`FlashyEffectsInterface`, `SettingsEnabled_OpaqueBoxBehindTooltips`, `MinimapFrame`.
 
 The renderer reads `LightingMode` (applied when the menu closes, through
 `LightMode::ALL`), `BackgroundEnabled` (the parallax layer gate in `draw_sky`) and
@@ -322,6 +322,24 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 | `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the Loot All/Deposit All/Quick Stack/Restock button row, the 10×4 chest slot window, context-3 slot backgrounds |
+| `ui/ingame_options.rs` | `IngameOptions.Draw` + `Main.DrawSettingButton` | the in-game Settings window: the 670×480 panel, the eight-row left navigation (DeathText, 47.5 px pitch) and the four right pages (General/Interface/Video/Controls) with the 0.75-scale value bars, the HSL colour bars and the per-row hover animation; the Settings word-button bottom-right |
+
+### In-game Settings window (`ui/ingame_options.rs`, `IngameOptions.cs`)
+
+The window opens from the Settings word-button (inventory open) or `TR_OPTIONS=1`.
+Geometry is the C#'s: panel origin `screen/2 − (670,480)/2` with the 20 px hover
+padding; left column anchor at the panel's ¼-x, rows at `50 + 47.5·(1+i)`
+(`vector5 = (0,380)/(num7+1)`, `num7 = 7` without the social invite row); right
+column anchor at the ¾-x, rows at `50 + pitch·(1+i)` with `pitch = 420/(num11+1)`
+(17/14/14/15 slots; the Video page draws 15 rows into 14 slots and subtracts 2 px).
+Bar rows hang 70 px left; their tracks sit at `panelRight − 30`, centred on the row
+anchor **− 3**, drawn at 0.75 scale (133×12). The colour bars sit a further 60 px
+left. Hit boxes are the measured label strings centred on the anchors; the bar
+drag is sticky (`rightLock`) and gated on `notBar` so a label hover never drags.
+Save & Exit runs `App::save_and_quit` (world + player + map, then the main menu);
+Keybinds opens the menuMode 27 page in-game (Back returns to gameplay). The only
+parked rows are the Video page's window-mode/resolution pair (no display backend).
+Full deviation list: `docs/ANALYSIS.md` → "The Settings menu layout + dead buttons".
 
 Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
 

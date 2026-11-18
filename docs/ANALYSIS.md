@@ -11792,6 +11792,13 @@ port's flat six-row list:
 
 **Deviations (all deliberate, each row cited in `page()`):**
 
+> **Superseded in part by "The Settings menu layout + dead buttons
+> (fix/settings-menu-layout, round 2)" below** — the parked rows of item 1
+> are wired now (only the Video page's window-mode/resolution pair stays
+> parked), item 3's wave-quality label and item 4's Keybinds/Save & Exit
+> arms are ported, and item 5's metrics are the measured boxes. The list is
+> kept as the M7-UI-4 record.
+
 1. **Parked rows.** A vanilla row whose state the port has no field for is
    drawn dimmed and inert rather than invented: the UI scale (`:561`), the
    door-opening preference (`:644`), auto-reuse-all (`:677`), the map frame /
@@ -16508,6 +16515,103 @@ in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
 multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
 the MP pause-menu flow lands. The Settings panel layout deviations remain a
 follow-up round.
+
+## The Settings menu layout + dead buttons (fix/settings-menu-layout, round 2)
+
+The window's geometry and several rows were still the port's own invention
+after M7-UI-4/4b. This round ports them to the C# constants
+(`IngameOptions.cs` unless noted) and wires every row whose backing feature
+the port already has.
+
+**Layout corrections (the misplaced panel contents):**
+
+1. **Left pitch** — `vector5.Y = (480 - 100) / (num7 + 1) = 380 / 8 = 47.5`
+   (`:181`, `num7 = 7` without the social invite row). The port divided by
+   `LEFT_SLOTS + 1 = 9` (42.2 px), compressing the column and lifting every
+   row off its vanilla position. Fixed: `left_pitch() = 380 / LEFT_SLOTS`.
+2. **Left hit boxes** — `DrawLeftSide` hit-tests the *measured string box
+   centred on the anchor* (`:1470`); the port's rect started **at** the
+   anchor and extended 120 px right, so the left half of every label was
+   unclickable and the right half of the column swallowed clicks that
+   belong to no row. Fixed: `left_row_rect` measures the DeathText label at
+   the row's scale and centres it, with the C#'s int truncations.
+3. **Left column font** — `DrawBorderStringBig` draws **DeathText** with the
+   3x3 black ring (`Utils.cs:2520-2536`); the port drew the MouseText font
+   with no border. Fixed (`centred_big_text`).
+4. **Right labels** — `DrawBorderStringMeasured` carries ChatManager's
+   four-way shadow at `spread = 1.5f` (`Utils.cs:2506`); the port drew flat
+   text. The per-row scale multipliers are now ported: zoom 0.85 (`:519`),
+   UI scale 0.75 (`:561`), map scale 0.85 (`:766`), lock-on/smart rows 0.9
+   (`:1372-1399`).
+5. **Value bars** — the window draws every `DrawValueBar` at `scale = 0.75f`
+   (`:116`), not the menu screens' 1.0; the track is 133x12 (int-truncated
+   178x16 * 0.75) and its centre is the row anchor's Y **minus 3**
+   (`valuePosition.Y -= 3f`, `:417`). The port drew full-size bars centred
+   on the raw anchor. Fixed: `sliders::value_bar_rects_at` /
+   `draw_value_bar_at` carry the scale; `bar_center_y` the -3.
+6. **Hover/lock state machine** — the C# steps the scales off the *previous*
+   frame's hover, keeps the **selected** category's left row at the plateau
+   (`(leftHover == j) | flag6`, `:194`), re-arms `rightLock` from the hover
+   at the end of every Draw (`:1409-1412`) and gates the bar write on
+   `!notBar` (a label/band hover must not drag the bar, `:409-412`). The
+   port now models `notBar`, the selected-row plateau, the wide hover band
+   (`:427-434`) and the end-of-draw lock re-arm; the bar's value write moved
+   from the click to the held-drag tick (`:422-425`), so a click on a bar
+   label no longer zeroes the value.
+7. **Settings apply** — the options clicks wrote `App.settings` but never
+   ran `apply_settings`, so zoom/lighting/quality changes did not reach the
+   renderer (`App.zoom`/`App.light_mode`). Every mutating click and the bar
+   drag now apply, like the menu's close does.
+8. **The bar drag's held-button source** — `frame_head` fed
+   `pointer.left_held()` (the front-end pointer machine, which only tracks
+   the 888 screens' presses) into the window's drag, so in-world the button
+   never read as held and the bars could not be dragged at all. The C# reads
+   `Main.mouseLeft` — the physical button, the port's `mine_down`
+   (`app/frame.rs`).
+
+**Rows wired (were dead or wrong):**
+
+| row | C# | what changed |
+| --- | --- | --- |
+| Event Progress Bar | `:702-714` | was a bool flip; now the 3-state `invasionProgressMode` cycle, label `Lang.menu[123] + " " + [124 + mode]` (Off/Timed/On) |
+| Wave Quality | `:1022-1034` | was `% 3` + an ordinal; now `% 4` with the `GameUI.QualityOff/Low/Medium/High` words |
+| Lighting mode label | `:955` | was `UI.LightMode_{ordinal}` (no such key); now the enum **name** (`UI.LightMode_Color` etc.) |
+| Boss bar numbers | `:823` | was the invented `GameUI.BigProgressBar` key; now `UI.ShowBossLifeTextOn/Off` |
+| Inventory Effects / Thunder Effects / Windy Environment | `:863`, `:1055`, `:1037` | were `{0}`-format keys that do not exist; now the real `...On/Off` key pairs |
+| Minimap Border | `:751-758` | was Parked; now cycles `Settings.minimap_frame` through the shared `SelectionHolder` backwards walk (the minimap re-renders live) |
+| Map Scale | `:761-796` | was a Parked "colour picker" row; it is the **map-scale bar** (0.5..1.0), now drawn and draggable |
+| Health and Mana Style | `:799-806` | was Parked; now cycles `Settings.resource_sets` (stored; the HUD still renders the Classic set — the Task 7 deviation stands) |
+| Portraits Style | `:808-821` | was Parked; now cycles `Settings.portrait_preference` (stored; the NPC-chat portrait renderer is not ported) |
+| Hover Text Boxes | `:832-840` | was Parked with an invented key; new `Settings.opaque_tooltip_box` (`SettingsEnabled_OpaqueBoxBehindTooltips`, `Main.cs:4155`/`:4542`, default true `:66513`), wired into `draw_item_tooltip` (`Main.cs:20381-20403`: no box + the 4 px clamp margin when off) |
+| Cursor / Border colour | `:1075-1355` | were eight Parked R/G/B/A-labelled rows; now the C#'s **H/S/L(+A)** bars with the `DelegateMethods.ColorLerp_HSL_*` gradients, editing `Settings.mouse_color`/`mouse_border_color` through `rgbToHsl`/`hslToRgb` (the cursor's L floored at 0.15, alpha 255; the border's alpha rides its bar). The bars sit 60 px left of the value bars (`num2`, `:1089`) |
+| Lock On Priority | `:1359-1379` | was missing (the Controls page had a phantom trailing spacer); now the `LockOnHelper.CycleUseModes` row with the ThreeDS→TargetClosest quirk (`LockOnHelper.cs:103-117`) |
+| Keybinds (left column) | `:252-256` | was a no-op close; now opens the port's menuMode 27 keybinding page over the world (`Menu::in_game_keybinds`), whose Back/Escape returns to gameplay (`IngameFancyUI.Close`, new `menu::Action::ReturnToWorld`) |
+
+**Still parked (deliberate, the backing feature is unported):** the Video
+page's **Go Fullscreen/Windowed** (`:876-884`, `Main.ToggleFullScreen`) and
+**Resolution** (`:885-910`, `Main.SetResolution`) rows — the port has no
+display-mode/resolution switch (the window backend row). They draw dimmed
+and inert, exactly as before.
+
+**Test-harness fix:** the process-global `LanguageManager` was mutated and
+read by tests without a consistent `test_lock` discipline, so a culture
+reload in one test could land between another test's registration and its
+assertions (bare keys mid-reload) — the source of the flaky
+`s1_e_20_the_hover_name_carries_the_affix_and_the_stack` and options-label
+failures. `lang::test_register_source` now loads the shipped sources first
+when the manager is empty (a partial fragment could become the *only*
+registered file, since `lang::init` early-returns on a non-empty source list)
+and documents that the **caller holds `test_lock`** for the whole test (the
+lock is not reentrant); the tooltip/buff-tooltip registration tests and
+`npc_chat::init_lang` now take the guard.
+
+**Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
+centred hit box, the per-category right anchors + bar shift, the 0.75 bar
+geometry (133x12, the -3 centre, the 60 px colour offset), the per-row draw
+scales, the Interface/Controls wiring, the map-scale round trip, the colour
+bars' HSL round trips + floors, the new cycles' ladders, the Keybinds
+click→screen mapping and the toggle click→`apply_settings` path; the stale
+pitch/label expectations were corrected to the C# values.
 
 ## The C#-written golden fixture (S1-J-3)
 
