@@ -16717,3 +16717,49 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
+
+The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
+the `if (this.aiStyle == N)` chain of 128 arms), then on `this.type` inside
+the family arm. The port dispatched on `NpcKind` alone (research/25 finding
+9, research/39 rank 9) - a style could not be ported once for all its kinds.
+
+**The seam.** `NpcKind::ai_style()` (`npc.rs`) is the first axis: a 199-row
+table mapping every ported kind to its vanilla `SetDefaults` aiStyle, each
+group cited to the `this.aiStyle = N;` lines (extracted mechanically from
+the decompile - the compound `this.type` conditions evaluated per id, not
+copied from the doc comments). `update_rng` now runs
+`match self.kind.ai_style()`: a claimed style enters its family arm, every
+other style falls through to `update_kind_ai` - the pre-axis `match
+self.kind`, moved verbatim (no arm reordering, no body edits). The buff
+block, `find_frame` and `contact` keep their exact positions around the
+dispatch, so the fixed-step order and every RNG draw are unchanged.
+
+**The first migrated family: aiStyle 5** (`AI_005_EaterOfSouls`,
+`NPC.cs:20802-20806` -> `:50244-50700`). `ai_005_hover_family` carries the
+four ported style-5 kinds - the Eater of Souls (6), the Hornet (42), the
+Meteor Head (23) and the Servant of Cthulhu (5, its own type-5 branch from
+S1-D-3k) - calling the same `update_hover`/servant machines with the same
+params as the old kind arms. The old kind-match arms for these four are
+`unreachable!` markers (the axis claims style 5 first); D-3 rounds shrink
+`update_kind_ai` the same way, one family per round. No new arms ported.
+
+**Proof.** `s1_d_2_tests::s1_d_2_the_style_axis_keeps_the_hover_behaviour`
+runs all four kinds 300 ticks through the axis vs the verbatim pre-axis
+arm bodies on cloned state with identical RNG seeds and asserts bit-equal
+x/y/vx/vy/frame/frame_counter/rotation/sprite_dir/facing/on_ground and
+player hp every tick.
+`s1_d_2_the_ai_style_table_matches_the_csharp_set_defaults` pins 86
+representative rows against the C# (the full 199-row table is cited
+in-place). The world-hash pins and the existing NPC AI tests pass
+unchanged (`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+**Known doc-vs-C# drift surfaced by the extraction** (the table follows the
+C#, not the comments): the Retinazer's SetDefaults row is aiStyle 30
+(`NPC.cs:10526`) and the Spazmatism's 31 (`:10543`) - the S1-D-3i work
+labelled them 57/3; the port's machines are unchanged this round (behaviour
+frozen), the style ids now carry the C#'s rows. Same for the Golem family
+(the body 45 `:12167`, the attached head 46 `:12184`, the fists 47
+`:12198`, the free head 48 `:12212`), the Wall of Flesh (27,
+`:10347`) and the Moon Lord core/head (77/79, `:14127`/`:14089`).
