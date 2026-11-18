@@ -697,6 +697,14 @@ pub struct Player {
     pub pinned_jumps: [bool; 9],
     pub pinned_balloon: bool,
     pub pinned_rocket_boots: i32,
+    /// The `TR_DASH` pin: stands in for the dash-granting equipment, re-applied
+    /// after the per-tick `dashType` clear (the `pinned_*` pattern).
+    pub pinned_dash: i32,
+    /// `Player.extraAccessory` (`Player.cs:866`): the Demon Heart's use-grant
+    /// (`:45197`) - unlocks the 6th accessory slot in expert mode
+    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use is
+    /// unported, so the flag stays false in play.
+    pub extra_accessory: bool,
     /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
     /// (the real items equip through `Item.mountType`), re-applied after the
     /// per-tick flag clear while no mount is active (the `pinned_*` pattern,
@@ -730,6 +738,15 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// `Player.fireWalk` (`Player.cs:1878`, reset `:18355`): the Obsidian
+    /// Skull family's grant — `Collision.CanTileHurt`'s hot arm skips the
+    /// burning tiles (`Collision.cs:3220`). The granters ride
+    /// `accessory_defense.rs` (S1-C-12 wave C).
+    pub fire_walk: bool,
+    /// `Player.hasPaladinShield` (`Player.cs:1408`, reset `:18777`): the
+    /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
+    /// The hurt-side team redirect (`:38190`) rides C-7.
+    pub has_paladin_shield: bool,
     /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
     /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
     /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
@@ -959,9 +976,12 @@ pub struct Player {
     /// int-truncated like the original's `(int)(position.Y / 16f)`.
     fall_start: i32,
     /// `Player.extraFall` (`Player.cs:2726`): tiles added to the 25-tile safe
-    /// fall. Nothing grants it yet (frog-gear sources = M3-EQUIP-3), but the
-    /// reset-each-tick shape is the vanilla one.
+    /// fall - the Amphibian Boots add 10 (`:14403`), reset per tick (`:18788`).
     extra_fall: i32,
+    /// `Player.jumpSpeedBoost` (`Player.cs:2724`): the flat jump-speed add
+    /// (`UpdateJumpHeight` `:19618`), reset per tick (`:18787`). The Amphibian
+    /// Boots add 1.6 (`:14402`); the frog/empress/moon-lord rows are unported.
+    jump_speed_boost: f32,
     /// `Player.noFallDmg` (`Player.cs:2766`): the horseshoe/balloon family
     /// (M3-EQUIP-3). Always false until the accessory system lands.
     no_fall_dmg: bool,
@@ -1053,9 +1073,11 @@ pub struct Player {
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
-    /// The granters (Tabi 977, EoCShield 3097, Master Ninja Gear 984) land
-    /// with M3-EQUIP-3, the Solar set and the Chillet mounts with their own
-    /// tasks — `TR_DASH=<1|2|3|6>` pins it for now.
+    /// The accessory granters (Tabi 977 `:15052`, EoCShield 3097 `:15056`,
+    /// Master Ninja Gear 984 `:15065`) arm it in `apply_equip_functional`;
+    /// the Solar set (type 3) rides the set rows and the Chillet mounts
+    /// (type 6) their own task. `ResetEffects` clears it per tick (`:18659`);
+    /// `TR_DASH=<1|2|3|6>` pins it through `pinned_dash`.
     pub dash_type: i32,
     /// `Player.dash` (`:1046`): the committed dash type of the lifecycle.
     pub dash: i32,
@@ -1242,6 +1264,24 @@ pub struct Player {
     // buff's bonuses (the tooltip's knockback row, `Main.cs:20333-20340`).
     pub kb_glove: bool,
     pub kb_buff: bool,
+    // ---- S1-E-7 wave C: the accessory/set-bonus buff flags
+    // (`buff_effects_accessory.rs`, `Player.cs:10800-11400` + `:12013-12044`).
+    /// `Player.gross` (`Player.cs:10981`): Horrified (37) while the WoF lives.
+    pub gross: bool,
+    /// `Player.tongued` (`Player.cs:10993`): Tongued (38), pinned at 10 ticks.
+    pub tongued: bool,
+    /// `Player.sunflower` (`Player.cs:11003`): the Sunflower-buff flag half
+    /// (the movement half rides the effect match below).
+    pub sunflower: bool,
+    /// `Player.rabid` (`Player.cs:11323`): the Feral Bite (148) flag.
+    pub rabid: bool,
+    /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
+    /// weapon-imbuement id 1..8 (0 = none).
+    pub melee_enchant: u8,
+    /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
+    /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
+    /// sets the 881 and 934 flags shared with buffs 284/317).
+    pub pet_flags: [bool; PROJ_COUNT],
     // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
@@ -1731,6 +1771,8 @@ impl Player {
             seat_pos_offset: (0.0, 0.0),
             seat_y_offset: 0,
             no_knockback: false,
+            fire_walk: false,
+            has_paladin_shield: false,
             // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
             // OnFire regen row's source (`Player.cs:18983-18992`).
             vampirism: world
@@ -1761,6 +1803,8 @@ impl Player {
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
+            pinned_dash: 0,
+            extra_accessory: false,
             pinned_mount: None,
             control_left: false,
             control_right: false,
@@ -1806,6 +1850,7 @@ impl Player {
             held_torch_style: None,
             fall_start: (sy / TILE_PX) as i32,
             extra_fall: 0,
+            jump_speed_boost: 0.0,
             no_fall_dmg: false,
             has_wings: false,
             grappling_active: false,
@@ -1901,6 +1946,12 @@ impl Player {
             minion_kb: 0.0,
             kb_glove: false,
             kb_buff: false,
+            gross: false,
+            tongued: false,
+            sunflower: false,
+            rabid: false,
+            melee_enchant: 0,
+            pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,
@@ -3252,6 +3303,318 @@ impl Player {
         (worn(267), worn(1307))
     }
 
+    /// `Player.IsItemSlotUnlockedAndUsable` (`Player.cs:12579-12604`): the
+    /// slot 8 needs the Demon Heart's `extraAccessory` AND expert mode, the
+    /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
+    /// read false in the sim; the port has no master difficulty yet, so the
+    /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
+    /// Demon Heart's use-grant (`:45197`) is unported - the flag stays false
+    /// in play until the consumable use lands.
+    fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
+        match slot {
+            8 | 18 => self.extra_accessory && self.buffs.expert_mode,
+            9 | 19 => false, // `Main.masterMode` - unported difficulty
+            _ => true,
+        }
+    }
+
+    /// `Player.UpdateEquips`' functional-accessory loop (`Player.cs:12946-12952`):
+    /// for the slots 3..10, `IsItemSlotUnlockedAndUsable` gates the slot and
+    /// `ApplyEquipFunctional` applies the worn kind. `GetEffectiveArmor`
+    /// (`:5684-5710`) collapses to `equipped[slot]` - no loadout system in the
+    /// port. The `:12922` gates ride along: `IsAir` (kind 0),
+    /// `UpdateEquips_CanItemGrantBenefits` (`:12869-12890` - the slots 3..9
+    /// demand `item.accessory`) and the accessory-only `GrantPrefixBenefits`
+    /// (`:12924-12927`). The `expertOnly` gate (`:14370-14373`) is unmodelled:
+    /// `ItemDef` carries no `expert_only` and every ported grant kind is
+    /// classic (deviation, docs/ANALYSIS.md "The UpdateEquip seam").
+    fn update_equips(&mut self) {
+        for m in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(m) {
+                continue;
+            }
+            let kind = self.equipped[m];
+            if kind == 0 {
+                continue;
+            }
+            if !crate::registry::get(kind).is_some_and(|d| d.accessory) {
+                continue;
+            }
+            crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
+            self.apply_equip_functional(m, kind);
+        }
+    }
+
+    /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
+    /// grant chain for one functional accessory slot. The ported arms keep
+    /// the C#'s grants; the visual half (`UpdateBootVisualEffects`/bobber/
+    /// voice, `:14378-14390`) and the `hideVisibleAccessory` gate are draw
+    /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
+    /// lookups only).
+    fn apply_equip_functional(&mut self, _item_slot: usize, kind: u16) {
+        match kind {
+            // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
+            53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
+            857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
+            987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
+            1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
+            3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
+            // The bottle combos (`:14822-14835`): 1164 (Bundle of
+            // Balloons) and 5331 (its Amber/Glass variant) carry all three
+            // bottles at once.
+            1164 | 5331 => {
+                self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                self.jump_boost = true;
+            }
+            // Every other bottle/balloon carries its own option *and*
+            // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
+            // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
+            // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
+            // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
+            // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
+            // Comb) carry only the boost, and so does `159`/`3225` (the
+            // Aglet-style `jumpSpeedBoost` rows).
+            399 | 1250 => {
+                self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                self.jump_boost = true;
+            }
+            1251 | 1163 => {
+                self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                self.jump_boost = true;
+            }
+            983 | 1252 => {
+                self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                self.jump_boost = true;
+            }
+            1863 | 3250 => {
+                self.has_jump_options[ExtraJump::Fart.index()] = true;
+                self.jump_boost = true;
+            }
+            3252 | 3241 => {
+                self.has_jump_options[ExtraJump::Sail.index()] = true;
+                self.jump_boost = true;
+            }
+            159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+            // The base boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
+            // `:15017-15020` Sailfish - `accRunSpeed = 6f`).
+            54 | 1579 | 3200 => self.acc_run_speed = 6.0,
+            // The Amphibian Boots (`:14399-14404`): the base run speed plus
+            // the auto-jump, the +1.6 jump-speed add and +10 safe-fall tiles.
+            // (`autoJump` re-derives per tick; a mount's own `constantJump`
+            // head-set still overwrites it in `update_mount`.)
+            3990 => {
+                self.acc_run_speed = 6.0;
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+            }
+            // The Fairy Boots (`:14418-14421`): the Spectre row (6f + tier 2).
+            3993 => {
+                self.acc_run_speed = 6.0;
+                self.rocket_boots = 2;
+            }
+            // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
+            // (the sand-floor 1.75x rides the floor-modifier chain).
+            4055 => {
+                self.acc_run_speed = 6.0;
+                self.desert_boots = true;
+            }
+            // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
+            128 => self.rocket_boots = 1,
+            // The Spectre Boots (`:15219-15223` - tier 2).
+            405 => {
+                self.acc_run_speed = 6.0;
+                self.rocket_boots = 2;
+            }
+            // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
+            // +8% move).
+            898 => {
+                self.acc_run_speed = 6.75;
+                self.rocket_boots = 2;
+                self.move_speed += 0.08;
+            }
+            // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
+            // skates).
+            1862 => {
+                self.acc_run_speed = 6.75;
+                self.rocket_boots = 3;
+                self.move_speed += 0.08;
+                self.ice_skate = true;
+            }
+            // The Terraspark Boots (`:15390-15396` - tier 4).
+            5000 => {
+                self.acc_run_speed = 6.75;
+                self.rocket_boots = 4;
+                self.move_speed += 0.08;
+                self.ice_skate = true;
+                // The Terraspark row (`:15168-15174`): the water/fire walk
+                // and the lava charm's 420 ticks.
+                self.lava_max += 420;
+            }
+            // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
+            4874 => {
+                self.acc_run_speed = 6.0;
+                self.rocket_boots = 5;
+            }
+            _ if Self::wing_slot(kind as i32) > 0 => {
+                // `:15593-15602`: the accessory's `wingSlot` is both the
+                // gameplay wing (`wingsLogic`) and the look (`wings`, same
+                // field in the port), and `:15453` takes the flight budget
+                // from the same id's `ArmorIDs.Wing.Sets.Stats`.
+                let slot_id = Self::wing_slot(kind as i32);
+                self.wings_logic = slot_id;
+                self.has_wings = true;
+                self.wing_time_max = Self::wing_stats(slot_id).0;
+            }
+            // The Titan Glove's melee-speed row (`:15103-15107`); its
+            // `autoReuseGlove` flag has no port consumer yet.
+            211 => self.melee_speed_bonus += 0.12,
+            // The damage/crit accessories (`ApplyEquipFunctional`, the
+            // `Player.cs:15223-15560` block): the four class emblems at
+            // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
+            // the Avenger Emblem's +12% to all four (935), the melee-speed
+            // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
+            // damage), the Sniper Scope's +10 ranged crit/+10% ranged
+            // damage (1858), the Celestial Stone-style +8 crit/+10% all
+            // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
+            // emblems +15%/+10% with their extra slot (1167/1864/1845),
+            // the Ankh/Stone rows' crit-and-damage mix (3015) and the
+            // Empress Brooch's +7.5% move (4989).
+            489 => self.magic_damage += 0.15,
+            490 => self.melee_damage += 0.15,
+            491 => self.ranged_damage += 0.15,
+            2998 => self.minion_damage += 0.15,
+            935 => {
+                self.melee_damage += 0.12;
+                self.ranged_damage += 0.12;
+                self.magic_damage += 0.12;
+                self.minion_damage += 0.12;
+            }
+            897 => self.melee_speed_bonus += 0.12,
+            936 => {
+                self.melee_speed_bonus += 0.12;
+                self.melee_damage += 0.12;
+            }
+            1343 => {
+                self.melee_speed_bonus += 0.12;
+                self.melee_damage += 0.12;
+            }
+            1858 => {
+                self.ranged_crit += 10;
+                self.ranged_damage += 0.1;
+            }
+            1301 => {
+                self.melee_crit += 8;
+                self.ranged_crit += 8;
+                self.magic_crit += 8;
+                self.melee_damage += 0.1;
+                self.ranged_damage += 0.1;
+                self.magic_damage += 0.1;
+                self.minion_damage += 0.1;
+            }
+            3015 => {
+                self.melee_crit += 5;
+                self.ranged_crit += 5;
+                self.magic_crit += 5;
+                self.melee_damage += 0.05;
+                self.ranged_damage += 0.05;
+                self.magic_damage += 0.05;
+                self.minion_damage += 0.05;
+            }
+            2220 => self.magic_damage += 0.15,
+            1167 => self.minion_damage += 0.15,
+            // 1864/1845 also carry `maxMinions++` in the C#; the budget
+            // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
+            // the damage row lands here (the C# total counts once).
+            1864 => self.minion_damage += 0.15,
+            1845 => self.minion_damage += 0.1,
+            4989 => self.move_speed += 0.075,
+            // The penetration rows: the Shark Tooth Necklace (3212,
+            // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
+            // add a flat 5 each.
+            3212 | 4007 => self.armor_penetration += 5,
+            // The Lava Charm family (`:15168-15183`): 906 (Lava Charm),
+            // 4038 (Molten Charm), 3999 (Molten Skull Rose) and 4003
+            // (Lava Waders) each add 420 ticks of lava immunity; 908
+            // (Lava Waders' older row) and 5000 (Terraspark Boots) also
+            // set the water/fire walk and the lava rose.
+            906 | 3999 | 4003 | 4038 => self.lava_max += 420,
+            // (The Terraspark Boots' own row rides its boot arm above —
+            // a duplicate pattern here would be unreachable.)
+            908 => self.lava_max += 420,
+            // The Worm Scarf (`:15081-15084`): +17% endurance.
+            3224 => self.endurance += 0.17,
+            // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
+            // Nature's Gift (`:15110-15113`, −0.06).
+            555 => self.mana_cost -= 0.08,
+            223 => self.mana_cost -= 0.06,
+            // The Ice Skates (`:15089-15092`).
+            950 => self.ice_skate = true,
+            // The Aglet / the Anklet of the Wind (`:15114-15121`).
+            285 => self.move_speed += 0.05,
+            212 => self.move_speed += 0.1,
+            // `Player.cs:15029-15033` + the horseshoe balloons: the fall
+            // damage immunity.
+            158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
+            // `Player.cs:15025-15028` - the Cobalt Shield.
+            156 => self.no_knockback = true,
+            // The sentry-backpack slings (`ApplyEquipFunctional`,
+            // `Player.cs:14506-14508`/`:14564-14579`): the Heavy Sling
+            // (6172) grants the bare flag; the Scout Sling (6175) adds
+            // +5% to all four damage classes (its `aggro -= 400` half has
+            // no port field — skipped, no aggro consumer); the Templar
+            // Sling (6176) also arms `accGolemSentryBackpack` (no port
+            // consumer — the Golem-backpack crit arm is unported); the
+            // Royal Guard's Harness (6177) adds the Cobalt Shield's
+            // knockback immunity.
+            6172 => self.acc_sentry_backpack = true,
+            6175 => {
+                self.acc_sentry_backpack = true;
+                self.melee_damage += 0.05;
+                self.magic_damage += 0.05;
+                self.ranged_damage += 0.05;
+                self.minion_damage += 0.05;
+            }
+            6176 => self.acc_sentry_backpack = true,
+            6177 => {
+                self.acc_sentry_backpack = true;
+                self.no_knockback = true;
+            }
+            // The dodge family (`ApplyEquipFunctional`): the Black Belt
+            // 963 (`:15058-15061`) and the Master Ninja Gear 984
+            // (`:15062-15067`) both arm `blackBelt`; the Mystic Arts Sash
+            // 6189 (`:14632-14635`) arms `mysticSashDodge` and the Brain
+            // of Confusion 3223 (`:15085-15088`) arms the (bool
+            // stand-in for the) `brainOfConfusionItem` reference.
+            963 => self.black_belt = true,
+            984 => {
+                self.black_belt = true;
+                // `:15065`: the Tabi's dash. (`spikedBoots = 2` at `:15066`
+                // has no port field - the wall-cling is unported.)
+                self.dash_type = 1;
+            }
+            // The dash granters: the Tabi (`:15050-15053`, type 1) and the
+            // Shield of Cthulhu (`:15054-15057`, type 2).
+            977 => self.dash_type = 1,
+            3097 => self.dash_type = 2,
+            6189 => self.mystic_sash_dodge = true,
+            3223 => self.brain_of_confusion = true,
+            // The Magic Cuffs (1595, `ApplyEquipFunctional`
+            // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
+            // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
+            // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
+            // (`:14951`) is a separate unported family.
+            1595 | 2221 => self.magic_cuffs = true,
+            // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
+            // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
+            // (The `Item.lifeRegen` rows are generic now — the loop after
+            // the accessory match adds every worn item's value.)
+            _ => {}
+        }
+    }
+
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
     /// the ported classes: the classless items pass the 1f default.
     pub fn weapon_damage_multiplier(&self, class: registry::DamageClass) -> f32 {
@@ -3552,6 +3915,10 @@ impl Player {
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
         self.auto_jump = false;
+        // `Player.cs:18787-18788`: the jump-boost add and the safe-fall tiles
+        // clear per tick; the Amphibian Boots re-grant them below.
+        self.jump_speed_boost = 0.0;
+        self.extra_fall = 0;
         // `Player.cs:18804`: the Actuation Rod's per-tick lock clears with
         // the rest of `ResetEffects`.
         self.actuation_rod_lock = false;
@@ -3626,6 +3993,10 @@ impl Player {
         self.set_monk_t3 = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
+        // `:18659`: `dashType = 0` - the armor-set rows and the accessory
+        // granters (Tabi/EoC Shield/Master Ninja Gear) below re-arm it per
+        // tick (ResetEffects runs before UpdateEquips, `:25305` < `:25633`).
+        self.dash_type = 0;
         // `:18376` + `:18726-18727`: the thorns flag clear.
         self.thorns = 0.0;
         self.cactus_thorns = false;
@@ -3979,10 +4350,9 @@ impl Player {
             self.vx = 0.0;
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
-        self.move_speed *= self.strongest_move_speed_debuff;
         // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
-        // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :14602-14604):
+        // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :12946-12952):
         // the flags reset, then the equipped kinds re-set them per tick.
         // `UpdateDyes` sits between the two in `Player.Update`
         // (`:25492` before `UpdateEquips`' `:25633`), so the dye cache
@@ -3994,6 +4364,10 @@ impl Player {
         self.desert_boots = false;
         self.rocket_boots = 0;
         self.no_knockback = false;
+        // `:18355`/`:18777`: `fireWalk = false` / `hasPaladinShield = false`
+        // — the wave-C pass (`accessory_defense.rs`) re-grants per tick.
+        self.fire_walk = false;
+        self.has_paladin_shield = false;
         self.has_jump_options = [false; 9];
         // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
         // — the granting wing re-sets all three below, so taking the wings off
@@ -4002,244 +4376,20 @@ impl Player {
         self.has_wings = false;
         self.wing_time_max = 0;
         self.accessory_life_regen = 0;
-        let (kinds, prefixes) = (self.equipped, self.equipped_prefix);
-        for (slot, prefix) in kinds[3..10].iter().zip(&prefixes[3..10]) {
-            // `UpdateEquips`' accessory arm (`Player.cs:12925-12930`):
-            // `GrantPrefixBenefits` rides the accessory slot's rolled prefix
-            // before the kind grants below.
-            crate::prefix::grant_prefix_benefits(*prefix, self);
-            match *slot {
-                // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
-                53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
-                857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
-                987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
-                1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
-                3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-                // The bottle combos (`:14822-14835`): 1164 (Bundle of
-                // Balloons) and 5331 (its Amber/Glass variant) carry all three
-                // bottles at once.
-                1164 | 5331 => {
-                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
-                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
-                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
-                    self.jump_boost = true;
-                }
-                // Every other bottle/balloon carries its own option *and*
-                // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
-                // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
-                // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
-                // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
-                // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
-                // Comb) carry only the boost, and so does `159`/`3225` (the
-                // Aglet-style `jumpSpeedBoost` rows).
-                399 | 1250 => {
-                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
-                    self.jump_boost = true;
-                }
-                1251 | 1163 => {
-                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
-                    self.jump_boost = true;
-                }
-                983 | 1252 => {
-                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
-                    self.jump_boost = true;
-                }
-                1863 | 3250 => {
-                    self.has_jump_options[ExtraJump::Fart.index()] = true;
-                    self.jump_boost = true;
-                }
-                3252 | 3241 => {
-                    self.has_jump_options[ExtraJump::Sail.index()] = true;
-                    self.jump_boost = true;
-                }
-                159 | 1249 | 3225 | 3251 => self.jump_boost = true,
-                // The boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
-                // `:15017-15020` Amphibian — `accRunSpeed = 6f`):
-                54 | 1579 | 3200 => self.acc_run_speed = 6.0,
-                // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
-                128 => self.rocket_boots = 1,
-                // The Spectre Boots (`:15213-15216` - tier 2).
-                405 => {
-                    self.acc_run_speed = 6.0;
-                    self.rocket_boots = 2;
-                }
-                // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
-                // +8% move).
-                898 => {
-                    self.acc_run_speed = 6.75;
-                    self.rocket_boots = 2;
-                    self.move_speed += 0.08;
-                }
-                // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
-                // skates).
-                1862 => {
-                    self.acc_run_speed = 6.75;
-                    self.rocket_boots = 3;
-                    self.move_speed += 0.08;
-                    self.ice_skate = true;
-                }
-                // The Terraspark Boots (`:15390-15396` - tier 4).
-                5000 => {
-                    self.acc_run_speed = 6.75;
-                    self.rocket_boots = 4;
-                    self.move_speed += 0.08;
-                    self.ice_skate = true;
-                    // The Terraspark row (`:15168-15174`): the water/fire walk
-                    // and the lava charm's 420 ticks.
-                    self.lava_max += 420;
-                }
-                // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
-                4874 => {
-                    self.acc_run_speed = 6.0;
-                    self.rocket_boots = 5;
-                }
-                _ if Self::wing_slot(*slot as i32) > 0 => {
-                    // `:15593-15602`: the accessory's `wingSlot` is both the
-                    // gameplay wing (`wingsLogic`) and the look (`wings`, same
-                    // field in the port), and `:15453` takes the flight budget
-                    // from the same id's `ArmorIDs.Wing.Sets.Stats`.
-                    let slot_id = Self::wing_slot(*slot as i32);
-                    self.wings_logic = slot_id;
-                    self.has_wings = true;
-                    self.wing_time_max = Self::wing_stats(slot_id).0;
-                }
-                // The Titan Glove's melee-speed row (`:15103-15107`); its
-                // `autoReuseGlove` flag has no port consumer yet.
-                211 => self.melee_speed_bonus += 0.12,
-                // The damage/crit accessories (`ApplyEquipFunctional`, the
-                // `Player.cs:15223-15560` block): the four class emblems at
-                // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
-                // the Avenger Emblem's +12% to all four (935), the melee-speed
-                // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
-                // damage), the Sniper Scope's +10 ranged crit/+10% ranged
-                // damage (1858), the Celestial Stone-style +8 crit/+10% all
-                // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
-                // emblems +15%/+10% with their extra slot (1167/1864/1845),
-                // the Ankh/Stone rows' crit-and-damage mix (3015) and the
-                // Empress Brooch's +7.5% move (4989).
-                489 => self.magic_damage += 0.15,
-                490 => self.melee_damage += 0.15,
-                491 => self.ranged_damage += 0.15,
-                2998 => self.minion_damage += 0.15,
-                935 => {
-                    self.melee_damage += 0.12;
-                    self.ranged_damage += 0.12;
-                    self.magic_damage += 0.12;
-                    self.minion_damage += 0.12;
-                }
-                897 => self.melee_speed_bonus += 0.12,
-                936 => {
-                    self.melee_speed_bonus += 0.12;
-                    self.melee_damage += 0.12;
-                }
-                1343 => {
-                    self.melee_speed_bonus += 0.12;
-                    self.melee_damage += 0.12;
-                }
-                1858 => {
-                    self.ranged_crit += 10;
-                    self.ranged_damage += 0.1;
-                }
-                1301 => {
-                    self.melee_crit += 8;
-                    self.ranged_crit += 8;
-                    self.magic_crit += 8;
-                    self.melee_damage += 0.1;
-                    self.ranged_damage += 0.1;
-                    self.magic_damage += 0.1;
-                    self.minion_damage += 0.1;
-                }
-                3015 => {
-                    self.melee_crit += 5;
-                    self.ranged_crit += 5;
-                    self.magic_crit += 5;
-                    self.melee_damage += 0.05;
-                    self.ranged_damage += 0.05;
-                    self.magic_damage += 0.05;
-                    self.minion_damage += 0.05;
-                }
-                2220 => self.magic_damage += 0.15,
-                1167 => self.minion_damage += 0.15,
-                // 1864/1845 also carry `maxMinions++` in the C#; the budget
-                // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
-                // the damage row lands here (the C# total counts once).
-                1864 => self.minion_damage += 0.15,
-                1845 => self.minion_damage += 0.1,
-                4989 => self.move_speed += 0.075,
-                // The penetration rows: the Shark Tooth Necklace (3212,
-                // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
-                // add a flat 5 each.
-                3212 | 4007 => self.armor_penetration += 5,
-                // The Lava Charm family (`:15168-15183`): 906 (Lava Charm),
-                // 4038 (Molten Charm), 3999 (Molten Skull Rose) and 4003
-                // (Lava Waders) each add 420 ticks of lava immunity; 908
-                // (Lava Waders' older row) and 5000 (Terraspark Boots) also
-                // set the water/fire walk and the lava rose.
-                906 | 3999 | 4003 | 4038 => self.lava_max += 420,
-                // (The Terraspark Boots' own row rides its boot arm above —
-                // a duplicate pattern here would be unreachable.)
-                908 => self.lava_max += 420,
-                // The Worm Scarf (`:15081-15084`): +17% endurance.
-                3224 => self.endurance += 0.17,
-                // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
-                // Nature's Gift (`:15110-15113`, −0.06).
-                555 => self.mana_cost -= 0.08,
-                223 => self.mana_cost -= 0.06,
-                // The Ice Skates (`:15089-15092`).
-                950 => self.ice_skate = true,
-                // The Aglet / the Anklet of the Wind (`:15114-15121`).
-                285 => self.move_speed += 0.05,
-                212 => self.move_speed += 0.1,
-                // `Player.cs:15029-15033` + the horseshoe balloons: the fall
-                // damage immunity.
-                158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
-                // `Player.cs:15025-15028` - the Cobalt Shield.
-                156 => self.no_knockback = true,
-                // The sentry-backpack slings (`ApplyEquipFunctional`,
-                // `Player.cs:14506-14508`/`:14564-14579`): the Heavy Sling
-                // (6172) grants the bare flag; the Scout Sling (6175) adds
-                // +5% to all four damage classes (its `aggro -= 400` half has
-                // no port field — skipped, no aggro consumer); the Templar
-                // Sling (6176) also arms `accGolemSentryBackpack` (no port
-                // consumer — the Golem-backpack crit arm is unported); the
-                // Royal Guard's Harness (6177) adds the Cobalt Shield's
-                // knockback immunity.
-                6172 => self.acc_sentry_backpack = true,
-                6175 => {
-                    self.acc_sentry_backpack = true;
-                    self.melee_damage += 0.05;
-                    self.magic_damage += 0.05;
-                    self.ranged_damage += 0.05;
-                    self.minion_damage += 0.05;
-                }
-                6176 => self.acc_sentry_backpack = true,
-                6177 => {
-                    self.acc_sentry_backpack = true;
-                    self.no_knockback = true;
-                }
-                // The dodge family (`ApplyEquipFunctional`): the Black Belt
-                // 963 (`:15059-15062`) and the Master Ninja Gear 984
-                // (`:15063-15067`, whose dash/spiked-boots rows ride the
-                // dash granters) both arm `blackBelt`; the Mystic Arts Sash
-                // 6189 (`:14632-14635`) arms `mysticSashDodge` and the Brain
-                // of Confusion 3223 (`:15085-15089`) arms the (bool
-                // stand-in for the) `brainOfConfusionItem` reference.
-                963 | 984 => self.black_belt = true,
-                6189 => self.mystic_sash_dodge = true,
-                3223 => self.brain_of_confusion = true,
-                // The Magic Cuffs (1595, `ApplyEquipFunctional`
-                // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
-                // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
-                // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
-                // (`:14951`) is a separate unported family.
-                1595 | 2221 => self.magic_cuffs = true,
-                // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
-                // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
-                // (The `Item.lifeRegen` rows are generic now — the loop after
-                // the accessory match adds every worn item's value.)
-                _ => {}
-            }
-        }
+        // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
+        // accessory pass over the slots 3..10, gated per slot - the seam below.
+        self.update_equips();
+        // S1-C-12 wave C — the defense/immunity accessory rows kept in
+        // their own module (the Obsidian/Paladin-family shields' knockback
+        // + fire-walk grants, `Player.cs:14605-14631`/`:15209-15213`/
+        // `:15348-15353`/`:15552-15554` + the fireWalk granters). Boolean
+        // OR grants with no RNG draw — a second pass over the same slots
+        // is order-identical to the C#'s interleaved rows.
+        crate::accessory_defense::apply_defense_accessories(self);
+        // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
+        // rides after the grants (the Amphibian Boots' +1.6); a non-additive
+        // mount still overwrites the pair in `update_mount` (`:19628-19629`).
+        self.jump_speed += self.jump_speed_boost;
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -4290,6 +4440,9 @@ impl Player {
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
         }
+        if self.pinned_dash != 0 {
+            self.dash_type = self.pinned_dash;
+        }
         // The `TR_MOUNT` pin equips while nothing else did this tick — a real
         // saddle (or its still-live buff) wins, matching the refresh order.
         if let Some(m) = self.pinned_mount {
@@ -4323,6 +4476,11 @@ impl Player {
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
         self.update_luck(world);
+        // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
+        // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
+        // multiply too. `oldStyleParkour` (the `:26007` gate) is unported
+        // (item 6190's info-acc row), so the accRunSpeed debuff always applies.
+        self.move_speed *= self.strongest_move_speed_debuff;
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
         self.acc_run_speed *= self.strongest_move_speed_debuff;
@@ -5917,10 +6075,11 @@ impl Player {
     /// decays by `runSlowdown` on the ground and half of it in the air. There
     /// is no hard clamp — the decay bounds the speed (knockback rides out).
     /// `Player.DashMovement` (`Player.cs:21034-21538`), dashTypes 1/2/3/6.
-    /// The dash granters (Tabi 977, EoCShield 3097, Master Ninja Gear 984 →
-    /// type 1/2/1) land with M3-EQUIP-3, the Solar set (type 3) and the
-    /// Chillet mounts (type 6) with their own tasks — `TR_DASH=<1|2|3|6>`
-    /// pins the capability for now. The dust/gore trails are visual seams;
+    /// The accessory dash granters (Tabi 977, EoCShield 3097, Master Ninja
+    /// Gear 984 → type 1/2/1) arm `dash_type` in `apply_equip_functional`
+    /// (S1-C-12a); the Solar set (type 3) rides the set rows and the Chillet
+    /// mounts (type 6) their own task — `TR_DASH=<1|2|3|6>` pins the
+    /// capability through `pinned_dash`. The dust/gore trails are visual seams;
     /// the vanilla plays no dash sounds.
     fn dash_movement(&mut self, world: &World, input: PlayerInput) {
         // `:21040-21048`: the lifecycle re-sync.
@@ -9418,7 +9577,7 @@ mod tests {
         for _ in 0..120 {
             p.update(w, PlayerInput::default());
         }
-        p.dash_type = 2;
+        p.pinned_dash = 2;
         p.update(
             w,
             PlayerInput {
@@ -9474,7 +9633,7 @@ mod tests {
     fn shield_dash_decays_into_cooldown() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.dash_type = 2;
+        p.pinned_dash = 2;
         p.dash = 2;
         p.dash_delay = -1;
         p.eoc_dash = 15;
@@ -9508,7 +9667,7 @@ mod tests {
             }
         }
         let mut p = Player::spawn(&w);
-        p.dash_type = 2;
+        p.pinned_dash = 2;
         let held = PlayerInput {
             right: true,
             ..Default::default()
@@ -9956,6 +10115,167 @@ mod tests {
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    /// S1-C-12 wave A — the movement-speed accessory family, per item.
+    #[test]
+    fn the_movement_speed_accessories_stack_their_rows() {
+        // Hermes (54, `:15005-15008`), Flurry (1579, `:15013-15016`) and
+        // Sailfish (3200, `:15017-15020`): each sets `accRunSpeed = 6f`.
+        for kind in [54u16, 1579, 3200] {
+            let p = player_with_accessory(kind);
+            assert!(
+                (p.acc_run_speed_value() - 6.0).abs() < 1e-4,
+                "kind {kind}: {}",
+                p.acc_run_speed_value()
+            );
+            assert!((p.move_speed - 1.0).abs() < 1e-4, "no moveSpeed row");
+        }
+        // The Aglet (285, `:15114-15117`): +5% moveSpeed, no run-speed row.
+        let p = player_with_accessory(285);
+        assert!((p.move_speed - 1.05).abs() < 1e-4);
+        assert!((p.acc_run_speed_value() - 3.0).abs() < 1e-4);
+        assert!((p.max_run_speed_value() - 3.0 * 1.05).abs() < 1e-4);
+        // The Anklet of the Wind (212, `:15118-15121`): +10%.
+        let p = player_with_accessory(212);
+        assert!((p.move_speed - 1.1).abs() < 1e-4);
+        assert!((p.max_run_speed_value() - 3.0 * 1.1).abs() < 1e-4);
+        // Both together (`:12946-12952` walks every slot): 1 + 0.05 + 0.1.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 285;
+        p.equipped[4] = 212;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.15).abs() < 1e-4);
+        // The boot tiers: Lightning 898 (`:15377-15382`) and Frostspark 1862
+        // (`:15383-15389`) / Terraspark 5000 (`:15390-15396`): 6.75 + 8%.
+        for kind in [898u16, 1862, 5000] {
+            let p = player_with_accessory(kind);
+            assert!((p.acc_run_speed_value() - 6.75).abs() < 1e-4, "kind {kind}");
+            assert!((p.move_speed - 1.08).abs() < 1e-4, "kind {kind}");
+        }
+        // Spectre 405 (`:15219-15223`) / Fairy 3993 (`:14418-14421`): 6f + tier 2.
+        for kind in [405u16, 3993] {
+            let p = player_with_accessory(kind);
+            assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4, "kind {kind}");
+            assert_eq!(p.rocket_boots, 2, "kind {kind}");
+        }
+        // Hellfire Treads 4874 (`:15397-15401`): 6f + tier 5.
+        let p = player_with_accessory(4874);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        assert_eq!(p.rocket_boots, 5);
+        // Sand Boots 4055 (`:14422-14425`): 6f + the desert-run flag.
+        let p = player_with_accessory(4055);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        assert!(p.desert_boots);
+        // Amphibian Boots 3990 (`:14399-14404`): 6f, autoJump, +1.6 jump
+        // speed, +10 safe-fall tiles.
+        let p = player_with_accessory(3990);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        assert!(p.auto_jump);
+        assert!((p.jump_speed - (5.01 + 1.6)).abs() < 1e-4);
+        assert_eq!(p.extra_fall, 10);
+        // The Empress Brooch 4989 (`:14771-14775`): +7.5%.
+        let p = player_with_accessory(4989);
+        assert!((p.move_speed - 1.075).abs() < 1e-4);
+    }
+
+    /// S1-C-12 wave A — the prefix speed rows ride the accessory's rolled
+    /// prefix (`GrantPrefixBenefits`, `Player.cs:14015-14030`).
+    #[test]
+    fn the_speed_prefixes_ride_the_accessory_slot() {
+        let w = ground_world();
+        for (prefix, add) in [(73u16, 0.01f32), (74, 0.02), (75, 0.03), (76, 0.04)] {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = 285; // the Aglet's own +5%
+            p.equipped_prefix[3] = prefix;
+            p.update(&w, PlayerInput::default());
+            assert!(
+                (p.move_speed - (1.05 + add)).abs() < 1e-4,
+                "prefix {prefix}: {}",
+                p.move_speed
+            );
+        }
+        // The prefix on an empty slot grants nothing (`:12922` IsAir gate).
+        let mut p = Player::spawn(&w);
+        p.equipped_prefix[3] = 76;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.0).abs() < 1e-4);
+    }
+
+    /// S1-C-12 wave A — the debuff multiply runs AFTER the equip grants
+    /// (`Player.cs:26004-26009` follows UpdateEquips' `:25633`).
+    #[test]
+    fn the_slow_debuff_damps_the_accessory_speeds() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 54; // Hermes: accRunSpeed 6
+        p.equipped[4] = 212; // Anklet: +10% moveSpeed
+        p.buffs.add_buff(32, 600); // Slow: strongestMoveSpeedDebuff 0.5
+        p.update(&w, PlayerInput::default());
+        assert!((p.acc_run_speed_value() - 3.0).abs() < 1e-4, "6 * 0.5");
+        assert!((p.move_speed - 0.55).abs() < 1e-4, "1.1 * 0.5");
+        assert!((p.max_run_speed_value() - 1.65).abs() < 1e-4, "3 * 0.55");
+    }
+
+    /// S1-C-12 wave A — the dash granters arm `dashType` per tick and the
+    /// reset clears it when they come off (`ResetEffects` `:18659`).
+    #[test]
+    fn the_dash_accessories_arm_the_dash_type() {
+        // Tabi 977 (`:15050-15053`): type 1.
+        let p = player_with_accessory(977);
+        assert_eq!(p.dash_type, 1);
+        // Shield of Cthulhu 3097 (`:15054-15057`): type 2.
+        let p = player_with_accessory(3097);
+        assert_eq!(p.dash_type, 2);
+        // Master Ninja Gear 984 (`:15062-15067`): type 1 + blackBelt.
+        let p = player_with_accessory(984);
+        assert_eq!(p.dash_type, 1);
+        assert!(p.black_belt);
+        // Taking it off clears the capability on the next tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 977;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.dash_type, 1);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.dash_type, 0);
+    }
+
+    /// S1-C-12 wave A — the dispatch seam's slot gates
+    /// (`IsItemSlotUnlockedAndUsable` `:12579-12604`, the `:12922` accessory
+    /// gate via `UpdateEquips_CanItemGrantBenefits` `:12869-12890`).
+    #[test]
+    fn the_equip_dispatch_gates_the_slots() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Slot 8 needs the Demon Heart flag AND expert mode.
+        p.equipped[8] = 212;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.0).abs() < 1e-4, "locked slot 8");
+        p.extra_accessory = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.move_speed - 1.0).abs() < 1e-4,
+            "classic mode stays locked"
+        );
+        p.buffs.expert_mode = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.1).abs() < 1e-4, "expert + Demon Heart");
+        // Slot 9 needs master mode - unported, always locked.
+        p.equipped[8] = 0;
+        p.equipped[9] = 212;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.0).abs() < 1e-4, "slot 9 locked");
+        // A non-accessory kind in an accessory slot grants nothing (88 =
+        // the Mining Helmet, `headSlot` only). The generic defense loop
+        // still reads it - the slot-typed GrantArmorBenefits gate is a
+        // separate deviation, untouched here.
+        p.equipped[9] = 0;
+        p.equipped[3] = 88;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.0).abs() < 1e-4);
     }
 
     #[test]
@@ -10728,7 +11048,7 @@ mod tests {
     fn dash_overspeed_continuation_gated() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.dash_type = 2;
+        p.pinned_dash = 2;
         p.dash = 2;
         p.dash_delay = -1;
         p.vx = 14.5;

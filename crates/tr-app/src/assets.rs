@@ -1250,7 +1250,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
     // and `TextureAssets.Actuator` the actuator plate drawn on every
     // actuator-carrying tile.
-    for name in ["WiresNew", "Actuator"] {
+    // `TextureAssets.TileCrack` (`Images/TileCracks`, the mining-progress
+    // crack overlay — `Main.DrawTileCracks`, `Main.cs:61533-61626`,
+    // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
+    for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
             images.push(img);
         }
@@ -1543,6 +1546,10 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_299",
     "Glow_300",
     "Glow_325",
+    // The shimmer-vine glowmask (`GetTileDrawData` case 638,
+    // `TileDrawing.cs:6080-6084`) — the vine strip pass draws it over the
+    // segment (`DrawVineStrip`, `:9125-9128`, S1-G-1).
+    "Glow_327",
     "Glow_334",
     "Glow_335",
     // The named single-sheet textures.

@@ -34,7 +34,7 @@ an agent needs before touching code.
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
-| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
+| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (pool + AI arms; the data tables in `projectile/data.rs` — kind consts, `proj_data` rows, yoyo/flail tables, summon consts, `proj_frames`; S1-G-1 split A, re-exported from `projectile`) (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Gores: the pool, `NewGore`, the `Update` walk | `tr-core/src/gore.rs`, `gore_id.rs` (`GoreID.Sets`); the collision seam in `gore_seam.rs` (App); the `gores` fixed-step stage in `app/frame.rs` |
@@ -299,7 +299,9 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
   wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the
-  animator), `npc.rs`, `spawner.rs`, `projectile.rs`,
+  animator), `npc.rs`, `spawner.rs`, `projectile.rs` (+ `projectile/data.rs`, the
+  verbatim data half: kind consts, `proj_data`, the yoyo/flail tables, the summon
+  constants and `proj_frames` — re-exported through `projectile`),
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
