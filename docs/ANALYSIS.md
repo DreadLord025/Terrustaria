@@ -17625,3 +17625,90 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The roller family's aiStyle-39 arm (S1-D-3 aiStyle-39, 2026-11-19)
+
+`crates/tr-app/src/npc_ai_style39.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 39)` block (`NPC.cs:29145-29665`) — the
+GiantTortoise 153, IceTortoise 154, GiantShelly/2 496/497 and SolarSroller
+417 — as a pure `style39_step(npc, world, ctx, players, rng)` over the
+`Style39Context`/`Style39Type` seam. **Code-only mode: no compiler
+invoked; the 13 witness tests are written, not run.** The module is
+UNWIRED — `update_rng`'s style axis and the live
+`npc.rs::update_solar_sroller` are byte-identical; the dispatch claim is
+the wiring follow-up (the same landing shape as the aiStyle-28 round).
+
+**Verdict that forced the module**: the live `update_solar_sroller`
+(`npc.rs:10451-10517`) is APPROXIMATE — it invents a `5 + ai[2]*0.6` roll
+speed and a `60*ai[2]` tick exit, counts the shelly `+0.5` wind-up rate on
+417 (the C# uses `++`, `:29403`), never changes the height (the C#
+collapses 52→32 at `:29414-29416` and restores at `:29638-29640`, both
+feet-planted), writes no damage/knockback, uses `vx*0.05` rotation
+instead of the ±π/10-clamped `vx/10*direction` (`:29632`), and has no
+CanHit launch/aim, cliff probe, step-up probe, justHit reset, wet gates or
+bounce FX. The other four kinds are unported entirely.
+
+**Faithful pieces** (each cited at its site in the module): the head
+step-up probe (`:29161-29202`) is the arm's OWN six-tile column probe —
+NOT `Collision.StepUp` (that writes stepSpeed 1/2, `:59938/:59942`; this
+one writes 0.75/1.5, `:29193/:29197`), with the halfbrick ±8 surface
+offsets and the f64 `<= 16.1` lift gate; the raw `Main.tileSolid`/
+`tileSolidTop` table reads (no `inActive()` conjunct — unlike
+`collision.rs::solid`), `Framing.GetTileSafely`'s fresh-tile fallback
+(`Framing.cs:426-439`); the `justHit && type != 417` reset
+(`:29203-29208`); the cliff probe's f64 FLOAT-half centre
+(`:29288/:29293`) vs the step-up probe's INTEGER half (`:29163`); the
+shelly `&` (non-short-circuit) aggro gates and the state-0 early return
+(`:29341`); the difficulty helpers — `GetAttackDamage_LerpBetweenFinalValues`
+(`:7047-7050`) is `(int)Utils.Remap(difficulty, 1, 2, normal, expert)`
+with the clamped `GetLerpValue` (`Utils.cs:315-348`), and
+`GetKnockbackMultiplier_ScaledByDifficulty` (`:7031-7034`) samples the
+Classic(1)→1 / Master(3)→0.8 `LinearCurve` (`GameDifficultyData.cs:86`,
+the `Sample` operation order `(value-key.input)*num2/num + key.output`
+kept verbatim, `:35-54`); the lunge's double `ai[1]++` on the launch tick
+(`:29439/:29446` — the first flight tick sees 2), the 0.3 spin seed
+applied on BOTH the launch line and the shared tail (`:29445/:29505`),
+the `ai[3]` vx latch with the −0.22 pull and the ×0.8 over-player release
+(`:29480-29493`); the ball's ×0.9 release with NO latch (`:29614-29621`),
+the `ai[2] == 0 || ai[1] >= 1200` exit (`:29622`), and the wet override
+that runs AFTER the unroll's 30-tick exit and wins the same tick
+(`:29659-29663`).
+
+**RNG argument**: the arm DOES draw `Main.rand`, so the fn takes
+`rng: &mut UnifiedRandom` and consumes every arm-level draw in C# order:
+`Next(10) == 0` (`:29212`, the 154 head dust gate), `Next(2, 5)`
+(`:29418`, the ball revolutions), `Next(3) < 2` (`:29424` the 154 lunge
+gate, `:29537` the ball dust gate), and on the bounce FX layer
+(`ai[3] > 0`): per gore ×4 on `ai[3] == 1` the `Next(100)` ×2 offsets +
+`Next(61, 64)` type + `Next(-10, 11)` ×2 nudges (`:29564-29567`, 20
+draws), then `NextFloat()` ×5 per FX tick (`:29573` — the draw runs even
+when `NewDust` refuses the spawn, the C# reads the dust slot either way).
+The witnesses `the_ball_fx_layer_consumes_the_cited_draws` and
+`the_ice_tortoise_gates_consume_their_draws` clone the RNG and replay the
+exact draw sequence. **Documented deviation**: the dust/gore SPAWNS are
+unmodelled (the NPC dust call sites are the outstanding S1-E-1/E-4
+caller coverage, "Dust & gore" above); their pool-internal draws
+(`Dust.cs:116-206`, `Gore.cs:1327-1328`'s `Next(10, 31)` then
+`Next(-20, 21)`) ride the pool's `DustRng` seam when the spawns land —
+the arm-level gates/arguments above are NOT skipped.
+
+**Documented stand-ins and no-ops**: `gfxOffY`/`stepSpeed`/
+`knockBackResist` ride the context (the port's `Npc` has no such fields —
+the same convention as style28); `justHit` rides `ctx.just_hit` (the
+wiring maps `hurt_cd > 0` — a widening: the C# flag lasts one tick,
+cleared at `:90516`); `this.type`/`defDamage`/`defDefense` ride
+`Style39Type` (the `SetDefaults` rows `:10936-10937/:10951-10952/
+:14682-14683/:15360-15361`); the `noGravity = false` write (`:29496`) is
+a cited no-op (all five kinds default `noGravity = false` and no style
+code arms it true); the `position ± netOffset` pairs around the dust
+spawns cancel exactly and only offset the unmodelled spawn positions.
+
+**Caller-owned (the wiring round)**: the position integration + gravity
+(`:90459-90472`), the `gfxOffY` ease-down (`:90396-90419`), the
+`Collision_MoveSolarSroller` bounce pass (`:92736-92757` — `ai[2]--`,
+`ai[3] = 1`, the ×0.9 `oldVelocity` reflection + direction flip while
+`ai[2] > 0`; this is where the ball's revolutions are spent — the AI arm
+only READS `ai[2] == 0`), and `FindFrame`'s style-39 tail (`:77292+`:
+`type != 417` zeroes the rotation, `frameCounter += |vx| * 1.1`, the 6-px
+frame bands). The four unported kinds (153/154/496/497) ride
+`Style39Type` + `size_override` until their `NpcKind`s land.
