@@ -11055,6 +11055,14 @@ impl ProjectilePool {
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
                             }
+                            // S1-D-5 slice B — the higher-id rowed kinds'
+                            // per-type `AI_001` arms (`Projectile.cs:54002-
+                            // 57794`), gated to `projectile_ai001_b`'s own
+                            // kind list ONLY: every other kind keeps the
+                            // generic `ai_arrow` flight byte-identical.
+                            kind if crate::projectile_ai001_b::covers(kind) => {
+                                crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
