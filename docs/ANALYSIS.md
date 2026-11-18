@@ -16296,12 +16296,15 @@ Deviations:
 
 - **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
   (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
-  through the layer targets; the port's `CaptureRenderer` trait is a no-op
-  stub until the render-target family lands, so a started capture drains
-  its queue without producing pixels. The selection state machine, the
-  countdown and the `IsCapturing` metrics gate are live (the selection
-  UI's sprite draw is NOT — see the bullet above); the write-out waits on
-  the targets.
+  through the layer targets; the render-target FAMILY now exists
+  (`tr_render::RenderTargetFamily`, `App.targets` — S1-G-13, ANALYSIS
+  "The render-target family (S1-G-13)"), but the chunk render through it
+  is not wired: the port's `CaptureRenderer` trait is still a no-op
+  stub, so a started capture drains its queue without producing pixels.
+  The selection state machine, the countdown and the `IsCapturing`
+  metrics gate are live (the selection UI's sprite draw is NOT — see the
+  bullet above); the write-out waits on the per-layer render callbacks +
+  `DrawCapture`.
 - **The capture toggle rides F6, not F4.** The vanilla binds
   `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
   debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
@@ -16313,6 +16316,91 @@ Deviations:
   takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
 - **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
   the toolbar's open-folder button plays its cue only.
+
+## The render-target family (S1-G-13, 2026-11-18)
+
+`crates/tr-render/src/targets.rs` ports the render-target FAMILY
+infrastructure — the seam `Main.DrawCapture` and the per-layer offscreen
+caching wait on. What landed, 1:1:
+
+- **`InitTargets`' size math** (`Main.cs:58167-58181`,
+  `init_target_layout`): `val = MaxWorldViewSize.X` (1920, `:677-681` /
+  `:66714`) clamps BOTH axes (`:58173-58174` — the C# uses `.X` for the
+  height clamp too); `SupportWideScreen && HiDef` raises it to 4096
+  (`:58169-58172`); `offScreenRange` starts at 192 and shrinks to
+  `(_renderTargetMaxSize - num) / 2` (C# int division) when the padded
+  width would overflow (`:58176-58179`). `_renderTargetMaxSize` is 4096
+  HiDef / 2048 Reach (`SetGraphicsProfileInternal`, `:3708-3718`).
+- **All ten targets in creation order** (`:58187-58196`,
+  `RenderTargetFamily::init`): the seven world-space
+  `WorldSceneLayerTarget`s (water, backWater, tile, tile2, wall,
+  background, backgroundSwap — `Main.cs:765-777`) at the padded size,
+  then skyTarget / screenTarget / screenTargetSwap at the raw backbuffer
+  size (`:781-785`). `ReleaseTargets` (`:58093-58150`) is Rust `Drop`;
+  `EnsureRenderTargetContent` (`:58152-58158`) is
+  `RenderTargetFamily::ensure` — called at the draw head
+  (`frame/draw.rs`, the `Main.Draw` wrapper's first step, `:61644`).
+- **`WorldSceneLayerTarget`** (`Graphics/WorldSceneLayerTarget.cs:7-70`):
+  `UpdateContent` (`:43-64`) computes the camera override (screen size =
+  target − 2·offScreenRange, position = `Utils.Round(center − size/2)` —
+  banker's rounding, `Utils.cs:112-115` — zoom = 1), clears the target
+  transparent and records `_position = screenPosition − (osr, osr)`
+  (`:57`); `IsPartiallyOffscreen` (`:17-34`) with the zero-position quirk
+  (a never-rendered layer counts as offscreen) and the strict `>`
+  margin test on both axes.
+- **`RenderToTargets` scheduling** (`Main.cs:57277-57327`,
+  `render_to_targets_plan`): the `renderCount` phase arms (1 → water;
+  2 → backWater + backgroundSwap + the pending flag; 3 → wall + tile +
+  tile2; the count is driven by the lighting engine,
+  `LightingEngine.cs:90-103`), then the fixed partial-offscreen re-render
+  order tile → tile2 → backWater → background (apply the pending swap,
+  RE-CHECK, then maybe re-render — `:57311-57318`) → wall → water. The
+  unreachable `renderNow` arms of the else-if chain are ported verbatim.
+- **`ApplyPendingBackgroundTargetSwap`** (`:58047-58054`): the
+  `Utils.Swap` + flag clear; the phase-2 arm sets the flag (`:57291`).
+- **The skyTarget gate** (`:62021-62027`, `sky_target_active`):
+  `(CanCapture || ForegroundSunlightEffects) && !drawToScreen &&
+  !mapFullscreen && !onlyDrawFancyUI && Lighting.NotRetro`.
+- **The `drawToScreen`/`targetSet` transition** (`:61751-61766`,
+  `target_transition`): Release on leaving the target path, Init on
+  entering, Keep otherwise.
+
+Deviations / scope (deliberate):
+
+- **No draw pass consumes the layers yet.** The frame path is unchanged:
+  the port keeps its single G6-cached world range + the
+  `render_world_fx` screen ping-pong (`sprite.rs`), and the family is
+  allocated but not rendered into by the world passes. The per-layer
+  render callbacks (`RenderTiles`/`RenderWallsAndBlacks`/`RenderWater`/
+  `RenderBackground*`, `Main.cs:57329-58091`), the skyTarget bind in the
+  sky pass (`:62025`) and the composite draws (`:63333`, `:62213`,
+  `:62196`, `:62308`) are the follow-up half of S1-G-13 — moving the
+  existing passes onto the layers is a draw-pass-order change and needs
+  its own A/B (the draw-pass order is frozen this round). The G6
+  `WorldFrameKey` is untouched.
+- **`IsContentLost` has no wgpu equivalent** — device loss recreates
+  everything; `ensure` re-inits on absence or backbuffer-size change
+  (the null-check half of `:58154`).
+- **The `InitTargets` catch arm** (`:58203-58215`: fall back to Retro
+  lighting + map off on allocation failure) is not ported — wgpu texture
+  creation aborts the process on failure instead of throwing.
+- **`Lighting.UpdateEveryFrame`** (`Lighting.cs:77-86`) is not yet a
+  live input: the port always runs the cached path, so
+  `target_transition` is ported + tested but the frame only ever takes
+  the Init/Keep arms. The Retro/UpdateEveryFrame drawToScreen branch
+  stays the research/02 deviation.
+- **The capture seam stays a stub** (`app/capture_driver.rs`'s
+  `PendingCaptureRenderer`): the family exists, but `Main.DrawCapture`
+  (`:56673-57066`) rendering chunks through it is the consumer half —
+  documented in "The loading screen + capture mode" above.
+
+Tests: 17 in `targets.rs` — the layout math (1080p HiDef/Reach, small
+window, the X-cap-on-both-axes clamp, wide-HiDef), `IsPartiallyOffscreen`
+(zero position, strict boundary, per-axis), the banker's camera override,
+the phase arms + offscreen order + swap-cancel, the sky gate's six
+inputs, the transition arms, and four headless-GPU tests (family sizes,
+update_content position/clear readback, the background swap exchange,
+ensure's size-change re-init).
 
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 
