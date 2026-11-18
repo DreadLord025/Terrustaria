@@ -14737,6 +14737,48 @@ Deviations:
   flag is a single tick, the port's window is the timer the other arms
   use for the same purpose (the port's convention, documented in the
   Goblin Archer's arm).
+* **The sound cues are SKIPPED** (the retreat's roar `SoundID 3`/`15`,
+  `:32408`/`:32418`, and the teleport's `Item8`, `:32505`/`:32622`) —
+  the arm carries no audio seam (the port's convention for the boss
+  machines; the S1-D-3e audit, 2026-11-18).
+* **The `getGoodWorld` arms fold to the classic values** — the normal
+  drift's 3-px speed (`:32538-32541`), the 40-Creeper swarm
+  (`GetBrainOfCthuluCreepersCount`, `:50936-50943`) and the
+  `brainOfGravity` write (`:32402-32405`) are the for-the-worthy
+  branches; the port's boss arms run constants-off (no difficulty
+  flags), so the classic 1-px drift and the 20-Creeper swarm stand.
+
+**Audit (2026-11-18, `task/S1-D-3-aistyle54`, code-only mode).** A
+line-by-line re-read of the whole `AI_054` block against `update_brain`
+confirmed the machine (the swarm init/shield/count seam, the 50/51
+retreat blend, the `60 + Next(120)` / `120 + Next(300)` timers re-rolled
+every tick, the 10-12 / 12-40 tile picks with the sign rolls, the
+velocity lead, the try-101 acceptance and the sight gate after the 75th
+try, the ±25 / ±5 fades, the despawn ramp). Two real defects were fixed
+surgically:
+
+1. **The 6000-px Manhattan despawn gate was missing** (`:32387-32399`:
+   `Math.Abs(center.X - player.Center.X) + Math.Abs(center.Y -
+   player.Center.Y) > 6000f` → `active = false`, `life = 0`). The arm
+   now deactivates (`hp = 0`) before any machine tick; the boundary is
+   the C#'s strict `>` (exactly 6000 lives). The generic `tick_despawn`
+   pass does not cover it — its only writer is the aiStyle-4 arm.
+2. **The normal drift's f32 order** (`:32549-32551`): the C# computes
+   the reciprocal first (`num816 = num817 / num816`) and then multiplies
+   (`delta * num816`); the port ran `dx / d * speed`, which rounds one
+   ulp away on some inputs. Witness: dx = 100, dy = 72 → the
+   reciprocal-first product is `0.8115344`, the divide-first
+   `0.81153435`. The arm now scales by the reciprocal.
+
+Witness tests WRITTEN, NOT RUN (code-only mode — no compiler invoked):
+`s1_d_3e_tests::{s1_d_3e_audit_the_brain_despawns_beyond_6000_manhattan_px,
+s1_d_3e_audit_the_normal_drift_scales_by_the_reciprocal}`. The RNG
+argument: the fixes add no draws (the despawn gate returns before any
+roll; the reciprocal reorders arithmetic only), so the `UpdateNpcs`
+stream order is unchanged — the per-tick draw sequence stays
+`Next(300)` → (on fire) the pick's `Next(12,41)`×2 + `Next(2)`×2 per
+try, and the retreat's optional `Next(5)` → `Next(120)` → the pick's
+`Next(10,13)`×2 + `Next(2)`×2.
 
 ## The Skeletron head's machine (S1-D-3f, 2026-11-14)
 
