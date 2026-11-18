@@ -4731,6 +4731,84 @@ reordered: the new arms are pure reads/writes. Acceptance:
 stickiness + frame +3, the latched sphere's `ai[3] = 1`, and the loot-seam
 `Cond::RedHatSkeletron` reachability for 36/32.
 
+### The caster aiStyle-8 re-port (S1-D-3, code-only mode)
+
+The 2026-11-19 aiStyle-7 round's FIRST CHECK corrected the task identity:
+the brief's "aiStyle 7 caster family (52 types)" inherits the ROADMAP
+parent row's mislabel — the C# dispatch is `aiStyle == 7 →
+AI_007_TownEntities` (the town-NPC family, `NPC.cs:20812-20815`, owned by
+sibling `task/S1-D-3-town-ai`) and `aiStyle == 8 → the caster arm`
+(`:20817-21376`, 13 `SetDefaults` types). With the Lead's confirmation the
+round re-ported the CASTER arm to `crates/tr-app/src/npc_ai_caster.rs`
+(`caster_ai` + the `CasterEnv` seam + the `CasterShot` drain enum), landed
+UNWIRED (the d6bc30ed bat precedent) — **code-only mode: no compiler
+invoked; the 13 witness tests are written, not run.**
+
+Escape-clause audit of the live `npc_ai.rs::caster_cycle` (research/25
+claimed "near-1:1", two flagged deviations) — the line-by-line read found
+a larger defect catalogue:
+
+* **Instant teleport** — the live arm snaps the position inside the 650
+  block; the C# writes the destination to `ai[2]/ai[3]` (`:21101-21103`)
+  and the position snap happens NEXT tick in the `:20855-20930` arrival
+  block: the netOffset bracket, the two 50-dust bursts, the INTEGER
+  `(float)(width / 2)` half-width, `netOffset *= 0`, velocity zero, the
+  ai[2]/ai[3] clear.
+* **`flag5` constant-on** — the real `AI_GlobalFiringDistanceCheck`
+  (`:55835-55841`: the 1920×1200 `Main.MaxWorldViewSize` Point-centred
+  rect, `Utils.cs:952-955` integer halving, inflated −50, half-open
+  `Contains` on the shooter's truncated Point) was never computed; only
+  type 29 is exempt (`:21007-21010`).
+* **Missing `flag4` half-speed gate** (`:21061-21068`) — the red-hat
+  caster's extra `ai[0]++` + odd snap-back freezes the cycle on even
+  values; the live arm ran full speed. The `getGoodWorld && type == 24 &&
+  AnyNPCs(113)` double-increment (`:21053-21060`) was missing too.
+* **No `TargetClosest`** — the live arm wrote facing ad hoc; the new
+  module rides `npc_target::target_closest` (S1-D-3p, `:20829`).
+* **Teleport-search semantics** (`AI_AttemptToFindTeleportSpot`
+  `:18937-19007`): the live port scanned the whole column; the C#
+  `break`s after the FIRST candidate that passes floor+body even when
+  telefrag rejects it (`:19003`). Missing: the >2000-px Manhattan bail
+  (`:18944`, ZERO draws), the dungeon-wall gate for 32/281-286/693 with
+  the `AnyNPCs(35)` fallback and its ELSE-IF lava quirk (`:18960-18970` —
+  the gate branch skips the lava check), the multi-player telefrag union
+  with the `(int)(velocity * 20)` extrapolation (`:18982-18997`), and
+  `Collision.SolidTiles`' bounds-as-solid + `!tileSolidTop` semantics
+  (`Collision.cs:3455-3488` — platforms do not block the body space).
+* **The Djinn volley skipped wholesale** (S1-E-5's documented skip) —
+  but its tile-search draws are ARM-level `Main.rand` and must be
+  preserved: the `% 30 == 0 && / 30 < 5` window fires at ai[1] =
+  120/90/60/30/0 AFTER the decrement (`:21117-21119`), 2 draws per
+  iteration (`:21140-21141`, X then Y), ≤50 iterations, early exit; the
+  >2000-px length gate (`:21133`) and netMode 1 draw nothing. The 596
+  curse now rides `CasterShot::Curse` for the wiring round.
+* **Missing ambient gate draws** — `Next(5)` (29/45, `:21282`), `Next(3)`
+  (32, `:21292`), `Next(6)` (the else group, `:21366`) every tick; 533
+  draws none (light only, `:21358-21361`).
+* **Missing `netUpdate` writes** (`:21016`-style trigger marks, `:21105`
+  even on a failed search) and the invented inline gravity integration —
+  the C# arm RETURNS at `:21375`; the generic `UpdateNPC` tail is the
+  caller's.
+
+RNG by construction (the module header enumerates every draw): the
+arrival bursts draw exactly 100 `Next(1, 3)` for 29/45 (the scale
+ARGUMENT — drawn even when `NewDust` culls), 0 for the other types; the
+search draws 2/attempt; the volley 2/iteration; the ambient tail 1/tick
+(0 for 533). The `NewDust` internals and the `AddLight`/`PlaySound` calls
+are the dust/light/sound tasks' documented skips (S1-E-1/S1-E-5), as in
+every unwired AI module. The witness tests pin each count with the
+five-probe stream-position method (written, NOT run).
+
+Deviations kept: the 172/281-286/693 branches are cited skips (their
+kinds are unported — the alpha ramp, the aimed skeleton shots with
+`GetAttackDamage_ForProjectiles` `:7052-7055`, the book teleport
+`:19009-19085` and the book shot `AI_FindNearbyBook` `:62308-62364` land
+with them); Tim's 665 spawn rides its own `npc_type` in `CasterShot` (the
+live arm folds it into `ChaosBall` — the wiring decides); the wiring
+round must also supply `player_velocities` (the telefrag union) and the
+`any_skeletron`/`any_npcs_113`/`get_good_world` flags. The live
+`caster_cycle` keeps running byte-identical until then.
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
