@@ -16147,6 +16147,15 @@ plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
 - `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
   (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
   F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
+  preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
+  60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
+  worker thread, so the shot is SHA256-stable; `update_world_load` only
+  re-latches the snapshot while a job is live (a job-less frame keeps the
+  preset's). Baseline `docs/screenshots/s1-e-17-worldload.png`,
+  `TR_SHOT` + `TR_UI=worldload` + `TR_NAME=ShotPin` + `TR_DEBUG=0` +
+  `TR_DAY=1.0`, two runs SHA256-equal
+  (`8f308c82c27b29ad523dfd2baa48dedb5887f55d6514ce1967e6c0e316496b9a`).
 
 ### The capture mode (S1-E-17)
 

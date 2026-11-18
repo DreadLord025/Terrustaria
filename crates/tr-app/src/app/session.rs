@@ -214,17 +214,22 @@ impl App {
             self.enter_front(FrontScreen::WorldSelect);
             return;
         }
-        // Still generating: latch the snapshot + the layout lerp.
+        // Still generating: latch the snapshot + the layout lerp. With no
+        // job (the `TR_UI=worldload` screenshot preset) the latched snapshot
+        // stays — the C# reads the live `CurrentGenerationProgress` static,
+        // which the preset stands in for.
         let snap = self.world_gen_job.as_ref().map(|j| j.snapshot());
         let aborted = self.world_gen_job.as_ref().is_some_and(|j| j.queued_abort());
         if let Some(FrontScreen::WorldLoad(state)) = self.front.as_mut() {
             state.update_layout(sh);
-            state.queued_abort = aborted;
-            state.set_progress(snap.map(|s| ui::world_load::GenerationProgress {
-                total_progress: s.total_progress,
-                value: s.value,
-                message: s.message,
-            }));
+            if let Some(snap) = snap {
+                state.queued_abort = aborted;
+                state.set_progress(Some(ui::world_load::GenerationProgress {
+                    total_progress: snap.total_progress,
+                    value: snap.value,
+                    message: snap.message,
+                }));
+            }
         }
     }
 }
