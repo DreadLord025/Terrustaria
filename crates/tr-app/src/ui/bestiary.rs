@@ -490,7 +490,11 @@ fn draw_portrait(
     // itself comes back through `entry_sheet` (the same derivation, the
     // bounds-checked form), so the index is not read again here.
     let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, lookups);
-    let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
+    // `UpdatePosition` (`UnlockableNPCEntryIcon.cs:112-123`) centres the icon
+    // when `_npcCache.noGravity` is set, else bottom-anchors it. The cache runs
+    // `SetDefaults` only, so the floater set is the generated `NO_GRAVITY`
+    // table (NPC.cs SetDefaults type/aiStyle blocks) — not a hand-picked pair.
+    let floats = super::bestiary_draw_offsets::no_gravity(entry.net_id);
                                                            // The NPC cache keeps its `SetDefaults` box even with a custom texture
                                                            // — `UpdatePosition` anchors on it, not on the portrait's size.
     let ([x, y], scale, frame) = portrait_layout(entry.net_id, floats, w, h, iconbox, is_portrait);
@@ -1704,15 +1708,22 @@ mod tests {
     #[test]
     fn the_eye_of_cthulhu_icon_uses_frame_4() {
         // EoC (4): `Position (25, -30)`, `Rotation 0.7`, `Frame 4`
-        // (`NPCID.cs:1281-1289`) — `frame.Y = frame.Height * 4`
-        // (`UnlockableNPCEntryIcon.cs:105-109`).
+        // (`NPCID.cs:1281-1289`) - `frame.Y = frame.Height * 4`
+        // (`UnlockableNPCEntryIcon.cs:105-109`). EoC sets `noGravity = true`
+        // (`NPC.cs:8714`), so the icon CENTRES (`UpdatePosition`, `:112-118`).
         let iconbox = [100.0, 100.0, 68.0, 68.0];
-        let ([x, y], scale, frame) = portrait_layout(4, false, 100.0, 110.0, iconbox, false);
+        let ([x, y], scale, frame) = portrait_layout(4, true, 100.0, 110.0, iconbox, false);
         assert_eq!(frame, 4);
         assert_eq!(scale, 1.0);
-        // Bottom anchor + offset, floored (`UpdatePosition`, `:120-122`):
-        // x = 100 + 34 - 50 + 25 = 109; y = 100 + 68 - 110 - 8 - 30 = 20.
-        assert_eq!([x, y], [109.0, 20.0]);
+        // Centred anchor + offset, floored (`UpdatePosition`, `:112-122`):
+        // x = 100 + (68-100)/2 + 25 = 109; y = 100 + (68-110)/2 - 30 = 49.
+        assert_eq!([x, y], [109.0, 49.0]);
+        // The generated NO_GRAVITY table carries EoC (and the towers/MoonLord).
+        assert!(super::super::bestiary_draw_offsets::no_gravity(4));
+        assert!(super::super::bestiary_draw_offsets::no_gravity(398));
+        assert!(super::super::bestiary_draw_offsets::no_gravity(422));
+        // Demon Eye (2) does NOT set noGravity in SetDefaults -> bottom-anchor.
+        assert!(!super::super::bestiary_draw_offsets::no_gravity(2));
     }
 
     #[test]

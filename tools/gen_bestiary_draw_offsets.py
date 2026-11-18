@@ -209,10 +209,77 @@ def main():
         "        .binary_search_by_key(&net_id, |(id, _)| *id)\n"
         "        .ok()\n"
         "        .map(|i| &DRAW_OFFSETS[i].1)\n"
-        "}\n"
+        "}\n\n"
+        + no_gravity_table()
     )
     OUT.write_text(out, encoding="utf-8", newline="\n")
     print(f"wrote {OUT} ({len(rows)} rows)")
+
+
+def no_gravity_table():
+    """The `NPC.noGravity` set from `NPC.SetDefaults` (Terraria 1.4.5.8).
+
+    `UnlockableNPCEntryIcon.UpdatePosition` (`UnlockableNPCEntryIcon.cs:112-123`)
+    centres the icon when `_npcCache.noGravity` is set, else bottom-anchors it.
+    The cache runs `SetDefaults` only (no AI), so the floater set is exactly the
+    types whose `SetDefaults` type-block OR shared aiStyle-block sets
+    `this.noGravity = true`. Parsed from `decompiled/Terraria/NPC.cs` by
+    brace-matching each `(this.type == N)` / `(this.aiStyle == N)` block; a type
+    inherits its aiStyle's flag when its own block does not set one.
+    """
+    npc_src = (ROOT / "decompiled" / "Terraria" / "NPC.cs").read_text(encoding="utf-8")
+
+    def blocks(pat):
+        out = {}
+        for m in re.finditer(pat, npc_src):
+            key = int(m.group(1))
+            j = npc_src.index("{", m.start())
+            d = 0
+            k = j
+            while k < len(npc_src):
+                if npc_src[k] == "{":
+                    d += 1
+                elif npc_src[k] == "}":
+                    d -= 1
+                    if d == 0:
+                        break
+                k += 1
+            out.setdefault(key, []).append(npc_src[j + 1 : k])
+        return out
+
+    type_blocks = blocks(r"(?:else )?if \(this\.type == (\d+)\)\s*\{")
+    ai_blocks = blocks(r"if \(this\.aiStyle == (\d+)\)\s*\{")
+    type_ai = {}
+    for t, bodies in type_blocks.items():
+        for b in bodies:
+            m = re.search(r"this\.aiStyle = (\d+);", b)
+            if m:
+                type_ai[t] = int(m.group(1))
+    # Only the SetDefaults stats aiStyle blocks (carry base.width), not the AI
+    # dispatch ones.
+    ng_ai = set(
+        a
+        for a, bodies in ai_blocks.items()
+        if any("this.noGravity = true" in b and "base.width" in b for b in bodies)
+    )
+    ng = set()
+    for t, bodies in type_blocks.items():
+        if any("this.noGravity = true" in b for b in bodies):
+            ng.add(t)
+        elif type_ai.get(t) in ng_ai:
+            ng.add(t)
+    rows = ", ".join(str(t) for t in sorted(ng))
+    return (
+        "/// The `NPC.noGravity` set from `NPC.SetDefaults` (NPC.cs): the types\n"
+        "/// whose type-block or shared aiStyle-block sets `noGravity = true`.\n"
+        "/// `UnlockableNPCEntryIcon.UpdatePosition` (`:112-123`) centres these\n"
+        "/// (floaters) and bottom-anchors the rest. GENERATED — do not hand-edit.\n"
+        f"pub static NO_GRAVITY: &[i32] = &[{rows}];\n\n"
+        "/// Whether the bestiary icon for this net id floats (centred anchor).\n"
+        "pub fn no_gravity(net_id: i32) -> bool {\n"
+        "    NO_GRAVITY.binary_search(&net_id).is_ok()\n"
+        "}\n"
+    )
 
 
 if __name__ == "__main__":
