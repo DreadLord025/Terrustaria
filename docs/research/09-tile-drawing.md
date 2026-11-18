@@ -193,6 +193,13 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 5. **Chest frame rewrite missing** — `behavioural`. `Main.chest[i].frame` (+0/+38/+76,
    `tileHeight=18`) never reaches the source rect, so opening chests do not animate and the
    bottom row is 16 px tall instead of 18. **Not admitted in ROADMAP.**
+   **S1-F-9 wave C update (2026-11-18)**: the rewrite itself is ported
+   (`drawdata_furniture.rs::chest_draw_rewrite`, per-case tests); what remains is the
+   wiring — an open-frame field on the chest state and the `tiles.rs` call after the
+   campfire epilogue (deferred to the S1-F-9 merge; waves A/B own `drawdata.rs`/`tiles.rs`).
+   The cage-frame draw rewrites (deviation 4's furniture slice) are likewise ported in
+   `drawdata_furniture.rs::cage_draw_data` with the `Main.*CageFrame` tables as a lookup;
+   only the cage animator (`Main.AnimateTiles_CritterCages`) is still missing.
 6. **Platforms: martian-conduit glow rows (frameY/18 == 26/27) and slope side-fill quads
    missing** — `pixel`. `SET_PLATFORMS` is generated but unused by the renderer. **Not
    admitted.**

@@ -11,6 +11,7 @@ pub mod bestiary;
 pub mod binio;
 pub mod damage;
 pub mod drawdata;
+pub mod drawdata_furniture;
 pub mod dd2;
 pub mod dust_table;
 pub mod edit;
