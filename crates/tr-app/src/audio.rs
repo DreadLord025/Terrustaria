@@ -34,6 +34,7 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Tink_2", 21),
     ("Coins", 18),
     ("Item_27", 2),
+    ("Item_30", 2),
     ("Item_48", 2),
     ("Item_49", 2),
     ("Item_50", 2),
@@ -831,27 +832,96 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        if let Some(prepared) = self.prepare(name, x, y, volume_scale, pitch) {
-            if let Some(handle) = &self.handle {
-                if let Ok(sink) = rodio::Sink::try_new(handle) {
-                    let (left, right) = sound::pan_gains(prepared.pan);
-                    let buf = rodio::buffer::SamplesBuffer::new(
-                        prepared.channels,
-                        prepared.rate,
-                        prepared.samples,
-                    )
-                    .convert_samples::<f32>();
-                    sink.append(Panned {
-                        inner: buf,
-                        channels: prepared.channels,
-                        left: prepared.volume * left,
-                        right: prepared.volume * right,
-                        channel: 0,
-                    });
-                }
-            }
-        }
+        self.emit(name, x, y, volume_scale, pitch);
         Some(name)
+    }
+
+    /// The shared output tail of the pitched play paths: prepare (attenuate +
+    /// resample for the pitch) and append one panned source to a fresh sink.
+    /// Headless (no output device) this is a no-op past `prepare`.
+    fn emit(&self, name: &str, x: f32, y: f32, volume_scale: f32, pitch: f32) {
+        let Some(prepared) = self.prepare(name, x, y, volume_scale, pitch) else {
+            return;
+        };
+        let Some(handle) = &self.handle else { return };
+        let Ok(sink) = rodio::Sink::try_new(handle) else { return };
+        let (left, right) = sound::pan_gains(prepared.pan);
+        let buf = rodio::buffer::SamplesBuffer::new(
+            prepared.channels,
+            prepared.rate,
+            prepared.samples,
+        )
+        .convert_samples::<f32>();
+        sink.append(Panned {
+            inner: buf,
+            channels: prepared.channels,
+            left: prepared.volume * left,
+            right: prepared.volume * right,
+            channel: 0,
+        });
+    }
+
+    /// S1-E-21 wave B — one tile/wall-placement cue
+    /// (`tr_core::edit::place_tile_sound`, the `WorldGen.PlaceTile` tail
+    /// switch `WorldGen.cs:60263-60282`; `PlaceObject` `:51441`,
+    /// `PlaceThing_Tiles_PlaceIt` `Player.cs:40124` and `PlaceWall` `:75141`
+    /// play the plain 0).
+    ///
+    /// The `SoundID.Item30`/`Item52` arms are style plays — the same façade
+    /// as wave A (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on
+    /// the audio-only `sound_style_random`, then case 2's `Main.rand` pitch
+    /// roll after the attenuation gate; style 52's ×0.35 volume,
+    /// `LegacySoundPlayer.cs:567-569`). The 18/0 arms are the int overload
+    /// (`SoundEngine.cs:102-108` — NO `GetRandomPitch` draw): case 18
+    /// (`:865-869`) plays `Coins` with no draws and no pitch; case 0
+    /// (`:440-452`) draws `Main.rand.Next(3)` for the Dig variation and
+    /// `Next(-10, 11) * 0.01` for the pitch — both ride the caller's stream
+    /// (placement runs from `Player.ItemCheck`/`PlaceThing` under the
+    /// `Main.cs:17754` `UpdatePlayers` swap, the `break_tile` precedent) and
+    /// only AFTER the attenuation gate passed (`:369-436` precedes the
+    /// switch). Returns the cue played; `None` when the gate refused. The
+    /// `SoundInstanceDig` stop/re-create pool is the standing D4 deviation.
+    pub fn play_place_sound(
+        &mut self,
+        (id, style): tr_core::edit::SoundCue,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if id == 2 {
+            let idx = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 2 && s.style == i32::from(style))?;
+            return self.play_use_sound(idx as u16, x, y, 0.0, rng);
+        }
+        if id != 0 && id != 18 {
+            return None;
+        }
+        // The attenuation gate first — the int overload draws nothing before
+        // the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(u32::from(id), x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (cue, pitch) = if id == 0 {
+            // Case 0 (`:442`/:450): the variation pick, then the pitch roll.
+            let variation = rng.next_range(0, 3);
+            let pitch =
+                sound::legacy_family_pitch(sound::Family::Dig, &mut |lo, hi| rng.next_range(lo, hi));
+            (
+                match variation {
+                    0 => "Dig_0",
+                    1 => "Dig_1",
+                    _ => "Dig_2",
+                },
+                pitch,
+            )
+        } else {
+            // Case 18 (`:865-869`): Volume/Pan only — no pitch, no draws.
+            ("Coins", 0.0)
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
@@ -2238,6 +2308,70 @@ mod tests {
         assert_eq!(sound_type("deerclops_hit_0"), 42);
         for name in ["dd2_goblin_hurt_0", "deerclops_hit_0", "deerclops_death"] {
             assert!(NPC_CUSTOM_CUES.contains(&name), "{name} in the custom list");
+        }
+    }
+
+    /// S1-E-21 wave B — the tile-place play's RNG contract: the case-0
+    /// `Main.rand.Next(3)` variation pick + `Next(-10, 11) * 0.01` pitch
+    /// (`LegacySoundPlayer.cs:442-450`) ride the caller's stream (the
+    /// `UpdatePlayers` swap at the placement sites) in that order; the
+    /// Coins case (`:865-869`) draws NOTHING; a muted play draws nothing
+    /// (the C# returns at `:433-436` before the switch).
+    #[test]
+    fn s1_e_21b_the_dig_variation_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _pitch = witness.next_range(-10, 11) as f32 * 0.01;
+        let cue = audio.play_place_sound((0, 1), 0.0, 0.0, &mut rng);
+        let want = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        assert_eq!(cue, Some(want), "the Next(3) pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // Coins (case 18) draws nothing — no pitch, no variation.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let cue = audio.play_place_sound((18, 1), 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Coins"));
+        assert_eq!(rng.peek(), peek, "the Coins play consumes no draw");
+        // The style arms (127 → Item30, 314 → Item52) ride wave A's case-2
+        // path: one Next(-6, 7) pitch draw after the gate, plus the
+        // GetRandomPitch NextFloat on the audio-only stream.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_place_sound((2, 30), 0.0, 0.0, &mut rng),
+            Some("Item_30")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 gameplay draw");
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_place_sound((2, 52), 0.0, 0.0, &mut rng),
+            Some("Item_52")
+        );
+        assert_eq!(rng.peek(), witness.peek());
+        // Muted (soundVolume 0): every arm draws NOTHING from the gameplay
+        // stream — the gate precedes the switch (`:433-436`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for cue_id in [(0u16, 1u16), (18, 1), (2, 30), (2, 52)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_place_sound(cue_id, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "{cue_id:?}: the muted play is draw-free");
+        }
+        // Every placement cue resolves to a registered bank asset.
+        for name in ["Dig_0", "Dig_1", "Dig_2", "Coins", "Item_30", "Item_52"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
     }
 

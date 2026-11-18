@@ -2073,6 +2073,23 @@ pub struct KillSounds {
     pub shatter: Option<SoundCue>,
 }
 
+/// `WorldGen.PlaceTile`'s tail sound switch (`WorldGen.cs:60263-60282`,
+/// S1-E-21 wave B): 127 → `SoundID.Item30` (`SoundID.cs:1413`), 314 →
+/// `SoundID.Item52` (`:1435`), 330-333 → the legacy id 18 (Coins), the
+/// default → the legacy id 0 (Dig). The `TileObject`-routed placements play
+/// the plain 0 instead (`Player.cs:40124`, `WorldGen.PlaceObject` `:51441`);
+/// none of the special kinds above is a `CustomPlace` kind (the registry's
+/// `BY_KIND` has no def for them), so this switch covers both routes.
+/// `WorldGen.PlaceWall` plays the 0 as well (`:75141`).
+pub fn place_tile_sound(kind: u16) -> SoundCue {
+    match kind {
+        127 => (2, 30),
+        314 => (2, 52),
+        330..=333 => (18, 1),
+        _ => (0, 1),
+    }
+}
+
 /// `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)`
 /// (`WorldGen.cs:66427-66575`) for the hit cell's `kind`/`frame_x`. `fail`
 /// mirrors the C# argument (`false` on the real break, `true` from the
