@@ -45,7 +45,7 @@ pub const BAR_WIDTH: f32 = 36.0;
 /// `TextureAssets.Hb1.Height()` (`Main.cs:21988`).
 pub const BAR_HEIGHT: f32 = 12.0;
 /// `float num3 = 10f` (`Main.cs:45913`) — the gap under the hitbox for
-/// `HealthBarDrawSettings == 1` (`Main.cs:46018`).
+/// `HealthBarDrawSettings == 1` (`Main.cs:46021-46024`).
 pub const BAR_GAP: f32 = 10.0;
 
 /// `Rectangle` as the C# passes it (`location` — the NPC hitbox).
@@ -301,7 +301,7 @@ pub fn damage_text_color(crit: bool, friendly: bool, from_net: bool) -> [u8; 4] 
 /// `Main.DrawHealthBar`'s fill geometry (`Main.cs:21915-21921`, `:21972-21975`):
 /// width `(int)(36f * ratio)` clamped to at least 3, height
 /// `TextureAssets.Hb1.Height()`, anchored `X - 18 * scale` under the hitbox
-/// (`Main.cs:46018`).
+/// (`Main.cs:46024`).
 pub fn bar_rect(hitbox: Rect, ratio: f32) -> Rect {
     let ratio = ratio.clamp(0.0, 1.0); // `Main.cs:21916-21919`
     // `int num2 = (int)(36f * num)` (`Main.cs:21920`) — the truncating cast.
@@ -312,7 +312,7 @@ pub fn bar_rect(hitbox: Rect, ratio: f32) -> Rect {
     }
     Rect {
         // `float num3 = X - 18f * scale` (`Main.cs:21921`), `X` is the box
-        // centre-X and `Y` its bottom + 10 (`Main.cs:46018`).
+        // centre-X and `Y` its bottom + 10 (`Main.cs:46024`).
         x: hitbox.x + hitbox.width * 0.5 - 18.0,
         y: hitbox.y + hitbox.height + BAR_GAP,
         width: width as f32,
@@ -322,7 +322,8 @@ pub fn bar_rect(hitbox: Rect, ratio: f32) -> Rect {
 
 /// The `life != lifeMax && ShowLife` gate (`Main.cs:45835`) with the
 /// `Health <= 0` early return (`Main.cs:21911-21914`). `ShowLife` defaults to
-/// true (`NPC.cs:66668`'s `HealthBarDrawSettings = 1`).
+/// true (`NPC.cs:6832-6842`; the pass-level gate lives in
+/// `render::entities::npc_shows_health_bar`).
 pub fn health_bar_rect(hitbox: Rect, life: i32, life_max: i32) -> Option<Rect> {
     // `if (Health <= 0) return;` (`Main.cs:21911-21914`) and
     // `life != lifeMax` (`Main.cs:45835`).
@@ -330,6 +331,38 @@ pub fn health_bar_rect(hitbox: Rect, life: i32, life_max: i32) -> Option<Rect> {
         return None;
     }
     Some(bar_rect(hitbox, life as f32 / life_max as f32))
+}
+
+/// One `Main.DrawHealthBar` slice (`Main.cs:21976-21998`), in the C# draw
+/// order: `(hb1, src_x, dst_x, width)` — `hb1` selects the filled `Hb1`
+/// sheet over the depleted `Hb2`, `src_x` is the source-rect X inside the
+/// 36x12 sheet, `dst_x` the offset from the bar's left edge in unscaled
+/// pixels, `width` the slice width. `filled` is `num2`, already floored at
+/// 3 (`Main.cs:21972-21975`).
+///
+/// Below 34 the C# keeps a 2 px seam: `Hb2`'s columns 2..4 ride the fill
+/// edge and `Hb1`'s columns 32..34 cap it (`:21980-21990`); at 34+ the two
+/// sheets simply butt (`:21994-21998`).
+pub fn bar_slices(filled: i32) -> Vec<(bool, i32, i32, u32)> {
+    let n = filled.max(3); // `Main.cs:21972-21975`
+    if n < 34 {
+        // `:21976-21990` — four slices (`n >= 3` makes `num2 < 36` and
+        // `num2 > 2` always true here).
+        vec![
+            (false, 2, n, 2),                    // `:21980` Hb2 (2,0,2,H)
+            (false, n + 2, n + 2, (36 - n - 2) as u32), // `:21984`
+            (true, 0, 0, (n - 2) as u32),        // `:21988` Hb1 (0,0,n-2,H)
+            (true, 32, n - 2, 2),                // `:21990` Hb1 (32,0,2,H)
+        ]
+    } else {
+        // `:21992-21998` — the depleted strip only while `num2 < 36`.
+        let mut v = Vec::with_capacity(2);
+        if n < 36 {
+            v.push((false, n, n, (36 - n) as u32)); // `:21996`
+        }
+        v.push((true, 0, 0, n as u32)); // `:21998`
+        v
+    }
 }
 
 /// The green-to-red fill colour (`Main.cs:21932-21942`), before the
@@ -578,7 +611,7 @@ mod tests {
         assert!(pool[1].crit);
     }
 
-    /// `Main.cs:21915-21921`, `:21972-21975`, `:46018`: width
+    /// `Main.cs:21915-21921`, `:21972-21975`, `:46024`: width
     /// `(int)(36 * ratio)` floored at 3, height 12, `X - 18`, under the box.
     #[test]
     fn an_ordinary_mob_health_bar_rect_matches_the_csharp_geometry() {
@@ -611,5 +644,53 @@ mod tests {
         assert_eq!(health_bar_rect(box_, 101, 100), None);
         assert_eq!(health_bar_rect(box_, 0, 100), None);
         assert!(health_bar_rect(box_, 50, 100).is_some());
+    }
+
+    /// `Main.cs:21976-21998`: below 34 filled pixels the four-slice seam
+    /// layout, at 34/35 the two-sheet butt with the depleted remainder, at
+    /// 36 the single full Hb1 strip. `(hb1, src_x, dst_x, width)` in the C#
+    /// draw order.
+    #[test]
+    fn the_bar_slices_match_the_csharp_seam_layout() {
+        // num2 = 18 (ratio 0.5): Hb2 (2,0,2) at 18, Hb2 (20,0,16) at 20,
+        // Hb1 (0,0,16) at 0, Hb1 (32,0,2) at 16 (`:21980-21990`).
+        assert_eq!(
+            bar_slices(18),
+            vec![
+                (false, 2, 18, 2),
+                (false, 20, 20, 16),
+                (true, 0, 0, 16),
+                (true, 32, 16, 2),
+            ]
+        );
+        // The 3 px minimum still keeps the seam (`:21972-21975`):
+        // Hb1's body is 1 px, the cap rides at dst 1.
+        assert_eq!(
+            bar_slices(3),
+            vec![
+                (false, 2, 3, 2),
+                (false, 5, 5, 31),
+                (true, 0, 0, 1),
+                (true, 32, 1, 2),
+            ]
+        );
+        // num2 = 34: the else arm — Hb2 (34,0,2) at 34, Hb1 (0,0,34)
+        // (`:21994-21998`).
+        assert_eq!(bar_slices(34), vec![(false, 34, 34, 2), (true, 0, 0, 34)]);
+        // num2 = 35: one depleted pixel.
+        assert_eq!(bar_slices(35), vec![(false, 35, 35, 1), (true, 0, 0, 35)]);
+        // num2 = 36: the full strip, no Hb2 (`:21994`'s `num2 < 36` fails).
+        assert_eq!(bar_slices(36), vec![(true, 0, 0, 36)]);
+        // Every slice set tiles [0, 36) exactly once — no gap, no overlap.
+        for n in 3..=36 {
+            let mut covered = [false; 36];
+            for &(_, _, dst, width) in &bar_slices(n) {
+                for px in dst..dst + width as i32 {
+                    assert!(!covered[px as usize], "num2 {n}: px {px} painted twice");
+                    covered[px as usize] = true;
+                }
+            }
+            assert!(covered.iter().all(|&c| c), "num2 {n}: a gap in the bar");
+        }
     }
 }
