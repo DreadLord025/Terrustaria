@@ -2893,6 +2893,78 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+### S1-K-3d — the herbs split (2026-11-18, code-only mode)
+
+The herbs S1-K-3 group (`task/S1-K-3d-herbs-split`, the K-3 precedent: one
+themed group per pass, verbatim move) moved the HERBS family out of
+`growth.rs` into `growth/herbs.rs` (291 lines; `growth.rs` 4 651 → 4 384):
+`TILE_ALCH`, `alch_seed_skips`, `grow_alch`, `WeatherCtx` +
+`is_alchemy_plant_harvestable` + `is_harvestable_herb_with_seed`, plus their
+5 tests (`the_alch_gate_uses_the_world_size_lerp`,
+`the_herb_lifecycle_blooms_by_the_cues`, `the_wrong_liquid_kills_the_herb`,
+`the_alch_harvest_matrix_runs_the_style_conditions`,
+`the_seed_harvest_arm_covers_the_grown_herbs`). All six moved items are
+already `pub` and re-exported from `growth`, so **every caller is unchanged**
+(`update_world_overground_tile`/`update_world_underground_tile`/
+`update_world` in growth.rs, `smart_cursor.rs`, tr-app
+`world_sim/smart_cursor.rs`) and **no visibility seam was needed** — zero
+`pub(super)` edits on either side. The moved tests import the pre-existing
+`crate::growth::test_fixtures::{put, world}` (byte-identical bodies to the
+private `tests::world`/`put` helpers they used before), so growth.rs's tests
+module is untouched apart from the five removed test blocks.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces the
+compile gate for this pass (the K-3b method):
+
+- the 5 moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (code ranges **59-61,
+  74-148, 149-210**; test ranges **2336-2406, 3257-3318**, 1-based inclusive)
+  and string-compared against the new `growth/herbs.rs`: **10 830 chars
+  across 5 blocks, every block found verbatim**; per-block sha256 prefixes
+  `d6d0336b94deab2f` / `0750472f0e11e016` / `530712ef21893a85` /
+  `41d77997cc27e3bb` / `196fe092053d39ae`.
+- inverse-transform identity: stripping the declared additions from
+  herbs.rs (the 9-line module header + the 6-line `#[cfg(test)] mod tests`
+  opener + the one blank separator between the test blocks + the closing
+  `}`) leaves exactly the origin blocks concatenated; re-inserting the
+  deleted ranges into the new growth.rs and removing the two seam
+  insertions reproduces the origin blob **byte-for-byte** (origin sha256
+  `b12149972c1da57e…b38ad322`, 182 466 bytes).
+- unified-diff audit vs origin: the **7 added lines** are exactly
+  `mod herbs;` + the 6-line re-export block (comment ×2, `pub use herbs::{`
+  ×3, `};`); all deleted lines are accounted for by the declared moved
+  ranges (274 diff deletions + 1 blank separator reused by the re-export
+  block's trailing blank = 275 range lines; difflib's positional shifts
+  across identical `}`/blank/`#[test]` lines verified as a multiset).
+- brace balance (comment/string/char-literal-aware scan): net 0, min-depth
+  0 on the origin blob, the new growth.rs and herbs.rs alike.
+- herbs.rs sha256 `1ae0bc02c2d1bc55b767172eb0bdcef1f760e5641c997b4742248ca03579d107`
+  (11 483 bytes); new growth.rs sha256
+  `4675057e388f4ccd3008b68cd9ebf4c58a88fdcfa4b43a6c9c0395d386ce7caf`
+  (171 878 bytes). Tests moved unchanged, NOT run.
+
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). No behaviour change is possible from a
+verbatim move of already-`pub` items + re-exports; if the deferred gate
+fails, the branch is fixed or dropped before merging, never merged red.
+
+**Merger note (K3b/K3c/K3d/K3e all edit growth.rs):** land sequentially with
+keep-both resolutions. K3d's growth.rs edits against `origin/main`
+(bfe68db8): insert `mod herbs;` before `mod trees;` (line 47); delete lines
+59-61, 74-210 (insert the 7-line re-export block at the 59 slot); delete
+test lines 2336-2407 and 3257-3319. K3b deletes code 451-654/1009-1160/
+3425-3847 and tests 2073-2301/2956-3009/3227-3255/3320-3422 — the ranges
+are disjoint from K3d's, but K3b's `mod tests`/`set_wall` `pub(super)` seams
+and its deletion of test block 2073-2301 shift K3d's test ranges; resolve
+by symbol (the five herb test names), not by line number. K3d touches no
+`pub(super)` seam, so no seam collision with K3b/K3c is possible; the
+module-header/re-export region (growth.rs lines 43-58) is the one textual
+hotspot — keep all three groups' `mod` + `pub use` blocks.
+
 ## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
 
 `TileDrawing.GetTileDrawData` (`TileDrawing.cs:4527`, the type switch at
@@ -9295,7 +9367,8 @@ committing through `Collision.InTileBounds` (`Collision.cs:3776-3783`).
 - **`WeatherCtx` is a seam, not a deviation.** `IsAlchemyPlantHarvestable`
   (`WorldGen.cs:66148-66175`) reads `Main.raining`/`cloudAlpha`/`remixWorld` —
   session state, not `World` fields — so the caller passes them
-  (`growth.rs`'s `WeatherCtx`); every other input (`dayTime`, `bloodMoon`,
+  (`growth/herbs.rs`'s `WeatherCtx`, re-exported from `growth`; S1-K-3d
+  verbatim move); every other input (`dayTime`, `bloodMoon`,
   `moonPhase`, `worldSurface`, `time`) is saved world state.
 - **The C#'s `&`/`|` bool operators become `&&`/`||`.** `Step_StaffOfRegrowth`'s
   `(tile.type == 0) & flag2` (`:238`) is redundant — the outer clause already
