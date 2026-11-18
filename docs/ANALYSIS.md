@@ -16471,6 +16471,127 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The aiStyle-58 shared-kind census + gap audit (S1-D-3, code-only mode)
+
+The 2026-11-18 aiStyle-58 round ran the shared-kind census before any port:
+`SetDefaults` (`NPC.cs:8426`) carries exactly ONE `this.aiStyle = 58` row —
+**type 327, the Pumpking** (`NPC.cs:13142-13157`: 100×100, dmg 50, def 40,
+26000 HP, `noGravity` + `noTileCollide`, kb 0, value 50000, npcSlots 5). No
+dynamic `aiStyle` reassignment anywhere in `NPC.cs` targets 58 (the only
+other `= 58;` hits are width/height/damage constants), and the whole
+decompiled tree's second `aiStyle = 58` row is `Projectile.cs:4417` — the
+PROJECTILE aiStyle space (`Projectile.AI`'s `aiStyle == 58` arm,
+`Projectile.cs:28906`), a different dispatch, not an NPC kind. **Verdict:
+aiStyle 58 is single-kind; no `npc_ai_style58_shared.rs` module is needed.**
+The census audit instead re-verified the sibling port — `982d3caf`
+(`task/S1-F-13b2-bosses`, `npc_ai_pumpkin_boss.rs::pumpking_step`, NOT yet
+merged into main at this audit's base `bfe68db8`) — against the whole arm
+(`NPC.cs:33044-33197`) with the f1701eb0 defect catalogue (`git show
+f1701eb0 -- docs/ANALYSIS.md`, the Hungry aiStyle-29 round) applied class by
+class. Code-only mode per user directive: **no compiler invoked**, the
+audit is line-by-line C# re-reading; the sibling's tests are written, not
+run.
+
+**The arm map (every block, its port status in `982d3caf`):**
+
+| C# block | lines | sibling port |
+| --- | --- | --- |
+| `localAI[0]/[1]` frame cycle (7 ticks / 0..4) | `:33046-33055` | faithful |
+| type-327 light `Lighting.AddLight(Center, 0.4, 0.4, 0.2)` — the arm's ONLY kind gate | `:33057-33060` | skipped, documented (below) |
+| mode timer: `localAI[2] > 300 → ai[3] = rand.Next(3)`; mode-0 lob every 30th tick past 30, `SolidTile` origin gate, `(dy + Next(50,201)) * 0.2` flattening, 5-draw shot | `:33061-33086` | faithful (draw order verified) |
+| init: `TargetClosest`, `ai[0] = 1`, two `NewNPC` 328 blades (`ai[0] = -1/1`, `ai[1] = whoAmI`, second `ai[3] = 150`) | `:33087-33104` | retarget/arm faithful; **blade spawns deferred** |
+| dead/far retarget (2000 px either axis), double-check → `ai[1] = 2` | `:33105-33117` | faithful |
+| dawn fall `vy += 0.3`, `vx *= 0.9` | `:33118-33122` | faithful |
+| hover: 300-tick gate (mode 1 → charge, else restart), aim 200 px above player centre, `num875` 6/8/10/12 bands, `/15` lerp, 50-px floor | `:33123-33169` | faithful |
+| charge: 600 ticks or mode ≠ 1 → hover, 16-speed `/50` lerp | `:33170-33185` | faithful |
+| flee: `vy += 0.1`, negative-vy ×0.95, `vx *= 0.95`, `EncourageDespawn(500)` | `:33186-33195` | faithful |
+| tilt `rotation = velocity.X * -0.02` | `:33196` | faithful write; **render gap below** |
+
+**Census-adjacent traps checked (none is a second 58 kind):** the
+`FindFrame` `case 58:` label (`NPC.cs:74183`) sits in the switch on
+`this.type` (`:66705`) — it is the TYPE-58 piranha's swim-frame case shared
+with types 102/241/465/592/607, NOT an aiStyle arm. The aiStyle-59 blade
+arm (`:33198-33373`) reads its owner's `aiStyle != 58` (`:33203`) and
+`ai[3] == 2` (`:33219`) — with the blades deferred those reads never fire.
+The other `type == 327` sites are outside the AI arm: the master-mode boss
+HP scaling (`:18457`), `GetNPCInvasionGroup` −2 (`:78372`), the HitEffect
+dust 189 + gores 476-484 (`:84817-84837`), the boss-background parallax
+(`Main.cs:60711-60715`) and the two draw overlays below.
+
+**Defect-catalogue classes (f1701eb0) applied to the sibling — none of the
+behavioural classes hit:** anchor offset — the 100×100 box is even, the
+float-half centre equals the C#'s integer half (`:33073`/`:33143`);
+missing gate/call — `TargetClosest` runs at all three C# sites through
+`npc_target::target_closest` (S1-D-3p, `NPC.cs:77652-77781` verified);
+per-tick reset / invented defense clear / f32-ratio ladder / third recoil
+arm / sprite-rotation writes / operation order — the arm has no
+damage/defense writes, no hp bands, no recoil state, no `spriteDirection`
+write (the C# arm writes none either), and every counter/lerp matches in
+order and constants; float-vs-integer half-extents — identical for the
+even box. The arm's `Math.Sqrt` is the double sqrt; the port's f32
+`.sqrt()` is the house-wide convention (the same deviation the 57 arm
+carries), boundary-tick divergence only.
+
+**RNG by construction — the arm draws `Main.rand` at exactly two sites:**
+`Next(3)` (`:33067`) and the lob's five-draw sequence (`:33078-33083`:
+aim-x `Next(-50,51)`, aim-y `Next(50,201)`, SpeedX jitter `Next(-30,31)`,
+SpeedY jitter `Next(-30,31)`, kind `Next(326,329)` — C# evaluates the
+`NewProjectile` named arguments in TEXTUAL order, so `Type:` draws LAST).
+The sibling reproduces both orders and witnesses them by stream-equality
+replay (`s1_f_13b2_pumpking_mode_pick_is_one_witnessed_next3`,
+`s1_f_13b2_pumpking_lob_draws_and_the_solid_origin_gate` — written, not
+run). The deferred blade spawns are stream-safe: `NPC.NewNPC`
+(`:80750`) draws only under `Main.getGoodWorld` (`:80752`, unmodelled,
+false in the port), and both spawn-source helpers are pure
+`EntitySource_Parent` constructors (`GetSpawnSource_ForProjectile`
+`:90749-90752`, `GetSpawnSourceForNPCFromNPCAI` `:90769-90772`). The
+skipped light draws nothing. The solid-origin gate suppresses the shot
+AND all five draws, exactly like the C#.
+
+**Gaps for the merger (the audit's findings):**
+1. **FindFrame case 327 is unported in BOTH states.** The C#'s 12-row
+   scythe cycle (`NPC.cs:72296-72356`: the `ai[3]`-gated
+   `frameCounter` ±1 drift over rows 0-5 / 4-10 / 2-8, the 6-tick wrap
+   over 12 rows, `npcFrameCount[327] = 12`) has no arm — main routes the
+   Pumpking to `walker_frame()` (`npc.rs:5597-5612`) and `982d3caf`
+   touches no frame code, so the walker strip survives the merge. The
+   sibling's `localAI[0]/[1]` cycle is faithful state, but its consumer
+   is the cloak draw (below), not FindFrame.
+2. **The rotation tilt never renders.** The sibling writes
+   `rotation = vx * -0.02` (`:33196`), but the Pumpking is absent from
+   the renderer's rotation opt-in (`render/entities.rs:2907-2954`) —
+   the S1-G-19 class ("a kind that writes rotation but is absent from
+   the whitelist never rolls"). One whitelist row lands the tilt.
+3. **The blade kind 328 (aiStyle 59) is unported** — the two init spawns
+   are deferred in the sibling (documented there). The follow-up needs
+   the kind, the `:33198-33373` arm, the scythe projectile 329
+   (`:33230`), the chain draw (`Main.cs:22669+`) and the `NewNPC`
+   bottom-centre placement (`:80770`). Stream-safe today (above); the
+   wiring must keep the spawn ORDER (blade −1 first, blade +1 second)
+   for the future `getGoodWorld` modelling.
+4. **The type-327 light** (`:33059`) is skipped in the sibling — it
+   belongs to the S1-E-5 entity-light family (`npc_lights.rs`), not the
+   AI module; no rand impact.
+5. **The two draw overlays are unported** (render follow-ups, not AI):
+   the `PumpkingCloak` sheet at centre+80 keyed on `(int)localAI[1]`
+   (`Main.cs:22662-22668`, 5 rows) and the `PumpkingFace` overlay + 9
+   jitter ghosts (`Main.cs:25669-25678`). **RNG warning for that round:**
+   the ghosts draw `Main.rand.Next(-10,11)` TWICE per ghost (18 draws per
+   drawn frame) from the GLOBAL stream inside the draw pass — wiring
+   them changes the observable stream unless the draw-pass RNG contract
+   is honoured; the audit records the count, the wiring round owns the
+   decision.
+6. **The live stand-in stays until the sibling merges.** On main the
+   Pumpking rides `update_hover` (`npc.rs:3638-3650`, max 6 / accel 0.4)
+   — the documented S1-F-13b stand-in, none of the arm's states/shots.
+   The sibling's `58 if self.kind == NpcKind::Pumpking` gate covers the
+   full census (the only 58 kind; `NpcKind::ai_style()`'s sole 58 row is
+   `npc/data.rs:1571`, pinned by the `CS_STYLES` table test
+   `npc.rs:22987`); its `update_kind_ai` fallback is `unreachable!` —
+   safe for the census, but any future kind claiming 58 must extend the
+   gate, not fall through.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
