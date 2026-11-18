@@ -8894,6 +8894,19 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
 - **The peer slots are seeded at the world spawn** on first sight (the C#'s
   `Main.player[i]` exists at the spawn before its first `13`), so the first
   snapshot's lag accrues from there rather than from (0, 0).
+- **S1-I-4b — the NPC send cadence is ported but not yet wired.**
+  `app/net_npc_sync.rs` ports `NPC.UpdateNetworkCode` + the `NetMessage`
+  `case 23`/`case 28` fan-out 1:1 (citations in the ROADMAP S1-I-4 row) as
+  pure functions; the live `net_tick` still sends the whole NPC set at 10 Hz
+  (`netglue.rs`) until a follow-up drains the `NpcSend` outbox. Deliberate
+  shape choices: (1) the per-client `broadcast`/`IsConnected` gates ride a
+  caller-supplied `PlayerView` array (the port's `Server::slot_ids` + section
+  bookkeeping map onto it); (2) `NPC.oldHomeless/oldHomeTileX/Y` start at the
+  C# `false/0/0` defaults — the port's `old_home: None` fires one extra `60`
+  on the very first observation of a `(false, 0, 0)` home, which no
+  head-index town NPC ever has; (3) `CanBeRemovedByNetMessage` is empty in
+  this decompilation (`BuffID.cs:48`), so `137` is ported as a gated-off
+  no-op, not omitted.
 ## Localized item tooltips (M6-LOCALIZE-wire)
 
 The "wire the localization core into the HUD/menus" row's item-hover slice:
