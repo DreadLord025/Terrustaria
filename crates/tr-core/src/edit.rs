@@ -8,6 +8,9 @@ use crate::tile::Tile;
 use crate::tiledata as td;
 use crate::world::World;
 
+mod wall;
+pub use wall::{break_wall, place_wall};
+
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon
 /// control lines. Vanilla refuses it in every removal/replacement path:
 /// `Player.CanPlayerSmashWall` (hammering), `WorldGen.ReplaceWall`, and it makes any
@@ -2746,36 +2749,6 @@ pub fn kill_actuator(world: &mut World, x: i32, y: i32) -> bool {
     true
 }
 
-/// Removes the background wall at `(x, y)`. Returns the wall id.
-pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
-    let t = *world.tile(x, y)?;
-    if t.wall == 0 || t.wall == WALL_UNBREAKABLE {
-        return None;
-    }
-    let wall = t.wall;
-    let i = world.index(x, y);
-    world.tiles[i].wall = 0;
-    world.tiles[i].set_wall_frame(0, 0);
-    after_wall_edit(world, x, y);
-    Some(wall)
-}
-
-/// Places a background wall into a cell that has none. The caller checks reach and
-/// support; a wall may sit behind an active tile.
-pub fn place_wall(world: &mut World, x: i32, y: i32, wall: u16) -> bool {
-    let Some(t) = world.tile(x, y).copied() else {
-        return false;
-    };
-    if t.wall != 0 || wall == 0 {
-        return false;
-    }
-    let i = world.index(x, y);
-    world.tiles[i].wall = wall;
-    world.tiles[i].set_wall_frame(0, 0);
-    after_wall_edit(world, x, y);
-    true
-}
-
 /// Places a block/torch into an empty cell, preserving the wall. The caller checks
 /// reach, support and player overlap.
 pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
@@ -3811,11 +3784,6 @@ fn touch(world: &mut World, x: i32, y: i32) {
     world.mark_chunk(x, y);
 }
 
-fn after_wall_edit(world: &mut World, x: i32, y: i32) {
-    touch(world, x, y);
-    framing::reframe_area(world, x, y, 2, true);
-}
-
 fn after_edit(world: &mut World, x: i32, y: i32) {
     world.recompute_column_surface(x);
     framing::reframe_area(world, x, y, 2, true);
@@ -3827,7 +3795,7 @@ mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
 
-    fn ground_world() -> World {
+    pub(super) fn ground_world() -> World {
         let mut w = World::new("t".into(), 32, 32);
         w.frame_important = vec![false; 754];
         for x in 0..32 {
@@ -4104,20 +4072,6 @@ mod tests {
         let t = *w.tile(5, 19).unwrap();
         assert!(t.active());
         assert_eq!((t.frame_x, t.frame_y), (0, 0));
-    }
-
-    #[test]
-    fn walls_place_and_break_and_reframe_neighbours() {
-        let mut w = ground_world();
-        assert!(place_wall(&mut w, 10, 15, 2));
-        assert_eq!(w.tile(10, 15).unwrap().wall, 2);
-        assert!(!place_wall(&mut w, 10, 15, 1), "already walled");
-        assert!(place_wall(&mut w, 11, 15, 2));
-        // The shared edge reframes to a connecting cell.
-        assert_ne!(w.tile(10, 15).unwrap().wall_col(), 0);
-        assert_eq!(break_wall(&mut w, 10, 15), Some(2));
-        assert_eq!(w.tile(10, 15).unwrap().wall, 0);
-        assert_eq!(break_wall(&mut w, 10, 15), None);
     }
 
     #[test]
