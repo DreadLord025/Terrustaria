@@ -962,6 +962,7 @@ class Emitter:
         self.names = {}   # id(obj) -> static name (shared sub-tile objects)
         self.order = []   # emission order (deterministic)
         self.owner = {}   # id(obj) -> owning tile kind (fi/interaction overlay)
+        self.role = {}    # id(obj) -> "top" | "sub" | "alt" (list emission)
 
     def name_for(self, obj, name):
         key = id(obj)
@@ -974,19 +975,28 @@ class Emitter:
     def collect(self, obj, name, is_top=True):
         """Register the object graph depth-first; children get stable names.
 
-        Only TOP-LEVEL defs (the `_data[type]` entries) recurse into their
-        alternates/sub-tiles. An alternate/sub-tile node's OWN nested lists are
-        not collected: in C# they are shared-reference cycles (CopyFrom shares
-        the alternates/sub-tile list, then addAlternate/addSubTile appends to
-        it — an alternate can contain itself), and `GetTileData`
-        (:5126-5161) resolves only ONE level (base -> sub-tile -> alternate),
-        never reading a child's nested lists. Rust statics cannot be cyclic, so
-        the children are emitted with their scalar fields and EMPTY nested
-        lists — behaviourally identical for every consumer (can_place/place/
-        get_tile_data read only the base's lists and one resolution level)."""
+        Top-level defs (the `_data[type]` entries) and sub-tile nodes keep
+        their OWN alternates/sub-tile lists: `GetTileData`
+        (TileObjectData.cs:5139-5157) resolves base -> sub-tile -> the
+        SUB-TILE's alternates (`alternate--` indexes the resolved node), and
+        the `CanPlace` loop counts `base.alternates` after the sub-tile
+        resolution (:194-198) — dropping a sub-tile's alternates refuses
+        placements the C# accepts (e.g. chair style 16 right-facing).
+
+        The deeper shared-reference cycles (C# CopyFrom shares the
+        alternates/sub-tile lists, then addAlternate/addSubTile appends — a
+        sub-tile's sub-tile list can contain itself, and an alternate's
+        alternate list can contain itself) are NOT emitted: the alternate
+        NODES are leaves (scalar fields + empty nested lists). No consumer
+        reads them: GetTileData resolves only ONE level past the sub-tile,
+        and CanPlace/custom_place read the base's lists plus one resolution
+        level. Verified over the interpreted graph: every sub-tile alternate
+        target is a pure leaf (never a top/sub-tile object, no self-refs), so
+        top -> sub -> alternate-leaf emission is acyclic."""
         if id(obj) in self.names:
             return self.names[id(obj)]
         self.names[id(obj)] = name
+        self.role[id(obj)] = "top" if is_top else "alt"
         if is_top:
             alts = obj.modules["alternates"]["data"] or []
             for i, alt in enumerate(alts):
@@ -994,18 +1004,33 @@ class Emitter:
             subs = obj.modules["subTiles"]["data"] or []
             for style, sub in enumerate(subs):
                 if sub is not None:
-                    self.collect(sub, f"{name}_S{style}", is_top=False)
+                    self.collect_sub(sub, f"{name}_S{style}")
         self.order.append((name, obj))
+        return name
+
+    def collect_sub(self, sub, name):
+        """A sub-tile node: collect its OWN alternates (leaf nodes), but not
+        its nested sub-tile list (the deeper C# shared-reference cycles —
+        GetTileData never resolves a sub-tile's sub-tiles)."""
+        if id(sub) in self.names:
+            return self.names[id(sub)]
+        self.names[id(sub)] = name
+        self.role[id(sub)] = "sub"
+        for i, alt in enumerate(sub.modules["alternates"]["data"] or []):
+            self.collect(alt, f"{name}_A{i + 1}", is_top=False)
+        self.order.append((name, sub))
         return name
 
     def emit_def(self, name, obj, kind, owner):
         g = obj.get
-        # Nested lists are emitted only for top-level defs (kind is not None);
-        # alternates/sub-tiles carry empty lists (the C# shared-reference cycles
-        # GetTileData never recurses into — see collect()).
-        is_top = kind is not None
-        alts = (obj.modules["alternates"]["data"] or []) if is_top else []
-        subs = (obj.modules["subTiles"]["data"] or []) if is_top else []
+        # Top-level defs and sub-tile nodes carry their OWN alternates lists
+        # (GetTileData indexes the RESOLVED sub-tile's alternates,
+        # TileObjectData.cs:5148-5157); alternate nodes are leaves — their
+        # deeper nested lists are the C# shared-reference cycles no consumer
+        # reads (see collect()).
+        role = self.role.get(id(obj), "top")
+        alts = (obj.modules["alternates"]["data"] or []) if role != "alt" else []
+        subs = (obj.modules["subTiles"]["data"] or []) if role == "top" else []
         alt_refs = ", ".join(self.names[id(a)] for a in alts)
         sub_entries = []
         for style, sub in enumerate(subs):

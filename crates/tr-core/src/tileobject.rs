@@ -3193,6 +3193,27 @@ mod tests {
         assert_eq!(get_tile_data(chair, 16, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
     }
 
+    /// S1-F-7a regression: sub-tiles carry their OWN alternates lists —
+    /// `GetTileData` does `alternate--` then indexes the RESOLVED sub-tile's
+    /// Alternates (TileObjectData.cs:5148-5157). Dropping them refused the
+    /// Obsidian Chair (item 1459, tile 15 style 16) right-facing placement
+    /// and lost the torch wall-anchor alternate.
+    #[test]
+    fn s1_f_7a_sub_tile_alternates_resolve() {
+        // Chair style 16 (Obsidian, :4151-4155): alternate 1 is the
+        // PlaceRight variant (style 1) — the CanPlace direction filter's
+        // only right-facing candidate for that style.
+        let chair = def_for_tile(15).unwrap();
+        let right = get_tile_data(chair, 16, 1).unwrap();
+        assert_eq!(right.direction, TileObjectDirection::PlaceRight);
+        assert_eq!(right.style, 1);
+        // Torch sub-tile 8 (:4607-4627, CopyFrom of the torch base):
+        // alternate 3 is the wall-anchor variant (:4596-4606).
+        let torch = def_for_tile(4).unwrap();
+        let wall = get_tile_data(torch, 8, 3).unwrap();
+        assert!(wall.anchor_wall);
+    }
+
     /// Chests (tile 21): `Style2x2` + the chest overrides
     /// (`TileObjectData.cs:3461-3470`) — 18-px bottom row, horizontal styles,
     /// the 11-id invalid-anchor list, the bottom anchor WITHOUT Table, and the

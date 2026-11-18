@@ -156,7 +156,7 @@ an agent needs before touching code.
   (`TILE_CUT`, `TILE_TABLE`, `IS_A_DRIP_TILE`, `IS_VINE`). The registry DATA is
   **generated** (S1-F-7 wave A): `tileobject/registry.rs` (do not edit) by
   `tools/GenTileObjectData/gen.py`, which interprets `TileObjectData.Initialize`
-  (`TileObjectData.cs:2110-5014`) 1:1 — all 389 registered tiles (578 defs) with
+  (`TileObjectData.cs:2110-5014`) 1:1 — all 389 registered tiles (604 defs) with
   geometry/anchors/styles/alternates/sub-tiles, plus the `Main.tileFrameImportant`
   and `KillTile_GetItemDrops` empty-group tables. See `ANALYSIS.md#s1-f-7-wave-a`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the

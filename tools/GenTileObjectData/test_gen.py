@@ -122,6 +122,17 @@ def test_spot_families():
     check(ch.get("CoordinatePaddingFix") == (0, 2), "chair padding fix (:4146)")
     check(ch.get("Direction") == 1, "chair PlaceLeft (:4143)")
     check(ch.modules["alternates"]["data"][0].get("Style") == 1, "chair PlaceRight alternate style 1")
+    # Sub-tile OWN alternates (GetTileData indexes the resolved sub-tile's
+    # alternates, TileObjectData.cs:5148-5157): chair sub16 (Obsidian) and
+    # torch sub8 carry their PlaceRight / wall-anchor alternates.
+    check(ch.modules["subTiles"]["data"][16].modules["alternates"]["data"][0].get("Direction") == 2,
+          "chair sub16 PlaceRight alternate (:4151-4155)")
+    check(ch.modules["subTiles"]["data"][16].modules["alternates"]["data"][0].get("Style") == 1,
+          "chair sub16 alternate style 1")
+    check(len(t.modules["subTiles"]["data"][8].modules["alternates"]["data"]) == 3,
+          "torch sub8 3 alternates (:4596-4606 via CopyFrom)")
+    check(t.modules["subTiles"]["data"][8].modules["alternates"]["data"][2].get("AnchorWall") is True,
+          "torch sub8 wall-anchor alternate")
 
     # Chest (Style2x2 + overrides :3461-3470): 18-px bottom, no Table anchor.
     chest = d[21]
@@ -162,9 +173,10 @@ def test_csharp_bugs_reproduced():
 def test_acyclic_and_shape():
     text, stats = gen.generate(ROOT)
     check(stats["tiles"] == 389, "389 tiles emitted")
-    # Every top-level def's alternates/sub-tiles reference emitted statics; the
-    # children carry empty nested lists (the C# shared-reference cycles
-    # GetTileData never recurses into). Verify no static references itself.
+    # Every top-level def's and sub-tile's alternates/sub-tiles reference
+    # emitted statics; alternate nodes are leaves (their deeper nested lists
+    # are the C# shared-reference cycles no consumer reads). Verify the
+    # emitted reference graph is acyclic.
     import re
     # Parse each static block and its alternates/subtiles refs.
     blocks = re.split(r"\nstatic (D_\w+): TileObjectDef = TileObjectDef \{", text)

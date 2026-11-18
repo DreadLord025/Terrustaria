@@ -16105,7 +16105,7 @@ not a scrollable 500-line view.
 
 `tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
 (`TileObjectData.cs:2110-5014`) statement-by-statement and emits all 389
-registered tiles (578 defs) into `crates/tr-core/src/tileobject/registry.rs`,
+registered tiles (604 defs) into `crates/tr-core/src/tileobject/registry.rs`,
 retiring the 33 hand-written defs. The generator reproduces the copy-on-write
 builder chain (module sharing via `CopyFrom`, the `_hasOwn*` no-op-compare
 setters, `Calculate`'s liquid-death fold, `LinkedAlternates` propagation,
@@ -16121,12 +16121,21 @@ bugs verbatim:
 * **`AnchorAlternateTiles` compares against `tileInvalid`** (:449) — a no-op
   write when the alternate list equals the INVALID list (a C# typo, reproduced).
 
-The shared-reference alternates/sub-tile cycles (C# heap references;
-`GetTileData` :5126-5161 is single-level index-based and never recurses) emit
-acyclic: top-level defs keep their lists verbatim, alternate/sub-tile nodes
-carry their scalar fields with EMPTY nested lists — behaviourally identical for
-every consumer (`can_place`/`place`/`get_tile_data` read only the base's lists
-and one resolution level).
+The shared-reference alternates/sub-tile cycles (C# heap references; `CopyFrom`
+shares the lists, then `addAlternate`/`addSubTile` appends) emit acyclic:
+top-level defs AND sub-tile nodes keep their OWN alternates lists verbatim —
+`GetTileData` (`TileObjectData.cs:5148-5157`) does `alternate--` then indexes the
+RESOLVED sub-tile's Alternates, so dropping them refused placements the C#
+accepts (S1-F-7a: chair style 16 right-facing, torch sub8 wall-anchor; 69
+sub-tiles carry non-empty alternates). Alternate NODES are leaves (scalar
+fields + empty nested lists): their deeper nested lists are the cycle depth no
+consumer reads — `GetTileData` resolves only one level past the sub-tile and
+`can_place`/`custom_place` read the base's lists plus one resolution level.
+Verified over the interpreted graph: every sub-tile alternate target is a pure
+leaf (never a top/sub-tile object, no self-references), so top -> sub ->
+alternate-leaf emission is acyclic (the DFS test in `test_gen.py`). Sub-tiles'
+nested sub-tile lists are likewise not emitted (the deeper C# cycles; no
+consumer resolves a sub-tile's sub-tiles).
 
 ### Divergences vs the 33 hand defs (the C# wins)
 
