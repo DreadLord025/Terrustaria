@@ -17588,3 +17588,47 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## IceQueen core AI (S1-F-13c slice C, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_frost_boss.rs` ports the `aiStyle == 60` arm of
+`NPC.AI` (`NPC.cs:33374-33680`) verbatim: the day flee (`:33376-33388`,
+NO `EncourageDespawn` unlike 57/61), phase 0's side charge + the 348
+FrostWave (the `Next(1,4)` per-tick timer `:33509`; the shot draws no
+RNG), phase 1's shard rain (the 349 drop gated on `WorldGen.SolidTile`
+`:33600`; `ai0 = Next(5)` draws ONLY when the cadence fires AND the gate
+passes, `:33607`), phase 2's spin barrage (the two `Next(-1000,1001)`
+draws EVERY tick before the 0.95 brake, `:33624-33628`) and the
+`ai[0] == -1` re-pick (`:33667-33679` — a SIBLING `if`, so it runs on the
+SAME tick a phase flips to -1, and by day when ai[0] is already -1; the
+`Next(3)` draws even when the >1000px check forces the pick to 0).
+
+- **Code-only mode this round:** no cargo/rustc/tests were invoked (the
+  worker's toolchain is disabled); the 9 witness tests are WRITTEN, NOT
+  RUN — each was verified by re-reading the C# and replaying the draw
+  order against a same-seeded probe stream by construction. The full
+  gate must run before this branch merges.
+- **Scope split:** Everscream (344, aiStyle 57 `:32761-33043`, the
+  type-344 branches — the shared arm's MourningWood branches stay with
+  S1-F-13b2) and SantaNK1 (346, aiStyle 61 `:33681-33921`) are DEFERRED
+  to the next slice-C round; the dispatch (`frost_boss_ai_step`) is
+  gated to 345 only.
+- **Deferred layers:** the `FindFrame` arm (`:72425+`),
+  `GetBossHeadRotation` (`:7624-7629`) and the death/bag/drop arms. The
+  aiStyle-60 arm itself has no `AddLight`, no dust and no `netUpdate`
+  writes — nothing inside it is skipped.
+- **Seam / dependency:** `NpcKind::IceQueen` + the full SetDefaults row
+  for 345 are worker B's (`task/S1-F-13c-defaults-b`); until it lands
+  the machine runs on the plain `FrostBossState` and the dispatch keys
+  on the vanilla type id + aiStyle (the pushed `npc_ai_frost_mob.rs`
+  pattern, 5ef9b24b). The AI inputs `(130, 140, 34000)` cite
+  `NPC.cs:13371-13376` and must agree with B's table. The five
+  `TargetClosest()` sites (`:33393`, `:33403`, `:33518`, `:33622`,
+  `:33670`) are the wiring worker's `npc_target::target_closest` calls;
+  the resolved slot rides `FrostBossTarget`. `Main.netMode != 1` is the
+  always-true server/local path. `noTileCollide`/`noGravity` come from
+  SetDefaults (`:13381-13382`) — the caller integrates the velocity.
+- **Out-of-world `SolidTile`:** the C# catch returns false
+  (`WorldGen.cs:70128-70131`); the in-world null-tile TRUE branch
+  (`:70115-70117`) is unreachable in the port (in-world tiles are never
+  null) — the `growth.rs::growth_solid` convention.
