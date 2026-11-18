@@ -602,6 +602,17 @@ pub struct Projectile {
     pub net_important: bool,
     /// `Projectile.ignoreWater` (stock false, `:752`).
     pub ignore_water: bool,
+    /// `Projectile.shouldFallThrough` (`:462`, reset false `:709`) — the
+    /// aiStyle-67 manual platform decision (`decidesManualFallThrough`,
+    /// `:460`/`:17583-17586`): the pirate arm writes it from the owner's
+    /// feet (`:49561`) and the jump helper from the target (`:51206`).
+    pub should_fall_through: bool,
+    /// `Projectile.stepSpeed` (stock 1f, `:342`, reset `:10884`) —
+    /// `Collision.StepUp`'s rise rate (`:50605`).
+    pub step_speed: f32,
+    /// `Projectile.gfxOffY` — the StepUp draw lift, decayed per tick
+    /// (`:16740-16764`).
+    pub gfx_off_y: f32,
 }
 
 impl Default for Projectile {
@@ -661,6 +672,9 @@ impl Default for Projectile {
             original_damage: 0,
             net_important: false,
             ignore_water: false,
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 }
@@ -7949,6 +7963,897 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI_067_FreakingPirates` (`Projectile.cs:49121-51201`) — the aiStyle-67
+    /// skeleton, ported for the Pirate Staff trio (393/394/395, the `flag`
+    /// branch) and the Vampire Frog (758, `flag2`). The other 12 types stay
+    /// deferred (the dispatch gates them): the Storm Tigers 833-835 (`flag3`,
+    /// the `AI_067_TigerSpecialAttack` chain `:49034-49119`), the Flinx 951
+    /// (`flag5`), the Mushroom Boi 1022 (`flag6`, the 1044 spore + the
+    /// `GetChaseResults` leap), the Cob Whip 1036 (`flag7`), the Cattiva pair
+    /// 1093/1112 (`flag8`, the `TryAssigningHelp` smart-cursor mining), the
+    /// Clay Pot 1118 (`flag9`) and the five pets 500/653/1018/1056/1090.
+    ///
+    /// RNG (arm-level draws mirrored in order; the `Dust.NewDust`/
+    /// `Gore.NewGore` internals belong to the unported dust/gore pools and
+    /// are skipped — ANALYSIS): the state-5 arrival's
+    /// `NextVector2CircularEdge(4,4)` (one `NextFloat`, `Utils.cs:1261-1274`),
+    /// the pirate high-jump's `NextFloatDirection()*NextFloat()` pair +
+    /// the `Next(4)` burst pick + the taken branch's gore-type roll
+    /// (`Next(580,583)` or two `Next(11,14)`), the frog idle frame's
+    /// `Next(50)` (only when the counter reaches 28, the `&&` short-circuit
+    /// of `:51037`) and the pirate idle burst's per-tick `Next(900,1200)`
+    /// comparison + its `Next(580,583)` gore roll on reset.
+    fn ai_freaking_pirates(
+        &mut self,
+        world: &World,
+        mut player: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:49124-49133` — the family flags; only `flag`/`flag2` are ported.
+        let flag = matches!(self.kind, ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN);
+        let flag2 = self.kind == VAMPIRE_FROG;
+        let num = 0.4f32;
+        // `:49147-49155` — no active owner: deactivate (the C# writes
+        // `active = false` directly, not `Kill()`).
+        let Some(_) = player.as_ref() else {
+            self.active = false;
+            return;
+        };
+        // `:49156-49160` — the parameter ladder. `flag10` (the petting
+        // interaction) folds to false — the port has no petting system.
+        let mut num2 = 450.0f32;
+        let num3 = 500.0f32;
+        let num4 = 300.0f32;
+        let flag10 = false;
+        // `:49248-49259` — the pirates' keep-alive pin.
+        if flag {
+            let dead = player.as_ref().is_some_and(|p| p.dead);
+            let held = player.as_ref().is_some_and(|p| p.pirate_minion);
+            if dead {
+                if let Some(p) = player.as_deref_mut() {
+                    p.pirate_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            num2 = 800.0;
+        }
+        // `:49316-49327` — the frog's keep-alive pin.
+        if flag2 {
+            let dead = player.as_ref().is_some_and(|p| p.dead);
+            let held = player.as_ref().is_some_and(|p| p.vampire_frog);
+            if dead {
+                if let Some(p) = player.as_deref_mut() {
+                    p.vampire_frog = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            num2 = 800.0;
+        }
+        let p = player.as_deref().unwrap();
+        let (pcx, pcy) = p.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let player_bottom = p.y + p.height;
+        // `:49405-49440` — the idle home spot beside the owner.
+        let mut vector = player_center;
+        if flag {
+            vector.x -= (15.0 + crate::player::WIDTH * 0.5) * p.facing as f32;
+            vector.x -= self.minion_pos as f32 * 20.0 * p.facing as f32;
+        } else if flag2 {
+            vector.x -= (35.0 + crate::player::WIDTH * 0.5) * p.facing as f32;
+            vector.x -= self.minion_pos as f32 * 40.0 * p.facing as f32;
+        }
+        // `:49556-49567` — the pets' no-target flag (false for the ported
+        // kinds), the manual fall-through decision and the attack parameters.
+        let flag13 = true;
+        self.should_fall_through = player_bottom - 12.0 > self.pos.y + self.h;
+        self.friendly = false;
+        let mut num9 = 0;
+        let mut num10 = 15;
+        let mut attack_target = -1i32;
+        let flag14 = true;
+        let flag15 = self.ai[0] == 5.0;
+        // `:49585-49590` — the frog attacks friendly, 20-tick bites, 60-tick
+        // cooldown.
+        if flag2 {
+            self.friendly = true;
+            num10 = 20;
+            num9 = 60;
+        }
+        // `:49607-49632` — the target search window.
+        let mut flag16 = self.ai[0] == 0.0;
+        if flag {
+            flag16 = self.ai[0] == 0.0 || self.ai[0] == 5.0;
+        }
+        if flag16 & flag13 {
+            // `:49631` — `skipIfCannotHitWithOwnBody: true`, the custom
+            // elimination check is the always-true stub (`:49029-49032`),
+            // `respectOwnerTarget: true`.
+            attack_target =
+                self.minion_find_target_in_range(world, npcs, player.as_deref(), num2, true, true);
+        }
+        // `:49742-49953` — state 1: fly back to the owner.
+        if self.ai[0] == 1.0 {
+            self.tile_collide = false;
+            let num17 = 0.2f32;
+            let mut num18 = 10.0f32;
+            let num19 = 200.0f32;
+            let pv_speed = p.vx.abs() + p.vy.abs();
+            if num18 < pv_speed {
+                num18 = pv_speed;
+            }
+            let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let spinninpoint = player_center - center;
+            let num20 = spinninpoint.length();
+            if num20 > 2000.0 {
+                // `:49767-49770` — the teleport home.
+                self.pos = player_center - Vec2::new(self.w, self.h) * 0.5;
+            }
+            // `:49771-49779` — arrived below the owner's feet: land.
+            if num20 < num19
+                && p.vy == 0.0
+                && self.pos.y + self.h <= player_bottom
+                && !box_solid(world, self.pos, self.w, self.h)
+            {
+                self.ai[0] = 0.0;
+                if self.vel.y < -6.0 {
+                    self.vel.y = -6.0;
+                }
+            }
+            let num21 = 60.0f32;
+            if num20 < num21 {
+                // `:49791-49802` — close: bleed the speed (the 1090's
+                // normalize arm is deferred).
+                self.local_ai[0] = 0.0;
+            } else {
+                // `:49803-49855` — far: steer at the owner.
+                let aim = safe_normalize(spinninpoint) * num18;
+                if self.vel.x < aim.x {
+                    self.vel.x += num17;
+                    if self.vel.x < 0.0 {
+                        self.vel.x += num17 * 1.5;
+                    }
+                }
+                if self.vel.x > aim.x {
+                    self.vel.x -= num17;
+                    if self.vel.x > 0.0 {
+                        self.vel.x -= num17 * 1.5;
+                    }
+                }
+                if self.vel.y < aim.y {
+                    self.vel.y += num17;
+                    if self.vel.y < 0.0 {
+                        self.vel.y += num17 * 1.5;
+                    }
+                }
+                if self.vel.y > aim.y {
+                    self.vel.y -= num17;
+                    if self.vel.y > 0.0 {
+                        self.vel.y -= num17 * 1.5;
+                    }
+                }
+            }
+            // `:49856-49859` — the facing.
+            if self.vel.x != 0.0 {
+                self.sprite_direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            }
+            // `:49879-49892` — the pirates' flight frames 10-13.
+            if flag {
+                self.frame_counter += 1;
+                if self.frame_counter > 3 {
+                    self.frame += 1;
+                    self.frame_counter = 0;
+                }
+                if self.frame < 10 || self.frame > 13 {
+                    self.frame = 10;
+                }
+                self.rot = self.vel.x * 0.1;
+            }
+            // `:49913-49922` — the frog's flight frames 14-17.
+            if flag2 {
+                let num22 = 3;
+                self.frame_counter += 1;
+                if self.frame_counter >= num22 * 4 {
+                    self.frame_counter = 0;
+                }
+                self.frame = 14 + self.frame_counter / num22;
+                self.rot = self.vel.x * 0.15;
+            }
+        }
+        // `:49954-49965` — state 2 with the cooldown running: the C# returns
+        // after the reset for every ported kind (`num10 >= 0`).
+        if self.ai[0] == 2.0 && self.ai[1] < 0.0 {
+            self.friendly = false;
+            self.ai[1] += 1.0;
+            if num10 >= 0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                return;
+            }
+        } else if self.ai[0] == 2.0 {
+            // `:49966-50057` — state 2: the bite.
+            self.sprite_direction = self.direction;
+            self.rot = 0.0;
+            if flag {
+                // `:49970-49978` — frames 4-6 (+3 airborne), the integer
+                // cast binds the numerator (`(int)(num10 - ai[1]) / 5`).
+                self.friendly = true;
+                self.frame = 4 + (num10 as f32 - self.ai[1]) as i32 / (num10 / 3);
+                if self.vel.y != 0.0 {
+                    self.frame += 3;
+                }
+            }
+            if flag2 {
+                // `:50015-50039` — the friendly window is the middle half of
+                // the bite; frames 18-20 / 21-23 mirror around the apex.
+                let num25 = (num10 as f32 - self.ai[1]) / num10 as f32;
+                if num25 > 0.25 && num25 < 0.75 {
+                    self.friendly = true;
+                }
+                let mut num26 = (num25 * 5.0) as i32;
+                if num26 > 2 {
+                    num26 = 4 - num26;
+                }
+                if self.vel.y != 0.0 {
+                    self.frame = 21 + num26;
+                } else {
+                    self.frame = 18 + num26;
+                }
+                if self.vel.y == 0.0 {
+                    self.vel.x *= 0.8;
+                }
+            }
+            // `:50040-50056` — the bite gravity and the cooldown hand-off.
+            self.vel.y += 0.4;
+            if self.vel.y > 10.0 {
+                self.vel.y = 10.0;
+            }
+            self.ai[1] -= 1.0;
+            if self.ai[1] <= 0.0 {
+                if num9 <= 0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                    return;
+                }
+                self.ai[1] = -num9 as f32;
+            }
+        }
+        // `:50058-50098` — state 5: the pirates' teleport strike.
+        if self.ai[0] == 5.0 {
+            if attack_target < 0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                self.local_ai[0] = 0.0;
+                return;
+            }
+            let n = &npcs[attack_target as usize];
+            let (nw, nh) = n.size();
+            let mut center = npc_center(n);
+            let num27 = nw.min(nh) * 0.5 * 0.5;
+            let ang = self.minion_pos as f32 * (std::f32::consts::PI * 2.0) / 0.5862069;
+            center += Vec2::new(ang.cos(), ang.sin()) * num27;
+            let num28 = 16.0f32;
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            self.vel = move_towards(Vec2::ZERO, center - my_center, num28);
+            self.local_ai[0] = (center - my_center).length() / num28;
+            self.direction = if self.vel.x >= 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
+            if self.local_ai[0] < 2.0 {
+                // `:50075-50086` — arrived: bite from the ring point. The
+                // `NextVector2CircularEdge(4,4)` is one `NextFloat` draw
+                // (`Utils.cs:1261-1274`); the C# then overwrites Y twice
+                // (`abs` then `-3`) — both writes kept verbatim.
+                self.ai[0] = 2.0;
+                self.ai[1] = num10 as f32;
+                self.vel *= 0.3;
+                let a = rng.next_float() * std::f32::consts::TAU;
+                self.vel += Vec2::new(a.cos(), a.sin()) * 4.0;
+                self.vel.y = self.vel.y.abs();
+                self.vel.y = -3.0;
+                self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+                return;
+            }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 180.0 {
+                if num9 <= 0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                    return;
+                }
+                self.ai[1] = -num9 as f32;
+            }
+        }
+        // `:50103-50270` — the target pursuit.
+        if attack_target >= 0 {
+            let num29 = if flag2 { 50.0f32 } else { 20.0f32 };
+            let n = &npcs[attack_target as usize];
+            let mut vector6 = npc_center(n);
+            let target_center = vector6;
+            vector = vector6;
+            if self.is_in_range_of_me_or_my_owner(world, n, num2, player.as_deref()) {
+                // `:50128` — the jump helper.
+                self.pirates_try_jumping_to_target(vector6, target_center);
+                // `:50129-50183` — the pirates' high leap / boss teleport.
+                if flag && self.ai[1] == 0.0 {
+                    let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                    let bottom = self.pos.y + self.h;
+                    // `base.wet` folds to false (no liquid-wet flags on the
+                    // slot — the sentry precedent, ANALYSIS).
+                    if self.vel.y > 2.0 && target_center.y - bottom < -250.0 {
+                        if self.pos.y % 1.0 < 0.5 {
+                            self.ai[0] = 5.0;
+                            self.ai[1] = 0.0;
+                            return;
+                        }
+                        let mut num30 = ((vector6.y - my_center.y) * -1.0 * 2.0 * 0.4).sqrt();
+                        if num30 > 26.0 {
+                            num30 = 26.0;
+                        }
+                        self.vel.y = 0.0 - num30;
+                        // `:50146` — two float draws steer the leap.
+                        self.vel.x += (rng.next_float() * 2.0 - 1.0) * rng.next_float() * 5.0;
+                        // `:50147-50174` — the burst pick draws `Next(4)`;
+                        // the dust spawns are skipped but the taken branch's
+                        // gore-type rolls stay on the stream (one
+                        // `Next(580,583)` or two `Next(11,14)`).
+                        if rng.next_range(0, 4) == 0 {
+                            let _ = rng.next_range(580, 583);
+                        } else {
+                            let _ = (rng.next_range(11, 14), rng.next_range(11, 14));
+                        }
+                    }
+                    // `:50176-50182` — the far-boss teleport (the boss proxy
+                    // is `revenge::BOSS_KINDS`, the scan's precedent).
+                    if (vector6 - my_center).length() > 600.0
+                        && crate::revenge::BOSS_KINDS.contains(&n.kind)
+                    {
+                        self.ai[0] = 5.0;
+                        self.ai[1] = 0.0;
+                        return;
+                    }
+                }
+                // `:50216-50231` — close enough: bite.
+                let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                if flag14 && my_center.distance(vector) < num29 && self.ai[0] != 2.0 {
+                    let mut flag17 = true;
+                    if flag && self.vel.y != 0.0 {
+                        flag17 = false;
+                    }
+                    if flag17 && self.vel.length() > 10.0 {
+                        self.vel /= self.vel.length() / 10.0;
+                    }
+                    self.ai[0] = 2.0;
+                    self.ai[1] = num10 as f32;
+                    self.direction = if vector6.x - my_center.x > 0.0 { 1 } else { -1 };
+                }
+            }
+            // `:50261-50269` — the frog stands off 20 px behind its aim.
+            if flag2 {
+                let num40 = if vector6.x - (self.pos.x + self.w * 0.5) < 0.0 { -1 } else { 1 };
+                vector.x += 20.0 * -num40 as f32;
+            }
+        }
+        // `:50271-50300` — idle and far from the owner: fly back.
+        if self.ai[0] == 0.0 && attack_target < 0 {
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let vector7 = player_center - my_center;
+            let mut flag18 = false;
+            if vector7.length() > 2000.0 {
+                self.pos = player_center - Vec2::new(self.w, self.h) * 0.5;
+            } else if vector7.length() > num3 || vector7.y.abs() > num4 {
+                flag18 = true;
+                if self.vel.y > 0.0 && vector7.y < 0.0 {
+                    self.vel.y = 0.0;
+                }
+                if self.vel.y < 0.0 && vector7.y > 0.0 {
+                    self.vel.y = 0.0;
+                }
+            }
+            if flag18 {
+                self.ai[0] = 1.0;
+            }
+        }
+        // `:50301-51149` — states 0/3: the ground walk.
+        if self.ai[0] == 0.0 || self.ai[0] == 3.0 {
+            if attack_target < 0 {
+                // `:50305-50308` — the home spot on the wrong side of the
+                // owner snaps to the owner.
+                let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                if my_center.distance(player_center) > 60.0
+                    && my_center.distance(vector) > 60.0
+                    && csign(vector.x - player_center.x) != csign(my_center.x - player_center.x)
+                {
+                    vector = player_center;
+                }
+                // `:50327-50336` — drop the home spot to the ground (20 rows).
+                let size = Vec2::new(self.w, self.h);
+                let mut r_top = vector - size * 0.5;
+                for _ in 0..20 {
+                    if box_solid(world, r_top, self.w, self.h) {
+                        break;
+                    }
+                    r_top.y += 16.0;
+                    vector.y += 16.0;
+                }
+                // `:50337-50338` — clamp the spot through the owner's tiles.
+                let tc = crate::collision::tile_collision(
+                    world,
+                    [player_center.x - size.x * 0.5, player_center.y - size.y * 0.5],
+                    [vector.x - player_center.x, vector.y - player_center.y],
+                    self.w,
+                    self.h,
+                    false,
+                    false,
+                );
+                vector = player_center + Vec2::new(tc.vel[0], tc.vel[1]);
+                // `:50339-50346` — already close: hold position.
+                if my_center.distance(vector) < 32.0 && self.ai[0] != 3.0 {
+                    let num43 = player_center.distance(vector);
+                    if player_center.distance(my_center) < num43 {
+                        vector = my_center;
+                    }
+                }
+                // `:50347-50363` — too far: walk the owner→spot line in 0.05
+                // steps and stop at the first solid box.
+                let vector9 = player_center - vector;
+                if vector9.length() > num3 || vector9.y.abs() > num4 {
+                    let r2_top = player_center - size * 0.5;
+                    let vector10 = vector - player_center;
+                    let mut vector11 = r2_top;
+                    let mut num44 = 0.0f32;
+                    while num44 < 1.0 {
+                        let vector12 = r2_top + vector10 * num44;
+                        if box_solid(world, vector12, self.w, self.h) {
+                            break;
+                        }
+                        vector11 = vector12;
+                        num44 += 0.05;
+                    }
+                    vector = vector11 + size * 0.5;
+                }
+            }
+            self.tile_collide = true;
+            // `:50366-50422` — the walk parameter ladder.
+            let mut num45 = 0.5f32;
+            let mut num46 = 4.0f32;
+            let mut num47 = 4.0f32;
+            let num48 = 0.1f32;
+            if flag && attack_target != -1 {
+                num45 = 1.0;
+                num46 = 8.0;
+                num47 = 8.0;
+            }
+            if flag2 && attack_target != -1 {
+                num45 = 0.7;
+                num46 = 6.0;
+                num47 = 6.0;
+            }
+            let pv_speed = p.vx.abs() + p.vy.abs();
+            if num47 < pv_speed {
+                num47 = pv_speed;
+                num45 = 0.7;
+            }
+            // `:50435-50566` — the horizontal steer.
+            let mut num50 = 0i32;
+            let mut flag19 = false;
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let mut num51 = vector.x - my_center.x;
+            let vector13 = vector - my_center;
+            if flag10 {
+                num51 = 0.0;
+            }
+            if num51.abs() > 5.0 {
+                if num51 < 0.0 {
+                    num50 = -1;
+                    if self.vel.x > 0.0 - num46 {
+                        self.vel.x -= num45;
+                    } else {
+                        self.vel.x -= num48;
+                    }
+                } else {
+                    num50 = 1;
+                    if self.vel.x < num46 {
+                        self.vel.x += num45;
+                    } else {
+                        self.vel.x += num48;
+                    }
+                }
+                // `:50509-50557` — the jump intent: the pirates never
+                // auto-jump on the flat (`flag` clears flag21), the frog
+                // only without a target.
+                let mut flag21 = true;
+                if flag {
+                    flag21 = false;
+                }
+                if flag2 && attack_target == -1 {
+                    flag21 = false;
+                }
+                if flag21 {
+                    flag19 = true;
+                }
+            } else {
+                self.vel.x *= 0.9;
+                if self.vel.x.abs() < num45 * 2.0 {
+                    self.vel.x = 0.0;
+                }
+            }
+            // `:50567-50584` — the wall probe ahead.
+            let flag22 = vector13.x.abs() >= 64.0 || (vector13.y <= -48.0 && vector13.x.abs() >= 8.0);
+            if (num50 != 0) & flag22 {
+                let mut num53 = (self.pos.x + self.w * 0.5) as i32 / 16;
+                let num54 = self.pos.y as i32 / 16;
+                num53 = num53 + num50 + self.vel.x as i32;
+                for num55 in num54..num54 + self.h as i32 / 16 + 1 {
+                    if solid_tile(world, num53, num55) {
+                        flag19 = true;
+                    }
+                }
+            }
+            // `:50605` — the step-up.
+            let mut pos = [self.pos.x, self.pos.y];
+            let mut vel = [self.vel.x, self.vel.y];
+            crate::collision::step_up(
+                world,
+                &mut pos,
+                &mut vel,
+                self.w,
+                self.h,
+                &mut self.step_speed,
+                &mut self.gfx_off_y,
+                false,
+            );
+            self.pos = Vec2::new(pos[0], pos[1]);
+            self.vel = Vec2::new(vel[0], vel[1]);
+            // `:50606-50608` — the fall-through lift (`flag23` is the
+            // deferred 1022's; `num57` stays 1).
+            let num56 = get_lerp_value(0.0, 100.0, vector13.y)
+                * get_lerp_value(-2.0, -6.0, self.vel.y);
+            if self.vel.y == 0.0 {
+                if flag19 {
+                    // `:50617-50663` — the three-column ground probe and the
+                    // jump ladder (the last column's write wins, the C#'s
+                    // loop overwrites `velocity.Y` per column).
+                    for num58 in 0..3 {
+                        let mut num59 = (self.pos.x + self.w * 0.5) as i32 / 16;
+                        if num58 == 0 {
+                            num59 = self.pos.x as i32 / 16;
+                        }
+                        if num58 == 2 {
+                            num59 = (self.pos.x + self.w) as i32 / 16;
+                        }
+                        let num60 = (self.pos.y + self.h) as i32 / 16;
+                        let ground = world.tile(num59, num60);
+                        let stands = solid_tile(world, num59, num60)
+                            || ground.is_some_and(|t| {
+                                t.half_brick()
+                                    || t.slope() > 0
+                                    || (tr_core::tiledata::SET_PLATFORMS.has(t.kind)
+                                        && t.active()
+                                        && !t.inactive())
+                            });
+                        if !stands {
+                            continue;
+                        }
+                        // `:50633-50662` — the try/catch: the first two
+                        // probes' null tiles throw into the catch's -9.1;
+                        // the later `SolidTile` calls read null as solid
+                        // (`WorldGen.cs:70115-70117`).
+                        let num59 = (self.pos.x + self.w * 0.5) as i32 / 16
+                            + num50
+                            + self.vel.x as i32;
+                        let num60 = (self.pos.y + self.h * 0.5) as i32 / 16;
+                        if world.tile(num59, num60 - 1).is_none()
+                            || world.tile(num59, num60 - 2).is_none()
+                        {
+                            self.vel.y = -9.1;
+                        } else if !solid_tile(world, num59, num60 - 1)
+                            && !solid_tile(world, num59, num60 - 2)
+                        {
+                            self.vel.y = -5.1;
+                        } else if !solid_tile(world, num59, num60 - 2) {
+                            self.vel.y = -7.1;
+                        } else if solid_tile(world, num59, num60 - 5) {
+                            self.vel.y = -11.1;
+                        } else if solid_tile(world, num59, num60 - 4) {
+                            self.vel.y = -10.1;
+                        } else {
+                            self.vel.y = -9.1;
+                        }
+                    }
+                    // `:50664-50711` — the height ladder toward the aim.
+                    let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                    if vector.y - my_center.y < -48.0 {
+                        let num61 = (vector.y - my_center.y) * -1.0;
+                        self.vel.y = if num61 < 60.0 {
+                            -6.0
+                        } else if num61 < 80.0 {
+                            -7.0
+                        } else if num61 < 100.0 {
+                            -8.0
+                        } else if num61 < 120.0 {
+                            -9.0
+                        } else if num61 < 140.0 {
+                            -10.0
+                        } else if num61 < 160.0 {
+                            -11.0
+                        } else if num61 < 190.0 {
+                            -12.0
+                        } else if num61 < 210.0 {
+                            -13.0
+                        } else if num61 < 270.0 {
+                            -14.0
+                        } else if num61 < 310.0 {
+                            -15.0
+                        } else {
+                            -16.0
+                        };
+                    }
+                    // `:50712-50715` — the wet double-jump folds out (no
+                    // wet flag on the slot).
+                }
+            }
+            // `:50733-50743` — the speed cap.
+            if self.vel.x > num47 {
+                self.vel.x = num47;
+            }
+            if self.vel.x < 0.0 - num47 {
+                self.vel.x = 0.0 - num47;
+            }
+            // `:50744-50767` — the facing.
+            if self.ai[0] != 2.0 {
+                if self.vel.x < 0.0 {
+                    self.direction = -1;
+                }
+                if self.vel.x > 0.0 {
+                    self.direction = 1;
+                }
+                if self.vel.x == 0.0 {
+                    self.direction = if player_center.x > my_center.x { 1 } else { -1 };
+                }
+                if self.vel.x > num45 && num50 == 1 {
+                    self.direction = 1;
+                }
+                if self.vel.x < 0.0 - num45 && num50 == -1 {
+                    self.direction = -1;
+                }
+            }
+            self.sprite_direction = self.direction;
+            // `:50897-50932` — the pirates' walk frames 0-3 / fall frame 14.
+            if flag {
+                self.rot = 0.0;
+                if self.vel.y == 0.0 {
+                    if self.vel.x == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    } else if self.vel.x.abs() >= 0.5 {
+                        self.frame_counter += self.vel.x.abs() as i32;
+                        self.frame_counter += 1;
+                        if self.frame_counter > 10 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                        if self.frame >= 4 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    }
+                } else if self.vel.y != 0.0 {
+                    self.frame_counter = 0;
+                    self.frame = 14;
+                }
+            }
+            // `:51029-51098` — the frog's idle blink / walk / rise / fall.
+            if flag2 {
+                self.rot = 0.0;
+                if self.vel.y == 0.0 {
+                    if self.vel.x == 0.0 {
+                        // `:51036-51050` — the blink: the `Next(50)` draws
+                        // only when the counter reaches 28 (the `&&`
+                        // short-circuit).
+                        let num63 = 4;
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 7 * num63 && rng.next_range(0, 50) == 0 {
+                            self.frame_counter = 0;
+                        }
+                        let mut num64 = self.frame_counter / num63;
+                        if num64 >= 4 {
+                            num64 = 6 - num64;
+                        }
+                        if num64 < 0 {
+                            num64 = 0;
+                        }
+                        self.frame = 1 + num64;
+                    } else if self.vel.x.abs() >= 0.5 {
+                        self.frame_counter += self.vel.x.abs() as i32;
+                        self.frame_counter += 1;
+                        let num65 = 15;
+                        if self.frame_counter >= 8 * num65 {
+                            self.frame_counter = 0;
+                        }
+                        self.frame = self.frame_counter / num65 + 5;
+                    } else {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    }
+                } else if self.vel.y != 0.0 {
+                    if self.vel.y < 0.0 {
+                        if self.frame > 9 || self.frame < 5 {
+                            self.frame = 5;
+                            self.frame_counter = 0;
+                        }
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 1 && self.frame < 9 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                    } else {
+                        if self.frame > 13 || self.frame < 9 {
+                            self.frame = 9;
+                            self.frame_counter = 0;
+                        }
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 2 && self.frame < 11 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                    }
+                }
+            }
+            // `:51144-51148` — the gravity + the fall-through lift.
+            self.vel.y += num + num56;
+            if self.vel.y > 10.0 {
+                self.vel.y = 10.0;
+            }
+        }
+        // `:51150-51171` — the pirates' idle burst: the counter and the
+        // per-tick `Next(900,1200)` comparison stay (they reset the state);
+        // the dust spawns are skipped, the gore-type roll stays on the
+        // stream.
+        if flag {
+            self.local_ai[0] += 1.0;
+            if self.vel.x == 0.0 {
+                self.local_ai[0] += 1.0;
+            }
+            if self.local_ai[0] >= rng.next_range(900, 1200) as f32 {
+                self.local_ai[0] = 0.0;
+                let _ = rng.next_range(580, 583);
+            }
+        }
+        // `:51172-51200` — the 1090's frame cycle is deferred.
+    }
+
+    /// `AI_067_FreakingPirates_TryJumpingToTarget`
+    /// (`Projectile.cs:51203-51256`) — the ported kinds' half: the manual
+    /// fall-through decision and the sqrt jump. The 1022's `GetChaseResults`
+    /// leap (`:51218-51241`) and the wet gate (`:51208-51211`, no wet flag)
+    /// are deferred; the 393-395 `vy > 2` block (`:51213-51217`) is two
+    /// discarded reads in the C# — a no-op.
+    fn pirates_try_jumping_to_target(&mut self, to_target: Vec2, target_center: Vec2) {
+        self.should_fall_through = target_center.y > self.pos.y + self.h;
+        let flag2 = self.vel.y == 0.0;
+        let num3 = 30.0f32;
+        let my_center_y = self.pos.y + self.h * 0.5;
+        if (to_target.y < my_center_y - num3) & flag2 {
+            let mut num4 = ((to_target.y - my_center_y) * -1.0 * 2.0 * 0.4).sqrt();
+            if num4 > 26.0 {
+                num4 = 26.0;
+            }
+            self.vel.y = 0.0 - num4;
+        }
+    }
+
+    /// `HandleMovement`'s half for the aiStyle-67 pirate/frog minions
+    /// (`Projectile.cs:17469-19865`): `flag6 = shouldFallThrough`
+    /// (`decidesManualFallThrough`, `:17583-17586`), the dry collision branch
+    /// (`:17700-17894`) — the >16 px/tick hoik step loop (`:17711-17846`)
+    /// with its 0.0001 last-velocity snap, else the single `TileCollision`
+    /// (`:17849`) — then `UpdatePosition`'s `position += velocity`
+    /// (`:19858`/`:20445`). The `gfxOffY` decay (`:16740-16764`) rides here
+    /// per tick. SKIPPED (ANALYSIS): the slope passes (every inner
+    /// `SlopeCollision` is gated on `!correctSlopeCollision`, which is false
+    /// for these `projPet` kinds — `:707`/`:17744`), the `UpdatePosition`
+    /// slope correction (`:20447-20474`, the twins precedent), the
+    /// `SwitchTiles` plate presses (`:17788-17791`/`:19859-19864`, no plate
+    /// layer), the `ignoreDoors`/`hoik` collision parameters (the port's
+    /// `tile_collision` carries the fall pair only), and the blocked-move
+    /// chain (`:17904-19854`): the tile-cut prologue including its
+    /// `Next(3)` draw (the `dd2_sentry_step` precedent) and every type arm —
+    /// the pirates/frog match none before the `!correctSlopeCollision` gate
+    /// at `:18398`, so a blocked move only stops them.
+    fn pirate_movement(&mut self, world: &World) {
+        // `:16740-16764` — the StepUp draw-lift decay.
+        let num = 1.0 + self.vel.x.abs() / 3.0;
+        if self.gfx_off_y > 0.0 {
+            self.gfx_off_y -= num * self.step_speed;
+            if self.gfx_off_y < 0.0 {
+                self.gfx_off_y = 0.0;
+            }
+        } else if self.gfx_off_y < 0.0 {
+            self.gfx_off_y += num * self.step_speed;
+            if self.gfx_off_y > 0.0 {
+                self.gfx_off_y = 0.0;
+            }
+        }
+        self.gfx_off_y = self.gfx_off_y.clamp(-16.0, 16.0);
+        if !self.tile_collide {
+            // `:17476`'s gate — no tile pass, just the integrate.
+            self.pos += self.vel;
+            return;
+        }
+        let fall = self.should_fall_through;
+        let last_velocity = self.vel;
+        // `:17702-17710` — the step size clamp.
+        let num2 = (self.w.min(self.h) as i32).clamp(3, 16) as f32;
+        if self.vel.length() > num2 {
+            // `:17711-17846` — the hoik step loop.
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                fall,
+                fall,
+            );
+            let mut num3 = self.vel.length();
+            let num4 = num2;
+            let mut vector8 = safe_normalize(self.vel);
+            if tc.vel[1] == 0.0 {
+                vector8.y = 0.0;
+            }
+            let mut zero = Vec2::ZERO;
+            let mut num5 = 0;
+            while num3 > 0.0 {
+                num5 += 1;
+                if num5 > 300 {
+                    break;
+                }
+                let num6 = num3.min(num4);
+                num3 -= num6;
+                let step_vel = vector8 * num6;
+                let tc = crate::collision::tile_collision(
+                    world,
+                    [self.pos.x, self.pos.y],
+                    [step_vel.x, step_vel.y],
+                    self.w,
+                    self.h,
+                    fall,
+                    fall,
+                );
+                let vector10 = Vec2::new(tc.vel[0], tc.vel[1]);
+                self.pos += vector10;
+                self.vel = vector10;
+                zero += self.vel;
+            }
+            self.vel = zero;
+            // `:17795-17802` — the last-velocity snap.
+            if (self.vel.x - last_velocity.x).abs() < 0.0001 {
+                self.vel.x = last_velocity.x;
+            }
+            if (self.vel.y - last_velocity.y).abs() < 0.0001 {
+                self.vel.y = last_velocity.y;
+            }
+        } else {
+            // `:17849` — the single collision pass.
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                fall,
+                fall,
+            );
+            self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        // `UpdatePosition` (`:20445`) — the dry integrate.
+        self.pos += self.vel;
+    }
+
     /// `Projectile.Minion_FindTargetInRange` (`Projectile.cs:48990-49027`) —
     /// the minion target walk: the owner's whip mark first (`respectOwnerTarget`)
     /// then the closest chaseable NPC whose distance to the minion *or* the
@@ -10576,6 +11481,9 @@ impl ProjectilePool {
             original_damage: if data.minion || data.sentry { damage } else { 0 },
             net_important: data.net_important,
             ignore_water: data.ignore_water,
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
@@ -11247,6 +12155,34 @@ impl ProjectilePool {
                                 sep_attack,
                                 sep_home,
                             );
+                        }
+                        // `AI_067_FreakingPirates` (`:49121-51201`, the
+                        // dispatch at `:30162`): the pirate trio (393-395)
+                        // and the Vampire Frog (758) — the first slice of
+                        // the 16-type family (S1-D-4b-7). The other types'
+                        // rows exist but stay gated here until their arms
+                        // land (the Tigers' special-attack chain, the
+                        // whip, the smart-cursor miners, the five pets).
+                        67 => {
+                            if matches!(
+                                self.slots[i].kind,
+                                ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN
+                                    | VAMPIRE_FROG
+                            ) {
+                                self.slots[i].ai_freaking_pirates(
+                                    world,
+                                    player.as_deref_mut(),
+                                    &npcs[..],
+                                    rng,
+                                );
+                                // `HandleMovement`'s pirate half — the
+                                // manual fall-through collision + integrate
+                                // (the arm's early returns still move, the
+                                // twins precedent `:19858`).
+                                if self.slots[i].active {
+                                    self.slots[i].pirate_movement(world);
+                                }
+                            }
                         }
                         // The Nebula Arcanum pair (`:34638-34887`): the two
                         // flight modes + the homing + the subshot roll; the
@@ -17771,6 +18707,9 @@ mod phasmal_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 
@@ -18007,6 +18946,9 @@ mod ritual_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 
@@ -26364,5 +27306,294 @@ mod projectile_ai_tests {
             "and flies on, x = {}",
             pool.slots[slot].pos.x
         );
+    }
+}
+#[cfg(test)]
+mod s1_d_4b_7_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 10;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p.facing = 1;
+        p
+    }
+
+    fn spawn_at(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 400;
+        n.hp = 400;
+        n
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player, npcs: &mut [Npc]) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    /// A draw-recording `Main.rand` stand-in: `next_range` returns `min`
+    /// (the burst comparison never resets, the frog's `Next(50)` roll hits
+    /// 0), `next_float` returns 0 — the census proves count AND order.
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The four rows' `SetDefaults` slice (`Projectile.cs:4755-4768`,
+    /// `:7814-7828`) + the frame sheets (`Main.cs:8518-8520`, `:8631`).
+    #[test]
+    fn s1_d_4b_7_the_four_rows_carry_the_csharp_set_defaults() {
+        for kind in [ONE_EYED_PIRATE, SOULSCOURGE_PIRATE, PIRATE_CAPTAIN] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (20.0, 30.0), "kind {kind}");
+            assert_eq!(d.ai_style, 67, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "the `timeLeft *= 5`");
+            assert!(d.minion, "kind {kind}");
+            assert_eq!(d.minion_slots, 1.0, "kind {kind}");
+            assert!(d.tile_collide, "the stock true — the arm sets neither");
+            assert!(!d.ignore_water, "kind {kind}");
+            assert!(d.uses_local_immunity, "the LOCAL pair (`:4765`)");
+            assert_eq!(d.local_hit_cooldown, 18, "`:4766`");
+            assert!(!d.uses_id_static_immunity, "kind {kind}");
+            assert!(d.decides_manual_fall_through, "`:4767`");
+            assert_eq!(proj_frames(kind), 15, "Main.cs:8518-8520");
+        }
+        let frog = proj_data(VAMPIRE_FROG).unwrap();
+        assert_eq!((frog.w, frog.h), (20.0, 30.0));
+        assert_eq!(frog.ai_style, 67);
+        assert_eq!(frog.penetrate, -1);
+        assert_eq!(frog.time_left, 18000);
+        assert!(frog.minion);
+        assert_eq!(frog.minion_slots, 1.0);
+        assert!(frog.uses_id_static_immunity, "the idStatic pair (`:7826`)");
+        assert_eq!(frog.id_static_hit_cooldown, 10, "`:7827`");
+        assert!(!frog.uses_local_immunity);
+        assert!(frog.decides_manual_fall_through, "`:7825`");
+        assert_eq!(proj_frames(VAMPIRE_FROG), 24, "Main.cs:8631");
+    }
+
+    /// Per-type dispatch: each ported kind's slot moves on its first tick
+    /// (the walk's gravity `:51144` + the integrate), while the deferred
+    /// Storm Tiger row stays inert — the dispatch gates it.
+    #[test]
+    fn s1_d_4b_7_the_dispatch_arms_the_pirates_and_the_frog() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for kind in [ONE_EYED_PIRATE, SOULSCOURGE_PIRATE, PIRATE_CAPTAIN, VAMPIRE_FROG] {
+            let slot = spawn_at(&mut pool, kind, cx + 60.0, cy);
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            let s = &pool.slots[slot];
+            assert!(s.active, "kind {kind} lives");
+            assert!(s.pos.y > cy, "kind {kind} fell — the arm ran ({:?})", s.pos);
+            assert!(s.vel.x < 0.0, "kind {kind} walks home (left)");
+            pool.slots[slot].active = false;
+        }
+        // The deferred types: the row exists (aiStyle 67) but the dispatch
+        // gate leaves the slot inert until their arms land.
+        let tiger = spawn_at(&mut pool, STORM_TIGER_1, cx + 60.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tiger].pos, Vec2::new(cx + 60.0, cy));
+        assert_eq!(pool.slots[tiger].vel, Vec2::ZERO);
+    }
+
+    /// `:49248-49259` / `:49316-49327` — the keep-alive pins: a live summon
+    /// flag pins `timeLeft = 2`; a dead owner clears the flag (no pin).
+    #[test]
+    fn s1_d_4b_7_the_pirates_and_frog_pin_against_their_summon_flags() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.pirate_minion = true;
+        p.vampire_frog = true;
+        let pirate = spawn_at(&mut pool, ONE_EYED_PIRATE, cx - 150.0, cy);
+        let frog = spawn_at(&mut pool, VAMPIRE_FROG, cx + 150.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[pirate].time_left, 1, "the pin of 2 minus the tail's decrement");
+        assert_eq!(pool.slots[frog].time_left, 1);
+        p.dead = true;
+        pool.slots[pirate].time_left = 18000;
+        pool.slots[frog].time_left = 18000;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(!p.pirate_minion, "the dead owner drops the flag");
+        assert!(!p.vampire_frog);
+        assert_eq!(pool.slots[pirate].time_left, 17999, "no pin after the clear");
+        assert_eq!(pool.slots[frog].time_left, 17999);
+    }
+
+    /// `:50216-50231` + `:49966-50057` — the frog bites a close target:
+    /// `ai[0] = 2`, `ai[1] = 20`, the 20-tick bite counts down into the
+    /// 60-tick cooldown (`ai[1] = -60`), and the cooldown's first tick
+    /// resets to the follow state (`num10 >= 0`, `:49958-49964`).
+    #[test]
+    fn s1_d_4b_7_the_frog_bites_for_twenty_ticks_then_cools_down() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let slot = spawn_at(&mut pool, VAMPIRE_FROG, cx, cy);
+        // The NPC's centre sits 40 px right of the frog's centre — inside
+        // the frog's 50-px bite range (`num29`, `:50107-50111`).
+        let frog_center = Vec2::new(cx + 10.0, cy + 15.0);
+        let mut n = npc_at(NpcKind::Zombie, 0.0, 0.0);
+        let (nw, nh) = n.size();
+        n.x = frog_center.x + 40.0 - nw * 0.5;
+        n.y = frog_center.y - nh * 0.5;
+        let mut npcs = vec![n];
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "the bite armed");
+        assert_eq!(pool.slots[slot].ai[1], 20.0, "`ai[1] = num10`");
+        assert!(pool.slots[slot].friendly, "the frog is friendly (`:49587`)");
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[slot].ai[1], -60.0, "the cooldown (`:50055`)");
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].ai[0], 0.0, "the cooldown resets (`:49960-49961`)");
+        assert_eq!(pool.slots[slot].ai[1], 0.0);
+    }
+
+    /// `:50058-50086` — the pirates' state-5 arrival: inside 2 strike steps
+    /// the pirate snaps onto the ring point, arms the bite (`ai[1] = 15`)
+    /// and the velocity's Y lands on -3 (the C#'s double write). RNG: the
+    /// arrival draws exactly ONE `NextFloat` (the circular-edge angle).
+    #[test]
+    fn s1_d_4b_7_the_pirate_teleport_strike_arrives_with_one_float_draw() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut proj = Projectile {
+            active: true,
+            kind: PIRATE_CAPTAIN,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx, cy),
+            ..Default::default()
+        };
+        proj.ai[0] = 5.0;
+        let my_center = proj.pos + Vec2::new(10.0, 15.0);
+        let mut n = npc_at(NpcKind::Zombie, 0.0, 0.0);
+        let (nw, nh) = n.size();
+        n.x = my_center.x + 20.0 - nw * 0.5;
+        n.y = my_center.y - nh * 0.5;
+        let npcs = vec![n];
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        proj.ai_freaking_pirates(&w, Some(&mut p), &npcs, &mut census);
+        assert_eq!(proj.ai[0], 2.0, "the strike became a bite");
+        assert_eq!(proj.ai[1], 15.0, "`ai[1] = num10` (the pirates' 15)");
+        assert_eq!(proj.vel.y, -3.0, "the C#'s abs-then--3 double write");
+        let num27 = nw.min(nh) * 0.5 * 0.5;
+        let ring = npc_center(&npcs[0]) + Vec2::new(num27, 0.0);
+        assert_eq!(proj.pos, ring - Vec2::new(10.0, 15.0), "the centre snap");
+        assert_eq!(census.floats, 1, "one NextVector2CircularEdge draw");
+        assert!(census.ranges.is_empty(), "no integer draws on the arrival");
+    }
+
+    /// RNG census, idle pirate (`:51150-51171`): exactly one
+    /// `Next(900,1200)` comparison per tick, in order, nothing else — the
+    /// dust/gore internals are skipped but the burst's gate stays.
+    #[test]
+    fn s1_d_4b_7_the_idle_pirate_draws_one_burst_comparison_per_tick() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut proj = Projectile {
+            active: true,
+            kind: ONE_EYED_PIRATE,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx + 100.0, cy),
+            ..Default::default()
+        };
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            proj.ai_freaking_pirates(&w, Some(&mut p), &[], &mut census);
+        }
+        assert_eq!(census.ranges, vec![(900, 1200); 3], "one comparison per tick");
+        assert_eq!(census.floats, 0);
+        assert_eq!(proj.local_ai[0], 3.0, "the counter climbs (vel.x != 0)");
+    }
+
+    /// RNG census, resting frog (`:51036-51050`): the blink's `Next(50)`
+    /// draws ONLY when the frame counter reaches 28 (the `&&`
+    /// short-circuit) — 27 silent ticks, the 28th draws, the 0-roll resets
+    /// the counter and the 29th is silent again.
+    #[test]
+    fn s1_d_4b_7_the_frog_blink_draws_only_at_the_28th_tick() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        // The home spot is cx - 45 (35 + width/2, facing 1); the line-walk
+        // trim keeps the aim within the 5-px dead band, so vel.x stays 0.
+        let mut proj = Projectile {
+            active: true,
+            kind: VAMPIRE_FROG,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx - 55.0, cy),
+            ..Default::default()
+        };
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        for i in 1..=29 {
+            proj.vel = Vec2::ZERO;
+            proj.ai_freaking_pirates(&w, Some(&mut p), &[], &mut census);
+            if i < 28 {
+                assert!(census.ranges.is_empty(), "tick {i}: the short-circuit holds");
+            } else if i == 28 {
+                assert_eq!(census.ranges, vec![(0, 50)], "the 28th tick draws");
+                assert_eq!(proj.frame_counter, 0, "the 0-roll resets the blink");
+            } else {
+                assert_eq!(census.ranges.len(), 1, "tick {i}: silent again");
+            }
+        }
+        assert_eq!(census.floats, 0);
     }
 }
