@@ -2065,6 +2065,32 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The item-use sound wave (S1-E-21-itemuse)
+
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
+at `base.Center` with `sItem.useSoundPitch`. The port provisions the data through
+`tools/GenItemData`: `ItemDef.use_sound` indexes the new generated
+`crates/tr-app/src/soundid.rs` (all 506 `SoundID` styles, ctor order), and
+`Audio::play_use_sound` ports the façade (`SoundEngine.cs:93-99`) + the legacy
+case-2 maths (`LegacySoundPlayer.cs:516-644`, `sound.rs::item_use_case2`) + the
+case-42 trackable arm (`:1376-1381`). The use-start seam is
+`world_sim/editing.rs::start_swing_extras` (every swing/shot/consume arm calls it);
+the `SkipsInitialUseSound` gate `{2350, 4870}` (`ItemID.cs:408`) lives in
+`item.rs::initial_use_sound`. RNG contract: the case-2 `Main.rand` draws ride the
+caller's `UpdatePlayers` stream (`Player.ItemCheck` under the `Main.cs:17754`
+swap) and run ONLY after the attenuation gate passed (the C# order); the
+`GetRandomPitch` NextFloat rides the audio-only `sound_style_random` and never
+touches a gameplay stream — pinned by
+`s1_e_21a_the_use_sound_draws_ride_the_passed_stream_only_when_audible`.
+Deliberate deviations: (1) the multi-variation trackables pin the `_0` asset
+(the standing D3 pin — the variation pick rides `LegacySoundStyle.Random`, an
+unobservable stream); (2) the per-style instance stop/re-create pool and the
+53/55/159 playing guards are unmodelled (the standing D4 deviation — repeated
+cues stack); (3) the net-sync arm (`Player.cs:51690-51692`, `NetMessage.SendData
+152`) has no port (single-player); (4) `Main.musicPitch` (styles 26/35/47, none
+named by a `UseSound` row today) reads 0.0. Tile place/break sounds are NOT this
+wave (break landed in S1-E-21c; place is a follow-up).
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,

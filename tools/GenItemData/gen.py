@@ -68,6 +68,8 @@ OUT = ROOT / "crates" / "tr-app" / "src" / "itemdata.rs"
 
 ITEM_CS = DEC / "Item.cs"
 ITEMID_CS = DEC / "ID" / "ItemID.cs"
+SOUNDID_CS = DEC / "ID" / "SoundID.cs"
+SOUNDID_OUT = ROOT / "crates" / "tr-app" / "src" / "soundid.rs"
 AMMOID_CS = DEC / "ID" / "AmmoID.cs"
 PROJECTILEID_CS = DEC / "ID" / "ProjectileID.cs"
 BUFFID_CS = DEC / "ID" / "BuffID.cs"
@@ -147,6 +149,165 @@ def parse_int_set_values(itemid_text, expr, src):
     if len(nums) % 2:
         fail(src, 1, "odd entry count in int set " + expr)
     return [v for (k, v) in zip(nums[0::2], nums[1::2]) if v >= 0]
+
+
+# ---------------------------------------------------------------------------
+# SoundID style table (ID/SoundID.cs) — the `LegacySoundStyle` fields the
+# item-use wave resolves `Item.UseSound` through (S1-E-21 wave A).
+# ---------------------------------------------------------------------------
+
+def parse_soundid():
+    """Parse the `SoundID` static ctor into an ordered style list.
+
+    Returns (styles, by_name) where styles is a list of dicts in source order
+    and by_name maps the field name to its index. Each style dict carries:
+      name, sound_id, style, variations, volume, pitch_variance, sound_type
+      (0 Sound / 1 Ambient / 2 Music), trackable (base asset name or None).
+
+    The forms (all from the ctor body, SoundID.cs:1254-1768):
+      new LegacySoundStyle(id, style)               base, 1 variation
+      ... .WithVolume(v) / .WithVolumePerceived(v) / .WithPitchVariance(v)
+      SoundID.CreateTrackable(name[, variations][, type|defaults][, max])
+      SoundID.Other.WithVolume(v)                   copy with a volume override
+    `SoundStyleDefaults`, the int counts and the null maps are not styles.
+    """
+    lines = read_lines(SOUNDID_CS)
+    start = next(i for i, l in enumerate(lines) if "static SoundID()" in l)
+    depth = 0
+    end = None
+    for i in range(start, len(lines)):
+        depth += lines[i].count("{") - lines[i].count("}")
+        if depth == 0 and i > start:
+            end = i
+            break
+    if end is None:
+        fail("SoundID.cs", start + 1, "static ctor has no closing brace")
+
+    styles = []
+    by_name = {}
+    trackable_count = 0
+    defaults = {}  # SoundStyleDefaults name -> (volume, pitch_variance)
+
+    def num(tok):
+        tok = tok.strip().rstrip("f")
+        if "/" in tok:
+            a, b = tok.split("/")
+            return float(a.strip().rstrip("f")) / float(b.strip().rstrip("f"))
+        return float(tok)
+
+    def apply_mods(st, rhs):
+        # chained .WithVolume / .WithVolumePerceived / .WithPitchVariance
+        for m in re.finditer(r"\.(WithVolume|WithVolumePerceived|WithPitchVariance)\(([^)]*)\)", rhs):
+            kind, arg = m.group(1), num(m.group(2))
+            if kind == "WithVolume":
+                st["volume"] = arg
+            elif kind == "WithVolumePerceived":
+                st["volume"] = arg ** 1.6608999967575073
+            else:
+                st["pitch_variance"] = arg
+        return st
+
+    for l in lines[start + 1:end]:
+        m = re.match(r"\s*SoundID\.(\w+) = (.+);$", l)
+        if not m:
+            continue
+        name, rhs = m.group(1), m.group(2).strip()
+        if rhs == "null" or re.fullmatch(r"\d+", rhs):
+            continue  # the null maps / the int counts
+        dm = re.match(r"new SoundStyleDefaults\(([^,]+),\s*([^)]+)\)", rhs)
+        if dm:
+            defaults[name] = (num(dm.group(1)), num(dm.group(2)))
+            continue
+        st = {"name": name, "sound_id": 0, "style": 0, "variations": 1,
+              "volume": 1.0, "pitch_variance": 0.0, "sound_type": 0,
+              "trackable": None}
+        lm = re.match(r"new LegacySoundStyle\((\d+),\s*(\d+)\)", rhs)
+        if lm:
+            st["sound_id"] = int(lm.group(1))
+            st["style"] = int(lm.group(2))
+            apply_mods(st, rhs)
+        elif rhs.startswith("SoundID.CreateTrackable("):
+            # the matching close paren of CreateTrackable( — mods follow it
+            depth = 0
+            close = None
+            for k in range(len("SoundID.CreateTrackable(") - 1, len(rhs)):
+                if rhs[k] == "(":
+                    depth += 1
+                elif rhs[k] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        close = k
+                        break
+            inner = rhs[len("SoundID.CreateTrackable("):close]
+            # split top-level args (the name is a quoted string)
+            args = [a.strip() for a in re.split(r",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", inner)]
+            asset = args[0].strip('"')
+            variations = 1
+            sound_type = 0
+            seen_int = False
+            for a in args[1:]:
+                if re.fullmatch(r"\d+", a):
+                    # the first bare int is `variations`; a later one is
+                    # `maxInstances` (no cap in the port)
+                    if not seen_int:
+                        variations = int(a)
+                        seen_int = True
+                elif a == "SoundType.Ambient":
+                    sound_type = 1
+                elif a == "SoundType.Music":
+                    sound_type = 2
+                elif a == "SoundType.Sound":
+                    sound_type = 0
+                elif a.startswith("SoundID."):
+                    dv = defaults[a[len("SoundID."):]]
+                    st["volume"], st["pitch_variance"] = dv
+            st["sound_id"] = 42
+            st["style"] = trackable_count
+            st["variations"] = variations
+            st["sound_type"] = sound_type
+            st["trackable"] = asset
+            # `CreateTrackable` adds `name` once for 1 variation, else
+            # `name_0..name_{variations-1}` (SoundID.cs:1218-1228).
+            trackable_count += variations
+            apply_mods(st, rhs)
+        elif re.match(r"SoundID\.\w+\.WithVolume", rhs):
+            src_name = rhs[len("SoundID."):].split(".")[0]
+            if src_name not in by_name:
+                fail("SoundID.cs", start + 1, "copy references unknown style " + src_name)
+            st = dict(styles[by_name[src_name]])
+            st["name"] = name
+            apply_mods(st, rhs)
+        else:
+            fail("SoundID.cs", start + 1, "unhandled style form: " + rhs)
+        by_name[name] = len(styles)
+        styles.append(st)
+    if len(styles) < 400:
+        fail("SoundID.cs", start + 1, "expected ~500 styles, got %d" % len(styles))
+    return styles, by_name
+
+
+# The parsed SoundID table, loaded once per pipeline run (set in _main_inner).
+_SOUND_STYLES = None
+_SOUND_BY_NAME = None
+
+
+def resolve_use_sound(rhs, ctx, src, line):
+    """`this.UseSound = <rhs>` → a SOUND_STYLES index, or None for `null`.
+
+    The only RHS forms in Item.cs are `null` and `SoundID.<Name>` (verified by
+    a source scan). Anything else is a hard failure so a new form cannot drift
+    silently.
+    """
+    rhs = rhs.strip()
+    if rhs == "null":
+        return None
+    m = re.fullmatch(r"SoundID\.(\w+)", rhs)
+    if not m:
+        fail(src, line, "unhandled UseSound RHS: " + rhs)
+    name = m.group(1)
+    if name not in _SOUND_BY_NAME:
+        fail(src, line, "unknown SoundID style " + name)
+    return _SOUND_BY_NAME[name]
 
 
 def price_value(kind, args, src, line):
@@ -233,8 +394,6 @@ def parse_call_args(argstr):
 
 THIS_SKIP_FIELDS = {
     # field: reason (value not represented in ItemDef)
-    "UseSound": "sound data not provisioned",
-    "useSoundPitch": "sound data not provisioned",
     "color": "Color not provisioned",
     "glowMask": "glow-mask id not provisioned",
     "stringColor": "fishing-line colour not provisioned",
@@ -876,6 +1035,12 @@ def exec_stmts(stmts, ctx, type_value, src, casemap=None, in_switch=False):
         elif kind == "assign":
             _, _, field, rhs = st
             env = ctx.env(type_value)
+            if field == "UseSound":
+                # `this.UseSound = SoundID.X;` / `= null;` — resolved to a
+                # SOUND_STYLES index (or None), not an int expression.
+                ctx.row["UseSound"] = resolve_use_sound(rhs, ctx, src, line)
+                ctx.write_log.append("UseSound")
+                continue
             # chained assignment `a = (b = RHS)`: the innermost field takes the
             # value first, then the outer ones (same value)
             fields = [field]
@@ -1084,6 +1249,11 @@ def _arg(args, named, key, i, default, env, src, line):
     fail(src, line, "missing argument %d for helper" % i)
 
 
+def _set_sound(ctx, name):
+    """Set `UseSound` to the SOUND_STYLES index of `SoundID.<name>` (or None)."""
+    ctx.row["UseSound"] = None if name is None else _SOUND_BY_NAME[name]
+
+
 def h_SetShopValues(ctx, type_value, args, named, src, line, env):
     """`SetShopValues(ItemRarityColor rarity, int coinValue)` — Item.cs:48585-48589."""
     ctx.row["rare"] = eval_expr(args[0], env, src, line)
@@ -1091,9 +1261,10 @@ def h_SetShopValues(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToFood(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48541-48568 (UseSound Item3/Item2 not provisioned)."""
+    """Item.cs:48541-48568 (UseSound Item3/Item2)."""
     gulp = bool(_arg(args, named, "useGulpSound", 4, False, env, src, line))
     anim = _arg(args, named, "animationTime", 5, 17, env, src, line)
+    _set_sound(ctx, "Item3" if gulp else "Item2")
     ctx.row["useStyle"] = 9 if gulp else 2
     ctx.row["useTurn"] = True
     ctx.row["useTime"] = anim
@@ -1110,6 +1281,7 @@ def h_DefaultToFood(ctx, type_value, args, named, src, line, env):
 def h_DefaultToHealingPotion(ctx, type_value, args, named, src, line, env):
     """Item.cs:48570-48583."""
     anim = _arg(args, named, "animationTime", 3, 17, env, src, line)
+    _set_sound(ctx, "Item3")
     ctx.row["useStyle"] = 9
     ctx.row["useTurn"] = True
     ctx.row["useTime"] = anim
@@ -1196,6 +1368,7 @@ def h_DefaultToQuestFish(ctx, type_value, args, named, src, line, env):
 def h_DefaultToGolfBall(ctx, type_value, args, named, src, line, env):
     """Item.cs:35444-35460 (noUseGraphic/noMelee/hasVanityEffects not provisioned)."""
     ctx.row["shoot"] = eval_expr(args[0], env, src, line)
+    _set_sound(ctx, "Item1")
     ctx.row["useStyle"] = 1
     ctx.row["shootSpeed"] = 12.0
     ctx.row["width"] = 18
@@ -1232,6 +1405,7 @@ def h_DefaultToBomb(ctx, type_value, args, named, src, line, env):
     ctx.row["useStyle"] = 1
     ctx.row["shootSpeed"] = eval_expr(args[1], env, src, line)
     ctx.row["shoot"] = eval_expr(args[0], env, src, line)
+    _set_sound(ctx, "Item1")
     ctx.row["width"] = 8
     ctx.row["height"] = 28
     ctx.row["consumable"] = True
@@ -1240,7 +1414,8 @@ def h_DefaultToBomb(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToVoiceOverrideAccessory(ctx, type_value, args, named, src, line, env):
-    """Item.cs:47785-47797 (UseSound/voiceSlot not provisioned)."""
+    """Item.cs:47785-47797 (voiceSlot not provisioned; UseSound = null)."""
+    _set_sound(ctx, None)
     ctx.row["useStyle"] = 4
     ctx.row["useTurn"] = False
     ctx.row["useAnimation"] = 17
@@ -1272,6 +1447,7 @@ def h_DefaultToWhip(ctx, type_value, args, named, src, line, env):
     ctx.row["width"] = 18
     ctx.row["height"] = 18
     ctx.row["shoot"] = eval_expr(args[0], env, src, line)
+    _set_sound(ctx, "Item152")
     ctx.row["summon"] = True
     ctx.row["damage"] = eval_expr(args[1], env, src, line)
     ctx.row["knockBack"] = eval_expr(args[2], env, src, line)
@@ -1293,6 +1469,7 @@ def h_DefaultToKite(ctx, type_value, args, named, src, line, env):
 def h_DefaultToVanitypet(ctx, type_value, args, named, src, line, env):
     """Item.cs:47936-47949 (noMelee not provisioned)."""
     ctx.row["damage"] = 0
+    _set_sound(ctx, "Item2")
     ctx.row["useStyle"] = 1
     ctx.row["width"] = 16
     ctx.row["height"] = 30
@@ -1346,12 +1523,13 @@ def h_DefaultToCapturedCritter(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToStaff(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48015-48022 (UseSound not provisioned)."""
+    """Item.cs:48015-48022 (UseSound Item43)."""
     h_DefaultToMagicWeapon(ctx, type_value, [args[0], args[2], args[1], "true"], {},
                            src, line, env)
     ctx.row["mana"] = eval_expr(args[3], env, src, line)
     ctx.row["width"] = 40
     ctx.row["height"] = 40
+    _set_sound(ctx, "Item43")
 
 
 def h_DefaultToSpear(ctx, type_value, args, named, src, line, env):
@@ -1363,6 +1541,7 @@ def h_DefaultToSpear(ctx, type_value, args, named, src, line, env):
     ctx.row["shootSpeed"] = eval_expr(args[1], env, src, line)
     ctx.row["width"] = 32
     ctx.row["height"] = 32
+    _set_sound(ctx, "Item1")
     ctx.row["shoot"] = eval_expr(args[0], env, src, line)
     ctx.row["melee"] = True
     ctx.row["useAnimation"] = anim
@@ -1397,13 +1576,14 @@ def h_SetWeaponValues(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToBow(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48422-48428 (UseSound not provisioned)."""
+    """Item.cs:48422-48428 (UseSound Item5)."""
     auto = bool(_arg(args, named, "hasAutoReuse", 2, False, env, src, line))
     h_DefaultToRangedWeapon(ctx, type_value,
                             ["1", "AmmoID.Arrow", args[0], args[1], "true" if auto else "false"],
                             {}, src, line, env)
     ctx.row["width"] = 14
     ctx.row["height"] = 30
+    _set_sound(ctx, "Item5")
 
 
 def h_DefaultToMagicWeapon(ctx, type_value, args, named, src, line, env):
@@ -1484,9 +1664,10 @@ def h_MakeUsableWithChlorophyteExtractinator(ctx, type_value, args, named, src, 
 
 
 def h_DefaultToGolfClub(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48515-48527 (UseSound not provisioned)."""
+    """Item.cs:48515-48527 (UseSound = null)."""
     ctx.row["width"] = eval_expr(args[0], env, src, line)
     ctx.row["height"] = eval_expr(args[1], env, src, line)
+    _set_sound(ctx, None)
     ctx.row["channel"] = True
     ctx.row["useStyle"] = 8
     ctx.row["holdStyle"] = 4
@@ -1497,13 +1678,14 @@ def h_DefaultToGolfClub(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToLawnMower(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48529-48539 (UseSound not provisioned)."""
+    """Item.cs:48529-48539 (UseSound Item23)."""
     ctx.row["width"] = eval_expr(args[0], env, src, line)
     ctx.row["height"] = eval_expr(args[1], env, src, line)
     ctx.row["holdStyle"] = 1
     ctx.row["useStyle"] = 11
     ctx.row["useAnimation"] = 30
     ctx.row["useTime"] = 10
+    _set_sound(ctx, "Item23")
     ctx.row["autoReuse"] = True
 
 
@@ -1614,6 +1796,10 @@ def stock_row():
         "vanity": False,
         "width": 0,         # C# field defaults (not reset by ResetStats)
         "height": 0,
+        # ResetStats sound stock (Item.cs:49027 UseSound = null, :48946
+        # useSoundPitch = 0f). UseSound holds a SOUND_STYLES index or None.
+        "UseSound": None,
+        "useSoundPitch": 0.0,
     }
 
 
@@ -2135,6 +2321,8 @@ RUST_FIELDS = [
     ("mount_type", "mountType", "i32"),
     ("paint", "paint", "i32"),
     ("paint_coating", "paintCoating", "i32"),
+    ("use_sound", "UseSound", "sound"),
+    ("use_sound_pitch", "useSoundPitch", "f32"),
 ]
 
 TYPE_RANGES = {
@@ -2177,6 +2365,10 @@ def emit_rows(rows, names, multi_flags):
                 # createTile/createWall: < 0 = none; shoot: <= 0 = none
                 none_at = 0 if kind == "option_pos1" else -1
                 parts.append("%s: %s" % (rust, "None" if v <= none_at else "Some(%d)" % v))
+                continue
+            if kind == "sound":
+                v = row[key]
+                parts.append("%s: %s" % (rust, "None" if v is None else "Some(%d)" % v))
                 continue
             if kind == "bool":
                 parts.append("%s: %s" % (rust, "true" if row[key] else "false"))
@@ -2342,6 +2534,16 @@ pub struct ItemDef {
     pub paint: i32,
     /// `Item.paintCoating` (`Item.cs:48965`, stock 0).
     pub paint_coating: i32,
+    /// `Item.UseSound` (`Item.cs:199`, a `LegacySoundStyle`): the index into
+    /// [`crate::soundid::SOUND_STYLES`] (`SoundID.cs`'s static ctor order),
+    /// `None` = the C# `null` (stock `ResetStats`, `Item.cs:49027`). The
+    /// item-use wave plays it through `Player.ItemCheck_StartActualUse`
+    /// (`Player.cs:51681-51698`).
+    pub use_sound: Option<u16>,
+    /// `Item.useSoundPitch` (`Item.cs:201`, stock 0f — `ResetStats`
+    /// `:48946`): the pitch offset `PlaySound(sItem.UseSound, base.Center,
+    /// sItem.useSoundPitch)` passes (`Player.cs:51696`).
+    pub use_sound_pitch: f32,
 }"""
 
 
@@ -2858,7 +3060,57 @@ def main():
     _main_inner()
 
 
+def emit_soundid(styles):
+    """`crates/tr-app/src/soundid.rs` — the SoundID style table (S1-E-21 wave A).
+
+    One row per `LegacySoundStyle` field in the static ctor's source order
+    (`SoundID.cs:1254-1768`); `ItemDef.use_sound` indexes into it. The
+    trackable rows carry the `Sounds/Custom/` asset base name; the legacy
+    rows resolve to `Sounds/Item_<style>` etc. app-side.
+    """
+    lines = []
+    lines.append("// @generated by tools/GenItemData from the decompiled Terraria sources.")
+    lines.append("// Do not edit by hand.")
+    lines.append("")
+    lines.append("//! `Terraria.ID.SoundID`'s `LegacySoundStyle` fields, in the static ctor's")
+    lines.append("//! source order (`SoundID.cs:1254-1768`) — S1-E-21 wave A. `ItemDef.use_sound`")
+    lines.append("//! indexes this table. Regenerate with `python tools/GenItemData/gen.py`.")
+    lines.append("")
+    lines.append("/// One `LegacySoundStyle` field (`SoundID.cs`): the legacy `(SoundId, Style)`")
+    lines.append("/// pair, the variation count, the baked `Volume`/`PitchVariance`")
+    lines.append("/// (`WithVolume`/`WithVolumePerceived`/`WithPitchVariance`), the `SoundType`")
+    lines.append("/// (0 Sound / 1 Ambient / 2 Music) and the trackable asset base name")
+    lines.append("/// (`Some` ⇔ `SoundId == 42`, `LegacySoundStyle.IsTrackable`).")
+    lines.append("#[derive(Clone, Copy, Debug, PartialEq)]")
+    lines.append("pub struct SoundStyleDef {")
+    lines.append("    pub name: &'static str,")
+    lines.append("    pub sound_id: u8,")
+    lines.append("    pub style: i32,")
+    lines.append("    pub variations: u8,")
+    lines.append("    pub volume: f32,")
+    lines.append("    pub pitch_variance: f32,")
+    lines.append("    pub sound_type: u8,")
+    lines.append("    pub trackable: Option<&'static str>,")
+    lines.append("}")
+    lines.append("")
+    lines.append("/// The %d styles in ctor order (`ItemDef.use_sound`'s index space)." % len(styles))
+    lines.append("pub static SOUND_STYLES: [SoundStyleDef; %d] = [" % len(styles))
+    for st in styles:
+        track = "None" if st["trackable"] is None else "Some(%s)" % rust_str(st["trackable"])
+        lines.append(
+            "    SoundStyleDef { name: %s, sound_id: %d, style: %d, variations: %d, "
+            "volume: %s, pitch_variance: %s, sound_type: %d, trackable: %s },"
+            % (rust_str(st["name"]), st["sound_id"], st["style"], st["variations"],
+               rust_float(st["volume"]), rust_float(st["pitch_variance"]),
+               st["sound_type"], track))
+    lines.append("];")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _main_inner():
+    global _SOUND_STYLES, _SOUND_BY_NAME
+    _SOUND_STYLES, _SOUND_BY_NAME = parse_soundid()
     item_lines = read_lines(ITEM_CS)
     itemid_text = "\n".join(read_lines(ITEMID_CS))
     count = re.search(r"\bItemID\.Count = (\d+);", itemid_text)
@@ -2940,6 +3192,12 @@ def _main_inner():
                 bait_rare3, multi_flags)
     _last_variants = all_variants
     OUT.write_text(text, encoding="utf-8")
+    # The SoundID table rides the same pipeline (S1-E-21 wave A): written next
+    # to OUT so a scratch run (`run_pipeline`/`check`) never touches the tree.
+    sound_path = OUT.parent / "soundid.rs"
+    sound_text = emit_soundid(_SOUND_STYLES)
+    sound_path.write_text(sound_text, encoding="utf-8")
+    print("wrote %s (%d styles)" % (sound_path, len(_SOUND_STYLES)))
     print("wrote %s (%d bytes, %d rows, %d variant rows, %d material ids)"
           % (OUT, len(text), ITEM_COUNT, len(all_variants), len(material_set)))
     return rows, all_variants

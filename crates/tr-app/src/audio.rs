@@ -122,6 +122,98 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_53", 2),
     ("Item_55", 2),
     ("Item_56", 2),
+    // S1-E-21 wave A — the item-use family: every `Sounds/Item_<style>.xnb`
+    // an `Item.UseSound` row names (`itemdata.rs::use_sound` →
+    // `soundid.rs::SOUND_STYLES`, `SoundID.cs:1384-1582`'s
+    // `new LegacySoundStyle(2, style)` rows), plus 18/19 — the style-1
+    // variation remap's targets (`LegacySoundPlayer.cs:539-550`).
+    ("Item_2", 2),
+    ("Item_3", 2),
+    ("Item_5", 2),
+    ("Item_6", 2),
+    ("Item_7", 2),
+    ("Item_8", 2),
+    ("Item_9", 2),
+    ("Item_10", 2),
+    ("Item_11", 2),
+    ("Item_12", 2),
+    ("Item_13", 2),
+    ("Item_15", 2),
+    ("Item_16", 2),
+    ("Item_18", 2),
+    ("Item_19", 2),
+    ("Item_20", 2),
+    ("Item_21", 2),
+    ("Item_23", 2),
+    ("Item_25", 2),
+    ("Item_28", 2),
+    ("Item_29", 2),
+    ("Item_31", 2),
+    ("Item_32", 2),
+    ("Item_34", 2),
+    ("Item_36", 2),
+    ("Item_38", 2),
+    ("Item_39", 2),
+    ("Item_40", 2),
+    ("Item_41", 2),
+    ("Item_43", 2),
+    ("Item_44", 2),
+    ("Item_59", 2),
+    ("Item_60", 2),
+    ("Item_61", 2),
+    ("Item_63", 2),
+    ("Item_64", 2),
+    ("Item_66", 2),
+    ("Item_67", 2),
+    ("Item_69", 2),
+    ("Item_71", 2),
+    ("Item_72", 2),
+    ("Item_73", 2),
+    ("Item_75", 2),
+    ("Item_76", 2),
+    ("Item_77", 2),
+    ("Item_78", 2),
+    ("Item_79", 2),
+    ("Item_80", 2),
+    ("Item_81", 2),
+    ("Item_82", 2),
+    ("Item_83", 2),
+    ("Item_84", 2),
+    ("Item_85", 2),
+    ("Item_88", 2),
+    ("Item_90", 2),
+    ("Item_92", 2),
+    ("Item_95", 2),
+    ("Item_97", 2),
+    ("Item_98", 2),
+    ("Item_99", 2),
+    ("Item_100", 2),
+    ("Item_102", 2),
+    ("Item_103", 2),
+    ("Item_105", 2),
+    ("Item_106", 2),
+    ("Item_108", 2),
+    ("Item_109", 2),
+    ("Item_111", 2),
+    ("Item_113", 2),
+    ("Item_117", 2),
+    ("Item_128", 2),
+    ("Item_130", 2),
+    ("Item_151", 2),
+    ("Item_152", 2),
+    ("Item_156", 2),
+    ("Item_157", 2),
+    ("Item_158", 2),
+    ("Item_174", 2),
+    ("Item_181", 2),
+    ("Item_183", 2),
+    ("Item_184", 2),
+    ("Item_185", 2),
+    ("Item_186", 2),
+    ("Item_187", 2),
+    ("Item_188", 2),
+    ("Item_196", 2),
+    ("Item_210", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -229,6 +321,31 @@ const LIQUID_CHANGE_CUES: &[&str] = &[
 /// their own volume (`ambient_sound::blizzard_strong_loop_style`).
 const TRACKED_CUES: &[&str] = &["blizzard_strong_loop", "blizzard_inside_building_loop"];
 
+/// The `Sounds/Custom/` trackables the item-use wave names
+/// (`Item.UseSound` → `SoundID.CreateTrackable`, `SoundID.cs:1607-1729`;
+/// S1-E-21 wave A). Like [`NPC_CUSTOM_CUES`] the port pins the first
+/// variation (`_0`) of the multi-variation families — the variation pick
+/// rides `LegacySoundStyle.Random` in the C#, an audio-only stream.
+pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
+    "dd2_defense_tower_spawn",
+    "dd2_betsy_fireball_shot_0",
+    "dd2_book_staff_cast_0",
+    "dd2_ghastly_glaive_pierce_0",
+    "dd2_monk_staff_swing_0",
+    "dd2_sonic_boom_blade_slash_0",
+    "dd2_sky_dragons_fury_swing_0",
+    "abigail_summon",
+    "pal_summon",
+    "deadcells_barrel_launcher_fire",
+    "deadcells_mushroom_summon",
+];
+
+/// Whether the cue name is in the SFX bank (the item-use coverage test's
+/// seam, S1-E-21 wave A).
+pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
+    SFX_CUES.iter().any(|(n, _)| *n == cue)
+}
+
 fn sound_type(cue: &str) -> u32 {
     SFX_CUES
         .iter()
@@ -239,7 +356,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -362,6 +479,7 @@ impl Audio {
                     .iter()
                     .chain(TRACKED_CUES.iter())
                     .chain(NPC_CUSTOM_CUES.iter())
+                    .chain(ITEM_CUSTOM_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -630,6 +748,106 @@ impl Audio {
             old.detach();
         }
         self.splash_slots[4] = Some(sink);
+    }
+
+    /// S1-E-21 wave A — `Player.ItemCheck_StartActualUse`'s sound arm
+    /// (`Player.cs:51681-51698`): `SoundEngine.PlaySound(sItem.UseSound,
+    /// base.Center, sItem.useSoundPitch)` for the style at
+    /// [`crate::soundid::SOUND_STYLES`] index `style_index`.
+    ///
+    /// The façade (`SoundEngine.cs:93-99`) passes `type.Style`,
+    /// `type.Volume * volumeScale` (volumeScale 1 here) and
+    /// `pitchOffset + type.GetRandomPitch()`; the `GetRandomPitch` draw rides
+    /// the audio-only `SoundStyle._random` stream (`sound_style_random`),
+    /// never a gameplay stream. The legacy case-2 volume/pitch maths
+    /// (`LegacySoundPlayer.cs:516-644`) draws `Main.rand` — the caller passes
+    /// the `UpdatePlayers` stream (`Player.ItemCheck` runs under the
+    /// `Main.cs:17754` swap), and the draws run only AFTER the attenuation
+    /// gate passed, exactly the C#'s order (`:390-436` precedes the switch).
+    ///
+    /// Trackable styles (`SoundId == 42`, case 42 `:1376-1381`) play the
+    /// pinned first variation like [`NPC_CUSTOM_CUES`] (no pitch roll).
+    /// Returns the cue asset played (the test seam); `None` when the
+    /// attenuation gate refused. The instance stop/re-create pool is the
+    /// standing D4 deviation.
+    pub fn play_use_sound(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let style = &crate::soundid::SOUND_STYLES[style_index as usize];
+        // `SoundEngine.cs:99` — `pitchOffset + type.GetRandomPitch()`; the
+        // NextFloat draw is consumed even at variance 0 (`SoundStyle.cs:42`).
+        let draw = self.sound_style_random.next_float();
+        let pitch_offset =
+            pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
+        // The attenuation gate first — the C# walks the position/volume
+        // checks (`:369-436`) before the type switch draws anything.
+        if sound::play_sound(
+            u32::from(style.sound_id),
+            x,
+            y,
+            self.listener,
+            style.volume,
+        )
+        .is_none()
+        {
+            return None;
+        }
+        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+            // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
+            // only the caller's offset, clamped at `:1410`.
+            let base = style.trackable.expect("trackable style carries an asset");
+            let cue = if style.variations == 1 {
+                base.to_string()
+            } else {
+                format!("{base}_0")
+            };
+            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0))
+        } else {
+            debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
+            let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
+            let (num, tweak, pitch) = sound::item_use_case2(style.style, &mut roll);
+            let cue = format!("Item_{num}");
+            (
+                cue,
+                style.volume * tweak,
+                (pitch + pitch_offset).clamp(-1.0, 1.0),
+            )
+        };
+        // Resolve against the loaded bank's static names (the cue is always
+        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
+        let name = SFX_CUES
+            .iter()
+            .map(|(n, _)| *n)
+            .chain(ITEM_CUSTOM_CUES.iter().copied())
+            .find(|n| *n == cue);
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(name) = name else { return None };
+        if let Some(prepared) = self.prepare(name, x, y, volume_scale, pitch) {
+            if let Some(handle) = &self.handle {
+                if let Ok(sink) = rodio::Sink::try_new(handle) {
+                    let (left, right) = sound::pan_gains(prepared.pan);
+                    let buf = rodio::buffer::SamplesBuffer::new(
+                        prepared.channels,
+                        prepared.rate,
+                        prepared.samples,
+                    )
+                    .convert_samples::<f32>();
+                    sink.append(Panned {
+                        inner: buf,
+                        channels: prepared.channels,
+                        left: prepared.volume * left,
+                        right: prepared.volume * right,
+                        channel: 0,
+                    });
+                }
+            }
+        }
+        Some(name)
     }
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
@@ -1935,6 +2153,62 @@ mod tests {
         for name in ["Menu_Open", "Menu_Close", "Menu_Tick", "Unlock"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+    }
+
+    /// S1-E-21 wave A — the item-use play's RNG contract: the case-2 draws
+    /// ride the caller's `Main.rand` stream (the `UpdatePlayers` swap) and
+    /// run only when the attenuation gate passed; the `GetRandomPitch`
+    /// NextFloat rides the audio-only `SoundStyle._random` stream.
+    #[test]
+    fn s1_e_21a_the_use_sound_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        let idx = |name: &str| {
+            crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == name)
+                .unwrap() as u16
+        };
+        // An inaudible play (soundVolume 0) draws NOTHING from the gameplay
+        // stream — the C# returns at `:369-372` before the switch.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_use_sound(idx("Item1"), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play consumes no gameplay draw");
+        // An audible style-2 play draws exactly one Next(-6, 7)
+        // (`LegacySoundPlayer.cs:632`) — the same value a bare stream draw
+        // produces.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let want_pitch = witness.next_range(-6, 7) as f32 * 0.01;
+        let cue = audio.play_use_sound(idx("Item2"), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_2"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(want_pitch.abs() <= 0.06, "the default window ±0.06");
+        // Style 1 draws twice: Next(3) remap (`:541`) + the pitch roll.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let remap = witness.next_range(0, 3);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_use_sound(idx("Item1"), 0.0, 0.0, 0.0, &mut rng);
+        let want = match remap {
+            1 => "Item_18",
+            2 => "Item_19",
+            _ => "Item_1",
+        };
+        assert_eq!(cue, Some(want), "the style-1 remap rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // A trackable (case 42) draws nothing from the gameplay stream —
+        // no pitch switch, the pinned variation (the port's D3 pin).
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let cue = audio.play_use_sound(idx("AbigailSummon"), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("abigail_summon"));
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
     }
 
     /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)
