@@ -4266,10 +4266,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == 8)
             .expect("the torch recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
-        let col = pos as f32 % cols;
-        let row = (pos as f32) / cols;
-        Vec2::new(l.grid[0] + col * 44.0 + 20.0, l.grid[1] + row * 44.0 + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
+        Vec2::new(x + 20.0, y + 20.0)
     }
 
     #[test]
@@ -4519,10 +4517,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == create)
             .expect("the recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
-        let col = pos as f32 % cols;
-        let row = (pos as f32) / cols;
-        Vec2::new(l.grid[0] + col * 44.0 + 20.0, l.grid[1] + row * 44.0 + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
+        Vec2::new(x + 20.0, y + 20.0)
     }
 
     #[test]
