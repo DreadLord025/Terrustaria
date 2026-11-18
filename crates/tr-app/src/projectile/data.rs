@@ -624,6 +624,11 @@ pub struct ProjData {
     /// rows; the `wet = false` spawn write (`:10886-10889`) lands with the
     /// projectile-liquid work.
     pub ignore_water: bool,
+    /// `Projectile.decidesManualFallThrough` (`:460`, reset false `:708`) —
+    /// `HandleMovement`'s `flag6` rides `shouldFallThrough` instead of the
+    /// per-type ladder (`:17583-17586`); the aiStyle-67 summon rows set it
+    /// (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`/`:8980`).
+    pub decides_manual_fall_through: bool,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -2073,6 +2078,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The Stardust Guardian (`Projectile.cs:6709`) — aiStyle 120, the
             // 0-slot pet-grade minion.
             STARDUST_GUARDIAN => (50.0, 80.0, 120, -1, 18000, 0, false, false, false, RESET_STATE),
+            // The pirate minion trio (`Projectile.cs:4755-4768`) — aiStyle 67,
+            // 20x30, `penetrate = -1`, `timeLeft *= 5`, a full slot, the LOCAL
+            // immunity pair (18) and the manual fall-through decision; neither
+            // tileCollide nor ignoreWater is set (the stock true / false).
+            ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => {
+                (20.0, 30.0, 67, -1, 18000, 0, true, false, false, RESET_STATE)
+            }
+            // The Vampire Frog (`Projectile.cs:7814-7828`) — aiStyle 67,
+            // 20x30, `friendly = true` (the arm re-pins it per tick, `:49587`),
+            // the idStatic-10 pair and the manual fall-through decision.
+            VAMPIRE_FROG => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
             // ignoreWater (the stock true / false).
@@ -2240,6 +2256,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the Lightning Auras (`:7332-7333`), the baby bird (`:7841-7842`).
         STARDUST_GUARDIAN => (true, 5),
         STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 => (true, 10),
+        // The pirate trio's LOCAL pair (`Projectile.cs:4765-4766`).
+        ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => (true, 18),
         ABIGAIL => (true, 20),
         BABY_BIRD => (true, 15),
         SLIME_MINION => (true, 12),
@@ -2260,7 +2278,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
     // (`Projectile.cs:775-776`).
     let (minion, sentry, minion_slots) = match kind {
         HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD
-        | SLIME_MINION | DEADLY_SPHERE => (true, false, 1.0),
+        | SLIME_MINION | DEADLY_SPHERE | ONE_EYED_PIRATE | SOULSCOURGE_PIRATE
+        | PIRATE_CAPTAIN | VAMPIRE_FROG => (true, false, 1.0),
         RETANIMINI | SPAZMAMINI => (true, false, 0.5),
         STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
             (true, false, 0.0)
@@ -2298,10 +2317,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(
                 kind,
                 TERRARIAN_YOYO | TERRARIAN_BEAM | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
-                    | TEMPEST | RETANIMINI | SPAZMAMINI
+                    | TEMPEST | RETANIMINI | SPAZMAMINI | VAMPIRE_FROG
             ),
-        id_static_hit_cooldown: if matches!(kind, TEMPEST | RETANIMINI | SPAZMAMINI) {
-            if kind == TEMPEST {
+        id_static_hit_cooldown: if matches!(kind, TEMPEST | RETANIMINI | SPAZMAMINI | VAMPIRE_FROG) {
+            if kind == TEMPEST || kind == VAMPIRE_FROG {
+                // `Projectile.cs:7827` — the frog's idStatic cooldown is 10.
                 10
             } else if kind == RETANIMINI {
                 16
@@ -2333,11 +2353,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion_slots,
         net_important: minion || sentry,
         ignore_water: ((minion || sentry)
-            && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
+            && !matches!(
+                kind,
+                STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+                    // The aiStyle-67 pirate/frog rows set neither
+                    // ignoreWater (`Projectile.cs:4755-4768`/`:7814-7828`).
+                    | ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
+            ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
             || kind == RAINBOW_CRYSTAL_EXPLOSION,
+        // The aiStyle-67 summon rows set `decidesManualFallThrough`
+        // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
+        // drives `shouldFallThrough` (`:49561`/`:51206`).
+        decides_manual_fall_through: matches!(
+            kind,
+            ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
+                | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+        ),
     })
 }
 
@@ -2351,6 +2385,13 @@ pub const FLYING_IMP: u16 = 375;
 pub const RETANIMINI: u16 = 387;
 pub const SPAZMAMINI: u16 = 388;
 pub const MINI_RETINA_LASER: u16 = 389;
+/// `ProjectileID.OneEyedPirate`/`SoulscourgePirate`/`PirateCaptain`
+/// (`ProjectileID.cs:1340-1344`) — the Pirate Staff's aiStyle-67 trio.
+pub const ONE_EYED_PIRATE: u16 = 393;
+pub const SOULSCOURGE_PIRATE: u16 = 394;
+pub const PIRATE_CAPTAIN: u16 = 395;
+/// `ProjectileID.VampireFrog` (`ProjectileID.cs:2070`) — the aiStyle-67 frog.
+pub const VAMPIRE_FROG: u16 = 758;
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
@@ -2467,6 +2508,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
+        // walk (0-3), bite (4-9) and flight (10-14) machines index it.
+        ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
+        // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
+        VAMPIRE_FROG => 24,
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
         // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.

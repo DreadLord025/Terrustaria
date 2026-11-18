@@ -17469,6 +17469,67 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+## The pirate family, first slice (S1-D-4b-7)
+
+`AI_067_FreakingPirates` (`Projectile.cs:49121-51201`, dispatch `:30162`) is
+one 2 081-line arm over 16 types. This round lands the shared skeleton plus
+the two smallest coherent branches — the Pirate Staff trio (393/394/395,
+`flag`) and the Vampire Frog (758, `flag2`) — as `ai_freaking_pirates`, with
+`pirates_try_jumping_to_target` (`:51203-51256`) and `pirate_movement`
+(`HandleMovement`'s half). The dispatch gates the kind list, so the other
+12 types' rows stay inert until their arms land: the Storm Tigers 833-835
+(the `AI_067_TigerSpecialAttack` chain `:49034-49119` + the 818 pounces),
+Flinx 951, Mushroom Boi 1022 (the 1044 spore + `GetChaseResults` leap), Cob
+Whip 1036, Cattiva 1093/1112 (`TryAssigningHelp`'s smart-cursor mining), Clay
+Pot 1118 and the five pets 500/653/1018/1056/1090.
+
+Ported verbatim: the keep-alive pins (`:49248-49259`/`:49316-49327`), the
+home-spot ladder (`:49416-49440`), the state machine (1 fly-home
+`:49742-49953`, 2 bite `:49954-50057` — the frog's 20-tick bite / 60-tick
+cooldown and middle-half friendly window, the pirates' 15-tick bite; 5
+teleport strike `:50058-50098` with the ring point and the C#'s
+abs-then-−3 double Y write), the pursuit (`:50103-50270` — the pirates'
+high leap / far-boss teleport, the frog's 20-px stand-off), the ground walk
+(`:50301-51149` — the 20-row ground drop, the owner-tile clamp, the 0.05
+line-walk trim, the parameter ladder, the three-column jump ladder with
+the try/catch's −9.1 and `SolidTile`'s null-as-solid
+(`WorldGen.cs:70115-70117`), the height ladder, `Collision.StepUp`, the
+frame machines and the `num + num56` gravity).
+
+New slot fields: `should_fall_through`/`step_speed`/`gfx_off_y`
+(`Projectile.cs:462`/`:342`), the rows' `decides_manual_fall_through`
+(`:460`). `HandleMovement`'s `flag6` rides `shouldFallThrough`
+(`:17583-17586`); the >16 px/tick hoik step loop (`:17711-17846`) keeps its
+0.0001 last-velocity snap; the `gfxOffY` decay (`:16740-16764`) rides the
+movement step.
+
+**RNG proof.** The arm-level draws are mirrored in count and order on the
+pool's `Main.rand` analogue: the state-5 arrival's
+`NextVector2CircularEdge(4,4)` = ONE `NextFloat` (`Utils.cs:1261-1274`), the
+high-jump's `NextFloatDirection()*NextFloat()` pair + the `Next(4)` burst
+pick + the taken branch's gore-type roll (`Next(580,583)` or two
+`Next(11,14)`), the frog blink's `Next(50)` ONLY when the frame counter
+reaches 28 (the `&&` short-circuit of `:51037`), and the pirate idle burst's
+per-tick `Next(900,1200)` comparison + its reset gore roll. Two census tests
+record the stream (`s1_d_4b_7_the_idle_pirate_draws_one_burst_comparison_per_tick`,
+`s1_d_4b_7_the_frog_blink_draws_only_at_the_28th_tick`); the arrival test
+pins the single float draw.
+
+Deviations (the standing precedents): the dust/gore spawns are skipped (no
+dust/gore pool — their `NewDust`/`NewGore` internal rolls belong to those
+pools; the arm-level gates/type rolls above stay), `base.wet` folds to
+false (no liquid-wet slot flags — the sentry precedent), the slope passes
+fold out (`correctSlopeCollision = Main.projPet[type]` is true for these
+kinds, `:707`, so every inner `SlopeCollision` is gated off; the
+`UpdatePosition` slope correction stays unported — the twins precedent),
+`SwitchTiles`/plate presses and the `ignoreDoors`/`hoik` collision
+parameters have no port layer, and the blocked-move chain
+(`:17904-19854`) is skipped including its `Next(3)` tile-cut draw (the
+`dd2_sentry_step` precedent) — the pirates/frog match no type arm before
+the `!correctSlopeCollision` gate at `:18398`, so a blocked move only stops
+them. `flag10` (petting) folds to false; `NPC.boss` rides the
+`revenge::BOSS_KINDS` proxy (the target scan's precedent). Tests
+`s1_d_4b_7_tests::*` (7).
 
 
 ## The tile-crack overlay (S1-G-1 wave C, 2026-11-18)
