@@ -6,6 +6,7 @@ pub mod font_atlas;
 pub mod gpu;
 pub mod post;
 pub mod sprite;
+pub mod targets;
 pub mod water_mask;
 
 #[cfg(test)]
@@ -20,4 +21,10 @@ pub use post::{
     PASS_TABLE,
 };
 pub use sprite::{Globals, SpriteInstance, SpriteRenderer};
+pub use targets::{
+    init_target_layout, is_partially_offscreen, render_to_targets_plan, sky_target_active,
+    target_transition, LayerCamera, LayerUpdate, RenderTargetFamily, SceneLayer, ScreenTarget,
+    TargetLayout, TargetTransition, WorldSceneLayerTarget, MAX_WORLD_VIEW_SIZE,
+    RENDER_TARGET_MAX_HIDEF, RENDER_TARGET_MAX_REACH,
+};
 pub use water_mask::{MaskRect, WaterMask};

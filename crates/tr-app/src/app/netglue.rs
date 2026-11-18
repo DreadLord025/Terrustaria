@@ -745,6 +745,15 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
+            // codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
+            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
+            C2s::TogglePvp(_)
+            | C2s::PlayerMana(_)
+            | C2s::TeamChange(_)
+            | C2s::ProjectileTrackers(_)
+            | C2s::SyncLoadout(_) => {}
         }
     }
 
@@ -1691,6 +1700,23 @@ impl App {
                     }
                 }
             }
+            // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
+            // codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
+            // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
+            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // with the send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::TogglePvp(_)
+            | S2c::PlayerMana(_)
+            | S2c::TeamChange(_)
+            | S2c::NpcHouse(_)
+            | S2c::TravelShop(_)
+            | S2c::AnglerQuest(_)
+            | S2c::RevengeMarker(_)
+            | S2c::DeadPlayer { .. }
+            | S2c::MiscEventValue(_)
+            | S2c::ProjectileTrackers(_)
+            | S2c::SyncLoadout(_) => {}
         }
     }
 

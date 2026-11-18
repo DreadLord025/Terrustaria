@@ -34,6 +34,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Tink_2", 21),
     ("Coins", 18),
     ("Item_27", 2),
+    // S1-E-21 wave D — the Moon Lord legs' fast-run footstep
+    // (`Player.cs:35959-35964` swaps `hermesStepSound` to Item style 24).
+    ("Item_24", 2),
     ("Item_30", 2),
     ("Item_48", 2),
     ("Item_49", 2),
@@ -99,6 +102,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
+    // S1-E-21 wave D — the fast-run footstep (`SoundID.Run = 17`,
+    // `SoundID.cs:56`; `Player.SpawnFastRunParticles`, `Player.cs:20214`;
+    // `SoundRun` loads `Sounds/Run`, `LegacySoundPlayer.cs:236`).
+    ("Run", 17),
     // `SoundEngine.PlaySound(8/:9)` — `WorldGen.OpenDoor` (`WorldGen.cs:37732`)
     // and `CloseDoor` (`:31906`).
     ("Door_Opened", 8),
@@ -330,7 +337,13 @@ const LIQUID_CHANGE_CUES: &[&str] = &[
 /// (`Sounds/Custom/<cue>.xnb`, `LegacySoundPlayer.cs:257`; S1-E-23): the
 /// SceneState blizzard loops (`SoundID.cs:1598-1599`) — the styles carry
 /// their own volume (`ambient_sound::blizzard_strong_loop_style`).
-const TRACKED_CUES: &[&str] = &["blizzard_strong_loop", "blizzard_inside_building_loop"];
+const TRACKED_CUES: &[&str] = &[
+    "blizzard_strong_loop",
+    "blizzard_inside_building_loop",
+    // `SoundID.AchievementComplete` (`SoundID.cs:1597`) — the unlock toast's
+    // cue (`AchievementInitializer.cs:731-734`, S1-E-26 wave A).
+    "achievement_complete",
+];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
 /// (`Item.UseSound` → `SoundID.CreateTrackable`, `SoundID.cs:1607-1729`;
@@ -1098,6 +1111,55 @@ impl Audio {
         Some(cue)
     }
 
+    /// S1-E-21 wave D — one fast-run footstep play
+    /// (`Player.SpawnFastRunParticles`, `Player.cs:20214`:
+    /// `PlaySound(hermesStepSound.SoundType, (int)position.X,
+    /// (int)position.Y, hermesStepSound.SoundStyle)`). The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Type 17 (`SoundID.Run`, the default cue — `Player.cs:35947-35949`):
+    /// case 17 (`LegacySoundPlayer.cs:854-864`) stops the previous instance
+    /// (the standing D4 deviation), plays `Sounds/Run` and rolls the pitch
+    /// `Main.rand.Next(-10, 11) * 0.01` (`:862`) — the draw rides the
+    /// caller's stream (`Player.Update` runs under the `Main.cs:17754`
+    /// `UpdatePlayers` swap) and only AFTER the attenuation gate passed
+    /// (`:369-436` precedes the switch). The style is unused (`-1`).
+    ///
+    /// Type 2 style 24 (the Moon Lord legs' override, `Player.cs:35959-35964`):
+    /// wave A's style façade — the `GetRandomPitch` NextFloat on the
+    /// audio-only `sound_style_random`, then case 2's `Main.rand` pitch roll
+    /// after the gate. Returns the cue played; `None` when the gate refused
+    /// or the type is not a footstep family.
+    pub fn play_step_sound(
+        &mut self,
+        (sound_type, style): (u16, i16),
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound_type == 2 {
+            // The Moon Lord legs' Item-24 click — wave A's case-2 path.
+            let idx = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 2 && s.style == i32::from(style))?;
+            return self.play_use_sound(idx as u16, x, y, 0.0, rng);
+        }
+        if sound_type != 17 {
+            return None;
+        }
+        // The attenuation gate first — the int overload draws nothing before
+        // the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(17, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        // Case 17 (`:862`): the run-step pitch roll.
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Run, &mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Run", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some("Run")
+    }
+
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
     /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
@@ -1290,6 +1352,17 @@ impl Audio {
         id: tr_core::slot::SlotId,
     ) -> Option<&mut crate::tracked_sound::ActiveSound> {
         self.tracked.get_active_sound_mut(id)
+    }
+
+    /// `SoundEngine.FindActiveSound(style)` (`SoundEngine.cs` →
+    /// `SoundPlayer.FindActiveSound`): the first live instance of the style,
+    /// or `None` — the achievement-completion subscriber's "already playing"
+    /// guard (`AchievementInitializer.cs:731`).
+    pub fn find_active_tracked(
+        &self,
+        style: &crate::tracked_sound::TrackedStyle,
+    ) -> Option<&crate::tracked_sound::ActiveSound> {
+        self.tracked.find_active_sound(style)
     }
 }
 
@@ -2657,6 +2730,50 @@ mod tests {
         }
         // Every placement cue resolves to a registered bank asset.
         for name in ["Dig_0", "Dig_1", "Dig_2", "Coins", "Item_30", "Item_52"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21 wave D — the fast-run footstep's RNG contract: case 17's
+    /// `Main.rand.Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:862`)
+    /// rides the caller's stream (the `UpdatePlayers` swap) and runs only
+    /// after the attenuation gate passed; the int overload draws no
+    /// `GetRandomPitch` NextFloat (`SoundEngine.cs:102-108`). The Moon Lord
+    /// legs' Item-24 arm rides wave A's style façade instead.
+    #[test]
+    fn s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Audible: exactly one Next(-10, 11) gameplay draw, nothing else.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        assert_eq!(audio.play_step_sound((17, -1), 0.0, 0.0, &mut rng), Some("Run"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 10, "the window is -10..=10");
+        // Muted (soundVolume 0): the gate precedes the switch — no draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_step_sound((17, -1), 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+        // The Moon Lord legs' arm (type 2 style 24): wave A's façade — one
+        // case-2 Next(-6, 7) pitch draw on the gameplay stream after the
+        // gate (`Item_24` has no volume/pitch special arm).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_step_sound((2, 24), 0.0, 0.0, &mut rng),
+            Some("Item_24")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one case-2 gameplay draw");
+        // Both footstep cues resolve to registered bank assets.
+        assert_eq!(sound_type("Run"), 17);
+        for name in ["Run", "Item_24"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
     }

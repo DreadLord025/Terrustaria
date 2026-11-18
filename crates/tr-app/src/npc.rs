@@ -2238,6 +2238,165 @@ impl NpcKind {
         })
     }
 
+    /// The C#'s `aiStyle` for this kind - the first dispatch axis of
+    /// `NPC.AI` (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain).
+    /// Every row is the `SetDefaults` assignment for the kind's vanilla
+    /// `NPCID` (the citation is the `this.aiStyle = N;` line). S1-D-2.
+    pub fn ai_style(self) -> u8 {
+        match self {
+            // aiStyle 0 - NPC.cs:10248, :10262, :10498, :13507, :13801, :16657
+            NpcKind::SleepingAngler | NpcKind::WebbedStylist | NpcKind::SleepingGolfer | NpcKind::BoundWizard |
+            NpcKind::BoundMechanic | NpcKind::BoundGoblin => 0,
+            // aiStyle 1 - NPC.cs:8576
+            NpcKind::Slime => 1,
+            // aiStyle 2 - NPC.cs:8590, :10650
+            NpcKind::DemonEye | NpcKind::WanderingEye => 2,
+            // aiStyle 3 - NPC.cs:8603, :9040, :9312, :11726, :11739, :11752, :11765, :11778, :12933, :13133, :13860, :13876, :13902, :13916, :13959, :13986, :15053, :15065, :15148, :15192, :15204, :15217, :15228, :15241, :15326, :15350, :15389, :15649, :15663, :15677, :15719, :15732, :15760
+            NpcKind::Zombie | NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::GoblinThief | NpcKind::GoblinWarrior |
+            NpcKind::GoblinArcher | NpcKind::GoblinPeon | NpcKind::GoblinSummoner | NpcKind::MartianOfficer |
+            NpcKind::GrayGrunt | NpcKind::MartianEngineer | NpcKind::GigaZapper | NpcKind::MartianWalker |
+            NpcKind::BrainScrambler | NpcKind::RayGunner | NpcKind::Scutlix | NpcKind::VortexRifleman |
+            NpcKind::VortexSoldier | NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab |
+            NpcKind::Predictor | NpcKind::StardustSpiderBig | NpcKind::StardustSoldier | NpcKind::SolarDrakomire |
+            NpcKind::SolarSelenian | NpcKind::SolarSpearman | NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate |
+            NpcKind::PirateArcher | NpcKind::PirateCorsair | NpcKind::PirateCaptain | NpcKind::Scarecrow1 |
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow3 | NpcKind::Scarecrow4 | NpcKind::Scarecrow5 |
+            NpcKind::Scarecrow6 | NpcKind::Scarecrow7 | NpcKind::Scarecrow8 | NpcKind::Scarecrow9 |
+            NpcKind::Scarecrow10 | NpcKind::Splinterling => 3,
+            // aiStyle 4 - NPC.cs:8707
+            NpcKind::EyeOfCthulhu => 4,
+            // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead | NpcKind::ServantOfCthulhu => 5,
+            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :15010, :15269, :15287, :15305
+            NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
+            NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
+            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
+            NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
+            NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
+            NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
+            NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
+            NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
+            // aiStyle 9 - NPC.cs:9097, :9139, :15703
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
+            // aiStyle 11 - NPC.cs:9170
+            NpcKind::SkeletronHead => 11,
+            // aiStyle 12 - NPC.cs:9187
+            NpcKind::SkeletronHand => 12,
+            // aiStyle 14 - NPC.cs:9378, :9409, :9543, :9629
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => 14,
+            // aiStyle 15 - NPC.cs:9392
+            NpcKind::KingSlime => 15,
+            // aiStyle 16 - NPC.cs:9465, :9508, :9615
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
+            // aiStyle 22 - NPC.cs:13194
+            NpcKind::Poltergeist => 22,
+            // aiStyle 26 - NPC.cs:12982, :13179, :15078, :15121
+            NpcKind::NebulaBeast | NpcKind::StardustSpiderSmall | NpcKind::HeadlessHorseman | NpcKind::Hellhound => 26,
+            // aiStyle 27 - NPC.cs:10347
+            NpcKind::WallOfFlesh => 27,
+            // aiStyle 28 - NPC.cs:10365
+            NpcKind::WallOfFleshEye => 28,
+            // aiStyle 29 - NPC.cs:10382
+            NpcKind::Hungry => 29,
+            // aiStyle 30 - NPC.cs:10526
+            NpcKind::Retinazer => 30,
+            // aiStyle 31 - NPC.cs:10543
+            NpcKind::Spazmatism => 31,
+            // aiStyle 32 - NPC.cs:10560
+            NpcKind::SkeletronPrime => 32,
+            // aiStyle 33 - NPC.cs:10592
+            NpcKind::PrimeSaw => 33,
+            // aiStyle 34 - NPC.cs:10607
+            NpcKind::PrimeVice => 34,
+            // aiStyle 35 - NPC.cs:10577
+            NpcKind::PrimeCannon => 35,
+            // aiStyle 36 - NPC.cs:10622
+            NpcKind::PrimeLaser => 36,
+            // aiStyle 37 - NPC.cs:10664
+            NpcKind::TheDestroyer => 37,
+            // aiStyle 38 - NPC.cs:10809, :10823, :10837
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 38,
+            // aiStyle 39 - NPC.cs:15360
+            NpcKind::SolarSroller => 39,
+            // aiStyle 43 - NPC.cs:11859
+            NpcKind::QueenBee => 43,
+            // aiStyle 45 - NPC.cs:12167
+            NpcKind::Golem => 45,
+            // aiStyle 46 - NPC.cs:12184
+            NpcKind::GolemHead => 46,
+            // aiStyle 47 - NPC.cs:12198
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 47,
+            // aiStyle 48 - NPC.cs:12212
+            NpcKind::GolemHeadFree => 48,
+            // aiStyle 51 - NPC.cs:12384
+            NpcKind::Plantera => 51,
+            // aiStyle 54 - NPC.cs:12443
+            NpcKind::BrainOfCthulhu => 54,
+            // aiStyle 55 - NPC.cs:12460
+            NpcKind::Creeper => 55,
+            // aiStyle 57 - NPC.cs:13119
+            NpcKind::MourningWood => 57,
+            // aiStyle 58 - NPC.cs:13146
+            NpcKind::Pumpking => 58,
+            // aiStyle 74 - NPC.cs:13939, :15372
+            NpcKind::MartianDrone | NpcKind::SolarCorite => 74,
+            // aiStyle 75 - NPC.cs:13973, :14000, :14018, :14035, :14655, :15338
+            NpcKind::ScutlixRider | NpcKind::MartianSaucer | NpcKind::MartianSaucerTurret | NpcKind::MartianSaucerCannon |
+            NpcKind::SolarDrakomireRider | NpcKind::FlyingDutchmanCannon => 75,
+            // aiStyle 76 - NPC.cs:14052
+            NpcKind::MartianSaucerCore => 76,
+            // aiStyle 77 - NPC.cs:14127
+            NpcKind::MoonLordCore => 77,
+            // aiStyle 78 - NPC.cs:14108
+            NpcKind::MoonLordHand => 78,
+            // aiStyle 79 - NPC.cs:14089
+            NpcKind::MoonLordHead => 79,
+            // aiStyle 80 - NPC.cs:14069
+            NpcKind::MartianProbe => 80,
+            // aiStyle 81 - NPC.cs:14146
+            NpcKind::MoonLordFreeEye => 81,
+            // aiStyle 82 - NPC.cs:14166
+            NpcKind::MoonLordLeechBlob => 82,
+            // aiStyle 84 - NPC.cs:14216
+            NpcKind::AncientCultist => 84,
+            // aiStyle 85 - NPC.cs:15026, :15134
+            NpcKind::StardustCellBig | NpcKind::BrainSuckler => 85,
+            // aiStyle 93 - NPC.cs:14637
+            NpcKind::FlyingDutchman => 93,
+            // aiStyle 94 - NPC.cs:14995, :15108, :15179, :15256
+            NpcKind::StardustTower | NpcKind::NebulaTower | NpcKind::SolarTower | NpcKind::VortexTower => 94,
+            // aiStyle 95 - NPC.cs:15040
+            NpcKind::StardustCellSmall => 95,
+            // aiStyle 96 - NPC.cs:15091
+            NpcKind::StardustJellyfishBig => 96,
+            // aiStyle 97 - NPC.cs:15161
+            NpcKind::NebulaFloater => 97,
+            // aiStyle 105 - NPC.cs:16002
+            NpcKind::DD2EterniaCrystal => 105,
+            // aiStyle 106 - NPC.cs:16040
+            NpcKind::DD2LanePortal => 106,
+            // aiStyle 107 - NPC.cs:16061, :16078, :16095, :16112, :16129, :16146, :16163, :16180, :16197, :16282, :16299, :16316, :16333, :16350, :16367, :16384, :16401, :16418, :16435
+            NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 | NpcKind::DD2GoblinBomberT1 |
+            NpcKind::DD2GoblinBomberT2 | NpcKind::DD2GoblinBomberT3 | NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 |
+            NpcKind::DD2JavelinT3 | NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 | NpcKind::DD2WitherBeastT3 |
+            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 | NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 |
+            NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 | NpcKind::DD2WitherBeast => 107,
+            // aiStyle 108 - NPC.cs:16211, :16229, :16247, :16485, :16503
+            NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3 | NpcKind::DD2KoboldFlyerT2 |
+            NpcKind::DD2KoboldFlyerT3 => 108,
+            // aiStyle 109 - NPC.cs:16452, :16470
+            NpcKind::DD2DarkMageT3 | NpcKind::DD2DarkMage => 109,
+            // aiStyle 110 - NPC.cs:16524
+            NpcKind::DD2Betsy => 110,
+            // aiStyle 123 - NPC.cs:17453
+            NpcKind::Deerclops => 123,
+        }
+    }
+
     pub fn ai3_walk_speed(self) -> Option<f32> {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
@@ -3454,6 +3613,39 @@ pub struct Npc {
     /// `FaceTarget` writes it (`:77649`) and the steering tails read it
     /// (`AI_109`'s `:66154-66185`).
     pub direction_y: i32,
+    /// `NPC.target` (`NPC.cs:6457`, field default -1; `SetDefaults`'
+    /// `ClearTarget` (`:8539`, `:42924-42927`) sets 255): the player slot
+    /// the shared selection (`npc_target::target_closest`,
+    /// `NPC.cs:77652-77666`) picked. The port has one session player, so
+    /// a live pick is always slot 0.
+    pub target: i32,
+    /// `NPC.targetRect` (`NPC.cs:6483`): the picked target's box —
+    /// `(x, y, width, height)` with the int-truncated position
+    /// (`:77717`/`:77735`). Written by `SetTargetTrackingValues`.
+    pub target_rect: (i32, i32, i32, i32),
+    /// `NPC.targetSetFrame` (`NPC.cs:6459`): the `Main.EverLastingTicker`
+    /// stamp of the last selection (`:77780`). Its only C# reader is the
+    /// target-line fade (`Main.cs:57174`), unported.
+    pub target_set_frame: u64,
+    /// `NPC.oldTarget` (`NPC.cs:6501`): the previous tick's `target`,
+    /// latched by `UpdateNPC` before the AI (`NPC.cs:90393`). The
+    /// facing-inheritance gate reads it (`:77748`).
+    pub old_target: i32,
+    /// `Entity.oldDirection` / `NPC.oldDirectionY`: the previous tick's
+    /// facings, latched beside `oldTarget` (`NPC.cs:90394-90395`); the
+    /// `netUpdate` change flag compares them (`:77776`).
+    pub old_direction: i32,
+    pub old_direction_y: i32,
+    /// `NPC.netUpdate` (`NPC.cs:6133`): the selection arms it when the
+    /// target/facing changed and neither collision axis blocked
+    /// (`:77776-77779`). The wire send path lands with the NPC net sync.
+    pub net_update: bool,
+    /// `NPC.boss` (`NPC.cs:6513`, the per-type `SetDefaults` rows): the
+    /// facing-inheritance gate's `!this.boss` term (`:77749`). The port's
+    /// kinds carry no general boss table yet — the rows land with the
+    /// caller migration (S1-D-3p follow-up); every kind keeps the stock
+    /// false until then.
+    pub boss: bool,
     /// `NPC.collideX`/`collideY` (`NPC.cs:6447-6448`): the axes the last
     /// tick's collision pass blocked. The AI reads them a tick later
     /// (`AI_109`'s `:66098-66121` bounce).
@@ -3515,13 +3707,26 @@ pub struct Npc {
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
     /// the (kind, bottom-centre x, bottom-centre y) spawn point.
-    pub wants_sphere: Vec<(NpcKind, f32, f32)>,
+    /// is the (kind, bottom-centre x, bottom-centre y, `ai[3]`) spawn
+    /// point — the 4th slot carries `NPC.NewNPC`'s `ai3` argument
+    /// (`NPC.cs:21246`'s `flag4 ? 1 : 0`; every other caller passes 0).
+    pub wants_sphere: Vec<(NpcKind, f32, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
     /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
     /// `ai[3]` the dash/servant counter; `AI()`'s aiStyle-4 block).
     pub ai: [f32; 4],
+    /// `NPC.localAI = new float[NPC.maxAI]` (`NPC.cs:6447`, `maxAI` = 4,
+    /// `Main.cs`'s init) — the client-local AI slots the vanilla never
+    /// nets. S1-E-14b: the RedHat state lives here for the hand 36
+    /// (`aiStyle 12` mirrors the head's `ai[3]`, `NPC.cs:22315`) and the
+    /// Dark Caster 32 (`aiStyle 8` latches from `FindFirstNPC(35)`,
+    /// `NPC.cs:20820-20827`); the loot seam feeds it to
+    /// `RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`). The
+    /// other AIs keep their bespoke named localAI stand-ins
+    /// (`caster_counter` etc.) — recorded in ANALYSIS.
+    pub local_ai: [f32; 4],
     /// The servant spawn request — the `NPC.NewNPC(..., 5)` calls in the
     /// aiStyle-4 block (`NPC.cs:4598`/`:4651` of the AI()), resolved by the
     /// world sim after the update pass (the `wants_sphere` shape; the payload
@@ -4539,6 +4744,17 @@ impl Npc {
             caster_counter: 0,
             cast_windup: 0,
             direction_y: 1,
+            // `SetDefaults`' `ClearTarget()` (`NPC.cs:8539`,
+            // `:42924-42927`): the fresh NPC targets the 255 sentinel.
+            target: 255,
+            target_rect: (0, 0, 0, 0),
+            target_set_frame: 0,
+            // `SetDefaults` latches `oldTarget = target` (`NPC.cs:8540`).
+            old_target: 255,
+            old_direction: facing,
+            old_direction_y: 1,
+            net_update: false,
+            boss: false,
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -4546,6 +4762,7 @@ impl Npc {
             dark_mage_local: [0.0; 3],
             frost_stuck_x: 0.0,
             wants_sphere: Vec::new(),
+        local_ai: [0.0; 4],
             swim_phase: 0.0,
             worm_id: 0,
             seg_index: 0,
@@ -5750,6 +5967,42 @@ impl Npc {
             *v = v.saturating_sub(1);
         }
         self.anim += dt;
+        // S1-D-2: the aiStyle axis — `NPC.AI` dispatches on the C#'s style id
+        // first (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain),
+        // then on the type inside the family arm. Migrated families claim
+        // their style here; every other style falls through to the kind
+        // match (`update_kind_ai`) unchanged, one family per D-3 round.
+        match self.kind.ai_style() {
+            // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
+            // (`NPC.cs:20802-20806`).
+            5 => self.ai_005_hover_family(world, player),
+            _ => self.update_kind_ai(world, player, dt, rng),
+        }
+        self.find_frame();
+        self.contact(player, rng);
+    }
+
+    /// S1-D-2: the aiStyle-5 family arm — `AI_005_EaterOfSouls`
+    /// (`NPC.cs:50244-50700`), shared by every style-5 kind. The per-type
+    /// rows (`num`/`num2`/`flag5`/the rotation arms) are the kind dispatch
+    /// inside the one family machine; behaviour is the pre-axis arms',
+    /// verbatim (the A/B pin `s1_d_2_the_style_axis_keeps_the_hover_behaviour`).
+    fn ai_005_hover_family(&mut self, world: &World, player: &Player) {
+        match self.kind {
+            // The type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
+            // the servant's own snapped-aim machine (S1-D-3k).
+            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
+            NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
+            NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
+            NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
+        }
+    }
+
+    /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
+    /// for every style the axis has not claimed yet. D-3 migrates one family
+    /// at a time into the axis above; this match shrinks as they land.
+    fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
@@ -6018,12 +6271,17 @@ impl Npc {
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
-            NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
-            NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
-            NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
+            // style axis (`ai_005_hover_family`) — these arms are unreachable
+            // through `update_rng` (the axis claims style 5 first).
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
+                unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
+            }
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
-            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
+            NpcKind::ServantOfCthulhu => {
+                unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
+            }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
                 self.update_caster(world, player, rng)
@@ -6111,8 +6369,6 @@ impl Npc {
                 },
             ),
         }
-        self.find_frame();
-        self.contact(player, rng);
     }
 
     /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
@@ -7603,6 +7859,11 @@ impl Npc {
                 } else {
                     0
                 };
+                // `NPC.cs:77050-77053`: `type == 32 && localAI[3] == 1`
+                // banks 3 rows down — the Skeletron-pose strip.
+                if self.kind == NpcKind::DarkCaster && self.local_ai[3] == 1.0 {
+                    self.frame += 3;
+                }
             }
             // The Desert Djinn (`FindFrame`'s case 533,
             // `NPC.cs:69978-69992`): the 8-row hover cycle — the counter
@@ -8190,17 +8451,53 @@ impl Npc {
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
     fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
         let (w, h) = NpcKind::Zombie.size();
-        let (pcx, pcy) = player.center();
-        let (cx, cy) = self.center();
-        let dx = pcx - cx;
-        let dy = pcy - cy;
-        let near = dx.abs() < 80.0 * TILE_PX && dy.abs() < 40.0 * TILE_PX;
-        if near {
-            self.facing = if dx >= 0.0 { 1 } else { -1 };
+        // S1-D-3p — the shared selection (`NPC.TargetClosest`,
+        // `NPC.cs:77652-77781`, `npc_target.rs`) replaces the ad-hoc
+        // dx-sign facing and the invented 80×40-tile aggro window:
+        // `AI_003_Fighters` calls `TargetClosest()` at `NPC.cs:57369`
+        // under the `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+        // gate (`:57336`, `:60300-60330`). For the zombie (type 3) that
+        // gate is false only on a non-eclipse day above the surface
+        // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
+        // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
+        // event terms cannot fire for this kind in the port.
+        let cand = crate::npc_target::TargetCandidate {
+            active: true,
+            dead: player.dead,
+            // The port has no hardcore ghosts (`Player.ghost`).
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            // `Player.aggro`/`npcTypeNoAggro`/`tankPet` have no port
+            // fields yet (the stealth/tank systems are unported) — the
+            // stock 0/false/None keep the C# metric's plain form.
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        let discouraged = !world.eclipse
+            && world.day_time
+            && !self.spawned_from_statue
+            && !((self.y as f64) > world.world_surface * 16.0);
+        if !discouraged {
+            // The `EverLastingTicker` is not plumbed into `Npc::update`
+            // yet; the stamp's only C# reader is the unported target-line
+            // fade (`Main.cs:57174`) — 0 until the caller migration.
+            crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
             self.sprite_dir = self.facing;
-            // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
-            // default group, `NPC.cs:58322-58374`): 1f.
-            self.vx = self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+            if !player.dead {
+                // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
+                // default group, `NPC.cs:58322-58374`): 1f. The port keeps
+                // its direct velocity write (the C#'s 0.07 approach lands
+                // with the full AI_003 migration — ANALYSIS, S1-D-3p).
+                self.vx =
+                    self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+            } else {
+                self.vx *= 0.9;
+            }
         } else {
             self.vx *= 0.9;
         }
@@ -9341,6 +9638,18 @@ impl Npc {
         }
     }
 
+    /// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`):
+    /// type 35 reads `ai[3] == 1` (the loot seam's live hand-count write
+    /// keeps its own model — `world_sim/npcs.rs`), 36/32 read
+    /// `localAI[3] == 1`, 33 reads `ai[3] == 1`, everything else false.
+    pub fn red_hat_skeletron_adjustments_enabled(&self) -> bool {
+        match self.kind {
+            NpcKind::SkeletronHead | NpcKind::WaterSphere => self.ai[3] == 1.0,
+            NpcKind::SkeletronHand | NpcKind::DarkCaster => self.local_ai[3] == 1.0,
+            _ => false,
+        }
+    }
+
     /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
     /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
     /// `wants_sphere`: the Goblin Sorcerer → the Chaos Ball 30 (`:21238`),
@@ -9350,6 +9659,13 @@ impl Npc {
     /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
     /// semantics (`:80771`).
     fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // `AI()`'s aiStyle-8 head (`NPC.cs:20819-20827`): the Dark
+        // Caster latches `localAI[3] = 1` while a live Skeletron head's
+        // `ai[3] == 1` (`FindFirstNPC(35)` — the sim's write-through
+        // mirror). No reset arm exists in the C#: the latch sticks.
+        if self.kind == NpcKind::DarkCaster && world.skeletron_red_hat {
+            self.local_ai[3] = 1.0;
+        }
         let (pcx, pcy) = player.center();
         let params = match self.kind {
             NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
@@ -9374,13 +9690,24 @@ impl Npc {
                 NpcKind::FireImp => (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0),
                 _ => return,
             };
+            // `:21246`: the Dark Caster's sphere carries
+            // `ai[3] = flag4 ? 1 : 0` — the red-hat state propagates to
+            // the Water Sphere 33 (`RedHatSkeletronAdjustmentsEnabled`'s
+            // `ai[3]` arm, `NPC.cs:66676-66679`).
+            let sphere_ai3 = if self.kind == NpcKind::DarkCaster
+                && self.red_hat_skeletron_adjustments_enabled()
+            {
+                1.0
+            } else {
+                0.0
+            };
             let sphere = match self.kind {
                 NpcKind::GoblinSorcerer | NpcKind::Tim => NpcKind::ChaosBall,
                 NpcKind::DarkCaster => NpcKind::WaterSphere,
                 NpcKind::FireImp => NpcKind::BurningSphere,
                 _ => return,
             };
-            self.wants_sphere.push((sphere, sx, sy));
+            self.wants_sphere.push((sphere, sx, sy, sphere_ai3));
         }
     }
 
@@ -11072,7 +11399,7 @@ impl Npc {
                     0,
                 ));
                 // `DD2Event.RaiseGoblins` — the port's summon request.
-                self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy));
+                self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy, 0.0));
             }
             // `:65849-65857` — the shadowflame: the aim re-sets `direction`
             // from the vector's signed x, then the 675 leaves from the
@@ -12637,7 +12964,7 @@ impl Npc {
             // `:59585-59589`'s spawn: the 410 spider at the centre with the
             // carried velocity.
             self.wants_sphere
-                .push((NpcKind::StardustSpiderSmall, cx, cy));
+                .push((NpcKind::StardustSpiderSmall, cx, cy, 0.0));
             self.ai[2] = 0.0;
         }
         if self.ai[1] <= 0.0 {
@@ -15109,6 +15436,11 @@ impl Npc {
     /// (the WoF write-through shape). The vanilla's `ai[2] += 10f`
     /// head-death despawn rides the sim.
     fn update_skeletron_hand(&mut self, world: &World, player: &Player) {
+        // `NPC.cs:22313-22316` — while the head is a live aiStyle-11 NPC
+        // the hand mirrors its `ai[3]` into `localAI[3]` (the red-hat
+        // latch rides the head; the sim's `skeletron_x/y` write-through
+        // stands for the active-head check).
+        self.local_ai[3] = if world.skeletron_red_hat { 1.0 } else { 0.0 };
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -15383,11 +15715,11 @@ impl Npc {
                 if self.caster_counter == 0 && self.cast_windup == 0 {
                     self.caster_counter = 1;
                     self.wants_sphere
-                        .push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
+                        .push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0, 0.0));
                     self.wants_sphere
-                        .push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
+                        .push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0, 0.0));
                     self.wants_sphere
-                        .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
+                        .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0, 0.0));
                 }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`): the C# gates the
@@ -18100,7 +18432,7 @@ mod tests {
             let (px, py) = (tim.x, tim.y);
             tim.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             let req = tim.wants_sphere.drain(..).next();
-            if let Some((kind, sx, sy)) = req {
+            if let Some((kind, sx, sy, _ai3)) = req {
                 assert_eq!(kind, NpcKind::ChaosBall);
                 // The Chaos Ball spawn point: Tim's bottom-centre, 8 px
                 // above the top (`:21242`'s NewNPC(x + w/2, y - 8) with the
@@ -18154,7 +18486,7 @@ mod tests {
         for _ in 0..400 {
             imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             let req = imp.wants_sphere.drain(..).next();
-            if let Some((kind, _, _)) = req {
+            if let Some((kind, _, _, _)) = req {
                 assert_eq!(kind, NpcKind::BurningSphere);
                 shot = true;
                 break;
@@ -19326,6 +19658,131 @@ mod tests {
             sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
         assert_eq!(sk.ai[1], 0.0, "the spin resumed");
+    }
+
+    #[test]
+    fn s1_e_14b_red_hat_36_32_local_ai_state_machine() {
+        // S1-E-14b acceptance — the 36/32 `localAI[3]` paths
+        // (`NPC.RedHatSkeletronAdjustmentsEnabled`, `NPC.cs:66671-66682`)
+        // become reachable through the ported `Npc.local_ai` vector.
+        let w = ground_air();
+        let mut player = surface_player(&w);
+        let mut rng = UnifiedRandom::new(7);
+
+        // The predicate itself: the C#'s full 10-case matrix on the real
+        // Npc (35/33 read `ai[3]`, 36/32 read `local_ai[3]`, others refuse).
+        let cases: [(NpcKind, f32, f32, bool); 10] = [
+            (NpcKind::SkeletronHead, 1.0, 0.0, true),
+            (NpcKind::SkeletronHead, 0.0, 1.0, false),
+            (NpcKind::SkeletronHead, 1.0, 1.0, true),
+            (NpcKind::SkeletronHand, 0.0, 1.0, true),
+            (NpcKind::SkeletronHand, 1.0, 0.0, false),
+            (NpcKind::DarkCaster, 0.0, 1.0, true),
+            (NpcKind::DarkCaster, 1.0, 0.0, false),
+            (NpcKind::WaterSphere, 1.0, 0.0, true),
+            (NpcKind::WaterSphere, 0.0, 1.0, false),
+            (NpcKind::Slime, 1.0, 1.0, false),
+        ];
+        for (kind, ai3, local3, expected) in cases {
+            let mut n = Npc::new(kind, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            n.ai[3] = ai3;
+            n.local_ai[3] = local3;
+            assert_eq!(
+                n.red_hat_skeletron_adjustments_enabled(),
+                expected,
+                "{kind:?} ai[3] {ai3} localAI[3] {local3}"
+            );
+        }
+
+        // 36 — the hand mirrors the head's `ai[3]` into `localAI[3]`
+        // (`NPC.cs:22313-22316`; the sim's `skeletron_red_hat` mirror
+        // stands for the active-head check).
+        let mut wh = ground_air();
+        let mut hand = Npc::new(NpcKind::SkeletronHand, 112.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hand.ai[0] = -1.0;
+        wh.skeletron_x = 100.0 * 16.0;
+        wh.skeletron_y = 100.0 * 16.0;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 0.0, "no red-hat head, no latch");
+        assert!(!hand.red_hat_skeletron_adjustments_enabled());
+        wh.skeletron_red_hat = true;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 1.0, "`:22315`'s mirror");
+        assert!(hand.red_hat_skeletron_adjustments_enabled());
+        wh.skeletron_red_hat = false;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 0.0, "the mirror tracks the head");
+
+        // 32 — the Dark Caster latches from `FindFirstNPC(35)`'s
+        // `ai[3] == 1` (`NPC.cs:20820-20827`); no reset arm exists.
+        let mut wd = ground_air();
+        let mut dc = Npc::new(NpcKind::DarkCaster, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        dc.hp = dc.max_hp;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 0.0, "no head, no latch");
+        wd.skeletron_red_hat = true;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 1.0, "`:20825`'s latch");
+        assert!(dc.red_hat_skeletron_adjustments_enabled());
+        wd.skeletron_red_hat = false;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 1.0, "the C# has no reset arm");
+        // `FindFrame`'s `:77050-77053`: the latched caster banks 3 rows.
+        dc.vy = 0.0;
+        dc.cast_windup = 0;
+        dc.find_frame();
+        assert_eq!(dc.frame, 3, "the Skeletron-pose strip");
+
+        // The sphere spawn carries the latch as `ai[3]` (`:21246`'s
+        // `flag4 ? 1 : 0`) — the Water Sphere 33's `ai[3]` path.
+        let mut fired = false;
+        for _ in 0..1200 {
+            dc.wants_sphere.clear();
+            dc.update_caster(&wd, &player, &mut rng);
+            if let Some((kind, _, _, ai3)) = dc.wants_sphere.first().copied() {
+                assert_eq!(kind, NpcKind::WaterSphere);
+                assert_eq!(ai3, 1.0, "the latched caster's sphere rides ai[3]=1");
+                let mut sphere = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+                sphere.ai[3] = ai3;
+                assert!(sphere.red_hat_skeletron_adjustments_enabled());
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "the caster fired its sphere");
+
+        // The loot seam: the ported vector reaches `Cond::RedHatSkeletron`
+        // (`Conditions.cs` RedHatSkeletron.CanDrop → the same predicate).
+        for (npc, kind, expected) in [
+            (&hand, 36, false),
+            (&dc, 32, true),
+        ] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut info = tr_core::loot::DropAttemptInfo {
+                rng: &mut rng,
+                luck: 0.0,
+                is_expert: false,
+                is_master: false,
+                active_players: 1,
+                extra_gel: false,
+                is_in_simulation: false,
+                get_text_value: None,
+                flags: tr_core::loot::LootFlags::default(),
+                npc: tr_core::loot::LootNpc {
+                    kind,
+                    ai: npc.ai,
+                    local_ai: npc.local_ai,
+                    ..Default::default()
+                },
+            };
+            use tr_core::loot::DropCondition as _;
+            assert_eq!(
+                tr_core::loot::Cond::RedHatSkeletron.can_drop(&mut info),
+                expected,
+                "kind {kind} through the seam"
+            );
+        }
+        let _ = w;
     }
 
     #[test]
@@ -25171,6 +25628,204 @@ mod s1_f_13b_tests {
                 "{kind:?} draws the wrong sheet"
             );
             assert_eq!(kind.net_id(), ty as i32, "{kind:?} has the wrong net id");
+        }
+    }
+}
+
+#[cfg(test)]
+mod s1_d_2_tests {
+    use super::*;
+    use tr_core::world::World;
+
+    /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
+    /// extracted mechanically from the 1.4.5.8 decompile (the compound
+    /// `this.type` conditions evaluated per id). The pin for the axis's
+    /// first dispatch key: `NpcKind::ai_style` must carry the C#'s row.
+    const CS_STYLES: &[(NpcKind, u8)] = &[
+        (NpcKind::Slime, 1),
+        (NpcKind::DemonEye, 2),
+        (NpcKind::WanderingEye, 2),
+        (NpcKind::Zombie, 3),
+        (NpcKind::KingSlime, 15),
+        (NpcKind::Guide, 7),
+        (NpcKind::Skeleton, 3),
+        (NpcKind::UndeadMiner, 3),
+        (NpcKind::CaveBat, 14),
+        (NpcKind::JungleBat, 14),
+        (NpcKind::Hellbat, 14),
+        (NpcKind::VoodooDemon, 14),
+        (NpcKind::EaterOfSouls, 5),
+        (NpcKind::Hornet, 5),
+        (NpcKind::MeteorHead, 5),
+        (NpcKind::ServantOfCthulhu, 5),
+        (NpcKind::GoblinThief, 3),
+        (NpcKind::GoblinWarrior, 3),
+        (NpcKind::GoblinArcher, 3),
+        (NpcKind::GoblinPeon, 3),
+        (NpcKind::GoblinSummoner, 3),
+        (NpcKind::SnowmanGangsta, 38),
+        (NpcKind::SnowBalla, 38),
+        (NpcKind::MysterySnowman, 38),
+        (NpcKind::EyeOfCthulhu, 4),
+        (NpcKind::BrainOfCthulhu, 54),
+        (NpcKind::Creeper, 55),
+        (NpcKind::QueenBee, 43),
+        (NpcKind::SkeletronHead, 11),
+        (NpcKind::SkeletronHand, 12),
+        (NpcKind::SkeletronPrime, 32),
+        (NpcKind::Retinazer, 30),
+        (NpcKind::Spazmatism, 31),
+        (NpcKind::Plantera, 51),
+        (NpcKind::Golem, 45),
+        (NpcKind::GolemHead, 46),
+        (NpcKind::GolemHeadFree, 48),
+        (NpcKind::Deerclops, 123),
+        (NpcKind::WallOfFlesh, 27),
+        (NpcKind::TheDestroyer, 37),
+        (NpcKind::MartianProbe, 80),
+        (NpcKind::MartianDrone, 74),
+        (NpcKind::ScutlixRider, 75),
+        (NpcKind::MartianSaucerCore, 76),
+        (NpcKind::MartianSaucer, 75),
+        (NpcKind::FlyingDutchman, 93),
+        (NpcKind::DD2DarkMage, 109),
+        (NpcKind::DD2Betsy, 110),
+        (NpcKind::DD2EterniaCrystal, 105),
+        (NpcKind::DD2LanePortal, 106),
+        (NpcKind::StardustTower, 94),
+        (NpcKind::AncientCultist, 84),
+        (NpcKind::MoonLordCore, 77),
+        (NpcKind::MoonLordHand, 78),
+        (NpcKind::MoonLordHead, 79),
+        (NpcKind::MoonLordFreeEye, 81),
+        (NpcKind::DevourerHead, 6),
+        (NpcKind::GiantWormHead, 6),
+        (NpcKind::EaterOfWorldsHead, 6),
+        (NpcKind::LeechHead, 6),
+        (NpcKind::SolarCrawltipedeHead, 6),
+        (NpcKind::StardustWormHead, 6),
+        (NpcKind::GoblinSorcerer, 8),
+        (NpcKind::Tim, 8),
+        (NpcKind::DarkCaster, 8),
+        (NpcKind::FireImp, 8),
+        (NpcKind::ChaosBall, 9),
+        (NpcKind::BurningSphere, 9),
+        (NpcKind::WaterSphere, 9),
+        (NpcKind::Goldfish, 16),
+        (NpcKind::Piranha, 16),
+        (NpcKind::Shark, 16),
+        (NpcKind::BoundGoblin, 0),
+        (NpcKind::BoundWizard, 0),
+        (NpcKind::BoundMechanic, 0),
+        (NpcKind::SleepingAngler, 0),
+        (NpcKind::WebbedStylist, 0),
+        (NpcKind::SleepingGolfer, 0),
+        (NpcKind::Scarecrow1, 3),
+        (NpcKind::Scarecrow10, 3),
+        (NpcKind::Splinterling, 3),
+        (NpcKind::HeadlessHorseman, 26),
+        (NpcKind::Hellhound, 26),
+        (NpcKind::MourningWood, 57),
+        (NpcKind::Pumpking, 58),
+        (NpcKind::Poltergeist, 22),
+    ];
+
+    #[test]
+    fn s1_d_2_the_ai_style_table_matches_the_csharp_set_defaults() {
+        for &(kind, style) in CS_STYLES {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+        }
+        // The style-5 family is exactly the four ported kinds (the C#'s 18
+        // style-5 types minus the 14 unported ones).
+        let five: Vec<_> = CS_STYLES
+            .iter()
+            .filter(|&&(_, s)| s == 5)
+            .map(|&(k, _)| k)
+            .collect();
+        assert_eq!(
+            five,
+            vec![
+                NpcKind::EaterOfSouls,
+                NpcKind::Hornet,
+                NpcKind::MeteorHead,
+                NpcKind::ServantOfCthulhu
+            ]
+        );
+    }
+
+    fn open_world() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// The frozen-behaviour A/B: the axis-routed family arm must produce the
+    /// exact pre-axis state sequence (the old `match self.kind` arms called
+    /// the same `update_hover`/servant machines with the same params). Both
+    /// runs share one world/player stream; every tick's kinematics + frame
+    /// state must be bit-equal.
+    #[test]
+    fn s1_d_2_the_style_axis_keeps_the_hover_behaviour() {
+        let w = open_world();
+        for kind in [
+            NpcKind::EaterOfSouls,
+            NpcKind::Hornet,
+            NpcKind::MeteorHead,
+            NpcKind::ServantOfCthulhu,
+        ] {
+            let mut player_a = Player::spawn(&w);
+            let mut player_b = Player::spawn(&w);
+            for _ in 0..60 {
+                player_a.update(&w, crate::player::PlayerInput::default());
+                player_b.update(&w, crate::player::PlayerInput::default());
+            }
+            let mut axis = Npc::new(kind, 90.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(123);
+            let mut rng_b = UnifiedRandom::new(123);
+            for tick in 0..300 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-axis arm, verbatim (the kind match's old bodies).
+                match kind {
+                    NpcKind::ServantOfCthulhu => legacy.update_servant_of_cthulhu(&player_b),
+                    NpcKind::EaterOfSouls => {
+                        legacy.update_hover(&w, &player_b, HoverParams::EATER_OF_SOULS)
+                    }
+                    NpcKind::Hornet => legacy.update_hover(&w, &player_b, HoverParams::HORNET),
+                    NpcKind::MeteorHead => {
+                        legacy.update_hover(&w, &player_b, HoverParams::METEOR_HEAD)
+                    }
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(
+                    axis.frame_counter.to_bits(),
+                    legacy.frame_counter.to_bits(),
+                    "{kind:?} frame_counter @{tick}"
+                );
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(axis.sprite_dir, legacy.sprite_dir, "{kind:?} dir @{tick}");
+                assert_eq!(axis.facing, legacy.facing, "{kind:?} facing @{tick}");
+                assert_eq!(axis.on_ground, legacy.on_ground, "{kind:?} ground @{tick}");
+                assert_eq!(player_a.hp, player_b.hp, "{kind:?} player hp @{tick}");
+            }
         }
     }
 }

@@ -2987,8 +2987,19 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
 
 **No arm — default 16×16** (the case has no unconditional static part):
 
-- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
-  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- ~~`5` (`:4645-4649`)~~ — **S1-F-9 wave A (2026-11-18)**: the static 20×20 arm
+  and the `tileFrameX += 176 * (GetTreeBiome + 1)` rewrite are ported
+  (`drawdata.rs::tree_variant`/`tree_biome`/`tree_frame_x_offset`, the case-5
+  arm + `apply_world_corrections`). `GetTreeVariant`'s jungle
+  surface/underground split (variant 5 below `Main.worldSurface`,
+  TileDrawing.cs:1789-1794) and `GetTreeBiome`'s marker-frame column shifts +
+  start-kind walk (`:1735-1776`) are faithful; the renderer's trunk probe
+  `tree::trunk_sheet_offset_at` delegates to it (the old 100-row
+  any-non-tree walk missed variant 5, the column shifts and the start-kind
+  stop rule). The app still routes kind 5 through the dedicated tree path
+  before `draw_data`, so the table arm remains dead in the app but complete.
+  Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
+  (`tree.rs::Foliage::for_ground` deviation stands).
 - `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
@@ -4610,7 +4621,7 @@ the existing rows byte-identical (`gen_loot.py --check` green).
 
 - RedHat's 36/32 paths are unreachable at runtime — the port's `Npc` has
   no `localAI` (the ai[3] paths for 35/33 work); the field port is
-  follow-up S1-E-14b.
+  follow-up S1-E-14b. (RESOLVED 2026-11-18 by S1-E-14b, see below.)
 - The mech-flags fill is a deliberate hardmode behavior change: mech
   spawner drops become possible.
 - The generator splices whole methods — 24 registrations, not 12;
@@ -4645,6 +4656,43 @@ M4-LOOT-2 (7 rows already on main), kept for row stability, inert at runtime
 (`spawn_loot` passes `is_master: false`); a dedicated fix should change all
 32 together. 15 `OneFromOptions` rows referencing unported items remain
 warn-and-emit (the established policy).
+
+Follow-up S1-E-14b (2026-11-18, `task/S1-E-14b`, COMPLETED): `Npc.local_ai:
+[f32; 4]` ports `NPC.localAI = new float[NPC.maxAI]` (`NPC.cs:6447`, maxAI =
+4) and the RedHat 36/32 state-machine paths become reachable:
+
+- `Npc::red_hat_skeletron_adjustments_enabled` (`npc.rs`) = the C# predicate
+  (`NPC.cs:66671-66682`): 35/33 read `ai[3] == 1`, 36/32 read
+  `local_ai[3] == 1`, everything else false.
+- Hand 36 (`update_skeletron_hand`): mirrors the head's `ai[3]` into
+  `local_ai[3]` each tick (`NPC.cs:22313-22316`); the head check rides the
+  sim's `World.skeletron_red_hat` write-through (the `skeletron_x/y` anchor
+  shape).
+- Dark Caster 32 (`update_caster`): the aiStyle-8 head latches
+  `local_ai[3] = 1` while `FindFirstNPC(35)`'s `ai[3] == 1`
+  (`NPC.cs:20820-20827`, mirrored by `World.skeletron_red_hat`); the C# has
+  no reset arm — the latch sticks. `FindFrame`'s `:77050-77053` banks the
+  latched caster 3 rows down (the Skeletron-pose strip).
+- The sphere spawn carries the latch: `wants_sphere` grows a 4th `ai[3]`
+  slot = `NPC.NewNPC`'s `ai3` argument (`NPC.cs:21246`'s `flag4 ? 1 : 0`);
+  every other caller passes 0. The Water Sphere 33's `ai[3]` path works
+  end-to-end.
+- `spawn_loot` feeds the live `npc.local_ai` to the seam (was `[0.0; 4]`).
+
+Deviations kept: the head 35's `ai[3]` stays the port's live hands-count
+stand-in (the sim write-through, `NPC.cs:21962-21970`'s expert `num168`
+scan) — the C# head's `ai[3]` is the red-hat latch set by
+`NPC.RedHatSkeletron`/`SpawnSkeletron(redHatMode)` (`NPC.cs:80394-80470`,
+the killClothier trigger unported); `skeletron_red_hat` mirrors that same
+slot, so the 36/32 paths activate exactly when the port's head slot reads
+1. The other AIs keep their bespoke named localAI stand-ins
+(`caster_counter`, the WoF/KingSlime/brain fields) — the generic vector is
+not retro-fitted onto them (behaviour frozen). No RNG draws added or
+reordered: the new arms are pure reads/writes. Acceptance:
+`s1_e_14b_red_hat_36_32_local_ai_state_machine` (npc.rs) — the full
+10-case predicate matrix on real Npcs, the hand mirror, the caster latch +
+stickiness + frame +3, the latched sphere's `ai[3] = 1`, and the loot-seam
+`Cond::RedHatSkeletron` reachability for 36/32.
 
 ## Buff slots (M2-BUFF-1)
 
@@ -10403,7 +10451,11 @@ powers/research — each needs its own scope.
   `save_world`. `load_pairs` resets `Condition.frac` to 0 because the text
   format stores only the whole `value` (a `CustomFloat` sub-unit fraction is
   in-memory only until saved). `notify` persists on completion and returns only
-  the last completed achievement (C# fires `OnCompleted` per completion).
+  the last completed achievement name (the caller-facing shape), but since
+  S1-E-26 wave A **every** completing row fires: `notify_with` queues each one
+  into `AchievementManager.completed_events` (Save + event per row,
+  `AchievementManager.cs:180-187`), and `App::drain_achievement_completions`
+  consumes the queue once per frame.
 - **Notify sites (S1-E-18, partial).** `notify_with` applies the C# `Value`-setter
   semantics (clamp `[0,max]`, complete at `max`) with wrappers for progression,
   custom flag/int/float. Wired sites: progression 1/3/5/6/8/9/16, altar smash
@@ -10432,6 +10484,54 @@ powers/research — each needs its own scope.
   `MagicPixel` fill/blip splices; the scroll rides the mouse wheel instead of the
   `UIScrollbar`; the gamepad link points (`SetupGamepadPoints`, ids 3000+) are
   out of scope; there are no UI click sounds.
+
+## The achievement unlock popup (S1-E-26 wave A)
+
+The completion → toast chain is ported: `AchievementManager.AchievementCompleted`
+(`AchievementManager.cs:180-187`) → `OnAchievementCompleted` →
+`InGameNotificationsTracker.AddCompleted` (`UI/InGameNotificationsTracker.cs:75-81`,
+the `netMode != 2` gate) → `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13-148`).
+The port's event seam is `AchievementManager.completed_events` (one entry per
+completing row, registry order — the old "only the last completion" divergence is
+fixed); `App::drain_achievement_completions` (`app/mod.rs`) runs the two
+subscribers once per frame after the update branch:
+
+- the popup (`ui/notifications.rs`): the 300-tick timer (`Update`, `:80-87`),
+  the `Scale`/`Opacity` curves (`:39-66` — the timer counts DOWN, so the
+  `> 285` arm is the 15-tick fade-in and `< 30` the 30-tick fade-out), the
+  `(MeasureString + (58, 10)) * Scale * 1.1` plate (`:100-102`), the icon +
+  border at `num * 0.3` scale with the `(0, 32)` / `(4, h/2)` origins
+  (`:106-108`), the `mouseTextColor` title at anchor `(1, 0.4)` (`:109`) and
+  the `50 * Opacity` anchor push (`:89-93`). The tracker walk
+  (`DrawInGame`, `InGameNotificationsTracker.cs:38-55`) starts at
+  `(screenWidth/2, screenHeight - 40)` and breaks below `-100`.
+- the chat + sound subscriber (`AchievementInitializer.cs:728-735`): the
+  `Achievements.Completed` line with the `[a:NAME]` tag
+  (`AchievementTagHandler.GenerateTag`) through `Main.NewText` (white +
+  `PlaySound(12)`), then the tracked `SoundID.AchievementComplete`
+  (`SoundID.cs:1597`, cue `achievement_complete`) behind the
+  `FindActiveSound == null` guard.
+
+The popup click (`OnMouseOver`, `:117-142`) consumes the left-release edge
+(`App.ui_left_release`), opens the achievements overlay and scrolls to the row
+(`IngameFancyUI.OpenAchievementsAndGoto` → `UIList.Goto`'s
+`ViewPosition = item.Top.Pixels`, `App::open_achievements_and_goto`). The
+update tick rides `frame()` before the world branch (`Main.cs:17045` — menus
+included, capture-frozen); the draw rides after the achievements overlay
+(`DrawInterface_13`, `Main.cs:44779-44783`); `SaveAndQuit` clears the tracker
+(`WorldGen.cs:6714`).
+
+**Deviations:** the join-request popup (`PlayerWantsToJoinGamePopup`) and the
+notifications-area draw (`DrawInIngameOptions`) are unported (no social join
+flow); the gamepad anchor drop (`-25f`) and the `IgnoreMouseInterface` /
+`mouseInterface` gates have no port counterpart (the buff-bar hover's
+documented gap); an expired popup stays in the list at opacity 0 until
+`Clear` — the vanilla quirk (`ShouldBeRemoved` only rides the click, `:141`),
+kept 1:1; the menu-twin draw site (`Main.cs:48457`) is unreachable in the port
+because the drain runs on the world branch and `SaveAndQuit` clears the list;
+the chat line prints the raw `[a:NAME]` tag (the port's chat carries no
+snippet markup yet, `chat.rs`); the popup's `gameMenu && menuMode == 0` click
+gate is moot for the same reason.
 
 ## The pillar worms (M4-EVENT-14)
 
@@ -13096,6 +13196,40 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+## The magic cuffs (S1-C-7 wave A, 2026-11-18)
+
+`Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
+`player.rs::hurt_inner`, slotted between the defense reduction (`:38247`) and
+the endurance step (`:38304`): `num3 = (int)(num * 1f)` is the RAW incoming
+damage (the C# `num` at `:38246` — the defense-reduced `num2` never feeds it),
+`statMana += num3` capped at `statManaMax2` (`:38295-38298`), and
+`ManaEffect(num3)` (`:4531-4538`) queues the HealMana combat text with the
+UNCAPPED amount. The port hands the amount over via `pending_mana_effect` /
+`take_mana_effect` (the `pending_hurt_sound` convention); the drain in
+`world_sim/player.rs` spawns `combat_text::spawn_amount` at the player's own
+hitbox with `HEAL_MANA = (100, 100, 255)` (`CombatText.cs:228`), the placement
+`Next` draws riding the `UpdatePlayers` stream like the melee-hit text
+(`world_sim/editing.rs`). The flag folds per tick: the Magic Cuffs (1595,
+`ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+`:14949-14953`) arm `magic_cuffs`; `ResetEffects` clears it (`:18599`).
+
+Documented gaps, all deliberate:
+
+- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): the port's hurt callers
+  carry no crit flag end-to-end (research/04 deviation 10), so the restore is
+  always the un-doubled raw damage. The slot's order is preserved — the double
+  would land on `raw` before the cuffs arm.
+- **The +40 `statManaMax2` stat rows** (1595/2221 `:14925-14928`, and the
+  982/6188/6189 band's +40/+60 regen `:14929-14934`) ride **S1-C-12** (the
+  accessory stat chain) — the flag arms here, the stat grants land there.
+- **2221's `manaMagnet` half** (`:14951`) is its own unported family (the mana-
+  star attraction radius); only the `magicCuffs` grant lands.
+- **The NetMessage 43 send** (`ManaEffect`'s `:4534-4537`) is MP-only, out with
+  the port's single-player scope.
+- **The respawn clears the pending text** (`respawn`'s pending strip) — the C#
+  `CombatText` pool is global and survives death; the port's queue is per-hit
+  one-shot state, drained the same tick, so nothing observable diverges.
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
@@ -13192,6 +13326,29 @@ writer never emitted ids in that band, so old saves read identically).
 Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
 the next round, so a port `.plr` is byte-comparable with vanilla **through the
 vault byte** only until then.
+
+**Increment 2 (S1-J-5b, 2026-11-18).** The writer/reader now run through
+`hideInfo` (`Serialize:54893` / `Deserialize:55623`): buffs (`:54864-54876` —
+44 pairs, `maxBuffs` `Player.cs:57106`; fresh `buffType`/`buffTime` are all-zero
+`:1510-1512` and `Main.buffNoSave[0]` is false, so the (0,0) else-arm bytes are
+identical to the no-save arm), the spawn list (`:54877-54888` — fresh
+`spN[0] == null` `:2488` writes only the `-1` sentinel), `hbLocked`
+(`:54889`, default false `:1436`) and `hideInfo[13]` (`:54890-54893`, fresh
+`bool[13]` `:812`). The reader gates mirror `Deserialize:55578-55623`, including
+the buff-count 44/22/10 version gates and the zero-type compaction
+(`:55593-55597`, which still consumes exactly `count` pairs). **Second shim**:
+the increment-1 port files are stamped 326 but end at the vault byte, so the
+C# gates would truncate in the buffs; `read_player_bytes` retries release-326
+truncations with `through_vault_only` (stop at `:55504`), the same port-only
+pattern as the 279 shim. Genuine vanilla 326 files never take it (they always
+carry the buffs tail). `golden_layout_through_hide_info` pins every byte and
+byte-compares the 370-byte tail with `assets/test/golden.plr` at offsets
+2402-2772. A port `.plr` is now byte-comparable with vanilla **through the last
+hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
+RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
+port zero-pads to the block boundary — invisible to field readers, but the
+final encrypted block differs from vanilla; full-envelope parity is a separate
+concern.
 
 ## The world-format contract (S1-J-8)
 
@@ -15562,6 +15719,73 @@ port has no such method; each machine writes `facing`/`sprite_dir` itself, and
 `npc_ai.rs::walker_step`'s `aggro_x`/`aggro_y` window (80×40 tiles at the call sites)
 is an invention with no C# counterpart. Retrofitting it changes which NPC targets
 which for every aiStyle-3 kind, so it needs its own branch and its own test pass.
+**The helper landed with S1-D-3p (2026-11-18)** — see "The shared target selection
+(S1-D-3p)" below; the caller migration is the documented remainder.
+
+## The shared target selection (S1-D-3p, 2026-11-18)
+
+`NPC.TargetClosest`/`TryTrackingTarget`/`SetTargetTrackingValues`
+(`NPC.cs:77652-77781`) is now ported as `crates/tr-app/src/npc_target.rs`
+(`target_closest` + the `TargetCandidate`/`TankPet` inputs). The port is
+1:1: the slot-order scan with the strict `<` replacement (first slot wins
+ties, `:77693`), the Manhattan metric minus `Player.aggro` (`:77687-77688`),
+the `npcTypeNoAggro && direction != 0` +1000 penalty (`:77689-77692`), the
+tank-pet steal (`distance − 200`, both `< distance` and `< 200`, plus the
+1×1-centre `Collision.CanHit` walk, `:77701-77709` — the port's
+`projectile::can_hit`, S1-D-7), the int-truncated `targetRect`
+(`:77717`/`:77735`), the INTEGER half-extent centre facing (the C# casts
+`(float)(base.width / 2)` AFTER the int divide, `:77719`/`:77752`), the
+aiStyle-3 bottom-edge `directionY` with `<=` (`:77761-77768`), the dead /
+no-aggro facing suppression (`:77736-77743`), the `oldTarget ∈ 0..=254 &&
+itemAnimation == 0 && aggro < 0 && !boss` facing-inheritance gate
+(`:77748-77749`), the buff-31 confused flip (`:77772-77775`; the C# latches
+`this.confused` in the buff scan `:92029-92032`, the port reads
+`NpcBuffs::find_buff_index(31)`), the collide-gated `netUpdate`
+(`:77776-77779`) and the `targetSetFrame` stamp (`:77780`). The `Npc`
+struct gained `target` (the `ClearTarget` 255 default, `NPC.cs:8539`,
+`:42924-42927`), `target_rect`, `target_set_frame`, `old_target`,
+`old_direction`, `old_direction_y`, `net_update`, `boss`.
+
+Deliberate deviations (the migration remainder):
+
+* **One caller wired.** `update_zombie` (`npc.rs`) is the representative:
+  it calls the helper under the `AI_003` chase gate
+  (`DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`, `NPC.cs:57336`,
+  `:60300-60330` — for type 3 only the non-eclipse-day-above-surface terms
+  can fire) and drops the invented 80×40-tile aggro window. The other ~29
+  `walker_step` callers and every ad-hoc-facing AI keep their current
+  writes until the migration; `walker_step`'s `aggro_x`/`aggro_y` params
+  stay for them (the C# has no such window — the chase is gated by the
+  despawn-discouragement arm, not a distance box).
+* **Stock player inputs.** `Player.aggro`, `npcTypeNoAggro` and `tankPet`
+  have no port fields (the stealth armour / tank pets are unported
+  systems); the wiring passes 0/false/None, the C# stock values. The
+  helper itself implements all three gates and the parity tests exercise
+  them through `TargetCandidate`.
+* **The zombie's velocity write stays direct** (`facing * 1f`): the C#'s
+  0.07-per-tick approach with the 0.8 overspeed brake (`NPC.cs:58378-58400`)
+  belongs to the full `AI_003_Fighters` migration, not the target helper.
+  A dead target keeps the port's 0.9 decay (the C# keeps walking toward
+  the corpse; the facing suppression is ported, the walk arm is the
+  migration's).
+* **The `old_*` latches** (`NPC.cs:90393-90395`, `UpdateNPC`'s head) are
+  not yet run from `Npc::update_rng`; the helper reads whatever the caller
+  latched. Until the migration adds the head latch, `old_target` holds
+  the spawn-time 255, so the inheritance gate stays inert in live play
+  (the tests drive it explicitly).
+* **`targetSetFrame` stamps 0** from the zombie wiring: the
+  `Main.EverLastingTicker` (`Main.cs:413`, `:17177`) is not plumbed into
+  `Npc::update`; the stamp's only C# reader is the target-line fade
+  (`Main.cs:57174`), unported. The helper takes the ticker as a parameter.
+* **`NPC.boss` defaults false for every kind** — the per-type
+  `SetDefaults` boss rows land with the caller migration; the gate's
+  `!boss` term is ported and tested.
+
+11 parity tests (`npc_target::tests`): the aggro metric, the no-aggro
+penalty + facing suppression, the rect truncation + int-centre ties, the
+aiStyle-3 bottom-edge arm, the oldTarget inheritance (swing/fresh/boss
+breaks), the confused flip, the tank steal + its LOS wall, the dead/absent
+fallback, the netUpdate collide gate, and the zombie wiring proof.
 
 ## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
 
@@ -16375,12 +16599,15 @@ Deviations:
 
 - **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
   (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
-  through the layer targets; the port's `CaptureRenderer` trait is a no-op
-  stub until the render-target family lands, so a started capture drains
-  its queue without producing pixels. The selection state machine, the
-  countdown and the `IsCapturing` metrics gate are live (the selection
-  UI's sprite draw is NOT — see the bullet above); the write-out waits on
-  the targets.
+  through the layer targets; the render-target FAMILY now exists
+  (`tr_render::RenderTargetFamily`, `App.targets` — S1-G-13, ANALYSIS
+  "The render-target family (S1-G-13)"), but the chunk render through it
+  is not wired: the port's `CaptureRenderer` trait is still a no-op
+  stub, so a started capture drains its queue without producing pixels.
+  The selection state machine, the countdown and the `IsCapturing`
+  metrics gate are live (the selection UI's sprite draw is NOT — see the
+  bullet above); the write-out waits on the per-layer render callbacks +
+  `DrawCapture`.
 - **The capture toggle rides F6, not F4.** The vanilla binds
   `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
   debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
@@ -16392,6 +16619,91 @@ Deviations:
   takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
 - **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
   the toolbar's open-folder button plays its cue only.
+
+## The render-target family (S1-G-13, 2026-11-18)
+
+`crates/tr-render/src/targets.rs` ports the render-target FAMILY
+infrastructure — the seam `Main.DrawCapture` and the per-layer offscreen
+caching wait on. What landed, 1:1:
+
+- **`InitTargets`' size math** (`Main.cs:58167-58181`,
+  `init_target_layout`): `val = MaxWorldViewSize.X` (1920, `:677-681` /
+  `:66714`) clamps BOTH axes (`:58173-58174` — the C# uses `.X` for the
+  height clamp too); `SupportWideScreen && HiDef` raises it to 4096
+  (`:58169-58172`); `offScreenRange` starts at 192 and shrinks to
+  `(_renderTargetMaxSize - num) / 2` (C# int division) when the padded
+  width would overflow (`:58176-58179`). `_renderTargetMaxSize` is 4096
+  HiDef / 2048 Reach (`SetGraphicsProfileInternal`, `:3708-3718`).
+- **All ten targets in creation order** (`:58187-58196`,
+  `RenderTargetFamily::init`): the seven world-space
+  `WorldSceneLayerTarget`s (water, backWater, tile, tile2, wall,
+  background, backgroundSwap — `Main.cs:765-777`) at the padded size,
+  then skyTarget / screenTarget / screenTargetSwap at the raw backbuffer
+  size (`:781-785`). `ReleaseTargets` (`:58093-58150`) is Rust `Drop`;
+  `EnsureRenderTargetContent` (`:58152-58158`) is
+  `RenderTargetFamily::ensure` — called at the draw head
+  (`frame/draw.rs`, the `Main.Draw` wrapper's first step, `:61644`).
+- **`WorldSceneLayerTarget`** (`Graphics/WorldSceneLayerTarget.cs:7-70`):
+  `UpdateContent` (`:43-64`) computes the camera override (screen size =
+  target − 2·offScreenRange, position = `Utils.Round(center − size/2)` —
+  banker's rounding, `Utils.cs:112-115` — zoom = 1), clears the target
+  transparent and records `_position = screenPosition − (osr, osr)`
+  (`:57`); `IsPartiallyOffscreen` (`:17-34`) with the zero-position quirk
+  (a never-rendered layer counts as offscreen) and the strict `>`
+  margin test on both axes.
+- **`RenderToTargets` scheduling** (`Main.cs:57277-57327`,
+  `render_to_targets_plan`): the `renderCount` phase arms (1 → water;
+  2 → backWater + backgroundSwap + the pending flag; 3 → wall + tile +
+  tile2; the count is driven by the lighting engine,
+  `LightingEngine.cs:90-103`), then the fixed partial-offscreen re-render
+  order tile → tile2 → backWater → background (apply the pending swap,
+  RE-CHECK, then maybe re-render — `:57311-57318`) → wall → water. The
+  unreachable `renderNow` arms of the else-if chain are ported verbatim.
+- **`ApplyPendingBackgroundTargetSwap`** (`:58047-58054`): the
+  `Utils.Swap` + flag clear; the phase-2 arm sets the flag (`:57291`).
+- **The skyTarget gate** (`:62021-62027`, `sky_target_active`):
+  `(CanCapture || ForegroundSunlightEffects) && !drawToScreen &&
+  !mapFullscreen && !onlyDrawFancyUI && Lighting.NotRetro`.
+- **The `drawToScreen`/`targetSet` transition** (`:61751-61766`,
+  `target_transition`): Release on leaving the target path, Init on
+  entering, Keep otherwise.
+
+Deviations / scope (deliberate):
+
+- **No draw pass consumes the layers yet.** The frame path is unchanged:
+  the port keeps its single G6-cached world range + the
+  `render_world_fx` screen ping-pong (`sprite.rs`), and the family is
+  allocated but not rendered into by the world passes. The per-layer
+  render callbacks (`RenderTiles`/`RenderWallsAndBlacks`/`RenderWater`/
+  `RenderBackground*`, `Main.cs:57329-58091`), the skyTarget bind in the
+  sky pass (`:62025`) and the composite draws (`:63333`, `:62213`,
+  `:62196`, `:62308`) are the follow-up half of S1-G-13 — moving the
+  existing passes onto the layers is a draw-pass-order change and needs
+  its own A/B (the draw-pass order is frozen this round). The G6
+  `WorldFrameKey` is untouched.
+- **`IsContentLost` has no wgpu equivalent** — device loss recreates
+  everything; `ensure` re-inits on absence or backbuffer-size change
+  (the null-check half of `:58154`).
+- **The `InitTargets` catch arm** (`:58203-58215`: fall back to Retro
+  lighting + map off on allocation failure) is not ported — wgpu texture
+  creation aborts the process on failure instead of throwing.
+- **`Lighting.UpdateEveryFrame`** (`Lighting.cs:77-86`) is not yet a
+  live input: the port always runs the cached path, so
+  `target_transition` is ported + tested but the frame only ever takes
+  the Init/Keep arms. The Retro/UpdateEveryFrame drawToScreen branch
+  stays the research/02 deviation.
+- **The capture seam stays a stub** (`app/capture_driver.rs`'s
+  `PendingCaptureRenderer`): the family exists, but `Main.DrawCapture`
+  (`:56673-57066`) rendering chunks through it is the consumer half —
+  documented in "The loading screen + capture mode" above.
+
+Tests: 17 in `targets.rs` — the layout math (1080p HiDef/Reach, small
+window, the X-cap-on-both-axes clamp, wide-HiDef), `IsPartiallyOffscreen`
+(zero position, strict boundary, per-axis), the banker's camera override,
+the phase arms + offscreen order + swap-cancel, the sky gate's six
+inputs, the transition arms, and four headless-GPU tests (family sizes,
+update_content position/clear readback, the background swap exchange,
+ensure's size-change re-init).
 
 ## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
 
@@ -16593,16 +16905,26 @@ Main.npcFrameCount[type]`, integer data). The fix slices frame 0 of
 derivation of the integer row count, not a `Math.Round` port) and applies
 the 8 px bottom inset / floater centring from `UpdatePosition` (`:112-123`).
 
-Deliberate interim deviation: `portrait_fit` is a uniform scale-down-to-cell
-stand-in, NOT vanilla's per-NPC `NPCID.Sets.NPCBestiaryDrawOffset`
-Scale/PortraitScale table (`NPCID.cs:393-412` + the GetRedigit/GetLeinfors/
-GetGrox dictionaries, applied per `UnlockableNPCEntryIcon.cs:52-82`) plus
-the `OverflowHidden` clip of the 68 px inner box
-(`UIBestiaryEntryButton.cs:30-38`). Vanilla draws at the table scale and
-CLIPS spill; the stand-in shrinks the whole sprite to fit. Follow-up required:
-port the per-NPC offset table + clip via `SpriteRenderer::push_clip`
-(`tr-render/src/sprite.rs`) and remove `portrait_fit`. The frame-0 slice,
-inset and centring are faithful; only the scale/clip mechanism is approximate.
+The interim `portrait_fit` uniform scale-down stand-in is GONE
+(fix/bestiary-per-npc-scale, 2026-11-18): the per-NPC
+`NPCID.Sets.NPCBestiaryDrawOffset` table landed as a generated static table
+(`tools/gen_bestiary_draw_offsets.py` -> `ui/bestiary_draw_offsets.rs`, 666
+rows; sources `NPCID.cs:393-412` merge order + `GetRedigitEntries`
+`:414-770`, `GetGroxEntries` `:772-786`, `GetLeinforsEntries` `:788-...`,
+struct defaults `:15-42`). `portrait_layout` applies
+Scale/PortraitScale/Position/PortraitPositionX-YOverride/Frame per
+`UnlockableNPCEntryIcon.cs:52-82` + `UpdatePosition` `:112-123` (floor
+included); the 68 px inner box clips via `SpriteRenderer::push_clip`
+(`UIBestiaryEntryButton.cs:30-38` `OverflowHidden`, the info-page card the
+same per `UIBestiaryNPCEntryPortrait.cs:20-28` with `isPortrait: true`
+`:56`). `CustomTexturePath` portraits (`UI/Bestiary/NPCs/NPC_*`, 25 ids)
+are packed in `STATIC_SHEET_NAMES` and drawn centred per `:197-201`.
+`Rotation` rides `push_ui_sprite_rot` about the frame centre
+(`DrawNPCDirect`'s centre-origin draw). Remaining approximation: the
+`Direction`/`SpriteDirection` horizontal flip (`Main.cs:23123-23127`,
+default -1) is not modelled — the UI pipeline has no flip seam yet; the
+`Velocity`-driven hover animation is likewise still frame 0 at rest
+(faithful for the idle icon, `Velocity` rows animate only while hovered).
 
 ## Save & Exit was a no-op (fix/settings-menu-layout, 2026-11-18)
 
@@ -16796,3 +17118,153 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
+## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
+
+The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
+the `if (this.aiStyle == N)` chain of 128 arms), then on `this.type` inside
+the family arm. The port dispatched on `NpcKind` alone (research/25 finding
+9, research/39 rank 9) - a style could not be ported once for all its kinds.
+
+**The seam.** `NpcKind::ai_style()` (`npc.rs`) is the first axis: a 199-row
+table mapping every ported kind to its vanilla `SetDefaults` aiStyle, each
+group cited to the `this.aiStyle = N;` lines (extracted mechanically from
+the decompile - the compound `this.type` conditions evaluated per id, not
+copied from the doc comments). `update_rng` now runs
+`match self.kind.ai_style()`: a claimed style enters its family arm, every
+other style falls through to `update_kind_ai` - the pre-axis `match
+self.kind`, moved verbatim (no arm reordering, no body edits). The buff
+block, `find_frame` and `contact` keep their exact positions around the
+dispatch, so the fixed-step order and every RNG draw are unchanged.
+
+**The first migrated family: aiStyle 5** (`AI_005_EaterOfSouls`,
+`NPC.cs:20802-20806` -> `:50244-50700`). `ai_005_hover_family` carries the
+four ported style-5 kinds - the Eater of Souls (6), the Hornet (42), the
+Meteor Head (23) and the Servant of Cthulhu (5, its own type-5 branch from
+S1-D-3k) - calling the same `update_hover`/servant machines with the same
+params as the old kind arms. The old kind-match arms for these four are
+`unreachable!` markers (the axis claims style 5 first); D-3 rounds shrink
+`update_kind_ai` the same way, one family per round. No new arms ported.
+
+**Proof.** `s1_d_2_tests::s1_d_2_the_style_axis_keeps_the_hover_behaviour`
+runs all four kinds 300 ticks through the axis vs the verbatim pre-axis
+arm bodies on cloned state with identical RNG seeds and asserts bit-equal
+x/y/vx/vy/frame/frame_counter/rotation/sprite_dir/facing/on_ground and
+player hp every tick.
+`s1_d_2_the_ai_style_table_matches_the_csharp_set_defaults` pins 86
+representative rows against the C# (the full 199-row table is cited
+in-place). The world-hash pins and the existing NPC AI tests pass
+unchanged (`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`).
+
+**Known doc-vs-C# drift surfaced by the extraction** (the table follows the
+C#, not the comments): the Retinazer's SetDefaults row is aiStyle 30
+(`NPC.cs:10526`) and the Spazmatism's 31 (`:10543`) - the S1-D-3i work
+labelled them 57/3; the port's machines are unchanged this round (behaviour
+frozen), the style ids now carry the C#'s rows. Same for the Golem family
+(the body 45 `:12167`, the attached head 46 `:12184`, the fists 47
+`:12198`, the free head 48 `:12212`), the Wall of Flesh (27,
+`:10347`) and the Moon Lord core/head (77/79, `:14127`/`:14089`).
+
+## The footstep sound wave (S1-E-21 wave D, 2026-11-18)
+
+**Source correction:** vanilla 1.4.5.8 has NO per-tile-type player footstep
+cues. The whole decompile carries no `footstep`/`StepSound` surface table and
+no Snow/Stone step assets exist in `Content/Sounds` — the grass (`Grass`,
+sound 6), stone (`Tink`, 21) and dig cues are the tile-break families
+(`WorldGen.KillTile_PlaySounds`, wave C). The only footstep path is the
+Hermes-boot fast run: `Player.SpawnFastRunParticles` (`Player.cs:20205-20216`)
+plays `hermesStepSound` when `runSoundDelay == 0 && velocity.Y == 0`
+(`:20212`) at `position` (the top-left, `:20214`) and re-arms
+`runSoundDelay = IntendedCooldown` (`:20215`). The callers are
+`HorizontalMovement`'s two 0.2x-acceleration arms past the
+`(accRunSpeed + maxRunSpeed) / 2` threshold (`:19779`), grounded and
+unmounted (`:19987-19990`, `:20017-20020`). `PlayerFrame` re-derives the cue
+every frame: default `(SoundType 17, Style -1, Cooldown 9)`
+(`:35947-35949`), the Moon Lord legs (`legs == 140`) override to
+`(2, 24, 6)` (`:35959-35964`). `Player.Update` ticks the delay down
+(`:24706-24708`).
+
+The port: `Player::spawn_fast_run_particles` queues the play
+(`pending_step_sound`), `update_frames` re-derives `hermes_step_sound`, the
+decrement sits after `purge_immune_buffs` and before `update_frames` (the
+C# order), and `world_sim/player.rs` drains the queue through
+`Audio::play_step_sound` with the `UpdatePlayers` stream (`Player.Update`
+runs under the `Main.cs:17754` swap). Case 17 (`LegacySoundPlayer.cs:854-864`)
+plays `Sounds/Run` and rolls `Main.rand.Next(-10, 11) * 0.01` for the pitch
+(`:862`, `sound::Family::Run`) — the draw runs only AFTER the attenuation
+gate passed (`:369-436` precedes the switch); the int overload
+(`SoundEngine.cs:102-108`) draws no `GetRandomPitch` NextFloat. The Item-24
+arm delegates to wave A's `play_use_sound` façade (the audio-only
+`GetRandomPitch` + the case-2 pitch draw after the gate). `Run` and
+`Item_24` join `SFX_CUES`.
+
+Deviations: the `SpawnFastRunParticles` dust trails (`:20217-20300` — the
+wings-3/rocket-6, sailDash and shoe-dye arms) are visual seams, unported;
+the legs-140 override is coded but unreachable — the port's `legs_armor`
+has no producer yet (the C#'s `:35767` effective-legSlot assignment is part
+of the unported armor visuals); the `SoundInstanceRun` stop/re-create pool
+is the standing D4 (a fresh source per play). Tests
+`s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown`,
+`s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream`.
+
+## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
+
+Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
+per scanning NPC, re-borrowing the mutable store for read-only lookups. This round
+introduces the seam for ONE scan family — the carrier-link scans in
+`world_sim/npcs.rs`'s `update_npcs` pre-passes (the Moon Lord parts' core lookup
+`NPC.cs:41642`/`:42098`, the unlinked part's family-core/head fallback find, and the
+core's part-alive check `:41251-41269`):
+
+- `crates/tr-app/src/world_sim/npc_snapshot.rs::NpcSnapshot` — a per-tick read-only
+  view built once (`NpcSnapshot::build(&app.npcs)`) before the family, copying only
+  the scan-visible fields (`uid`, `kind`, `hp`, the `Npc::center()` pair). The scans
+  (`position_living_uid`, `first_living_kind_uid`, `any_living_uid`) take `&self`, so
+  the compiler forbids them touching the mutable store; the family's writes land on
+  the scanning NPC alone.
+- The one intra-family mutation the live reads could observe — the pre-pass's own
+  `hp = 0` kill of a part whose core died — is mirrored by the owning pass through
+  `NpcSnapshot::kill(idx)`; later scans in the family see the death exactly as the
+  live `hp > 0` reads did. Centres stay valid: the family never moves an NPC.
+- Behaviour frozen: no predicate, order, constant or RNG change. Proof: the existing
+  Moon-Lord NPC tests, the `worldgen/world_hash.rs` pins, and two seam-equivalence
+  tests (`npc_snapshot::tests::the_snapshot_scans_match_the_live_slice_scans`,
+  `the_kill_mirror_matches_the_live_hp_write`) that compare every snapshot query
+  against the live-slice scan it replaces. Full workspace green.
+- **Left (not this round)**: the other scan families (saucer/scutlix/dutchman carrier
+  scans, the projectile pool's `npcs.iter()` sites, the separation/target-selection
+  families) and the spatial hash — the ROADMAP S1-D-8 row stays 🟡 until then. No
+  spatial hash was introduced; the scan count is unchanged (the seam only changes
+  what the scans borrow, not how many there are).
+## The join-bundle message ids (S1-I-1 wave A, 2026-11-18)
+
+Wave A of the message-id remap ports the JOIN bundle's eleven missing ids as
+wire bodies + `C2s`/`S2c` codecs in `crates/tr-app/src/net.rs` — the first
+dependency tier of `SyncConnectedPlayer` (`NetMessage.cs:2806-2822`) /
+`SyncOnePlayer` (`:2885-2960`) / `SendNPCHousesAndTravelShop` (`:2824-2852`) /
+`SendAnglerQuest` (`:2653-2673`) /
+`CreditsRollEvent.SendCreditsRollRemainingTimeToPlayer`
+(`CreditsRollEvent.cs:27-33`) / `SendAllMarkersToPlayer`
+(`CoinLossRevengeSystem.cs:498-507`):
+
+- `30 TogglePVP` — `(byte)plr + hostile` (`NetMessage.cs:856-859`).
+- `42 Unknown42` — the mana sync, `(byte)plr + (short)statMana + (short)statManaMax` (`:961-965`). Named `PLAYER_MANA` for readability; the C# name is `Unknown42` (`MessageID.cs:95`).
+- `45 TeamChange` — `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id and stays unported.
+- `60 Unknown60` — the NPC household banner, `(short)npc + (short)homeX + (short)homeY + (byte)status` (`:1067-1072`); the status is `WorldGen.TownManager.GetHouseholdStatus` (`:2845`). Named `NPC_HOUSE`.
+- `72 TravelMerchantItems` — exactly `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`) `(short)` item types, no count prefix (`:1134-1141`, reader `MessageBuffer.cs:3121-3124`).
+- `74 AnglerQuest` — `(byte)Main.anglerQuest + anglerWhoFinishedToday.Contains(recipient name)` (`:1145-1148`); the wire's bool is per-recipient, the client stores it as `anglerQuestFinished` (`MessageBuffer.cs:3147-3153`).
+- `126 SyncRevengeMarker` — `RevengeMarker.WriteSelfTo` (`CoinLossRevengeSystem.cs:275-286`): int uniqueID, Vector2 location, int npcNetID, float hpPercent, int npcType, int aiStyle, int coinsValue, float baseValue, bool spawnedFromStatue; the reader mirrors it field-for-field (`:321-324`).
+- `135 DeadPlayer` — `(byte)plr` only (`:1569-1571`); sent when `statLife <= 0` (`:2897-2900`), the client raises `immuneAlpha` to 255 (`MessageBuffer.cs:4195-4203`).
+- `140 SetMiscEventValues` — `(byte)kind + (int)value` (`:1591-1594`); the join bundle sends kind 0 only (the credits roll's remaining frames). Kinds 1/2 (the server-side slime transforms, `MessageBuffer.cs:4250-4260`) decode but have no port application.
+- `142 SyncProjectileTrackers` — `(byte)plr` + two `TrackedProjectileReference` bodies, each `(int)Key + (short)type` (`TrackedProjectileReference.cs:22-26`/`:33-37`).
+- `147 SyncLoadout` — `(byte)plr + (byte)CurrentLoadoutIndex` + the `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one `(ushort)` — bit `i` per slot (`WriteAccessoryVisibility`, `NetMessage.cs:1882-1893`; unpack `MessageBuffer.cs:4494-4501`).
+
+Deliberate scope boundary: **bodies + codecs only**. The two `netglue`
+dispatchers carry explicit parked arms for the new variants — nothing sends
+them and the client/host apply-and-relay sites (`MessageBuffer.cs:1851-1867`,
+`:2290-2306`, `:2325-2364`, `:2695-2739`, `:3118-3126`, `:3147-3153`,
+`:4043-4048`, `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land with
+the send-path pass (S1-I-4), so the live net message order is unchanged. The
+per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
+the exact C# body bytes and the decode round trip; the travel shop test also
+pins the fixed 40-slot length (a 39-slot body fails to decode).

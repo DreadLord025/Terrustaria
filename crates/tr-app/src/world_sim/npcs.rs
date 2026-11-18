@@ -2339,6 +2339,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // S1-D-8 (research/39 "Phase A"): the read-only snapshot seam. The
+    // carrier-link scan family below (the parts' core lookup + the core's
+    // part check) reads this per-tick view instead of re-borrowing
+    // `app.npcs` per scan; the writes land on the scanning NPC alone. The
+    // pass mirrors its own `hp = 0` kills into the view (`snap.kill`) so
+    // later scans in the family see the deaths exactly as the live
+    // `hp > 0` reads did — the scan predicates/order are unchanged.
+    let mut snap = crate::world_sim::npc_snapshot::NpcSnapshot::build(&app.npcs);
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
     // PRE-pass: each 397/396/400/401 finds ITS core (the `ai[3]` link,
@@ -2366,21 +2374,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             } else {
                 NpcKind::MoonLordCore
             };
-            carrier_uid = app
-                .npcs
-                .iter()
-                .find(|m| m.kind == want && m.hp > 0)
-                .map(|m| m.uid)
-                .unwrap_or(0);
+            carrier_uid = snap.first_living_kind_uid(want).unwrap_or(0);
             app.npcs[i].carrier_uid = carrier_uid;
         }
-        let core = app
-            .npcs
-            .iter()
-            .position(|m| m.uid == carrier_uid && m.uid != 0 && m.hp > 0);
+        let core = snap.position_living_uid(carrier_uid);
         match core {
             Some(ci) => {
-                let (ccx, ccy) = app.npcs[ci].center();
+                let row = &snap.rows()[ci];
+                let (ccx, ccy) = (row.cx, row.cy);
                 app.npcs[i].carrier_x = ccx;
                 app.npcs[i].carrier_y = ccy;
                 app.npcs[i].carrier_timer = 1.0;
@@ -2390,6 +2391,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].moon_core_alive = false;
                 app.npcs[i].carrier_timer = 0.0;
                 app.npcs[i].hp = 0;
+                // Mirror the kill into the read-only view: a later part's
+                // fallback find / the core's alive check must not see it
+                // (the live `hp > 0` reads didn't either).
+                snap.kill(i);
             }
         }
     }
@@ -2414,7 +2419,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dead = false;
                 continue;
             }
-            let alive = app.npcs.iter().any(|m| m.uid as i32 == uid && m.hp > 0);
+            let alive = snap.any_living_uid(uid);
             if !alive {
                 lost = true;
             } else {
@@ -3237,12 +3242,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // block below.
     let mut spheres = Vec::new();
     for n in app.npcs.iter_mut() {
-        for (kind, sx, sy) in n.wants_sphere.drain(..) {
+        for (kind, sx, sy, ai3) in n.wants_sphere.drain(..) {
             // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
             // is the sphere's bottom-centre.
             let (w, h) = kind.size();
             let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
             ball.hp = ball.max_hp;
+            // `NPC.NewNPC`'s `ai3` argument (`NPC.cs:21246`'s
+            // `flag4 ? 1 : 0` — the Dark Caster's red-hat sphere).
+            ball.ai[3] = ai3;
             // The Golem family's `NewNPC` defaults (`NPC.cs:80750-80780` —
             // no direction argument, the ctor's `spriteDirection = -1`,
             // `NPC.cs:6515`) plus the `SetDefaults` `alpha = 255` fade
@@ -3361,6 +3369,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
             head.ai[3] = hands_alive;
+            // S1-E-14b: the `FindFirstNPC(35)` mirror the hand's
+            // `localAI[3]` copy (`NPC.cs:22315`) and the Dark Caster's
+            // `aiStyle 8` latch (`NPC.cs:20820-20827`) read — the head's
+            // live `ai[3]` (the port's hands-count stand-in; the red-hat
+            // head model deviation is recorded in ANALYSIS).
+            app.world.skeletron_red_hat = head.ai[3] == 1.0;
+        }
+        if !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+        {
+            app.world.skeletron_red_hat = false;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -4300,11 +4321,12 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             has_player_target: true,
             // The slime-body rain / statue-mimic style (`ai[1]`) and the
             // RedHat Skeletron state (`ai[3]`) ride the live ai vector
-            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). The port's
-            // `Npc` has no `localAI` vector — the 36/32 `localAI[3]` paths
-            // stay zeros until the port models it.
+            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). S1-E-14b:
+            // the 36/32 `localAI[3]` paths ride the ported `local_ai`
+            // vector (the hand mirrors the head, `NPC.cs:22315`; the Dark
+            // Caster latches from `FindFirstNPC(35)`, `:20820-20827`).
             ai: npc.ai,
-            local_ai: [0.0; 4],
+            local_ai: npc.local_ai,
             // `HasGivenName` = the non-empty name (`NPC.cs:6741`); the empty
             // string maps to `None` (Decision D2).
             given_name: (!npc.given_name.is_empty()).then_some(npc.given_name.as_str()),
@@ -9420,7 +9442,7 @@ mod tower_mob_tests {
             }
         }
         assert!(saw > 0, "the small spider spawns");
-        let (kind, _sx, _sy) = n.wants_sphere[0];
+        let (kind, _sx, _sy, _ai3) = n.wants_sphere[0];
         assert_eq!(kind, NpcKind::StardustSpiderSmall, "the 410 spawn");
         // It fires no projectile.
         assert!(n.wants_hostile_shot.is_empty(), "no projectile");
