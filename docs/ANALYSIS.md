@@ -6355,6 +6355,80 @@ notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
 
+## The decorations split (S1-K-3c)
+
+The second themed group of the S1-K-3 `growth.rs` split (after the tree
+family → `growth/trees.rs`), executed in **code-only mode**: file
+reads/writes + git only — no cargo/rustc/rustfmt/tests were invoked, so
+the byte-equality of the move is proven mechanically instead of by the
+world-hash pins (those run when the branch merges, per MAIN-RULES §1).
+
+**What moved** (verbatim, from `origin/main:crates/tr-core/src/growth.rs`
+at `bfe68db8`):
+
+- Functions block, origin lines **3849–4526** (678 lines): the
+  `CAT_TAIL_DISTANCE` const, the `cell`/`nactive` accessors,
+  `check_cat_tail` (`WorldGen.cs:58744-58930`), `grow_cat_tail`
+  (`:58974-59082`), `grow_check_seaweed` (`:58917-58973`), `grow_web`
+  (`:74088-74122`), `DYE_FREE_SIDES`, `place_dye` (`:53988-54065`),
+  `try_growing_abigails_flower` (`:73049-73073`),
+  `has_valid_ground_for_abigails_flower_below_spot` (`:73026-73046`),
+  `no_nearby_abigails_flower` (`:73076-73095`), `plant_dye`
+  (`:71286-71436`) and `dye_density_blocked` (`:71310-71322`) — with
+  every doc-comment cite.
+- Tests block, origin lines **2495–2954** (460 lines, 12 tests): the
+  three cattail tests, the two seaweed tests, the dungeon-web test, the
+  three dye-plant tests, the dispatcher-arrival test and the two
+  Abigail's-flower tests — moved unchanged, NOT run (code-only mode).
+
+Into `growth/decorations.rs` (1 166 lines with the module header and the
+test scaffolding); `growth.rs` 4 651 → 3 517 lines.
+
+**Seams (the only byte changes inside the moved blocks):** `grow_web`
+and `try_growing_abigails_flower` were private but are called by the
+staying dispatchers (`update_world_underground_tile` `:73803-73806` web
+arm; `update_world_overground_tile` `:72063-72067` tombstone arm), so
+they gain `pub(super)` — the same visibility-seam pattern the tree split
+used on `kill_invalid_tree_above`. The five pub fns (`check_cat_tail`,
+`grow_cat_tail`, `grow_check_seaweed`, `place_dye`, `plant_dye`) are
+re-exported from `growth`, so every caller path is unchanged (there are
+no callers outside `growth.rs` — verified by `git grep` over the whole
+workspace; `worldgen/ocean.rs`'s `grow_check_seaweed` is its own private
+worldgen twin, untouched). The test scaffolding follows the trees
+precedent: `world`/`put` come from `growth::test_fixtures`, the two
+dispatchers are imported from `crate::growth`, and the 4-line `set_wall`
+test helper is copied verbatim (the staying wall-arm tests keep theirs).
+
+**Byte-equality proof (mechanical string diff, file ops only).** The move
+was performed by a Python script that slices the origin blob
+(`git show origin/main:crates/tr-core/src/growth.rs`, LF bytes) by line
+range and re-assembles both files; the same script then re-reads the
+written files from disk and checks:
+
+1. Functions block in `decorations.rs` == origin block + exactly the two
+   `pub(super)` insertions — SHA256 of origin block
+   `93a12bd3a35e1a9c1a7e38a02aab073668de3d8b39936427c330505531af0b58`,
+   of origin+seams and of the moved block both
+   `a720374c64cd0b5e353b4c4ab9203933833646c756762d0037c8eb522192692f`.
+   Reversing the two seam edits restores the origin bytes exactly.
+2. Tests block == origin block byte-for-byte, zero changes — SHA256
+   `bbe030ea87b208dcbdc5450ae3608cbfb7c2d25ec2adcdc99b48f45e7f54849b`
+   on both sides.
+3. New `growth.rs` == origin minus the two deleted ranges plus the six
+   added lines (`mod decorations;`, the comment pair, the `pub use` and
+   the private `use`) — byte-for-byte reconstruction check passed.
+4. Every staying `growth.rs` line is unchanged and in order (line-list
+   equality after removing the added lines).
+
+Origin blob SHA256 `b12149972c1da57eb42fc816e1f3eaab10b0370436f065302352e8b2b38ad322`;
+new `growth.rs` `f66f6c41a3e4e8fd0adef769d1bccb7fb0faa37fe5a290c65f72644ead734d83`;
+`decorations.rs` `d124bf15474e92882c445bd925e209d5d046feabdc1becd4eb251ef33bfe0ffb`.
+All five checks printed `True` / `ALL PROOF CHECKS PASSED`. No rustfmt
+was run; the moved bytes keep the origin formatting. Compile + the
+workspace tests + the world-hash pins are deferred to the merge pass
+(MAIN-RULES §1); the sibling grass/spread split (`task/S1-K-3b`) owns
+that group — this branch does not touch it.
+
 ## Worldgen pass pipeline (M5-GEN-1)
 
 The scaffold wraps the already-landed passes in the vanilla pipeline shape
