@@ -70,6 +70,7 @@ mod research;
 mod sand;
 mod ambience;
 mod ambient_sound;
+mod capture;
 mod chest_gen;
 mod craft;
 mod craft_filter;
