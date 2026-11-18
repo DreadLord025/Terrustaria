@@ -8411,6 +8411,74 @@ semantics; the world-hash pins are re-taken (`SEED42_512 = 1586971478`,
 `DEFAULT_WORLD = 4240603701`) and `worldgen/biomes.rs`'s divergence note
 updated — its own `spread_jungle_grass` already carried the C# gate.
 
+### The downward-spread report, re-verified (fix/grass-spread-direction)
+
+A user report ("grass grows INTO the soil below a slope, green veins inside
+dirt") pointed at the same function. Re-verification against
+`WorldGen.cs:74269-74867` + `:75146-75257` found the enclosure gate already
+correct on main (the M5-SPREAD-1 fix above): a probe massif converted grass
+only on exposed faces — the top fringe AND the exposed cliff sides, which is
+vanilla behaviour. **The C# has no "cell above must be open" rule**; the
+surface gate is the 3×3 enclosure scan, so grass legitimately rides down an
+exposed cliff face one column wide. Buried soil (fully solid 3×3) never
+converts. Pinned by `growth::tests::buried_soil_stays_soil_and_exposed_soil_converts`
+and `the_grass_scan_leaves_buried_soil_and_the_draw_count_is_outcome_independent`.
+The screenshot's veins are consistent with the pre-M5-SPREAD-1 inverted gate
+(which converted enclosed subsoil and refused open surfaces).
+
+Two residual divergences in the same slice were fixed on this branch
+(both RNG-free — `spread_grass` and its callees draw nothing, so the
+UnifiedRandom stream's count/order is untouched; the lockstep test above
+pins it):
+
+- **The surface rule wrongly bound the infection grasses.** The port refused
+  every `dirt == 0 && j >= worldSurface` conversion; the C# (`:75162`)
+  exempts grass 23/199/661/662 — corrupt/crimson grass converts dirt at any
+  depth (the enclosure gate still applies). Plain grass 2 / jungle 60 /
+  mushroom 70 / hallow 109 keep the surface rule. Pinned by
+  `the_surface_rule_exempts_the_infection_grasses`.
+- **The `CanBeClearedDuringGeneration` gate was missing** (`:75202` →
+  `:80168-80175`, `skipDualDungeonCheck: true` reduces it to the bare
+  `TileID.Sets.CanBeClearedDuringGeneration` set, `TileID.cs:573` — default
+  true, {396-401, 404, 368, 367, 41, 43, 44, 481-483, 226, 237} false).
+  Restored; dirt 0 / mud 59 / stone 1 / grass 2 are all in the set, so no
+  existing conversion arm changes. The world-hash pins are UNCHANGED
+  (`SEED42_512 = 2673964944`, `DEFAULT_WORLD = 3439477718` — the current
+  post-S1-A-3 values), proving worldgen output is byte-identical.
+
+**Arm audit** (which conversions the enclosure gate binds): every arm of the
+ported `update_world_grass_growth` table routes through `spread_grass`, so
+all were affected by the old inverted gate and all are now correct — plain
+grass 0→2, corrupt 0→23 / mud 59→661, crimson 0→199 / 59→662, the 661/662
+reverse arms (59→661/0→23, 59→662/0→199), jungle 59→60, mushroom 59→70, ash
+57→633. Chlorophyte does NOT ride this function (`spread.rs::hard_update_world`
+→ `convert_cell`, C# `:69646-69685` — no enclosure gate in the C# either;
+chlorophyte legitimately converts buried mud). The moss arm
+(`grow_moss_arm`) and the neon-moss worldgen sweep share `spread_grass` and
+inherit the fixes.
+
+**Genuinely unported arms** (documented divergence, NOT ported here — each
+adds RNG draws the frozen stream does not make): the C# overground body
+(`underground: false`, `:74510-74866`) is a different switch from the
+underground table the port implements for both dispatchers. Unported:
+the halloween pumpkin roll (`:74524-74546`, `Next(75)`); the plant-above
+rolls for grass 2 (`Next(12)` → 3), corrupt 23 (`Next(10)` → 24), crimson
+199 (`Next(10)` → 201), 661/662 (`Next(10)`), hallow 109 (`Next(10)` → 110),
+ash 633 (`Next(10)` → 637) (`:74547-74590`); the 32/352 thorn and 477/492
+golf-grass source remaps (`:74592-74614` — the port's table has no 2/109/
+477/492/32/352 rows, so overground plain-grass spread currently rides the
+underground-style 0→2 row instead); the overground cross-infection scan
+(`:74628-74697` — grass↔evil↔hallow conversions of ALREADY-grassed
+neighbours, 2→23/199, 109→… etc.); the overground jungle/mushroom tree and
+plant arms (`:74704-74813`, `Next(7)`/`Next(500)`/`Next(25)`/`Next(300)`);
+the 226 lihzahrd plant arm (`:74815-74828`); the 633 ash plant + scan
+(`:74829-74865`). The underground body's jungle special arms (plantera
+bulbs 238 `:74414-74495`, jungle roses 236/233, the mushroom cattail/tree
+arm `:74497-74506`) are likewise unported. These are plant-placement and
+cross-grass-conversion features, not soil-direction bugs; porting them
+changes the draw ledger and belongs to a dedicated M5-SPREAD task.
+
+
 ## Chest loot rows + the family probes (M5-CHEST-gen)
 
 The remaining `AddBuriedChest` tail rows landed 2026-11-09 with two
