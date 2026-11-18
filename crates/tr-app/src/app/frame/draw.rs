@@ -906,6 +906,8 @@ impl App {
                         lookups,
                         npcs,
                         light,
+                        &style,
+                        anim_time,
                         draw_cam,
                         world_zoom,
                         screen,

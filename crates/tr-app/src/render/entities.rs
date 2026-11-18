@@ -1830,16 +1830,21 @@ pub(crate) fn draw_player_map_icon(
 // hard error here.
 #[deny(unreachable_patterns)]
 /// `Main.DrawInterface_14_EntityHealthBars`'s ordinary arm
-/// (`Main.cs:46018`): every NPC with `life != lifeMax` and `ShowLife`
-/// (`:45835`, default on — `NPC.cs:66668`'s `HealthBarDrawSettings = 1`)
-/// draws `Main.DrawHealthBar` (`:21909-21990`) under its box. The port walks
-/// the list after the world pass (the vanilla interface order, `Main.cs:45810`)
-/// and uses the retail `Hb1`/`Hb2` strips.
+/// (`Main.cs:46021-46024`): every NPC with `life != lifeMax` and `ShowLife`
+/// (`:45835`) draws `Main.DrawHealthBar` (`:21909-22000`) under its box at
+/// `Y = position.Y + height + 10 + NPCAddHeight` (`num3 = 10f`, `:45913`,
+/// `:46023`). The port walks the list after the world pass (the vanilla
+/// interface order, `Main.cs:45810`) and uses the retail `Hb1`/`Hb2` strips.
+/// This is the ONLY NPC health bar pass — `Main.DrawNPC` (`Main.cs:22469`)
+/// draws no bar, and the ad-hoc red strip `draw_npcs` used to paint above
+/// the hitbox was the duplicate of the two-bars bug.
 pub(crate) fn draw_npc_health_bars(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     npcs: &[Npc],
     light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
@@ -1851,12 +1856,18 @@ pub(crate) fn draw_npc_health_bars(
         // PNG-only runs (`Lookups::default()`) draw no bars.
         return;
     };
-    for n in npcs {
-        // `Main.cs:45832` active/type/shimmer gates: dead and fully hidden
-        // NPCs show nothing.
-        if n.hp <= 0 || n.shimmer_transparency > 0.0 {
+    for npc in npcs {
+        if !npc_shows_health_bar(npc) {
             continue;
         }
+        // `position += netOffset` (`Main.cs:45831`, restored at `:46108`) —
+        // the same smoothed draw position `draw_npcs` uses.
+        let n_owned = npc.offset_clone();
+        let n: &Npc = if npc.net_offset == Vec2::ZERO {
+            npc
+        } else {
+            &n_owned
+        };
         let (w, h) = n.size();
         let box_ = crate::combat_text::Rect {
             x: n.x,
@@ -1868,62 +1879,114 @@ pub(crate) fn draw_npc_health_bars(
         let Some(bar) = crate::combat_text::health_bar_rect(box_, n.hp, n.max_hp) else {
             continue;
         };
-        // The boss-scale 1.5 list (`Main.cs:45839-45922`): King Slime (50) and
-        // the Eye of Cthulhu (4) are the port's only shipped entries.
-        let scale = match n.kind {
-            NpcKind::KingSlime | NpcKind::EyeOfCthulhu => 1.5,
-            _ => 1.0,
-        };
+        let scale = npc_health_bar_scale(n.kind);
         let ratio = n.hp as f32 / n.max_hp as f32;
         let rgb = crate::combat_text::bar_color(ratio);
         // `Lighting.Brightness((int)((position.X + width / 2) / 16f),
-        // (int)((position.Y + height / 2) / 16f))` (`Main.cs:46021-46022`).
+        // (int)((position.Y + height / 2) / 16f))` (`Main.cs:46024`):
+        // `GlobalBrightness * (color.X + color.Y + color.Z) / 3f`
+        // (`Lighting.cs:118-122`) — the channel MEAN through the light
+        // style, not the max. (`npc.gfxOffY` rides the C# sample too; the
+        // port's `Npc` carries no gfx offset.)
         let tx = ((n.x + w * 0.5) / TILE_PX) as i32;
         let ty = ((n.y + h * 0.5) / TILE_PX) as i32;
-        let l = light.get(tx, ty);
-        let brightness = l[0].max(l[1]).max(l[2]);
-        // `float num9 = 0.95f; num5 = num5 * alpha * num9` (`Main.cs:21943-21944`).
+        let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+        let brightness = (c[0] + c[1] + c[2]) / 3.0;
+        // `float num9 = 0.95f; num5 = num5 * alpha * num9` (`Main.cs:21943-21946`),
+        // then each channel AND the alpha byte clamp into [0, 255]
+        // (`:21947-21969`) — with GlobalBrightness 1.2 the product can
+        // exceed 1, so the clamp is load-bearing.
         let a = brightness * 0.95;
         let color = [
-            rgb[0] as f32 / 255.0 * a,
-            rgb[1] as f32 / 255.0 * a,
-            rgb[2] as f32 / 255.0 * a,
-            a,
+            (rgb[0] as f32 / 255.0 * a).clamp(0.0, 1.0),
+            (rgb[1] as f32 / 255.0 * a).clamp(0.0, 1.0),
+            (rgb[2] as f32 / 255.0 * a).clamp(0.0, 1.0),
+            a.clamp(0.0, 1.0),
         ];
-        // `Main.cs:46018`: `X = position.X + width / 2`, `Y = position.Y +
-        // height + 10f` — then the interface pass's screen mapping.
+        // `Main.cs:46023-46024`: `num3 += NPCAddHeight`, then
+        // `X = position.X + width / 2`, `Y = position.Y + height + num3` —
+        // and the interface pass's screen mapping.
         let sx = (n.x + w * 0.5 - camera.x) * zoom + screen.x * 0.5 - 18.0 * scale;
-        let sy = (n.y + h + crate::combat_text::BAR_GAP - camera.y) * zoom + screen.y * 0.5;
-        let filled = bar.width;
-        let empty = crate::combat_text::BAR_WIDTH - filled;
-        // `Main.cs:21980-21984`: the depleted `Hb2` strip at `num3 + num2`.
-        let uv2 = lookups.health_bar_uv(
-            hb2,
-            filled as i32,
-            0,
-            empty as u32,
-            crate::combat_text::BAR_HEIGHT as u32,
-        );
-        r.push_ui_sprite(
-            [sx + filled * scale, sy],
-            [empty * scale, crate::combat_text::BAR_HEIGHT * scale],
-            uv2,
-            color,
-        );
-        // `Main.cs:21988-21990`: the filled `Hb1` strip from the left edge.
-        let uv1 = lookups.health_bar_uv(
-            hb1,
-            0,
-            0,
-            filled as u32,
-            crate::combat_text::BAR_HEIGHT as u32,
-        );
-        r.push_ui_sprite(
-            [sx, sy],
-            [filled * scale, crate::combat_text::BAR_HEIGHT * scale],
-            uv1,
-            color,
-        );
+        let sy = (n.y + h + crate::combat_text::BAR_GAP + npc_add_height(n) - camera.y) * zoom
+            + screen.y * 0.5;
+        // `Main.DrawHealthBar`'s slices (`Main.cs:21976-21998`): below 34
+        // filled pixels the C# keeps a 2 px seam (Hb2 columns 2..4 at the
+        // fill edge, Hb1 columns 32..34 capping it); at 34+ the two sheets
+        // butt. `bar_slices` carries the layout in the C# draw order.
+        for (is_hb1, src_x, dst_x, width) in crate::combat_text::bar_slices(bar.width as i32) {
+            let sheet = if is_hb1 { hb1 } else { hb2 };
+            let uv = lookups.health_bar_uv(sheet, src_x, 0, width, crate::combat_text::BAR_HEIGHT as u32);
+            r.push_ui_sprite(
+                [sx + dst_x as f32 * scale, sy],
+                [width as f32 * scale, crate::combat_text::BAR_HEIGHT * scale],
+                uv,
+                color,
+            );
+        }
+    }
+}
+
+/// The `DrawInterface_14_EntityHealthBars` per-NPC gates before the
+/// `life != lifeMax` test (which [`crate::combat_text::health_bar_rect`]
+/// carries): `active && type > 0 && shimmerTransparency == 0f`
+/// (`Main.cs:45832`), `ShowLife` (`:45835` — `NPC.cs:6832-6842`:
+/// `dontTakeDamage ? dontTakeDamageStillShowLife : true`, and the only
+/// `dontTakeDamageStillShowLife = true` default is type 412, the solar
+/// crawltipede head, `NPC.cs:15279-15280`), and the cultist's ritual-phase
+/// exclusion `(type != 439 && type != 440) || ai[0] != 5f`
+/// (`Main.cs:45928`; the expert-Brain and StatueMimic terms of that line
+/// are no-ops — the port is single-difficulty normal and ships no 690).
+fn npc_shows_health_bar(n: &Npc) -> bool {
+    if n.hp <= 0 || n.shimmer_transparency > 0.0 {
+        return false;
+    }
+    if n.dont_take_damage && n.kind != NpcKind::SolarCrawltipedeHead {
+        return false;
+    }
+    if n.kind == NpcKind::AncientCultist && n.ai[0] == 5.0 {
+        return false;
+    }
+    true
+}
+
+/// The boss-scale 1.5 list of `DrawInterface_14_EntityHealthBars`
+/// (`Main.cs:45839-45922`), restricted to the kinds the port ships:
+/// 4/35/36/50/113/114/125-131/222/245-249/262/266/551/564/565/576/577/439.
+/// The unshipped ids (87 the Wyvern, 370 Duke Fishron, 454/510/621 the
+/// late-game worm heads) have no port kind. The Destroyer's 134-136 arm
+/// (`:45930-45975`, the smoothed shared bar) stays with the open worm-bar
+/// work (S1-D-6b, `docs/ANALYSIS.md`).
+fn npc_health_bar_scale(kind: NpcKind) -> f32 {
+    use NpcKind::*;
+    match kind {
+        EyeOfCthulhu
+        | SkeletronHead
+        | SkeletronHand
+        | KingSlime
+        | WallOfFlesh
+        | WallOfFleshEye
+        | Retinazer
+        | Spazmatism
+        | SkeletronPrime
+        | PrimeCannon
+        | PrimeSaw
+        | PrimeVice
+        | PrimeLaser
+        | QueenBee
+        | Golem
+        | GolemHead
+        | GolemFistLeft
+        | GolemFistRight
+        | GolemHeadFree
+        | Plantera
+        | BrainOfCthulhu
+        | DD2Betsy
+        | DD2DarkMage
+        | DD2DarkMageT3
+        | DD2OgreT2
+        | DD2OgreT3
+        | AncientCultist => 1.5,
+        _ => 1.0,
     }
 }
 
@@ -1939,7 +2002,6 @@ pub(crate) fn draw_npcs(
     screen: Vec2,
     behind_tiles: bool,
 ) -> u32 {
-    let white = r.white_uv();
     let mut quads = 0;
     for npc in npcs {
         // Main.cs:22336 — filter to the requested pass.
@@ -3010,17 +3072,12 @@ pub(crate) fn draw_npcs(
             quads += 1;
         }
         quads += 1;
-        if n.hp < n.max_hp {
-            let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);
-            r.push_sprite([n.x, n.y - 9.0], [w, 4.0], white, [0.02, 0.02, 0.02, 0.75]);
-            r.push_sprite(
-                [n.x, n.y - 9.0],
-                [w * frac, 4.0],
-                white,
-                [0.85, 0.15, 0.15, 0.95],
-            );
-            quads += 2;
-        }
+        // No health bar here: `Main.DrawNPC` (`Main.cs:22469`) /
+        // `DrawNPCDirect` never draw one. The single NPC bar is
+        // `DrawInterface_14_EntityHealthBars` (`Main.cs:45810`), ported by
+        // [`draw_npc_health_bars`] below the hitbox. The ad-hoc red strip
+        // this pass used to paint at `n.y - 9` was the duplicate bar of the
+        // two-bars bug (red above, faithful green below).
     }
     quads
 }
@@ -3542,5 +3599,78 @@ mod offset_fix {
             "Guide top offset {:+} px, the C# anchor wants -12",
             top - n.y
         );
+    }
+
+    /// `Main.cs:45832-45835` + `NPC.cs:6832-6842`: the health-bar gate is
+    /// active/shimmer/`ShowLife` — `dontTakeDamage` hides the bar unless the
+    /// kind defaults `dontTakeDamageStillShowLife` (only 412, the solar
+    /// crawltipede head, `NPC.cs:15279-15280`). A damaged town NPC DOES
+    /// show its bar (the C# gate has no townNPC term).
+    #[test]
+    fn the_health_bar_gate_follows_show_life() {
+        let mut n = bare(NpcKind::Slime);
+        assert!(npc_shows_health_bar(&n), "a live ordinary mob shows");
+        n.hp = 0;
+        assert!(!npc_shows_health_bar(&n), "dead shows nothing");
+        n.hp = 10;
+        n.shimmer_transparency = 0.5;
+        assert!(!npc_shows_health_bar(&n), "shimmered shows nothing");
+        n.shimmer_transparency = 0.0;
+        n.dont_take_damage = true;
+        assert!(!npc_shows_health_bar(&n), "ShowLife is false under dontTakeDamage");
+        n.kind = NpcKind::SolarCrawltipedeHead;
+        assert!(npc_shows_health_bar(&n), "412 keeps dontTakeDamageStillShowLife");
+        // The cultist's ritual phase (`Main.cs:45928`'s ai[0] == 5 term).
+        let mut c = bare(NpcKind::AncientCultist);
+        assert!(npc_shows_health_bar(&c));
+        c.ai[0] = 5.0;
+        assert!(!npc_shows_health_bar(&c), "the ritual clone draws no bar");
+        // A damaged town NPC keeps its bar — the C# gate is life != lifeMax
+        // && ShowLife, nothing about townNPC (`Main.cs:45835`).
+        let g = bare(NpcKind::Guide);
+        assert!(npc_shows_health_bar(&g));
+    }
+
+    /// `Main.cs:45839-45922`: the boss-scale 1.5 list covers every shipped
+    /// boss id, not just King Slime and the Eye; ordinary mobs stay 1.
+    #[test]
+    fn the_boss_health_bar_scale_list_matches_the_shipped_kinds() {
+        for kind in [
+            NpcKind::EyeOfCthulhu,      // 4
+            NpcKind::SkeletronHead,     // 35
+            NpcKind::SkeletronHand,     // 36
+            NpcKind::KingSlime,         // 50
+            NpcKind::WallOfFlesh,       // 113
+            NpcKind::WallOfFleshEye,    // 114
+            NpcKind::Retinazer,         // 125
+            NpcKind::Spazmatism,        // 126
+            NpcKind::SkeletronPrime,    // 127
+            NpcKind::PrimeCannon,       // 128
+            NpcKind::PrimeSaw,          // 129
+            NpcKind::PrimeVice,         // 130
+            NpcKind::PrimeLaser,        // 131
+            NpcKind::QueenBee,          // 222
+            NpcKind::Golem,             // 245
+            NpcKind::GolemHead,         // 246
+            NpcKind::GolemFistLeft,     // 247
+            NpcKind::GolemFistRight,    // 248
+            NpcKind::GolemHeadFree,     // 249
+            NpcKind::Plantera,          // 262
+            NpcKind::BrainOfCthulhu,    // 266
+            NpcKind::AncientCultist,    // 439
+            NpcKind::DD2Betsy,          // 551
+            NpcKind::DD2DarkMage,       // 564
+            NpcKind::DD2DarkMageT3,     // 565
+            NpcKind::DD2OgreT2,         // 576
+            NpcKind::DD2OgreT3,         // 577
+        ] {
+            assert_eq!(npc_health_bar_scale(kind), 1.5, "{kind:?}");
+        }
+        assert_eq!(npc_health_bar_scale(NpcKind::Slime), 1.0);
+        assert_eq!(npc_health_bar_scale(NpcKind::Zombie), 1.0);
+        assert_eq!(npc_health_bar_scale(NpcKind::Guide), 1.0);
+        // The Destroyer's shared-bar arm is the open worm work (S1-D-6b),
+        // not this list — its head keeps the ordinary scale here.
+        assert_eq!(npc_health_bar_scale(NpcKind::TheDestroyer), 1.0);
     }
 }
