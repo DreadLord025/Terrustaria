@@ -53,6 +53,9 @@ mod npc;
 mod npc_chat;
 mod revenge;
 mod npc_ai;
+// S1-D-3 (aiStyle-42): UNWIRED Lost Girl machine — the kind-table rows +
+// dispatch arm are the family's merge step (see the module doc).
+mod npc_ai_style42;
 mod npc_target;
 mod npc_buffs;
 mod persist;
