@@ -498,6 +498,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         npc_sheets: PILLAR_SHEETS
             .iter()
             .chain(PUMPKIN_SHEETS)
+            .chain(FROST_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1112,6 +1113,21 @@ pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     327, // the Pumpking
     329, // the Hellhound
     330, // the Poltergeist
+];
+
+/// The Frost Moon wave family's sheets (`S1-F-13c` slice B): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each of the
+/// eight (345-352) draws its own `NPC_<id>` art. Keyed by the vanilla net id
+/// ([`NpcKind::frost_moon_type`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const FROST_SHEETS: &[u32] = &[
+    345, // the Ice Queen
+    346, // the Santa-NK1
+    347, // the Elf Copter
+    348, // the Nutcracker
+    349, // the spinning Nutcracker
+    350, // the Elf Archer
+    351, // Krampus
+    352, // Flocko
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2834,6 +2850,24 @@ pub(crate) fn draw_npcs(
                 let ty = n.kind.pumpkin_moon_type().expect("a family kind");
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
+            // The Frost Moon family (`S1-F-13c` slice B): the same generic
+            // centre anchor + `SetFrameSize` row height (`FROST_SHEETS`
+            // rows). The bosses' extra overlays — the Santa-NK1's below-half
+            // `SantaTank` sheet (`Main.cs:25279-25282`) and the Ice Queen's
+            // `IceQueen` face + four velocity trail ghosts (`:25689-25696`)
+            // — are parked like the pumpkin bosses' TreeFace/PumpkingFace
+            // faces (ANALYSIS).
+            NpcKind::IceQueen
+            | NpcKind::SantaNK1
+            | NpcKind::ElfCopter
+            | NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus
+            | NpcKind::Flocko => {
+                let ty = n.kind.frost_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
         };
         let Some(tex) = tex else {
             continue;
@@ -3189,6 +3223,45 @@ mod anchor_tests {
         for &(kind, rows) in cases {
             let net = texture_net_id(kind);
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }
+
+    #[test]
+    fn the_frost_rows_match_between_the_draw_and_the_machine() {
+        // The Frost Moon family (`S1-F-13c` slice B): each of the eight draws
+        // its own `NPC_<id>` sheet (`FROST_SHEETS`), and `FindFrame` walks
+        // `npc_rows(texture_net_id(kind))` — the same drift check as the
+        // pillar family above, over the `Main.npcFrameCount` rows
+        // (`Main.cs:67082`): 345→6, 346→9, 347→8, 348→9, 349→8, 350→20,
+        // 351→10, 352→6.
+        let cases: &[(NpcKind, u32)] = &[
+            (NpcKind::IceQueen, 6),
+            (NpcKind::SantaNK1, 9),
+            (NpcKind::ElfCopter, 8),
+            (NpcKind::Nutcracker, 9),
+            (NpcKind::NutcrackerSpinning, 8),
+            (NpcKind::ElfArcher, 20),
+            (NpcKind::Krampus, 10),
+            (NpcKind::Flocko, 6),
+        ];
+        for &(kind, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(net, kind.to_u16(), "{kind:?} draws its own sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(
+                FROST_SHEETS.contains(&(net as u32)),
+                "{kind:?}: NPC_{net} has no by-net-id sheet row"
+            );
+        }
+        // Every frost sheet the draw asks for is packed into the atlas —
+        // the M4-NPC-3v audit, frost edition.
+        use crate::assets::STATIC_SHEET_NAMES;
+        for &id in FROST_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
         }
     }
 

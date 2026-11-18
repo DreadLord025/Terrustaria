@@ -171,6 +171,38 @@ pub struct PumpkinDefaults {
     pub no_tile_collide: bool,
 }
 
+/// The Frost Moon wave family's `SetDefaults` rows (`S1-F-13c` slice B) —
+/// the family-scoped defaults the kind-level spawn reads: the vanilla type
+/// the wire rides, the aiStyle, and the flags/scale/alpha rows. The
+/// per-kind stats (size/damage/defense/life/kb/value/sounds) live in the
+/// shared per-kind tables, exactly like [`PumpkinDefaults`]. None of the
+/// eight kinds writes a scale/alpha row (`NPC.cs:13369-13487`), so every
+/// row carries the `SetDefaults` class defaults 1.0/0.
+/// [`FrostDefaults::vanilla_type`] is the kind→type seam: the frost wave
+/// roster picks by it (`spawner.rs`'s `frost_moon_ladder`),
+/// `MOON_BOSS_SLOTS` (`spawner.rs:75`) weights by it and
+/// `CheckProgressFrostMoon`'s kill points (`world.rs:733`) key on it — it
+/// equals the kind's `to_u16` and round-trips through `from_u16`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrostDefaults {
+    /// `NPC.type` — the vanilla id the family rides on the wire.
+    pub vanilla_type: u16,
+    /// `NPC.aiStyle` — 60 for 345, 61 for 346, 62 for 347, 3 for the four
+    /// walkers (348-351), 63 for 352 (`NPC.cs:13369-13487`).
+    pub ai_style: i32,
+    /// `NPC.scale` — no frost kind writes a scale row; every row is the
+    /// class default 1f (`NPC.cs:8510`'s reset).
+    pub scale: f32,
+    /// `NPC.alpha` — no frost kind writes an alpha row; every row is 0.
+    pub alpha: u8,
+    /// `NPC.noGravity` — 345/347/352 (`NPC.cs:13382`/`:13413`/`:13483`).
+    /// 346's AI sets it every tick (`:33684`) but `SetDefaults` does not.
+    pub no_gravity: bool,
+    /// `NPC.noTileCollide` — 345/347/352 (`NPC.cs:13381`/`:13412`/`:13484`);
+    /// 346's AI sets it (`:33685`) but `SetDefaults` does not.
+    pub no_tile_collide: bool,
+}
+
 impl NpcKind {
     // The protocol id tables below must stay a single live arm per kind/id:
     // the pirate/martian merges of 2026-11 appended duplicates that the
@@ -402,6 +434,24 @@ impl NpcKind {
             NpcKind::Pumpking => 327,
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
+            // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
+            // 345-352 encode here (the same ids `from_u16` decodes below) —
+            // the frost wave roster, `MOON_BOSS_SLOTS` (`spawner.rs:75`) and
+            // `CheckProgressFrostMoon`'s kill points (`world.rs:733`) key on
+            // the vanilla `NPC.type`, and the ids sit above the whole
+            // port-local space so nothing collides. `NpcKind::frost_moon_type`
+            // is the named kind→type seam the spawn wiring and the kill walk
+            // use. `NPC.cs:13369` (345), `:13386` (346), `:13400` (347),
+            // `:13416` (348), `:13430` (349), `:13444` (350), `:13457`
+            // (351), `:13471` (352).
+            NpcKind::IceQueen => 345,
+            NpcKind::SantaNK1 => 346,
+            NpcKind::ElfCopter => 347,
+            NpcKind::Nutcracker => 348,
+            NpcKind::NutcrackerSpinning => 349,
+            NpcKind::ElfArcher => 350,
+            NpcKind::Krampus => 351,
+            NpcKind::Flocko => 352,
         }
     }
 
@@ -628,6 +678,21 @@ impl NpcKind {
             327 => NpcKind::Pumpking,
             329 => NpcKind::Hellhound,
             330 => NpcKind::Poltergeist,
+            // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
+            // 345-352 decode here (the same ids `to_u16` encodes above) —
+            // they sit above the whole port-local space, so no decode arm
+            // below ever sees them. The 338-344 band lands on a separate
+            // task row. `NPC.cs:13369` (345), `:13386` (346), `:13400`
+            // (347), `:13416` (348), `:13430` (349), `:13444` (350),
+            // `:13457` (351), `:13471` (352).
+            345 => NpcKind::IceQueen,
+            346 => NpcKind::SantaNK1,
+            347 => NpcKind::ElfCopter,
+            348 => NpcKind::Nutcracker,
+            349 => NpcKind::NutcrackerSpinning,
+            350 => NpcKind::ElfArcher,
+            351 => NpcKind::Krampus,
+            352 => NpcKind::Flocko,
             _ => return None,
         })
     }
@@ -1021,13 +1086,103 @@ impl NpcKind {
     }
 
     /// The wave roster's vanilla `NPC.type` → the ported kind — the inverse of
-    /// [`NpcKind::pumpkin_moon_type`] the F-13a moon ladders' picks decode
-    /// through (`S1-F-13b` Phase 2's spawn wiring). `None` for every id outside
-    /// the 16: the frost-moon wave kinds (341-346) and every port-local id
-    /// consume the pick and spawn nothing.
+    /// [`NpcKind::pumpkin_moon_type`]/[`NpcKind::frost_moon_type`] the F-13a
+    /// moon ladders' picks decode through (`S1-F-13b`/`S1-F-13c` slice B's
+    /// spawn wiring). `None` for every id outside the ported families: the
+    /// frost-moon wave kinds 338-344 and every port-local id consume the pick
+    /// and spawn nothing.
     pub fn moon_wave_kind(vanilla_type: u16) -> Option<NpcKind> {
-        NpcKind::from_u16(vanilla_type)
-            .filter(|kind| kind.pumpkin_moon_type() == Some(vanilla_type))
+        NpcKind::from_u16(vanilla_type).filter(|kind| {
+            kind.pumpkin_moon_type() == Some(vanilla_type)
+                || kind.frost_moon_type() == Some(vanilla_type)
+        })
+    }
+
+    /// The family-scoped defaults above, or `None` outside the 8 kinds.
+    pub fn frost_moon_defaults(self) -> Option<FrostDefaults> {
+        Some(match self {
+            // `NPC.cs:13369-13385` — the Ice Queen: noGravity + noTileCollide
+            // (`:13381-13382`), no scale/alpha row.
+            NpcKind::IceQueen => FrostDefaults {
+                vanilla_type: 345,
+                ai_style: 60,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            // `NPC.cs:13386-13399` — the Santa-NK1: SetDefaults writes neither
+            // flag; the AI itself sets noGravity + noTileCollide every tick
+            // (`:33684-33685`).
+            NpcKind::SantaNK1 => FrostDefaults {
+                vanilla_type: 346,
+                ai_style: 61,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            // `NPC.cs:13400-13415` — the Elf Copter (`:13412-13413`).
+            NpcKind::ElfCopter => FrostDefaults {
+                vanilla_type: 347,
+                ai_style: 62,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            // `NPC.cs:13416-13429` / `:13430-13443` / `:13444-13456` /
+            // `:13457-13470` — the four aiStyle-3 walkers: no flag rows.
+            NpcKind::Nutcracker => FrostDefaults {
+                vanilla_type: 348,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::NutcrackerSpinning => FrostDefaults {
+                vanilla_type: 349,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::ElfArcher => FrostDefaults {
+                vanilla_type: 350,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Krampus => FrostDefaults {
+                vanilla_type: 351,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            // `NPC.cs:13471-13487` — Flocko (`:13483-13484`).
+            NpcKind::Flocko => FrostDefaults {
+                vanilla_type: 352,
+                ai_style: 63,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            _ => return None,
+        })
+    }
+
+    /// The kind→type map — [`FrostDefaults::vanilla_type`] as the named seam
+    /// the frost spawn wiring and the kill walk read. `None` outside the
+    /// family.
+    pub fn frost_moon_type(self) -> Option<u16> {
+        self.frost_moon_defaults().map(|d| d.vanilla_type)
     }
 
     /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
@@ -1253,6 +1408,17 @@ impl NpcKind {
             NpcKind::Pumpking => "NPC_Hit_1",
             NpcKind::Hellhound => "NPC_Hit_1",
             NpcKind::Poltergeist => "NPC_Hit_1",
+            // The Frost Moon family (`S1-F-13c` slice B): 345's `NPCHit7`
+            // (`NPC.cs:13377`), 346/347's `NPCHit4` (`:13394`/`:13408`),
+            // the four walkers and Flocko's `NPCHit1` (`:13424`/`:13438`/
+            // `:13452`/`:13465`/`:13479`).
+            NpcKind::IceQueen => "NPC_Hit_7",
+            NpcKind::SantaNK1 | NpcKind::ElfCopter => "NPC_Hit_4",
+            NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus
+            | NpcKind::Flocko => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -1461,6 +1627,17 @@ impl NpcKind {
             NpcKind::Pumpking => "NPC_Killed_1",
             NpcKind::Hellhound => "NPC_Killed_5",
             NpcKind::Poltergeist => "NPC_Killed_6",
+            // The Frost Moon family (`S1-F-13c` slice B): 345's `NPCDeath5`
+            // (`NPC.cs:13378`), 346/347's `NPCDeath14` (`:13395`/`:13410`),
+            // the four walkers' `NPCDeath1` (`:13425`/`:13439`/`:13453`/
+            // `:13466`), Flocko's `NPCDeath6` (`:13480`).
+            NpcKind::IceQueen => "NPC_Killed_5",
+            NpcKind::SantaNK1 | NpcKind::ElfCopter => "NPC_Killed_14",
+            NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus => "NPC_Killed_1",
+            NpcKind::Flocko => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -1490,6 +1667,9 @@ impl NpcKind {
             NpcKind::Scarecrow2 | NpcKind::Scarecrow3 | NpcKind::Scarecrow4 | NpcKind::Scarecrow5 |
             NpcKind::Scarecrow6 | NpcKind::Scarecrow7 | NpcKind::Scarecrow8 | NpcKind::Scarecrow9 |
             NpcKind::Scarecrow10 | NpcKind::Splinterling => 3,
+            // The Frost Moon walkers (`S1-F-13c` slice B) — aiStyle 3:
+            // NPC.cs:13420 (348), :13434 (349), :13448 (350), :13461 (351).
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning | NpcKind::ElfArcher | NpcKind::Krampus => 3,
             // aiStyle 4 - NPC.cs:8707
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
@@ -1569,6 +1749,14 @@ impl NpcKind {
             NpcKind::MourningWood => 57,
             // aiStyle 58 - NPC.cs:13146
             NpcKind::Pumpking => 58,
+            // aiStyle 60 - NPC.cs:13373 (`S1-F-13c` slice B)
+            NpcKind::IceQueen => 60,
+            // aiStyle 61 - NPC.cs:13390
+            NpcKind::SantaNK1 => 61,
+            // aiStyle 62 - NPC.cs:13404
+            NpcKind::ElfCopter => 62,
+            // aiStyle 63 - NPC.cs:13475
+            NpcKind::Flocko => 63,
             // aiStyle 74 - NPC.cs:13939, :15372
             NpcKind::MartianDrone | NpcKind::SolarCorite => 74,
             // aiStyle 75 - NPC.cs:13973, :14000, :14018, :14035, :14655, :15338
@@ -1663,6 +1851,14 @@ impl NpcKind {
             NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 1.0,
             NpcKind::Splinterling => 2.0,
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => 6.0,
+            // The Frost Moon family (`S1-F-13c` slice B): the four aiStyle-3
+            // walkers' caps — 348 and 351 in the cap-2 group
+            // (`NPC.cs:57554-57578`), 349 in the cap-6 group
+            // (`:57403-57427`), 350 the shooters' `num180 = 1f` default
+            // (`:59717` — no type-350 override exists).
+            NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
+            NpcKind::NutcrackerSpinning => 6.0,
+            NpcKind::ElfArcher => 1.0,
             _ => return None,
         })
     }
@@ -1958,6 +2154,19 @@ impl NpcKind {
             NpcKind::Pumpking => (100.0, 100.0),
             NpcKind::Hellhound => (46.0, 30.0),
             NpcKind::Poltergeist => (24.0, 44.0),
+            // The Frost Moon family (`S1-F-13c` slice B): 345 is 130x140
+            // (`NPC.cs:13371-13372`), 346 112x140 (`:13388-13389`), 347
+            // 50x50 (`:13402-13403`), the nutcracker pair 28x76
+            // (`:13418-13419`/`:13432-13433`), 350 18x40
+            // (`:13446-13447`), 351 18x90 (`:13459-13460`), 352 54x54
+            // (`:13473-13474`).
+            NpcKind::IceQueen => (130.0, 140.0),
+            NpcKind::SantaNK1 => (112.0, 140.0),
+            NpcKind::ElfCopter => (50.0, 50.0),
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => (28.0, 76.0),
+            NpcKind::ElfArcher => (18.0, 40.0),
+            NpcKind::Krampus => (18.0, 90.0),
+            NpcKind::Flocko => (54.0, 54.0),
         }
     }
 
@@ -2444,6 +2653,17 @@ impl NpcKind {
             NpcKind::Pumpking => 26000,
             NpcKind::Hellhound => 1800,
             NpcKind::Poltergeist => 1250,
+            // The Frost Moon family (`S1-F-13c` slice B): 345 34000
+            // (`NPC.cs:13376`), 346 18000 (`:13393`), 347 1200 (`:13407`),
+            // the nutcracker pair 1800 (`:13423`/`:13437`), 350 900
+            // (`:13451`), 351 2500 (`:13464`), 352 450 (`:13478`).
+            NpcKind::IceQueen => 34000,
+            NpcKind::SantaNK1 => 18000,
+            NpcKind::ElfCopter => 1200,
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => 1800,
+            NpcKind::ElfArcher => 900,
+            NpcKind::Krampus => 2500,
+            NpcKind::Flocko => 450,
         }
     }
 
@@ -2700,6 +2920,16 @@ impl NpcKind {
             NpcKind::Pumpking => 50,
             NpcKind::Hellhound => 80,
             NpcKind::Poltergeist => 90,
+            // The Frost Moon family (`S1-F-13c` slice B): 345/346 120
+            // (`NPC.cs:13374`/`:13391`), 347 60 (`:13405`), 348 80
+            // (`:13421`), 349/351 100 (`:13435`/`:13462`), 350 70
+            // (`:13449`), 352 75 (`:13476`).
+            NpcKind::IceQueen | NpcKind::SantaNK1 => 120,
+            NpcKind::ElfCopter => 60,
+            NpcKind::Nutcracker => 80,
+            NpcKind::NutcrackerSpinning | NpcKind::Krampus => 100,
+            NpcKind::ElfArcher => 70,
+            NpcKind::Flocko => 75,
         }
     }
 }

@@ -2833,6 +2833,21 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The Frost Moon wave family (`S1-F-13c` slice B): the four
+        // aiStyle-3 walkers plant their feet on the surface like the
+        // scarecrow band; the flyers ride the hover ctor like the Mourning
+        // Wood / Pumpking / Poltergeist.
+        crate::npc::NpcKind::Nutcracker
+        | crate::npc::NpcKind::NutcrackerSpinning
+        | crate::npc::NpcKind::ElfArcher
+        | crate::npc::NpcKind::Krampus => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::IceQueen
+        | crate::npc::NpcKind::SantaNK1
+        | crate::npc::NpcKind::ElfCopter
+        | crate::npc::NpcKind::Flocko => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

@@ -94,8 +94,9 @@ pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
 /// (`NPC.cs:274-283`) — the ctx's boss-cap input (the `invasion_saucer_alive`
 /// pattern). `S1-F-13b` lands 315/325/327 as real kinds whose `to_u16` rides
 /// the vanilla ids, so the count goes live for exactly those three (1.0/3.0/
-/// 5.0 — their `SetDefaults` `npcSlots` rows); 328/344/345/346 stay unported
-/// and contribute nothing.
+/// 5.0 — their `SetDefaults` `npcSlots` rows); `S1-F-13c` slice B lands
+/// 345/346 the same way (5.0/4.0). 328/344 stay unported and contribute
+/// nothing.
 pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
     npcs.iter()
         .filter(|n| n.hp > 0)
@@ -1109,9 +1110,11 @@ fn spawn_npc_at(
             // tile's top edge, X centred 8 px into the tile, the facing
             // toward the player (`TargetClosest`) — the placement the
             // invaders arm rides.
-            // Every other pick (the frost-moon kinds, the wave-20 unported
-            // bosses) still consumes its draw and spawns nothing — the Wyvern
-            // arm's consume-and-return-None shape (`spawner.rs:989-994`).
+            // Every other pick (the 338-344 frost band, slice A; the wave-20
+            // unported bosses) still consumes its draw and spawns nothing —
+            // the Wyvern arm's consume-and-return-None shape
+            // (`spawner.rs:989-994`). `S1-F-13c` slice B lands 345-352, so
+            // those picks spawn through the same map.
             if let Some(kind) = pick.and_then(crate::npc::NpcKind::moon_wave_kind) {
                 let (nw, nh) = kind.size();
                 let mut n = Npc::new(
@@ -1644,9 +1647,10 @@ where
 ///
 /// Returns the `NPC.type` the arm would spawn. `None` is the C#'s only
 /// no-spawn outcome: the wave-20 trio behind a reached boss cap (`:2815`).
-/// Every picked kind is an unported wave kind (the frost family lands with
-/// F-13c) — the moon arm's [`crate::npc::NpcKind::moon_wave_kind`] map returns
-/// `None` for it and the dispatch consumes the pick without spawning.
+/// `S1-F-13c` slice B lands 345-352: the moon arm's
+/// [`crate::npc::NpcKind::moon_wave_kind`] map decodes those picks and spawns
+/// the ported kinds; the 338-344 band (slice A) still consumes the pick
+/// without spawning.
 fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
@@ -3959,17 +3963,31 @@ mod tests {
         assert_eq!(moon_boss_slots(0), None);
     }
 
-    /// DW-1.4: the weighted count over the live NPCs is 0 while the seven
-    /// kinds are unported (F-13b/c) — so the cap stays false, and any number
-    /// of ported NPCs never moves it.
+    /// DW-1.4: the weighted count over the live NPCs — the non-boss kinds
+    /// never move it. `S1-F-13c` slice B lands 345/346, so their `npcSlots`
+    /// rows (5.0/4.0) weigh live too.
     #[test]
-    fn the_boss_cap_counts_zero_while_the_kinds_are_unported() {
+    fn the_boss_cap_counts_only_the_live_boss_kinds() {
         let npcs: Vec<Npc> = (0..24)
             .map(|i| Npc::new(NpcKind::Zombie, i as f32 * 32.0, 100.0, 1, 0.0))
             .collect();
         assert_eq!(moon_boss_cap_count(&npcs), 0.0);
         assert!(!moon_boss_cap_reached(0.0));
         assert_eq!(moon_boss_cap_count(&[]), 0.0);
+        // The frost bosses weigh their `SetDefaults` npcSlots rows
+        // (`NPC.cs:13369`/`:13386` — 5/4); a dead one weighs nothing.
+        let mut queen = Npc::new(NpcKind::IceQueen, 0.0, 100.0, 1, 0.0);
+        let mut santa = Npc::new(NpcKind::SantaNK1, 32.0, 100.0, 1, 0.0);
+        let mut dead_queen = Npc::new(NpcKind::IceQueen, 64.0, 100.0, 1, 0.0);
+        queen.hp = queen.max_hp;
+        santa.hp = santa.max_hp;
+        dead_queen.hp = 0;
+        assert_eq!(moon_boss_cap_count(&[queen, santa, dead_queen]), 9.0);
+        assert!(!moon_boss_cap_reached(9.0), "9 < 11 stays open");
+        // The frost walkers are not bosses — they contribute nothing.
+        let mut nut = Npc::new(NpcKind::Nutcracker, 0.0, 100.0, 1, 0.0);
+        nut.hp = nut.max_hp;
+        assert_eq!(moon_boss_cap_count(&[nut]), 0.0);
     }
 
     /// DW-1.4: the bound — the port's single active player reads
@@ -3997,28 +4015,29 @@ mod tests {
 
     /// DIRTY (watched RED pre-fix): DW-2.1 — with a night + snow moon +
     /// wave 20 armed, the ladder draws the vanilla boss-trio `Next(3)`
-    /// sequence on the spawner stream and spawns nothing (the wave kinds
-    /// are unported until F-13b/c).
+    /// sequence on the spawner stream. `S1-F-13c` slice B lands 345/346:
+    /// those picks SPAWN at the found tile; the 341 head and the 344 pick
+    /// stay unported (slice A) and consume their draws without spawning.
     ///
     /// The reference replay (`NPC.cs:2804-2830`): `GetZombieSettings`' style
     /// `Next(7)` (`:1284`), then the arm head EXACTLY as the C# runs it — the
     /// 341 `Next(30) == 0 && CountNPCS(341) < 4` arm (`:2807-2811`) hits only
     /// 1/30 of the time and RETURNS on the hit (no `num44` draw); otherwise
     /// the wave-20 branch draws `num44 = Next(3)` (`:2814`) and picks
-    /// 345/346/344 per num44 (`:2820-2826`). The kinds are unported, so no NPC
-    /// comes back — but the picks and both stream tails (the ladder's and
-    /// `spawn_npc_at`'s, which is the style draw + the arm) must match the
-    /// replay seed for seed.
+    /// 345/346/344 per num44 (`:2820-2826`). The picks and both stream tails
+    /// (the ladder's and `spawn_npc_at`'s, which is the style draw + the arm)
+    /// must match the replay seed for seed.
     #[test]
     fn the_snow_wave_20_boss_trio_replays_the_vanilla_next3_sequence() {
         let w = moon_world(20, true);
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.moon_boss_cap_count = 0.0; // the cap is open
+        let (tile_x, tile_y) = (210i32, 25i32 * 16);
         let mut saw_head = 0;
         let mut saw_trio = 0;
         for seed in 1..=200u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            let spawn = spawn_npc_at(&c, &mut rng, tile_x, tile_y, false, false, false);
             // The ladder's pick on its own stream: after the style draw
             // `GetZombieSettings` puts ahead of every arm (`NPC.cs:1284`).
             let mut pick_rng = UnifiedRandom::new(seed as i32);
@@ -4026,17 +4045,18 @@ mod tests {
             let picked = frost_moon_ladder(&c, &mut pick_rng);
             let mut r#ref = UnifiedRandom::new(seed as i32);
             let _style = r#ref.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
-            if r#ref.next_max(30) == 0 {
+            let expect_ty = if r#ref.next_max(30) == 0 {
                 // The 341 head hit (`:2807-2811`): the C# spawns and returns —
                 // the trio's `Next(3)` is never drawn, so the replay stops
-                // here. `CountNPCS(341) < 4` is open (the count is
-                // structurally 0 until F-13b/c).
+                // here. `CountNPCS(341) < 4` is open (the ctx's roster is
+                // empty).
                 saw_head += 1;
                 assert_eq!(
                     picked,
                     Some(341),
-                    "seed {seed}: the head arm picks the vanilla Eskimo type"
+                    "seed {seed}: the head arm picks the vanilla Present Mimic type"
                 );
+                341u16
             } else {
                 let num44 = r#ref.next_max(3); // the boss-trio pick (`:2814`)
                 let trio = match num44 {
@@ -4050,11 +4070,32 @@ mod tests {
                     Some(trio),
                     "seed {seed}: the ladder picks the vanilla trio type"
                 );
+                trio
+            };
+            // Slice B's seam: 345/346 decode and spawn at the found tile (the
+            // `NewNPC` Bottom placement); 341/344 stay unported and spawn
+            // nothing.
+            match NpcKind::moon_wave_kind(expect_ty) {
+                Some(kind) => {
+                    let n = spawn.expect("seed: the ported frost boss must spawn");
+                    assert_eq!(n.kind, kind, "seed {seed}: the wrong kind spawned");
+                    let (nw, nh) = kind.size();
+                    assert_eq!(
+                        n.x, tile_x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                        "seed {seed}: the feet sit centred 8 px into the found tile"
+                    );
+                    assert_eq!(
+                        n.y, tile_y as f32 - nh,
+                        "seed {seed}: the feet stand on the found tile's top edge"
+                    );
+                    assert_eq!(n.facing, -1, "seed {seed}: the spawn faces the player");
+                    assert_eq!(n.hp, n.max_hp, "seed {seed}: the spawn is at full hp");
+                }
+                None => assert!(
+                    spawn.is_none(),
+                    "seed {seed}: the unported kind {expect_ty} must not spawn"
+                ),
             }
-            assert!(
-                spawn.is_none(),
-                "seed {seed}: the unported trio kind must not spawn"
-            );
             assert_eq!(
                 pick_rng.peek(), r#ref.peek(),
                 "seed {seed}: the ladder's stream tail is the vanilla draw order"
@@ -4189,12 +4230,13 @@ mod tests {
         assert_eq!(rng2.peek(), rng.peek(), "the roll was still drawn (the C# && order)");
     }
 
-    /// DW-2.3: every unported wave-kind arm consumes the C#'s draws and returns
-    /// no spawn (the Wyvern-arm consume-and-return-None shape) — across the
-    /// whole snow wave range the production dispatch never produces an NPC,
-    /// and the ladder's picks (when Some) are vanilla `NPC.type` wave ids.
+    /// DW-2.3: across the whole snow wave range the ladder's picks (when
+    /// Some) are vanilla `NPC.type` wave ids. `S1-F-13c` slice B lands
+    /// 345-352: those picks SPAWN through `moon_wave_kind` at the found tile;
+    /// the 338-344 band (slice A) still consumes its draws and returns no
+    /// spawn (the Wyvern-arm consume-and-return-None shape).
     #[test]
-    fn the_snow_ladder_picks_are_wave_ids_and_never_spawn() {
+    fn the_snow_ladder_picks_are_wave_ids_and_spawn_only_the_ported_band() {
         const SNOW_WAVE_IDS: std::ops::RangeInclusive<u16> = 338..=352;
         for wave in 1..=20i32 {
             let w = moon_world(wave, true);
@@ -4209,10 +4251,20 @@ mod tests {
                     );
                 }
                 let spawns = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 25 * 16, false, false, false);
-                assert!(
-                    spawns.is_none(),
-                    "wave {wave} seed {seed}: no unported wave kind spawns"
-                );
+                match picked.and_then(NpcKind::moon_wave_kind) {
+                    Some(kind) => {
+                        let n = spawns.expect("the ported frost kind must spawn");
+                        assert_eq!(
+                            n.kind, kind,
+                            "wave {wave} seed {seed}: the wrong kind spawned"
+                        );
+                        assert_eq!(n.hp, n.max_hp, "wave {wave} seed {seed}: full hp");
+                    }
+                    None => assert!(
+                        spawns.is_none(),
+                        "wave {wave} seed {seed}: no unported wave kind spawns"
+                    ),
+                }
             }
         }
     }

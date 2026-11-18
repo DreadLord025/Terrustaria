@@ -1254,6 +1254,18 @@ fn portrait_data(
         (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
+        // The Frost Moon wave family (`S1-F-13c` slice B): the portrait
+        // rests each kind's `SetDefaults` box (`NPC.cs:13369-13487`) — the
+        // same shape the pumpkin rows above carry.
+        (NpcKind::IceQueen, _) => (sheet_i, 140.0, 130.0, 140.0, white),
+        (NpcKind::SantaNK1, _) => (sheet_i, 140.0, 112.0, 140.0, white),
+        (NpcKind::ElfCopter, _) => (sheet_i, 50.0, 50.0, 50.0, white),
+        (NpcKind::Nutcracker, _) | (NpcKind::NutcrackerSpinning, _) => {
+            (sheet_i, 76.0, 28.0, 76.0, white)
+        }
+        (NpcKind::ElfArcher, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Krampus, _) => (sheet_i, 90.0, 18.0, 90.0, white),
+        (NpcKind::Flocko, _) => (sheet_i, 54.0, 54.0, 54.0, white),
     }
 }
 
