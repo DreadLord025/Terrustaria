@@ -16817,6 +16817,38 @@ mod tests {
         assert_eq!(NpcKind::RayGunner.death_sound(), None);
     }
 
+    /// S1-E-21 wave C — every ported kind's hit/death cue resolves to a
+    /// registered bank asset AND a `SoundID` style row: the strike/death
+    /// plays (`Audio::play_npc_hit_sound`/`play_npc_death_sound`) can never
+    /// silently drop a kind's voice on a bank gap.
+    #[test]
+    fn s1_e_21c_every_kind_hit_and_death_cue_resolves() {
+        for kind in ALL_KINDS {
+            if let Some(cue) = kind.hit_sound() {
+                assert!(
+                    crate::audio::sfx_cue_registered(cue)
+                        || crate::audio::NPC_CUSTOM_CUES.contains(&cue),
+                    "{kind:?} hit cue {cue} in the bank"
+                );
+                assert!(
+                    crate::audio::npc_sound_style(cue, "NPC_Hit_", 3).is_some(),
+                    "{kind:?} hit cue {cue} resolves to a style row"
+                );
+            }
+            if let Some(cue) = kind.death_sound() {
+                assert!(
+                    crate::audio::sfx_cue_registered(cue)
+                        || crate::audio::NPC_CUSTOM_CUES.contains(&cue),
+                    "{kind:?} death cue {cue} in the bank"
+                );
+                assert!(
+                    crate::audio::npc_sound_style(cue, "NPC_Killed_", 4).is_some(),
+                    "{kind:?} death cue {cue} resolves to a style row"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_hover_kinds_spawn_fly_and_map() {
         // The Eater of Souls (6)/Hornet (42)/Meteor Head (23): the hovers
