@@ -454,6 +454,10 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
+/// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
+/// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
+pub const LIGHTS_BANE: u16 = 974;
 
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
@@ -2482,6 +2486,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // `Projectile.cs:9237-9252` — the Light's Bane slash (974):
+            // 20x20, aiStyle 188, `penetrate = 2`, `tileCollide = false`,
+            // `ignoreWater = true`, `timeLeft = 30`, the local-immunity pair
+            // (`usesLocalNPCImmunity`, `localNPCHitCooldown = -1`). The
+            // melee/armorPenetration/stopsDealingDamageAfterPenetrateHits
+            // fields are damage-side and stay with the melee port.
+            LIGHTS_BANE => (20.0, 20.0, 188, 2, 30, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2592,7 +2603,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         ignore_water: ((minion || sentry)
             && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
-            || matches!(kind, VILE_BASE | VILE_TIP),
+            || matches!(kind, VILE_BASE | VILE_TIP)
+            // `Projectile.cs:9244`: the Light's Bane slash ignores water.
+            || kind == LIGHTS_BANE,
     })
 }
 
@@ -9633,6 +9646,14 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
+        // ahead of the generic emit (`Main.cs:28143-28144` →
+        // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
+        // vanilla draws through the reverse-subtract + additive batches.
+        if self.kind == LIGHTS_BANE {
+            self.draw_lights_bane(r, lookups, camera, zoom, screen);
+            return;
+        }
         // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
         // the C# draws the strip ahead of the sprite (`Main.cs:28182-28243`'s
         // drawers, before the emit at `:30857-30909`), so the quads push first
@@ -9675,6 +9696,63 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+    }
+
+    /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
+    /// slash's three blend batches (S1-G-3). The C# ends the alpha batch,
+    /// begins `Main._multiplyBlendState` (the custom ReverseSubtract state,
+    /// `:27462-27470`) for two stretched `White * 0.3f * num` copies of frame
+    /// 12 plus four `Color.White` copies of the current frame (`:27483-27488`),
+    /// re-begins `BlendState.Additive` (`:27490`) for two `Color.Magenta`
+    /// copies (`:27491-27492`), then restores `BlendState.AlphaBlend`
+    /// (`:27494`). The port pushes the same eight quads, in the same order,
+    /// tagged with [`tr_render::BlendMode`]; `draw_ranges` splits the range
+    /// into one draw per batch. No light tint — the C# draws raw White /
+    /// Magenta here, not `GetAlpha`.
+    fn draw_lights_bane(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) {
+        let Some(sheet) = lookups.proj_sheets.get(&LIGHTS_BANE).copied() else {
+            return;
+        };
+        // `:27474` — `position = proj.Center - Main.screenPosition`; the ui
+        // range's screen pixels convert like `frame_quad`'s anchor.
+        let anchor = [
+            (self.pos.x + self.w * 0.5 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+        ];
+        // `:27477-27478` — `rectangle = asset.Frame(1, 13, 0, proj.frame)`
+        // (the drawer's own 13-row slice, NOT `Main.projFrames[974]` = 1) and
+        // `vector = rectangle.Size() / 2f`.
+        let frame_h = sheet.height / 13;
+        let uv = frame_slice_uv(&sheet, lookups.atlas_size, self.frame, 13);
+        let half = [sheet.width as f32 * 0.5, frame_h as f32 * 0.5];
+        // `:27479` — `vector2 = new Vector2(0.7f, 0.7f) * proj.scale`.
+        let s = 0.7 * self.scale * zoom;
+        // `:27481` — `value = asset.Frame(1, 13, 0, 12)`, the last row.
+        let uv12 = frame_slice_uv(&sheet, lookups.atlas_size, 12, 13);
+        // `:27482` — `origin = vector` (the frame's centre); the instance
+        // pipeline rotates about the top-left, so the pivot is in scaled
+        // screen pixels like `frame_quad`'s.
+        let origin = [half[0] * s, half[1] * s];
+        let size = [sheet.width as f32 * s, frame_h as f32 * s];
+        for (blend, stretch, row, tint) in lights_bane_batches(self.frame) {
+            let uv = if row == 12 { uv12 } else { uv };
+            r.push_ui_sprite_blend(
+                anchor,
+                [size[0] * stretch[0], size[1] * stretch[1]],
+                uv,
+                tint,
+                self.rot,
+                origin,
+                blend,
+            );
+        }
     }
 
     /// The followup kinds' frame-sliced quad, computed pure so the unit tests
@@ -10038,6 +10116,37 @@ impl Projectile {
         self.ai[0] += 1.0;
         // `HandleMovement`: the shadow's row keeps `tileCollide = false`, so
         // the position follows the velocity without a tile probe.
+        self.kill_step(world);
+    }
+
+    /// `AI_188_LightsBane` (`Projectile.cs:42229-42262`) — the Light's Bane
+    /// slash (974): the scale rides `ai[0]`, the 3-tick frame machine kills
+    /// at frame 12, and the rotation follows the velocity.
+    ///
+    /// The sound cue (`:42231-42239`, `SoundID.Item60` at `0.15 * ai[0]`
+    /// volume) and the dust streak (`:42255-42261`, type 278 with its two
+    /// `Main.rand` draws) are SKIPPED — the pool has no sound or dust layer
+    /// (the `ai_volcano` precedent); with them go their RNG draws.
+    fn ai_lights_bane(&mut self, world: &World) {
+        // `:42240` — the scale is the spawn's `ai[0]`.
+        self.scale = self.ai[0];
+        // `:42241` — the age counter the dust streak's window reads.
+        self.local_ai[0] += 1.0;
+        // `:42242-42250` — the frame advances every third tick; the twelfth
+        // frame kills the slash.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 12 {
+                self.kill();
+                return;
+            }
+        }
+        // `:42251` — `rotation = velocity.ToRotation()`.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        // `HandleMovement`: the row keeps `tileCollide = false`
+        // (`Projectile.cs:9243`), so the position follows the velocity.
         self.kill_step(world);
     }
 
@@ -11052,6 +11161,37 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         LIGHTNING_AURA_3 => 8,
         _ => 1,
     }
+}
+
+/// `Main.DrawProj_LightsBane`'s eight quads in push order (`Main.cs:27483-27492`),
+/// as `(blend, scale-stretch, sheet-row, tint)` — pure so the batch layout is
+/// unit-testable without a GPU. The multiply batch (`Main._multiplyBlendState`,
+/// `:27462-27470`) draws two stretched `White * 0.3f * num` copies of row 12
+/// (`:27483-27484`, stretches `(1, 6)` and `(2, 2)`) then four `Color.White`
+/// copies of the current frame (`:27485-27488`); the additive batch
+/// (`BlendState.Additive`, `:27490`) draws two `Color.Magenta` copies
+/// (`:27491-27492`). `num = Remap(frame, 0, 3, 0, 1) * Remap(frame, 4, 12, 1, 0)`
+/// (`:27480`, `Utils.cs:345-348`); `Color.White * x` scales every channel,
+/// alpha included.
+fn lights_bane_batches(
+    frame: i32,
+) -> [(tr_render::BlendMode, [f32; 2], i32, [f32; 4]); 8] {
+    let num = remap(frame as f32, 0.0, 3.0, 0.0, 1.0) * remap(frame as f32, 4.0, 12.0, 1.0, 0.0);
+    let ghost = [0.3 * num, 0.3 * num, 0.3 * num, 0.3 * num];
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let magenta = [1.0, 0.0, 1.0, 1.0];
+    let m = tr_render::BlendMode::Multiply;
+    let a = tr_render::BlendMode::Additive;
+    [
+        (m, [1.0, 6.0], 12, ghost),
+        (m, [2.0, 2.0], 12, ghost),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (a, [1.0, 1.0], frame, magenta),
+        (a, [1.0, 1.0], frame, magenta),
+    ]
 }
 
 /// The frame rect of `Main.DrawProjDirect`'s default emit — `Main.cs:34386-34388`
@@ -13630,6 +13770,10 @@ impl ProjectilePool {
                         // the four variation choreographies and the alpha
                         // ramp.
                         187 => self.slots[i].ai_insanity_shadow(world),
+                        // The aiStyle-188 Light's Bane slash
+                        // (`:42229-42262`): the scale latch, the 3-tick
+                        // frame machine and the velocity rotation.
+                        188 => self.slots[i].ai_lights_bane(world),
                         // The aiStyle-189 Volcano / Cascade Explosion
                         // (`:42264-42303`): the alpha flash, the scale ramp
                         // and the five-frame life.
@@ -28757,5 +28901,134 @@ mod projectile_ai_tests {
             "and flies on, x = {}",
             pool.slots[slot].pos.x
         );
+    }
+}
+
+#[cfg(test)]
+mod lights_bane_tests {
+    //! S1-G-3: the Light's Bane slash (974) — the SetDefaults row, the
+    //! aiStyle-188 frame machine and `DrawProj_LightsBane`'s batch layout
+    //! (`Projectile.cs:9237-9252`, `:42229-42262`, `Main.cs:27455-27495`).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 64)
+    }
+
+    fn spawn(pool: &mut ProjectilePool) -> usize {
+        pool.spawn_with_data_owned(LIGHTS_BANE, 0, 100.0, 100.0, 8.0, 0.0, 20, 0.0, 1.0, 0.0)
+            .expect("the LightsBane row")
+    }
+
+    fn ticks(pool: &mut ProjectilePool, w: &mut World, n: usize) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..n {
+            pool.update(
+                w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+        }
+    }
+
+    /// The SetDefaults row (`Projectile.cs:9237-9252`): 20x20, aiStyle 188,
+    /// penetrate 2, timeLeft 30, tileCollide off, ignoreWater on, the
+    /// local-immunity pair (true, −1).
+    #[test]
+    fn the_set_defaults_row_matches_the_csharp() {
+        let d = proj_data(LIGHTS_BANE).expect("the row exists");
+        assert_eq!((d.w, d.h), (20.0, 20.0));
+        assert_eq!(d.ai_style, 188);
+        assert_eq!(d.penetrate, 2);
+        assert_eq!(d.time_left, 30);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -1);
+        // The drawer's own 13-row slice is NOT the projFrames table — 974
+        // keeps the loop default 1 (`Main.cs:8439-8442`, no override row).
+        assert_eq!(proj_frames(LIGHTS_BANE), 1);
+        assert!(spawnable_kinds().contains(&LIGHTS_BANE), "the sheet packs");
+    }
+
+    /// `AI_188_LightsBane` (`Projectile.cs:42240-42251`): the scale latches
+    /// `ai[0]`, the frame advances every third tick, the rotation follows the
+    /// velocity. The pool's `timeLeft = 30` (`:9249`) kills the slash at tick
+    /// 30 — before the frame machine's own frame-12 kill at tick 36, which
+    /// the arm test below pins directly.
+    #[test]
+    fn the_frame_machine_advances_every_third_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = spawn(&mut pool);
+        ticks(&mut pool, &mut w, 1);
+        let p = &pool.slots[slot];
+        assert_eq!(p.scale, 1.0, "scale = ai[0]");
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!((p.rot - 0.0).abs() < 1e-6, "velocity (8, 0) → rot 0");
+        assert!((p.pos.x - 108.0).abs() < 1e-4, "flies on, no tile collide");
+        ticks(&mut pool, &mut w, 2);
+        assert_eq!(pool.slots[slot].frame, 1, "the third tick advances");
+        assert_eq!(pool.slots[slot].frame_counter, 0);
+        // The 30-tick life (`Projectile.cs:9249`): tick 29 still flies at
+        // frame 9, tick 30 spends the last timeLeft and kills.
+        ticks(&mut pool, &mut w, 26);
+        assert!(pool.slots[slot].active);
+        assert_eq!(pool.slots[slot].frame, 9);
+        ticks(&mut pool, &mut w, 1);
+        assert!(!pool.slots[slot].active, "timeLeft 30 kills");
+    }
+
+    /// The arm's own kill (`Projectile.cs:42245-42248`): the twelfth frame
+    /// kills the slash — reachable when the life counter is refreshed (the
+    /// C# keeps both gates).
+    #[test]
+    fn the_twelfth_frame_kills_the_slash() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: LIGHTS_BANE,
+            frame: 11,
+            frame_counter: 2,
+            ..Default::default()
+        };
+        p.ai_lights_bane(&w);
+        assert!(!p.active, "frame 12 kills");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.frame, 12);
+    }
+
+    /// `Main.cs:27483-27492` — the eight quads: two stretched ghosts of row
+    /// 12 (`White * 0.3f * num`), four White copies of the current frame, all
+    /// multiply; then two Magenta copies, additive. The order is the C#'s
+    /// push order — the batch boundaries the port's blend runs reproduce.
+    #[test]
+    fn the_batch_layout_matches_the_csharp_draw_order() {
+        let b = lights_bane_batches(6);
+        // num at frame 6: Remap(6,0,3)=1, Remap(6,4,12,1,0)=1−2/8=0.75.
+        let ghost = 0.3 * 0.75;
+        assert_eq!(b[0], (tr_render::BlendMode::Multiply, [1.0, 6.0], 12, [ghost, ghost, ghost, ghost]));
+        assert_eq!(b[1], (tr_render::BlendMode::Multiply, [2.0, 2.0], 12, [ghost, ghost, ghost, ghost]));
+        for q in &b[2..6] {
+            assert_eq!(*q, (tr_render::BlendMode::Multiply, [1.0, 1.0], 6, [1.0, 1.0, 1.0, 1.0]));
+        }
+        for q in &b[6..8] {
+            assert_eq!(*q, (tr_render::BlendMode::Additive, [1.0, 1.0], 6, [1.0, 0.0, 1.0, 1.0]));
+        }
+        // The ghost window: num is 0 at frame 0 and back to 0 at frame 12
+        // (`:27480`'s two remaps), peaking over frames 3..4.
+        assert_eq!(lights_bane_batches(0)[0].3, [0.0; 4]);
+        assert_eq!(lights_bane_batches(12)[0].3, [0.0; 4]);
+        assert_eq!(lights_bane_batches(3)[0].3, [0.3; 4]);
     }
 }

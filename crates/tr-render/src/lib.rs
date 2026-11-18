@@ -19,5 +19,5 @@ pub use post::{
     pass_index, FilterImages, FilterPass, FilterParams, PassId, PostPipeline, MAX_CHAIN,
     PASS_TABLE,
 };
-pub use sprite::{Globals, SpriteInstance, SpriteRenderer};
+pub use sprite::{BlendMode, Globals, SpriteInstance, SpriteRenderer};
 pub use water_mask::{MaskRect, WaterMask};

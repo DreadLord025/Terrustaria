@@ -19,15 +19,34 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if empty {
             if let Some(p) = &app.player {
             let (cx, cy) = p.center();
-                app.projectiles.spawn(
-                    kind,
-                    0,
-                    Vec2::new(cx - 3.0, cy - 3.0),
-                    Vec2::new(3.0, 0.0),
-                    10,
-                    4.0,
-                    false,
-                );
+                if kind == crate::projectile::LIGHTS_BANE {
+                    // The slash's scale rides `ai[0]` (`AI_188_LightsBane`,
+                    // `Projectile.cs:42240`) — the fixture spawns it through
+                    // the SetDefaults row at scale 1 (S1-G-3's blend-batch
+                    // screenshot).
+                    app.projectiles.spawn_with_data_owned(
+                        kind,
+                        0,
+                        cx - 3.0,
+                        cy - 3.0,
+                        3.0,
+                        0.0,
+                        10,
+                        4.0,
+                        1.0,
+                        0.0,
+                    );
+                } else {
+                    app.projectiles.spawn(
+                        kind,
+                        0,
+                        Vec2::new(cx - 3.0, cy - 3.0),
+                        Vec2::new(3.0, 0.0),
+                        10,
+                        4.0,
+                        false,
+                    );
+                }
             }
         }
     }
