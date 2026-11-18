@@ -53,6 +53,9 @@ mod npc;
 mod npc_chat;
 mod revenge;
 mod npc_ai;
+// S1-D-3 (aiStyle-46): UNWIRED Golem-head machine — the kind-arm swap +
+// style-axis claim are the golem family's merge step (see the module doc).
+mod npc_ai_style46;
 mod npc_target;
 mod npc_buffs;
 mod persist;
