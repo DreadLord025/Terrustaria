@@ -17625,3 +17625,64 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Dungeon Spirit aiStyle-56 arm (S1-D-3, code-only mode)
+
+`crates/tr-app/src/npc_ai_style56.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 56)` block (`NPC.cs:32742-32760`) 1:1 as
+`style56_step` + the `Style56Env` seam (the d6bc30ed bat precedent:
+pure fn over `Npc`, the pool/stream/statics passed in). **Code-only
+mode**: no cargo/rustc/rustfmt runs per the user directive — the 11
+`s1_d_3_s56_*` witness tests are WRITTEN NOT RUN; verification is the
+line-by-line C# re-reading below.
+
+**Family identity (verified, not claimed):** the only `aiStyle = 56`
+assignment in `NPC.cs` is type 288, `NPCID.DungeonSpirit`
+(`NPC.cs:12738-12752`, `ID/NPCID.cs:11253`): 20×20, dmg 70, def 30,
+200 HP, kb 0.2, `NPCHit36`/`NPCDeath39`, value 500, noTileCollide,
+noGravity. `Projectile.cs:4220`'s aiStyle 56 is the projectile axis,
+not this family. The arm has no per-type branches — the 19-line block
+is the whole family. Escape-clause result: UNPORTED on main (no
+`NpcKind::DungeonSpirit`, no dispatch arm, no anchors/PORT_MAP row),
+so this is a faithful UNWIRED first port, not an audit fix.
+
+**Faithfulness (the f1701eb0 catalogue applied):** `TargetClosest()`
+first (`:32744`, via `npc_target::target_closest` unmodified, style
+56); both centres through `Entity.Center`'s FLOAT halves
+(`Entity.cs:50-55`); the normaliser `12f / (float)Math.Sqrt(f32 sum)`
+— sqrt in f64, cast + divide in f32 (`:32748`); the `(v*100 + aim)/101`
+f32 blend (`:32751-32752`); `rotation = (float)Math.Atan2(aimY, aimX)
+- 1.57f` every tick (`:32753`, the literal, not π/2); zero distance is
+unguarded (0 × inf = NaN velocity/rotation, kept); the netOffset
+add/subtract round trip around the dust spawn kept verbatim
+(`:32754`/`:32759`); the dust post-writes `velocity *= 0.1f`,
+`scale = 1.3f` (ASSIGNMENT over the rolled scale), `noGravity = true`
+land on the returned slot INCLUDING the 6000 refuse sentinel
+(`Main.dust[6000]` exists in the C#). No ai[] writes, no resets, no
+expert arms, no shots, no spriteDirection — nothing else is in the
+block; the caller owns the position integration (noTileCollide).
+
+**RNG by construction:** the arm draws no direct `Main.rand.Next`;
+its only stream consumer is `Dust.NewDust(position, w, h, 180)`
+(`:32755`) through the S1-E-1 `DustPool::new_dust`. For the 20×20 box
+and an accepted low-band slot the order is exactly `Next(16)` (pos X,
+`Dust.cs:170`), `Next(16)` (pos Y, `:171`), `Next(-20,21)` (vel X,
+`:172`), `Next(-20,21)` (vel Y, `:173`), `Next(3)` (frame, `:175`),
+`Next(-20,21)` (scale, `:190` — consumed, then overwritten by the
+arm's 1.3 assignment). Type 180 hits no per-type tweak arm
+(`Dust.cs:214-252`) and is not `DangerousDust` (`ChildSafety.cs:32`).
+The pressure-band gate draws (`Dust.cs:114-148`) only fire when the
+first free slot is above a `maxDustToDraw` band and short-circuit the
+spawn on refusal; the menu/pause/off-screen guards refuse with zero
+draws. The stream-peek witnesses replay these draws by hand on a
+pre-step RNG clone (written, not run).
+
+**Cited skips (outside the arm):** the death dust burst
+(`NPC.cs:85000-85009`, checkDead), the ambient sound roll
+(`:90147-90150`, `Next(400) == 0` then `Next(53,55)` — UpdateNPC's
+sound chain, a different stream site), the draw colour
+(`:93605-93608`, `Color(200,200,200,0)` — render). The wiring round
+adds `NpcKind::DungeonSpirit` + the `SetDefaults` row + the style-axis
+dispatch claim + the pool/stream plumbing; until then the module is
+`#![allow(dead_code)]` and every other file is byte-identical except
+the `mod` line.
