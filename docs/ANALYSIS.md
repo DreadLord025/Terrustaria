@@ -17625,3 +17625,65 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The dungeon-debris trio (S1-D-5, 2026-11-19, code-only mode)
+
+The 736/737/738 `BlueDungeonDebris`/`GreenDungeonDebris`/`PinkDungeonDebris`
+rows, the aiStyle-10 `AI_010` arm (`Projectile.cs:57826-58100`, dispatch
+`:24367-24370`), the `HandleMovement` collision tail (`:17592-17597`) and the
+`Kill_ExplodeTiles` death crack (`:77369-77385`) are ported for the trio only
+(`ai_dungeon_debris` + `debris_death_crack` in `projectile.rs`, rows + the
+`DUNGEON_DEBRIS` set + the 3-frame `proj_frames` arm in `projectile/data.rs`).
+Written in **code-only mode**: tests-as-code (`s1_d_5_debris_tests`, 7 tests)
+are written but NOT run — no compiler invoked. Deviations:
+
+- **Damage model.** The C# stock `friendly`/`hostile` are both false
+  (`SetDefaults` `:788`/`:764`; the `:7748-7755` arm touches neither), so the
+  debris damages nothing: `Damage_PVE_Inner` refuses `!friendly` (`:12611`),
+  `Damage_EVP` refuses `!hostile` (`:14775`), `CutTiles` needs friendly
+  (`:12500`). The pool's slot default is `friendly = true`, so the arm holds
+  `friendly = false` explicitly (the `ai_spectre_wrath` precedent) and both
+  damage proxies are kind-gated on `DUNGEON_DEBRIS`: the `damage_player`
+  `!friendly` call site and the `damage_pve` NPC walk. The blocked-move
+  tile-cut prologue (`:17910`/`:17948`, gate `(friendly || hostile) &&
+  damage > 0`) is therefore false for the trio — the whole chain including
+  its `Next(3)` draw is skipped, stream-exact (the sentry precedent).
+- **Movement tail.** `HandleMovement`'s trio arm takes the plain
+  `Collision.TileCollision(pos, vel, w, h, flag6, flag6)` with `flag6 = true`
+  (`:17478`; the trio is NOT in `FallingBlockDoesNotFallThroughPlatforms`,
+  `ProjectileID.cs:433` — platforms block it). A blocked move falls through
+  the per-type chain to the default `position += velocity; Kill()`
+  (`:19849-19853`). The port rides the `kill_step` stand-in (the
+  `ai_sharp_tears`/`ai_leaf_blower` house pattern): a per-axis destination
+  probe via `player::collides_rect`, `pos += vel` always, death on hit. The
+  swept-collision zeroing of the blocked axis (the C# velocity survives as 0
+  on that axis for the death frame) may differ by the swept span in the
+  death pixel — the recorded stand-in cost, same as the siblings.
+- **Tile walk.** The owner's breakable set (185-187/165/12/665/639/105/178)
+  dies through `tr_core::edit::kill_tile(world, tx, ty, false)` (the cascading
+  `KillTile` port). The top-slope flatten is `set_slope(0)` + clear
+  `FLAG_HALF_BRICK` + `pos.y -= 16` (the `slope_tile_flatten` shape,
+  `tileobject.rs`); `WorldGen.SlopeTile`'s `CanPoundTile` gate
+  (`WorldGen.cs:80695-80743`) has no port — the flatten is unconditional, and
+  the fail-dust/sound/net tails are skipped.
+- **Dust/sound skips.** The trail's `Next(40)` gate roll (`:57929`) stays on
+  the stream (state-bearing census); the taken-branch `Dust.NewDust`
+  (type − 736 + 275) and its internal draws are SKIPPED wholly (the
+  `gem_bolt_aoe` convention, not the leaf-blower draws-kept one — the trio's
+  dust carries no state the port reads). The death arm's `SoundID.Item127`
+  and 3× dust are likewise skipped; the crack `Next(2)` roll stays and keeps
+  the C# short-circuit order (active && `SET_CRACKED_BRICKS` && roll,
+  `:77376-77385`). `noDropItem` is stock false (`:746`) and never set for the
+  trio — the outer gate is unported. `netUpdate` (`:57994`) skipped (no MP).
+- **Dispatch scope.** The `10 =>` arm is total for aiStyle 10 but kind-gated
+  to the trio; the sand family (42/65/68/354) keeps riding the pool's
+  falling-tile tail and the row-less kinds (109/411-414/1081) never dispatch
+  — unchanged behaviour. `Damage_CanDealDamage`'s aiStyle-10/`localAI[1] ==
+  -1` gate (`:12456`) is unreachable: the arm pins `localAI[1] = 0` every
+  tick (`:57952`).
+- **Spawner unwired.** `WorldGen.cs:63839-63850` (the cracked-brick break
+  spawns type = tile − 481 + 736, damage 20, kb 0, vel (0, 0.41) at the tile
+  centre, owner `myPlayer`) is separate scope; the rows make the kinds
+  spawnable and drawable (`spawnable_kinds` packs the verified
+  `Projectile_736/737/738.xnb` sheets, `proj_frames = 3` per
+  `Main.cs:8445-8447`).
