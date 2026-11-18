@@ -16075,6 +16075,84 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
+
+`crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
+(LegacyLighting.cs, 1442 lines) - the pre-1.2 engine the White/Retro/Trippy modes
+select (`Lighting.Mode` setter, `Lighting.cs:45-56`). The port is ADDITIVE: the
+modern Color engine (`lighting/mod.rs` + `blur.rs`) is byte-identical - its maths,
+RNG draws and the S1-G-10 `NON_VISIBLE_PADDING = 18` are untouched, and
+`presenting_legacy_then_modern_recompute_is_byte_identical` proves a LightMap that
+served a legacy present recomputes the exact modern result afterwards.
+
+Ported paths (citations in place):
+- `ProcessArea` (`:302-369`): the renderCount cycle - pre-render at
+  `count > RenderPhases`, swipe passes at counts 0/1/2, the publish at count 2,
+  the camera shift + sky reseed at counts 3..phases. `RenderPhases` reads the
+  S1-B-6 `GfxQuality::render_phases` field (`Main.cs:17085-17101`).
+- `PreRenderPhase` (`:648-849`): working-set clear, the scanner export over the
+  expanded rect clamped to `[5, maxTiles-1]`, the mask flags, the lit-cell bound,
+  the AddLight dictionary merge, the area snapshots, `renderCount = 0`.
+- `DoColors` (`:851-1085`): the blue wave (`0.97..1.0` by `0.0001`), the White
+  factors (`neg 0.9 / neg2 0.54 / neg3 0.8`, `wet_r = 0.95*neg*wave`), the
+  Retro/Trippy subtractive factors (`0.04/0.16/0.08` + the buff deltas), the
+  nightVision/blind/blackout/headcovered arms, and the four swipe-pass bounds.
+- The swipes: White `doColors_Mode1_Swipe` (`:1192-1271`, multiplicative carry,
+  the `0.0185` cutoff, the neighbour gate, R2-only - no colour bleed), Retro
+  `Mode2` (`:1273-1329`, subtractive, no neighbour gate), Trippy `Mode3`
+  (`:1331-1435`, per-channel subtractive with the `<= 0` done gate; the
+  StopLight subtraction is additive to the channel decay and the B channel has
+  no wet arm - both C# quirks kept).
+- `CopyFullyProcessedDataOver` (`:538-621`) incl. the inner-guard quirk (the
+  condition reads the x delta, the subtraction the y delta, `:583/608`),
+  `ShiftUnProcessedDataOver` (`:473-536`, the +/-5-tile jump guard),
+  `UpdateLightToSkyColor` (`:435-471`, the unconditional-R quirk at `:459`),
+  `Clear` (`:623-646`), `AddLight` (`:258-300`, the 2000 cap, the non-RGB mean
+  collapse), `GetColor` (`:211-219`).
+- The legacy seed gate is the GLOBAL `(int)Main.worldSurface`
+  (`TileLightScanner.cs:92`) and `UnderworldLayer = maxTilesY - 200`
+  (`Main.cs:2790`); the legacy mask keeps the C# `!tile.inActive()` conjunct
+  (`TileLightScanner.cs:68`) the modern blur mask does not have - an actuated
+  block is air to the legacy swipes. The per-type arms reuse the shared
+  `tile_light` port.
+
+RNG streams (order exact, seeds pinned - the S1-A-6 precedent):
+- `_swipeRandom`: `NextSeed()` after EVERY swipe pass (`:1082`), wet cells draw
+  `WithModifier((ulong)(i*1000+j)).Next(98,100)*0.01f` (`:1250-1251`). Vanilla
+  seeds it `CreateWithRandomSeed()` (`:1440`, session-nondeterministic); the
+  port pins seed 0.
+- The legacy engine's own `TileLightScanner._random` advances once per
+  PreRenderPhase (`Update()`, `:723`), NOT once per frame like the modern path;
+  seeded from the frame's `LightParams.rng_seed` on first use.
+
+Deliberate deviations:
+- `FastParallel.For` chunks run as ONE sequential chunk per pass. The C# swipes
+  wrap their body in `try/catch` (`:1091/1196/1277/1335`), so an out-of-bounds
+  inner index aborts the rest of that thread's chunk; writes never cross outer
+  indices, so chunking cannot change cell values - only the abort extent, which
+  the single chunk reproduces for the sequential case.
+- The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) is not
+  ported - it is the map system's own lighting pass (`Main.Map.UpdateLighting`),
+  gated on `mapEnabled && renderCount == 3`; the port's map lighting rides the
+  modern map pass. The netplay `mapTime = 1` poke (`:341-344`) is likewise out.
+- The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
+  `Player.gross`, neither ported; the gate is false in the port.
+- Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
+  selector (Color selects the NEW engine, `Lighting.cs:40-44`); only the Mode
+  1/2/3 swipes are ported. The Mode-0 water/honey decay table (`:874-929`) is
+  kept in the factor block for completeness.
+- `Player.nightVision/blackout/headcovered` are not ported fields; the driver
+  passes `false` (the `blind` flag is wired). The factor arms are code-complete.
+- The G6 `WorldFrameKey`'s `anim` slot carries `anim_time` in the legacy modes
+  (the engine re-publishes every frame); the key's contents are unchanged.
+
+Tests: 12 in `legacy.rs` - the Retro falloff table (hand-derived 0.04 steps +
+the 0.16 solid gate), White's multiplicative carry / no-bleed / 0.0185 cutoff /
+wet RNG draw, per-mode engine goldens on a fixed 96x96 torch world, cycle
+determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
+byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
+lava/water decay.
+
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
 Two bugs: no mouse cursor over the bestiary, and the entity icon showed the

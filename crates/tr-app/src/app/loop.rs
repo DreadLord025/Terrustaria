@@ -676,6 +676,14 @@ impl App {
             }
             KeyCode::F2 => {
                 self.light_mode = self.light_mode.next();
+                // `Lighting.NextLightMode` (`Lighting.cs:165-173`): the Mode
+                // setter resets `renderCount` and `Lighting.Clear()` zeroes
+                // the active engine's presented values — no state leaks
+                // across the switch (S1-E-19).
+                if let Some(engine) = self.legacy_light.as_mut() {
+                    engine.set_mode(self.light_mode);
+                    engine.clear();
+                }
                 self.world_key = None;
                 log::info!("light mode: {}", self.light_mode.label());
             }
