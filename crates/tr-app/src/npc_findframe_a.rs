@@ -15,16 +15,15 @@
 //! 67), the worms (7-15, single-frame `{}` arms) and WanderingEye (133).
 //! This module owns the 24 kinds listed in [`FindFrameKind::vanilla_type`].
 //!
-//! Shape: the kinds are NOT in `NpcKind` on this branch (their
-//! SetDefaults/AI/spawn machines are other D-3 rounds), so — like
-//! `npc_findframe_b.rs` and `tr-core/src/drawdata_anim.rs` (S1-F-9b) —
-//! the frame machines land first as pure functions over a small
-//! [`FrameState`]/[`FrameInput`] pair and the `find_frame` wiring is a
-//! separate step: when a kind joins `NpcKind`, its arm calls
-//! [`find_frame_a`] with the NPC's `vx`/`vy`/`facing`/`aiAction` and
-//! copies `row`/`counter`/`sprite_dir`/`rotation` back. No RNG is touched
-//! (none of these arms draws `Main.rand` — the eye group's dust spawn is
-//! type 23's, not this wave's), so the wiring cannot move a stream.
+//! Shape: the machines are pure functions over a small
+//! [`FrameState`]/[`FrameInput`] pair (the `npc_findframe_b.rs` /
+//! `tr-core/src/drawdata_anim.rs` S1-F-9b precedent). The wiring landed
+//! with S1-D-3ff: the 24 kinds joined `NpcKind` and `npc.rs::find_frame`
+//! routes them through [`find_frame_kind`] + [`find_frame_a`] (the
+//! `Npc::find_frame_wave_a` bridge copies `row`/`counter`/`sprite_dir`/
+//! `rotation` to/from the NPC). No RNG is touched (none of these arms
+//! draws `Main.rand` — the eye group's dust spawn is type 23's, not this
+//! wave's), so the wiring cannot move a stream.
 //!
 //! Row convention: the port tracks frame ROW indices, not pixels — the
 //! C#'s `num` (the sheet height / `Main.npcFrameCount[type]`,
@@ -42,13 +41,14 @@
 //! (`:74032-74043` — its `type == 2` arm is shadowed by the first `if`,
 //! and 121/660 are not this wave's kinds).
 
-// The `find_frame` wiring is a later wave (the kinds are not in
-// `NpcKind` on this branch) — the `npc_findframe_b.rs` precedent.
+// The wiring landed with S1-D-3ff (`npc.rs::find_frame_wave_a`); the
+// module stays a binary-crate module, so the unused-in-bin targets keep
+// the allow (the `npc_findframe_b.rs` precedent).
 #![allow(dead_code)]
 
 /// The 24 wave-A kinds, keyed by their VANILLA `NPC.type`
-/// (`ID/NPCID.cs`'s `public const short` rows — the port-local `NpcKind`
-/// ids do not exist for them on this branch yet).
+/// (`ID/NPCID.cs`'s `public const short` rows; the `NpcKind` variants
+/// landed with the S1-D-3ff wiring — [`find_frame_kind`] maps them).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FindFrameKind {
     // The slime group — `FindFrame`'s case 1/16/59/71/81/138/147/183/
@@ -191,6 +191,40 @@ impl FindFrameKind {
             Self::ZombieRaincoat => 3,
         }
     }
+}
+
+/// The `NpcKind` → [`FindFrameKind`] mapping (the S1-D-3ff wiring): the
+/// 24 wave-A kinds map 1:1, every other kind is `None` (its arm stays in
+/// `npc.rs::find_frame`).
+pub fn find_frame_kind(kind: crate::npc::NpcKind) -> Option<FindFrameKind> {
+    use crate::npc::NpcKind as K;
+    Some(match kind {
+        K::MotherSlime => FindFrameKind::MotherSlime,
+        K::LavaSlime => FindFrameKind::LavaSlime,
+        K::DungeonSlime => FindFrameKind::DungeonSlime,
+        K::CorruptSlime => FindFrameKind::CorruptSlime,
+        K::IlluminantSlime => FindFrameKind::IlluminantSlime,
+        K::IceSlime => FindFrameKind::IceSlime,
+        K::Crimslime => FindFrameKind::Crimslime,
+        K::SpikedIceSlime => FindFrameKind::SpikedIceSlime,
+        K::UmbrellaSlime => FindFrameKind::UmbrellaSlime,
+        K::CataractEye => FindFrameKind::CataractEye,
+        K::SleepyEye => FindFrameKind::SleepyEye,
+        K::DialatedEye => FindFrameKind::DialatedEye,
+        K::GreenEye => FindFrameKind::GreenEye,
+        K::PurpleEye => FindFrameKind::PurpleEye,
+        K::DoctorBones => FindFrameKind::DoctorBones,
+        K::TheGroom => FindFrameKind::TheGroom,
+        K::BaldZombie => FindFrameKind::BaldZombie,
+        K::ZombieEskimo => FindFrameKind::ZombieEskimo,
+        K::PincushionZombie => FindFrameKind::PincushionZombie,
+        K::SlimedZombie => FindFrameKind::SlimedZombie,
+        K::SwampZombie => FindFrameKind::SwampZombie,
+        K::TwiggyZombie => FindFrameKind::TwiggyZombie,
+        K::FemaleZombie => FindFrameKind::FemaleZombie,
+        K::ZombieRaincoat => FindFrameKind::ZombieRaincoat,
+        _ => return None,
+    })
 }
 
 /// The `NPC` fields `FindFrame` reads/writes for these arms:

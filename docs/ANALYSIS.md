@@ -17660,12 +17660,14 @@ slime and eye variant carries 2 rows, every walker 3.
 
 Shape and deviations:
 
-- **Wiring deferred** (the `npc_findframe_b.rs`/`drawdata_anim.rs`
-  precedent): the kinds are not in `NpcKind` on this branch, so the
-  machines are pure functions over `FrameState`/`FrameInput`; when a
-  kind joins the roster its `find_frame` arm calls `find_frame_a` and
-  copies row/counter/sprite_dir/rotation back. No arm draws `Main.rand`,
-  so the wiring cannot move an RNG stream.
+- **Wiring landed with the roster (S1-D-3ff, MERGER-P6 2026-11-19)**:
+  the original wave-A commit deferred it (the
+  `npc_findframe_b.rs`/`drawdata_anim.rs` precedent — pure functions over
+  `FrameState`/`FrameInput`); the complementary roster wave then joined
+  all 24 kinds to `NpcKind` (SetDefaults rows, bestiary/net ids, sounds,
+  buffs, sheets, netglue) and wired `npc.rs::find_frame` through
+  `find_frame_kind` + the `find_frame_wave_a` bridge. No arm draws
+  `Main.rand`, so the wiring cannot move an RNG stream.
 - **Row indices, not pixels**: the C#'s `num` (sheet height /
   `npcFrameCount`, `NPC.cs:66694`) cancels out — the existing `npc.rs`
   convention.
@@ -17694,3 +17696,26 @@ Shape and deviations:
   `app/netglue.rs`) was present in this worktree during the task; it was
   left untouched and is NOT part of this branch's commit (only the six
   wave-A files are staged).
+
+### The S1-D-3ff roster completion (MERGER-P6, 2026-11-19)
+
+The complementary roster wave (the LEAD-COORDINATION-NOTE's option 1) is
+committed on this branch on top of `58b4310a`, so the branch is a
+superset of its findframe name: frames + kinds together. It adds the 24
+`NpcKind` variants with their `SetDefaults` rows (each cited to its
+`NPC.cs` type arm), the bestiary entries, sounds/buffs, the sprite-sheet
+rows (`assets.rs`, `render/entities.rs`), the netglue rows and the
+`find_frame` wiring above. **Net-id verification (the note's suspicion
+resolved)**: the sequential `to_u16`/`from_u16` ids 189..212 are the
+PORT-LOCAL protocol space (the established `S1-F-1` bijection pattern —
+e.g. `Skeleton => 6` while `NPCID.Skeleton` is 21), NOT vanilla net ids;
+the band was free on main (the highest prior id was 188 MartianDrone)
+and both tables carry `#[deny(unreachable_patterns)]`. The true
+`.wld`/spawn net ids ride `bestiary.rs`'s `net_id` rows, and all 24 were
+verified equal to the `NPCID.cs` constants (16/52/53/59/71/81/132/138/
+147/161/183/184/186/187/188/189/190/191/192/193/194/200/223/225).
+SetDefaults spot-audit vs the C# (MERGER-P6): MotherSlime `NPC.cs:8963`
+(kb 0.6, def 7, value 75), DoctorBones `:9418` (0.5/10/1000), TheGroom
+`:9432` (0.5/8/1000), FemaleZombie `:11559` (0.6/4/65), UmbrellaSlime
+`:11897` (0.75/5/200) — all match. The wave's tests run at the merge
+gate (no longer code-only).
