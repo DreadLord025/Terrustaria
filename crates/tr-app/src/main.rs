@@ -84,6 +84,9 @@ mod npc_ai_plantera;
 // ride the sibling npc_ai_style52/53/50 branches.
 mod npc_ai_plantera_anchor;
 mod npc_ai_style41;
+// S1-D-3 (aiStyle-42): UNWIRED Lost Girl machine - the kind-table rows +
+// dispatch arm are the family's merge step (see the module doc).
+mod npc_ai_style42;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
@@ -103,6 +106,7 @@ pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai001_a;
+mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod rain;

@@ -14711,7 +14711,58 @@ hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
 RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
 port zero-pads to the block boundary — invisible to field readers, but the
 final encrypted block differs from vanilla; full-envelope parity is a separate
-concern.
+concern. *(Resolved by increment 3 below.)*
+
+**Increment 3 (S1-J-5c, 2026-11-18): the full `Serialize` + PKCS7.** The
+writer/reader now run the WHOLE `Serialize` (`Player.cs:54750-54933`) /
+`Deserialize` (`:55134-55764`). The tail (`:54894-54933`), every unmodelled
+field at its fresh-ctor default: `anglerQuestsFinished` 0 (`:1910`),
+`DpadRadial.Bindings[4]` all -1 (the Dpad4 ctor, `:618-621`),
+`builderAccStatus[12]` = `[1,0×11]` (`:814` + `BuilderAccToggleIDs.Count = 12`
+`:47-75`; the ctor's `[0] = 1` `:56092`), `bartenderQuestLog` 0 (`:1914`),
+`dead` false (the respawnTimer is written only when dead, `:54905-54908`),
+the save timestamp, `golferScoreAccumulated` 0 (`:1912`), the creative
+tracker (`CreativeUnlocksTracker.Save:9-12` → `ItemsSacrificedUnlocksTracker
+.Save:157-169`: the literal `false` + count 0), the temp-slot BitsByte 0
+(`SaveTemporaryItemSlotContents:54935-54959` — all four global slots air),
+the per-player creative powers (`CreativePowerManager.SaveToPlayer:183-195`
+over the `Initialize:86-105` registration order: `(true, u16 5, false)`
+Godmode `CreativePowers.cs:705-707`, `(true, u16 11, false)` FarPlacement
+`:744-746`, `(true, u16 14, 0f)` SpawnRate `:1717-1719`, then `false`), the
+super-cart BitsByte **2** (`unlockedSuperCart` false `:2052`,
+`enabledSuperCart` **true** `:2054`), `CurrentLoadoutIndex` 0 (`:3207`),
+three `EquipmentLoadout.Serialize` (`EquipmentLoadout.cs:31-45`: 20 armor +
+10 dye × `Item.Serialize(writeFavorite: true)` = 10 zero bytes each, then
+`Hide[10]` false — 310 bytes per loadout), `voiceVariant` **1** (the ctor
+`:56045`, NOT the field default 0), `voicePitchOffset` 0f (`:1348`),
+`CraftingRequests.SavePossibleRefunds` count 0 (`CraftingRequests.cs:353-362`)
+and `oneTimeDialoguesSeen` count 0 (`:3209`). The reader mirrors
+`Deserialize:55624-55762` with the version gates (the builderAcc 8/10/11/12
+count gates, the dead-conditional respawnTimer, the tracker's >= 282 bool,
+the power loop's unknown-id BREAK `CreativePowerManager.cs:203-206`, the
+loadout favourited >= 322 gate). **The one unowned value** is
+`DateTime.UtcNow.ToBinary()` (`:54909`): it rides
+`PlayerFileWrite::last_saved_binary` (the App stamps 0 = "unknown", the same
+policy as the `.wld` CreationTime); the golden test pins the harness's
+`FixtureClock` value `0x48DF4506E391C000` (2026-11-18T00:00:00Z, kind Utc).
+**PKCS7**: `cbc_encrypt` now appends `n = 16 - len % 16` bytes of value `n`
+(a full block when aligned) — the bare `new RijndaelManaged()` default of
+`InternalSavePlayerFile` (`:54734`) flushed by `FlushFinalBlock` (`:54742`);
+the read path keeps `PaddingMode.None` semantics (`:55074` — whole blocks,
+padding never stripped, `Deserialize` stops at the logical end). The
+**harness had the same bug**: `tools/WldFixtureHarness` zero-padded with
+`PaddingMode.None`; it now uses `PaddingMode.PKCS7` and `golden.plr` was
+regenerated (same 3840 bytes; the final block now decrypts to 3 data bytes +
+13 × 0x0D). **Third shim**: the increment-2 port files end at `hideInfo`, so
+`read_player_bytes` retries 326 truncations at depth 2 (stop at `:55623`)
+after the depth-1 vault retry. **Evidence**:
+`golden_plr_writer_matches_the_csharp_fixture_byte_for_byte` — the port's
+encrypted output for the fixture's player + pinned clock is byte-identical
+to the C#-written `assets/test/golden.plr` (all 3840 bytes, plaintext 3827 +
+PKCS7 13); `golden_layout_through_hide_info` pins every tail field and
+byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs7`
+pins the pad rule incl. the aligned full-block case. No new dependency —
+the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
 ## The world-format contract (S1-J-8)
 
@@ -17634,6 +17685,76 @@ aiStyle-3 bottom-edge arm, the oldTarget inheritance (swing/fresh/boss
 breaks), the confused flip, the tank steal + its LOS wall, the dead/absent
 fallback, the netUpdate collide gate, and the zombie wiring proof.
 
+## The Lost Girl's aiStyle-42 machine (S1-D-3 aiStyle-42, code-only mode, 2026-11-18)
+
+`NPC.AI()`'s `else if (this.aiStyle == 42)` arm (`NPC.cs:30160-30189`) is
+ported as `crates/tr-app/src/npc_ai_style42.rs` — the ONLY style-42 user in
+the C# is the Lost Girl (`NPCID.LostGirl = 195`, `NPCID.cs:11067`;
+`SetDefaults` case 195, `NPC.cs:11492-11505`). The machine: every tick
+`TargetClosest()` (`:30162`, through the S1-D-3p shared helper via the new
+`npc_target::session_candidate` seam); in the calm state (`ai[0] == 0`) a
+picked target within `sqrt(dx² + dy²) < 200f` with a clear
+`Collision.CanHit` full-box sight line flips `ai[0] = 1` (`:30165-30174` —
+`num616` aims at the player's centre X, `num617` at the player's TOP edge
+`position.Y`, the C# asymmetry kept verbatim); the disturbance terms
+`velocity.X != 0 || velocity.Y < 0 || velocity.Y > 2 || life != lifeMax`
+flip it independently (`:30175-30178`, no `else`); otherwise `ai[0]++`
+counts to the `>= 21f` clamp and `Transform(196)` (`:30182-30187`) turns
+her into the Nymph (`NPCID.Nymph = 196`, `NPCID.cs:11069`, aiStyle 3,
+`NPC.cs:11510`).
+
+`transform_to` ports `NPC.Transform` (`NPC.cs:81084-81145`) on the host
+path with the default arguments (`ai0..3 = 0`, `withReposition = true`):
+the pre-defaults life pair (`:81090-81091`), the bottom-edge reposition
+(`Y += height` before / `-= height` after, `:81092-81100` — nets zero for
+the equal 18×40 boxes), the SetDefaults-owned resets (scale 1 `:8536`,
+alpha 0 `:8525`, netUpdate `:8530`, the ai/localAI zero loops
+`:8564-8571`, `ClearTarget` 255 + oldTarget latch `:8539-8540` +
+`:42924-42927`, targetRect default `:8541`), the post-defaults
+`TargetClosest` (`:81101`), and the INTEGER life share
+`life = num * lifeMax / num2` floored at 1 (`:81106-81110` — 125/250 of
+the Girl's life becomes 150/300 of the Nymph's). The `LOST_GIRL`/`NYMPH`
+`KindDefaults` consts carry the cited `SetDefaults` rows (both
+`Item.buyPrice(0, 2)` = 20000 copper, `Item.cs:49417-49420`) for the
+wiring step.
+
+**UNWIRED (code-only mode).** The port has no LostGirl/Nymph `NpcKind`
+variants and `npc/data.rs`'s tables are contested by the in-flight
+S1-D-3 sibling branches, so the slice lands as pure functions (the
+`render/special_tiles.rs` pattern): the kind-table rows, the `42 =>`
+dispatch arm and the `npc.kind` swap are the family's merge step. No
+compiler was invoked; 10 witness tests are written NOT run.
+
+**RNG by construction.** The arm (`:30160-30189`) draws no `Main.rand`;
+`TargetClosest` (`:77652-77781`) is a deterministic scan; the 195→196
+`Transform` path draws nothing — `SetDefaults` case 196 (`:11506-11519`)
+has no rand row, `TransformVisuals` (`:80963-81033`) has NO (195,196) arm
+(its rand-drawing arms are 158↔159 (sound/gore only), 478→479, 406→405,
+428→427, 427→426), and `GiveTownUniqueDataToNPCsThatNeedIt` (`:80839`) is
+town-only (196 is not a town NPC). The functions take no RNG parameter —
+a draw is impossible by signature; the witness test pins two identically
+seeded `UnifiedRandom` streams across 600 machine ticks.
+
+Deliberate folds (host-path stand-ins):
+
+* The `Main.netMode != 1` gate (`:81086`) folds to the host path; the
+  `netMode == 2` SendData 23/54 pair (`:81131-81135`) is unported wire
+  work.
+* `TransformVisuals`' `position += netOffset` / `-= netOffset` pair
+  (`:80965`/`:81032`) is a single-player no-op and there is no (195,196)
+  visual arm — dropped whole.
+* `altTexture = 0` (`:81143`) has no port field — dropped.
+* `frameCounter = 0` (`SetDefaults`, `:8529`) rides the private
+  `Npc::frame_counter`; the wiring step resets it inside `npc.rs` (this
+  module resets the public `frame` row, the `update_stardust_cell`
+  convention).
+* The stat swap (dmg 10→35, def 30→16, kb 0.5→0.4, sounds NPCHit1/
+  NPCDeath1→NPCDeath2, rarity 2, value 2 gold both) rides the kind
+  tables at the wiring step; only `lifeMax` (the life-share input) and
+  the hitbox height (the reposition) are applied here.
+* The value-zero flag (`:81088`, `:81102-81105`) is inert for this pair
+  (both rows carry 20000).
+
 ## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
 
 `Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
@@ -19787,6 +19908,15 @@ byte-identical.
   (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
   writer's own byte parity stays S1-J-5's.
+- **S1-J-5c envelope fix**: the harness itself zero-padded the `.plr` with
+  `PaddingMode.None` (mirroring the *read* path's `Player.cs:55074`); the
+  vanilla *write* path uses the bare `RijndaelManaged`'s default **PKCS7**
+  (`:54734-54742`). The harness now encrypts with `PaddingMode.PKCS7` and
+  `golden.plr` was regenerated — same 3840 bytes, the last block now
+  decrypts to 3 data bytes + 13 × 0x0D. `golden.wld` is unchanged
+  (byte-identical regen). The port's writer is byte-identical to the
+  regenerated fixture end-to-end (see "The `.plr` legacy-subset shim +
+  default policy", increment 3).
 
 ## The worldgen parity proof (S1-A-7)
 
@@ -19870,6 +20000,7 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 `WorldGen.PlaceWire*` `:58115` etc.) keeps its pinned `Dig_1` — the wiring
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
+
 
 ## The pylon/trophy/void-lens passes (S1-G-1 wave D, 2026-11-18)
 
@@ -20490,6 +20621,151 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+## The pirate family, first slice (S1-D-4b-7)
+
+`AI_067_FreakingPirates` (`Projectile.cs:49121-51201`, dispatch `:30162`) is
+one 2 081-line arm over 16 types. This round lands the shared skeleton plus
+the two smallest coherent branches — the Pirate Staff trio (393/394/395,
+`flag`) and the Vampire Frog (758, `flag2`) — as `ai_freaking_pirates`, with
+`pirates_try_jumping_to_target` (`:51203-51256`) and `pirate_movement`
+(`HandleMovement`'s half). The dispatch gates the kind list, so the other
+12 types' rows stay inert until their arms land: the Storm Tigers 833-835
+(the `AI_067_TigerSpecialAttack` chain `:49034-49119` + the 818 pounces),
+Flinx 951, Mushroom Boi 1022 (the 1044 spore + `GetChaseResults` leap), Cob
+Whip 1036, Cattiva 1093/1112 (`TryAssigningHelp`'s smart-cursor mining), Clay
+Pot 1118 and the five pets 500/653/1018/1056/1090.
+
+Ported verbatim: the keep-alive pins (`:49248-49259`/`:49316-49327`), the
+home-spot ladder (`:49416-49440`), the state machine (1 fly-home
+`:49742-49953`, 2 bite `:49954-50057` — the frog's 20-tick bite / 60-tick
+cooldown and middle-half friendly window, the pirates' 15-tick bite; 5
+teleport strike `:50058-50098` with the ring point and the C#'s
+abs-then-−3 double Y write), the pursuit (`:50103-50270` — the pirates'
+high leap / far-boss teleport, the frog's 20-px stand-off), the ground walk
+(`:50301-51149` — the 20-row ground drop, the owner-tile clamp, the 0.05
+line-walk trim, the parameter ladder, the three-column jump ladder with
+the try/catch's −9.1 and `SolidTile`'s null-as-solid
+(`WorldGen.cs:70115-70117`), the height ladder, `Collision.StepUp`, the
+frame machines and the `num + num56` gravity).
+
+New slot fields: `should_fall_through`/`step_speed`/`gfx_off_y`
+(`Projectile.cs:462`/`:342`), the rows' `decides_manual_fall_through`
+(`:460`). `HandleMovement`'s `flag6` rides `shouldFallThrough`
+(`:17583-17586`); the >16 px/tick hoik step loop (`:17711-17846`) keeps its
+0.0001 last-velocity snap; the `gfxOffY` decay (`:16740-16764`) rides the
+movement step.
+
+**RNG proof.** The arm-level draws are mirrored in count and order on the
+pool's `Main.rand` analogue: the state-5 arrival's
+`NextVector2CircularEdge(4,4)` = ONE `NextFloat` (`Utils.cs:1261-1274`), the
+high-jump's `NextFloatDirection()*NextFloat()` pair + the `Next(4)` burst
+pick + the taken branch's gore-type roll (`Next(580,583)` or two
+`Next(11,14)`), the frog blink's `Next(50)` ONLY when the frame counter
+reaches 28 (the `&&` short-circuit of `:51037`), and the pirate idle burst's
+per-tick `Next(900,1200)` comparison + its reset gore roll. Two census tests
+record the stream (`s1_d_4b_7_the_idle_pirate_draws_one_burst_comparison_per_tick`,
+`s1_d_4b_7_the_frog_blink_draws_only_at_the_28th_tick`); the arrival test
+pins the single float draw.
+
+Deviations (the standing precedents): the dust/gore spawns are skipped (no
+dust/gore pool — their `NewDust`/`NewGore` internal rolls belong to those
+pools; the arm-level gates/type rolls above stay), `base.wet` folds to
+false (no liquid-wet slot flags — the sentry precedent), the slope passes
+fold out (`correctSlopeCollision = Main.projPet[type]` is true for these
+kinds, `:707`, so every inner `SlopeCollision` is gated off; the
+`UpdatePosition` slope correction stays unported — the twins precedent),
+`SwitchTiles`/plate presses and the `ignoreDoors`/`hoik` collision
+parameters have no port layer, and the blocked-move chain
+(`:17904-19854`) is skipped including its `Next(3)` tile-cut draw (the
+`dd2_sentry_step` precedent) — the pirates/frog match no type arm before
+the `!correctSlopeCollision` gate at `:18398`, so a blocked move only stops
+them. `flag10` (petting) folds to false; `NPC.boss` rides the
+`revenge::BOSS_KINDS` proxy (the target scan's precedent). Tests
+`s1_d_4b_7_tests::*` (7).
+
+## The pirate family, slice B (S1-D-4b-12)
+
+**Code-only mode**: this slice was written under a no-compiler constraint —
+no `cargo`/`rustc`/`rustfmt`/test invocation ran at any point; the tests below
+are written, not executed. Verification is by construction (the C# citations)
+plus the witness tests-as-code; the first build/test run belongs to the
+integrating merge.
+
+Slice B lands the three RNG-light pets of `AI_067_FreakingPirates`
+(`Projectile.cs:49121-51201`) in the new module
+`crates/tr-app/src/projectile_ai067_b.rs` (`ai_freaking_pirates_pets` +
+the pure `pet_home_spot`/`pet_fall_through` helpers): the **Crimson Heart
+(500)**, the **Dirtiest Block (1018)** and the **Boulder Pet (1056)**. The
+dispatch's 67 arm gains an `else if` branch gated to exactly these three
+kinds; the sibling slice's 393/394/395/758 arm is byte-identical. The pets
+set `flag13 = false` (`:49556-49560`), so the target scan, the pursuit and
+the states 2/5 are unreachable — the port omits them structurally (no `npcs`
+parameter). Ported verbatim: the keep-alive pins with `num3 = 200`
+(`:49328-49375`, the flags ride `Player.pet_flags`), the home-spot ladder
+(`:49441-49453`), the per-tick blocks (the 500's 6/12-tick 4-frame pulse +
+`rotation += velX/20`, `:49462-49485`; the 1018's `/20`, `:49486-49489`; the
+1056's `/16`, `:49490-49493`), the state-1 fly-home (`:49742-49953` — the
+2000-px teleport, the landing with the −6 clamp, the 60-px orbit bleed, the
+0.2/0.3 accel ladder, the 1056's `+0.5*spriteDirection` spin `:49942-49945`,
+the 1018's `miscCounter % 3` flight dust `:49946-49952`), the 200-px fly-home
+trigger (`:50271-50300`), and the ground walk (`:50301-51149`) with the pets'
+own arms: the 1018's owner-speed cap (`:50423-50434`), the 1056's near-home
+settle with the `WrapAngle`→`AngleLerp(0, 0.1)` slow spin (`:50444-50464`),
+the 1018's `AngleTowards(0, 0.2)` settle (`:50465-50473`), the jump-intent
+clears (`:50530-50537`), the motion intents (`:50585-50600` — the 500 jumps
+on any sideways motion, the 1018 above 3, the 1056 above 5), the 1018's
+landing burst latch (`localAI[2]`, `:50717-50732`), and the shared skeleton
+(the ground drop, the owner-tile clamp, the line-walk trim, the wall probe,
+`StepUp`, the three-column + height jump ladders, the facing, the gravity).
+The pets have NO walk frame machine (`:50768-51143` has no pet arm) — their
+frames ride the per-tick blocks only.
+
+**Fall-through**: the pets keep `decidesManualFallThrough = false`, so the
+arm's `shouldFallThrough` write (`:49561`) is dead and `HandleMovement`'s own
+rules decide (`:17478-17503`): the 500 (`:17488-17495`) and the 1018
+(`:17496-17503`, shared with the 653) fall through when the owner's bottom is
+4+ px below theirs; the 1056 rides the generic `projPet` −12 rule
+(`:17480-17487`, `Main.projPet[1056] = true`, `Main.cs:8846`).
+`pet_fall_through` computes the effective value into `should_fall_through`
+for the shared `pirate_movement`. Note `Main.projPet[500]` is **never set**
+(`Main.cs:8728-8846` sets 492/499 but not 500), so the 500's
+`correctSlopeCollision` is false (`Projectile.cs:707`) — unlike the sibling's
+kinds. The port's `tile_collision` has no `correctSlopeCollision` parameter
+layer; the extra `SlopeCollision` passes the C# would run for the 500 fold
+into the port's single slope-aware pass (a documented approximation, the
+twins/sentry slope precedent).
+
+**RNG proof (by construction).** The only arm-level draws on these three
+types are the dust-velocity `RotatedByRandom` pairs — TWO `NextDouble` draws
+each (`Utils.cs:1697-1700`, left operand first): the 500's per-tick pair
+(`:49482`, unconditional — the velocity write targets `Main.dust[6000]` even
+when `NewDust` bails), the 1018's state-1 pair gated on
+`Main.LocalPlayer.miscCounter % 3 == 0` (`:49946-49952`), and the 1018's
+six-pair landing burst gated on the `localAI[2]` latch (`:50717-50727`). The
+`NewDust` internal rolls belong to the dust pool and are skipped (the
+S1-D-4b-7 precedent); the arm-level pairs stay on the stream as two
+`next_float` calls each — `UnifiedRandom.next_float` IS `next_double`
+(`unified_random.rs:209-211`), so the stream advances identically and the
+discarded values make the f32 cast unobservable. No other draw exists: no
+scan, no bite, no burst, no blink. Witness tests
+(`s1_d_4b_12_tests::*`, 9, written not run): the per-tick pair census, the
+`miscCounter` gate census, the landing-burst 12-draw latch census, the
+1056's zero-draw census, the rows/frames, the home spots, the fall-through
+split, the keep-alive pins, the 200-px trigger and the landing clamp.
+
+**Deferred (still gated)**: the 653 Companion Cube and the 1090 Rainbow
+Boulder Pet — their draws steer observable state (the 653's scream
+`Next(10)` + the darkness `Next(30,120)`/`Next(5)`/`Next(30)` chain with the
+`Player.Hurt`, `:49494-49554`; the 1090's `NextVector2CircularEdge` particle
++ `RotatedByRandom` velocity steering, `:49744-49818`), so they need the
+sound/lighting/particle layers or an explicit stream-fidelity decision
+first. The 8 minion types (the Tigers 833-835, Flinx 951, Mushroom Boi 1022,
+Cob Whip 1036, Cattiva 1093/1112, Clay Pot 1118) stay deferred per the first
+slice's list. Other deviations: the 500's `Lighting.AddLight` (`:49464`) has
+no port layer; `flag10` (petting) folds to false; `base.wet` folds to false;
+the blocked-move chain (`:17904-19854`) has no 500/1018/1056 type arm, so a
+blocked move only stops them.
+
 
 ## AI_026 slice B (S1-D-4b-11, task/S1-D-4b-11-melee-b, 2026-11-18)
 
