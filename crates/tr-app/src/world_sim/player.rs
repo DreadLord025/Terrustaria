@@ -723,6 +723,17 @@ let spawned = app.projectiles.spawn_hook(
             // The `59 HitSwitch` send sites (`Collision.cs:3304`/`:3318`/
             // `:3324`/`:3347`).
             switch_sends.extend(switch.switches.iter().copied());
+            // S1-E-21i — the tripped switches' Mech-28 clicks
+            // (`Wiring.cs:267` et al.): the pitch draws ride the
+            // `UpdatePlayers` stream — `Collision.SwitchTiles` runs inside
+            // `Player.Update` under the `Main.cs:17754` swap.
+            for (px, py) in app.wiring.take_switch_clicks() {
+                app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
             // player stands on.
@@ -736,6 +747,17 @@ let spawned = app.projectiles.spawn_hook(
                 crate::player::WIDTH as f32,
                 crate::player::HEIGHT as f32,
             );
+            // S1-E-21i — the weighted plates' clicks: `PressurePlateHelper.
+            // Update` runs under its own `UpdatePressurePlates` swap
+            // (`Main.cs:17763-17765`), so the press/release trips' pitch
+            // draws ride that stream, not the player's.
+            for (px, py) in app.wiring.take_switch_clicks() {
+                app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
+                );
+            }
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }
@@ -750,7 +772,11 @@ let spawned = app.projectiles.spawn_hook(
                 p,
                 &mut app.projectiles,
                 &app.npcs,
-                rng,
+                // The same `UpdatePlayers` stream, re-fetched: the
+                // switch-click drains above (S1-E-21i) borrowed the pool
+                // after `rng`'s last use — the stream identity and the
+                // draw order are unchanged.
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
@@ -833,6 +859,16 @@ let spawned = app.projectiles.spawn_hook(
             if let Some((i, j)) = p.take_switch_trip() {
                 app.wiring.hit_switch(&mut app.world, i, j);
                 switch_sends.push((i, j));
+                // S1-E-21i — the track switch's Mech-28 click rides the
+                // `UpdatePlayers` stream (`Minecart.HitTrackSwitch` runs in
+                // the player tick, `Main.cs:17754`).
+                for (px, py) in app.wiring.take_switch_clicks() {
+                    app.audio.play_switch_click(
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)

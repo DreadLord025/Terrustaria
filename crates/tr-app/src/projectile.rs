@@ -723,7 +723,8 @@ tile.active()
 /// `Collision.SolidCollision(position, width, height)` — the Tempest's alpha
 /// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
 /// its centre over active non-top solids. The C#'s exact point cloud is a
-/// margin-level difference — recorded in ANALYSIS.
+/// margin-level difference — recorded in ANALYSIS. `pub(crate)`: the
+/// AI_026 slices' grounded-reset gate (`:60106` etc.) shares it.
 pub(crate) fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
 let pts = [
     (pos.x, pos.y),
@@ -10501,6 +10502,7 @@ fn is_followup_draw(kind: u16) -> bool {
 }
 
 
+
 /// `Main.DrawProj_LightsBane`'s eight quads in push order (`Main.cs:27483-27492`),
 /// as `(blend, scale-stretch, sheet-row, tint)` — pure so the batch layout is
 /// unit-testable without a GPU. The multiply batch (`Main._multiplyBlendState`,
@@ -10938,7 +10940,7 @@ fn full_solid(t: &tr_core::tile::Tile) -> bool {
 /// *missing* tile as solid (`:70114-70116`, the try/catch of `:69965`), so
 /// out-of-world coordinates come back `true`; the callers that care keep the
 /// C#'s `WorldGen.InWorld` guard in front, exactly as the source does.
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_none_or(full_solid)
 }
 
@@ -11021,7 +11023,7 @@ fn npc_center(n: &Npc) -> Vec2 {
 /// `Math.Sign(float)` — the C#'s float overload, which yields 0 for 0 rather
 /// than Rust's `signum` 1. The minion steering adds `(sign, sign) * k`, so the
 /// zero must stay zero.
-fn csign(v: f32) -> f32 {
+pub(crate) fn csign(v: f32) -> f32 {
     if v > 0.0 {
         1.0
     } else if v < 0.0 {
@@ -11280,7 +11282,7 @@ fn find_target_with_line_of_sight(
 /// the clamped ramp — 0/1 outside the from-range, linear inside. The branches
 /// are the C#'s, since it treats a descending range (`from > to`) as clamped
 /// from the *other* side.
-fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
+pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
     if from < to {
         if t < from {
             return 0.0;
@@ -11317,7 +11319,7 @@ fn is_a_phaseblade(kind: u16) -> bool {
 /// `MathHelper.WrapAngle` (XNA's body: the `IEEERemainder(angle, TwoPi)`
 /// remainder plus the ±2π fix-up). `round_ties_even` is
 /// `IEEERemainder`'s round-to-nearest-integer.
-fn wrap_angle(angle: f32) -> f32 {
+pub(crate) fn wrap_angle(angle: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     if angle > -PI && angle <= PI {
         return angle;
@@ -11351,7 +11353,7 @@ pub(crate) fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
 
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`): the
 /// zero/NaN direction falls back to `defaultValue`.
-fn safe_normalize(v: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         Vec2::ZERO
     } else {
@@ -11365,7 +11367,7 @@ fn safe_normalize(v: Vec2) -> Vec2 {
 /// `MathHelper.WrapAngle` (the `IEEERemainder` form, which keeps +π as +π;
 /// the `npc::angle_lerp` rem_euclid wrap folds it to −π, a boundary difference
 /// the Ballista's facing-−1 init rotation `π` would hit).
-fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
+pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
     use std::f32::consts::TAU;
     let angle = if target < cur {
         let wrapped = target + TAU;
@@ -13056,11 +13058,22 @@ impl ProjectilePool {
                         // the Laser/VenomFang/SkyFracture hooks wrap the
                         // shared flight instead of taking the plain arrow
                         // arm, so the plain arrows keep the generic flight
-                        // only.
+                        // only. S1-D-5 slice A adds the per-type arms for
+                        // the 14 lowest-id rowed kinds
+                        // (`crate::projectile_ai001_a::SLICE_A_KINDS`,
+                        // `AI_001` `Projectile.cs:54002-57798`); every
+                        // other kind keeps the generic flight untouched.
                         1 => match self.slots[i].kind {
                             BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
+                            }
+                            kind if crate::projectile_ai001_a::handles(kind) => {
+                                crate::projectile_ai001_a::ai001_slice_a(
+                                    &mut self.slots[i],
+                                    world,
+                                    owner,
+                                )
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
@@ -13292,6 +13305,25 @@ impl ProjectilePool {
                                 // manual fall-through collision + integrate
                                 // (the arm's early returns still move, the
                                 // twins precedent `:19858`).
+                                if self.slots[i].active {
+                                    self.slots[i].pirate_movement(world);
+                                }
+                            } else if matches!(
+                                self.slots[i].kind,
+                                CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET
+                            ) {
+                                // Slice B (S1-D-4b-12): the three RNG-light
+                                // pets — the 500/1018/1056 (`flag13 = false`,
+                                // `:49556-49560`); the 653/1090 stay deferred
+                                // (their draws steer observable state).
+                                self.slots[i].ai_freaking_pirates_pets(
+                                    world,
+                                    player.as_deref_mut(),
+                                    rng,
+                                );
+                                // The same `HandleMovement` half — the pets'
+                                // effective flag6 rides `should_fall_through`
+                                // (`:17478-17503`, the module doc).
                                 if self.slots[i].active {
                                     self.slots[i].pirate_movement(world);
                                 }
@@ -15022,22 +15054,36 @@ impl ProjectilePool {
                         }
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
-                        // SLICE A ONLY (S1-D-4b-10): the 14 early-return
-                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`).
-                        // Every other aiStyle-26 kind (the 266 slime
-                        // minion today, slice B's ground pets tomorrow —
-                        // task/S1-D-4b-11-melee-b) keeps the pre-existing
-                        // `_ => {}` fall-through, byte-identical: the gate
-                        // returns false and nothing mutates.
+                        // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
+                        // 14 early-return flyer pets
+                        // (`projectile_ai026_a::AI_026_A_KINDS`) gate
+                        // first; on its false return B's two spinning
+                        // boss-head pets 885/889
+                        // (`projectile_ai026_b::AI_026_B_KINDS`, the
+                        // shared arm `:60092-60253`) run. The kind sets
+                        // are disjoint, so either order is
+                        // behaviour-identical (ANALYSIS "AI_026 slice
+                        // B"). Every other aiStyle-26 kind (the 266
+                        // slime minion today) keeps the pre-existing
+                        // `_ => {}` fall-through, byte-identical: both
+                        // gates return false and nothing mutates.
                         26 => {
-                            // The gate's false return is the no-op: the
+                            // The gates' false returns are the no-op: the
                             // non-slice kind keeps the old no-arm state.
-                            let _ = crate::projectile_ai026_a::ai026_a_tick(
+                            let handled = crate::projectile_ai026_a::ai026_a_tick(
                                 &mut self.slots[i],
                                 world,
                                 player.as_deref_mut(),
                                 rng,
                             );
+                            if !handled {
+                                let _ = crate::projectile_ai026_b::ai026_b_tick(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref_mut(),
+                                    rng,
+                                );
+                            }
                         }
                         _ => {}
                     }
