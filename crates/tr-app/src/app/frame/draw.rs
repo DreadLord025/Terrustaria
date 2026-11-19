@@ -925,6 +925,37 @@ impl App {
                         // key or a blind gain/loss keeps the previous frame's tints.
                         brightness: style.brightness.to_bits(),
                         waterfall: waterfall.anim_key(),
+                        // S1-G-1f: the wired tile animator feeds
+                        // `Main.tileFrame`/`tileFrameCounter` rows into the
+                        // tile draw (`draw_tiles` → `draw_data` /
+                        // `case_draw_data`) — clock-dependent pixels inside
+                        // the cached range, so the state must ride the key.
+                        // Gated on an animated kind being active in the
+                        // view rect (the vine-grid key's convention): an
+                        // animator-free view keeps the pre-wiring cache
+                        // behaviour bit-for-bit.
+                        tile_anim: {
+                            let vh = screen * 0.5 / *zoom;
+                            let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                            let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                            let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                            let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                            let any_animated = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_anim::TileAnimator::is_animated_kind(
+                                                t.kind,
+                                            )
+                                    })
+                                })
+                            });
+                            if any_animated {
+                                self.tile_anim.anim_key()
+                            } else {
+                                0
+                            }
+                        },
                         net_key: {
                             // FNV-1a over the peers' smoothed state and the NPC
                             // smoothing accumulators (`npc_key` covers the base
@@ -1086,6 +1117,9 @@ impl App {
                             &self.wiring,
                             crate::world_events::party_is_up(&self.world_events),
                             crate::env::show_invisible(),
+                            // S1-G-1f: the wired tile animator's rows/counters
+                            // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
+                            &self.tile_anim,
                         );
                         *world_key = Some(key);
                     }
