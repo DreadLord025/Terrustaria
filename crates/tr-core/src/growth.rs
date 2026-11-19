@@ -1168,6 +1168,49 @@ pub(super) mod tests {
         assert!(grew2 > 0, "the vine's own arm extends it ({grew2})");
     }
 
+    /// fix/vines-destroy-walls: the runtime vine arm (`WorldGen.cs:73331-
+    /// 73335` — `type = 62`, `active(true)`, `SquareTileFrame`,
+    /// `CopyPaintAndCoating`) writes the tile fields only; the cell's
+    /// `wall`/`wallFrame` are separate fields the arm never touches, so a
+    /// vine growing into a walled mini-cave cell keeps the wall behind it.
+    #[test]
+    fn the_vine_arm_preserves_the_wall_and_wall_frame() {
+        let mut base = World::new("t".into(), 200, 200);
+        base.world_surface = 100.0;
+        for y in 30..=32 {
+            let i = base.index(100, y);
+            base.tiles[i].kind = 60;
+            base.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The free cell below carries the natural dirt wall + its autotile
+        // frame (the mini-cave pocket the user reported).
+        let below = base.index(100, 33);
+        base.tiles[below].wall = 2; // WallID.DirtUnsafe
+        base.tiles[below].set_wall_frame(5, 2);
+        let mut grew = 0;
+        for seed in 1u64..600 {
+            let mut w = base.clone();
+            let mut rng = UnifiedRandom::new(seed as i32);
+            grow_vine_arm(&mut w, 100, 32, &mut rng);
+            let t = w.tile(100, 33).unwrap();
+            if t.active() && t.kind == 62 {
+                grew += 1;
+                assert_eq!(t.wall, 2, "the grown vine keeps the dirt wall");
+                assert_eq!(
+                    (t.wall_col(), t.wall_row()),
+                    (5, 2),
+                    "the grown vine keeps the wall autotile frame"
+                );
+                assert_eq!(t.liquid, 0, "the arm zeroes the liquid");
+            } else {
+                // No growth: the cell is untouched, wall included.
+                assert_eq!(t.wall, 2);
+                assert_eq!((t.wall_col(), t.wall_row()), (5, 2));
+            }
+        }
+        assert!(grew > 0, "the arm grew at least one vine ({grew})");
+    }
+
     /// The bamboo arm (`:72154-72156` + `PlaceBamboo` `:58391-58445`): a
     /// bamboo 571 with a free cell above grows a stalk at the vanilla gates —
     /// the wall/surface refusal, the water-depth window (2..5), the density
