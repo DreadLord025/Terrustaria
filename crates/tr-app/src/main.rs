@@ -61,11 +61,13 @@ mod npc_chat;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
+mod npc_ai_prime_limbs;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
 mod npc_ai_frost_mob_b;
 mod npc_ai_frost_mob;
 mod npc_ai_caster;
+mod npc_ai_town;
 mod npc_ai3_speeds;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
@@ -108,7 +110,18 @@ mod npc_ai_style9;
 mod npc_ai_style31;
 mod npc_ai_style47;
 mod npc_ai_bat;
+mod npc_ai_eye;
 mod npc_ai_golem;
+mod npc_ai_slime;
+// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
+// the live npc.rs::update_lunatic_cultist stub stays byte-identical
+// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
+// deferred, see the module doc).
+mod npc_ai_cultist;
+// S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
+// + the checkDead intercept are the wiring wave; R72 wires the 629
+// shield-chip seams (see the module doc).
+mod npc_ai_pillar;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;

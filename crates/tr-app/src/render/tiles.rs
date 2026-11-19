@@ -2073,4 +2073,52 @@ mod tests {
         );
         assert!(bottom.is_some(), "sunflower bottom row resolves");
     }
+
+    // fix/vines-destroy-walls: the wall pass draws BEHIND vine cells. C#
+    // `WallDrawing.DrawWalls` skips a cell only when `FullTile` holds
+    // (`WallDrawing.cs:91`, `:241-442`) — a full SOLID unsloped block; a vine
+    // is not solid, so its wall always draws. The port's gate is
+    // `tile_hides_wall` (the frame-opacity proxy): a vine frame is
+    // transparent → not opaque → the wall draws; an opaque dirt frame hides
+    // it. The pre-fix worldgen pass erased the wall itself; this pins the
+    // draw side so a vine cell never suppresses its background wall.
+    #[test]
+    fn walls_draw_under_vine_cells() {
+        // A transparent vine sheet (alpha 0) and an opaque dirt sheet
+        // (alpha 255), both on the 18 px frame grid.
+        let sheet = |name: &str, alpha: u8| tr_render::AtlasImage {
+            name: name.to_string(),
+            width: 36,
+            height: 36,
+            rgba: (0..(36 * 36)).flat_map(|_| [120, 90, 60, alpha]).collect(),
+            layout: tr_render::SheetLayout::Tile,
+        };
+        let atlas = Atlas::build(vec![sheet("Tiles_62", 0), sheet("Tiles_0", 255)], 1024);
+        let mut lookups = assets::Lookups::build(
+            &atlas,
+            [(62_u16, "Tiles_62".to_string()), (0, "Tiles_0".to_string())].into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        // The dirt wall is visible (not 0, not the echo wall 318).
+        assert!(wall_visible(2), "WallID.DirtUnsafe draws");
+        // The vine cell does NOT hide its wall — the wall pass draws it.
+        assert!(
+            !tile_hides_wall(&mut lookups, Some(&atlas), 62, 0, 0, 0, false),
+            "a jungle-vine cell keeps its background wall"
+        );
+        // Control: an opaque full dirt block hides the wall (FullTile).
+        assert!(
+            tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 0, false),
+            "a full dirt block hides its wall"
+        );
+        // A slope / half-brick never hides the wall, even on dirt
+        // (`blockType() != 0`, `WallDrawing.cs:243` / `Tile.cs:202-214`).
+        assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 1, false));
+        assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 0, true));
+    }
 }

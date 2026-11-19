@@ -220,7 +220,15 @@ mod tests {
     // `Next(worldSurface + 50, maxTilesY - 500)` band collapses), and the
     // framing's 383/384 merge arms (`WorldGen.cs:82077-82082`) only fire
     // on the new kinds.
-    const SEED42_512: u32 = 2673964944;
+    // Re-pinned at the merge gate for fix/vines-destroy-walls: the Vines
+    // pass write is now the C#'s field-only form (`WorldGen.cs:20246-20251`
+    // — active/type/ClearSlope), so generated vine cells KEEP their
+    // wall/wall_frame/liquid/paint instead of zeroing them. The RNG draw
+    // order is unchanged (the write draws nothing) — the a == b determinism
+    // asserts stayed green on the failing gate run; only the pinned values
+    // moved. Old -> new: 2673964944 -> 124297949 (measured on the merged
+    // tree, gate log TR-LD-gate-vines.log).
+    const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
     // surface-opening tunnels before `Shinies`, so the default world's
@@ -232,7 +240,11 @@ mod tests {
     // downstream tile-dependent passes (the vines on the mud, the slopes,
     // the tree/flora placement) legitimately re-roll around them.
     // Measured on this branch (the synced a23d87e5 base).
-    const DEFAULT_WORLD: u32 = 143177146;
+    // Re-pinned at the merge gate for fix/vines-destroy-walls (see the
+    // SEED42_512 note above): vine cells keep their wall fields, so the
+    // default world's hash moves too. Old -> new: 143177146 -> 311316399
+    // (measured on the merged tree, a == b determinism stayed green).
+    const DEFAULT_WORLD: u32 = 311316399;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
     // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item

@@ -236,6 +236,20 @@ pub struct World {
     pub prime_present: bool,
     pub prime_x: f32,
     pub prime_y: f32,
+    /// The head's `position.X` — the faithful limb arms' INTEGER
+    /// half-width centres read it (`NPC.cs:28249` etc.); the legacy
+    /// `prime_x` stays the FLOAT centre for the v1 saw arm.
+    pub prime_head_x: f32,
+    /// The head's `width` — an INT in the C# (`width / 2` is INTEGER
+    /// division, `NPC.cs:28249`/`:28528`).
+    pub prime_head_width: i32,
+    /// The head's `velocity` — the vice's rise/fly X/Y blends read it
+    /// (`NPC.cs:28446`/`:28489`).
+    pub prime_head_vx: f32,
+    pub prime_head_vy: f32,
+    /// The head's `ai[1]` phase: 0 hover, 1 charge, 2 rage, 3 despawn
+    /// (`NPC.cs:28326`/`:28537`/`:28772`'s limb gates).
+    pub prime_head_ai1: f32,
     /// The Skeletron head's centre (`NPC.cs:21930`'s spawn point + the
     /// hands' tether reads) — the skeletron_x/y pair.
     pub skeletron_x: f32,
@@ -573,6 +587,11 @@ impl World {
             prime_present: false,
             prime_x: 0.0,
             prime_y: 0.0,
+            prime_head_x: 0.0,
+            prime_head_width: 0,
+            prime_head_vx: 0.0,
+            prime_head_vy: 0.0,
+            prime_head_ai1: 0.0,
             skeletron_y: 0.0,
             skeletron_red_hat: false,
             golem_y: 0.0,
