@@ -18891,7 +18891,14 @@ mod tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
-        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // A player above the dirt so the head moves FIRST (the C#'s
+        // slot order) and the follower snaps to the leader's same-tick
+        // centre — with the faithful Bottom placement the child spawns
+        // overlapping the head, so a stationary head would leave the
+        // trail distance 0 (the C# produces NaN there; the port's
+        // len-guard keeps it finite). W-A2-1 / T2b+T2c.
+        let pc = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + the bodies + the tail; the Giant Worm's
         // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
         assert!(
@@ -19014,8 +19021,11 @@ mod tests {
         // aims at the tile-snapped player at `num45`; in the open air the
         // gravity pulls.
         let mut w = ground_air();
-        // The head deep in the dirt, the player above.
-        let mut head = Npc::spawn_worm_head(&w, 40, 150, NpcKind::DevourerHead);
+        // The head deep in the dirt, the player above. The Giant Worm
+        // (type 10) rides the plain dig — the corruption escape's 7/13
+        // pair (Devourer/EoW) would aim straight down here instead
+        // (`:52004-52050`, W-A2-1; pinned below).
+        let mut head = Npc::spawn_worm_head(&w, 40, 150, NpcKind::GiantWormHead);
         head.hp = head.max_hp;
         head.worm_inited = true;
         head.worm_id = 1;
@@ -19026,10 +19036,24 @@ mod tests {
         let pc = (100.0 * 16.0, 116.0 * 16.0);
         crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
         let h0 = &npcs[0];
-        // The dig: the velocity magnitude rides num45 (9 for the Devourer).
+        // The dig: the velocity magnitude rides num45 (6 for the Giant Worm).
         let speed = (h0.vx * h0.vx + h0.vy * h0.vy).sqrt();
-        assert!((speed - 9.0).abs() < 0.1, "the dig speed ({speed})");
+        assert!((speed - 6.0).abs() < 0.1, "the dig speed ({speed})");
         assert!(h0.vy < 0.0, "the head digs up toward the player");
+        // The Devourer (7) in the same dirt with the same non-evil target:
+        // the corruption escape aims straight down at num45 = 9
+        // (`:52048-52049`; shallow — above the (rockLayer+maxTilesY)/2
+        // depth gate, the chain-despawn arm is the worm_tests witness's
+        // own).
+        let mut dev = Npc::spawn_worm_head(&w, 40, 140, NpcKind::DevourerHead);
+        dev.hp = dev.max_hp;
+        dev.worm_inited = true;
+        dev.worm_id = 3;
+        let mut npcs3 = vec![dev];
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs3, &mut rng, &mut next_id);
+        assert_eq!(npcs3[0].vx, 0.0, "the escape aims straight down");
+        assert_eq!(npcs3[0].vy, 9.0, "num49 = num45 (the Devourer's 9)");
+        assert!(npcs3[0].hp > 0, "shallow: no chain despawn");
         // The air stumble: the head in the open cavern falls.
         let mut w2 = ground_air();
         for x in 30..50 {
