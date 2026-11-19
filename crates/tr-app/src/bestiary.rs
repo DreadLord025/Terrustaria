@@ -716,6 +716,64 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Poltergeist",
     },
+    // The Frost Moon family, slice A (`S1-F-13c`): the first 7 wave kinds
+    // (`NPC.cs:13281-13368`). The Zombie Elf trio shares the display name
+    // "Zombie Elf" (the en-US `NPCName` rows), like the Scarecrow pairs.
+    BestiaryEntryDef {
+        credit_id: "ZombieElf",
+        net_id: 338,
+        kind: NpcKind::ZombieElf,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie Elf",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieElfBeard",
+        net_id: 339,
+        kind: NpcKind::ZombieElfBeard,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie Elf",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieElfGirl",
+        net_id: 340,
+        kind: NpcKind::ZombieElfGirl,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie Elf",
+    },
+    BestiaryEntryDef {
+        credit_id: "PresentMimic",
+        net_id: 341,
+        kind: NpcKind::PresentMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Present Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "GingerbreadMan",
+        net_id: 342,
+        kind: NpcKind::GingerbreadMan,
+        variant: None,
+        quick_unlock: false,
+        name: "Gingerbread Man",
+    },
+    BestiaryEntryDef {
+        credit_id: "Yeti",
+        net_id: 343,
+        kind: NpcKind::Yeti,
+        variant: None,
+        quick_unlock: false,
+        name: "Yeti",
+    },
+    BestiaryEntryDef {
+        credit_id: "Everscream",
+        net_id: 344,
+        kind: NpcKind::Everscream,
+        variant: None,
+        quick_unlock: false,
+        name: "Everscream",
     // The Frost Moon wave family (`S1-F-13c` slice B): the credit ids are
     // `NPCID.Search.GetName`'s persistent names (`ContentSamples.cs:868-870`;
     // `NPCID.cs:11367-11381`) — 348/349 carry DISTINCT credits despite the

@@ -1064,6 +1064,32 @@ impl App {
         );
         let joined = S2c::Joined { id, name };
         server.broadcast(&joined);
+        // The join item burst (`MessageBuffer.cs:843-850`): one `21 ItemDrop`
+        // + one `22 ItemOwner` per live slot, to the joining client only.
+        // The reservation rides the C# field defaults: 255 = unreserved
+        // (`WorldItem.cs:139`), the grab-delay ints default to 0
+        // (`WorldItem.cs:22-26`), so the `22` body is the zeroed `ItemOwner`
+        // plus the position (`NetMessage.cs:675-685`).
+        for (i, it) in self.items.iter().enumerate() {
+            let slot = i as i16;
+            let st = Self::item_state_of(slot, it);
+            server.send(id, &S2c::ItemState(Box::new(st)));
+            server.send(
+                id,
+                &S2c::ItemOwner(Box::new(net::ItemOwner {
+                    slot,
+                    reserved_for: 255,
+                    hold: 0,
+                    grab_delay_player: 0,
+                    grab_delay: 0,
+                    x: it.pos.x,
+                    y: it.pos.y,
+                })),
+            );
+            // The burst counts as sent: the next cadence diff only re-sends
+            // the slot when it actually changes.
+            self.net_item_last.insert(slot, st);
+        }
         // `MessageBuffer.cs:871` → `BestiaryUnlocksTracker.OnPlayerJoining`
         // → `NPCKillsTracker.OnPlayerJoining` (`NPCKillsTracker.cs:98-107`):
         // every recorded credit's current count goes to the joining slot as a
@@ -2150,25 +2176,38 @@ impl App {
                 // Prune the generation bookkeeping of slots that died.
                 self.net_npc_gen
                     .retain(|slot, _| (*slot as usize) < self.npcs.len());
-                // `21 ItemDrop` / `151` — only the slots whose state changed
-                // since the last send, plus the vanished tail (the index
-                // shift a removal causes). The C#'s default broadcast has no
-                // per-item gate either (`NetMessage.cs:1801-1811`).
+                // `Main.UpdateServer` (`Main.cs:64557-64580`): the server
+                // counter advances once per 60 Hz tick (the port batches it
+                // on the 10 Hz cadence tick — 6 per batch), and every 60th
+                // tick one round-robin slot gets an unconditional `21`
+                // heartbeat. The C# walks 400 fixed slots; the port walks
+                // its live list (M6-NET-5), wrapping at its length. The
+                // unreserved-only condition (`playerIndexTheItemIsReservedFor
+                // == 255`) holds for every port drop — reservations are
+                // unported — and the heartbeat re-sends even an unchanged
+                // slot (the diff below skips it as already recorded).
+                self.net_play_counter = self.net_play_counter.wrapping_add(6);
+                if self.net_play_counter % 3600 == 0 {
+                    self.net_play_counter = 0;
+                }
+                if self.net_play_counter % 60 == 0 && !self.items.is_empty() {
+                    self.last_item_update += 1;
+                    if self.last_item_update >= self.items.len() {
+                        self.last_item_update = 0;
+                    }
+                    let slot = self.last_item_update as i16;
+                    let st = Self::item_state_of(slot, &self.items[self.last_item_update]);
+                    self.net_item_last.insert(slot, st);
+                    server.broadcast(&S2c::ItemState(Box::new(st)));
+                }
+                // `21 ItemDrop` — only the slots whose state changed since the
+                // last send (the port's batched stand-in for the C#'s
+                // event-driven `SyncItem` fan-out — `WorldItem.cs:612-615`
+                // and its callers; the C# never diff-streams physics).
                 let live = self.items.len() as i16;
                 for (i, it) in self.items.iter().enumerate() {
                     let slot = i as i16;
-                    let st = net::ItemState {
-                        slot,
-                        x: it.pos.x,
-                        y: it.pos.y,
-                        vx: it.vel.x,
-                        vy: it.vel.y,
-                        stack: it.count.min(i16::MAX as u32) as i16,
-                        prefix: it.prefix.min(255) as u8,
-                        kind: it.kind as i16,
-                        shimmered: it.shimmered,
-                        shimmer_time: it.shimmer_time,
-                    };
+                    let st = Self::item_state_of(slot, it);
                     if self.net_item_last.get(&slot) != Some(&st) {
                         self.net_item_last.insert(slot, st);
                         server.broadcast(&S2c::ItemState(Box::new(st)));
@@ -2326,6 +2365,23 @@ impl App {
         let sx = self.world.spawn_x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
         let sy = self.world.spawn_y as f32 * TILE_PX;
         (sx, sy)
+    }
+
+    /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
+    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
+        net::ItemState {
+            slot,
+            x: it.pos.x,
+            y: it.pos.y,
+            vx: it.vel.x,
+            vy: it.vel.y,
+            stack: it.count.min(i16::MAX as u32) as i16,
+            prefix: it.prefix.min(255) as u8,
+            kind: it.kind as i16,
+            shimmered: it.shimmered,
+            shimmer_time: it.shimmer_time,
+        }
     }
 
     /// Builds the `13 PlayerState` body for a stored peer snapshot (the
@@ -2845,6 +2901,19 @@ fn npc_seed(
         | crate::npc::NpcKind::SantaNK1
         | crate::npc::NpcKind::ElfCopter
         | crate::npc::NpcKind::Flocko => {
+        // The Frost Moon family, slice A (`S1-F-13c`): the same seed shape
+        // as the pumpkin roster — the walkers (the Zombie Elf trio, the
+        // Present Mimic, the Gingerbread Man and the Yeti, whose aiStyle-3/25
+        // stand-ins ride the walker family) plant the feet on the column
+        // surface; the Everscream's aiStyle-57 hover stand-in rides the
+        // hover ctor (`NPC.cs:13281-13368` SetDefaults).
+        crate::npc::NpcKind::ZombieElf
+        | crate::npc::NpcKind::ZombieElfBeard
+        | crate::npc::NpcKind::ZombieElfGirl
+        | crate::npc::NpcKind::PresentMimic
+        | crate::npc::NpcKind::GingerbreadMan
+        | crate::npc::NpcKind::Yeti => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Everscream => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
@@ -3306,6 +3375,69 @@ mod handshake_tests {
             "the host validated and removed it"
         );
         assert!(client_app.items.is_empty(), "the client saw the 151");
+    }
+
+    #[test]
+    fn the_join_burst_streams_the_live_items_with_their_reservations() {
+        // `MessageBuffer.cs:843-850` — one `21` + one `22` per live slot, to
+        // the joining client only, BEFORE the first cadence tick.
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        let mut drop = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        drop.age = 60.0;
+        host_app.items.push(drop);
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        // No net_tick: the join burst alone must have delivered the drop
+        // (a few poll rounds let the loopback bytes land).
+        for _ in 0..8 {
+            host_app.poll_net();
+            client_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(client_app.items.len(), 1, "the join 21 burst streamed it");
+        assert_eq!(client_app.items[0].kind, 7);
+        // The paired `22` arrived with the C# field defaults: unreserved.
+        assert!(
+            !client_app.net_reserved.contains_key(&0),
+            "the join 22 carries 255 (unreserved), which clears the store"
+        );
+        // The burst recorded the state: a cadence tick without a change
+        // re-sends nothing (the diff sees the burst's snapshot).
+        host_app.net_tick(0.1);
+        host_app.poll_net();
+        client_app.poll_net();
+        assert_eq!(client_app.items.len(), 1, "no duplicate spawn");
+    }
+
+    #[test]
+    fn the_item_heartbeat_re_sends_one_slot_per_second() {
+        // `Main.cs:64570-64580` — every 60 server ticks one round-robin slot
+        // gets an unconditional `21`, even when nothing changed. The port's
+        // cadence batches 6 ticks per call, so 10 calls = one heartbeat.
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut drop = item::ItemDrop::new(7, 3, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        drop.age = 60.0;
+        host_app.items.push(drop);
+        // Ten cadence ticks: the first diff-sends the new drop, the rest see
+        // no change — but the 10th tick's counter hits 60 and the heartbeat
+        // fires (slot 0 of the one-item list).
+        for _ in 0..10 {
+            host_app.net_tick(0.1);
+        }
+        assert_eq!(host_app.net_play_counter, 60);
+        assert_eq!(host_app.last_item_update, 0, "the walk wrapped to slot 0");
+        for _ in 0..8 {
+            host_app.poll_net();
+            client_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(client_app.items.len(), 1, "the heartbeat patched, not spawned");
+        // Another second: the counter keeps walking, the slot stays 0 (the
+        // one-item list wraps every step).
+        for _ in 0..10 {
+            host_app.net_tick(0.1);
+        }
+        assert_eq!(host_app.net_play_counter, 120);
+        assert_eq!(host_app.last_item_update, 0);
     }
 
     #[test]

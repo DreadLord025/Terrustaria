@@ -1266,6 +1266,19 @@ fn portrait_data(
         (NpcKind::ElfArcher, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Krampus, _) => (sheet_i, 90.0, 18.0, 90.0, white),
         (NpcKind::Flocko, _) => (sheet_i, 54.0, 54.0, 54.0, white),
+        // The Frost Moon family, slice A (`S1-F-13c`): the same shape as
+        // the pumpkin arms above — the portrait rests the kind's
+        // `SetDefaults` box (`NPC.cs:13281-13368`): the trio + the
+        // Gingerbread Man the 18x40 humanoid box, the Present Mimic the
+        // 24x24 chest box, the Yeti the 38x78 box and the Everscream the
+        // 172x130 box.
+        (NpcKind::ZombieElf, _)
+        | (NpcKind::ZombieElfBeard, _)
+        | (NpcKind::ZombieElfGirl, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::PresentMimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        (NpcKind::GingerbreadMan, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Yeti, _) => (sheet_i, 78.0, 38.0, 78.0, white),
+        (NpcKind::Everscream, _) => (sheet_i, 130.0, 172.0, 130.0, white),
     }
 }
 
