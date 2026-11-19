@@ -3842,6 +3842,54 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut servants);
+    // B-6c (S1-E-12d): the crystal's lane-portal spawn (`NPC.cs:40744-40755`'s
+    // `localAI[0]` one-shot): the update pass set `wants_lane_portals` with
+    // `base.Bottom`, this pass runs the arena walker and spawns the two 549s
+    // — BEFORE the lane-spawn resolve below, so a portal created this tick
+    // enters the gate machine on the next one (the C#'s `NewNPC` slots
+    // update from the following `UpdateNPCs` frame too).
+    let mut portal_requests = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some(bottom) = n.wants_lane_portals.take() {
+            portal_requests.push(bottom);
+        }
+    }
+    for bottom in portal_requests {
+        // `StrayMethods.CheckArenaScore(base.Bottom, out xLeftEnd, out
+        // xRightEnd)` (`:40746`, `StrayMethods.cs:83-105`) — pure tile
+        // walk, ZERO RNG draws (census in `tr_core::stray`).
+        let (mut left_end, mut right_end) = tr_core::stray::check_arena_score(&app.world, bottom);
+        // `:40748-40749`: the ends nudge 2 tiles toward the centre.
+        left_end.0 += 2;
+        right_end.0 -= 2;
+        // `:40750-40753`: `NewNPC(xEnd.X, xEnd.Y, 549)` spawns Bottom-
+        // anchored at the tile corner (`NPC.cs:80770`), then `Bottom =
+        // end.ToWorldCoordinates(8, 16)` (`Utils.cs:1762-1765`: tile*16 +
+        // (8,16)) re-centres it — the net placement is `x = end.X*16 + 8 -
+        // 78/2`, `y = end.Y*16 + 16 - 130` (the 549 box, `NPC.cs:16037-
+        // 16038`). The right portal carries `ai[2] = 1` (`:40751`'s `1f`
+        // in `NewNPC`'s `ai2` slot — the `leftGate` flag the lane machine
+        // reads, `:40972`). `dontTakeDamage = true` is the 549's
+        // `SetDefaults` row (`NPC.cs:16049`).
+        for (end, right) in [(left_end, false), (right_end, true)] {
+            let mut gate = Npc::new(
+                NpcKind::DD2LanePortal,
+                end.0 as f32 * TILE_PX + 8.0 - 78.0 * 0.5,
+                end.1 as f32 * TILE_PX + 16.0 - 130.0,
+                1,
+                0.0,
+            );
+            gate.hp = gate.max_hp;
+            gate.dont_take_damage = true;
+            if right {
+                gate.ai[2] = 1.0;
+            }
+            app.npcs.push(gate);
+        }
+        // `DD2Event.FindArenaHitbox()` (`:40754`) — the arena rect feeds
+        // only `ShouldBlockBuilding` (`Player.cs:25963-25969`'s noBuilding
+        // + buff 199), unported; deferred with that pass (ANALYSIS).
+    }
     // The Old One's Army's lane spawns (`DD2Event.cs:556-570`'s
     // `SpawnMonsterFromGate`, whose `Difficulty_N_SpawnMonsterFromGate` picks
     // the wave's bodies): the update pass set `wants_dd2_spawn`, this pass
@@ -8933,6 +8981,191 @@ mod crystal_summon_tests {
         assert!(
             !crate::world_sim::editing::use_etherian_crystal(&mut app),
             "no stand refuses"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dd2_portal_wire_tests {
+    //! B-6c (S1-E-12d) witnesses — WRITTEN NOT RUN (code-only round).
+    //! The dead-code revival chain: crystal use → the 180-tick one-shot →
+    //! two 549 portals at the walker's ends → the landed lane machine
+    //! spawns the wave's bodies. Every citation re-read against the
+    //! decompiled source; the walker's maths pinned in `tr_core::stray`.
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The stand's ANCHOR tile at (150, 116), frame (0,0) — the real
+        // 5x4 stand's top row (`WorldGen.Place5x4`, `WorldGen.cs:60149`):
+        // the crystal's spawn point rides anchor*16 + (40, 64)
+        // (`DD2Event.cs:590-594`), so its Bottom lands on the floor row
+        // 120 exactly (116*16 + 64 = 1920) — the walker's start row.
+        let i = w.index(150, 116);
+        w.tiles[i].kind = 466;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 152.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    fn summon(app: &mut App) {
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 116.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(crate::world_sim::editing::use_etherian_crystal(app));
+    }
+
+    #[test]
+    fn the_crystal_use_spawns_two_lane_portals_at_tick_180() {
+        // `NPC.cs:40734-40756`: the ai[0] countdown hits 0 on the 180th
+        // tick, `localAI[0]` latches and the two 549s spawn. The crystal
+        // Bottom (1960, 1920) → tile (122, 120), the floor cell; the flat
+        // 300-wide world walks to the ±120 caps, `CheckArenaScore`'s ±1
+        // and the caller's ±2 nudges put the ends at 122-117 = 5 and
+        // 122+117 = 239.
+        let mut app = base_app();
+        summon(&mut app);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DD2LanePortal),
+            "no portals before the countdown"
+        );
+        for _ in 0..179 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DD2LanePortal),
+            "179 ticks: the shield still holds, no portals"
+        );
+        update_npcs(&mut app, 1.0 / 60.0);
+        let portals: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::DD2LanePortal)
+            .collect();
+        assert_eq!(portals.len(), 2, "the two lane portals exist");
+        // `Bottom = end.ToWorldCoordinates(8, 16)` (`:40750-40753`), the
+        // 78x130 box (`NPC.cs:16037-16038`): x = end*16 + 8 - 39.
+        let left = portals.iter().find(|n| n.ai[2] == 0.0).unwrap();
+        let right = portals.iter().find(|n| n.ai[2] == 1.0).unwrap();
+        assert_eq!(left.x, 5.0 * 16.0 + 8.0 - 39.0, "the left end");
+        assert_eq!(right.x, 239.0 * 16.0 + 8.0 - 39.0, "the right end");
+        assert_eq!(left.y, 119.0 * 16.0 + 16.0 - 130.0, "Bottom anchored");
+        assert_eq!(right.y, left.y);
+        assert!(left.dont_take_damage && right.dont_take_damage);
+        // The one-shot: `localAI[0] = 1` (`:40747`) — 400 more ticks
+        // never re-spawn (the C#'s ai[0] rearm keeps counting, the
+        // localAI gate refuses).
+        for _ in 0..400 {
+            update_npcs(&mut app, 1.0 / 60.0);
+            let count = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::DD2LanePortal)
+                .count();
+            assert!(count <= 2, "the localAI[0] latch refuses a re-spawn");
+        }
+        let c = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .expect("the crystal stands (the gates' AnyNPCs(548) guard)");
+        assert_eq!(c.local_ai[0], 1.0);
+    }
+
+    #[test]
+    fn the_lanes_activate_once_the_portals_exist() {
+        // The dead-code-revived proof: with the portals live, the landed
+        // aiStyle-106 machine (`update_dd2_lane`) opens spawn attempts at
+        // the wave-1 rate (90, `DD2Event.cs:953-975`) and the tier-1 roll
+        // spawns the goblin (552) — the whole chain from the item use.
+        let mut app = base_app();
+        summon(&mut app);
+        // 180 (the portal spawn) + 300 (the StartInvasion hold, the
+        // counters park under it) + 90 (the first rate crossing).
+        for _ in 0..(180 + 300 + 91) {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DD2GoblinT1),
+            "the lane machine spawns the wave's bodies in live play"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.wants_lane_right || n.ai[2] == 1.0),
+            "the right gate's flag rides"
+        );
+    }
+
+    #[test]
+    fn a_short_arena_refuses_the_use_with_the_bartender_warning() {
+        // `WouldFailSpawningHere` (`DD2Event.cs:603-613`): < 60 walkable
+        // tiles on either side refuses; `FailureMessage` (`:614-627`)
+        // broadcasts the yellow warning; nothing consumes.
+        let mut app = base_app();
+        // Wall off the right side 40 tiles out (x = 190, rows 100-119 —
+        // taller than the 3-up skip).
+        for y in 100..120 {
+            let i = app.world.index(190, y);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "the 40-tile right span refuses"
+        );
+        assert!(!app.world.dd2_event_ongoing, "no event");
+        assert_eq!(app.inventory[app.selected].count, 1, "nothing consumed");
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.color == [255, 255, 0]
+                    && m.text == crate::lang::text("DungeonDefenders2.BartenderWarning")),
+            "the bartender warning rides"
         );
     }
 }

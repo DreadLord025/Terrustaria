@@ -1416,6 +1416,12 @@ pub struct Npc {
     /// request: the lane gate asks for its wave's pick — the sim
     /// resolves it through the dd2 tables.
     pub wants_dd2_spawn: bool,
+    /// B-6c (S1-E-12d): the crystal's one-shot lane-portal spawn request
+    /// (`NPC.cs:40744-40755`'s `localAI[0]` arm) — the payload is
+    /// `base.Bottom` in world px; the sim runs `CheckArenaScore` and
+    /// spawns the two 549s at the walker's ends (the `wants_dd2_spawn`
+    /// seam's shape: the machine holds `&World`, the pool lives outside).
+    pub wants_lane_portals: Option<(f32, f32)>,
     /// `NPC.cs:40972`'s `leftGate` reading: `ai[2] == 0f` is the left
     /// lane, `1f` the right — the resolved pick rides this flag.
     pub wants_lane_right: bool,
@@ -2359,6 +2365,7 @@ impl Npc {
             wants_moon_parts_clear: false,
             wants_blast: false,
             wants_dd2_spawn: false,
+            wants_lane_portals: None,
             wants_lane_right: false,
             wants_stardust_mark: false,
             wants_obstruct: false,
@@ -10327,6 +10334,30 @@ impl Npc {
             self.y += self.vy;
             let _ = (world, player);
             return;
+        }
+        // B-6c (S1-E-12d): the `ai[1] == 0` arm's one-shot portal spawn
+        // (`NPC.cs:40734-40756`). The C# counts `ai[0]` DOWN from 180 to
+        // 0, rearms 180 (`:40742`) and — once per crystal
+        // (`localAI[0] == 0f && Main.netMode != 1`, `:40744`; the port is
+        // single-player, the net gate folds away) — runs
+        // `CheckArenaScore(base.Bottom)` and spawns the two 549 lane
+        // portals at the walker's ends (`:40746-40753`), the right one
+        // with `ai[2] = 1` (the `1f` rides `NewNPC`'s `ai2` slot,
+        // `:40751`). `DD2Event.FindArenaHitbox()` (`:40754`) is deferred
+        // with the arena-block pass (ANALYSIS). The port's
+        // `caster_counter` (the 180-tick spawn-in shield below) mirrors
+        // the countdown: the C#'s `ai[0] == 0` frame is the counter's
+        // 180th tick — checked at 179 pre-increment, so the shield's
+        // release and the portal spawn land on the SAME tick, as in the
+        // C#. The spawn rides `wants_lane_portals` — the machine holds
+        // `&World`, the pool lives in the sim (`wants_dd2_spawn`'s seam).
+        // The walker draws NO RNG (`StrayMethods.cs:83-156` census —
+        // ANALYSIS "DD2 lane portals (S1-E-12d)").
+        if self.ai[1] == 0.0 && self.caster_counter == 179 && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            let (cw, ch) = self.size();
+            // `base.Bottom` (`Entity.cs:122-127`): (x + w/2, y + h).
+            self.wants_lane_portals = Some((self.x + cw * 0.5, self.y + ch));
         }
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
