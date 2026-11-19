@@ -505,6 +505,13 @@ pub struct Projectile {
     pub alpha: i32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
+    /// `Projectile.light` (`:378`, reset `:773`) — the `ProjLight` amount
+    /// (`Projectile.cs:16153-16661`, called from `Update` `:17031`): the
+    /// per-type colour chain multiplies it into the frame's `AddLight`
+    /// contribution (`proj_lights.rs`, S1-E-5). The `SetDefaults` value
+    /// rides the data-carrying spawn; the aiStyle-24 arm rewrites it every
+    /// tick (`:25953`, `ai_crystal_storm`).
+    pub light: f32,
     /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
     /// per-type arms index into `Main.projFrames[type]` and the render pass
     /// slices by. Only the Typhoon's `localAI[1] / 3 % 3` writes it today
@@ -651,6 +658,7 @@ impl Default for Projectile {
             local_ai: [0.0; 3],
             alpha: 0,
             scale: 1.0,
+            light: 0.0,
             frame: 0,
             frame_counter: 0,
             old_pos: [Vec2::ZERO; 10],
@@ -5760,15 +5768,20 @@ impl Projectile {
         }
     }
 
-    /// `AI()`'s aiStyle-24 arm (`Projectile.cs:25936-26014`): the rotation
+    /// `AI()`'s aiStyle-24 arm (`Projectile.cs:25936-26014`): the per-tick
+    /// `light = scale * 0.5f` write (`:25953`), the rotation
     /// `+= velocity.X * 0.2f`, the counter `ai[1]++`, the CrystalStorm 94's
     /// ×0.985 drag and its fade from `ai[1] > 130f` (`scale -= 0.05f`, the
     /// kill at 0.2) — the generic kinds take ×0.96 and fade from 15. The
-    /// `light = scale * 0.5f` write has no slot field yet (render-only) and
-    /// the per-type dust is SKIPPED.
+    /// per-type dust is SKIPPED.
     fn ai_crystal_storm(&mut self, world: &World) {
-        // `:25938-25943`'s 1134 first-tick sound/dust block is SKIPPED (no
-        // ported row for the kind).
+        // `:25938-25952`'s 1134 first-tick sound/dust block is SKIPPED (the
+        // kind has a row, but the block only plays a cue and spawns dust —
+        // neither has a layer in the pool; the `localAI[0]` gate flag rides
+        // with it).
+        // `:25953` — the light follows the CURRENT scale, before this tick's
+        // fade below (`proj_lights.rs` reads it for the frame contribution).
+        self.light = self.scale * 0.5;
         self.rot += self.vel.x * 0.2;
         self.ai[1] += 1.0;
         // `:25944-25966` (the 94 shard) and `:25967-26013` (the generic; the
@@ -12194,6 +12207,7 @@ impl ProjectilePool {
             local_ai: [0.0; 3],
             alpha: 0,
             scale: 1.0,
+            light: 0.0,
             // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
             // flight is the custom falling-tile mode, not an aiStyle arm.
             w: 10.0,
@@ -12408,6 +12422,7 @@ impl ProjectilePool {
             local_ai: [0.0; 3],
             alpha: data.alpha,
             scale: data.scale,
+            light: data.light,
             w: data.w,
             h: data.h,
             tile_collide: data.tile_collide,
@@ -20257,6 +20272,7 @@ mod phasmal_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            light: 0.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -20496,6 +20512,7 @@ mod ritual_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            light: 0.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -30692,5 +30709,175 @@ mod s1_d_4b_7_tests {
             }
         }
         assert_eq!(census.floats, 0);
+    }
+}
+#[cfg(test)]
+mod proj_light_spawn_tests {
+    //! S1-E-5: the `light` amount's journey from `SetDefaults`
+    //! (`set_defaults_light`) through the data-carrying spawn onto the slot,
+    //! the aiStyle-24 per-tick rewrite (`Projectile.cs:25953`), and the
+    //! stream-neutrality of the `proj_lights.rs` frame feed тАФ the feed is a
+    //! pure read (`proj_light` takes no RNG), so interleaving it with the
+    //! pool step cannot move `Main.rand`.
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 64)
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut World, rng: &mut tr_core::tile_light::FastRandom) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Feed every active slot through the frame-pass function тАФ the same
+    /// call `app/frame/draw.rs` makes after the step.
+    fn feed(pool: &ProjectilePool) -> Vec<(i32, i32, [f32; 3])> {
+        let p = tr_core::lighting::LightParams::default();
+        pool.slots()
+            .iter()
+            .filter(|s| s.active)
+            .filter_map(|s| crate::proj_lights::proj_light(s.kind, s.light, s.pos, s.w, s.h, false, &p))
+            .collect()
+    }
+
+    #[test]
+    fn test_s1_e_5_the_spawn_copies_the_set_defaults_light() {
+        // The data-carrying spawn (`spawn_with_data_ai_owned`) copies
+        // `ProjData::light` тАФ the `SetDefaults` slice тАФ onto the slot.
+        let mut pool = ProjectilePool::new();
+        for (kind, want) in [
+            (FLAME_ARROW, 1.0),      // `:824`
+            (MUSKET_BALL, 0.5),      // `:957`
+            (BULLET_SNOWMAN, 0.5),   // `:1985`
+            (CRYSTAL_STORM, 0.5),    // `:1784`
+            (DUAL_HOOK_BLUE, 0.4),   // `:1546`
+            (ILLUMINANT_HOOK, 0.3),  // `:5631`
+        ] {
+            let slot = pool
+                .spawn_with_data(kind, 160.0, 160.0, 1.0, 0.0, 10, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            assert_eq!(pool.slots()[slot].light, want, "kind {kind}");
+            assert_eq!(pool.slots()[slot].light, set_defaults_light(kind));
+            pool.kill(slot);
+        }
+        // An unlit row keeps the stock `0f` reset (`:773`).
+        let slot = pool
+            .spawn_with_data(BOMB, 160.0, 160.0, 1.0, 0.0, 10, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].light, 0.0);
+        assert!(crate::proj_lights::proj_light(
+            BOMB,
+            pool.slots()[slot].light,
+            pool.slots()[slot].pos,
+            pool.slots()[slot].w,
+            pool.slots()[slot].h,
+            false,
+            &tr_core::lighting::LightParams::default(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_s1_e_5_the_water_bolt_has_no_set_defaults_light() {
+        // `Projectile.cs:1095-1105` тАФ the WaterBolt 27's `SetDefaults` arm
+        // writes NO `this.light`, so the slot keeps the `0f` reset (`:773`)
+        // and `ProjLight` early-returns: its `:16380-16385` colour arm is
+        // unreachable until a later system writes the amount (the C# never
+        // does тАФ the arm is dead code in the source too). The missing
+        // `set_defaults_light` row is faithful, not a gap.
+        assert_eq!(set_defaults_light(WATER_BOLT), 0.0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WATER_BOLT, 160.0, 160.0, 1.0, 0.0, 10, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].light, 0.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..10 {
+            step(&mut pool, &mut w, &mut rng);
+        }
+        assert!(feed(&pool).is_empty(), "the water bolt stays dark");
+    }
+
+    #[test]
+    fn test_s1_e_5_the_crystal_storm_light_follows_its_scale() {
+        // `:25953` тАФ `this.light = this.scale * 0.5f` every tick, BEFORE the
+        // fade (`:25962-25968`, from `ai[1] > 130f`). At the row's scale 1.2
+        // the shard starts at 0.6; two fade ticks drop the scale to 1.1 and
+        // the light to 0.55, and the frame feed reads the CURRENT amount.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(CRYSTAL_STORM, 160.0, 160.0, 1.0, 0.0, 20, 0.0)
+            .unwrap();
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        step(&mut pool, &mut w, &mut rng);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.light, p.scale * 0.5);
+        assert_eq!(p.light, 1.2 * 0.5);
+        for _ in 0..131 {
+            step(&mut pool, &mut w, &mut rng);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 132.0, "two ticks past the fade gate");
+        // The rewrite runs BEFORE the fade (`:25953` ahead of `:25962`), so
+        // after a fade tick the light holds the PRE-fade scale's half.
+        assert!(
+            (p.light - (p.scale + 0.05) * 0.5).abs() < 1e-5,
+            "the rewrite tracks the pre-fade scale"
+        );
+        let lit = crate::proj_lights::proj_light(
+            p.kind,
+            p.light,
+            p.pos,
+            p.w,
+            p.h,
+            false,
+            &tr_core::lighting::LightParams::default(),
+        )
+        .expect("the shard still lights");
+        // `:16283-16287` тАФ (0.5l, 0, l) off the faded amount.
+        assert_eq!(lit.2, [p.light * 0.5, 0.0, p.light]);
+    }
+
+    #[test]
+    fn test_s1_e_5_the_light_feed_leaves_the_rng_stream_untouched() {
+        // The stream-neutrality witness: two identical runs тАФ one interleaves
+        // the frame feed after every step, one never feeds тАФ must leave the
+        // seeded `FastRandom` at the same state. `proj_light` is pure (no RNG
+        // parameter; the rand-bearing 867/1000 chain arms have no rows), so
+        // this holds by construction; the test pins it against a future arm
+        // that tries to draw.
+        let kinds = [FLAME_ARROW, MUSKET_BALL, CRYSTAL_STORM, DEMON_SCYTHE, WATER_BOLT];
+        let mut seeds = Vec::new();
+        for feed_lights in [false, true] {
+            let mut pool = ProjectilePool::new();
+            for (i, kind) in kinds.iter().enumerate() {
+                pool.spawn_with_data(*kind, 160.0 + i as f32 * 32.0, 160.0, 2.0, -1.0, 10, 0.0)
+                    .unwrap();
+            }
+            let mut w = world();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            for _ in 0..60 {
+                step(&mut pool, &mut w, &mut rng);
+                if feed_lights {
+                    let _ = feed(&pool);
+                }
+            }
+            seeds.push(rng.seed);
+        }
+        assert_eq!(seeds[0], seeds[1], "the feed cannot move the stream");
     }
 }
