@@ -265,6 +265,34 @@ pub const DUTCHMAN_SHELL: u16 = 240;
 /// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
 /// (`NPC.cs:44582`'s `TryMakingSpike`).
 pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// The Frost Moon projectile family (S1-D-4, `ProjectileID.cs:1244-1258`).
+/// `ProjectileID.PineNeedleHostile` (345) — Everscream's needle spray
+/// (`NPC.cs:32838`, `ai0 = Main.rand.Next(0, 31)`).
+pub const PINE_NEEDLE_HOSTILE: u16 = 345;
+/// `ProjectileID.OrnamentHostile` (346) — Everscream's ornament lob
+/// (`NPC.cs:32885`, `ai1 = Main.rand.Next(2)` picks the frame); on its last
+/// tick it bursts into five 347 shrapnel (`Projectile.cs:24883-24896`).
+pub const ORNAMENT_HOSTILE: u16 = 346;
+/// `ProjectileID.OrnamentHostileShrapnel` (347) — the ornament's burst
+/// fragment (the aiStyle-2 5-tick arm, `Projectile.cs:23503-23510`).
+pub const ORNAMENT_SHRAPNEL: u16 = 347;
+/// `ProjectileID.FrostWave` (348) — IceQueen's phase-0 side charge
+/// (`NPC.cs:33500`).
+pub const FROST_WAVE: u16 = 348;
+/// `ProjectileID.FrostShard` (349) — IceQueen's shard rain / spin barrage
+/// (`NPC.cs:33607`'s `ai0 = Main.rand.Next(5)` frame pick, `:33656`).
+pub const FROST_SHARD: u16 = 349;
+/// `ProjectileID.Missile` (350) — SantaNK1's missile salvo
+/// (`NPC.cs:33818`). Alias of `MISSILE` (the S1-F-13c row name) — one
+/// const per id; the S1-D-4 santa slice and the F-13c wiring landed the
+/// same ids independently (deduped at merge).
+pub use MISSILE as SANTA_MISSILE;
+/// `ProjectileID.Present` (351) — SantaNK1's present rain
+/// (`NPC.cs:33840`, the aiStyle-58 drop). Alias of `PRESENT`.
+pub use PRESENT as SANTA_PRESENT;
+/// `ProjectileID.Spike` (352) — SantaNK1's ornament spike
+/// (`NPC.cs:33798`, the aiStyle-14 alpha/scale pulse). Alias of `SPIKE`.
+pub use SPIKE as SANTA_SPIKE;
 /// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
 /// Deerclops' rubble chunk (the aiStyle-1 flight).
 pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
@@ -274,20 +302,9 @@ pub const FLAMING_WOOD: u16 = 325;
 // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring,
 // `ProjectileID.cs:1244-1258`). The Everscream / IceQueen / SantaNK1
 // machines (`npc_ai_frost_boss*.rs`) queue these; the rows below let the
-// drained `wants_hostile_shot(_ai)` requests spawn + fly.
-/// `ProjectileID.PineNeedleHostile` (345, `Projectile.cs:4353-4360`) — the
-/// Everscream's needle spray (4x4, aiStyle 1, scale 0.8).
-pub const PINE_NEEDLE_HOSTILE: u16 = 345;
-/// `ProjectileID.OrnamentHostile` (346, `Projectile.cs:4361-4369`) — the
-/// Everscream's ornament lob (18x18, aiStyle 14, penetrate -1, timeLeft 300).
-pub const ORNAMENT_HOSTILE: u16 = 346;
-/// `ProjectileID.FrostWave` (348, `Projectile.cs:4378-4389`) — the IceQueen's
-/// side charge (48x48, aiStyle 1, penetrate -1, tileCollide false,
-/// extraUpdates 1, timeLeft 900).
-pub const FROST_WAVE: u16 = 348;
-/// `ProjectileID.FrostShard` (349, `Projectile.cs:4390-4399`) — the IceQueen's
-/// shard rain / spin barrage (12x12, aiStyle 1, penetrate -1, timeLeft 900).
-pub const FROST_SHARD: u16 = 349;
+// drained `wants_hostile_shot(_ai)` requests spawn + fly. The 345/346/
+// 348/349 consts are the S1-D-4 family block above (deduped at merge —
+// one const per id; the rows are value-identical in both branches).
 /// `ProjectileID.Missile` (350, `Projectile.cs:4400-4410`) — the SantaNK1's
 /// missile salvo (14x14, aiStyle 1, penetrate -1, tileCollide false,
 /// alpha 255, timeLeft 300).
@@ -2645,6 +2662,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 30.0, 30.0, 180, -1, 180, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`):
+            // the 345/346/348/349/350/351/352 rows are the S1-F-13c wiring
+            // rows ABOVE (value-identical in both branches — deduped at
+            // merge, deny(unreachable_patterns) keeps one arm per id).
+            // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
+            // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
+            ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -3070,6 +3094,19 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
         // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
         968 => 24,
+        // The Frost Moon family (S1-D-4): the present's 2-frame sheet
+        // (`Main.cs:8529`) — AI()'s aiStyle-58 arm pins frame 0/1
+        // (`Projectile.cs:28915`/`:28928`); the frost shard's 5-frame sheet
+        // (`Main.cs:8530`) — the 349 hook's `frame = (int)ai[0]` pin
+        // (`Projectile.cs:56223`); the ornament's 2-frame sheet
+        // (`Main.cs:8565`) — the 346 arm's `frame = (int)ai[1]` pin
+        // (`Projectile.cs:24874`, the `NPC.cs:32885` `Next(2)` payload); the
+        // shrapnel's 2-frame sheet (`Main.cs:8566`, no AI frame writer — the
+        // stock frame 0 reads the top row).
+        SANTA_PRESENT => 2,
+        FROST_SHARD => 5,
+        ORNAMENT_HOSTILE => 2,
+        ORNAMENT_SHRAPNEL => 2,
         _ => 1,
     }
 }

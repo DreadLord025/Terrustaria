@@ -13311,6 +13311,14 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // S1-D-4 — the Frost Moon family's four
+                            // aiStyle-1 kinds (345/348/349/350,
+                            // `projectile_ai_frostmoon`): kind-disjoint
+                            // from A/B (and the parallel slice C's set),
+                            // so the gate order never double-applies.
+                            kind if crate::projectile_ai_frostmoon::covers(kind) => {
+                                crate::projectile_ai_frostmoon::step(&mut self.slots[i], world)
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
@@ -13428,7 +13436,52 @@ impl ProjectilePool {
                                 }
                             }
                         }
-                        14 => self.slots[i].ai_spear(world),
+                        // S1-D-4 — the Frost Moon aiStyle-14 pair ahead of
+                        // the generic spear arm: the ornament's burst head
+                        // (`:24867-24897`) and the spike's alpha/scale
+                        // pulse (`:24848-24866`), then the SAME generic
+                        // tail via `ai_spear` (no parallel flight). The
+                        // shrapnel spawns ride back out (the nebula shape)
+                        // with the ornament's owner; `NewProjectile`
+                        // centres the box (`:10876-10877`), so the spawn
+                        // site subtracts the 6×6 shrapnel's half-box.
+                        14 => {
+                            match self.slots[i].kind {
+                                ORNAMENT_HOSTILE => {
+                                    let mut bursts = Vec::new();
+                                    crate::projectile_ai_frostmoon::ornament(
+                                        &mut self.slots[i],
+                                        rng,
+                                        &mut bursts,
+                                    );
+                                    let owner_id = self.slots[i].owner;
+                                    for s in bursts {
+                                        let slot = self.spawn_with_data_ai_owned(
+                                            ORNAMENT_SHRAPNEL,
+                                            owner_id,
+                                            s.x - 3.0,
+                                            s.y - 3.0,
+                                            s.vx,
+                                            s.vy,
+                                            40, // `:24894`'s Damage: 40
+                                            0.0,
+                                            0.0,
+                                            s.ai1,
+                                        );
+                                        if let Some(slot) = slot {
+                                            self.slots[slot].friendly = false;
+                                        }
+                                    }
+                                }
+                                SANTA_SPIKE => {
+                                    crate::projectile_ai_frostmoon::spike_pulse(
+                                        &mut self.slots[i],
+                                    );
+                                }
+                                _ => {}
+                            }
+                            self.slots[i].ai_spear(world)
+                        }
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
                         // S1-D-4 unarmed styles (census §3c): the four
@@ -13530,6 +13583,17 @@ impl ProjectilePool {
                         2 => {
                             let wind = self.wind_speed;
                             self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind);
+                        }
+                        // S1-D-4 — `AI()`'s `else if (this.aiStyle == 58)`
+                        // (`Projectile.cs:28906-28937`): SantaNK1's present
+                        // drop (351, the style's only rowed kind — the
+                        // gate keeps every other kind's no-arm state
+                        // byte-identical). The arm owns its integration
+                        // (the row's `tileCollide = false`, `:4419`).
+                        58 => {
+                            if self.slots[i].kind == SANTA_PRESENT {
+                                crate::projectile_ai_frostmoon::present(&mut self.slots[i]);
+                            }
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
