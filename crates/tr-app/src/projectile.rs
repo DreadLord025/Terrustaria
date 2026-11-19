@@ -13216,9 +13216,18 @@ impl ProjectilePool {
                         // SnowBallHostile 109 (S1-D-3q) is the first kind
                         // with an AI arm here; the falling-tile kinds keep
                         // their `falling_tile` movement below the dispatch.
+                        // The dungeon-debris trio's tile walk kills
+                        // breakables and flattens slopes, so it reborrows
+                        // `world` mutably at its own call site (the
+                        // ai_ice_block carve-out); the other aiStyle-10
+                        // kinds keep the pre-existing no-op (the sand
+                        // family rides the falling-tile tail below; the 42
+                        // row's arm is the documented S1-D-5 gap).
                         10 => {
                             if self.slots[i].kind == SNOW_BALL_HOSTILE {
                                 self.slots[i].ai_snowball_hostile(world);
+                            } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
+                                self.slots[i].ai_dungeon_debris(world, rng, local_owner);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`
@@ -13323,19 +13332,6 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
-                        // `AI()`'s aiStyle-10 arm (`Projectile.cs:24367-24370`)
-                        // -> `AI_010`. Only the dungeon-debris trio has the
-                        // arm ported: its tile walk kills breakables and
-                        // flattens slopes, so it reborrows `world` mutably at
-                        // its own call site (the ai_ice_block carve-out). The
-                        // other aiStyle-10 kinds keep the pre-existing no-op
-                        // (the sand family rides the falling-tile tail below;
-                        // the 42 row's arm is the documented S1-D-5 gap).
-                        10 => {
-                            if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
-                                self.slots[i].ai_dungeon_debris(world, rng, local_owner);
-                            }
-                        }
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),

@@ -1628,12 +1628,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `Projectile.cs:1978-1991` — the Snowman Gangsta's bullet (110):
-            // 4x4, aiStyle 1, hostile, `penetrate = -1`, `light = 0.5f`,
-            // alpha 255, `scale = 1.2f`, `timeLeft = 600`, `extraUpdates = 1`
-            // (S1-E-5: the Frost Legion throw requests it, `npc.rs`'s Gangsta
-            // arm; the row lets the data-carrying spawn land it).
-            BULLET_SNOWMAN => (4.0, 4.0, 1, -1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring).
             // `Projectile.cs:4353-4360` — the Everscream's pine needle (345):
             // 4x4, aiStyle 1, hostile, `scale = 0.8f`; the stock penetrate 1
