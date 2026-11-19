@@ -103,6 +103,10 @@ mod npc_ai_style52;
 mod npc_ai_style53;
 mod npc_ai_style55;
 mod npc_ai_style56;
+// S1-D-3 (aiStyle-66): UNWIRED crawling-critter family (Worm 357 /
+// TruffleWorm 374 / GoldWorm 448 / 484-487 / Maggot 606) - the kind rows
+// + style-axis arm are the family's merge step (see the module doc).
+mod npc_ai_style66;
 mod npc_ai_style72;
 mod npc_ai_style9;
 mod npc_ai_style31;

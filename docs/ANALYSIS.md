@@ -24628,6 +24628,82 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
   aiStyle-39 only (`:77292`) — single frame,
   `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
   entry).
+## The crawling critters (S1-D-3 aiStyle-66, code-only)
+
+`crates/tr-app/src/npc_ai_style66.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 66)` arm (`NPC.cs:34253-34347`) — the ground
+crawlers. NOT the projectile aiStyle 66 (the Twins minions,
+`Projectile.cs:29604-30161`, landed S1-D-4b-6 — a different system).
+CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 12 witness tests are
+written, not run. Wiring deferred (the style72/spore precedent): none of
+the eight kinds has an `NpcKind`, so the style axis (`npc.rs:3651`) has
+no arm to claim; only the one-line `mod npc_ai_style66;` seam landed.
+
+- **Census verified from the C#** — every `this.aiStyle = 66;` row:
+  Worm 357 (`:13545-13558`), TruffleWorm 374 (`:13762-13776`), GoldWorm
+  448 (`:14332-14346`), the 484..=487 RANGE row (`:14576-14589`,
+  EnchantedNightcrawler/Grubby/Sluggy/Buggy, `catchItem = 3191 + type -
+  484`), Maggot 606 (`:16781-16794`). GraniteFlyer 483 is aiStyle 91
+  (`:14567`) — outside the family. The transform target TruffleWormDigger
+  375 (`:13777-13795`) is aiStyle 6, not a style-66 kind. All rows are
+  5-HP/0-dmg/0-def, `NPCHit1`/`NPCDeath1`; only 374 is non-friendly and
+  `dontTakeDamageFromHostiles` (`:13775`), 20×10 vs the family's 10×4.
+- **The arm in C# order**: the 484-only essScale flicker FIRST and
+  ungated (`:34255-34259` — one `Next(90,111)` every tick, airborne
+  included; `num983 = roll * 0.01f * ((essScale + 0.5f) / 2f)`, the
+  `(0.3, 0.1, 0.25) * num983` light at the QUOTIENT-truncated centre
+  `(int)((X + width/2) / 16f)` — `XAnchor::Center`, the integer `width/2`
+  exact for the 10×4/20×10 boxes); the grounded branch (`velocity.Y ==
+  0f`): walk (`ai[0] == 1`) faces the player only while `direction == 0`
+  (`TargetClosest` `:34266` through `npc_target.rs`, RNG-free), flips on
+  `collideX` (`:34270`), writes `num984 * direction` with the
+  0.2/0.25/0.325/0.4 ladder for default/485/486/487 (`:34272-34284`) and
+  the 374 ×3 (`:34288`); idle zeroes `velocity.X` (`:34293`); the
+  `localAI[1]` timer (`:34297-34311`, `netMode != 1` folds true) toggles
+  at `<= 0` — walk→idle `Next(300,900)`, idle→walk `Next(600,1800)`,
+  `netUpdate = true` — and the toggle tick's velocity keeps the OLD
+  gait. Airborne: only the directionless ±1 latch from `vx`'s sign
+  (`:34314-34321`); no timer, no velocity write. `type != 374` RETURNS
+  (`:34322`).
+- **The 374 dig tail**: `spriteDirection = direction` (`:34326`);
+  `flag69` = any `active && !dead` player within EUCLIDEAN 160 of the
+  centre (`:34331` — `!(Distance > 160f)`, exactly 160 counts, NO ghost
+  check unlike `TargetClosest`); `ai[1]` increments once per near tick,
+  caps at 90, NEVER decays (`:34338` has no else); at exactly 90 with
+  `netMode != 1`: `Y += 16`, `Transform(375)` (`:34344-34345`) — returned
+  as the `transform_to_digger` seam.
+- **RNG by construction**: the arm's only draws are the 484 flicker
+  (every tick) and exactly one timer range roll per expiry;
+  `TargetClosest`/the dig tail draw nothing. `Transform(375)` is
+  stream-neutral: the whole `SetDefaults` body (`:8426-17859`) was
+  scanned — zero `rand.` hits; `TransformVisuals(374,375)`
+  (`:80963-81033`) matches none of its branches (158/159, 478/479,
+  406/405, 428/427, 427/426); `GiveTownUniqueDataToNPCsThatNeedIt`
+  (`:80839-80856`) is inert (375 is not town-like); the life rescale
+  `life = old*newMax/oldMax` is INTEGER math floored at 1
+  (`transform_life`, both maxima 5 → life carries). The witnesses replay
+  the cited draws on a cloned `UnifiedRandom` and compare the full
+  state, including a mixed 120-tick three-kind run.
+- **The GoldWorm sparkle** (`UpdateNPC_CastLights` `:92345-92368`, called
+  BEFORE `AI()`): 448 is the family's only `IsGoldCritter` member
+  (`ID/NPCID.cs:10126`). `gold_worm_sparkle` ports the gate — the
+  `Next(300)` (`:92361`) is drawn ONLY when a light channel > 20
+  (`:92349`), succeeds below `max/30` (integer divide). The one dust 43
+  spawn on success (`:92363-92364`, alpha 254, yellow, scale 0.5,
+  velocity zeroed) is the wiring caller's — its `Dust.NewDust` internal
+  draws must run in C# order when the dust feed lands (the style50
+  light-seam precedent). No other CastLights arm matches a family kind.
+- **Deviations / deferrals**: `Main.netMode != 1` folds to true (the
+  single-player port — on a client the C# draws no timer RNG and never
+  digs); `Main.essScale` is caller-passed (`App::ess_scale`); the 484
+  light rides the outcome seam; `FindFrame` is NOT ported here — the
+  family cases are cited as the wiring obligation (374 `:71121-71155`,
+  375 `:71109-71120`, the 357/448/484/606 group `:72774-72828` with the
+  slope ±0.785f tail, the 485/486/487 group `:72829-72883` with the
+  `|vx|*5`-weighted counter) and the nine `npcFrameCount` rows
+  (`Main.cs:67082-67153`: 357→2, 374→4, 375→4, 448→2, 484→2, 485→4,
+  486→4, 487→4, 606→2) pinned as consts; the kinds + axis arm + the
+  Transform executor wait on the roster wave.
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
