@@ -1557,6 +1557,14 @@ pub struct Npc {
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
     /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
     pub wind_speed_current: f32,
+    /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
+    /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
+    /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
+    /// (`NPC.cs:26468-26474` / `:27083-27089`). `Npc::update_rng` cannot
+    /// see its siblings, so the sim's pre-pass stamps this before each
+    /// tick (the Plantera hook-anchor carrier precedent); outside the
+    /// sim it stays empty.
+    pub twin_time_lefts: Vec<i32>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -2612,6 +2620,7 @@ impl Npc {
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
+            twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -4122,6 +4131,32 @@ impl Npc {
             // half-width anchor, the leash clamp, the strike-tick
             // justHit); `update_hungry` retired. RNG-free by construction.
             29 => self.ai_029_hungry_family(world, player),
+            // `else if (this.aiStyle == 30)` (`NPC.cs:26405-27014`) -
+            // the Retinazer (125), the style's only user. S1-D-3
+            // wire-retinazer: the faithful machine lives in
+            // `npc_ai_style30.rs`; the mislabeled `update_retinazer`
+            // (an aiStyle-57 MourningWood port, audit 51 §1 R1-R6) is
+            // retired. The twin `timeLeft`s ride the sim-stamped
+            // carrier; the Mech Queen is unported (`None`, the style31
+            // module's shared anchor seam); expert rides the player's
+            // difficulty flag, getGood the world's FTW seed (the
+            // `npc_ai_style43` precedent).
+            30 => {
+                // The twin list is cloned out of `self` first — the env
+                // borrows it while the machine takes `self` mutably
+                // (the list holds at most the other eye's one entry).
+                let twins = self.twin_time_lefts.clone();
+                let env = crate::npc_ai_style30::Style30Env {
+                    twin_time_lefts: &twins,
+                    mech_queen: None,
+                    destroyer_body_active: false,
+                    expert: player.buffs.expert_mode,
+                    get_good: world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                };
+                crate::npc_ai_style30::retinazer_ai(self, world, player, rng, &env)
+            }
             // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) -
             // the Spazmatism (126), the style's only user. S1-D-3
             // aiStyle-31: the machine lives in `npc_ai_style31.rs`;
@@ -4919,13 +4954,13 @@ impl Npc {
             // exhaustive.
             NpcKind::Probe => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            // The Retinazer (C# type 125) rides its own machine
-            // (`update_retinazer`, the S1-D-3i port of the shared aiStyle-57
-            // block shape); the Spazmatism (126) is claimed by the aiStyle-31
-            // axis above (S1-D-3 aiStyle-31) - this arm keeps the kind match
-            // exhaustive and routes to the same machine. The Pumpkin bosses'
-            // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
-            NpcKind::Retinazer => self.update_retinazer(world, player, rng),
+            // The Retinazer (125) is claimed by the aiStyle-30 axis
+            // above (S1-D-3 wire-retinazer - the mislabeled
+            // `update_retinazer` retired); this arm keeps the kind
+            // match exhaustive. The Spazmatism (126) rides the
+            // aiStyle-31 axis above too; the Pumpkin bosses' aiStyles
+            // 57/58 ride the style axis (S1-F-13b2 slice B).
+            NpcKind::Retinazer => unreachable!("aiStyle 30 rides the style axis (S1-D-3)"),
             NpcKind::Spazmatism => crate::npc_ai_style31::spazmatism_ai(
                 self,
                 world,
@@ -14434,237 +14469,6 @@ impl Npc {
         }
     }
 
-    /// `AI_030`/`AI_031`'s Twins v1 (`NPC.cs`'s aiStyle 30/31 machines) —
-    /// the EoC cycle shape per eye: the hover (the ±0.09, the 8.5 cap),
-    /// the charge (the 480-tick cycle, the direct velocity x 8.5), the
-    /// decel (the 40 ticks x0.98). The laser/spit phases and the second-
-    /// form transformations = the follow-ups.
-    /// `AI()`'s aiStyle-57 block (`NPC.cs:32761-33043`) — the Retinazer's
-    /// machine: the idle (0), the stomp (1), the spin (2), the beam (3) and
-    /// the charge (4), the horizontal drift toward the player and the
-    /// vertical hover.
-    ///
-    /// The light and the dust are SKIPPED — no dust/light layer. The
-    /// day-time `EncourageDespawn(10)` rides the world's own day arm (the
-    /// port's NPCs carry no despawn timer).
-    fn update_retinazer(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        // `:32764-32772` — the horizontal speed cap (the hp bands; the
-        // day-time raises it to 8).
-        let mut speed = 2.0f32;
-        if self.hp * 4 < self.max_hp * 3 {
-            speed = 3.0;
-        }
-        if self.hp * 2 < self.max_hp {
-            speed = 4.0;
-        }
-        if world.day_time {
-            speed = 8.0;
-        }
-        // `:32789` — the "firing" flag: the states that hold the boss still
-        // while it shoots.
-        let mut firing = false;
-        match self.ai[0] as i32 {
-            0 => {
-                // `:32794-32815` — the idle: the counter (the faster it
-                // loses hp, the faster it counts) and then the next state.
-                self.ai[1] += 1.0;
-                if self.hp * 2 < self.max_hp {
-                    self.ai[1] += 1.0;
-                }
-                if self.hp * 4 < self.max_hp {
-                    self.ai[1] += 1.0;
-                }
-                if self.ai[1] >= 300.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = if self.hp * 4 < self.max_hp {
-                        rng.next_range(3, 5) as f32
-                    } else {
-                        rng.next_range(1, 3) as f32
-                    };
-                }
-            }
-            1 => {
-                // `:32836-32866` — the stomp: the flaming wood every 15
-                // ticks.
-                firing = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] % 15.0 == 0.0 {
-                    let origin = Vec2::new(cx, cy + 30.0);
-                    let mut dx = pcx - origin.x;
-                    let mut dy = pcy - origin.y;
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    dx = dx / d * 10.0;
-                    dy = dy / d * 10.0;
-                    let sx = dx
-                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.01);
-                    let sy = dy
-                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.01);
-                    self.wants_hostile_shot.push((
-                        crate::projectile::FLAMING_WOOD,
-                        origin.x,
-                        origin.y,
-                        sx,
-                        sy,
-                        50,
-                    ));
-                }
-                if self.ai[1] >= 120.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
-            }
-            2 => {
-                // `:32868-32929` — the spin: the Greek fires every eighth
-                // tick between the 60th and the 240th.
-                firing = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] > 60.0 && self.ai[1] < 240.0 && self.ai[1] % 8.0 == 0.0 {
-                    let origin = Vec2::new(cx, cy + 30.0);
-                    let mut dx = pcx - origin.x;
-                    let mut dy = pcy - origin.y - dx.abs() * 0.3;
-                    let mut shot_speed = 10.0f32;
-                    shot_speed += dx.abs() * 0.004;
-                    if shot_speed > 14.0 {
-                        shot_speed = 14.0;
-                    }
-                    dx += rng.next_range(-50, 51) as f32;
-                    dy -= rng.next_range(50, 201) as f32;
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    dx = dx / d * shot_speed;
-                    dy = dy / d * shot_speed;
-                    let kind = rng.next_range(326, 329) as u16;
-                    let sx = dx
-                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.01);
-                    let sy = dy
-                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.01);
-                    self.wants_hostile_shot
-                        .push((kind, origin.x, origin.y, sx, sy, 40));
-                }
-                if self.ai[1] >= 300.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
-            }
-            3 => {
-                // `:32930-32956` — the beam: the flaming wood every 30 ticks.
-                speed = 4.0;
-                self.ai[1] += 1.0;
-                if self.ai[1] % 30.0 == 0.0 {
-                    let origin = Vec2::new(cx, cy + 30.0);
-                    let mut dx = pcx - origin.x;
-                    let mut dy = pcy - origin.y;
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    dx = dx / d * 16.0;
-                    dy = dy / d * 16.0;
-                    let sx = dx
-                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.001);
-                    let sy = dy
-                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.001);
-                    self.wants_hostile_shot.push((
-                        crate::projectile::FLAMING_WOOD,
-                        origin.x,
-                        origin.y,
-                        sx,
-                        sy,
-                        75,
-                    ));
-                }
-                if self.ai[1] >= 120.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
-            }
-            4 => {
-                // `:32957-32990` — the charge: the Greek fires every tenth
-                // tick.
-                speed = 4.0;
-                self.ai[1] += 1.0;
-                if self.ai[1] % 10.0 == 0.0 {
-                    let origin = Vec2::new(cx, cy + 30.0);
-                    let mut dx = pcx - origin.x;
-                    let mut dy = pcy - origin.y - dx.abs() * 0.2;
-                    let mut shot_speed = 12.0f32;
-                    shot_speed += dx.abs() * 0.002;
-                    if shot_speed > 16.0 {
-                        shot_speed = 16.0;
-                    }
-                    dx += rng.next_range(-50, 51) as f32;
-                    dy -= rng.next_range(50, 201) as f32;
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    dx = dx / d * shot_speed;
-                    dy = dy / d * shot_speed;
-                    let kind = rng.next_range(326, 329) as u16;
-                    let sx = dx
-                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.005);
-                    let sy = dy
-                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.005);
-                    self.wants_hostile_shot
-                        .push((kind, origin.x, origin.y, sx, sy, 50));
-                }
-                if self.ai[1] >= 240.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
-            }
-            _ => {}
-        }
-        // `:32991-32995` — the horizontal damp close to the player.
-        if (cx - pcx).abs() < 50.0 {
-            firing = true;
-        }
-        if firing {
-            self.vx *= 0.9;
-            if self.vx > -0.1 && self.vx < 0.1 {
-                self.vx = 0.0;
-            }
-        } else {
-            if self.facing > 0 {
-                self.vx = (self.vx * 20.0 + speed) / 21.0;
-            }
-            if self.facing < 0 {
-                self.vx = (self.vx * 20.0 - speed) / 21.0;
-            }
-        }
-        // `:33012-33040` — the vertical hover: the player-overlap test, the
-        // solid-tile probe under the boss and the fall/rise ramps.
-        let probe_x = cx - 40.0;
-        let probe_y = self.y + h - 20.0;
-        let over_player = self.x < player.x
-            && self.x + w > player.x + crate::player::WIDTH
-            && self.y + h < player.y + player.height - 16.0;
-        if over_player {
-            self.vy += 0.5;
-        } else if collides_rect(world, probe_x, probe_y, 80.0, 20.0) {
-            if self.vy > 0.0 {
-                self.vy = 0.0;
-            }
-            if self.vy > -0.2 {
-                self.vy -= 0.025;
-            } else {
-                self.vy -= 0.2;
-            }
-            if self.vy < -4.0 {
-                self.vy = -4.0;
-            }
-        } else {
-            if self.vy < 0.0 {
-                self.vy = 0.0;
-            }
-            if self.vy < 0.1 {
-                self.vy += 0.025;
-            } else {
-                self.vy += 0.5;
-            }
-        }
-        if self.vy > 10.0 {
-            self.vy = 10.0;
-        }
-    }
-
     fn update_twin(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -20432,9 +20236,12 @@ mod tests {
 
     #[test]
     fn the_twin_cycles_and_maps() {
-        // `AI_057`'s machine (the Retinazer, `NPC.cs:32761-33043`): the idle
-        // counts 300 ticks and then picks the next state (the stomp 1-2 or
-        // the beam 3-4).
+        // S1-D-3 wire-retinazer: the aiStyle-30 machine
+        // (`npc_ai_style30.rs`, `NPC.cs:26405-27014`) — the mislabeled
+        // aiStyle-57 port is retired. Through `update_rng` (the axis
+        // claims `30 =>`): the 600-tick hover (`:26576-26591`) flips
+        // into the dash and ClearTarget, and the 83-laser cadence
+        // (`:26592-26642`) fires above the player.
         let mut w = ground_air();
         w.day_time = false;
         let mut ret = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -20443,29 +20250,29 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(0);
-        for _ in 0..300 {
-            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-        }
-        assert!(
-            ret.ai[0] >= 1.0 && ret.ai[0] <= 4.0,
-            "the next state armed ({})",
-            ret.ai[0]
-        );
-        // The stomp (the state 1) fires the flaming wood every 15 ticks.
-        ret.ai[0] = 1.0;
-        ret.ai[1] = 0.0;
+        // The hover: ai[2] climbs one per tick; the 600th flips.
+        ret.ai = [0.0, 0.0, 599.0, 0.0];
+        ret.target = 0;
+        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(ret.ai[1], 1.0, "the 600-tick hover flips into the dash");
+        assert_eq!(ret.target, 255, "ClearTarget on the flip");
+        // The hover shot (`:26618-26642`): the eye laser (83), damage 20.
+        // The shot gate (`:26592`) needs the hover point within 400 px
+        // and the NPC's bottom above the player — park both close.
+        player.y = 60.0 * TILE_PX;
+        ret.ai = [0.0, 0.0, 0.0, 59.0];
+        ret.x = 90.0 * TILE_PX;
+        ret.y = 40.0 * TILE_PX;
         ret.wants_hostile_shot.clear();
-        for _ in 0..15 {
-            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-        }
+        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let shots: Vec<_> = ret
             .wants_hostile_shot
             .iter()
-            .filter(|s| s.0 == crate::projectile::FLAMING_WOOD)
+            .filter(|s| s.0 == crate::projectile::EYE_LASER)
             .copied()
             .collect();
-        assert_eq!(shots.len(), 1, "the stomp fires the flaming wood");
-        assert_eq!(shots[0].5, 50, "the shot's damage");
+        assert_eq!(shots.len(), 1, "the hover fires the eye laser (83)");
+        assert_eq!(shots[0].5, 20, "GetAttackDamage_ForProjectiles(20, 19) classic");
         // The stats round-trip.
         assert_eq!(ret.size(), (100.0, 110.0));
         assert_eq!(ret.max_hp, 20000);
@@ -20476,6 +20283,37 @@ mod tests {
         assert_eq!(e.net_id, 125);
         let e = crate::bestiary::entry_for_npc(NpcKind::Spazmatism, SlimeVariant::Blue);
         assert_eq!(e.net_id, 126);
+    }
+
+    /// S1-D-3 wire-retinazer: the mislabel is retired — the kind arm is
+    /// an `unreachable!` marker, so `update_rng` must route the Retinazer
+    /// through the aiStyle-30 axis (`npc_ai_style30::retinazer_ai`).
+    /// RNG parity: a plain hover tick draws exactly ONE `Next(5)` (the
+    /// dust gate, `NPC.cs:26460`) on the caller's stream — the witness
+    /// replay proves the axis passes the same stream through.
+    #[test]
+    fn the_retinazer_rides_the_style_thirty_axis_with_one_gate_draw() {
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        let _gate = witness.next_max(5);
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "the axis feeds the caller's stream: one gate draw");
+        // The machine ran: the hover counter climbed (`:26576`).
+        assert_eq!(n.ai[2], 1.0);
+        // The twin seam rides the carrier — the sim stamps it; a solo
+        // NPC keeps the empty list (no discouragement).
+        assert!(n.twin_time_lefts.is_empty());
+        n.despawn_timer = 5;
+        n.twin_time_lefts = vec![300];
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.despawn_timer, 299, "the twin timeLeft - 1 raises ours (`:26466-26475`)");
     }
 
     #[test]

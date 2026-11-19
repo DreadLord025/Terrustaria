@@ -3706,6 +3706,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
+    // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
+    // scan over the other ACTIVE type-125/126 slots, feeding
+    // `DiscourageDespawn(timeLeft - 1)`): `Npc::update_rng` cannot see
+    // its siblings, so the pre-pass stamps each eye's
+    // `twin_time_lefts` in slot order (the Plantera hook-anchor carrier
+    // precedent, `npc_ai_plantera_anchor.rs`).
+    {
+        let is_twin = |n: &Npc| {
+            (n.kind == NpcKind::Retinazer || n.kind == NpcKind::Spazmatism) && n.hp > 0
+        };
+        for i in 0..app.npcs.len() {
+            if !is_twin(&app.npcs[i]) {
+                continue;
+            }
+            app.npcs[i].twin_time_lefts =
+                crate::npc_ai_style30::twin_time_left_scan(&app.npcs, i, is_twin);
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
@@ -8416,6 +8435,34 @@ mod probe_tests {
         player.y = 118.0 * TILE_PX;
         app.player = Some(player.clone());
         (app, player)
+    }
+
+    /// S1-D-3 wire-retinazer: the twin-despawn feed through the LIVE sim
+    /// pass (`NPC.cs:26468-26474`). The pre-pass stamps each eye's
+    /// `twin_time_lefts` from the other active 125/126 slot; the
+    /// aiStyle-30 axis consumes it — the Retinazer's 5-tick timer is
+    /// raised to the Spazmatism's 300 - 1, then the pass-tail
+    /// `tick_despawn` (`NPC.cs:77986`) decrements both once.
+    #[test]
+    fn s1_d_3_wire_the_sim_feeds_the_twin_time_lefts() {
+        let (mut app, _player) = app_with_player();
+        app.world.day_time = false;
+        let mut ret = Npc::new(NpcKind::Retinazer, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        ret.hp = ret.max_hp;
+        ret.despawn_timer = 5;
+        let mut spaz = Npc::new(NpcKind::Spazmatism, 70.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        spaz.hp = spaz.max_hp;
+        spaz.despawn_timer = 300;
+        app.npcs.push(ret);
+        app.npcs.push(spaz);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let ret = &app.npcs[0];
+        let spaz = &app.npcs[1];
+        assert_eq!(ret.twin_time_lefts, vec![300], "the pre-pass fed the sibling's timeLeft");
+        assert_eq!(spaz.twin_time_lefts, vec![5], "the feed is symmetric (slot order)");
+        // 300 - 1 = 299 raised the 5, then the tail tick decremented it.
+        assert_eq!(ret.despawn_timer, 298, "the discourage raise ran through the axis");
+        assert_eq!(spaz.despawn_timer, 299, "the healthy timer only ticks down");
     }
 
     #[test]

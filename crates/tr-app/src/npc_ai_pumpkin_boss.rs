@@ -23,7 +23,7 @@
 //! Documented deviations (ANALYSIS, S1-F-13b2 slice B):
 //! * the `Lighting.AddLight` lines (`:32781`/`:32785`/`:33059`) and the
 //!   type-344 dust arm (`:32821-32825`) are skipped — the same call as the
-//!   Retinazer's port (`npc.rs`'s `update_retinazer` docs): no dust/light
+//!   Retinazer's faithful port (`npc_ai_style30.rs`'s dust notes): no dust/light
 //!   layer on these machines yet; neither draws `Main.rand` outside the
 //!   skipped dust arm, so the stream is untouched;
 //! * the type-344 (Everscream) branches are not ported — the kind does not
