@@ -28129,46 +28129,52 @@ mod magic_ai_tests {
     }
 
     /// `Projectile.cs:57123-57127` — the Razorpine needle flies straight for
-    /// 50 ticks (the counter runs, `flag3` true) then falls at 0.5/tick.
+    /// 50 AI sub-steps (the counter runs, `flag3` true) then falls at 0.5 per
+    /// sub-step. The row's `extraUpdates = 1` (`:4294`) runs the arm 2× per
+    /// tick, so 50 sub-steps = 25 ticks.
     #[test]
-    fn s1_p_i21_the_pine_needle_falls_after_fifty_ticks() {
+    fn s1_p_i21_the_pine_needle_falls_after_fifty_substeps() {
         let mut pool = ProjectilePool::new();
         let slot = pool.spawn_with_data(PINE_NEEDLE_FRIENDLY, 200.0, 200.0, 6.0, 0.0, 48, 3.25).unwrap();
         let mut w = world();
-        for _ in 0..49 {
+        // 24 ticks = 48 sub-steps: still straight.
+        for _ in 0..24 {
             staff_tick(&mut pool, &mut w, &mut [], None);
         }
-        assert_eq!(pool.slots()[slot].ai[0], 49.0, "the counter runs");
+        assert_eq!(pool.slots()[slot].ai[0], 48.0, "the counter runs per sub-step");
         assert_eq!(pool.slots()[slot].vel.y, 0.0, "straight flight before 50");
+        // Tick 25 = sub-steps 49-50: the 50th caps the counter and starts the fall.
         staff_tick(&mut pool, &mut w, &mut [], None);
         assert_eq!(pool.slots()[slot].ai[0], 50.0, "the counter caps at 50");
         assert!((pool.slots()[slot].vel.y - 0.5).abs() < 1e-5, "the fall begins");
+        // Tick 26 = sub-steps 51-52: two more 0.5 increments.
         staff_tick(&mut pool, &mut w, &mut [], None);
         assert_eq!(pool.slots()[slot].ai[0], 50.0, "the counter holds");
-        assert!((pool.slots()[slot].vel.y - 1.0).abs() < 1e-5, "0.5 per tick");
+        assert!((pool.slots()[slot].vel.y - 1.5).abs() < 1e-5, "0.5 per sub-step");
     }
 
     /// `Projectile.cs:56940-56948` — the Blizzard icicle falls through tiles
     /// until it drops below the owner's `position.Y − 300` (or above the
-    /// surface), then collides; `frame = (int)ai[1]` pins the icicle row.
+    /// surface), then collides; `frame = (int)ai[1]` pins the icicle row. The
+    /// fixture keeps the icicle BELOW the surface line so only the owner gate
+    /// is under test.
     #[test]
     fn s1_p_i21_the_blizzard_collides_near_the_owner() {
         let mut pool = ProjectilePool::new();
-        // Spawn above the surface line so the surface gate stays off; the
-        // owner sits at y = 1000, so the −300 gate is y > 700.
-        let slot = pool.spawn_with_data(BLIZZARD, 200.0, 100.0, 0.0, 8.0, 58, 4.5).unwrap();
-        assert!(!pool.slots()[slot].tile_collide, "the spawn falls through");
         let mut w = world();
-        w.world_surface = 1000.0; // the surface line far below the spawn
+        w.world_surface = 5.0; // the surface line at y = 80, above the spawn
         let mut p = crate::player::Player::spawn(&w);
-        p.y = 1000.0;
-        // ai[1] = 3 → frame 3.
-        pool.slots_mut()[slot].ai[1] = 3.0;
+        p.y = 600.0; // the owner gate: y > 300 → collide
+        // Spawn at y = 250: below the surface (80) and above the owner − 300
+        // (300), so neither gate fires yet.
+        let slot = pool.spawn_with_data(BLIZZARD, 200.0, 250.0, 0.0, 0.0, 58, 4.5).unwrap();
+        assert!(!pool.slots()[slot].tile_collide, "the spawn falls through");
+        pool.slots_mut()[slot].ai[1] = 3.0; // ai[1] = 3 → frame 3
         staff_tick(&mut pool, &mut w, &mut [], Some(&mut p));
         assert_eq!(pool.slots()[slot].frame, 3, "frame = (int)ai[1]");
         assert!(!pool.slots()[slot].tile_collide, "still above the owner − 300");
-        // Drop the icicle below y = 700 → the gate flips tileCollide.
-        pool.slots_mut()[slot].pos.y = 750.0;
+        // Drop the icicle below y = 300 → the owner gate flips tileCollide.
+        pool.slots_mut()[slot].pos.y = 350.0;
         staff_tick(&mut pool, &mut w, &mut [], Some(&mut p));
         assert!(pool.slots()[slot].tile_collide, "below the owner − 300 → collide");
     }
@@ -28178,23 +28184,30 @@ mod magic_ai_tests {
     /// kill hook spawns the raining cloud). The rotation rides `vx * 0.02`.
     #[test]
     fn s1_p_i21_the_moving_cloud_settles_at_the_cursor() {
+        // A cloud already past its cursor point: the +X flight overshot (centre
+        // 214 > 200) and the Y axis is at rest, so both axes zero on tick 1 and
+        // the cloud dies → the kill hook spawns the raining cloud.
         let mut pool = ProjectilePool::new();
-        // The cursor point 100 px to the right; the cloud flies +4/tick.
-        let slot = pool.spawn_with_data_ai(RAIN_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 300.0, 200.0).unwrap();
+        pool.spawn_with_data_ai(RAIN_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 200.0, 200.0).unwrap();
         let mut w = world();
-        // The cloud's centre starts at 214 (28-wide box); it reaches 300 after
-        // 22 ticks (214 + 22×4 = 302 > 300). The Y axis is already at rest.
-        // 21 ticks: still flying (centre 298 < 300).
-        for _ in 0..21 {
-            staff_tick(&mut pool, &mut w, &mut [], None);
-        }
-        assert!(pool.slots()[slot].active, "still flying at centre 298");
-        assert!((pool.slots()[slot].vel.x - 4.0).abs() < 1e-5, "the X axis still drives");
-        // Tick 22: the centre passes 300, both axes rest → the cloud dies and
-        // the kill hook spawns the raining cloud.
         staff_tick(&mut pool, &mut w, &mut [], None);
         let raining = pool.slots().iter().find(|p| p.active && p.kind == RAIN_CLOUD_RAINING);
-        assert!(raining.is_some(), "the kill hook spawned the raining cloud");
+        assert!(raining.is_some(), "the settled cloud's kill hook spawned the raining cloud");
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == RAIN_CLOUD_MOVING),
+            "the moving cloud is gone"
+        );
+        // A cloud still short of its cursor keeps flying: the cursor 1000 px to
+        // the right, three ticks of +4 leave it well short and still active.
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data_ai(RAIN_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 1000.0, 200.0).unwrap();
+        let mut w = world();
+        for _ in 0..3 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert!(pool.slots()[slot].active, "still flying toward the distant cursor");
+        assert!((pool.slots()[slot].vel.x - 4.0).abs() < 1e-5, "the X axis still drives");
+        assert!(pool.slots()[slot].pos.x > 200.0, "it moved toward the cursor");
     }
 
     /// `Projectile.cs:28025-28047` — the raining cloud over ground spawns a
