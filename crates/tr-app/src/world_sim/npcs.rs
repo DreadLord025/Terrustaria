@@ -2853,7 +2853,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
             app.world.golem_vx = body.vx;
+            // S1-D-3: the anchor's FULL velocity (`:19258`'s
+            // `nPC.velocity`), the body's raw life/lifeMax (the free
+            // head's mixed DOUBLE/INTEGER tier comparisons, `:31420`/
+            // `:31477`) and the part scan (`:19544-19566`'s flags).
+            app.world.golem_vy = body.vy;
+            app.world.golem_hp = body.hp;
+            app.world.golem_max_hp = body.max_hp;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+            app.world.golem_head_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            app.world.golem_fist_left_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistLeft && n.hp > 0);
+            app.world.golem_fist_right_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistRight && n.hp > 0);
         } else {
             app.world.golem_present = false;
         }
@@ -3771,11 +3790,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
             app.world.golem_vx = body.vx;
+            app.world.golem_vy = body.vy;
+            app.world.golem_hp = body.hp;
+            app.world.golem_max_hp = body.max_hp;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
             let head_alive = app
                 .npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            app.world.golem_head_alive = head_alive;
+            app.world.golem_fist_left_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistLeft && n.hp > 0);
+            app.world.golem_fist_right_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistRight && n.hp > 0);
             if let Some(b) = app
                 .npcs
                 .iter_mut()
@@ -3859,12 +3890,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
-        // (`NPC.cs:29022`/`:29084`) and Plantera's seeds
-        // (`NPC.cs:31966-31969` — every volley kind except the 277 thorn
+        // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
+        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3) and Plantera's seeds
+        // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
         // ball).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
+            || kind == crate::projectile::GOLEM_EYE_BEAM
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
         {
