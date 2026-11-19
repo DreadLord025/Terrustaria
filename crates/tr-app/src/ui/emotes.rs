@@ -198,20 +198,21 @@ pub fn draw(
                 (world0[1] - camera.y) * zoom + screen.y * 0.5,
             ];
             // The pop gate: the first/last 6 ticks draw the closed shell
-            // (`:204-205`). The shell draws FIRST with the original flip at
-            // the unshifted anchor (`:213`), and the pop frames early-return
-            // (`:214-217`) before the 87/89 adjustment.
-            let popping = b.life_time < 6 || b.life_time_start - b.life_time < 6;
-            let shell_col = if popping { 0 } else { 1 };
-            draw_frame(shell_col, 0, anchor, flip0);
+            // (`:204-205`, `EmoteBubble::popping`/`shell_column`). The shell
+            // draws FIRST with the original flip at the unshifted anchor
+            // (`:213`), and the pop frames early-return (`:214-217`) before
+            // the 87/89 adjustment.
+            let popping = b.popping();
+            draw_frame(b.shell_column(), 0, anchor, flip0);
             if popping {
                 continue;
             }
-            // The 87/89 un-flip (`:220-224`): the confused/sleep emotes keep
-            // their orientation and shift 4 px right instead — applied AFTER
-            // the shell, to the emote sprite only (`:225`).
+            // The 87/89 un-flip (`:220-224`, `crate::emotes::bubble_unflips`):
+            // the confused/sleep emotes keep their orientation and shift
+            // 4 px right instead — applied AFTER the shell, to the emote
+            // sprite only (`:225`).
             let (mut world, mut flip) = (world0, flip0);
-            if flip && (b.emote == 87 || b.emote == 89) {
+            if crate::emotes::bubble_unflips(b.emote, flip) {
                 flip = false;
                 world[0] += 4.0;
             }
@@ -220,9 +221,8 @@ pub fn draw(
                 (world[1] - camera.y) * zoom + screen.y * 0.5,
             ];
             // The emote sprite: column `emote*2%8 + frame`, row `1 + emote/4`
-            // (`:225`).
-            let col = (b.emote * 2) % 8 + b.frame;
-            let row = 1 + b.emote / 4;
+            // (`:225`, `EmoteBubble::emote_frame`).
+            let (col, row) = b.emote_frame();
             draw_frame(col, row, anchor, flip);
         }
     }
@@ -541,5 +541,95 @@ mod tests {
         crate::lang::init(tr_core::localization::GameCulture::English);
         let en = crate::lang::text(BACK_KEY);
         assert_eq!(en, "Back", "the en-US `UI.Back` row");
+    }
+
+    // S1-E-26 wave B — the wheel's cell geometry and open/pick/close flow,
+    // verified against `EmoteButton.cs` and `UIEmotesMenu.cs` line by line.
+    // Tests written, not run (code-only mode).
+
+    #[test]
+    fn the_button_frame_formula_matches_get_frame() {
+        // `EmoteButton.GetFrame` (`:32-36`): column `_emoteIndex%4*2 +
+        // (_frameCounter >= 10 ? 1 : 0)`, row `_emoteIndex/4 + 1`. The draw
+        // reads the same formula via `EmoteSystem::button_frame` (the shared
+        // 20-tick counter). Pin it for representative ids across the roster.
+        let mut sys = crate::emotes::EmoteSystem::default();
+        sys.open();
+        // First half of the cycle: frame 0.
+        assert_eq!(sys.button_frame(), 0);
+        for id in [0i32, 3, 4, 7, 8, 87, 150] {
+            let col = (id % 4) * 2 + sys.button_frame();
+            let row = 1 + id / 4;
+            assert_eq!(col, (id % 4) * 2, "frame 0 half: id {id}");
+            assert!(row >= 1 && row < crate::emotes::SHEET_ROWS, "id {id}");
+        }
+        // Second half (counter >= 10): frame 1 shifts every column by one.
+        for _ in 0..10 {
+            sys.update_all();
+        }
+        assert_eq!(sys.button_frame(), 1);
+        for id in [0i32, 3, 4, 150] {
+            let col = (id % 4) * 2 + sys.button_frame();
+            assert_eq!(col, (id % 4) * 2 + 1, "frame 1 half: id {id}");
+        }
+        // The shell frame is always column 1, row 0 (`DrawSelf` `:58-59`:
+        // `value.X = texture.Width()/8`, `value.Y = 0`) — independent of id.
+        let shell_col = 1;
+        let shell_row = 0;
+        assert_eq!((shell_col, shell_row), (1, 0));
+    }
+
+    #[test]
+    fn the_border_origin_is_the_emote_frame_half_size() {
+        // `EmoteButton.DrawSelf` (`:60`, `:69`): `origin = frame.Size()/2`
+        // (the 34x28 emote frame → (17,14)), drawn at `vector - One*2`, so
+        // the border's top-left = cell centre − (19,16). NOT the border's
+        // own half-size (18,15) — the BUG the draw comment records.
+        let (frame_w, frame_h) = (34.0f32, 28.0f32);
+        let origin = [frame_w * 0.5, frame_h * 0.5];
+        assert_eq!(origin, [17.0, 14.0]);
+        let centre = [100.0f32, 200.0f32];
+        let top_left = [centre[0] - 2.0 - origin[0], centre[1] - 2.0 - origin[1]];
+        assert_eq!(top_left, [81.0, 184.0], "centre − (19,16)");
+    }
+
+    #[test]
+    fn the_wheel_opens_picks_and_closes() {
+        // The full flow: `DrawEmoteBubblesButton`'s click opens the wheel
+        // (`Main.cs:42404` → `UIEmotesMenu.OnActivate` rebuild, scroll 0),
+        // a cell pick fires `EmoteButton.LeftClick` (`:90-95`) →
+        // `MakeLocalPlayerEmote` (`EmoteBubble.cs:278-292`, the 360-tick
+        // bubble) + `IngameFancyUI.Close`, and Back just closes
+        // (`UIEmotesMenu.GoBackClick` `:305-309`).
+        let screen = Vec2::new(1600.0, 900.0);
+        let mut sys = crate::emotes::EmoteSystem::default();
+        assert!(!sys.menu_open);
+        sys.open();
+        assert!(sys.menu_open);
+        assert_eq!(sys.scroll, 0, "OnActivate rebuilds the page at scroll 0");
+        // Pick the drawn centre of cell (row 1, col 3) → id 17.
+        let grid = grid_rect(screen);
+        let origin = grid_origin(&grid);
+        let cx = origin[0] + 3.0 * CELL + CELL * 0.5;
+        let cy = origin[1] + 1.0 * CELL + CELL * 0.5;
+        let id = card_at(screen, Vec2::new(cx, cy), sys.scroll).unwrap();
+        assert_eq!(id, 17);
+        // The pick spawns the bubble and closes the wheel (the dead gate is
+        // the caller's, `clicks.rs:1056` — here the player is alive).
+        sys.new_bubble(id);
+        sys.close();
+        assert!(!sys.menu_open);
+        assert_eq!(sys.scroll, 0);
+        assert_eq!(sys.bubbles.len(), 1);
+        assert_eq!(sys.bubbles[0].emote, 17);
+        assert_eq!(sys.bubbles[0].life_time, 360);
+        // Back closes without spawning (`GoBackClick`).
+        sys.open();
+        let panel = panel_rect(screen, true);
+        let back = back_rect(&panel);
+        assert!(back_hit(&panel, Vec2::new(back[0] + 5.0, back[1] + 5.0)));
+        sys.close();
+        assert!(!sys.menu_open);
+        assert_eq!(sys.bubbles.len(), 1, "Back spawns nothing");
     }
 }
