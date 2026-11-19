@@ -543,7 +543,8 @@ impl NpcKind {
 
     /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
     /// bijection over the whole kind roster (`S1-F-1`); the unmatched ids
-    /// (the free 62/148 holes + the gaps above 215) decode to `None`. One
+    /// (the free 62 hole + the gaps above the landed bands) decode to
+    /// `None` (148 = LeechTail since W-A2-3). One
     /// live arm per id: a duplicate is a hard error (`to_u16`'s guard above).
     #[deny(unreachable_patterns)]
     pub fn from_u16(v: u16) -> Option<Self> {
