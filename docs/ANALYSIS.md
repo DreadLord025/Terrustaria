@@ -24893,3 +24893,169 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+## Empress of Light's machine — the audit + the pure-core gap-fill (S1-D-3 empress, 2026-11-19)
+
+**Code-only mode**: this round ran with NO compiler invoked — no cargo/rustc/
+rustfmt/tests/graphify; file reads/writes + git only. The witness tests are
+WRITTEN NOT RUN; verification is the block-by-block re-read of the C# source
+(the whole `AI_120_HallowBoss` machine `NPC.cs:45814-46982` plus every helper
+it calls).
+
+### The verdict table (census-confirmed, not doc-trusted)
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| The boss machine is missing | **CONFIRMED** | grep census over `crates/`: no `NpcKind` for 636, no aiStyle-120 arm, no `update_empress`; the only Empress hits are the loot rows (`loot_db_gen.rs:1314`/`:1479-1483`, incl. the `EmpressOfLightIsGenuinelyEnraged` Terraprisma condition), the item/name tables and the `IsDamageDodgeable` note (`npc.rs:3402-3403`) |
+| `NPCID.HallowBoss` = 636 | **CONFIRMED** | `ID/NPCID.cs:11949` |
+| aiStyle 120, the `SetDefaults` row | **CONFIRMED** | `NPC.cs:17188-17206`: 100×100, damage 80, defense 50, lifeMax 70000, knockBackResist 0, noGravity + noTileCollide, boss, Opacity 0, dontTakeDamage, npcSlots 16, value 25 gold |
+| The day-enrage one-shot form | **CONFIRMED** | the 9999 damage rows (`:46002-46010` projectile, `:46921-46924` contact) — the kill IS the damage; the tint (`Main.OurFavoriteColor`, `Main.cs:26615-26620`/`:28282-28293`) and the `IsDamageDodgeable` false arm (`NPC.cs:78752-78753`) are render/dodge-side, noted for the wiring |
+
+### What landed: `crates/tr-app/src/npc_ai_empress.rs` (pure core, wiring deferred)
+
+The WHOLE `AI_120_HallowBoss` machine (`NPC.cs:45953-46942`) ported as pure
+functions over a local `EmpressState`/`EmpressEnv` — the Fishron precedent
+(`ad41a646`). The resume found a partial port (the prior session died at the
+`__CONTINUE__` marker); this round ran the distrust-verbatim audit against the
+C# and corrected SIX deltas before writing the 28 witness tests:
+
+1. **f32 angle arithmetic before the `RotatedBy` widening** (4 sites): the C#
+   computes `(float)Math.PI / 2f * x` in FLOAT and widens the result to double
+   for `RotatedBy` (`Utils.cs:1675-1684` takes a double but the ARGUMENT is
+   float-typed at `:46257`/`:46291`/`:46294`/`:46818`); the partial computed
+   the product in double — a different rounding.
+2. **`NextVector2Unit`'s angle** (`Utils.cs:1261-1264`): `startRotation +
+   rotationRange * NextFloat()` is float arithmetic; the partial multiplied
+   in double.
+3. **case 5's `num62`** (`:46473`): `(float)Math.PI * 2f * NextFloat()` is
+   float; fixed.
+4. **the expert wall lead** (`:46612`): `Velocity * 20f * num78` associates
+   LEFT in f32 — `(v*20)*num78`, not `v*(20*num78)`.
+5. **the RAW `GetTargetData().Center`** in cases 1 (despawn distance + expert
+   side-step), 4 (the lance ring centre) and 13 (the fade distance): the C#
+   reads `targetData.Center` WITHOUT the invalid fallback (the default
+   `NPCAimedTarget` is (0,0), `NPCAimedTarget.cs:21`); the partial used the
+   fallback centre. Cases 3/7/10/11 already read raw.
+6. **the case-12 discarded `_ = ai[1] / 60f`** (`:46817`) noted (no effect).
+
+The machine's structure (all verified line-by-line):
+
+* the `ai[3]` phase/enrage latch (0 normal / 1 phase 2 / 2 day-enraged /
+  3 enraged phase 2; `IsInPhase2` = 1|3 `:45814-45821`, `IsGenuinelyEnraged`
+  = 2|3 `:45823-45830`);
+* **materialize** (0, `:46024-46075`): 180 ticks, the still 874 Death Aurora
+  at centre+(0,-80), the opacity ramp, the 2-dust trail (ticks 11..149);
+* **pattern pick** (1, `:46076-46264`): `DashTo` (`:46944-46960` — the
+  discarded first `DirectionTo`, the (0,-300) aim pulled 100 px when > 200,
+  the 18-cap / 6-divide lerp over the 100..600 ramp), then the classic 10-slot
+  `[2,8,6,8,5,2,8,4,8,5]` (hp ≤ 50 % forces 10), the phase-2 9-slot
+  `[7,2,8,5,2,6,4,8,12]` / expert 10-slot `[7,2,8,11,5,2,6,4,8,12]`; 8 → 9
+  when the target is right; the despawn gates (invalid / > 6400 px /
+  enraged-at-night or dusk ≥ 53400) force 13; the expert side-step (the away
+  direction rotated ±π/2, 20 speed) for every pick except 5/12;
+* **prismatic bolts** (2, `:46265-46320`): 873 every 3 ticks (2 expert) < 60,
+  the ±π/4 `NextFloatDirection` fan; phase-2 expert: the full-circle 10-speed
+  variant — BOTH draws fire (`:46291` then `:46294` overwrites);
+* **death aurora** (3, `:46321-46342`): the `% 180` volley is unreachable
+  (the state ends at 120, the increment comes FIRST) — ported as-is;
+* **ethereal lances** (4, `:46343-46451`): 919 on the 300/450-px ring, every
+  4 ticks < 100; the classic outward ±0.5 push, the motion flip, the ring-snap
+  when the velocity pull shortens the spawn; the flipped `ring_dir` CARRIES
+  between extra players (`:46424`);
+* **lasting rainbows** (5, `:46452-46492`): the 13-bolt 872 ring, ONE
+  `NextFloat` start angle; the f32 `+= 1f/13f` loop runs exactly 13 times
+  (the 13th add lands on 1.0 — hand-traced);
+* **sun dance** (6, `:46493-46531`): 923, 6 (8 expert) per volley at ticks
+  0/60/120, the `% 1` wrap + the `ToInt` (0/1) side;
+* **lance walls** (7, `:46532-46631`): the six geometric 919 walls; the
+  DISCARDED `Main.rand.NextFloat()` (`:46553`) STILL advances the stream;
+  14 lances classic (the inclusive `<= 1f` loop hits exactly 1.0 on the 13th
+  add of 1/13) / 18 expert (1/18 never lands on 1.0); the expert lead-aim lerp
+  0.75 with the left-associated `v*20*num78` lead;
+* **dash** (8/9, `:46632-46675`): invulnerable ONLY 6..40, damage ×1.5 in
+  41..90, the effect-5 dust every tick (progress 0 → no draws);
+* **transform** (10, `:46676-46707`): at tick 90 `ai[3]` 0→1 / 2→3 and the
+  centre snaps over the RAW target + (0,-250); the end resets `ai[2]`;
+* **spiral bolts** (11, `:46708-46793`): the 919 behind the player's velocity
+  (the (0,-1) default), every 3 ticks < 100;
+* **rotating streaks** (12, `:46794-46843`): 873 every 6 (4 expert) ticks in
+  10..60, the angle rides `(ai[1]-10)/50`; the extra-shot rotation index is
+  `ai[1] % num22` (always 0 inside the branch), NOT the quotient (`:46825`);
+* **despawn** (13, `:46844-46917`): the alpha ramp ±5, the 5-dust trail; at
+  alpha 255 with ai1 ≥ 20 `active = false` and the tail is SKIPPED (the C#
+  `return`, `:46911`);
+* the tail (`:46919-46941`): `dontTakeDamage = !flag6`, the contact damage
+  (×1.5 dash / 9999 enrage), the phase-2 defense ×1.2, the 44-tick wing clock,
+  the flag5 alpha fade.
+
+### The day-enrage gate
+
+`ShouldEmpressBeEnraged` (`NPC.cs:45925-45951`): non-remix returns
+`Main.dayTime`; remix returns the sticky `NPC.empressRageMode` latch, set
+when the first live 636's centre is above `worldSurface * 16` (a DOUBLE
+compare, `:45942`) and cleared when none is alive (`Main.cs:17922-17924`).
+The port takes THIS boss as the first live 636 (the single-Empress invariant —
+documented). At FULL life the latch adds 2 to `ai[3]` at the head
+(`:45974-45977`) AND at the end of the materialize (`:46066-46069` — a boss
+damaged during the fade-in latches there instead). Enraged: every projectile
+damage row 9999, the contact 9999, `flag2` forced true (the expert cadences +
+the +5 timer shave apply even in classic). The one-shot kill IS the 9999
+damage — no special kill code exists.
+
+### RNG by construction
+
+Every `Main.rand` draw is consumed in C# order (each draw = one
+`InternalSample`, `UnifiedRandom.cs:62-88`); the stream-clone witnesses
+replay the draws against a clone (the style-52 pattern):
+
+* `DoMagicEffect` (`:45832-45923`): per dust, the `NewDustPerfect` ARGUMENTS
+  evaluate first — `NextVector2CircularEdge` (1, `Utils.cs:1271-1274` →
+  `NextVector2Unit` `:1261-1264`), the velocity `NextFloat` (1), the colour
+  `NextFloat` (1), the scale `NextFloat` (1) — then `Dust.NewDust`'s own 6
+  (`Dust.cs:170-175`/`:190`: `Next(w-4)`, `Next(h-4)` with w/h clamped ≥ 5,
+  `Next(-20,21)` ×2, `Next(3)`, `Next(-20,21)`). Effect 5 with 0 < progress
+  draws `Next(86,92)` ONCE (`:45869`) even when progress ≥ 1 zeroes the
+  count; progress == 0 draws NOTHING (the `customData` branch `:45902-45909`
+  is dead code).
+* case 0 trail (`:46040-46058`): per dust 6 (`NewDust`, w/h = 100) + 2
+  (`NextVector2Circular`, `Utils.cs:1266-1269`) + 1 (velocity) + 1 (fadeIn)
+  + 6 (`CloneDust` → `NewDust`, `Dust.cs:263-281`) = 16 ×2 = 32/tick, ticks
+  11..149 (139 ticks × 32 = 4448 draws over the materialize).
+* case 13 trail (`:46880-46898`): 1 (colour) + 6 (w/h = 200) + 2 + 1
+  (velocity) + 1 (scale) + 1 (fadeIn) + 6 = 18 ×5 = 90/tick.
+* gameplay: case 2 `NextFloatDirection` (`:46291`, +`NextFloat` `:46294`
+  when phase-2 expert — BOTH consumed), case 5 `NextFloat` (`:46473`),
+  case 7 the DISCARDED `NextFloat` (`:46553`).
+
+**Dust-pool assumption (documented deviation)**: the pool is below the 50 %
+`maxDustToDraw` threshold (the FIRST skip tier, `Dust.cs:139-143`) and
+on-screen, so `Dust.NewDust`'s skip draws and early-outs (`Dust.cs:77-101`)
+never fire; `ChildSafety.Disabled` is true by default
+(`GameContent/ChildSafety.cs:33`) so its branch (`Dust.cs:194-213`) never
+draws. Dust type 267 is in NONE of the extra-draw type lists
+(`Dust.cs:214-253`), so exactly 6 draws per `NewDust`.
+
+### Documented deviations / skips
+
+* the dust VISUALS, the sounds (`SoundID.Item160-165`), the
+  `Lighting.AddLight` tail (`:46941`) and `GetSpawnSource_ForProjectile` are
+  skipped — the dust RNG is still consumed (above);
+* `TargetClosest` is a REQUEST (the S1-D-3p `npc_target.rs` helper when
+  wired); the caller's target rides unchanged within the tick;
+* single-player assumed (`Main.netMode != 1`): every `NewProjectile` fires
+  and the `Boss_CanShootExtraAt` scans (`:46962-46982`) run over the caller's
+  ascending-slot player slice;
+* the remix scan (`:45933-45941`) takes THIS boss as the first live 636 (the
+  single-Empress invariant);
+* `Vector2.Normalize` of an exactly-zero vector yields NaN in XNA; the port
+  guards to zero (the Fishron precedent) — only differs on exact overlap;
+* the 874/873/872/919/923 projectiles have no port AI yet — the spawns are
+  REQUESTS carrying the C# `ai[0]`/`ai[1]` arguments verbatim.
+
+### The seam + the remainder
+
+`empress_seam_applies(kind) == (kind == 636)` — the ONE gate the live dispatch
+will call once `NpcKind::EmpressOfLight` lands. The remainder: the roster row
++ the exhaustive `npc/data.rs` tables + the bestiary entry + the
+`update_kind_ai` wiring + the five projectile AIs + the `IsDamageDodgeable`
+636 arm (`npc.rs:3402-3403` notes it) + the `OurFavoriteColor` enrage tint
+(render-side). 28 witness tests WRITTEN NOT RUN — **no compiler invoked**.
