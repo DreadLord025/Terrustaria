@@ -107,6 +107,7 @@ mod npc_ai_style72;
 mod npc_ai_style9;
 mod npc_ai_style31;
 mod npc_ai_style47;
+mod npc_ai_bat;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;

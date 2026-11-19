@@ -17939,6 +17939,81 @@ Three, all forced by the port's shape:
   defers the strip walk to a background thread
   (`TransformWorldOnBackgroundThread`, `:31721-31742`) and queues the chat/achievement
   follow-up back to the main thread. The port's `start_hardmode` transforms inline
+
+## S1-D-3 — the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
+
+**Code-only mode.** This slice landed under the Lead's code-only directive: no
+`cargo`/`rustc`/`rustfmt`/test run was invoked. The port was verified by re-reading
+the C# source block-by-block and by hand-arithmetic on the witness tests (written,
+not run). The tests are the module's `#[cfg(test)]` block plus the existing
+`npc.rs` caster tests, which the seam keeps green by construction.
+
+The C#'s aiStyle 8 (`NPC.cs:20817-21376`) is the **teleporting caster** machine —
+the task slug "bat/flyer" mislabels it (the bats ride aiStyle 14, `:22849`). The
+new `crates/tr-app/src/npc_ai_bat.rs` supersedes the old `npc_ai.rs::caster_cycle`
+framework (deleted) with the faithful whole-block port:
+
+* **The state rides the real `ai[]` vector** — `ai[0]` the cycle counter (500 init
+  `:20836-20843`, `++` `:20993`, the 100/200/300 triggers `:21069-21073`, the 650
+  wrap `:21083-21085`), `ai[1]` the windup countdown (`:21113-21116`), and
+  `ai[2]`/`ai[3]` the **pending teleport tile**, consumed on the NEXT tick
+  (`:20855-20992`) — the old framework teleported on the same tick, a real
+  behavioural delta this slice fixes. `update_caster` folds the port's
+  `caster_counter`/`cast_windup` mirrors into `ai[0]`/`ai[1]` around the step.
+* **`TargetClosest`** (`:20829`) now rides the shared `npc_target::target_closest`
+  helper (the zombie wiring's candidate shape), replacing the old ad-hoc
+  centre-facing write.
+* **The teleport search** (`attempt_find_teleport_spot`, `:18937-19007`) is faithful:
+  the >2000-Manhattan-px early-fail (`:18944-18948`, zero draws), the per-attempt
+  X-then-Y `Main.rand.Next` pair (`:18952-18953`), the downward column scan whose
+  pre-telefrag rejections all `continue` (`:18957`/`:18973`/`:18978`) and only the
+  telefrag check ends the attempt (`:19003`), the dungeon-wall gate for the Dark
+  Caster (`:18960-18966`, `Main.wallDungeon` walls 7/8/9/94-99), the lava check in
+  the else branch (`:18967`), the `Collision.SolidTiles` body space with the
+  actuated/`tileSolidTop` exclusions (`Collision.cs:3455-3488`), and the telefrag
+  rect = the floor tile's 16×16 box inflated 5 tiles tested against the player's
+  hitbox UNION its `(int)(velocity*20)` displaced copy (`:18980-18996`,
+  `Utils.Modified`/`Rectangle.Union`), skipping dead players (`:18985`).
+* **The firing-distance gate** (`global_firing_distance_check`,
+  `AI_GlobalFiringDistanceCheck` `:55835-55841`) is now real: the target centre's
+  `CenteredRectangle(MaxWorldViewSize)` (1920×1200, `Main.cs:677-681`/`:66714`)
+  deflated 50/side, both points truncated — the old constant-on stand-in is gone.
+  The Goblin Sorcerer's always-in-range override (`:21007-21010`) is ported.
+* **The red-hat latch + double-step** (`:20819-20828`, `:21061-21068`): the Dark
+  Caster latches `local_ai[3]` from the sim's `skeletron_red_hat` mirror (no reset
+  arm, as in the C#); `flag4`'s second `++` with the odd rollback doubles the cast
+  rate (an even counter advances +2/tick). The Water Sphere carries
+  `ai[3] = flag4 ? 1 : 0` (`:21246`).
+* **The FTW Fire-Imp-vs-WoF stall** (`:21053-21060`) rides
+  `world.seeds.contains(FOR_THE_WORTHY) && world.wof_present` (the port's
+  `getGoodWorld` convention, `variants.rs:45`, and the WoF presence mirror).
+
+**Deliberate deferrals / deviations (recorded, not silently dropped):**
+
+* **The rand-drawing arms are skipped wholesale** (the S1-E-5 RNG rule): the Djinn's
+  `% 30` curse volley (`:21117-21162`, `Next` pair per shot `:21140-21141`), the
+  Rune Wizard / dungeon-caster aim jitter (`:21195-21198`, `:21260`, `:21268-21269`),
+  the teleport dust bursts' `Next(1,3)` scales (`:20867`/`:20936`) and the per-type
+  dust/light tail (`:21279-21374`). The lights already feed `npc_lights.rs::npc_light`
+  (S1-E-5); the dust system is unported. Skipping keeps the surviving stream's order
+  exact — the only draws this machine makes are the teleport search's pairs.
+* **Unported kinds stay deferred**: the hardmode dungeon casters 281-286
+  (`:12640-12723`), the Rune Wizard 172 (`:17727`) and the Librarian Skeleton 693
+  (the near-books search `AI_AttemptToFindTeleportSpotNearBooks` `:19009+`, the
+  `localAI` book machine `:20994-21005`/`:21106-21111`, the 1092 book projectile).
+  Their trigger/wrap/shoot arms (`:21011-21050`, `:21075-21078`, `:21177-21227`,
+  `:21248-21274`) are cited but not armed; the module's `else` group covers only the
+  ported standard casters + Fire Imp + Djinn.
+* **`AnyNPCs(35)` rides the `skeletron_red_hat` mirror** (`world_sim/npcs.rs:3377`),
+  whose hands-count stand-in means a live head with one hand reads alive but a
+  two-hand head does not. The exact `NPC.AnyNPCs(35)` check lands with the mirror's
+  rework; a stock world (no head) reads false, which is the common case.
+* **The generic gravity + collision tail** (`NPC.cs:90465-90493`) runs AFTER `AI()`
+  returns in `NPC.UpdateNPC`; the port applies it at the end of the step (the
+  pre-existing ordering deviation, unchanged — the windup countdown sees the
+  pre-gravity position exactly as the C#'s AI-then-collision split does).
+* **The Poltergeist (aiStyle 22)** keeps riding `update_caster` as its documented
+  stand-in and stays shotless (the step's standard shoot match has no arm for it).
   and then runs the follow-up in the same call. `TryProtectingSpawnedItems`/
   `UndoSpawnedItemProtection` (`:31708`/`:31717`) have no ported consumer.
 * **The kill-all row has no C# counterpart** (see above) — its sweep stays as-is.
