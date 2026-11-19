@@ -976,6 +976,18 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
         }
         merge(&mut n, num, |v| td::SET_DIRT.has(v));
     }
+    // `WorldGen.cs:82077-82082`: the living-mahogany/leaf pair — the same
+    // shape as the living wood above, but 383 merges with MUD (not dirt).
+    if me == 384 {
+        merge(&mut n, num, |v| v == 383);
+    } else if me == 383 {
+        for v in n.iter_mut() {
+            if *v == 384 {
+                *v = -2;
+            }
+        }
+        merge(&mut n, num, |v| td::SET_MUD.has(v));
+    }
     if td::TILE_MOSS.has(me) || td::SET_TILE_MOSS_BRICK.has(me) {
         merge(&mut n, num, |v| td::SET_DIRT.has(v));
     } else if td::SET_DIRT.has(me) {

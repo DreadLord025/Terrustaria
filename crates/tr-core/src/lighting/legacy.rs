@@ -34,11 +34,29 @@
 //!   the S1-A-6 `LightMap.blur_rng` precedent. Stream *order* is exact:
 //!   `NextSeed()` after every swipe pass (`:1082`), `WithModifier(i*1000+j)`
 //!   per wet cell (`:1250`), `Next(98,100)` per wet decay draw.
-//! - The minimap light export (`TryUpdatingMapWithLight`, `:371-433`) and the
-//!   Wall-of-Flesh `gross` light block (`:678-717`) are not ported: the first
-//!   is the map system's own lighting pass, the second needs `Player.gross` /
-//!   `Main.wofNPCIndex`, neither of which exists in the port yet. Both are
-//!   gated off in vanilla single-player without those conditions.
+//! - The Wall-of-Flesh `gross` light block (`:678-717`) is not ported: it
+//!   needs `Player.gross` / `Main.wofNPCIndex`, neither of which exists in
+//!   the port yet. It is gated off in vanilla single-player without those
+//!   conditions.
+//! - The minimap light export (`TryUpdatingMapWithLight`, `:371-433`, wave B)
+//!   is split along the C#'s own seam: the `ProcessArea` gate block
+//!   (`:341-358`) runs INLINE in `process_area` (before `PreRenderPhase`
+//!   resets the count, so the `renderCount == 3` gate sees the C# value),
+//!   writing through [`MapLightExport`] — the `Main.mapTime/mapEnabled`
+//!   counters, the `Main.Map` tile array and the `Main.updateMap` rect. The
+//!   `Main.mapDelay` countdown (`Main.cs:229`, static ctor `= 2` at
+//!   `:66504`, world-load re-arm `WorldGen.cs:6947`) lives on the engine;
+//!   the frame driver resets it via [`LegacyLighting::reset_map_delay`] on
+//!   world entry. The frame driver attaches the export only while a legacy
+//!   mode is active; the modern path keeps `LightingEngine.ExportToMiniMap`
+//!   (`WorldMap::update`). The per-frame `Main.mapTime` countdown
+//!   (`Main.cs:61818-61821`) stays on the map side (`WorldMap::tick_map_time`);
+//!   the export re-arms it (`:373`). The C# `try/catch` around the export
+//!   (`:351-357`) becomes an abort-on-out-of-bounds early return — the
+//!   re-arm at `:373` happens first either way, tiles written before the
+//!   abort persist and `Main.updateMap` stays untouched, exactly like the
+//!   C#. The export draws NO random numbers, so the swipe/scanner streams
+//!   are untouched (the `map_export_keeps_the_rng_streams` witness).
 //! - Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the
 //!   mode selector — Color selects the NEW engine (`Lighting.cs:40-44`) — so
 //!   only the Mode 1/2/3 swipes are ported; the Mode-0 water/honey decay table
@@ -72,6 +90,49 @@ struct State {
 /// right/bottom exclusive).
 type Rect = [i32; 4];
 
+/// The map-side state `TryUpdatingMapWithLight` (`:371-433`) reads and writes
+/// — the `Main.Map` / `Main.mapTime` / `Main.mapEnabled` / `Main.updateMap`
+/// seam. The frame driver borrows it from the app's `WorldMap` and attaches
+/// it to [`LegacyLighting::process_area`]; `None` keeps the engine's light
+/// behaviour identical (the export draws no random numbers).
+pub struct MapLightExport<'a> {
+    /// `Main.Map`'s tile array (`WorldMap._tiles`), row-major `y * w + x`.
+    pub tiles: &'a mut [crate::map::MapTile],
+    /// `Main.mapTime` (`Main.cs:803`) — the export countdown; the per-frame
+    /// decrement (`Main.cs:61818-61821`) stays on the map side, the export
+    /// re-arms it from `map_time_max` (`:373`).
+    pub map_time: &'a mut i32,
+    /// `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality refresh budget.
+    pub map_time_max: i32,
+    /// `Main.mapEnabled` (`Main.cs:813`) — the export gate (`:349`).
+    pub map_enabled: bool,
+    /// The tiles `Main.Map.UpdateLighting` changed (`WorldMap.cs:49-63`
+    /// returns true) — the port's `MapRenderer.QueueChange` analog: the
+    /// driver pushes these into the map texture's dirty list.
+    pub changed: Vec<(i32, i32)>,
+    /// `Main.updateMap` (`:432`) as `[x, y, w, h]` — set on a completed
+    /// export; the C# `try/catch` abort (`:351-357`) leaves it untouched.
+    pub update_map: Option<Rect>,
+}
+
+impl<'a> MapLightExport<'a> {
+    pub fn new(
+        tiles: &'a mut [crate::map::MapTile],
+        map_time: &'a mut i32,
+        map_time_max: i32,
+        map_enabled: bool,
+    ) -> Self {
+        Self {
+            tiles,
+            map_time,
+            map_time_max,
+            map_enabled,
+            changed: Vec::new(),
+            update_map: None,
+        }
+    }
+}
+
 /// The per-frame `Main` state the legacy engine reads beyond `LightParams`.
 #[derive(Clone, Copy, Debug)]
 pub struct LegacyInputs {
@@ -93,6 +154,14 @@ pub struct LegacyInputs {
     /// `Main.gamePaused` — keeps the `AddLight` dictionary across frames
     /// (`:826-829`).
     pub game_paused: bool,
+    /// `Main.GameViewMatrix.Translation` (`SpriteViewMatrix.cs:149-153`),
+    /// read by the minimap light export (`:375-382`): the zoom frame's
+    /// offset, `Round(screen/2 - (screen/2) / Round(zoom/(1/128))*(1/128))`.
+    /// `[0, 0]` at zoom 1.
+    pub view_translation: [f32; 2],
+    /// `Netplay.Connection.StatusMax > 0` (`:341`) — while connecting, the
+    /// export countdown is pinned to 1 every shift frame.
+    pub net_connecting: bool,
 }
 
 impl Default for LegacyInputs {
@@ -105,6 +174,8 @@ impl Default for LegacyInputs {
             blackout: false,
             headcovered: false,
             game_paused: false,
+            view_translation: [0.0; 2],
+            net_connecting: false,
         }
     }
 }
@@ -197,6 +268,10 @@ pub struct LegacyLighting {
     /// `TileLightScanner.cs:56-59`), NOT once per frame like the modern path.
     /// Seeded from the frame's `LightParams.rng_seed` on first use.
     scanner_rng: Option<FastRandom>,
+    /// `Main.mapDelay` (`Main.cs:229`, static ctor `= 2` at `:66504`,
+    /// re-armed on world load `WorldGen.cs:6947`) — the export gate's
+    /// countdown (`ProcessArea`, `:345-348`).
+    map_delay: i32,
 }
 
 impl LegacyLighting {
@@ -236,7 +311,16 @@ impl LegacyLighting {
             last_size: [0.0; 2],
             swipe_rng: FastRandom::new(0),
             scanner_rng: None,
+            map_delay: 2,
         }
+    }
+
+    /// `Main.mapDelay = 2` on world entry (`WorldGen.cs:6947`, the static
+    /// ctor's initial value `Main.cs:66504`): the export gate's countdown
+    /// re-arms. The engine owns the counter in the port (the modern map
+    /// pass does not read it — see ANALYSIS, S1-E-19 wave B).
+    pub fn reset_map_delay(&mut self) {
+        self.map_delay = 2;
     }
 
     /// The `Lighting.Mode` setter's legacy half (`Lighting.cs:45-59`): select
@@ -340,7 +424,9 @@ impl LegacyLighting {
     /// size). The requested rect is `Main.GetAreaToLight`'s legacy branch
     /// (`Main.cs:63926-63939`). `lights` are the frame's `AddLight` sources;
     /// they are accumulated against the previous rect first, exactly where
-    /// vanilla's between-frame `AddLight` calls sit.
+    /// vanilla's between-frame `AddLight` calls sit. `map_export` is the
+    /// `Main.Map` seam for the `:341-358` gate block (wave B); `None` keeps
+    /// the light behaviour identical — the export draws no random numbers.
     pub fn process_area(
         &mut self,
         world: &World,
@@ -349,6 +435,7 @@ impl LegacyLighting {
         params: &LightParams,
         inputs: &LegacyInputs,
         lights: &[DynamicLight],
+        mut map_export: Option<&mut MapLightExport<'_>>,
     ) {
         // The between-frame `AddLight` accumulation (`Lighting.cs:157-163`).
         for l in lights {
@@ -393,13 +480,31 @@ impl LegacyLighting {
         if self.render_count < 3 {
             self.do_colors(inputs);
         }
-        // `:334-363`. The map-lighting export (`TryUpdatingMapWithLight`) and
-        // the netplay `mapTime` poke are the map system's own pass — out of
-        // scope here (module note).
+        // `:334-363`.
         if self.render_count == 2 {
             self.copy_fully_processed(max_x, max_y, camera_pos);
         } else if let Some(last) = self.last_camera {
             self.shift_unprocessed(max_x, max_y, camera_pos, last);
+            // `:341-344`: while connecting, the export countdown is pinned
+            // to 1 every shift frame.
+            if inputs.net_connecting {
+                if let Some(m) = map_export.as_deref_mut() {
+                    *m.map_time = 1;
+                }
+            }
+            // `:345-358`: the mapDelay countdown, then the gated export.
+            // The C# runs this whether or not the map exists (the counters
+            // are `Main` statics); the port only has the seam when the map
+            // is live, so `mapDelay` rides the engine either way.
+            if self.map_delay > 0 {
+                self.map_delay -= 1;
+            } else if let Some(m) = map_export {
+                if *m.map_time == 0 && m.map_enabled && self.render_count == 3 {
+                    // `:351-357`: the try/catch — an abort keeps the re-arm
+                    // and the tiles written so far, and skips `updateMap`.
+                    self.try_updating_map_with_light(world, camera_pos, camera_size, inputs, m);
+                }
+            }
             if self.old_sky_color != self.sky_color {
                 self.update_light_to_sky_color(world, tile_r, tile_g, tile_b);
             }
@@ -464,6 +569,121 @@ impl LegacyLighting {
                 }
             }
         }
+    }
+
+    /// `TryUpdatingMapWithLight` (`:371-433`): the minimap light export. The
+    /// presented `R/G/B` collapse to the max channel (×1.5 in White,
+    /// `:416-419` — `IsColorOrWhiteMode`, `Mode < 2`, `:204`), quantise to a
+    /// byte, take the sky-air 22 and the revealed-floor 22 arms (`:421-428`),
+    /// and ride `Main.Map.UpdateLighting` (`WorldMap.cs:49-63`, the shared
+    /// [`crate::map::update_map_lighting`] port). The window is the camera's
+    /// SCALED view (`:375-382`, `Camera.ScaledPosition`/`ScaledSize`,
+    /// `Camera.cs:12-14`) intersected with the requested rect, both clamped
+    /// with the C#'s max-first `Utils.Clamp` (`Utils.cs:223-234`). The re-arm
+    /// at `:373` happens FIRST — the C# `try/catch` (`:351-357`) aborts the
+    /// walk on an out-of-bounds state/tile read but keeps it, the written
+    /// tiles and the untouched `Main.updateMap`. No RNG draws here.
+    fn try_updating_map_with_light(
+        &self,
+        world: &World,
+        camera_pos: [f32; 2],
+        camera_size: [f32; 2],
+        inputs: &LegacyInputs,
+        m: &mut MapLightExport<'_>,
+    ) {
+        // `:373`.
+        *m.map_time = m.map_time_max;
+        // `:374-382`: the scaled view rect. `Camera.ScaledSize = UnscaledSize
+        // - Translation * 2` (`Camera.cs:14`), `ScaledPosition =
+        // UnscaledPosition + Translation` (`:12`).
+        let num = 40;
+        let tr = inputs.view_translation;
+        let num2 = (camera_size[0] - tr[0] * 2.0) as i32;
+        let num3 = (camera_size[1] - tr[1] * 2.0) as i32;
+        let vx = camera_pos[0] + tr[0];
+        let vy = camera_pos[1] + tr[1];
+        let mut value = (vx / 16.0).floor() as i32;
+        let mut value2 = ((vx + num2 as f32) / 16.0).floor() as i32 + 1;
+        let mut value3 = (vy / 16.0).floor() as i32;
+        let mut value4 = ((vy + num3 as f32) / 16.0).floor() as i32 + 1;
+        // `:383-394`: `Utils.Clamp` — max first, so a reversed range (a tiny
+        // world) folds onto the max instead of panicking.
+        let off = self.off_screen_tiles;
+        let clamp = crate::wind::cs_clamp;
+        value = clamp(value, off, world.width - off);
+        value2 = clamp(value2, off, world.width - off);
+        value3 = clamp(value3, off, world.height - off);
+        value4 = clamp(value4, off, world.height - off);
+        let mut value5 = clamp(self.requested[0], num, world.width - num);
+        let mut value6 = clamp(self.requested[1], num, world.width - num);
+        let mut value7 = clamp(self.requested[2], num, world.height - num);
+        let mut value8 = clamp(self.requested[3], num, world.height - num);
+        value5 = clamp(value5, value, value2);
+        value6 = clamp(value6, value, value2);
+        value7 = clamp(value7, value3, value4);
+        value8 = clamp(value8, value3, value4);
+        // `:396-431`: x outer, y inner — the jagged read is
+        // `_states[i - _requestedRectLeft + OffScreenTiles]
+        //          [j - _requestedRectTop + OffScreenTiles]`.
+        let color_or_white = self.mode < 2;
+        for i in value5..value6 {
+            let lx = i - self.requested[0] + off;
+            // `:398`: the COLUMN is read once, BEFORE the inner loop — an
+            // out-of-range column throws (→ the `:355` catch aborts the
+            // whole walk) even when the y range is empty.
+            if lx < 0 || lx >= self.sw {
+                return;
+            }
+            for j in value7..value8 {
+                let ly = j - self.requested[2] + off;
+                // The C# `array[...]` / `Main.tile[i, j]` reads throw on an
+                // out-of-range index → the `:355` catch aborts the walk.
+                if ly < 0 || ly >= self.sh {
+                    return;
+                }
+                let Some(tile) = world.tile(i, j) else {
+                    return;
+                };
+                let s = self.states[(lx * self.sh + ly) as usize];
+                // `:403-415`: the max channel of the PRESENTED values.
+                let mut num4 = 0.0f32;
+                if s.r > num4 {
+                    num4 = s.r;
+                }
+                if s.g > num4 {
+                    num4 = s.g;
+                }
+                if s.b > num4 {
+                    num4 = s.b;
+                }
+                // `:416-419`: White brightens the export 1.5x.
+                if color_or_white {
+                    num4 *= 1.5;
+                }
+                // `:420`: `(byte)Math.Min(255f, num4 * 255f)` — the float
+                // min then the byte truncation.
+                let mut b = (num4 * 255.0).min(255.0) as u8;
+                // `:421-424`: sky air keeps the 22 ambient.
+                if (j as f64) < world.world_surface
+                    && !tile.active()
+                    && tile.wall == 0
+                    && tile.liquid == 0
+                {
+                    b = 22;
+                }
+                // `:425-428`: a revealed tile never drops below 22.
+                let old_light = m.tiles[world.index(i, j)].light;
+                if (b > 18 || old_light > 0) && b < 22 {
+                    b = 22;
+                }
+                // `:429`: `Main.Map.UpdateLighting(i, j, b)`.
+                if crate::map::update_map_lighting(world, m.tiles, i, j, b) {
+                    m.changed.push((i, j));
+                }
+            }
+        }
+        // `:432`: `Main.updateMap = new Rectangle(value5, value7, w, h)`.
+        m.update_map = Some([value5, value7, value6 - value5, value8 - value7]);
     }
 
     /// `ShiftUnProcessedDataOver` (`:473-536`): pan the PRESENTED values with
@@ -1230,7 +1450,7 @@ mod tests {
         let params = LightParams::default();
         let mut prerendered = false;
         for _ in 0..32 {
-            engine.process_area(w, pos, size, &params, inputs, &[]);
+            engine.process_area(w, pos, size, &params, inputs, &[], None);
             if engine.render_count == 0 {
                 prerendered = true;
             }
@@ -1496,7 +1716,7 @@ mod tests {
         let inputs = LegacyInputs::default();
         let mut prerendered = false;
         for _ in 0..32 {
-            engine.process_area(&w, shifted, size, &params, &inputs, &[]);
+            engine.process_area(&w, shifted, size, &params, &inputs, &[], None);
             if engine.render_count == 0 {
                 prerendered = true;
             }
@@ -1596,6 +1816,7 @@ mod tests {
             &params,
             &LegacyInputs::default(),
             &[],
+            None,
         );
         // White collapses to the mean and keeps the maximum (`:286-298`).
         // The expected means are computed with the same f32 expression the
@@ -1654,5 +1875,285 @@ mod tests {
         let wet = engine2.get_color(44, 48)[0];
         // Three air steps left to the water edge, then the wet gate.
         assert!(wet < seed - 3.0 * 0.04, "water must decay faster: {wet}");
+    }
+
+    // ---- S1-E-19 wave B: the minimap light export (tests-as-code, code-only
+    // mode — written, not run; see ANALYSIS "The legacy minimap light export").
+
+    /// Drive `frames` ProcessArea calls, attaching a fresh enabled export
+    /// seam every frame (the `frame/draw.rs` driver shape). Returns the
+    /// per-frame `update_map` results — `Some` exactly on the frames the
+    /// `:349` gate fired.
+    fn drive_with_export(
+        engine: &mut LegacyLighting,
+        w: &World,
+        inputs: &LegacyInputs,
+        tiles: &mut [crate::map::MapTile],
+        map_time: &mut i32,
+        map_time_max: i32,
+        enabled: bool,
+        frames: usize,
+    ) -> Vec<Option<Rect>> {
+        let (pos, size) = camera();
+        let params = LightParams::default();
+        let mut out = Vec::new();
+        for _ in 0..frames {
+            let mut e = MapLightExport::new(tiles, map_time, map_time_max, enabled);
+            engine.process_area(w, pos, size, &params, inputs, &[], Some(&mut e));
+            out.push(e.update_map);
+        }
+        out
+    }
+
+    #[test]
+    fn map_export_keeps_the_rng_streams() {
+        // The module-note witness: the export draws NO random numbers, so a
+        // run with the seam attached every frame must present byte-identical
+        // light AND leave both RNG seeds where the seam-less run left them.
+        // Wet cells beside the torch force real `WithModifier`/`Next(98,100)`
+        // swipe draws (`:1250-1251`), so the witness is not vacuous.
+        let mut w = torch_world();
+        for x in [46, 47] {
+            let i = w.index(x, 48);
+            w.tiles[i].liquid = 255; // water (no lava flag)
+        }
+        let (pos, size) = camera();
+        let params = LightParams::default();
+        let inputs = LegacyInputs::default();
+        let mut a = LegacyLighting::new(LightMode::White);
+        let mut b = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut exported = false;
+        for _ in 0..20 {
+            a.process_area(&w, pos, size, &params, &inputs, &[], None);
+            let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+            b.process_area(&w, pos, size, &params, &inputs, &[], Some(&mut e));
+            exported |= e.update_map.is_some();
+        }
+        assert!(exported, "the seam must actually fire during the run");
+        assert!(
+            tiles.iter().any(|t| t.light > 0),
+            "the export must reveal map tiles"
+        );
+        assert_eq!(a.swipe_rng.seed, b.swipe_rng.seed, "swipe stream unchanged");
+        assert_eq!(
+            a.scanner_rng.map(|r| r.seed),
+            b.scanner_rng.map(|r| r.seed),
+            "scanner stream unchanged"
+        );
+        let (x0, y0, ww, hh) = a.get_area();
+        for y in y0..y0 + hh {
+            for x in x0..x0 + ww {
+                assert_eq!(
+                    a.get_color(x, y).map(f32::to_bits),
+                    b.get_color(x, y).map(f32::to_bits),
+                    "presented light diverged at {x},{y}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn map_export_gates_on_delay_count_and_render_count() {
+        // `ProcessArea` `:334-358`: a fresh engine (count 99) pre-renders on
+        // call 1 (count 0); the shift branch (`else if`, any count != 2 with
+        // a camera anchor) runs from call 2. `mapDelay` starts 2
+        // (`Main.cs:66504`) and counts down on calls 2/4; the export gate
+        // additionally needs `renderCount == 3`, so the first export fires
+        // on call 9 (the first count-3 frame after the delay expired). With
+        // `mapTimeMax = 0` the re-arm keeps the gate open, so call 14 (count
+        // 3 again, 5-frame cycle) exports a second time.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let out = drive_with_export(
+            &mut engine,
+            &w,
+            &LegacyInputs::default(),
+            &mut tiles,
+            &mut map_time,
+            0,
+            true,
+            14,
+        );
+        let fired: Vec<usize> = out
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(fired, vec![8, 13], "exports only on the count-3 shift frames");
+        assert_eq!(map_time, 0, "the re-arm reads mapTimeMax = 0 (`:373`)");
+        // The window is the requested rect clamped into the 40 inset
+        // (`:383-394`): the 96-wide world folds [37..60] onto [40, 56).
+        assert_eq!(out[8], Some([40, 40, 16, 16]));
+        assert!(tiles.iter().any(|t| t.light > 0), "the torch reveals");
+    }
+
+    #[test]
+    fn map_export_disabled_gate_writes_nothing() {
+        // `Main.mapEnabled == false` (`:349`): the countdown still runs and
+        // the re-arm never happens — no tiles, no `updateMap`.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let out = drive_with_export(
+            &mut engine,
+            &w,
+            &LegacyInputs::default(),
+            &mut tiles,
+            &mut map_time,
+            3,
+            false,
+            14,
+        );
+        assert!(out.iter().all(|r| r.is_none()), "no export while disabled");
+        assert_eq!(map_time, 0, "no re-arm while disabled");
+        assert!(tiles.iter().all(|t| t.light == 0), "no tile writes");
+    }
+
+    #[test]
+    fn map_export_net_connecting_pins_map_time_to_one() {
+        // `:341-344`: `Netplay.Connection.StatusMax > 0` pokes `mapTime = 1`
+        // on EVERY shift frame, before the gate — so the count-3 frame sees
+        // 1, not 0, and never exports while connecting.
+        let w = torch_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let inputs = LegacyInputs {
+            net_connecting: true,
+            ..Default::default()
+        };
+        let out = drive_with_export(
+            &mut engine, &w, &inputs, &mut tiles, &mut map_time, 0, true, 14,
+        );
+        assert!(out.iter().all(|r| r.is_none()), "no export while connecting");
+        assert_eq!(map_time, 1, "the poke lands on the last shift frame");
+    }
+
+    /// A 200x150 air world, surface at y=40, camera centred on tile (100,60)
+    /// in a 320x240 backbuffer: the export window folds to [90,111)x[52,68)
+    /// (all below the surface, so the sky-air arm never fires).
+    fn export_world() -> (World, [f32; 2], [f32; 2]) {
+        let mut w = World::new("export".into(), 200, 150);
+        w.world_surface = 40.0;
+        (w, [1440.0, 840.0], [320.0, 240.0])
+    }
+
+    /// One ProcessArea call to set the requested rect / margins / array, then
+    /// hand-seed the PRESENTED cells the export reads (`:403-415`).
+    fn seed_presented(engine: &mut LegacyLighting, w: &World, pos: [f32; 2], size: [f32; 2]) {
+        engine.process_area(
+            w,
+            pos,
+            size,
+            &LightParams::default(),
+            &LegacyInputs::default(),
+            &[],
+            None,
+        );
+        // (100,60): max channel 0.5. (98,60): byte 19 after White's 1.5x.
+        // (97,60): byte 18 — the floor's `b > 18` boundary.
+        for (x, r) in [(100, 0.5f32), (98, 0.05), (97, 0.048)] {
+            let lx = x - engine.requested[0] + engine.off_screen_tiles;
+            let ly = 60 - engine.requested[2] + engine.off_screen_tiles;
+            let s = &mut engine.states[(lx * engine.sh + ly) as usize];
+            s.r = r;
+            s.g = r * 0.4;
+            s.b = r * 0.2;
+        }
+    }
+
+    #[test]
+    fn map_export_white_brightens_and_floors_at_22() {
+        // `TryUpdatingMapWithLight` `:403-431` directly: White's 1.5x
+        // (`:416-419`), the byte truncation (`:420`), the revealed-floor 22
+        // (`:425-428`), the re-arm FIRST (`:373`) and the `updateMap` rect
+        // (`:432`). Below-surface air keeps the exported byte (the map's
+        // background arm only forces 255 above the surface).
+        let (w, pos, size) = export_world();
+        let mut engine = LegacyLighting::new(LightMode::White);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        // (96,60) is revealed at light 10 but dark now → the floor lifts it.
+        assert!(crate::map::update_map_lighting(&w, &mut tiles, 96, 60, 10));
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 7, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        // Snapshot the export's outputs before reading `tiles` (the export
+        // holds the mutable borrow until its last use).
+        let changed = std::mem::take(&mut e.changed);
+        let update_map = e.update_map;
+        drop(e);
+        assert_eq!(map_time, 7, "the re-arm happens first (`:373`)");
+        assert_eq!(update_map, Some([90, 52, 21, 16]), "`:432`");
+        // 0.5 * 1.5 * 255 = 191.25 → 191.
+        assert_eq!(tiles[w.index(100, 60)].light, 191);
+        // 0.05 * 1.5 * 255 = 19.125 → 19 → the `b > 18` floor lifts to 22.
+        assert_eq!(tiles[w.index(98, 60)].light, 22);
+        // 0.048 * 1.5 * 255 = 18.36 → 18 — NOT > 18, unrevealed → stays 18.
+        assert_eq!(tiles[w.index(97, 60)].light, 18);
+        // Dark + revealed (old light 10 > 0) → floor 22, max(10, 22) = 22.
+        assert_eq!(tiles[w.index(96, 60)].light, 22);
+        assert!(changed.contains(&(96, 60)), "the floor lift is a change");
+        // Dark + unrevealed → `UpdateLighting(0)` refuses (`WorldMap.cs:52-55`).
+        assert_eq!(tiles[w.index(95, 60)].light, 0);
+        assert!(!changed.contains(&(95, 60)));
+        // The changed list is x-outer, y-inner (`:396-399`).
+        let first = changed.iter().position(|&(x, _)| x == 96).unwrap();
+        let last = changed.iter().rposition(|&(x, _)| x == 96).unwrap();
+        assert!(changed[first..=last].iter().all(|&(x, _)| x == 96));
+    }
+
+    #[test]
+    fn map_export_retro_keeps_the_raw_byte() {
+        // Retro (`Mode >= 2`) skips the 1.5x brighten (`IsColorOrWhiteMode`,
+        // `:204`): 0.5 * 255 = 127.5 → 127, and 0.05 * 255 = 12.75 → 12 stays
+        // below the floor's `b > 18` gate.
+        let (w, pos, size) = export_world();
+        let mut engine = LegacyLighting::new(LightMode::Retro);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        assert_eq!(tiles[w.index(100, 60)].light, 127);
+        assert_eq!(tiles[w.index(98, 60)].light, 12);
+    }
+
+    #[test]
+    fn map_export_sky_air_keeps_the_22_ambient() {
+        // `:421-424`: above the surface, inactive + wall 0 + liquid 0 forces
+        // b = 22 regardless of the presented light. A wet cell fails the
+        // `liquid == 0` conjunct and keeps its own byte — that pair proves
+        // the arm, not just the revealed-floor 22. The map's sky-background
+        // arm (`MapHelper.GetBackgroundType`) publishes sky cells at 255.
+        let (mut w, _, _) = export_world();
+        w.world_surface = 100.0; // the whole window is now above the surface
+        // (95,60): water — the sky-air arm must NOT fire here.
+        let wet = w.index(95, 60);
+        w.tiles[wet].liquid = 255;
+        let pos = [1440.0, 840.0];
+        let size = [320.0, 240.0];
+        let mut engine = LegacyLighting::new(LightMode::White);
+        seed_presented(&mut engine, &w, pos, size);
+        let mut tiles = vec![crate::map::MapTile::default(); (w.width * w.height) as usize];
+        let mut map_time = 0i32;
+        let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
+        engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        let changed = std::mem::take(&mut e.changed);
+        let update_map = e.update_map;
+        drop(e);
+        // Dark dry sky air reveals (the arm's 22 > 0); the wet dark cell
+        // keeps b = 0 and stays unrevealed (`WorldMap.cs:52-55`).
+        assert!(tiles[w.index(94, 60)].light > 0, "sky air reveals at 22+");
+        assert!(changed.contains(&(94, 60)));
+        assert_eq!(tiles[wet].light, 0, "the wet cell skips the sky-air arm");
+        assert!(!changed.contains(&(95, 60)));
+        assert_eq!(update_map, Some([90, 52, 21, 16]));
     }
 }
