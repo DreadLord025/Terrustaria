@@ -306,7 +306,7 @@ struct FlailTick {
 /// carry the vanilla value for the later AI port — M4-PROJ).
 /// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
 /// angle in radians.
-fn rotate(v: Vec2, angle: f32) -> Vec2 {
+pub(crate) fn rotate(v: Vec2, angle: f32) -> Vec2 {
     let (s, c) = angle.sin_cos();
     Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
 }
@@ -11159,7 +11159,7 @@ pub(crate) fn chaseable(n: &Npc) -> bool {
 /// (`Projectile.cs:34773`): a `dontTakeDamage` NPC keeps a lock it already
 /// holds, while the acquire scans (`:34764`, the Wrath's `:28954`) use the
 /// plain [`chaseable`] gate that excludes it.
-fn chaseable_held(n: &Npc) -> bool {
+pub(crate) fn chaseable_held(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5
 }
 
@@ -13431,6 +13431,66 @@ impl ProjectilePool {
                         14 => self.slots[i].ai_spear(world),
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
+                        // S1-D-4 unarmed styles (census §3c): the four
+                        // data-rowed styles with no arm. The bodies live
+                        // in `projectile_ai_misc` (the slice-module
+                        // precedent); the movement is the shared
+                        // `kill_step` (HandleMovement's default arm),
+                        // run after the AI exactly as the C# runs it
+                        // (`:17015`).
+                        // aiStyle 31 — the Clentaminator spray
+                        // (`Projectile.cs:26786-26886`): the owner-gated
+                        // `WorldGen.Convert` cleanse (the tile write
+                        // reborrows `world` mutably, the ai_ice_block
+                        // carve-out), the 133 cap, the counter, the spin.
+                        31 => {
+                            crate::projectile_ai_misc::ai_spray(
+                                &mut self.slots[i],
+                                world,
+                                local_owner,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 147 — the Celebration Mk2 rockets
+                        // (`AI_147_Celeb2Rocket` `:52881-53092`): the
+                        // seven-state machine; the death resize + Damage
+                        // + explosion ride the pool's death hook below.
+                        147 => {
+                            crate::projectile_ai_misc::ai_celeb2_rocket(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 181 — the Empress drop-shot
+                        // (`AI_181_FairyQueenRangedItemShot`
+                        // `:43178-43193`): the counter, the 10-tick alpha
+                        // ramp, the velocity rotation, the 1-in-6 dust
+                        // gate.
+                        181 => {
+                            crate::projectile_ai_misc::ai_fairy_queen_shot(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 193 — the Flamethrower Flames
+                        // (`AI_193_Flamethrower` `:41337-41401`): the
+                        // 72-tick life, the 60-tick decay, the two dust
+                        // gates' draws.
+                        193 => {
+                            crate::projectile_ai_misc::ai_flamethrower(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -15433,6 +15493,23 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // S1-D-4 unarmed styles: the 932's death-dust census
+                // (`:71109-71147`) and the Celebration rockets' Kill arm
+                // (`:73632-73645` resize + Damage + explosion, plus the
+                // 716/718 `Kill_ExplodeTiles` tile break `:77297-77365`).
+                // C# body order: the 932 dust chain precedes the 715 arm.
+                if self.slots[i].kind == 932 {
+                    crate::projectile_ai_misc::fairy_queen_death_draws(rng);
+                }
+                self.celeb2_death(
+                    i,
+                    world,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    luck,
+                    local_owner,
+                );
             }
         }
     }
@@ -15472,6 +15549,101 @@ impl ProjectilePool {
             .is_some_and(|t| t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind));
         if cracked && rng.next_range(0, 2) == 0 {
             let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+        }
+    }
+
+    /// S1-D-4 unarmed styles — the Celebration rockets' `Kill()` arm
+    /// (`Projectile.cs:73632-73645`): the centre-snap resize (128×128,
+    /// 240×240 for the large 717/718), the `Damage()` box walk and the
+    /// `AI_147_Explosion` burst — then the 716/718's `Kill_ExplodeTiles`
+    /// tile break (`:77297-77365`, radius 3 / 5, the centre compare spot
+    /// `:77339-77342`, the owner gate `:77267`). Kind-gated, one-shot per
+    /// death (a dead slot never returns to `active` — the
+    /// `spawn_inferno_blast` death-hook precedent). The `SoundID.Item14`
+    /// is the sound skip; the explosion's draw census lives in
+    /// `projectile_ai_misc::celeb2_explosion`.
+    fn celeb2_death(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        if !matches!(kind, 715..=718) {
+            return;
+        }
+        // `:73634-73642` — the resize (the sound is the skip).
+        crate::projectile_ai_misc::celeb2_kill_resize(&mut self.slots[slot]);
+        // `:73643` — `Damage()`: the box walk through the resized box
+        // (the gem_bolt_aoe precedent).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `:73644` — the explosion burst's draw census.
+        crate::projectile_ai_misc::celeb2_explosion(&self.slots[slot], world, rng);
+        // `Kill_ExplodeTiles`' 716/718 arm (`:77297`, `:77322-77329`):
+        // the tile break, owner-gated (`:77267`).
+        if !matches!(kind, 716 | 718) || self.slots[slot].owner != local_owner {
+            return;
+        }
+        let radius = if kind == 718 { 5 } else { 3 };
+        let p = &self.slots[slot];
+        // `:77338-77342` — the compare spot is the CENTRE for 716/718.
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // `:77345-77364` — the clamped tile box.
+        let min_i = ((center.x / 16.0 - radius as f32) as i32).max(0);
+        let max_i = ((center.x / 16.0 + radius as f32) as i32).min(world.width);
+        let min_j = ((center.y / 16.0 - radius as f32) as i32).max(0);
+        let max_j = ((center.y / 16.0 + radius as f32) as i32).min(world.height);
+        // `ShouldWallExplode` (`:78616-78633`): any wall-less cell inside
+        // the radius arms the 3×3 wall break.
+        let mut wall_splode = false;
+        for i in min_i..=max_i {
+            for j in min_j..=max_j {
+                let dx = (i as f32 - center.x / 16.0).abs();
+                let dy = (j as f32 - center.y / 16.0).abs();
+                if (dx * dx + dy * dy).sqrt() < radius as f32
+                    && world.tile(i, j).is_some_and(|t| t.wall == 0)
+                {
+                    wall_splode = true;
+                    break;
+                }
+            }
+        }
+        // `ExplodeTiles` (`:78707-78756`): the radius walk, the
+        // `CanExplodeTile` gate (the port's `can_explode_tile` stand-in,
+        // the explode_bomb precedent), the kill and the 3×3 wall break.
+        for i in min_i..=max_i {
+            for j in min_j..=max_j {
+                let dx = (i as f32 - center.x / 16.0).abs();
+                let dy = (j as f32 - center.y / 16.0).abs();
+                if (dx * dx + dy * dy).sqrt() >= radius as f32 {
+                    continue;
+                }
+                let mut flag = true;
+                if let Some(t) = world.tile(i, j) {
+                    if t.active() {
+                        flag = can_explode_tile(t.kind, t.frame_y as i32 / 18);
+                        if flag {
+                            let _ = tr_core::edit::kill_tile(world, i, j, false);
+                        }
+                    }
+                }
+                if !(wall_splode && flag) {
+                    continue;
+                }
+                for k in (i - 1)..=(i + 1) {
+                    for l in (j - 1)..=(j + 1) {
+                        if let Some(wt) = world.tile(k, l) {
+                            if wt.wall != 0 && wt.wall != 350 {
+                                let _ = tr_core::edit::break_wall(world, k, l);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -16533,8 +16705,11 @@ mod tests {
         // Census §3c: the documented rowed-but-unarmed styles (the wiring
         // follow-ups). 185's old aiStyle-1 mislabel is fixed — style 14 is
         // armed, so the spiky ball is NOT in this list. 194 left the list
-        // with S1-D-4 W-10 (the Horseman's pumpkin arm landed).
-        const UNARMED_ROWED: [u8; 5] = [31, 120, 147, 181, 193];
+        // with S1-D-4 W-10 (the Horseman's pumpkin arm landed);
+        // 31/147/181/193 left with the unarmed-styles slice
+        // (projectile_ai_misc). 120 stays: StardustGuardian rowed but arm
+        // UNOWNED (R62's kinds are 872/873/874/919/923 — next-wave item).
+        const UNARMED_ROWED: [u8; 1] = [120];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the

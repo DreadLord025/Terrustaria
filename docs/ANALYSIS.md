@@ -28335,3 +28335,89 @@ The 16 per-set tests + the tr-core product tests are WRITTEN, NOT RUN -
 **no compiler invoked** (code-only round). Verified by re-reading the
 C# line-by-line and hand-arithmetic (the lava 36/76 reductions, the
 crimson ramp 0.453125 -> 0 vs 0.6796875 -> 1 banker's rounds).
+
+## The unarmed projectile styles (S1-D-4, 2026-11-19, code-only mode)
+
+Census slice P-3 (`docs/research/50-entity-ai-census.md` §3c on
+`origin/docs/entity-ai-census`): the six data-rowed projectile styles with
+NO dispatch arm. This round takes **31 / 147 / 181 / 193**; **194**
+(HorsemanPumpkin, R56 / TR-wire15) and **120** (StardustGuardian, R62 /
+TR-emproj) are other workers' in-flight claims and stay out.
+
+**Per-style census + verdict** (kinds from `projectile/data.rs`, C# arms
+read WHOLE before porting):
+
+| style | rowed kinds | C# arm (read whole) | verdict |
+| --- | --- | --- | --- |
+| 31 | 145 PureSpray (`data.rs:2172`) | inline `AI()` `Projectile.cs:26786-26886` | PORTED — `ai_spray`; the owner-gated `WorldGen.Convert(x, y, 0, size)` cleanse, the 133 timeLeft cap, the `ai[0]++`, the 0.3·direction spin. The per-kind dust/conversion ladder (146-149/1015-1017) is ported but those kinds have no rows yet. |
+| 147 | 715-718 Celeb2 rockets (`data.rs:2126`) | `AI_147_Celeb2Rocket` `:52881-53092` + `AI_147_Explosion` `:53130-53399` + `CreateGroundExplosion` `:53401-53464` + the `Kill()` arm `:73632-73645` | PORTED — `ai_celeb2_rocket` (the seven states), `celeb2_explosion` (the draw census), `celeb2_kill_resize` + the pool `celeb2_death` hook (resize → `damage_pve_boxed` → explosion → the 716/718 `Kill_ExplodeTiles` tile break `:77297-77365`). |
+| 181 | 932 FairyQueenRangedItemShot (`data.rs:2370`) | `AI_181_FairyQueenRangedItemShot` `:43178-43193` | PORTED — `ai_fairy_queen_shot` (the counter, the 10-tick truncated-lerp alpha ramp, the velocity rotation, the 1-in-6 dust gate) + the `Kill()` death-dust census `fairy_queen_death_draws` (`:71109-71147`). |
+| 193 | 85 Flames (`data.rs:2171`) | `AI_193_Flamethrower` `:41337-41401` | PORTED — `ai_flamethrower` (the 72-tick kill with NO return, the 60-tick 0.95 decay, the Foxparks window flip, the two dust gates' draws). |
+
+**No existing arm, incl. dead dups.** Before adding, the dispatch
+(`ProjectilePool::update`'s `match data.ai_style`) was scanned for every
+`31/147/181/193 =>` arm — none existed (the R20 dead-dup purge branch
+`6c221ac4` is unmerged, but it touches styles 1/3/14/16/115/99, not these
+four). The four arms sit at `projectile.rs:13211/13224/13239/13251`,
+ahead of the aiStyle-22 carve-out; the death hooks ride the existing
+`if !active` block after `floating_turret_kill`.
+
+**RNG argument (by construction).** The `UpdateProjectiles` stream
+(`Main.cs:17775-17777`) is untouched except where the C# arm itself draws:
+
+- **31 takes NO rng parameter at all** — the arm's state (conversion, cap,
+  counter, spin) draws nothing; the dust-scale ladder (`:26845-26879`)
+  feeds only the skipped dust and rolls nothing. Zero draws by
+  construction, the `projectile_ai001_a` precedent.
+- **181**: `Next(6)` every tick (`:43183`); the taken branch's colour
+  `NextFloat` (`:43189`). The colour helper is rand-free for non-dev names
+  (`:21665-22041` — only "Random" draws). Death: one discarded `NextFloat`
+  + ten `Next(1, 3)` + three floats per spawned dust (`:71109-71147`).
+- **193**: the flame gate `NextFloat` (`:41372`) + its taken branch's
+  `NextVector2Circular` pair + `Next(4)` (`:41374-41375`); the smoke gate
+  `NextFloat` (`:41391`) + its taken branch's `RotatedByRandom` pair +
+  `NextVector2Circular` pair + scale/customData floats (`:41394-41399`).
+  Short-circuit order kept (`localAI[0] < num3 && rand…`).
+- **147**: the state-1 ring's per-particle colour `NextFloat` (`:52940`,
+  the f32 `+= 0.12f` loop's own count); the explosion censuses keep every
+  explicit call-site draw (the discarded `NextFloat`s `:53162`/`:53312`,
+  the `Next(4)`/`NextFloatDirection` `:53191-53197`, the per-state colour
+  floats, the gore rows). The `CreateGroundExplosion` tile walk keeps the
+  per-dust `NextFloat` scales + the `Next(3)` gore gate + the taken
+  branch's gore.
+
+The dust/gore BODIES are skipped (no draw layer wired) and the
+`Dust.NewDust*` internal rolls go with the dust pool (the `ai_style2` /
+ANALYSIS "Dust & gore" precedent); the `Gore.NewGore` internal kicks
+(`Next(10, 31)` Y-first then `Next(-20, 21)` X, `Gore.cs:1327-1328`) DO
+stay — the LEAD-REVIEW G3 standard. The f32 accumulation loops keep the
+C#'s own iteration counts (drift included); the homing blend is
+reciprocal-first (`speed / sqrt(dx²+dy²)`, the C#'s unguarded divide) and
+the scan centres use the INTEGER half-widths while the blend centre uses
+the FLOAT halves — both faithful to `:52999-53040`.
+
+**The aiStyle-31 cleanse** ports `WorldGen.Convert`'s type-0 cell
+(`tr-core/spread.rs::convert_cleanse`, `WorldGen.cs:55067-55083` square
+walk + `:55527-55664` cell): the wall chain (via the shared
+`growth::convert_wall_by_case(wall, 0, …)`, with the type-0 no-op walls
+61/185/204-207 gated out and the wall-80 depth arm handled separately),
+the torch/grass/stone/sand/ice/mushroom tile ladder and the thorn kill,
+plus `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+(`:54802-54899`, the gem/vanity/ash ground-test profiles). Recorded
+deviations: the wall-69/70/81 surface roll and the wall-80 depth rolls
+draw `WorldGen.genRand` (`:55535`/`:55584`) — the port has no runtime
+genRand stream (the `edit.rs` precedent), so the surface arm takes the
+no-rng 64 and the wall-80 arm compares the unrolled band edges; the
+`ConvertTreeAndGround` cross-conversion is unported (an invalid tree is
+killed, never re-typed); the re-frame rides `framing::reframe_area`'s
+documented superset.
+
+**Verification.** Code-only: the C# arms were re-read whole and the port
+matched line-by-line (the state machines, the gates' short-circuit order,
+the integer-vs-float halves, the truncating lerps, the f32 loop counts);
+every seam signature was checked by read/grep (`can_hit`'s 9-arg shape,
+`chaseable`/`chaseable_held`, `get_lerp_value`, `safe_normalize`,
+`rotate`, `kill_step`, `damage_pve_boxed`, `reframe_area`,
+`convert_wall_by_case`, the `TILE_SOLID`/`SET_CONVERSION_*`/`SET_ICE`
+sets). The 15 witness tests in `projectile_ai_misc.rs` are WRITTEN, NOT
+RUN — **no compiler invoked**.

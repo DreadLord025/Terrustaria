@@ -387,6 +387,204 @@ pub(crate) fn convert_tile_hallow(kind: u16) -> Option<u16> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the spray/cleanse entry (S1-D-4 unarmed styles, the
+// aiStyle-31 Clentaminator arm's `WorldGen.Convert(point.X, point.Y, 0, size)`
+// call, `Projectile.cs:26834`). Only conversion type 0 (the pure spray 145's
+// `num245 = 0` default arm, `:26793-26795`) is ported here — the other rowed
+// spray kinds (146-149, 1015-1017) have no `proj_data` rows yet.
+
+/// `TileID.Sets.Conversion.Grass` (`TileID.cs:86`).
+const CONV_GRASS: [u16; 6] = [2, 23, 199, 109, 477, 492];
+/// `TileID.Sets.Conversion.JungleGrass` (`TileID.cs:84`).
+const CONV_JUNGLE_GRASS: [u16; 3] = [60, 661, 662];
+/// `TileID.Sets.Conversion.MushroomGrass` (`TileID.cs:85`).
+const CONV_MUSHROOM_GRASS: [u16; 1] = [70];
+/// `TileID.Sets.Conversion.Snow` (`TileID.cs:89`).
+const CONV_SNOW: [u16; 1] = [147];
+/// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
+fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`):
+/// the square walk with the Manhattan `< 6` gate. The port carries the type-0
+/// (cleanse) cell only — the spray's conversion type.
+pub fn convert_cleanse(world: &mut World, i: i32, j: i32, size: i32) {
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_cleanse_cell(world, k, l);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-0 arm (`WorldGen.cs:55527-55664`): the wall chain, then
+/// the torch/grass/stone/sand/ice tile ladder, the mushroom grass and the
+/// thorn kill. `Convert_ActuallyConvertTile`/`Wall` (`:56312-56343`) write
+/// only when the cell differs, and re-frame through `SquareTileFrame` /
+/// `SquareWallFrame` — the port's [`crate::framing::reframe_area`] superset
+/// (its documented deviation).
+///
+/// Deviations (ANALYSIS "The unarmed projectile styles (S1-D-4)"): the wall
+/// 69/70/81 surface roll and the wall-80 depth rolls draw `WorldGen.genRand`
+/// (`:55535`, `:55584`) — the port has no runtime genRand stream (the
+/// `edit.rs` precedent), so the surface arm takes the no-rng 64 (the shared
+/// `convert_wall_by_case(wall, 0, .., None)` behaviour) and the wall-80 arm
+/// compares against the unrolled band edges. The tree cross-conversion
+/// (`ConvertTreeAndGround`, `:54902+`) is unported — an invalid tree above a
+/// converted cell is killed, never re-typed.
+fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half (`:55528-55611`). The 80 arm (`:55582-55592`) sits in the
+    // C#'s default chain between the NewWall ladder and the HardenedSand arm;
+    // the shared `convert_wall_by_case` has no 80 row, so it is handled here
+    // first (the two arms are wall-disjoint). The switch's no-op cases
+    // 61/185/204-207 (`:55602-55608`) break WITHOUT converting — the shared
+    // ladder's Stone/NewWall sets would otherwise catch them, so they are
+    // gated out here.
+    let new_wall = if matches!(wall, 61 | 185 | 204 | 205 | 206 | 207) {
+        None
+    } else if wall == 80 {
+        // `j2 < worldSurface + 4 + Next(3) || j2 > (maxTilesY + rockLayer)/2
+        // - 3 + Next(3)` — the unrolled band edges (the genRand skip).
+        let mid = (world.height as f64 + world.rock_layer) / 2.0 - 3.0;
+        Some(if (y as f64) < world.world_surface + 4.0 || (y as f64) > mid {
+            15u16
+        } else {
+            64
+        })
+    } else {
+        crate::growth::convert_wall_by_case(wall, 0, y, world.world_surface, None)
+    };
+    if let Some(new_wall) = new_wall {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The tile half (`:55616-55663`) — the else-if ladder in source order.
+    let torch_style = if active && kind == 4 {
+        // `TileID.Sets.Conversion.Torch(tile, 0)` (`TileID.cs:51-56`): the
+        // corrupt/crimson/hallow rows 18-20 and the mushroom row 22.
+        let num = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if (18..=20).contains(&num) || num == 22 {
+            // `Convert_ActuallyConvertTorch` (`:56287-56310`): the type-0
+            // mushroom quirk — style 22 lands on 21, not 0.
+            Some(if num == 22 { 21i16 } else { 0 })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(style) = torch_style {
+        let cur = world.tile(x, y).map_or(0, |t| t.frame_y as i32 / 22);
+        if cur != style as i32 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = style * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    let new_kind: Option<u16> = if kind == 492 {
+        Some(477)
+    } else if CONV_JUNGLE_GRASS.contains(&kind) && kind != 60 {
+        Some(60)
+    } else if CONV_GRASS.contains(&kind) && kind != 2 && kind != 477 {
+        Some(2)
+    } else if crate::tiledata::SET_CONVERSION_STONE.has(kind) && kind != 1 {
+        Some(1)
+    } else if crate::tiledata::SET_CONVERSION_SAND.has(kind) && kind != 53 {
+        Some(53)
+    } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
+        Some(397)
+    } else if crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind) && kind != 396 {
+        Some(396)
+    } else if crate::tiledata::SET_ICE.has(kind) && kind != 161 {
+        // `TileID.Sets.Conversion.Ice` = {161, 163, 164, 200} (`TileID.cs:91`)
+        // — the generated Ice set carries the same four convertible ids.
+        Some(161)
+    } else if CONV_MUSHROOM_GRASS.contains(&kind) {
+        Some(60)
+    } else {
+        None
+    };
+    if let Some(new_kind) = new_kind {
+        // `Convert_ActuallyConvertTile` (`:56312-56327`): active, different,
+        // the tree-above validity check, then the write + re-frame.
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else if kind == 32 || kind == 352 {
+        // `:55656-55662` — the thorn bushes die (the netMode arm is MP-only).
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
+/// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
+/// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
+/// the converted cell dies when the new floor no longer fits its ground
+/// test. The gem/vanity/ash profiles (`GrowTreeSettings.Profiles.
+/// TryGetFromTreeId`, `:3890-3928`) override the vanilla test; the
+/// `ConvertTreeAndGround` cross-conversion half is the documented skip.
+fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16) {
+    if !in_world(world, x, y, 2) {
+        return;
+    }
+    let Some(above) = world.tile(x, y - 1) else {
+        return;
+    };
+    if !above.active() {
+        return;
+    }
+    let tree = above.kind;
+    let is_trunk = crate::torch::TREE_TRUNKS.contains(&tree);
+    if !is_trunk && tree != 323 {
+        return;
+    }
+    let grass_side = CONV_GRASS.contains(&new_floor)
+        || CONV_JUNGLE_GRASS.contains(&new_floor)
+        || CONV_SNOW.contains(&new_floor)
+        || CONV_MUSHROOM_GRASS.contains(&new_floor);
+    let mut fits = true;
+    match tree {
+        5 => fits = grass_side,
+        323 => fits = crate::tiledata::SET_CONVERSION_SAND.has(new_floor),
+        _ => {}
+    }
+    // The profile override (`:54840-54843`): gem trees 583-589 take
+    // `GemTreeGroundTest` (Stone | Moss, `:30304-30315`), the vanity trees
+    // 596/616 `VanityTreeGroundTest` (Grass minus 23/199, `:30317-30328`),
+    // the ash tree 634 `AshTreeGroundTest` (633, `:30330-30341`).
+    if (583..=589).contains(&tree) {
+        fits = crate::tiledata::SET_CONVERSION_STONE.has(new_floor)
+            || crate::tiledata::SET_CONVERSION_MOSS.has(new_floor);
+    } else if tree == 596 || tree == 616 {
+        fits = CONV_GRASS.contains(&new_floor) && new_floor != 23 && new_floor != 199;
+    } else if tree == 634 {
+        fits = new_floor == 633;
+    }
+    if !fits {
+        let _ = crate::edit::kill_tile(world, x, y - 1, false);
+    }
+}
+
 /// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
 /// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
 /// hallowed stone wall 28.
