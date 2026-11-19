@@ -10127,11 +10127,15 @@ mod dd2_portal_wire_tests {
     #[test]
     fn the_crystal_use_spawns_two_lane_portals_at_tick_180() {
         // `NPC.cs:40734-40756`: the ai[0] countdown hits 0 on the 180th
-        // tick, `localAI[0]` latches and the two 549s spawn. The crystal
-        // Bottom (1960, 1920) → tile (122, 120), the floor cell; the flat
-        // 300-wide world walks to the ±120 caps, `CheckArenaScore`'s ±1
-        // and the caller's ±2 nudges put the ends at 122-117 = 5 and
-        // 122+117 = 239.
+        // tick, `localAI[0]` latches and the two 549s spawn. The stand
+        // anchor (150, 116) → spawn point (2440, 1920) (`DD2Event.cs:
+        // 590-594`); the crystal's Bottom column is 2440/16 = 152, its
+        // row drops to the floor 120 (`CheckArenaScore`'s 4-down probe /
+        // the walker's 3-up skip, `StrayMethods.cs:89-90`/`:114-121`).
+        // The flat 300-wide world walks to the ±120 caps (`SendWalker`'s
+        // last spot is one step PAST the 120th advance), so the ends are
+        // 152-120+1+2 = 35 and 152+120-1-2 = 269 (`:97-98`'s ±1 + the
+        // caller's ±2, `NPC.cs:40748-40749`).
         let mut app = base_app();
         summon(&mut app);
         assert!(
@@ -10156,8 +10160,8 @@ mod dd2_portal_wire_tests {
         // 78x130 box (`NPC.cs:16037-16038`): x = end*16 + 8 - 39.
         let left = portals.iter().find(|n| n.ai[2] == 0.0).unwrap();
         let right = portals.iter().find(|n| n.ai[2] == 1.0).unwrap();
-        assert_eq!(left.x, 5.0 * 16.0 + 8.0 - 39.0, "the left end");
-        assert_eq!(right.x, 239.0 * 16.0 + 8.0 - 39.0, "the right end");
+        assert_eq!(left.x, 35.0 * 16.0 + 8.0 - 39.0, "the left end");
+        assert_eq!(right.x, 269.0 * 16.0 + 8.0 - 39.0, "the right end");
         assert_eq!(left.y, 119.0 * 16.0 + 16.0 - 130.0, "Bottom anchored");
         assert_eq!(right.y, left.y);
         assert!(left.dont_take_damage && right.dont_take_damage);
@@ -10223,7 +10227,10 @@ mod dd2_portal_wire_tests {
         let camx = app.camera;
         app.mouse_pos = {
             let (w, h) = app.screen_size();
-            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 119.0 * TILE_PX + 8.0);
+            // The click lands ON the stand anchor tile (150, 116) — the
+            // C#'s myX/myY is the clicked 466 cell (`Player.cs:32401`);
+            // frameY 0 → num28 = 116+3 = 119, the walker's floor probe.
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 116.0 * TILE_PX + 8.0);
             let screen = Vec2::new(w, h) * 0.5;
             (wp - camx) * app.zoom + screen
         };
