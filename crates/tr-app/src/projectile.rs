@@ -12932,6 +12932,15 @@ impl ProjectilePool {
         }
     }
 
+    // The aiStyle dispatch below must stay a single live arm per style:
+    // appended duplicates only warn (`unreachable_patterns`), and six dead
+    // arms (1/3/14/16/115/99) survived that way until S1-D-5 censused and
+    // deleted them — the `npc/data.rs` `to_u16`/`from_u16` precedent. A
+    // duplicate is a hard error here. The deny is function-scoped (a
+    // statement attribute on the inner match is not stable Rust); it also
+    // covers the nested kind/tower/frame matches in this body, each
+    // censused clean (distinct const arms + a `_` tail).
+    #[deny(unreachable_patterns)]
     pub fn update(
         &mut self,
         world: &mut World,
@@ -13430,10 +13439,15 @@ impl ProjectilePool {
                         129 => {
                             self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
                         }
-                        1 => self.slots[i].ai_arrow(world),
-                        3 => self.slots[i].ai_boomerang(world, owner),
-                        14 => self.slots[i].ai_spear(world),
-                        16 => self.slots[i].ai_bomb(world),
+                        // S1-D-5: the duplicate `1 => ai_arrow`, `3 =>
+                        // ai_boomerang`, `14 => ai_spear`, `16 => ai_bomb`
+                        // arms that sat here were unreachable behind the
+                        // live arms above (the kind-gated aiStyle-1 arm,
+                        // :ai_boomerang/:ai_spear/:ai_bomb) — deleted. The
+                        // dead `1` arm was NOT byte-identical to the live
+                        // one (it lacked the rider gates), which is exactly
+                        // why a silent shadow was dangerous; the census is
+                        // in ANALYSIS "The projectile data-row deviations".
                         115 => self.slots[i].ai_yoyo_beam(world),
                         210 => self.slots[i].ai_yoyo_shot(world),
                         82 => {
@@ -14915,7 +14929,9 @@ impl ProjectilePool {
                                 self.slots[i].pos += vel;
                             }
                         }
-                        115 => self.slots[i].ai_yoyo_beam(world),
+                        // S1-D-5: the duplicate `115 => ai_yoyo_beam` arm
+                        // that sat here was unreachable behind the live one
+                        // above — deleted (byte-identical pair).
                         62 => {
                             // `AI_062` (`Projectile.cs:29314-29316`'s
                             // `else if (this.aiStyle == 62) this.AI_062();`):
@@ -15029,49 +15045,11 @@ impl ProjectilePool {
                                 }
                             }
                         }
-                        99 => {
-                            // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
-                            // active slot below this index, same owner and
-                            // kind, `ai[0] >= -1f` — the double yoyo (the Yoyo
-                            // Glove's second copy).
-                            let (slot_owner, slot_kind) = {
-                                let p = &self.slots[i];
-                                (p.owner, p.kind)
-                            };
-                            let flag = self.slots[..i].iter().any(|p| {
-                                p.active
-                                    && p.owner == slot_owner
-                                    && p.kind == slot_kind
-                                    && p.ai[0] >= -1.0
-                            });
-                            let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
-                            // `:67764-67771` — the sweep flips the whole
-                            // owner's aiStyle-99 set with `ai[0] >= 0f` to the
-                            // return state.
-                            if tick.sweep {
-                                for p in self.slots.iter_mut() {
-                                    if p.active
-                                        && p.owner == slot_owner
-                                        && YOYO_KINDS.contains(&p.kind)
-                                        && p.ai[0] >= 0.0
-                                    {
-                                        p.ai[0] = -1.0;
-                                    }
-                                }
-                            }
-                            // `:67815` — the Terrarian's beam spawn.
-                            if let Some(b) = tick.beam {
-                                self.spawn_with_data(
-                                    TERRARIAN_BEAM,
-                                    b.x,
-                                    b.y,
-                                    b.vx,
-                                    b.vy,
-                                    b.damage,
-                                    b.knock_back,
-                                );
-                            }
-                        }
+                        // S1-D-5: the duplicate `99 => { ai_yoyo ... }` arm
+                        // that sat here was unreachable behind the live one
+                        // above (byte-identical pair, verified by line-range
+                        // comparison) — deleted. The last of ROADMAP S1-D-4's
+                        // six dead dispatch arms (1/3/14/16/115/99).
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
                         // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
@@ -17361,8 +17339,9 @@ mod arrow_tests {
     fn the_family_data_map_is_verbatim() {
         // `Projectile.cs:807-815` (the wooden arrow), `:817-827` (flame),
         // `:950-961` (the musket ball), `:1823-1832`/`:2707-2716`/`:9330-9339`
-        // (the trap darts/spiky), `:6953-6966` (the poison dart),
-        // `:2717-2727` (the spear).
+        // (the trap darts), `:6953-6966` (the poison dart), `:2717-2727`
+        // (the spiky ball 185 — S1-D-5 split it out of the dart group),
+        // `:2728-2740` (the spear 186 — the stand-in row, see data.rs).
         let arrow = proj_data(WOODEN_ARROW).unwrap();
         assert_eq!((arrow.w, arrow.h), (10.0, 10.0));
         assert_eq!(arrow.ai_style, 1);
@@ -17378,15 +17357,23 @@ mod arrow_tests {
         let poison = proj_data(POISON_DART).unwrap();
         assert!(!poison.tile_collide);
         assert_eq!(poison.extra_updates, 5);
-        // The spear trap's spear (186, `Projectile.cs:2717-2727` — aiStyle 14)
-        // and the spiky ball (185) both ride the ported families.
+        // The spear trap's spear (186) keeps the 185 stand-in row until
+        // aiStyle 37 is ported (`Projectile.cs:2728-2740`, the deviation in
+        // ANALYSIS "The projectile data-row deviations (S1-D-5)").
         let spear = proj_data(TRAP_SPEAR).unwrap();
         assert_eq!((spear.w, spear.h), (14.0, 14.0));
         assert_eq!(spear.ai_style, 14);
         assert_eq!(spear.time_left, 900);
+        // S1-D-5: the spiky ball (185) is its own row — `Projectile.cs
+        // :2717-2727`: 14x14, aiStyle **14** (not the dart group's 1),
+        // `penetrate = -1`, `timeLeft = 900`, trap.
         let spiky = proj_data(TRAP_SPIKY_BALL).unwrap();
-        assert_eq!((spiky.w, spiky.h), (10.0, 10.0));
+        assert_eq!((spiky.w, spiky.h), (14.0, 14.0));
+        assert_eq!(spiky.ai_style, 14, "`Projectile.cs:2721`");
+        assert_eq!(spiky.time_left, 900, "`Projectile.cs:2725`");
         assert_eq!(spiky.penetrate, -1);
+        assert!(spiky.trap);
+        assert_eq!(TRAP_SPIKY_BALL, 185, "the C# ProjectileID.SpikyBallTrap");
         assert_eq!(TRAP_SPEAR, 186, "the C# ProjectileID.SpearTrap");
         // The flame jet 187 (aiStyle 38) is unported — no data, the emission
         // drops at the drain.
@@ -21010,7 +20997,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 44] = [
+    const BASELINE_ROWS: [u16; 41] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -21021,7 +21008,6 @@ mod widened_state_tests {
         CURSED_FLAME,
         EYE_FIRE,
         BRAIN_SCRAMBLER,
-        RAY_GUNNER,
         SAUCER_DEATHRAY,
         SAUCER_MISSILE,
         SAUCER_LASER,
@@ -21046,9 +21032,12 @@ mod widened_state_tests {
         STICKY_BOMB,
         BOMB_FISH,
         DYNAMITE,
-        SCRAMBLER_SHOT,
+        // S1-D-5: `SCRAMBLER_SHOT`/`MARTIAN_RAY` left the sweep — they are
+        // the same-id aliases of `BRAIN_SCRAMBLER`/`RAY_GUNNER` (436/438,
+        // `ProjectileID.cs:1426`/`:1430`), already covered above/below; and
+        // the 438 row now carries the C# `alpha = 255` (`Projectile.cs
+        // :5087`), so it leaves the reset sweep like the shadow hand.
         PIRATE_ARROW,
-        MARTIAN_RAY,
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
@@ -21161,6 +21150,10 @@ mod widened_state_tests {
         // turns it invisible on tick 3 — so it leaves the reset sweep too.
         let shell = proj_data(DUTCHMAN_SHELL).unwrap_or_else(|| panic!("the shell lost its row"));
         assert_eq!(shell.alpha, 255, "`alpha = 255` (`:3226`)");
+        // S1-D-5: the Ray Gunner's laser (`:5087`) writes `alpha = 255` —
+        // the slice-A fade fades IN from 255 — so it leaves the sweep.
+        let ray = proj_data(RAY_GUNNER).unwrap_or_else(|| panic!("the ray lost its row"));
+        assert_eq!(ray.alpha, 255, "`alpha = 255` (`:5087`)");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -31444,5 +31437,188 @@ mod proj_light_spawn_tests {
             seeds.push(rng.seed);
         }
         assert_eq!(seeds[0], seeds[1], "the feed cannot move the stream");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_5_data_row_tests {
+    //! S1-D-5 (`task/S1-D-5-projdata-deviations`, code-only mode — tests
+    //! WRITTEN NOT RUN): the projectile data-row deviation fixes. (1) the
+    //! spiky ball 185 rides its own aiStyle-14 row (`Projectile.cs
+    //! :2717-2727`), not the dart group's aiStyle 1; (2) the duplicate
+    //! unreachable `MUSKET_BALL` 10x10 arm is gone — kind 14 resolves the
+    //! real 4x4 row (`:950-961`); (3) the same-id alias pairs
+    //! (`SCRAMBLER_SHOT`/`BRAIN_SCRAMBLER` 436, `MARTIAN_RAY`/`RAY_GUNNER`
+    //! 438, `LEAF`/`LEAF_BLOWER` 206) resolve ONE row each, while 462/622
+    //! are DISTINCT C# ids with distinct rows; (4) the six dead dispatch
+    //! arms (aiStyle 1/3/14/16/115/99) are deleted — the live arms still
+    //! run (the 99 yoyo clock and the 14 spear flight pinned here).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut World) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    #[test]
+    fn s1_d_5_the_spiky_ball_row_is_the_csharp_2717_arm() {
+        // `Projectile.cs:2717-2727`: 14x14, aiStyle 14, penetrate -1,
+        // timeLeft 900, trap. Before the fix the row rode the dart group
+        // (10x10, aiStyle 1) — the slice-A gate never saw it, but the
+        // generic arrow flight gave it the wrong gravity/rotation.
+        let d = proj_data(TRAP_SPIKY_BALL).expect("the 185 row");
+        assert_eq!((d.w, d.h), (14.0, 14.0), "`:2719-2720`");
+        assert_eq!(d.ai_style, 14, "`:2721` — NOT the dart group's 1");
+        assert_eq!(d.penetrate, -1, "`:2724`");
+        assert_eq!(d.time_left, 900, "`:2725`");
+        assert!(d.tile_collide);
+        assert!(d.trap, "`:2726`");
+        // The dart group keeps its own aiStyle-1 row without the 185.
+        let dart = proj_data(TRAP_DART).expect("the dart row");
+        assert_eq!(dart.ai_style, 1);
+        assert_eq!((dart.w, dart.h), (10.0, 10.0));
+    }
+
+    #[test]
+    fn s1_d_5_the_spiky_ball_dispatches_the_spear_flight() {
+        // The 14 arm (`ai_spear`, `Projectile.cs:25143-25158`): ai[0]++
+        // per tick, the `ai[0] > 5f` gravity `velocity.Y += 0.2f` from the
+        // 6th tick, `rotation += velocity.X * 0.1f`. Under the old row the
+        // ball ran `ai_arrow` (gravity 0.1 from tick 15) — this pins the
+        // dispatch switch. The tile BOUNCE (`HandleMovement` `:19703-19713`)
+        // is still unported: `ai_spear` kills on the tile scan — the
+        // documented gap in ANALYSIS "The projectile data-row deviations".
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TRAP_SPIKY_BALL, 160.0, 160.0, 4.0, 0.0, 40, 2.0)
+            .expect("the row spawns");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 1.0, "the spear counter ticks (`:25144`)");
+        assert_eq!(p.vel.y, 0.0, "no gravity before the 6th tick");
+        assert!((p.rot - 0.4).abs() < 1e-5, "`rotation += 4 * 0.1` (`:25157`)");
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 5.0, "the counter caps at 5 (`:25147`)");
+        assert!((p.vel.y - 0.2).abs() < 1e-5, "the 6th tick adds 0.2 (`:25155`)");
+    }
+
+    #[test]
+    fn s1_d_5_kind_14_resolves_the_real_musket_ball_row() {
+        // `Projectile.cs:950-961`: 4x4, aiStyle 1, penetrate 1, light 0.5,
+        // alpha 255, scale 1.2, timeLeft 600, extraUpdates 1. The deleted
+        // duplicate arm claimed 10x10/timeLeft 3600/extraUpdates 0 — it was
+        // unreachable behind this row (the compiler only warned).
+        let d = proj_data(MUSKET_BALL).expect("the 14 row");
+        assert_eq!((d.w, d.h), (4.0, 4.0));
+        assert_eq!(d.ai_style, 1);
+        assert_eq!(d.time_left, 600);
+        assert_eq!(d.extra_updates, 1);
+        assert_eq!(d.penetrate, 1);
+    }
+
+    #[test]
+    fn s1_d_5_the_alias_pairs_resolve_one_row_each() {
+        // The C# has ONE id per pair (`ProjectileID.cs:1426` BrainScramblerBolt
+        // = 436, `:1430` RayGunnerLaser = 438, `:966` Leaf = 206) — the Rust
+        // alias consts stay for their callers, but `proj_data` carries one
+        // arm per id. The deleted arms were unreachable duplicates.
+        assert_eq!(SCRAMBLER_SHOT, BRAIN_SCRAMBLER);
+        assert_eq!(MARTIAN_RAY, RAY_GUNNER);
+        assert_eq!(LEAF, LEAF_BLOWER);
+        assert_eq!(proj_data(SCRAMBLER_SHOT), proj_data(BRAIN_SCRAMBLER));
+        assert_eq!(proj_data(MARTIAN_RAY), proj_data(RAY_GUNNER));
+        assert_eq!(proj_data(LEAF), proj_data(LEAF_BLOWER));
+        // The leaf row is the `:2937-2945` arm (both copies were
+        // value-identical): 14x14, aiStyle 40, penetrate 1, timeLeft 360,
+        // alpha 255.
+        let leaf = proj_data(LEAF).expect("the 206 row");
+        assert_eq!((leaf.w, leaf.h), (14.0, 14.0));
+        assert_eq!(leaf.ai_style, 40);
+        assert_eq!(leaf.time_left, 360);
+        assert_eq!(leaf.alpha, 255);
+    }
+
+    #[test]
+    fn s1_d_5_462_and_622_are_distinct_rows_with_the_csharp_alpha() {
+        // NOT aliases: `ProjectileID.cs:1478` PhantasmalBolt = 462 and
+        // `:1798` BlowupSmokeMoonlord = 622 are different ids with different
+        // `SetDefaults` arms (`Projectile.cs:5329-5339` / `:6691-6698`).
+        // Both set `alpha = 255`; the fix carries it (the bolt fades IN via
+        // `:55660-55671`; the smoke never fades — invisible for its whole
+        // life, the visible effect is the skipped dust 229).
+        assert_ne!(PHANTASMAL_BOLT, BLOWUP_SMOKE_MOONLORD);
+        let bolt = proj_data(PHANTASMAL_BOLT).expect("the 462 row");
+        assert_eq!((bolt.w, bolt.h), (8.0, 8.0), "`:5331-5332`");
+        assert_eq!(bolt.ai_style, 1);
+        assert_eq!(bolt.extra_updates, 3, "`:5336`");
+        assert!(!bolt.tile_collide, "`:5338`");
+        assert_eq!(bolt.alpha, 255, "`:5335`");
+        let smoke = proj_data(BLOWUP_SMOKE_MOONLORD).expect("the 622 row");
+        assert_eq!((smoke.w, smoke.h), (10.0, 10.0), "`:6693-6694`");
+        assert_eq!(smoke.ai_style, 1);
+        assert_eq!(smoke.extra_updates, 2, "`:6697`");
+        assert!(smoke.tile_collide);
+        assert_eq!(smoke.alpha, 255, "`:6696`");
+        // The martian pair is distinct too (436 vs 438): the scrambler has
+        // no alpha write, the ray gunner's `:5087` sets 255.
+        assert_ne!(proj_data(BRAIN_SCRAMBLER), proj_data(RAY_GUNNER));
+        assert_eq!(proj_data(BRAIN_SCRAMBLER).unwrap().alpha, 0);
+        assert_eq!(proj_data(RAY_GUNNER).unwrap().alpha, 255);
+        assert_eq!(proj_data(RAY_GUNNER).unwrap().extra_updates, 3);
+    }
+
+    #[test]
+    fn s1_d_5_the_ray_gunner_spawns_invisible_and_fades_in() {
+        // The integration witness for the alpha fix: the data-carrying
+        // spawn copies the row's 255, and the slice-A fade (`:55660-55671`,
+        // `alpha -= (byte)(speed * 0.9)`) drops it `(byte)(10 * 0.9) = 9`
+        // per sub-step. Under the old reset-0 row the fade was a no-op
+        // (alpha stayed 0 — the fade-in state was lost from tick 1).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(RAY_GUNNER, Vec2::new(160.0, 160.0), Vec2::new(10.0, 0.0), 30, 0.0)
+            .expect("the row spawns");
+        assert_eq!(pool.slots()[slot].alpha, 255, "the spawn copies `:5087`");
+        let mut w = world();
+        // extraUpdates 3 → 4 sub-steps per update; each fades 9:
+        // 255 → 246 → 237 → 228 → 219.
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].alpha, 219, "4 sub-steps × 9 off 255");
+    }
+
+    #[test]
+    fn s1_d_5_the_live_yoyo_arm_still_ticks_after_the_dedupe() {
+        // The dead duplicate `99 =>` arm (byte-identical to the live one)
+        // is deleted; the LIVE arm's lifetime clock (`AI_099_2_Yoyos`
+        // `:67745`, `localAI[0]++`) must still run through the dispatch.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHIK_YOYO, 0, 160.0, 160.0, 0.0, 0.0, 20, 4.0, 0.0, 0.0)
+            .expect("the yoyo row spawns");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].local_ai[0], 1.0, "the 99 arm ran");
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].local_ai[0], 2.0);
+        assert!(pool.slots()[slot].active, "the keep-alive pins timeLeft 6");
     }
 }
