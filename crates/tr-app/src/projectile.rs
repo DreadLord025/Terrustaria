@@ -13067,11 +13067,22 @@ impl ProjectilePool {
                         // the Laser/VenomFang/SkyFracture hooks wrap the
                         // shared flight instead of taking the plain arrow
                         // arm, so the plain arrows keep the generic flight
-                        // only.
+                        // only. S1-D-5 slice A adds the per-type arms for
+                        // the 14 lowest-id rowed kinds
+                        // (`crate::projectile_ai001_a::SLICE_A_KINDS`,
+                        // `AI_001` `Projectile.cs:54002-57798`); every
+                        // other kind keeps the generic flight untouched.
                         1 => match self.slots[i].kind {
                             BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
+                            }
+                            kind if crate::projectile_ai001_a::handles(kind) => {
+                                crate::projectile_ai001_a::ai001_slice_a(
+                                    &mut self.slots[i],
+                                    world,
+                                    owner,
+                                )
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
