@@ -342,7 +342,15 @@ mod tests {
         let before = rng.clone();
         drippler_ai(&mut n, &w, &p, &mut rng);
         assert_ne!(rng, before, "the parked flee drew one Next(-1, 2)");
-        assert!(n.vx == -1.5 || n.vx == 0.0 || n.vx == 1.5, "the drift magnitude");
+        // The drift {-1.5, 0, 1.5} then rides the X-approach tail
+        // (`NPC.cs:25169-25200`, facing = +1): -1.5 → -1.45 (the +0.1
+        // accel then the -0.05 near-zero brake), 0 → 0.1, 1.5 stays
+        // (the `vx < max_x` gate is strict).
+        assert!(
+            (n.vx - (-1.45)).abs() < 1e-5 || (n.vx - 0.1).abs() < 1e-5 || n.vx == 1.5,
+            "the drift magnitude after the X approach: {}",
+            n.vx
+        );
         // A moving body draws nothing on the flee branch.
         let mut n2 = Npc::new(NpcKind::Drippler, 20.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
         n2.vx = 1.0;

@@ -18115,6 +18115,10 @@ mod tests {
         // (`NPC.cs:57377-57380`) and the 10-tick `timeLeft` cull
         // (`:77986-77996`).
         let mut w = ground();
+        // The C# surface line sits below the terrain (`TerrainPass`:
+        // `worldSurface = surfaceMax + 25`); the `World::new` default (16)
+        // sits above this fixture's row-30 ground — the dawn gate needs it.
+        w.world_surface = 40.0;
         let mut player = Player::spawn(&w);
         for _ in 0..120 {
             player.update(&w, crate::player::PlayerInput::default());
@@ -29548,6 +29552,12 @@ mod s1_d_2_tests {
     #[test]
     fn s1_d_3z_daylight_arms_despawn_not_burn() {
         let mut w = ground();
+        // The C# surface line sits BELOW the terrain (`TerrainPass`:
+        // `worldSurface = surfaceMax + 25`, `worldgen/terrain.rs:273`);
+        // `World::new`'s `height * 0.25` default (16) sits ABOVE this
+        // fixture's row-30 ground, so the `:57377` gate could never fire.
+        // 40 keeps the deep case (row 50) inside the 64-row world.
+        w.world_surface = 40.0;
         w.day_time = true;
         let mut player = Player::spawn(&w);
         for _ in 0..120 {
@@ -29587,6 +29597,12 @@ mod s1_d_2_tests {
         // (`NPC.cs:60096`); the ctor's -1 default would skip it.
         z.sprite_dir = 1;
         z.facing = 1;
+        // The idle counter at num57 takes the WANDER arm (`:57336`'s
+        // `ai[3] < num57` fails) — the chase arm's TargetClosest would
+        // flip facing toward the player (LEFT of this fixture) and the
+        // `:60096` motion gate would then fail. The wander arm keeps
+        // vx != 0 so the `:57396` reset holds and the facing stays +1.
+        z.ai[3] = 60.0;
         // Stand flush against a TWO-tile wall at column 32 (rows 28/29):
         // the body's right edge at 512, so the +1px X move collides. The
         // jump probe column is (centre 503 + 15)/16 = 32, row (440 + 40 -

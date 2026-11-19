@@ -2680,19 +2680,21 @@ mod tests {
             let b = fingerprint(&holiday, seed);
             if a != b {
                 shifted += 1;
-                // S1-D-3z: the holiday arm now returns the matching variant
-                // kind (the seeded world sets ENDLESS_HALLOWEEN, so the
-                // `Next(319, 322)` pick lands on Doctor/Superman/Pixie) — a
-                // spawn is never LOST by the early return, and the stream
-                // fingerprint still shifts exactly where the arm fires.
+                // S1-D-3z: the holiday arm's GATE roll (`Next(2)`) shifts
+                // the stream even when it fails — the ladder then falls
+                // through to the plain zombie (the C# `&&` short-circuit
+                // spends the gate draw either way). When the gate passes,
+                // the `Next(319, 322)` pick lands on Doctor/Superman/
+                // Pixie — a spawn is never LOST by the early return.
                 assert!(
                     matches!(
                         b.1,
-                        Some(NpcKind::ZombieDoctor)
+                        Some(NpcKind::Zombie)
+                            | Some(NpcKind::ZombieDoctor)
                             | Some(NpcKind::ZombieSuperman)
                             | Some(NpcKind::ZombiePixie)
                     ),
-                    "the holiday zombie variant kind, got {:?}",
+                    "the holiday arm's outcome kind, got {:?}",
                     b.1
                 );
             } else {
