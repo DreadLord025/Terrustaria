@@ -343,13 +343,19 @@ pub const LANE_SPAWN_RATE: i32 = 60;
 /// `SpawnMonsterFromGate`'s pick. The C# hands out up to two bodies from a
 /// single pass — the `num7`/`num8` (D2) or `num8`/`num9` (D3) pair, where the
 /// trailing squire branch spawns the second body alongside the first
-/// (`DD2Event.cs:1311-1312`, `:1355-1356`, `:1688-1689`).
+/// (`DD2Event.cs:1311-1312`, `:1355-1356`, `:1688-1689`) — and up to THREE
+/// in D3 wave 6, whose two independent `if` chains (`:1692-1707`,
+/// `:1708-1727`) each spawn, the second chain's squire arm adding its
+/// always-spawned `num9` beside the rolled `num8` (B-6e).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LaneSpawn {
     /// The first body — `num7`/`num8`; `None` when the pass picks nothing.
     pub first: Option<u16>,
     /// The second body — `num8`/`num9`, when the branch spawns a pair.
     pub second: Option<u16>,
+    /// The third body — only D3 wave 6's second-chain squire arm fills it
+    /// (the always-spawned `num9` 554, `DD2Event.cs:1726`); `None` elsewhere.
+    pub third: Option<u16>,
 }
 
 impl LaneSpawn {
@@ -358,6 +364,7 @@ impl LaneSpawn {
         LaneSpawn {
             first: Some(kind),
             second: None,
+            third: None,
         }
     }
 
@@ -366,6 +373,7 @@ impl LaneSpawn {
         LaneSpawn {
             first: None,
             second: None,
+            third: None,
         }
     }
 
@@ -374,6 +382,7 @@ impl LaneSpawn {
         LaneSpawn {
             first: Some(squire),
             second,
+            third: None,
         }
     }
 }
@@ -460,12 +469,15 @@ pub fn lane_spawn_roll_d1(
             } else {
                 None
             };
-            // `:1077-1098`: the Dark Mage's `if` is its own statement — the
-            // chain after it re-assigns `num4` whenever it fires, so the boss
-            // only survives when the chain picks nothing.
+            // `:1078-1093`: the Dark Mage's `if` is its own statement and
+            // its `NewNPC` RUNS; the chain after it re-assigns `num4` (the
+            // net-sync handle) but spawns its body TOO — both NPCs spawn.
+            // B-6d: the old `chain.or(boss)` dropped the mage whenever the
+            // chain fired.
             LaneSpawn {
-                first: chain.or(boss),
-                second: None,
+                first: boss,
+                second: chain,
+                third: None,
             }
         }
         _ => LaneSpawn::one(552),
@@ -710,8 +722,12 @@ pub fn lane_spawn_roll_d3(
             }
         }
         6 => {
-            // `:1691-1728`: two independent chains — the second (`:1708`)
-            // re-assigns `num8` whenever it fires, so it outranks the first.
+            // `:1691-1728`: TWO INDEPENDENT `if` chains — the first
+            // (`:1692-1707`, the bosses/drake) runs its `NewNPC`, then the
+            // second (`:1708-1727`) runs its OWN; re-assigning `num8` is
+            // only the net-sync handle (`:1755-1762`), it does not un-spawn
+            // the first chain's body. B-6e: the old `second.first.or(first)`
+            // dropped the first chain's body whenever the second fired.
             let first = if rng01() * 20.0 < 1.0 && count(577) == 0 {
                 Some(577)
             } else if rng01() * 20.0 < 1.0 && count(565) == 0 {
@@ -723,22 +739,32 @@ pub fn lane_spawn_roll_d3(
             } else {
                 None
             };
+            // The second chain: its single-body arms fill `first` (the
+            // `num8` slot); its squire arm rolls the 557 into `num8` and
+            // ALWAYS spawns the 554 into `num9` (`:1722-1726`) — carried in
+            // `third` so the final pick keeps all three bodies in order.
             let second = if rng01() * 7.0 < 1.0 && count(578) < cap_bomb {
                 LaneSpawn::one(578)
             } else if rng01() * 7.0 < 1.0 && count(573) + count(575) < cap_mystic {
-                // `:1714-1716`: `Next(3) == 0` picks the frost mage's 575.
+                // `:1714`: `Next(3) == 0` picks the frost mage's 575.
                 LaneSpawn::one(if rng01() * 3.0 < 1.0 { 575 } else { 573 })
             } else if rng01() * 5.0 < 1.0 && count(563) < cap_t3 {
                 LaneSpawn::one(563)
             } else if count(554) + count(557) < cap_squire {
-                // `:1722-1727`: `Next(3) == 0` drops the 557 beside the 554.
-                LaneSpawn::pair(554, roll_second(&rng01, 3.0, 557))
+                // `:1722-1726`: the `Next(3)` 557 spawns FIRST when it hits,
+                // then the 554 squire spawns unconditionally (`num9`).
+                LaneSpawn {
+                    first: roll_second(&rng01, 3.0, 557),
+                    second: None,
+                    third: Some(554),
+                }
             } else {
                 LaneSpawn::none()
             };
             LaneSpawn {
-                first: second.first.or(first),
-                second: second.second,
+                first,
+                second: second.first,
+                third: second.third,
             }
         }
         7 => {

@@ -2598,7 +2598,9 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
         _ => tr_core::dd2::lane_spawn_roll_d1(wave, &count, kills, required, left_gate, roll),
     };
     let mut spawned = Vec::new();
-    for id in [pick.first, pick.second].into_iter().flatten() {
+    // Up to three bodies in the C#'s spawn order — D3 wave 6's two
+    // independent chains plus the squire arm's `num9` (`DD2Event.cs:1691-1727`).
+    for id in [pick.first, pick.second, pick.third].into_iter().flatten() {
         if let Some(kind) = nid_of(id) {
             spawned.push(Npc::new(kind, sx, sy, 1, 0.0));
         }
@@ -13775,9 +13777,10 @@ mod shard_tests {
             assert_eq!(pick.first, Some(561));
             let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.5);
             assert_eq!(pick.first, Some(552));
-            // Wave 5: the Dark Mage rides the half-kill gate (`:1078`), but the
-            // chain after it re-assigns `num4` whenever it fires — so the boss
-            // only survives when the goblins already sit at their cap.
+            // Wave 5: the Dark Mage rides the half-kill gate (`:1078`) AND
+            // the chain after it spawns its own body (`:1082-1093`) — `num4`
+            // is only the net-sync handle, both NPCs spawn (B-6d: the old
+            // `chain.or(boss)` dropped the mage whenever the chain fired).
             let full = |t: u16| if t == 564 { 0 } else { 60 };
             let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 31, 60, false, || 0.9);
             assert_eq!(
@@ -13785,13 +13788,50 @@ mod shard_tests {
                 Some(564),
                 "the Dark Mage past the half-kill gate"
             );
+            assert_eq!(pick.second, None, "the capped chain spawns nothing");
             let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 10, 60, false, || 0.9);
             assert_eq!(
                 pick.first, None,
                 "the gate holds before half the wave is dead"
             );
             let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || 0.01);
-            assert_eq!(pick.first, Some(558), "the chain outranks the boss spawn");
+            assert_eq!(pick.first, Some(564), "the mage spawns first");
+            assert_eq!(pick.second, Some(558), "the wyvern chain spawns TOO");
+        }
+
+        #[test]
+        fn b6d_wave_five_spawns_the_mage_and_the_chain_together() {
+            // `DD2Event.cs:1075-1095`: the mage's `if` and the chain are
+            // independent statements — every chain arm runs its own
+            // `NewNPC` beside the mage's. Witness each pairing.
+            let empty = |_t: u16| 0i32;
+            // The wyvern chain (`Next(10)`).
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || 0.01);
+            assert_eq!((pick.first, pick.second), (Some(564), Some(558)));
+            // The javeliner chain (`Next(4)` after the wyvern miss).
+            let rolls = std::cell::RefCell::new([0.9f32, 0.01].into_iter());
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!((pick.first, pick.second), (Some(564), Some(561)));
+            // The goblin chain (`Next(4) != 0` → the squire 552).
+            let rolls = std::cell::RefCell::new([0.9f32, 0.9, 0.9].into_iter());
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!((pick.first, pick.second), (Some(564), Some(552)));
+            // The right lane spends its `Next(2)` (`:1078`): a miss keeps
+            // the mage off, the chain still spawns.
+            let rolls = std::cell::RefCell::new([0.9f32, 0.01].into_iter());
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, true, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!((pick.first, pick.second), (None, Some(558)));
+            // A live mage (`AnyNPCs(564)`, `:1078`) blocks the second mage;
+            // the chain is untouched.
+            let mage_up = |t: u16| if t == 564 { 1 } else { 0 };
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &mage_up, 31, 60, false, || 0.01);
+            assert_eq!((pick.first, pick.second), (None, Some(558)));
         }
 
         #[test]
@@ -13840,8 +13880,9 @@ mod shard_tests {
             };
             let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
             assert_eq!(pick.first, Some(572));
-            // D3 wave 6: the balista's one-shot survives only when the second
-            // chain's rolls fail and its squire cap is full.
+            // D3 wave 6: the first chain's balista spawns even when the second
+            // chain runs — here the second chain's rolls fail and its squire
+            // cap is full, so the balista stands alone (B-6e).
             let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
             let seq = std::cell::Cell::new(0usize);
             let roll = || {
@@ -13865,22 +13906,118 @@ mod shard_tests {
 
         #[test]
         fn the_tier_three_wave_six_chains_run_side_by_side() {
-            // `DD2Event.cs:1691-1728`: wave 6 runs two independent `if` chains —
-            // the second one re-assigns `num8` whenever it fires, so the glider
-            // (578) it picks outranks the balista (577) the first chain picked.
+            // `DD2Event.cs:1691-1728`: wave 6 runs two INDEPENDENT `if` chains —
+            // each runs its own `NewNPC`; re-assigning `num8` is only the
+            // net-sync handle. B-6e: the old `second.first.or(first)` dropped
+            // the first chain's body whenever the second fired.
             let empty = |_t: u16| 0i32;
             let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || 0.01);
-            assert_eq!(pick.first, Some(578));
+            assert_eq!(pick.first, Some(577), "the first chain's balista SPAWNS");
+            assert_eq!(pick.second, Some(578), "the second chain's glider TOO");
+            assert_eq!(pick.third, None);
             // With the glider at its cap the second chain's failed rolls carry it
-            // to the squire pair, whose `Next(3)` drops the 557.
+            // to the squire arm: the `Next(3)` 557 spawns first, the 554 always.
             let capped = |t: u16| if t == 578 { 40 } else { 0 };
             let pick = tr_core::dd2::lane_spawn_roll_d3(6, &capped, || 0.3);
-            assert_eq!(pick.first, Some(554), "the second chain's squire pair");
-            assert_eq!(pick.second, Some(557));
+            assert_eq!(pick.first, None, "the first chain's rolls all miss");
+            assert_eq!(pick.second, Some(557), "the rolled 557");
+            assert_eq!(pick.third, Some(554), "the always-spawned squire");
             // Both chains empty and the squire cap full: nothing spawns.
             let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
             let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, || 0.9);
-            assert_eq!(pick.first, None);
+            assert_eq!((pick.first, pick.second, pick.third), (None, None, None));
+        }
+
+        #[test]
+        fn b6e_wave_six_spawns_all_three_bodies_in_c_order() {
+            // `DD2Event.cs:1691-1727` read whole: the first chain (`:1692-1707`)
+            // spawns the balista; the second chain (`:1708-1727`) falls through
+            // its rolls to the squire arm, whose `Next(3)` 557 (`:1724`) spawns
+            // BEFORE the unconditional 554 (`:1726`, `num9`). All three spawn.
+            let empty = |_t: u16| 0i32;
+            let rolls = std::cell::RefCell::new(
+                [0.01f32, 0.9, 0.9, 0.9, 0.01].into_iter(),
+            );
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (Some(577), Some(557), Some(554)),
+                "balista + rolled 557 + always-554, in the C#'s spawn order"
+            );
+            // The first chain misses entirely; the second chain's squire arm
+            // still spawns its pair (`num8` on the roll, `num9` always).
+            let rolls = std::cell::RefCell::new(
+                [0.9f32, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.01].into_iter(),
+            );
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (None, Some(557), Some(554))
+            );
+            // The squire's `Next(3)` MISSES: only the unconditional 554 spawns
+            // from the arm (`:1722` false → `:1726` still runs).
+            let rolls = std::cell::RefCell::new(
+                [0.9f32, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9].into_iter(),
+            );
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || {
+                rolls.borrow_mut().next().unwrap()
+            });
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (None, None, Some(554)),
+                "the squire spawns even when its companion roll misses"
+            );
+            // The second chain's single-body arm: two bodies, no third.
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || 0.01);
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (Some(577), Some(578), None)
+            );
+        }
+
+        #[test]
+        fn b6e_per_wave_spawn_count_pins() {
+            // Census of every wave row against the C# switches: D1 waves 1-4
+            // and D2 waves 1-2/4 and D3 waves 3-4 are single else-if chains
+            // (max ONE body); the squire-pair arms cap at TWO; only D3 wave 6
+            // reaches THREE. `third` stays None outside D3 wave 6.
+            let empty = |_t: u16| 0i32;
+            // D1 waves 1-4: one body at most (`DD2Event.cs:1039-1074`).
+            for wave in 1..=4 {
+                let pick =
+                    tr_core::dd2::lane_spawn_roll_d1(wave, &empty, 0, 60, false, || 0.01);
+                assert_eq!(pick.third, None, "d1 wave {wave}");
+                assert!(pick.second.is_none(), "d1 wave {wave} single chain");
+            }
+            // D2 waves 1-7: the squire-pair arms are the only two-body shapes
+            // (`:1309-1313`, `:1353-1357`, `:1383-1387`, `:1415-1419`).
+            for wave in 1..=7 {
+                let pick =
+                    tr_core::dd2::lane_spawn_roll_d2(wave, &empty, 0, 60, false, || 0.9);
+                assert_eq!(pick.third, None, "d2 wave {wave}");
+            }
+            // D2 wave 3's pair: two bodies, never three.
+            let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.2);
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (Some(553), Some(556), None)
+            );
+            // D3 waves 1-5/7: single chains + squire pairs, max two
+            // (`:1581-1690`, `:1729-1750`).
+            for wave in [1, 2, 3, 4, 5, 7] {
+                let pick = tr_core::dd2::lane_spawn_roll_d3(wave, &empty, || 0.9);
+                assert_eq!(pick.third, None, "d3 wave {wave}");
+            }
+            // D3 wave 1's squire pair on the `Next(7)` hit: exactly two.
+            let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.1);
+            assert_eq!(
+                (pick.first, pick.second, pick.third),
+                (Some(554), Some(557), None)
+            );
         }
 
         #[test]
@@ -13970,6 +14107,50 @@ mod shard_tests {
             }
             assert_eq!(n.ai[1], 1.0, "the fade arm opened");
             assert!(n.hp <= 0, "the gate dies at 550: {}", n.hp);
+        }
+
+        #[test]
+        fn b6d_the_gate_fade_ramps_500_to_600() {
+            // B-6d re-verification of audit 53 §4.1 defect 1: the audit
+            // claimed the port's fade finishes at 550 (a 500→550 window).
+            // FALSE POSITIVE — `npc.rs`'s `((ai[0]-500)/100).clamp(0,1)` IS
+            // `Utils.GetLerpValue(500, 600, ai[0], clamped)` (`Utils.cs:342`:
+            // `(t-from)/(to-from)` = `(t-500)/100`), and `NPC.cs:41028`'s
+            // `Lerp(1, 0.05, …)` matches the port's `1 + (0.05-1)*t`. At the
+            // 550 death tick both give t = 0.5 → scale 0.525 (mid-fade),
+            // exactly the value the audit attributes to the C# alone.
+            // This witness pins the window so no future "fix" narrows it.
+            let world = surface_world();
+            let mut player = Player::spawn(&world);
+            let mut rng = UnifiedRandom::new(7);
+            let mut gate_at = |ai0: f32| {
+                let mut n = Npc::new(
+                    NpcKind::DD2LanePortal,
+                    150.0 * TILE_PX,
+                    118.0 * TILE_PX,
+                    1,
+                    0.0,
+                );
+                n.ai[1] = 1.0; // the fade arm (`:41025`)
+                n.ai[0] = ai0;
+                n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+                n
+            };
+            // `:41028` at ai[0] == 500: GetLerpValue = 0 → scale 1.
+            let n = gate_at(499.0);
+            assert_eq!(n.ai[0], 500.0);
+            assert!((n.scale - 1.0).abs() < 1e-4, "fade start: {}", n.scale);
+            // Mid-window ai[0] == 525: t = 0.25 → 1 - 0.95*0.25 = 0.7625.
+            let n = gate_at(524.0);
+            assert!((n.scale - 0.7625).abs() < 1e-4, "mid-fade: {}", n.scale);
+            // The death tick ai[0] == 550: t = 0.5 → 0.525, NOT 0.05 —
+            // the gate dies mid-fade (`:41038-41042`), the 600 endpoint
+            // is never reached.
+            let n = gate_at(549.0);
+            assert_eq!(n.ai[0], 550.0);
+            assert!((n.scale - 0.525).abs() < 1e-4, "death mid-fade: {}", n.scale);
+            assert!(n.hp <= 0, "the 550 death still fires");
+            assert!(!n.dont_take_damage, "`:41040`'s unshield on death");
         }
 
         #[test]
