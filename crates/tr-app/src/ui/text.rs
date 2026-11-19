@@ -234,6 +234,14 @@ pub(crate) fn ui_font_width(lookups: &assets::Lookups, text: &str, scale: f32) -
     lookups.ui_font.as_ref().map(|f| font_width(f, text, scale))
 }
 
+/// `FontAssets.MouseText.MeasureString(text).Y` at `scale` — the retail
+/// sheet's line spacing (the bitmap fallback has no metrics; the callers
+/// estimate). `ChatManager.GetStringSize`'s Y (`ChatManager.cs:189-198`),
+/// which `NPCChatPanel.DrawButtons`' label origin reads (`NPCChatPanel.cs:120`).
+pub(crate) fn ui_font_height(lookups: &assets::Lookups, scale: f32) -> Option<f32> {
+    lookups.ui_font.as_ref().map(|f| f.line_spacing * scale)
+}
+
 /// `FontAssets.DeathText.MeasureString(text).X` (`Main.DrawSettingButton`'s
 /// `vector3.X`, `Main.cs:45536`) when the retail sheet is loaded.
 pub(crate) fn death_font_width(lookups: &assets::Lookups, text: &str) -> Option<f32> {

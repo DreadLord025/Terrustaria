@@ -223,9 +223,10 @@ pub fn apply_touch_damage(
     let dont_starve = world
         .seeds
         .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
-    // `player.fireWalk` (`Player.cs:1878`) — the Obsidian Skull family's
-    // grant (`accessory_defense.rs`, S1-C-12 wave C) skips the hot arm
-    // (`Collision.cs:3220`).
+    // `player.fireWalk` (`Player.cs:1878`): the ObsidianSkin buff (1) arms it
+    // per tick (`UpdateBuffs`, `:9878` — S1-E-7 wave A) and the Obsidian Skull
+    // family grants it (`accessory_defense.rs`, S1-C-12 wave C); either skips
+    // the hot arm (`Collision.cs:3220`).
     let fire_walk = player.fire_walk;
     let Some(hit) = hurt_tiles(
         world,
@@ -258,7 +259,11 @@ pub fn apply_touch_damage(
         // `Hurt`'s default `true` — the hazard tiles pass no `dodgeable`
         // override in the C# (`Player.cs:28982-29019`'s call chain), so a black
         // belt eats spike damage (research S1-C-1 §1.4).
-        outcome.damaged = player.hurt(dmg, cx, rng, true);
+        // `Crit: false` and the `ImmunityCooldownID.TileContactDamage` counter
+        // (`Player.cs:28981`) — TileContactDamage is NOT in `Sets.Retaliate`
+        // (`ImmunityCooldownID.cs:49`), so the S1-C-7 wave B retaliate lane
+        // stays off (vanilla spike hits never retaliate).
+        outcome.damaged = player.hurt_inner(dmg, cx, true, rng, true, false, None, false);
     }
     let flag = raw > 0 && !outcome.damaged;
     if !flag {
