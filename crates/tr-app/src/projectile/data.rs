@@ -391,6 +391,10 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
+/// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
+/// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
+pub const LIGHTS_BANE: u16 = 974;
 
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
@@ -1417,6 +1421,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `Projectile.cs:3219-3227` — the Flying Dutchman's shell (240):
+            // 16x16, aiStyle 2, `penetrate = -1`, `alpha = 255` (the arm's
+            // `ai[0] > 2f` gate turns it invisible on tick 3). The C#'s
+            // `hostile = true` rides the hostile spawn sites, not the row.
             DUTCHMAN_SHELL => (
                 16.0,
                 16.0,
@@ -1427,7 +1435,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // The DD2 families' weapons (`Projectile.cs`'s SetDefaults): the
             // javelin throwers' spears 662/685 (16x16, aiStyle 1, penetrate
@@ -2095,6 +2103,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             CRIMSON_HEART => (20.0, 20.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
             DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
             // ignoreWater (the stock true / false).
@@ -2132,8 +2141,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:6916-6938` — the turret pair's `alpha = 255`
+            // fade-in rides the state group (the 641's `drawLayer = 1` is a
+            // draw-side field with no pool consumer); `ignoreWater` rides
+            // the sentry flag's tail below.
             MOONLORD_TURRET | RAINBOW_CRYSTAL => {
-                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
+                (32.0, 32.0, 123, 1, 36000, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6904-6915` — the turret's beam (642): 18x18,
+            // aiStyle 84 (the `AI_084` laser family), `penetrate = -1`,
+            // `tileCollide = false`, `alpha = 255`, local-immunity 10.
+            MOONLORD_TURRET_LASER => {
+                (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 10, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6941-6952` — the crystal's shard (644): 14x14,
+            // aiStyle 112, `penetrate = 1`, `timeLeft = 900`,
+            // `tileCollide = false`, `ignoreWater`, `alpha = 255`, the
+            // idStatic pair with the stock −1 cooldown (`:466`).
+            RAINBOW_CRYSTAL_EXPLOSION => {
+                (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, true, -1, 255, 1.0))
             }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -2230,6 +2256,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // `Projectile.cs:9237-9252` — the Light's Bane slash (974):
+            // 20x20, aiStyle 188, `penetrate = 2`, `tileCollide = false`,
+            // `ignoreWater = true`, `timeLeft = 30`, the local-immunity pair
+            // (`usesLocalNPCImmunity`, `localNPCHitCooldown = -1`). The
+            // melee/armorPenetration/stopsDealingDamageAfterPenetrateHits
+            // fields are damage-side and stay with the melee port.
+            LIGHTS_BANE => (20.0, 20.0, 188, 2, 30, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2357,7 +2390,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, VILE_BASE | VILE_TIP)
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
-            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET),
+            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // `Projectile.cs:9244`: the Light's Bane slash ignores water.
+            || kind == LIGHTS_BANE
+            // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
+            || kind == RAINBOW_CRYSTAL_EXPLOSION,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -2393,6 +2430,7 @@ pub const CRIMSON_HEART: u16 = 500;
 pub const DIRTIEST_BLOCK: u16 = 1018;
 /// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
 pub const BOULDER_PET: u16 = 1056;
+
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
@@ -2407,7 +2445,17 @@ pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
 pub const SPIDER_EGG: u16 = 378;
 pub const MOONLORD_TURRET: u16 = 641;
+/// `ProjectileID.MoonlordTurretLaser` (642) — the turret's beam
+/// (`Projectile.cs:6904-6915`: 18x18, aiStyle 84, `penetrate = -1`,
+/// `alpha = 255`, `tileCollide = false`, local-immunity 10).
+pub const MOONLORD_TURRET_LASER: u16 = 642;
 pub const RAINBOW_CRYSTAL: u16 = 643;
+/// `ProjectileID.RainbowCrystalExplosion` (644) — the crystal's shard
+/// (`Projectile.cs:6941-6952`: 14x14, aiStyle 112, `penetrate = 1`,
+/// `timeLeft = 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
+/// `usesIDStaticNPCImmunity` with the stock `idStaticNPCHitCooldown = -1`,
+/// `Projectile.cs:466` — the block-forever sentinel).
+pub const RAINBOW_CRYSTAL_EXPLOSION: u16 = 644;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
 pub const FLAME_BURST_TOWER_2: u16 = 665;
 pub const FLAME_BURST_TOWER_3: u16 = 667;
@@ -2508,6 +2556,7 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
         // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.
@@ -2523,6 +2572,21 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The Rainbow Crystal's 8-frame sheet (`Main.cs:8476`) — `AI_123`'s
+        // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
+        // The turret 641 has no `projFrames` row (the stock 1).
+        RAINBOW_CRYSTAL => 8,
+        // The glow-stick's 4-frame sheet (`Main.cs:8664`) — the aiStyle-2
+        // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
+        // it, back to frame 1.
+        861 => 4,
+        // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
+        // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
+        // one of its rows.
+        909 => 6,
+        // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
+        // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
+        968 => 24,
         _ => 1,
     }
 }
