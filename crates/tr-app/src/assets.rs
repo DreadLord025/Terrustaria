@@ -1208,6 +1208,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_371",
         "NPC_372",
         "NPC_373",
+        // S1-D-3z — the five holiday zombies' sheets, one per kind, keyed by
+        // the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s HOLIDAY_ZOMBIE_SHEETS).
+        "NPC_319",
+        "NPC_320",
+        "NPC_321",
+        "NPC_331",
+        "NPC_332",
+        // S1-D-3z — the blood-moon pair's sheets (`render/entities.rs`'s
+        // BLOOD_MOON_SHEETS): 489 the Blood Zombie, 490 the Drippler.
+        "NPC_489",
+        "NPC_490",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

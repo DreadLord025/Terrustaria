@@ -605,6 +605,32 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
     matches!(
         kind,
         Zombie
+            // S1-D-3z — the ten wave-A zombie variants + the five holiday
+            // zombies ride the SAME plain `update_zombie` walker, so their
+            // `ai[3]` is free for the idle counter and their C# moan arms
+            // (`NPC.cs:57340` lists 132/161/186-189/200/223/319-321/331-332)
+            // draw the family's one `Next(1000)` on the caller stream.
+            | DoctorBones
+            | TheGroom
+            | BaldZombie
+            | ZombieEskimo
+            | PincushionZombie
+            | SlimedZombie
+            | SwampZombie
+            | TwiggyZombie
+            | FemaleZombie
+            | ZombieRaincoat
+            | ZombieDoctor
+            | ZombieSuperman
+            | ZombiePixie
+            | ZombieXmas
+            | ZombieSweater
+            // S1-D-3z — the Blood Zombie (489) rides the same plain
+            // walker; its moan is the 489/586 `Next(800)` arm
+            // (`NPC.cs:57344`, `fighter_ambient_moans` below), NOT the
+            // family's `Next(1000)` (489 is absent from the `:57340`
+            // list) — the kind gate keeps the draw shape exact.
+            | BloodZombie
             | Skeleton
             | UndeadMiner
             | GoblinThief
@@ -1734,6 +1760,61 @@ mod tests {
         fighter_ambient_moans(305, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
         assert!(plays.is_empty());
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-D-3z — the fifteen zombie variants (the ten wave-A kinds + the
+    /// five holiday kinds) are plain `update_zombie` walkers: their `ai[3]`
+    /// is free for the idle counter (`fighter_walker_kind`) and the holiday
+    /// types 319-321/331-332 sit in the C#'s zombie-family 1000-roll moan
+    /// arm (`NPC.cs:57340`), consuming exactly ONE draw per qualifying
+    /// tick on the caller stream.
+    #[test]
+    fn s1_d_3z_the_zombie_variants_are_walker_kinds_and_moan_once() {
+        use crate::npc::NpcKind;
+        use tr_core::UnifiedRandom;
+        for kind in [
+            NpcKind::Zombie,
+            NpcKind::DoctorBones,
+            NpcKind::TheGroom,
+            NpcKind::BaldZombie,
+            NpcKind::ZombieEskimo,
+            NpcKind::PincushionZombie,
+            NpcKind::SlimedZombie,
+            NpcKind::SwampZombie,
+            NpcKind::TwiggyZombie,
+            NpcKind::FemaleZombie,
+            NpcKind::ZombieRaincoat,
+            NpcKind::ZombieDoctor,
+            NpcKind::ZombieSuperman,
+            NpcKind::ZombiePixie,
+            NpcKind::ZombieXmas,
+            NpcKind::ZombieSweater,
+        ] {
+            assert!(fighter_walker_kind(kind), "{kind:?} is a plain walker");
+        }
+        // Each holiday type draws the family's one `Next(1000)` (seed 146
+        // hits 0 → case 14 style 1; seed 1 fails → still one draw).
+        for npc_type in [319, 320, 321, 331, 332] {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _ = witness.next_max(1000);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert_eq!(plays, vec![(14, 1)], "type {npc_type}");
+            assert_eq!(rng.peek(), witness.peek(), "type {npc_type}: one roll");
+
+            let mut rng = UnifiedRandom::new(1);
+            let mut witness = UnifiedRandom::new(1);
+            let _ = witness.next_max(1000);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert!(plays.is_empty(), "type {npc_type}");
+            assert_eq!(rng.peek(), witness.peek(), "type {npc_type}: failed roll consumed");
+        }
     }
 
     /// S1-E-21e — `fighter_not_discouraged`'s table

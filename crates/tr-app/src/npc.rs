@@ -933,6 +933,46 @@ pub enum NpcKind {
     /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) — the rain zombie
     /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70.
     ZombieRaincoat,
+    // S1-D-3z (zombie fighter audit) — the five holiday zombie variants.
+    // All aiStyle 3 (`AI_003_Fighters`), 18x40, the case-3 walk strip
+    // (`NPC.cs:76338-76342`), `Main.npcFrameCount` 3 (`Main.cs:67115`/
+    // `:67116`/`:67117`). The halloween trio (319-321) carries `scale` rows;
+    // the xmas pair (331-332) is the base Zombie's stat twin.
+    /// `NPCID.ZombieDoctor` (319, `NPCID.cs:11315`) — the halloween zombie
+    /// (`NPC.cs:13033-13046`): 18x40, dmg 20, def 6, 40 HP, kb 0.6,
+    /// value 85, scale 0.9.
+    ZombieDoctor,
+    /// `NPCID.ZombieSuperman` (320, `NPCID.cs:11317`) — the halloween zombie
+    /// (`NPC.cs:13047-13060`): 18x40, dmg 15, def 8, 60 HP, kb 0.5,
+    /// value 105, scale 1.05.
+    ZombieSuperman,
+    /// `NPCID.ZombiePixie` (321, `NPCID.cs:11319`) — the halloween zombie
+    /// (`NPC.cs:13061-13074`): 18x40, dmg 20, def 14, 34 HP, kb 0.3,
+    /// value 120, scale 1.1.
+    ZombiePixie,
+    /// `NPCID.ZombieXmas` (331, `NPCID.cs:11339`) — the xmas zombie
+    /// (`NPC.cs:13204-13216`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
+    /// value 60 (the base Zombie's stat twin, no scale row).
+    ZombieXmas,
+    /// `NPCID.ZombieSweater` (332, `NPCID.cs:11341`) — the xmas zombie
+    /// (`NPC.cs:13217-13229`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
+    /// value 60 (the base Zombie's stat twin, no scale row).
+    ZombieSweater,
+    // S1-D-3z (zombie fighter audit) — the two blood-moon kinds.
+    /// `NPCID.BloodZombie` (489, `NPCID.cs:11651`) — the blood-moon
+    /// zombie (`NPC.cs:14605-14617`): 18x40, aiStyle 3, dmg 20, def 8,
+    /// 75 HP, kb 0.4, NPCHit18/NPCDeath21, value 150. The `num107` cap
+    /// is the distance-scaled 489 row (`NPC.cs:58367`, already in
+    /// `npc_ai3_speeds.rs`); the moan is the 489/586 `Next(800)` arm
+    /// (`NPC.cs:57344`, already in `ambient_sound.rs`). NOT in the
+    /// door-bash `flag24` list (`:59996`) — it bashes, but its `ai[1]`
+    /// resets on non-blood-moon nights.
+    BloodZombie,
+    /// `NPCID.Drippler` (490, `NPCID.cs:11653`) — the blood-moon flyer
+    /// (`NPC.cs:14618-14631`): noGravity, 28x30, aiStyle 22, dmg 28,
+    /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
+    /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
+    Drippler,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -1173,10 +1213,24 @@ pub struct Npc {
     /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
-    /// Accumulated daylight burn time (zombies only).
+    /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie
+    /// fighter audit): the C# `AI_003_Fighters` has no daylight damage, so
+    /// the zombie's dawn "burn" was removed in favour of `EncourageDespawn`
+    /// (`NPC.cs:57377-57380`). The field stays for struct-layout stability
+    /// but no machine reads or writes it.
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
+    /// S1-D-3z (zombie fighter audit) — `AI_003_Fighters`' door bash
+    /// (`NPC.cs:59990-60086`): the scan sets `(tile_x, tile_y, direction,
+    /// open)` when the 60-tick bash counter fires; `world_sim/npcs.rs`
+    /// drains it after the tick (the `wants_sphere` borrow-safe shape —
+    /// `update_zombie` holds `&World` immutable). `open` is `flag28`
+    /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
+    /// on every bash and, when `open`, calls `edit::open_door` (a refusal
+    /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
+    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
     pub wants_minion_batch: u32,
@@ -2461,11 +2515,20 @@ impl Npc {
     }
 
     pub fn spawn_zombie(world: &World, x_tile: i32) -> Option<Self> {
+        Self::spawn_zombie_variant(world, x_tile, NpcKind::Zombie)
+    }
+
+    /// S1-D-3z — a zombie-family variant at the surface, the same placement
+    /// as [`Self::spawn_zombie`] (feet on the column top, the liquid gate,
+    /// the -1 initial facing). The holiday arms of the night ladder
+    /// (`NPC.cs:4727-4735`) pick the variant by the vanilla type; the kind
+    /// carries its own `SetDefaults` stats + scale (`Npc::new`).
+    pub fn spawn_zombie_variant(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
             return None;
         }
-        let (w, h) = NpcKind::Zombie.size();
+        let (w, h) = kind.size();
         let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
         let y = top as f32 * TILE_PX - h;
         if collides_rect(world, x, y, w, h) {
@@ -2474,7 +2537,7 @@ impl Npc {
         if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
             return None;
         }
-        Some(Self::new(NpcKind::Zombie, x, y, -1, 0.0))
+        Some(Self::new(kind, x, y, -1, 0.0))
     }
 
     /// Demon eyes spawn a few tiles above the surface and ignore gravity.
@@ -2550,10 +2613,15 @@ impl Npc {
                 .pumpkin_moon_defaults()
                 .map(|d| d.scale)
                 .or_else(|| kind.frost_moon_defaults().map(|d| d.scale))
+                // S1-D-3z — the halloween zombie trio's scale rows
+                // (`NPC.cs:13045`/`:13059`/`:13073`); the xmas pair and
+                // every other kind keep the 1f default.
+                .or_else(|| kind.holiday_zombie_scale())
                 .unwrap_or(1.0),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
+            wants_door_bash: None,
             wants_minion_batch: 0,
             home: None,
             variation_index: 0,
@@ -3075,6 +3143,17 @@ impl Npc {
             | NpcKind::ZombieRaincoat => 0.45,
             NpcKind::SlimedZombie | NpcKind::TwiggyZombie => 0.55,
             NpcKind::FemaleZombie => 0.6,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` knockBackResist
+            // rows: 489 0.4 (`NPC.cs:14615` — the class default, written
+            // outright), 490 0.6 (`:14628`).
+            NpcKind::BloodZombie => 0.4,
+            NpcKind::Drippler => 0.6,
+            // S1-D-3z — the holiday zombies' `SetDefaults` knockBackResist
+            // rows: 319 0.6 (`NPC.cs:13043`), 320 0.5 (`:13057`), 321 0.3
+            // (`:13071`), 331/332 0.5 (`:13214`/`:13227`).
+            NpcKind::ZombieDoctor => 0.6,
+            NpcKind::ZombieSuperman | NpcKind::ZombieXmas | NpcKind::ZombieSweater => 0.5,
+            NpcKind::ZombiePixie => 0.3,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13295`/`:13302`/`:13310` —
             // 0.4/0.2/0.25), 341 0.25 (`:13325`), 342 0.2 (`:13337`),
@@ -3419,6 +3498,16 @@ impl Npc {
             NpcKind::BaldZombie => 5,
             NpcKind::SlimedZombie => 6,
             NpcKind::TwiggyZombie | NpcKind::FemaleZombie => 4,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` defense rows:
+            // 489 8 (`NPC.cs:14611`), 490 14 (`:14625`).
+            NpcKind::BloodZombie => 8,
+            NpcKind::Drippler => 14,
+            // S1-D-3z — the holiday zombies' `SetDefaults` defense rows:
+            // 319 6 (`NPC.cs:13039`), 320 8 (`:13053`), 321 14 (`:13067`),
+            // 331/332 6 (`:13210`/`:13223`).
+            NpcKind::ZombieDoctor | NpcKind::ZombieXmas | NpcKind::ZombieSweater => 6,
+            NpcKind::ZombieSuperman => 8,
+            NpcKind::ZombiePixie => 14,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13293`/`:13300`/`:13308` —
             // 18/24/14), 341 32 (`:13320`), 342 26 (`:13333`), 343 50
@@ -3763,6 +3852,16 @@ impl Npc {
             NpcKind::ZombieEskimo | NpcKind::SwampZombie => 80.0,
             NpcKind::SlimedZombie => 55.0,
             NpcKind::TwiggyZombie | NpcKind::ZombieRaincoat => 70.0,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` value rows
+            // (copper): 489 150 (`NPC.cs:14616`), 490 150 (`:14630`).
+            NpcKind::BloodZombie | NpcKind::Drippler => 150.0,
+            // S1-D-3z — the holiday zombies' `SetDefaults` value rows
+            // (copper): 319 85 (`NPC.cs:13044`), 320 105 (`:13058`),
+            // 321 120 (`:13072`), 331/332 60 (`:13215`/`:13228`).
+            NpcKind::ZombieDoctor => 85.0,
+            NpcKind::ZombieSuperman => 105.0,
+            NpcKind::ZombiePixie => 120.0,
+            NpcKind::ZombieXmas | NpcKind::ZombieSweater => 60.0,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's 1200 (`NPC.cs:13288`), 341 2000 (`Item.buyPrice(0, 0,
             // 20)` = 20 silver, `:13324`), 342 1800 (`:13338`), 343 3000
@@ -5038,7 +5137,19 @@ impl Npc {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => self.update_zombie(world, player, dt),
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies ride the same aiStyle-3 walker
+            // (the C#'s `AI_003_Fighters` is one arm per style; the per-type
+            // rows are stats + the `num107` cap, `NPC.cs:58322-58401`).
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the Blood Zombie (489) rides the same aiStyle-3
+            // walker (`NPC.cs:14609`); its `num107` cap is the
+            // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
+            | NpcKind::BloodZombie => self.update_zombie(world, player, dt),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -5282,22 +5393,21 @@ impl Npc {
             // spearman rides the walker.
             NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
             NpcKind::SolarSpearman => {
-                let (pcx, pcy) = player.center();
-                // S1-D-3: the 518 carrier row (`NPC.cs:58226-58231`).
-                crate::npc_ai::walker_step_ladder(
+                // S1-D-3p (walker migration): the shared selection at the
+                // C# position (`NPC.cs:57369`); S1-D-3's 518 carrier row
+                // (`NPC.cs:58226-58231`) rides the same ladder.
+                crate::npc_ai::walker_step_fighter(
                     self,
                     world,
-                    pcx,
-                    pcy,
+                    player,
                     crate::npc_ai::WalkerParams {
                         speed: 5.0,
                         jump: -6.2,
-                        aggro_x: 80.0 * TILE_PX,
-                        aggro_y: 40.0 * TILE_PX,
+                        aggro_x: 0.0,
+                        aggro_y: 0.0,
                     },
                     GRAVITY,
                     MAX_FALL,
-                    player.dead,
                 );
             }
             // The stardust/solar tower mobs: the spider pair, the soldier,
@@ -5336,22 +5446,21 @@ impl Npc {
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
             // `:57681`: the soldier's walk speed is the 4-px cap.
             NpcKind::VortexSoldier => {
-                let (pcx, pcy) = player.center();
-                // S1-D-3: the 429 num83 row (`NPC.cs:57681-57684`).
-                crate::npc_ai::walker_step_ladder(
+                // S1-D-3p (walker migration): the shared selection at the
+                // C# position (`NPC.cs:57369`); S1-D-3's 429 num83 row
+                // (`NPC.cs:57681-57684`) rides the same ladder.
+                crate::npc_ai::walker_step_fighter(
                     self,
                     world,
-                    pcx,
-                    pcy,
+                    player,
                     crate::npc_ai::WalkerParams {
                         speed: 4.0,
                         jump: -6.2,
-                        aggro_x: 80.0 * TILE_PX,
-                        aggro_y: 40.0 * TILE_PX,
+                        aggro_x: 0.0,
+                        aggro_y: 0.0,
                     },
                     GRAVITY,
                     MAX_FALL,
-                    player.dead,
                 );
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
@@ -5457,6 +5566,14 @@ impl Npc {
             // is the 90-damage contact body.
             NpcKind::Poltergeist => {
                 crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+            }
+            // The Drippler (490): aiStyle 22's 490 branches (S1-D-3z,
+            // `NPC.cs:24666-25234` — the day flee, the distance-scaled
+            // floor probe, the 0.03/0.75 gravity, the 1.5/1 caps). The
+            // Poltergeist machine stays byte-identical; 490 has tile
+            // collision (no `noTileCollide`), so its integration differs.
+            NpcKind::Drippler => {
+                crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
             }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
             // aiStyle 58): S1-F-13b2 slice B landed their named machines
@@ -5666,6 +5783,72 @@ impl Npc {
             self.frame_counter = 0.0;
         }
         if self.frame >= crate::render::entities::npc_rows(330) {
+            self.frame = 0;
+        }
+    }
+
+    /// S1-D-3z — `FindFrame`'s humanoid-group arm for the Blood Zombie
+    /// (489, `NPC.cs:68614`'s case list): the grounded flip
+    /// (`:68649-68656` — only `direction` ±1 writes), idle row 1
+    /// (`:69510-69514`'s type-489 override), the walk accumulator
+    /// `|vx| + 0.5` (`:69544-69549`, num108 = 8) stepping rows 2..8
+    /// (`:69559-69584`, num109 = num*2, the wrap at `npcFrameCount[489]`
+    /// = 9 — num57 = 0, 489 is not town-like), and the air pin to row 0
+    /// (`:69642-69650`'s type-489 override of the row-1 air default).
+    /// The town `ai[0]` sit/talk/attack zones (`:68662-69488`) never fire
+    /// for 489 — the zombie machine's ai[0] is the 0..2 wander counter.
+    fn blood_zombie_frame(&mut self) {
+        if self.vy == 0.0 {
+            // `:68649-68656`.
+            if self.facing == 1 {
+                self.sprite_dir = 1;
+            }
+            if self.facing == -1 {
+                self.sprite_dir = -1;
+            }
+            if self.vx == 0.0 {
+                // `:69510-69514` — the type-489 idle row 1.
+                self.frame = 1;
+                self.frame_counter = 0.0;
+            } else {
+                // `:69544-69549` — num108 = 8, the |vx| + 0.5 clock.
+                self.frame_counter += self.vx.abs();
+                self.frame_counter += 0.5;
+                // `:69559-69575` — num109 = row 2; the step at >8.
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                if self.frame_counter > 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                // `:69581-69584` — the wrap at npcFrameCount - num57 = 9.
+                if self.frame >= crate::render::entities::npc_rows(489) {
+                    self.frame = 2;
+                }
+            }
+        } else {
+            // `:69642-69650` — the air default row 1, then the type-489
+            // override to row 0; the counter zeroes.
+            self.frame_counter = 0.0;
+            self.frame = 0;
+        }
+    }
+
+    /// S1-D-3z — `FindFrame`'s case-490 arm (`NPC.cs:72521-72533`): the
+    /// Drippler tilts at `velocity.X * 0.15`, the counter steps one row
+    /// every >6 ticks (the 7th tick), wrapping over
+    /// `npcFrameCount[490]` = 8 (`Main.cs:67132`).
+    fn drippler_frame(&mut self) {
+        // `:72522`.
+        self.rotation = self.vx * 0.15;
+        // `:72523-72532`.
+        self.frame_counter += 1.0;
+        if self.frame_counter > 6.0 {
+            self.frame_counter = 0.0;
+            self.frame += 1;
+        }
+        if self.frame >= crate::render::entities::npc_rows(490) {
             self.frame = 0;
         }
     }
@@ -7060,12 +7243,35 @@ impl Npc {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => {
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies ride the SAME case-3 arm
+            // (`NPC.cs:76338-76342` lists 319-321/331-332), the 3-row strip.
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => {
                 self.find_frame_wave_a(
                     crate::npc_findframe_a::find_frame_kind(self.kind)
                         .expect("a wave-A kind"),
                 );
             }
+            // S1-D-3z — the Blood Zombie (489) rides `FindFrame`'s
+            // humanoid-group arm (`NPC.cs:68614`'s case list), NOT the
+            // case-3 walker strip: idle row 1 (`:69510-69514`), the walk
+            // accumulator `|vx| + 0.5` stepping rows 2..8 every >8
+            // (`:69544-69584`, num108 = 8, num109 = num*2, the wrap at
+            // `npcFrameCount[489]` = 9, `Main.cs:67132`), and the air pin
+            // to row 0 via the type-489 override (`:69642-69650`). The
+            // town `ai[0]` sit/talk/attack zones never fire for 489 (the
+            // zombie machine writes ai[0] only as the wander-flip
+            // counter, 0..2).
+            NpcKind::BloodZombie => self.blood_zombie_frame(),
+            // S1-D-3z — the Drippler (490) rides `FindFrame`'s case-490
+            // arm (`NPC.cs:72521-72533`): rotation = vx * 0.15, the
+            // counter steps one row every >6 ticks, wrapping over
+            // `npcFrameCount[490]` = 8 (`Main.cs:67132`).
+            NpcKind::Drippler => self.drippler_frame(),
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
                 // town machine — 15 rows).
@@ -8258,6 +8464,13 @@ impl Npc {
         // off the kind like the C# arm does (`kind.size()` keeps the
         // base Zombie's behaviour byte-identical).
         let (w, h) = self.kind.size();
+        // S1-D-3z (zombie fighter audit) — the `AI_003_Fighters` head
+        // (`NPC.cs:55858-55861`): the player's bottom edge exactly level
+        // with the zombie's flips `directionY` up, before the chase gate.
+        crate::npc_ai_fighter_scan::fighter_head_direction_y(
+            self,
+            player.y + player.height,
+        );
         // S1-D-3p — the shared selection (`NPC.TargetClosest`,
         // `NPC.cs:77652-77781`, `npc_target.rs`) replaces the ad-hoc
         // dx-sign facing and the invented 80×40-tile aggro window:
@@ -8267,34 +8480,42 @@ impl Npc {
         // gate is false only on a non-eclipse day above the surface
         // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
         // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
-        // event terms cannot fire for this kind in the port.
-        let cand = crate::npc_target::TargetCandidate {
-            active: true,
-            dead: player.dead,
-            // The port has no hardcore ghosts (`Player.ghost`).
-            ghost: false,
-            x: player.x,
-            y: player.y,
-            width: crate::player::WIDTH as i32,
-            height: crate::player::HEIGHT as i32,
-            // `Player.aggro`/`npcTypeNoAggro`/`tankPet` have no port
-            // fields yet (the stealth/tank systems are unported) — the
-            // stock 0/false/None keep the C# metric's plain form.
-            aggro: 0,
-            item_animation: player.frame_inputs.swing_anim as i32,
-            npc_type_no_aggro: false,
-            tank_pet: None,
-        };
+        // event terms cannot fire for this kind in the port. The walker
+        // migration batch 1 ported the FULL gate as
+        // `npc_ai::fighters_not_discouraged`; the zombie's own fold stays
+        // until its arm joins a batch.
+        // The candidate rides the shared seam (the batch-1 convention):
+        // the player's live `aggro`/`npcTypeNoAggro` fields (stock 0 /
+        // all-false until the stealth/calm systems land), the tank-pet
+        // slot inert until the pet system lands.
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
         let discouraged = !world.eclipse
             && world.day_time
             && !self.spawned_from_statue
             && !((self.y as f64) > world.world_surface * 16.0);
-        if !discouraged {
+        // S1-D-3z (zombie fighter audit) — the chase gate's MISSING idle
+        // term: `NPC.cs:57336` is `ai[3] < num57 && NotDiscouraged(...)`,
+        // and `num57` is 60 for the zombie family (the type-120 row's 180,
+        // `:57035-57038`, cannot fire for these kinds). The batch-1
+        // `walker_step_fighter` already carries this term (`npc_ai.rs`);
+        // the zombie's own inline fold dropped it, so a zombie whose idle
+        // counter reached 60 kept chasing instead of wandering. `ai[3]` is
+        // the idle counter `world_sim/npcs.rs` ticks ahead of `update_rng`
+        // (`ambient_sound::fighter_idle_counter`, `NPC.cs:57034-57149`).
+        let num57 = 60.0;
+        if self.ai[3] < num57 && !discouraged {
             // The `EverLastingTicker` is not plumbed into `Npc::update`
             // yet; the stamp's only C# reader is the unported target-line
             // fade (`Main.cs:57174`) — 0 until the caller migration.
             crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
             self.sprite_dir = self.facing;
+            // S1-D-3z — the `:57370-57373` directionY refresh: facing
+            // down while the player's centre is at or above the zombie's
+            // bottom flips the vertical facing back up (the batch-1
+            // `walker_step_fighter` carries the same fold).
+            if self.direction_y > 0 && player.center().1 <= self.y + h {
+                self.direction_y = -1;
+            }
             if !player.dead {
                 // S1-D-3 (speed table): the C#'s `num107` default arm
                 // (`NPC.cs:58322-58401`) — the 1f cap with the scale row,
@@ -8312,16 +8533,70 @@ impl Npc {
                 self.vx *= 0.9;
             }
         } else {
-            self.vx *= 0.9;
+            // S1-D-3z (zombie fighter audit) — the discouraged arm is the
+            // C#'s wander-flip + daytime despawn (`NPC.cs:57375-57401`), NOT
+            // the port's old `vx *= 0.9` decay. For the zombie family
+            // `CanBeBusyWithAction` is false (`:60332-60339` — none of the
+            // listed types), so the `else if` at `:57375` always runs when
+            // the chase gate fails.
+            //
+            // `:57377-57380` — the daytime flee-despawn gate:
+            // `IsItDay() && position.Y / 16 < worldSurface && type != 624
+            // && type != 631` → `EncourageDespawn(10)`. The zombie family is
+            // never 624/631. NOTE the boundary is `<` on the TILE coordinate
+            // (`position.Y / 16`), distinct from the chase gate's `>` on
+            // pixels (`:60302`). This REPLACES the port's invented daylight
+            // "burn" (`hp -= 6`/sec) — the C# has no such damage; the zombie
+            // leaves via the 10-tick `timeLeft` window (`:7249-7256`,
+            // `:77986-77996`), which `world_sim/npcs.rs` ticks and culls.
+            if world.day_time && (self.y as f64 / 16.0) < world.world_surface {
+                self.encourage_despawn(10);
+            }
+            // `:57381-57397` — the wander-flip: grounded and stopped, the
+            // `ai[0]` idle counter advances and flips the direction every 2
+            // ticks; any horizontal motion resets it.
+            if self.vx == 0.0 {
+                if self.vy == 0.0 {
+                    self.ai[0] += 1.0;
+                    if self.ai[0] >= 2.0 {
+                        self.facing = -self.facing;
+                        self.sprite_dir = self.facing;
+                        self.ai[0] = 0.0;
+                    }
+                }
+            } else {
+                self.ai[0] = 0.0;
+            }
+            // `:57398-57401` — a zero direction snaps to +1.
+            if self.facing == 0 {
+                self.facing = 1;
+            }
         }
+        // S1-D-3z (zombie fighter audit, fix B/C) — the C#'s obstacle
+        // scan tail (`NPC.cs:59831-60284`): the flag5 ground probe, the
+        // 1-tile step-up assist, the door bash (the `wants_door_bash`
+        // request, drained in `world_sim/npcs.rs`) and the probe jump
+        // ladder (-8/-7/-6/-5 tiers + the gap leap). Runs at the C#'s
+        // position — after the chase/despawn arms and the num107 ladder,
+        // BEFORE the gravity + collision integration. The scan draws
+        // zero rand (the bash's Next(60) short-circuits on the unported
+        // graveyard zone — the module's RNG census).
+        crate::npc_ai_fighter_scan::fighter_obstacle_scan(self, world);
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
 
         let nx = self.x + self.vx;
         if !collides_rect(world, nx, self.y, w, h) {
             self.x = nx;
-        } else if self.on_ground {
-            // Jump a one-tile ledge or wall instead of grinding into it.
-            self.vy = -6.2;
+        } else if self.on_ground && self.vy >= 0.0 {
+            // S1-D-3z — the collision-jump FALLBACK for the cells the
+            // probe ladder does not name (a wall the 15px-ahead probe
+            // missed): the C#'s one-tile-wall velocity `-6f`
+            // (`NPC.cs:60125`), NOT the port's old -6.2 (no such constant
+            // exists in the C# arm). The `vy >= 0` gate keeps the scan's
+            // own jump (-8/-7/-6/-5, still negative after the +GRAVITY
+            // above) from being overwritten on the tick it fires — the C#
+            // integrates the scan's velocity directly.
+            self.vy = -6.0;
             self.on_ground = false;
         } else {
             self.vx = 0.0;
@@ -8342,15 +8617,12 @@ impl Npc {
             self.vy = 0.0;
         }
 
-        if world.day_time {
-            self.burn += 1.0 / 60.0;
-            if self.burn >= 1.0 {
-                self.burn -= 1.0;
-                self.hp -= 6;
-            }
-        } else {
-            self.burn = 0.0;
-        }
+        // S1-D-3z (zombie fighter audit) — the port's old daylight "burn"
+        // (`self.burn += 1/60; hp -= 6` per second) is REMOVED: the C#
+        // `AI_003_Fighters` has no daylight damage — the zombie leaves via
+        // `EncourageDespawn(10)` in the discouraged arm above
+        // (`NPC.cs:57377-57380`). ANALYSIS's "the vanilla burn" label was a
+        // misread; the `burn` field is now unused by this machine.
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -9025,32 +9297,38 @@ impl Npc {
     /// accumulator (the frame wraps over `Main.npcFrameCount[21] = 15`,
     /// `Main.cs:67082`).
     fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3 (speed table): the ladder variant — the aiStyle-3 kinds
-        // ride the C#'s per-type accel/brake (`NPC.cs:57403-58401`); the
-        // direct-write kinds keep the old step byte-for-byte.
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`) replaces the ad-hoc dx-sign facing and
+        // the invented 80×40-tile aggro window — `walker_step_fighter`
+        // keeps the S1-D-3 ladder (the aiStyle-3 kinds ride the C#'s
+        // per-type accel/brake, `NPC.cs:57403-58401`) and the direct-write
+        // fallback byte-identical.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
                 // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
                 // the skeleton 1.5, the undead miner 1.0, the pirate
                 // deckhand 2.0 and the pirate captain's mate 3.0. The jump
-                // -6.2 and the zombie's 80x40-tile aggro window stay.
+                // -6.2 stays; the aggro box is gone (the C# gates the chase
+                // on the despawn-discouragement arm, not a distance box).
                 speed: self
                     .kind
                     .ai3_walk_speed()
                     .expect("the cave walkers' aiStyle-3 cap"),
                 jump: -6.2,
+                // The fighter core ignores the box (the C# gates the chase
+                // on the despawn-discouragement arm, `NPC.cs:57336`); the
+                // values stay ONLY for the non-aiStyle-3 fallback — the
+                // Present Mimic's documented aiStyle-25 walker stand-in
+                // (`npc.rs`'s dispatch note) keeps its legacy step.
                 aggro_x: 80.0 * TILE_PX,
                 aggro_y: 40.0 * TILE_PX,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // The frame: the same accumulator as the zombie's, wrapping over
         // the 15-frame strip.
@@ -10440,21 +10718,21 @@ impl Npc {
         {
             self.ai[2] = 1.0;
         }
-        // S1-D-3: the 391 carrier row (`NPC.cs:58205-58207`'s 5/0.25/0.7).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 391 carrier row
+        // (`NPC.cs:58205-58207`'s 5/0.25/0.7) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 5.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
         if self.ai[2] > 0.0 && self.on_ground {
@@ -11845,20 +12123,21 @@ impl Npc {
         }
         // `:57677`: the rifleman's walk speed is 6 — S1-D-3: the num83
         // row's 0.07 accel rides the ladder (`NPC.cs:57677-57680`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`) replaces the ad-hoc facing + the
+        // invented 80×40 box; the ladder write stays byte-identical.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 6.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
     }
 
@@ -12504,16 +12783,21 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 60.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — the 409 switch case keeps it
+        // encouraged even by day, `:60312-60326`); the shooter block's
+        // own re-target (`:59206`) and walk (`:59715+`) stay the S1-D-3c
+        // shooter migration's job — the ladder declines 409, so the
+        // direct write is byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 2.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
@@ -12618,16 +12902,22 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 330.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — the 411 switch case keeps it
+        // encouraged even by day, `:60312-60326`); the shooter block's
+        // own re-target (`:59206`, the ai[1] > 220 gate) and walk
+        // (`:59741-59744`'s 2/0.5) stay the S1-D-3c shooter migration's
+        // job — the ladder declines 411, so the direct write is
+        // byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 2.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
@@ -12649,22 +12939,21 @@ impl Npc {
     /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
     /// with the mob-specific speed, hidden while a 416 rides it.
     fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3: the 415 carrier row (`NPC.cs:58214-58219`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 415 carrier row
+        // (`NPC.cs:58214-58219`) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 4.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
@@ -12871,22 +13160,21 @@ impl Npc {
     /// 6/0.15/0.85 walk) — the selenian rides the walker with its own
     /// speed and the roller's drag.
     fn update_solar_selenian(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3: the 419 carrier row (`NPC.cs:58220-58225`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 419 carrier row
+        // (`NPC.cs:58220-58225`) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 6.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
     }
 
@@ -13147,16 +13435,22 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 180.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — 424 BREAKS the discouragement chain
+        // (`:60302`'s `npcID != 424` term), so the lunar predictor chases
+        // even by day); the shooter block's own re-target (`:59206`) and
+        // walk (`:59717`'s 1f default) stay the S1-D-3c shooter
+        // migration's job — the ladder declines 424, so the direct write
+        // is byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 1.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
@@ -16605,6 +16899,17 @@ impl Npc {
             NpcKind::TwiggyZombie => 189,
             NpcKind::FemaleZombie => 200,
             NpcKind::ZombieRaincoat => 223,
+            // S1-D-3z — the holiday zombies' vanilla types (the G6 key stays
+            // injective; none of 319-321/331-332 is used by another arm).
+            NpcKind::ZombieDoctor => 319,
+            NpcKind::ZombieSuperman => 320,
+            NpcKind::ZombiePixie => 321,
+            NpcKind::ZombieXmas => 331,
+            NpcKind::ZombieSweater => 332,
+            // S1-D-3z — the blood-moon pair's vanilla types (the G6 key
+            // stays injective; neither 489 nor 490 is used by another arm).
+            NpcKind::BloodZombie => 489,
+            NpcKind::Drippler => 490,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla type
             // ids (the same values `to_u16` rides) — unused by every arm
             // above, so the G6 key stays injective.
@@ -17649,7 +17954,12 @@ mod tests {
     }
 
     #[test]
-    fn zombie_walks_to_the_player_and_burns_at_dawn() {
+    fn zombie_walks_to_the_player_and_despawns_at_dawn() {
+        // S1-D-3z (zombie fighter audit) — repointed off the removed
+        // daylight "burn": the C# `AI_003_Fighters` deals NO daylight
+        // damage; the zombie leaves via `EncourageDespawn(10)`
+        // (`NPC.cs:57377-57380`) and the 10-tick `timeLeft` cull
+        // (`:77986-77996`).
         let mut w = ground();
         let mut player = Player::spawn(&w);
         for _ in 0..120 {
@@ -17664,13 +17974,19 @@ mod tests {
         assert!(zombie.x < start_x, "zombie walked the wrong way");
         assert!(player.hp < player.max_hp, "hp {}", player.hp);
 
-        // Daylight burns the zombie away.
+        // Daylight: the zombie takes NO damage (the burn is gone) but the
+        // discouraged arm arms the 10-tick despawn window.
         w.day_time = true;
         let hp = zombie.hp;
-        for _ in 0..600 {
-            zombie.update(&w, &mut player, 1.0 / 60.0);
+        zombie.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(zombie.hp, hp, "daylight deals no damage (the burn is removed)");
+        assert_eq!(zombie.despawn_timer, 10, "EncourageDespawn(10) armed");
+        // The sim's per-tick `timeLeft--` + cull (`world_sim/npcs.rs`) drops
+        // it once the window expires — mirrored here.
+        for _ in 0..10 {
+            zombie.tick_despawn();
         }
-        assert!(zombie.hp < hp, "hp {} stayed at {hp}", zombie.hp);
+        assert!(zombie.despawn_expired(), "the 10-tick window expired");
     }
 
     #[test]
@@ -21001,7 +21317,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 251] = [
+    pub(super) const ALL_KINDS: [NpcKind; 258] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -21239,6 +21555,15 @@ mod tests {
         NpcKind::TwiggyZombie,
         NpcKind::FemaleZombie,
         NpcKind::ZombieRaincoat,
+        // S1-D-3z — the holiday zombie variants.
+        NpcKind::ZombieDoctor,
+        NpcKind::ZombieSuperman,
+        NpcKind::ZombiePixie,
+        NpcKind::ZombieXmas,
+        NpcKind::ZombieSweater,
+        // S1-D-3z — the blood-moon pair.
+        NpcKind::BloodZombie,
+        NpcKind::Drippler,
         NpcKind::ZombieElf,
         NpcKind::ZombieElfBeard,
         NpcKind::ZombieElfGirl,
@@ -28254,6 +28579,8 @@ mod s1_d_2_tests {
     // scratch helpers (MERGER-P6 first-compile fix).
     use super::tests::{bare, ground, ALL_KINDS};
     use tr_core::world::World;
+    // S1-D-3z — the holiday-zombie / audit witnesses build their own walls.
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
     /// extracted mechanically from the 1.4.5.8 decompile (the compound
@@ -28351,6 +28678,9 @@ mod s1_d_2_tests {
         (NpcKind::MourningWood, 57),
         (NpcKind::Pumpking, 58),
         (NpcKind::Poltergeist, 22),
+        // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
+        (NpcKind::BloodZombie, 3),
+        (NpcKind::Drippler, 22),
         (NpcKind::ZombieElf, 3),
         (NpcKind::ZombieElfBeard, 3),
         (NpcKind::ZombieElfGirl, 3),
@@ -28910,6 +29240,356 @@ mod s1_d_2_tests {
         }
     }
 
+    // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +
+    // the live-path audit fixes. Tests-as-code, WRITTEN NOT RUN (code-only
+    // mode — no compiler invoked). Every constant pins to its C# literal. ----
+
+    /// The five holiday zombies' `SetDefaults` rows (`NPC.cs:13033-13074`
+    /// for 319-321, `:13204-13229` for 331-332): size, aiStyle, lifeMax,
+    /// damage, defense, value, knockBackResist — and the halloween trio's
+    /// scale rows (`:13045`/`:13059`/`:13073`).
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale)
+        let table = [
+            (NpcKind::ZombieDoctor, 319, 18.0, 40.0, 3, 40, 20, 6, 85.0, 0.6, 0.9),
+            (NpcKind::ZombieSuperman, 320, 18.0, 40.0, 3, 60, 15, 8, 105.0, 0.5, 1.05),
+            (NpcKind::ZombiePixie, 321, 18.0, 40.0, 3, 34, 20, 14, 120.0, 0.3, 1.1),
+            (NpcKind::ZombieXmas, 331, 18.0, 40.0, 3, 45, 14, 6, 60.0, 0.5, 1.0),
+            (NpcKind::ZombieSweater, 332, 18.0, 40.0, 3, 45, 14, 6, 60.0, 0.5, 1.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale) in table {
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(n.scale, scale, "{kind:?} scale");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The null `DebuffImmunitySets` rows (`NPCID.cs:7964-7966`/
+            // `:8024-8025`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(
+                !b.buff_immune.iter().any(|x| *x),
+                "{kind:?} null immunity row"
+            );
+        }
+    }
+
+    /// The protocol ids ride the gate-reassigned 223..227 band (L-I: the
+    /// branch's 221-225 collided with the landed fishron 219-222) and
+    /// round-trip; the vanilla types (319-321/331-332) are distinct from
+    /// the protocol ids.
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_protocol_ids_round_trip() {
+        let table = [
+            (NpcKind::ZombieDoctor, 223u16),
+            (NpcKind::ZombieSuperman, 224),
+            (NpcKind::ZombiePixie, 225),
+            (NpcKind::ZombieXmas, 226),
+            (NpcKind::ZombieSweater, 227),
+        ];
+        for (kind, id) in table {
+            assert_eq!(kind.to_u16(), id, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            // The band stays clear of the landed fishron 219-222 band,
+            // the 213/214 R10-martian reservation and the 148 LeechTail hole.
+            assert!(id >= 223 && id <= 227, "{kind:?} off the free band");
+        }
+    }
+
+    /// The `num107` walk cap (`NPC.cs:58322-58401`): all five ride the 1f
+    /// default (no per-type override at `:58329-58364`); 331/332 are in the
+    /// `:58374` scale-factor set but their scale is 1f, so the effective
+    /// cap is 1f for all five.
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_walk_caps() {
+        for kind in [
+            NpcKind::ZombieDoctor,
+            NpcKind::ZombieSuperman,
+            NpcKind::ZombiePixie,
+            NpcKind::ZombieXmas,
+            NpcKind::ZombieSweater,
+        ] {
+            assert_eq!(kind.ai3_walk_speed(), Some(1.0), "{kind:?} num107 cap");
+        }
+    }
+
+    /// The holiday zombies ride the case-3 walk strip through the bridge
+    /// (`NPC.cs:76338-76342`): the stand row 0, the |vx| bands, the air pin.
+    #[test]
+    fn s1_d_3z_the_holiday_zombies_walk_the_three_rows() {
+        for kind in [
+            NpcKind::ZombieDoctor,
+            NpcKind::ZombieSuperman,
+            NpcKind::ZombiePixie,
+            NpcKind::ZombieXmas,
+            NpcKind::ZombieSweater,
+        ] {
+            let mut n = bare(kind);
+            n.frame = 2;
+            n.frame_counter = 12.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 0.0), "{kind:?} stand");
+            // Airborne pins row 2.
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} air");
+        }
+    }
+
+    /// AUDIT FIX A — the daylight "burn" is REMOVED: the C# `AI_003_Fighters`
+    /// deals no daylight damage; the zombie leaves via `EncourageDespawn(10)`
+    /// (`NPC.cs:57377-57380`). A daytime tick above the surface arms the
+    /// 10-tick window and leaves HP untouched.
+    #[test]
+    fn s1_d_3z_daylight_arms_despawn_not_burn() {
+        let mut w = ground();
+        w.day_time = true;
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        let hp = z.hp;
+        z.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z.hp, hp, "no daylight damage (the burn is removed)");
+        assert_eq!(z.despawn_timer, 10, "EncourageDespawn(10)");
+        // Below the surface the daytime gate does NOT fire (`:57377`'s
+        // `position.Y / 16 < worldSurface`).
+        let mut deep = Npc::spawn_zombie(&w, 30).unwrap();
+        deep.y = (w.world_surface as f32 + 10.0) * TILE_PX;
+        deep.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(deep.despawn_timer, -1, "below the surface: no despawn");
+    }
+
+    /// AUDIT FIX B — the blocked-path jump is the C#'s `-6f`
+    /// (`NPC.cs:60125`), not the port's old -6.2. With the obstacle scan
+    /// ported (`npc_ai_fighter_scan.rs`), a TWO-tile wall fires the -6
+    /// tier (the probe row `num199 - 1` is solid, `num199 - 2` is not);
+    /// a ONE-tile wall is stepped up instead (`:59872-59948`), and a
+    /// three-tile wall fires -7. The scan runs BEFORE the +GRAVITY, so
+    /// the post-update velocity is -6 + 0.4 = -5.6.
+    #[test]
+    fn s1_d_3z_the_blocked_path_jump_is_minus_six() {
+        let mut w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        z.on_ground = true;
+        z.vx = 1.0;
+        // The ladder gates on spriteDirection matching the motion
+        // (`NPC.cs:60096`); the ctor's -1 default would skip it.
+        z.sprite_dir = 1;
+        z.facing = 1;
+        // Stand flush against a TWO-tile wall at column 32 (rows 28/29):
+        // the body's right edge at 512, so the +1px X move collides. The
+        // jump probe column is (centre 503 + 15)/16 = 32, row (440 + 40 -
+        // 15)/16 = 29: solid(32, 28) true, solid(32, 27) false → the -6
+        // tier. The step-up probe column 32's t1 = (32, 28) is solid, so
+        // its head-clear gate fails and it does not lift.
+        z.x = 494.0;
+        for ty in [28, 29] {
+            let i = w.index(32, ty);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        z.update(&w, &mut player, 1.0 / 60.0);
+        // -6 (the C# literal) + GRAVITY 0.4, not -6.2.
+        assert!(z.vy <= -5.6 && z.vy > -6.0, "the -6f jump, got {}", z.vy);
+    }
+
+    /// AUDIT FIX C — the chase gate carries the `ai[3] < num57` idle term
+    /// (`NPC.cs:57336`): a zombie whose idle counter reached 60 stops
+    /// chasing (the wander arm runs instead).
+    #[test]
+    fn s1_d_3z_the_chase_gate_carries_the_idle_term() {
+        let mut w = ground();
+        w.day_time = false; // night: the despawn-discouragement gate passes
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        // Idle counter below 60: the chase runs (the target is acquired).
+        z.ai[3] = 0.0;
+        z.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z.target, 0, "the chase acquires the target");
+        // Idle counter at 60: the chase gate fails — the target is NOT
+        // re-acquired (the wander arm runs). Reset the target sentinel and
+        // confirm the chase does not fire.
+        let mut z2 = Npc::spawn_zombie(&w, 30).unwrap();
+        z2.ai[3] = 60.0;
+        z2.target = 255;
+        z2.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z2.target, 255, "ai[3] >= num57 blocks the chase");
+    }
+
+    /// The zombie machine consumes ZERO `Main.rand` draws — the audit fixes
+    /// (despawn gate, wander-flip, jump) are all draw-free, and the moan
+    /// arms ride the caller's stream in `world_sim/npcs.rs`, not here. The
+    /// `UnifiedRandom` PartialEq mirror pins the stream position.
+    #[test]
+    fn s1_d_3z_the_zombie_machine_consumes_no_rand_draws() {
+        let mut w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        let mut rng = tr_core::UnifiedRandom::new(12345);
+        let before = rng.clone();
+        for _ in 0..60 {
+            z.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, before, "the zombie machine draws nothing");
+        // Daytime too (the despawn arm is draw-free).
+        w.day_time = true;
+        for _ in 0..60 {
+            z.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, before, "the daytime despawn arm draws nothing");
+    }
+
+    // ---- S1-D-3z (zombie fighter audit) — the blood-moon pair (489/490).
+    // Tests-as-code, WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked). Every constant pins to its C# literal. ----
+
+    /// The blood-moon pair's `SetDefaults` rows (`NPC.cs:14605-14617` for
+    /// 489, `:14618-14631` for 490): size, aiStyle, lifeMax, damage,
+    /// defense, value, knockBackResist, and the hit/death cues.
+    #[test]
+    fn s1_d_3z_the_blood_moon_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death)
+        let table = [
+            (NpcKind::BloodZombie, 489, 18.0, 40.0, 3, 75, 20, 8, 150.0, 0.4, "NPC_Hit_18", "NPC_Killed_21"),
+            (NpcKind::Drippler, 490, 28.0, 30.0, 22, 50, 28, 14, 150.0, 0.6, "NPC_Hit_19", "NPC_Killed_22"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+            // The null `DebuffImmunitySets` rows (`NPCID.cs:8892-8893`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+    }
+
+    /// The protocol ids ride the gate-reassigned 228/229 band (L-I) and
+    /// round-trip; the vanilla types (489/490) are distinct from the
+    /// protocol ids.
+    #[test]
+    fn s1_d_3z_the_blood_moon_protocol_ids_round_trip() {
+        for (kind, id) in [(NpcKind::BloodZombie, 228u16), (NpcKind::Drippler, 229)] {
+            assert_eq!(kind.to_u16(), id, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            assert_ne!(kind.cs_id(), id, "{kind:?} vanilla != protocol");
+        }
+    }
+
+    /// The Blood Zombie (489) rides the humanoid-group FindFrame arm
+    /// (`NPC.cs:68614`'s case list): idle row 1 (`:69510-69514`), the
+    /// `|vx| + 0.5` walk clock stepping rows 2..8 every >8
+    /// (`:69544-69584`), and the air pin to row 0 (`:69642-69650`).
+    #[test]
+    fn s1_d_3z_the_blood_zombie_rides_the_humanoid_strip() {
+        let mut n = bare(NpcKind::BloodZombie);
+        // Idle: row 1, counter zeroed.
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 5;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "idle row 1");
+        // Airborne: row 0 (the type-489 override).
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "air row 0");
+        // Walking at vx 2: the clock adds 2.5/tick; the row steps at >8
+        // (the 4th tick: 10 > 8), starting from row 2.
+        n.vy = 0.0;
+        n.vx = 2.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..4 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, [2, 2, 2, 3], "the walk clock steps at >8");
+        // The wrap: at row 9 (npcFrameCount[489]) the band resets to 2.
+        n.frame = 8;
+        n.frame_counter = 8.0;
+        n.find_frame(); // 8 + 2.5 = 10.5 > 8 → row 9 → wrap 2
+        assert_eq!(n.frame, 2, "the wrap back to row 2");
+    }
+
+    /// The Drippler (490) rides the case-490 FindFrame arm
+    /// (`NPC.cs:72521-72533`): rotation = vx * 0.15, the counter steps one
+    /// row every >6 ticks (the 7th), wrapping over npcFrameCount[490] = 8.
+    #[test]
+    fn s1_d_3z_the_drippler_rides_the_case_490_strip() {
+        let mut n = bare(NpcKind::Drippler);
+        n.vx = 2.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        // The row steps on the 7th tick (counter 7 > 6), holds to the 8th.
+        assert_eq!(rows, [0, 0, 0, 0, 0, 0, 1, 1], "the >6 step");
+        assert_eq!(n.rotation, 2.0 * 0.15, "rotation = vx * 0.15");
+        // The wrap at row 8.
+        n.frame = 7;
+        n.frame_counter = 6.0;
+        n.find_frame(); // 7 > 6 → row 8 → wrap 0
+        assert_eq!(n.frame, 0, "the wrap at npcFrameCount[490]");
+    }
+
+    /// The Blood Zombie is a plain walker (the idle counter + the 489
+    /// `Next(800)` moan arm); the Drippler is NOT (aiStyle 22).
+    #[test]
+    fn s1_d_3z_the_blood_zombie_is_a_walker_kind() {
+        assert!(crate::ambient_sound::fighter_walker_kind(NpcKind::BloodZombie));
+        assert!(!crate::ambient_sound::fighter_walker_kind(NpcKind::Drippler));
+        assert!(crate::npc_ai_fighter_scan::is_fighter_zombie(NpcKind::BloodZombie));
+        assert!(!crate::npc_ai_fighter_scan::is_fighter_zombie(NpcKind::Drippler));
+    }
+
+    /// The blood-moon pair's bestiary entries resolve (the names ride
+    /// `Lang.GetNPCName`, `NPCID.cs:12524-12525`).
+    #[test]
+    fn s1_d_3z_the_blood_moon_bestiary_entries() {
+        for (kind, net, name) in [
+            (NpcKind::BloodZombie, 489, "Blood Zombie"),
+            (NpcKind::Drippler, 490, "Drippler"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.name, name, "{kind:?} name");
+            assert_eq!(kind.net_id(), net, "{kind:?} net_id reads the bestiary");
+        }
+    }
 }
 
 // ==============================================================// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no

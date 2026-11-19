@@ -438,7 +438,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SwampZombie
         | NpcKind::TwiggyZombie
         | NpcKind::FemaleZombie
-        | NpcKind::ZombieRaincoat => &[],
+        | NpcKind::ZombieRaincoat
+        // S1-D-3z — the holiday zombies' null `DebuffImmunitySets` rows
+        // (`NPCID.cs:7964-7966` for 319-321, `:8024-8025` for 331-332).
+        | NpcKind::ZombieDoctor
+        | NpcKind::ZombieSuperman
+        | NpcKind::ZombiePixie
+        | NpcKind::ZombieXmas
+        | NpcKind::ZombieSweater
+        // S1-D-3z — the blood-moon pair's null `DebuffImmunitySets` rows
+        // (`NPCID.cs:8892-8893`).
+        | NpcKind::BloodZombie
+        | NpcKind::Drippler => &[],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

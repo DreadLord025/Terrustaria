@@ -110,6 +110,19 @@ pub enum FindFrameKind {
     FemaleZombie,
     /// `NPCID.ZombieRaincoat` = 223 (`NPCID.cs:11123`).
     ZombieRaincoat,
+    // S1-D-3z — the five holiday zombies join the SAME case-3 walker arm
+    // (`NPC.cs:76338-76342` lists 319-321/331-332); the 3-row stand/walk
+    // strip (`Main.npcFrameCount` 3, `Main.cs:67115`/`:67116`/`:67117`).
+    /// `NPCID.ZombieDoctor` = 319 (`NPCID.cs:11315`).
+    ZombieDoctor,
+    /// `NPCID.ZombieSuperman` = 320 (`NPCID.cs:11317`).
+    ZombieSuperman,
+    /// `NPCID.ZombiePixie` = 321 (`NPCID.cs:11319`).
+    ZombiePixie,
+    /// `NPCID.ZombieXmas` = 331 (`NPCID.cs:11339`).
+    ZombieXmas,
+    /// `NPCID.ZombieSweater` = 332 (`NPCID.cs:11341`).
+    ZombieSweater,
 }
 
 impl FindFrameKind {
@@ -140,6 +153,12 @@ impl FindFrameKind {
             Self::TwiggyZombie => 189,
             Self::FemaleZombie => 200,
             Self::ZombieRaincoat => 223,
+            // S1-D-3z — the holiday zombies' vanilla types.
+            Self::ZombieDoctor => 319,
+            Self::ZombieSuperman => 320,
+            Self::ZombiePixie => 321,
+            Self::ZombieXmas => 331,
+            Self::ZombieSweater => 332,
         }
     }
 
@@ -189,6 +208,13 @@ impl FindFrameKind {
             Self::FemaleZombie => 3,
             // Main.cs:67106 (entry 223): 3.
             Self::ZombieRaincoat => 3,
+            // S1-D-3z — Main.cs:67115 (entry 319): 3; Main.cs:67116
+            // (entries 320-321): 3, 3; Main.cs:67117 (entries 331-332): 3, 3.
+            Self::ZombieDoctor => 3,
+            Self::ZombieSuperman => 3,
+            Self::ZombiePixie => 3,
+            Self::ZombieXmas => 3,
+            Self::ZombieSweater => 3,
         }
     }
 }
@@ -223,6 +249,12 @@ pub fn find_frame_kind(kind: crate::npc::NpcKind) -> Option<FindFrameKind> {
         K::TwiggyZombie => FindFrameKind::TwiggyZombie,
         K::FemaleZombie => FindFrameKind::FemaleZombie,
         K::ZombieRaincoat => FindFrameKind::ZombieRaincoat,
+        // S1-D-3z — the holiday zombies map 1:1 (the case-3 arm).
+        K::ZombieDoctor => FindFrameKind::ZombieDoctor,
+        K::ZombieSuperman => FindFrameKind::ZombieSuperman,
+        K::ZombiePixie => FindFrameKind::ZombiePixie,
+        K::ZombieXmas => FindFrameKind::ZombieXmas,
+        K::ZombieSweater => FindFrameKind::ZombieSweater,
         _ => return None,
     })
 }
@@ -359,7 +391,13 @@ pub fn find_frame_a(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
         | FindFrameKind::SwampZombie
         | FindFrameKind::TwiggyZombie
         | FindFrameKind::FemaleZombie
-        | FindFrameKind::ZombieRaincoat => {
+        | FindFrameKind::ZombieRaincoat
+        // S1-D-3z — the holiday zombies ride the same plain walker arm.
+        | FindFrameKind::ZombieDoctor
+        | FindFrameKind::ZombieSuperman
+        | FindFrameKind::ZombiePixie
+        | FindFrameKind::ZombieXmas
+        | FindFrameKind::ZombieSweater => {
             zombie_walk_frame(s, i);
         }
     }
@@ -453,6 +491,12 @@ mod tests {
             (FindFrameKind::TwiggyZombie, 189, 3),
             (FindFrameKind::FemaleZombie, 200, 3),
             (FindFrameKind::ZombieRaincoat, 223, 3),
+            // S1-D-3z — the holiday zombies' 3-row strips.
+            (FindFrameKind::ZombieDoctor, 319, 3),
+            (FindFrameKind::ZombieSuperman, 320, 3),
+            (FindFrameKind::ZombiePixie, 321, 3),
+            (FindFrameKind::ZombieXmas, 331, 3),
+            (FindFrameKind::ZombieSweater, 332, 3),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -610,9 +654,10 @@ mod tests {
     }
 
     /// Every walker shares the one arm — pin the band entry row across
-    /// all ten kinds (`NPC.cs:76324-76346`'s case list).
+    /// all fifteen kinds (`NPC.cs:76324-76346`'s case list, incl. the
+    /// S1-D-3z holiday zombies 319-321/331-332).
     #[test]
-    fn all_ten_walkers_share_the_zombie_arm() {
+    fn all_fifteen_walkers_share_the_zombie_arm() {
         for kind in [
             FindFrameKind::DoctorBones,
             FindFrameKind::TheGroom,
@@ -624,6 +669,11 @@ mod tests {
             FindFrameKind::TwiggyZombie,
             FindFrameKind::FemaleZombie,
             FindFrameKind::ZombieRaincoat,
+            FindFrameKind::ZombieDoctor,
+            FindFrameKind::ZombieSuperman,
+            FindFrameKind::ZombiePixie,
+            FindFrameKind::ZombieXmas,
+            FindFrameKind::ZombieSweater,
         ] {
             let rows = rows_over(kind, input(1.0, 0.0), 16);
             // At vx 1: rows 0 for counters 1..7, 1 for 8..15, and the

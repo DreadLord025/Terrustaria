@@ -118,6 +118,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // S1-D-3 W-9 fishron wiring — Duke Fishron's hit cue
     // (`NPC.cs:13713`'s `NPCHit14`) — the S1-E-21 bank-gap closure.
     ("NPC_Hit_14", 3),
+    // S1-D-3z — the Blood Zombie's hit cue (`NPC.cs:14613`'s NPCHit18).
+    ("NPC_Hit_18", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
     ("NPC_Hit_39", 3),
@@ -143,6 +145,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // S1-D-3 W-9 fishron wiring — Duke Fishron's death cue
     // (`NPC.cs:13714`'s `NPCDeath20`) — the S1-E-21 bank-gap closure.
     ("NPC_Killed_20", 4),
+    // S1-D-3z — the Blood Zombie's death cue (`NPC.cs:14614`'s NPCDeath21).
+    ("NPC_Killed_21", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
     ("NPC_Killed_42", 4),

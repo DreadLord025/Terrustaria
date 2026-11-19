@@ -1203,9 +1203,21 @@ fn spawn_npc_at(
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4632-4645`: blood moon 2/5 → 489/490 (the `Next(2)` picks).
+        // S1-D-3z: the pick now spawns the matching kind — 0 → the Blood
+        // Zombie (489, the aiStyle-3 walker), 1 → the Drippler (490, the
+        // aiStyle-22 flyer). The draw ORDER is unchanged (the 2/5 gate
+        // then the `Next(2)` pick), so the stream fingerprint is
+        // byte-identical; only the spawned kind differs.
         if ctx.flags.blood_moon && rng.next_max(5) < 2 {
-            let _ = rng.next_max(2);
-            return Npc::spawn_zombie(ctx.world, x);
+            if rng.next_max(2) == 0 {
+                return Npc::spawn_zombie_variant(ctx.world, x, NpcKind::BloodZombie);
+            }
+            // The Drippler's `SpawnNPC` bottom placement (`NPC.cs:4646`):
+            // the hover ctor at the surface column's top row (the
+            // noGravity flyer's feet-on-surface stand-in — the machine
+            // takes over on the first tick).
+            let top = ctx.world.surface_of(x);
+            return Npc::spawn_hover(ctx.world, x, top - 2, NpcKind::Drippler);
         }
         // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
         // then the Eskimo default (161; all the port's zombie kind).
@@ -1232,30 +1244,43 @@ fn spawn_npc_at(
         // `endlessHalloween` micro seed by `InitializeSecretSeeds`
         // `WorldGen.cs:572-574`), so the roll — and only the roll — runs
         // under the flag: the C# `&&` short-circuits it on a classic world.
-        // The three holiday zombie types have no `NpcKind` of their own, so
-        // every hit lands on the port's single zombie kind (the clothing
-        // variants are a draw-layer concern).
+        // S1-D-3z: the three halloween zombie types now have `NpcKind`
+        // variants — the `Next(319, 322)` pick (0/1/2 → 319/320/321) spawns
+        // the matching kind. The draw ORDER is unchanged (the gate's
+        // `Next(2)` then the type pick), so the stream fingerprint is
+        // byte-identical; only the spawned kind differs.
         if ctx
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
             && rng.next_max(2) == 0
         {
-            let _ = rng.next_max(3); // `Next(319, 322)` — the type pick.
-            return Npc::spawn_zombie(ctx.world, x);
+            let pick = rng.next_max(3); // `Next(319, 322)` — the type pick.
+            let kind = match pick {
+                0 => NpcKind::ZombieDoctor,
+                1 => NpcKind::ZombieSuperman,
+                _ => NpcKind::ZombiePixie,
+            };
+            return Npc::spawn_zombie_variant(ctx.world, x, kind);
         }
         // `:4732-4735`'s xmas arm — `Main.xMas && Next(2) == 0` →
         // `Next(331, 333)` = ZombieXmas/ZombieSweater (331/332), the same
         // `forceXMasForever` source (`Main.cs:13135`,
-        // `WorldGen.cs:576-578`).
+        // `WorldGen.cs:576-578`). S1-D-3z: the pick (0/1 → 331/332) spawns
+        // the matching kind; the draw order is unchanged.
         if ctx
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
             && rng.next_max(2) == 0
         {
-            let _ = rng.next_max(2); // `Next(331, 333)` — the type pick.
-            return Npc::spawn_zombie(ctx.world, x);
+            let pick = rng.next_max(2); // `Next(331, 333)` — the type pick.
+            let kind = if pick == 0 {
+                NpcKind::ZombieXmas
+            } else {
+                NpcKind::ZombieSweater
+            };
+            return Npc::spawn_zombie_variant(ctx.world, x, kind);
         }
         // `:4736-4758`: the armed-expert zombie styles — still constants-off
         // (the armed variants are unmodelled).
@@ -2655,10 +2680,21 @@ mod tests {
             let b = fingerprint(&holiday, seed);
             if a != b {
                 shifted += 1;
-                // The holiday arms return the port's own zombie kind — the
-                // 319-321/331-332 C# types have no `NpcKind` of their own —
-                // so a spawn is never LOST by the early return.
-                assert_eq!(b.1, Some(NpcKind::Zombie), "the holiday zombie kind");
+                // S1-D-3z: the holiday arm now returns the matching variant
+                // kind (the seeded world sets ENDLESS_HALLOWEEN, so the
+                // `Next(319, 322)` pick lands on Doctor/Superman/Pixie) — a
+                // spawn is never LOST by the early return, and the stream
+                // fingerprint still shifts exactly where the arm fires.
+                assert!(
+                    matches!(
+                        b.1,
+                        Some(NpcKind::ZombieDoctor)
+                            | Some(NpcKind::ZombieSuperman)
+                            | Some(NpcKind::ZombiePixie)
+                    ),
+                    "the holiday zombie variant kind, got {:?}",
+                    b.1
+                );
             } else {
                 compared += 1;
                 assert_eq!(a.1, b.1, "the classic outcome is unchanged");

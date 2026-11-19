@@ -60,10 +60,14 @@ pub struct TargetCandidate {
 
 /// The single session player as a slot-0 [`TargetCandidate`] — the
 /// S1-D-3p wiring convention shared by the aiStyle machines that call
-/// `TargetClosest` (the zombie's inline candidate, `npc.rs`, and the
-/// aiStyle-42 arm, `npc_ai_style42.rs`): stock aggro 0 / no-aggro false /
-/// no tank pet until those systems land, `itemAnimation` from the raw
-/// swing counter. WIRED by S1-D-3 W-2 (the Creeper's aiStyle-55 seam,
+/// `TargetClosest` (the zombie's inline candidate, `npc.rs`, the
+/// aiStyle-42 arm, `npc_ai_style42.rs`, and the migrated walker batch,
+/// `npc_ai.rs::walker_step_fighter`): the player's live `aggro` /
+/// `npcTypeNoAggro` fields (stock 0 / all-false until the stealth / calm
+/// systems land), `itemAnimation` from the raw swing counter, and the
+/// tank-pet slot when a pet system fills it (stock -1 → `None`; the
+/// projectile box lookup lands with that system — ANALYSIS). WIRED by
+/// S1-D-3 W-2 (the Creeper's aiStyle-55 seam,
 /// `npc.rs::ai_055_creeper_family`).
 pub fn session_candidate(player: &crate::player::Player) -> TargetCandidate {
     TargetCandidate {
@@ -75,11 +79,33 @@ pub fn session_candidate(player: &crate::player::Player) -> TargetCandidate {
         y: player.y,
         width: crate::player::WIDTH as i32,
         height: crate::player::HEIGHT as i32,
-        aggro: 0,
+        // `Player.aggro` (`Player.cs:1446`) — the field landed with the
+        // walker migration; the stealth writers are still unported.
+        aggro: player.aggro,
         item_animation: player.frame_inputs.swing_anim as i32,
+        // `Player.npcTypeNoAggro[this.type]` (`Player.cs:2994`) — the
+        // per-type flag for THIS npc is resolved by the caller that knows
+        // the kind (`session_candidate_for`); the plain seam keeps the
+        // stock false (every flag is false until the calm writers land).
         npc_type_no_aggro: false,
+        // `Player.tankPet` (`Player.cs:870`) — the slot landed, but the
+        // port has no projectile table to read the pet's box from; the
+        // steal stays inert (None) until the pet system lands.
         tank_pet: None,
     }
+}
+
+/// [`session_candidate`] with the per-kind `npcTypeNoAggro` flag resolved
+/// (`NPC.cs:77689`/`:77701`/`:77740` index `Main.player[j].npcTypeNoAggro
+/// [this.type]`): the migrated walker callers pass their `NpcKind::cs_id`.
+pub fn session_candidate_for(
+    player: &crate::player::Player,
+    kind: crate::npc::NpcKind,
+) -> TargetCandidate {
+    let mut cand = session_candidate(player);
+    let id = kind.cs_id() as usize;
+    cand.npc_type_no_aggro = player.npc_type_no_aggro.get(id).copied().unwrap_or(false);
+    cand
 }
 
 /// `NPC.TargetClosest(bool faceTarget = true)` (`NPC.cs:77652-77666`):

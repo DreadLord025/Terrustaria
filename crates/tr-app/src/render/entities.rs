@@ -500,6 +500,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(PUMPKIN_SHEETS)
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
+            .chain(HOLIDAY_ZOMBIE_SHEETS)
+            .chain(BLOOD_MOON_SHEETS)
             .chain(SNOW_SHEETS)
             .chain(BEE_SHEETS)
             .chain(PLANTERA_MINION_SHEETS)
@@ -1148,6 +1150,18 @@ pub(crate) const FISHRON_SHEETS: &[u32] = &[
     372, // the Sharkron
     373, // the Sharkron2
 ];
+/// S1-D-3z — the five holiday zombies' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The halloween trio
+/// (319-321) and the xmas pair (331-332) each draw their own `NPC_<id>` art.
+pub(crate) const HOLIDAY_ZOMBIE_SHEETS: &[u32] = &[319, 320, 321, 331, 332];
+
+/// S1-D-3z (zombie fighter audit) — the blood-moon pair's own sheets (the
+/// vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `HOLIDAY_ZOMBIE_SHEETS`. 489 draws
+/// its 9-row humanoid strip, 490 its 8-row flap strip
+/// (`Main.npcFrameCount`, `Main.cs:67132`).
+pub(crate) const BLOOD_MOON_SHEETS: &[u32] = &[489, 490];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
@@ -2998,7 +3012,24 @@ pub(crate) fn draw_npcs(
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => {
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies draw their OWN sheet
+            // (`TextureAssets.Npc[type]`, the `HOLIDAY_ZOMBIE_SHEETS` rows)
+            // at the 3-row strip (`Main.npcFrameCount` 3) with the generic
+            // centred anchor — the wave-A walkers' shape. The halloween
+            // trio's `scale` rows ride `n.scale` in the draw below.
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the blood-moon pair draws its OWN sheet
+            // (`TextureAssets.Npc[type]`, the `BLOOD_MOON_SHEETS` rows):
+            // 489 the 9-row humanoid strip, 490 the 8-row flap strip
+            // (`Main.npcFrameCount`, `Main.cs:67132`) with the generic
+            // centred anchor — the holiday zombies' shape.
+            | NpcKind::BloodZombie
+            | NpcKind::Drippler => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },

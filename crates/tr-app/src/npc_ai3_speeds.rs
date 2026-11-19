@@ -88,8 +88,9 @@ pub struct LadderFx {
 }
 
 /// `NPCID.Sets.CritterThatCanTurnOnPlayers` (`NPCID.cs:10436`): the ten
-/// critters the `:57441` arm names.
-const TURN_CRITTERS: [u16; 10] = [645, 639, 644, 642, 643, 641, 640, 299, 539, 538];
+/// critters the `:57441` arm names. Also read by the aiStyle-3 chase gate
+/// (`npc_ai.rs::fighters_not_discouraged`, `NPC.cs:60309`).
+pub(crate) const TURN_CRITTERS: [u16; 10] = [645, 639, 644, 642, 643, 641, 640, 299, 539, 538];
 
 /// The shooter-block exclusion list of the default arm (`NPC.cs:58322`'s
 /// `this.type != …` chain — the same set the `:59069` block claims).

@@ -545,6 +545,70 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Raincoat Zombie",
     },
+    // S1-D-3z — the five holiday zombies (`BestiaryEntry.Enemy(319-321/
+    // 331-332)`, the automated populator `BestiaryDatabaseNPCsPopulator.cs:
+    // 851-868`); the names ride `Lang.GetNPCName` (en-US NPCs.json — all
+    // five resolve to "Zombie").
+    BestiaryEntryDef {
+        credit_id: "ZombieDoctor",
+        net_id: 319,
+        kind: NpcKind::ZombieDoctor,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieSuperman",
+        net_id: 320,
+        kind: NpcKind::ZombieSuperman,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombiePixie",
+        net_id: 321,
+        kind: NpcKind::ZombiePixie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieXmas",
+        net_id: 331,
+        kind: NpcKind::ZombieXmas,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieSweater",
+        net_id: 332,
+        kind: NpcKind::ZombieSweater,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3z (zombie fighter audit) — the blood-moon pair
+    // (`BestiaryDatabaseNPCsPopulator.cs:1310`/`:1336` tag both with the
+    // BloodMoon spawn condition); the names ride `Lang.GetNPCName`
+    // (en-US NPCs.json — `NPCID.cs:12524-12525`'s name map).
+    BestiaryEntryDef {
+        credit_id: "BloodZombie",
+        net_id: 489,
+        kind: NpcKind::BloodZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "Drippler",
+        net_id: 490,
+        kind: NpcKind::Drippler,
+        variant: None,
+        quick_unlock: false,
+        name: "Drippler",
+    },
     // S1-D-3ff wave A — `BestiaryEntry.Enemy(225)` (the automated
     // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
     // name rides `Lang.GetNPCName` (en-US NPCs.json).
