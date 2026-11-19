@@ -119,8 +119,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "lihzahrd temple" => PassMessage::Gen(70),
         // WorldGen.cs:16980.
         "cave houses" => PassMessage::Gen(30),
-        // WorldGen.cs:20910 (Micro Biomes — both grouped steps).
-        "campsites" | "sword shrines" => PassMessage::Gen(76),
+        // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
+        "campsites" | "sword shrines" | "mahogany trees" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the
         // classic-world arm; the MarblePiles/SpikeCaves messages are the
         // Don't Starve / no-traps arms, not the classic feed).

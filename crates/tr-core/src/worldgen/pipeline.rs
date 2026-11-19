@@ -1319,6 +1319,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
+    // The vanilla slot (`WorldGen.cs:21105-21123`): the Micro Biomes pass's
+    // mahogany block runs after the sword shrines (`:20979`) and the
+    // campsites (`:21031`) — S1-K-2 wave A's `MahoganyTreeBiome` port.
+    step!("mahogany trees", "Micro Biomes", step_mahogany_trees),
     // The vanilla slot (`WorldGen.cs:19995`): after the micro-biomes the port
     // grouped here and immediately before the plants pass (`:20122`) — the
     // M5-STRUCT-5 webs/speleothems pass, which runs over whatever walls the
@@ -2339,6 +2343,41 @@ fn step_sword_shrines(
     );
 }
 
+fn step_mahogany_trees(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `WorldGen.cs:21106`: the LivingTreeCount config roll
+    // (`WorldGenRange.GetRandom`, Min 6 / Max 11 / WorldWidth). The view
+    // keys on the vanilla pass name ("Micro Biomes") — `apply_step` hands
+    // the display-name view, so the step reads its own section, the
+    // `config.pass("Jungle Temple")` precedent. The count and the
+    // placement draws share one fresh per-pass stream.
+    let pass_config = super::config::WorldGenConfig::parse().pass("Micro Biomes");
+    let mut rng = streams.pass_rng("Micro Biomes");
+    let count = pass_config
+        .get_range("LivingTreeCount")
+        .map(|r| r.get_random(&mut rng, world.width, world.height))
+        .unwrap_or(0);
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    mini_biomes::pass_mahogany_trees(
+        world,
+        world_surface,
+        rock_layer,
+        count,
+        &mut rng,
+        &mut gv.jungle_chest_cycle,
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
 fn step_mushroom_jungle_plants(
     world: &mut World,
     gv: &mut GenVars,
@@ -3004,7 +3043,9 @@ mod tests {
         // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
         // `:12500`).
         // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
-        assert_eq!(names.len(), 63);
+        // S1-K-2 wave A: + `mahogany trees` (vanilla "Micro Biomes",
+        // `WorldGen.cs:21105`) after `sword shrines`.
+        assert_eq!(names.len(), 64);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3082,6 +3123,7 @@ mod tests {
                 "campsites",
                 "spike pits",
                 "sword shrines",
+                "mahogany trees",
                 "webs and honey",
                 "mushroom and jungle plants",
                 "jungle plants",
@@ -3269,6 +3311,18 @@ mod tests {
         assert!(cpos("Moss") == cpos("Gem Caves") + 1);
         assert!(cpos("Temple") == cpos("Moss") + 1);
         assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
+    }
+
+    /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's
+    /// vanilla slot — after `sword shrines` (`WorldGen.cs:20979`) and
+    /// before `webs and honey` (the port's grouped neighbour; the mahogany
+    /// block itself is `:21105`).
+    #[test]
+    fn s1_k_2_the_mahogany_step_sits_after_the_sword_shrines() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mahogany trees"), pos("sword shrines") + 1);
+        assert_eq!(pos("mahogany trees") + 1, pos("webs and honey"));
     }
 
     #[test]

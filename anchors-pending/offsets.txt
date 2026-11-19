@@ -1,1 +1,0 @@
-crates/tr-app/src/render/entities.rs|fn generic_anchor_shift_y|offsets - the NPC and boss draw anchors follow the C# collapse (Main.cs:25511-25512: the Draw origin cancels halfSize, pivot-only) and the Zombie NPCAddHeight misattribution is removed (Main.cs:22037-22039 is the Devourer's 7/8/9)
