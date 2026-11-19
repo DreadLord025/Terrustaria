@@ -24842,6 +24842,75 @@ style axis (the style31 `npc.rs:3665-3671` precedent), delete the
 tests, and feed `twin_time_lefts` from the sim — the twin-despawn
 coupling goes live for BOTH twins in the same pass.
 
+### Wiring note (S1-D-3-wire-retinazer, code-only mode, 2026-11-19)
+
+**Base note:** the branch is based on `52e8c6f9`
+(`origin/task/S1-D-3-retinazer-report`, the module wave above) — the
+chain lands both commits together; the diff vs `origin/main` therefore
+includes the module itself.
+
+The retirement plan above is EXECUTED, with one scope correction: the
+twin-despawn coupling goes live for the **Retinazer only** this wave —
+the Spazmatism's style-31 dispatch still passes `CLASSIC_SOLO` (feeding
+it is its own module's follow-up; the sim pre-pass already stamps BOTH
+eyes' lists, so that follow-up is a one-line env swap).
+
+- **Axis claim**: `npc.rs`'s `match self.kind.ai_style()` gains
+  `30 =>` → `npc_ai_style30::retinazer_ai` (the style31 precedent). The
+  env is built live: `twin_time_lefts` from the sim-stamped
+  `Npc::twin_time_lefts` carrier (cloned out of `self` before the
+  mutable call), `expert` from `player.buffs.expert_mode` (the
+  retaliate-drain precedent, `world_sim/npcs.rs`), `get_good` from
+  `world.seeds` FOR_THE_WORTHY (the `npc_ai_style43:266` precedent —
+  a live flag, NOT the module's classic-only stand-in note),
+  `mech_queen: None` + `destroyer_body_active: false` (the type-127
+  queen and the type-135 body have no ported kinds — the S1-D-3j
+  precedent; the branches stay witness-tested in the module).
+- **Retirement**: the kind arm is
+  `NpcKind::Retinazer => unreachable!("aiStyle 30 rides the style axis")`
+  and `update_retinazer` (the 231-line mislabeled aiStyle-57 port) is
+  deleted. Caller census before deletion: the kind arm + its own
+  doc-comment mentions only — `the_twin_cycles_and_maps` exercised it
+  through `update_rng` and is repointed at the style-30 behaviour (the
+  600-tick hover flip + the 83-laser, plus the stats/bestiary
+  round-trips kept). The stale `npc_ai_pumpkin_boss.rs` header mention
+  now cites `npc_ai_style30.rs`. The `anchors.txt` row for
+  `fn update_retinazer` is a marker rename (MAIN-RULES §3), not a
+  deletion — it now pins the `unreachable!` kind arm.
+- **Twin feed**: `npc_ai_style30::twin_time_left_scan` (the C#'s
+  `num400 != whoAmI` scan, `NPC.cs:26468-26474` — read and cited
+  verbatim) collects the other active 125/126 slots' `despawn_timer`s
+  in slot order; the sim pre-pass stamps it before each tick (the
+  Plantera hook-anchor carrier precedent). The port's -1 "no timer"
+  sentinel passes through unchanged — the machine's raise loop gates
+  on OUR timer (`>= 0 && < 10`), so a sentinel sibling can never lower
+  an active timer (`despawn_timer < -2` is false for any active value).
+- **Shots**: the module's `wants_hostile_shot` requests resolve through
+  the sim's existing drain (`world_sim/npcs.rs`): EYE_LASER 83
+  (`projectile/data.rs:117`, the row + `ai_phasmal_sphere` arm exist)
+  and DESTROYER_LASER 100 (`data.rs:102` — the C#'s DeathLaser IS type
+  100, `NPC.cs:26895`/`:26996` `num427/num436 = 100`, re-read; the
+  drain's `timeLeft = 300` override already covers it).
+- **RNG**: the wiring passes the caller's `UpdateNPCs` stream straight
+  through (`Main.cs:17767`) — the module's 18 witnesses pin the draw
+  census (1 `Next(5)`/tick; the 83-jitter X-then-Y pair only on a
+  firing hover tick; the 52-draw spin burst + the per-tick spin pair;
+  nothing else). A new axis witness
+  (`the_retinazer_rides_the_style_thirty_axis_with_one_gate_draw`)
+  replays the gate draw against a stream clone THROUGH `update_rng`,
+  and a sim witness (`s1_d_3_wire_the_sim_feeds_the_twin_time_lefts`)
+  pins the feed + the raise + the pass-tail decrement end-to-end.
+  The retired arm's idle/stomp/spin rolls are GONE from the stream —
+  this is the intended behavioural fix (audit 51 R5), not a
+  determinism regression: the mislabeled machine was never 1:1.
+- **Deferred**: the shared aim/approach/dead-band helper extraction
+  (style30/31 keep their private mirrors — the module wave's note
+  said "deferred to the wiring wave", but touching the landed style31
+  module is out of this task's scope; recorded here instead).
+- **Code-only**: no cargo/rustc/rustfmt/tests invoked (worker
+  directive); all 19 module tests + the 2 wiring witnesses are
+  WRITTEN NOT RUN, verified by C# re-reading + hand arithmetic.
+
 ## The Golem family (S1-D-3, 2026-11-18)
 
 **Audit verdict: PARTIAL → core ported. Code-only mode — no compiler

@@ -5,23 +5,21 @@
 //! def 10, dmg 45, 20000 HP, kb 0, noGravity + noTileCollide, boss,
 //! value 120000, npcSlots 5).
 //!
-//! **UNWIRED (code-only wave).** The live `npc.rs::update_retinazer`
-//! (`:13118-13334`, kind arm `:3812`) is a MISLABELED port of the
-//! aiStyle-57 MourningWood arm (`NPC.cs:32761-33043`) — wrong projectiles
-//! (325/326-328 vs 83/100), no laser phases, no 40%-hp transform, no
-//! despawn gates, RNG stream mismatch (audit
-//! `docs/research/51-audit-twins-skeletron.md` §1, R1-R6, branch
-//! `docs/audit-twins-skeletron`). This module is the REAL style-30
-//! machine; the live arm stays byte-identical this wave.
-//! **Retirement plan (next wave):** claim `30 =>` on the style axis
-//! (`npc.rs`'s `match self.kind.ai_style()`, the style31 `:3665-3671`
-//! precedent), delete the `NpcKind::Retinazer => self.update_retinazer`
-//! kind arm (`:3812`) and `update_retinazer` itself (its machine already
-//! lives faithfully in `npc_ai_pumpkin_boss.rs::mourning_wood_step`,
-//! claimed by the axis's `57 if kind == MourningWood` arm), repoint the
-//! S1-D-3i-era Retinazer tests at this module, and feed
-//! `Style30Env::twin_time_lefts` from the sim (the style31 wiring
-//! follow-up — the twin-despawn coupling becomes live for BOTH twins).
+//! **WIRED (S1-D-3-wire-retinazer).** The mislabeled live arm —
+//! `npc.rs::update_retinazer`, a port of the aiStyle-57 MourningWood arm
+//! (`NPC.cs:32761-33043`) running under the Retinazer's kind dispatch
+//! (wrong projectiles 325/326-328 vs 83/100, no laser phases, no 40%-hp
+//! transform, no despawn gates, RNG stream mismatch — audit
+//! `docs/research/51-audit-twins-skeletron.md` §1, R1-R6) — is RETIRED:
+//! the style axis claims `30 =>` (`npc.rs`'s `match
+//! self.kind.ai_style()`, the style31 precedent), the kind arm is an
+//! `unreachable!` marker and `update_retinazer` is deleted (the faithful
+//! type-325 machine lives in `npc_ai_pumpkin_boss.rs::mourning_wood_step`,
+//! claimed by the axis's `57 if kind == MourningWood` arm). The twin
+//! `timeLeft` list rides [`Npc::twin_time_lefts`], stamped by the sim's
+//! pre-pass (`world_sim/npcs.rs`, the Plantera hook-anchor precedent) —
+//! the twin-despawn coupling is live for the Retinazer; the Spazmatism's
+//! style-31 dispatch still passes `CLASSIC_SOLO` (its own follow-up).
 //!
 //! The machine: the invalid-target retarget (`:26407-26410`), the
 //! bottom-anchored aim `num397` with the ±6.283 wrap and the **0.1**
@@ -55,10 +53,11 @@
 //!
 //! Deliberate stand-ins (house pattern, recorded in ANALYSIS):
 //! - `Main.expertMode` / `Main.getGoodWorld` ride [`Style30Env`] — the
-//!   port is single-difficulty classic, so the dispatch passes
-//!   false/false; the branch maths stay ported and witness-tested (the
-//!   8.25/0.115 hover, the +0.3x4 shot ladder, the 15 dash, the
-//!   9.5/0.175 approach, the 10 laser, the +1.5 strafe timer).
+//!   WIRED dispatch reads them live (`player.buffs.expert_mode`, the
+//!   world's FOR_THE_WORTHY seed — the `npc_ai_style43` precedent);
+//!   the branch maths are ported and witness-tested (the 8.25/0.115
+//!   hover, the +0.3x4 shot ladder, the 15 dash, the 9.5/0.175
+//!   approach, the 10 laser, the +1.5 strafe timer).
 //! - `NPC.IsMechQueenUp` (`NPC.cs:6868-6883`) needs an active type 127
 //!   — the port has no such kind (the S1-D-3j precedent), so the
 //!   dispatch passes `mech_queen: None`; the orbit-anchor / 14-speed /
@@ -72,8 +71,9 @@
 //! - The twin-alive loop (`:26468-26474`) scans the other active
 //!   125/126 slots; the pure fn takes their `timeLeft`s in slot order
 //!   ([`Style30Env::twin_time_lefts`]). `Npc::update_rng` cannot see
-//!   its siblings, so the dispatch passes `&[]` until the sim pass
-//!   feeds the list (wiring deferred, the S1-F-9b precedent).
+//!   its siblings, so the sim's pre-pass stamps [`Npc::twin_time_lefts`]
+//!   before each tick (the Plantera hook-anchor carrier precedent) and
+//!   the dispatch borrows it; outside the sim (tests) the list is empty.
 //! - `DiscourageDespawn` (`NPC.cs:7258-7265`) raises `timeLeft`; the
 //!   port's `despawn_timer` carries a -1 "no timer" sentinel
 //!   (`npc.rs`'s `encourage_despawn` convention), so the gate and the
@@ -100,8 +100,6 @@
 //!   sibling's (`npc_ai_style31.rs:140-177`); a shared extraction is
 //!   deferred to the wiring wave to keep the landed module untouched.
 
-#![allow(dead_code)] // wiring deferred (S1-D-3 retinazer, code-only mode)
-
 use crate::npc::{Npc, NpcKind};
 use crate::npc_ai_style31::MechQueenAnchor;
 use crate::player::Player;
@@ -123,9 +121,11 @@ pub struct Style30Env<'a> {
     pub get_good: bool,
 }
 
+#[cfg(test)]
 impl Style30Env<'static> {
-    /// The dispatch's stock env: classic single-player, no twin list
-    /// (the sim-pass wiring is deferred), no Mech Queen.
+    /// The stock env: classic single-player, no twin list, no Mech
+    /// Queen. The axis dispatch builds a live env (the sim-stamped
+    /// twin list + the difficulty flags); the tests use this constant.
     pub const CLASSIC_SOLO: Style30Env<'static> = Style30Env {
         twin_time_lefts: &[],
         mech_queen: None,
@@ -205,6 +205,26 @@ fn clamp_dead_band(v: &mut f32) {
     if (*v as f64) > -0.1 && (*v as f64) < 0.1 {
         *v = 0.0;
     }
+}
+
+/// The twin-alive scan the sim's pre-pass runs for each eye
+/// (`NPC.cs:26468-26474`, the style-31 sibling at `:27083-27089`): the
+/// OTHER slots passing `is_twin` (active type 125/126 — the caller's
+/// `hp > 0` liveness gate), their `timeLeft`s in SLOT order. The port's
+/// `despawn_timer` -1 "no timer" sentinel reads as an active C# slot's
+/// freshly-set `timeLeft` — the raise loop gates on OUR timer anyway
+/// ([`Style30Env::twin_time_lefts`]), so the sentinel passes through
+/// unchanged and only ever fails the `despawn_timer < t` comparison.
+pub fn twin_time_left_scan(
+    npcs: &[Npc],
+    who: usize,
+    is_twin: impl Fn(&Npc) -> bool,
+) -> Vec<i32> {
+    npcs.iter()
+        .enumerate()
+        .filter(|(j, n)| *j != who && is_twin(n))
+        .map(|(_, n)| n.despawn_timer)
+        .collect()
 }
 
 /// One fixed step of the Retinazer (type 125) through the aiStyle-30
@@ -1280,5 +1300,36 @@ mod tests {
         n.despawn_timer = 50;
         retinazer_ai(&mut n, &w, &p, &mut rng, &twins);
         assert_eq!(n.despawn_timer, 50);
+    }
+
+    /// The sim feed (S1-D-3-wire-retinazer): `twin_time_left_scan` is
+    /// the `num400 != whoAmI` slot scan (`:26468-26474`) — it skips the
+    /// eye's own slot, keeps slot order, and the `is_twin` gate drops
+    /// the dead/non-twin slots. Feeding the scan's output through the
+    /// env raises the despawn timer exactly like the hand-built list.
+    #[test]
+    fn s1_d_3_a30_the_sim_feed_scans_the_other_twin_slots() {
+        let w = world();
+        let p = player(&w);
+        let mut me = ret(60.0 * TILE_PX, 60.0 * TILE_PX);
+        me.despawn_timer = 5;
+        let mut me_slot = ret(60.0 * TILE_PX, 60.0 * TILE_PX);
+        me_slot.despawn_timer = 5;
+        let mut sibling = ret(70.0 * TILE_PX, 60.0 * TILE_PX);
+        sibling.despawn_timer = 300;
+        let mut dead = Npc::new(NpcKind::Spazmatism, 0.0, 0.0, 1, 0.0);
+        dead.hp = 0;
+        dead.despawn_timer = 999;
+        let npcs = vec![dead, me_slot, sibling];
+        let is_twin = |n: &Npc| {
+            (n.kind == NpcKind::Retinazer || n.kind == NpcKind::Spazmatism) && n.hp > 0
+        };
+        // Slot 1 = me: the scan sees only slot 2's 300 (slot 0 is dead).
+        let list = twin_time_left_scan(&npcs, 1, is_twin);
+        assert_eq!(list, vec![300], "own slot skipped, dead slot dropped, slot order");
+        let env = Style30Env { twin_time_lefts: &list, ..env() };
+        let mut rng = UnifiedRandom::new(7);
+        retinazer_ai(&mut me, &w, &p, &mut rng, &env);
+        assert_eq!(me.despawn_timer, 299, "the fed list discourages the despawn");
     }
 }
