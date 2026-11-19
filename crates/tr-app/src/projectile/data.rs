@@ -2515,9 +2515,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || sentry
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
-            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET),
-
-        net_important: minion || sentry
+            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
