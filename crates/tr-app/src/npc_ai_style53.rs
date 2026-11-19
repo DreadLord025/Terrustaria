@@ -344,11 +344,13 @@ pub fn ai_053_arm(
     // LITERAL `3.14f`, not PI (the npc.rs rotation precedent).
     if num797 > 0.0 {
         npc.sprite_dir = 1;
-        npc.rotation = num798.atan2(num797);
+        // `(float)Math.Atan2(num798, num797)` - the double seam: widen,
+        // atan2 in f64, cast back (the house Math.* pattern).
+        npc.rotation = (num798 as f64).atan2(num797 as f64) as f32;
     }
     if num797 < 0.0 {
         npc.sprite_dir = -1;
-        npc.rotation = num798.atan2(num797) + 3.14;
+        npc.rotation = (num798 as f64).atan2(num797 as f64) as f32 + 3.14;
     }
     fx
 }
