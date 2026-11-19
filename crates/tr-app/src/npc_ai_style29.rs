@@ -225,7 +225,9 @@ pub fn style29_step(npc: &mut Npc, world: &World, ctx: &Style29Context, players:
     // ×1.3 with an INT truncation, resetting at 200.
     npc.ai[2] += 1.0;
     if npc.ai[2] > 100.0 {
-        num387 = (num387 * 1.3) as i32 as f32;
+        // `:26287` `(int)(num387 * 1.3f)` - the FLOAT literal: the f32
+        // product (700 * 1.3f32 = 909.99994 -> 909), not the f64 one.
+        num387 = (num387 * 1.3f32) as i32 as f32;
         if npc.ai[2] > 200.0 {
             npc.ai[2] = 0.0;
         }
@@ -325,11 +327,13 @@ pub fn style29_step(npc: &mut Npc, world: &World, ctx: &Style29Context, players:
     // aim (num391 == 0) writes NEITHER — the previous flip/rotation hold.
     if num391 > 0.0 {
         npc.sprite_dir = 1;
-        npc.rotation = num392.atan2(num391);
+        // `:26396` `(float)Math.Atan2(num392, num391)` - the double seam:
+        // widen, atan2 in f64, cast back (the house Math.* pattern).
+        npc.rotation = (num392 as f64).atan2(num391 as f64) as f32;
     }
     if num391 < 0.0 {
         npc.sprite_dir = -1;
-        npc.rotation = num392.atan2(num391) + 3.14;
+        npc.rotation = (num392 as f64).atan2(num391 as f64) as f32 + 3.14;
     }
     // `:26403` — Lighting.AddLight(centre/16, 0.3, 0.2, 0.1): the
     // entity-light follow-up (S1-E-5), skipped here.
@@ -498,11 +502,12 @@ mod tests {
         n3.ai[2] = 200.0; // → 201 → wrap
         style29_step(&mut n3, &w, &c, &players);
         assert_eq!(n3.ai[2], 0.0, "ai[2] > 200 resets (:26288-26291)");
-        // The truncation witness: 300 * 1.3f = 390.00003 → (int) 390;
-        // 500 * 1.3f = 650.00004 → 650; 700 * 1.3f = 910.00006 → 910.
-        assert_eq!((300.0f32 * 1.3) as i32, 390);
-        assert_eq!((500.0f32 * 1.3) as i32, 650);
-        assert_eq!((700.0f32 * 1.3) as i32, 910);
+        // The truncation witness uses the C#'s FLOAT literal 1.3f
+        // (`:26287`): f32 700 * 1.3f32 = 909.99994 -> (int) 909 (the
+        // f64-literal form would round to 910 - not the C#'s value).
+        assert_eq!((300.0f32 * 1.3f32) as i32, 390);
+        assert_eq!((500.0f32 * 1.3f32) as i32, 650);
+        assert_eq!((700.0f32 * 1.3f32) as i32, 909);
     }
 
     /// `NPC.cs:26299-26304` — beyond the leash the aim vector scales to
@@ -598,12 +603,12 @@ mod tests {
         let mut n = hungry(1050.0, 1300.0);
         style29_step(&mut n, &w, &c, &[cand(1200.0, 1279.0)]);
         assert_eq!(n.sprite_dir, 1);
-        assert_eq!(n.rotation, (-15.0f32).atan2(145.0));
+        assert_eq!(n.rotation, (-15.0f64).atan2(145.0) as f32);
         // Target left: player at (900, 1279) → delta (-145, -15).
         let mut n2 = hungry(1050.0, 1300.0);
         style29_step(&mut n2, &w, &c, &[cand(900.0, 1279.0)]);
         assert_eq!(n2.sprite_dir, -1);
-        assert_eq!(n2.rotation, (-15.0f32).atan2(-145.0) + 3.14);
+        assert_eq!(n2.rotation, (-15.0f64).atan2(-145.0) as f32 + 3.14);
         // Dead centre: player x + 10 - 15 = 1050 → x = 1055; the aim
         // delta X is 0 → neither if fires.
         let mut n3 = hungry(1050.0, 1300.0);
