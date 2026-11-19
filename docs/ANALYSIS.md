@@ -17695,6 +17695,16 @@ this round; the witness tests are WRITTEN, NOT RUN.
   wiring worker fills them. The off-screen cull returns the 6000
   sentinel with NO draws; the C# writes `Main.dust[6000].velocity` too,
   and the port's sentinel slot exists (`particles.rs:243`).
+  **Stale-audit cross-check RESOLVED (MERGER-P4, 2026-11-19, audit
+  `f353f22a` / `task/S1-D-3-aistyle57-shared`)**: the 344 dust arm's
+  AI-level draws are NOT stream-neutral and ARE consumed — `Next(5)`
+  every phase-1 tick (`npc_ai_frost_boss_b.rs`, `NPC.cs:32821`), then on
+  0 the `NextVector2Square(0,1)` X-before-Y pair (`Utils.cs:1251-1254`)
+  and the verbatim `NewDust` pool draws on the SAME caller stream, even
+  when the pool's off-screen cull/pressure bands skip the visual (the
+  C# evaluates the position argument's draws before `Dust.NewDust`'s
+  own guards run, `Dust.cs:77-101`). The audit's "Everscream machine
+  MISSING" claim was stale — this module ports it.
 - **Deliberate drops (no rand impact)**: the `Lighting.AddLight` lines
   (`:32781`, `:33709` — Santa's `InWorld && !SolidTile` gate is kept as
   a probe for the 1:1 shape, `WorldGen.cs:9688-9695`/`:70111-70132`,
