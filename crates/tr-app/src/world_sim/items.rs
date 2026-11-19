@@ -104,6 +104,27 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let collected = drop.update(world, player_center, step);
+            // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
+            // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
+            // it at `:436`, after the movement half, per live drop in
+            // `Main.item` slot order, under the `UpdateItems` swap
+            // (`Main.cs:18024`) — so the flicker draws ride this stream, in
+            // this order. A collected drop is `TurnToAir`'d (type 0) before
+            // `:436` in the C#, so it contributes nothing; the lava-burned
+            // drops above are the same. The RNG-free arms stay in the frame
+            // feed (`entity_lights::item_light`).
+            if !collected {
+                let ess = app.ess_scale;
+                if let Some((x, y, rgb)) = crate::item_lights::rand_light(
+                    drop.kind,
+                    drop.pos,
+                    crate::item::SIZE,
+                    ess,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                ) {
+                    app.entity_lights.add(x, y, rgb);
+                }
+            }
             // `WorldItem.UpdateShimmer`'s 0.9 trigger (`WorldItem.cs:528-535`):
             // the transform runs after the step's items borrow is released (the
             // apply needs the app wholesale for the spawns and the world flags).
@@ -600,6 +621,120 @@ mod shimmer_tests {
         update_items(&mut app, 1.0 / 60.0);
         // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
         assert!(app.items[0].pos.y < before, "the item rises");
+    }
+}
+
+#[cfg(test)]
+mod rand_light_witness {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::player::Player;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::world::World;
+
+    /// A dry 40x40 world, stone floor at y = 20, the player parked at x = 10
+    /// tiles — the drops sit at x = 28..32 tiles, outside the pickup magnet.
+    fn dry_world() -> App {
+        let mut w = World::new("rl".into(), 40, 40);
+        for x in 0..40 {
+            for y in 20..40 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    fn resting(kind: u16, tx: f32) -> ItemDrop {
+        let mut d = ItemDrop::new(kind, 1, 0, tx * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        d.vel = Vec2::ZERO;
+        d
+    }
+
+    /// S1-E-5 witness: the flicker arms draw the `UpdateItems` stream in
+    /// `Main.item` slot order — exactly one `Next(90, 111)` per flicker drop,
+    /// interleaved with the draw-free skips (116, 501, a plain block) — and
+    /// the lights land in the shared `EntityLights` list with the C#
+    /// products. Every other stage stream stays pristine.
+    #[test]
+    fn the_flicker_arms_draw_the_item_stream_in_slot_order() {
+        let mut app = dry_world();
+        // Slot order: 520 (draw), 116 (skip), 521 (draw), 501 (skip),
+        // 58 (draw), 2 (no arm), 3456 (essScale, draw-free).
+        for (i, kind) in [520u16, 116, 521, 501, 58, 2, 3456].iter().enumerate() {
+            app.items.push(resting(*kind, 28.0 + i as f32));
+        }
+        *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(4242);
+        update_items(&mut app, 1.0 / 60.0);
+        // The twin: three Next(90,111) draws, in slot order, nothing else.
+        let mut twin = UnifiedRandom::new(4242);
+        let d0 = twin.next_range(90, 111);
+        let d1 = twin.next_range(90, 111);
+        let d2 = twin.next_range(90, 111);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            twin,
+            "exactly the three flicker draws, in slot order"
+        );
+        // The lights: swap the list pair, then read the frame's sources.
+        app.entity_lights.end_frame();
+        let lights = app.entity_lights.visible();
+        assert_eq!(lights.len(), 4, "3 flickers + 1 fragment");
+        let n0 = d0 as f32 * 0.01 * 1.0; // essScale seeds 1.0
+        assert_eq!(lights[0].rgb, [0.5 * n0, 0.1 * n0, 0.25 * n0]);
+        let n1 = d1 as f32 * 0.01 * 1.0;
+        assert_eq!(lights[1].rgb, [0.25 * n1, 0.1 * n1, 0.5 * n1]);
+        let n2 = d2 as f32 * 0.01 * (1.0f32 * 0.5);
+        assert_eq!(lights[2].rgb, [0.5 * n2, 0.1 * n2, 0.1 * n2]);
+        // The fragment arm: no draw, the fixed Vector3 at essScale 1.0.
+        assert_eq!(lights[3].rgb, [0.2, 0.4, 0.5]);
+        // The isolation: no other stage stream moved (flow_app seeds 0).
+        for k in RngKey::ALL {
+            if k == RngKey::UpdateItems {
+                continue;
+            }
+            assert!(
+                !app.rngs.is_created(k) || *app.rngs.stream(k) == UnifiedRandom::new(0),
+                "{} stayed pristine",
+                k.name()
+            );
+        }
+    }
+
+    /// The muted path: a world with only draw-free kinds spends nothing on
+    /// the item stream across many ticks.
+    #[test]
+    fn a_world_without_flicker_kinds_stays_draw_free() {
+        let mut app = dry_world();
+        for (i, kind) in [116u16, 501, 2, 3456, 3459].iter().enumerate() {
+            app.items.push(resting(*kind, 28.0 + i as f32));
+        }
+        *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(9);
+        for _ in 0..30 {
+            update_items(&mut app, 1.0 / 60.0);
+            // One frame per tick, like the draw pass's swap.
+            app.entity_lights.end_frame();
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            UnifiedRandom::new(9),
+            "the skipped arms and the fragment arms draw nothing"
+        );
+        // The fragments still light every tick (RNG-free).
+        assert_eq!(app.entity_lights.visible().len(), 2);
     }
 }
 
