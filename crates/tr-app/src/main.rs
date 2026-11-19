@@ -110,7 +110,6 @@ mod npc_ai_style31;
 mod npc_ai_style47;
 mod npc_ai_bat;
 mod npc_ai_golem;
-mod npc_ai_town;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;

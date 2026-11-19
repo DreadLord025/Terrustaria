@@ -3588,9 +3588,13 @@ fn town_attack_magic(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRandom, 
         } else if net_id == 160 || net_id == 663 {
             // `:54936-54967` — the Party Girl / Princess spot spawn:
             // up to 10 / 5 retries of a random point near the target,
-            // each retry drawing RandomVector2(0,1)×2.
-            if num67 != -1 {
-                let target = target_view(env, num67).unwrap();
+            // each retry drawing RandomVector2(0,1)×2. The C# reads
+            // Main.npc[num67] unconditionally (an inactive slot reads
+            // as a zero box); the port's live list may lack the slot,
+            // so a missing view skips the spawn (no draws — the C#
+            // would spawn at the inactive NPC's stale position, a
+            // recorded seam residual).
+            if let Some(target) = target_view(env, num67) {
                 let (mut tries, scale) = if net_id == 160 { (10, 5.0f32) } else { (5, 1.0f32) };
                 let base = if net_id == 160 {
                     (target.x - target.width * 2.0, target.y - target.height * 2.0)
