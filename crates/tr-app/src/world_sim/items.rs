@@ -7,7 +7,7 @@ use tr_core::UnifiedRandom;
 
 use crate::achievements;
 use crate::app::{App, NetRole};
-use crate::item::{ItemDrop, slot_for_pickup};
+use crate::item::ItemDrop;
 use crate::registry;
 
 /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
@@ -21,21 +21,47 @@ const LAVA_IMMUNE: &[u16] = &[
 
 pub(crate) fn update_items(app: &mut App, dt: f32) {
     if app.is_client() {
-        // The host owns the drops: ask it to collect whatever lies under our feet
-        // and hide those locally until the next authoritative snapshot.
-        let Some(pc) = app
-            .player
-            .as_ref()
-            .map(|p| Vec2::new(p.center().0, p.center().1))
-        else {
+        // The host owns the drops: ask it to collect whatever lies in our
+        // grab rectangle and hide those locally until the next authoritative
+        // snapshot. The range is `GetItemGrabRange`'s expanded hitbox
+        // (`Player.cs:34926`, S1-P-i47) — the old 26 px circle had no C#
+        // counterpart. The client's accessory flags are the local player's;
+        // the unported grants read false (the `GrabFlags` seam).
+        let Some(p) = app.player.as_ref() else {
             return;
+        };
+        let (px, py, ph) = (p.x, p.y, p.height);
+        // `Player.cs:27426-27428` — a dead player grabs nothing.
+        if p.dead {
+            return;
+        }
+        let in_range = |it: &ItemDrop| {
+            // The `:34911` gate row, the client's half: shimmering and
+            // grab-delayed drops stay until the host's authoritative update.
+            if it.shimmer_time != 0.0
+                || (it.grab_delay_time > 0
+                    && (it.grab_delay_player == app.local_id as u8
+                        || it.grab_delay_player == 255))
+            {
+                return false;
+            }
+            let range = crate::item::get_item_grab_range(it.kind, crate::item::GrabFlags::default())
+                as f32;
+            crate::item::grab_rect_intersects(
+                px,
+                py,
+                crate::player::WIDTH,
+                ph,
+                range,
+                it.pos,
+            )
         };
         let ids: Vec<u32> = app
             .items
             .iter()
             .enumerate()
             .filter(|(i, it)| {
-                (it.center() - pc).length() < 26.0
+                in_range(it)
                     // `22 ItemOwner` gate (`GrabItems`, `Player.cs:34905-34923`):
                     // a drop reserved for another peer is not grabbable yet.
                     && !app
@@ -50,7 +76,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 client.send(&crate::net::C2s::Pickup { drop: id });
             }
         }
-        app.items.retain(|it| (it.center() - pc).length() >= 26.0);
+        app.items.retain(|it| !in_range(it));
         return;
     }
     let world = &app.world;
@@ -63,11 +89,265 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
     app.item_step.tick(dt.min(0.25), |step| {
-        let player_center = player
-            .as_ref()
-            .map(|p| Vec2::new(p.center().0, p.center().1));
-        // `AchievementsHelper.NotifyItemPickup`'s registry handle.
-        let achievements = &mut app.achievements;
+        // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
+        // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
+        // physics (`Main.cs:17754`'s UpdatePlayers swap precedes `:18024`'s
+        // UpdateItems); the port keeps both in the items pass, grab first.
+        // A direct hitbox overlap picks the drop up; the expanded grab
+        // rectangle only PULLS (the velocity applies in the physics half
+        // below via `being_grabbed`).
+        let mut i = 0;
+        while i < items.len() {
+            let kind = items[i].kind;
+            // The `:34911` gate row: shimmering drops wait, the grab delay
+            // locks its player (255 = everyone), a foreign reservation is
+            // not grabbable, and a shimmered drop must nearly rest first.
+            // `CanAcceptItemIntoInventory` (`:34896-34903`) reads
+            // `preventAllItemPickups` — the Encumbering Stone has no port
+            // flag yet, so the accept is unconditional (ANALYSIS).
+            let reserved_elsewhere = app
+                .net_reserved
+                .get(&(i as i16))
+                .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
+            let delay_locked = items[i].grab_delay_time > 0
+                && (items[i].grab_delay_player == app.local_id as u8
+                    || items[i].grab_delay_player == 255);
+            if items[i].shimmer_time != 0.0
+                || delay_locked
+                || reserved_elsewhere
+                || (items[i].shimmered && items[i].vel.length() >= 0.2)
+            {
+                i += 1;
+                continue;
+            }
+            // The `IsAPickup` consume-on-touch arms (`PickupItem`
+            // `:35045-35098`): hearts/stars ride i52, the nebula/4143 mana
+            // arms have no ported buff route — the kinds are not grabbed
+            // until those land (ANALYSIS S1-P-i47).
+            if crate::item::is_a_pickup(kind) {
+                i += 1;
+                continue;
+            }
+            let Some(pl) = player.as_ref() else {
+                break;
+            };
+            // `Player.cs:27426-27428` — `if (!this.dead) this.GrabItems(i)`:
+            // a dead player grabs nothing (the death drops lie until respawn).
+            if pl.dead {
+                break;
+            }
+            // The player scalars the grab reads, snapshotted so the vault
+            // write below can take `player` mutably.
+            let (px, py, ph, pvx) = (pl.x, pl.y, pl.height, pl.vx);
+            let pc = Vec2::new(pl.center().0, pl.center().1);
+            let (mana, mana_max) = (pl.mana, pl.mana_max);
+            let vault_enabled = pl.void_vault_enabled;
+            let flags = crate::item::GrabFlags {
+                journey_far_range: pl.far_placement_range,
+                ..Default::default()
+            };
+            let range = crate::item::get_item_grab_range(kind, flags) as f32;
+            let drop_pos = items[i].pos;
+            if crate::item::rects_intersect(
+                px,
+                py,
+                crate::player::WIDTH,
+                ph,
+                drop_pos.x,
+                drop_pos.y,
+                crate::item::SIZE,
+                crate::item::SIZE,
+            ) {
+                // `:34917-34922` — the direct pickup, gated on the held
+                // slot being non-air OR the swing finished (`:34919`).
+                if inventory[app.selected].kind == 0 && app.swing > 0.0 {
+                    i += 1;
+                    continue;
+                }
+                if registry::is_coin(kind) {
+                    // The coin wallet path (the port's `App.coins` purse —
+                    // the coin-slot routing is i50's). The revenge suck
+                    // (`WorldItem.cs:1125-1200`) runs here on the pickup,
+                    // the port's recorded placement deviation: a nearby
+                    // hostile NPC (lifeMax > 5, not statue-spawned) takes
+                    // 50-75% of the stack into `extraValue`.
+                    let mut drop = items[i].clone();
+                    let coin_copper = registry::coin_value(kind) * drop.count as u64;
+                    let mut picked = 0u64;
+                    if let Some(npc) = app.npcs.iter_mut().find(|n| {
+                        n.hp > 5
+                            && !n.spawned_from_statue
+                            && (n.center().0 - drop.center().x).abs() < 16.0
+                            && (n.center().1 - drop.center().y).abs() < 24.0
+                            && n.extra_value < coin_copper
+                            && n.extra_value + coin_copper < 999_000_000
+                    }) {
+                        // `num5 = Main.rand.Next(50, 76) * 0.01f` + the
+                        // copper (71) `Next(51)` and silver (72) `Next(26)`
+                        // extras, clamped at 1f; `num6 = (int)(stack * num5)`
+                        // clamped 1..stack (`WorldItem.cs:1158-1172`). The
+                        // draws ride the `UpdateItems` stream (the port's
+                        // pickup lives in the items pass).
+                        let share = if drop.count == 1 {
+                            1
+                        } else {
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+                            let mut num5 = rng.next_range(50, 76) as f32 * 0.01;
+                            if kind == 71 {
+                                num5 += rng.next_max(51) as f32 * 0.01;
+                            }
+                            if kind == 72 {
+                                num5 += rng.next_max(26) as f32 * 0.01;
+                            }
+                            num5 = num5.min(1.0);
+                            ((drop.count as f32 * num5) as u32).clamp(1, drop.count)
+                        };
+                        picked = registry::coin_value(kind) * share as u64;
+                        npc.extra_value += picked;
+                        drop.count -= share;
+                    }
+                    if picked > 0 {
+                        // S1-E-21f — `NPC.moneyPing` (`NPC.cs:90052-90054`,
+                        // `WorldItem.cs:1189`): case 38's two draws ride the
+                        // `UpdateItems` stream, right after the share draws.
+                        audio.play_coin_ping(
+                            drop.pos.x,
+                            drop.pos.y,
+                            app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        );
+                    }
+                    if drop.count == 0 {
+                        items.swap_remove(i);
+                        continue;
+                    }
+                    *coins = (*coins)
+                        .saturating_add(registry::coin_value(kind) * drop.count as u64);
+                    // S1-E-21f — the coin chime (`Player.cs:39444`:
+                    // `PlaySound(newItem.IsACoin ? 38 : 7)`, UNPOSITIONED)
+                    // on the `UpdatePlayers` stream (the GrabItems caller).
+                    audio.play_pickup_sound(
+                        true,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    items.swap_remove(i);
+                    continue;
+                }
+                // `PickupItem`'s inventory arm (`:35099-35108`): `GetItem`
+                // with `PickupItemFromWorld` (`GetItemSettings.cs:57` —
+                // `CanGoIntoVoidVault`), the remainder `ReplaceWith`'d back
+                // into the world drop. The deposit walk is the C#'s order:
+                // ammo pre-pass → occupied forward → usable hotbar → empty
+                // REVERSE → the void vault LAST (`Player.cs:39330-39399`).
+                // S1-C-9: the inventory receives the `remaining` count
+                // exactly once — the walk never re-adds a merged stack.
+                let count = items[i].count;
+                let prefix = items[i].prefix;
+                let favorite = |idx: usize| app.favorite_slots.contains(&idx);
+                let mut remaining = crate::item::deposit_pickup(
+                    inventory,
+                    &mut app.equip.ammo,
+                    kind,
+                    prefix,
+                    count,
+                    favorite,
+                    &mut |moved| {
+                        // S1-E-21f — one chime per accepted slot
+                        // (`:39491`/`:39559`, `FillAmmo` `:39274`/`:39321`),
+                        // the Grab pitch draw on `UpdatePlayers`; the
+                        // achievement notify rides each fill
+                        // (`AchievementsHelper.NotifyItemPickup`, `:39505`).
+                        audio.play_pickup_sound(
+                            false,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        );
+                        let _ = moved;
+                        if let Some(_done) = app
+                            .achievements
+                            .notify(achievements::CondKind::ItemPickup(kind))
+                        {
+                            log::info!("achievement completed");
+                        }
+                    },
+                );
+                // `:39395-39398` — the vault is the LAST resort, after every
+                // inventory pass failed (the old port routed it FIRST).
+                if remaining > 0
+                    && vault_enabled
+                    && crate::bank::can_void_vault_accept(kind)
+                {
+                    let taken = crate::bank::void_vault_take(
+                        &mut player.as_mut().unwrap().banks[3],
+                        kind,
+                        prefix,
+                        remaining,
+                        registry::max_stack(kind),
+                    );
+                    if taken > 0 {
+                        remaining -= taken;
+                        // `GetItem_FillIntoOccupiedSlot_VoidBag`'s chime
+                        // (`:39444`); the port's merged fill plays one per
+                        // pickup event (the standing S1-E-21f deviation).
+                        audio.play_pickup_sound(
+                            false,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        );
+                    }
+                }
+                if remaining == 0 {
+                    items.swap_remove(i);
+                    continue;
+                }
+                // The surplus stays where it fell (`ReplaceWith(item)`).
+                items[i].count = remaining;
+                i += 1;
+                continue;
+            }
+            if !crate::item::grab_rect_intersects(
+                px,
+                py,
+                crate::player::WIDTH,
+                ph,
+                range,
+                drop_pos,
+            ) {
+                i += 1;
+                continue;
+            }
+            // `ItemSpace` + `CanPullItem` (`:34930-34934`): no room, no pull.
+            let vault = player.as_ref().unwrap();
+            let status = crate::item::item_space(
+                inventory,
+                &app.equip.ammo,
+                kind,
+                items[i].prefix,
+                |idx| app.favorite_slots.contains(&idx),
+                if vault_enabled { Some(&vault.banks[3]) } else { None },
+            );
+            if !status.can_take {
+                i += 1;
+                continue;
+            }
+            // `:34935-34972` — the pull arms. `flag2` = the heart/star
+            // family; at full mana without the Mana Magnet they are not
+            // pulled at all (`:34947`). The accessory grants are the
+            // `GrabFlags` seam (unported equipment families).
+            let drop = &mut items[i];
+            drop.shimmered = false;
+            drop.being_grabbed = true;
+            let flag2 = matches!(kind, 184 | 1735 | 1868);
+            let held_magic = registry::get(inventory[app.selected].kind)
+                .is_some_and(|d| d.magic);
+            if !flag2 || held_magic || mana != mana_max {
+                if status.to_void_vault {
+                    // `PullItem_ToVoidVault` (`:34978-34981`).
+                    crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
+                } else {
+                    crate::item::pull_item_common(drop.center(), &mut drop.vel, pc, pvx, 0.75);
+                }
+            }
+            i += 1;
+        }
+        // --- `WorldItem.UpdateItem`'s physics half -------------------------
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -103,27 +383,26 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 items.swap_remove(i);
                 continue;
             }
-            let collected = drop.update(world, player_center, step);
+            let was_grabbed = drop.being_grabbed;
+            drop.update(world, step);
             // S1-E-5 — `WorldItem.UpdateItem_VisualEffects`'s rand/essScale
             // head (`WorldItem.cs:1206-1293`, `item_lights.rs`): the C# runs
             // it at `:436`, after the movement half, per live drop in
             // `Main.item` slot order, under the `UpdateItems` swap
             // (`Main.cs:18024`) — so the flicker draws ride this stream, in
-            // this order. A collected drop is `TurnToAir`'d (type 0) before
-            // `:436` in the C#, so it contributes nothing; the lava-burned
-            // drops above are the same. The RNG-free arms stay in the frame
-            // feed (`entity_lights::item_light`).
-            if !collected {
-                let ess = app.ess_scale;
-                if let Some((x, y, rgb)) = crate::item_lights::rand_light(
-                    drop.kind,
-                    drop.pos,
-                    crate::item::SIZE,
-                    ess,
-                    app.rngs.stream(crate::app::RngKey::UpdateItems),
-                ) {
-                    app.entity_lights.add(x, y, rgb);
-                }
+            // this order. A collected drop was `TurnToAir`'d in the grab
+            // pass above and never reaches here; the lava-burned drops are
+            // the same. The RNG-free arms stay in the frame feed
+            // (`entity_lights::item_light`).
+            let ess = app.ess_scale;
+            if let Some((x, y, rgb)) = crate::item_lights::rand_light(
+                drop.kind,
+                drop.pos,
+                crate::item::SIZE,
+                ess,
+                app.rngs.stream(crate::app::RngKey::UpdateItems),
+            ) {
+                app.entity_lights.add(x, y, rgb);
             }
             // `WorldItem.UpdateShimmer`'s 0.9 trigger (`WorldItem.cs:528-535`):
             // the transform runs after the step's items borrow is released (the
@@ -131,178 +410,19 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             if drop.shimmer_transform_due() {
                 shimmer_due.push(i as u32);
             }
-            if collected {
-                // The revenge pickup arm (`WorldItem.cs:1125-1200`): a
-                // nearby hostile NPC (lifeMax > 5, not statue-spawned) sucks
-                // 50-75% of a coin stack into `extraValue` while its
-                // `extraValue < item.value && extraValue + value <
-                // 999000000`. The moneyPing cue is not in the port's set.
-                if registry::is_coin(drop.kind) {
-                    let coin_copper = registry::coin_value(drop.kind) * drop.count as u64;
-                    let mut picked = 0u64;
-                    if let Some(npc) = app.npcs.iter_mut().find(|n| {
-                        n.hp > 5
-                            && !n.spawned_from_statue
-                            && (n.center().0 - drop.center().x).abs() < 16.0
-                            && (n.center().1 - drop.center().y).abs() < 24.0
-                            && n.extra_value < coin_copper
-                            && n.extra_value + coin_copper < 999_000_000
-                    }) {
-                        // `num5 = Main.rand.Next(50, 76) * 0.01f` + the
-                        // copper (71) `Next(51)` and silver (72) `Next(26)`
-                        // extras, clamped at 1f; `num6 = (int)(stack * num5)`
-                        // clamped 1..stack (`WorldItem.cs:1158-1172`). The
-                        // pickup runs inside `WorldItem.UpdateItem` under the
-                        // `UpdateItems` swap (`Main.cs:18024`) — the draws
-                        // ride the `UpdateItems` stream.
-                        let share = if drop.count == 1 {
-                            1
-                        } else {
-                            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
-                            let mut num5 = rng.next_range(50, 76) as f32 * 0.01;
-                            if drop.kind == 71 {
-                                num5 += rng.next_max(51) as f32 * 0.01;
-                            }
-                            if drop.kind == 72 {
-                                num5 += rng.next_max(26) as f32 * 0.01;
-                            }
-                            num5 = num5.min(1.0);
-                            ((drop.count as f32 * num5) as u32).clamp(1, drop.count)
-                        };
-                        picked = registry::coin_value(drop.kind) * share as u64;
-                        npc.extra_value += picked;
-                        drop.count -= share;
-                    }
-                    if picked > 0 {
-                        // S1-E-21f — `NPC.moneyPing` (`NPC.cs:90052-90054`,
-                        // called from `WorldItem.cs:1189`): `PlaySound(38,
-                        // base.position)` at the DROP's top-left. Case 38's
-                        // two draws (slot, then pitch) ride the `UpdateItems`
-                        // stream — the revenge arm runs inside
-                        // `WorldItem.UpdateItem` under the `Main.cs:17779`
-                        // swap, right after the share draws above.
-                        audio.play_coin_ping(
-                            drop.pos.x,
-                            drop.pos.y,
-                            app.rngs.stream(crate::app::RngKey::UpdateItems),
-                        );
-                    }
-                    if drop.count == 0 {
-                        items.swap_remove(i);
-                        continue;
-                    }
-                    *coins = (*coins)
-                        .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
-                    // S1-E-21f — the coin pickup chime (`Player.cs:39444`:
-                    // `PlaySound(newItem.IsACoin ? 38 : 7)` — UNPOSITIONED).
-                    // The C# site runs in `Player.GrabItems` under the
-                    // `UpdatePlayers` swap (`Main.cs:17754`); the port's
-                    // pickup lives in the items pass, so the drain point
-                    // differs but the named stream is the source's.
-                    audio.play_pickup_sound(
-                        true,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                    items.swap_remove(i);
-                    continue;
-                }
-                // `Player.GetItem`'s void-vault arm (`Player.cs:39395`):
-                // `CanGoIntoVoidVault && IsVoidVaultEnabled &&
-                // CanVoidVaultAccept` routes the pickup into bank4 first
-                // (`GetItem_VoidVault`, :39402-39423); the leftover falls
-                // through to the inventory.
-                let mut remaining = drop.count;
-                let mut into_vault = false;
-                if let Some(p) = player.as_mut() {
-                    if p.void_vault_enabled
-                        && crate::bank::can_void_vault_accept(drop.kind)
-                        && crate::bank::bank_for_chest(-5).is_some()
-                    {
-                        let def = registry::get(drop.kind);
-                        let max_stack = def.map(|d| d.max_stack).unwrap_or(999);
-                        let taken = crate::bank::void_vault_take(
-                            &mut p.banks[3],
-                            drop.kind,
-                            drop.prefix,
-                            drop.count,
-                            max_stack,
-                        );
-                        if taken == drop.count {
-                            into_vault = true;
-                        } else {
-                            remaining = drop.count - taken;
-                        }
-                    }
-                }
-                if into_vault {
-                    // S1-E-21f — `GetItem_VoidVault`'s fills play the same
-                    // `IsACoin ? 38 : 7` chime (`Player.cs:39444`'s void-bag
-                    // twins `GetItem_FillIntoOccupiedSlot_VoidBag`), unpositioned,
-                    // on the `UpdatePlayers` stream (the GrabItems caller).
-                    audio.play_pickup_sound(
-                        false,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                    items.swap_remove(i);
-                    continue;
-                }
-                // `Player.GetItem`'s slot walk (`Player.cs:39347-39372`) runs
-                // `GetItem_FillIntoOccupiedSlot` per slot (`:39493-39518`): an
-                // occupied slot takes `maxStack - stack` and the leftover
-                // `returnItem.stack -= maxStack - stack` stays in the
-                // `returnItem` the caller swaps back into the world
-                // (`Player.PickupItem`'s `itemToPickUp.ReplaceWith(item)`,
-                // `:35085-35087`) — so the surplus is a drop, never an
-                // over-full slot. `slot_for_pickup` already skips full slots,
-                // so the loop drains through the roomier ones.
-                // The vault took `drop.count - remaining`, so the slot walk
-                // below sees only `remaining` (S1-C-9).
-                let drop_count = remaining;
-                let max_stack = registry::max_stack(drop.kind);
-                let mut pending = drop_count;
-                let mut moved = 0u32;
-                while pending > 0 {
-                    let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) else {
-                        break;
-                    };
-                    let room = max_stack.saturating_sub(inventory[slot].count);
-                    if room == 0 {
-                        break;
-                    }
-                    let take = pending.min(room);
-                    inventory[slot].count += take;
-                    pending -= take;
-                    moved += take;
-                }
-                if moved > 0 {
-                    // S1-E-21f — `Player.GetItem`'s occupied/empty fill chime
-                    // (`Player.cs:39444`/`:39491`/`:39534`/`:39559`:
-                    // `PlaySound(newItem.IsACoin ? 38 : 7)` — UNPOSITIONED,
-                    // once per accepted slot; the port's slot walk is one
-                    // merged fill, so one chime per pickup event). The Grab
-                    // pitch draw rides `UpdatePlayers` (the `GrabItems`
-                    // caller, `Player.cs:27428` under the `Main.cs:17754` swap).
-                    audio.play_pickup_sound(
-                        false,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                    // `AchievementsHelper.NotifyItemPickup` — the pickup
-                    // feeds the ItemPickupCondition rows (TIMBER).
-                    if let Some(_done) =
-                        achievements.notify(achievements::CondKind::ItemPickup(drop.kind))
-                    {
-                        log::info!("achievement completed");
-                    }
-                    // The slot walk took everything: the drop is gone.
-                    if pending == 0 {
-                        items.swap_remove(i);
-                        continue;
-                    }
-                    // The remainder stays where it fell (`ReplaceWith(item)`).
-                    drop.count = pending;
+            items[i] = drop;
+            // `TryCombiningIntoNearbyItems` (`WorldItem.cs:157-186`, called
+            // at `:404` inside the non-grabbed branch): the passive world
+            // stack merge. The port runs it after the movement half (the
+            // C# combines before `MoveInWorld`; RNG-free, the lerp targets
+            // differ by one tick of motion — ANALYSIS S1-P-i47). The
+            // drained sources are later indices, removed highest-first.
+            if !was_grabbed {
+                let drained = crate::item::ItemDrop::combine_nearby(items, i);
+                for j in drained.into_iter().rev() {
+                    items.swap_remove(j);
                 }
             }
-            items[i] = drop;
             i += 1;
         }
     });
@@ -903,7 +1023,10 @@ mod lava_burn_tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = hell_world();
         let mut player = crate::player::Player::spawn(&app.world);
-        player.x = 200.0 * TILE_PX;
+        // Far from the lava pool (S1-P-i47): `GrabItems` runs BEFORE the
+        // item physics in the C# too — a player standing over the drops
+        // would pick them up before they burn.
+        player.x = 150.0 * TILE_PX;
         player.y = 496.0 * TILE_PX;
         app.player = Some(player);
         // The rare-0 dirt block: burns.
@@ -967,7 +1090,9 @@ mod lava_burn_tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = hell_world();
         let mut player = crate::player::Player::spawn(&app.world);
-        player.x = 200.0 * TILE_PX;
+        // Out of grab range (S1-P-i47) — the doll must reach the lava, not
+        // the player's inventory.
+        player.x = 150.0 * TILE_PX;
         player.y = 496.0 * TILE_PX;
         app.player = Some(player);
         let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
@@ -1038,8 +1163,8 @@ mod pickup_tests {
 
     #[test]
     fn pickup_transfers_the_stack_once() {
-        // `S1-C-9`: the drop must add `remaining` exactly once to the slot
-        // (`Player.cs:39330` / `world_sim/items.rs:191-206`).
+        // `S1-C-9`: the drop must add `remaining` (S1-C-9) exactly once to
+        // the slot (`Player.cs:39330`, the `deposit_pickup` walk).
         let mut app = pickup_world();
         let pc = app.player.as_ref().unwrap().center();
         app.items.push(collectable_drop(3, 5, pc.0 - 4.0, pc.1 - 4.0));
@@ -1055,9 +1180,12 @@ mod pickup_tests {
     }
 
     #[test]
-    fn pickup_sends_only_the_vault_remainder_to_inventory() {
-        // Player.cs:39395-39423 / GetItem_VoidVault: the vault takes what
-        // fits, the leftover falls through to the inventory once.
+    fn pickup_sends_only_the_overflow_to_the_vault_remainder_stays_in_world() {
+        // `Player.cs:39395-39398` / `GetItem_VoidVault` (S1-P-i47): the vault
+        // is GetItem's LAST resort — the inventory passes run first. The
+        // grid is full here, so the vault takes what fits (3) and the
+        // leftover 2 stays in the WORLD drop (`PickupItem`'s `ReplaceWith`,
+        // `:35103`), never an over-full slot.
         let mut app = pickup_world();
         let mut player = app.player.take().unwrap();
         player.void_vault_enabled = true;
@@ -1077,10 +1205,18 @@ mod pickup_tests {
             prefix: 0,
         };
         app.player = Some(player);
+        // The grid is full of dirt — no inventory pass accepts the stone.
+        for s in app.inventory.iter_mut() {
+            *s = crate::item::ItemSlot {
+                kind: 2,
+                name: crate::registry::name(2),
+                count: crate::registry::max_stack(2),
+                prefix: 0,
+            };
+        }
         let pc = app.player.as_ref().unwrap().center();
         app.items.push(collectable_drop(3, 5, pc.0 - 4.0, pc.1 - 4.0));
         update_items(&mut app, 1.0 / 60.0);
-        assert!(app.items.is_empty(), "the drop was consumed");
         let in_vault: u32 = app.player.as_ref().unwrap().banks[3]
             .iter()
             .filter(|s| s.kind == 3)
@@ -1093,6 +1229,136 @@ mod pickup_tests {
             .map(|s| s.count)
             .sum();
         assert_eq!(in_vault, max_stack, "the vault took exactly 3");
-        assert_eq!(in_inv, 2, "only the remainder reached inventory");
+        assert_eq!(in_inv, 0, "the full grid took nothing");
+        assert_eq!(app.items.len(), 1, "the surplus stays in the world");
+        assert_eq!(app.items[0].count, 2, "5 - 3 = 2 left on the ground");
+    }
+
+    /// S1-P-i47 — `GrabItems`' pull half (`Player.cs:34924-34974`): a drop
+    /// inside the grab rectangle but outside the hitbox is PULLED, not
+    /// teleported — `PullItem_Common`'s 0.45/tick acceleration, the
+    /// `being_grabbed` raw-velocity tick (`WorldItem.cs:425-435`), then the
+    /// direct-hitbox pickup a few ticks later.
+    #[test]
+    fn the_grab_rectangle_pulls_before_the_hitbox_collects() {
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        // 30 px to the right of the player's centre: inside the 42 px
+        // expanded rectangle, outside the 20x42 body.
+        let mut d = ItemDrop::new(3, 5, 0, pc.0 + 30.0, pc.1, 0.0, 0.0, 0.0);
+        d.vel = Vec2::ZERO;
+        app.items.push(d);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "not collected on the pull tick");
+        // The pull: X accelerates -0.45 toward the player (left), the
+        // grabbed tick applies it raw.
+        let d = &app.items[0];
+        assert!(d.vel.x < 0.0, "pulled left, vel {:?}", d.vel);
+        assert!((d.vel.x + 0.45).abs() < 1e-5, "one 0.45 step, got {}", d.vel.x);
+        // A few dozen ticks later the drop reaches the body and lands in
+        // the inventory (the fall to the floor keeps it in the rectangle).
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        assert!(app.items.is_empty(), "the pull ended in a pickup");
+        assert_eq!(
+            app.inventory.iter().filter(|s| s.kind == 3).map(|s| s.count).sum::<u32>(),
+            5
+        );
+    }
+
+    /// S1-P-i47 — the grab delay (`WorldItem.cs:26`/`:110`,
+    /// `Player.cs:34911`): a `GrabDelayForLocalPlayer` drop refuses the
+    /// grabber for 100 ticks, then collects normally.
+    #[test]
+    fn the_grab_delay_locks_the_drop_for_100_ticks() {
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        let mut d = ItemDrop::new(3, 5, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
+        d.apply_grab_delay(app.local_id as u8);
+        app.items.push(d);
+        for _ in 0..99 {
+            update_items(&mut app, 1.0 / 60.0);
+            assert_eq!(app.items.len(), 1, "still locked at tick {}", _);
+        }
+        // Tick 100: the delay hit 0 on the 100th update — the NEXT grab
+        // pass collects (the decrement runs after the grab gate).
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items[0].grab_delay_time, 0);
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the lock expired");
+        assert_eq!(
+            app.inventory.iter().filter(|s| s.kind == 3).map(|s| s.count).sum::<u32>(),
+            5
+        );
+    }
+
+    /// S1-P-i47 — `ItemSpace` gates the PULL (`Player.cs:34930-34934`): a
+    /// full inventory (and no vault) leaves the drop lying — no pull, no
+    /// velocity.
+    #[test]
+    fn a_full_inventory_refuses_the_pull() {
+        let mut app = pickup_world();
+        for s in app.inventory.iter_mut() {
+            *s = crate::item::ItemSlot {
+                kind: 2,
+                name: crate::registry::name(2),
+                count: crate::registry::max_stack(2),
+                prefix: 0,
+            };
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        let mut d = ItemDrop::new(3, 5, 0, pc.0 + 30.0, pc.1, 0.0, 0.0, 0.0);
+        d.vel = Vec2::ZERO;
+        app.items.push(d);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1);
+        assert!(!app.items[0].being_grabbed, "no pull without room");
+        assert_eq!(app.items[0].vel.x, 0.0, "the velocity stayed untouched");
+    }
+
+    /// S1-P-i47 — `Player.cs:27426-27428`: a dead player grabs nothing.
+    #[test]
+    fn a_dead_player_grabs_nothing() {
+        let mut app = pickup_world();
+        app.player.as_mut().unwrap().dead = true;
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3, 5, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the death drop lies until respawn");
+        assert!(app.inventory.iter().all(|s| s.count == 0));
+    }
+
+    /// S1-P-i47 — the world stack merge (`WorldItem.TryCombiningIntoNearbyItems`
+    /// `:157-186`) inside the items pass: two wood drops within 30 px
+    /// combine into one, away from the player.
+    #[test]
+    fn nearby_world_drops_merge_in_the_items_pass() {
+        let mut app = pickup_world();
+        // Park the player far away (x = 10 tiles); the drops at x = 30.
+        let mut a = ItemDrop::new(9, 10, 0, 30.0 * TILE_PX, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        a.vel = Vec2::ZERO;
+        let mut b = ItemDrop::new(9, 7, 0, 30.0 * TILE_PX + 10.0, 19.0 * TILE_PX + 2.0, 0.0, 0.0, 0.0);
+        b.vel = Vec2::ZERO;
+        app.items.push(a);
+        app.items.push(b);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the source drained into the survivor");
+        assert_eq!(app.items[0].count, 17);
+        assert_eq!(app.items[0].kind, 9);
+    }
+
+    /// S1-P-i47 — the ammo routing end-to-end: an arrow drop lands in the
+    /// ammo rows (`FillAmmo`, `Player.cs:39264-39328`), not the grid.
+    #[test]
+    fn an_arrow_drop_lands_in_the_ammo_rows() {
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(40, 12, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty());
+        assert_eq!(app.equip.ammo[0].kind, 40);
+        assert_eq!(app.equip.ammo[0].count, 12);
+        assert!(app.inventory.iter().all(|s| s.count == 0), "the grid stayed out");
     }
 }

@@ -1176,29 +1176,28 @@ pub(crate) fn retain_favorite_on_move_at(context: i32) -> bool {
     matches!(context, 0 | 1 | 2 | 32 | 5)
 }
 
-/// `Player.ItemSpace(item).CanTakeItemToPersonalInventory`
-/// (`Player.cs:39153-39197`) for the shift-out cursor: any grid slot accepts
-/// the item (`CanItemSlotAcceptPickup`, `:39220-39232` — empty, or a
-/// same-kind partial stack), or the ungated same-kind merge scan over the
-/// ammo slots (`:39185-39191`). The `IsAPickup`/`uniqueStack` sets, the
-/// `ammo > 0` FillAmmo arm (`:39175-39184`) and the Cofveve void scan
-/// (`:39192-39195`) have no port counterparts yet.
+/// `Player.ItemSpace(item).CanTakeItem` (`Player.cs:39153-39197`,
+/// S1-P-i47) for the shift-out cursor: the full predicate — the
+/// `IsAPickup` bypass, the grid scan with the favorited one-per-inventory
+/// guard (`CanItemSlotAcceptPickup`, `:39220-39235`), the `ammo > 0`
+/// FillAmmo arm (`:39175-39184`), the ungated ammo merge scan
+/// (`:39185-39191`) and the Cofveve void scan (`:39192-39195`). The caller
+/// holds no prefix (the cursor probe), so the probe stacks unprefixed.
 pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
     if kind == 0 {
         return false;
     }
-    let max = registry::max_stack(kind);
-    if app
-        .inventory
-        .iter()
-        .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
-    {
-        return true;
-    }
-    app.equip
-        .ammo
-        .iter()
-        .any(|s| s.count > 0 && s.kind == kind && s.count < max)
+    let vault_enabled = app.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+    let vault = app.player.as_ref().map(|p| &p.banks[3]);
+    crate::item::item_space(
+        &app.inventory,
+        &app.equip.ammo,
+        kind,
+        0,
+        |idx| app.is_favorite(idx),
+        if vault_enabled { vault } else { None },
+    )
+    .can_take
 }
 
 /// `ChestUI.TryPlacingInChest` (`ChestUI.cs:1209-1289`) — the shift-in

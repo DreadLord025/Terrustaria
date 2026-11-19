@@ -534,16 +534,29 @@ impl App {
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
                 // C# `SyncItem`→`151` path — `WorldItem.cs:612-615`). The host
-                // validates the range, removes the slot and announces the
+                // validates the range as `GrabItems`' expanded grab rectangle
+                // (`Player.cs:34926`, S1-P-i47 — the same gate the client
+                // requested through), removes the slot and announces the
                 // removal as `151`; the indices shift, and the next cadence
                 // tick's `21` diff streams the shifted slots.
-                let center = self
+                let pos = self
                     .remote_players
                     .get(&id)
-                    .map(|p| Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5));
-                if let Some(center) = center {
-                    if let Some(c) = self.items.get(drop as usize).map(|it| it.center()) {
-                        if (c - center).length() < 60.0 {
+                    .map(|p| (p.x, p.y));
+                if let Some((px, py)) = pos {
+                    if let Some(it) = self.items.get(drop as usize) {
+                        let range = crate::item::get_item_grab_range(
+                            it.kind,
+                            crate::item::GrabFlags::default(),
+                        ) as f32;
+                        if crate::item::grab_rect_intersects(
+                            px,
+                            py,
+                            player::WIDTH,
+                            player::HEIGHT,
+                            range,
+                            it.pos,
+                        ) {
                             self.items.remove(drop as usize);
                             server.broadcast(&S2c::ItemDead { slot: drop as i16 });
                         }
