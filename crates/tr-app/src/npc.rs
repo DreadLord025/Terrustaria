@@ -14630,6 +14630,7 @@ impl Npc {
                         damage: 80,
                         ai0: self.slot as f32 + 1.0,
                         ai1: 0.0,
+                        scale: None,
                     });
                 }
                 self.net_update = true;
@@ -29454,7 +29455,7 @@ mod s1_d_2_tests {
         ];
         for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale) in table {
             assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
-            assert_eq!(kind.net_id(), vanilla, "{kind:?} net id");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
             assert_eq!(kind.size(), (w, h), "{kind:?} size");
             assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
             assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");

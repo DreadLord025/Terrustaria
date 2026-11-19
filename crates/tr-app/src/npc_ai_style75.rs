@@ -567,6 +567,7 @@ pub fn style75_step(
                         damage: 30,
                         ai0: 0.0,
                         ai1: 0.0,
+                        scale: None,
                     });
                     npcs[me].net_update = true;
                 } else {
@@ -635,6 +636,7 @@ pub fn style75_step(
                     damage: 30,
                     ai0: 0.0,
                     ai1: 0.0,
+                    scale: None,
                 });
                 npcs[me].net_update = true;
             } else {
@@ -700,6 +702,7 @@ pub fn style75_step(
                     damage: dmg,
                     ai0: 0.0,
                     ai1: 20.0, // the arming delay (:35845)
+                    scale: None,
                 });
                 let c = center(&npcs[me]);
                 out.sounds.push((39, c.x, c.y)); // Item39 (:35847)
@@ -751,6 +754,7 @@ pub fn style75_step(
                     damage: dmg,
                     ai0: 0.0,
                     ai1: 0.0,
+                    scale: None,
                 });
                 out.sounds.push((12, c.x, c.y)); // Item12 (:35891)
             }
@@ -785,6 +789,7 @@ pub fn style75_step(
                 damage: dmg_ray,
                 ai0: me as f32 + 1.0, // base.whoAmI + 1 (:35917)
                 ai1: 0.0,
+                scale: None,
             });
             out.sounds.push((12, c.x, c.y)); // Item12 (:35919)
         }
@@ -840,6 +845,7 @@ pub fn style75_step(
                 damage: dmg_missile,
                 ai0: 0.0,
                 ai1: 0.0,
+                scale: None,
             });
             out.sounds.push((39, c.x, c.y)); // Item39 (:35987)
         }
@@ -861,6 +867,7 @@ pub fn style75_step(
                 damage: dmg_missile,
                 ai0: 0.0,
                 ai1: 0.0,
+                scale: None,
             });
             out.sounds.push((39, c.x, c.y)); // Item39 (:35998)
         }
@@ -885,6 +892,7 @@ pub fn style75_step(
                 damage: dmg_missile,
                 ai0: 0.0,
                 ai1: 0.0,
+                scale: None,
             });
             out.sounds.push((39, c.x, c.y)); // Item39 (:36013)
         }
@@ -906,6 +914,7 @@ pub fn style75_step(
                 damage: dmg_missile,
                 ai0: 0.0,
                 ai1: 0.0,
+                scale: None,
             });
             out.sounds.push((39, c.x, c.y)); // Item39 (:36024)
         }

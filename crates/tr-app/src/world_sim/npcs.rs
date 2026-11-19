@@ -4294,6 +4294,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
+    // The door-bash drain below still draws the scoped `npcs_rng` binding
+    // (S1-D-3z) — the sends re-borrow the stream (the retaliate-drain
+    // precedent at the pass tail) so the mutable borrow ends here.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
@@ -4357,7 +4360,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     true,
                     tx as f32 * TILE_PX,
                     ty as f32 * TILE_PX,
-                    npcs_rng,
+                    app.rngs.stream(RngKey::UpdateNpcs),
                 );
                 app.world_key = None;
             }
@@ -4368,7 +4371,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
                     crate::world_sim::items::spawn_item_drop(
                         &mut app.items,
-                        npcs_rng,
+                        app.rngs.stream(RngKey::UpdateNpcs),
                         item,
                         1,
                         d.x,
