@@ -1184,17 +1184,6 @@ impl NpcKind {
             // `NPC.cs:13386-13399` — the Santa-NK1: SetDefaults writes neither
             // flag; the AI itself sets noGravity + noTileCollide every tick
             // (`:33684-33685`).
-    /// moon ladders' picks decode through (`S1-F-13b` Phase 2's spawn wiring,
-    /// extended by `S1-F-13c` slices A+B). `None` for every id outside the two
-    /// families: the pumpkin wave-20 unported bosses and every port-local id
-    /// consume the pick and spawn nothing.
-                scale: 1.0,
-                alpha: 0,
-                no_gravity: true,
-                no_tile_collide: true,
-            },
-    }
-            // (`:33684-33685`).
             NpcKind::SantaNK1 => FrostDefaults {
                 vanilla_type: 346,
                 ai_style: 61,
