@@ -149,6 +149,10 @@ impl App {
             let debug_items = self.items.len();
             let debug_projectiles = self.projectiles.active_count();
             let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
+            // S1-G-1 wave D: the void lens's `Update` gate
+            // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
+            // the field destructuring (the pass borrows `entity_lights` mutably).
+            let game_paused_for_specials = self.game_paused;
             // The achievement popup's click target (`InGamePopups.cs:138`'s
             // `OpenAchievementsAndGoto`) — parked here because the goto
             // mutates `self` while the draw destructure holds its fields;
@@ -179,6 +183,12 @@ impl App {
                     inventory,
                     selected,
                     edit_target,
+                    mine_target,
+                    mine_timer,
+                    mine_hardness,
+                    mine_crack_style,
+                    mine_crack_target,
+                    mine_crack_rng,
                     camera,
                     zoom,
                     debug,
@@ -394,6 +404,15 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
+                    // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
+                    // center tile while buff 11 is held. No RNG — the feed
+                    // leaves the streams untouched.
+                    if let Some(p) = player.as_ref() {
+                        if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -554,9 +573,10 @@ impl App {
                         let legacy_inputs = tr_core::lighting::legacy::LegacyInputs {
                             render_phases: self.gfx_quality.render_phases,
                             water_style: legacy_water_style as u8,
-                            // The buff flags beyond `blind` are not ported
-                            // (`Player.nightVision/blackout/headcovered`).
-                            night_vision: false,
+                            // NightOwl (buff 12) arms `nightVision` per tick
+                            // (`Player.cs:9999`, S1-E-7 wave A); blackout /
+                            // headcovered have no ported sources yet.
+                            night_vision: player.as_ref().is_some_and(|p| p.night_vision),
                             blind: player.as_ref().is_some_and(|p| p.blind),
                             blackout: false,
                             headcovered: false,
@@ -911,6 +931,62 @@ impl App {
                             *vine_wind_counter,
                         );
                         *world_key = Some(key);
+                    }
+
+                    // S1-G-1 wave C: the tile-crack overlay
+                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
+                    // solid-layer sites `TileDrawing.cs:732-733`). It rides
+                    // the per-frame world range right after the cached tile
+                    // pass — the damage timer advances every frame, so the
+                    // crack cannot live inside the G6-cached range (the
+                    // `WorldFrameKey` is untouched). The port's stand-in for
+                    // the solid-layer site; ANALYSIS "The tile-crack
+                    // overlay (S1-G-1 wave C)".
+                    crate::render::tile_cracks::draw_mining_cracks(
+                        renderer,
+                        world,
+                        light,
+                        &style,
+                        draw_cam,
+                        anim_time,
+                        *mine_target,
+                        *mine_timer,
+                        *mine_hardness,
+                        mine_crack_rng,
+                        mine_crack_style,
+                        mine_crack_target,
+                    );
+                    // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
+                    // false)`'s pylon / trophy / void-lens passes
+                    // (`TileDrawing.cs:423-425`). The sprites ride the
+                    // always-rebuilt world-effect range (screen space, like
+                    // the leaf gores), so the G6-cached world range and its
+                    // key stay untouched; the C# draws them between the tile
+                    // layers — the port's fused pass keeps the documented
+                    // z-order approximation (ANALYSIS "The pylon/trophy/
+                    // void-lens passes"). The `tileFrameCounter[597]/[491]`
+                    // stand-ins are the update-count wraps (`Main.cs:19284`,
+                    // `:19227` — the animator is unported).
+                    {
+                        let special_env = crate::render::pylons::SpecialEnv {
+                            global_time: anim_time % 3600.0,
+                            pylon_counter: self.game_update_count % 64,
+                            lens_counter: self.game_update_count % 40,
+                            show_invisible: crate::env::show_invisible(),
+                        };
+                        crate::render::pylons::draw_pylons_trophies_void(
+                            renderer,
+                            world,
+                            light,
+                            &style,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            anim_time,
+                            &special_env,
+                            game_paused_for_specials,
+                            &mut self.entity_lights,
+                        );
                     }
 
                     // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
