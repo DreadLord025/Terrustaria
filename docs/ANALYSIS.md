@@ -21701,6 +21701,84 @@ the init/steady/death ticks (written, not run).
   damage factor is 0.75 with lifeMax untouched (`:18417-18424`, the
   `type != 371` gate). The port is single-difficulty normal; the
   wiring wave carries the expert rows.
+## The Sharkron pair (S1-D-3 aiStyle-71, code-only, 2026-11-19)
+
+`crates/tr-app/src/npc_ai_style71.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 71)` arm (`NPC.cs:34958-35079`) as a pure
+module — CODE-ONLY MODE: no cargo/rustc/rustfmt/tests invoked; the 13
+witness tests are written, not run. The family is the Sharkron 372 /
+Sharkron2 373 (`ID/NPCID.cs:11421`/`:11423`), Duke Fishron's
+sharknados' sharks; the 371 DetonatingBubble beside them rides
+aiStyle **70** (`NPC.cs:13723`) and is NOT this arm. The *projectile*
+aiStyle 71 (the Razorblade Typhoon, `Projectile.cs:30355-30454`,
+already `ai_typhoon`) is a different system, untouched.
+
+**The machine, verbatim:** `noTileCollide = true` (`:34960`); the
+unset/dead-target re-pick is `TargetClosest(faceTarget: false)` then
+`direction = 1` + netUpdate (`:34962-34967`) — the forced right
+facing AFTER the selection is load-bearing for the sway's sign.
+Phase 0 (`:34968-35025`): `ai[1]++`, noGravity, dontTakeDamage,
+`velocity.Y = ai[3]` EVERY tick — the plain Sharkron's spawner passes
+no ai3 (0 → it hovers), the Sharkron2's passes −1.5 (it rises). The
+373-only sway (`:34976-35003`): the π/30·localAI[1] cosine scaled by
+`ai[2]` (the spawner's projectile width, `Projectile.cs:29514`), the
+undo-then-advance-then-apply double position add across the
+`localAI[1]++`, the |cos−0.5| > 0.25 spriteDirection write (cos−0.5
+>= 0 → −1), the `vy·spriteDirection·0.1` rotation with the two
+sequential ±0.2 clamps and the alpha −6 fade-in. The C# subtracts
+0.5 in DOUBLE before the float cast and compares the DOUBLE in the
+sprite gate — the port casts the f32 product up to f64 for the
+cosine and keeps the double through the comparisons. At
+`ai[1] >= 90` (`:35004-35024`): phase 1, `ai[1] = 0` bumped to 1 iff
+the box is NOT in solid tiles, the roar (sound 4 style 19 — an
+outcome flag), `TargetClosest()` (faceTarget true),
+`spriteDirection = direction`, `velocity = Normalize(playerCenter −
+Center)·16` (the port's house `normalize_or_zero`, the XNA
+reciprocal-multiply form), `rotation = ToRotation()` (+π when
+direction −1), netUpdate. Phase 1 (`:35026-35078`): any other phase
+RETURNS; free air floors `ai[1]` at 1, embedded fades alpha −15 with
+the 150 floor; once armed (`ai[1] >= 1`): alpha −60 floor 0,
+dontTakeDamage = false, `ai[1]++`, and the SECOND solid check kills
+(`life = 0`, HitEffect, `active = false`, return — no `checkDead`,
+the vanilla deactivates directly). `ai[1] >= 60` returns gravity;
+the rotation rides the live velocity every phase-1 tick.
+
+**RNG by construction:** the arm contains no `Next`/`NextFloat`
+(`NPC.cs:34958-35079`), and `TargetClosest`/`TryTrackingTarget`/
+`SetTargetTrackingValues` (`:77652-77781`, the `npc_target.rs` port,
+reused UNMODIFIED) draw nothing — so `ai_style71` takes no RNG
+parameter and the `the_style71_arm_draws_no_rng` witness pins a
+seeded `UnifiedRandom` across a full 200-tick lifecycle of both
+kinds. The `HitEffect` arm (`:84207-84228` — the dmg/lifeMax·100
+type-5 dust loop on hit, the flat 75 + the 583/577/578/579 gore
+burst on death) draws only inside `Dust.NewDust`/`Gore.NewGore`;
+the NPC dust/gore call sites are unported (S1-E-4's remainder), so
+the arm is skipped wholesale (the `npc_lights.rs` precedent — the
+stream stays untouched) and `sharkron_hit_dust_plan` ports the
+branch structure/counts only. The sounds draw no `Main.rand`.
+
+**Wiring deferred** (the `npc_ai_style50.rs` precedent, 613aac92):
+the roster has no Sharkron kinds, so the aiStyle axis
+(the `match self.kind.ai_style()` block in `npc.rs::update_rng`)
+has no style-71 arm to claim; one-line `mod` seam
+only. `Npc` has no `no_tile_collide`/`no_gravity` fields — the
+per-tick writes ride `Style71Outcome` for the wiring caller's
+movement step (`NPC.cs:90490-90498`); the tile kill sets `hp = 0`
+and returns `died_in_tiles` (the caller owes the DeathSound, the
+dust/gore plan and the deactivation). `FindFrame` case 371/372/373
+(`:72138-72142`) pins `frame.Y = num` — the SECOND row forever
+(`SHARKRON_FRAME_ROW = 1`); `npcFrameCount[372] = [373] = 2`
+(`Main.cs:67121`, the 370-379 row of the `:67082` array). The
+expert/master tweaks (`ScaleStats_ByDifficulty_Tweaks`,
+`:18417-18424`: damage ×0.75 for 372/373, knockback ×0.75 for the
+371/372/373 group) ride the difficulty system, not this arm — the
+consts are the normal-mode `SetDefaults` rows. The spawner itself
+(the sharknado projectile aiStyle-64 arm, `Projectile.cs:29419-
+29533`: every 4th bolt — 2nd for the Greater Sharknado 386 — spawns
+a shark with the projectile's velocity, the 386 alone seeding
+`ai[2] = width` / `ai[3] = −1.5`) is the projectile family's wiring
+wave; the module documents the seed contract.
+
 ## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_frost_boss_b.rs` ports the two remaining Frost
