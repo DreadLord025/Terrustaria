@@ -6917,9 +6917,14 @@ impl Projectile {
             self.time_left = 0;
             return;
         }
-        // `:28212-28214`: the snapshot at the delay tick.
+        // `:28212-28214`: the snapshot at the delay tick
+        // (`AI_048_GetStartPositionSettingDelay` `:53986-54000`).
         let delay = match self.kind {
             MAGNET_SPHERE_BOLT => 4,
+            // S1-P-i21: the Shadowbeam Staff's beam (`:53995-53996`) — the
+            // 9-tick delay the doc cited but the match omitted (the beam's
+            // reflect trail reads the snapshot at `localAI[0] >= 9`).
+            SHADOWBEAM => 9,
             _ => 0,
         };
         if self.local_ai[0] == delay as f32 {
@@ -6930,6 +6935,274 @@ impl Projectile {
         // `:28216-28236`: every type writes alpha 255 (the 290's sound at
         // `localAI[0] == 1` SKIPPED).
         self.alpha = 255;
+        // S1-P-i21: the Shadowbeam Staff's beam reflects off tiles instead of
+        // dying — `HandleMovement`'s 290/294 arm (`Projectile.cs:18861-18904`):
+        // a blocked axis steps once more and flips to `-lastVelocity`; the
+        // beam never dies on contact (`penetrate = -1`). The particle-orchestra
+        // broadcast (`:18893-18898`) is the render layer — skipped; the
+        // `localAI[1..2]` centre snapshot it reads is the delay-gated one above.
+        if self.kind == SHADOWBEAM {
+            let last = self.vel;
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.pos.x += self.vel.x;
+                self.vel.x = -last.x;
+            }
+            if hit_y {
+                self.pos.y += self.vel.y;
+                self.vel.y = -last.y;
+            }
+            self.pos += self.vel;
+            return;
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-12 arm (`Projectile.cs:24501-24547`): the Golden
+    /// Shower's stream (280). The scale shrinks 0.002/tick and kills at ≤0;
+    /// `ai[0]` counts up to 3 then rests while `velocity.Y += 0.075f` arcs the
+    /// stream down. The three-dust trail and the `Next(8)` sparkle roll
+    /// (`:24522-24540`) are dust-only — SKIPPED with their draws (the pool's
+    /// dust convention, ANALYSIS). The 288 hostile twin's sound/`ai[0]=4`
+    /// latch is not a ported kind.
+    fn ai_golden_shower(&mut self, world: &World) {
+        // `:24510-24514`: the scale decay + the kill.
+        self.scale -= 0.002;
+        if self.scale <= 0.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:24519-24545`: the arc — past 3 the stream falls, else it counts.
+        if self.ai[0] > 3.0 {
+            self.vel.y += 0.075;
+        } else {
+            self.ai[0] += 1.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-36 arm (`Projectile.cs:27292-27471`): the Bat
+    /// Scepter's homing bat (316). The alpha fades 50/tick from the spawn 255
+    /// (the wet kill `:27294-27297` folds dry — no liquid-wet flags on the
+    /// slot); the sprite flips against the flight (`:27336-27346`), the
+    /// rotation rides `velocity.X * 0.1f` and the 3-frame sheet wraps
+    /// (`:27355-27365`). After 30 ticks it hunts the tightest-Manhattan
+    /// chaseable NPC inside 800f with a clear `CanHit` line (`:27371-27391`);
+    /// the 316 steers at 13/0.325 with a target, 10/0.25 without
+    /// (`:27413-27425`), the per-axis accel doubling on a sign cross
+    /// (`:27439-27470`). The NPC `wet` gate (`:27377`) folds to "all
+    /// chaseable" — the port's NPCs carry no liquid state for it.
+    fn ai_bat(&mut self, world: &World, npcs: &[Npc]) {
+        // `:27298-27309`: the alpha fade (the extraUpdates zero at alpha 0).
+        if self.alpha > 0 {
+            self.alpha -= 50;
+        } else {
+            self.extra_updates = 0;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:27336-27346`: the 316's sprite flips against the flight.
+        if self.vel.x > 0.0 {
+            self.sprite_direction = -1;
+        } else if self.vel.x < 0.0 {
+            self.sprite_direction = 1;
+        }
+        // `:27355-27365`: the rotation + the 3-frame wrap.
+        self.rot = self.vel.x * 0.1;
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 3 {
+            self.frame = 0;
+        }
+        // `:27367-27391`: the hunt — the tightest Manhattan candidate inside
+        // 800f with a clear line, once `ai[0]` rests at 30.
+        let mut target_x = self.pos.x;
+        let mut target_y = self.pos.y;
+        let mut best = 100000.0f32;
+        let mut found = false;
+        self.ai[0] += 1.0;
+        if self.ai[0] > 30.0 {
+            self.ai[0] = 30.0;
+            let cx = self.pos.x + self.w * 0.5;
+            let cy = self.pos.y + self.h * 0.5;
+            for n in npcs {
+                if !chaseable(n) {
+                    continue;
+                }
+                let c = npc_center(n);
+                let manhattan = (cx - c.x).abs() + (cy - c.y).abs();
+                if manhattan < 800.0
+                    && manhattan < best
+                    && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, n.size().0, n.size().1)
+                {
+                    best = manhattan;
+                    target_x = c.x;
+                    target_y = c.y;
+                    found = true;
+                }
+            }
+        }
+        // `:27392-27396`: no target — aim 100 ticks ahead along the flight.
+        if !found {
+            target_x = self.pos.x + self.w * 0.5 + self.vel.x * 100.0;
+            target_y = self.pos.y + self.h * 0.5 + self.vel.y * 100.0;
+        }
+        // `:27413-27425`: the 316's speed/accel pair.
+        let (speed, accel) = if found { (13.0f32, 0.325f32) } else { (10.0, 0.25) };
+        // `:27431-27438`: the desired velocity normalized to the speed.
+        let cx = self.pos.x + self.w * 0.5;
+        let cy = self.pos.y + self.h * 0.5;
+        let mut dx = target_x - cx;
+        let mut dy = target_y - cy;
+        let len = (dx * dx + dy * dy).sqrt();
+        let k = speed / len;
+        dx *= k;
+        dy *= k;
+        // `:27439-27470`: the per-axis steer with the sign-cross double.
+        if self.vel.x < dx {
+            self.vel.x += accel;
+            if self.vel.x < 0.0 && dx > 0.0 {
+                self.vel.x += accel * 2.0;
+            }
+        } else if self.vel.x > dx {
+            self.vel.x -= accel;
+            if self.vel.x > 0.0 && dx < 0.0 {
+                self.vel.x -= accel * 2.0;
+            }
+        }
+        if self.vel.y < dy {
+            self.vel.y += accel;
+            if self.vel.y < 0.0 && dy > 0.0 {
+                self.vel.y += accel * 2.0;
+            }
+        } else if self.vel.y > dy {
+            self.vel.y -= accel;
+            if self.vel.y > 0.0 && dy < 0.0 {
+                self.vel.y -= accel * 2.0;
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// S1-P-i21 — `AI_001`'s Razorpine needle arm (`Projectile.cs:57116-57128`,
+    /// the `type == 336 || type == 345` branch; the 345's first-tick sound
+    /// latch is the hostile twin's, not the 336's). The needle flies straight
+    /// for 50 ticks (`flag3` true, `:56038-56041` — the 336 is not on the skip
+    /// list) then falls at 0.5/tick; the shared rotation tail (`:57748-57751`)
+    /// and the +16 clamp (`:57764-57767`) follow, then the tile-kill movement.
+    /// The same shape the Frost Moon's hostile needle rides
+    /// (`projectile_frost_shots::needle`), kind-gated to the friendly 336.
+    fn ai_pine_needle(&mut self, world: &World) {
+        // `:56038-56041` — `flag3` true: the counter runs.
+        self.ai[0] += 1.0;
+        // `:57123-57127` — the gravity arm (mutually exclusive with the
+        // generic `ai[0] >= 15f` tail, `:57568`).
+        if self.ai[0] >= 50.0 {
+            self.ai[0] = 50.0;
+            self.vel.y += 0.5;
+        }
+        // `:57748-57751` + `:57764-57767` — the rotation tail and the clamp.
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// S1-P-i21 — `AI_001`'s Blizzard icicle arm (`Projectile.cs:56938-56955`).
+    /// The icicle falls through tiles (`tileCollide = false` at spawn) until
+    /// it drops below the owner's `position.Y - 300f` or above the world
+    /// surface, then collides (`:56940-56947`); `frame = (int)ai[1]` pins the
+    /// icicle row (`:56948`). The `Next(2)` dust roll (`:56949-56954`) is
+    /// dust-only — SKIPPED with its draw (the pool's dust convention). The
+    /// 337 is `flag3` true (`:56038-56041`) but its first-chain branch carries
+    /// no gravity, so the counter advances inert; the rotation tail
+    /// (`:57748-57751`) and the +16 clamp (`:57764-57767`) still apply.
+    fn ai_blizzard(&mut self, world: &World, player: Option<&crate::player::Player>) {
+        // `:56038-56041` — `flag3` true: the counter runs (no gravity arm).
+        self.ai[0] += 1.0;
+        // `:56940-56943`: below the owner's top − 300 → collide. The C# reads
+        // `Main.player[owner].position.Y`; the port's `player` is the owner.
+        if let Some(p) = player {
+            if self.pos.y > p.y - 300.0 {
+                self.tile_collide = true;
+            }
+        }
+        // `:56944-56947`: above the world surface → collide.
+        if (self.pos.y as f64) < world.world_surface * 16.0 {
+            self.tile_collide = true;
+        }
+        // `:56948`: the icicle row.
+        self.frame = self.ai[1] as i32;
+        // `:57748-57751` + `:57764-57767` — the rotation tail and the clamp.
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// S1-P-i21 — `AI()`'s aiStyle-45 moving-cloud arm (`Projectile.cs:27952-
+    /// 27986`, the `type == 237 || type == 243` branch; the 243 Blood Cloud is
+    /// not a ported kind). The cloud flies to the cursor point cached in
+    /// `ai[0..1]` (the shoot arm writes it): each axis zeroes once it reaches
+    /// or passes the target, and when both rest the cloud dies (`:27960-
+    /// 27973`) — the kill hook spawns the raining cloud 238. The rotation rides
+    /// `velocity.X * 0.02f` and the 4-frame sheet wraps (`:27975-27985`).
+    fn ai_rain_cloud_moving(&mut self, world: &World) {
+        let tx = self.ai[0];
+        let ty = self.ai[1];
+        // `:27956-27974`: the fly-to-cursor stop (the C# `&` is non-short-
+        // circuiting, but the two axis tests are independent).
+        if tx != 0.0 && ty != 0.0 {
+            let cx = self.pos.x + self.w * 0.5;
+            let cy = self.pos.y + self.h * 0.5;
+            let mut stopped_x = false;
+            let mut stopped_y = false;
+            if self.vel.x == 0.0 || (self.vel.x < 0.0 && cx < tx) || (self.vel.x > 0.0 && cx > tx) {
+                self.vel.x = 0.0;
+                stopped_x = true;
+            }
+            if self.vel.y == 0.0 || (self.vel.y < 0.0 && cy < ty) || (self.vel.y > 0.0 && cy > ty) {
+                self.vel.y = 0.0;
+                stopped_y = true;
+            }
+            if stopped_x && stopped_y {
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        }
+        // `:27975-27985`: the rotation + the 4-frame wrap.
+        self.rot += self.vel.x * 0.02;
+        self.frame_counter += 1;
+        if self.frame_counter > 4 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame > 3 {
+                self.frame = 0;
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// S1-P-i21 — `AI()`'s aiStyle-45 rain-drop arm (`Projectile.cs:28084-
+    /// 28105`, the `type == 239 || type == 245 || type == 264` branch; the
+    /// 245/264 hostile twins are not ported kinds). The 239 sets alpha 50
+    /// (`:28093-28096`); the shimmer bounce (`:28086-28092`) folds out — the
+    /// port carries no shimmer-liquid state on the tile. The drop falls at its
+    /// spawn `vy = 5` through the generic movement.
+    fn ai_rain_drop(&mut self, world: &World) {
+        // `:28093-28096`: the 239's alpha.
+        self.alpha = 50;
         self.kill_step(world);
     }
 
@@ -11438,6 +11711,39 @@ pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_none_or(full_solid)
 }
 
+/// `Collision.SolidTiles(Vector2, int, int)` (`Collision.cs:3450-3488`): the
+/// inclusive tile-rectangle scan the Nimbus cloud's ground test reads
+/// (`Projectile.cs:27992`). The bounds are the four edge tiles
+/// (`(int)(pos/16)` .. `(int)((pos+size)/16)`); an edge outside the world
+/// (or inside the `maxTilesY - 40` underworld cap) reads solid, a missing
+/// tile inside reads non-solid, and any active full-solid tile wins.
+pub(crate) fn solid_tiles(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let start_x = (x / 16.0) as i32;
+    let end_x = ((x + w) / 16.0) as i32;
+    let start_y = (y / 16.0) as i32;
+    let end_y = ((y + h) / 16.0) as i32;
+    if start_x < 0 || end_x >= world.width || start_y < 0 || end_y >= world.height - 40 {
+        return true;
+    }
+    for i in start_x..=end_x {
+        for j in start_y..=end_y {
+            match world.tile(i, j) {
+                None => return false,
+                Some(t) => {
+                    if t.flags & tr_core::tile::FLAG_INACTIVE == 0
+                        && t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// `Collision.CanHit(Vector2, int, int, Vector2, int, int)`
 /// (`Collision.cs:381-479`): the Manhattan line walk the C#'s per-type
 /// `CanHit(...)` acquisition scans use (the Book of Skulls' targeting,
@@ -13710,6 +14016,13 @@ impl ProjectilePool {
                         // other kind keeps the generic flight untouched.
                         1 => match self.slots[i].kind {
                             BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
+                            // S1-P-i21 — the Razorpine needle (336) and the
+                            // Blizzard icicle (337): their own `AI_001` branches
+                            // (`Projectile.cs:57116-57128`/`:56938-56955`),
+                            // kind-gated ahead of the generic flight (the
+                            // slice-A/B/C precedent).
+                            PINE_NEEDLE_FRIENDLY => self.slots[i].ai_pine_needle(world),
+                            BLIZZARD => self.slots[i].ai_blizzard(world, player.as_deref()),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
                             }
@@ -14222,6 +14535,23 @@ impl ProjectilePool {
                         47 => self.magnet_sphere_step(i, world, npcs),
                         // The aiStyle-48 magnet bolt (`:28204-28242`).
                         48 => self.slots[i].ai_magnet_bolt(world),
+                        // S1-P-i21 — the Golden Shower's stream (aiStyle 12,
+                        // `:24501-24547`): the scale decay + the arc.
+                        12 => self.slots[i].ai_golden_shower(world),
+                        // S1-P-i21 — the Bat Scepter's homing bat (aiStyle 36,
+                        // `:27292-27471`): the alpha fade, the hunt and the
+                        // per-axis steer.
+                        36 => self.slots[i].ai_bat(world, &npcs[..]),
+                        // S1-P-i21 — the Nimbus Rod's aiStyle-45 chain
+                        // (`:27950-28105`): the moving cloud flies to the
+                        // cursor, the raining cloud spawns the drops and caps
+                        // the owner at two (pool-side), the drop falls.
+                        45 => match self.slots[i].kind {
+                            RAIN_CLOUD_MOVING => self.slots[i].ai_rain_cloud_moving(world),
+                            RAIN_CLOUD_RAINING => self.nimbus_step(i, world, rng),
+                            RAIN_FRIENDLY => self.slots[i].ai_rain_drop(world),
+                            _ => {}
+                        },
                         // The aiStyle-129 spirit flame (`:36198-36309`): the
                         // retarget reads `Main.npc` and the owner gate.
                         129 => {
@@ -16100,6 +16430,9 @@ impl ProjectilePool {
             // kind (so the blast cannot chain a second spawn).
             if !self.slots[i].active {
                 self.spawn_inferno_blast(i);
+                // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
+                // moving cloud's death spawns the raining cloud 238.
+                self.spawn_rain_cloud(i);
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
@@ -16774,6 +17107,109 @@ impl ProjectilePool {
         );
     }
 
+    /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
+    /// 28105`), pool-side: the raining cloud's rain spawn and its two-cloud
+    /// cap need the whole pool, so they are not slot arms (the magnet
+    /// sphere's precedent). The moving cloud's fly-to-cursor half and the
+    /// rain drop's shimmer bounce are slot arms ([`Projectile::ai_rain_cloud_moving`]
+    /// / [`Projectile::ai_rain_drop`]); the moving cloud's death → raining
+    /// cloud spawn is the kill hook ([`Self::spawn_rain_cloud`]).
+    fn nimbus_step(&mut self, slot: usize, world: &World, rng: &mut dyn DropRng) {
+        let kind = self.slots[slot].kind;
+        if kind != RAIN_CLOUD_RAINING || self.slots[slot].owner != 0 {
+            return;
+        }
+        // `:27989-27995`: the ground test — a 2×20 box at the cloud's bottom
+        // centre; solid tiles below stop the rain.
+        let cx = (self.slots[slot].pos.x + self.slots[slot].w * 0.5) as i32;
+        let bottom = (self.slots[slot].pos.y + self.slots[slot].h) as i32;
+        let over_ground = !solid_tiles(world, cx as f32, bottom as f32, 2.0, 20.0);
+        // `:27996-28005`: the 6-frame sheet — the ground-bound cloud wraps at
+        // 2, the free cloud at 5 (the frame machine runs every tick).
+        self.slots[slot].frame_counter += 1;
+        if self.slots[slot].frame_counter > 8 {
+            self.slots[slot].frame_counter = 0;
+            self.slots[slot].frame += 1;
+            let cap = if over_ground { 2 } else { 5 };
+            if self.slots[slot].frame > cap {
+                self.slots[slot].frame = 0;
+            }
+        }
+        // `:28006-28015`: the age counter; past 18000 the cloud fades 5/tick
+        // and dies at alpha 255.
+        self.slots[slot].ai[1] += 1.0;
+        if self.slots[slot].ai[1] >= 18000.0 {
+            self.slots[slot].alpha += 5;
+            if self.slots[slot].alpha > 255 {
+                self.slots[slot].alpha = 255;
+                self.slots[slot].active = false;
+                self.slots[slot].time_left = 0;
+            }
+            return;
+        }
+        // `:28025-28047`: over ground, the rain counter runs; past 8 it resets
+        // and spawns the drop 239 at `cx + Next(-14, 15)`, `vy = 5`.
+        if over_ground {
+            self.slots[slot].ai[0] += 1.0;
+            if self.slots[slot].ai[0] > 8.0 {
+                self.slots[slot].ai[0] = 0.0;
+                let x = cx as f32 + rng.next_range(-14, 15) as f32;
+                let (damage, owner) = {
+                    let p = &self.slots[slot];
+                    (p.damage, p.owner)
+                };
+                // The C# spawns at the bottom-centre point; the port's spawn
+                // takes the top-left, so the 4×40 drop is re-centred on x.
+                let Some(row) = proj_data(RAIN_FRIENDLY) else { return };
+                self.spawn_with_data_ai_owned(
+                    RAIN_FRIENDLY, owner, x - row.w * 0.5, bottom as f32, 0.0, 5.0, damage, 0.0, 0.0, 0.0,
+                );
+            }
+        }
+        // `:28048-28082`: every 10 ticks the cloud counts its owner's living
+        // raining clouds and, past two, ages out the oldest (`ai[1] = 18000`).
+        self.slots[slot].local_ai[0] += 1.0;
+        if self.slots[slot].local_ai[0] < 10.0 {
+            return;
+        }
+        self.slots[slot].local_ai[0] = 0.0;
+        let owner = self.slots[slot].owner;
+        let mut count = 0;
+        let mut oldest = usize::MAX;
+        let mut oldest_age = 0.0f32;
+        for (j, p) in self.slots.iter().enumerate() {
+            if p.active && p.owner == owner && p.kind == RAIN_CLOUD_RAINING && p.ai[1] < 18000.0 {
+                count += 1;
+                if p.ai[1] > oldest_age {
+                    oldest = j;
+                    oldest_age = p.ai[1];
+                }
+            }
+        }
+        if count > 2 && oldest != usize::MAX {
+            self.slots[oldest].ai[1] = 18000.0;
+        }
+    }
+
+    /// S1-P-i21 — `Kill()`'s type-237 arm (`Projectile.cs:74535-74538`): the
+    /// moving cloud's death spawns the raining cloud 238 at its centre with
+    /// the same damage/knockback/owner. Owner-only, one-shot per cloud (the
+    /// `blast_spawned` flag, the inferno-bolt precedent), kind-gated so the
+    /// raining cloud never chains a second spawn.
+    fn spawn_rain_cloud(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        if p.blast_spawned || p.kind != RAIN_CLOUD_MOVING || p.owner != 0 {
+            return;
+        }
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (damage, knock_back, owner) = (p.damage, p.knock_back, p.owner);
+        self.slots[slot].blast_spawned = true;
+        let Some(row) = proj_data(RAIN_CLOUD_RAINING) else { return };
+        self.spawn_with_data_ai_owned(
+            RAIN_CLOUD_RAINING, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
+        );
+    }
+
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
     /// 46844`) resizes the box and re-arms the damage, `Damage()` walks the
     /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
@@ -17329,6 +17765,16 @@ impl ProjectilePool {
                 // `numHits++` `:14199`).
                 if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
                     p.damage = (p.damage as f64 * 0.96) as i32;
+                }
+                // S1-P-i21 — `Damage_PVE_Inner`'s type-294 arm
+                // (`Projectile.cs:13411-13413`): the Shadowbeam's stored damage
+                // decays ×0.9 (the `(int)((double)damage * 0.9)` truncation) on
+                // every landed hit — the switch runs before `StrikeNPC`, but
+                // the strike reads the local `dmg` (computed at `:12938` from
+                // the pre-decay value), so this hit keeps full damage and the
+                // NEXT hit reads the decayed store (the moon-lord precedent).
+                if p.kind == SHADOWBEAM {
+                    p.damage = (p.damage as f64 * 0.9) as i32;
                 }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
@@ -27579,6 +28025,257 @@ mod magic_ai_tests {
             (still[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
             "the zero vector's rotation"
         );
+    }
+
+    // ---- S1-P-i21: the hardmode staves' AI arms (WRITTEN, NOT RUN) ----------
+    // Code-only mode: no cargo/rustc/tests invoked. Each expected value was
+    // verified by re-reading the cited C# and hand arithmetic; a follow-up
+    // build must run `cargo test -p tr-app magic_ai_tests` before merging.
+
+    /// A chaseable NPC at (x, y) — the `npc_at` fixture of the summon tests.
+    fn staff_npc(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Slime, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// One pool tick with an NPC slice and an optional owner player.
+    fn staff_tick(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        npcs: &mut [Npc],
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            w, npcs, None, None, player,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+    }
+
+    /// `Projectile.cs:24510-24514` — the Golden Shower's stream shrinks 0.002
+    /// per AI sub-step from the spawn scale 1 and dies at ≤0 (500 sub-steps).
+    /// The row's `extraUpdates = 2` (`:3671`) runs the arm 3× per tick. The arc
+    /// counter (`:24519-24545`) counts to 3 then rests while `vy += 0.075`.
+    /// The tall world keeps the arcing stream in bounds for the whole life.
+    #[test]
+    fn s1_p_i21_the_golden_shower_stream_shrinks_and_arcs() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(GOLDEN_SHOWER, 200.0, 200.0, 0.0, 0.0, 30, 4.0).unwrap();
+        let mut w = World::new("t".into(), 512, 2000);
+        // Tick 1 = 3 sub-steps: ai[0] counts 1, 2, 3 (no gravity yet).
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].ai[0], 3.0, "the counter rests at 3");
+        assert!((pool.slots()[slot].scale - 0.994).abs() < 1e-4, "0.002 × 3");
+        assert_eq!(pool.slots()[slot].vel.y, 0.0, "no gravity before the counter rests");
+        // Tick 2: sub-step 1 counts to 4, sub-steps 2-3 arc (+0.075 each).
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].ai[0], 4.0, "the counter holds past 3");
+        assert!((pool.slots()[slot].vel.y - 0.15).abs() < 1e-5, "the arc begins");
+        // 160 ticks = 480 sub-steps: scale ≈ 1 − 0.96 = 0.04, still alive.
+        for _ in 0..158 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert!(pool.slots()[slot].active, "alive at scale ≈ 0.04");
+        assert!((pool.slots()[slot].scale - 0.04).abs() < 2e-3, "0.002 × 480");
+        // 170 ticks = 510 sub-steps: scale ≤ 0 → the kill.
+        for _ in 0..10 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert!(!pool.slots()[slot].active, "the stream dies at scale ≤ 0");
+    }
+
+    /// `Projectile.cs:27298-27309` + `:27336-27365` — the bat's alpha fades
+    /// 50/tick from 255 (zero at tick 6, then extraUpdates zeroes), the sprite
+    /// flips against the flight and the rotation rides `vx * 0.1`.
+    #[test]
+    fn s1_p_i21_the_bat_fades_and_flips() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(BAT_FRIENDLY, 200.0, 200.0, 5.0, 0.0, 45, 3.0).unwrap();
+        assert_eq!(pool.slots()[slot].alpha, 255, "the spawn alpha");
+        let mut w = world();
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].alpha, 205, "255 − 50");
+        assert_eq!(pool.slots()[slot].sprite_direction, -1, "the +X flight flips the sprite");
+        assert!((pool.slots()[slot].rot - 0.5).abs() < 1e-5, "vx 5 × 0.1");
+        for _ in 0..5 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert_eq!(pool.slots()[slot].alpha, 0, "the fade floors at 0");
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "alpha 0 zeroes extraUpdates");
+    }
+
+    /// `Projectile.cs:27371-27470` — past 30 ticks the bat hunts the tightest
+    /// Manhattan chaseable NPC inside 800f and steers at 13/0.325. A target
+    /// 100 px to the right: the desired vx is 13, so the bat accelerates +0.325
+    /// per tick from rest (no sign cross while both positive).
+    #[test]
+    fn s1_p_i21_the_bat_homes_after_thirty_ticks() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(BAT_FRIENDLY, 200.0, 200.0, 0.0, 0.0, 45, 3.0).unwrap();
+        let mut w = world();
+        let mut npcs = vec![staff_npc(300.0, 200.0)];
+        // 30 ticks: ai[0] reaches 30, no hunt yet (the gate is `> 30`).
+        for _ in 0..30 {
+            staff_tick(&mut pool, &mut w, &mut npcs, None);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 30.0, "the counter rests at 30");
+        assert_eq!(pool.slots()[slot].vel.x, 0.0, "no steer before the hunt");
+        // Tick 31: the hunt fires, the target is +100 px → desired vx 13,
+        // accel 0.325 (found). The bat's centre is 208, the NPC centre ~316.
+        staff_tick(&mut pool, &mut w, &mut npcs, None);
+        assert!((pool.slots()[slot].vel.x - 0.325).abs() < 1e-4, "the first steer step");
+    }
+
+    /// `Projectile.cs:57123-57127` — the Razorpine needle flies straight for
+    /// 50 ticks (the counter runs, `flag3` true) then falls at 0.5/tick.
+    #[test]
+    fn s1_p_i21_the_pine_needle_falls_after_fifty_ticks() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(PINE_NEEDLE_FRIENDLY, 200.0, 200.0, 6.0, 0.0, 48, 3.25).unwrap();
+        let mut w = world();
+        for _ in 0..49 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 49.0, "the counter runs");
+        assert_eq!(pool.slots()[slot].vel.y, 0.0, "straight flight before 50");
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].ai[0], 50.0, "the counter caps at 50");
+        assert!((pool.slots()[slot].vel.y - 0.5).abs() < 1e-5, "the fall begins");
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].ai[0], 50.0, "the counter holds");
+        assert!((pool.slots()[slot].vel.y - 1.0).abs() < 1e-5, "0.5 per tick");
+    }
+
+    /// `Projectile.cs:56940-56948` — the Blizzard icicle falls through tiles
+    /// until it drops below the owner's `position.Y − 300` (or above the
+    /// surface), then collides; `frame = (int)ai[1]` pins the icicle row.
+    #[test]
+    fn s1_p_i21_the_blizzard_collides_near_the_owner() {
+        let mut pool = ProjectilePool::new();
+        // Spawn above the surface line so the surface gate stays off; the
+        // owner sits at y = 1000, so the −300 gate is y > 700.
+        let slot = pool.spawn_with_data(BLIZZARD, 200.0, 100.0, 0.0, 8.0, 58, 4.5).unwrap();
+        assert!(!pool.slots()[slot].tile_collide, "the spawn falls through");
+        let mut w = world();
+        w.world_surface = 1000.0; // the surface line far below the spawn
+        let mut p = crate::player::Player::spawn(&w);
+        p.y = 1000.0;
+        // ai[1] = 3 → frame 3.
+        pool.slots_mut()[slot].ai[1] = 3.0;
+        staff_tick(&mut pool, &mut w, &mut [], Some(&mut p));
+        assert_eq!(pool.slots()[slot].frame, 3, "frame = (int)ai[1]");
+        assert!(!pool.slots()[slot].tile_collide, "still above the owner − 300");
+        // Drop the icicle below y = 700 → the gate flips tileCollide.
+        pool.slots_mut()[slot].pos.y = 750.0;
+        staff_tick(&mut pool, &mut w, &mut [], Some(&mut p));
+        assert!(pool.slots()[slot].tile_collide, "below the owner − 300 → collide");
+    }
+
+    /// `Projectile.cs:27956-27985` — the moving cloud flies to the cursor point
+    /// in `ai[0..1]`, zeroes each axis on arrival, and dies when both rest (the
+    /// kill hook spawns the raining cloud). The rotation rides `vx * 0.02`.
+    #[test]
+    fn s1_p_i21_the_moving_cloud_settles_at_the_cursor() {
+        let mut pool = ProjectilePool::new();
+        // The cursor point 100 px to the right; the cloud flies +4/tick.
+        let slot = pool.spawn_with_data_ai(RAIN_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 300.0, 200.0).unwrap();
+        let mut w = world();
+        // The cloud's centre starts at 214 (28-wide box); it reaches 300 after
+        // 22 ticks (214 + 22×4 = 302 > 300). The Y axis is already at rest.
+        // 21 ticks: still flying (centre 298 < 300).
+        for _ in 0..21 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert!(pool.slots()[slot].active, "still flying at centre 298");
+        assert!((pool.slots()[slot].vel.x - 4.0).abs() < 1e-5, "the X axis still drives");
+        // Tick 22: the centre passes 300, both axes rest → the cloud dies and
+        // the kill hook spawns the raining cloud.
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        let raining = pool.slots().iter().find(|p| p.active && p.kind == RAIN_CLOUD_RAINING);
+        assert!(raining.is_some(), "the kill hook spawned the raining cloud");
+    }
+
+    /// `Projectile.cs:28025-28047` — the raining cloud over ground spawns a
+    /// drop every 9 ticks (the counter resets past 8); the drop falls at vy 5.
+    #[test]
+    fn s1_p_i21_the_raining_cloud_rains_over_ground() {
+        let mut pool = ProjectilePool::new();
+        // No tiles below → over_ground true. The cloud at (200, 200).
+        let slot = pool.spawn_with_data(RAIN_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        // 9 ticks: ai[0] counts 1..8 then resets at the 9th and spawns a drop.
+        for _ in 0..9 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the rain counter reset");
+        let drop = pool.slots().iter().find(|p| p.active && p.kind == RAIN_FRIENDLY);
+        assert!(drop.is_some(), "the drop spawned");
+        assert_eq!(drop.unwrap().vel.y, 5.0, "the drop falls at 5");
+        assert_eq!(drop.unwrap().alpha, 50, "the 239's alpha (`:28095`)");
+    }
+
+    /// `Projectile.cs:28058-28082` — past two living raining clouds the owner's
+    /// oldest is aged out (`ai[1] = 18000`) on the 10-tick cap scan.
+    #[test]
+    fn s1_p_i21_the_raining_cloud_caps_at_two() {
+        let mut pool = ProjectilePool::new();
+        let a = pool.spawn_with_data(RAIN_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let b = pool.spawn_with_data(RAIN_CLOUD_RAINING, 400.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let c = pool.spawn_with_data(RAIN_CLOUD_RAINING, 600.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        // Age a and b so c is the youngest; a is the oldest.
+        pool.slots_mut()[a].ai[1] = 100.0;
+        pool.slots_mut()[b].ai[1] = 50.0;
+        let mut w = world();
+        // 10 ticks: each cloud's localAI[0] reaches 10 → the cap scan runs.
+        for _ in 0..10 {
+            staff_tick(&mut pool, &mut w, &mut [], None);
+        }
+        // Three clouds > 2 → the oldest (a, ai[1] = 100+10) is aged out.
+        assert_eq!(pool.slots()[a].ai[1], 18000.0, "the oldest aged out");
+        assert!(pool.slots()[b].ai[1] < 18000.0, "b survives");
+        assert!(pool.slots()[c].ai[1] < 18000.0, "c survives");
+    }
+
+    /// `Projectile.cs:18861-18872` — the Shadowbeam reflects off tiles: a
+    /// blocked axis steps once more and flips to `-lastVelocity`; the beam
+    /// never dies on contact (`penetrate = -1`). A two-tile corridor keeps the
+    /// 101 sub-steps of the first tick bouncing in bounds.
+    #[test]
+    fn s1_p_i21_the_shadowbeam_reflects_off_tiles() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        // Walls at tiles 9 and 12 (rows 9-11): the 4-wide beam bounces between
+        // x = 144 and x = 188, never reaching the world edge.
+        for y in 9..=11 {
+            put_tile(&mut w, 9, y, 1);
+            put_tile(&mut w, 12, y, 1);
+        }
+        let slot = pool.spawn_with_data(SHADOWBEAM, 160.0, 160.0, 2.0, 0.0, 80, 6.0).unwrap();
+        assert_eq!(pool.slots()[slot].penetrate, -1, "the beam never dies on contact");
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert!(pool.slots()[slot].active, "the beam survives the walls");
+        assert!(pool.slots()[slot].pos.x >= 144.0 && pool.slots()[slot].pos.x <= 188.0,
+            "the beam stayed in the corridor: {}", pool.slots()[slot].pos.x);
+        assert!((pool.slots()[slot].vel.x.abs() - 2.0).abs() < 1e-5, "the speed holds through the flips");
+    }
+
+    /// `Projectile.cs:53995-53996` + `:28212-28214` — the Shadowbeam's centre
+    /// snapshot fires at the 9-tick delay (not the magnet bolt's 4). The row's
+    /// `extraUpdates = 100` (`:3844`) runs the arm 101× per tick, so the first
+    /// tick's 10th sub-step (`localAI[0] == 9`) writes the snapshot and the
+    /// counter ends the tick at 101.
+    #[test]
+    fn s1_p_i21_the_shadowbeam_snapshot_delay_is_nine() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(SHADOWBEAM, 200.0, 200.0, 0.0, 0.0, 80, 6.0).unwrap();
+        let mut w = world();
+        // The beam is stationary (vel 0), so its centre stays (202, 202).
+        staff_tick(&mut pool, &mut w, &mut [], None);
+        assert_eq!(pool.slots()[slot].local_ai[0], 101.0, "101 sub-steps in the tick");
+        assert!((pool.slots()[slot].local_ai[1] - 202.0).abs() < 1e-3, "the centre X snapshot");
+        assert!((pool.slots()[slot].local_ai[2] - 202.0).abs() < 1e-3, "the centre Y snapshot");
     }
 }
 #[cfg(test)]
