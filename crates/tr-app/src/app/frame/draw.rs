@@ -149,6 +149,10 @@ impl App {
             let debug_items = self.items.len();
             let debug_projectiles = self.projectiles.active_count();
             let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
+            // S1-G-1 wave D: the void lens's `Update` gate
+            // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
+            // the field destructuring (the pass borrows `entity_lights` mutably).
+            let game_paused_for_specials = self.game_paused;
             // The achievement popup's click target (`InGamePopups.cs:138`'s
             // `OpenAchievementsAndGoto`) — parked here because the goto
             // mutates `self` while the draw destructure holds its fields;
@@ -179,6 +183,12 @@ impl App {
                     inventory,
                     selected,
                     edit_target,
+                    mine_target,
+                    mine_timer,
+                    mine_hardness,
+                    mine_crack_style,
+                    mine_crack_target,
+                    mine_crack_rng,
                     camera,
                     zoom,
                     debug,
@@ -206,6 +216,7 @@ impl App {
                     grass_wind_counter,
                     sunflower_wind_counter,
                     sunflower_wind_step,
+                    vine_wind_counter,
                     leaves,
                     items,
                     swing,
@@ -393,6 +404,80 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
+                    // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
+                    // center tile while buff 11 is held. No RNG — the feed
+                    // leaves the streams untouched. This stays the LIVE
+                    // Shine feed: `player_lights.rs` below deliberately
+                    // skips buff 11 so the family never double-feeds it.
+                    // (Feed order follows `Main.Update`'s family order:
+                    // Players, NPCs, Projectiles, Items, Dust —
+                    // `Main.cs:17754-17783`.)
+                    if let Some(p) = player.as_ref() {
+                        if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
+                    // The Player `AddLight` family (S1-E-5,
+                    // `player_lights.rs`): the `UpdateBuffs` buff arms
+                    // (`Player.cs:10215`/`:10316`/`:10466` — Shine `:9995`
+                    // is fed above by S1-E-7a), the `UpdateEquips`
+                    // accessory walk (`:15224-15262`) and
+                    // `ItemCheck_EmitHeldItemLight` (`:49810-50194`) —
+                    // the C# runs them in that order inside
+                    // `Player.Update` (`:25566`/`:25633`/`:31827`); the
+                    // port collects them here after the step, like the
+                    // item/NPC feeds above, feeding the SAME
+                    // `EntityLights` pair. No ported arm draws
+                    // `Main.rand` — every rand-bearing dust branch is
+                    // skipped wholesale — so the placement leaves the
+                    // UpdatePlayers stream untouched. The dead player
+                    // is skipped like the dead NPCs (the port's death
+                    // path clears the buffs; vanilla's residual light
+                    // while dead needs the unported death visuals).
+                    if let Some(p) = player.as_ref().filter(|p| !p.dead) {
+                        let held_kind = inventory
+                            .get(*selected)
+                            .filter(|s| s.count > 0)
+                            .map_or(0, |s| s.kind);
+                        // The rest anchor's `heldItemFrame.Width` — the
+                        // same icon width the draw layer reads
+                        // (`render/entities.rs::held_item_quad`).
+                        let held_frame_w = lookups
+                            .item_icon(held_kind)
+                            .map_or(0.0, |(_, w, _)| w);
+                        for (x, y, rgb) in crate::player_lights::player_lights(
+                            p,
+                            held_kind,
+                            held_frame_w,
+                            p.zones,
+                            world,
+                            &params,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
+                    // `Projectile.ProjLight` (S1-E-5, `Projectile.cs:
+                    // 16153-16661`): `Update` calls it once per movement
+                    // sub-step (`:17031`), after `HandleMovement` and the
+                    // active re-check (`:17027-17030`) — the port collects
+                    // the same sources here after the step, in
+                    // `Main.projectile` slot order, reading each slot's
+                    // current `light` amount (the aiStyle-24 arm rewrites
+                    // its shard's per tick, `:25953`). No ported arm draws
+                    // `Main.rand` (the rand-bearing 867/1000 arms have no
+                    // rows, `proj_lights.rs`), so the placement relative to
+                    // the sim leaves the stream untouched.
+                    let good_world = world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        if let Some((x, y, rgb)) = crate::proj_lights::proj_light(
+                            p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -553,9 +638,10 @@ impl App {
                         let legacy_inputs = tr_core::lighting::legacy::LegacyInputs {
                             render_phases: self.gfx_quality.render_phases,
                             water_style: legacy_water_style as u8,
-                            // The buff flags beyond `blind` are not ported
-                            // (`Player.nightVision/blackout/headcovered`).
-                            night_vision: false,
+                            // NightOwl (buff 12) arms `nightVision` per tick
+                            // (`Player.cs:9999`, S1-E-7 wave A); blackout /
+                            // headcovered have no ported sources yet.
+                            night_vision: player.as_ref().is_some_and(|p| p.night_vision),
                             blind: player.as_ref().is_some_and(|p| p.blind),
                             blackout: false,
                             headcovered: false,
@@ -606,6 +692,13 @@ impl App {
                     sunflower_wind_step.tick(dt, |_| {
                         tr_core::wind::advance_sunflower_counter(
                             sunflower_wind_counter,
+                            wind.speed_current,
+                        );
+                        // `_vineWindCounter` advances in the same
+                        // `TileDrawing.Update` (`TileDrawing.cs:375`), so it
+                        // rides the same 60 Hz step (S1-G-1).
+                        tr_core::wind::advance_vine_counter(
+                            vine_wind_counter,
                             wind.speed_current,
                         );
                     });
@@ -689,6 +782,35 @@ impl App {
                                     (grass_wind_counter.to_bits() as u32)
                                         ^ (tree_wind_counter.to_bits() as u32)
                                         ^ (sunflower_wind_counter.to_bits() as u32)
+                                        ^ (vine_wind_counter.to_bits() as u32)
+                                } else {
+                                    0
+                                })
+                                // S1-G-1: the vine strips' `GetWindGridPush`
+                                // (`TileDrawing.cs:9076-9078`) decays on the
+                                // grid clock even in calm air — a player's
+                                // stamp keeps moving pixels for 20 ticks with
+                                // no other key input changing. The clock
+                                // rides the key only when a vine thread is
+                                // in the view rect (the pass's only grid
+                                // consumer), so vine-free worlds keep the
+                                // old cache behaviour bit-for-bit.
+                                ^ (if wind.sway_enabled && {
+                                    let vh = screen * 0.5 / *zoom;
+                                    let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                                    let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                                    let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                                    let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                                    (vy0..=vy1).any(|ty| {
+                                        (vx0..=vx1).any(|tx| {
+                                            world.tile(tx, ty).is_some_and(|t| {
+                                                t.active()
+                                                    && crate::render::vines::is_vine_thread(t.kind)
+                                            })
+                                        })
+                                    })
+                                } {
+                                    wind.wind_grid.key()
                                 } else {
                                     0
                                 })
@@ -871,8 +993,70 @@ impl App {
                             *tree_wind_counter,
                             *sunflower_wind_counter,
                             &mut leaf_spawns,
+                            *vine_wind_counter,
+                            // S1-F-9 slice B: the engine-driven DrawData cases'
+                            // inputs (plates 428, party 455, echo sight 541).
+                            &self.wiring,
+                            crate::world_events::party_is_up(&self.world_events),
+                            crate::env::show_invisible(),
                         );
                         *world_key = Some(key);
+                    }
+
+                    // S1-G-1 wave C: the tile-crack overlay
+                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
+                    // solid-layer sites `TileDrawing.cs:732-733`). It rides
+                    // the per-frame world range right after the cached tile
+                    // pass — the damage timer advances every frame, so the
+                    // crack cannot live inside the G6-cached range (the
+                    // `WorldFrameKey` is untouched). The port's stand-in for
+                    // the solid-layer site; ANALYSIS "The tile-crack
+                    // overlay (S1-G-1 wave C)".
+                    crate::render::tile_cracks::draw_mining_cracks(
+                        renderer,
+                        world,
+                        light,
+                        &style,
+                        draw_cam,
+                        anim_time,
+                        *mine_target,
+                        *mine_timer,
+                        *mine_hardness,
+                        mine_crack_rng,
+                        mine_crack_style,
+                        mine_crack_target,
+                    );
+                    // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
+                    // false)`'s pylon / trophy / void-lens passes
+                    // (`TileDrawing.cs:423-425`). The sprites ride the
+                    // always-rebuilt world-effect range (screen space, like
+                    // the leaf gores), so the G6-cached world range and its
+                    // key stay untouched; the C# draws them between the tile
+                    // layers — the port's fused pass keeps the documented
+                    // z-order approximation (ANALYSIS "The pylon/trophy/
+                    // void-lens passes"). The `tileFrameCounter[597]/[491]`
+                    // stand-ins are the update-count wraps (`Main.cs:19284`,
+                    // `:19227` — the animator is unported).
+                    {
+                        let special_env = crate::render::pylons::SpecialEnv {
+                            global_time: anim_time % 3600.0,
+                            pylon_counter: self.game_update_count % 64,
+                            lens_counter: self.game_update_count % 40,
+                            show_invisible: crate::env::show_invisible(),
+                        };
+                        crate::render::pylons::draw_pylons_trophies_void(
+                            renderer,
+                            world,
+                            light,
+                            &style,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            anim_time,
+                            &special_env,
+                            game_paused_for_specials,
+                            &mut self.entity_lights,
+                        );
                     }
 
                     // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
