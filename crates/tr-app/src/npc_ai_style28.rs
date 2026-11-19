@@ -1,13 +1,13 @@
 //! The aiStyle-28 family arm — the Wall of Flesh Eye (`NPC.AI()`'s
 //! `else if (this.aiStyle == 28)` block, `NPC.cs:26053-26208`).
 //!
-//! S1-D-3 (aiStyle-28 round, code-only mode): this module is the faithful
-//! 1:1 port of the arm as pure functions over `Npc` + a small context
-//! seam. It is NOT wired into `Npc::update_rng`'s style axis yet — the
-//! live `npc.rs::update_wof_eye` keeps running until the wiring round
-//! (the sibling D-3 rounds land the same way: module + tests first,
-//! dispatch claim second). Every other file is byte-identical except the
-//! one `mod` line in `main.rs` and the docs.
+//! S1-D-3 (aiStyle-28 round): this module is the faithful 1:1 port of the
+//! arm as pure functions over `Npc` + a small context seam.
+//! **WIRED (S1-D-3 W-1)**: `Npc::update_rng`'s style axis claims 28 →
+//! `npc.rs::ai_028_wof_eye_family` → `style28_step`; the f32-band
+//! `update_wof_eye` approximation is retired. The wiring fills the
+//! context from the World's wall mirror (the sim's per-NPC write-through
+//! keeps the raw life ints + the INT band statics fresh in slot order).
 //!
 //! The only type on this style is `NPCID.WallofFleshEye` (114,
 //! `ID/NPCID.cs:10905`); its `SetDefaults` row (`NPC.cs:10361-10377`):
@@ -58,7 +58,7 @@
 //! * `Main.netMode == 1` early return (`:26121-26124`) rides
 //!   `Style28Context::net_client`; `Main.expertMode` (`:26147`) rides
 //!   `Style28Context::expert` (the port is single-difficulty today).
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dispatch claim is the follow-up round
+#![allow(dead_code)] // WIRED (S1-D-3 W-1); the expert arms stay parked behind the classic flag
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
