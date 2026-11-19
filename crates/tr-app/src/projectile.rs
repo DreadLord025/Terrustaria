@@ -15105,6 +15105,34 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // S1-D-4 empress proj — the Empress of Light's
+                        // five projectile kinds (872/873/874/919/923,
+                        // aiStyles 173/171/0/179/180 — none had an arm
+                        // here before, they rode the `_ => {}` no-op).
+                        // The gate is KIND-keyed
+                        // (`projectile_ai_empress::EMPRESS_PROJ_KINDS`),
+                        // so every other kind — including the style-171
+                        // weapon variants 931/1039 when they land — keeps
+                        // the fall-through byte-identical. The single-
+                        // player port maps `Main.player[0]` to the local
+                        // player (R7's machine targets index 0); the npc
+                        // slice maps through `npc_ref` (the 636 snap gate
+                        // stays false until R7's NpcKind row merges).
+                        _ if crate::projectile_ai_empress::handles(self.slots[i].kind) => {
+                            let empress_players: Vec<(f32, f32)> = player
+                                .as_ref()
+                                .map(|pl| vec![pl.center()])
+                                .unwrap_or_default();
+                            let empress_npcs: Vec<crate::projectile_ai_empress::EmpressNpcRef> =
+                                npcs.iter().map(crate::projectile_ai_empress::npc_ref).collect();
+                            let _ = crate::projectile_ai_empress::empress_proj_tick(
+                                &mut self.slots[i],
+                                i,
+                                &empress_players,
+                                &empress_npcs,
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
