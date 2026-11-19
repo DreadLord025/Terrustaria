@@ -67,6 +67,10 @@ mod npc_ai_frost_mob_b;
 mod npc_ai_frost_mob;
 mod npc_ai_caster;
 mod npc_ai3_speeds;
+// S1-D-3z (zombie fighter audit): the AI_003 obstacle scan tail
+// (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.
+mod npc_ai_fighter_scan;
+mod npc_ai_drippler;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;

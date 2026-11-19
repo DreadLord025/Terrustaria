@@ -3104,6 +3104,89 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
+    // S1-D-3z (zombie fighter audit) — `AI_003_Fighters`' door-bash drain
+    // (`NPC.cs:59990-60086`): the obstacle scan
+    // (`npc_ai_fighter_scan.rs`) set `wants_door_bash` when the 60-tick
+    // bash counter fired; the world mutation runs here, after the tick
+    // (the `wants_sphere` borrow-safe shape — `update_zombie` holds
+    // `&World` immutable). The C# plays both cues inside `NPC.UpdateNPC`
+    // under the `UpdateNPCs` swap (`Main.cs:17767`), so they ride
+    // `npcs_rng`: the `KillTile(fail: true)` thud on EVERY bash
+    // (`:60046` — the door's default dig cue, `WorldGen.cs:66540-66549`),
+    // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
+    // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
+    // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
+    // tall gate (388) `ShiftTallGate` is unported — the bash still
+    // counted its +2 and plays the thud, the gate never shifts
+    // (ANALYSIS "The zombie fighter audit").
+    for i in 0..app.npcs.len() {
+        let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
+            continue;
+        };
+        // `:60046` — the failure thud. The cell's kind/frame ride the
+        // live tile (the C#'s `tileCache`); the door (10) and the gate
+        // (388) both resolve to the default dig cue (`kill_tile_sound`'s
+        // `_ => Some((0, 1))` arm).
+        if let Some(t) = app.world.tile(tx, ty) {
+            let sounds = tr_core::edit::kill_tile_sound(t.kind, t.frame_x, true);
+            let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+            for cue in [sounds.primary, sounds.extra, sounds.shatter]
+                .into_iter()
+                .flatten()
+            {
+                // The shared pinned cue map (`world_sim/editing.rs`'s
+                // `kill_cue`): the door/gate dig family pins Dig_1.
+                if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+                    app.audio.play_at(name, px, py, volume);
+                }
+            }
+        }
+        if !open {
+            continue;
+        }
+        // `:60059-60071` — the door (10) open. The port is the host
+        // (netMode 0), so the `netMode != 1` gates fold away.
+        let kind = app.world.tile(tx, ty).map(|t| t.kind);
+        if kind == Some(10) {
+            let mut drops = Vec::new();
+            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops);
+            if !opened {
+                // `:60062-60066` — the refusal: the idle counter jumps to
+                // num57 (60 for the zombie family), blocking the chase
+                // until it decays.
+                app.npcs[i].ai[3] = 60.0;
+                app.npcs[i].net_update = true;
+            } else {
+                // `WorldGen.cs:37732` — `SoundEngine.PlaySound(8)`: the
+                // door cue's pitch draw rides the UpdateNPCs stream (the
+                // C# plays it inside the NPC's AI tick).
+                app.audio.play_door_sound(
+                    true,
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    npcs_rng,
+                );
+                app.world_key = None;
+            }
+            // The opening's cleanup kills' drops (`open_door`'s
+            // `validate_tile_square` refusals) — the item spawns ride the
+            // same stream (the `interaction_events` shape).
+            for d in drops {
+                if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        npcs_rng,
+                        item,
+                        1,
+                        d.x,
+                        d.y,
+                    );
+                }
+            }
+        }
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate`: unported
+        // (the module docs' stand-in) — no shift, no refusal.
+    }
     // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517`): the accepted contact hit queued its retaliate request
     // (`hurt_inner`'s tail) and possibly a dismount-on-hit; the C# rolls the
@@ -12729,6 +12812,68 @@ mod dw3_tests {
             *app.rngs.stream(RngKey::UpdateNpcs),
             witness,
             "the moan spends exactly the arm roll + the slot draw"
+        );
+    }
+
+    /// S1-D-3z (zombie fighter audit) — the door-bash drain's world
+    /// contract: a queued `wants_door_bash` with `open = false` plays the
+    /// `KillTile(fail: true)` thud and opens nothing; with `open = true`
+    /// on a closed door it calls `edit::open_door` (the cell turns to the
+    /// open door, tile 11) and plays the `Door_Opened` cue. The request
+    /// drains either way. (The scan itself draws nothing — the bash's
+    /// `Next(60)` short-circuits on the unported graveyard zone; the door
+    /// cue's one pitch draw rides `UpdateNPCs`, `WorldGen.cs:37732`.)
+    #[test]
+    fn s1_d_3z_the_door_bash_drain_opens_the_door() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let build = || {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.compute_column_surface();
+            world.day_time = false;
+            app.world = world;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            app
+        };
+        // A closed door (tile 10) at column 30, rows 117-119 (a 1x3 door,
+        // frames 0/18/36), the cell above the ground row 120.
+        let place_door = |app: &mut crate::app::App| {
+            for (dy, frame_y) in [(117i32, 0i16), (118, 18), (119, 36)] {
+                let i = app.world.index(30, dy);
+                app.world.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        };
+        // The thud-only bash (open = false): no door mutation.
+        let mut a = build();
+        place_door(&mut a);
+        let mut zombie = Npc::new(NpcKind::Zombie, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.wants_door_bash = Some((30, 118, 1, false));
+        a.npcs.push(zombie);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert!(a.npcs[0].wants_door_bash.is_none(), "the request drained");
+        assert_eq!(
+            a.world.tile(30, 118).map(|t| t.kind),
+            Some(10),
+            "the closed door stays closed (open = false)"
+        );
+        // The open bash (open = true): the door opens (tile 11).
+        let mut b = build();
+        place_door(&mut b);
+        let mut zombie = Npc::new(NpcKind::Zombie, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.wants_door_bash = Some((30, 118, 1, true));
+        b.npcs.push(zombie);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert!(b.npcs[0].wants_door_bash.is_none(), "the request drained");
+        assert_eq!(
+            b.world.tile(30, 118).map(|t| t.kind),
+            Some(11),
+            "the door opened (tile 11)"
         );
     }
 }

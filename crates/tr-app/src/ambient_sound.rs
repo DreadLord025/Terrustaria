@@ -625,6 +625,12 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | ZombiePixie
             | ZombieXmas
             | ZombieSweater
+            // S1-D-3z — the Blood Zombie (489) rides the same plain
+            // walker; its moan is the 489/586 `Next(800)` arm
+            // (`NPC.cs:57344`, `fighter_ambient_moans` below), NOT the
+            // family's `Next(1000)` (489 is absent from the `:57340`
+            // list) — the kind gate keeps the draw shape exact.
+            | BloodZombie
             | Skeleton
             | UndeadMiner
             | GoblinThief

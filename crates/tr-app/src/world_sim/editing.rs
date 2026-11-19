@@ -2059,7 +2059,7 @@ fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
 /// one variation per family (research D3) and does not port the per-play pitch
 /// jitter (`Main.rand.Next(-10,11)*0.01` etc. — an audio-only deviation).
 /// `None` = a family the port has no cue for.
-fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32)> {
+pub(crate) fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32)> {
     Some(match (id, style) {
         // case 0 (`:440-452`) — `SoundDig[Next(3)]`; pinned to Dig_1.
         (0, _) => ("Dig_1", 1.0),

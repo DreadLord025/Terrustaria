@@ -1501,6 +1501,11 @@ fn portrait_data(
         | NpcKind::ZombiePixie
         | NpcKind::ZombieXmas
         | NpcKind::ZombieSweater, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // S1-D-3z — the blood-moon pair's portrait rests the kind's
+        // `SetDefaults` box: 489 the 18x40 humanoid box (`NPC.cs:14607-
+        // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
+        (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }
 

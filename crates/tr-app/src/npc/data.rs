@@ -495,6 +495,13 @@ impl NpcKind {
             NpcKind::ZombiePixie => 223,
             NpcKind::ZombieXmas => 224,
             NpcKind::ZombieSweater => 225,
+            // S1-D-3z (zombie fighter audit) — the blood-moon pair takes
+            // the free 226/227 band (the port-local space; verified free
+            // of the taken ids — the 213-220 comment above is stale, no
+            // arm encodes them). The vanilla types ride `cs_id`/`net_id`
+            // (489/490), NOT these protocol ids.
+            NpcKind::BloodZombie => 226,
+            NpcKind::Drippler => 227,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344, above the whole port-local space exactly like the
             // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
@@ -780,6 +787,10 @@ impl NpcKind {
             223 => NpcKind::ZombiePixie,
             224 => NpcKind::ZombieXmas,
             225 => NpcKind::ZombieSweater,
+            // S1-D-3z — the blood-moon pair decodes here (the same ids
+            // `to_u16` encodes above). `NPC.cs:14605-14631`.
+            226 => NpcKind::BloodZombie,
+            227 => NpcKind::Drippler,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344 decode here (the same ids `to_u16` encodes above).
             // `NPC.cs:13281-13368`.
@@ -1586,6 +1597,10 @@ impl NpcKind {
             | NpcKind::ZombiePixie
             | NpcKind::ZombieXmas
             | NpcKind::ZombieSweater => "NPC_Hit_1",
+            // S1-D-3z — the blood-moon pair's `SetDefaults` HitSound rows:
+            // 489 NPCHit18 (`NPC.cs:14613`), 490 NPCHit19 (`:14627`).
+            NpcKind::BloodZombie => "NPC_Hit_18",
+            NpcKind::Drippler => "NPC_Hit_19",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCHit1` (`NPC.cs:13286`/`:13348`), 341's
             // `NPCHit4` (`:13322`), 342 and 344's `NPCHit7`
@@ -1852,6 +1867,11 @@ impl NpcKind {
             | NpcKind::ZombiePixie
             | NpcKind::ZombieXmas
             | NpcKind::ZombieSweater => "NPC_Killed_2",
+            // S1-D-3z — the blood-moon pair's `SetDefaults` DeathSound
+            // rows: 489 NPCDeath21 (`NPC.cs:14614`), 490 NPCDeath22
+            // (`:14629`).
+            NpcKind::BloodZombie => "NPC_Killed_21",
+            NpcKind::Drippler => "NPC_Killed_22",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCDeath1` (`NPC.cs:13287`/`:13349`), 341 and
             // 342's `NPCDeath6` (`:13323`/`:13336`), 344's `NPCDeath5`
@@ -1943,6 +1963,8 @@ impl NpcKind {
             | NpcKind::ZombiePixie
             | NpcKind::ZombieXmas
             | NpcKind::ZombieSweater => 3,
+            // aiStyle 3 — the Blood Zombie (S1-D-3z; `NPC.cs:14609`).
+            NpcKind::BloodZombie => 3,
             // aiStyle 4 - NPC.cs:8707
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
@@ -1974,6 +1996,8 @@ impl NpcKind {
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
+            // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
+            NpcKind::Drippler => 22,
             // aiStyle 25 - NPC.cs:13318 (the Present Mimic's chest machine,
             // `AI_025`, `:25538-25630`)
             NpcKind::PresentMimic => 25,
@@ -2272,7 +2296,11 @@ impl NpcKind {
             | NpcKind::ZombieSuperman
             | NpcKind::ZombiePixie
             | NpcKind::ZombieXmas
-            | NpcKind::ZombieSweater => (18.0, 40.0),
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the Blood Zombie's 18x40 box (`NPC.cs:14607-14608`).
+            | NpcKind::BloodZombie => (18.0, 40.0),
+            // S1-D-3z — the Drippler's 28x30 box (`NPC.cs:14621-14622`).
+            NpcKind::Drippler => (28.0, 30.0),
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
             NpcKind::Merchant => (18.0, 40.0),
@@ -3092,6 +3120,10 @@ impl NpcKind {
             NpcKind::ZombieSuperman => 60,
             NpcKind::ZombiePixie => 34,
             NpcKind::ZombieXmas | NpcKind::ZombieSweater => 45,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` lifeMax rows:
+            // 489 75 (`NPC.cs:14612`), 490 50 (`:14626`).
+            NpcKind::BloodZombie => 75,
+            NpcKind::Drippler => 50,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13294`/`:13301`/`:13309` —
             // 600/700/500), 341 900 (`:13321`), 342 750 (`:13334`),
@@ -3411,6 +3443,10 @@ impl NpcKind {
             NpcKind::ZombieDoctor | NpcKind::ZombiePixie => 20,
             NpcKind::ZombieSuperman => 15,
             NpcKind::ZombieXmas | NpcKind::ZombieSweater => 14,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` damage rows:
+            // 489 20 (`NPC.cs:14610`), 490 28 (`:14624`).
+            NpcKind::BloodZombie => 20,
+            NpcKind::Drippler => 28,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13292`/`:13299`/`:13307` —
             // 65/52/78), 341 100 (`:13319`), 342 90 (`:13332`), 343 140

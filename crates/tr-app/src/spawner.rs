@@ -1203,9 +1203,21 @@ fn spawn_npc_at(
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4632-4645`: blood moon 2/5 → 489/490 (the `Next(2)` picks).
+        // S1-D-3z: the pick now spawns the matching kind — 0 → the Blood
+        // Zombie (489, the aiStyle-3 walker), 1 → the Drippler (490, the
+        // aiStyle-22 flyer). The draw ORDER is unchanged (the 2/5 gate
+        // then the `Next(2)` pick), so the stream fingerprint is
+        // byte-identical; only the spawned kind differs.
         if ctx.flags.blood_moon && rng.next_max(5) < 2 {
-            let _ = rng.next_max(2);
-            return Npc::spawn_zombie(ctx.world, x);
+            if rng.next_max(2) == 0 {
+                return Npc::spawn_zombie_variant(ctx.world, x, NpcKind::BloodZombie);
+            }
+            // The Drippler's `SpawnNPC` bottom placement (`NPC.cs:4646`):
+            // the hover ctor at the surface column's top row (the
+            // noGravity flyer's feet-on-surface stand-in — the machine
+            // takes over on the first tick).
+            let top = ctx.world.surface_of(x);
+            return Npc::spawn_hover(ctx.world, x, top - 2, NpcKind::Drippler);
         }
         // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
         // then the Eskimo default (161; all the port's zombie kind).

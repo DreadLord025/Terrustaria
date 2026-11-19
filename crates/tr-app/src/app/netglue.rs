@@ -2712,7 +2712,11 @@ fn npc_seed(
         | crate::npc::NpcKind::ZombieSuperman
         | crate::npc::NpcKind::ZombiePixie
         | crate::npc::NpcKind::ZombieXmas
-        | crate::npc::NpcKind::ZombieSweater => {
+        | crate::npc::NpcKind::ZombieSweater
+        // S1-D-3z — the Blood Zombie plants its feet on the column
+        // surface like the wave-A walkers (the aiStyle-3 family machine
+        // takes over on the first tick).
+        | crate::npc::NpcKind::BloodZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::CataractEye
@@ -2971,7 +2975,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Hellhound => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::MourningWood
         | crate::npc::NpcKind::Pumpking
-        | crate::npc::NpcKind::Poltergeist => {
+        | crate::npc::NpcKind::Poltergeist
+        // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
+        // hover ctor like the Poltergeist.
+        | crate::npc::NpcKind::Drippler => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

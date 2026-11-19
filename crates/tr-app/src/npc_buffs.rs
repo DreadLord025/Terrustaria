@@ -436,7 +436,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::ZombieSuperman
         | NpcKind::ZombiePixie
         | NpcKind::ZombieXmas
-        | NpcKind::ZombieSweater => &[],
+        | NpcKind::ZombieSweater
+        // S1-D-3z — the blood-moon pair's null `DebuffImmunitySets` rows
+        // (`NPCID.cs:8892-8893`).
+        | NpcKind::BloodZombie
+        | NpcKind::Drippler => &[],
     }
 }
 

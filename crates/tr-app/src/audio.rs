@@ -68,6 +68,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Headless Horseman's hit cue (`NPC.cs:12978`'s `NPCHit12`,
     // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
     ("NPC_Hit_12", 3),
+    // S1-D-3z — the Blood Zombie's hit cue (`NPC.cs:14613`'s NPCHit18).
+    ("NPC_Hit_18", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
     ("NPC_Hit_39", 3),
@@ -90,6 +92,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Headless Horseman's death cue (`NPC.cs:12987`'s `NPCDeath18`,
     // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
     ("NPC_Killed_18", 4),
+    // S1-D-3z — the Blood Zombie's death cue (`NPC.cs:14614`'s NPCDeath21).
+    ("NPC_Killed_21", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
     ("NPC_Killed_42", 4),

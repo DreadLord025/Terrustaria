@@ -25206,12 +25206,16 @@ classic world neither holiday roll runs). Witnesses:
 
 ### Deliberate deviations / remainder
 
-- **The door-bash / step-up scan** (`NPC.cs:59831-60088` + the jump
-  ladder `:60089-60138`): the port keeps the collision-jump stand-in
-  (blocked + grounded → jump) with the CORRECTED `-6f` velocity. The
-  full scan (the door-open/bash states, the 2/3-tile wall probes, the
-  `-8f`/`-7f`/`-5f` ladder rows, the slope arms) is the documented
-  remainder — a follow-up round.
+- **The door-bash / step-up scan — NOW PORTED (round 2, see below).** The
+  first round kept the collision-jump stand-in; the second round ports
+  the full `AI_003_Fighters` obstacle scan (`NPC.cs:59831-60284`) into
+  `npc_ai_fighter_scan.rs` — the flag5 ground probe, the 1-tile step-up
+  assist, the door bash (the `wants_door_bash` request drained in
+  `world_sim/npcs.rs`) and the probe jump ladder (-8/-7/-6/-5 + the gap
+  leap). The collision-jump stand-in survives ONLY as the fallback for
+  cells the 15px-ahead probe misses (gated `vy >= 0` so it never
+  overwrites the scan's own jump). See "The obstacle scan + the blood-moon
+  pair (round 2)" below.
 - **The `num107` ladder's position**: the C# runs the velocity ladder
   (`:58322-58401`) UNCONDITIONALLY, outside the chase gate (an else-if
   chain sibling of the per-type groups); the port keeps it INSIDE the
@@ -25258,3 +25262,205 @@ new `s1_d_3z_*` witnesses (`the_holiday_zombie_setdefaults_rows`,
 `the_chase_gate_carries_the_idle_term`,
 `the_zombie_machine_consumes_no_rand_draws`) + the extended findframe-a
 tables + the updated spawner fingerprint test — **no compiler invoked**.
+
+## The obstacle scan + the blood-moon pair (S1-D-3z round 2, code-only mode, 2026-11-19)
+
+Same branch `fix/zombie-fighter-audit-defects`, same chain base
+`aab09419`. This round closes the first round's documented remainder
+(the door-bash / step-up scan) and adds the two blood-moon kinds the
+audit named (489 BloodZombie / 490 Drippler). **Code-only mode — no
+cargo/rustc/rustfmt/tests invoked; every test below is WRITTEN, NOT RUN.**
+
+### The obstacle scan (the remainder, now ported)
+
+`npc_ai_fighter_scan.rs::fighter_obstacle_scan` ports `AI_003_Fighters`'
+obstacle-scan tail (`NPC.cs:59831-60284`) verbatim for the zombie family,
+called from `update_zombie` at the C#'s position — after the chase /
+discouraged arms and the num107 ladder, BEFORE the gravity + collision
+integration (`AI_003_Fighters` ends `:60298`; `UpdateCollision`
+integrates afterwards). The four blocks:
+
+- **The flag5 ground probe** (`:59831-59867`): while `vy == 0` (the hop
+  `flag` is false for every zombie kind — it is set only by the
+  scarecrow 305-309 arm, `npc_ai3_speeds`' `fx.hop_flag`, dropped by
+  `run_ai3_ladder`), probe the floor row `(bottom + 7)/16` and the head
+  row `(top - 9)/16` across the body's column span; a solid head cell
+  kills flag5, a solid floor cell sets it, a null cell inside the span
+  arms the `flag23` early-return (`:59863-59866` — the C# returns from
+  `AI_003_Fighters` itself; the port returns `true` and the caller still
+  integrates, as `UpdateCollision` runs after `AI()` regardless). No
+  floor + rising cancels the jump (`:59859-59862`).
+- **The 1-tile step-up assist** (`:59872-59948`): while falling or level,
+  probe the NEXT-x column `centre + (width/2 + 1) * sign(vx)` at the
+  body's bottom row; a 1-tile ledge with clear head/body room lifts
+  `position.Y` onto it (the `gfxOffY` record + `stepSpeed` 1/2 by the
+  lift's <9px threshold), the 16.1px reach. This is the block that makes
+  1-tile climbing WORK — the jump ladder alone does not handle 1-tile
+  ledges (the unicorn machine's inline copy, `npc_ai_unicorn.rs:328-387`,
+  is the shape precedent). The `gfxOffY`/`stepSpeed` writes land on the
+  NPC fields; the render pass does not read `gfx_off_y` yet and the decay
+  helper (`npc_ai_unicorn_b.rs:285`) is unwired — the lift itself is
+  live, the visual offset is the documented remainder.
+- **The door bash** (`:59949-60088`): a closed door (tile 10) / tall gate
+  (388) in the ahead probe column ticks `ai[2]` each scan; at 60 the bash
+  fires — `vx = 0.5 * -direction`, `ai[1] += 5` (door) / `+2` (gate),
+  `ai[2]` resets, and at `ai[1] >= 10` the open arms. The boolean algebra
+  is ported VERBATIM (not simplified): `flag24` = the type list
+  (`:59996`, 35 types — 489 is NOT in it), `flag25` = the graveyard
+  `Next(60)` roll, `flag26` = the target inside unbreakable walls,
+  `flag27 = ((!bloodMoon || getGoodWorld) && !flag25) & flag24` (the
+  non-blood-moon reset gate). On a normal night a flag24 type resets
+  `ai[1]` to 0 before the +5 (never opens); on a blood moon flag27 is
+  false for EVERY type, so `ai[1]` accumulates and the door opens. The
+  world mutation (`WorldGen.OpenDoor`) rides the `Npc::wants_door_bash`
+  request drained in `world_sim/npcs.rs` (the `wants_sphere` borrow-safe
+  shape — `update_zombie` holds `&World` immutable); the drain plays the
+  `KillTile(fail: true)` thud on every bash and, when open, calls
+  `edit::open_door` (a refusal sets `ai[3] = num57`, `:60064`) + the
+  `Door_Opened` cue, all on the `UpdateNPCs` stream.
+- **The probe jump ladder** (`:60089-60203`): while moving WITH the
+  facing (`spriteDirection` matches the velocity sign, `:60096`), the
+  ahead column `centre + 15 * direction` at row `bottom - 15`: a 3-tile
+  wall jumps -8, a 2-tile wall -7, a 1-tile wall -6 (`:60125`), a sunken
+  floor -5 (`:60131`), a gap (directionY < 0, no bottom-slope support)
+  leaps -8 with `vx *= 1.5` (`:60134-60139`); no obstacle resets the bash
+  counters (`:60140-60144`). The parked re-hop (`flag6 && ai[3] == 1`,
+  `:60145-60148`) is carried; the expert-mode / type-586 hop
+  (`:60149-60203`) is skipped (no expertMode flag, 586 not a zombie kind).
+  The else-flag8 reset (`:60280-60284`) clears the bash counters when no
+  floor is under the body.
+
+The collision-jump stand-in survives ONLY as the fallback for cells the
+15px-ahead probe misses (a wall the probe did not name): blocked +
+grounded + `vy >= 0` → -6. The `vy >= 0` gate keeps the scan's own jump
+(still negative after the +GRAVITY) from being overwritten on the tick
+it fires. The repointed `the_blocked_path_jump_is_minus_six` witness
+stands the zombie flush against a TWO-tile wall so the scan's -6 tier
+fires deterministically (a 1-tile wall is now stepped, not jumped).
+
+### The two blood-moon kinds (added, fully wired)
+
+The C# night-spawn ladder's blood-moon arm (`NPC.cs:4638-4648`:
+`Main.bloodMoon && Next(5) < 2` → `Next(2) == 0 ? 489 : 490`):
+
+| vanilla type | kind | protocol id | aiStyle | dmg/def/hp/kb/value | box | SetDefaults cite |
+| --- | --- | --- | --- | --- | --- | --- |
+| 489 BloodZombie | `NpcKind::BloodZombie` | 226 | 3 | 20/8/75/0.4/150 | 18×40 | `NPC.cs:14605-14617` |
+| 490 Drippler | `NpcKind::Drippler` | 227 | 22 | 28/14/50/0.6/150 | 28×30 | `NPC.cs:14618-14631` |
+
+Protocol ids 226/227 verified free in `npc/data.rs::to_u16` (the taken
+bands: 213-225, 148, 353/354 — none touched; the first round's "213-220
+taken" comment was stale, no arm encoded them). Both: `NPC_Hit_18`/
+`NPC_Killed_21` (489) and `NPC_Hit_19`/`NPC_Killed_22` (490) — the cues
+registered in `audio.rs`'s `SFX_CUES` (the assets exist in
+`assets/Content/Sounds`), null debuff-immunity rows (`NPCID.cs:8892-8893`),
+bestiary entries "Blood Zombie"/"Drippler" (`NPCID.cs:12524-12525`, the
+BloodMoon spawn tag `BestiaryDatabaseNPCsPopulator.cs:1310`/`:1336`).
+
+- **489 BloodZombie** rides `update_zombie` (the aiStyle-3 walker). Its
+  `num107` cap is the distance-scaled 489 row (`NPC.cs:58365-58373`,
+  already in `npc_ai3_speeds.rs:550`); its moan is the 489/586 `Next(800)`
+  arm (`NPC.cs:57344`, already in `ambient_sound.rs:933`) — NOT the
+  family's `Next(1000)` (489 is absent from the `:57340` list).
+  `fighter_walker_kind` extended to it (the idle counter + the moan pass).
+  Its `FindFrame` is the humanoid-group arm (`NPC.cs:68614`'s case list),
+  NOT the case-3 walker strip: idle row 1 (`:69510-69514`), the
+  `|vx| + 0.5` walk clock stepping rows 2..8 every >8 (`:69544-69584`,
+  num108 = 8, the wrap at `npcFrameCount[489]` = 9), the air pin to row 0
+  via the type-489 override (`:69642-69650`) — `Npc::blood_zombie_frame`.
+  It is NOT in the door-bash `flag24` list, so it bashes but its `ai[1]`
+  resets on non-blood-moon nights (on a blood moon it opens doors too).
+- **490 Drippler** rides the NEW `npc_ai_drippler.rs::drippler_ai` — the
+  aiStyle-22 arm's 490 branches (`NPC.cs:24666-25234`): the DAY flee gate
+  (`:24678-24681`), the dwell anchor / −200 dash (the generic `ai[2]++` /
+  `ai[2] += 1` rows, NOT the 330's 0.1 creep), the distance-scaled floor
+  probe `num294 = 4 + min(dist/70, 8)` (`:24958-24969`), the 0.03 gravity /
+  0.75 cap (`:25049-25056`), the −0.075 rise brake / −0.75 floor
+  (`:25083-25093`), the X cap 1.5 (`:25144-25147`) and the Y cap 1
+  (`:25201`). The Poltergeist (330) machine stays BYTE-IDENTICAL (its own
+  module). Unlike 330, 490 carries NO `noTileCollide` — the body
+  integrates WITH tile collision (the golem-body shape), so the
+  `collideX`/`collideY` bounces (`:25111-25134`) are live. Its `FindFrame`
+  is the case-490 arm (`NPC.cs:72521-72533`): rotation = vx * 0.15, the
+  counter steps one row every >6 ticks, wrapping over
+  `npcFrameCount[490]` = 8 — `Npc::drippler_frame`.
+
+Wiring: every exhaustive `NpcKind` match extended (`to_u16`/`from_u16`/
+`hit_sound`/`death_sound`/`ai_style`/`size`/`max_hp`/`contact_damage` in
+`npc/data.rs`; knockback/defense/value/`update_kind_ai`/`find_frame`/
+`render_key`/`ALL_KINDS` (243→245)/`CS_STYLES` in `npc.rs`), bestiary
+entries, `npc_buffs` `&[]`, `netglue` `npc_seed` (489 the cave-walker ctor,
+490 the hover ctor), `render/entities.rs` draw arm + `BLOOD_MOON_SHEETS`
+(NPC_489/490 chained into `npc_sheets`), `assets.rs` `STATIC_SHEET_NAMES`,
+`ui/bestiary.rs` portrait arms, `ambient_sound.rs::fighter_walker_kind`
+(489 only). The spawner's blood-moon arm now spawns the matching kinds —
+the DRAW ORDER is unchanged (the `Next(5) < 2` gate then the `Next(2)`
+pick), only the spawned kind differs; the stream fingerprint is
+byte-identical.
+
+### The RNG argument (round 2)
+
+The obstacle scan draws ZERO `Main.rand` values: the door bash's only
+draw is `flag25`'s `Main.rand.Next(60)` (`NPC.cs:59997`), guarded by
+`Main.player[target].ZoneGraveyard` — unported (false, the
+`npc_ai.rs:270` stand-in), so the `&&` short-circuits and the draw is
+NEVER consumed. The ground probe, the step-up and the jump ladder draw
+nothing. The Drippler machine's only draw is the flee branch's
+`Next(-1, 2) * 1.5f` when `velocity.X == 0f` (`NPC.cs:24716-24720`) — the
+caller's `UpdateNPCs` stream, exactly once per such tick (the poltergeist
+precedent); the dwell/dash/probe/approach tails draw nothing. The
+BloodZombie's moan is the already-wired 489 `Next(800)` arm. The door
+drain's `Door_Opened` cue spends one `Next(-20, 21)` pitch draw on the
+`UpdateNPCs` stream (the C# plays it inside the NPC's AI tick,
+`WorldGen.cs:37732`); the `KillTile(fail: true)` thud is the pinned Dig_1
+(draw-free). The spawner change consumes the SAME draws in the SAME
+order. Witnesses: `npc_ai_fighter_scan::tests` (the jump tiers, the
+step-up, the door bash + blood-moon gate, the no-floor reset, the head
+directionY), `npc_ai_drippler::tests` (the day flee draw census, the night
+dwell, the gravity/X caps), `npc.rs::s1_d_3z_the_blood_moon_*` (the
+SetDefaults rows, the protocol ids, the FindFrame strips, the walker-kind
+gate, the bestiary entries), `world_sim/npcs.rs::s1_d_3z_the_door_bash_drain_opens_the_door`.
+
+### Deliberate stand-ins / remainder (round 2)
+
+- **`Main.getGoodWorld`** — unported, false (the style-9 precedent);
+  `flag27`'s `(!bloodMoon || getGoodWorld)` folds to `!bloodMoon`.
+- **`player.insideUnbreakableWalls`** (`flag26`, `:60002`) — no Player
+  field, false; the +6 bash bonus never fires.
+- **`WorldGen.ShiftTallGate`** (`:60074`) — unported; the gate-388 bash
+  still counts `ai[1] += 2` and plays the thud, the gate never shifts and
+  the refusal (`ai[3] = num57`) never fires for it.
+- **`ZoneGraveyard`** — unported, false (the `npc_ai.rs:270` stand-in);
+  the bash's `Next(60)` short-circuits (the RNG census).
+- **The expert-mode / type-586 hop** (`:60149-60203`) — skipped (no
+  expertMode runtime flag, 586 not a zombie kind).
+- **The step-up's `gfxOffY`/`stepSpeed`** — the writes land on the NPC
+  fields, but the render pass does not read `gfx_off_y` yet and the decay
+  helper is unwired; the lift itself is live, the visual offset is the
+  documented remainder.
+- **The Drippler's platform fall-through** (`NPC.cs:93016` — `type == 490`
+  sets `fallThrough = true` in `UpdateCollision`): the port's
+  `collides_rect` treats platforms as solid; the fall-through is the
+  documented remainder.
+- **The Drippler's spawn placement**: the spawner's blood-moon arm uses
+  the hover ctor at `surface_of(x) - 2` (the noGravity flyer's
+  feet-on-surface stand-in); the C#'s `SpawnNPC` bottom placement
+  (`NPC.cs:4646`) is the exact seam — the machine takes over on the first
+  tick. The blood-moon spawn wiring (`GetZombieSettings`' blood-moon arm)
+  is the spawner's separate territory; this round wires the `Next(2)`
+  pick only.
+- **The `num107` ladder's position** and **the discouraged-gate fold** —
+  unchanged from round 1 (the pre-existing structural deviations).
+
+### Verification (round 2)
+
+Code-only: the C# blocks re-read line-by-line (`:59831-60284` the obstacle
+scan, `:24666-25234` the aiStyle-22 arm, `:14605-14631` the SetDefaults
+rows, `:68614`/`:69489-69655` the 489 FindFrame, `:72521-72533` the 490
+FindFrame, `:4638-4648` the blood-moon spawn arm, `WorldGen.cs:70167-70218`
+the SolidTile helpers, `Main.cs:67132` the frame counts 489=9/490=8);
+every exhaustive `NpcKind` match census-verified via the `ZombieSweater`/
+`Poltergeist` touchpoint lists. Tests WRITTEN NOT RUN: the scan module's 6
+witnesses + the Drippler module's 4 witnesses + 6 new
+`s1_d_3z_the_blood_moon_*` witnesses + the door-bash drain witness + the
+repointed `the_blocked_path_jump_is_minus_six` — **no compiler invoked**.
