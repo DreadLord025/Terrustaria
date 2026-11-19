@@ -10,7 +10,7 @@ use crate::world::World;
 mod place;
 pub use place::{place_alch, place_item_tile, place_tile};
 mod wall;
-pub use wall::{break_wall, place_wall};
+pub use wall::{break_wall, kill_wall_sound, place_wall};
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
