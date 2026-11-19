@@ -23758,10 +23758,11 @@ mod s1_f_13c_tests {
             n.find_frame();
             seen.push(n.frame);
         }
-        // Standing: the counter advances 1/tick, `> 5` steps the row — six
-        // ticks per row, rows 0..9; tick 60 steps past row 9 and wraps to 0
+        // Standing: the counter advances 1/tick, `> 5` steps the row — the
+        // first row shows five ticks (the counter starts at 0), then six
+        // per row; tick 60 steps past row 9 and wraps to 0
         // (`frame.Y > num * 9 → 0`, NPC.cs:72471-72474).
-        assert_eq!(&seen[..12], &[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]);
+        assert_eq!(&seen[..12], &[0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
         assert!(seen.iter().all(|&f| f < 10));
         assert_eq!(seen[53], 9, "row 9 lands on tick 54");
         assert_eq!(seen[59], 0, "tick 60 wraps past row 9 back to 0");
