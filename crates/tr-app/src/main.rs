@@ -26,6 +26,7 @@ mod combat_text;
 mod debug_panel;
 mod death;
 mod drawdata_cases_a;
+mod drawdata_cases_b;
 mod dye;
 mod emotes;
 mod env;
@@ -64,6 +65,7 @@ mod npc_ai_style16;
 mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
+mod npc_ai_style33;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED — the merge union feeds it into
 // npc_ai_plantera.rs's hook_anchor parameter (docs/ANALYSIS.md "The
