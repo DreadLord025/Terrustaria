@@ -2025,14 +2025,18 @@ fn solid_block(world: &World, x: i32, y: i32) -> bool {
 }
 
 /// `AI_015_KingSlime_FindTeleportSpot` + `BuildKingSlimeTeleportCache`
-/// (`NPC.cs:43077-43119`): the tile the King Slime teleports onto — a
+/// (`NPC.cs:43056-43119`): the tile the King Slime teleports onto — a
 /// solid (or platform) tile with clear air below and a line of sight to
 /// the player, in the ring around the player (the 10/7 cache, then the
 /// 6/2 one). The anti-cheese case lands on the player instead.
-fn king_slime_find_teleport_spot(
+/// `npc_height` is the King Slime's current body height — the sight-line
+/// origin is `j*16 - height/2` (`:43065`), which shrinks with the hp
+/// scale (K-3: the old port hardcoded 46 = the full-scale half).
+pub(crate) fn king_slime_find_teleport_spot(
     world: &World,
     player: &Player,
     anti_cheese: bool,
+    npc_height: f32,
     rng: &mut UnifiedRandom,
 ) -> (f32, f32) {
     let (pcx, pcy) = player.center();
@@ -2044,6 +2048,11 @@ fn king_slime_find_teleport_spot(
     let ty = (pcy as i32) / 16;
     // `TileID.Sets.Platforms` (`ID/TileID.cs:534`).
     const PLATFORMS: [u16; 7] = [19, 427, 435, 436, 437, 438, 439];
+    // `NPC.kingSlimePointCacheSizeMax = 50` (`NPC.cs:95273`, the cap check
+    // `:43063`): the cache stops filling at 50 candidates, so the
+    // `Next(0, size)` draw range — and the picked spot — match the C#
+    // (K-3 strict-bounds class: the old unbounded Vec diverged past 50).
+    const CACHE_MAX: usize = 50;
     for (outer, inner) in [(10i32, 7i32), (6, 2)] {
         let mut cache: Vec<(i32, i32)> = Vec::new();
         // The four bands (`:43080-43083`).
@@ -2058,27 +2067,48 @@ fn king_slime_find_teleport_spot(
                     let Some(t) = world.tile(x, y) else {
                         continue;
                     };
+                    // `:43063` — `nactive()` is active-and-not-actuated
+                    // (`Tile.cs:240-247`); the cap short-circuits the rest
+                    // of the gate, exactly like the C#'s `&&` chain.
+                    let active = t.active() && !t.inactive();
+                    if !active || cache.len() >= CACHE_MAX {
+                        continue;
+                    }
                     let solid = tr_core::tiledata::TILE_SOLID.has(t.kind)
                         && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
                     let platform = PLATFORMS.contains(&t.kind);
-                    let below_solid = world
-                        .tile(x, y - 1)
-                        .is_some_and(|b| b.active() && tr_core::tiledata::TILE_SOLID.has(b.kind));
-                    if !t.active() || !(solid || platform) || below_solid {
+                    // `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`):
+                    // active, solid, not solid-top, not half-brick, no
+                    // slope (K-3: the old probe ignored actuated/half/
+                    // sloped tiles below).
+                    let below_solid = world.tile(x, y - 1).is_some_and(|b| {
+                        b.active()
+                            && !b.inactive()
+                            && tr_core::tiledata::TILE_SOLID.has(b.kind)
+                            && !tr_core::tiledata::TILE_SOLID_TOP.has(b.kind)
+                            && !b.half_brick()
+                            && b.slope() == 0
+                    });
+                    if !(solid || platform) || below_solid {
                         continue;
                     }
-                    // `:43065-43066` — the spot's position and the sight line.
-                    let pos = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 - 46.0);
-                    if crate::projectile::can_hit_line(
-                        world, pos.x, pos.y, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
-                    ) {
+                    // `:43065-43066` — the spot's position and the sight
+                    // line, behind the LAVA gate (`!tile.lava()`,
+                    // `Tile.cs:345-348` — the lava bit alone, any amount).
+                    let pos = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 - npc_height / 2.0);
+                    if t.liquid_kind() != tr_core::tile::LiquidKind::Lava
+                        && crate::projectile::can_hit_line(
+                            world, pos.x, pos.y, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
+                        )
+                    {
                         cache.push((x, y));
                     }
                 }
             }
         }
         if !cache.is_empty() {
-            let pick = rng.next_max(cache.len() as i32) as usize;
+            // `:43099`/`:43108` — `Main.rand.Next(0, size)`.
+            let pick = rng.next_range(0, cache.len() as i32) as usize;
             let (x, y) = cache[pick];
             return (x as f32 * 16.0 + 8.0, y as f32 * 16.0);
         }
@@ -2247,6 +2277,9 @@ impl Npc {
         }
         let mut npc = Self::new(NpcKind::KingSlime, x, y, -1, 1.2);
         npc.hp = npc.max_hp;
+        // `SetDefaults` case 50 (`NPC.cs:9389`): `this.boss = true` — the
+        // facing-inheritance gate's `!this.boss` term (`:77749`) reads it.
+        npc.boss = true;
         Some(npc)
     }
 
@@ -5648,12 +5681,21 @@ impl Npc {
     }
 
     fn find_frame(&mut self) {
-        let num2 = if self.vy < 0.0 {
-            2
-        } else if self.vy > 0.0 {
-            3
-        } else if self.vx != 0.0 {
-            1
+        // `NPC.cs:66696-66704` — `num2` is the velocity class only while
+        // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
+        // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
+        let num2 = if self.ai_action == 0 {
+            if self.vy < 0.0 {
+                2
+            } else if self.vy > 0.0 {
+                3
+            } else if self.vx != 0.0 {
+                1
+            } else {
+                0
+            }
+        } else if self.ai_action == 1 {
+            4
         } else {
             0
         };
@@ -8658,46 +8700,90 @@ impl Npc {
     /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
     /// branches use the single-player values.
     fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
-        // `:43123-43131` — the flags and the getGood world's scale factor.
+        // `:43123-43133` — the flags and the getGood world's scale factor.
+        // `num2` stays 1.0 (the getGood `num3 = 2f` scale row `:43128-43131`
+        // is constants-off, the classic solo env — ANALYSIS).
         let mut num = 1.0f32;
-        let mut num2 = 1.0f32;
+        let num2 = 1.0f32;
+        let mut flag = false;
         let mut flag2 = false;
         let mut flag3 = false;
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
         let ph = player.height;
-        // `:43136-43147` — the init: the `ai[3]` hp latch and the one-shot
+        // `:43133` — the aiAction reset. The port's `find_frame` reads the
+        // field (`NPC.cs:66697-66704`'s `num2 == 4` crouch class).
+        self.ai_action = 0;
+        // `:43134-43147` — the init: the `ai[3]` hp latch and the one-shot
         // `localAI[3]` arm (which drops the body into its first scale).
         if self.ai[3] == 0.0 && self.hp > 0 {
             self.ai[3] = self.max_hp as f32;
         }
         if self.king_slime_local[3] == 0.0 {
             self.king_slime_local[3] = 1.0;
+            // `flag = true` (`:43141`) is ONE-SHOT — the `localAI[3]` slot
+            // stays 1 as the latch, but the recentre trigger is this local
+            // flag, consumed by the scale write below (K-4 fix).
+            flag = true;
+            // `Main.netMode != 1` (`:43142`) — the port is single-player.
             self.ai[0] = -100.0;
+            // `:43145` — `TargetClosest()` (K-4: the zombie's inline
+            // candidate convention, `npc.rs::update_zombie`).
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
         }
-        // `:43149-43176` — the despawn: a dead player or one 3000 px away
-        // sends the King Slime to the world's far corner.
+        // `:43149-43173` — the despawn: a dead player or one 3000 px away
+        // sends the King Slime to the world's far corner. K-1 (54-audit):
+        // the state write is gated `ai[1] != 5f` (`:43164`) — writing it
+        // every tick re-zeroed the shrink timer and the corner teleport
+        // NEVER fired while the player fled.
         let distance = ((cx - pcx).powi(2) + (cy - pcy).powi(2)).sqrt();
         if player.dead || distance > 3000.0 {
-            self.king_slime_local[1] = world.width as f32 * 16.0;
-            self.king_slime_local[2] = world.height as f32 * 16.0;
-            self.ai[0] = 0.0;
-            self.ai[1] = 5.0;
+            // `:43152` — re-aim first (the second check `:43153` reads the
+            // same single player, so it repeats verbatim).
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
+            if player.dead || distance > 3000.0 {
+                // `:43155` — `EncourageDespawn(10)`: the boss actually
+                // leaves when the player stays away (the sim's despawn
+                // tick + retain run it).
+                self.encourage_despawn(10);
+                // `:43156-43163` — face AWAY from the fleeing player.
+                self.facing = if pcx < cx { 1 } else { -1 };
+                // `:43164-43172` — `Main.netMode != 1 && this.ai[1] != 5f`.
+                if self.ai[1] != 5.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[0] = 0.0;
+                    self.ai[1] = 5.0;
+                    self.king_slime_local[1] = world.width as f32 * 16.0;
+                    self.king_slime_local[2] = world.height as f32 * 16.0;
+                }
+            }
         }
         // `:43177-43196` — the teleport: the player out of sight for 300
-        // ticks (and the King Slime grounded) shrinks and blinks.
-        if !player.dead && self.ai[2] >= 300.0 && self.ai[1] < 5.0 && self.vy == 0.0 {
+        // ticks (and the King Slime grounded) shrinks and blinks. The
+        // `timeLeft > 10` term (`:43175`) rides `despawn_timer` (-1 = the
+        // idle 750 window, `NPC.cs:8542`/`:95186`).
+        if !player.dead
+            && (self.despawn_timer < 0 || self.despawn_timer > 10)
+            && self.ai[2] >= 300.0
+            && self.ai[1] < 5.0
+            && self.vy == 0.0
+        {
             self.ai[2] = 0.0;
             self.ai[0] = 0.0;
             self.ai[1] = 5.0;
+            // `:43182` — `TargetClosest(faceTarget: false)` (K-4).
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], false, 15, 0);
             // The anti-cheese case (`:43185-43191`): the King Slime has been
             // out of sight for 360 ticks or the player is 2000 px away.
             let anti_cheese = self.king_slime_local[0] >= 360.0 || distance > 2000.0;
             if self.king_slime_local[0] >= 360.0 {
                 self.king_slime_local[0] = 360.0;
             }
-            let (tx, ty) = king_slime_find_teleport_spot(world, player, anti_cheese, rng);
+            let (tx, ty) = king_slime_find_teleport_spot(world, player, anti_cheese, h, rng);
             self.king_slime_local[1] = tx;
             self.king_slime_local[2] = ty;
         }
@@ -8713,33 +8799,55 @@ impl Npc {
                 self.king_slime_local[0] = 0.0;
             }
         }
-        // `:43212-43218` — the closing timer clears the state. The port's
-        // NPCs carry no `NPC.timeLeft` (the despawn timer is the world's
-        // own row), so the arm cannot watch the closing window — the state
-        // clears with the normal machine instead.
+        // `:43214-43220` — the closing timer clears the state (K-1's
+        // companion: `timeLeft < 10` is the encouraged-despawn window the
+        // far-player arm armed; `flag2 = false` keeps the hop timer out).
+        if self.despawn_timer >= 0
+            && self.despawn_timer < 10
+            && (self.ai[0] != 0.0 || self.ai[1] != 0.0)
+        {
+            self.ai[0] = 0.0;
+            self.ai[1] = 0.0;
+            flag2 = false;
+        }
         if self.ai[1] == 5.0 {
-            // `:43219-43261` — the shrink: the scale ramps down over 60 ticks
+            // `:43221-43256` — the shrink: the scale ramps down over 60 ticks
             // and the King Slime teleports onto the picked spot.
             flag2 = true;
+            // `:43224` — `aiAction = 1` (the crouch frame class).
+            self.ai_action = 1;
             self.ai[0] += 1.0;
             num = 0.5 + ((60.0 - self.ai[0]) / 60.0).clamp(0.0, 1.0) * 0.5;
             if self.ai[0] >= 60.0 {
                 flag3 = true;
+                // `:43235-43241` — `base.Bottom = (localAI[1], localAI[2])`
+                // (`Entity.cs:128-131`): x centres on the spot, y anchors
+                // the bottom.
                 self.x = self.king_slime_local[1] - w * 0.5;
                 self.y = self.king_slime_local[2] - h;
                 self.ai[1] = 6.0;
                 self.ai[0] = 0.0;
             }
         } else if self.ai[1] == 6.0 {
-            // `:43262-43284` — the grow-back: 30 ticks at the same ramp.
+            // `:43257-43282` — the grow-back: 30 ticks at the same ramp.
             flag2 = true;
+            // `:43260` — `aiAction = 0`.
+            self.ai_action = 0;
             self.ai[0] += 1.0;
             num = 0.5 + (self.ai[0] / 30.0).clamp(0.0, 1.0) * 0.5;
             if self.ai[0] >= 30.0 {
                 self.ai[1] = 0.0;
                 self.ai[0] = 0.0;
+                // `:43268` — `TargetClosest()` at grow-end (K-4).
+                let cand = crate::npc_target::session_candidate(player);
+                crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
             }
         }
+        // `:43283` — `this.dontTakeDamage = (this.hide = flag3)`: the
+        // teleport tick is unhittable (K-4). The `hide` draw-skip has no
+        // port field — the invulnerability half rides `dont_take_damage`
+        // (ANALYSIS).
+        self.dont_take_damage = flag3;
         // `:43285-43326` — the movement: the hop cycle (grounded) and the
         // air control.
         if self.vy == 0.0 {
@@ -8749,25 +8857,32 @@ impl Npc {
             }
             if !flag2 {
                 // The hop timer — the faster the King Slime is hurt, the
-                // faster it hops.
+                // faster it hops. `:43293-43313` — the C# compares the raw
+                // hp against `lifeMax * tier` (f32 multiplies), not the
+                // ratio.
                 self.ai[0] += 2.0;
-                let life = self.hp as f32 / self.max_hp as f32;
-                if life < 0.8 {
+                let life = self.hp as f32;
+                let max = self.max_hp as f32;
+                if life < max * 0.8 {
                     self.ai[0] += 1.0;
                 }
-                if life < 0.6 {
+                if life < max * 0.6 {
                     self.ai[0] += 1.0;
                 }
-                if life < 0.4 {
+                if life < max * 0.4 {
                     self.ai[0] += 2.0;
                 }
-                if life < 0.2 {
+                if life < max * 0.2 {
                     self.ai[0] += 3.0;
                 }
-                if life < 0.1 {
+                if life < max * 0.1 {
                     self.ai[0] += 4.0;
                 }
                 if self.ai[0] >= 0.0 {
+                    // `:43317` — `TargetClosest()` at the hop launch (K-4:
+                    // the King re-aims every hop, not just at spawn).
+                    let cand = crate::npc_target::session_candidate(player);
+                    crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
                     if self.ai[1] == 3.0 {
                         self.vy = -13.0;
                         self.vx += 3.5 * self.facing as f32;
@@ -8784,6 +8899,9 @@ impl Npc {
                         self.ai[0] = -120.0;
                         self.ai[1] += 1.0;
                     }
+                } else if self.ai[0] >= -30.0 {
+                    // `:43340-43343` — the wind-up crouch frame class.
+                    self.ai_action = 1;
                 }
             }
         } else {
@@ -8797,30 +8915,41 @@ impl Npc {
                 }
             }
         }
-        // `:43340-43356` — the body scale: the hp drives the size (the
-        // C#'s `num9`).
+        // `:43365-43382` — the body scale: the hp drives the size (the
+        // C#'s `num9`). `:43368-43371` — `life <= 0` returns BEFORE the
+        // scale write (the port no longer scales a corpse — K-4).
+        if self.hp <= 0 {
+            return;
+        }
         let num9 = (self.hp as f32 / self.max_hp as f32 * 0.5 + 0.75) * num * num2;
-        if num9 != self.scale || self.king_slime_local[3] == 1.0 {
-            let new_w = 98.0 * num9;
-            let new_h = 92.0 * num9;
-            // The C#'s recentre (`:43346-43351`): the bottom-right corner
-            // stays put.
+        if num9 != self.scale || flag {
+            // `:43378-43379` — `(int)(98f * scale)` / `(int)(92f * scale)`:
+            // the C# truncates the box to whole pixels (K-4 int class).
+            let new_w = (98.0 * num9) as i32 as f32;
+            let new_h = (92.0 * num9) as i32 as f32;
+            // The C#'s recentre (`:43375-43381`): the bottom-centre stays
+            // put (`position += (width/2, height)` then `-= (new/2, new)`).
             self.x += w * 0.5 - new_w * 0.5;
             self.y += h - new_h;
             self.scale = num9;
             self.size_override = Some((new_w, new_h));
         }
-        // `:43357-43395` — the minion batches: every 5 % of the hp the King
-        // Slime spawns 1-3 slimes.
+        // `:43387-43393` — the minion batches: every 5 % of the hp the King
+        // Slime spawns 1-3 slimes. `:43388` — `!(life + num10 < ai[3])`
+        // returns: the batch fires on a STRICT cross of the 5 % window.
         let num10 = (self.max_hp as f32 * 0.05) as i32;
-        if self.hp + num10 >= self.ai[3] as i32 {
+        if !((self.hp + num10) < self.ai[3] as i32) {
             return;
         }
         self.ai[3] = self.hp as f32;
-        let count = rng.next_range(1, 4).max(1);
+        // `:43393` — the ONE batch-count draw. The per-minion draws
+        // (`:43396-43407`: position x/y, the expert kind roll, velocity
+        // x/y, `ai[0]`) resolve in the drain (`world_sim/npcs.rs`) at the
+        // same `UpdateNPCs` stream position — K-2 (S1-A-10 census: 1 +
+        // 5×count classic draws per batch).
+        let count = rng.next_range(1, 4);
         self.wants_minion = true;
         self.wants_minion_batch = count as u32;
-        let _ = num2;
     }
 
     /// The contact overlap test (`contact`'s AABB) as a pure read —
@@ -25860,7 +25989,9 @@ mod s1_d_3g_tests {
             "the full-hp scale ({})",
             k.scale
         );
-        assert_eq!(k.size_override, Some((98.0 * 1.25, 92.0 * 1.25)));
+        // K-4 (54-audit): the C# truncates the box to whole pixels —
+        // `(int)(98f * 1.25)` = 122, `(int)(92f * 1.25)` = 115 (`:43378-43379`).
+        assert_eq!(k.size_override, Some((122.0, 115.0)));
         // At half the hp the scale drops to 1.0.
         k.hp = k.max_hp / 2;
         k.update_king_slime(&w, &mut player, &mut rng);
@@ -25897,6 +26028,47 @@ mod s1_d_3g_tests {
             "the batch is 1-3 ({})",
             k.wants_minion_batch
         );
+    }
+
+    /// A-1 audit K-1 (`NPC.cs:43164`): the far-player state write is gated
+    /// `ai[1] != 5f`. The witness pre-arms the shrink state (`ai[1] = 5`,
+    /// `ai[0] = 30`, a NON-corner teleport target) and ticks the arm with a
+    /// far player. With the guard the write is SKIPPED: `ai[0]` advances
+    /// 30 → 31 (the shrink timer is not re-zeroed) and the teleport target
+    /// is preserved. Without the guard (the old bug) `ai[0]` would be
+    /// re-zeroed to 0 then incremented to 1 and the target overwritten to
+    /// the world corner — the corner teleport could never fire.
+    #[test]
+    fn k1_the_far_player_write_is_gated_by_ai1_not_5() {
+        let mut w = tr_core::World::new("t".into(), 200, 200);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut player = Player::spawn(&w);
+        let mut k = Npc::new(NpcKind::KingSlime, 100.0, 100.0, 1, 0.0);
+        k.hp = k.max_hp;
+        // Skip the one-shot init (which would reset ai[0] = -100).
+        k.king_slime_local[3] = 1.0;
+        // Mid-shrink, aimed at a teleport spot that is NOT the world corner.
+        k.ai[1] = 5.0;
+        k.ai[0] = 30.0;
+        k.ai[2] = 0.0;
+        k.king_slime_local[1] = 999.0;
+        k.king_slime_local[2] = 888.0;
+        // The player is >3000 px away (the despawn distance).
+        player.x = 5000.0;
+        player.y = 100.0;
+        let mut rng = UnifiedRandom::new(9);
+        let before = rng.clone();
+        k.update_king_slime(&w, &mut player, &mut rng);
+        // The guard skipped the state write: the timer ADVANCED, not reset.
+        assert_eq!(k.ai[0], 31.0, "the shrink timer advances (guard held)");
+        assert_eq!(k.ai[1], 5.0, "still shrinking");
+        assert_eq!(k.king_slime_local[1], 999.0, "teleport target preserved");
+        assert_eq!(k.king_slime_local[2], 888.0, "teleport target preserved");
+        // EncourageDespawn(10) armed the despawn window (`:43155`).
+        assert_eq!(k.despawn_timer, 10, "the boss is encouraged to despawn");
+        // No teleport-spot search this tick (ai[2] < 300): zero draws.
+        assert_eq!(rng, before, "the gated write consumes no draw");
     }
 }
 

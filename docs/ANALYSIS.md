@@ -17850,20 +17850,95 @@ The arm now carries the C#'s machine:
 
 Deviations:
 
-* **The dust and the gore are SKIPPED** (`:43253-43281`, `:43327-43339`) вЂ”
-  no dust/gore layer.
+* **The dust and the gore are SKIPPED** (`:43249-43254`, `:43276-43281`,
+  `:43365-43367`, the death gore `:43233`/`:85684`) — no dust/gore layer.
 * **The MP-only branches use the single-player values.**
-* **`NPC.timeLeft` is not ported**: the port's NPCs carry no despawn timer,
-  so the C#'s "the closing timer clears the state" arm (`:43212-43218`) and
-  the `timeLeft > 10` gate on the teleport (`:43180`) ride the normal
-  machine.
-* **The getGood world's rows** (the shrinking scale factor, the 6-px air
-  control) are the classic values вЂ” the port carries no world-seed flag.
-* **The minions' `ai[0] = -1000 * Next(3)` / `ai[1] = -1`** (`:43386-43388`)
-  ride the port's slime spawn: the slimes' own machine (`AI_001_Slimes`) is
-  not ported yet.
-* **The minion positions** stay the sim's (the surface near the King
-  Slime) rather than the C#'s random offsets inside its box.
+* **The getGood world's rows** (the shrinking scale factor `num2`, the 6-px
+  air control) are the classic values — the port carries no world-seed flag.
+* **The expert minion kind roll** (`Next(4) == 0` → SpikedSlime 535,
+  `:43399-43401`) is constants-off: the port runs the classic solo env
+  (`Main.expertMode` has no runtime flag, the `spawn_loot` `is_expert: false`
+  precedent), so every minion is the Blue Slime (1) and the per-minion census
+  is 5 draws (no expert `Next(4)`).
+* **The minions' `ai[0] = -1000 * Next(3)` / `ai[1] = -1`** (`:43407-43408`)
+  are SEEDED by the drain but the port's stand-in slime machine
+  (`update_slime`) reads `hop_timer`, not `ai[0]` — the jump-delay seed is
+  carried as data until the A1-4 whole-arm `AI_001_Slimes` port consumes it.
+* **`NPC.hide`** (the teleport-tick draw-skip, `:43283`) has no port field —
+  the invulnerability half rides `dont_take_damage`; the King still draws on
+  the blink tick.
+* **The despawn-refresh is not ported**: the C#'s `CheckActive` resets
+  `timeLeft = activeTime` while a player is near (`NPC.cs:77930-77938`), so a
+  fleeing-then-returning player keeps the boss alive. The port's
+  `despawn_timer` is terminal across ALL bosses (no near-player refresh), so
+  an `EncourageDespawn(10)` runs to zero even if the player returns within the
+  window. Port-wide deviation, not King-Slime-specific.
+* **The King Slime sprite does not scale with `n.scale`** in the draw
+  (`render/entities.rs`'s King Slime arm uses a fixed 174x120 frame) — the
+  hitbox shrinks with hp but the sprite does not. Pre-existing DISPLAY
+  deviation (the M4-NPC-3q display task), out of the AI audit's scope.
+
+### A-1 audit fixes (fix/kingslime-audit-defects, 2026-11-19, code-only)
+
+The 54-audit (`docs/research/54-audit-slime-eye.md`, KingSlime §4) flagged
+three WRONG defects (K-1..K-3) plus the K-4 minor folds. All are fixed in
+place; the rest of the arm was re-verified against `AI_015_KingSlime`
+(`NPC.cs:43121-43414`) line-by-line and confirmed faithful (the teleport
+cadence 300/360, the shrink 60 / grow 30 ramps, the hop ladder's five hp
+tiers, the air steer 3/0.2/0.93, the `num9` scale + bottom-anchor recentre,
+the 5 % batch gate).
+
+* **K-1 — the boss-escape exploit (WRONG → fixed).** The far-player state
+  write was UNCONDITIONAL every tick; the C# gates it `Main.netMode != 1 &&
+  this.ai[1] != 5f` (`:43164`). Without the guard the shrink timer `ai[0]`
+  was re-zeroed each tick, so `ai[0] >= 60` never fired and the corner
+  teleport never happened — the King Slime never despawned when the player
+  fled. Fix: the `ai[1] != 5.0` guard at the C# position, plus
+  `EncourageDespawn(10)` (`:43155`), the away-facing write (`:43156-43163`)
+  and the re-aim (`:43152`). The `timeLeft > 10` teleport gate (`:43175`) and
+  the `timeLeft < 10` state-clear (`:43214-43220`) now ride `despawn_timer`
+  (the -1 sentinel reads as the idle 750 window).
+* **K-2 — the minion drain (WRONG → fixed).** The old drain dropped all 5
+  per-minion RNG draws, invented an 8-minion cap (the C# has NONE —
+  `NewNPC` takes any free slot, `:43394-43413`), and placed the minions in a
+  row OUTSIDE the body. Fix: `king_slime_minion_batch`
+  (`world_sim/npcs.rs`) ports the spawn loop — position `Next(width-32)` /
+  `Next(height-32)` inside the body (bottom-anchored per `NewNPC` `:80770`),
+  velocity `Next(-15,16)*0.1` / `Next(-30,1)*0.1`, `ai[0] = -1000*Next(3)`,
+  `ai[1] = -1`. The cap is removed. **RNG census (S1-A-10):** the AI tick
+  draws the ONE batch count `Next(1,4)` (`:43393`); the drain draws 5 per
+  minion in the C# order (x, y, vx, vy, ai[0]) on the same `UpdateNPCs`
+  stream — `1 + 5*count` draws per burst. The expert `Next(4)` is
+  constants-off (above). Stream-parity witnesses written (not run):
+  `king_slime_audit_tests::k2_*` (`world_sim/npcs.rs`).
+* **K-3 — the teleport finder (WRONG → fixed).** Three gates were missing /
+  invented: (a) the LAVA gate `!tile.lava()` (`:43066`) — the port let the
+  King teleport onto lava-covered platforms; (b) the 50-entry cache cap
+  `kingSlimePointCacheSizeMax = 50` (`:95273`, checked `:43063`) — the port's
+  unbounded Vec changed the `Next(0, size)` draw range past 50 candidates
+  (strict-bounds class); (c) the sight-line origin hardcoded `-46` where the
+  C# uses `j*16 - base.height/2` (`:43065`) — height is `92*scale` and shrinks
+  with hp, so 46 was only correct at full scale. Fix: the lava gate, the
+  50-cap (short-circuiting the gate chain like the C# `&&`), the height
+  parameter, and the `below_solid` probe now matches `WorldGen.SolidTile`
+  (`WorldGen.cs:69957-69974`: active, solid, not solid-top, not half-brick,
+  no slope). The pick uses `Next(0, size)` (`:43099`/`:43108`). Witness:
+  `k3_the_finder_rejects_lava_covered_candidates`.
+* **K-4 — the minor folds (fixed).** The three `TargetClosest` sites (init
+  `:43145`, hop-launch `:43317`, grow-end `:43268`, plus the despawn re-aim
+  `:43152` and the teleport `faceTarget:false` `:43182`) now route through
+  `npc_target::target_closest` (the zombie precedent) — the King re-aims
+  every hop instead of keeping its spawn facing. `dontTakeDamage = flag3`
+  (`:43283`), the `life <= 0` early return before the scale write
+  (`:43368-43371`), the `(int)(98*scale)`/`(int)(92*scale)` truncation
+  (`:43378-43379`), the one-shot `flag` (vs the sticky `localAI[3]`), the
+  `aiAction` writes (`:43133`/`:43224`/`:43260`/`:43342`) and the raw-hp
+  life-band comparisons (`:43294-43313`) are all ported. `boss = true` on
+  spawn (`SetDefaults` case 50 `:9389`).
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked.** Evidence = file reads + git. The stream-parity witnesses are
+WRITTEN, NOT RUN (the S1-A-10 contract for a code-only wave).
 
 ## The wiring tools (S1-L-6b1, 2026-11-14)
 
