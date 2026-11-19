@@ -4978,7 +4978,8 @@ pub(crate) mod tr_hooks {
 
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
-        let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-pins");
+        let path = dir.join("tr-dw-1-6-pins.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -4993,7 +4994,7 @@ pub(crate) mod tr_hooks {
         let (world, sections) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(
             world.fast_forward_to_dawn,
@@ -5027,7 +5028,8 @@ pub(crate) mod tr_hooks {
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
-        let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-clear");
+        let path = dir.join("tr-dw-1-6-clear.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -5035,7 +5037,7 @@ pub(crate) mod tr_hooks {
         )
         .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
         assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));
