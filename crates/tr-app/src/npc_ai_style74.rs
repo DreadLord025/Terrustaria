@@ -656,7 +656,7 @@ pub fn style74_step(npc: &mut Npc, env: &mut Style74Env<'_>) -> Style74Outcome {
         // `:35423-35430` — the 388-only wall fold into the implosion.
         if p.explodes_on_contact {
             let (w, h) = npc.size();
-            if crate::player::solid_collision(env.world, npc.x, npc.y, w, h) {
+            if crate::player::Player::solid_collision(env.world, npc.x, npc.y, w, h) {
                 npc.ai[0] = 3.0;
                 npc.ai[1] = 0.0;
                 npc.ai[2] = 0.0;
