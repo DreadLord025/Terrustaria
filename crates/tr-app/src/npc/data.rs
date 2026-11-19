@@ -2860,7 +2860,10 @@ impl NpcKind {
         }
     }
 
-    pub(super) fn contact_damage(self) -> i32 {
+    /// `NPC.defDamage`'s stand-in — the kind's `SetDefaults` contact
+    /// damage. `pub(crate)` since S1-D-3: the aiStyle-3 ladder's charge
+    /// family (`NPC.cs:58266`/`:58308`) restores/boosts it from `npc_ai`.
+    pub(crate) fn contact_damage(self) -> i32 {
         match self {
             NpcKind::Slime => 7,         // NPC.cs:8571
             NpcKind::DemonEye => 18,     // case 2

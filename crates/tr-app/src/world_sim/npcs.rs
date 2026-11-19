@@ -3048,6 +3048,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
+        let audio = &mut app.audio;
         for n in app.npcs.iter() {
             let (w, h) = n.size();
             let switch = crate::collision::switch_tiles(
@@ -3071,6 +3072,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
             // send sits on every fired switch.
             switch_sends.extend(switch.switches.iter().copied());
+            // S1-E-21i — the NPC-tripped switches' Mech-28 clicks: the
+            // pitch draws ride the `UpdateNPCs` stream (`NPC.UpdateNPC`
+            // runs under the `Main.cs:17767-17769` swap), drained per NPC
+            // so the play order matches the slot order.
+            for (px, py) in wiring.take_switch_clicks() {
+                audio.play_switch_click(px as f32, py as f32, npcs_rng);
+            }
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
