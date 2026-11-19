@@ -391,6 +391,10 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
+/// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
+/// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
+pub const LIGHTS_BANE: u16 = 974;
 
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
@@ -2241,6 +2245,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // `Projectile.cs:9237-9252` — the Light's Bane slash (974):
+            // 20x20, aiStyle 188, `penetrate = 2`, `tileCollide = false`,
+            // `ignoreWater = true`, `timeLeft = 30`, the local-immunity pair
+            // (`usesLocalNPCImmunity`, `localNPCHitCooldown = -1`). The
+            // melee/armorPenetration/stopsDealingDamageAfterPenetrateHits
+            // fields are damage-side and stay with the melee port.
+            LIGHTS_BANE => (20.0, 20.0, 188, 2, 30, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2362,6 +2373,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
+            // `Projectile.cs:9244`: the Light's Bane slash ignores water.
+            || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
             || kind == RAINBOW_CRYSTAL_EXPLOSION,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`

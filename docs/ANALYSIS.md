@@ -832,6 +832,102 @@ diff exactly inside the rectangle against the unpainted frame (3756 px each);
 the unpainted branch is pixel-identical to main; the extras round-trip test
 covers the sparse save.
 
+### The blend batches (S1-G-3, 2026-11-18)
+
+The vanilla frame runs three `SpriteBatch.Begin` blend configurations the port
+now expresses (`Main.cs:27457-27494`, research/41 D-2): the alpha-blend default
+(`Main.cs:22193`), `BlendState.Additive` (`:27490`) and the custom
+`Main._multiplyBlendState` (`:27462-27470` — `ReverseSubtract` with
+`SourceAlpha`/`One` on both the color and the alpha channels, i.e.
+`dst − src·srcAlpha` clamped at 0). `sprite.rs::BlendMode` builds one pipeline
+per mode over the same shader — exactly like XNA, where only the device blend
+state changes between `Begin` calls. The per-instance `blend` tag rides the
+instance buffer and `draw_blend_runs` splits each range into contiguous
+same-mode runs: a run boundary is the C#'s `End()`/`Begin(blendState)` batch
+boundary, so push order (and therefore composite order) is preserved; an
+all-alpha range stays a single draw, leaving the default path byte-identical.
+
+The only vanilla consumer of the two extra states is `DrawProj_LightsBane`
+(`Main.cs:27455-27495`), ported as `projectile.rs::draw_lights_bane`: the
+13-row frame slice (the drawer's own `Frame(1, 13, …)`, NOT
+`Main.projFrames[974]` = 1), the `(0.7, 0.7)·scale` quads, two
+`White·0.3·num` stretched ghosts of row 12 (`(1, 6)` and `(2, 2)` stretches)
+plus four `Color.White` copies in the multiply batch, then two `Color.Magenta`
+copies in the additive batch. `num = Remap(frame, 0, 3, 0, 1) · Remap(frame,
+4, 12, 1, 0)` (`:27480`). No light tint — the C# draws raw White/Magenta here.
+The aiStyle-188 frame machine (`Projectile.cs:42229-42262`) and the SetDefaults
+row (`:9237-9252`) landed with it; the sound cue and the dust streak (with
+their `Main.rand` draws) are skipped like `ai_volcano`'s (no sound/dust layer
+in the pool). The pool's `timeLeft = 30` kills the slash before the frame
+machine's own frame-12 kill at tick 36 — both gates are ported and tested.
+
+Deviations kept: the alpha-blend default's *premultiplied* convention stays
+asserted (XNA's `BlendState.AlphaBlend` definition is not in the decompile —
+research/41 D-2's original note); the additive/multiply equations themselves
+are pinned by `blend_equations_land_on_the_csharp_batches` on both an sRGB
+target (the port's swapchain) and a plain UNORM target (the vanilla's non-sRGB
+backbuffer, where the blend maths runs on the stored bytes directly).
+
+Verification: `blend_states_match_the_csharp_fields`,
+`blend_runs_split_only_at_batch_boundaries`, the headless GPU equation test,
+and `lights_bane_tests` (4). Screenshots
+`docs/screenshots/s1-g-3-lights-bane-{base,blend}.png` (golden.wld, TR_DAY=1,
+TR_THROW=974, frame 20): two identical runs SHA256-equal (`61c19b9b…`), the
+blend frame differs from the base only in the slash's bbox (32 826 px,
+`tools/pixel_diff.py`).
+
+#### The verifier fixes (2026-11-18, code-only pass)
+
+The verifier FAILed the first landing on two placement/tint defects; both are
+fixed in code, tests written but NOT run (user directive: no cargo/rustc/
+rustfmt/test/screenshot runs in this pass — the compile window owns them):
+
+* **D1 — the anchor/origin convention.** `draw_lights_bane` passed the C#'s
+  `position` (the centre anchor, `Main.cs:27474`) as `pos` to
+  `push_ui_sprite_blend`, but the helper wants the UNROTATED TOP-LEFT
+  (`pos = anchor − origin`) and shifts it by `origin − R·origin` itself —
+  every quad landed a full origin away from the anchor, and the two ghosts
+  further off still: XNA's `SpriteBatch.Draw(…, origin, scale, …)` multiplies
+  the texture-space origin by the scale vector, so the `(1, 6)`/`(2, 2)`
+  stretched ghosts (`:27483-27484`) pivot at `half · s · stretch`, not
+  `half · s`. The placement now lives in the pure `lights_bane_quads`
+  (`Main.cs:27477-27492`): per quad `origin = half · s · stretch`,
+  `pos = anchor − origin`, `size = base · stretch` — the
+  `push_sprite_origin_rot` convention (`foliage.rs::palm_placement`
+  precedent: pos = anchor − origin; `frame_quad`'s tl = anchor − R·origin).
+  The blend core (`BlendMode` factors, `draw_blend_runs`, the WGSL) was
+  verified CORRECT and is untouched.
+* **D2 — the ghost tint.** `Color.White * 0.3f * num` (`:27483-27484`) is
+  XNA's TWO byte-truncating multiplies — `(byte)(255f · 0.3f) = 76` per
+  channel (alpha included), then `(byte)(76f · num)` — not one fused
+  `0.3 · num` float (frame 6: 57/255, not 0.225). The port now chains the
+  house helper `ui::color::mul` twice + `tint` (the `bars.rs` precedent).
+* **D3 — the pins.** `lights_bane_tests` grows to 6:
+  `the_batch_layout_matches_the_csharp_draw_order` re-pinned to the
+  two-truncation bytes (57/255 at frame 6, 76/255 at the peak),
+  `the_ghost_tint_truncates_twice_like_xna` pins the byte ladder over the
+  ghost window (frames 0/2/3/4/6/8/10/12 → 0/50/76/76/57/38/19/0), and
+  `the_quads_place_the_origin_texel_on_the_anchor` pins the per-quad
+  pos/origin/size/uv on a synthetic 20×260 sheet at (scale 1, zoom 1) and
+  (scale 2, zoom 1.5), including the `pos + origin = anchor` invariant.
+  WRITTEN NOT RUN — they must go green in the compile window.
+
+**Screenshot re-take DONE in the compile window (M8, 2026-11-19).** The
+committed `s1-g-3-lights-bane-{base,blend}.png` predated D1/D2; re-taken on
+the synced branch (golden.wld, `TR_DAY=1 TR_SHOT_FRAME=20 TR_DEBUG=0`,
+base = no `TR_THROW`, blend = `TR_THROW=974`; note `TR_NOPLAYER=1` from the
+original recipe note is incompatible with the throw fixture — it removes
+`app.player`, the fixture's spawn anchor — the original d7fbab4f shots ran
+with the player present, same here). Twin runs SHA256-equal: base
+`9AE3526A…`, blend `D72601B9…`. `tools/pixel_diff.py` vs the old committed
+shots: 8 px, max delta 7, bbox (786,152)-(847,178) — the ghost-tint ≤1-LSB
+band, confined; base-vs-blend still 32 826 px in the slash bbox
+(952,276)-(1121,635). Full gate green on the synced tree (3367+1581+55+…,
+0 failed, `m8-g3-gate.log`); `main_anchors` included. rustfmt: sprite.rs
+clean; projectile.rs carries 395 pre-existing fmt deviations on main
+itself — left untouched (no repo-wide fmt noise; the G-3 additions match
+the file's hand style).
+
 ## Living trees (M5-LIVING-trees)
 
 `crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
@@ -3026,11 +3122,15 @@ rand, generating_or_loading)`:
 - `490` (`:4742`): the bob needs `InAPlaceWithWind` + `Main.WindForVisuals` +
   `Main.weatherVaneBobframe`; outside wind C# yields addFrY 0 — the same 0
   the port produces at t=0. Top 2 ported.
-- `529` (`:4827-4849`): the `addFrY += 34 * <biome/beach pick> - tileFrameY`
-  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band;
-  32 px tall / top −14 / flip are ported.
-- `530` (`:4705-4722`): the `addFrY += 36 * <biome pick>` rewrite needs
-  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750); top 2 ported.
+- `529` (`:4827-4849`): ~~the `addFrY += 34 * <biome/beach pick> - tileFrameY`
+  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band~~ —
+  **S1-F-9d slice A (2026-11-18)**: ported in the delegated pass
+  (`tr-app/src/drawdata_cases_a.rs::sea_oats_add_fr_y`); 32 px tall /
+  top −14 / flip stay in `drawdata.rs`.
+- `530` (`:4705-4722`): ~~the `addFrY += 36 * <biome pick>` rewrite needs
+  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750)~~ — **S1-F-9d slice A
+  (2026-11-18)**: ported (`drawdata_cases_a.rs::oasis_plants_add_fr_y`);
+  top 2 stays in `drawdata.rs`.
 - `485` (`:4727-4730`): the `tileFrameCounter`-driven addFrY is not ported;
   top 2 is.
 - `428` (`:5605`): a pressed `PressurePlateHelper` plate adds addFrX 18; the
@@ -3078,7 +3178,11 @@ rand, generating_or_loading)`:
   before `draw_data`, so the table arm remains dead in the app but complete.
   Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
   (`tree.rs::Foliage::for_ground` deviation stands).
-- `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
+- ~~`518` (`:4604-4630`)~~ — **S1-F-9d slice A (2026-11-18)**: the LilyPad
+  liquid float (needs `tile.liquid` + the block type below) is ported in
+  the delegated pass (`tr-app/src/drawdata_cases_a.rs::lily_pad_top_delta`,
+  `WorldGen.SolidTile` + `Tile.blockType` verbatim); the static table arm
+  stays default 16×16.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
 - `453|456` (`:5412-5417`), `507|508` (`:6007-6013`): `Main.tileFrameCounter`
@@ -3093,8 +3197,11 @@ rand, generating_or_loading)`:
   generated and untouched): `addFrY = tileFrame*36` below frameY 36, else
   252; top 2.
 - The halfBrick epilogue (`:6045-6048`) is the tile pass's separate
-  half-brick draw path, not `draw_data`. The glow switch (`:6049-`) is
-  TILE-DRAW-2, except 564's addFrY reset (`:6105-6113`) noted above.
+  half-brick draw path, not `draw_data`. ~~The glow switch (`:6049-`) is
+  TILE-DRAW-2~~ — **S1-F-9d slice A (2026-11-18)** ports its data side (see
+  "S1-F-9d cases A" below); only the glow TEXTURE binding stays TILE-DRAW-2.
+  564's addFrY reset (`:6105-6113`) is folded into `drawdata.rs`'s arm, noted
+  above.
 - The caller-side source-rect corrections of `DrawSingleTile` (`:1125-1150`)
   are ported as `TileDrawData::apply_world_corrections`: palm 323
   `frameY = 22 * GetPalmTreeBiome` (`:1726`, `:4670`), dye plants 227 with
@@ -3145,6 +3252,57 @@ rand, generating_or_loading)`:
   from `TileDrawing.DrawTrees`, so the single-tile pass must not draw it too). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
+
+### S1-F-9d cases A (2026-11-18, branch `task/S1-F-9d-cases-a` — code-only mode)
+
+Written in **code-only mode** (user directive: no cargo/rustc/rustfmt/test
+runs): the module, the dispatch seam and the 13 `test_DW_F9d_*` per-case
+coverage tests are written but NOT compiled or run; verification is pending
+a build-capable session.
+
+`crates/tr-app/src/drawdata_cases_a.rs` ports the remaining STATIC
+`GetTileDrawData` case ids as a delegated pass after `draw_data` +
+`apply_world_corrections` (`render/tiles.rs` dispatch site), matching the C#
+order (the glow switch runs after the main switch and the campfire/half-brick
+epilogue, `TileDrawing.cs:6033-6049`). `drawdata.rs` is untouched — waves B
+(animator) / C (furniture) own it.
+
+- First-switch world probes: **518** LilyPad (`:4604-4630` — the liquid
+  float, `WorldGen.SolidTile` clamp `WorldGen.cs:70111-70132`,
+  `Tile.blockType` below `Tile.cs:202-214`), **530** OasisPlants / **529**
+  SeaOats biome rows (`:4705-4722` / `:4827-4849`,
+  `WorldGen.GetBiomeInfluence` `WorldGen.cs:47750-47777` over the generated
+  `SET_CORRUPT`/`SET_CRIMSON`/`SET_HALLOW` tables; the beach band rides the
+  380 `WorldGen.beachDistance` constant `WorldGen.cs:86914`).
+- Second switch: ALL 38 case ids (`:6049-6507`) — the glow-mask index, source
+  rect and colour, the unconditional 1998/2016/2040/2014 style-stride
+  unwinds (88/87/89/101/104/42/93/15/497/172) and the two `tileTop` rewrites
+  (93 `+= 2`, 104 `= 2`). The glow gates read the RAW `tileFrameX/Y` (the C#
+  locals are never rewritten by this switch): a style-block-1 dresser
+  (`fx = 1998 + 24*54`) unwinds its frame but does NOT glow — its raw column
+  is 61, not 24. Source rects stay on the 16 px / 18 px sheet grid (2 px
+  padding); the candle case's 22 px row stride is the sheet's own grid.
+
+Deviations (all parked data, no pixel change until the glow pass lands):
+
+- The glow TEXTURE binding (GlowMask sheet indices) is the renderer's glow
+  pass (TILE-DRAW-2); until it lands the `GlowData` record rides unused
+  (`let _glow` at the dispatch site).
+- Case **637**'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
+  painted sheet) is not routed — `mask 0` placeholder; its rect + 75% lerp
+  port. Case **184** column 220's `Main.DiscoR/G/B` colour is engine state
+  the port does not route — parked `[0,0,0,255]`; its rect ports.
+- Case **564**'s unconditional `addFrY = 0` (`:6112`) is already folded into
+  `drawdata.rs`'s 564 arm — the pass must not (and does not) apply it twice.
+- `Main.mouseTextColor` (656/701/564): the dispatch site passes 255 (the
+  steady full-bright value) until the UI text pulse rides in; the functions
+  take the value so it can be fed later.
+- `Main.martianLight` is 0 outside the (unported) Martian Madness event;
+  `martian_glow(light)` takes the value (`:498-499`, the truncating byte
+  cast) so the event can feed it.
+- The cell colour for the 637/638 lerps converts `LightMap::get`'s f32
+  channels to XNA bytes (`×255`, clamp, alpha 255 — `Lighting.GetColor`
+  has no alpha).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -4605,6 +4763,10 @@ ticks), the defense/damage tiers (30/60 at <50%, 20/45 at <75%) through
 the new `defense_override`/`damage_override` fields (the contact path
 prefers the override), the justHit recoil (the hurt cooldown stands in
 for the C# flag), the wall's death deactivates the minion.
+**Re-audited 2026-11-18 (S1-D-3 aiStyle-29 round): the live arm is an
+approximation, not verbatim — see "The Hungry aiStyle-29 re-port
+(S1-D-3)" below; the faithful module `npc_ai_style29.rs` is landed
+UNWIRED, the live `update_hungry` keeps running until the wiring round.**
 
 **The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
 the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
@@ -4617,6 +4779,79 @@ wall's band); the expert burst block (the hp-scaled spawn odds) and the
 is cosmetic and skipped. The bestiary `card_at` now matches the draw's
 centred lattice — the stale top-left guard dropped cards once the
 roster's rows overflowed the panel.
+
+### The Hungry aiStyle-29 re-port (S1-D-3, code-only mode)
+
+The 2026-11-18 aiStyle-29 round re-read the whole arm (`NPC.cs:26209-26404`)
+against the live `npc.rs::update_hungry` (M4-BOSS-6b, claimed "verbatim"
+in the section above). The arm IS ported, but approximately — the escape
+clause's line-by-line audit found these defect classes:
+
+* **Missing anchor offset** — `num389 = wof.position.X + (float)(wof.width / 2)`
+  (`:26280`, INTEGER half-width); the live arm uses `World.wof_x` alone
+  (the wall's left edge), shifting every Hungry's leash centre ~50 px.
+* **Missing gate/call** — `TargetClosest()` (`:26220`) never runs in the
+  live arm; the new module rides `npc_target::target_closest` (S1-D-3p).
+* **Missing per-tick reset** — `damage = defDamage` (`:26223`); the live
+  arm's `damage_override = None` at full hp happens to match, but the
+  tier write skips `GetAttackDamage_ScaledByDifficulty` (`:26253`,
+  `NPC.cs:7036-7039` — the classic `EnemyDamageMultiplier.Sample(1)` is
+  exactly 1: the curve's Journey 0.5→0.5 / Master 3→3 keys,
+  `GameDifficultyData.cs:84`, `GameDifficultyLevel.cs:18`).
+* **Invented defense clear** — the live arm sets `defense_override = None`
+  at full hp; the C# writes defense ONLY in the two tiers (`:26228`/`:26241`)
+  and restores `defDefense` only in the expert block (`:26257`). A Hungry
+  that drops from <75% back to full hp keeps def 20 in the C#.
+* **f32-ratio vs f64-int ladder** — the live arm reads the sim's
+  precomputed `World.wof_hp_ratio` (f32); the C# compares
+  `(double)life < (double)lifeMax * k` (`:26225`/`:26238`) — boundary
+  ticks can tier differently.
+* **Missing third recoil arm** — `ai[1] < 0 → ai[1] = 0` (`:26389-26392`);
+  the live arm lets a negative pause run forever (never chases again).
+* **Missing sprite/rotation writes** — `spriteDirection = ±1` and the
+  left arm's `+ 3.14f` (`:26393-26402`, the literal 3.14, not π); a
+  dead-centre aim (`num391 == 0`) keeps the previous flip AND rotation.
+  The live arm writes neither the flip nor the offset. (BUG-07's audit
+  cited `:26393` for the Hungry's own-aim flip; the live arm never
+  implemented it.)
+* **Float vs integer half-extents** — the aim deltas use
+  `(float)(width / 2)` on BOTH entities (`:26294-26295`); the live arm
+  uses `center()`'s float halves. Identical for the even 30×30/20×42
+  boxes, divergent for odd sizes.
+* **Operation order** — `ai[2]++` runs AFTER the anchor reads (`:26284`);
+  the dive's `(int)(num387 * 1.3f)` truncates (`:26287`); the flip
+  double-add is `num386 * 2.5f` (expert accel rides it), not a hardcoded
+  0.25; `justHit` writes BEFORE the wall-presence gate (`:26211-26219`).
+
+The faithful port is `crates/tr-app/src/npc_ai_style29.rs`
+(`style29_step` + `Style29Context`), landed **code-only mode**: no
+compiler invoked, the 12 witness tests are written not run. It is
+**UNWIRED** — `update_rng`'s style axis does not claim 29 yet, the live
+`update_hungry` keeps running byte-identical. The wiring round adds the
+`29 =>` dispatch arm and the context plumbing: the wall's raw
+`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the sim's
+`World.wof_*` write-through carries presence/x/dir today), the INT band
+statics (`Main.wofDrawAreaTop/Bottom` are `int`, `Main.cs:757`/`:759` —
+the port's `World.wof_draw_top/bottom` are f32), the `justHit` per-tick
+flag (the live arm's `hurt_cd > 0` stand-in re-arms the pause for the
+whole cooldown, not one tick) and `whoAmI` (`Npc::slot`).
+
+Deviations (documented, same conventions as the sibling style-28 round):
+`active = false` → the port's hp-0 death convention; the arm does not
+integrate (noTileCollide — `UpdateNPC` owns the step, the live arm
+integrates inline); `Lighting.AddLight(centre/16, 0.3, 0.2, 0.1)`
+(`:26403`) rides the S1-E-5 entity-light family; the expert arms are
+ported verbatim behind `ctx.expert` (the port is single-difficulty, the
+wiring passes false) including the `:26341` INT-division quirk
+(`life / lifeMax` truncates to 0 or 1 — at any hp below lifeMax ALL four
+speed-cap bands fire; kept verbatim, not "fixed").
+
+RNG by construction: the arm draws no `Main.rand.Next` — every pacing
+value is a deterministic counter (`ai[1]` the recoil, `ai[2]` the dive)
+or an hp-band comparison, and `TargetClosest` is a deterministic
+Manhattan scan; the fn takes no RNG parameter and the witness test
+`the_arm_is_deterministic_without_an_rng` pins two identical inputs to
+identical state over 300 ticks.
 
 ## The Eye of Cthulhu (M4-BOSS-1)
 

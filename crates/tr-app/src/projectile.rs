@@ -7926,6 +7926,14 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
+        // ahead of the generic emit (`Main.cs:28143-28144` →
+        // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
+        // vanilla draws through the reverse-subtract + additive batches.
+        if self.kind == LIGHTS_BANE {
+            self.draw_lights_bane(r, lookups, camera, zoom, screen);
+            return;
+        }
         // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
         // the C# draws the strip ahead of the sprite (`Main.cs:28182-28243`'s
         // drawers, before the emit at `:30857-30909`), so the quads push first
@@ -7968,6 +7976,47 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+    }
+
+    /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
+    /// slash's three blend batches (S1-G-3). The C# ends the alpha batch,
+    /// begins `Main._multiplyBlendState` (the custom ReverseSubtract state,
+    /// `:27462-27470`) for two stretched `White * 0.3f * num` copies of frame
+    /// 12 plus four `Color.White` copies of the current frame (`:27483-27488`),
+    /// re-begins `BlendState.Additive` (`:27490`) for two `Color.Magenta`
+    /// copies (`:27491-27492`), then restores `BlendState.AlphaBlend`
+    /// (`:27494`). The port pushes the same eight quads, in the same order,
+    /// tagged with [`tr_render::BlendMode`]; `draw_ranges` splits the range
+    /// into one draw per batch. No light tint — the C# draws raw White /
+    /// Magenta here, not `GetAlpha`. The screen placement (the per-quad
+    /// `anchor − origin·stretch` top-lefts) lives in [`lights_bane_quads`].
+    fn draw_lights_bane(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) {
+        let Some(sheet) = lookups.proj_sheets.get(&LIGHTS_BANE).copied() else {
+            return;
+        };
+        // `:27474` — `position = proj.Center - Main.screenPosition`; the ui
+        // range's screen pixels convert like `frame_quad`'s anchor.
+        let anchor = [
+            (self.pos.x + self.w * 0.5 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+        ];
+        for q in lights_bane_quads(
+            &sheet,
+            lookups.atlas_size,
+            self.frame,
+            self.scale,
+            anchor,
+            zoom,
+        ) {
+            r.push_ui_sprite_blend(q.pos, q.size, q.uv, q.tint, self.rot, q.origin, q.blend);
+        }
     }
 
     /// The followup kinds' frame-sliced quad, computed pure so the unit tests
@@ -8331,6 +8380,37 @@ impl Projectile {
         self.ai[0] += 1.0;
         // `HandleMovement`: the shadow's row keeps `tileCollide = false`, so
         // the position follows the velocity without a tile probe.
+        self.kill_step(world);
+    }
+
+    /// `AI_188_LightsBane` (`Projectile.cs:42229-42262`) — the Light's Bane
+    /// slash (974): the scale rides `ai[0]`, the 3-tick frame machine kills
+    /// at frame 12, and the rotation follows the velocity.
+    ///
+    /// The sound cue (`:42231-42239`, `SoundID.Item60` at `0.15 * ai[0]`
+    /// volume) and the dust streak (`:42255-42261`, type 278 with its two
+    /// `Main.rand` draws) are SKIPPED — the pool has no sound or dust layer
+    /// (the `ai_volcano` precedent); with them go their RNG draws.
+    fn ai_lights_bane(&mut self, world: &World) {
+        // `:42240` — the scale is the spawn's `ai[0]`.
+        self.scale = self.ai[0];
+        // `:42241` — the age counter the dust streak's window reads.
+        self.local_ai[0] += 1.0;
+        // `:42242-42250` — the frame advances every third tick; the twelfth
+        // frame kills the slash.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 12 {
+                self.kill();
+                return;
+            }
+        }
+        // `:42251` — `rotation = velocity.ToRotation()`.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        // `HandleMovement`: the row keeps `tileCollide = false`
+        // (`Projectile.cs:9243`), so the position follows the velocity.
         self.kill_step(world);
     }
 
@@ -10185,6 +10265,117 @@ fn is_followup_draw(kind: u16) -> bool {
     )
 }
 
+
+/// `Main.DrawProj_LightsBane`'s eight quads in push order (`Main.cs:27483-27492`),
+/// as `(blend, scale-stretch, sheet-row, tint)` — pure so the batch layout is
+/// unit-testable without a GPU. The multiply batch (`Main._multiplyBlendState`,
+/// `:27462-27470`) draws two stretched `White * 0.3f * num` copies of row 12
+/// (`:27483-27484`, stretches `(1, 6)` and `(2, 2)`) then four `Color.White`
+/// copies of the current frame (`:27485-27488`); the additive batch
+/// (`BlendState.Additive`, `:27490`) draws two `Color.Magenta` copies
+/// (`:27491-27492`). `num = Remap(frame, 0, 3, 0, 1) * Remap(frame, 4, 12, 1, 0)`
+/// (`:27480`, `Utils.cs:345-348`).
+///
+/// The ghost tint is XNA's TWO byte-truncating multiplies, not one fused
+/// float: `Color.White * 0.3f` stores `(byte)(255f * 0.3f) = 76` per channel
+/// (alpha included — `Color.operator*(Color, float)` scales every channel
+/// and truncates), then `* num` stores `(byte)(76f * num)`. Fusing
+/// `0.3 * num` drifts up to 1 LSB (e.g. frame 6: 57/255, not 0.225).
+fn lights_bane_batches(
+    frame: i32,
+) -> [(tr_render::BlendMode, [f32; 2], i32, [f32; 4]); 8] {
+    let num = remap(frame as f32, 0.0, 3.0, 0.0, 1.0) * remap(frame as f32, 4.0, 12.0, 1.0, 0.0);
+    // `Color.White * 0.3f * num` (`:27483-27484`) evaluates left-to-right
+    // through TWO `Color.operator*` byte truncations: `(byte)(255f * 0.3f)`
+    // = 76 per channel, then `(byte)(76f * num)` — the house XNA helper
+    // (`ui::color::mul`, the `bars.rs` precedent), not one fused float.
+    let ghost = crate::ui::color::tint(crate::ui::color::mul(
+        crate::ui::color::mul([255, 255, 255, 255], 0.3),
+        num,
+    ));
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let magenta = [1.0, 0.0, 1.0, 1.0];
+    let m = tr_render::BlendMode::Multiply;
+    let a = tr_render::BlendMode::Additive;
+    [
+        (m, [1.0, 6.0], 12, ghost),
+        (m, [2.0, 2.0], 12, ghost),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (a, [1.0, 1.0], frame, magenta),
+        (a, [1.0, 1.0], frame, magenta),
+    ]
+}
+
+/// One blend-batch quad of `DrawProj_LightsBane` in the
+/// [`SpriteRenderer::push_ui_sprite_blend`] convention: `pos` is the
+/// UNROTATED top-left (`anchor − origin`), `origin` the sprite-local pivot
+/// in scaled screen pixels — the helper shifts the top-left by
+/// `origin − R·origin` so the origin texel lands on `pos + origin`, i.e.
+/// exactly the C#'s `position` anchor (`Main.cs:27474`).
+struct LightsBaneQuad {
+    pos: [f32; 2],
+    size: [f32; 2],
+    uv: [f32; 4],
+    tint: [f32; 4],
+    origin: [f32; 2],
+    blend: tr_render::BlendMode,
+}
+
+/// `Main.DrawProj_LightsBane`'s eight placed quads (`Main.cs:27477-27492`),
+/// computed pure so the screen placement is unit-testable without a GPU
+/// (the `frame_quad` / `palm_placement` precedent). `anchor` is `:27474`'s
+/// `proj.Center − Main.screenPosition` already in the ui range's screen
+/// pixels; `scale` is `proj.scale`.
+///
+/// XNA's `SpriteBatch.Draw(texture, position, rect, color, rotation,
+/// origin, scale, …)` multiplies the texture-space origin by the scale
+/// vector: the pivot inside the drawn quad sits at `origin · scale` and
+/// the rotation keeps it on `position`. The per-quad scale here is
+/// `vector2 · stretch` (`:27483-27484`'s `(1, 6)`/`(2, 2)` stretches over
+/// `:27479`'s `(0.7, 0.7)·proj.scale`), so the ghosts' pivots are stretched
+/// too — `origin = half · s · stretch` and `pos = anchor − origin` per
+/// quad, exactly the `push_sprite_origin_rot` convention (the
+/// `foliage.rs::palm_placement` precedent: pos = anchor − origin).
+fn lights_bane_quads(
+    sheet: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    frame: i32,
+    scale: f32,
+    anchor: [f32; 2],
+    zoom: f32,
+) -> [LightsBaneQuad; 8] {
+    // `:27477-27478` — `rectangle = asset.Frame(1, 13, 0, proj.frame)`
+    // (the drawer's own 13-row slice, NOT `Main.projFrames[974]` = 1) and
+    // `vector = rectangle.Size() / 2f`.
+    let frame_h = sheet.height / 13;
+    let uv = frame_slice_uv(sheet, atlas_size, frame, 13);
+    let half = [sheet.width as f32 * 0.5, frame_h as f32 * 0.5];
+    // `:27479` — `vector2 = new Vector2(0.7f, 0.7f) * proj.scale`; the ui
+    // range's screen pixels carry the zoom too (`frame_quad`'s shape).
+    let s = 0.7 * scale * zoom;
+    // `:27481` — `value = asset.Frame(1, 13, 0, 12)`, the last row.
+    let uv12 = frame_slice_uv(sheet, atlas_size, 12, 13);
+    let size = [sheet.width as f32 * s, frame_h as f32 * s];
+    lights_bane_batches(frame).map(|(blend, stretch, row, tint)| {
+        let uv = if row == 12 { uv12 } else { uv };
+        // XNA multiplies the origin by the per-quad scale vector — the
+        // ghosts' `(1, 6)`/`(2, 2)` stretches stretch the pivot with the
+        // quad. The instance pipeline rotates about the top-left, so the
+        // pivot is in scaled screen pixels like `frame_quad`'s.
+        let origin = [half[0] * s * stretch[0], half[1] * s * stretch[1]];
+        LightsBaneQuad {
+            pos: [anchor[0] - origin[0], anchor[1] - origin[1]],
+            size: [size[0] * stretch[0], size[1] * stretch[1]],
+            uv,
+            tint,
+            origin,
+            blend,
+        }
+    })
+}
 
 /// The frame rect of `Main.DrawProjDirect`'s default emit — `Main.cs:34386-34388`
 /// builds it (`num474 = value134.Height / Main.projFrames[proj.type]`,
@@ -12795,6 +12986,10 @@ impl ProjectilePool {
                         // the four variation choreographies and the alpha
                         // ramp.
                         187 => self.slots[i].ai_insanity_shadow(world),
+                        // The aiStyle-188 Light's Bane slash
+                        // (`:42229-42262`): the scale latch, the 3-tick
+                        // frame machine and the velocity rotation.
+                        188 => self.slots[i].ai_lights_bane(world),
                         // The aiStyle-189 Volcano / Cascade Explosion
                         // (`:42264-42303`): the alpha flash, the scale ramp
                         // and the five-frame life.
@@ -29214,6 +29409,231 @@ mod projectile_ai_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod lights_bane_tests {
+    //! S1-G-3: the Light's Bane slash (974) — the SetDefaults row, the
+    //! aiStyle-188 frame machine and `DrawProj_LightsBane`'s batch layout
+    //! (`Projectile.cs:9237-9252`, `:42229-42262`, `Main.cs:27455-27495`).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 64)
+    }
+
+    fn spawn(pool: &mut ProjectilePool) -> usize {
+        pool.spawn_with_data_owned(LIGHTS_BANE, 0, 100.0, 100.0, 8.0, 0.0, 20, 0.0, 1.0, 0.0)
+            .expect("the LightsBane row")
+    }
+
+    fn ticks(pool: &mut ProjectilePool, w: &mut World, n: usize) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..n {
+            pool.update(
+                w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+        }
+    }
+
+    /// The SetDefaults row (`Projectile.cs:9237-9252`): 20x20, aiStyle 188,
+    /// penetrate 2, timeLeft 30, tileCollide off, ignoreWater on, the
+    /// local-immunity pair (true, −1).
+    #[test]
+    fn the_set_defaults_row_matches_the_csharp() {
+        let d = proj_data(LIGHTS_BANE).expect("the row exists");
+        assert_eq!((d.w, d.h), (20.0, 20.0));
+        assert_eq!(d.ai_style, 188);
+        assert_eq!(d.penetrate, 2);
+        assert_eq!(d.time_left, 30);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -1);
+        // The drawer's own 13-row slice is NOT the projFrames table — 974
+        // keeps the loop default 1 (`Main.cs:8439-8442`, no override row).
+        assert_eq!(proj_frames(LIGHTS_BANE), 1);
+        assert!(spawnable_kinds().contains(&LIGHTS_BANE), "the sheet packs");
+    }
+
+    /// `AI_188_LightsBane` (`Projectile.cs:42240-42251`): the scale latches
+    /// `ai[0]`, the frame advances every third tick, the rotation follows the
+    /// velocity. The pool's `timeLeft = 30` (`:9249`) kills the slash at tick
+    /// 30 — before the frame machine's own frame-12 kill at tick 36, which
+    /// the arm test below pins directly.
+    #[test]
+    fn the_frame_machine_advances_every_third_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = spawn(&mut pool);
+        ticks(&mut pool, &mut w, 1);
+        let p = &pool.slots[slot];
+        assert_eq!(p.scale, 1.0, "scale = ai[0]");
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!((p.rot - 0.0).abs() < 1e-6, "velocity (8, 0) → rot 0");
+        assert!((p.pos.x - 108.0).abs() < 1e-4, "flies on, no tile collide");
+        ticks(&mut pool, &mut w, 2);
+        assert_eq!(pool.slots[slot].frame, 1, "the third tick advances");
+        assert_eq!(pool.slots[slot].frame_counter, 0);
+        // The 30-tick life (`Projectile.cs:9249`): tick 29 still flies at
+        // frame 9, tick 30 spends the last timeLeft and kills.
+        ticks(&mut pool, &mut w, 26);
+        assert!(pool.slots[slot].active);
+        assert_eq!(pool.slots[slot].frame, 9);
+        ticks(&mut pool, &mut w, 1);
+        assert!(!pool.slots[slot].active, "timeLeft 30 kills");
+    }
+
+    /// The arm's own kill (`Projectile.cs:42245-42248`): the twelfth frame
+    /// kills the slash — reachable when the life counter is refreshed (the
+    /// C# keeps both gates).
+    #[test]
+    fn the_twelfth_frame_kills_the_slash() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: LIGHTS_BANE,
+            frame: 11,
+            frame_counter: 2,
+            ..Default::default()
+        };
+        p.ai_lights_bane(&w);
+        assert!(!p.active, "frame 12 kills");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.frame, 12);
+    }
+
+    /// `Main.cs:27483-27492` — the eight quads: two stretched ghosts of row
+    /// 12 (`White * 0.3f * num`), four White copies of the current frame, all
+    /// multiply; then two Magenta copies, additive. The order is the C#'s
+    /// push order — the batch boundaries the port's blend runs reproduce.
+    #[test]
+    fn the_batch_layout_matches_the_csharp_draw_order() {
+        let b = lights_bane_batches(6);
+        // num at frame 6: Remap(6,0,3)=1, Remap(6,4,12,1,0)=1−2/8=0.75.
+        // The tint is TWO byte truncations: (byte)(255*0.3)=76, then
+        // (byte)(76*0.75)=57 — NOT the fused 0.3*0.75=0.225.
+        let ghost = 57.0 / 255.0;
+        assert_eq!(b[0], (tr_render::BlendMode::Multiply, [1.0, 6.0], 12, [ghost, ghost, ghost, ghost]));
+        assert_eq!(b[1], (tr_render::BlendMode::Multiply, [2.0, 2.0], 12, [ghost, ghost, ghost, ghost]));
+        for q in &b[2..6] {
+            assert_eq!(*q, (tr_render::BlendMode::Multiply, [1.0, 1.0], 6, [1.0, 1.0, 1.0, 1.0]));
+        }
+        for q in &b[6..8] {
+            assert_eq!(*q, (tr_render::BlendMode::Additive, [1.0, 1.0], 6, [1.0, 0.0, 1.0, 1.0]));
+        }
+        // The ghost window: num is 0 at frame 0 and back to 0 at frame 12
+        // (`:27480`'s two remaps), peaking over frames 3..4.
+        assert_eq!(lights_bane_batches(0)[0].3, [0.0; 4]);
+        assert_eq!(lights_bane_batches(12)[0].3, [0.0; 4]);
+        // The peak is 76/255 — `(byte)(255*0.3)` — not 0.3.
+        assert_eq!(lights_bane_batches(3)[0].3, [76.0 / 255.0; 4]);
+    }
+
+    /// The XNA two-step byte quantisation of `Color.White * 0.3f * num`
+    /// (`Main.cs:27483-27484`): `Color.operator*(Color, float)` truncates
+    /// every channel (alpha included) to a byte on EACH multiply, so the
+    /// chain stores `(byte)(255f * 0.3f) = 76` first and `(byte)(76f * num)`
+    /// second. Fusing `0.3 * num` into one float drifts up to 1 LSB — frame
+    /// 6 must be 57/255, not 0.225. Pins the byte ladder over the ghost
+    /// window; expected values derived from the C# expression, never from
+    /// the port.
+    #[test]
+    fn the_ghost_tint_truncates_twice_like_xna() {
+        // num = Remap(f,0,3,0,1) * Remap(f,4,12,1,0); byte = (byte)(76*num).
+        // f=0: 0*1 → 0; f=2: (2/3)*1 → (byte)50.666 = 50; f=3..4: 1 → 76;
+        // f=6: 1*0.75 → 57; f=8: 1*0.5 → 38; f=10: 1*0.25 → 19; f=12: 0.
+        for (frame, byte) in [(0, 0.0), (2, 50.0), (3, 76.0), (4, 76.0), (6, 57.0), (8, 38.0), (10, 19.0), (12, 0.0)] {
+            let t = lights_bane_batches(frame)[0].3;
+            assert_eq!(t, [byte / 255.0; 4], "frame {frame}: (byte)(76*num) = {byte}");
+        }
+        // The fused float would give 0.225 at frame 6 — 0.375 LSB away.
+        let fused = 0.3f32 * 0.75;
+        let stored = lights_bane_batches(6)[0].3[0];
+        assert!((stored - fused).abs() > 1e-6, "not the fused 0.3*num");
+        // Both ghosts carry the same tint (the two `:27483-27484` draws).
+        assert_eq!(lights_bane_batches(6)[0].3, lights_bane_batches(6)[1].3);
+    }
+
+    /// The screen placement (`Main.cs:27474-27492`): every quad's pivot
+    /// lands on the C#'s `position` anchor — `pos` is the UNROTATED
+    /// top-left `anchor − origin` and `origin` is the frame half scaled by
+    /// the PER-QUAD scale vector (XNA multiplies the texture-space origin
+    /// by the scale, so the `(1, 6)`/`(2, 2)` ghosts stretch their pivots
+    /// too). Mirrors the `palm_placement` precedent: a synthetic sheet
+    /// pins the maths without a GPU.
+    #[test]
+    fn the_quads_place_the_origin_texel_on_the_anchor() {
+        // A 20x260 sheet = thirteen 20x20 rows; half = (10, 10).
+        let sheet = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 260,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        let anchor = [100.0, 200.0];
+        // scale 1, zoom 1: s = 0.7, the base quad is 14x14, origin (7, 7).
+        let q = lights_bane_quads(&sheet, atlas, 6, 1.0, anchor, 1.0);
+        let near = |a: [f32; 2], b: [f32; 2]| {
+            assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4, "{a:?} vs {b:?}");
+        };
+        // Ghost 1: stretch (1, 6) → size (14, 84), origin (7, 42).
+        near(q[0].origin, [7.0, 42.0]);
+        near(q[0].pos, [93.0, 158.0]);
+        near(q[0].size, [14.0, 84.0]);
+        // Ghost 2: stretch (2, 2) → size (28, 28), origin (14, 14).
+        near(q[1].origin, [14.0, 14.0]);
+        near(q[1].pos, [86.0, 186.0]);
+        near(q[1].size, [28.0, 28.0]);
+        // The six unstretched copies: origin (7, 7), pos = anchor − origin.
+        for quad in &q[2..8] {
+            near(quad.origin, [7.0, 7.0]);
+            near(quad.pos, [93.0, 193.0]);
+            near(quad.size, [14.0, 14.0]);
+        }
+        // Every pivot lands on the anchor — the helper's `pos + origin`
+        // invariant (`push_ui_sprite_blend` shifts by `origin − R·origin`).
+        for quad in &q {
+            near([quad.pos[0] + quad.origin[0], quad.pos[1] + quad.origin[1]], anchor);
+        }
+        // The ghosts sample row 12 (`:27481`'s `value`), the copies the
+        // current frame (`:27477`'s `rectangle`).
+        let uv12 = frame_slice_uv(&sheet, atlas, 12, 13);
+        let uv6 = frame_slice_uv(&sheet, atlas, 6, 13);
+        assert_eq!(q[0].uv, uv12);
+        assert_eq!(q[1].uv, uv12);
+        for quad in &q[2..8] {
+            assert_eq!(quad.uv, uv6);
+        }
+        // scale 2, zoom 1.5: s = 0.7*2*1.5 = 2.1 — the origin scales with
+        // the quad (XNA's origin·scale), the ghosts' stretches included.
+        let q = lights_bane_quads(&sheet, atlas, 6, 2.0, anchor, 1.5);
+        near(q[0].origin, [21.0, 126.0]);
+        near(q[0].pos, [79.0, 74.0]);
+        near(q[0].size, [42.0, 252.0]);
+        near(q[1].origin, [42.0, 42.0]);
+        near(q[1].pos, [58.0, 158.0]);
+        near(q[2].origin, [21.0, 21.0]);
+        near(q[2].pos, [79.0, 179.0]);
+        for quad in &q {
+            near([quad.pos[0] + quad.origin[0], quad.pos[1] + quad.origin[1]], anchor);
+        }
+    }
+}
+
 #[cfg(test)]
 mod s1_d_4b_7_tests {
     use super::*;
