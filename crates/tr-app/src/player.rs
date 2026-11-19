@@ -10463,7 +10463,7 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-    fn ground_world() -> World {
+    pub(super) fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
         for x in 0..64 {
             for y in 60..128 {
@@ -12150,7 +12150,7 @@ mod tests {
     /// Arms the Cloud + Sandstorm options on a settled player — through the
     /// pins (the grant pass clears the direct sets every tick; the pins are
     /// the stand-in for the granting equipment).
-    fn settled_with_jumps(w: &World, opts: &[ExtraJump]) -> Player {
+    pub(super) fn settled_with_jumps(w: &World, opts: &[ExtraJump]) -> Player {
         let mut p = Player::spawn(w);
         for j in opts {
             p.pinned_jumps[j.index()] = true;
@@ -15962,6 +15962,10 @@ mod summon_tests {
 #[cfg(test)]
 mod s1_player_composite_tests {
     use super::*;
+    // S1-E-21f gate fix: the sound-trigger tests below reuse the movement
+    // fixtures from the sibling `tests` module (private there — the
+    // code-only branch could not compile the cross-module reference).
+    use super::tests::{ground_world, settled_with_jumps};
 
     /// A frame-inputs builder with the raw counters the composite styles read.
     fn inputs(style: u8, remaining: f32, anim: f32, max: f32) -> FrameInputs {
