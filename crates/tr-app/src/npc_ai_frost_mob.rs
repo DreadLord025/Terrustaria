@@ -41,11 +41,19 @@
 //! below are the AI-relevant `SetDefaults` inputs, cited per row — they
 //! must agree with A/B's tables when those land.
 
-// The wiring lands with the defaults workers; until then the dispatch is
-// exercised by this module's tests only.
+// The pure dispatch seam (`frost_mob_ai_step`) stays test-only — the live
+// wiring below (`frost_mob_step`, S1-D-3 W-6) calls the machines directly
+// so each `TargetClosest()` site keeps its C# position.
 #![allow(dead_code)]
 
-use tr_core::{UnifiedRandom, World};
+use crate::npc::{Npc, NpcKind, GRAVITY, MAX_FALL};
+use crate::npc_ai::WalkerParams;
+use crate::npc_ai_frost_mob_b::{
+    elf_archer_ai_retarget, ArcherTick, FrostArcherShot, FrostArcherTarget, FrostMobBState,
+};
+use crate::npc_target::{session_candidate, target_closest};
+use crate::player::Player;
+use tr_core::{UnifiedRandom, World, TILE_PX};
 
 /// The non-boss Frost Moon kinds this module owns, with their vanilla
 /// `NPCID` values (`NPCID.cs:11353-11381`).
@@ -416,6 +424,21 @@ pub fn present_mimic_ai(
     target: &FrostTarget,
     snow_moon: bool,
 ) {
+    present_mimic_ai_retarget(s, world, target, snow_moon, &mut |_| {});
+}
+
+/// The wired form (S1-D-3 W-6): `retarget` runs at each C# `TargetClosest()`
+/// site (`NPC.cs:25550` the layer pick, `:25566` the idle arm under
+/// `!flag40`, `:25601` the hop launch under `!flag40`) and syncs the picked
+/// facing back into `s.direction`. The pure [`present_mimic_ai`] passes a
+/// no-op so the module tests keep the resolved-target form.
+pub fn present_mimic_ai_retarget(
+    s: &mut FrostMobState,
+    world: &World,
+    target: &FrostTarget,
+    snow_moon: bool,
+    retarget: &mut dyn FnMut(&mut FrostMobState),
+) {
     // `:25540`.
     let flag40 = !snow_moon;
     // `:25541-25557` — the one-time placement nudge + layer pick.
@@ -425,8 +448,8 @@ pub fn present_mimic_ai(
         if s.y / 16.0 > underworld_layer {
             s.ai[3] = 3.0;
         } else if (s.y / 16.0) as f64 > world.world_surface {
-            // `:25550` — TargetClosest(); the caller's seam (FrostTarget
-            // is already the resolved slot in this pure form).
+            // `:25550` — TargetClosest().
+            retarget(s);
             s.ai[3] = 2.0;
         } else {
             s.ai[3] = 1.0;
@@ -435,7 +458,11 @@ pub fn present_mimic_ai(
     // `:25558-25561` — the 341/629 override.
     s.ai[3] = 1.0;
     if s.ai[0] == 0.0 {
-        // `:25562-25584` — the disguised idle: wake on movement, on the
+        // `:25562-25566` — the idle arm re-targets under !flag40.
+        if !flag40 {
+            retarget(s);
+        }
+        // `:25567-25584` — the disguised idle: wake on movement, on the
         // ±100px inflated overlap, or on any damage.
         if s.vx != 0.0 || s.vy < 0.0 || s.vy as f64 > 0.3 {
             s.ai[0] = 1.0;
@@ -467,8 +494,10 @@ pub fn present_mimic_ai(
             return;
         }
         s.ai[2] = 0.0;
-        // `:25599-25602` — TargetClosest() under !flag40 (caller's seam).
-        let _ = flag40;
+        // `:25599-25602` — TargetClosest() under !flag40.
+        if !flag40 {
+            retarget(s);
+        }
         // `:25603-25607`.
         if s.direction == 0 {
             s.direction = -1;
@@ -648,6 +677,405 @@ pub fn frost_mob_ai_step(
         _ => unreachable!("the Frost mob set only carries aiStyles 3/25/62/63"),
     }
     true
+}
+
+// =====================================================================
+// The live wiring (S1-D-3 W-6, census slice W-6): `Npc` copy-in/out over
+// the pure machines above. The kinds wired here are exactly the census's
+// UNWIRED mobs — 341 PresentMimic, 347 ElfCopter, 348/349 Nutcracker
+// twins, 350 ElfArcher (the sibling `npc_ai_frost_mob_b.rs` machine),
+// 352 Flocko. The five WIRED-DELEGATE walkers (338/339/340/342/343/351)
+// keep their `update_skeleton` ladder routing; the bosses 344/345/346
+// are R41's row (`task/S1-F-13c-wire-bosses`) and are NOT claimed here.
+// =====================================================================
+
+/// The `NpcKind` → module-kind map for the wired mob set (the bosses and
+/// the ladder-owned walkers are absent by construction).
+fn wired_kind(kind: NpcKind) -> Option<FrostMobKind> {
+    Some(match kind {
+        NpcKind::PresentMimic => FrostMobKind::PresentMimic,
+        NpcKind::ElfCopter => FrostMobKind::ElfCopter,
+        NpcKind::Nutcracker => FrostMobKind::Nutcracker,
+        NpcKind::NutcrackerSpinning => FrostMobKind::NutcrackerSpinning,
+        NpcKind::Flocko => FrostMobKind::Flocko,
+        _ => return None,
+    })
+}
+
+/// Copy the AI-visible `Npc` fields into the module state (the module
+/// header's field list). `Npc.hp`/`max_hp` are the C# `life`/`lifeMax`,
+/// `facing` the `Entity.direction`, `despawn_timer` the `timeLeft`
+/// convention (-1 = unset).
+fn state_from_npc(npc: &Npc) -> FrostMobState {
+    let (w, h) = npc.size();
+    FrostMobState {
+        x: npc.x,
+        y: npc.y,
+        vx: npc.vx,
+        vy: npc.vy,
+        ai: npc.ai,
+        local_ai: npc.local_ai,
+        direction: npc.facing,
+        sprite_direction: npc.sprite_dir,
+        rotation: npc.rotation,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        width: w,
+        height: h,
+        scale: npc.scale,
+        despawn_timer: npc.despawn_timer,
+    }
+}
+
+/// Copy the machine's writes back onto the `Npc`. The position write is
+/// kept (the mimic's one-time +8 nudge, `NPC.cs:25543`); the flyers'
+/// integration happens in the machine caller below.
+fn state_to_npc(npc: &mut Npc, s: &FrostMobState) {
+    npc.x = s.x;
+    npc.y = s.y;
+    npc.vx = s.vx;
+    npc.vy = s.vy;
+    npc.ai = s.ai;
+    npc.local_ai = s.local_ai;
+    npc.facing = s.direction;
+    npc.sprite_dir = s.sprite_direction;
+    npc.rotation = s.rotation;
+    npc.despawn_timer = s.despawn_timer;
+}
+
+/// The session player as the module's resolved target box (the 20×42
+/// `Player` box, `player.rs`'s WIDTH/HEIGHT).
+fn frost_target(player: &Player) -> FrostTarget {
+    FrostTarget {
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH,
+        height: crate::player::HEIGHT,
+    }
+}
+
+/// `TargetClosest()` at the machine's C# call site: the shared
+/// `npc_target::target_closest` scan over the single session candidate
+/// (the zombie wiring's convention, `npc.rs::update_zombie`), then the
+/// picked facing rides back into the module state's `direction`. The
+/// `EverLastingTicker` stamp is 0 (the unported target-line fade's only
+/// reader, the zombie precedent). `ai_style` is the machine's C# style.
+fn retarget_state(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    s: &mut FrostMobState,
+    ai_style: i32,
+) {
+    // Sync the machine's current position/velocity so the scan's centre
+    // math reads the live box (the mimic's nudge moved it).
+    npc.x = s.x;
+    npc.y = s.y;
+    npc.facing = s.direction;
+    let cand = session_candidate(player);
+    target_closest(npc, world, &[cand], true, ai_style, 0);
+    s.direction = npc.facing;
+}
+
+/// One wired mob tick — the census's UNWIRED set, each machine at its
+/// C# arm position with the caller's `UpdateNPCs` stream. Returns `true`
+/// when the kind is claimed (the caller routes only the wired kinds).
+///
+/// RNG census (preserved from the module witnesses): Flocko draws
+/// NOTHING (`NPC.cs:33971-34018` has no `Main.rand`); the mimic draws
+/// NOTHING (`:25538-25630`); the walkers draw NOTHING (`:57403-57740`);
+/// the copter draws exactly SIX on the firing tick (`:33960-33967`,
+/// `Next(-35,36)` ×2 → `Next(-20,21)` ×2 → `Next(-20,21)` ×2) and zero
+/// otherwise; the archer draws exactly TWO per fire/entry site
+/// (`npc_ai_frost_mob_b.rs`'s header census). The transform
+/// (`:57031-57034` → `Transform(349)`) draws NOTHING: `TransformVisuals`
+/// (`NPC.cs:80963-81033`) has no 348→349 arm, `SetDefaults` is rand-free
+/// and `TargetClosest` is the deterministic Manhattan scan.
+pub(crate) fn frost_mob_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &mut Player,
+    rng: &mut UnifiedRandom,
+) -> bool {
+    // ---- ElfArcher (350): the sibling shooter machine ----
+    if npc.kind == NpcKind::ElfArcher {
+        archer_step(npc, world, player, rng);
+        return true;
+    }
+    let Some(kind) = wired_kind(npc.kind) else {
+        return false;
+    };
+    let mut kind = kind;
+    let mut s = state_from_npc(npc);
+    let target = frost_target(player);
+    match kind {
+        // aiStyle 63 (`NPC.cs:33971-34018`): TargetClosest at `:33973`,
+        // then the pure machine; noGravity + noTileCollide
+        // (`SetDefaults :13483-13484`) → the raw integration.
+        FrostMobKind::Flocko => {
+            retarget_state(npc, world, player, &mut s, 63);
+            flocko_ai(&mut s, &target, world.day_time);
+            state_to_npc(npc, &s);
+            npc.x += npc.vx;
+            npc.y += npc.vy;
+        }
+        // aiStyle 62 (`NPC.cs:33922-33969`): TargetClosest at `:33924`;
+        // the six shot draws ride `rng` in the C# order; the shot request
+        // rides `wants_hostile_shot` (BulletDeadeye 180, 32 dmg,
+        // KnockBack 0 — the sim's drain resolves it into the pool).
+        FrostMobKind::ElfCopter => {
+            retarget_state(npc, world, player, &mut s, 62);
+            let mut shots = Vec::new();
+            elf_copter_ai(&mut s, world, &target, world.day_time, rng, &mut shots);
+            state_to_npc(npc, &s);
+            for shot in shots {
+                npc.wants_hostile_shot.push((
+                    crate::projectile::PIRATE_ARROW,
+                    shot.x,
+                    shot.y,
+                    shot.vx,
+                    shot.vy,
+                    shot.damage,
+                ));
+            }
+            npc.x += npc.vx;
+            npc.y += npc.vy;
+        }
+        // aiStyle 25 (`NPC.cs:25538-25630`): the retarget sites ride the
+        // callback at their C# positions; the mimic is a grounded walker
+        // (no noGravity/noTileCollide row, `:13314-13326`) → the shared
+        // gravity + tile-collision pass after the machine.
+        FrostMobKind::PresentMimic => {
+            {
+                let npc_ref: &mut Npc = npc;
+                present_mimic_ai_retarget(
+                    &mut s,
+                    world,
+                    &target,
+                    world.snow_moon,
+                    &mut |st| {
+                        retarget_state(npc_ref, world, player, st, 25);
+                    },
+                );
+            }
+            state_to_npc(npc, &s);
+            crate::npc_ai::walker_integrate(
+                npc,
+                world,
+                WalkerParams {
+                    speed: 3.5,
+                    jump: -6.2,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+        }
+        // aiStyle 3 (the Nutcracker twins): the transform gate FIRST
+        // (`NPC.cs:57031-57034`, ahead of the velocity ladder), then
+        // TargetClosest under the discouraged gate (`:57336`/`:57369`,
+        // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+        // `:60300-60330` — the frost terms: day-above-surface discourages
+        // every type except the snowMoon-gated 343/350, neither of which
+        // is here), then the per-type velocity arm, then the movement
+        // tail. The shared stuck/jump core stays S1-D-3p's scope — the
+        // port's collision jump (-6.2) is its documented stand-in.
+        FrostMobKind::Nutcracker | FrostMobKind::NutcrackerSpinning => {
+            // `:57031-57034` — the 55% transform (netMode != 1 always).
+            if let Some(new_type) = nutcracker_transform(kind, npc.hp, npc.max_hp) {
+                transform_nutcracker(npc, world, player, new_type);
+                // Transform re-rolled the kind; re-read the kind + state.
+                kind = wired_kind(npc.kind).expect("the transform stays in the wired set");
+                s = state_from_npc(npc);
+            }
+            let discouraged = ai3_discouraged(npc, world);
+            if !discouraged {
+                retarget_state(npc, world, player, &mut s, 3);
+            } else {
+                // `:57375-57379` — the day-above-surface despawn nudge.
+                if world.day_time && (npc.y as f64 / 16.0) < world.world_surface {
+                    npc.encourage_despawn(10);
+                    s.despawn_timer = npc.despawn_timer;
+                }
+            }
+            if let Some((vx, vy)) =
+                fighter_walk_velocity(kind, s.vx, s.vy, s.direction, s.scale)
+            {
+                s.vx = vx;
+                s.vy = vy;
+            }
+            state_to_npc(npc, &s);
+            crate::npc_ai::walker_integrate(
+                npc,
+                world,
+                WalkerParams {
+                    speed: 2.0,
+                    jump: -6.2,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+        }
+        // The ladder-owned walkers never reach this dispatch (their
+        // `update_skeleton` arms stay); the mimic/flyers/twins above are
+        // the whole wired set.
+        _ => return false,
+    }
+    true
+}
+
+/// `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+/// (`NPC.cs:60300-60330`) resolved to the frost walker terms: the gate
+/// is FALSE (discouraged) only on a non-eclipse day above the surface
+/// for a non-statue NPC outside the graveyard; the snowMoon exemption
+/// covers 343/350 only (neither rides this arm), the invasion/dontStarve
+/// terms cannot fire for 348/349, and neither id is on the always-active
+/// exclusion list. The graveyard/invasion fields have no port runtime
+/// yet (the zombie wiring's convention — they read false).
+fn ai3_discouraged(npc: &Npc, world: &World) -> bool {
+    !world.eclipse
+        && world.day_time
+        && !npc.spawned_from_statue
+        && !((npc.y as f64) > world.world_surface * 16.0)
+}
+
+/// The Nutcracker's `Transform(349)` (`NPC.cs:57031-57034` →
+/// `Transform` `:81084-81141`): the stats re-roll to the spinning twin
+/// (the same 28×76 box / 1800 lifeMax, `SetDefaults :13430-13443`), the
+/// hp fraction preserved (`life = num * lifeMax / num2`, floored at 1),
+/// the ai[] slots zeroed (the call's default ai0..ai3 = 0), the
+/// `TargetClosest()` re-pick, and the frame reset. The C#'s
+/// `position.Y += height` / `-= height` reposition pair is a no-op for
+/// the equal-height twins; `TransformVisuals` has no 348→349 arm
+/// (`:80963-81033`) so it draws NOTHING. `value == 0` stays 0 (the
+/// `flag` guard) — both twins carry value 1500, so the guard never
+/// fires here.
+fn transform_nutcracker(npc: &mut Npc, world: &World, player: &Player, new_type: u16) {
+    debug_assert_eq!(new_type, 349);
+    let old_life = npc.hp;
+    let old_max = npc.max_hp;
+    npc.kind = NpcKind::NutcrackerSpinning;
+    npc.max_hp = NpcKind::NutcrackerSpinning.max_hp();
+    // `:81105-81109` — the hp fraction, floored at 1.
+    let mut life = old_life * npc.max_hp / old_max.max(1);
+    if life <= 0 {
+        life = 1;
+    }
+    npc.hp = life;
+    // `:81110-81113` — the ai[] slots reset to the call's defaults (0).
+    npc.ai = [0.0; 4];
+    // `SetDefaults`' frame reset (`:8529`) + the localAI reset
+    // (`:8503-8506`); the knockBackResist row changes 0.4 → 0.1
+    // (`:13426`/`:13440`) — the kind table reads it live.
+    npc.local_ai = [0.0; 4];
+    npc.frame = 0;
+    npc.frame_counter = 0.0;
+    // `:81101` — TargetClosest() after the re-roll.
+    let cand = session_candidate(player);
+    target_closest(npc, world, &[cand], true, 3, 0);
+}
+
+/// The ElfArcher (350) wiring — the sibling machine
+/// (`npc_ai_frost_mob_b.rs::elf_archer_ai`) over the `Npc` fields. The
+/// shooter block runs INSIDE `AI_003_Fighters` after the shared core;
+/// the port runs it at the kind-arm position (the shared stuck/jump core
+/// stays S1-D-3p). `justHit` folds onto `hurt_cd > 0` (the Poltergeist
+/// precedent, `npc_ai_poltergeist.rs:71`); `confused` reads the buff
+/// engine (buff 31, `NPC.cs:92029-92032`). The two-entry draws ride
+/// `rng` in the module's witnessed order; the FlamingArrow 82 request
+/// rides `wants_hostile_shot` (45 dmg, KnockBack 0).
+fn archer_step(npc: &mut Npc, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
+    let (w, h) = npc.size();
+    let mut s = FrostMobBState {
+        x: npc.x,
+        y: npc.y,
+        vx: npc.vx,
+        vy: npc.vy,
+        ai: npc.ai,
+        local_ai: npc.local_ai,
+        direction: npc.facing,
+        sprite_direction: npc.sprite_dir,
+        rotation: npc.rotation,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        width: w,
+        height: h,
+        scale: npc.scale,
+        despawn_timer: npc.despawn_timer,
+    };
+    // The target seam: the C# `TargetClosest()` at `:59206` runs every
+    // stopped tick (the callback below); the entry gates read the
+    // resolved slot's dead/stealth/itemAnimation. `Player.stealth`
+    // defaults 1f in C# (`Player.cs:1562`) and only the shroomite armour
+    // drives it toward 0; the port's field is unwritten (starts 0, the
+    // shroomite system unported), so the seam maps the C# default 1f
+    // while `shroomite_stealth` is off — otherwise the `:59641` refusal
+    // (`stealth == 0 && itemAnimation == 0`) would refuse a stationary
+    // port player forever. The gate itself is carried verbatim, not
+    // folded (ANALYSIS "The Frost Moon MOB wiring").
+    let stealth = if player.shroomite_stealth { player.stealth } else { 1.0 };
+    let target = FrostArcherTarget {
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH,
+        height: crate::player::HEIGHT,
+        dead: player.dead,
+        stealth,
+        item_animation: player.frame_inputs.swing_anim as i32,
+    };
+    let tick = ArcherTick {
+        just_hit: npc.hurt_cd > 0.0,
+        confused: npc.buffs.find_buff_index(31).is_some(),
+    };
+    let mut shots: Vec<FrostArcherShot> = Vec::new();
+    {
+        let npc_ref: &mut Npc = npc;
+        elf_archer_ai_retarget(&mut s, world, &target, tick, rng, &mut shots, &mut |st| {
+            npc_ref.x = st.x;
+            npc_ref.y = st.y;
+            npc_ref.facing = st.direction;
+            let cand = session_candidate(player);
+            target_closest(npc_ref, world, &[cand], true, 3, 0);
+            st.direction = npc_ref.facing;
+        });
+    }
+    npc.x = s.x;
+    npc.y = s.y;
+    npc.vx = s.vx;
+    npc.vy = s.vy;
+    npc.ai = s.ai;
+    npc.local_ai = s.local_ai;
+    npc.facing = s.direction;
+    npc.sprite_dir = s.sprite_direction;
+    npc.rotation = s.rotation;
+    npc.despawn_timer = s.despawn_timer;
+    for shot in shots {
+        npc.wants_hostile_shot.push((
+            crate::projectile::FLAMING_ARROW_HOSTILE,
+            shot.x,
+            shot.y,
+            shot.vx,
+            shot.vy,
+            shot.damage,
+        ));
+    }
+    // The movement tail: 350 is a grounded walker (no noGravity row,
+    // `:13444-13456`); the shared AI_003 collision core's stand-in.
+    crate::npc_ai::walker_integrate(
+        npc,
+        world,
+        WalkerParams {
+            speed: 1.0,
+            jump: -6.2,
+            aggro_x: 0.0,
+            aggro_y: 0.0,
+        },
+        GRAVITY,
+        MAX_FALL,
+    );
 }
 
 #[cfg(test)]
@@ -1146,5 +1574,273 @@ mod tests {
             assert_eq!(k.ai_style(), style, "{id}");
             assert_eq!(k.type_id(), id);
         }
+    }
+
+    // =================================================================
+    // S1-D-3 W-6 wiring witnesses — WRITTEN, NOT RUN (code-only mode).
+    // These exercise the LIVE `frost_mob_step` seam over `Npc` (the
+    // copy-in/out + the C#-position TargetClosest/shot/transform seams),
+    // complementing the pure-machine witnesses above. Every expected
+    // value is hand-derived from the cited C# lines; the RNG argument is
+    // by construction (the machines' draw censuses are preserved).
+    // =================================================================
+
+    /// A night world with a ground strip (the walkers/mimic integrate onto
+    /// it; the flyers ignore it). `snow_moon` on so the mimic re-targets.
+    fn wired_world() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.day_time = false;
+        w.snow_moon = true;
+        w
+    }
+
+    fn wired_player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 120.0 * TILE_PX;
+        p.y = 95.0 * TILE_PX;
+        p
+    }
+
+    fn wired_npc(kind: NpcKind, x_tiles: f32, y_tiles: f32) -> Npc {
+        let mut n = Npc::new(kind, x_tiles * TILE_PX, y_tiles * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// The wiring claims exactly the census's UNWIRED mob set; the bosses
+    /// (R41) and the ladder walkers fall through (`false`).
+    #[test]
+    fn s1_d_3_w6_the_seam_claims_the_unwired_mob_set_only() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        let mut rng = UnifiedRandom::new(1);
+        for kind in [
+            NpcKind::PresentMimic,
+            NpcKind::ElfCopter,
+            NpcKind::Nutcracker,
+            NpcKind::NutcrackerSpinning,
+            NpcKind::ElfArcher,
+            NpcKind::Flocko,
+        ] {
+            let mut n = wired_npc(kind, 60.0, 60.0);
+            assert!(frost_mob_step(&mut n, &w, &mut p, &mut rng), "{kind:?}");
+        }
+        for kind in [
+            NpcKind::Everscream,
+            NpcKind::IceQueen,
+            NpcKind::SantaNK1,
+            NpcKind::ZombieElf,
+            NpcKind::Yeti,
+            NpcKind::Krampus,
+        ] {
+            let mut n = wired_npc(kind, 60.0, 60.0);
+            assert!(!frost_mob_step(&mut n, &w, &mut p, &mut rng), "{kind:?}");
+        }
+    }
+
+    /// Flocko (352) through the seam: the spin latch inside 200px
+    /// (`NPC.cs:33988-34003`), the velocity untouched, and ZERO draws
+    /// (the aiStyle-63 arm has no `Main.rand`).
+    #[test]
+    fn s1_d_3_w6_flocko_spins_through_the_seam_draw_free() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        // The player within 200px of the Flocko's aim point so the spin
+        // latch fires: Flocko at (960, 960), centre (987, 987), aim point
+        // (967, 993) (facing -1 after the latch); player centre (1002, 981)
+        // → dist ≈ 37 < 200.
+        p.x = 62.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut n = wired_npc(NpcKind::Flocko, 60.0, 60.0);
+        n.vx = -2.0;
+        n.vy = 1.0;
+        n.ai[0] = 5.0;
+        let mut rng = UnifiedRandom::new(9);
+        let mut probe = UnifiedRandom::new(9);
+        frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        assert_eq!(n.ai[0], 20.0, "the <200px latch re-arms (`:33990`)");
+        assert_eq!(n.facing, -1, "the direction follows vx's sign (`:33993`)");
+        // The spin early-returns before the chase: velocity unchanged,
+        // then the noTileCollide integration adds it to the position.
+        assert_eq!(n.vx, -2.0);
+        assert_eq!(n.vy, 1.0);
+        for _ in 0..8 {
+            assert_eq!(rng.next(), probe.next(), "Flocko draws nothing");
+        }
+    }
+
+    /// ElfCopter (347) through the seam: at the 15th slow hover tick the
+    /// six draws fire in the C# order and ONE BulletDeadeye-180 request
+    /// lands on `wants_hostile_shot` (32 dmg); the stream afterwards
+    /// aligns with a manual replay of the same six draws.
+    #[test]
+    fn s1_d_3_w6_copter_shot_consumes_six_draws_and_requests_180() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        // Copter at (1000, 600), player at (1300, 600): dist ≈ 300 < 600,
+        // LOS clear (open air above the ground strip) → the hover arm.
+        p.x = 1300.0;
+        p.y = 600.0;
+        let mut n = wired_npc(NpcKind::ElfCopter, 60.0, 60.0);
+        n.x = 1000.0;
+        n.y = 600.0;
+        n.local_ai[0] = 14.0; // the next slow tick fires
+        let mut rng = UnifiedRandom::new(12345);
+        frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        assert_eq!(n.local_ai[0], 0.0, "the cadence resets (`:33957`)");
+        assert_eq!(n.wants_hostile_shot.len(), 1);
+        let (kind, _sx, _sy, _svx, _svy, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::PIRATE_ARROW, "Type 180 (`:33967`)");
+        assert_eq!(dmg, 32, "Damage 32 (`:33967`)");
+        // The manual replay — the same seed, the same six draws.
+        let mut probe = UnifiedRandom::new(12345);
+        for (min, max) in [(-35, 36), (-35, 36), (-20, 21), (-20, 21), (-20, 21), (-20, 21)] {
+            probe.next_range(min, max);
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next(), probe.next(), "the six-draw order holds");
+        }
+    }
+
+    /// The copter's non-firing ticks consume ZERO draws (the hover tick
+    /// below the cadence) — the other half of the witness.
+    #[test]
+    fn s1_d_3_w6_copter_non_firing_ticks_leave_the_stream_untouched() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        p.x = 1300.0;
+        p.y = 600.0;
+        let mut n = wired_npc(NpcKind::ElfCopter, 60.0, 60.0);
+        let mut rng = UnifiedRandom::new(999);
+        let mut probe = UnifiedRandom::new(999);
+        for _ in 0..14 {
+            // Re-anchor each tick: the hover arm damps the velocity and the
+            // integration drifts the copter; keep it in the hover window so
+            // the cadence counts without firing.
+            n.x = 1000.0;
+            n.y = 600.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        }
+        assert!(n.wants_hostile_shot.is_empty());
+        assert_eq!(n.local_ai[0], 14.0);
+        for _ in 0..8 {
+            assert_eq!(rng.next(), probe.next());
+        }
+    }
+
+    /// PresentMimic (341) through the seam: the first tick nudges X by 8
+    /// and forces ai[3] = 1 (`NPC.cs:25543`/`:25558-25561`); the hop cycle
+    /// launches the alternating (3.5, -4) hop after 12 grounded ticks.
+    /// ZERO draws (the aiStyle-25 arm has no `Main.rand`).
+    #[test]
+    fn s1_d_3_w6_mimic_nudges_and_hops_through_the_seam() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        // The player FAR away so the ±100px wake overlap never fires — the
+        // mimic stays disguised until we wake it by hand.
+        p.x = 5000.0;
+        p.y = 600.0;
+        let mut n = wired_npc(NpcKind::PresentMimic, 60.0, 95.0);
+        let x0 = n.x;
+        let mut rng = UnifiedRandom::new(5);
+        let mut probe = UnifiedRandom::new(5);
+        frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        assert_eq!(n.ai[3], 1.0, "the 341 override (`:25560`)");
+        assert_eq!(n.ai[0], 0.0, "the far untouched present stays disguised");
+        // The +8 nudge (`:25543`) then the gravity integration's first fall.
+        assert!(n.x >= x0 + 8.0, "the one-time +8 nudge (`:25543`)");
+        // Wake it and arm the hop cadence: the 12th grounded tick fires.
+        n.ai[0] = 1.0;
+        n.ai[2] = 11.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.on_ground = true;
+        frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        assert!(n.vy < 0.0, "the 12th tick launches the hop (`:25608-25619`)");
+        assert_eq!(n.ai[1], 1.0, "the first hop increments ai[1] (`:25608`)");
+        for _ in 0..8 {
+            assert_eq!(rng.next(), probe.next(), "the mimic draws nothing");
+        }
+    }
+
+    /// The Nutcracker's 55% transform through the seam (`NPC.cs:57031-57034`
+    /// → `Transform(349)` `:81084-81141`): the kind swaps, the hp fraction
+    /// is preserved, the ai[] slots zero, and the transform draws NOTHING.
+    #[test]
+    fn s1_d_3_w6_nutcracker_transforms_at_55_percent_through_the_seam() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        let mut n = wired_npc(NpcKind::Nutcracker, 60.0, 90.0);
+        n.hp = 990; // 990 <= 1800 * 0.55 = 990 → the gate fires
+        n.ai = [7.0, 7.0, 7.0, 7.0];
+        let mut rng = UnifiedRandom::new(3);
+        let mut probe = UnifiedRandom::new(3);
+        frost_mob_step(&mut n, &w, &mut p, &mut rng);
+        assert_eq!(n.kind, NpcKind::NutcrackerSpinning, "Transform(349)");
+        assert_eq!(n.hp, 990, "the hp fraction preserves (1800/1800)");
+        assert_eq!(n.ai, [0.0; 4], "the ai[] slots reset (`:81110-81113`)");
+        for _ in 0..8 {
+            assert_eq!(rng.next(), probe.next(), "the transform draws nothing");
+        }
+        // Above the gate: no transform.
+        let mut n2 = wired_npc(NpcKind::Nutcracker, 60.0, 90.0);
+        n2.hp = 991;
+        frost_mob_step(&mut n2, &w, &mut p, &mut rng);
+        assert_eq!(n2.kind, NpcKind::Nutcracker, "991 > 990 stays");
+    }
+
+    /// ElfArcher (350) through the seam: the aggression entry stops the
+    /// walk and latches the 110-tick cycle (`NPC.cs:59683-59688`), drawing
+    /// exactly two `Next(-40, 41)`; the fire at ai[1] == 55 requests ONE
+    /// FlamingArrow-82 (45 dmg).
+    #[test]
+    fn s1_d_3_w6_archer_entry_and_fire_through_the_seam() {
+        let w = wired_world();
+        let mut p = wired_player(&w);
+        // Archer at (960, 1520) falls onto the ground strip (top y=1600,
+        // the 40px box rests at y=1560); the player at (1280, 1520) stands
+        // 320px to the right — inside the 700px aggro gate (`:59655`), LOS
+        // clear above the ground.
+        p.x = 1280.0;
+        p.y = 1520.0;
+        let mut n = wired_npc(NpcKind::ElfArcher, 60.0, 95.0);
+        n.vx = 1.0;
+        let mut rng = UnifiedRandom::new(4242);
+        // The settle ticks land the archer (vy == 0), then the entry
+        // latches the cycle.
+        for _ in 0..30 {
+            frost_mob_step(&mut n, &w, &mut p, &mut rng);
+            if n.ai[1] == 110.0 {
+                break;
+            }
+        }
+        assert_eq!(n.ai[1], 110.0, "the entry latches the cycle (`:59688`)");
+        assert!(n.ai[2] > 0.0, "the octant latches (`:59689-59711`)");
+        // Run to the fire tick: the decrement walks 110 → 55, the fire
+        // lands on the tick that READS 56.
+        let mut fired = false;
+        for _ in 0..60 {
+            frost_mob_step(&mut n, &w, &mut p, &mut rng);
+            if !n.wants_hostile_shot.is_empty() {
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "the fire tick requests the shot (`:59592`)");
+        let (kind, _sx, _sy, _svx, _svy, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::FLAMING_ARROW_HOSTILE, "num170 = 82");
+        assert_eq!(dmg, 45, "num169 = 45 (`:59416-59419`)");
     }
 }

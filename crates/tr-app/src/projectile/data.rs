@@ -98,6 +98,10 @@ pub const WOODEN_ARROW: u16 = 1;
 /// `ProjectileID.WoodenArrowHostile` (`ProjectileID.cs:716`) — the
 /// Goblin Archer's shot; the box/flight mirror the wooden arrow.
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
+/// `ProjectileID.FlamingArrow` (`ProjectileID.cs:718`) — the ElfArcher's
+/// shot (the AI_003 shooter block's `num170 = 82` default,
+/// `NPC.cs:59403`); the hostile twin of the flame arrow 2.
+pub const FLAMING_ARROW_HOSTILE: u16 = 82;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
@@ -1085,6 +1089,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
             // flight, `timeLeft = 1200`.
             WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:1625-1631` — the hostile FlamingArrow (82):
+            // 10x10, aiStyle 1, hostile; the stock penetrate 1 (`:774`),
+            // tileCollide (`:775`), timeLeft 3600 (`:787`) — the type arm
+            // writes NO override (unlike the friendly 2's 1200). The
+            // `arrow` flag stays false (the 81/82 arms never set it —
+            // `:809`/`:819` are the friendly 1/2 only). The ElfArcher's
+            // shot (S1-D-3 W-6); the OnFire-on-hit roll
+            // (`StatusPlayer :12284`, `Next(3)`) is a HIT-time draw on
+            // the projectile's own tick — the player-debuff layer is
+            // unported, documented in ANALYSIS.
+            FLAMING_ARROW_HOSTILE => {
+                (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
             // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
             SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -1687,25 +1704,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`AI_001` `:56165-56183` never fades it; the visible effect is
             // the dust 229, a documented skip).
             BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
-            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2).
-            // The Corsair's shot is kind **82 FlamingArrow** (`ProjectileID.cs
-            // :718`, `Projectile.cs:1625-1631`: 10x10, aiStyle 1, hostile) —
-            // it has no row yet (S1-D-5 census: the old "musket ball 82"
-            // comment was wrong twice over — the arm below it was
-            // `MUSKET_BALL` = 14, already resolved at the `:950-961` row
-            // above, so it was unreachable; deleted with the MARTIAN_RAY
-            // alias arm, 438 = RAY_GUNNER).
+            // Deadeye's arrow 180 (`Projectile.cs:2660-2672`): 4x4,
+            // aiStyle 1, hostile, penetrate -1, light 0.5, alpha 255,
+            // scale 1.2, timeLeft 180, extraUpdates 1. The ElfCopter's
+            // Ice-Spike shot rides this id too (S1-D-3 W-6, `NPC.cs:33967`
+            // Type 180) — the row is the C# `SetDefaults` arm verbatim
+            // (GATE: the 180 verbatim row WINS main's stale placeholder).
+            // `arrow` stays false (the 180 arm never sets it). The Corsair's
+            // shot is kind 82 FlamingArrow (`Projectile.cs:1625-1631`),
+            // rowed separately (S1-D-5 census).
             PIRATE_ARROW => (
                 4.0,
                 4.0,
                 1,
                 -1,
-                TIME_LEFT_DEFAULT,
-                0,
-                true,
+                180,
+                1,
                 true,
                 false,
-                RESET_STATE,
+                false,
+                (false, -2, false, -1, 255, 1.2),
             ),
             // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring).
             // `Projectile.cs:4353-4360` — the Everscream's pine needle (345):

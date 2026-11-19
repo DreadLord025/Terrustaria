@@ -4385,6 +4385,24 @@ impl Npc {
             // the Sharkron pair 372/373. The faithful
             // `npc_ai_style71::ai_style71` arm (80fcb43b).
             71 => self.ai_071_sharkron(world, player),
+            // S1-D-3 W-6 (census slice W-6): the Frost Moon MOBS' named
+            // machines. aiStyle 25's only ported kind is the PresentMimic
+            // (341, `NPC.cs:13318`); aiStyle 62's only kind is the
+            // ElfCopter (347, `:13404` — the DesertDjinn 533 is aiStyle 8,
+            // `npc/data.rs`); aiStyle 63's only kind is Flocko (352,
+            // `:13475`). The kind guards keep the arms scoped to the
+            // frost set (the aiStyle-25 chest's other C# kinds 85/629 are
+            // unported). The bosses 344/345/346 (aiStyles 57/60/61) are
+            // R41's row — NOT claimed here.
+            25 if self.kind == NpcKind::PresentMimic => {
+                crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
+            62 if self.kind == NpcKind::ElfCopter => {
+                crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
+            63 if self.kind == NpcKind::Flocko => {
+                crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5491,11 +5509,13 @@ impl Npc {
             | NpcKind::Yeti => self.update_skeleton(world, player, dt),
             // The Present Mimic (341): aiStyle 25 (`AI_025`, the chest
             // machine `NPC.cs:25538-25630` — the 100px wake radius, the
-            // 12/20-tick hop cadence, the alternating -4/-8 hops). Its named
-            // machine rides the bespoke slice; until it lands the wave arm's
-            // documented stand-in is the walker family at the hop launch's
-            // 3.5f cap (`:25617` — `ai3_walk_speed`'s frost row).
-            NpcKind::PresentMimic => self.update_skeleton(world, player, dt),
+            // 12/20-tick hop cadence, the alternating -4/-8 hops). S1-D-3
+            // W-6: the named machine (`npc_ai_frost_mob.rs`) rides the
+            // style axis above — this arm is unreachable through
+            // `update_rng` (the walker stand-in is retired).
+            NpcKind::PresentMimic => {
+                unreachable!("aiStyle 25's PresentMimic rides the style axis (S1-D-3 W-6)")
+            }
             // The Everscream (344, aiStyle 57): S1-F-13c wiring landed its
             // named machine (`npc_ai_frost_boss_b.rs`, the type-344 branches
             // of `NPC.cs:32761-33043`) — the style axis claims it, so this
@@ -5505,57 +5525,45 @@ impl Npc {
                 unreachable!("aiStyle 57's Everscream rides the style axis (S1-F-13c wiring)")
             }
             // ---- The Frost Moon wave family (`S1-F-13c` slice B): the wave
-            // roster rides alive on documented stand-ins (ANALYSIS) until the
-            // aiStyle-60/61/62/63 machines land on a later row. The four
-            // aiStyle-3 walkers ride the walker family on the C#'s own
-            // per-type speed rows (`ai3_walk_speed`: 348/351 the cap-2 group
-            // `NPC.cs:57554-57578`, 349 the cap-6 group `:57403-57427`, 350
-            // the shooters' 1f default `:59717`).
-            NpcKind::Nutcracker
-            | NpcKind::NutcrackerSpinning
-            | NpcKind::ElfArcher
-            | NpcKind::Krampus => self.update_skeleton(world, player, dt),
-            // The flyers: 347/352 keep the hover family at each named
-            // machine's own base speed/approach until the aiStyle-62/63
-            // machines wire (R52, `npc_ai_frost_mob.rs`) — 347: aiStyle-62's
-            // `num945 = 7f` (`NPC.cs:33927`) with its `/60` lerp (`:33947`,
-            // accel 0.12); 352: aiStyle-63's `num953 = 11f` (`:33974`) with
-            // its `/51` lerp (`:34005`, accel 0.21). Both fly through the
-            // tiles (their noTileCollide rows). The bosses 345/346 are WIRED
-            // (S1-F-13c) — the style axis claims them, so their kind arms are
-            // unreachable through `update_rng` (the hover stand-ins retired).
+            // roster rides alive. S1-D-3 W-6 wired the Nutcracker twins
+            // (348/349) + the ElfArcher (350) to their named machines
+            // (`npc_ai_frost_mob.rs` / `_b.rs`); Krampus (351) keeps the
+            // walker family on the C#'s cap-2 speed row (`ai3_walk_speed`:
+            // `NPC.cs:57554-57578`). The bosses 345/346 are WIRED
+            // (S1-F-13c) — the style axis claims them, so their kind arms
+            // are unreachable through `update_rng` (the hover stand-ins
+            // retired; the branch's R41-pending note is stale on main).
+            NpcKind::Krampus => self.update_skeleton(world, player, dt),
+            // The Nutcracker twins (348/349, aiStyle 3): the per-type
+            // velocity arms + the 55% transform gate (`NPC.cs:57031-57034`,
+            // `:57403-57440` the cap-6 spin, `:57554-57578` the cap-2 walk).
+            // S1-D-3 W-6: the named machine rides `frost_mob_step`.
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => {
+                crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
+            // The ElfArcher (350, aiStyle 3): the shared shooter block
+            // (`NPC.cs:59069-59801`, the type-350 terms — 350 is EXCLUDED
+            // from the generic AI_003 walker by `:58322`, this IS its
+            // walk). S1-D-3 W-6: the named machine rides `frost_mob_step`.
+            NpcKind::ElfArcher => {
+                crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
             NpcKind::IceQueen => {
                 unreachable!("aiStyle 60 rides the style axis (S1-F-13c wiring)")
             }
             NpcKind::SantaNK1 => {
                 unreachable!("aiStyle 61 rides the style axis (S1-F-13c wiring)")
             }
-            NpcKind::ElfCopter => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 7.0,
-                    accel: 0.12,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
-            NpcKind::Flocko => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 11.0,
-                    accel: 0.21,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
+            // The ElfCopter (347, aiStyle 62) + Flocko (352, aiStyle 63):
+            // S1-D-3 W-6 wired their named machines (`npc_ai_frost_mob.rs`)
+            // on the style axis above — these arms are unreachable through
+            // `update_rng` (the hover stand-ins are retired).
+            NpcKind::ElfCopter => {
+                unreachable!("aiStyle 62's ElfCopter rides the style axis (S1-D-3 W-6)")
+            }
+            NpcKind::Flocko => {
+                unreachable!("aiStyle 63's Flocko rides the style axis (S1-D-3 W-6)")
+            }
             // S1-D-3 W-9 fishron wiring: the boss + its three hazards are
             // claimed by the aiStyle-69/70/71 axis above (the Spazmatism
             // precedent — this arm keeps the kind match exhaustive and
@@ -27430,9 +27438,11 @@ mod s1_f_13c_tests {
         }
     }
 
-    /// DW-2.5's routing: the six walkers (the five aiStyle-3 kinds + the
-    /// Present Mimic stand-in) close the gap on the walker family and never
-    /// exceed their row's cap; the Everscream holds the hover stand-in.
+    /// DW-2.5's routing: the five aiStyle-3 ladder walkers close the gap on
+    /// the walker family and never exceed their row's cap; the Everscream
+    /// holds the hover stand-in. S1-D-3 W-6 retired the PresentMimic's
+    /// walker stand-in — its chest machine rides the style axis now
+    /// (`s1_d_3_w6_*` pins the wiring).
     #[test]
     fn s1_f_13c_the_family_machines_route_to_their_stand_ins() {
         let mut w = tr_core::World::new("t".into(), 200, 120);
@@ -27456,7 +27466,6 @@ mod s1_f_13c_tests {
             NpcKind::ZombieElfGirl,
             NpcKind::GingerbreadMan,
             NpcKind::Yeti,
-            NpcKind::PresentMimic,
         ] {
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 95.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
@@ -28242,12 +28251,14 @@ mod s1_f_13c2_tests {
         }
     }
 
-    /// DW-2.5's routing: the wave roster rides live — the four aiStyle-3
-    /// walkers walk on the walker family at their C# speed rows, the two
-    /// non-boss flyers (347/352) hover toward the player through the tiles
-    /// (their named machines wire with R52), and the bosses (344/345/346)
-    /// ride their WIRED named machines on the style axis (S1-F-13c wiring —
-    /// the hover stand-ins retired).
+    /// DW-2.5's routing: the wave roster rides live — S1-D-3 W-6 wired
+    /// the PresentMimic + Nutcracker twins + ElfArcher + ElfCopter +
+    /// Flocko to their named machines (`npc_ai_frost_mob.rs` / `_b.rs`);
+    /// Krampus keeps the walker family at its C# cap-2 row and the
+    /// bosses 344/345/346 ride their WIRED named machines on the style
+    /// axis (S1-F-13c wiring). The wired kinds' behaviour is pinned by
+    /// the `s1_d_3_w6_*` / `s1_f_13c_wire_tests` tests; this test keeps
+    /// the still-standing routings.
     #[test]
     fn s1_f_13c_the_family_machines_route_to_their_stand_ins() {
         let mut w = tr_core::World::new("t".into(), 200, 120);
@@ -28265,16 +28276,10 @@ mod s1_f_13c2_tests {
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
-        for kind in [
-            NpcKind::Nutcracker,
-            NpcKind::NutcrackerSpinning,
-            NpcKind::ElfArcher,
-            NpcKind::Krampus,
-        ] {
-            // The walkers: spawned left of the player and ABOVE the ground
-            // (the tallest box, Krampus's 90 px, must not start embedded),
-            // they fall onto it, close the gap and never exceed their row's
-            // cap.
+        for kind in [NpcKind::Krampus] {
+            // The walker: spawned left of the player and ABOVE the ground
+            // (the 90 px box must not start embedded), it falls onto it,
+            // closes the gap and never exceeds its row's cap.
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
             let dx0 = player.center().0 - n.center().0;
@@ -28288,25 +28293,6 @@ mod s1_f_13c2_tests {
             assert!(
                 player.center().0 - n.center().0 < dx0,
                 "{kind:?} never closed the gap"
-            );
-        }
-        // The non-boss flyers: the hover stand-in flies toward the player
-        // (the gravity-off approach), each at its named machine's base speed.
-        for kind in [NpcKind::ElfCopter, NpcKind::Flocko] {
-            let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
-            n.hp = n.max_hp;
-            let (dx0, dy0) = {
-                let (pcx, pcy) = player.center();
-                (pcx - n.center().0, pcy - n.center().1)
-            };
-            for _ in 0..30 {
-                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            }
-            let (pcx, pcy) = player.center();
-            let (dx1, dy1) = (pcx - n.center().0, pcy - n.center().1);
-            assert!(
-                (dx1 * dx1 + dy1 * dy1) < (dx0 * dx0 + dy0 * dy0),
-                "{kind:?} never flew toward the player"
             );
         }
         // The bosses ride their named machines on the style axis (S1-F-13c

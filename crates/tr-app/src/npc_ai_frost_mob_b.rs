@@ -297,6 +297,23 @@ pub fn elf_archer_ai(
     rng: &mut UnifiedRandom,
     shots: &mut Vec<FrostArcherShot>,
 ) {
+    elf_archer_ai_retarget(s, world, target, tick, rng, shots, &mut |_| {});
+}
+
+/// The wired form (S1-D-3 W-6): `retarget` runs at the C# `TargetClosest()`
+/// site (`NPC.cs:59206`, every stopped tick — `flag18` is true for 350) and
+/// syncs the picked facing back into `s.direction`. The pure
+/// [`elf_archer_ai`] passes a no-op so the module tests keep the
+/// resolved-target form.
+pub fn elf_archer_ai_retarget(
+    s: &mut FrostMobBState,
+    world: &World,
+    target: &FrostArcherTarget,
+    tick: ArcherTick,
+    rng: &mut UnifiedRandom,
+    shots: &mut Vec<FrostArcherShot>,
+    retarget: &mut dyn FnMut(&mut FrostMobBState),
+) {
     // `:59086-59089` — the cycle timer decrements first.
     if s.ai[1] > 0.0 {
         s.ai[1] -= 1.0;
@@ -315,7 +332,8 @@ pub fn elf_archer_ai(
     // `:59202-59629` — the stopped arm.
     if s.ai[2] > 0.0 {
         // `:59204-59207` — flag18 is true for 350: TargetClosest() every
-        // stopped tick. The wiring seam: `target` is the resolved slot.
+        // stopped tick.
+        retarget(s);
         if s.ai[1] == FIRE_TICK as f32 {
             // `:59279` — the muzzle starts at Center (no 350 offset in
             // `:59280-59308`).
