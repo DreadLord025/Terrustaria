@@ -443,6 +443,27 @@ pub const HIVE_FIVE: u16 = 999;
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
 pub const LIGHTS_BANE: u16 = 974;
 
+// ===== S1-D-4: the Empress of Light's projectile family =====
+// The five kinds the Empress `AI_120_HallowBoss` machine spawns (R7's
+// `npc_ai_empress.rs` `EmpressRequest::Projectile` set). Ids verified against
+// `ID/ProjectileID.cs`; the aiStyle + box + flags against each `SetDefaults`
+// arm. The AI cores live in `projectile_ai_empress.rs` (unwired, code-only).
+/// `ProjectileID.HallowBossLastingRainbow` (872, `ProjectileID.cs:2298`) —
+/// the lasting-rainbow ring bolt, aiStyle 173 (`Projectile.cs:8403-8415`).
+pub const HALLOW_BOSS_LASTING_RAINBOW: u16 = 872;
+/// `ProjectileID.HallowBossRainbowStreak` (873, `ProjectileID.cs:2300`) —
+/// the homing prismatic bolt, aiStyle 171 (`Projectile.cs:8354-8366`).
+pub const HALLOW_BOSS_RAINBOW_STREAK: u16 = 873;
+/// `ProjectileID.HallowBossDeathAurora` (874, `ProjectileID.cs:2302`) —
+/// the death-aurora flash, aiStyle **0** (no AI arm, `Projectile.cs:8367-8379`).
+pub const HALLOW_BOSS_DEATH_AURORA: u16 = 874;
+/// `ProjectileID.FairyQueenLance` (919, `ProjectileID.cs:2392`) — the
+/// telegraph-then-dash ethereal lance, aiStyle 179 (`Projectile.cs:8714-8726`).
+pub const FAIRY_QUEEN_LANCE: u16 = 919;
+/// `ProjectileID.FairyQueenSunDance` (923, `ProjectileID.cs:2400`) — the
+/// boss-tethered sun-dance beam, aiStyle 180 (`Projectile.cs:8757-8770`).
+pub const FAIRY_QUEEN_SUN_DANCE: u16 = 923;
+
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
 /// second hand-maintained list: the id space above the port's highest row is
@@ -2575,6 +2596,47 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // ===== S1-D-4: the Empress of Light's projectiles =====
+            // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
+            // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
+            // (`friendly = false` rides the pool's `!friendly` proxy),
+            // `timeLeft = 660`, `tileCollide = false`, `ignoreWater = true`
+            // (the overlay below). No arrow/trap, stock extraUpdates 0.
+            HALLOW_BOSS_LASTING_RAINBOW => (
+                30.0, 30.0, 173, -1, 660, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:8354-8366` — the Rainbow Streak (873): 30x30,
+            // aiStyle 171, `alpha = 255`, `penetrate = -1`, hostile,
+            // `timeLeft = 200`, `tileCollide = false`, `ignoreWater = true`.
+            HALLOW_BOSS_RAINBOW_STREAK => (
+                30.0, 30.0, 171, -1, 200, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:8367-8379` — the Death Aurora (874): 30x30,
+            // aiStyle **0** (`AI()` has no style-0 arm — a pure visual),
+            // `alpha = 255`, `penetrate = -1`, hostile, `timeLeft = 210`,
+            // `tileCollide = false`, `ignoreWater = true`.
+            HALLOW_BOSS_DEATH_AURORA => (
+                30.0, 30.0, 0, -1, 210, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:8714-8726` — the Fairy Queen Lance (919): 8x8,
+            // aiStyle 179, `alpha = 255`, `penetrate = -1`, hostile,
+            // `timeLeft = 240`, `tileCollide = false`, `ignoreWater = true`.
+            FAIRY_QUEEN_LANCE => (
+                8.0, 8.0, 179, -1, 240, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:8757-8770` — the Sun Dance (923): 30x30,
+            // aiStyle 180, `alpha = 255`, `penetrate = -1`, hostile,
+            // `timeLeft = 180`, `tileCollide = false`, `ignoreWater = true`.
+            // `drawLayer = 2` (`:8769`) is render-side — the port's draw-layer
+            // work owns it (documented skip, ANALYSIS S1-D-4).
+            FAIRY_QUEEN_SUN_DANCE => (
+                30.0, 30.0, 180, -1, 180, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2728,7 +2790,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
             || kind == RAINBOW_CRYSTAL_EXPLOSION
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
-            || kind == HORSEMAN_PUMPKIN,
+            || kind == HORSEMAN_PUMPKIN
+            // S1-D-4: the Empress family's five arms all set `ignoreWater`
+            // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
+            || matches!(
+                kind,
+                HALLOW_BOSS_LASTING_RAINBOW
+                    | HALLOW_BOSS_RAINBOW_STREAK
+                    | HALLOW_BOSS_DEATH_AURORA
+                    | FAIRY_QUEEN_LANCE
+                    | FAIRY_QUEEN_SUN_DANCE
+            ),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
