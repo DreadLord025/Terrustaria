@@ -58,6 +58,8 @@ mod npc_ai;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
+mod npc_ai_style24;
+mod npc_ai_style28;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;

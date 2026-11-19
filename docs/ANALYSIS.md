@@ -18880,3 +18880,95 @@ case; the module is `#![allow(dead_code)]` until the kind wave (the
 (`:93597-93602`, keeps the light colour) and the dust/gore visuals are
 render-side, out of this AI round. (3) The SetDefaults row is a const struct
 (`BLAZING_WHEEL`) rather than roster fields, for the same reason.
+## The aiStyle-24 bird family (S1-D-3, task/S1-D-3-aistyle24, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style24.rs` ports the whole `else if (this.aiStyle == 24)`
+arm of `NPC.AI` (`NPC.cs:25313-25537`) as pure functions over the port's `Npc`
+slot plus a `Style24Ctx` seam. **UNWIRED**: none of the 11 types (Bird 74/297/298,
+GoldBird 442, Owl 611, ScarletMacaw 671 / BlueMacaw 672 / Toucan 673 /
+YellowCockatiel 674 / GrayCockatiel 675, OwlMimic 689) has a `NpcKind` yet, so the
+module lands test-only (the `drawdata_anim.rs` / `special_tiles.rs` pattern);
+the wiring (kinds + `size_override` rows from `STYLE24_BIRDS`, the `update_rng`
+style-axis arm, the 1080 projectile, the full Transform) is the merge step.
+
+- **RNG by construction**: the arm's only draw is the poop gate's
+  `RollOnlyBadLuckExtreme(50)` (`NPC.cs:25319` → `Luck.cs:53-60`). The `&&`
+  short-circuit means `NextFloat()` is consumed ONLY for `luck < 0`, and the
+  second draw `Next(range / 10)` ONLY on the hit; non-negative luck draws nothing
+  and returns −1 (only a Cenx-named player poops then — the `||` still evaluates
+  the roll first). `the_bad_luck_roll_replays_the_csharp_stream` pins the draw
+  count/order/value against a manual replay over 64 seeds;
+  `non_negative_luck_draws_nothing` pins the zero-draw path. 17 tests WRITTEN NOT
+  RUN (code-only mode: no cargo/rustc/rustfmt, no compiler invoked).
+- **TargetClosest** (`:25338`/`:25377`/`:25535`) rides the shared
+  `npc_target::target_closest` with `faceTarget = true`, `aiStyle = 24`; the two
+  `Player.FindClosest` sites (`:25317`/`:25330`) ride the new
+  `find_closest_player` (`Player.cs:4942-4967`: first-active default even dead,
+  then the alive Manhattan scan, integer halves, strict `<` ties).
+- **The mimic Transform** (`:25333`) applies only the core the rest of the arm
+  observes (`transform_core`): the ±height reposition (34 down / 32 up → net +2),
+  the `SetDefaults` ai/localAI/target/oldTarget/targetRect/netUpdate/collide
+  resets (`:8527-8541`, `:8564-8571`), the DemonEyeOwl 30×32/75-HP row
+  (`:13007-13019`), the same-tick `TargetClosest` (`:81101`) and the integer
+  life rescale floored at 1 (`:81106-81110`). The value/knockback/sound/
+  `TransformVisuals` halves ride the wiring's full `NPC.Transform`.
+- **Faithful oddities kept**: the `(double)velocity.Y > 0.3` widen (vy == 0.3f
+  startles), the ground probe's plain `nactive() && tileSolid` (no solidTop /
+  slope / halfBrick terms, liquid counts, `:25492`), the steering's dead inner
+  `> num330` / `< -num330` tests (`:25448`/`:25464`), the owl scan's same-type
+  `break` (`:25365`), and the poop set's four non-style-24 birds (363/365/603/609)
+  with the owls excluded (`NPCID.cs:10435`).
+- **Seam stand-ins**: `releaseOwner` (no `Npc` field yet — the ctx passes the 255
+  default), `noGravity` (returned in `Style24Outcome`), the poop shot and the
+  transform (requests, the `wants_hostile_shot` pattern), the player's
+  `IsThisCenx` answer (pre-computed by the wiring from the profile name).
+## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure
+function (`style28_step`) over `Npc` + a `Style28Context` seam. The
+only kind on the style is `NPCID.WallofFleshEye` (114,
+`ID/NPCID.cs:10905`; `SetDefaults` `NPC.cs:10361-10377`: 100x100,
+damage 50, defense 0, lifeMax 8000, noGravity/noTileCollide/behindTiles,
+kb 0, scale 1.2, value 80000) - there are no per-type branches inside
+the arm. **Code-only mode**: no cargo/rustc/rustfmt/tests were run; the
+9 witness tests are written, not executed, and the dispatch claim (the
+`28 =>` arm in `update_rng` replacing `update_wof_eye`) is the
+follow-up wiring round - every other file is byte-identical except the
+`mod` line and the docs.
+
+Faithfulness points the port keeps (and the live `update_wof_eye`
+misses - the wiring round must retire it, not merge with it):
+
+- `position.X = Main.npc[wofNPCIndex].position.X` (`:26066`) is a
+  LITERAL copy; the live arm subtracts `width/2`.
+- The band midpoint `(wofDrawAreaBottom + wofDrawAreaTop) / 2`
+  (`:26069`) is INTEGER division (`Main.cs:757`/`:759` are
+  `int`); the `- height/2` sits outside the `?:` (`:26070`).
+- The pacing counters are `localAI[1]`/`localAI[2]` (`:26126`+),
+  not `ai[1]`/`ai[2]`; the ladder compares in f64
+  (`(double)life < (double)lifeMax * k`, `:26127`+).
+- The `CanHit` sight gate (`:26167`) returns BEFORE the counters
+  reset - a blocked tick keeps its accumulator.
+- The aim rotation multiplies the delta by the distance (`:26097-
+  26098`, a C# quirk; the angle is unchanged, the order is kept); the
+  rotation aim uses INTEGER player half-extents (`:26093`) while the
+  shot aim uses FLOAT halves (`:26198`).
+- The shot spawns one velocity step ahead of the centre (`:26203-
+  26205`); the normaliser has no epsilon floor.
+- The arm does not integrate `position += velocity` - the eye is
+  noTileCollide, `UpdateNPC` integrates after `AI()` (`NPC.cs:90498`).
+
+Documented stand-ins: `active = false` (`:26057`) rides the port's
+hp-0 death convention; `realLife = wofNPCIndex` (`:26060`) rides the
+`wof_life` mirror until a WoF carrier lands (the port's carrier
+machinery is worm-keyed); `Main.netMode == 1`/`Main.expertMode` ride
+the context flags; the `EverLastingTicker` stamp passes 0 (the same
+stand-in as `update_zombie`, S1-D-3p).
+
+**RNG by construction**: the C# arm (`NPC.cs:26053-26208`) draws no
+`Main.rand.Next` - the pacing is deterministic counters and hp-band
+comparisons - so `style28_step` takes no RNG parameter and cannot
+perturb any stream; the witness
+`the_arm_is_deterministic_without_an_rng` pins identical inputs to
+identical state including the shot.
