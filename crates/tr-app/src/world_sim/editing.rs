@@ -1354,6 +1354,61 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     app.audio.play_npc_hit_sound(cue, nx, ny, rng);
                 }
+                // S1-P-i50 — the Lucky Coin family's melee-hit coin proc
+                // (`ApplyNPCOnHitEffects`' tail, `Player.cs:44537-44549`,
+                // called at `:44404` AFTER `StrikeNPC` — so after the
+                // combat text and the hit cue above): `npc.value > 0 &&
+                // hasLuckyCoin && Main.rand.Next(5) == 0` → type 71,
+                // upgraded to 72 on `Next(10) == 0` and to 73 on
+                // `Next(100) == 0` (independent rolls, gold wins), then
+                // `RequestNewItem(stack: Next(1, 11), velocity:
+                // (Next(10, 31) * 0.2 * direction, Next(-20, 1) * 0.2),
+                // center: npc.Center, prefix: 0)`. The proc runs on a
+                // landed hit regardless of the kill (`:44404` precedes the
+                // `DidNPCDie` check `:44415`); the draws ride the
+                // `UpdatePlayers` swap (`Main.cs:17754`). The explicit
+                // velocity skips `Item.NewItem`'s spread draws
+                // (`Item.cs:49738-49740`) and `prefix: 0` draws nothing —
+                // six draws total when the Next(5) gate passes, one when
+                // it refuses.
+                let lucky = app.player.as_ref().is_some_and(|p| p.has_lucky_coin);
+                if landed && lucky && app.npcs[idx].value() > 0.0 {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if rng.next_max(5) == 0 {
+                        let mut kind = 71u16;
+                        if rng.next_max(10) == 0 {
+                            kind = 72;
+                        }
+                        if rng.next_max(100) == 0 {
+                            kind = 73;
+                        }
+                        let stack = rng.next_range(1, 11) as u32;
+                        let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                        let vx = rng.next_range(10, 31) as f32 * 0.2 * dir as f32;
+                        let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                        let (ncx, ncy) = app.npcs[idx].center();
+                        // `WorldItem.Center = center` (`Item.cs:49736`) —
+                        // the 14x14 box centred on the NPC.
+                        let mut coin = crate::item::ItemDrop::new(
+                            kind,
+                            stack,
+                            0,
+                            ncx - crate::item::SIZE * 0.5,
+                            ncy - crate::item::SIZE * 0.5,
+                            vx,
+                            vy,
+                            0.0,
+                        );
+                        // `NewItemOwnership.ReserveForLocalPlayer` →
+                        // `enemyGrabDelayTime = DefaultGrabDelay = 100`
+                        // (`Item.cs:49757-49760`, `WorldItem.cs:110`): the
+                        // monsters cannot suck it for 100 ticks; the port's
+                        // revenge arm has no enemy-delay field, the player
+                        // pickup delay (0.35 s) is the standing stand-in.
+                        coin.age = 0.0;
+                        app.items.push(coin);
+                    }
+                }
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
@@ -4098,6 +4153,81 @@ mod tests {
             state_0,
             "luck 1.0 rerolled DamageVar"
         );
+    }
+
+    /// S1-P-i50 — the Lucky Coin melee proc (`ApplyNPCOnHitEffects`' tail,
+    /// `Player.cs:44537-44549`): a landed hit on a `value > 0` NPC with
+    /// `hasLuckyCoin` draws `Next(5)`; on 0 it draws the denomination
+    /// upgrades (`Next(10)`, `Next(100)`), the stack (`Next(1, 11)`) and the
+    /// velocity pair (`Next(10, 31)`, `Next(-20, 1)`), then spawns the coin
+    /// at the NPC's centre. Differential witness: the ring and no-ring rigs
+    /// share every pre-proc draw (crit/DamageVar/probe/combat-text/hit-cue),
+    /// so the ring's stream is the no-ring's advanced by exactly the proc's
+    /// draws — one when the Next(5) gate refuses, six when it passes. Both
+    /// branches are exercised across a seed sweep; the spawn shape is
+    /// pinned whenever the gate fires.
+    #[test]
+    fn s1_p_i50_the_lucky_coin_proc_draws_and_spawns_on_a_landed_hit() {
+        let mut saw_fire = false;
+        let mut saw_refuse = false;
+        for seed in 0..40i32 {
+            // The no-ring baseline: the hit lands, no coin spawns.
+            let mut base = melee_app();
+            seed_stream(&mut base, seed);
+            let hp0 = base.npcs[0].hp;
+            mine_frames(&mut base, 1);
+            assert!(base.npcs[0].hp < hp0, "the baseline hit lands (seed {seed})");
+            assert!(base.items.is_empty(), "no ring, no coin");
+            let base_state = base.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+            // The ring rig, same seed: identical pre-proc draws, then the proc.
+            let mut ring = melee_app();
+            ring.player.as_mut().unwrap().has_lucky_coin = true;
+            seed_stream(&mut ring, seed);
+            mine_frames(&mut ring, 1);
+            assert!(ring.npcs[0].hp < hp0, "the ring hit lands too");
+
+            // Replay the two possible proc tails on the baseline state.
+            let mut refused = base_state.clone();
+            let _ = refused.next_max(5);
+            let mut passed = base_state.clone();
+            let gate = passed.next_max(5);
+            let mut kind = 71u16;
+            let mut stack = 0u32;
+            if gate == 0 {
+                if passed.next_max(10) == 0 {
+                    kind = 72;
+                }
+                if passed.next_max(100) == 0 {
+                    kind = 73;
+                }
+                stack = passed.next_range(1, 11) as u32;
+                let _ = passed.next_range(10, 31);
+                let _ = passed.next_range(-20, 1);
+            }
+            let ring_state = ring.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            assert!(
+                ring_state == refused || ring_state == passed,
+                "seed {seed}: the proc draws exactly 1 (refused) or 6 (passed) past the baseline"
+            );
+            if gate == 0 {
+                saw_fire = true;
+                assert_eq!(ring.items.len(), 1, "the proc spawned one coin");
+                let coin = &ring.items[0];
+                assert_eq!(coin.kind, kind, "the denomination rolls");
+                assert_eq!(coin.count, stack, "Next(1, 11) stack");
+                assert_eq!(coin.prefix, 0, "prefix: 0");
+                // Centre on the NPC (`WorldItem.Center = center`).
+                let (ncx, ncy) = ring.npcs[0].center();
+                assert!((coin.center().x - ncx).abs() < 1e-3);
+                assert!((coin.center().y - ncy).abs() < 1e-3);
+            } else {
+                saw_refuse = true;
+                assert!(ring.items.is_empty(), "the refused gate spawns nothing");
+            }
+        }
+        assert!(saw_fire, "some seed fires the Next(5)==0 gate");
+        assert!(saw_refuse, "some seed refuses it");
     }
 
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
@@ -8407,7 +8537,7 @@ mod item_mechanics {
         let floor_top = 20.0 * TILE_PX;
         // In the air: one step adds exactly `gravity` and applies the friction.
         let mut drop = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 0.0, 0.0);
-        drop.update(&app.world, None, ONE_TICK_SECS);
+        drop.update(&app.world, None, ONE_TICK_SECS, crate::item::item_grab_range(drop.kind, false), false);
         assert!(
             (drop.vel.y - 0.1).abs() < 1e-6,
             "gravity is 0.1, got {}",
@@ -8420,12 +8550,12 @@ mod item_mechanics {
         );
         // The fall speed caps at 7.
         let mut fast = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 40.0, 0.0);
-        fast.update(&app.world, None, ONE_TICK_SECS);
+        fast.update(&app.world, None, ONE_TICK_SECS, crate::item::item_grab_range(fast.kind, false), false);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
         let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
         for _ in 0..30 {
-            rest.update(&app.world, None, ONE_TICK_SECS);
+            rest.update(&app.world, None, ONE_TICK_SECS, crate::item::item_grab_range(rest.kind, false), false);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");

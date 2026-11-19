@@ -121,7 +121,8 @@ pub(crate) fn loot_all(
             // `Player.GetItem`'s coin routing: the occupied coin rows first,
             // then the empty ones.
             let coin_cap = crate::registry::max_stack(item.kind);
-            for cs in coins.iter_mut() {
+            let mut filled: Vec<usize> = Vec::new();
+            for (ci, cs) in coins.iter_mut().enumerate() {
                 if item.count == 0 {
                     break;
                 }
@@ -129,9 +130,14 @@ pub(crate) fn loot_all(
                     let moved = item.count.min(coin_cap.saturating_sub(cs.count));
                     cs.count += moved;
                     item.count -= moved;
+                    if moved > 0 {
+                        // `GetItem_FillIntoOccupiedSlot`'s `DoCoins(i)`
+                        // (`Player.cs:39503`/`:39519`) — C# index 50 + ci.
+                        filled.push(crate::item::INV + ci);
+                    }
                 }
             }
-            for cs in coins.iter_mut() {
+            for (ci, cs) in coins.iter_mut().enumerate() {
                 if item.count == 0 {
                     break;
                 }
@@ -144,6 +150,20 @@ pub(crate) fn loot_all(
                         prefix: item.prefix,
                     };
                     item.count -= put;
+                    // `GetItem_FillEmptyInventorySlot`'s `DoCoins(i)`
+                    // (`Player.cs:39569`).
+                    filled.push(crate::item::INV + ci);
+                }
+            }
+            // The port's merged fill runs the conversions after the row
+            // walk — `do_coins` on each filled slot in fill order (the
+            // sweep's per-slot form; the conversions commute with the
+            // remaining fills because a conversion only ever moves value
+            // UP a denomination).
+            if !filled.is_empty() {
+                let mut slots = crate::item::carry_slots_mut(inventory, coins, None);
+                for i in filled {
+                    crate::item::do_coins(&mut slots, i);
                 }
             }
         } else if let Some(i) = crate::item::slot_for_pickup(inventory, item.kind, item.prefix) {

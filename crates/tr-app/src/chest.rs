@@ -1117,7 +1117,8 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // Out: the bank containers (M3-STORE-1 — `GetCurrentContainer`'s chest < -1
 // arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
 // 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
-// `DoCoins`' roll-over (`Player.cs:39567-39569` — unported everywhere), the
+// `DoCoins`' roll-over (`Player.cs:39567-39569`) landed with S1-P-i50
+// (`item.rs::do_coins`, wired at the transfer tails), the
 // cursor-override texture draw (see `App.cursor_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
@@ -1362,8 +1363,8 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
 /// `GetItemSettings.QuickTransferFromSlot` (`GetItemSettings.cs:58`) is
 /// NoText-only. The remainder stays in the chest slot. Out: the
 /// `FitsAmmoSlot`/`FillAmmo` pre-pass (`Player.cs:39345-39352` — no
-/// ammo-accept registry yet), `DoCoins` (`:39567-39569`), the void vault
-/// (`:39395-39398`).
+/// ammo-accept registry yet) and the void vault (`:39395-39398`);
+/// `DoCoins` (`:39567-39569`) landed with S1-P-i50 (the sweep tail).
 pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     /// `GetItem_FillIntoOccupiedSlot`'s merge step (`Player.cs:39485-39524`):
     /// as much of `remainder` as a partial slot accepts — the accept gate is
@@ -1472,6 +1473,14 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
                 break;
             }
         }
+    }
+    // `DoCoins` per filled slot (`Player.cs:39503`/`:39519`/`:39569`,
+    // S1-P-i50): the quick transfer's `GetItemSettings.QuickTransferFromSlot`
+    // (`GetItemSettings.cs:58`) leaves `NoCoinMerge` false, so every coin
+    // fill converts. The sweep is the port's merged-fill form — it runs
+    // only when a coin moved (a non-coin transfer cannot arm a conversion).
+    if is_coin {
+        crate::item::do_coins_sweep(inventory, equip);
     }
     // `:800-812`'s `inv[slot] = ...` — the unplaced remainder stays in the
     // chest slot (its prefix rides along; an empty remainder normalises to
