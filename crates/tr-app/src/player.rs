@@ -1374,6 +1374,13 @@ pub struct Player {
     /// clears both (`:18748`/`:18752`).
     pub set_monk_t2: bool,
     pub set_monk_t3: bool,
+    /// `Player.setApprenticeT2`/`setApprenticeT3` (`Player.cs:2844`/`:2836`):
+    /// the Apprentice armor sets (`ArmorSetBonuses.cs:74-78`/`:99-104`, the
+    /// triples `:485`/`:489`) — the Flame Burst Tower's 0.1 angle cone, the
+    /// 1.5× range and the 1.4× shot speed (`Projectile.cs:68275-68280`).
+    /// `ResetEffects` clears both (`:18753`/`:18749`). S1-D-4b-9.
+    pub set_apprentice_t2: bool,
+    pub set_apprentice_t3: bool,
     /// `Player.ammoBox` (`Player.cs:1982`): buff 93, the Ammo Box (`:10080`) —
     /// the 1/5 roll arm on ANY ammo (`:53599`).
     pub ammo_box: bool,
@@ -2004,6 +2011,8 @@ impl Player {
             set_huntress_t3: false,
             set_monk_t2: false,
             set_monk_t3: false,
+            set_apprentice_t2: false,
+            set_apprentice_t3: false,
             ammo_box: false,
             ammo_potion: false,
             huntress_ammo_cost90: false,
@@ -4075,6 +4084,8 @@ impl Player {
         self.set_huntress_t3 = false;
         self.set_monk_t2 = false;
         self.set_monk_t3 = false;
+        self.set_apprentice_t2 = false;
+        self.set_apprentice_t3 = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -4203,9 +4214,10 @@ impl Player {
         // `DataStructures/ArmorSetBonuses.cs:68-118`, the registration triples
         // `:484-491`): the Squire/Huntress/Monk T2/T3 rows each set their tier
         // flag and raise `maxTurrets` by 1; the T3 rows also set the T2 flag
-        // (`:95`/`:109`/`:116`). The Apprentice rows (`:74-78`/`:99-104`) have
-        // no ported consumer (the aiStyle-140/142 towers are unported) and
-        // stay out. `ResetEffects` clears the flags and the `max_turrets`
+        // (`:95`/`:102`/`:109`/`:116`). The Apprentice rows (`:74-78`/`:99-104`)
+        // feed the Flame Burst Tower's aim cone/range/speed buffs
+        // (`Projectile.cs:68275-68280`, S1-D-4b-9); the aiStyle-140/142 towers
+        // stay unported. `ResetEffects` clears the flags and the `max_turrets`
         // base (`:18449`) each tick, so this re-derives per tick.
         match (armor_head, armor_body, armor_legs) {
             (3800, 3801, 3802) => {
@@ -4239,6 +4251,17 @@ impl Player {
                 // `:113-118` Benefits.MonkTier3.
                 self.set_monk_t3 = true;
                 self.set_monk_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3797, 3798, 3799) => {
+                // `:74-78` Benefits.ApprenticeTier2 (the triple `:485`).
+                self.set_apprentice_t2 = true;
+                self.max_turrets += 1;
+            }
+            (3874, 3875, 3876) => {
+                // `:99-104` Benefits.ApprenticeTier3 (the triple `:489`).
+                self.set_apprentice_t3 = true;
+                self.set_apprentice_t2 = true;
                 self.max_turrets += 1;
             }
             _ => {}
@@ -8531,6 +8554,21 @@ mod tests {
         p.equipped[2] = 3808;
         p.update(&w, PlayerInput::default());
         assert!(p.set_monk_t2 && !p.set_monk_t3);
+        // The Apprentice T2 (3797/3798/3799) and T3 (3874/3875/3876) —
+        // S1-D-4b-9, `ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
+        // `:485`/`:489`.
+        p.equipped[0] = 3797;
+        p.equipped[1] = 3798;
+        p.equipped[2] = 3799;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_apprentice_t2 && !p.set_apprentice_t3);
+        assert_eq!(p.max_turrets, 2, "+1 turret");
+        p.equipped[0] = 3874;
+        p.equipped[1] = 3875;
+        p.equipped[2] = 3876;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_apprentice_t3 && p.set_apprentice_t2, "T3 sets T2 too");
+        assert_eq!(p.max_turrets, 2);
         // The Ballista Panic buff (205).
         assert!(!p.ballista_panic);
         p.buffs.add_buff(205, 3600);
