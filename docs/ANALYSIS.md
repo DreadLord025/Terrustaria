@@ -24459,3 +24459,71 @@ adds `NpcKind::DungeonSpirit` + the `SetDefaults` row + the style-axis
 dispatch claim + the pool/stream plumbing; until then the module is
 `#![allow(dead_code)]` and every other file is byte-identical except
 the `mod` line.
+## The force bubble (S1-D-3 aiStyle-72, code-only)
+
+`crates/tr-app/src/npc_ai_style72.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 72)` arm (`NPC.cs:35080-35101`) — the
+ForceBubble 384 (`SetDefaults` `:13882-13894`, `ID/NPCID.cs:11445`), the
+Martian Officer's shield bubble. The census of `this.aiStyle = 72;`
+across `NPC.cs` returns exactly one hit (`:13888`); the family is a
+single kind. CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 10
+witness tests are written, not run. Wiring deferred (the BlazingWheel
+precedent, `npc_ai_style21.rs`; the spore pair 613aac92): no
+`NpcKind::ForceBubble` exists, so the style axis (`npc.rs:3255`) has no
+arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
+
+- **Family identity verified from the C#**: the port's `Golem => 72`
+  row (`npc/data.rs:2650`) is the Golem's contact DAMAGE — the Golem's
+  aiStyle is 45 (`npc/data.rs:1555`, `NPC.cs:12167`, `AI_045_Golem`
+  `:19505`). The style table (`npc/data.rs:1472`) has no 72 row; the
+  bubble kind was simply never ported.
+- **The arm is RNG-free by construction**: `:35080-35101` has no
+  `Next`, no `TargetClosest` (it reads the officer's NPC slot through
+  `(int)ai[0]`, never the player — `npc_target.rs` is not involved), no
+  `EncourageDespawn`. `ai_style72` takes NO RNG parameter; a
+  `UnifiedRandom` state-pin test witnesses it. Unlike the spore pair,
+  there is no per-tick `UpdateNPC_CastLights` draw either: that pass
+  (`:92343-92414`) arms gold critters / 160 / 254..=261+634/635 / 209 /
+  44 only — 384 lights nothing there. The bubble's only light is the
+  constant `AddLight((int)Center.X/16, (int)Center.Y/16, 0.1, 0.5, 0.7)`
+  inside the AI arm (`:35092`), returned as the `Style72Outcome.light`
+  seam for the `EntityLights` feed (`CenterTruncated` anchor).
+- **The snap maths**: `position = officer.Center` then
+  `X -= width/2; Y -= height/2` (`:35088-35090`) — INTEGER half-extents
+  (`Entity.width`/`height` are `int`): 9 and 20 for the 18×40 box. The
+  velocity is zeroed (`:35087`) and `gfxOffY` copied (`:35091`, returned
+  seam — `Npc` has no `gfx_off_y` field). The C# gravity
+  (`:90465-90472`, `noGravity` false) and the `noTileCollide` raw
+  integration (`:90494-90498`) run AFTER `AI()` and are the caller's
+  movement step; the bubble re-snaps every tick.
+- **The pop**: officer inactive or slot recycled to a non-383 →
+  `life = 0; HitEffect(); active = false` (`:35096-35098`). The port
+  sets `hp = 0` and returns `died`; the caller owes the HitEffect +
+  deactivation pair (`checkDead` `:78040` has no 384 branch). The host
+  is read through a `BubbleHost` view slice; the C# indexes
+  `Main.npc[(int)ai[0]]` without a bounds check — the port `.get()`s and
+  treats out-of-range/negative as the pop branch. Vanilla only writes
+  `ai[0] = whoAmI` (`:56228`) or the SetDefaults 0, so the case is
+  unreachable from vanilla writes; recorded as a defensive seam.
+- **The dust arm is skipped wholesale** (the `npc_lights.rs`
+  precedent): `HitEffect`'s 384 arm (`:84342-84361`) spawns dust 226
+  only — the hit half's `dmg/lifeMax*50.0` double-precision loop
+  (`life > 0` gate — a just-zeroed life takes the death half) with the
+  `Lerp(position, Center, 0.25)` + scale 0.5, the death half's flat 70
+  at speedX `-2.5*hitDirection` — and NO gore (the officer 383's
+  597/598/599 trio at `:84377-84379` is a different arm). Every draw is
+  inside `Dust.NewDust`; `bubble_hit_dust_plan` ports the branch
+  structure/counts only, no RNG parameter, stream untouched.
+- **The officer's lifecycle is aiStyle-3, cited not ported**:
+  `AI_003_Fighters` (`:56222-56251`) spawns the bubble
+  (`NewNPC(..., 384, whoAmI)` at the officer's truncated centre,
+  `Bottom` placement `:80770`/`Entity.cs:128-131`, `timeLeft = 937`
+  `:80772`/`:95186`), writes the bubble's `ai[0] = whoAmI`, and shields
+  the officer (`dontTakeDamage = true` while the linked bubble lives,
+  the 180-tick `localAI[0]` re-spawn cooldown after a pop). The bubble
+  itself stays hittable (`dontTakeDamage = false`, `:8507`). This block
+  belongs to the S1-D-3c walker family's wiring wave.
+- **Frame**: `FindFrame` has no case 384 and the post-switch tail is
+  aiStyle-39 only (`:77292`) — single frame,
+  `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
+  entry).
