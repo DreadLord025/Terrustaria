@@ -11955,6 +11955,68 @@ Tests-as-code (written, not run): `emotes::tests` gains
 `the_button_frame_formula_matches_get_frame`,
 `the_border_origin_is_the_emote_frame_half_size`,
 `the_wheel_opens_picks_and_closes`.
+## The bestiary UI parity pass (S1-E-26 wave C)
+
+**Code-only mode (2026-11-18):** this wave ran without cargo/rustc/rustfmt —
+the tests below are WRITTEN NOT RUN and no compiler was invoked; the branch
+needs the catalog test run before it merges.
+
+The bestiary screen (`ui/bestiary.rs`, `UIBestiaryTest.cs`) already carried
+the grid, the lock-tier portraits and the info page from earlier tasks; this
+wave read the main grid + entry-display classes whole
+(`UIBestiaryEntryGrid.cs`, `UIBestiaryEntryButton.cs`, `UIBestiaryEntryIcon.cs`,
+`UIBestiaryEntryInfoPage.cs`, `UnlockableNPCEntryIcon.cs`,
+`NPCStatsReportInfoElement.cs`, `NPCKillCounterInfoElement.cs`,
+`FlavorTextBestiaryInfoElement.cs`, `ItemDropBestiaryInfoElement.cs`,
+`UIBestiaryInfoItemLine.cs`) and closed the gaps against them:
+
+- **Completion bar.** `GetUnlockProgress` (`UIBestiaryTest.cs:497-513`)
+  counts every entry `> NotKnownAtAll_0` — the port's old bar counted only
+  tier-4 entries and read far too low. `completion_percent` now mirrors
+  `BestiaryUnlockProgressReport.CompletionPercent` (`:9-19`, 1 for an empty
+  roster). The bar is the `UIColoredSliderSimple` of `FillProgressBottomBar`
+  (`:158-179`): 15 px, bottom-aligned, FilledColor (51, 137, 255) /
+  EmptyColor (35, 43, 81); the hover prints
+  `BestiaryInfo.PercentCollected` ("{Percent} Collected") through
+  `PrettifyPercentDisplay(_, "P2")` (`ShowStats_Completion`, `:181-196`).
+- **Grid range + clamp.** `grid_range_text`/`fix_grid_range` port
+  `GetRangeText`/`FixBestiaryRange` (`UIBestiaryEntryGrid.cs:87-123`); the
+  range label rides the top strip (`_indexesRangeText`, `:248-254`).
+- **Card hover.** `entry_hover_text` = `UnlockableNPCEntryIcon.GetHoverText`
+  (`:209-221`): the localized NPC name from tier 1, "???" below — drawn as
+  the `UIBestiaryEntryButton.DrawSelf` MouseText (`:142-148`).
+- **Info-page tier gates.** The stats block appears from tier 1 with every
+  value "???" until tier 2 (`NPCStatsReportInfoElement.cs:57-128`), the
+  knockback column is the High/Med/Low/None label (`:123`, the exact
+  `> 0.8` / `> 0.4` / `!(x > 0)` gates). The flavor text is the
+  `Bestiary_FlavorText.npc_<ConstName>` row behind `Language.Exists`
+  (`BestiaryEntry.cs:46-50`), shown from tier 2
+  (`FlavorTextBestiaryInfoElement.cs:20-23`) — new `lang::exists` seam. The
+  kill counter is the raw count from the first kill with the
+  `BestiaryInfo.Slain` hover (`NPCKillCounterInfoElement.cs:24-96`) — the
+  old "Kills: x/y" fraction was a port invention. The drop lines appear
+  from tier 2 (`ItemDropBestiaryInfoElement.cs:20-23`): locked-icon rows
+  below tier 3 (`UIBestiaryInfoItemLine.cs:36-55`), "???" rates at tier 3,
+  stack range + prettified rate at tier 4 (`:92-109`).
+
+**Deferred (documented, not silently dropped):** the filter/sort/search
+grids (`UIBestiaryFilteringOptionsGrid`/`SortingOptionsGrid`/
+`UIWrappedSearchBar`, `EntryFilterer`/`EntrySorter`); the Back/Forward page
+buttons (`OffsetLibraryByPages`) — the port's grid grows its rows to fit the
+roster instead of paging, the clamp math is in place for when paging lands;
+the side-by-side grid + 230 px info panel layout (`BuildPage`, `:97-146`) —
+the port keeps its grid-or-info-page switch; the info-page `UIScrollbar`;
+the gamepad link points (`SetupGamepadPoints`, ids 3000+); the pretty
+portrait's background providers (`NPCPortraitInfoElement`'s biome
+backdrops). The `PrettifyPercentDisplay` `TrimStart('0', ' ')` quirk is kept
+1:1 (a sub-1 % value prints ".01%", zero prints "%").
+
+Tests (written, not run): `ui::bestiary::tests` — `grid_range_text_matches_get_range_text`,
+`fix_grid_range_clamps_like_utils_clamp`, `the_completion_bar_rides_the_bottom_strip`,
+`completion_counts_every_known_entry_not_only_tier_4`, `hover_text_is_the_name_or_question_marks`,
+`kill_counter_needs_a_first_kill`, `drop_rate_text_gates_by_tier`,
+`knockback_label_matches_the_four_way_gate`, `flavor_text_gates_at_tier_2_and_the_language_key`,
+`prettify_percent_display_trims_like_utils`.
 
 ## The pillar worms (M4-EVENT-14)
 
@@ -23437,3 +23499,138 @@ Host-path folds (the module header carries the same list):
   standing `wants_hostile_shot` convention (always request, no source).
 - The beams' `timeLeft = 300` rides the sim's timed-spawn list at the merge
   step (see above).
+## The Angry Nimbus' aiStyle-49 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_style49.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 49)` arm (`NPC.cs:31587-31650`) — the Angry
+Nimbus (250, `NPCID.cs:11177`), the style's ONLY user (`SetDefaults`
+case 250, `NPC.cs:12221-12233`). **Code-only mode**: no compiler invoked
+(no cargo/rustc/rustfmt/tests); the 9 witness tests are WRITTEN NOT RUN.
+
+**The machine, verbatim.** Every tick: `noGravity = true` (`:31589`),
+`TargetClosest()` (`:31590`, through the shared `npc_target::target_closest`,
+S1-D-3p — the inline slot-0 candidate, the `update_zombie` convention;
+the `session_candidate` seam lives only on the unmerged style-42 branch),
+then the aim at the player's centre with the y offset **−200f** (`:31595`
+— the cloud hovers 200 px ABOVE the player), normalized to the 4f speed
+(`:31591`/`:31604-31606`) unless the distance is strictly `< 20f`, in
+which case the CURRENT velocity is the aim (`:31597-31601`). Each axis
+approaches the aim by ±0.25f (`:31592`), with the extra ±0.5f while the
+velocity still points the other way (`:31611-31613`/`:31619-31621` on x,
+`:31627-31629`/`:31635-31637` on y) — all comparisons strict.
+
+**The rain window** (`:31640-31648`): the cloud's box horizontally spans
+the player's box, its bottom edge is strictly ABOVE the player's top,
+`Collision.CanHit` (the port's Manhattan walk, `projectile::can_hit`,
+`Collision.cs:381-479`) and `Main.netMode != 1` → `ai[0]++`; at
+`ai[0] > 8f` (strict — the 9th qualifying tick) reset to 0 and fire the
+Rain projectile **264**: X = `(int)(position.X + 10f + Next(width - 20))`
+(width 34 → `Next(14)`, 0..=13), Y = `(int)(position.Y + height + 4f)`,
+SpeedX 0, SpeedY 5, Damage 20, KnockBack 0. The shot rides the plain
+`Npc::wants_hostile_shot` list (the C# call passes no `ai0`/`ai1`); the
+drain (`world_sim/npcs.rs`) spawns it with knockback 0. The 264
+`SetDefaults` row (`Projectile.cs:3491-3502`: 4×40, aiStyle 45, hostile,
+penetrate −1, timeLeft 120, scale 1.1, extraUpdates 1, ignoreWater) and
+the projectile aiStyle-45 arm itself are M4-PROJ work — the request
+carries the cited kind/position/velocity/damage only.
+
+**RNG order (by construction).** The arm's ONLY `Main.rand` draw is the
+shot's x pick (`:31646`), drawn AFTER the `ai[0] = 0` reset and BEFORE
+`Projectile.NewProjectile`. `TargetClosest` (`:77652-77781`) draws
+nothing. So `angry_nimbus_ai` takes the caller's `UnifiedRandom` and
+consumes exactly one `next_max(14)` per fired shot, zero otherwise —
+witnessed by `s1_d_3_s49_the_stream_advances_once_per_shot` (two seeded
+streams, 8 non-firing ticks draw-free, the firing tick's x equals the
+control's `Next(14)`).
+
+**The movement tail.** Type 250 has no special arm in
+`ApplyTileCollision` (`:92612-92627`) → `Collision_MoveNormal`
+(`:92723-92726`, plain `Collision.TileCollision`) +
+`Collision_MoveWhileDry` (`:92591-92607`: the `Collision.up` 0.01f
+ceiling nudge, the `collideX`/`collideY` latches off `oldVelocity`, the
+`oldPosition` stamp, `position += velocity`). The 250 defaults set
+`noGravity` ONLY — `noTileCollide` stays false, so the cloud DOES
+collide with tiles. `Collision_DecideFallThroughPlatforms` includes the
+aiStyle-49 row (`:92952-92955`, `fall = true`): the cloud drops through
+platforms. `nimbus_step` ports the dry, no-slope path on the stand-in
+`collides_rect` walk (the zombie convention: a blocked axis zeroes its
+velocity component instead of the C#'s pixel-snap — the snap lands with
+the shared Collision port; the stand-in does not model platforms, so
+the wiring passes `fall = true` into the shared `TileCollision`).
+
+**The frame clock.** `FindFrame` case 250 (`NPC.cs:72884-72897`, shared
+with the Rain 264 / Sharknado 268): `frameCounter++`, at `>= 6.0` advance
+the frame row and reset; wrap at `num * Main.npcFrameCount[250]`.
+`Main.npcFrameCount[250] = 4` — the initializer `Main.cs:67082`, ten
+entries per row from `:67084` (ids 0-9), so `:67109` covers ids 250-259
+(`4, 3, 5, 3, 3, 3, 4, 5, 6, 4`) and index 250 is its first entry.
+`nimbus_find_frame` is the pure twin over the frame INDEX (the port's
+`Npc::frame` convention); the private `frame_counter` reset is the
+wiring step inside `npc.rs::find_frame`.
+
+**Deliberate stand-ins / skips.**
+- `Main.netMode != 1` (`:31640`) folds to the host path (the port is
+  single-player/host) — the rain gate always passes.
+- The thunder ambient roll (`NPC.cs:90111-90113`: type 250,
+  `Next(700) == 0` → sound 29 style `Next(41, 44)`) is `UpdateNPC`'s
+  sound layer — unported; when it lands it draws BEFORE the AI arm each
+  tick (the RNG-order note for the wiring step).
+- The `HitEffect` dust/gore rows (`:88959-88979`: the cloud puff 54
+  burst, `dmg / lifeMax * 50` dusts while alive, 20 + the two gore 99s
+  on death) are the dust-layer skip (the S1-D-3e/f precedent).
+- The wet/slope/conveyor collision halves (`:92545-92562`,
+  `:92574-92578`) are unported engine layers.
+- The stat row (34×26, dmg 50, def 24, 300 HP, kb 0.3, value 300f =
+  3 silver, HitSound NPCHit30 / DeathSound NPCDeath33) rides the
+  `ANGRY_NIMBUS` cited `NimbusDefaults` const for the wiring step — no
+  `NpcKind::AngryNimbus` exists yet and the kind tables are contested by
+  the in-flight S1-D-3 sibling branches, so this slice is UNWIRED (the
+  `npc_ai_style42.rs` precedent, `8ac80b4e`): `#![allow(dead_code)]`,
+  the `mod npc_ai_style49;` registration, the kind-table rows + the
+  `49 =>` dispatch arm are the family's merge step.
+## The spore pair (S1-D-3 aiStyle-50, code-only)
+
+`crates/tr-app/src/npc_ai_style50.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 50)` arm (`NPC.cs:31651-31716`) — the FungiSpore
+261 (`SetDefaults` `:12364-12378`) and the Spore 265 (`:12423-12437`), the
+1-HP contact hazards. CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the
+14 witness tests are written, not run. Wiring deferred (the BlazingWheel
+precedent, `npc_ai_style21.rs`): no `NpcKind::FungiSpore`/`Spore` exists,
+so the style axis (`npc.rs:3255`) has no arm to claim; only the one-line
+`mod npc_ai_style50;` seam landed.
+
+- **The arm is RNG-free by construction**: `:31651-31716` has no `Next`;
+  neither does `TargetClosest` (`:77652-77781`, `npc_target.rs`) nor
+  `EncourageDespawn` (`:7249-7256`). `ai_style50` takes NO RNG parameter;
+  a `UnifiedRandom` state-pin test witnesses it.
+- **The one per-tick draw is the light, not the AI**:
+  `UpdateNPC_CastLights` runs BEFORE `AI()` (`:90320` vs `:90423`); its
+  254..=261 arm (`:92384-92396`) draws one `Main.rand.Next(28, 42)`
+  (`:92386`) for the FungiSpore ONLY — the Spore 265 is outside the range
+  and lights nothing anywhere. `fungi_spore_light` takes the RNG and
+  draws exactly that one range (test-pinned against a clone).
+- **The dust arms are skipped wholesale** (the `npc_lights.rs`
+  precedent): the Spore's 15-dust `Next(3)` loop (`:87226-87236`) and the
+  FungiSpore's 165-dust loops (`:89055-89070`) need the unported dust
+  system; `spore_hit_dust_plan` ports the branch structure and counts
+  only, drawing nothing, so the stream stays untouched. The Spore's gate
+  is `life >= 0` (`:87222`, note `>=` — a just-zeroed life draws nothing);
+  the FungiSpore never gores (`type != 261` gate, `:89071`). The generic
+  `HitEffect` prologue (`:81656-81858`) is inert for both kinds (townNPC/
+  daybreak/686/690/594/661 checks all false).
+- **Seams**: `Npc` has no `no_tile_collide` field — the arm's per-tick
+  write (false for 261, true for 265) is returned in `Style50Outcome`;
+  the FungiSpore's contact death (`:31657-31662`) sets `hp = 0` and
+  returns `died_on_contact` (the caller owes `HitEffect(0, 100.0)` +
+  `checkDead()`; `checkDead` `:78040-78149` has no spore branch). The
+  `despawnEncouraged` flag (`:7255`) has no port field — the established
+  `encourage_despawn` seam. `Main.expertMode` is a parameter (the port is
+  single-difficulty normal, `world.rs:727`); the expert double-damp
+  (two ×0.98) and double-accel (two +0.1) are pinned by tests.
+- **No frame helper**: `FindFrame` (`:66684-77370`) has no case 261/265
+  and the post-switch tail is aiStyle-39 only (`:77292`) — the frame
+  never advances; both kinds are single-frame (`Main.cs:67110`, the
+  260-269 row of the `:67082` array), pinned by the frame-count consts.
+- **Not this system**: the *projectile* aiStyle 50 (the spore cloud,
+  `Projectile.cs`) is unrelated and untouched; ANALYSIS's earlier
+  "style-50" mention is that projectile row.

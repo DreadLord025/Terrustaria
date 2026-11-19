@@ -1900,6 +1900,13 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
 /// over the whole roster. The Zoologist's shop gates read it
 /// (`Chest.cs:3265`).
 pub fn completion_percent(kills: &KillTracker) -> f32 {
+    // `BestiaryUnlockProgressReport.CompletionPercent`
+    // (`BestiaryUnlockProgressReport.cs:9-19`): 1 for an empty roster,
+    // else the known share (`UIBestiaryTest.GetUnlockProgress`, `:497-513`,
+    // counts `> NotKnownAtAll_0`).
+    if ENTRIES.is_empty() {
+        return 1.0;
+    }
     let seen = ENTRIES
         .iter()
         .filter(|e| unlock_state(e, kills).known())
