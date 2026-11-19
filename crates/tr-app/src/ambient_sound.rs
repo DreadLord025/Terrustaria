@@ -464,6 +464,78 @@ pub fn critter_legacy_voice(
             }
             Some(voice(15, 0.2, roll(-10, 31)))
         }
+        // S1-E-21e — case 45 (`:1059-1070`): the duck quack's pinned slot
+        // 109 (`NPC.cs:23678-23681`'s `ai[3] == 60 && Next(2) == 0` site —
+        // the port has no duck kind yet, the arm lands table-complete),
+        // the playing guard BEFORE the pitch draw, ×0.3, `Next(-10, 11)`.
+        45 => {
+            if is_playing(109) {
+                return None;
+            }
+            Some(voice(109, 0.3, roll(-10, 11)))
+        }
+        // S1-E-21e — the fighter-moan cases (`AI_003_Fighters`,
+        // `NPC.cs:57340-57367`). Case 14 (`:793-824`): NO pitch draw and no
+        // playing guard — the style-542 slot 7, the 489/586 `Next(21, 24)`
+        // pair and the default `Next(3)`, all ×0.4, the array entry
+        // overwritten without a Stop (the old voice plays out).
+        14 => {
+            let slot = match style {
+                542 => 7,
+                489 | 586 => roll(21, 24).max(0) as usize,
+                _ => roll(0, 3).max(0) as usize,
+            };
+            Some(CritterVoice {
+                slot,
+                asset: zombie_asset(slot),
+                volume_mult: 0.4,
+                pitch: 0.0,
+            })
+        }
+        // Case 26 (`:969-978`): the mummy's `Next(3, 5)` slot pick, ×0.9,
+        // one `Next(-10, 11)` pitch draw; no guard, overwrite without Stop.
+        26 => {
+            let slot = roll(3, 5).max(0) as usize;
+            Some(voice(slot, 0.9, roll(-10, 11)))
+        }
+        // Case 29 (`:1008-1047`): the Style argument IS the slot; the
+        // per-style volume arms, the playing guard returns null BEFORE the
+        // pitch draw (`:1038-1041`), one `Next(-10, 11)` pitch (`:1045`).
+        // The moan arms only name styles 6/7/8 (×1.0); the full switch is
+        // ported for the later waves' callers.
+        29 => {
+            let mut mult = 1.0f32;
+            let s = style as i32;
+            if (24..=87).contains(&s) {
+                mult *= 0.5;
+            }
+            if (88..=91).contains(&s) {
+                mult *= 0.7;
+            }
+            if (93..=99).contains(&s) {
+                mult *= 0.4;
+            }
+            if s == 92 {
+                mult *= 0.5;
+            }
+            if s == 103 {
+                mult *= 0.4;
+            }
+            if s == 104 {
+                mult *= 0.55;
+            }
+            if s == 100 || s == 101 {
+                mult *= 0.25;
+            }
+            if s == 102 {
+                mult *= 0.4;
+            }
+            let slot = style as usize;
+            if is_playing(slot) {
+                return None;
+            }
+            Some(voice(slot, mult, roll(-10, 11)))
+        }
         _ => None,
     }
 }
@@ -497,7 +569,363 @@ fn zombie_asset(slot: usize) -> &'static str {
         128 => "Zombie_128",
         129 => "Zombie_129",
         130 => "Zombie_130",
+        // S1-E-21e — the fighter-moan slots: case 14's `Next(3)` default
+        // (`LegacySoundPlayer.cs:815-821`), case 26's `Next(3, 5)` (`:971`),
+        // case 14's style-542 slot 7 (`:796`) and 489/586's `Next(21, 24)`
+        // (`:807`), case 29's Style-is-the-slot rows 6/7/8 (`:1038-1046`)
+        // plus the full switch's slot 5 row, case 45's pinned slot 109
+        // (`:1060`).
+        0 => "Zombie_0",
+        1 => "Zombie_1",
+        2 => "Zombie_2",
+        3 => "Zombie_3",
+        4 => "Zombie_4",
+        5 => "Zombie_5",
+        6 => "Zombie_6",
+        7 => "Zombie_7",
+        8 => "Zombie_8",
+        21 => "Zombie_21",
+        22 => "Zombie_22",
+        23 => "Zombie_23",
+        109 => "Zombie_109",
         _ => "Zombie_0",
+    }
+}
+
+/// S1-E-21e — the aiStyle-3 kinds whose port machine is the plain
+/// `AI_003_Fighters` walker (`update_zombie`/`update_skeleton`) and whose
+/// `ai[3]` slot is therefore free for the C#'s idle counter. The other
+/// aiStyle-3 machines (the martian shooters, the scutlix rider, the vortex
+/// rifleman, …) have claimed `ai[3]` for their own state in the port; their
+/// C# idle-counter share lands with each machine's full migration. The
+/// Headless Horseman/Hellhound walker stand-ins are aiStyle 26 in the C#
+/// (`AI_026_Unicorns`), not AI_003 — excluded.
+pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
+    use crate::npc::NpcKind::*;
+    matches!(
+        kind,
+        Zombie
+            | Skeleton
+            | UndeadMiner
+            | GoblinThief
+            | GoblinWarrior
+            | GoblinPeon
+            | PirateDeckhand
+            | PirateCaptainsMate
+            | Scarecrow1
+            | Scarecrow2
+            | Scarecrow3
+            | Scarecrow4
+            | Scarecrow5
+            | Scarecrow6
+            | Scarecrow7
+            | Scarecrow8
+            | Scarecrow9
+            | Scarecrow10
+            | Splinterling
+    )
+}
+
+/// S1-E-21e — `AI_003_Fighters`' idle counter (`NPC.cs:57034-57145`): the
+/// `num57` cap (60; the type-120 row's 180 — its `-120` teleport arm is
+/// unported), the `flag9`/`flag10` type gates (`:57076-57118`), the
+/// turnaround `flag7` (`:57122-57125`), the stuck-or-idle `ai[3]++` / the
+/// moving `ai[3]--` (`:57126-57133`), the `num57 * 10` wrap (`:57134-57137`),
+/// the `justHit` reset (`:57138-57141`) and the player-hitbox reset
+/// (`:57146-57149` — the `Main.player[target].Hitbox.Intersects` read).
+/// `x`/`old_x` are the C#'s `position.X`/`oldPosition.X` at AI time: the
+/// previous tick's pre-integration stamp (`NPC.cs:90496`), which the port's
+/// `old_x` still holds when this runs ahead of `update_rng`. The
+/// `ai[3] == num57` `netUpdate` flag (`:57142-57145`) has no net seam here.
+/// `just_hit` rides the port's established `hurt_cd > 0` stand-in
+/// (`npc.rs:13420`) — the counter rests at 0 through the hurt cooldown
+/// instead of the C#'s single-tick reset (ANALYSIS, S1-E-21e).
+pub fn fighter_idle_counter(
+    npc_type: i32,
+    ai2: f32,
+    ai3: f32,
+    vx: f32,
+    vy: f32,
+    facing: i32,
+    x: f32,
+    old_x: f32,
+    just_hit: bool,
+    player_intersects: bool,
+) -> f32 {
+    // `int num57 = 60;` + the type-120 row (`NPC.cs:57034-57037`).
+    let num57 = if npc_type == 120 { 180.0 } else { 60.0 };
+    // `flag9` (`:57076-57081`): the sigil/sigil-adjacent types 425/471.
+    let flag9 = npc_type == 425 || npc_type == 471;
+    // `flag10` (`:57082-57118`): the busy-with-action types freeze the
+    // counter while `ai[2] > 0`.
+    let flag10 = !(matches!(
+        npc_type,
+        110 | 111
+            | 206
+            | 214
+            | 215
+            | 216
+            | 291
+            | 292
+            | 293
+            | 350
+            | 379
+            | 380
+            | 381
+            | 382
+            | 409
+            | 411
+            | 424
+            | 426
+            | 466
+            | 498
+            | 499
+            | 500
+            | 501
+            | 502
+            | 503
+            | 504
+            | 505
+            | 506
+            | 520
+    ) && ai2 > 0.0);
+    let mut ai3 = ai3;
+    if !flag9 && flag10 {
+        // `flag7` (`:57122-57125`): grounded and moving against the facing.
+        let flag7 = vy == 0.0 && ((vx > 0.0 && facing < 0) || (vx < 0.0 && facing > 0));
+        // `:57126-57133` — the C#'s `|` is non-short-circuiting; both sides
+        // are pure reads, so the port's `||` keeps the value.
+        if x == old_x || ai3 >= num57 || flag7 {
+            ai3 += 1.0;
+        } else if vx.abs() > 0.9 && ai3 > 0.0 {
+            ai3 -= 1.0;
+        }
+        if ai3 > num57 * 10.0 {
+            ai3 = 0.0;
+        }
+        if just_hit {
+            ai3 = 0.0;
+        }
+        if player_intersects {
+            ai3 = 0.0;
+        }
+    }
+    ai3
+}
+
+/// S1-E-21e — `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+/// (`NPC.cs:60300-60330`), the moan arms' gate (`:57336`), ported whole:
+/// the long `if` condition (`:60302`) — the five live scene terms (eclipse,
+/// day, statue, surface, graveyard), the event terms (snow-moon 343/350,
+/// goblin invasion 26/27/28/111/471, don't-starve 163/164, pirate invasion
+/// 212-216, martian invasion 381/382/383/385/386/389/391/520), the
+/// unconditional exclusion list (31/294-296/47/67/77/78-80/630/110/120/
+/// 168/181/185/198/199/206/217-220/239/243/254/255/257/258/291-293/379/
+/// 380/464/470/424/73/624), the 631 `ai[2]` and 411 `ai[1]` arms — and the
+/// switch (`:60304-60327`): the case-listed types (409/415/419/425/427-429/
+/// 508/524-527/580/582) and 528/529/530/532 break to `return true`, every
+/// other type returns `NPCID.Sets.CritterThatCanTurnOnPlayers[npcID]`
+/// (`NPCID.cs:10436`: 645/639/644/642/643/641/640/299/539/538 — false for
+/// the zombie 3 and the skeleton 21). A condition failure falls through to
+/// `return true` (`:60329`) — the excluded moan types (the mummies 78-80/
+/// 630, the face monster 181, 110, 31/77/291-296) are NOT discouraged even
+/// on a non-eclipse day above the surface. `npcInstance` is never null at
+/// the moan call site, so the null arms fold to the instance reads.
+#[allow(clippy::too_many_arguments)]
+pub fn fighter_not_discouraged(
+    npc_type: i32,
+    y: f64,
+    world_surface_px: f64,
+    eclipse: bool,
+    day_time: bool,
+    spawned_from_statue: bool,
+    zone_graveyard: bool,
+    snow_moon: bool,
+    invasion_type: i32,
+    dont_starve: bool,
+    ai1: f32,
+    ai2: f32,
+) -> bool {
+    // `:60302` — the whole condition, term for term.
+    let cond = !eclipse
+        && day_time
+        && !spawned_from_statue
+        && !(y > world_surface_px)
+        && !zone_graveyard
+        && (!snow_moon || (npc_type != 343 && npc_type != 350))
+        && (invasion_type != 1 || !matches!(npc_type, 26 | 27 | 28 | 111 | 471))
+        && (!dont_starve || (npc_type != 164 && npc_type != 163))
+        && npc_type != 73
+        && npc_type != 624
+        && (npc_type != 631 || !(ai2 > 0.0))
+        && (invasion_type != 3 || !(212..=216).contains(&npc_type))
+        && (invasion_type != 4 || !matches!(npc_type, 381 | 382 | 383 | 385 | 386 | 389 | 391 | 520))
+        && !matches!(
+            npc_type,
+            31 | 294
+                | 295
+                | 296
+                | 47
+                | 67
+                | 77
+                | 78
+                | 79
+                | 80
+                | 630
+                | 110
+                | 120
+                | 168
+                | 181
+                | 185
+                | 198
+                | 199
+                | 206
+                | 217
+                | 218
+                | 219
+                | 220
+                | 239
+                | 243
+                | 254
+                | 255
+                | 257
+                | 258
+                | 291
+                | 292
+                | 293
+                | 379
+                | 380
+                | 464
+                | 470
+                | 424
+        )
+        && (npc_type != 411 || (!(ai1 >= 180.0) && !(ai1 < 90.0)));
+    if cond {
+        // `:60304-60327` — the switch: the case-listed types break to the
+        // tail's `return true`; the default returns the critter set unless
+        // the type is 528/529/530/532 (those break too).
+        match npc_type {
+            409 | 415 | 419 | 425 | 427 | 428 | 429 | 508 | 524 | 525 | 526 | 527 | 580 | 582 => {}
+            _ => {
+                if !matches!(npc_type, 528 | 529 | 530 | 532) {
+                    // `NPCID.Sets.CritterThatCanTurnOnPlayers` (`NPCID.cs:10436`).
+                    return matches!(npc_type, 645 | 639 | 644 | 642 | 643 | 641 | 640 | 299 | 539 | 538);
+                }
+            }
+        }
+    }
+    // `:60329` — the early-exit path: NOT discouraged.
+    true
+}
+
+/// S1-E-21e — `AI_003_Fighters`' ambient moan arms (`NPC.cs:57336-57368`):
+/// behind `ai[3] < num57 && DespawnEncouragement_AIStyle3_Fighters_
+/// NotDiscouraged` (`:57336`) and `shimmerTransparency < 1f` (`:57338`),
+/// seven independent `if` arms each roll `Main.rand.Next(N) == 0` on the
+/// `UpdateNPCs` stream (`Main.cs:17767`) and play their legacy cue at the
+/// NPC's position. The arms are NOT else-chained — the type-162
+/// Frankenstein matches both the 1000-roll zombie arm and its own 500-roll
+/// `PlaySound(29, …, 6)` arm, so both rolls are consumed in the C#'s order
+/// and `play` fires per hit, interleaved with the later arms' rolls. The
+/// caller's `play` is [`crate::audio::Audio::play_fighter_moan`] — the
+/// legacy case's slot/pitch draws run inside it, AFTER the attenuation
+/// gate (the `PlaySound` prologue, `LegacySoundPlayer.cs:360-431`).
+///
+/// `not_discouraged` is the caller's
+/// [`fighter_not_discouraged`] — the full
+/// `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged` port
+/// (`NPC.cs:60300-60330`): the `:60302` condition's event/exclusion terms
+/// are NOT vacuous for the moan type sets — the mummies 78-80/630, the
+/// face monster 181, and 31/77/110/291-296 sit in the unconditional
+/// exclusion list and reach `return true` (`:60329`) even on a day above
+/// the surface; the non-excluded types (the zombie 3, the skeleton 21)
+/// fall to the switch's default `CritterThatCanTurnOnPlayers` arm (false
+/// for both), so for them the five live scene terms decide.
+pub fn fighter_ambient_moans(
+    npc_type: i32,
+    idle_counter: f32,
+    not_discouraged: bool,
+    shimmer_transparency: f32,
+    rng: &mut tr_core::UnifiedRandom,
+    play: &mut dyn FnMut(u32, i32, &mut tr_core::UnifiedRandom),
+) {
+    // `:57336` — `num57` is 60 for every type the arms name (the 120 row's
+    // 180 cannot reach an arm).
+    if !(idle_counter < 60.0 && not_discouraged) {
+        return;
+    }
+    // `:57338` — the shimmer gate wraps ALL seven arms.
+    if !(shimmer_transparency < 1.0) {
+        return;
+    }
+    // `:57340-57343` — the zombie/skeleton family's 1000-roll, case 14.
+    if matches!(
+        npc_type,
+        3 | 691
+            | 591
+            | 590
+            | 331
+            | 332
+            | 21
+            | 31
+            | 294
+            | 295
+            | 296
+            | 77
+            | 110
+            | 132
+            | 167
+            | 161
+            | 162
+            | 186
+            | 187
+            | 188
+            | 189
+            | 197
+            | 200
+            | 201
+            | 202
+            | 203
+            | 223
+            | 291
+            | 292
+            | 293
+            | 320
+            | 321
+            | 319
+            | 481
+            | 632
+            | 635
+    ) || (449..=452).contains(&npc_type)
+    {
+        if rng.next_max(1000) == 0 {
+            play(14, 1, rng);
+        }
+    }
+    // `:57344-57347` — the 489/586 pair's 800-roll, case 14 with the type
+    // as the Style (the `Next(21, 24)` slot arm).
+    if (npc_type == 489 || npc_type == 586) && rng.next_max(800) == 0 {
+        play(14, npc_type, rng);
+    }
+    // `:57348-57351` — the mummy family's 500-roll, case 26.
+    if matches!(npc_type, 78 | 79 | 80 | 630) && rng.next_max(500) == 0 {
+        play(26, 1, rng);
+    }
+    // `:57352-57355` — the vampire's 500-roll, case 29 style 7.
+    if npc_type == 159 && rng.next_max(500) == 0 {
+        play(29, 7, rng);
+    }
+    // `:57356-57359` — Frankenstein's own 500-roll, case 29 style 6.
+    if npc_type == 162 && rng.next_max(500) == 0 {
+        play(29, 6, rng);
+    }
+    // `:57360-57363` — the face monster's 500-roll, case 29 style 8.
+    if npc_type == 181 && rng.next_max(500) == 0 {
+        play(29, 8, rng);
+    }
+    // `:57364-57367` — the armored-bones 269-280 range's 1000-roll, case 14.
+    if (269..=280).contains(&npc_type) && rng.next_max(1000) == 0 {
+        play(14, 1, rng);
     }
 }
 
@@ -954,5 +1382,419 @@ mod tests {
             None
         );
         assert_eq!(calls, 0);
+    }
+
+    /// S1-E-21e — the fighter-moan cases' draw contract
+    /// (`LegacySoundPlayer.cs:793-824/:969-978/:1008-1050/:1059-1070`).
+    #[test]
+    fn s1_e_21e_the_moan_cases_draw_in_the_c_order() {
+        // Case 14 default (`:817`): ONE `Next(3)` slot draw, NO pitch draw
+        // (the case never sets `Pitch`), ×0.4, no guard — the busy slot is
+        // overwritten without a Stop.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            14,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, _| Some(lo + (2 % (hi - lo).max(1)))),
+            &|_| unreachable!("case 14 has no playing guard"),
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 2);
+        assert_eq!(voice.asset, "Zombie_2");
+        assert_eq!(voice.volume_mult, 0.4);
+        assert_eq!(voice.pitch, 0.0, "case 14 draws no pitch");
+        assert_eq!(state.calls, 1, "the slot draw only");
+
+        // Case 14 style 542 (`:796-803`): slot 7 pinned, ZERO draws.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            14,
+            542,
+            &mut signed_roll(&mut state, &|_, _, _| unreachable!("style 542 draws nothing")),
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 7);
+        assert_eq!(voice.asset, "Zombie_7");
+        assert_eq!(state.calls, 0);
+
+        // Case 14 styles 489/586 (`:805-813`): the `Next(21, 24)` slot arm,
+        // still no pitch.
+        for style in [489u32, 586] {
+            let mut state = Rolls::new();
+            let voice = critter_legacy_voice(
+                14,
+                style,
+                &mut signed_roll(&mut state, &|lo, hi, _| {
+                    Some(lo + (1 % (hi - lo).max(1)))
+                }),
+                &|_| false,
+            )
+            .unwrap();
+            assert_eq!(voice.slot, 22);
+            assert_eq!(voice.volume_mult, 0.4);
+            assert_eq!(voice.pitch, 0.0);
+            assert_eq!(state.calls, 1);
+        }
+
+        // Case 26 (`:969-978`): `Next(3, 5)` + one `Next(-10, 11)` pitch,
+        // ×0.9, no guard.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            26,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                if call == 0 {
+                    Some(4)
+                } else {
+                    Some(-7)
+                }
+            }),
+            &|_| unreachable!("case 26 has no playing guard"),
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 4);
+        assert_eq!(voice.asset, "Zombie_4");
+        assert_eq!(voice.volume_mult, 0.9);
+        assert!((voice.pitch + 0.07).abs() < 1e-6);
+        assert_eq!(state.calls, 2, "slot + pitch");
+
+        // Case 29 (`:1008-1050`): the Style IS the slot; the playing guard
+        // returns BEFORE the pitch draw (`:1041-1044`).
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(29, 7, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| s
+                == 7)
+            .is_none(),
+            "a busy style slot blocks the cue"
+        );
+        assert_eq!(state.calls, 0, "the guard precedes the pitch draw");
+        // The moan arms' styles 6/7/8 keep mult 1.0; one pitch draw.
+        for style in [6u32, 7, 8] {
+            let mut state = Rolls::new();
+            let voice = critter_legacy_voice(
+                29,
+                style,
+                &mut signed_roll(&mut state, &|_, _, _| Some(5)),
+                &|_| false,
+            )
+            .unwrap();
+            assert_eq!(voice.slot, style as usize);
+            assert_eq!(voice.volume_mult, 1.0);
+            assert!((voice.pitch - 0.05).abs() < 1e-6);
+            assert_eq!(state.calls, 1);
+        }
+        // The full switch's volume arms (`:1009-1040`): 24..87 ×0.5,
+        // 88..91 ×0.7, 92 ×0.5, 93..99 ×0.4, 100/101 ×0.25, 102 ×0.4,
+        // 103 ×0.4, 104 ×0.55.
+        for (style, mult) in [
+            (24u32, 0.5f32),
+            (87, 0.5),
+            (90, 0.7),
+            (92, 0.5),
+            (95, 0.4),
+            (100, 0.25),
+            (101, 0.25),
+            (102, 0.4),
+            (103, 0.4),
+            (104, 0.55),
+        ] {
+            let mut state = Rolls::new();
+            let voice = critter_legacy_voice(
+                29,
+                style,
+                &mut signed_roll(&mut state, &|_, _, _| Some(0)),
+                &|_| false,
+            )
+            .unwrap();
+            assert_eq!(voice.volume_mult, mult, "style {style}");
+        }
+
+        // Case 45 (`:1059-1070`): slot 109 pinned, the guard before the
+        // pitch draw, ×0.3, `Next(-10, 11)`.
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(45, 1, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| s
+                == 109)
+            .is_none()
+        );
+        assert_eq!(state.calls, 0);
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            45,
+            1,
+            &mut signed_roll(&mut state, &|_, _, _| Some(-10)),
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 109);
+        assert_eq!(voice.asset, "Zombie_109");
+        assert_eq!(voice.volume_mult, 0.3);
+        assert!((voice.pitch + 0.10).abs() < 1e-6);
+        assert_eq!(state.calls, 1);
+    }
+
+    /// S1-E-21e — `fighter_idle_counter`'s branches (`NPC.cs:57034-57149`).
+    #[test]
+    fn s1_e_21e_the_idle_counter_follows_the_branch_table() {
+        // Stuck (`position.X == oldPosition.X`, `:57126`): the counter ticks
+        // up even while moving fast.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 2.0, 0.0, 1, 100.0, 100.0, false, false),
+            6.0
+        );
+        // Moving with the facing (`:57130-57132`): |vx| > 0.9 decrements.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 2.0, 0.0, 1, 100.0, 90.0, false, false),
+            4.0
+        );
+        // A slow walk neither ticks nor decrements.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 0.5, 0.0, 1, 100.0, 90.0, false, false),
+            5.0
+        );
+        // The turnaround `flag7` (`:57122-57125`): grounded, moving against
+        // the facing — ticks up despite the motion.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 2.0, 0.0, -1, 100.0, 90.0, false, false),
+            6.0
+        );
+        // At/over the cap (`ai[3] >= num57`) the counter keeps ticking up.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 60.0, 2.0, 0.0, 1, 100.0, 90.0, false, false),
+            61.0
+        );
+        // The `num57 * 10` wrap (`:57134-57137`): 601 → 0.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 600.0, 0.0, 0.0, 1, 100.0, 100.0, false, false),
+            0.0
+        );
+        // The `justHit` reset (`:57138-57141`) and the player-hitbox reset
+        // (`:57146-57149`) both zero the counter.
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 0.0, 0.0, 1, 100.0, 100.0, true, false),
+            0.0
+        );
+        assert_eq!(
+            fighter_idle_counter(3, 0.0, 5.0, 0.0, 0.0, 1, 100.0, 100.0, false, true),
+            0.0
+        );
+        // `flag9` (the sigil types 425/471, `:57076-57081`): frozen.
+        assert_eq!(
+            fighter_idle_counter(425, 0.0, 5.0, 0.0, 0.0, 1, 100.0, 100.0, false, false),
+            5.0
+        );
+        // `flag10` (the busy-with-action types, `:57082-57118`): frozen
+        // while `ai[2] > 0`, live once it clears.
+        assert_eq!(
+            fighter_idle_counter(110, 3.0, 5.0, 0.0, 0.0, 1, 100.0, 100.0, false, false),
+            5.0
+        );
+        assert_eq!(
+            fighter_idle_counter(110, 0.0, 5.0, 0.0, 0.0, 1, 100.0, 100.0, false, false),
+            6.0
+        );
+        // The type-120 row's 180 cap (`:57036-57038`): the wrap is 1800.
+        assert_eq!(
+            fighter_idle_counter(120, 0.0, 600.0, 0.0, 0.0, 1, 100.0, 100.0, false, false),
+            601.0
+        );
+    }
+
+    /// S1-E-21e — `fighter_ambient_moans`' roll consumption
+    /// (`NPC.cs:57336-57367`): the seven arms are independent `if`s on the
+    /// `UpdateNPCs` stream; a matching type consumes its roll even when the
+    /// roll fails, and the type-162 Frankenstein matches TWO arms.
+    #[test]
+    fn s1_e_21e_the_moan_arms_roll_in_the_c_order() {
+        use tr_core::UnifiedRandom;
+        // Seed 1: `Next(1000)` fails — the zombie's arm consumes exactly
+        // one draw and plays nothing.
+        let mut rng = UnifiedRandom::new(1);
+        let mut witness = UnifiedRandom::new(1);
+        let _ = witness.next_max(1000);
+        let mut plays: Vec<(u32, i32)> = Vec::new();
+        fighter_ambient_moans(3, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
+        assert!(plays.is_empty());
+        assert_eq!(rng.peek(), witness.peek(), "one failed roll consumed");
+
+        // Seed 146: `Next(1000)` hits 0 — the zombie plays case 14 style 1;
+        // the case's own draws run inside the play callback (the caller's
+        // `Audio::play_fighter_moan`), not in the arm table.
+        let mut rng = UnifiedRandom::new(146);
+        let mut witness = UnifiedRandom::new(146);
+        let _ = witness.next_max(1000);
+        let mut plays: Vec<(u32, i32)> = Vec::new();
+        fighter_ambient_moans(3, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
+        assert_eq!(plays, vec![(14, 1)]);
+        assert_eq!(rng.peek(), witness.peek());
+
+        // The 489/586 pair's 800-roll arm carries the TYPE as the Style
+        // (the case-14 `Next(21, 24)` slot arm, `:57344-57347`).
+        for npc_type in [489, 586] {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _ = witness.next_max(800);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert_eq!(plays, vec![(14, npc_type)]);
+            assert_eq!(rng.peek(), witness.peek());
+        }
+
+        // The mummy family's 500-roll → case 26 (`:57348-57351`).
+        for npc_type in [78, 79, 80, 630] {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _ = witness.next_max(500);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert_eq!(plays, vec![(26, 1)], "type {npc_type}");
+            assert_eq!(rng.peek(), witness.peek());
+        }
+
+        // The vampire 159 → case 29 style 7, Frankenstein 162 → style 6,
+        // the face monster 181 → style 8 (`:57352-57363`).
+        for (npc_type, style) in [(159, 7), (181, 8)] {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _ = witness.next_max(500);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert_eq!(plays, vec![(29, style)], "type {npc_type}");
+            assert_eq!(rng.peek(), witness.peek());
+        }
+
+        // The armored-bones 269-280 range's 1000-roll → case 14
+        // (`:57364-57367`).
+        for npc_type in [269, 280] {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _ = witness.next_max(1000);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
+                plays.push((c, s))
+            });
+            assert_eq!(plays, vec![(14, 1)], "type {npc_type}");
+            assert_eq!(rng.peek(), witness.peek());
+        }
+
+        // The type-162 Frankenstein matches BOTH the zombie-family 1000
+        // arm AND its own 500 arm — the arms are NOT else-chained. Seed
+        // 34995 hits 0 on both: two plays, two rolls, in the C#'s order.
+        let mut rng = UnifiedRandom::new(34995);
+        let mut witness = UnifiedRandom::new(34995);
+        let _ = witness.next_max(1000);
+        let _ = witness.next_max(500);
+        let mut plays: Vec<(u32, i32)> = Vec::new();
+        fighter_ambient_moans(162, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
+        assert_eq!(plays, vec![(14, 1), (29, 6)]);
+        assert_eq!(rng.peek(), witness.peek(), "both arms' rolls consumed");
+        // Seed 580: the first arm fails, the second hits — the failed roll
+        // is still consumed ahead of the second arm's draw.
+        let mut rng = UnifiedRandom::new(580);
+        let mut witness = UnifiedRandom::new(580);
+        let _ = witness.next_max(1000);
+        let _ = witness.next_max(500);
+        let mut plays: Vec<(u32, i32)> = Vec::new();
+        fighter_ambient_moans(162, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
+        assert_eq!(plays, vec![(29, 6)]);
+        assert_eq!(rng.peek(), witness.peek());
+
+        // The gates are draw-free: the idle counter at the cap, a
+        // discouraged fighter, and a fully-shimmered NPC each consume
+        // nothing (`:57336`/`:57338`).
+        for (counter, not_discouraged, shimmer) in
+            [(60.0, true, 0.0), (0.0, false, 0.0), (0.0, true, 1.0)]
+        {
+            let mut rng = UnifiedRandom::new(146);
+            let peek = rng.peek();
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            fighter_ambient_moans(
+                3,
+                counter,
+                not_discouraged,
+                shimmer,
+                &mut rng,
+                &mut |c, s, _| plays.push((c, s)),
+            );
+            assert!(plays.is_empty());
+            assert_eq!(rng.peek(), peek, "the gate is draw-free");
+        }
+        // A kind outside every arm (the skeleton 21 matches the first arm;
+        // the scarecrow 305 matches none) draws nothing.
+        let mut rng = UnifiedRandom::new(146);
+        let peek = rng.peek();
+        let mut plays: Vec<(u32, i32)> = Vec::new();
+        fighter_ambient_moans(305, 0.0, true, 0.0, &mut rng, &mut |c, s, _| plays.push((c, s)));
+        assert!(plays.is_empty());
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21e — `fighter_not_discouraged`'s table
+    /// (`NPC.cs:60300-60330`): the `:60302` condition, the switch's
+    /// case-list / critter-set default and the `:60329` early-exit tail.
+    /// The excluded moan types are NOT discouraged even by day above the
+    /// surface — the Lead-review witness.
+    #[test]
+    fn s1_e_21e_the_not_discouraged_gate_follows_the_c_table() {
+        // A plain scene: no eclipse, no statue, above the surface (y 100 <
+        // surface 800), no graveyard, no events, ai[1]/ai[2] at 0. Only
+        // `day` varies unless a case overrides.
+        let gate = |npc_type: i32, day: bool| {
+            fighter_not_discouraged(
+                npc_type, 100.0, 800.0, false, day, false, false, false, 0, false, 0.0, 0.0,
+            )
+        };
+        // The zombie 3 / skeleton 21: the condition holds by day, the
+        // switch's default returns CritterThatCanTurnOnPlayers (false for
+        // both) — discouraged; night opens the gate.
+        for t in [3, 21] {
+            assert!(!gate(t, true), "type {t}: day above surface discourages");
+            assert!(gate(t, false), "type {t}: night is not discouraged");
+        }
+        // The five live scene terms each open the gate by day (`:60302`).
+        assert!(fighter_not_discouraged(3, 100.0, 800.0, true, true, false, false, false, 0, false, 0.0, 0.0)); // eclipse
+        assert!(fighter_not_discouraged(3, 100.0, 800.0, false, true, true, false, false, 0, false, 0.0, 0.0)); // statue
+        assert!(fighter_not_discouraged(3, 900.0, 800.0, false, true, false, false, false, 0, false, 0.0, 0.0)); // below surface
+        assert!(fighter_not_discouraged(3, 100.0, 800.0, false, true, false, true, false, 0, false, 0.0, 0.0)); // graveyard
+        // THE EXCLUDED MOAN TYPES (`:60302`'s unconditional list): the
+        // condition fails, the tail returns TRUE — not discouraged even on
+        // a plain day above the surface. The mummies 78-80/630 ride moan
+        // arm 3, the face monster 181 arm 6, 110/31/77/291-296 arm 1.
+        for t in [31, 77, 78, 79, 80, 110, 181, 291, 292, 293, 294, 295, 296, 630] {
+            assert!(gate(t, true), "excluded type {t}: not discouraged by day");
+        }
+        // The event terms: each fails the condition for its own ids BY
+        // DAY (where the plain scene otherwise discourages them — the
+        // same ids without their event assert false below).
+        assert!(fighter_not_discouraged(343, 100.0, 800.0, false, true, false, false, true, 0, false, 0.0, 0.0)); // snow moon
+        assert!(fighter_not_discouraged(26, 100.0, 800.0, false, true, false, false, false, 1, false, 0.0, 0.0)); // goblin invasion
+        assert!(fighter_not_discouraged(212, 100.0, 800.0, false, true, false, false, false, 3, false, 0.0, 0.0)); // pirate invasion
+        assert!(fighter_not_discouraged(381, 100.0, 800.0, false, true, false, false, false, 4, false, 0.0, 0.0)); // martian invasion
+        assert!(fighter_not_discouraged(163, 100.0, 800.0, false, true, false, false, false, 0, true, 0.0, 0.0)); // don't starve
+        // …and the same ids WITHOUT their event fall to the default arm
+        // (false — none is in the critter set): the day gate applies.
+        for t in [26, 212, 381, 163, 343] {
+            assert!(!gate(t, true), "type {t} without its event: day discourages");
+        }
+        // The 631 `ai[2]` arm and the 411 `ai[1]` band (`:60302`), by day
+        // so the term is the only difference.
+        assert!(fighter_not_discouraged(631, 100.0, 800.0, false, true, false, false, false, 0, false, 0.0, 1.0));
+        assert!(!fighter_not_discouraged(631, 100.0, 800.0, false, true, false, false, false, 0, false, 0.0, 0.0));
+        assert!(fighter_not_discouraged(411, 100.0, 800.0, false, true, false, false, false, 0, false, 200.0, 0.0)); // >= 180
+        assert!(fighter_not_discouraged(411, 100.0, 800.0, false, true, false, false, false, 0, false, 50.0, 0.0)); // < 90
+        assert!(!fighter_not_discouraged(411, 100.0, 800.0, false, true, false, false, false, 0, false, 100.0, 0.0)); // in-band
+        // The switch's default: a critter-set member returns TRUE by day
+        // (`NPCID.cs:10436`), the case-listed and 528-532 types break to
+        // the tail's TRUE.
+        assert!(gate(299, true), "the critter set returns true");
+        assert!(gate(425, true), "the case list breaks to true");
+        assert!(gate(528, true), "the 528-532 break arm");
     }
 }
