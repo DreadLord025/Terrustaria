@@ -573,6 +573,9 @@ pub const NEBULA_BLAZE_1: u16 = 634;
 /// `extraUpdates = 3` (the C# arm sets `friendly` twice — a verbatim quirk
 /// with no effect on the port's `friendly` default).
 pub const NEBULA_BLAZE_2: u16 = 635;
+/// `ProjectileID.HorsemanPumpkin` (1001) — the Headless Horseman's
+/// 480-tick lob (`NPC.cs:62417`; `Projectile.cs:9511-9522`, aiStyle 194).
+pub const HORSEMAN_PUMPKIN: u16 = 1001;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -2352,6 +2355,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // `Projectile.cs:9511-9522` — the Horseman's pumpkin lob
+            // (1001, S1-F-13b2 slice B): 26×26, aiStyle 194, hostile,
+            // `tileCollide = false`, `ignoreWater`, `timeLeft = 360`,
+            // `alpha = 255`; the stock penetrate 1 (`:774`). The arm's
+            // `scale = 1f + Main.rand.Next(51) * 0.01f` (`:9518`) is a
+            // spawn-time UpdateNPCs-stream draw — the row carries the
+            // 1f base, the roll rides the lob's queue site at union
+            // (`npc_ai_unicorn_b.rs::horseman_pumpkin_scale`, module
+            // docs union point 5). The aiStyle-194 flight
+            // (`AI_194_HorsemanPumpkin`, `:41293`) is a follow-up.
+            HORSEMAN_PUMPKIN => (
+                26.0,
+                26.0,
+                194,
+                1,
+                360,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:9237-9252` — the Light's Bane slash (974):
             // 20x20, aiStyle 188, `penetrate = 2`, `tileCollide = false`,
             // `ignoreWater = true`, `timeLeft = 30`, the local-immunity pair
@@ -2500,7 +2525,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:9244`: the Light's Bane slash ignores water.
             || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
-            || kind == RAINBOW_CRYSTAL_EXPLOSION,
+            || kind == RAINBOW_CRYSTAL_EXPLOSION
+            // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
+            || kind == HORSEMAN_PUMPKIN,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
