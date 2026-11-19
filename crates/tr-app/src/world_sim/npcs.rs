@@ -2632,6 +2632,50 @@ fn carrier_link_pre_pass_linear(npcs: &mut [Npc]) {
     }
 }
 
+/// The King Slime's minion burst (`AI_015_KingSlime`, `NPC.cs:43394-43413`):
+/// `count` Blue Slimes spawned INSIDE the King's body. Per minion the C#
+/// draws `Next(width-32)` / `Next(height-32)` for the spawn point
+/// (`NewNPC`'s X/Y anchor the minion's BOTTOM, `NPC.cs:80770`), then
+/// `Next(-15,16)*0.1` / `Next(-30,1)*0.1` velocity and `-1000*Next(3)` for
+/// `ai[0]`, with `ai[1] = -1`. FIVE draws per minion on the caller's
+/// `UpdateNPCs` stream (K-2 census, S1-A-10); the expert `Next(4)==0` →
+/// SpikedSlime 535 roll (`:43399`) is constants-off (the classic solo env —
+/// ANALYSIS "The King Slime's machine"). The C# has NO minion cap and NO
+/// placement/collision gate (`NewNPC` takes any free slot), so the port
+/// spawns every drawn minion at its drawn point.
+fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> Vec<Npc> {
+    let (kw, kh) = king.size();
+    // The Blue Slime's `SetDefaults` box (`NPC.cs:8574-8575`): 24x18.
+    let (sw, sh) = NpcKind::Slime.size();
+    let mut out = Vec::new();
+    for _ in 0..count {
+        // `:43396-43397` — `(int)(position + (float)Next(size - 32))`.
+        let x = (king.x + rng.next_max(kw as i32 - 32) as f32) as i32;
+        let y = (king.y + rng.next_max(kh as i32 - 32) as f32) as i32;
+        // `:43403` + `NPC.cs:80770` — `NewNPC`'s X/Y anchor the BOTTOM;
+        // `direction` stays the ctor's 0 (`NPC.cs:8354`) until the AI writes.
+        let mut m = Npc::new(
+            NpcKind::Slime,
+            x as f32 - sw * 0.5,
+            y as f32 - sh,
+            0,
+            0.0,
+        );
+        m.hp = m.max_hp;
+        // `:43405-43406` — the velocity draws.
+        m.vx = rng.next_range(-15, 16) as f32 * 0.1;
+        m.vy = rng.next_range(-30, 1) as f32 * 0.1;
+        // `:43407-43408` — the AI seed (`ai[1] = -1` gates the slime-body
+        // item roll, `AI_001` `:60356`). The port's stand-in slime machine
+        // (`update_slime`) reads `hop_timer`, not `ai[0]`, so the jump-delay
+        // seed is carried as data until the A1-4 whole-arm port consumes it.
+        m.ai[0] = -1000.0 * rng.next_max(3) as f32;
+        m.ai[1] = -1.0;
+        out.push(m);
+    }
+    out
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -4277,29 +4321,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.extend(dutch_drops);
 
-    let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
+    // The King Slime's minion batch (`AI_015_KingSlime`, `NPC.cs:43394-43413`):
+    // the 5 %-damage arm's `rand(1, 4)` count was drawn by the AI tick; THIS
+    // drain resolves the burst at the same `UpdateNPCs` stream position
+    // (K-2, 54-audit): every minion draws position x/y, velocity x/y and
+    // `ai[0]` — 5 draws per minion after the one batch draw (the expert
+    // `Next(4)` kind roll `:43399` is constants-off, the classic solo env —
+    // ANALYSIS "The King Slime's machine"). No minion cap: the C# has none
+    // (the old invented 8-minion ceiling dropped draws and spawns alike).
     let mut spawned = Vec::new();
+    let batch_rng = app.rngs.stream(RngKey::UpdateNpcs);
     for n in app.npcs.iter_mut() {
         if !n.wants_minion {
             continue;
         }
         n.wants_minion = false;
-        // The King Slime's batch (`AI_015` `:44233-44247`): the 5 %-damage
-        // arm spawns `rand(1, 4)` (1-3) Blue Slimes, the death arm 4-7; the
-        // port's `wants_minion_batch` carries the count for the resolution.
         let batch = n.wants_minion_batch.max(1);
         n.wants_minion_batch = 0;
-        for k in 0..batch {
-            if minions >= 8 {
-                break;
-            }
-            let xt =
-                ((n.x / TILE_PX) as i32 + n.facing * (2 + k as i32)).clamp(2, app.world.width - 3);
-            if let Some(m) = Npc::spawn_slime(&app.world, xt) {
-                spawned.push(m);
-                minions += 1;
-            }
-        }
+        spawned.extend(king_slime_minion_batch(n, batch, batch_rng));
     }
     app.npcs.extend(spawned);
     if let Some(player) = app.player.as_mut() {
@@ -12730,5 +12769,194 @@ mod dw3_tests {
             witness,
             "the moan spends exactly the arm roll + the slot draw"
         );
+    }
+}
+
+/// A-1 audit (54-audit-slime-eye) K-1/K-2/K-3 — the King Slime fixes.
+/// Stream-parity witnesses: WRITTEN, NOT RUN (code-only mode, no compiler).
+/// Each pins the exact `Main.rand` draw order the C# arm consumes
+/// (`AI_015_KingSlime`, `NPC.cs:43121-43414`), per the S1-A-10 contract.
+#[cfg(test)]
+mod king_slime_audit_tests {
+    use super::*;
+    use tr_core::UnifiedRandom;
+
+    /// K-2 census (`NPC.cs:43394-43413`): the batch drain consumes EXACTLY
+    /// five draws per minion, in the C# order — position x (`Next(width-32)`),
+    /// position y (`Next(height-32)`), velocity x (`Next(-15,16)`), velocity y
+    /// (`Next(-30,1)`), `ai[0]` (`Next(3)`). The expert `Next(4)` kind roll
+    /// (`:43399`) is constants-off (classic solo). The witness replays the
+    /// draws on a clone and asserts both the stream state AND every spawned
+    /// minion's position/velocity/ai match the drawn values.
+    #[test]
+    fn k2_the_minion_batch_consumes_five_draws_per_minion_in_csharp_order() {
+        let mut king = Npc::new(NpcKind::KingSlime, 1000.0, 500.0, 1, 0.0);
+        king.hp = king.max_hp;
+        // A known body box so the `Next(size-32)` ranges are pinned.
+        king.size_override = Some((122.0, 115.0));
+        let (kw, kh) = king.size();
+        let count = 3u32;
+        let mut rng = UnifiedRandom::new(777);
+        let mut witness = rng.clone();
+        let batch = king_slime_minion_batch(&king, count, &mut rng);
+        assert_eq!(batch.len(), count as usize, "no cap: every drawn minion spawns");
+        let (sw, sh) = NpcKind::Slime.size();
+        for m in &batch {
+            // The C# draw order, replayed on the witness.
+            let dx = witness.next_max(kw as i32 - 32);
+            let dy = witness.next_max(kh as i32 - 32);
+            let vx = witness.next_range(-15, 16) as f32 * 0.1;
+            let vy = witness.next_range(-30, 1) as f32 * 0.1;
+            let ai0 = -1000.0 * witness.next_max(3) as f32;
+            let x = (king.x + dx as f32) as i32;
+            let y = (king.y + dy as f32) as i32;
+            assert_eq!(m.kind, NpcKind::Slime, "classic: always the Blue Slime (1)");
+            assert_eq!(m.x, x as f32 - sw * 0.5, "NewNPC anchors the BOTTOM (x centre)");
+            assert_eq!(m.y, y as f32 - sh, "NewNPC anchors the BOTTOM (y)");
+            assert_eq!(m.vx, vx, "velocity x draw");
+            assert_eq!(m.vy, vy, "velocity y draw");
+            assert_eq!(m.ai[0], ai0, "ai[0] = -1000*Next(3)");
+            assert_eq!(m.ai[1], -1.0, "ai[1] = -1");
+            assert_eq!(m.hp, m.max_hp, "full hp on spawn");
+        }
+        assert_eq!(rng, witness, "the drain spends exactly 5 draws per minion");
+    }
+
+    /// K-2 full census: the AI tick draws the ONE batch count (`Next(1,4)`,
+    /// `:43393`), then the drain draws 5×count. Together the burst spends
+    /// `1 + 5*count` draws on the `UpdateNPCs` stream — the witness replays
+    /// the whole sequence and pins the final stream state.
+    #[test]
+    fn k2_the_full_burst_spends_one_plus_five_times_count_draws() {
+        let mut king = Npc::new(NpcKind::KingSlime, 1000.0, 500.0, 1, 0.0);
+        king.hp = king.max_hp;
+        king.size_override = Some((122.0, 115.0));
+        let (kw, kh) = king.size();
+        let mut rng = UnifiedRandom::new(4242);
+        let mut witness = rng.clone();
+        // The AI's batch-count draw (`:43393`).
+        let count = rng.next_range(1, 4);
+        let _ = witness.next_range(1, 4);
+        assert!((1..=3).contains(&count), "Next(1,4) is 1-3");
+        // The drain's per-minion draws.
+        let _ = king_slime_minion_batch(&king, count as u32, &mut rng);
+        for _ in 0..count {
+            let _ = witness.next_max(kw as i32 - 32);
+            let _ = witness.next_max(kh as i32 - 32);
+            let _ = witness.next_range(-15, 16);
+            let _ = witness.next_range(-30, 1);
+            let _ = witness.next_max(3);
+        }
+        assert_eq!(rng, witness, "1 + 5*count draws, no more, no less");
+    }
+
+    /// K-3 lava gate (`NPC.cs:43066` `!tile.lava()`): a lava-covered
+    /// candidate tile is rejected. The fixture is a flat ground row with the
+    /// player standing above it; the ground tiles are the ring's candidates.
+    /// Covering them ALL in lava empties the cache — the finder falls through
+    /// to the player's bottom and consumes ZERO draws; clearing the lava
+    /// restores the candidates and the pick consumes ONE `Next(0, size)` draw.
+    #[test]
+    fn k3_the_finder_rejects_lava_covered_candidates() {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        // Flat ground at row 40, air above.
+        for x in 0..64 {
+            for y in 40..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut player = crate::player::Player::spawn(&w);
+        // Stand the player ON the ground (bottom at row 40's top edge).
+        player.x = 32.0 * 16.0;
+        player.y = 40.0 * 16.0 - player.height;
+        let (pcx, _) = player.center();
+        let height = 115.0; // the King's body height (full-hp scale)
+        // Cover the whole ground surface row in lava.
+        for x in 0..64 {
+            let i = w.index(x, 40);
+            w.tiles[i].liquid = 255;
+            w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        let mut rng = UnifiedRandom::new(5);
+        let before = rng.clone();
+        let (lx, ly) = crate::npc::king_slime_find_teleport_spot(&w, &player, false, height, &mut rng);
+        assert_eq!(
+            (lx, ly),
+            (pcx, player.y + player.height),
+            "every candidate lava-covered -> the player-bottom fallback"
+        );
+        assert_eq!(rng, before, "the empty cache consumes no draw");
+        // Clear the lava: candidates return, the pick draws once.
+        for x in 0..64 {
+            let i = w.index(x, 40);
+            w.tiles[i].liquid = 0;
+            w.tiles[i].clear_liquid_kind();
+        }
+        let mut rng2 = UnifiedRandom::new(5);
+        let (sx, sy) = crate::npc::king_slime_find_teleport_spot(&w, &player, false, height, &mut rng2);
+        // The picked spot is a surface tile: y = 40*16, x on the 16-px grid.
+        assert_eq!(sy, 40.0 * 16.0, "the spot sits on the ground row");
+        assert_eq!(sx % 16.0, 8.0, "the spot's x is tile*16 + 8");
+        // Stream parity: replicate the finder's 10/7 cache scan to count the
+        // candidates, then replay the ONE `Next(0, size)` pick on a witness.
+        let (pcx2, pcy2) = player.center();
+        let tx = (pcx2 as i32) / 16;
+        let ty = (pcy2 as i32) / 16;
+        const PLATFORMS: [u16; 7] = [19, 427, 435, 436, 437, 438, 439];
+        let mut cache: Vec<(i32, i32)> = Vec::new();
+        for (x0, x1, y0, y1) in [
+            (tx - 10, tx - 7, ty - 10, ty + 10),
+            (tx + 7, tx + 10, ty - 10, ty + 10),
+            (tx - 7, tx + 7, ty - 10, ty - 7),
+            (tx - 7, tx + 7, ty + 7, ty + 10),
+        ] {
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    let Some(t) = w.tile(x, y) else { continue };
+                    if !t.active() || t.inactive() || cache.len() >= 50 {
+                        continue;
+                    }
+                    let solid = tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                    let platform = PLATFORMS.contains(&t.kind);
+                    let below_solid = w.tile(x, y - 1).is_some_and(|b| {
+                        b.active()
+                            && !b.inactive()
+                            && tr_core::tiledata::TILE_SOLID.has(b.kind)
+                            && !tr_core::tiledata::TILE_SOLID_TOP.has(b.kind)
+                            && !b.half_brick()
+                            && b.slope() == 0
+                    });
+                    if !(solid || platform) || below_solid {
+                        continue;
+                    }
+                    let pos = glam::Vec2::new(
+                        x as f32 * 16.0 + 8.0,
+                        y as f32 * 16.0 - height / 2.0,
+                    );
+                    if t.liquid_kind() != tr_core::tile::LiquidKind::Lava
+                        && crate::projectile::can_hit_line(
+                            &w, pos.x, pos.y, 0.0, 0.0, pcx2, pcy2, 0.0, 0.0,
+                        )
+                    {
+                        cache.push((x, y));
+                    }
+                }
+            }
+        }
+        assert!(!cache.is_empty(), "the clear ground yields candidates");
+        let mut witness = UnifiedRandom::new(5);
+        let pick = witness.next_range(0, cache.len() as i32) as usize;
+        let (wx, wy) = cache[pick];
+        assert_eq!(
+            (sx, sy),
+            (wx as f32 * 16.0 + 8.0, wy as f32 * 16.0),
+            "the finder picks the witnessed candidate"
+        );
+        assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
     }
 }
