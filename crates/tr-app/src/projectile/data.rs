@@ -262,6 +262,34 @@ pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
 /// `ProjectileID.FlamingWood` (325, `Projectile.cs:3249-3259`) — the
 /// Retinazer's shot.
 pub const FLAMING_WOOD: u16 = 325;
+// ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring,
+// `ProjectileID.cs:1244-1258`). The Everscream / IceQueen / SantaNK1
+// machines (`npc_ai_frost_boss*.rs`) queue these; the rows below let the
+// drained `wants_hostile_shot(_ai)` requests spawn + fly.
+/// `ProjectileID.PineNeedleHostile` (345, `Projectile.cs:4353-4360`) — the
+/// Everscream's needle spray (4x4, aiStyle 1, scale 0.8).
+pub const PINE_NEEDLE_HOSTILE: u16 = 345;
+/// `ProjectileID.OrnamentHostile` (346, `Projectile.cs:4361-4369`) — the
+/// Everscream's ornament lob (18x18, aiStyle 14, penetrate -1, timeLeft 300).
+pub const ORNAMENT_HOSTILE: u16 = 346;
+/// `ProjectileID.FrostWave` (348, `Projectile.cs:4378-4389`) — the IceQueen's
+/// side charge (48x48, aiStyle 1, penetrate -1, tileCollide false,
+/// extraUpdates 1, timeLeft 900).
+pub const FROST_WAVE: u16 = 348;
+/// `ProjectileID.FrostShard` (349, `Projectile.cs:4390-4399`) — the IceQueen's
+/// shard rain / spin barrage (12x12, aiStyle 1, penetrate -1, timeLeft 900).
+pub const FROST_SHARD: u16 = 349;
+/// `ProjectileID.Missile` (350, `Projectile.cs:4400-4410`) — the SantaNK1's
+/// missile salvo (14x14, aiStyle 1, penetrate -1, tileCollide false,
+/// alpha 255, timeLeft 300).
+pub const MISSILE: u16 = 350;
+/// `ProjectileID.Present` (351, `Projectile.cs:4411-4420`) — the SantaNK1's
+/// present rain (24x24, aiStyle 58, penetrate -1, tileCollide false,
+/// alpha 255).
+pub const PRESENT: u16 = 351;
+/// `ProjectileID.Spike` (352, `Projectile.cs:4421-4429`) — the SantaNK1's
+/// spike (30x30, aiStyle 14, penetrate -1, timeLeft 1200).
+pub const SPIKE: u16 = 352;
 /// `ProjectileID.GreekFire1` (326, `Projectile.cs:3260-3277`) — the
 /// Retinazer's Greek fire.
 pub const GREEK_FIRE_1: u16 = 326;
@@ -1555,6 +1583,31 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (S1-E-5: the Frost Legion throw requests it, `npc.rs`'s Gangsta
             // arm; the row lets the data-carrying spawn land it).
             BULLET_SNOWMAN => (4.0, 4.0, 1, -1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring).
+            // `Projectile.cs:4353-4360` — the Everscream's pine needle (345):
+            // 4x4, aiStyle 1, hostile, `scale = 0.8f`; the stock penetrate 1
+            // (`:774`), tileCollide true (`:775`), timeLeft 3600 (`:787`).
+            PINE_NEEDLE_HOSTILE => (4.0, 4.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `Projectile.cs:4361-4369` — the ornament (346): 18x18,
+            // aiStyle 14, hostile, `penetrate = -1`, `timeLeft = 300`.
+            ORNAMENT_HOSTILE => (18.0, 18.0, 14, -1, 300, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4378-4389` — the FrostWave (348): 48x48,
+            // aiStyle 1, hostile, `penetrate = -1`, `tileCollide = false`,
+            // `extraUpdates = 1`, `timeLeft = 900`.
+            FROST_WAVE => (48.0, 48.0, 1, -1, 900, 1, false, false, false, RESET_STATE),
+            // `Projectile.cs:4390-4399` — the FrostShard (349): 12x12,
+            // aiStyle 1, hostile, `penetrate = -1`, `timeLeft = 900`.
+            FROST_SHARD => (12.0, 12.0, 1, -1, 900, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4400-4410` — the Missile (350): 14x14, aiStyle 1,
+            // hostile, `penetrate = -1`, `tileCollide = false`, `alpha = 255`,
+            // `timeLeft = 300`.
+            MISSILE => (14.0, 14.0, 1, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4411-4420` — the Present (351): 24x24, aiStyle 58,
+            // hostile, `penetrate = -1`, `tileCollide = false`, `alpha = 255`.
+            PRESENT => (24.0, 24.0, 58, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4421-4429` — the Spike (352): 30x30, aiStyle 14,
+            // hostile, `penetrate = -1`, `timeLeft = 1200`.
+            SPIKE => (30.0, 30.0, 14, -1, 1200, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:3219-3227` — the Flying Dutchman's shell (240):
             // 16x16, aiStyle 2, `penetrate = -1`, `alpha = 255` (the arm's
             // `ai[0] > 2f` gate turns it invisible on tick 3). The C#'s

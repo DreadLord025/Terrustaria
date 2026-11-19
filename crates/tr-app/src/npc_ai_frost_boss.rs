@@ -51,11 +51,15 @@
 //! nothing (unless `ai[0] == -1` re-picks). The witness tests pin each
 //! order against a same-seeded probe stream.
 
-// The wiring lands with the defaults worker; until then the dispatch is
-// exercised by this module's tests only.
+// S1-F-13c wiring landed: the style axis (`npc.rs::update_rng_dust`) claims
+// 345 through `ice_queen_step` below. The seam constants stay test-pinned,
+// so the module keeps the dead-code allowance.
 #![allow(dead_code)]
 
 use tr_core::{UnifiedRandom, World};
+
+use crate::npc::{HostileShotAi, Npc};
+use crate::player::Player;
 
 /// `NPCID.IceQueen` — `NPCID.cs:11367`.
 pub const ICE_QUEEN_TYPE: u16 = 345;
@@ -515,6 +519,102 @@ pub fn frost_boss_ai_step(
     // wiring worker's gate axis.
     ice_queen_ai(s, world, target, world.day_time, rng, shots);
     true
+}
+
+/// `NPC.TargetClosest` (`NPC.cs:77652-77781`) through the shared selection
+/// (`npc_target.rs`, S1-D-3p) — one session player, the zombie/pumpkin
+/// wiring's candidate shape (`npc_ai_pumpkin_boss.rs::target_closest`).
+fn target_closest(npc: &mut Npc, world: &World, player: &Player, ai_style: i32) {
+    let cand = crate::npc_target::TargetCandidate {
+        active: true,
+        dead: player.dead,
+        ghost: false,
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH as i32,
+        height: crate::player::HEIGHT as i32,
+        aggro: 0,
+        item_animation: player.frame_inputs.swing_anim as i32,
+        npc_type_no_aggro: false,
+        tank_pet: None,
+    };
+    crate::npc_target::target_closest(npc, world, &[cand], true, ai_style, 0);
+}
+
+/// The live wiring seam (S1-F-13c) — the style axis (`npc.rs`) claims the
+/// IceQueen (345, aiStyle 60) here. Copies the AI-visible `Npc` fields into
+/// [`FrostBossState`], runs `TargetClosest` where the C# arm calls it
+/// (`:33393` the initial side pick, `:33403` phase 0 per tick, `:33518`
+/// phase 1, `:33622` phase 2, `:33670` the re-pick — all at night; the
+/// single session player makes every call resolve to the same box, so one
+/// pre-pass retarget covers them, `TargetClosest` draws no rand), runs the
+/// dispatch ([`frost_boss_ai_step`]) on the caller's `UpdateNPCs` stream,
+/// copies the state back, drains the shot requests into
+/// `wants_hostile_shot(_ai)` and integrates the raw velocity
+/// (`noTileCollide`/`noGravity` from SetDefaults, `:13381-13382` —
+/// `NPC.cs:90495-90498`).
+///
+/// The aiStyle-60 day flee draws no `EncourageDespawn` (unlike 57/61) and
+/// the arm has no dust — the stream is the shot/timer draws only.
+pub fn ice_queen_step(npc: &mut Npc, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    let type_id = npc.kind.to_u16();
+    let ai_style = npc.kind.ai_style() as i32;
+    // The five `TargetClosest()` sites all run at night (the day flee,
+    // `:33376-33388`, calls none). One pre-pass retarget covers them: the
+    // port has one session player, so every call resolves to the same box
+    // and `TargetClosest` draws no rand (the stream order is exact).
+    if !world.day_time {
+        target_closest(npc, world, player, ai_style);
+    }
+    let (w, h) = npc.size();
+    let mut s = FrostBossState {
+        x: npc.x,
+        y: npc.y,
+        vx: npc.vx,
+        vy: npc.vy,
+        ai: npc.ai,
+        rotation: npc.rotation,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        width: w,
+        height: h,
+    };
+    let target = FrostBossTarget {
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH,
+        height: player.height,
+    };
+    let mut shots = Vec::new();
+    frost_boss_ai_step(type_id, &mut s, world, &target, rng, &mut shots);
+    // Copy the AI-visible writes back.
+    npc.vx = s.vx;
+    npc.vy = s.vy;
+    npc.ai = s.ai;
+    npc.rotation = s.rotation;
+    // Drain the shot requests. The FrostWave (348) and the spin-barrage
+    // shard (349) carry zero ai0/ai1 → the plain lane; the shard-rain drop
+    // (349, `ai0 = Next(5)`, `:33607`) carries its payload on the ai lane.
+    for shot in shots {
+        if shot.ai0 == 0.0 && shot.ai1 == 0.0 {
+            npc.wants_hostile_shot
+                .push((shot.kind, shot.x, shot.y, shot.vx, shot.vy, shot.damage));
+        } else {
+            npc.wants_hostile_shot_ai.push(HostileShotAi {
+                kind: shot.kind,
+                x: shot.x,
+                y: shot.y,
+                vx: shot.vx,
+                vy: shot.vy,
+                damage: shot.damage,
+                ai0: shot.ai0,
+                ai1: shot.ai1,
+            });
+        }
+    }
+    // `NPC.cs:90495-90498` — the noTileCollide integration.
+    npc.x += npc.vx;
+    npc.y += npc.vy;
 }
 
 #[cfg(test)]

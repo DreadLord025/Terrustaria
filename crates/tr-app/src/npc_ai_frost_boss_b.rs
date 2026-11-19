@@ -106,13 +106,17 @@
 //!
 //! The witness tests pin each order against a same-seeded probe stream.
 
-// The wiring lands with the defaults workers; until then the dispatch is
-// exercised by this module's tests only.
+// S1-F-13c wiring landed: the style axis (`npc.rs::update_rng_dust`) claims
+// 344/346 through `frost_boss_b_step` below. The seam constants stay
+// test-pinned, so the module keeps the dead-code allowance.
 #![allow(dead_code)]
 
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::{UnifiedRandom, World};
+
+use crate::npc::{HostileShotAi, Npc};
+use crate::player::Player;
 
 /// `NPCID.Everscream` — `NPCID.cs:11365`.
 pub const EVERSCREAM_TYPE: u16 = 344;
@@ -846,6 +850,134 @@ pub fn frost_boss_b_ai_step(
         }
         _ => false,
     }
+}
+
+/// `NPC.TargetClosest` (`NPC.cs:77652-77781`) through the shared selection
+/// (`npc_target.rs`, S1-D-3p) — one session player, the zombie/pumpkin
+/// wiring's candidate shape (`npc_ai_pumpkin_boss.rs::target_closest`).
+fn target_closest(npc: &mut Npc, world: &World, player: &Player, ai_style: i32) {
+    let cand = crate::npc_target::TargetCandidate {
+        active: true,
+        dead: player.dead,
+        ghost: false,
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH as i32,
+        height: crate::player::HEIGHT as i32,
+        aggro: 0,
+        item_animation: player.frame_inputs.swing_anim as i32,
+        npc_type_no_aggro: false,
+        tank_pet: None,
+    };
+    crate::npc_target::target_closest(npc, world, &[cand], true, ai_style, 0);
+}
+
+/// The live wiring seam (S1-F-13c) — the style axis (`npc.rs`) claims the
+/// Everscream (344, aiStyle 57) and the SantaNK1 (346, aiStyle 61) here.
+/// Copies the AI-visible `Npc` fields into [`FrostBossBState`], runs
+/// `TargetClosest` where the C# arms call it (`:32768` / `:33688` night,
+/// `:33725` Santa's idle→volley flip), runs the dispatch
+/// ([`frost_boss_b_ai_step`]) on the caller's `UpdateNPCs` stream (the
+/// Everscream dust arm rolls the live pool through it), copies the state
+/// back, drains the shot requests into `wants_hostile_shot(_ai)` and
+/// integrates the raw velocity (both bosses set `noGravity`/`noTileCollide`
+/// inside the arm, `:32764-32765` / `:33684-33685` — `NPC.cs:90495-90498`).
+///
+/// The day flee's `EncourageDespawn(10)` maps onto the port's
+/// `despawn_timer` (the `encourage_despawn` helper, the MourningWood
+/// precedent); `despawnEncouraged` has no port field (no rand impact).
+pub fn frost_boss_b_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+) {
+    let type_id = npc.kind.to_u16();
+    let ai_style = npc.kind.ai_style() as i32;
+    // `:32766-32769` / `:33686-33689` — retarget only at night.
+    if !world.day_time {
+        target_closest(npc, world, player, ai_style);
+    }
+    // Santa's idle→volley flip retargets again (`:33725`): the C# calls
+    // `TargetClosest()` INSIDE the `ai[1] >= 300` arm, before the state
+    // write. The port pre-runs it here on the flip tick (the same stream
+    // position — `TargetClosest` draws no rand, so the order is exact).
+    if type_id == SANTA_NK1_TYPE
+        && !world.day_time
+        && npc.ai[0] == 0.0
+        && npc.ai[1] + 1.0 >= 300.0
+    {
+        target_closest(npc, world, player, ai_style);
+    }
+    let (w, h) = npc.size();
+    let mut s = FrostBossBState {
+        x: npc.x,
+        y: npc.y,
+        vx: npc.vx,
+        vy: npc.vy,
+        ai: npc.ai,
+        local_ai: npc.local_ai,
+        direction: npc.facing,
+        rotation: npc.rotation,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        width: w,
+        height: h,
+        // The port's despawn window maps onto `time_left`; the machine only
+        // ever LOWERS it (`EncourageDespawn`), so a -1 (no window) reads as
+        // the C#'s fresh 750 default until a day arm writes 10.
+        time_left: if npc.despawn_timer < 0 { 750 } else { npc.despawn_timer },
+        despawn_encouraged: false,
+    };
+    // The resolved target box — the session player (the `target_closest`
+    // pick above; Santa's `flag64` reads `active`/`dead`, `:33692`).
+    let target = FrostBossBTarget {
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH,
+        height: player.height,
+        active: true,
+        dead: player.dead,
+    };
+    let mut shots = Vec::new();
+    frost_boss_b_ai_step(type_id, &mut s, world, &target, rng, &mut shots, dust, dust_ctx);
+    // Copy the AI-visible writes back.
+    npc.vx = s.vx;
+    npc.vy = s.vy;
+    npc.ai = s.ai;
+    npc.local_ai = s.local_ai;
+    npc.rotation = s.rotation;
+    // `EncourageDespawn` only ever lowers the window; map a written 10 back
+    // onto the port's `despawn_timer` (the day arms, `:32789` / `:33713`).
+    if s.despawn_encouraged {
+        npc.encourage_despawn(s.time_left);
+    }
+    // Drain the shot requests into the sim's hostile-shot lanes. The
+    // zero-ai0/ai1 shots ride the plain lane; the Everscream's needle
+    // (`ai0 = Next(0,31)`) and ornament (`ai1 = Next(2)`) carry their payload
+    // on the ai lane (`Projectile.cs:10862-10863`).
+    for shot in shots {
+        if shot.ai0 == 0.0 && shot.ai1 == 0.0 {
+            npc.wants_hostile_shot
+                .push((shot.kind, shot.x, shot.y, shot.vx, shot.vy, shot.damage));
+        } else {
+            npc.wants_hostile_shot_ai.push(HostileShotAi {
+                kind: shot.kind,
+                x: shot.x,
+                y: shot.y,
+                vx: shot.vx,
+                vy: shot.vy,
+                damage: shot.damage,
+                ai0: shot.ai0,
+                ai1: shot.ai1,
+            });
+        }
+    }
+    // `NPC.cs:90495-90498` — the noTileCollide integration.
+    npc.x += npc.vx;
+    npc.y += npc.vy;
 }
 
 #[cfg(test)]

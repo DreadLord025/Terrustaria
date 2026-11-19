@@ -1,13 +1,15 @@
 //! The aiStyle-29 family arm — the Hungry (`NPC.AI()`'s
 //! `else if (this.aiStyle == 29)` block, `NPC.cs:26209-26404`).
 //!
-//! S1-D-3 (aiStyle-29 round, code-only mode): this module is the faithful
-//! 1:1 port of the arm as a pure function over `Npc` + a small context
-//! seam. It is NOT wired into `Npc::update_rng`'s style axis yet — the
-//! live `npc.rs::update_hungry` keeps running until the wiring round
-//! (the sibling D-3 rounds land the same way: module + tests first,
-//! dispatch claim second). Every other file is byte-identical except the
-//! one `mod` line in `main.rs` and the docs.
+//! S1-D-3 (aiStyle-29 round): this module is the faithful 1:1 port of the
+//! arm as a pure function over `Npc` + a small context seam.
+//! **WIRED (S1-D-3 W-1)**: `Npc::update_rng`'s style axis claims 29 →
+//! `npc.rs::ai_029_hungry_family` → `style29_step`; the defective
+//! `update_hungry` stand-in is retired. The wiring fills the context
+//! from the World's wall mirror (the raw life ints, the width, the INT
+//! band statics — the sim's per-NPC write-through) and the strike-tick
+//! `Npc::just_hit` flag (armed by the hurt paths, cleared at the update
+//! tail, `NPC.cs:81274`/`:90516`).
 //!
 //! The only type on this style is `NPCID.TheHungry` (115, the WoF's
 //! leech minion); its `SetDefaults` row (`NPC.cs:10378-10392`): 30×30,
@@ -82,7 +84,7 @@
 //!   `:26341` divides two INTs (`life / lifeMax` → 1 only at full hp,
 //!   0 at ANY damaged hp — so all four cap bands fire) — kept verbatim,
 //!   not "fixed" to a float ratio.
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dispatch claim is the follow-up round
+#![allow(dead_code)] // WIRED (S1-D-3 W-1); the expert arms stay parked behind the classic flag
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
