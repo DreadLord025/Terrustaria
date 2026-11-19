@@ -5220,17 +5220,19 @@ span the AI arm AND the sim resolve AND the missing context plumbing.
 The faithful port is `crates/tr-app/src/npc_ai_style27.rs`
 (`style27_step` + `Style27Context` + `Style27Spawn`), landed
 **code-only mode**: no compiler invoked, the 15 witness tests are
-written not run. It is **UNWIRED** — `update_rng`'s style axis does not
-claim 27 yet; the live `update_wof` + the sim write-through keep
-running byte-identical. The wiring round adds the `27 =>` dispatch arm
-and the context plumbing: the INT band statics (the port's
-`World.wof_draw_top/bottom` are f32 — convert or add int shadows), the
-`Player.gross` per-slot slice (`player.rs:1270`, S1-E-7c), the live
-`CountNPCS` counts (117/24/115), the Hungry `ai[0]` collection in slot
-order, the `Main.rand` pass-through (`UnifiedRandom`), and the
-Bottom-placement spawn resolve (`position = (X − width/2, Y − height)`,
-`Start` → the slot-search seed, `ai0` → the minion's `ai[0]`, the
-leech's `vx = direction * 8`).
+written not run. **WIRED 2026-11-19 (S1-D-3 W-1, code-only)** —
+`update_rng`'s style axis claims `27 => ai_027_wof_family`, the live
+`update_wof` is retired and the sim's catastrophic spawn block is
+replaced by the one-shot init drain (see "The WoF family wiring"
+below). The context plumbing the wiring round owed: the INT band
+statics (`World.wof_draw_top/bottom` converted f32 → i32), the
+`Player.gross` per-slot slice, the live `CountNPCS` counts (117/115;
+24 unread behind getGood false), the Hungry `ai[0]` collection in slot
+order, the `Main.rand` pass-through (`UnifiedRandom` on the
+`UpdateNPCs` stream), and the Bottom-placement spawn resolve
+(`position = (X − width/2, Y − height)`, `ai0` → the minion's `ai[0]`,
+the leech's `vx = direction * 8`; `Start` is the C#'s slot-search seed
+— the port's compacting pool appends, the established spawn convention).
 
 RNG argument (every `Next` cited, in stream order): classic draws
 exactly `Next(1000)` (`:25717`, every tick — the C# evaluates the
@@ -5307,16 +5309,18 @@ clause's line-by-line audit found these defect classes:
 
 The faithful port is `crates/tr-app/src/npc_ai_style29.rs`
 (`style29_step` + `Style29Context`), landed **code-only mode**: no
-compiler invoked, the 12 witness tests are written not run. It is
-**UNWIRED** — `update_rng`'s style axis does not claim 29 yet, the live
-`update_hungry` keeps running byte-identical. The wiring round adds the
-`29 =>` dispatch arm and the context plumbing: the wall's raw
-`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the sim's
-`World.wof_*` write-through carries presence/x/dir today), the INT band
-statics (`Main.wofDrawAreaTop/Bottom` are `int`, `Main.cs:757`/`:759` —
-the port's `World.wof_draw_top/bottom` are f32), the `justHit` per-tick
-flag (the live arm's `hurt_cd > 0` stand-in re-arms the pause for the
-whole cooldown, not one tick) and `whoAmI` (`Npc::slot`).
+compiler invoked, the 12 witness tests are written not run.
+**WIRED 2026-11-19 (S1-D-3 W-1, code-only)** — `update_rng`'s style axis
+claims `29 => ai_029_hungry_family`, the live `update_hungry` is retired.
+The context plumbing the wiring round owed: the wall's raw
+`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the new
+`World.wof_life/wof_life_max/wof_width/wof_vx/wof_center_x` mirror,
+written in-loop right after the wall's update), the INT band statics
+(`World.wof_draw_top/bottom` converted f32 → i32), the `justHit`
+per-tick flag (`Npc.just_hit` — armed by the three hurt paths
+`NPC.cs:81274`, cleared at the update tail `:90516`; the live arm's
+`hurt_cd > 0` stand-in re-armed the pause for the whole cooldown, not
+one tick) and `whoAmI` (`Npc::slot`).
 
 Deviations (documented, same conventions as the sibling style-28 round):
 `active = false` → the port's hp-0 death convention; the arm does not
@@ -5334,6 +5338,74 @@ or an hp-band comparison, and `TargetClosest` is a deterministic
 Manhattan scan; the fn takes no RNG parameter and the witness test
 `the_arm_is_deterministic_without_an_rng` pins two identical inputs to
 identical state over 300 ticks.
+
+### The WoF family wiring (S1-D-3 W-1, code-only mode)
+
+The census (`docs/research/50-entity-ai-census.md` §W-1, on
+`docs/entity-ai-census`) flagged the **P0 catastrophic live bug**: the
+faithful aiStyle-27/28/29 modules were UNWIRED — the live stand-ins
+(`update_wof`/`update_wof_eye`/`update_hungry`) kept running and the
+sim's spawn block (`world_sim/npcs.rs`, the old `:3943-4038`) pushed the
+two mirror eyes EVERY tick (ungated loop) while `wants_hungry` was never
+cleared (11 Hungries re-spawn every tick). The 2026-11-19 wiring round
+(`task/S1-D-3-wire-wof`, code-only — no compiler invoked):
+
+* **Dispatch claims** — `update_rng`'s style axis gains
+  `27 => ai_027_wof_family` / `28 => ai_028_wof_eye_family` /
+  `29 => ai_029_hungry_family` (`npc.rs`), each filling the module's
+  context seam and delegating to `style27_step`/`style28_step`/
+  `style29_step`. The kind-match arms carry `unreachable!` markers
+  (`ai_style()` maps 113/114/115 unconditionally, so the fallthrough
+  never reaches them — the aiStyle-5/9/57 marker precedent); the three
+  stand-ins are deleted. The
+  modules' draw census is preserved byte-for-byte: the wiring passes
+  the caller's stream straight through as `ctx.rng` (style 27) and the
+  style-28/29 arms take no RNG at all.
+* **RNG argument** — the sim's NPC loop already draws on the
+  `UpdateNPCs` group (`Main.SwapRandom("UpdateNPCs")`,
+  `Main.cs:17767-17769`); the wall's roar cadence (`Next(1000)` every
+  tick, `Next(200)` on the roar, `NPC.cs:25717`/`:25719`) now rides that
+  stream in slot order exactly like the C#. The sim witness
+  `the_roar_cadence_draws_ride_the_update_npcs_stream` replays the draw
+  order on a cloned mirror stream over 30 ticks and asserts byte-equality
+  (written not run). The expert/getGood draws stay parked behind the
+  classic flags (the module's documented stand-ins).
+* **The one-time init** — the sim's catastrophic block is replaced by a
+  `wof_spawns` drain: the module's `localAI[0]` 1→2 latch
+  (`NPC.cs:26041-26043`) emits 2 eyes + 11 Hungries ONCE (plus the
+  tongue-phase leech heads `:25712` and the expert respawn `:26036`),
+  and the sim resolves each `Style27Spawn` with `NewNPC`'s
+  `Bottom = (X, Y)` placement (`NPC.cs:80770`, `Entity.cs:122-131`:
+  `position = (X − width/2, Y − height)`). `wants_hungry`/`wants_leech`
+  clear after the drain (the legacy flags are never set by the faithful
+  arm). The witnesses pin: no re-spawn over 10 follow-up ticks, the
+  Bottom rows + the `i*0.1 − 0.05` ai0 ladder, the minion despawn on the
+  wall's death, and the live leash/recoil gates.
+* **The statics** — `World.wof_draw_top/bottom` converted f32 → i32 (the
+  C# statics are `int`, `Main.cs:757`/`:759`; the band midpoint `/2` is
+  INTEGER division). New mirror fields `wof_npc_index`/`wof_life`/
+  `wof_life_max`/`wof_width`/`wof_vx`/`wof_center_x` join the existing
+  presence/x/dir/ratio. The arm holds `&World`, so it stages the band
+  writes on `Npc.wof_band_*`/`wof_npc_index_out`; the sim copies them
+  onto the World IN-LOOP right after the wall's update — later slots in
+  the same tick read the fresh values, like the C#'s live
+  `Main.wofDrawArea*`/`Main.npc[wofNPCIndex]` reads. The presence mirror
+  arms per living wall (the `OnSpawn` type-113 shape, `NPC.cs:8404-8407`)
+  and clears on the death tick (`ResetNPCSlotData`, `:8379-8381`).
+* **justHit** — `Npc.just_hit` is the strike tick: the three hurt paths
+  arm it (`NPC.cs:81274`), the update tail clears it (`:90516`). The
+  Hungry's recoil (`ai[1] = 10`, `:26211-26214`) now fires for ONE tick
+  per strike, not the whole `hurt_cd` cooldown the v1 stood in with.
+* **Deviations (documented)** — `Start` (the C#'s `GetAvailableNPCSlot`
+  search seed, `NPC.cs:80796`) is not carried: the port's compacting
+  pool appends (the established spawn convention, the Prime-limb/Skeletron
+  precedent). `NewNPC`'s direction default is `Entity.direction = 1`
+  (`Entity.cs:20`); the children spawn facing 1 with the ctor's
+  `spriteDirection = -1` (`NPC.cs:6515`). The getGood demon (type 24)
+  has no port kind — getGoodWorld is false so the arm never emits it.
+  The `EverLastingTicker` stamp stays 0 (the `update_zombie` stand-in).
+  The noTileCollide integration (`NPC.cs:90495-90498`) rides the family
+  wrappers (the modules leave the step to the caller).
 
 ## The Eye of Cthulhu (M4-BOSS-1)
 

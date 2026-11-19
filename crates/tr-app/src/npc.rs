@@ -1162,19 +1162,46 @@ pub struct Npc {
     pub pending_pool_damage: i32,
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
+    /// S1-D-3 W-1: the faithful aiStyle-27 arm emits `Style27Spawn`
+    /// requests instead (`wof_spawns`); this legacy flag is never set
+    /// by it and the sim clears it after the drain (the catastrophic
+    /// never-cleared respawn loop's fix).
     pub wants_leech: bool,
     /// The Prime's 4-limb spawn request (the `aiStyle 32` one-shot init).
     pub wants_limbs: bool,
     /// The WoF's Hungry init request (`localAI[0]` 1 → 2's 11 spawns).
+    /// S1-D-3 W-1: legacy — the faithful arm's one-time init
+    /// (`NPC.cs:26041-26043`) rides `wof_spawns`; cleared after drain.
     pub wants_hungry: bool,
+    /// S1-D-3 W-1: the aiStyle-27 arm's `NPC.NewNPC` requests, in C#
+    /// emission order (leech `:25712`, expert respawn `:26036`, the
+    /// one-time init eyes + 11 Hungries `:26044-26049`). The sim drains
+    /// them with the `Bottom = (X, Y)` placement (`NPC.cs:80770`).
+    pub wof_spawns: Vec<crate::npc_ai_style27::Style27Spawn>,
+    /// S1-D-3 W-1: the sim pre-pass's live `NPC.CountNPCS(117)` count
+    /// (`NPC.cs:25710`'s `< 10` leech gate) for the wall's arm.
+    pub wof_leech_count: i32,
+    /// S1-D-3 W-1: the sim pre-pass's live Hungry (115) `ai[0]` values
+    /// in slot order, capped at 10 (`NPC.cs:26003-26010`) — the expert
+    /// respawn roll's free-slot scan reads them.
+    pub wof_hungry_ai0s: Vec<f32>,
+    /// S1-D-3 W-1: the wall arm's band write-back staging. The arm holds
+    /// `&World`, so `style27_step` eases/clamps locals seeded from
+    /// `World.wof_draw_top/bottom`; the sim copies these onto the World
+    /// statics right after the wall's update (the C#'s live
+    /// `Main.wofDrawArea*` mutation, `NPC.cs:25758-25842`).
+    pub wof_band_top: i32,
+    pub wof_band_bottom: i32,
+    /// The wall arm's `Main.wofNPCIndex` write-back staging (`:25724`).
+    pub wof_npc_index_out: i32,
+    /// `NPC.justHit` (`NPC.cs:81274` sets it on a strike, `:90516`/
+    /// `:90390` clear it at the update's tail/death). S1-D-3 W-1: the
+    /// Hungry's recoil arm (`:26211-26214`) reads the STRIKE tick, not
+    /// the whole `hurt_cd` cooldown the v1 stood in with.
+    pub just_hit: bool,
     /// The AI's per-tick contact-damage override (the Hungry's
     /// damage tiers, `aiStyle 29`'s `num388`).
     pub damage_override: Option<i32>,
-    /// The WoF's draw-band scan targets (`AI_027`'s bottom/top walks) —
-    /// the world sim eases `World.wof_draw_*` toward them (the AI holds
-    /// `&World`, so the band state lives on the sim side).
-    pub wof_bottom_target: f32,
-    pub wof_top_target: f32,
     /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
@@ -2294,9 +2321,14 @@ impl Npc {
             wants_leech: false,
             wants_limbs: false,
             wants_hungry: false,
+            wof_spawns: Vec::new(),
+            wof_leech_count: 0,
+            wof_hungry_ai0s: Vec::new(),
+            wof_band_top: -1,
+            wof_band_bottom: -1,
+            wof_npc_index_out: -1,
+            just_hit: false,
             damage_override: None,
-            wof_bottom_target: -1.0,
-            wof_top_target: -1.0,
             wet_x: 0.0,
             ai: [0.0; 4],
             wants_servant: None,
@@ -3457,6 +3489,9 @@ impl Npc {
             self.hp -= amount;
         }
         self.hurt_cd = 0.18;
+        // `this.justHit = true` (`NPC.cs:81274`) — the strike tick the
+        // Hungry's recoil arm reads (S1-D-3 W-1).
+        self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3497,6 +3532,8 @@ impl Npc {
             self.hp -= amount;
         }
         self.hurt_cd = 0.18;
+        // `this.justHit = true` (`NPC.cs:81274`) — the strike tick.
+        self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3598,6 +3635,8 @@ impl Npc {
         // The knockback half (`NPC.cs:81389-81458`).
         let n = &mut npcs[idx];
         n.hurt_cd = 0.18;
+        // `this.justHit = true` (`NPC.cs:81274`) — the strike tick.
+        n.just_hit = true;
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3657,6 +3696,24 @@ impl Npc {
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
+            // S1-D-3 W-1: the Wall of Flesh rides the faithful
+            // `npc_ai_style27::style27_step` (the one-time init, the band
+            // clamps + 160-px rule, the roar RNG cadence on the caller's
+            // `UpdateNPCs` stream). The defective `update_wof` stand-in
+            // is retired.
+            27 => self.ai_027_wof_family(world, player, rng),
+            // `else if (this.aiStyle == 28)` (`NPC.cs:26053-26208`) —
+            // S1-D-3 W-1: the WoF Eye rides `npc_ai_style28::style28_step`
+            // (the INT band midpoint, the localAI pacing, the CanHit gate
+            // before the counter reset); `update_wof_eye` retired.
+            28 => self.ai_028_wof_eye_family(world, player),
+            // `else if (this.aiStyle == 29)` (`NPC.cs:26209-26404`) —
+            // S1-D-3 W-1: the Hungry rides `npc_ai_style29::style29_step`
+            // (TargetClosest, the f64 raw-int ladder, the INTEGER
+            // half-width anchor, the leash clamp, the strike-tick
+            // justHit); `update_hungry` retired. RNG-free by construction.
+            29 => self.ai_029_hungry_family(world, player),
             // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) -
             // the Spazmatism (126), the style's only user. S1-D-3
             // aiStyle-31: the machine lives in `npc_ai_style31.rs`;
@@ -3730,6 +3787,119 @@ impl Npc {
         crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng);
     }
 
+    /// S1-D-3 W-1: the aiStyle-27 family arm — the Wall of Flesh
+    /// (`NPC.cs:25635-26052`) rides `npc_ai_style27::style27_step`.
+    /// The seam fills the module's `Style27Context` from the World
+    /// statics + the sim pre-pass's live counts; the band write-back
+    /// stages on `wof_band_*` (the arm holds `&World`), the spawn
+    /// requests queue on `wof_spawns` for the sim's `NewNPC` drain.
+    /// `Main.rand` is the caller's stream — the sim passes the
+    /// `UpdateNPCs` group (`Main.cs:17767-17769`), so the roar cadence's
+    /// `Next(1000)`/`Next(200)` (`:25717`/`:25719`) draw in the C#'s
+    /// slot order. Single-player classic: expert/getGood false,
+    /// `not_client` true (the module's documented stand-ins).
+    fn ai_027_wof_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let gross = [player.gross];
+        let mut top = world.wof_draw_top;
+        let mut bottom = world.wof_draw_bottom;
+        let mut index = world.wof_npc_index;
+        let mut spawns = std::mem::take(&mut self.wof_spawns);
+        let hungry_ai0s = self.wof_hungry_ai0s.clone();
+        let leech_head_count = self.wof_leech_count;
+        {
+            let mut ctx = crate::npc_ai_style27::Style27Context {
+                wof_draw_top: &mut top,
+                wof_draw_bottom: &mut bottom,
+                wof_npc_index: &mut index,
+                expert: false,
+                get_good_world: false,
+                not_client: true,
+                leech_head_count,
+                // `NPC.CountNPCS(24)` — the getGood gate draws Next(180)
+                // first, so with getGoodWorld false the count is unread.
+                demon_count: 0,
+                hungry_ai0s: &hungry_ai0s,
+                players: &players,
+                player_gross: &gross,
+                // `Main.EverLastingTicker` is not plumbed into
+                // `Npc::update` yet (the `update_zombie` stand-in).
+                ticker: 0,
+                rng,
+                spawns: &mut spawns,
+            };
+            crate::npc_ai_style27::style27_step(self, world, &mut ctx);
+        }
+        self.wof_spawns = spawns;
+        // The band/index write-back staging — the sim copies these onto
+        // the World statics right after this NPC's update (the C#'s live
+        // `Main.wofDrawArea*`/`wofNPCIndex` mutation).
+        self.wof_band_top = top;
+        self.wof_band_bottom = bottom;
+        self.wof_npc_index_out = index;
+        // `noTileCollide` (`NPC.cs:10354`): `UpdateNPC` integrates after
+        // `AI()` (`NPC.cs:90495-90498`) — the module leaves the step to
+        // the caller, so the arm integrates here like the retired v1.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// S1-D-3 W-1: the aiStyle-28 family arm — the WoF Eye
+    /// (`NPC.cs:26053-26208`) rides `npc_ai_style28::style28_step`.
+    /// The context mirrors the wall through the World fields (the sim's
+    /// per-NPC write-through keeps them fresh in slot order, like the
+    /// C#'s live `Main.npc[Main.wofNPCIndex]` reads).
+    fn ai_028_wof_eye_family(&mut self, world: &World, player: &Player) {
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let ctx = crate::npc_ai_style28::Style28Context {
+            wof_present: world.wof_present,
+            wof_life: world.wof_life,
+            wof_life_max: world.wof_life_max,
+            wof_x: world.wof_x,
+            wof_dir: world.wof_dir,
+            wof_draw_top: world.wof_draw_top,
+            wof_draw_bottom: world.wof_draw_bottom,
+            expert: false,
+            net_client: false,
+            ticker: 0,
+        };
+        crate::npc_ai_style28::style28_step(self, world, &ctx, &players);
+        // `noTileCollide` — the `UpdateNPC` integration tail.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// S1-D-3 W-1: the aiStyle-29 family arm — the Hungry
+    /// (`NPC.cs:26209-26404`) rides `npc_ai_style29::style29_step`.
+    /// The arm draws no `Main.rand` (the module's RNG-by-construction
+    /// contract); `just_hit` is the strike-tick flag the hurt paths arm
+    /// (`NPC.cs:81274`), NOT the v1's whole-cooldown `hurt_cd` stand-in.
+    fn ai_029_hungry_family(&mut self, world: &World, player: &Player) {
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let ctx = crate::npc_ai_style29::Style29Context {
+            wof_present: world.wof_present,
+            wof_life: world.wof_life,
+            wof_life_max: world.wof_life_max,
+            wof_x: world.wof_x,
+            wof_width: world.wof_width,
+            wof_vx: world.wof_vx,
+            wof_center_x: world.wof_center_x,
+            wof_draw_top: world.wof_draw_top,
+            wof_draw_bottom: world.wof_draw_bottom,
+            expert: false,
+            just_hit: self.just_hit,
+            who_am_i: self.slot as i32,
+            ticker: 0,
+        };
+        crate::npc_ai_style29::style29_step(self, world, &ctx, &players);
+        // `noTileCollide` (`NPC.cs:10390`) — the `UpdateNPC` tail.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -3794,12 +3964,20 @@ impl Npc {
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
-            NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
+            // S1-D-3 W-1: the WoF family's aiStyles 27/28/29 ride the
+            // style axis above (the faithful modules); `ai_style()` maps
+            // these kinds unconditionally, so the fallthrough never
+            // reaches them (the aiStyle-5/9/57 marker precedent).
+            NpcKind::WallOfFleshEye => {
+                unreachable!("aiStyle 28 rides the style axis (S1-D-3 W-1)")
+            }
             NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
                 self.update_prime_limb(world, player)
             }
-            NpcKind::WallOfFlesh => self.update_wof(world, player),
-            NpcKind::Hungry => self.update_hungry(world, player),
+            NpcKind::WallOfFlesh => {
+                unreachable!("aiStyle 27 rides the style axis (S1-D-3 W-1)")
+            }
+            NpcKind::Hungry => unreachable!("aiStyle 29 rides the style axis (S1-D-3 W-1)"),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
@@ -8286,300 +8464,14 @@ impl Npc {
         }
     }
 
-    /// `AI()`'s aiStyle-27 block — the Wall of Flesh's machine
-    /// (`NPC.cs:25635-26050`, the 416-line `else if (this.aiStyle == 27)`).
-    /// The classic path verbatim: the off-edge kill, the tongue timer
-    /// (`ai[1]`/`ai[2]` → the Leech spawns), the underworld draw-band scan
-    /// (`Main.wofDrawArea*` → the World fields) with the Y pinning, the
-    /// slide speed by the hp thresholds, the direction lock, the
-    /// dead-player abandonment (the `localAI[1]` timer folded into
-    /// `ai[0]`), the init Hungry spawns (`localAI[0]` → `ai[3]`).
-    /// The expert-mode burst block and the `getGoodWorld` spawn are out
-    /// (no difficulty flags); the wall's eye/mouth mirrors (114) are the
-    /// render-machinery follow-up, so the init spawns the 11 Hungries
-    /// only; the roar sound rides `localAI[3]`'s cosmetic timer — skipped.
-    fn update_wof(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        // The world-edge kill (`position.X < 160 || > (maxTilesX - 10) * 16`).
-        if self.x < 160.0 || self.x > (world.width as f32 - 10.0) * TILE_PX {
-            self.hp = 0;
-            return;
-        }
-        // The tongue timer (`ai[1]` with the hp-ratio bonuses; 2700 → the
-        // phase machine `ai[2]`).
-        self.ai[1] += 1.0;
-        if self.ai[2] == 0.0 {
-            if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
-                self.ai[1] += 1.0;
-            }
-            if (self.hp as f64) < (self.max_hp as f64) * 0.2 {
-                self.ai[1] += 1.0;
-            }
-            if self.ai[1] > 2700.0 {
-                self.ai[2] = 1.0;
-            }
-        }
-        if self.ai[2] > 0.0 && self.ai[1] > 60.0 {
-            let mut num344 = 3;
-            if (self.hp as f64) < (self.max_hp as f64) * 0.3 {
-                num344 += 1;
-            }
-            self.ai[2] += 1.0;
-            self.ai[1] = 0.0;
-            if self.ai[2] > num344 as f32 {
-                self.ai[2] = 0.0;
-            }
-            // The Leech head spawn (`NPC.CountNPCS(117) < 10` — the count
-            // check rides the sim resolve; the worm pass grows the chain).
-            self.wants_leech = true;
-        }
-        // The underworld draw-band scan (`num346` = UnderworldLayer + 10,
-        // `num347` = +70): the bottom walk finds 15 solid/liquid tiles down
-        // the wall's column span, the top walk mirrors it; the areas ease
-        // 1 px per tick toward the found rows and clamp to a 160 px band.
-        // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
-        let underworld_layer = world.height as i32 - 200;
-        let num346 = underworld_layer + 10;
-        let num347 = num346 + 70;
-        let num348 = (self.x / TILE_PX) as i32;
-        let num349 = ((self.x + w) / TILE_PX) as i32;
-        let num350 = ((self.y + h * 0.5) / TILE_PX) as i32;
-        // The `WorldGen.SolidTile` analog (the active + the solid set).
-        let solid_tile = |x: i32, y: i32| -> bool {
-            world
-                .tile(x, y)
-                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
-        };
-        // The bottom: start at +7, walk down until 15 solid/liquid tiles.
-        let mut num351 = 0;
-        let mut num352 = num350 + 7;
-        while num351 < 15 && num352 > underworld_layer {
-            num352 += 1;
-            if num352 > world.height as i32 - 10 {
-                num352 = world.height as i32 - 10;
-                break;
-            }
-            if num352 < num346 {
-                continue;
-            }
-            for num353 in num348..=num349 {
-                if solid_tile(num353, num352) {
-                    num351 += 1;
-                }
-            }
-        }
-        num352 += 4;
-        let bottom_target = num352 as f32 * TILE_PX;
-        self.wof_bottom_target = bottom_target;
-        // The top: start at -7, walk up.
-        num351 = 0;
-        num352 = num350 - 7;
-        while num351 < 15 && num352 < world.height as i32 - 10 {
-            num352 -= 1;
-            if num352 <= 10 {
-                num352 = 10;
-                break;
-            }
-            if num352 > num347 {
-                continue;
-            }
-            if num352 < num346 {
-                num352 = num346;
-                break;
-            }
-            for num354 in num348..=num349 {
-                // The liquid counts toward the band like the solid
-                // (`SolidTile || liquid > 0`, `:25747`'s inner test).
-                let liquid = world.tile(num354, num352).is_some_and(|t| t.liquid > 0);
-                if solid_tile(num354, num352) || liquid {
-                    num351 += 1;
-                }
-            }
-        }
-        num352 -= 4;
-        let top_target = num352 as f32 * TILE_PX;
-        self.wof_top_target = top_target;
-        // The band lives on the World (the sim eases toward the targets);
-        // the Y pinning rides the CURRENT band midpoint.
-        let num355 = (world.wof_draw_bottom + world.wof_draw_top) / 2.0 - h / 2.0;
-        self.vy = 0.0;
-        self.y = num355;
-        // The slide speed by the hp thresholds (the classic rows; the
-        // expert/getGood arms are out).
-        let mut num356 = 1.5f32;
-        if (self.hp as f64) < (self.max_hp as f64) * 0.75 {
-            num356 += 0.25;
-        }
-        if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
-            num356 += 0.4;
-        }
-        if (self.hp as f64) < (self.max_hp as f64) * 0.25 {
-            num356 += 0.5;
-        }
-        if (self.hp as f64) < (self.max_hp as f64) * 0.1 {
-            num356 += 0.6;
-        }
-        // The direction: locked to the sign, never damped (the wall slides
-        // at the full speed toward its side).
-        if self.vx == 0.0 {
-            self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
-            self.sprite_dir = self.facing;
-            self.vx = self.facing as f32;
-        }
-        if self.vx < 0.0 {
-            self.vx = -num356;
-            self.facing = -1;
-            self.sprite_dir = self.facing;
-        } else {
-            self.vx = num356;
-            self.facing = 1;
-            self.sprite_dir = self.facing;
-        }
-        // The dead-player abandonment (`localAI[1]` += 1/180 → the wall
-        // kills itself at 1; the recovery −1/30; folded into `ai[0]`).
-        if player.hp <= 0 {
-            self.ai[0] += 1.0 / 180.0;
-            if self.ai[0] >= 1.0 {
-                self.hp = 0;
-                return;
-            }
-        } else {
-            self.ai[0] = (self.ai[0] - 1.0 / 30.0).clamp(0.0, 1.0);
-        }
-        self.facing = self.vx.signum() as i32;
-        self.sprite_dir = self.facing;
-        // The rotation: the eye aims at the player when the player crosses
-        // the wall's plane (`:25992-26010`).
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        let num361 = pcx - cx;
-        let num362 = pcy - cy;
-        if self.facing > 0 {
-            if pcx > self.x + w * 0.5 {
-                self.rotation = (-num362).atan2(-num361) + 3.14;
-            } else {
-                self.rotation = 0.0;
-            }
-        } else if pcx < self.x + w * 0.5 {
-            self.rotation = num362.atan2(num361) + 3.14;
-        } else {
-            self.rotation = 0.0;
-        }
-        // The Hungry init (`localAI[0] == 1 → 2`): the 11 Hungries along
-        // the band (`ai[0] = i * 0.1 - 0.05`); the mirrors (114) are the
-        // render follow-up. The request resolves in the world sim.
-        if self.ai[3] == 0.0 {
-            self.ai[3] = 1.0;
-            self.wants_hungry = true;
-        }
-        // `noTileCollide` + `noGravity`: the raw integration.
-        self.x += self.vx;
-        self.y += self.vy;
-    }
-
-    /// `AI()`'s aiStyle-29 block — the Hungry's machine
-    /// (`NPC.cs:26054-26210`): the anchor = the wall's x + the draw-band
-    /// row at `ai[0]`, the chase toward the player clamped to `num387`
-    /// from the anchor (300/500/700 by the wall's hp), the defense/damage
-    /// tiers (30/20 by the hp), the 4-speed cap, the justHit recoil
-    /// (`ai[1] = 10`, folded onto `hurt_cd > 0`). The wall's death
-    /// (`wof_present` off) deactivates the minion. The expert arms are out.
-    fn update_hungry(&mut self, world: &World, player: &Player) {
-        if !world.wof_present {
-            self.hp = 0;
-            return;
-        }
-        // `justHit → ai[1] = 10` (the recoil pause; the hurt cooldown
-        // stands in for the flag).
-        if self.hurt_cd > 0.0 {
-            self.ai[1] = 10.0;
-        }
-        // The tiers by the wall's hp (`num388` the damage, the defense,
-        // `num387` the leash radius).
-        let mut num387 = 300.0f32;
-        let mut num388 = 0;
-        if (world.wof_hp_ratio as f64) < 0.5 {
-            num388 = 60;
-            self.defense_override = Some(30);
-            num387 = 700.0;
-        } else if (world.wof_hp_ratio as f64) < 0.75 {
-            num388 = 45;
-            self.defense_override = Some(20);
-            num387 = 500.0;
-        } else {
-            self.defense_override = None;
-        }
-        if num388 > 0 {
-            self.damage_override = Some(num388);
-        } else {
-            self.damage_override = None;
-        }
-        // The dive cycle: after 100 ticks the leash grows ×1.3, resetting
-        // at 200.
-        self.ai[2] += 1.0;
-        if self.ai[2] > 100.0 {
-            num387 = (num387 * 1.3) as i32 as f32;
-            if self.ai[2] > 200.0 {
-                self.ai[2] = 0.0;
-            }
-        }
-        // The anchor: the wall's x, the band row at `ai[0]`.
-        let num389 = world.wof_x;
-        let num390 = world.wof_draw_bottom - world.wof_draw_top;
-        let y2 = world.wof_draw_top + num390 * self.ai[0];
-        let (pcx, pcy) = player.center();
-        let (w, h) = self.size();
-        let mut num391 = pcx - w * 0.5 - num389;
-        let mut num392 = pcy - h * 0.5 - y2;
-        let mut num393 = (num391 * num391 + num392 * num392).sqrt();
-        if self.ai[1] == 0.0 {
-            if num393 > num387 {
-                num393 = num387 / num393;
-                num391 *= num393;
-                num392 *= num393;
-            }
-            // The approach with the double-add on the sign flips
-            // (0.1 accel, the ×2.5 flip bonus).
-            if self.x < num389 + num391 {
-                self.vx += 0.1;
-                if self.vx < 0.0 && num391 > 0.0 {
-                    self.vx += 0.25;
-                }
-            } else if self.x > num389 + num391 {
-                self.vx -= 0.1;
-                if self.vx > 0.0 && num391 < 0.0 {
-                    self.vx -= 0.25;
-                }
-            }
-            if self.y < y2 + num392 {
-                self.vy += 0.1;
-                if self.vy < 0.0 && num392 > 0.0 {
-                    self.vy += 0.25;
-                }
-            } else if self.y > y2 + num392 {
-                self.vy -= 0.1;
-                if self.vy > 0.0 && num392 < 0.0 {
-                    self.vy -= 0.25;
-                }
-            }
-            // The speed cap 4.
-            self.vx = self.vx.clamp(-4.0, 4.0);
-            self.vy = self.vy.clamp(-4.0, 4.0);
-        } else if self.ai[1] > 0.0 {
-            self.ai[1] -= 1.0;
-        }
-        // The rotation toward the player.
-        if num391 > 0.0 {
-            self.rotation = num392.atan2(num391);
-        }
-        if num391 < 0.0 {
-            self.rotation = num392.atan2(num391);
-        }
-        // `noTileCollide` + `noGravity`: the raw integration.
-        self.x += self.vx;
-        self.y += self.vy;
-    }
+    // S1-D-3 W-1: `update_wof` (the M4-BOSS-6b aiStyle-27 stand-in) and
+    // `update_hungry` (the aiStyle-29 stand-in) are RETIRED — the style
+    // axis claims 27/29 above and delegates to the faithful
+    // `npc_ai_style27::style27_step` / `npc_ai_style29::style29_step`
+    // (`ai_027_wof_family` / `ai_029_hungry_family`). The census W-1
+    // defect catalogue (the every-tick respawn loop, the missing band
+    // clamps / TargetClosest / INT halves / roar RNG cadence, the f32
+    // ladder, the invented defense clear) lives in the modules' headers.
 
     /// `AI()`'s aiStyle-80 block (`NPC.cs:36532-36624`) — the Martian
     /// Probe's hover/detect/escape machine. `ai[0] == 0` hovers: the
@@ -13608,122 +13500,11 @@ impl Npc {
         self.y += self.vy;
     }
 
-    /// The WoF's mirror eye (`aiStyle 28`, `NPC.cs:26053-26208`): the
-    /// life/X mirror, the Y target `(band mid + drawTop/Bottom) / 2` chased
-    /// at ±1 capped ±5, the eye-laser volley (the 600-tick idle → 4-shot
-    /// bursts at 46-tick intervals, projectile 83 at the ramp 11/12/13).
-    /// The parent anchor rides the World's WoF fields (the write-through).
-    fn update_wof_eye(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        if !world.wof_present {
-            // `wofNPCIndex < 0` → the eye deactivates (the sim holds the
-            // despawn — the port mirrors via hp).
-            self.hp = 0;
-            return;
-        }
-        // The life mirror (`:26061-26064`) + the X/direction mirror
-        // (`:26066-26068`): `position.X = mainNpc.position.X;
-        // direction = mainNpc.direction; spriteDirection = direction`.
-        // The eye has no flip of its own.
-        self.x = world.wof_x - w * 0.5;
-        self.facing = world.wof_dir;
-        self.sprite_dir = world.wof_dir;
-        let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
-        // `:26070` — the half-band target with the `- height/2` applied to
-        // BOTH ternary branches (it sits outside the `?:` in the C#).
-        let top_half = self.ai[0] > 0.0;
-        let target_y = if top_half {
-            (band_mid + world.wof_draw_top) * 0.5 - h * 0.5
-        } else {
-            (band_mid + world.wof_draw_bottom) * 0.5 - h * 0.5
-        };
-        // `:26071-26083` — outside a ±1 band the velocity is ±1, inside it
-        // zeroes and `position.Y` snaps to the target.
-        if self.y > target_y + 1.0 {
-            self.vy = -1.0;
-        } else if self.y < target_y - 1.0 {
-            self.vy = 1.0;
-        } else {
-            self.vy = 0.0;
-            self.y = target_y;
-        }
-        // `:26084-26091` — the ±5 clamp.
-        self.vy = self.vy.clamp(-5.0, 5.0);
-        self.y += self.vy;
-        // The volley (`:26125-26206`): the idle 600, then the 45-tick shots
-        // in bursts of `num381` (4 + the hp ladder).
-        self.ai[1] += 1.0;
-        let mut burst = 4.0f32;
-        if world.wof_hp_ratio < 0.75 {
-            self.ai[1] += 1.0;
-            burst += 1.0;
-        }
-        if world.wof_hp_ratio < 0.5 {
-            self.ai[1] += 1.0;
-            burst += 1.0;
-        }
-        if world.wof_hp_ratio < 0.25 {
-            self.ai[1] += 1.0;
-            burst += 2.0;
-        }
-        if world.wof_hp_ratio < 0.1 {
-            self.ai[1] += 2.0;
-            burst += 3.0;
-        }
-        if self.ai[2] == 0.0 && self.ai[1] > 600.0 {
-            self.ai[2] = 1.0;
-            self.ai[1] = 0.0;
-        }
-        if self.ai[2] > 0.0 && self.ai[1] > 45.0 {
-            let dx = pcx - cx;
-            let dy = pcy - (self.y + h * 0.5);
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            let mut speed = 9.0;
-            let mut dmg = 11;
-            if world.wof_hp_ratio < 0.5 {
-                speed += 1.0;
-                dmg += 1;
-            }
-            if world.wof_hp_ratio < 0.25 {
-                speed += 1.0;
-                dmg += 1;
-            }
-            if world.wof_hp_ratio < 0.1 {
-                speed += 2.0;
-                dmg += 2;
-            }
-            self.ai[1] = 0.0;
-            self.ai[2] += 1.0;
-            // `:26173-26176` — the burst counter wraps at `num381`.
-            if self.ai[2] >= burst {
-                self.ai[2] = 0.0;
-            }
-            // `:26167`: `CanHit(base.position, base.width, base.height,
-            // player.position, player.width, player.height)`.
-            if crate::projectile::can_hit(
-                world,
-                self.x,
-                self.y,
-                w,
-                h,
-                player.x,
-                player.y,
-                crate::player::WIDTH,
-                player.height,
-            ) {
-                self.wants_hostile_shot.push((
-                    crate::projectile::EYE_LASER,
-                    cx,
-                    self.y + h * 0.5,
-                    dx / d * speed,
-                    dy / d * speed,
-                    dmg,
-                ));
-            }
-        }
-    }
+    // S1-D-3 W-1: `update_wof_eye` (the W48 f32-band approximation) is
+    // RETIRED — the style axis claims 28 above and delegates to the
+    // faithful `npc_ai_style28::style28_step` (`ai_028_wof_eye_family`):
+    // the INTEGER band midpoint, the localAI[1]/[2] pacing, the CanHit
+    // gate BEFORE the counter reset, the distance-scaled aim rotation.
 
     /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22613`): the
     /// tether return to the orbit slot `(headCenter.X - 200 * side,
@@ -16487,15 +16268,19 @@ mod tests {
         assert!((sp3 - 10.0).abs() < 0.5, "the 10 speed ({sp3})");
     }
 
+    #[test]
     fn the_wof_eye_mirrors_and_volleys() {
         // `aiStyle 28` (`NPC.cs:26053-26208`): the Y target rides the
         // band halves, the volley's idle-600 -> 4-shot bursts at 46 ticks
-        // with the hp-ramped 83 damage.
+        // with the hp-ramped 83 damage. S1-D-3 W-1: rides the faithful
+        // `ai_028_wof_eye_family` (the raw-int ladder, the localAI pacing).
         let mut w = ground_air();
         w.wof_present = true;
         w.wof_x = 100.0 * 16.0;
-        w.wof_draw_top = 100.0 * 16.0;
-        w.wof_draw_bottom = 130.0 * 16.0;
+        w.wof_draw_top = 100 * 16;
+        w.wof_draw_bottom = 130 * 16;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
         w.wof_hp_ratio = 1.0;
         let mut player = crate::player::Player::spawn(&w);
         player.x = 130.0 * 16.0;
@@ -16504,23 +16289,24 @@ mod tests {
         eye.hp = eye.max_hp;
         eye.ai[0] = 1.0;
         // The full-hp eye: the 11-damage 83 at the 9 speed, idle 600.
-        eye.ai[2] = 1.0; // the burst window open
-        eye.ai[1] = 46.0;
+        eye.local_ai[2] = 1.0; // the burst window open
+        eye.local_ai[1] = 46.0;
         let before = eye.wants_hostile_shot.len();
-        eye.update_wof_eye(&w, &player);
+        eye.ai_028_wof_eye_family(&w, &player);
         let shot = eye.wants_hostile_shot.last().copied().expect("the volley");
         assert_eq!(shot.0, crate::projectile::EYE_LASER);
         assert_eq!(shot.5, 11, "the classic damage");
         let sp = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
         assert!((sp - 9.0).abs() < 0.5, "the 9 speed ({sp})");
         // The wounded boss racks the ramp (12/13 by the <50/<25 tiers).
+        w.wof_life = 1600; // 0.2 of 8000
         w.wof_hp_ratio = 0.2;
         let mut eye2 = Npc::new(NpcKind::WallOfFleshEye, 100.0 * 16.0, 105.0 * 16.0, 1, 0.0);
         eye2.hp = eye2.max_hp;
         eye2.ai[0] = 1.0;
-        eye2.ai[2] = 1.0;
-        eye2.ai[1] = 46.0;
-        eye2.update_wof_eye(&w, &player);
+        eye2.local_ai[2] = 1.0;
+        eye2.local_ai[1] = 46.0;
+        eye2.ai_028_wof_eye_family(&w, &player);
         let shot2 = eye2.wants_hostile_shot.last().copied().expect("the volley");
         assert_eq!(shot2.5, 13, "the <25% ramp");
         let before_count = eye.wants_hostile_shot.len() - before;
@@ -18368,7 +18154,10 @@ mod tests {
             0.0,
         );
         eoc_wall.hp = eoc_wall.max_hp;
-        player.hp = 0;
+        // The faithful arm reads the target's `dead` flag
+        // (`npc_target::session_candidate`), not `hp` — the abandonment
+        // rides `localAI[1]` (`NPC.cs:25937-25955`, S1-D-3 W-1).
+        player.dead = true;
         for _ in 0..200 {
             eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
             if eoc_wall.hp <= 0 {
@@ -18380,16 +18169,20 @@ mod tests {
 
     #[test]
     fn the_hungry_anchors_to_the_band_and_tiers_by_the_wall_hp() {
-        // aiStyle 29: the anchor = the wall's x + the band row at `ai[0]`;
-        // the leash 300/500/700 and the defense/damage tiers by the wall's
-        // hp; the wall's death deactivates the minion.
+        // aiStyle 29: the anchor = the wall's x + its INTEGER half-width +
+        // the band row at `ai[0]`; the leash 300/500/700 and the
+        // defense/damage tiers by the wall's raw life ints (the f64
+        // ladder, S1-D-3 W-1); the wall's death deactivates the minion.
         let mut w = ground_air();
         w.day_time = false;
         w.wof_present = true;
         w.wof_hp_ratio = 1.0;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
         w.wof_x = 40.0 * TILE_PX;
-        w.wof_draw_top = 580.0 * TILE_PX;
-        w.wof_draw_bottom = 600.0 * TILE_PX;
+        w.wof_width = 120;
+        w.wof_draw_top = 580 * TILE_PX as i32;
+        w.wof_draw_bottom = 600 * TILE_PX as i32;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
@@ -18400,9 +18193,11 @@ mod tests {
         assert!(hungry.hp > 0, "the wall is alive");
         assert_eq!(hungry.defense(), 10, "full-hp wall keeps the base defense");
         // The wall's hp drops: the defense tier 20 (75%) then 30 (50%).
+        w.wof_life = 4800; // 0.6
         w.wof_hp_ratio = 0.6;
         hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(hungry.defense(), 20);
+        w.wof_life = 3200; // 0.4
         w.wof_hp_ratio = 0.4;
         hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(hungry.defense(), 30);
@@ -22326,8 +22121,12 @@ mod tests {
         let mut w = World::new("t".into(), 200, 100);
         w.wof_present = true;
         w.wof_x = 100.0 * 16.0;
-        w.wof_draw_top = 400.0;
-        w.wof_draw_bottom = 900.0;
+        w.wof_draw_top = 400;
+        w.wof_draw_bottom = 900;
+        // S1-D-3 W-1: the faithful arm mirrors the wall's raw life
+        // (`NPC.cs:26061-26064`) — a positive life keeps the eye alive.
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
         let mut n = bare(NpcKind::WallOfFleshEye);
         n.x = w.wof_x - n.size().0 * 0.5;
         let mut player = crate::player::Player::spawn(&w);
@@ -22336,17 +22135,17 @@ mod tests {
         // The wall faces right: the eye flips with it, whatever the player
         // does — even standing on the far side.
         w.wof_dir = 1;
-        n.update_wof_eye(&w, &player);
+        n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (1, 1), "the wall's right");
         player.x = w.wof_x - 300.0 - crate::player::WIDTH * 0.5;
-        n.update_wof_eye(&w, &player);
+        n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (1, 1), "still the wall's side");
         // The wall turns: the eye follows the wall, not the aim.
         w.wof_dir = -1;
-        n.update_wof_eye(&w, &player);
+        n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (-1, -1), "the wall's left");
         player.x = w.wof_x + 300.0 - crate::player::WIDTH * 0.5;
-        n.update_wof_eye(&w, &player);
+        n.ai_028_wof_eye_family(&w, &player);
         assert_eq!((n.facing, n.sprite_dir), (-1, -1), "ignores the aim");
     }
 }

@@ -407,16 +407,35 @@ pub struct World {
     /// The morning roll's `StartInvasion` request — the app resolves it
     /// wholesale (the players' life-max gate + the size/position assign).
     pub invasion_arm_pending: bool,
-    /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs`'s statics): the WoF's
-    /// underworld draw band, written by the wall's AI_027 scan and read by
-    /// the Hungry's anchor (`aiStyle 29`). Runtime-only.
-    pub wof_draw_top: f32,
-    pub wof_draw_bottom: f32,
+    /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs:757`/`:759`): the WoF's
+    /// underworld draw band — INTs in the C#, written by the wall's
+    /// aiStyle-27 arm (`npc_ai_style27::style27_step`, the ease + clamps +
+    /// 160-px rule) and read by the eye/Hungry arms. Runtime-only.
+    /// S1-D-3 W-1: converted f32 → i32 (the C# statics are `int`; the
+    /// band midpoint `/2` is INTEGER division, `NPC.cs:25843`/`:26069`).
+    pub wof_draw_top: i32,
+    pub wof_draw_bottom: i32,
+    /// `Main.wofNPCIndex` (`Main.cs:755`): the wall's slot, written every
+    /// wall tick (`NPC.cs:25724`); -1 when no wall lives. `wof_present`
+    /// is the port's living-wall mirror of `index >= 0`.
+    pub wof_npc_index: i32,
     /// A WoF is alive (the Hungry deactivates without one) + its hp ratio
     /// and x (the Hungry's anchor reads).
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// The wall's raw life ints + box/velocity mirror (S1-D-3 W-1): the
+    /// eye/Hungry ladders compare `(double)life < (double)lifeMax * k`
+    /// (`NPC.cs:26061`/`:26225`/`:26238`), the Hungry anchor adds the
+    /// wall's INTEGER half-width (`:26280`), the expert catch-up reads
+    /// `velocity.X`/`Center.X` (`:26359`/`:26363`). Written per-NPC inside
+    /// the update loop so later slots read the wall's fresh state, like
+    /// the C#'s live `Main.npc[Main.wofNPCIndex]` reads.
+    pub wof_life: i32,
+    pub wof_life_max: i32,
+    pub wof_width: i32,
+    pub wof_vx: f32,
+    pub wof_center_x: f32,
     /// The wall's `direction` — the eye's mirror copies it verbatim
     /// (`NPC.cs:26067-26068`: `direction = mainNpc.direction;
     /// spriteDirection = direction`). The `num391`-driven flip the port
@@ -663,11 +682,17 @@ impl World {
             invasion_warn: 0,
             invasion_delay: 0,
             invasion_arm_pending: false,
-            wof_draw_top: -1.0,
-            wof_draw_bottom: -1.0,
+            wof_draw_top: -1,
+            wof_draw_bottom: -1,
+            wof_npc_index: -1,
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+            wof_life: 0,
+            wof_life_max: 0,
+            wof_width: 0,
+            wof_vx: 0.0,
+            wof_center_x: 0.0,
     wof_dir: 1,
             saved_angler: false,
             saved_wizard: false,
