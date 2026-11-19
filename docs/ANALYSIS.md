@@ -4135,9 +4135,6 @@ the C#'s `AnyNPCs`/`invasionSize*` reads are per-ladder).
 Deviations (documented):
 - The kind per arm resolves through the port's bestiary net id, so the
   spawned net id is the C#'s; the port's kind *names* for net
-  26/27/28/111 (the goblin quartet) and net 144/145 (SnowBalla/
-  MysterySnowman) are shifted vs 1.4.5's `NPCID.cs` вЂ” the pre-existing
-  roster mapping, the rename is the bestiary pass's concern.
   26/27/28/111 (the goblin quartet — renamed in S1-D-3d) and net 144/145
   (SnowBalla/MysterySnowman — the C#'s MisterStabby/SnowBalla) are
   shifted vs 1.4.5's `NPCID.cs`; the frost rename stays the bestiary
@@ -5016,12 +5013,6 @@ The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
 `invasionDelay = 0; StartInvasion(2)` вЂ” the march state rides the World
 (the morning-roll resolve's shape; the size 80+40, the far-side roll).
 
-The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145)
-carry their verbatim `SetDefaults` rows (26Г—40, 200/240/220 HP, dmg
-50/65/55, def 20/26/22, kb 0.6, value 400) and ride aiStyle 38's
-movement core through the walker (the per-type speeds 3/3.5/4 fold into
-the walker params; the Gangsta's bottle throw, the Balla's kick and the
-Mystery's jump arms land with the projectile work).
 The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145 —
 the port's roster labels; the C#'s names are SnowmanGangsta/MisterStabby/
 SnowBalla, `NPCID.cs:10963-10967`) carry their verbatim `SetDefaults`
@@ -15473,14 +15464,6 @@ stuck flip exactly like the vanilla.
 Two documented gaps at the R-25-1 landing, both resolved by S1-D-3q
 (2026-11-18/19, code-only mode):
 
-- **The `confused` resets** (`:29015-29017`, `:29131-29135`) ride the NPC
-  confusion debuff вЂ” not ported (the trio's `npc_buffs` row is empty), so
-  the arms land with the debuff table's task.
-- **The `proj.ai[0] = 2f` writes** (`:29021`, `:29082`) are inert for
-  projectiles 109/110: `AI_010` reads `ai[0]` only for type 31
-  (`Projectile.cs:57828`). The port's hostile-spawn seam carries no ai
-  payload; the throw's `timeLeft = 300` rides the resolution's explicit
-  override (`world_sim/npcs.rs`).
 - **The `confused` resets** (`:29012-29015`, `:29123-29128`) now read the
   buff engine's Confused (31) directly (`buffs.find_buff_index(31)`) —
   the same latch shape `npc_target.rs` uses for the C#'s `this.confused`
