@@ -419,11 +419,53 @@ impl App {
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
                     // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
                     // center tile while buff 11 is held. No RNG — the feed
-                    // leaves the streams untouched. (Feed order follows
-                    // `Main.Update`'s family order: Players, NPCs,
-                    // Projectiles, Items, Dust — `Main.cs:17754-17783`.)
+                    // leaves the streams untouched. This stays the LIVE
+                    // Shine feed: `player_lights.rs` below deliberately
+                    // skips buff 11 so the family never double-feeds it.
+                    // (Feed order follows `Main.Update`'s family order:
+                    // Players, NPCs, Projectiles, Items, Dust —
+                    // `Main.cs:17754-17783`.)
                     if let Some(p) = player.as_ref() {
                         if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
+                    // The Player `AddLight` family (S1-E-5,
+                    // `player_lights.rs`): the `UpdateBuffs` buff arms
+                    // (`Player.cs:10215`/`:10316`/`:10466` — Shine `:9995`
+                    // is fed above by S1-E-7a), the `UpdateEquips`
+                    // accessory walk (`:15224-15262`) and
+                    // `ItemCheck_EmitHeldItemLight` (`:49810-50194`) —
+                    // the C# runs them in that order inside
+                    // `Player.Update` (`:25566`/`:25633`/`:31827`); the
+                    // port collects them here after the step, like the
+                    // item/NPC feeds above, feeding the SAME
+                    // `EntityLights` pair. No ported arm draws
+                    // `Main.rand` — every rand-bearing dust branch is
+                    // skipped wholesale — so the placement leaves the
+                    // UpdatePlayers stream untouched. The dead player
+                    // is skipped like the dead NPCs (the port's death
+                    // path clears the buffs; vanilla's residual light
+                    // while dead needs the unported death visuals).
+                    if let Some(p) = player.as_ref().filter(|p| !p.dead) {
+                        let held_kind = inventory
+                            .get(*selected)
+                            .filter(|s| s.count > 0)
+                            .map_or(0, |s| s.kind);
+                        // The rest anchor's `heldItemFrame.Width` — the
+                        // same icon width the draw layer reads
+                        // (`render/entities.rs::held_item_quad`).
+                        let held_frame_w = lookups
+                            .item_icon(held_kind)
+                            .map_or(0.0, |(_, w, _)| w);
+                        for (x, y, rgb) in crate::player_lights::player_lights(
+                            p,
+                            held_kind,
+                            held_frame_w,
+                            p.zones,
+                            world,
+                            &params,
+                        ) {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
