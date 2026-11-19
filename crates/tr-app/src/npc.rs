@@ -973,6 +973,12 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// `NPC.justHit` (`NPC.cs:6453`): the ONE-TICK strike flag — set by
+    /// `StrikeNPC_Inner` (`NPC.cs:81274`) on every accepted hit, read by
+    /// the AI arms (the Creeper's recoil, `NPC.cs:32724`), cleared once
+    /// per NPC update (`NPC.cs:90516`). NOT the ~11-tick `hurt_cd`
+    /// cooldown (the retired `update_creeper` stand-in's W95 defect).
+    pub just_hit: bool,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -2230,6 +2236,8 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            // `SetDefaults`' field reset (`NPC.cs:8506`).
+            just_hit: false,
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -3457,6 +3465,8 @@ impl Npc {
             self.hp -= amount;
         }
         self.hurt_cd = 0.18;
+        // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
+        self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3497,6 +3507,8 @@ impl Npc {
             self.hp -= amount;
         }
         self.hurt_cd = 0.18;
+        // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
+        self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3598,6 +3610,8 @@ impl Npc {
         // The knockback half (`NPC.cs:81389-81458`).
         let n = &mut npcs[idx];
         n.hurt_cd = 0.18;
+        // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
+        n.just_hit = true;
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -3676,6 +3690,15 @@ impl Npc {
             // the real collideX/Y exit, the state-3 hover) over the
             // npc_ai_style47 reference port's documented fold-outs.
             47 => self.ai_047_golem_fist_family(world, player, rng),
+            // `else if (this.aiStyle == 55)` (`NPC.cs:32657-32741`) - the
+            // Creeper (267), the style's only user. S1-D-3 W-2 wiring: the
+            // faithful `npc_ai_style55::ai_055_step` replaces the retired
+            // `update_creeper` stand-in (the W95 x6 defects: the missing
+            // 700-px leash, the missing TargetClosest, the invented
+            // `.max(1.0)` floor, the divide-then-multiply aim order, the
+            // hurt_cd-for-justHit recoil gate, the missing netUpdate /
+            // expert / ftw / kb-0 branches).
+            55 => self.ai_055_creeper_family(world, player, rng),
             // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
             // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
             // two kinds only (the aiStyle-26/22 kinds ride another slice).
@@ -3687,6 +3710,13 @@ impl Npc {
             }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
+        // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
+        // once per NPC update, AFTER the AI read it. The clear sits before
+        // `contact` because the port folds the player-side collision pass
+        // (`Player.Update_NPCCollision`, OUTSIDE `NPC.UpdateNPC` in the C#)
+        // in here — a thorns reflect landing in `contact` must survive to
+        // the NEXT tick's AI, exactly like the C#'s player-update strike.
+        self.just_hit = false;
         self.find_frame();
         self.contact(player, rng);
     }
@@ -3728,6 +3758,50 @@ impl Npc {
             red_hat: self.red_hat_skeletron_adjustments_enabled(),
         };
         crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng);
+    }
+
+    /// S1-D-3 W-2: the aiStyle-55 family arm — `NPC.AI()`'s
+    /// `else if (this.aiStyle == 55)` block (`NPC.cs:32657-32741`). The
+    /// Creeper (267) is the style's only user; the faithful machine lives
+    /// in `npc_ai_style55.rs` (the W95 audit's re-port, 14 witnesses). This
+    /// seam feeds the module's `Ai55Ctx`:
+    /// * `NPC.crimsonBoss` → `brain_anchor` over the sim's
+    ///   `world.brain_*` write-through (`world_sim/npcs.rs`'s
+    ///   `update_brain_state`);
+    /// * the session player as the slot-0 `TargetCandidate` (the S1-D-3p
+    ///   convention, `npc_target::session_candidate`);
+    /// * `Main.expertMode` → the port's `player.buffs.expert_mode` mirror
+    ///   (the `world_sim/npcs.rs` retaliate convention) and
+    ///   `Main.getGoodWorld` → `SeedFlags::FOR_THE_WORTHY` (the
+    ///   `npc_ai_bat`/`variants.rs` convention);
+    /// * `NPC.justHit` → the one-tick `self.just_hit` flag (armed by the
+    ///   strike paths at `NPC.cs:81274`, cleared once per update at
+    ///   `:90516` — NOT the `hurt_cd` cooldown the stand-in read).
+    /// The `active = false` despawn request maps to
+    /// `EncourageDespawn(0)` — the same-tick pool removal
+    /// (`world_sim/npcs.rs`'s `despawn_expired` retain), the port's
+    /// `active = false` shape without the death effects `hp = 0` would
+    /// trigger. The sim's `update_brain_state` retain is the backstop.
+    fn ai_055_creeper_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let players = [crate::npc_target::session_candidate(player)];
+        let ctx = crate::npc_ai_style55::Ai55Ctx {
+            players: &players,
+            crimson_boss_center: crate::npc_ai_style55::brain_anchor(world),
+            expert_mode: player.buffs.expert_mode,
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            just_hit: self.just_hit,
+            // `Main.EverLastingTicker` is not plumbed into `Npc::update`
+            // (the zombie's `target_closest` precedent).
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style55::ai_055_step(self, world, &ctx, rng);
+        if fx.deactivate {
+            // `this.active = false` (`NPC.cs:32661`); the `netUpdate`
+            // write (`:32662`) already landed on the NPC inside the arm.
+            self.encourage_despawn(0);
+        }
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -3819,7 +3893,13 @@ impl Npc {
             ),
             NpcKind::Plantera => self.update_plantera(world, player, rng),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
-            NpcKind::Creeper => self.update_creeper(world, player, rng),
+            // S1-D-3 W-2: the Creeper (aiStyle 55) rides the style axis
+            // (`ai_055_creeper_family`) — this arm is unreachable through
+            // `update_rng` (the axis claims style 55 first). The
+            // `update_creeper` stand-in is retired (the W95 x6 defects).
+            NpcKind::Creeper => {
+                unreachable!("aiStyle 55 rides the style axis (S1-D-3 W-2)")
+            }
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
             NpcKind::SleepingAngler => {}
@@ -14563,57 +14643,6 @@ impl Npc {
         }
     }
 
-    /// The Creeper (`AI_055`, `NPC.cs:32657-32735`): the orbit around
-    /// the brain — beyond the 90 px ring the velocity blends home
-    /// (`x15/16`), inside it the speed amplifies x1.05 under the 8 cap;
-    /// the 1/200 roll (the classic; the expert's 1/100 folds out)
-    /// lunges at the player at 8 px/tick; the lunge holds until the
-    /// justHit recoil (`hurt_cd` stands in for `justHit`) sends it back
-    /// to the orbit. The brainless Creepers die in the sim
-    /// (`NPC.crimsonBoss < 0` -> `active = false`); the brain's anchor
-    /// rides the World fields (the WoF's write-through shape).
-    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        if !world.brain_present {
-            return;
-        }
-        let (w, h) = self.size();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        if self.ai[0] == 0.0 {
-            self.ai[1] = 0.0;
-            let dx = world.brain_x - cx;
-            let dy = world.brain_y - cy;
-            let d = (dx * dx + dy * dy).sqrt();
-            if d > 90.0 {
-                let s = 8.0 / d;
-                self.vx = (self.vx * 15.0 + dx * s) / 16.0;
-                self.vy = (self.vy * 15.0 + dy * s) / 16.0;
-                return;
-            }
-            if self.vx.abs() + self.vy.abs() < 8.0 {
-                self.vy *= 1.05;
-                self.vx *= 1.05;
-            }
-            // `Main.rand.Next(200) == 0` (`NPC.cs:32686`, the classic
-            // arm; the expert `Next(100)` half folds - no expert mode).
-            if rng.next_max(200) == 0 {
-                let (pcx, pcy) = player.center();
-                let dx = pcx - cx;
-                let dy = pcy - cy;
-                let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                self.vx = dx / d * 8.0;
-                self.vy = dy / d * 8.0;
-                self.ai[0] = 1.0;
-            }
-            return;
-        }
-        // The lunge: the straight flight until the justHit recoil.
-        if self.hurt_cd <= 0.0 {
-            return;
-        }
-        self.ai[0] = 0.0;
-    }
-
     /// `AI()`'s aiStyle-54 block (`NPC.cs:32370-32656`) — the Brain of
     /// Cthulhu's machine: the blink (the `-1`/`-2`/`-3` retreat and the
     /// `0`/`1`/`2` normal states), the velocity model and the despawn ramp.
@@ -18734,10 +18763,11 @@ mod tests {
     }
     #[test]
     fn the_creeper_orbits_brain_and_lunges() {
-        // `AI_055` (`NPC.cs:32657-32735`): beyond the 90 px ring the
-        // velocity blends home (x15/16); inside it the drift amplifies;
-        // the 1/200 roll lunges at 8 px/tick and holds until the
-        // justHit recoil.
+        // `AI_055` (`NPC.cs:32657-32741`), S1-D-3 W-2 WIRED: the axis arm
+        // (`ai_055_creeper_family` -> `npc_ai_style55::ai_055_step`).
+        // Beyond the 90 px ring the velocity blends home (x15/16); inside
+        // it the drift amplifies; the 1/200 roll lunges at 8 px/tick and
+        // holds until the one-tick `just_hit` recoil.
         let mut w = ground_air();
         w.brain_present = true;
         w.brain_x = 100.0 * 16.0;
@@ -18750,16 +18780,15 @@ mod tests {
         let mut c = Npc::new(NpcKind::Creeper, 110.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         c.hp = c.max_hp;
         let mut rng = UnifiedRandom::new(1);
-        c.update_creeper(&w, &player, &mut rng);
+        c.ai_055_creeper_family(&w, &player, &mut rng);
         assert!(c.vx < 0.0, "the orbit pulls toward the brain");
-        // At the ring: the roll may lunge — hunt a no-lunge seed and a
-        // lunge seed.
+        // At the ring: the roll may lunge — hunt a lunge seed.
         let mut lunge = None;
         for seed in 0..20000u64 {
             let mut c = Npc::new(NpcKind::Creeper, 100.2 * 16.0, 100.0 * 16.0, 1, 0.0);
             c.hp = c.max_hp;
             let mut rng = UnifiedRandom::new(seed as i32);
-            c.update_creeper(&w, &player, &mut rng);
+            c.ai_055_creeper_family(&w, &player, &mut rng);
             if c.ai[0] == 1.0 {
                 lunge = Some((seed, c));
                 break;
@@ -18775,12 +18804,169 @@ mod tests {
         // The lunge holds while the justHit recoil is silent.
         let mut c = c;
         let mut rng = UnifiedRandom::new(seed as i32);
-        c.update_creeper(&w, &player, &mut rng);
+        c.ai_055_creeper_family(&w, &player, &mut rng);
         assert_eq!(c.ai[0], 1.0, "the lunge holds");
-        // The hit sends it back to the orbit.
-        c.hurt(10, c.x - 5.0, 5.0, false);
-        c.update_creeper(&w, &player, &mut rng);
+        // The hit sends it back to the orbit — the ONE-TICK flag
+        // (`NPC.cs:81274`), not the `hurt_cd` cooldown.
+        assert!(c.hurt(10, c.x - 5.0, 5.0, false));
+        assert!(c.just_hit, "the strike arms the one-tick flag");
+        c.ai_055_creeper_family(&w, &player, &mut rng);
         assert_eq!(c.ai[0], 0.0, "the justHit returns to the orbit");
+        // Re-lunge, then a full update clears the flag (`NPC.cs:90516`)
+        // — the next tick's AI reads it false, so a cooldown tail can no
+        // longer keep recoiling the Creeper (the stand-in's defect).
+        let mut fired = false;
+        for seed2 in 0..20000u64 {
+            let mut probe = UnifiedRandom::new(seed2 as i32);
+            if probe.next_max(200) == 0 {
+                let mut rng2 = UnifiedRandom::new(seed2 as i32);
+                c.ai_055_creeper_family(&w, &player, &mut rng2);
+                assert_eq!(c.ai[0], 1.0, "re-lunged");
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "a re-lunge seed exists");
+        // The cooldown has elapsed by now (the fixture compresses time).
+        c.hurt_cd = 0.0;
+        assert!(c.hurt(1, c.x - 5.0, 5.0, false));
+        // ai[0] == 1 here, so the update's AI runs the state-1 recoil
+        // tail (no roll, no re-lunge). Park the player far away so the
+        // folded-in contact pass cannot interfere.
+        let mut player2 = player.clone();
+        player2.x = c.x + 5000.0;
+        c.update_rng(&w, &mut player2, 1.0 / 60.0, &mut rng);
+        assert_eq!(c.ai[0], 0.0, "the strike tick's AI recoils");
+        assert!(!c.just_hit, "the update tail clears the flag (:90516)");
+        assert!(c.hurt_cd > 0.0, "the cooldown is still running");
+        // Re-lunge once more: the next tick's quiet AI must HOLD despite
+        // the positive cooldown — the W95 hurt_cd-vs-justHit defect.
+        let mut fired = false;
+        for seed3 in 0..20000u64 {
+            let mut probe = UnifiedRandom::new(seed3 as i32);
+            if probe.next_max(200) == 0 {
+                let mut rng3 = UnifiedRandom::new(seed3 as i32);
+                c.ai_055_creeper_family(&w, &player, &mut rng3);
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "a re-lunge seed exists");
+        c.ai_055_creeper_family(&w, &player, &mut rng);
+        assert_eq!(
+            c.ai[0], 1.0,
+            "the cooldown tail no longer recoils (one-tick justHit)"
+        );
+    }
+
+    /// S1-D-3 W-2 — the 700-px leash is LIVE (`NPC.cs:32715-32721`): the
+    /// stand-in's lunging Creepers flew forever; the wired axis arm drops
+    /// a Creeper past 700 px from the Brain back to the orbit with no hit.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_3_w2_the_700_leash_is_live_through_the_axis() {
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 1000.0;
+        w.brain_y = 1000.0;
+        let player = crate::player::Player::spawn(&w);
+        // 700.5 px out: strict `>` — the leash resets, no hit needed.
+        let mut c = Npc::new(NpcKind::Creeper, 1700.5 - 15.0, 1000.0 - 15.0, 1, 0.0);
+        c.hp = c.max_hp;
+        c.ai[0] = 1.0;
+        let mut rng = UnifiedRandom::new(42);
+        c.ai_055_creeper_family(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 0.0, "d > 700 drops the lunge (:32719)");
+        // Exactly 700: the lunge holds (strict bound).
+        let mut c2 = Npc::new(NpcKind::Creeper, 1700.0 - 15.0, 1000.0 - 15.0, 1, 0.0);
+        c2.hp = c2.max_hp;
+        c2.ai[0] = 1.0;
+        c2.ai_055_creeper_family(&w, &player, &mut rng);
+        assert_eq!(c2.ai[0], 1.0, "d == 700 is inside the leash");
+    }
+
+    /// S1-D-3 W-2 — the lunge runs `TargetClosest` (`NPC.cs:32688`) and
+    /// flags `netUpdate` (`:32696`): the stand-in aimed at the session
+    /// player without ever updating target/rect/facing. WRITTEN NOT RUN.
+    #[test]
+    fn s1_d_3_w2_the_lunge_retargets_and_syncs_through_the_axis() {
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 1000.0;
+        w.brain_y = 1000.0;
+        let mut player = crate::player::Player::spawn(&w);
+        // The player LEFT of the Creeper.
+        player.x = 900.0;
+        player.y = 1000.0 - 21.0;
+        let mut fired = false;
+        for seed in 0..20000i32 {
+            let mut probe = UnifiedRandom::new(seed);
+            if probe.next_max(200) != 0 {
+                continue;
+            }
+            let mut c = Npc::new(NpcKind::Creeper, 1010.0 - 15.0, 1000.0 - 15.0, 1, 0.0);
+            c.hp = c.max_hp;
+            c.net_update = false;
+            let mut rng = UnifiedRandom::new(seed);
+            c.ai_055_creeper_family(&w, &player, &mut rng);
+            assert_eq!(c.ai[0], 1.0);
+            assert!(c.net_update, "netUpdate = true (:32696)");
+            assert_eq!(c.target, 0, "TargetClosest picked the session slot");
+            assert_eq!(
+                c.target_rect,
+                (900, 979, crate::player::WIDTH as i32, crate::player::HEIGHT as i32),
+                "the rect tracks the picked player"
+            );
+            assert_eq!(c.facing, -1, "the player is to the left");
+            assert!(c.vx < 0.0);
+            fired = true;
+            break;
+        }
+        assert!(fired, "a lunge seed exists");
+    }
+
+    /// S1-D-3 W-2 — RNG parity: the wired classic arm draws exactly ONE
+    /// `Next(200)` per in-ring state-0 tick (the `Next(100)` expert half
+    /// short-circuits before drawing) and nothing on the far-orbit or
+    /// state-1 paths — the same draw census the stand-in had, so the
+    /// shared `UpdateNpcs` stream stays in step for classic worlds.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn s1_d_3_w2_the_wired_classic_draw_census_matches_the_mirror() {
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 1000.0;
+        w.brain_y = 1000.0;
+        let player = crate::player::Player::spawn(&w);
+        let mut c = Npc::new(NpcKind::Creeper, 1010.0 - 15.0, 1000.0 - 15.0, 1, 0.0);
+        c.hp = c.max_hp;
+        let mut rng = UnifiedRandom::new(2026);
+        let mut mirror = rng.clone();
+        for _ in 0..10 {
+            if c.ai[0] == 0.0 {
+                let _ = mirror.next_max(200);
+            }
+            c.ai_055_creeper_family(&w, &player, &mut rng);
+        }
+        assert_eq!(rng, mirror, "one Next(200) per in-ring state-0 tick");
+    }
+
+    /// S1-D-3 W-2 — the brainless despawn request drains: `active = false`
+    /// (`NPC.cs:32661`) maps to `EncourageDespawn(0)` — the same-tick pool
+    /// removal — plus the `netUpdate` write (`:32662`). WRITTEN NOT RUN.
+    #[test]
+    fn s1_d_3_w2_the_brainless_creeper_despawns_same_tick() {
+        let mut w = ground_air();
+        w.brain_present = false;
+        let player = crate::player::Player::spawn(&w);
+        let mut c = Npc::new(NpcKind::Creeper, 100.0, 100.0, 1, 0.0);
+        c.hp = c.max_hp;
+        let mut rng = UnifiedRandom::new(42);
+        let mirror = rng.clone();
+        c.ai_055_creeper_family(&w, &player, &mut rng);
+        assert!(c.despawn_expired(), "EncourageDespawn(0) — removed this tick");
+        assert!(c.net_update, "netUpdate = true (:32662)");
+        assert_eq!(rng, mirror, "the despawn arm draws nothing");
     }
 
     #[test]
