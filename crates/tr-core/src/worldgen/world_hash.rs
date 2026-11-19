@@ -264,10 +264,13 @@ mod tests {
     // SEED42_512 note above): vine cells keep their wall fields, so the
     // default world's hash moves too. Old -> new: 143177146 -> 311316399
     // (measured on the merged tree, a == b determinism stayed green).
-    // The S1-K-2 wave B re-pin runs sequentially AFTER the vines re-pin
-    // (gate measures the merged tree; value updated in the K-2b re-pin
-    // commit below this history).
-    const DEFAULT_WORLD: u32 = 311316399;
+    // The S1-K-2 wave B re-pin ran sequentially AFTER the vines re-pin at
+    // the merge gate: measured on the merged tree (vines + mining
+    // explosives + thin ice), a == b determinism stayed green on the
+    // failing run and SEED42_512 stayed UNCHANGED (the width-guard proof
+    // held). Old -> new: 311316399 -> 3647283075 (gate log
+    // TR-LD-gate-k2b.log).
+    const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
     // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item
