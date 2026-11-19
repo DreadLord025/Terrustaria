@@ -973,6 +973,27 @@ pub struct HostileShotAi {
     pub damage: i32,
     pub ai0: f32,
     pub ai1: f32,
+    /// The spawn-time scale override — `None` keeps the `proj_data`
+    /// row's scale. The Horseman's pumpkin lob rolls
+    /// `1f + Next(51) * 0.01f` (`Projectile.cs:9518`) at the QUEUE site
+    /// on the `UpdateNPCs` stream (S1-D-4 W-10, union point 5 of
+    /// `npc_ai_unicorn_b`); the drain applies it to the spawned slot.
+    pub scale: Option<f32>,
+}
+
+/// The Horseman's gallop-dust request (`NPC.cs:62421-62439`) — S1-D-4
+/// W-10. The arm-level draws (the `Next(3)` gate + the two `NextFloat`
+/// jitters) are consumed IN-STEP by `unicorn_step`; this carries the
+/// fully-rolled `NewDustPerfect(pos, 6, base.velocity)` to the sim
+/// drain, which feeds `DustPool` (the pool-internal draws ride the same
+/// UpdateNPCs stream there — the recorded placement deviation,
+/// ANALYSIS). Position is `Bottom + (-30, -8) + jitter`.
+#[derive(Clone, Copy, Debug)]
+pub struct GallopDustAi {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1177,6 +1198,12 @@ pub struct Npc {
     /// `NPC.stepSpeed` (`NPC.cs:6097`): the step-up lift's decay rate —
     /// 1 for lifts under 9 px, 2 above (`NPC.cs:62794-62801`).
     pub step_speed: f32,
+    /// The aiStyle-39 machine's difficulty-scaled `knockBackResist`
+    /// write (`NPC.cs:29266-29271` state-0 / `:29536` ball 0) — S1-D-4
+    /// W-10: `style39_step`'s ctx OUT rides here; `knock_back_resist`
+    /// prefers it over the kind table while set. Cleared never (the C#
+    /// field keeps its last write too).
+    pub kb_resist_override: Option<f32>,
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
@@ -1360,6 +1387,10 @@ pub struct Npc {
     /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
     /// (`NPC.cs:44394`).
     pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// The Horseman's gallop-dust spawns (S1-D-4 W-10, `NPC.cs:62431-
+    /// 62437`): fully-rolled at the AI site, drained into the DustPool
+    /// post-tick (`world_sim/npcs.rs`).
+    pub wants_gallop_dust: Vec<GallopDustAi>,
     /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
     /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
     /// 263/264/265 have no port arms yet, so the sim records the request
@@ -1635,6 +1666,7 @@ fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut UnifiedRand
             ai0: 0.0,
             // `:44463` — the chunk's `ai1 = 6 + Next(6)`.
             ai1: 6.0 + rng.next_max((6) as i32) as u32 as f32,
+            scale: None,
         });
         break;
     }
@@ -1746,6 +1778,7 @@ fn deerclops_try_make_spike(
         damage: 13,
         ai0: 0.0,
         ai1,
+        scale: None,
     });
 }
 
@@ -2360,6 +2393,7 @@ impl Npc {
             unicorn_stuck_x: 0.0,
             gfx_off_y: 0.0,
             step_speed: 0.0,
+            kb_resist_override: None,
             wants_sphere: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
@@ -2411,6 +2445,7 @@ impl Npc {
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
+            wants_gallop_dust: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
@@ -2464,6 +2499,10 @@ impl Npc {
     /// base per `SetDefaultsFromNetId`: green x1.2, pinky x1.4, baby
     /// x0.95, purple x0.9, black/red/yellow x1).
     pub fn knock_back_resist(&self) -> f32 {
+        // The style-39 machine's live write wins (S1-D-4 W-10).
+        if let Some(kb) = self.kb_resist_override {
+            return kb;
+        }
         if self.kind == NpcKind::Slime {
             let mult = match self.slime {
                 SlimeVariant::Blue
@@ -3805,6 +3844,13 @@ impl Npc {
             *v = v.saturating_sub(1);
         }
         self.anim += dt;
+        // `NPC.UpdateNPC`'s gfxOffY decay (`NPC.cs:90396-90420`), AFTER
+        // the old-target/direction latches and BEFORE `AI()` — S1-D-4
+        // W-10 wires slice B's pure fn. Reads the PRE-AI velocity.X;
+        // for every kind but the step-up writers (315/329's inline
+        // probe, style 39's) both fields are 0 → a cited no-op.
+        self.gfx_off_y =
+            crate::npc_ai_unicorn_b::gfx_off_y_decay(self.gfx_off_y, self.vx, self.step_speed);
         // S1-D-2: the aiStyle axis — `NPC.AI` dispatches on the C#'s style id
         // first (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain),
         // then on the type inside the family arm. Migrated families claim
@@ -6933,9 +6979,12 @@ impl Npc {
             // `FindFrame`'s plain walker strip. `FindFrame`'s humanoid-group
             // case list carries 310-314 and 326 (`NPC.cs:68543-68600`) and its
             // default arm (`:69481+`, the `|vx| * 2` accumulator, row 0 idle
-            // / rows 2..count-1 walk) carries every other kind — 305-309 and
-            // the named kinds — so the walker frame stands for them, each
-            // wrapping over its own `npcFrameCount` row (`Main.cs:67082`).
+            // / rows 2..count-1 walk) carries every other kind — so the
+            // walker frame stands for them, each wrapping over its own
+            // `npcFrameCount` row (`Main.cs:67082`). The Horseman (315) and
+            // the Hellhound (329) have their OWN FindFrame cases
+            // (`:74465-74497` / `:74375-74403`) — S1-D-4 W-10 wires slice
+            // B's arms below.
             NpcKind::Scarecrow1
             | NpcKind::Scarecrow2
             | NpcKind::Scarecrow3
@@ -6946,11 +6995,44 @@ impl Npc {
             | NpcKind::Scarecrow8
             | NpcKind::Scarecrow9
             | NpcKind::Scarecrow10
-            | NpcKind::HeadlessHorseman
             | NpcKind::MourningWood
             | NpcKind::Splinterling
-            | NpcKind::Pumpking
-            | NpcKind::Hellhound => self.walker_frame(),
+            | NpcKind::Pumpking => self.walker_frame(),
+            // `FindFrame`'s case 315 (`NPC.cs:74465-74497`) — S1-D-4
+            // W-10: slice B's pure arm (the wet turn + airborne reset +
+            // the |vx| gallop over rows 1..10). `wet` rides the port's
+            // `Npc::wet`.
+            NpcKind::HeadlessHorseman => {
+                let (dir, counter, row) = crate::npc_ai_unicorn_b::horseman_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.wet,
+                    self.facing,
+                    self.sprite_dir,
+                    self.frame_counter,
+                    self.frame,
+                );
+                self.sprite_dir = dir;
+                self.frame_counter = counter;
+                self.frame = row;
+            }
+            // `FindFrame`'s case 329 (`NPC.cs:74375-74403`) — S1-D-4
+            // W-10: slice B's pure arm (the fall/rise rows break BEFORE
+            // the sprite assignment; the grounded |vx|*0.4 walk cycles
+            // rows 2..=9).
+            NpcKind::Hellhound => {
+                let (dir, counter, row) = crate::npc_ai_unicorn_b::hellhound_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.facing,
+                    self.sprite_dir,
+                    self.frame_counter,
+                    self.frame,
+                );
+                self.sprite_dir = dir;
+                self.frame_counter = counter;
+                self.frame = row;
+            }
             // The Poltergeist rides its own `FindFrame` arm (S1-F-13b2 slice
             // C) — the case-330 strip, not the walker stand-in.
             NpcKind::Poltergeist => self.poltergeist_frame(),
@@ -9771,6 +9853,7 @@ impl Npc {
                         damage: 50,
                         ai0: 0.0,
                         ai1: 20.0,
+                        scale: None,
                     });
                 }
             }
@@ -9792,6 +9875,7 @@ impl Npc {
                         damage: 50,
                         ai0: self.slot as f32 + 1.0,
                         ai1: 0.0,
+                        scale: None,
                     });
                 }
                 // The windows: the core's gun phase (2) opens them always;
@@ -11946,77 +12030,108 @@ impl Npc {
         self.vy = 0.0;
     }
 
-    /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29394-29421`'s
-    /// ball entry + `:29422-29488`'s lunge + `:29532-29580`'s ball state +
-    /// `:29634-29668`'s unroll) — the sroller winds up, collapses into a
-    /// ball (the ×1.8 damage, the doubled defense, kb 0), rolls for
-    /// `ai[2]` in [2, 4] revolutions, then unrolls.
-    ///
-    /// Deviations: the dust/gore bursts and the `ai[3]` FX layer are
-    /// unmodelled; the roll's spin rides the port's rotation.
+    /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29145-29665`)
+    /// — S1-D-4 W-10 WIRES the faithful `npc_ai_style39::style39_step`
+    /// (S1-D-3 module, W83 audit) over the invented v1 (the
+    /// `5 + ai[2]*0.6` speed, the `60*ai[2]` exit, the 0.5 wind-up rate).
+    /// The module owns the AI states; this wrapper owns the caller-side
+    /// seams the module doc names: the ctx fill (classic difficulty, the
+    /// `hurt_cd > 0` justHit stand-in, the ticker-0 stand-in), the
+    /// gfxOffY/stepSpeed/kb OUT copies, the gravity + fall cap
+    /// (`NPC.cs:90465-90472`, the port's GRAVITY/MAX_FALL seam — the
+    /// unicorn machine's convention), and the
+    /// `Collision_MoveSolarSroller` bounce pass (`:92736-92757`) folded
+    /// into the axis-separated integrate: `oldVelocity` latched, the
+    /// blocked axes zeroed, and in the ball state a block spends one
+    /// revolution (`ai[2]--`), arms the FX layer (`ai[3] = 1`) and
+    /// reflects the axis at ×-0.9 with the direction flip while
+    /// revolutions remain. The dust/gore spawns stay unmodelled INSIDE
+    /// the module (its arm-level draws are consumed there in C# order).
     fn update_solar_sroller(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::TargetCandidate {
+            active: true,
+            dead: player.dead,
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        let mut ctx = crate::npc_ai_style39::Style39Context {
+            kind: crate::npc_ai_style39::Style39Type::SolarSroller,
+            difficulty: 1.0, // Classic — the port's difficulty fold
+            just_hit: self.hurt_cd > 0.0,
+            ticker: 0, // the update_zombie stand-in (no ticker plumbed)
+            gfx_off_y: self.gfx_off_y,
+            step_speed: self.step_speed,
+            knockback_resist: self.knock_back_resist(),
+        };
+        crate::npc_ai_style39::style39_step(self, world, &mut ctx, &[cand], rng);
+        self.gfx_off_y = ctx.gfx_off_y;
+        self.step_speed = ctx.step_speed;
+        self.kb_resist_override = Some(ctx.knockback_resist);
+        // The shared movement tail (`NPC.UpdateNPC :90465-90472`): the
+        // port-wide gravity seam (the unicorn machine's convention).
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        // `Collision_MoveSolarSroller` (`NPC.cs:92736-92757`): the
+        // TileCollision result differs from oldVelocity on a blocked
+        // axis; the port's family convention zeroes the blocked axis
+        // (the `collides_rect` probe), then the ball's bounce arm runs.
         let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        match self.ai[0] as i32 {
-            0 => {
-                // `:29267-29276`'s aggro counter and the jump reach.
-                self.ai[1] += 4.0;
-                if self.ai[1] >= 400.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 1.0;
+        // `base.oldVelocity = base.velocity` (`NPC.cs:92538`) — latched
+        // BEFORE the collision pass (the port convention, `:10051`);
+        // next tick's state-0 blocked-move flip reads it (`:29278`).
+        let (old_vx, old_vy) = (self.vx, self.vy);
+        self.old_vx = old_vx;
+        self.old_vy = old_vy;
+        let mut blocked_x = false;
+        let mut blocked_y = false;
+        let nx = self.x + self.vx;
+        if !crate::player::collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            blocked_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !crate::player::collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            blocked_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            blocked_y = true;
+        }
+        // `:92740-92756` — only the ball state bounces; every block
+        // spends a revolution and arms the FX layer, the ×-0.9
+        // reflection runs only while revolutions remain. The guards are
+        // the C#'s `velocity.X != 0 && velocity.X != oldVelocity.X`
+        // (`:92746`/`:92751`): the port's blocked-axis zero stands for
+        // the TileCollision trim; a zeroed axis with a non-zero
+        // pre-collision value satisfies both conjuncts. (The C# trims
+        // to the wall instead of zeroing — the residual sub-pixel value
+        // passes the same guards; the ×-0.9 reflection erases it.)
+        if self.ai[0] == 6.0 && (blocked_x || blocked_y) {
+            self.ai[2] -= 1.0;
+            self.ai[3] = 1.0;
+            if self.ai[2] > 0.0 {
+                if blocked_x && old_vx != 0.0 {
+                    self.vx = (0.0 - old_vx) * 0.9;
+                    self.facing *= -1;
                 }
-                crate::npc_ai::walker_step(
-                    self,
-                    world,
-                    pcx,
-                    pcy,
-                    crate::npc_ai::WalkerParams {
-                        speed: 1.0,
-                        jump: -6.2,
-                        aggro_x: 80.0 * TILE_PX,
-                        aggro_y: 40.0 * TILE_PX,
-                    },
-                    GRAVITY,
-                    MAX_FALL,
-                );
-            }
-            1 => {
-                // `:29394-29419`'s wind-up: at the 30th tick the sroller
-                // collapses into the ball (the 32-px height) and rolls for
-                // `rand(2, 4)` revolutions.
-                self.ai[1] += 0.5;
-                if self.ai[1] >= 30.0 {
-                    self.ai[1] = 0.0;
-                    // `Main.rand.Next(2, 5)` — the roll revolutions.
-                    self.ai[2] = rng.next_range(2, 5) as f32;
-                    self.ai[0] = 6.0;
-                }
-            }
-            6 => {
-                // `:29532-29580`'s ball state: the doubled defense, kb 0
-                // and the rolling spin over the revolutions.
-                self.defense_override = Some(68);
-                self.vx = (if self.facing >= 0 { 1.0 } else { -1.0 })
-                    * (5.0 + (self.ai[2] * 0.6).min(4.0));
-                self.rotation += self.vx * 0.05;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 * self.ai[2] {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 5.0;
-                }
-                self.x += self.vx;
-                self.y += self.vy;
-            }
-            _ => {
-                // `:29634-29668`'s unroll: restore the height and rest.
-                self.rotation = 0.0;
-                self.vx = 0.0;
-                self.defense_override = None;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 30.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
+                if blocked_y && old_vy != 0.0 {
+                    self.vy = (0.0 - old_vy) * 0.9;
                 }
             }
         }
@@ -14290,6 +14405,7 @@ impl Npc {
                             damage: 15,
                             ai0,
                             ai1,
+                            scale: None,
                         });
                     }
                 }

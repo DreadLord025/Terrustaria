@@ -968,7 +968,10 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
 /// (`boss_half_size - frame_h / 2`), which put the boss trio 24 px and every
 /// humanoid whose box is not `frame_h - 8` off the C# anchor.
 fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
-    (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n)
+    // S1-D-4 W-10: the C# anchor's `+ gfxOffY` term (`Main.cs:25414`
+    // etc.) — the step-up lift accumulator (`Npc::gfx_off_y`, zero for
+    // every kind without a step-up writer, so a no-op elsewhere).
+    (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n) + n.gfx_off_y
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:

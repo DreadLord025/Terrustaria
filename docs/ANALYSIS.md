@@ -28223,6 +28223,107 @@ the actual signatures by read/grep (`npc_target::target_closest`'s
 was re-read line-by-line (the parameter table, the state nesting, the
 dust gate order, the fuse). The 18 witness tests are WRITTEN, NOT RUN —
 **no compiler invoked**.
+
+## The W-10 wiring slice (S1-D-4, 2026-11-19, code-only mode)
+
+Branch `task/S1-D-4-wire-unicorn-proj194`, census slice W-10
+(`docs/research/50-entity-ai-census.md` §3c/§5 W-11: proj-1001 + the
+roller/unicorn tails). **Code-only mode: no compiler invoked** — no
+cargo/rustc/rustfmt/tests; every witness below is WRITTEN NOT RUN.
+
+### proj 194 — `ai_horseman_pumpkin` (projectile.rs)
+
+`AI_194_HorsemanPumpkin` (`Projectile.cs:41293-41336`, dispatch
+`:36739-36742`): the target-slot aim (`ai[0]` = the lob's
+`num3 = this.target`, `NPC.cs:62414`; the port's single player rides
+slot 0 — any other slot = `IndexInRange` false → own centre), the
+±30-px vertical dead-band (the C#'s `!(y < 30) || !(y > -30)` kept
+verbatim), the `Math.Sign` accels 0.4/0.4 with the ±4/±5 clamps
+(`csign` — Sign(0)=0), `rotation = velocity.ToRotation()`, the sprite
+side, the `Opacity` fade (1/30 in, 0.1 out under 6 ticks — the
+`opacity_of`/`alpha_of` alpha view, `Projectile.cs:540-549`). 1001 is
+the style's ONLY SetDefaults row (`:9511-9522`) — no kind gate. FIRST
+occurrence wins: no other 194 arm exists anywhere in the match
+(verified by grep over the whole dispatch, dead arms included — R20's
+`deny(unreachable_patterns)` branch is not on this base, but the
+census §3b dead-arm list carries no 194 either).
+
+**RNG by construction**: exactly ONE draw per tick — `Next(3)`
+(`:41327`), ALWAYS consumed on the threaded `UpdateProjectiles`
+stream; the taken branch's `NewDustDirect` internals ride the DustRng
+seam (the leaf-blower precedent — dust unmodelled in the pool).
+Witness `s1_d_4_w10_the_pumpkin_draws_one_next3_per_tick` replays the
+gate on a twin stream. The `Next(51)` scale roll is NOT in this arm —
+see the queue-site roll below.
+
+### The unicorn tails — the six `npc_ai_unicorn_b` union points
+
+1. **gfxOffY decay** — `update_rng`'s head, pre-AI
+   (`NPC.cs:90396-90420`); reads the PRE-AI `velocity.X`. For every
+   kind without a step-up writer both fields are 0 → cited no-op.
+2. **Gallop dust** — `unicorn_step`'s Horseman block
+   (`NPC.cs:62421-62439`): the row-4..7 gate guards ALL draws; the
+   `Next(3)` gate + the taken branch's two jitter `NextFloat`s (x
+   then y) are consumed IN-STEP on the UpdateNPCs stream; the
+   `NewDustPerfect` spawn + post-writes ride the sim drain
+   (`wants_gallop_dust` → `world_sim/npcs.rs`, the hostile-shot drain
+   convention). **Recorded deviation**: the pool-internal draws land
+   after the tick's AI pass instead of mid-AI (the port's DustPool is
+   not reachable from `Npc::update_rng`'s signature); the arm-level
+   draw order is exact. The gate reads `npc.frame` — LAST tick's
+   FindFrame row, the same value the C# reads mid-AI.
+3. **AddLight** — render-side (`app/frame/draw.rs`, the `npc_lights`
+   precedent): `horseman_light` beside `npc_light`, no RNG → no
+   stream placement.
+4. **FindFrame 315/329** — `npc.rs::find_frame`'s own arms replace
+   the walker stand-in (the C# cases `:74465-74497`/`:74375-74403`).
+5. **Scale roll** — `horseman_pumpkin_scale` at the lob's QUEUE site
+   as the fourth draw (after `NextFloatDirection`), carried on
+   `HostileShotAi.scale` (new `Option<f32>`, `None` everywhere else)
+   and applied by the drain via `ProjectilePool::set_scale`. Rolling
+   at the drain would move the draw past every later NPC's AI draws —
+   the module-doc union-point-5 argument, kept.
+6. **gfxOffY render term** — `generic_anchor_shift_y` adds
+   `n.gfx_off_y` (`Main.cs:25414`'s `+ gfxOffY`); zero for kinds
+   without a step-up writer.
+
+The slice-A lob witness is updated to FOUR draws (angle, radius,
+direction, `Next(51)`) and pins `frame = 0` so the dust gate stays
+shut; the new `s1_d_4_w10_the_gallop_dust_gate_draws_in_step` replays
+the gate + jitters by hand. The 200-tick stream-untouched test still
+holds: `frame` stays 0 in it (FindFrame never runs there).
+
+### Roller-39 — `update_solar_sroller` delegates to `style39_step`
+
+The W83 stand-in (invented `5 + ai[2]*0.6` speed, `60*ai[2]` exit, 0.5
+wind-up on 417, `vx*0.05` spin, no height change) is replaced by the
+faithful S1-D-3 module. The wrapper owns the caller seams: the ctx
+fill (Classic difficulty 1.0, `hurt_cd > 0` justHit stand-in — the
+documented widening, ticker 0 — the `update_zombie` stand-in), the
+gfxOffY/stepSpeed/kb OUT copies (the new `Npc::kb_resist_override`
+feeds `knock_back_resist` — the C# `knockBackResist` writes
+`:29266-29271`/`:29536`), the port-wide GRAVITY/MAX_FALL seam (the
+unicorn convention), and the **`Collision_MoveSolarSroller` bounce
+pass** (`NPC.cs:92736-92757`) folded into the axis-separated
+integrate: a blocked axis in the ball state spends one revolution
+(`ai[2]--`), arms the FX layer (`ai[3] = 1`), and reflects ×-0.9 with
+the direction flip while revolutions remain. **Recorded deviation**:
+the port zeroes the blocked axis where `Collision.TileCollision`
+trims to the wall (`Collision.cs:2292-2450`); the C#'s reflection
+guards (`velocity.X != 0 && velocity.X != oldVelocity.X`) pass for
+both shapes and the ×-0.9 write erases the residual — the bounce
+outcome is identical, the sub-pixel wall gap is not. The module's
+dust/gore spawns stay unmodelled INSIDE it (its arm-level draws are
+consumed in C# order — its own RNG argument); the 13 module witnesses
++ the sim collapse witness keep their premises (the wind-up now
+counts whole ticks: 29 → 30 collapses on the FIRST tick, the test's
+8-tick loop still catches it; the doubled defense 68 holds — 34×2).
+
+No new streams, no draw-order changes outside the cited additions
+(the gallop gate + jitters + the scale roll are NEW draws the C#
+always made — the port previously skipped them with the dust layer;
+this slice restores them, so the UpdateNPCs stream now matches the C#
+where it previously diverged by omission).
 WRITTEN, NOT RUN — **no compiler invoked**.
 
 ## S1-C-12 wave D - the LOW-tier armor set bonuses (2026-11-18, code-only mode)
