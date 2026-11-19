@@ -29,6 +29,20 @@ pub(crate) fn update_tile_entities(app: &mut App, dt: f32) {
         let world = &mut app.world;
         let wiring = &mut app.wiring;
         tr_core::tile_entities::update_logic_sensors(world, wiring, day, &boxes);
+        // S1-E-21i — the sensors' Mech-28 clicks (the logic sensor's
+        // `UpdateEndInternal` fires `HitSwitch`, `TileEntity.cs` via
+        // `tr_core::tile_entities`): `TileEntity.PerformUpdates` runs from
+        // `WorldGen.UpdateWorld` (`WorldGen.cs:71510`) under the
+        // `UpdateWorldGen` swap (`Main.cs:17802-17805`), so the pitch draws
+        // ride that stream — drained right after the scan, the trips'
+        // play order matching the scan order.
+        for (px, py) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            );
+        }
     });
     app.te_step.cap_backlog();
 }

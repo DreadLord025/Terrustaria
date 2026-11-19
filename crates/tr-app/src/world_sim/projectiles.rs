@@ -18,16 +18,35 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         let empty = app.projectiles.slots().iter().all(|p| !p.active);
         if empty {
             if let Some(p) = &app.player {
-            let (cx, cy) = p.center();
-                app.projectiles.spawn(
-                    kind,
-                    0,
-                    Vec2::new(cx - 3.0, cy - 3.0),
-                    Vec2::new(3.0, 0.0),
-                    10,
-                    4.0,
-                    false,
-                );
+                let (cx, cy) = p.center();
+                if kind == crate::projectile::LIGHTS_BANE {
+                    // The slash's scale rides `ai[0]` (`AI_188_LightsBane`,
+                    // `Projectile.cs:42240`) — the fixture spawns it through
+                    // the SetDefaults row at scale 1 (S1-G-3's blend-batch
+                    // screenshot).
+                    app.projectiles.spawn_with_data_owned(
+                        kind,
+                        0,
+                        cx - 3.0,
+                        cy - 3.0,
+                        3.0,
+                        0.0,
+                        10,
+                        4.0,
+                        1.0,
+                        0.0,
+                    );
+                } else {
+                    app.projectiles.spawn(
+                        kind,
+                        0,
+                        Vec2::new(cx - 3.0, cy - 3.0),
+                        Vec2::new(3.0, 0.0),
+                        10,
+                        4.0,
+                        false,
+                    );
+                }
             }
         }
     }
@@ -175,6 +194,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
+    // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
+    let disco = app.disco;
+    app.projectiles.set_disco(disco);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -190,6 +213,27 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
+    // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
+    // accepted shot queued its retaliate request and possibly a dismount-on-
+    // hit (the golf-ball returns 877/878/879); the C# rolls inline under the
+    // `UpdateProjectiles` swap (`Main.cs:17775`), the port drains at the pass
+    // tail on the same stream (the S1-E-21c batch convention).
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_dismount(p, &app.world);
+    }
+    if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
+        let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::hurt_modifiers::drain_retaliate(
+            app.player.as_mut().unwrap(),
+            &mut app.projectiles,
+            &mut app.npcs,
+            req,
+            app.local_id as u8,
+            expert,
+            rng,
+        );
+    }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
     // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch

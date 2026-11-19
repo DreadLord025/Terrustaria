@@ -91,13 +91,14 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.raining); // _tempRaining
     w.i32(world.rain_time); // _tempRainTime
     w.f32(world.max_raining); // _tempMaxRain
-    // WorldFile.cs:1316-1325: the hardmode ore tiers (unowned — no port
-    // state) and the eight background styles. The five surface-variant styles
-    // ride their byte slots (`setBG` 1 corrupt, 2 jungle, 4 hallow,
-    // 5 crimson); the rest stay at the C# default.
-    w.i32(0); // Cobalt
-    w.i32(0); // Mythril
-    w.i32(0); // Adamantite
+    // WorldFile.cs:1315-1317: the hardmode ore tiers — `World.ore_tiers`
+    // owns them (M5-HARDFORCE-ores / M5-ORES-1); the eight background styles
+    // follow. The five surface-variant styles ride their byte slots (`setBG`
+    // 1 corrupt, 2 jungle, 4 hallow, 5 crimson); the rest stay at the C#
+    // default.
+    w.i32(world.ore_tiers.cobalt); // Cobalt
+    w.i32(world.ore_tiers.mythril); // Mythril
+    w.i32(world.ore_tiers.adamantite); // Adamantite
     w.u8(0); // setBG(0) treeBG1
     w.u8(world.corrupt_bg_style); // setBG(1) corruptBG
     w.u8(world.jungle_bg_style); // setBG(2) jungleBG
@@ -111,16 +112,17 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(0); // cloudBGActive
     w.i16(0); // numClouds
     w.f32(0.0); // windSpeedTarget
-                // WorldFile.cs:1333-1338: today's fisherman list (empty — the angler
-                // quest is unported), then the saved-NPC flags.
+    // WorldFile.cs:1333-1338: today's fisherman list (empty — the port collapses
+    // `Main.anglerWhoFinishedToday` to the bool `World.angler_quest_turned_in`,
+    // so the name list has no store), then the saved-NPC flags and the quest index.
     w.i32(0); // anglerWhoFinishedToday.Count
-    w.boolean(false); // savedAngler
-    w.i32(0); // anglerQuest
-    w.boolean(false); // savedStylist
-    w.boolean(false); // savedTaxCollector
-    w.boolean(false); // savedGolfer
+    w.boolean(world.saved_angler); // savedAngler
+    w.i32(world.angler_quest as i32); // anglerQuest
+    w.boolean(world.saved_stylist); // savedStylist
+    w.boolean(world.saved_tax_collector); // savedTaxCollector
+    w.boolean(world.saved_golfer); // savedGolfer
     w.i32(world.invasion_size_start);
-    w.i32(0); // _tempCultistDelay — the ritual is unported
+    w.i32(0); // _tempCultistDelay — App-owned (`world_events.rs`), no World store
               // WorldFile.cs:1341: `BannerSystem.Save` — the banner kill counts have
               // no port store, so both arrays are written at their C# length, all zero.
     w.i16(MAX_BANNER_TYPES);
@@ -132,28 +134,31 @@ pub fn write(w: &mut Writer, world: &World) {
         w.u16(0); // claimableBanners
     }
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
-    // the lunar towers. `downedMartians` is owned; the rest are unported event
-    // flags with no port state.
+    // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
+    // four tower downeds/actives and the apocalypse phase are World-owned;
+    // Fishron and the seasonal bosses stay unowned (no port state).
     w.boolean(world.fast_forward_to_dawn);
-    w.boolean(false); // downedFishron
+    w.boolean(false); // downedFishron — unowned
     w.boolean(world.downed_martians);
-    w.boolean(false); // downedAncientCultist
-    w.boolean(false); // downedMoonlord
+    w.boolean(world.downed_ancient_cultist); // downedAncientCultist
+    w.boolean(world.downed_moon_lord); // downedMoonlord
     w.boolean(false); // downedHalloweenKing
     w.boolean(false); // downedHalloweenTree
     w.boolean(false); // downedChristmasIceQueen
     w.boolean(false); // downedChristmasSantank
     w.boolean(false); // downedChristmasTree
-    for _ in 0..4 {
-        w.boolean(false); // downedTower{Solar,Vortex,Nebula,Stardust}
-    }
-    for _ in 0..4 {
-        w.boolean(false); // TowerActive{Solar,Vortex,Nebula,Stardust}
-    }
-    w.boolean(false); // LunarApocalypseIsUp
-                      // WorldFile.cs:1363-1368: the party snapshot — the birthday party is
-                      // unowned, so manual/genuine are false, the cooldown 0 and the celebrant
-                      // list empty.
+    w.boolean(world.downed_tower_solar); // downedTowerSolar
+    w.boolean(world.downed_tower_vortex); // downedTowerVortex
+    w.boolean(world.downed_tower_nebula); // downedTowerNebula
+    w.boolean(world.downed_tower_stardust); // downedTowerStardust
+    w.boolean(world.tower_active_solar); // TowerActiveSolar
+    w.boolean(world.tower_active_vortex); // TowerActiveVortex
+    w.boolean(world.tower_active_nebula); // TowerActiveNebula
+    w.boolean(world.tower_active_stardust); // TowerActiveStardust
+    w.boolean(world.lunar_apocalypse_is_up); // LunarApocalypseIsUp
+    // WorldFile.cs:1363-1368: the party snapshot — the birthday party state is
+    // App-owned (`world_events.rs`), no World store: manual/genuine false, the
+    // cooldown 0 and the celebrant list empty.
     w.boolean(false); // _tempPartyManual
     w.boolean(false); // _tempPartyGenuine
     w.i32(0); // _tempPartyCooldown
@@ -165,8 +170,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.sandstorm_time_left); // _tempSandstormTimeLeft
     w.f32(world.sandstorm_severity); // _tempSandstormSeverity
     w.f32(world.sandstorm_intended_severity); // _tempSandstormIntendedSeverity
-                // WorldFile.cs:1373-1375: `DD2Event.Save` — the tavern/old-one's army
-                // progress is unported.
+    // WorldFile.cs:1373-1375: `NPC.savedBartender` + `DD2Event.Save`'s three
+    // tier flags (`DD2Event.cs:151-156`). No World store: `dd2_latches` is the
+    // wave-boss death latches (never saved by the C# either), NOT the tiers.
     w.boolean(false); // savedBartender
     w.boolean(false); // DownedInvasionT1
     w.boolean(false); // DownedInvasionT2
@@ -191,33 +197,37 @@ pub fn write(w: &mut Writer, world: &World) {
     for _ in 0..TREE_TOP_VARIATIONS {
         w.i32(0); // _variations
     }
-    // WorldFile.cs:1386-1391: the forced seasonal events, the four ore
-    // tiers and the pets — all unowned.
+    // WorldFile.cs:1386-1391: the forced seasonal events (unowned), the four
+    // pre-hardmode ore tiers (`World.ore_tiers`, `:1388-1391`) and the pets
+    // (unowned).
     w.boolean(false); // forceHalloweenForToday
     w.boolean(false); // forceXMasForToday
-    w.i32(0); // Copper
-    w.i32(0); // Iron
-    w.i32(0); // Silver
-    w.i32(0); // Gold
+    w.i32(world.ore_tiers.copper); // Copper
+    w.i32(world.ore_tiers.iron); // Iron
+    w.i32(world.ore_tiers.silver); // Silver
+    w.i32(world.ore_tiers.gold); // Gold
     w.boolean(false); // boughtCat
     w.boolean(false); // boughtDog
     w.boolean(false); // boughtBunny
-                      // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedDeerclops`
-                      // is owned.
-    w.boolean(false); // downedEmpressOfLight
-    w.boolean(false); // downedQueenSlime
+    // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
+    // `downedDeerclops` are owned, the Empress has no port state.
+    w.boolean(false); // downedEmpressOfLight — unowned
+    w.boolean(world.downed_queen_slime); // downedQueenSlime
     w.boolean(world.downed_deerclops);
-    // WorldFile.cs:1398-1410: the unlocked town-NPC spawns. Only the
-    // rainbow slime spawn has port state; the other unlocks are unowned.
+    // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
+    // arrival (`WorldGen.cs:5577-5604`), read at the spawn gates
+    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). The party
+    // girl, the princess and the rainbow slime have World state; the other
+    // unlocks are unowned.
     w.boolean(false); // unlockedSlimeBlueSpawn
     w.boolean(false); // unlockedMerchantSpawn
     w.boolean(false); // unlockedDemolitionistSpawn
-    w.boolean(false); // unlockedPartyGirlSpawn
+    w.boolean(world.unlocked_party_girl); // unlockedPartyGirlSpawn
     w.boolean(false); // unlockedDyeTraderSpawn
     w.boolean(false); // unlockedTruffleSpawn
     w.boolean(false); // unlockedArmsDealerSpawn
     w.boolean(false); // unlockedNurseSpawn
-    w.boolean(false); // unlockedPrincessSpawn
+    w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
     w.boolean(false); // combatBookVolumeTwoWasUsed
     w.boolean(false); // peddlersSatchelWasUsed
     w.boolean(false); // unlockedSlimeGreenSpawn
@@ -227,8 +237,10 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
     w.boolean(false); // unlockedSlimeCopperSpawn
-                      // WorldFile.cs:1416-1423: the moondial, the forced seasons and the
-                      // secret seeds — unowned; the two rain counters likewise.
+    // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
+    // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
+    // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
+    // rain counters likewise.
     w.boolean(world.fast_forward_to_dusk);
     w.u8(world.moondial_cooldown);
     w.boolean(false); // forceHalloweenForever
@@ -279,7 +291,7 @@ fn write_world_flavour(w: &mut Writer, world: &World) {
 /// `SaveWorldFlags:1250-1251`: the creation time and the last-played time as
 /// `DateTime.ToBinary` longs.
 fn write_times(w: &mut Writer, world: &World) {
-    w.u64(0); // CreationTime — unowned
+    w.u64(world.creation_time as u64); // CreationTime (`DateTime.ToBinary`)
     w.u64(world.last_played as u64); // LastPlayed (`DateTime.UtcNow.ToBinary`)
 }
 
@@ -299,8 +311,8 @@ fn write_downed_flags(w: &mut Writer, world: &World) {
     w.boolean(world.downed_golem);
     w.boolean(world.downed_slime_king);
     w.boolean(world.saved_goblin);
-    w.boolean(false); // savedWizard — unowned
-    w.boolean(false); // savedMech — unowned
+    w.boolean(world.saved_wizard); // savedWizard
+    w.boolean(world.saved_mech); // savedMech
     w.boolean(world.downed_goblins);
     w.boolean(false); // downedClown — unowned
     w.boolean(world.downed_frost);
@@ -352,9 +364,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
             r.skip(1)?;
         }
     }
-    // WorldFile.cs:2014-2020 — the two creation-time longs.
+    // WorldFile.cs:2042-2049 — the two creation-time longs.
     if version >= 141 {
-        r.skip(8)?; // CreationTime
+        world.creation_time = r.u64()? as i64; // CreationTime (`DateTime.FromBinary`)
     }
     if version >= 284 {
         world.last_played = r.u64()? as i64; // LastPlayed (`DateTime.ToBinary`)
@@ -397,7 +409,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.downed_slime_king = r.bool()?;
     }
     world.saved_goblin = r.bool()?;
-    r.skip(2)?; // savedWizard, savedMech
+    world.saved_wizard = r.bool()?; // savedWizard
+    world.saved_mech = r.bool()?; // savedMech
     world.downed_goblins = r.bool()?;
     r.skip(1)?; // downedClown
     world.downed_frost = r.bool()?;
@@ -427,7 +440,10 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.raining = r.bool()?; // _tempRaining
     world.rain_time = r.i32()?; // _tempRainTime
     world.max_raining = r.f32()?; // _tempMaxRain
-    r.skip(3 * 4)?; // SavedOreTiers Cobalt/Mythril/Adamantite
+    // WorldFile.cs:2131-2133 — the hardmode ore tiers into `World.ore_tiers`.
+    world.ore_tiers.cobalt = r.i32()?;
+    world.ore_tiers.mythril = r.i32()?;
+    world.ore_tiers.adamantite = r.i32()?;
     // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): only the five
     // surface-variant styles are port-owned; the rest are skip-read.
     r.skip(1)?; // setBG(0) treeBG1
@@ -449,20 +465,20 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version < 99 {
         return Ok(());
     }
-    r.skip(1)?; // savedAngler
+    world.saved_angler = r.bool()?; // savedAngler
     if version < 101 {
         return Ok(());
     }
-    r.skip(4)?; // anglerQuest
+    world.angler_quest = r.i32()? as u8; // anglerQuest (the 0..40 pool index)
     if version < 104 {
         return Ok(());
     }
-    r.skip(1)?; // savedStylist
+    world.saved_stylist = r.bool()?; // savedStylist
     if version >= 129 {
-        r.skip(1)?; // savedTaxCollector
+        world.saved_tax_collector = r.bool()?; // savedTaxCollector
     }
     if version >= 201 {
-        r.skip(1)?; // savedGolfer
+        world.saved_golfer = r.bool()?; // savedGolfer
     }
     world.invasion_size_start = r.i32()?;
     r.skip(4)?; // _tempCultistDelay
@@ -477,13 +493,43 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version < 131 {
         return Ok(());
     }
-    r.skip(1)?; // downedFishron
+    r.skip(1)?; // downedFishron — unowned
     world.downed_martians = r.bool()?;
-    r.skip(7)?; // downedAncientCultist .. downedChristmasTree
+    world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
+    world.downed_moon_lord = r.bool()?; // downedMoonlord
+    r.skip(5)?; // downedHalloweenKing .. downedChristmasTree
     if version < 140 {
         return Ok(());
     }
-    r.skip(9)?; // the four tower downeds + four tower actives + LunarApocalypseIsUp
+    world.downed_tower_solar = r.bool()?;
+    world.downed_tower_vortex = r.bool()?;
+    world.downed_tower_nebula = r.bool()?;
+    world.downed_tower_stardust = r.bool()?;
+    world.tower_active_solar = r.bool()?;
+    world.tower_active_vortex = r.bool()?;
+    world.tower_active_nebula = r.bool()?;
+    world.tower_active_stardust = r.bool()?;
+    world.lunar_apocalypse_is_up = r.bool()?;
+    // WorldFile.cs:2235-2250: an active tower comes back at full shield —
+    // `ShieldStrengthTowerMax` (`NPC.cs:6795-6806`: the normal power, halved
+    // once the Moon Lord is downed), the tr-app `tower_shield_max` twin.
+    let shield_max = if world.downed_moon_lord {
+        world.lunar_shield_power_normal / 2
+    } else {
+        world.lunar_shield_power_normal
+    };
+    if world.tower_active_solar {
+        world.tower_shield_solar = shield_max;
+    }
+    if world.tower_active_vortex {
+        world.tower_shield_vortex = shield_max;
+    }
+    if world.tower_active_nebula {
+        world.tower_shield_nebula = shield_max;
+    }
+    if world.tower_active_stardust {
+        world.tower_shield_stardust = shield_max;
+    }
                 // WorldFile.cs:2195-2206 — the party snapshot (cooldown i32, then a counted i32 list).
     if version >= 170 {
         r.skip(1)?; // _tempPartyManual
@@ -538,13 +584,25 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(2)?; // forceHalloweenForToday, forceXMasForToday
     }
     if version >= 216 {
-        r.skip(4 * 4)?; // Copper/Iron/Silver/Gold
+        // WorldFile.cs:2344-2347 — the pre-hardmode quartet.
+        world.ore_tiers.copper = r.i32()?;
+        world.ore_tiers.iron = r.i32()?;
+        world.ore_tiers.silver = r.i32()?;
+        world.ore_tiers.gold = r.i32()?;
+    } else {
+        // WorldFile.cs:2351-2354 — the pre-216 reset arm; the post-load
+        // `CheckSavedOreTiers` (`:730`) then re-derives them from the tiles.
+        world.ore_tiers.copper = -1;
+        world.ore_tiers.iron = -1;
+        world.ore_tiers.silver = -1;
+        world.ore_tiers.gold = -1;
     }
     if version >= 217 {
         r.skip(3)?; // boughtCat/Dog/Bunny
     }
     if version >= 223 {
-        r.skip(2)?; // downedEmpressOfLight, downedQueenSlime
+        r.skip(1)?; // downedEmpressOfLight — unowned
+        world.downed_queen_slime = r.bool()?; // downedQueenSlime
     }
     if version >= 240 {
         world.downed_deerclops = r.bool()?;
@@ -553,7 +611,12 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(1)?; // unlockedSlimeBlueSpawn
     }
     if version >= 251 {
-        r.skip(8)?; // unlockedMerchantSpawn .. unlockedPrincessSpawn
+        // WorldFile.cs:2396-2403 — the eight unlocks in write order; only the
+        // party girl (3rd) and the princess (8th) have World state.
+        r.skip(2)?; // unlockedMerchantSpawn, unlockedDemolitionistSpawn
+        world.unlocked_party_girl = r.bool()?; // unlockedPartyGirlSpawn
+        r.skip(4)?; // unlockedDyeTrader/Truffle/ArmsDealer/Nurse
+        world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
         r.skip(1)?; // combatBookVolumeTwoWasUsed

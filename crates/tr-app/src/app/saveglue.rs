@@ -103,6 +103,12 @@ impl App {
         self.world.sandstorm_time_left = self.sandstorm.time_left;
         self.world.sandstorm_severity = self.sandstorm.severity;
         self.world.sandstorm_intended_severity = self.sandstorm.intended_severity;
+        // `WorldGen.SavedOreTiers` (`WorldFile.cs:1315-1317` + `:1388-1391`):
+        // the altar smash advances the App's runtime copy (`editing.rs`'s
+        // `smash_altar`), so the save snapshots it into the world payload —
+        // the `.trwld` v11 section and the `.wld` flags block both read it
+        // from `World.ore_tiers` (S1-J-3b).
+        self.world.ore_tiers = self.ore_tiers;
         // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
         // world file, captured before the write — the `.bak` source and the
         // failed-write restore source (S1-J-4).
@@ -410,14 +416,11 @@ mod tests {
     use tr_core::World;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-    /// A per-test scratch dir under the system temp dir (tr-app has no
-    /// tempfile dev-dependency — the `wld/mod.rs` tests' pattern).
+    /// A per-test scratch dir under the system temp dir (the shared
+    /// `test_world_helpers` helper — unique per pid + test name, so parallel
+    /// gates in sibling worktrees never share a path).
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("tr-saveglue-p7-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        dir
+        crate::test_world_helpers::test_scratch(&format!("saveglue-p7-{name}"))
     }
 
     fn slot(kind: u16, count: u32) -> ItemSlot {
@@ -876,6 +879,13 @@ mod chest_save_tests {
     use tr_core::World;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// A per-test scratch dir under the system temp dir (the shared
+    /// `test_world_helpers` helper — unique per pid + test name, so parallel
+    /// gates in sibling worktrees never share a path).
+    fn scratch(name: &str) -> std::path::PathBuf {
+        crate::test_world_helpers::test_scratch(&format!("saveglue-{name}"))
+    }
+
     /// The `chest_gen` test rig's world: a floor row at y = 200, so the anchors
     /// on y = 197/198 sit on it and inside the surface band.
     fn chest_rig() -> World {
@@ -952,8 +962,8 @@ mod chest_save_tests {
         let mut world = chest_rig();
         put_chest(&mut world, ax, ay);
         put_chest(&mut world, bx, by);
-        let path = std::env::temp_dir().join("tr-dw-2-2-chest-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-2-chest-roundtrip");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             world,
@@ -1100,6 +1110,7 @@ mod chest_save_tests {
             back.world_chests[renamed].name, "Gold Stash",
             "the name rides the entity (the old side map is gone)"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.2: the anchor cull — the vanilla `LoadChests`/`FixAgainstExploits`
@@ -1189,8 +1200,8 @@ mod chest_save_tests {
     #[test]
     fn dw_2_3_a_saved_banner_tally_round_trips_through_the_app() {
         let mut world = chest_rig();
-        let path = std::env::temp_dir().join("tr-dw-2-3-banner-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-3-banner-roundtrip");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             world,
@@ -1230,6 +1241,7 @@ mod chest_save_tests {
             PathBuf::new(),
         );
         assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.4: the bestiary tally's save → load round-trip through the App
@@ -1239,8 +1251,8 @@ mod chest_save_tests {
     #[test]
     fn dw_2_4_a_saved_bestiary_tally_round_trips_through_the_app() {
         let world = chest_rig();
-        let path = std::env::temp_dir().join("tr-dw-2-4-bestiary-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-4-bestiary-roundtrip");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             world,
@@ -1275,6 +1287,7 @@ mod chest_save_tests {
             PathBuf::new(),
         );
         assert_eq!(control.bestiary.kills.get_kill_count("BlueSlime"), 0);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// S1-J-7: the rain event's save → load round-trip through the App path —
@@ -1286,8 +1299,8 @@ mod chest_save_tests {
     #[test]
     fn s1_j_7_a_saved_rain_event_round_trips_through_the_app() {
         let world = chest_rig();
-        let path = std::env::temp_dir().join("tr-s1-j-7-rain-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("s1-j-7-rain-roundtrip");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             world,
@@ -1315,6 +1328,7 @@ mod chest_save_tests {
             (back.rain.visual_alpha() - 0.75).abs() < f32::EPSILON,
             "cloudAlpha := maxRaining (WorldFile.cs:162)"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -1325,8 +1339,8 @@ mod chest_save_tests {
         // `SetOngoingToTemps:159-172`. Both events are ported (`App.rain`,
         // `App.sandstorm`), so a `.wld` save must not reset the weather.
         let world = chest_rig();
-        let path = std::env::temp_dir().join("tr-s1-j-7-wld-weather-roundtrip.wld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("s1-j-7-wld-weather-roundtrip");
+        let path = dir.join("world.wld");
 
         let mut app = app_for(
             world,
@@ -1361,6 +1375,7 @@ mod chest_save_tests {
         assert_eq!(back.sandstorm.time_left, 4_321);
         assert!((back.sandstorm.severity - 0.5).abs() < f32::EPSILON);
         assert!((back.sandstorm.intended_severity - 0.625).abs() < f32::EPSILON);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -1370,11 +1385,8 @@ mod chest_save_tests {
         // chain shifts into `.bak2` (the C#'s own slot numbering — the bare
         // `.bak` is slot 1 and the numbered slots start at 2).
         let world = chest_rig();
-        let path = std::env::temp_dir().join("tr-s1-j-4-rotation.trwld");
-        let _ = std::fs::remove_file(&path);
-        for i in 0..3 {
-            let _ = std::fs::remove_file(backup_path(&path, i));
-        }
+        let dir = scratch("s1-j-4-rotation");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             world,
@@ -1415,10 +1427,7 @@ mod chest_save_tests {
             first,
             ".bak2 carries the two-saves-ago bytes"
         );
-        let _ = std::fs::remove_file(&path);
-        for i in 0..3 {
-            let _ = std::fs::remove_file(backup_path(&path, i));
-        }
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -1428,8 +1437,8 @@ mod chest_save_tests {
         // validates and a corrupted file does not (the failure arm restores
         // the captured previous bytes via the same helpers).
         let world = chest_rig();
-        let path = std::env::temp_dir().join("tr-s1-j-4-validate.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("s1-j-4-validate");
+        let path = dir.join("world.trwld");
         let mut app = app_for(
             world,
             WorldSections::native(save::WorldSide::default()),
@@ -1446,7 +1455,7 @@ mod chest_save_tests {
         // The failure arm's restore: the previous bytes return.
         std::fs::write(&path, &old_world).unwrap();
         assert!(validate_world_bytes(&path, |b| tr_core::save::parse(b).is_ok()));
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.4 (the back-compat fallback): a world saved before v9 (the
@@ -1455,8 +1464,8 @@ mod chest_save_tests {
     /// home stays the fallback for migrated builds.
     #[test]
     fn dw_2_4_a_v8_world_falls_back_to_the_sidecar_kills() {
-        let path = std::env::temp_dir().join("tr-dw-2-4-sidecar-fallback.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-4-sidecar-fallback");
+        let path = dir.join("world.trwld");
         // A v8 payload: the current writer's stream with the version patched.
         let mut app = app_for(
             chest_rig(),
@@ -1487,6 +1496,7 @@ mod chest_save_tests {
             "the sidecar's line seeds the tracker"
         );
         assert_eq!(back.bestiary.kills.get_kill_count("BlueSlime"), 25);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.5: the town roster's save → load round-trip through the App path —
@@ -1495,8 +1505,8 @@ mod chest_save_tests {
     /// world (no records) keeps the vanilla-gen Guide arrival.
     #[test]
     fn dw_2_5_a_town_npc_round_trips_through_the_app() {
-        let path = std::env::temp_dir().join("tr-dw-2-5-npc-roundtrip.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-5-npc-roundtrip");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             chest_rig(),
@@ -1562,6 +1572,7 @@ mod chest_save_tests {
             .find(|n| n.kind == NpcKind::Guide)
             .expect("the saved Guide rides the record");
         assert!(guide.home.is_none(), "the Guide's recorded homelessness");
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.5 (the back-compat arm): a world without NPC records (a fresh
@@ -1591,8 +1602,8 @@ mod chest_save_tests {
     /// reset them (the recorded pre-fix loss).
     #[test]
     fn dw_2_6_the_ore_tiers_round_trip_through_the_app() {
-        let path = std::env::temp_dir().join("tr-dw-2-6-ore-tiers.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-6-ore-tiers");
+        let path = dir.join("world.trwld");
 
         let mut app = app_for(
             chest_rig(),
@@ -1625,6 +1636,7 @@ mod chest_save_tests {
         );
         assert_eq!(back.ore_tiers.mythril, 108);
         assert_eq!(back.ore_tiers.adamantite, 111);
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-2.6 (the back-compat arm): a world whose save carries no ore section
@@ -1634,8 +1646,8 @@ mod chest_save_tests {
     fn dw_2_6_a_v10_world_starts_at_the_static_defaults() {
         let mut world = chest_rig();
         world.ore_tiers.copper = 166; // a generation-time roll the old save dropped
-        let path = std::env::temp_dir().join("tr-dw-2-6-defaults.trwld");
-        let _ = std::fs::remove_file(&path);
+        let dir = scratch("dw-2-6-defaults");
+        let path = dir.join("world.trwld");
         let mut app = app_for(
             world,
             WorldSections::native(save::WorldSide::default()),
@@ -1657,16 +1669,13 @@ mod chest_save_tests {
             back.ore_tiers.copper, 7,
             "the static default, not the dropped roll"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// A per-test scratch dir for the achievements writes (the sibling `tests`
     /// module's pattern).
     fn ach_scratch(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("tr-saveglue-ach-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        dir
+        crate::test_world_helpers::test_scratch(&format!("saveglue-ach-{name}"))
     }
 
     /// S1-E-18: `Player.InternalSavePlayer`'s first statement is
@@ -1706,6 +1715,7 @@ mod chest_save_tests {
             slayer.conditions[0].completed,
             "the partial condition rode the save"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// `AchievementManager.AchievementCompleted` (`AchievementManager.cs:180-187`)
@@ -1731,5 +1741,6 @@ mod chest_save_tests {
                 .any(|a| a.name == "EYE_ON_YOU" && a.completed),
             "the completed row is on disk"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }

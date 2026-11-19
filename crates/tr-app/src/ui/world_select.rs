@@ -1414,13 +1414,12 @@ mod tests {
         assert_eq!(created_text(None), "");
         // The draw-facing form reads the file's mtime stand-in — a fresh
         // file's date today, so pin the `d MMMM yyyy` shape (3 tokens).
-        let dir = std::env::temp_dir().join("tr-worldsel-created");
-        let _ = std::fs::create_dir_all(&dir);
+        let dir = crate::test_world_helpers::test_scratch("worldsel-created");
         let file = dir.join("any.trwld");
         std::fs::write(&file, b"x").unwrap();
         let text = created_text(Some(&file));
         assert_eq!(text.split_whitespace().count(), 3, "{text}");
-        std::fs::remove_file(&file).unwrap();
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
