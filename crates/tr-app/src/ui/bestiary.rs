@@ -133,6 +133,149 @@ pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
     }
 }
 
+/// `UIBestiaryEntryGrid.GetRangeText` (`UIBestiaryEntryGrid.cs:87-93`):
+/// `"{min(at + 1, last)}-{last} ({total})"` where
+/// `last = min(total, at + capacity)`. The empty roster prints `"0-0 (0)"`
+/// (`Math.Min(1, 0)` is 0).
+pub fn grid_range_text(at: usize, capacity: usize, total: usize) -> String {
+    let last = total.min(at + capacity);
+    format!("{}-{} ({})", (at + 1).min(last), last, total)
+}
+
+/// `UIBestiaryEntryGrid.FixBestiaryRange` (`UIBestiaryEntryGrid.cs:116-123`):
+/// `Utils.Clamp(at + offset, 0, max(0, total - capacity))` — the page index
+/// never runs past the last full page, and a roster smaller than one page
+/// pins to 0. `OffsetLibraryByPages` (`:103-107`) passes
+/// `pages * capacity` as the offset.
+pub fn fix_grid_range(at: usize, offset: i64, capacity: usize, total: usize) -> usize {
+    let max = total.saturating_sub(capacity);
+    (at as i64 + offset).clamp(0, max as i64) as usize
+}
+
+/// The completion bar's rect — `FillProgressBottomBar`
+/// (`UIBestiaryTest.cs:158-179`): the `UIColoredSliderSimple` fills the
+/// bottom strip (`Width (0, 1)`, `Height 15`, `VAlign 1`, `:168-171`); the
+/// strip itself is the panel's bottom 20 px row (`BuildPage`, `:123-131`)
+/// inset by `UIPanel`'s default 12 px side padding.
+pub fn progress_bar_rect(panel: &[f32; 4]) -> [f32; 4] {
+    [
+        panel[0] + 12.0,
+        panel[1] + panel[3] - 12.0 - 15.0,
+        panel[2] - 24.0,
+        15.0,
+    ]
+}
+
+/// `GetCompletionPercentText` (`UIBestiaryTest.cs:190-196`):
+/// `Language.GetTextValueWith("BestiaryInfo.PercentCollected", { Percent =
+/// Utils.PrettifyPercentDisplay(report.CompletionPercent, "P2") })` — the
+/// "{Percent} Collected" row with the trimmed two-decimal share.
+pub fn completion_percent_text(fraction: f32) -> String {
+    crate::lang::text_args(
+        "BestiaryInfo.PercentCollected",
+        &[prettify_percent_display(fraction)],
+    )
+}
+
+/// `NPCKillCounterInfoElement.ProvideUIElement`'s hover line
+/// (`NPCKillCounterInfoElement.cs:90-96`): the kill count's tooltip is
+/// `BestiaryInfo.Slain` ("Slain"), the count itself is the raw integer
+/// (`:46`, `:68` — scale 0.85) beside the grave icon (item 321, `:75-77`).
+/// `GetKillCount` (`:98-101`) returns null/0 before the first kill and the
+/// element is skipped (`:26-30`).
+pub fn kill_counter_text(kills: i32) -> Option<String> {
+    if kills < 1 {
+        return None;
+    }
+    Some(kills.to_string())
+}
+
+/// `NPCStatsReportInfoElement`'s knockback label
+/// (`NPCStatsReportInfoElement.cs:123`): `> 0.8` High, `> 0.4` Med,
+/// `<= 0` None, else Low (`BestiaryInfo.Knockback{High,Medium,None,Low}`).
+/// Below tier 2 the whole stats block prints "???" (`:124-128`).
+pub fn knockback_label(resist: f32, stats_known: bool) -> String {
+    if !stats_known {
+        return "???".to_string();
+    }
+    let key = if resist > 0.8 {
+        "BestiaryInfo.KnockbackHigh"
+    } else if resist > 0.4 {
+        "BestiaryInfo.KnockbackMedium"
+    } else if !(resist > 0.0) {
+        "BestiaryInfo.KnockbackNone"
+    } else {
+        "BestiaryInfo.KnockbackLow"
+    };
+    crate::lang::text(key)
+}
+
+/// `UIBestiaryInfoItemLine.GetDropInfo`'s rate column
+/// (`UIBestiaryInfoItemLine.cs:92-109`): tier 4 prints the stack range + the
+/// prettified rate ("P4" under 0.1 %, "100%" at the full rate); tier 3
+/// prints "???" and drops the stack range (`:105-109`). Below tier 3 the
+/// whole line is the locked icon (`:36-55`), never a text row.
+pub fn drop_rate_text(state: UnlockState, rate: f32, stack_min: i32, stack_max: i32) -> String {
+    if state < UnlockState::CanShowDropsWithoutDropRates {
+        return String::new();
+    }
+    let stack_range = if stack_min != stack_max {
+        format!(" ({stack_min}-{stack_max})")
+    } else if stack_min == 1 {
+        String::new()
+    } else {
+        format!(" ({stack_min})")
+    };
+    let rate_text = if rate != 1.0 {
+        prettify_percent_display(rate)
+    } else {
+        "100%".to_string()
+    };
+    if state != UnlockState::CanShowDropsWithDropRates {
+        return "???".to_string();
+    }
+    // `:64-67`: the stack range prefixes the rate with one space.
+    if stack_range.is_empty() {
+        rate_text
+    } else {
+        format!("{stack_range} {rate_text}")
+    }
+}
+
+/// `UIBestiaryEntryIcon.GetHoverText` → `UnlockableNPCEntryIcon.GetHoverText`
+/// (`UIBestiaryEntryIcon.cs:69-72`, `UnlockableNPCEntryIcon.cs:209-221`):
+/// `Lang.GetNPCNameValue(netID)` once the entry is known, "???" while it is
+/// not — the card hover's `MouseText` (`UIBestiaryEntryButton.cs:142-148`).
+pub fn entry_hover_text(entry: &crate::bestiary::BestiaryEntryDef, state: UnlockState) -> String {
+    if !state.known() {
+        return "???".to_string();
+    }
+    let localized = crate::lang::npc_name(entry.net_id);
+    if localized.is_empty() {
+        entry.name.to_string()
+    } else {
+        localized
+    }
+}
+
+/// `BestiaryEntry.CommonEnemy`'s flavor-text key
+/// (`BestiaryEntry.cs:46-50`): `"Bestiary_FlavorText.npc_" +
+/// Lang.GetNPCName(netID).Key.Replace("NPCName.", "")`, added only when
+/// `Language.Exists` — the port's credit id IS the `NPCName.<Const>` tail
+/// (`ContentSamples.cs:862-873`). `FlavorTextBestiaryInfoElement` shows it
+/// from tier 2 (`FlavorTextBestiaryInfoElement.cs:20-23`).
+pub fn flavor_text(entry: &crate::bestiary::BestiaryEntryDef, state: UnlockState) -> Option<String> {
+    if state < UnlockState::CanShowStats {
+        return None;
+    }
+    let key = format!("Bestiary_FlavorText.npc_{}", entry.credit_id);
+    if crate::lang::exists(&key) {
+        Some(crate::lang::text(&key))
+    } else {
+        None
+    }
+}
+
 /// `true` while the cursor is over the Back panel (`MakeExitButton`'s
 /// `OnLeftMouseDown` -> `Click_GoBack`).
 pub fn back_hit(screen: Vec2, mouse: Vec2) -> bool {
@@ -230,34 +373,57 @@ pub fn draw_screen(
 
     match selected {
         Some(idx) => draw_info_page(r, lookups, screen, tracker, idx, mouse),
-        None => draw_grid(r, lookups, screen, tracker, mouse),
+        None => {
+            draw_grid(r, lookups, screen, tracker, mouse);
+            // `_indexesRangeText` (`UIBestiaryTest.cs:248-254` +
+            // `UpdateBestiaryGridRange`, `:345-348`): the "1-N (N)" range
+            // panel in the top strip. The port's grid grows its rows to
+            // fit the roster (no paging yet — the Back/Forward page
+            // buttons defer with the filters/sort), so the range always
+            // starts at entry 1.
+            let panel = panel_rect(screen);
+            let rect = grid_rect(&panel);
+            let (cols, rows) = grid_metrics(&rect);
+            let range = grid_range_text(0, cols * rows, crate::bestiary::ENTRIES.len());
+            let w = text::hud_text_width(r, lookups, &range, 0.8);
+            text::hud_text(
+                r,
+                lookups,
+                panel[0] + panel[2] - 12.0 - w,
+                panel[1] + 14.0,
+                0.8,
+                [1.0; 4],
+                &range,
+            );
+        }
     }
 
-    // The completion bar — `FillProgressBottomBar` + `GetCompletionPercentText`
-    // (`:390-430`): the fully-unlocked share of the entries.
+    // The completion bar — `FillProgressBottomBar` (`UIBestiaryTest.cs:158-179`)
+    // + `ShowStats_Completion`/`GetCompletionPercentText` (`:181-196`):
+    // `GetUnlockProgress` (`:497-513`) counts every entry past
+    // `NotKnownAtAll_0` — NOT only the fully-unlocked ones (the old tier-4
+    // count read far too low); `CompletionPercent`
+    // (`BestiaryUnlockProgressReport.cs:9-19`) is that share, 1 for an empty
+    // roster. The bar: `UIColoredSliderSimple` 15 px tall, full width, bottom
+    // of the 20 px bottom strip (`:167-175`), FilledColor (51, 137, 255),
+    // EmptyColor (35, 43, 81); the percent label rides the hover
+    // (`ShowStats_Completion` -> `MouseText`, `:181-188`).
     let panel = panel_rect(screen);
-    let total = crate::bestiary::ENTRIES.len() as f32;
-    let done = crate::bestiary::ENTRIES
-        .iter()
-        .filter(|e| {
-            crate::bestiary::unlock_state(e, tracker)
-                == tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
-        })
-        .count() as f32;
-    let pct = if total > 0.0 {
-        done / total * 100.0
-    } else {
-        0.0
-    };
-    text::hud_text(
-        r,
-        lookups,
-        panel[0] + 8.0,
-        panel[1] + panel[3] - 46.0,
-        0.8,
-        [1.0, 1.0, 1.0, 1.0],
-        &format!("Unlocked: {:.0}%", pct),
+    let pct = crate::bestiary::completion_percent(tracker);
+    let bar = progress_bar_rect(&panel);
+    r.push_ui_sprite([bar[0], bar[1]], [bar[2], bar[3]], r.white_uv(), super::color::tint([35, 43, 81, 255]));
+    r.push_ui_sprite(
+        [bar[0], bar[1]],
+        [bar[2] * pct.clamp(0.0, 1.0), bar[3]],
+        r.white_uv(),
+        super::color::tint([51, 137, 255, 255]),
     );
+    if super::in_rect(mouse, bar) {
+        // `Language.GetTextValueWith("BestiaryInfo.PercentCollected", {Percent})`
+        // (`:192-195`) — "{Percent} Collected", the P2-prettified share.
+        let label = completion_percent_text(pct);
+        super::tooltip::draw_mouse_text(r, lookups, mouse, &label, screen, super::UiPulse::default());
+    }
 
     // `MakeExitButton` (`:364-380`): the 0.7-large Back panel.
     let r0 = back_rect(&panel);
@@ -313,18 +479,43 @@ fn draw_grid(
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
-    for (idx, entry) in crate::bestiary::ENTRIES
+    let capacity = cols * rows;
+    // `FillBestiarySpaceWithEntries`' page start (`UIBestiaryEntryGrid.cs:37-71`):
+    // `FixBestiaryRange(0, capacity)` clamps `_atEntryIndex` before the fill.
+    // The port grows its rows to fit the whole roster (no Back/Forward paging
+    // yet — deferred with the filters/sort), so the offset is 0 and the clamp
+    // pins the start to 0; the math is the C#'s so paging lands on it later.
+    let at = fix_grid_range(0, 0, capacity, crate::bestiary::ENTRIES.len());
+    for (slot, entry) in crate::bestiary::ENTRIES
         .iter()
-        .take(cols * rows)
+        .skip(at)
+        .take(capacity)
         .enumerate()
     {
-        let col = idx % cols;
-        let row = idx / cols;
+        let idx = at + slot;
+        let col = slot % cols;
+        let row = slot / cols;
         let x = rect[0] + col as f32 * CELL;
         let y = rect[1] + row as f32 * CELL;
         let cell = [x, y, CELL, CELL];
         let hover = card_at(screen, mouse) == Some(idx);
         draw_card(r, lookups, cell, entry, tracker, idx, hover);
+    }
+    // `UIBestiaryEntryButton.DrawSelf` (`UIBestiaryEntryButton.cs:142-148`):
+    // the hovered card prints the icon's hover text — the NPC name once
+    // known, "???" while locked (`UnlockableNPCEntryIcon.GetHoverText`,
+    // `:209-221`).
+    if let Some(idx) = card_at(screen, mouse) {
+        let entry = &crate::bestiary::ENTRIES[idx];
+        let state = crate::bestiary::unlock_state(entry, tracker);
+        super::tooltip::draw_mouse_text(
+            r,
+            lookups,
+            mouse,
+            &entry_hover_text(entry, state),
+            screen,
+            super::UiPulse::default(),
+        );
     }
 }
 
@@ -1307,7 +1498,6 @@ fn draw_info_page(
     idx: usize,
     mouse: Vec2,
 ) {
-    let _ = mouse;
     let panel = panel_rect(screen);
     let entry = &crate::bestiary::ENTRIES[idx];
     let state = crate::bestiary::unlock_state(entry, tracker);
@@ -1355,17 +1545,23 @@ fn draw_info_page(
     text::hud_text(r, lookups, tx, ty, 1.2, [1.0, 0.9, 0.4, 1.0], &shown_name);
     ty += 34.0;
 
-    // The stat rows — tier 2+ (`CanShowStats`).
-    if state >= UnlockState::CanShowStats {
+    // The stat rows — `NPCStatsReportInfoElement.ProvideUIElement`
+    // (`NPCStatsReportInfoElement.cs:57-128`): the block appears from tier 1
+    // (`== NotKnownAtAll_0` returns null, `:59-62`), but every value prints
+    // "???" until tier 2 (`:124-128`). The knockback column is the
+    // High/Med/Low/None label, not the raw resist (`:123`).
+    if state.known() {
         let stats =
             crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
+        let known = state >= UnlockState::CanShowStats;
+        let masked = |v: String| if known { v } else { "???".to_string() };
         stat_row(
             r,
             lookups,
             &mut ty,
             tx,
             lookups.ui_bestiary_stat_hp,
-            &format!("{}", stats.hp),
+            &masked(format!("{}", stats.hp)),
         );
         stat_row(
             r,
@@ -1373,7 +1569,7 @@ fn draw_info_page(
             &mut ty,
             tx,
             lookups.ui_bestiary_stat_attack,
-            &format!("{}", stats.damage),
+            &masked(format!("{}", stats.damage)),
         );
         stat_row(
             r,
@@ -1381,7 +1577,7 @@ fn draw_info_page(
             &mut ty,
             tx,
             lookups.ui_bestiary_stat_defense,
-            &format!("{}", stats.defense),
+            &masked(format!("{}", stats.defense)),
         );
         stat_row(
             r,
@@ -1389,7 +1585,7 @@ fn draw_info_page(
             &mut ty,
             tx,
             lookups.ui_bestiary_stat_knockback,
-            &format!("{:.2}", stats.kb),
+            &knockback_label(stats.kb, known),
         );
         stat_row(
             r,
@@ -1397,65 +1593,118 @@ fn draw_info_page(
             &mut ty,
             tx,
             lookups.ui_bestiary_stat_copper,
-            &format!("{}", stats.value as i64),
+            &masked(format!("{}", stats.value as i64)),
         );
         ty += 10.0;
     }
 
-    // The kill progress — `NPCKillCounterInfoElement`, tier 1+ (the count
-    // rides the entry's portrait page, one tier above the `???` name).
-    if state >= UnlockState::CanShowPortraitOnly {
-        let (kills, needed) = crate::bestiary::kill_progress(entry, tracker);
-        let progress = if entry.quick_unlock {
-            format!("Kills: {kills}")
-        } else {
-            format!("Kills: {kills}/{needed}")
-        };
-        text::hud_text(r, lookups, tx, ty, 0.8, [0.8, 0.85, 1.0, 1.0], &progress);
+    // The flavor text — `FlavorTextBestiaryInfoElement` (tier 2+,
+    // `FlavorTextBestiaryInfoElement.cs:20-23`), the wrapped 0.8-scale row
+    // in the (43, 56, 101) stat panel (`:24-33`); the panel grows with the
+    // wrapped text (`AddDynamicResize`, `:47-53`).
+    if let Some(flavor) = flavor_text(entry, state) {
+        let panel_w = 230.0 - 11.0; // `Width (-11, 1)` of the 230 px info page (`:26`, `UIBestiaryEntryInfoPage.cs:30`)
+        let lines = wrap_text(r, lookups, &flavor, 0.8, panel_w - 8.0);
+        let line_h = text::line_height(lookups) * 0.8;
+        let h = lines.len() as f32 * line_h + 8.0;
+        r.push_ui_sprite(
+            [tx, ty],
+            [panel_w, h],
+            r.white_uv(),
+            super::color::tint([43, 56, 101, 255]),
+        );
+        for (i, line) in lines.iter().enumerate() {
+            text::hud_text(r, lookups, tx + 4.0, ty + 4.0 + i as f32 * line_h, 0.8, [1.0; 4], line);
+        }
+        ty += h + 8.0;
+    }
+
+    // The kill counter — `NPCKillCounterInfoElement`
+    // (`NPCKillCounterInfoElement.cs:24-96`): the raw count (no "/needed" —
+    // the progress fraction is the port's own earlier stand-in) from the
+    // first kill, with the `BestiaryInfo.Slain` hover (`:90-96`).
+    let (kills, _needed) = crate::bestiary::kill_progress(entry, tracker);
+    if let Some(count) = kill_counter_text(kills) {
+        text::hud_text(r, lookups, tx, ty, 0.85, [0.8, 0.85, 1.0, 1.0], &count);
+        if super::in_rect(mouse, [tx, ty, 60.0, 20.0]) {
+            super::tooltip::draw_mouse_text(
+                r,
+                lookups,
+                mouse,
+                &crate::lang::text("BestiaryInfo.Slain"),
+                screen,
+                super::UiPulse::default(),
+            );
+        }
         ty += 26.0;
     }
 
-    // The drops — tier 3+, the rates only from tier 4.
-    if state >= UnlockState::CanShowDropsWithoutDropRates {
+    // The drops — `ItemDropBestiaryInfoElement` shows its lines from tier 2
+    // (`ItemDropBestiaryInfoElement.cs:20-23`); below tier 3 each line is
+    // the locked icon (`UIBestiaryInfoItemLine.cs:36-55`), tier 3 prints
+    // "???" for the rate, tier 4 the stack range + rate (`:92-109`).
+    if state >= UnlockState::CanShowStats {
         text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], "Drops:");
         ty += 22.0;
         let rows = crate::loot_db::drop_rows(entry.net_id);
         for row in &rows {
             let name = crate::registry::name(row.item_id as u16);
-            // `UIBestiaryInfoItemLine.GetDropInfo` (`UIBestiaryInfoItemLine.cs:78-104`):
-            // the stack range ("(1-2)", "(3)" or empty) + the rate
-            // (`Utils.PrettifyPercentDisplay` — "100%" or the prettified
-            // percentage).
-            let line = if state >= UnlockState::CanShowDropsWithDropRates {
-                let stack_range = if row.stack_min != row.stack_max {
-                    format!(" ({}-{})", row.stack_min, row.stack_max)
-                } else if row.stack_min == 1 {
-                    String::new()
-                } else {
-                    format!(" ({})", row.stack_min)
-                };
-                format!(
-                    "  {name}{stack_range} {}",
-                    prettify_percent_display(row.drop_rate)
-                )
+            let rate = drop_rate_text(state, row.drop_rate, row.stack_min, row.stack_max);
+            let line = if state >= UnlockState::CanShowDropsWithoutDropRates {
+                format!("  {name} {rate}")
             } else {
-                format!("  {name}")
+                // The locked-icon line (`UIBestiaryInfoItemLine.cs:39-54`):
+                // `Icon_Locked` at 0.55 scale, centred in the 32 px row.
+                if let Some(locked) = lookups.ui_bestiary_locked {
+                    let lw = locked.width as f32 * 0.55;
+                    let lh = locked.height as f32 * 0.55;
+                    push_whole(
+                        r,
+                        lookups,
+                        &locked,
+                        [tx + (230.0 - lw) * 0.5, ty + (32.0 - lh) * 0.5, lw, lh],
+                        [1.0; 4],
+                    );
+                }
+                ty += 32.0;
+                continue;
             };
             text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &line);
             ty += 22.0;
         }
-        if rows.is_empty() {
-            text::hud_text(
-                r,
-                lookups,
-                tx,
-                ty,
-                0.8,
-                [0.7; 4],
-                "  (nothing recorded yet)",
-            );
+    }
+}
+
+/// `UIText.IsWrapped`'s word wrap (`UIText.cs`'s `WordWrapping` pass): the
+/// words greedily fill `max_w` at `scale`, one line per overflow; a word
+/// longer than the line rides its own line (the vanilla breaks mid-word
+/// only through `TrimTextIfNeeded`, not the wrap). At least one line.
+fn wrap_text(
+    r: &SpriteRenderer,
+    lookups: &Lookups,
+    text_in: &str,
+    scale: f32,
+    max_w: f32,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text_in.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current} {word}")
+        };
+        if !current.is_empty() && text::hud_text_width(r, lookups, &candidate, scale) > max_w {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+        } else {
+            current = candidate;
         }
     }
+    if !current.is_empty() || lines.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 /// One `Stat_*` icon + value row (the info page's stat list style).
@@ -1892,6 +2141,160 @@ mod tests {
         assert_eq!(dst, [535.0, 279.0, 28.0, 28.0]);
         let dst = two_frame_dst(&sheet, BUTTON_RECT);
         assert_eq!(dst, [499.0, 279.0, 28.0, 28.0]);
+    }
+
+    // ---- S1-E-26 wave C: the grid range/clamp, the lock-state text gates
+    // and the completion bar. Written in code-only mode — NOT RUN here.
+
+    #[test]
+    fn grid_range_text_matches_get_range_text() {
+        // `UIBestiaryEntryGrid.GetRangeText` (`UIBestiaryEntryGrid.cs:87-93`):
+        // $"{Min(at + 1, last)}-{last} ({total})" with
+        // last = Min(total, at + capacity).
+        assert_eq!(grid_range_text(0, 36, 174), "1-36 (174)");
+        assert_eq!(grid_range_text(36, 36, 174), "37-72 (174)");
+        // The last partial page: at 144, capacity 36, total 174 -> 145-174.
+        assert_eq!(grid_range_text(144, 36, 174), "145-174 (174)");
+        // A roster smaller than one page.
+        assert_eq!(grid_range_text(0, 36, 12), "1-12 (12)");
+        // The empty roster: Min(1, 0) = 0.
+        assert_eq!(grid_range_text(0, 36, 0), "0-0 (0)");
+    }
+
+    #[test]
+    fn fix_grid_range_clamps_like_utils_clamp() {
+        // `FixBestiaryRange` (`UIBestiaryEntryGrid.cs:116-123`):
+        // Clamp(at + offset, 0, Max(0, total - capacity)).
+        // 174 entries, 36/page -> the last page starts at 138.
+        assert_eq!(fix_grid_range(0, 36, 36, 174), 36);
+        assert_eq!(fix_grid_range(138, 36, 36, 174), 138, "never past the last page");
+        assert_eq!(fix_grid_range(0, -36, 36, 174), 0, "never below 0");
+        assert_eq!(fix_grid_range(138, 3600, 36, 174), 138);
+        // total < capacity pins the max to 0.
+        assert_eq!(fix_grid_range(0, 36, 36, 12), 0);
+        assert_eq!(fix_grid_range(0, 0, 36, 0), 0);
+    }
+
+    #[test]
+    fn the_completion_bar_rides_the_bottom_strip() {
+        // `FillProgressBottomBar` (`UIBestiaryTest.cs:158-179`): 15 px tall,
+        // VAlign 1 in the 20 px bottom strip, the panel's 12 px side inset.
+        let panel = panel_rect(Vec2::new(1600.0, 900.0));
+        let bar = progress_bar_rect(&panel);
+        assert_eq!(bar[3], 15.0);
+        assert_eq!(bar[0], panel[0] + 12.0);
+        assert_eq!(bar[2], panel[2] - 24.0);
+        // Bottom-aligned inside the panel (the strip's bottom 12 px pad).
+        assert_eq!(bar[1] + bar[3], panel[1] + panel[3] - 12.0);
+    }
+
+    #[test]
+    fn completion_counts_every_known_entry_not_only_tier_4() {
+        // `GetUnlockProgress` (`UIBestiaryTest.cs:497-513`) counts
+        // `UnlockState > NotKnownAtAll_0` — one kill of the first entry
+        // already moves the bar (the old tier-4-only count did not).
+        let mut kills = KillTracker::new();
+        let first = &crate::bestiary::ENTRIES[0];
+        assert_eq!(crate::bestiary::completion_percent(&kills), 0.0);
+        kills.register_kill(first.credit_id);
+        let pct = crate::bestiary::completion_percent(&kills);
+        assert!(pct > 0.0, "one kill must move the completion bar");
+        assert_eq!(pct, 1.0 / crate::bestiary::ENTRIES.len() as f32);
+    }
+
+    #[test]
+    fn hover_text_is_the_name_or_question_marks() {
+        // `UnlockableNPCEntryIcon.GetHoverText`
+        // (`UnlockableNPCEntryIcon.cs:209-221`): "???" below tier 1, the
+        // NPC name from tier 1 up.
+        let entry = &crate::bestiary::ENTRIES[0];
+        assert_eq!(entry_hover_text(entry, UnlockState::NotKnownAtAll), "???");
+        let name = entry_hover_text(entry, UnlockState::CanShowPortraitOnly);
+        assert_ne!(name, "???");
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn kill_counter_needs_a_first_kill() {
+        // `NPCKillCounterInfoElement.ProvideUIElement` (`:26-30`): null
+        // below 1, the raw count string above (no "/needed" fraction).
+        assert_eq!(kill_counter_text(0), None);
+        assert_eq!(kill_counter_text(-3), None);
+        assert_eq!(kill_counter_text(1), Some("1".to_string()));
+        assert_eq!(kill_counter_text(999_999_999), Some("999999999".to_string()));
+    }
+
+    #[test]
+    fn drop_rate_text_gates_by_tier() {
+        // `UIBestiaryInfoItemLine.GetDropInfo` (`:78-109`).
+        use UnlockState::*;
+        // Tier 4: stack range + prettified rate.
+        assert_eq!(drop_rate_text(CanShowDropsWithDropRates, 1.0, 1, 1), "100%");
+        assert_eq!(
+            drop_rate_text(CanShowDropsWithDropRates, 0.5, 2, 4),
+            " (2-4) 50%"
+        );
+        assert_eq!(drop_rate_text(CanShowDropsWithDropRates, 0.25, 3, 3), " (3) 25%");
+        // Tier 3: "???" and no stack range (`:105-109`).
+        assert_eq!(drop_rate_text(CanShowDropsWithoutDropRates, 0.5, 2, 4), "???");
+        // Below tier 3 the line is the locked icon, never text (`:36-55`).
+        assert_eq!(drop_rate_text(CanShowStats, 1.0, 1, 1), "");
+        assert_eq!(drop_rate_text(NotKnownAtAll, 1.0, 1, 1), "");
+    }
+
+    #[test]
+    fn knockback_label_matches_the_four_way_gate() {
+        // `NPCStatsReportInfoElement.cs:123`: > 0.8 High, > 0.4 Med,
+        // <= 0 None, else Low; below tier 2 "???" (`:124-128`). The labels
+        // are localized, so the assertions pin the GATE (four distinct
+        // branches, the boundary values, the negative arm), not the words.
+        let _guard = crate::lang::test_lock().lock().unwrap();
+        assert_eq!(knockback_label(1.0, false), "???");
+        assert_eq!(knockback_label(0.0, false), "???");
+        let high = knockback_label(0.9, true);
+        let med = knockback_label(0.5, true);
+        let low = knockback_label(0.2, true);
+        let none = knockback_label(0.0, true);
+        let neg = knockback_label(-0.5, true);
+        assert!(!high.is_empty() && !med.is_empty() && !low.is_empty() && !none.is_empty());
+        assert_ne!(high, med);
+        assert_ne!(med, low);
+        assert_ne!(low, none);
+        assert_eq!(none, neg, "negative resist is the None arm (!(x > 0))");
+        // The exact boundaries: 0.8 is NOT > 0.8 (Med), 0.4 is NOT > 0.4 (Low).
+        assert_eq!(knockback_label(0.8, true), med);
+        assert_eq!(knockback_label(0.4, true), low);
+        // The keys are the C#'s four (resolvable or the key placeholder).
+        assert!(high == crate::lang::text("BestiaryInfo.KnockbackHigh"));
+        assert!(none == crate::lang::text("BestiaryInfo.KnockbackNone"));
+    }
+
+    #[test]
+    fn flavor_text_gates_at_tier_2_and_the_language_key() {
+        // `FlavorTextBestiaryInfoElement.cs:20-23`: null below CanShowStats.
+        let _guard = crate::lang::test_lock().lock().unwrap();
+        let entry = &crate::bestiary::ENTRIES[0];
+        assert!(flavor_text(entry, UnlockState::NotKnownAtAll).is_none());
+        assert!(flavor_text(entry, UnlockState::CanShowPortraitOnly).is_none());
+        // From tier 2: Some iff Language.Exists("Bestiary_FlavorText.npc_<id>")
+        // (`BestiaryEntry.cs:46-50`) — without the resource files the manager
+        // has no keys and the element is absent, exactly like a culture
+        // missing the row.
+        let got = flavor_text(entry, UnlockState::CanShowStats);
+        let key = format!("Bestiary_FlavorText.npc_{}", entry.credit_id);
+        assert_eq!(got.is_some(), crate::lang::exists(&key));
+    }
+
+    #[test]
+    fn prettify_percent_display_trims_like_utils() {
+        // `Utils.PrettifyPercentDisplay` (`Utils.cs:1105-1109`) — the
+        // TrimStart('0', ' ') quirk is kept 1:1: a sub-1 % value loses its
+        // leading zero (".01%"), and 0 trims to the bare "%".
+        assert_eq!(prettify_percent_display(1.0), "100%");
+        assert_eq!(prettify_percent_display(0.5), "50%");
+        assert_eq!(prettify_percent_display(0.1429), "14.29%");
+        assert_eq!(prettify_percent_display(0.0001), ".01%");
+        assert_eq!(prettify_percent_display(0.0), "%");
     }
 }
 
