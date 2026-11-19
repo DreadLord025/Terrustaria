@@ -778,6 +778,20 @@ pub const SPAWN_HOLD_LOSS: i32 = 30;
 /// `new Color(255, 0, 0)`: the loss broadcast's red.
 pub const INFO_FAILURE_INVASION_COLOR: [u8; 3] = [255, 0, 0];
 
+/// `DD2Event.INFO_START_INVASION_COLOR` (`DD2Event.cs:1811`) —
+/// `ChatColors.World` = `new Color(50, 255, 130)` (`ChatColors.cs:24`):
+/// the win broadcast's green (`WinInvasionInternal`, `:341`).
+pub const INFO_START_INVASION_COLOR: [u8; 3] = [50, 255, 130];
+
+/// `DD2Event.INFO_NEW_WAVE_COLOR` (`DD2Event.cs:1810`) —
+/// `new Color(175, 55, 255)`: the wave-complete broadcast's violet
+/// (`CheckProgress`, `:403`).
+pub const INFO_NEW_WAVE_COLOR: [u8; 3] = [175, 55, 255];
+
+/// `DD2Event.DropMedals`'s item id (`DD2Event.cs:809`) — the Defender
+/// Medal (3817), one `numberOfMedals` stack per live Eternia Crystal.
+pub const MEDAL_ITEM: u16 = 3817;
+
 /// `DD2Event.ClearAllDD2EnergyCrystalsInChests`'s item id (`:682`) — the
 /// Elder Crystal (3822) the wipe turns to air in the open chests.
 pub const ENERGY_CRYSTAL_ITEM: u16 = 3822;
