@@ -239,14 +239,22 @@ pub fn planteras_hook_step(
         // last match's draw wins), self skipped, same type, either velocity
         // component non-zero.
         if !flag59 && npcs[me].local_ai[0] <= 0.0 && npcs[me].ai[0] != 0.0 {
+            // The draw lands after the scan (the borrow checker forbids the
+            // in-loop write); EVERY matching slot still spends its own
+            // Next(60, 300) and the LAST match's value wins - the C#'s
+            // stream order and final state are unchanged.
+            let mut rearm: Option<f32> = None;
             for (j, other) in npcs.iter().enumerate() {
                 if j as i32 != ctx.who_am_i
                     && other.hp > 0
                     && type_of(other) == ctx.npc_type
                     && (other.vx != 0.0 || other.vy != 0.0)
                 {
-                    npcs[me].local_ai[0] = rng.next_range(60, 300) as f32;
+                    rearm = Some(rng.next_range(60, 300) as f32);
                 }
+            }
+            if let Some(v) = rearm {
+                npcs[me].local_ai[0] = v;
             }
         }
         // `:32135-32183` — the anchor search.
