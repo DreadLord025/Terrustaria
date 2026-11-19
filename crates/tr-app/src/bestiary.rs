@@ -630,6 +630,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Giant Worm",
     },
+    // The wyvern family (`S1-D-3` wyvern): ONE entry on the head's id 87
+    // — the segments' bestiary draw modifiers carry `Hide = true`
+    // (`NPCID.cs:1821-1856`) and the kills credit the head (the
+    // Devourer's fold below, `entry_for_npc`). The Sky spawn-condition
+    // tag rides all six ids (`BestiaryDatabaseNPCsPopulator.cs:1713-1718`);
+    // the name is the localization's `"WyvernHead": "Wyvern"` row
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "WyvernHead",
+        net_id: 87,
+        kind: NpcKind::WyvernHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Wyvern",
+    },
     // The worm segments fold onto the head's entry (`entry_for_npc`'s
     // mapping): the vanilla credits the whole worm to the head's bestiary
     // id — one entry per credit.
@@ -2155,6 +2170,14 @@ pub fn try_entry_for_npc(
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — the whole serpent is
+        // one bestiary credit, the Devourer precedent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2190,6 +2213,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — one credit for the
+        // whole serpent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

@@ -3409,6 +3409,19 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The wyvern family (`S1-D-3` wyvern): the sky flyer's net seed
+        // rides the hover ctor (the net state overwrites the position
+        // below); the chain links rebuild through the sim wiring — a lone
+        // segment dies finding no leader (the worm families' net shape).
+        crate::npc::NpcKind::WyvernHead
+        | crate::npc::NpcKind::WyvernLegs
+        | crate::npc::NpcKind::WyvernBody
+        | crate::npc::NpcKind::WyvernBody2
+        | crate::npc::NpcKind::WyvernBody3
+        | crate::npc::NpcKind::WyvernTail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

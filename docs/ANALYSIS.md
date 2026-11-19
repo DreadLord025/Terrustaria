@@ -19103,6 +19103,138 @@ which for every aiStyle-3 kind, so it needs its own branch and its own test pass
 (S1-D-3p)" below; the caller migration is the documented remainder.
 
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 вЂ” code-only mode)
+## The Wyvern family (S1-D-3, 2026-11-19 — code-only mode)
+
+The audit `docs/research/55-audit-worms.md` T3a (branch `docs/audit-worms`)
+found the Wyvern 87-92 family **UNPORTED entirely** — no kinds, no 14-link
+chain, no altitude gates. This round lands the kind wave + the head machine,
+**code-only mode: no compiler invoked**; the 16 witness tests in
+`npc_ai_wyvern.rs` are WRITTEN NOT RUN. Branch `task/S1-D-3-wyvern-port`,
+NOT merged.
+
+**Identity census** (`NPCID.cs:10851-10861`): WyvernHead 87, WyvernLegs 88,
+WyvernBody 89, WyvernBody2 90, WyvernBody3 91, WyvernTail 92 — all six are
+`aiStyle = 6` (`NPC.cs:9945`/`:9962`/`:9980`/`:9998`/`:10016`/`:10034`), the
+shared `AI_006_Worms` sim-pass serves them; there is no `AI_037`-style
+dedicated method (the brief's "style 37?" is the Destroyer's, not the
+wyvern's). The roster's `DD2WyvernT1-3` are the Etherian 558-560 — a
+different family, untouched.
+
+**The kind wave** (the frost precedent — every exhaustive `NpcKind` match
+gained arms, found by a scripted scan of all `match` blocks over the enum):
+- `npc.rs`: the 6 variants; `knock_back_resist` 0 (`NPC.cs:9953` etc.),
+  `defense` 10/20 (`:9948`/`:9965`...), `value` 10000 except WyvernBody's
+  **2000** (`:9989` — the one divergent coin row), `update_kind_ai` no-op
+  (the sim-pass convention), `find_frame` no-op (FindFrame has NO case
+  87-92 — verified over the whole `:66705-77291` switch;
+  `Main.npcFrameCount[87..92]` = 1, `Main.cs:67092-67093`), `render_key`
+  (the gate-reassigned 223-228 band), `ALL_KINDS` 253 → 259 at the L-C gate;
+- `npc/data.rs`: `to_u16`/`from_u16` **223-228** (GATE REASSIGN L-C: the
+  branch's 213-218 TRIPLE-collided with R10 martian 213/214 — keeps,
+  earliest push — + R55 destroyer 216-218 + R50 fishron 219-222; the six
+  took the next-free 223-228, 148 reserved R78 LeechTail. The vanilla
+  87-92 collide with the port-local Scutlix 87/88 + saucer 89-92 ids —
+  the pirate renumber's precedent; the vanilla `NPC.type` rides the
+  bestiary entry),
+  `ai_style` 6, `size` 32×32, `max_hp` 4000, `contact_damage` 80/40,
+  `hit_sound` NPC_Hit_7 / `death_sound` NPC_Killed_8 (`:9950-9951` etc.),
+  `worm_tunables` (11, 0.25) (`:51720-51724`), `shares_carrier_life` all
+  six (`:51158-51159`/`:51182-51183`);
+- `npc_buffs.rs`: `SpecificallyImmuneTo = [31]` (On Fire!) for all six
+  (`NPCID.cs:6600-6641`);
+- `bestiary.rs`: ONE entry (credit `WyvernHead`, net 87, name "Wyvern" —
+  the localization row); the five segments fold onto it
+  (`NPCID.cs:1821-1856`'s `Hide = true` draw modifiers; the Sky tag rides
+  all six ids, `BestiaryDatabaseNPCsPopulator.cs:1713-1718`). The banner
+  chain already existed: 87-92 → banner 86 → item 1700
+  (`BannerSystem.cs:638-644`/`:611-612`, `tr-core/src/bestiary.rs:293-298`);
+  the loot rows already existed (`loot_db_gen.rs:299-300` — the kite 4379
+  wind-gated 1/25 + the Souls of Flight 575 5-10 classic / 10-20 expert,
+  `ItemDropDatabase.cs:1008-1009`);
+- `app/netglue.rs::npc_seed`: the hover-ctor arm (the net state overwrites
+  the position); `render/entities.rs`: the six draw arms + the rotation
+  whitelist + `npc_health_bar_scale` 1.5 for the head
+  (`Main.cs:45911-45914`); `ui/bestiary.rs::portrait_data`: the 32×32 rows;
+- `audio.rs`: the `NPC_Killed_8` bank row (the asset ships).
+
+**Deliberate membership choice**: the wyvern kinds are NOT in
+`is_worm`/`is_worm_head`/`is_worm_mid` (the `StardustWormHead` precedent).
+The shared pass's budget-roll chain + dig/air head are the WRONG machine
+for a fixed-count sky flyer — adding them would make the live
+`update_worms_in` spawn a budget chain with the wrong per-index kinds and
+run the velocity-snap stand-in head. `shares_carrier_life` IS extended
+(inert until the wiring sets `worm_id`/`seg_index`). The shared sim-pass
+is **R77's lane** (the audit's T1/T2 fixes) and was NOT edited.
+
+**The machine** (`crates/tr-app/src/npc_ai_wyvern.rs`, UNWIRED):
+- `assemble_wyvern_chain` ports `:51156-51190` whole: the fixed 14 links,
+  `wyvern_chain_kind(m)` = legs 88 at m 1/8, body2 90 at 11, body3 91 at
+  12, tail 92 at 13, body 89 default (`:51164-51180`); the `NewNPC` Bottom
+  placement (`:80770`, `Entity.cs:130` — every link stacked on the head's
+  truncated bottom-centre), the ai[0]/ai[1]/ai[3]/realLife links, the
+  port's stable `worm_id`/`seg_index` identity alongside;
+- `wyvern_head_step` ports the type-87 path in source order: the realLife
+  mirror (`:51133-51135`), the dead/invalid re-target (`:51137-51140`,
+  `npc_target::target_closest` style 6), the dead-target
+  `EncourageDespawn(300)` with NO flag sink (87 has no `:51112-51128`
+  case), the chain request, the velocity-sign sprite flip
+  (`:51616-51626`), the 16-px snapped aim (`:51855-51860`, truncating
+  casts), the ×num67 scale (`:51997-52002`), the **altitude gates**
+  (`:52053-52078`: the reversal turn-boost — any-axis opposition +
+  Manhattan > num46/2 + dist < 300 → ×1.1 below max; the climb rule —
+  head centre below player centre OR player centre below worldSurface
+  (the f64 tile compare) OR dead → |vx| < 5.5 ramp ×1.1 with the
+  `vx == 0` kick `-direction`, else `vy -= 0.25` while `vy > -11`), the
+  shared three-arm steer (`:52112-52198` verbatim — the 0.2/0.5 bands,
+  the 1.1/2× multipliers, the cross-brakes), the head rotation
+  `atan2 + PI/2` (`:52201` — the Math.PI/2 constant, distinct from the
+  followers' 1.57f literal);
+- `wyvern_follower_step` ports `:51867-51922` with the 42 spacing
+  (`:51881-51884`) and the step-sign flip (`:51911-51921`) — the shared
+  follow MODEL is faithful per the audit (T2a), this is the
+  wyvern-parameterised copy for the unwired path;
+- `wyvern_hit_dust_plan` ports the `:88909-88933` counts (the
+  double-precision `dmg/lifeMax*50` hit loop; the death half's 10 dusts +
+  the wiring's `Next(1,4)` gore count with per-gore `Next(11,14)` draws).
+
+**RNG by construction**: the 87-92 path through AI_006 draws NOTHING —
+every `Main.rand` site in `:50963-52273` belongs to another type's arm
+(the full census is in the module docs; the budget list `:51303` excludes
+87, the crumble draw `:51590` is unreachable under flag3-true, the dig
+sound `:51976` excludes 87). Neither the assembly nor the steps take an
+RNG parameter; the witness pins a seeded `UnifiedRandom` bit-identical
+across 120 ticks of a full chain. The ONLY wyvern RNG is the death-gore
+pair in HitEffect (the strike path, not the AI) — the plan returns counts
+and the wiring owns the draws in C# order.
+
+**Documented deferrals**:
+1. **Sheet deferral (NO atlas sheets)**: NPC_87..92 are not packed. The
+   best-fit atlas stands at **8121 px** against the 8192 strict-GPU bound
+   (`tr-render/src/atlas.rs:98-105`) — **~71 px of headroom**; the six
+   sheets (the head alone is a multi-frame 100+-px strip) do not fit.
+   The draw arms ask `npc_sheet(87..92)` → None → the `let Some(tex)`
+   guard skips; the bestiary portrait skips the same way. The repack
+   (a wider shelf strategy or the array-layer path) + the
+   `BESTIARY_NPC_SHEET_IDS` rows + the head's draw modifiers
+   (`NPCID.cs:1811-1819`: Position (55,15), portrait overrides (4,10))
+   ride the atlas wave.
+2. **Sim wiring** (the next wave, R77's lane): the head's
+   `update_kind_ai` arm calls `wyvern_head_step` (or the style-6 axis
+   claims it), drains `wants_chain` through `assemble_wyvern_chain`,
+   runs `wyvern_follower_step` for seg_index > 0 with the 42 spacing,
+   and adds the orphan-death checks (`:51425-51433` the leader-gone
+   segment death, `:51468-51475` the follower-gone head death — both
+   need the pool, cited in the module). The natural-spawn gate
+   (`Main.SpawnNPC`'s wyvern arm — hardmode + sky altitude + the
+   `NPC.downedMechBossAny` gate) rides the spawner wave.
+3. The wyvern health bar's dedicated worm arm
+   (`DrawInterface_Healthbar_Worm(npc, 92, scale)`, `Main.cs`'s case-87)
+   stays with S1-D-6b's worm-bar work; the 1.5 scale landed.
+4. `CopyInteractions` (`:51185`) is the identity at assembly time (the
+   fresh head has no interaction flags on the spawn tick); the wiring
+   re-copies if it ever assembles later.
+
+## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
 `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)
 is ported as `crates/tr-app/src/npc_ai_style37.rs` вЂ” pure functions over the
