@@ -32870,3 +32870,117 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The bow launch (S1-P-i13)
+
+**Mode.** Code-only: no `cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no
+graphify — file reads/writes + git only. The C# arms were re-read whole and
+compared line-by-line against the landed Rust; the 24 witness tests are
+WRITTEN, NOT RUN. **No compiler invoked.**
+
+**Assignment.** The bow use (`useAmmo=true`, `ammoType Arrow`) — the
+`Player.ItemCheck_Shoot` bow launch arms vs the port. Scope: the bow LAUNCH
+only. The arrow flight (aiStyle 1, `AI_001`) already landed with the
+projectile-AI tasks; the ammo consumption is the i15 task's.
+
+**Census (the WRONGs and the MISSING).** The pre-i13 shooter wire
+(`world_sim/editing.rs`) fired every arrow/stake shooter through one generic
+spawn: `center + dir*10`, the aim normalized to the fused speed, no per-bow
+arm. Against `Player.cs:47056-49468` that was WRONG on three counts and
+MISSING the whole special-arm family:
+
+* **WRONG — the spawn anchor.** The C# spawns at
+  `pointPosition = RotatedRelativePoint(MountedCenter)` (`:47196`), not the
+  body centre + 10 px. For a stationary unmounted player the two coincide
+  (`fullRotation=0`, `gfxOffY=0`, `mount.PlayerOffset=0` fold the rotation to
+  the identity), but a mounted/rotated player diverges. The bow path now
+  reads the real anchor.
+* **WRONG — the facing flip.** The C# flips `base.direction` toward the
+  cursor via `Dot(UnitX.RotatedBy(fullRotation), normalize(MouseWorld −
+  pointPosition))` (`:47202-47224`) before the aim. The wire never flipped.
+* **WRONG — the post-pick `projToShoot` overrides.** `:47157-47176` runs
+  AFTER `PickAmmo` resolved the ammo's own `shoot`: the Molten Fury 120
+  converts the wooden-arrow default 1 → the FireArrow 2 (the without-quiver
+  path; the Molten Quiver's `:53537` already did it when armed), the Marrow
+  682 → the Bone Arrow 117, the Ice Bow 725 → the FrostArrow 120, the Pulse
+  Bow 2223 → the PulseBolt 357 — all unconditional except the Molten Fury's
+  `proj == 1` gate. The wire fired the raw resolved kind, so the Marrow fired
+  a wooden arrow, the Ice Bow a wooden arrow, the Pulse Bow a wooden arrow.
+* **MISSING — the per-bow launch arms.** The Tsunami 2624's five-arrow π/10
+  fan (`:47784-47809`), the Daedalus Stormbow 3029's rain (`:47424-47465`),
+  the Blood Rain Bow 4381's rain (`:47466-47500`), the Hellwing 3019's dual
+  `RotatedByRandom` (`:47573-47579`), the Chlorophyte Shotbow 1229's
+  cumulative spread (`:48278-48308`), the DD2 Betsy Bow 3859's six-arrow fan
+  forcing 710 (`:48748-48760`), the Fairy Queen 4953's aimed shot with the
+  fan index and the `num61 == 2` prism double (`:47910-47957`). All fired as
+  a single generic arrow before.
+* **MISSING — the arrow `proj_data` rows.** The overrides and the arrow
+  ammo's own `Item.shoot` resolve to kinds with NO row, so the data-carrying
+  spawn declined them (the Marrow's 117 existed, but 120/357/710/323 and the
+  arrow-ammo family 4/5/41/91/103/172/225/278/282/474/1006 did not). Added
+  field-cited from the `SetDefaults` bodies (`Projectile.cs:837-863`,
+  `:1237-1247`, `:1743-1752`, `:1904-1914`, `:2093-2104`, `:2579-2590`,
+  `:3100-3110`, `:3638-3698`, `:4160-4171`, `:4474-4486`, `:5474-5484`,
+  `:7521-7535`, `:9570-9579`), with the `ignoreWater` (5/710) and `light`
+  (4/5/41/103/172/278) overlays.
+
+**The port.** `crates/tr-app/src/bow_launch.rs` — `fire` applies the
+post-pick overrides, builds the launch frame (the anchor, the facing flip,
+the aim normalized to `speed` with the zero/NaN direction fallback
+`:47291-47296`), dispatches the per-bow arm and spawns the arrows. The wire
+routes arrow/stake shooters (`is_arrow_shooter`) through it; the `gunProj`
+four and the non-arrow shooters keep the generic spawn (their launch arms
+are their own tasks). `Projectile.no_drop_item` + `set_no_drop_item` carry
+the multi-shot stamp (`Player.cs:47806`/`:48305`/`:47497`/`:47955`), which
+the kill path's ammo-recovery drop reads (`Projectile.cs:77367`).
+
+**RNG order.** The port rolls the crit at THROW time (the established
+`world_sim` convention, a documented deviation from the C#'s hit-time
+`Projectile.Damage` roll); that one draw precedes the launch arm's draws.
+Within each arm the `Main.rand` draws are consumed in the C#'s exact order:
+the Stormbow's count `Next(3)` then six per shot (`Next(201)`,
+`Next(-100,101)`, `Next(-40,41)` vx, `Next(-40,41)` vy, `Next(75,150)`,
+`Next(-50,51)`); the Blood Rain's `Next(1,3)` + `Next(3)` then seven per shot
+(`Next(61)`, `Next(-30,31)`, `NextFloat`, `Next(-20,21)`, `Next(-40,41)`,
+`Next(55,80)`, `Next(-50,51)`); the Chlorophyte's `Next(3)` then two per
+spread shot; the Hellwing's FOUR `NextDouble` (the π/8 ai-spin pair then the
+π/16 velocity pair, `Utils.cs:1697-1700`). The Tsunami/Betsy/Fairy Queen
+draw NOTHING. The draw-count witness tests pin each against a replayed
+stream.
+
+**Documented folds.** `gravDir = 1` (no gravity flip) — the `:47285-47288`
+reverse-gravity aim arm folds to a plain add. `ChangeDir`'s pulley
+reposition (`Player.cs:42097-42110`) and its `itemRotation`/composite-arm
+mirrors (`:42112-42115`) are transient in the port: `item_rotation` is
+recomputed from `swing_aim` each frame (`world_sim/player.rs`) and the
+composite arms are re-set by `ApplyUseStyle`, so only the persistent
+`base.direction = dir` (`:42111`) lands. `MountedCenter == center` and
+`ApplyItemPositionOffsetFromMount` is a no-op without an active mount
+(`Player.cs:51387-51390`).
+
+**Out of scope (recorded, not changed).** `GetWeaponKnockback`
+(`Player.cs:53346-53369`: the summon `minionKB`, the `kbGlove`/`kbBuff`,
+the Shroomite/Vortex stealth scales) is not called by the shooter wire — a
+pre-existing deviation affecting ALL shooters, not the bow geometry; the
+bow launch reads the knockback the wire already fused. The arrow flight's
+per-kind gravity/rotation hooks (`AI_001`'s 142 per-type arms) are the
+S1-D-5 slices; the new rows ride the generic `ai_arrow` arm until those
+land. The 4058 Skeleton Bow is `ItemID.Sets.Deprecated` (`ItemID.cs:1316`),
+so its id-0 registry row is correct and the `resolve_projectile` 4058 arm
+(`Player.cs:53511-53514`) is dead-but-faithful — no correction. The two
+`gunProj` BOWS (the Phantasm 3540 → 630, the DD2 Phoenix Bow 3854 → 705)
+keep the M3-ITEM-6 fixed-projectile reset and the wire's pre-existing
+centre + 10 px anchor: their C# launch is a single fixed shot
+(`:48996-48999`/`:49014-49017`), the Phantasm's multi-arrow is the 630
+projectile's own `AI_075` (the 631 spawn, arrow flight — out of scope), and
+the geometry deviation is shared with the bullet/rocket `gunProj` items, so
+it stays the ammo-resolution task's recorded path rather than this one's.
+
+**Verification.** Code-only: every bow arm re-read whole against
+`Player.cs:47424-47957`/`:48278-48308`/`:48748-48760`/`:49437`, the shared
+geometry against `:47151-47307`, the helpers against `Utils.cs`; the seam
+call sites checked by read/grep (`can_hit`/`can_hit_line`'s 9-arg shape,
+`Player`'s `mounted_center`/`rotated_relative_point`/`facing`/`misc_counter`,
+`UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_double`,
+`ProjectilePool::spawn_with_data_owned`/`set_crit`/`set_no_drop_item`). The
+24 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.

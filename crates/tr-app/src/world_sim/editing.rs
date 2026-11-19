@@ -1860,7 +1860,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             (weapon_def.damage, weapon_def.knock_back, weapon_def.crit),
             |s| (s.damage, s.knock_back, s.crit),
         );
-        if let Some(p) = app.player.as_mut() {
+        // The stat fuse + the crit roll read the player; the bow launch
+        // (S1-P-i13) re-borrows it for the geometry/facing flip, so the fuse
+        // runs in its own scope and the launch dispatch follows.
+        let fused = if let Some(p) = app.player.as_mut() {
             // `Player.GetWeaponDamage` (`:53427`): the weapon's own part is
             // `(int)(damage * multiplier + 5E-06f)` — the C# truncates it
             // BEFORE the fuse (S1-C-4), and the multiplier is the ranged
@@ -1906,24 +1909,56 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 }
                 knock_back += resolved.knock_back;
             }
+            // The ranged shot rides the same `ItemCheck` → `UpdatePlayers`
+            // stream as the rest of the pass (`Main.cs:17754`). The crit rolls
+            // at throw time (the port's convention, ahead of the launch arms'
+            // spread draws — the documented crit-at-throw deviation).
+            let crit = {
+                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + w_crit)
+            };
+            Some((damage, speed, knock_back, crit))
+        } else {
+            None
+        };
+        let Some((damage, speed, knock_back, crit)) = fused else {
+            return;
+        };
+        if gun_proj.is_none() && crate::bow_launch::is_arrow_shooter(held_use_ammo) {
+            // S1-P-i13 — the bow launch: the post-pick `projToShoot` overrides
+            // (`Player.cs:47157-47176`), the `RotatedRelativePoint(MountedCenter)`
+            // spawn anchor + facing flip (`:47196-47224`), the aim normalized to
+            // `speed` (`:47277-47307`) and the per-bow spawn arms (the Tsunami
+            // fan, the Stormbow/Blood Rain rain, the Chlorophyte spread, the
+            // Betsy fan, the Fairy Queen aimed shot, the Hellwing dual spin, the
+            // generic single tail). The module owns the spawn + the audio cue.
+            crate::bow_launch::fire(
+                app,
+                held.kind,
+                resolved.projectile,
+                speed,
+                damage as i32,
+                knock_back,
+                crit,
+                world_pos,
+                anim_max_ticks,
+                remaining_anim_ticks,
+            );
+        } else {
+            // The gunProj four keep their fixed-projectile reset; the non-arrow
+            // shooters (bullets/rockets/solutions) keep the generic spawn. The
+            // pre-i13 centre + 10 px anchor stands for them (the bow geometry is
+            // the arrow half's; the bullet/rocket launch arms are their own
+            // tasks).
+            let Some(p) = app.player.as_ref() else {
+                return;
+            };
             let (pcx, pcy) = p.center();
             let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
             if dir == Vec2::ZERO {
                 return;
             }
             let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-            // The ranged shot rides the same `ItemCheck` → `UpdatePlayers`
-            // stream as the rest of the pass (`Main.cs:17754`).
-            let crit = {
-                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + w_crit)
-            };
-            // origin/main’s owned spawner (the owner plumbing of the
-            // projectile-ownership task) + this task’s resolution: the pair
-            // table’s or the ammo’s own projectile, the gunProj fixed id when
-            // the weapon is one of the four, and the fused knockback (the
-            // weapon’s own + the ammo’s + the magicQuiver scale), which
-            // supersedes the pre-fuse `w_kb` read.
             let slot = app.projectiles.spawn_with_data_owned(
                 gun_proj.map_or(resolved.projectile, |g| g.projectile),
                 app.local_id as u8,
