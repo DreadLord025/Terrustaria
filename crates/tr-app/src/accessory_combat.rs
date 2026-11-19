@@ -4,9 +4,12 @@
 //! Knuckles, the melee gloves (Power/Mechanical/Berserker/Fire) and the
 //! Celestial Stone bundle. Each per-accessory arm is its own fn carrying
 //! the C# citation; [`apply_combat_accessory`] is the seam the
-//! `UpdateEquip` grant loop (wave A, `player.rs`) will call per slot —
-//! it dispatches in the C# source order and leaves every non-family
-//! kind to the existing match. The bundle's flag arms are ported in
+//! `UpdateEquip` grant loop (wave A, `player.rs`) calls per slot —
+//! WIRED in wave E (S1-C-12e): `apply_equip_functional` delegates the
+//! family kinds here FIRST and the inline combat arms were deleted, so
+//! each family kind has exactly one grant path. The dispatch follows
+//! the C# source order and leaves every non-family kind to the existing
+//! match. The bundle's flag arms are ported in
 //! [`set_sky_stone_flag`] and its `UpdateEquips` stat fold in
 //! [`apply_sky_stone_effects`] (`Player.cs:12989-13003`).
 //!
@@ -96,12 +99,15 @@ fn mechanical_glove(p: &mut Player) {
     p.melee_damage += 0.12;
 }
 
-/// The Berserker's Glove (`Player.cs:14411-14417`): the Mechanical
-/// Glove's rows plus `aggro += 400` (no port field — skipped).
+/// The Berserker's Glove (`Player.cs:14411-14417`): the POWER Glove's
+/// rows (`kbGlove`/`autoReuseGlove`/`meleeScaleGlove`/`meleeSpeed`) plus
+/// `aggro += 400` (no port field — skipped). NOTE: unlike the Mechanical
+/// Glove/Fire Gauntlet there is NO `meleeDamage` row here — wave B's
+/// original arm copied the Mechanical +0.12 in error; wave E's re-read
+/// of the switch arm removed it (S1-C-12e dedupe).
 fn berserker_glove(p: &mut Player) {
     p.kb_glove = true;
     p.melee_speed_bonus += 0.12;
-    p.melee_damage += 0.12;
 }
 
 /// The Fire Gauntlet (`Player.cs:15306-15314`): the Mechanical Glove's
@@ -293,13 +299,15 @@ mod tests {
         assert!(near(p.melee_speed_bonus, 0.12));
         assert!(near(p.melee_damage, 1.12));
 
-        // Berserker's Glove (`Player.cs:14411-14417`): the Mechanical
-        // rows + the unported aggro.
+        // Berserker's Glove (`Player.cs:14411-14417`): the POWER Glove
+        // rows + the unported aggro — the C# arm has NO meleeDamage row
+        // (wave B's +0.12 copy of the Mechanical row was removed in
+        // wave E's re-read).
         let mut p = fresh();
         assert!(apply_combat_accessory(3992, &mut p));
         assert!(p.kb_glove);
         assert!(near(p.melee_speed_bonus, 0.12));
-        assert!(near(p.melee_damage, 1.12));
+        assert!(near(p.melee_damage, 1.0), "no meleeDamage row at :14411");
 
         // Fire Gauntlet (`Player.cs:15306-15314`): the Mechanical rows
         // + the unported magma stone.

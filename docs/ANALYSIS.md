@@ -22054,6 +22054,69 @@ fold at `:3643-3655` omits it) and keeps `kbGlove = true` on the glove rows
 change. Tests: 10 per-accessory modifier tests in the module (spawn baselines
 from `player.rs:1608-1621`).
 
+## The combat accessory dedupe/wiring (S1-C-12 wave E, 2026-11-19, code-only)
+
+Wave B landed `accessory_combat.rs` UNWIRED while wave A's
+`apply_equip_functional` carried verbatim INLINE arms for ten of the family's
+kinds — naively calling the hook would DOUBLE-GRANT. Wave E dedupes to a
+single grant path per row (code-only mode — no compiler invoked; tests
+written, not run):
+
+1. **Per-slot family**: `apply_equip_functional` now calls
+   `accessory_combat::apply_combat_accessory(kind, self)` FIRST and returns
+   when it claims the kind; the ten inline arms (489/490/491/2998/935/897/
+   936/1343/1301/3015) are DELETED from the match. The C# rows are
+   independent per-type `if`s (`Player.cs:14368-15450`), and the family
+   kinds are disjoint from every remaining match arm, so claiming before
+   the match is order-identical. The family gains what the inline arms
+   missed: `kbGlove = true` on 897/936/1343 (`:15301/:15371/:15308`) and
+   the two previously-absent kinds 3992 (Berserker's Glove, `:14411-14417`)
+   and 3016 (Flesh Knuckles, aggro-only, `:14647-14650`).
+2. **Wave-B parity fix found by the wave-E re-read**: the module's
+   Berserker's Glove arm copied the Mechanical Glove's `meleeDamage +=
+   0.12f` — the C# switch arm `:14411-14417` has NO meleeDamage row
+   (kbGlove/autoReuseGlove/meleeScaleGlove/meleeSpeed/aggro only). Removed;
+   the module test now pins `melee_damage == 1.0` for 3992.
+3. **Sky-stone bundle**: the inline flag scan + stat fold in `player.rs`
+   are replaced by `accessory_combat::set_sky_stone_flag` /
+   `apply_sky_stone_effects` (ONE path). The fold now includes the C#
+   `minionKB += 0.5f` (`:13002`) the inline copy omitted; its `lifeRegen
+   += 2` half (`:12991`) keeps riding the existing `accessory_life_regen`
+   fold. Flag timing is unchanged (scan before `update_equips`, fold at
+   the same site).
+4. **Per-tick clears the wired grants need** (without them the new rows
+   would accumulate/stick): `minion_kb = 0.0` (`ResetEffects`
+   `Player.cs:18347`) and `kb_glove = false` (`:18709`) added beside the
+   crit-base resets in `player.rs`. `minion_kb` had NO reset before
+   (only spawn-zeroed); no live producer existed until this wave — the
+   field's consumer is the summon tooltip's knockback line
+   (`ui/tooltip.rs:344`, `Main.cs:20749-20798`); `buff_effects_misc.rs`'s
+   minion_kb is its own effect struct, not this field.
+   `autoReuseGlove`/`meleeScaleGlove` (`:18710-18711`) still have no port
+   fields.
+5. **Naming fix**: the `player.rs` test comment calling 1301 "Necromantic
+   Scroll" is corrected — 1301 is `ItemID.DestroyerEmblem`
+   (`ItemID.cs:4285`); the Necromantic Scroll is 1845 (`:5373`).
+
+Dedupe proof (tests-as-code): `player.rs::
+each_combat_accessory_grants_exactly_once_through_the_wired_seam` pins the
+FULL row set (4 damage classes, 3 crits, melee-speed bonus, kbGlove) for
+each of the 12 family kinds through a real `Player::update` tick, re-ticks
+(a second grant path would drift tick 2), unequips (the per-tick clears
+end the grant) and stacks two slots of the same emblem (1.30 = per-slot,
+not double). `the_sky_stone_bundle_grants_once_including_minion_knockback`
+pins the bundle once per tick incl. `minion_kb == 0.5`, stone+emblem
+together, and the unequip decay. The module's 10 wave-B tests stay green
+with the 3992 correction. Deliberate deltas vs the pre-wave-E port: 3992
+no longer grants +12% melee (C# parity fix), the gloves now arm `kbGlove`
+(the tooltip's melee-knockback line, `ui/tooltip.rs:330`), the bundle adds
+`minion_kb 0.5` — all three are moves TOWARD the C#, not deviations. The
+standing documented-skipped halves are unchanged (aggro/autoReuseGlove/
+meleeScaleGlove/magmaStone; the minion emblems' `minionKB += 2f`
+`:15317/:15322` still has no live consumer and stays with the inline
+1167/1864 arms, outside the combat family). No RNG rides any arm; the
+fixed-step order is untouched.
+
 ## The vine strip pass (S1-G-1 wave A, 2026-11-18)
 
 `crates/tr-app/src/render/vines.rs` ports `TileDrawing.DrawVines` /
