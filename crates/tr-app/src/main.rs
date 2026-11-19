@@ -61,6 +61,7 @@ mod npc_chat;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
+mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
 mod npc_ai_frost_mob_b;
 mod npc_ai_frost_mob;

@@ -21456,6 +21456,117 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_frost_boss_b.rs` ports the two remaining Frost
+Moon boss machines into a module DISJOINT from the IceQueen sibling
+(`npc_ai_frost_boss.rs`, `task/S1-F-13c-boss-ai`, 41bc275f) and the
+MourningWood sibling (`npc_ai_pumpkin_boss.rs`, S1-F-13b2, 982d3caf) —
+the same house pattern (plain state struct + a type-keyed step), the
+merger unions the seams. **Code-only mode**: no compiler was invoked
+this round; the witness tests are WRITTEN, NOT RUN.
+
+- **Everscream (344, aiStyle 57)** — only the `type == 344` branches of
+  the shared arm (`NPC.cs:32761-33043`); the type-325 arms (and the
+  untyped `else` arms, which are the 325 runtime paths) stay byte-identical
+  in the S1-F-13b2 module. Key fidelity points: the idle attack pick is
+  ALWAYS `Next(1, 3)` — the `this.type != 344` guard at `:32806` kills the
+  low-hp `Next(3, 5)` arm even below 25% hp; phases 3/4 (`:32922-32969`)
+  are unreachable for 344 and unported. Phase 1 is the pine-needle spray
+  (345, Damage 43, every 5 ticks, 180-tick phase) with the per-tick
+  `Next(5)` dust gate (`:32821`) drawn EVEN when it declines; on 0 the
+  245-dust spawn draws `NextVector2Square(0,1)` = 2 × `NextDouble`
+  (`Utils.cs:1251-1253`, X before Y) then the verbatim `Dust.NewDust`
+  pool draws (on an empty pool: `Next(6)`, `Next(10)`, `Next(-20,21)` ×2,
+  `Next(3)`, `Next(-20,21)` — `Dust.cs:153-193`; type 245 hits no tweak
+  arm; ChildSafety off by default) and the slot's velocity is damped
+  ×0.2 AFTER (`:32824`). The shot's aim targets the player's TOP
+  (`position.Y`, not the centre, `:32832`), the Y-jitter draws BEFORE
+  the `Next(0,21)` slope roll (`:32834`), and the named-arg
+  `NewProjectile` evaluates in textual order — SpeedX jitter, SpeedY
+  jitter, `ai0: Next(0,31)` LAST (`:32838`). Phase 2 is the ornament lob
+  (346 CONSTANT — no kind draw, Damage 57, `60 < ai[1] < 240 && %15`,
+  300-tick phase): the `|dx|*0.004` speed gain has NO cap (unlike the
+  325 arm's 14f), the `|dx|*0.3` lift uses dx BEFORE the jitter, the lob
+  draws `Next(50,201)` downward, and `ai1: Next(2)` is LAST (`:32885`).
+- **SantaNK1 (346, aiStyle 61)** — the whole arm (`NPC.cs:33681-33921`):
+  `flag64` = target `active && !dead && Distance(Center, player.Center)
+  <= 2000` (`:33692`, `Entity.cs:195-198` — the float sqrt); the
+  300-tick idle → 240-tick volley cycle draws NOTHING in its state
+  machine; the volley (180 BulletDeadeye, Damage 36) is flag64-gated
+  with the hp-tiered cadence 16/14/11/8 (the else-if chain picks the
+  lowest tier first), aims at the player's CENTRE-Y (`:33754`), and
+  draws origin-Y `Next(15,36)` first. The attack block
+  (`Main.netMode != 1`, `:33769-33847`) fires EVERY tick — even by day
+  and in the idle state: `Next(num927)` (600, hp-scaled ×0.5/×0.75/×0.9
+  via `(int)(double)` truncation) → the 352 Spike (Damage 80, the
+  behind-origin `−direction*24, −64`, `Next(1,100)*direction` against
+  1f, normalised, NO jitters); `Next(num928)` (1200) → `localAI[1]=1`,
+  the window increments on the SAME tick it triggers (→2), fires the
+  350 Missile (Damage 42, ±50 aim jitters, ×0.015 speed jitters) at
+  `%12` when flag64, resets at ≥100; `Next(num929)` (2700) →
+  `localAI[2]=2` (→3 same tick), the 351 Present (Damage 50,
+  `Next(-100,101)` against −300f, 11f normalised, ×0.01 jitters) at
+  `%9` — NOT flag64-gated (presents rain at a dead/far target too),
+  resets at ≥100. All three trigger rolls are unconditional; only the
+  window shots are gated.
+- **The shared floater tail** (`:32970-33042` / `:33848-33920` —
+  byte-identical in the C#) is one helper: the <50px centre damp with
+  the ±0.1 snap-to-zero (the `(double)` compares), the
+  `(vx*20 ± speed)/21` approach, the 80×20 solid probe at
+  `(Center.X−40, pos.Y+height−20)` through the port's verbatim
+  `Player::solid_collision`, the over-player +0.5 drop, the
+  −0.025/−0.2 rise (floor −4) and +0.025/+0.5 fall ramps, the 10f cap.
+  No rand.
+- **Dust seam**: the Everscream dust arm rolls the caller's `Main.rand`
+  through `tr-core`'s verbatim `DustPool::new_dust` (`particles.rs:435`,
+  the `DustRng` impl for `UnifiedRandom`); `SpawnCtx` carries the `Main`
+  statics (screen box, maxDustToDraw) the cull/pressure bands read — the
+  wiring worker fills them. The off-screen cull returns the 6000
+  sentinel with NO draws; the C# writes `Main.dust[6000].velocity` too,
+  and the port's sentinel slot exists (`particles.rs:243`).
+  **Stale-audit cross-check RESOLVED (MERGER-P4, 2026-11-19, audit
+  `f353f22a` / `task/S1-D-3-aistyle57-shared`)**: the 344 dust arm's
+  AI-level draws are NOT stream-neutral and ARE consumed — `Next(5)`
+  every phase-1 tick (`npc_ai_frost_boss_b.rs`, `NPC.cs:32821`), then on
+  0 the `NextVector2Square(0,1)` X-before-Y pair (`Utils.cs:1251-1254`)
+  and the verbatim `NewDust` pool draws on the SAME caller stream, even
+  when the pool's off-screen cull/pressure bands skip the visual (the
+  C# evaluates the position argument's draws before `Dust.NewDust`'s
+  own guards run, `Dust.cs:77-101`). The audit's "Everscream machine
+  MISSING" claim was stale — this module ports it.
+- **Deliberate drops (no rand impact)**: the `Lighting.AddLight` lines
+  (`:32781`, `:33709` — Santa's `InWorld && !SolidTile` gate is kept as
+  a probe for the 1:1 shape, `WorldGen.cs:9688-9695`/`:70111-70132`,
+  `ToTileCoordinates` = `(int)x >> 4`, `Utils.cs:1807-1810`); the
+  `netUpdate` writes (`:32814`, `:33728` — single-player port);
+  `noGravity`/`noTileCollide` are set inside the arms in the C#
+  (`:32764-32765`, `:33684-33685`) and are the caller's integration
+  contract here. `EncourageDespawn(10)` (`NPC.cs:7249-7256`) only ever
+  LOWERS `timeLeft` (default `NPC.activeTime = 750`, `:95186`).
+- **Dependency on the defaults workers**: the `NpcKind` variants + full
+  `SetDefaults` rows for 344/346 (`task/S1-F-13c-defaults-a/b`) are not
+  merged; the dispatch keys on the vanilla type ids + the aiStyle
+  constants (57/61), the AI-visible inputs ride
+  `everscream_ai_defaults()` (172×130, 13000) / `santa_nk1_ai_defaults()`
+  (112×140, 18000) — the agreement points the defaults tables must
+  match. `TargetClosest()` (`:32768`, `:33688`, `:33725`) is the wiring
+  seam (`npc_target::target_closest`); Santa's flag64 needs the
+  target's `active`/`dead` on `FrostBossBTarget`.
+- **Witness tests (written, NOT run — no compiler invoked)**: each
+  machine's draw order is replayed against a same-seeded
+  `UnifiedRandom` probe — the Everscream idle pick (always 1/2 at every
+  hp tier), the needle spray (dust gate first, Y-jitter before the
+  slope roll, ai0 last), a forced dust spawn (a `Next(5)==0` seed pins
+  the slot payload + the ×0.2 damp), the ornament lob (ai1 last, the
+  no-cap gain), the day flees (zero draws / Santa's rolls still fire),
+  the movement damp/approach/cap; Santa's witnesses replay the WHOLE
+  attack block per tick (an independent transcription — the three
+  unconditional rolls can trigger on any seed, and a triggered window
+  increments the same tick), covering the volley cadence tiers, the
+  flag64 suppression (dead + >2000px), the Spike payload, both window
+  cadences/resets and the hp-scaled denominators; the dispatch claims
+  exactly 344/346 and a declined id draws nothing.
 ## IceQueen core AI (S1-F-13c slice C, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_frost_boss.rs` ports the `aiStyle == 60` arm of
