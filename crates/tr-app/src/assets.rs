@@ -396,6 +396,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Mount_DrillRing",
         "Mount_DrillSeat",
         "Mount_DrillDiode",
+        // S1-L-8b: the glow strips the mount rows now name (data-only until
+        // the glow draw pass lands). The Drill's three `DrillMount[3..5]`
+        // (`Mount.cs:1323`/`:1327`/`:1329`, `AssetInitializer.cs:449-451`).
+        "Mount_Glow_DrillRing",
+        "Mount_Glow_DrillSeat",
+        "Mount_Glow_DrillDiode",
         "Mount_CuteFishron1",
         "Mount_CuteFishron2",
         "Extra_113",
@@ -405,15 +411,26 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_274",
         "Extra_290",
         "Extra_291",
+        // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
+        // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
+        // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
+        // (`AssetInitializer.cs:352-354`). Data-only until the glow draw pass.
+        "Glow_283",
+        "Glow_284",
+        "Glow_285",
+        "Glow_370",
         // The minecart rows and their `Mount.SetAsMinecart` cosmetic variants
         // (`Mount.cs:912-1110`): the base cart, the mech body + glow, wood and
-        // fish cart textures, then the `Extra_*` strip per variant.
+        // fish cart textures, then the `Extra_*` strip per variant. S1-L-8b:
+        // the names are the actual content files (`AssetInitializer.cs:435-441`)
+        // — the old `MinecartMechMount*`/`MinecartWoodMount`/`Mount_FishMinecart`/
+        // `Mount_DesertMinecart` spellings matched no `.xnb`.
         "Mount_Minecart",
-        "MinecartMechMount",
-        "MinecartMechMountGlow",
-        "MinecartWoodMount",
-        "Mount_FishMinecart",
-        "Mount_DesertMinecart",
+        "Mount_MinecartMech",
+        "Mount_MinecartMechGlow",
+        "Mount_MinecartWood",
+        "Mount_MinecartMineCarp",
+        "Mount_MinecartDesert",
         "Extra_108",
         "Extra_109",
         "Extra_110",
@@ -438,6 +455,28 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_165",
         "Extra_246",
         "Extra_251",
+        // S1-L-8b: the S1-L-9 land-mount rows' sheets were never packed — the
+        // Turtle (`Mount.cs:1112-1162`), GolfCart 17 (`:1694-1739`, Extra_97
+        // + its Extra_96 back extra, `:1733-1734`), Flamingo 37 (`:1796-1841`, Extra_149),
+        // SpookyWood 45 (`:1940-1985`, Extra_167), Santank 46 (`:1987-2039`,
+        // Extra_168 body + tracks), Wolf 52 (`:2246-2308`, Extra_253/254),
+        // Velociraptor 54 (`:2310-2360`, Extra_271/272), Rat 55
+        // (`:2362-2415`, Extra_273) and the Chillemts 62-65
+        // (`SetAsChillet` `:2670-2745`, Extra_301/302). Same silent-nothing
+        // failure mode as M4-NPC-3v: the row names a sheet the atlas lacks.
+        "Mount_Turtle",
+        "Extra_96",
+        "Extra_97",
+        "Extra_149",
+        "Extra_167",
+        "Extra_168",
+        "Extra_253",
+        "Extra_254",
+        "Extra_271",
+        "Extra_272",
+        "Extra_273",
+        "Extra_301",
+        "Extra_302",
         // S1-E-16 screen effects: `Extra_49` is the `ScreenObstruction` border
         // diamond (`ScreenObstruction.cs:53`), `Extra_98` the paladin-shield
         // boundary arc (`Main.cs:57248`) and `FlameRing` the inferno halo
