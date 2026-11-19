@@ -3955,22 +3955,21 @@ impl Npc {
             // spearman rides the walker.
             NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
             NpcKind::SolarSpearman => {
-                let (pcx, pcy) = player.center();
-                // S1-D-3: the 518 carrier row (`NPC.cs:58226-58231`).
-                crate::npc_ai::walker_step_ladder(
+                // S1-D-3p (walker migration): the shared selection at the
+                // C# position (`NPC.cs:57369`); S1-D-3's 518 carrier row
+                // (`NPC.cs:58226-58231`) rides the same ladder.
+                crate::npc_ai::walker_step_fighter(
                     self,
                     world,
-                    pcx,
-                    pcy,
+                    player,
                     crate::npc_ai::WalkerParams {
                         speed: 5.0,
                         jump: -6.2,
-                        aggro_x: 80.0 * TILE_PX,
-                        aggro_y: 40.0 * TILE_PX,
+                        aggro_x: 0.0,
+                        aggro_y: 0.0,
                     },
                     GRAVITY,
                     MAX_FALL,
-                    player.dead,
                 );
             }
             // The stardust/solar tower mobs: the spider pair, the soldier,
@@ -4005,22 +4004,21 @@ impl Npc {
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
             // `:57681`: the soldier's walk speed is the 4-px cap.
             NpcKind::VortexSoldier => {
-                let (pcx, pcy) = player.center();
-                // S1-D-3: the 429 num83 row (`NPC.cs:57681-57684`).
-                crate::npc_ai::walker_step_ladder(
+                // S1-D-3p (walker migration): the shared selection at the
+                // C# position (`NPC.cs:57369`); S1-D-3's 429 num83 row
+                // (`NPC.cs:57681-57684`) rides the same ladder.
+                crate::npc_ai::walker_step_fighter(
                     self,
                     world,
-                    pcx,
-                    pcy,
+                    player,
                     crate::npc_ai::WalkerParams {
                         speed: 4.0,
                         jump: -6.2,
-                        aggro_x: 80.0 * TILE_PX,
-                        aggro_y: 40.0 * TILE_PX,
+                        aggro_x: 0.0,
+                        aggro_y: 0.0,
                     },
                     GRAVITY,
                     MAX_FALL,
-                    player.dead,
                 );
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
@@ -6786,24 +6784,15 @@ impl Npc {
         // gate is false only on a non-eclipse day above the surface
         // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
         // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
-        // event terms cannot fire for this kind in the port.
-        let cand = crate::npc_target::TargetCandidate {
-            active: true,
-            dead: player.dead,
-            // The port has no hardcore ghosts (`Player.ghost`).
-            ghost: false,
-            x: player.x,
-            y: player.y,
-            width: crate::player::WIDTH as i32,
-            height: crate::player::HEIGHT as i32,
-            // `Player.aggro`/`npcTypeNoAggro`/`tankPet` have no port
-            // fields yet (the stealth/tank systems are unported) — the
-            // stock 0/false/None keep the C# metric's plain form.
-            aggro: 0,
-            item_animation: player.frame_inputs.swing_anim as i32,
-            npc_type_no_aggro: false,
-            tank_pet: None,
-        };
+        // event terms cannot fire for this kind in the port. The walker
+        // migration batch 1 ported the FULL gate as
+        // `npc_ai::fighters_not_discouraged`; the zombie's own fold stays
+        // until its arm joins a batch.
+        // The candidate rides the shared seam (the batch-1 convention):
+        // the player's live `aggro`/`npcTypeNoAggro` fields (stock 0 /
+        // all-false until the stealth/calm systems land), the tank-pet
+        // slot inert until the pet system lands.
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
         let discouraged = !world.eclipse
             && world.day_time
             && !self.spawned_from_statue
@@ -7514,32 +7503,38 @@ impl Npc {
     /// accumulator (the frame wraps over `Main.npcFrameCount[21] = 15`,
     /// `Main.cs:67082`).
     fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3 (speed table): the ladder variant — the aiStyle-3 kinds
-        // ride the C#'s per-type accel/brake (`NPC.cs:57403-58401`); the
-        // direct-write kinds keep the old step byte-for-byte.
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`) replaces the ad-hoc dx-sign facing and
+        // the invented 80×40-tile aggro window — `walker_step_fighter`
+        // keeps the S1-D-3 ladder (the aiStyle-3 kinds ride the C#'s
+        // per-type accel/brake, `NPC.cs:57403-58401`) and the direct-write
+        // fallback byte-identical.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
                 // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
                 // the skeleton 1.5, the undead miner 1.0, the pirate
                 // deckhand 2.0 and the pirate captain's mate 3.0. The jump
-                // -6.2 and the zombie's 80x40-tile aggro window stay.
+                // -6.2 stays; the aggro box is gone (the C# gates the chase
+                // on the despawn-discouragement arm, not a distance box).
                 speed: self
                     .kind
                     .ai3_walk_speed()
                     .expect("the cave walkers' aiStyle-3 cap"),
                 jump: -6.2,
+                // The fighter core ignores the box (the C# gates the chase
+                // on the despawn-discouragement arm, `NPC.cs:57336`); the
+                // values stay ONLY for the non-aiStyle-3 fallback — the
+                // Present Mimic's documented aiStyle-25 walker stand-in
+                // (`npc.rs`'s dispatch note) keeps its legacy step.
                 aggro_x: 80.0 * TILE_PX,
                 aggro_y: 40.0 * TILE_PX,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // The frame: the same accumulator as the zombie's, wrapping over
         // the 15-frame strip.
@@ -9141,21 +9136,21 @@ impl Npc {
         {
             self.ai[2] = 1.0;
         }
-        // S1-D-3: the 391 carrier row (`NPC.cs:58205-58207`'s 5/0.25/0.7).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 391 carrier row
+        // (`NPC.cs:58205-58207`'s 5/0.25/0.7) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 5.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
         if self.ai[2] > 0.0 && self.on_ground {
@@ -10700,20 +10695,21 @@ impl Npc {
         }
         // `:57677`: the rifleman's walk speed is 6 — S1-D-3: the num83
         // row's 0.07 accel rides the ladder (`NPC.cs:57677-57680`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`) replaces the ad-hoc facing + the
+        // invented 80×40 box; the ladder write stays byte-identical.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 6.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
     }
 
@@ -11321,16 +11317,21 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 60.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — the 409 switch case keeps it
+        // encouraged even by day, `:60312-60326`); the shooter block's
+        // own re-target (`:59206`) and walk (`:59715+`) stay the S1-D-3c
+        // shooter migration's job — the ladder declines 409, so the
+        // direct write is byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 2.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
@@ -11435,16 +11436,22 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 330.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — the 411 switch case keeps it
+        // encouraged even by day, `:60312-60326`); the shooter block's
+        // own re-target (`:59206`, the ai[1] > 220 gate) and walk
+        // (`:59741-59744`'s 2/0.5) stay the S1-D-3c shooter migration's
+        // job — the ladder declines 411, so the direct write is
+        // byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 2.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
@@ -11466,22 +11473,21 @@ impl Npc {
     /// 4/0.1/0.95 jump assist + `:58422-58431`'s rider-hide) — the walker
     /// with the mob-specific speed, hidden while a 416 rides it.
     fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3: the 415 carrier row (`NPC.cs:58214-58219`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 415 carrier row
+        // (`NPC.cs:58214-58219`) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 4.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
@@ -11672,22 +11678,21 @@ impl Npc {
     /// 6/0.15/0.85 walk) — the selenian rides the walker with its own
     /// speed and the roller's drag.
     fn update_solar_selenian(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        // S1-D-3: the 419 carrier row (`NPC.cs:58220-58225`).
-        crate::npc_ai::walker_step_ladder(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`); S1-D-3's 419 carrier row
+        // (`NPC.cs:58220-58225`) rides the same ladder.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 6.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,
-            player.dead,
         );
     }
 
@@ -11948,16 +11953,22 @@ impl Npc {
             self.ai[2] = 3.0;
             self.ai[1] = 180.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369` — 424 BREAKS the discouragement chain
+        // (`:60302`'s `npcID != 424` term), so the lunar predictor chases
+        // even by day); the shooter block's own re-target (`:59206`) and
+        // walk (`:59717`'s 1f default) stay the S1-D-3c shooter
+        // migration's job — the ladder declines 424, so the direct write
+        // is byte-identical to the old `walker_step`.
+        crate::npc_ai::walker_step_fighter(
             self,
             world,
-            pcx,
-            pcy,
+            player,
             crate::npc_ai::WalkerParams {
                 speed: 1.0,
                 jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
+                aggro_x: 0.0,
+                aggro_y: 0.0,
             },
             GRAVITY,
             MAX_FALL,

@@ -204,6 +204,10 @@ pub struct FrostDefaults {
 }
 
 impl NpcKind {
+    /// `NPCID.Count` (`NPCID.cs:12581`, 697) — the length of the C#'s
+    /// per-type tables (`Player.npcTypeNoAggro`, `Player.cs:2994`).
+    pub const CS_ID_COUNT: usize = 697;
+
     // The protocol id tables below must stay a single live arm per kind/id:
     // the pirate/martian merges of 2026-11 appended duplicates that the
     // compiler only warns about, so 60 dead `to_u16` arms and 28 dead

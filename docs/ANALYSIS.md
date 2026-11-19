@@ -18264,18 +18264,29 @@ struct gained `target` (the `ClearTarget` 255 default, `NPC.cs:8539`,
 
 Deliberate deviations (the migration remainder):
 
-* **One caller wired.** `update_zombie` (`npc.rs`) is the representative:
-  it calls the helper under the `AI_003` chase gate
+* **One caller wired, then batch 1 (10 callers).** `update_zombie`
+  (`npc.rs`) is the representative: it calls the helper under the `AI_003`
+  chase gate
   (`DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`, `NPC.cs:57336`,
   `:60300-60330` — for type 3 only the non-eclipse-day-above-surface terms
-  can fire) and drops the invented 80×40-tile aggro window. The other ~29
-  `walker_step` callers and every ad-hoc-facing AI keep their current
-  writes until the migration; `walker_step`'s `aggro_x`/`aggro_y` params
-  stay for them (the C# has no such window — the chase is gated by the
-  despawn-discouragement arm, not a distance box).
-* **Stock player inputs.** `Player.aggro`, `npcTypeNoAggro` and `tankPet`
-  have no port fields (the stealth armour / tank pets are unported
-  systems); the wiring passes 0/false/None, the C# stock values. The
+  can fire) and drops the invented 80×40-tile aggro window. The 2026-11-19
+  walker migration batch 1 (`walker_step_fighter`, below) wires 10 more
+  fighter callers on the FULL gate. The remaining walker callers and
+  every ad-hoc-facing AI keep their current writes until the next batch;
+  `walker_step`'s `aggro_x`/`aggro_y` params stay for them (the C# has no
+  such window — the chase is gated by the despawn-discouragement arm, not
+  a distance box).
+* **Stock player inputs — the fields landed with batch 1.** `Player.aggro`
+  (`Player.cs:1446`), `npcTypeNoAggro[NPCID.Count]` (`Player.cs:2994`,
+  `NPCID.Count = 697`, `NPCID.cs:12581`) and `tankPet` (`Player.cs:870`,
+  default -1) are now real `Player` fields, spawned at the C# stock
+  defaults (0 / all-false / -1); the stealth armour / calm-accessory /
+  tank-pet writers are still unported, so the values stay stock until
+  those systems land. `npc_target::session_candidate` reads `aggro` live;
+  `session_candidate_for(player, kind)` resolves the per-type
+  `npcTypeNoAggro[cs_id]` flag; the tank-pet slot stays `None` in the
+  candidate because the port has no projectile table to read the pet's
+  box from (the steal arm is inert until the pet system lands). The
   helper itself implements all three gates and the parity tests exercise
   them through `TargetCandidate`.
 * **The zombie's velocity write stays direct** (`facing * 1f`): the C#'s
@@ -18302,6 +18313,150 @@ penalty + facing suppression, the rect truncation + int-centre ties, the
 aiStyle-3 bottom-edge arm, the oldTarget inheritance (swing/fresh/boss
 breaks), the confused flip, the tank steal + its LOS wall, the dead/absent
 fallback, the netUpdate collide gate, and the zombie wiring proof.
+
+## The walker migration batch 1 (S1-D-3p, code-only mode, 2026-11-19)
+
+`task/S1-D-3p-walker-migration` — the first coherent batch of the
+`walker_step` caller migration: **10 aiStyle-3 fighter callers** now run
+the shared selection at the C# position through
+`npc_ai.rs::walker_step_fighter`. No compiler invoked (code-only mode):
+the equivalence argument is below, the A/B tests are tests-as-code
+(written, NOT run).
+
+### The C# shape (re-read, cited)
+
+`AI_003_Fighters` (`NPC.cs:55856+`) runs its target core at `:57336`:
+
+```
+if (this.ai[3] < (float)num57 && NPC.DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged(...))
+{
+    ... sound rolls (:57340-57367, the unported audio layer) ...
+    this.TargetClosest();                                   // :57369
+    if (this.directionY > 0 && Main.player[this.target].Center.Y <= base.Bottom.Y)
+        this.directionY = -1;                               // :57370-57373
+}
+else if (...) { ... the wander/despawn arm (:57375-57401) ... }
+```
+
+`num57` is 60 (`:57035`), 180 for type 120 (`:57036-57038` — no batch kind
+is 120, the fold keeps the gate verbatim). The velocity ladder
+(`npc_ai3_speeds.rs`, S1-D-3) runs AFTER the core (`:57403-58401`), then
+the position integration. `walker_step_fighter` reproduces exactly this
+order: gate → `target_closest` (the `npc_target.rs` helper, slot-0 session
+candidate, aiStyle 3, ticker 0) → `sprite_dir = facing` (the BUG-07
+lockstep, the zombie convention) → the `:57370-57373` directionY re-check
+→ `run_ai3_ladder` with the direct `facing * speed` fallback → the
+unchanged `walker_integrate`. The discouraged arm keeps the port's
+`vx *= 0.9` decay (the zombie convention; the C# wander-flip arm is the
+full AI_003 migration's job).
+
+The gate itself — `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+(`NPC.cs:60300-60330`) — is ported whole as `fighters_not_discouraged`:
+the day-above-surface `&&` chain (eclipse / `IsItDay` / statue / surface /
+graveyard / snowMoon / invasionType 1+3+4 / dontStarve / the ~50-type
+exclusion list / the 411 ai[1] window) and the switch (409/415/419/425/
+427/428/429/508/524-527/580/582 + 528-532 stay encouraged; the default
+returns `NPCID.Sets.CritterThatCanTurnOnPlayers`, `NPCID.cs:10436`). When
+ANY chain term fails (night, underground, ...) the method returns true —
+every fighter chases. Stock stand-ins: `ZoneGraveyard` and
+`Main.dontStarveWorld` have no port fields (false — their terms pass);
+`Main.remixWorld`'s `IsItDay` half (`Main.cs:62825-62832`) is unported.
+
+### The callers migrated (the batch)
+
+| Caller (`npc.rs`) | Kinds served | C# velocity arm |
+| --- | --- | --- |
+| `update_skeleton` | Skeleton 21, UndeadMiner 44, GoblinPeon/Thief/Warrior 26/27/28, PirateDeckhand/CaptainsMate 212/213, the martians, the scarecrows 305-314 + Splinterling 326, the frost walkers 338-343/348-351 (the ladder declines the frost block — the direct write stands in, as before) | the `ai3_walk_speed` cap rows (`:57520-58374`) |
+| `update_scutlix` | Scutlix 391 | the carrier row 5/0.25/0.7 (`:58205-58207`) |
+| `update_solar_drakomire` | SolarDrakomire 415 | the carrier row 4/0.1/0.95 (`:58214-58219`) |
+| `update_solar_selenian` | SolarSelenian 419 | the carrier row 6/0.15/0.85 (`:58220-58225`) |
+| the SolarSpearman dispatch arm | SolarSpearman 518 | the carrier row 5/0.1/0.95 (`:58226-58231`) |
+| the VortexSoldier dispatch arm | VortexSoldier 429 | the num83 row cap 4 (`:57681-57684`) |
+| `update_vortex_rifleman` | VortexRifleman 425 | the num83 row cap 6 (`:57677-57680`) |
+| `update_stardust_spider_big` | StardustSpiderBig 409 | the shooter block's walk (`:59715+`, deferred — the direct write stands in) |
+| `update_stardust_soldier` | StardustSoldier 411 | the shooter block's 2/0.5 (`:59741-59744`, deferred) |
+| `update_nebula_predictor` | Predictor 424 | the shooter block's 1f default (`:59717`, deferred) |
+
+The three shooter-block kinds (409/411/424) get the selection at the
+`:57369` position (their switch cases keep them encouraged by day); their
+shooter-block re-target (`:59206`, the `ai[2] > 0` + flag18 gate) and walk
+arm stay the S1-D-3c shooter migration's job — the ladder declines the
+shooter ids (`:58322`'s exclusion list), so the direct write is
+byte-identical to the old `walker_step`.
+
+`update_skeleton` also serves the Present Mimic (341, aiStyle 25) as a
+documented stand-in: `walker_step_fighter` detects the non-aiStyle-3 kind
+and delegates to the legacy `walker_step_ladder` (the 80×40 box included)
+byte-for-byte — the fighter core is AI_003's, not a generic replacement.
+
+### The equivalence argument (BEHAVIOUR FROZEN)
+
+Inside the chase gate, for the same inputs the new path produces the same
+facing/target/velocity/position as the old path:
+
+1. **Facing.** The old step writes `facing = sign(target_x − cx)` with the
+   float centre `cx = x + w/2` (`walker_step`). The helper writes the
+   int-centre comparison `(targetRect.X + Width/2) < position.X +
+   (float)(width/2)` (`NPC.cs:77751-77755`). Every batch kind has an EVEN
+   width (18/22/30/34/60) and the player box is 20×42, so on
+   integer-aligned positions `w/2 == (int)w/2` and the truncation is the
+   identity — the two comparisons are bit-equal (ties face +1 on both).
+   The `targetRect` truncation (`:77735`) only bites at fractional player
+   positions, where the C# itself truncates — the new path is the faithful
+   one there (a documented fidelity fix, not a regression).
+2. **The pick.** One session player → slot 0 always wins the scan
+   (`:77693`'s `!t` first-slot arm); the stock aggro 0 / no-aggro false /
+   tank-pet-none inputs keep the metric's plain form. `target` goes
+   255 → 0 on the first selection, exactly as the zombie wiring.
+3. **Velocity.** Both paths run `run_ai3_ladder` (the same `LadderCtx`:
+   the same centre, the same `player.center()` target, the same
+   `player.dead`, the same gravity) at the same position, with the same
+   direct-write fallback. The ladder is RNG-free (`npc_ai3_speeds.rs`
+   module doc).
+4. **Integration.** `walker_integrate` is shared verbatim — the same
+   gravity/collision/jump choreography, the same fixed-step order.
+5. **RNG.** Neither path draws: the `:57336-57402` core has no `Main.rand`
+   (the sound rolls `:57340-57367` are the unported audio layer), the
+   ladder draws none, `walker_integrate` draws none. The A/B tests carry a
+   twin `UnifiedRandom` pair (PartialEq over the full ring state) and
+   assert it untouched.
+
+The deliberate differences (the C# fidelity fixes, all gated): the
+dropped 80×40 distance box (the C# chases gated by the
+despawn-discouragement arm, not a range window — a far player is now
+faced/tracked), the day-gate discouragement (the old step chased by day
+too), the dead-target facing suppression (`:77736-77739`), the
+`direction_y` writes (`:77756-77768` + `:57370-57373` — no batch kind's
+movement reads `direction_y`, so the writes are inert for the frozen
+outputs), and the `net_update`/`target_set_frame` stamps (the unported
+net-sync/fade readers).
+
+### The A/B tests-as-code (`npc_ai.rs::tests`, written NOT run)
+
+10 tests: `s1_d_3p_ab_skeleton_matches_the_old_ladder_step_bit_for_bit`,
+`..._scutlix_...`, `..._solar_carriers_...` (415/419/518/429),
+`..._vortex_rifleman_...`, `..._shooter_walkers_...` (409/411/424, the
+direct-write old path), `s1_d_3p_the_day_gate_matches_the_csharp_discouragement`,
+`s1_d_3p_the_discouraged_arm_decays_instead_of_chasing`,
+`s1_d_3p_the_chase_has_no_distance_box`,
+`s1_d_3p_the_dead_target_is_tracked_not_faced`,
+`s1_d_3p_the_non_fighter_stand_in_keeps_the_legacy_step`. The A/B core
+(`ab_fighter_kind`) drives twin NPCs tick-for-tick for 240 ticks on the
+flat night ground (the gate passes for every fighter at night) and
+bit-compares facing/sprite_dir/vx/vy/x/y/on_ground/ai/damage_override per
+tick, asserts the slot-0 pick + the tracking rect + the left facing, and
+asserts the twin RNG streams equal.
+
+### Remaining (the next batches)
+
+~19 walker callers (the archer's stand arm, the DD2 goblin/bomber/kobold/
+ogre/thrower/skeleton arms, the solar sroller/corite, the vortex hunter/
+alien/headcrab, the stardust spider-small/jellyfish/cell, the nebula beast/
+floater, the brain suckler, the saucer core, the wither beasts, the drakin,
+the goblin stand-in) + every ad-hoc-facing AI; the shooters' own re-target
+(`:59206`) and walk arm (S1-D-3c); the `old_*` head latches
+(`NPC.cs:90393-90395`); the `EverLastingTicker` plumb; the tank-pet box
+lookup; the discouraged arm's wander-flip (`:57375-57401`).
 
 ## The Lost Girl's aiStyle-42 machine (S1-D-3 aiStyle-42, code-only mode, 2026-11-18)
 

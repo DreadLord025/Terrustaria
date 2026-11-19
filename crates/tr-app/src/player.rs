@@ -555,6 +555,23 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
+    /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
+    /// the facing-inheritance gate reads (`:77749`). The stealth armour
+    /// writers are unported (the Scout Sling's `aggro -= 400` half,
+    /// `Player.cs:14579`, still skips) — stock 0 until they land; the
+    /// S1-D-3p wiring reads it through `npc_target::session_candidate`.
+    pub aggro: i32,
+    /// `Player.npcTypeNoAggro[NPCID.Count]` (`Player.cs:2994`, the bool
+    /// array default false): per-NPC-type "do not aggro" flags (the
+    /// Royal Gel / calm-accessory writers are unported). Indexed by the
+    /// C# NPC type (`NpcKind::cs_id`), read by the target scan's +1000
+    /// penalty (`NPC.cs:77689`) and facing suppression (`:77740`).
+    pub npc_type_no_aggro: Vec<bool>,
+    /// `Player.tankPet` (`Player.cs:870`, default -1): the projectile
+    /// slot of the player's tank pet (the mount/pet system is unported —
+    /// stock -1; the target scan's steal arm reads it, `NPC.cs:77701`).
+    pub tank_pet: i32,
     /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
     /// counter `/death` reads (`DeathCommand`).
     pub deaths_pve: u32,
@@ -1760,6 +1777,11 @@ impl Player {
         };
         Self {
             dead: false,
+            // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
+            // field defaults): no stealth, no per-type calm, no tank pet.
+            aggro: 0,
+            npc_type_no_aggro: vec![false; crate::npc::NpcKind::CS_ID_COUNT],
+            tank_pet: -1,
             composite_front: crate::player::CompositeArmState::DISABLED,
             composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
