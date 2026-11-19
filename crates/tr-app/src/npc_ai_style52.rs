@@ -381,12 +381,13 @@ pub fn planteras_hook_step(
         npcs[me].vx = num787 * num789;
         npcs[me].vy = num788 * num789;
     }
-    // `:32238-32239` — the rotation faces the BOSS (not the anchor):
+    // `:32238-32239` - the rotation faces the BOSS (not the anchor):
     // `Atan2(x: bossCentre.X - centre.X, y: bossCentre.Y - centre.Y) -
-    // 1.57f` — the named args put dx in the FIRST slot, and 1.57f is the
-    // literal, not π/2.
+    // 1.57f` - Math.Atan2(y, x) with NAMED args means y = dy, x = dx,
+    // i.e. atan2(dy, dx) (the plantera-audit G1 precedent); the double
+    // seam widens, atan2 in f64, casts back; 1.57f is the literal.
     let (bcx, bcy) = npcs[bi].center();
-    npcs[me].rotation = (bcx - cx).atan2(bcy - cy) - 1.57;
+    npcs[me].rotation = ((bcy - cy) as f64).atan2((bcx - cx) as f64) as f32 - 1.57;
     ev
 }
 
@@ -397,7 +398,10 @@ mod tests {
     use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn air() -> World {
-        let mut w = World::new("t".into(), 200, 120);
+        // height 400 keeps UnderworldLayer = height - 200 = 200 positive
+        // (the 120-tall draft made it -80 -> bound -1280, so EVERY player
+        // tripped the underworld retreat gate).
+        let mut w = World::new("t".into(), 200, 400);
         w.world_surface = 30.0;
         w.day_time = false;
         w
@@ -490,12 +494,14 @@ mod tests {
         let w = air();
         let players = [cand(1000.0, 800.0)]; // jungle, below surface 480
         let mut rng = UnifiedRandom::new(1);
-        // Full life, anchored, timer 100 → 99.
+        // Full life, anchored, timer 100 -> 99. The player must sit BELOW
+        // the surface line (world_surface 30 * 16 = 480): y 800 is under it.
         let mut pool = [boss(900.0, 700.0), hook(500.0, 500.0)];
         pool[1].ai = [10.0, 10.0, 0.0, 0.0];
         pool[1].local_ai[0] = 100.0;
         let ctx = HookCtx::stock(1, 0);
-        step(&mut pool, 1, &ctx, &w, &players, &mut rng);
+        let deep = [cand(1000.0, 800.0)];
+        step(&mut pool, 1, &ctx, &w, &deep, &mut rng);
         assert_eq!(pool[1].local_ai[0], 99.0);
         // Below half (14999 < 15000): −1 −2 = −3.
         pool[0].hp = 14999;
@@ -807,9 +813,9 @@ mod tests {
         step(&mut pool, 1, &ctx, &w, &players, &mut rng);
         let (cx, cy) = pool[1].center();
         let (bcx, bcy) = pool[0].center();
-        let expect = (bcx - cx).atan2(bcy - cy) - 1.57;
+        let expect = ((bcy - cy) as f64).atan2((bcx - cx) as f64) as f32 - 1.57;
         assert_eq!(pool[1].rotation, expect);
-        assert_ne!(expect, (bcx - cx).atan2(bcy - cy) - std::f32::consts::FRAC_PI_2,
+        assert_ne!(expect, ((bcy - cy) as f64).atan2((bcx - cx) as f64) as f32 - std::f32::consts::FRAC_PI_2,
             "1.57f is the literal, not π/2");
     }
 
