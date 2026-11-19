@@ -526,6 +526,12 @@ pub struct Projectile {
     /// `local_ai` — the leaf's C# arm owns all three `localAI` slots (the age,
     /// the tick counter, the spin-sign latch).
     pub frame_counter: i32,
+    /// `Entity.oldPosition` (`Projectile.cs:17013`) — the position
+    /// latch taken between the AI and `HandleMovement` every sub-step:
+    /// the ground machine's `flag32` stall test (`:62318`) reads it.
+    /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
+    /// the stock ZERO until their movement ports land.
+    pub old_position: Vec2,
     /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
@@ -540,7 +546,14 @@ pub struct Projectile {
     pub old_rot: [f32; 10],
     /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
     /// modes 2-5 records beside the ring positions.
-    pub old_sprite_direction: [i32; 10],    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
+    pub old_sprite_direction: [i32; 10],
+    /// `Kill()`'s captured `num = this.timeLeft` (`Projectile.cs:70649`,
+    /// taken BEFORE the `:70650` zeroing) — the 639 MoonlordArrow's death
+    /// hook (`:73444-73451`) computes the 640 trail's spawn delay from it.
+    /// Only the moon-lord arms write it (S1-D-4); every other death path
+    /// leaves the stock 0 and no consumer reads it for them.
+    pub kill_time_left: i32,
+    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
     /// `Projectile.tileCollide` (the default true, `:787`-defaults).
@@ -593,6 +606,19 @@ pub struct Projectile {
     /// The 578's 580 spawn (`Projectile.cs:33838-33841`): the (x, y,
     /// vx, vy, ai0) payload the world_sim resolves into the pool.
     pub wants_ritual_bolt: Option<(f32, f32, f32, f32, f32)>,
+    /// S1-D-3 W-9 fishron wiring — the aiStyle-64 sharknado cloud's shark
+    /// spawn (`Projectile.cs:29502-29516`'s `NPC.NewNPC(..., 372/373)`):
+    /// (npc_type, x, y, vx, vy, ai2, ai3). The world_sim's projectile pass
+    /// resolves it into the NPC vec (the `wants_mark_spawn` shape — the
+    /// pool cannot grow the NPC list). The 386 alone seeds ai2 = width /
+    /// ai3 = -1.5 (the Sharkron2's rise + sway); the 384's Sharkron keeps
+    /// the stock 0/0 (it hovers).
+    pub wants_shark_spawn: Option<(u16, f32, f32, f32, f32, f32, f32)>,
+    /// The aiStyle-64 cloud's next-segment spawn
+    /// (`Projectile.cs:29496`'s `NewProjectile(..., this.type, ..., 10f,
+    /// ai[1] - 1)`): (x, y, vx, vy, ai1). The sim re-spawns the same kind
+    /// with ai0 = 10 (the pool cannot spawn from a slot arm mid-iteration).
+    pub wants_cloud_segment: Option<(f32, f32, f32, f32, f32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -668,9 +694,11 @@ impl Default for Projectile {
             light: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -690,6 +718,8 @@ impl Default for Projectile {
             bonus_tag_damage: 0,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
+            wants_shark_spawn: None,
+            wants_cloud_segment: None,
             minion: false,
             sentry: false,
             minion_slots: 0.0,
@@ -3590,6 +3620,212 @@ impl Projectile {
         // its row's `tileCollide`, so a blocked move steps into the tile and
         // dies — what `kill_step` models.
         self.kill_step(world);
+    }
+
+    /// S1-D-3 W-9 fishron wiring — `AI()`'s aiStyle-64 block
+    /// (`Projectile.cs:29419-29533`): the sharknado clouds (384 the
+    /// ForceBubble, 386 the Cthulunado). RNG by construction: the arm
+    /// draws ZERO `Main.rand` (the 385-bolt Kill's dust ring is the
+    /// documented skip). The segment re-spawn (`:29496`) cannot run from
+    /// a slot arm mid-iteration — the request shape: the shark spawn
+    /// rides `wants_shark_spawn`, the segment re-spawn rides
+    /// `wants_cloud_segment`; the world sim resolves both.
+    fn ai_sharknado_cloud(&mut self, world: &World, local_owner: u8) {
+        // `:29421-29431` — the per-type tunables.
+        let (num490, num491, num492) = if self.kind == CTHULUNADO {
+            (16.0f32, 16.0f32, 1.5f32)
+        } else {
+            (10.0, 15.0, 1.0)
+        };
+        let num493 = 150.0f32;
+        let num494 = 42.0f32;
+        // `:29432-29435` — the facing follows -sign(vx).
+        if self.vel.x != 0.0 {
+            let d = if self.vel.x > 0.0 { -1 } else { 1 };
+            self.direction = d;
+            self.sprite_direction = d;
+        }
+        // `:29436-29445` — the >2 frame counter over the 6-row strip.
+        self.frame_counter += 1;
+        if self.frame_counter > 2 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 6 {
+            self.frame = 0;
+        }
+        // `:29446-29457` — the local-owner init latch: recentre, scale,
+        // resize, recentre back.
+        if self.local_ai[0] == 0.0 && self.owner == local_owner {
+            self.local_ai[0] = 1.0;
+            self.pos.x += self.w / 2.0;
+            self.pos.y += self.h / 2.0;
+            self.scale = (num490 + num491 - self.ai[1]) * num492 / (num491 + num490);
+            self.w = (num493 * self.scale) as i32 as f32;
+            self.h = (num494 * self.scale) as i32 as f32;
+            self.pos.x -= self.w / 2.0;
+            self.pos.y -= self.h / 2.0;
+        }
+        // `:29458-29463` — the per-tick scale ladder (ai[1] != -1).
+        if self.ai[1] != -1.0 {
+            self.scale = (num490 + num491 - self.ai[1]) * num492 / (num491 + num490);
+            self.w = (num493 * self.scale) as i32 as f32;
+            self.h = (num494 * self.scale) as i32 as f32;
+        }
+        // `:29464-29483` — the solid-collision alpha ramp.
+        if !box_solid(world, self.pos, self.w, self.h) {
+            self.alpha -= 30;
+            if self.alpha < 60 {
+                self.alpha = 60;
+            }
+            if self.kind == CTHULUNADO && self.alpha < 100 {
+                self.alpha = 100;
+            }
+        } else {
+            self.alpha += 30;
+            if self.alpha > 150 {
+                self.alpha = 150;
+            }
+        }
+        // `:29484-29487` — the segment countdown.
+        if self.ai[0] > 0.0 {
+            self.ai[0] -= 1.0;
+        }
+        // `:29488-29518` — the segment hand-off: at ai[0]==1 with segments
+        // left, spawn the next segment (ai0 = 10, ai1 - 1) and every 4th
+        // (2nd for the 386) a shark.
+        if self.ai[0] == 1.0 && self.ai[1] > 0.0 && self.owner == local_owner {
+            let mut center4 = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            center4.y -= num494 * self.scale / 2.0;
+            let num495 = (num490 + num491 - self.ai[1] + 1.0) * num492 / (num491 + num490);
+            center4.y -= num494 * num495 / 2.0;
+            center4.y += 2.0;
+            // `:29496` — the next cloud segment (the pool spawn rides the
+            // request out; the sim resolves it after the update).
+            self.wants_cloud_segment =
+                Some((center4.x, center4.y, self.vel.x, self.vel.y, self.ai[1] - 1.0));
+            // `:29497-29517` — the shark cadence.
+            let num496 = if self.kind == CTHULUNADO { 2 } else { 4 };
+            if (self.ai[1] as i32) % num496 == 0 && self.ai[1] != 0.0 {
+                let npc_type = if self.kind == CTHULUNADO { 373u16 } else { 372 };
+                // `NPC.NewNPC`'s Bottom = (X, Y) (`NPC.cs:80771`); the
+                // velocity inherits the cloud's (`:29510`); the 386 alone
+                // seeds ai[2] = width / ai[3] = -1.5 (`:29512-29516`).
+                let (ai2, ai3) = if self.kind == CTHULUNADO {
+                    (self.w, -1.5)
+                } else {
+                    (0.0, 0.0)
+                };
+                self.wants_shark_spawn =
+                    Some((npc_type, center4.x, center4.y, self.vel.x, self.vel.y, ai2, ai3));
+            }
+        }
+        // `:29519-29532` — the free-drift cosine sway (ai[0] <= 0): the
+        // undo-then-advance-then-apply double position add.
+        if self.ai[0] <= 0.0 {
+            let num499 = std::f32::consts::PI / 30.0;
+            let mut num500 = self.w / 5.0;
+            if self.kind == CTHULUNADO {
+                num500 *= 2.0;
+            }
+            // The C# subtracts 0.5 in DOUBLE before the float cast.
+            let cos_at = |t: f32| ((num499 * t) as f64).cos() - 0.5;
+            let mut num501 = cos_at(0.0 - self.ai[0]) as f32 * num500;
+            self.pos.x -= num501 * -(self.direction as f32);
+            self.ai[0] -= 1.0;
+            num501 = cos_at(0.0 - self.ai[0]) as f32 * num500;
+            self.pos.x += num501 * -(self.direction as f32);
+        }
+        // `HandleMovement` (`Projectile.cs:17469+`): the clouds'
+        // `tileCollide = false` rows (`:4671`/`:4693`) — the free
+        // `UpdatePosition` add (`:20445`), the port's `kill_step`
+        // no-collide half.
+        self.kill_step(world);
+    }
+
+    /// S1-D-3 W-9 fishron wiring — `AI()`'s aiStyle-65 block
+    /// (`Projectile.cs:29534-29603`): the Sharknado bolt (385). The aimed
+    /// chase (`ai[1] = target + 1`, the enrage `ai[2] == 1` +12 speed) or
+    /// the free cosine bob; the six-dust ring (`:29544-29554`) is the
+    /// documented visual skip — its two draws per dust
+    /// (`NextDouble()` + `Next(3, 8)`, `:29548`) are SKIPPED WHOLESALE
+    /// with the dust body (the spore precedent), so the arm takes no RNG.
+    /// The wet kill (`:29598-29602`) rides the port's `is_wet` probe.
+    fn ai_sharknado_bolt(&mut self, world: &World, player: Option<&crate::player::Player>) {
+        if self.ai[1] > 0.0 {
+            // `:29538-29575` — the aimed chase at player[ai[1] - 1].
+            let num502 = (self.ai[1] as i32) - 1;
+            if num502 < 255 {
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] > 10.0 {
+                    // The dust ring is skipped wholesale (no draws); the
+                    // fade/spin/frame tail still runs (`:29555-29561`).
+                    self.alpha -= 5;
+                    if self.alpha < 100 {
+                        self.alpha = 100;
+                    }
+                    self.rot += self.vel.x * 0.1;
+                    self.frame = (self.local_ai[0] / 3.0) as i32 % 3;
+                }
+                // The port's single session player is slot 0; a bolt
+                // aimed at another slot has no live target (the C# reads
+                // the inactive slot's zero centre — the port keeps the
+                // previous velocity, the documented single-player fold).
+                if num502 == 0 {
+                    if let Some(p) = player {
+                        let (pcx, pcy) = p.center();
+                        let center =
+                            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                        let value2 = Vec2::new(pcx - center.x, pcy - center.y);
+                        let mut num506 = 4.0f32;
+                        if self.ai[2] == 1.0 {
+                            num506 += 12.0;
+                        }
+                        num506 += self.local_ai[0] / 20.0;
+                        self.vel = value2.normalize_or_zero() * num506;
+                        if value2.length() < 50.0 {
+                            // `Kill()` (`:29573`) — the death arm spawns
+                            // the 384/386 cloud (`:73761-73816`); the
+                            // request rides `wants_bolt_death_cloud`.
+                            self.active = false;
+                            self.time_left = 0;
+                        }
+                    }
+                }
+            }
+        } else {
+            // `:29577-29597` — the free bob: the π/15 cosine on vy, the
+            // undo-then-advance-then-apply pair.
+            let num507 = std::f32::consts::PI / 15.0;
+            let num508 = 4.0f32;
+            let cos_at = |t: f32| ((num507 * t) as f64).cos() - 0.5;
+            let mut num509 = cos_at(self.ai[0]) as f32 * num508;
+            self.vel.y -= num509;
+            self.ai[0] += 1.0;
+            num509 = cos_at(self.ai[0]) as f32 * num508;
+            self.vel.y += num509;
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] > 10.0 {
+                self.alpha -= 5;
+                if self.alpha < 100 {
+                    self.alpha = 100;
+                }
+                self.rot += self.vel.x * 0.1;
+                self.frame = (self.local_ai[0] / 3.0) as i32 % 3;
+            }
+        }
+        // `:29598-29602` — the wet kill: position.Y -= 16, Kill().
+        if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
+            self.pos.y -= 16.0;
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `HandleMovement`: the bolt keeps the stock `tileCollide = true`
+        // (`:4676-4685` writes no false) — the blocked-move default
+        // (`kill_step`: the tile contact kills, `:19851-19855`).
+        if self.active {
+            self.kill_step(world);
+        }
     }
 
     /// `AI()`'s aiStyle-71 block (`Projectile.cs:30355-30454`) — the Razorblade
@@ -7881,6 +8117,7 @@ impl Projectile {
         let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
         self.pos += self.vel;
         if hit_x || hit_y {
+            self.kill_time_left = self.time_left;
             self.active = false;
             self.time_left = 0;
         }
@@ -10422,8 +10659,11 @@ impl Projectile {
     }
 
     /// `Kill()` (`Projectile.cs:70644-70648`): the slot's death — `active`
-    /// off and `timeLeft` zeroed.
+    /// off and `timeLeft` zeroed. The `num` capture (`:70649`, the
+    /// pre-zeroing timeLeft) rides `kill_time_left` for the 639's death
+    /// hook (`:73444`); every other kind's consumer reads nothing.
     fn kill(&mut self) {
+        self.kill_time_left = self.time_left;
         self.active = false;
         self.time_left = 0;
     }
@@ -10807,7 +11047,13 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // no trail drawer reads them yet — the after-image path is its own row).
         CRYSTAL_STORM | TYPHOON | BRAIN_SCRAMBLER | RAY_GUNNER | PHANTASMAL_EYE
         | PHANTASMAL_BOLT | CANNON_EXPLOSIVE | NEBULA_ARCANUM | SKY_FRACTURE
-        | DARK_MAGE_FLAME | SHADOW_HAND => 0,
+        | DARK_MAGE_FLAME | SHADOW_HAND
+        // `ProjectileID.cs:521` — the moon-lord drop shots' mode-0 entries
+        // (638/639/640, S1-D-4). The 640's at-rest kill scan reads the ring
+        // (`Projectile.cs:55441-55447`); its C# `TrailCacheLength` is 20
+        // (`ProjectileID.cs:522`) — the port's fixed 10-entry ring is the
+        // recorded trail-density deviation (ANALYSIS).
+        | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
@@ -11150,6 +11396,7 @@ pub(crate) fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32
 /// NPC is chaseable and hostile and none is immortal), so the three fields the
 /// pool can observe carry the gate. The C#'s `ignoreDontTakeDamage: true` form
 /// plus its separate `!dontTakeDamage` test lands on the same predicate.
+/// `pub(crate)`: AI_026 slice C's ground-machine scans share it.
 pub(crate) fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
 }
@@ -12239,6 +12486,15 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-D-3 W-9 — the spawn-site `localAI[0]` payload setter: the
+    /// aimed sharknado bolt's enrage flag (`NPC.cs:49505`'s third
+    /// `NewProjectile` arg, `flag6 ? 1 : 0`; the `set_ai1` convention).
+    pub fn set_local_ai0(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.local_ai[0] = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }
@@ -12250,6 +12506,7 @@ impl ProjectilePool {
 
     pub fn kill(&mut self, slot: usize) {
         if slot < self.slots.len() {
+            self.slots[slot].kill_time_left = self.slots[slot].time_left;
             self.slots[slot].active = false;
             self.slots[slot].time_left = 0;
         }
@@ -12433,6 +12690,30 @@ impl ProjectilePool {
     ) -> Option<usize> {
         let slot = self.spawn_with_data_owned(
             kind, 255, pos.x, pos.y, vel.x, vel.y, damage, knock_back, ai0, ai1,
+        )?;
+        self.slots[slot].friendly = false;
+        Some(slot)
+    }
+
+    /// S1-D-3 W-9 fishron wiring — the hostile shot with the C#'s
+    /// `ai0`/`ai1` payload AND an explicit owner: Fishron's sharknado
+    /// bolts spawn with `Owner: Main.myPlayer` (`NPC.cs:49279-49280`/
+    /// `:49505`) — the aiStyle-65 arm's `Main.myPlayer == this.owner`
+    /// gates and the pool's owner-simulation gate both read it, so the
+    /// stock `spawn_hostile_ai`'s 255 would leave the bolt inert.
+    pub fn spawn_hostile_ai_owned(
+        &mut self,
+        kind: u16,
+        owner: u8,
+        pos: Vec2,
+        vel: Vec2,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+        ai1: f32,
+    ) -> Option<usize> {
+        let slot = self.spawn_with_data_ai_owned(
+            kind, owner, pos.x, pos.y, vel.x, vel.y, damage, knock_back, ai0, ai1,
         )?;
         self.slots[slot].friendly = false;
         Some(slot)
@@ -12808,6 +13089,33 @@ impl ProjectilePool {
         out
     }
 
+    /// S1-D-3 W-9 fishron wiring — the aiStyle-64 cloud's shark spawn
+    /// (`Projectile.cs:29509-29516`): the (npc_type, x, y, vx, vy, ai2,
+    /// ai3) the world sim resolves into the NPC vec (the mark-spawn
+    /// shape).
+    pub fn drain_shark_spawns(&mut self) -> Vec<(u16, f32, f32, f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_shark_spawn.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
+    /// The aiStyle-64 cloud's next-segment spawn
+    /// (`Projectile.cs:29496`): (owner, kind, damage, knock_back, x, y,
+    /// vx, vy, ai1) — the sim re-spawns the same cloud kind with ai0 = 10.
+    pub fn drain_cloud_segments(&mut self) -> Vec<(u8, u16, i32, f32, f32, f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some((x, y, vx, vy, ai1)) = p.wants_cloud_segment.take() {
+                out.push((p.owner, p.kind, p.damage, p.knock_back, x, y, vx, vy, ai1));
+            }
+        }
+        out
+    }
+
     /// S1-E-21 wave C — the landed strikes' hit-sound intents
     /// (`NPC.StrikeNPC` `NPC.cs:81544-81553`, reached from
     /// `Projectile.Damage` `Projectile.cs:13649`): the world sim drains and
@@ -13157,6 +13465,15 @@ impl ProjectilePool {
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
             for sub in 0..sub_steps {
+                // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
+                // spawn-delay countdown: while `ai[1] > 0` the WHOLE
+                // sub-step is skipped (ahead of the out-of-world guard, the
+                // AI and the lifetime block) — the trail hangs frozen until
+                // the 639's death hook delay drains (S1-D-4).
+                if self.slots[i].kind == MOONLORD_ARROW_TRAIL && self.slots[i].ai[1] > 0.0 {
+                    self.slots[i].ai[1] -= 1.0;
+                    continue;
+                }
                 // `Projectile.cs:16683-16703` — the out-of-world guard sits at
                 // the top of every sub-step, ahead of the AI, and skips the
                 // aiStyle-3 slots (the boomerang family legitimately leaves).
@@ -13311,6 +13628,26 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // S1-D-4 — the Frost Moon family's four
+                            // aiStyle-1 kinds (345/348/349/350,
+                            // `projectile_ai_frostmoon`): kind-disjoint
+                            // from A/B (and the parallel slice C's set),
+                            // so the gate order never double-applies.
+                            kind if crate::projectile_ai_frostmoon::covers(kind) => {
+                                crate::projectile_ai_frostmoon::step(&mut self.slots[i], world)
+                            }
+                            // S1-D-4 — the Moon Lord drop-weapon shots
+                            // (638 MoonlordBullet / 639 MoonlordArrow /
+                            // 640 MoonlordArrowTrail, `AI_001`
+                            // `Projectile.cs:55415-55482`/`:55864-55899`/
+                            // `:57542-57548`/`:57737-57743`), gated to
+                            // `projectile_ai_moonlord`'s own kind list ONLY
+                            // (disjoint from A/B/C and the frostmoon set):
+                            // every other kind keeps the generic `ai_arrow`
+                            // flight byte-identical.
+                            kind if crate::projectile_ai_moonlord::covers(kind) => {
+                                crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
@@ -13428,7 +13765,52 @@ impl ProjectilePool {
                                 }
                             }
                         }
-                        14 => self.slots[i].ai_spear(world),
+                        // S1-D-4 — the Frost Moon aiStyle-14 pair ahead of
+                        // the generic spear arm: the ornament's burst head
+                        // (`:24867-24897`) and the spike's alpha/scale
+                        // pulse (`:24848-24866`), then the SAME generic
+                        // tail via `ai_spear` (no parallel flight). The
+                        // shrapnel spawns ride back out (the nebula shape)
+                        // with the ornament's owner; `NewProjectile`
+                        // centres the box (`:10876-10877`), so the spawn
+                        // site subtracts the 6×6 shrapnel's half-box.
+                        14 => {
+                            match self.slots[i].kind {
+                                ORNAMENT_HOSTILE => {
+                                    let mut bursts = Vec::new();
+                                    crate::projectile_ai_frostmoon::ornament(
+                                        &mut self.slots[i],
+                                        rng,
+                                        &mut bursts,
+                                    );
+                                    let owner_id = self.slots[i].owner;
+                                    for s in bursts {
+                                        let slot = self.spawn_with_data_ai_owned(
+                                            ORNAMENT_SHRAPNEL,
+                                            owner_id,
+                                            s.x - 3.0,
+                                            s.y - 3.0,
+                                            s.vx,
+                                            s.vy,
+                                            40, // `:24894`'s Damage: 40
+                                            0.0,
+                                            0.0,
+                                            s.ai1,
+                                        );
+                                        if let Some(slot) = slot {
+                                            self.slots[slot].friendly = false;
+                                        }
+                                    }
+                                }
+                                SANTA_SPIKE => {
+                                    crate::projectile_ai_frostmoon::spike_pulse(
+                                        &mut self.slots[i],
+                                    );
+                                }
+                                _ => {}
+                            }
+                            self.slots[i].ai_spear(world)
+                        }
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
                         // S1-D-4 unarmed styles (census §3c): the four
@@ -13530,6 +13912,17 @@ impl ProjectilePool {
                         2 => {
                             let wind = self.wind_speed;
                             self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind);
+                        }
+                        // S1-D-4 — `AI()`'s `else if (this.aiStyle == 58)`
+                        // (`Projectile.cs:28906-28937`): SantaNK1's present
+                        // drop (351, the style's only rowed kind — the
+                        // gate keeps every other kind's no-arm state
+                        // byte-identical). The arm owns its integration
+                        // (the row's `tileCollide = false`, `:4419`).
+                        58 => {
+                            if self.slots[i].kind == SANTA_PRESENT {
+                                crate::projectile_ai_frostmoon::present(&mut self.slots[i]);
+                            }
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
@@ -15339,19 +15732,25 @@ impl ProjectilePool {
                         194 => self.slots[i].ai_horseman_pumpkin(world, player.as_deref(), rng),
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
-                        // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
-                        // 14 early-return flyer pets
-                        // (`projectile_ai026_a::AI_026_A_KINDS`) gate
-                        // first; on its false return B's two spinning
-                        // boss-head pets 885/889
+                        // SLICE A + SLICE B + SLICE C chained
+                        // (S1-D-4b-10/-11/-16): A's 14 early-return
+                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`)
+                        // gate first; on its false return B's two
+                        // spinning boss-head pets 885/889
                         // (`projectile_ai026_b::AI_026_B_KINDS`, the
-                        // shared arm `:60092-60253`) run. The kind sets
-                        // are disjoint, so either order is
-                        // behaviour-identical (ANALYSIS "AI_026 slice
-                        // B"). Every other aiStyle-26 kind (the 266
-                        // slime minion today) keeps the pre-existing
-                        // `_ => {}` fall-through, byte-identical: both
-                        // gates return false and nothing mutates.
+                        // shared arm `:60092-60253`) run; on B's false
+                        // return C's ground machine takes the 266
+                        // slime minion
+                        // (`projectile_ai026_c::AI_026_C_KINDS`, the
+                        // idle/walk/jump machine `:60254-65015` +
+                        // `HandleMovement`). The kind sets are
+                        // disjoint, so any order is behaviour-identical
+                        // (ANALYSIS "AI_026 slice C"). Every other
+                        // aiStyle-26 kind (the row-less ground pets,
+                        // pygmies/spiders, Pal summons) keeps the
+                        // pre-existing `_ => {}` fall-through,
+                        // byte-identical: all three gates return false
+                        // and nothing mutates.
                         26 => {
                             // The gates' false returns are the no-op: the
                             // non-slice kind keeps the old no-arm state.
@@ -15362,13 +15761,40 @@ impl ProjectilePool {
                                 rng,
                             );
                             if !handled {
-                                let _ = crate::projectile_ai026_b::ai026_b_tick(
+                                let handled_b = crate::projectile_ai026_b::ai026_b_tick(
                                     &mut self.slots[i],
                                     world,
                                     player.as_deref_mut(),
                                     rng,
                                 );
+                                if !handled_b {
+                                    let _ = crate::projectile_ai026_c::ai026_c_tick(
+                                        &mut self.slots[i],
+                                        world,
+                                        npcs,
+                                        player.as_deref_mut(),
+                                        rng,
+                                    );
+                                }
                             }
+                        }
+                        // S1-D-3 W-9 fishron wiring — `AI()`'s
+                        // `else if (this.aiStyle == 64)`
+                        // (`Projectile.cs:29419-29533`): the sharknado
+                        // clouds (384 ForceBubble / 386 Cthulunado). The
+                        // scale ladder, the alpha ramp, the segment
+                        // re-spawn and the shark spawn (the 372/373
+                        // NewNPC) — the shark request rides out to the
+                        // world sim (the pool cannot grow the NPC vec).
+                        64 => {
+                            self.slots[i].ai_sharknado_cloud(world, local_owner);
+                        }
+                        // `else if (this.aiStyle == 65)`
+                        // (`Projectile.cs:29534-29603`): the Sharknado
+                        // bolt (385) — the aimed chase (ai[1] = target+1)
+                        // or the free cosine bob, the wet kill.
+                        65 => {
+                            self.slots[i].ai_sharknado_bolt(world, player.as_deref());
                         }
                         // S1-D-4 empress proj — the Empress of Light's
                         // five projectile kinds (872/873/874/919/923,
@@ -15436,10 +15862,16 @@ impl ProjectilePool {
                 // `hostile = false` (`:764`) makes `Damage_EVP` refuse
                 // (`:14775`), and the port's `!friendly` proxy would
                 // otherwise hurt the player (the trio holds
-                // `friendly = false` for the PVE refusal).
+                // `friendly = false` for the PVE refusal). The 266
+                // slime minion is exempt the same way (AI_026 slice
+                // C): its idle machine holds `friendly = false`
+                // (`Projectile.cs:61999-62002`) while the stock
+                // `hostile` stays false — an idle minion never hurts
+                // its owner.
                 if self.slots[i].active
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
+                    && self.slots[i].kind != SLIME_MINION
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -15458,6 +15890,7 @@ impl ProjectilePool {
                     let p = &mut self.slots[i];
                     p.time_left -= 1;
                     if p.time_left <= 0 || p.penetrate == 0 {
+                        p.kill_time_left = p.time_left;
                         p.time_left = 0;
                         p.active = false;
                     }
@@ -15538,8 +15971,126 @@ impl ProjectilePool {
                     luck,
                     local_owner,
                 );
+                // S1-D-3 W-9 — `Kill()`'s 385 arm
+                // (`Projectile.cs:73761-73818`): the bolt's death spawns
+                // the sharknado cloud (the 384 or the ground-scanned 386).
+                self.sharknado_bolt_kill(
+                    i,
+                    world,
+                    local_owner,
+                    player.as_deref().is_some_and(|p| p.buffs.expert_mode),
+                );
+                // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
+                // S1-D-4): the 639's death spawns its 640 trail.
+                self.moonlord_arrow_kill(i);
             }
         }
+    }
+
+    /// S1-D-3 W-9 fishron wiring — `Kill()`'s 385 arm
+    /// (`Projectile.cs:73761-73818`): the Sharknado bolt's death spawns
+    /// the cloud. The sound (4 style 19) and the 36-dust type-172 ring
+    /// (`:73763-73773`) are the documented visual skips — the ring's
+    /// `Dust.NewDust` internals draw, the whole arm is skipped (the
+    /// spore precedent), so no RNG parameter. The unaimed bolt
+    /// (`ai[1] < 1`) spawns the 384 ForceBubble at `centre - (dir*30, 4)`
+    /// with damage 40 (expert 25), ai0 16 / ai1 15; the aimed bolt scans
+    /// the column below for the first solid/liquid tile (the 100-tile
+    /// window, the +15 default) and spawns the 386 Cthulunado at
+    /// `(tile*16 + 8, tile*16 - 24)` with damage 80 (expert 50),
+    /// ai0 16 / ai1 24. Kind + owner gated; the death hook fires once
+    /// (a dead slot never returns to active).
+    fn sharknado_bolt_kill(
+        &mut self,
+        slot: usize,
+        world: &World,
+        local_owner: u8,
+        expert: bool,
+    ) {
+        let p = &self.slots[slot];
+        if p.kind != SHARKNADO_BOLT || p.owner != local_owner {
+            return;
+        }
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        if p.ai[1] < 1.0 {
+            // `:73776-73780` — the 384 at the offset muzzle. The C#'s
+            // NewProjectile takes the CENTRE; the port's spawn takes the
+            // top-left (the inferno-blast precedent).
+            let damage = if expert { 25 } else { 40 };
+            let x = center.x - (p.direction as f32 * 30.0);
+            let y = center.y - 4.0;
+            self.spawn_cloud(FORCE_BUBBLE, x, y, -(p.direction as f32) * 0.01, 0.0, damage, 16.0, 15.0, p.owner);
+        } else {
+            // `:73782-73815` — the column scan.
+            let mut num441 = (center.y / 16.0) as i32;
+            let mut num442 = (center.x / 16.0) as i32;
+            let num443 = 100;
+            if num442 < 10 {
+                num442 = 10;
+            }
+            if num442 > world.width - 10 {
+                num442 = world.width - 10;
+            }
+            if num441 < 10 {
+                num441 = 10;
+            }
+            if num441 > world.height - num443 - 10 {
+                num441 = world.height - num443 - 10;
+            }
+            let num444 = num441 + num443;
+            let mut num445 = num441 + 15;
+            for num446 in num441..num444 {
+                // `:73807` — `tile.active() && (tileSolid[type] ||
+                // liquid != 0)`: the full-solid table (platforms count —
+                // the C# reads Main.tileSolid, not the collision gate).
+                let hit = world.tile(num442, num446).is_some_and(|t| {
+                    t.active()
+                        && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.liquid != 0)
+                });
+                if hit {
+                    num445 = num446;
+                    break;
+                }
+            }
+            num441 = num445;
+            let damage = if expert { 50 } else { 80 };
+            let x = (num442 * 16 + 8) as f32;
+            let y = (num441 * 16 - 24) as f32;
+            self.spawn_cloud(CTHULUNADO, x, y, 0.0, 0.0, damage, 16.0, 24.0, local_owner);
+        }
+    }
+
+    /// The death-cloud spawn helper: `NewProjectile`'s centre convention
+    /// re-centred to the port's top-left spawn (the inferno-blast
+    /// precedent), knockBack 4, the ai0/ai1 payload.
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_cloud(
+        &mut self,
+        kind: u16,
+        cx: f32,
+        cy: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        ai0: f32,
+        ai1: f32,
+        owner: u8,
+    ) {
+        let Some(row) = proj_data(kind) else {
+            return;
+        };
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            cx - row.w * 0.5,
+            cy - row.h * 0.5,
+            vx,
+            vy,
+            damage,
+            4.0,
+            ai0,
+            ai1,
+        );
     }
 
     /// `Kill()`'s dungeon-debris arm (`Projectile.cs:77369-77385`, inside
@@ -15805,6 +16356,72 @@ impl ProjectilePool {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`, S1-D-4):
+    /// the 639's death spawns its 640 ghost trail at the latched centre
+    /// (`localAI[0..1]`, the AI_001 hook `:55417-55423`) with the latched
+    /// velocity (`ai[0..1]`), the arrow's damage/knockback/owner and
+    /// `ai1 = num + 1` — `num` is `Kill()`'s captured pre-zeroing timeLeft
+    /// (`:70649`, the slot's `kill_time_left`), plus one more when the free
+    /// slot sits above the update loop index (`:73446-73449`, the C#'s
+    /// same-tick double-update guard — the port's `spawn_with_data_ai_owned`
+    /// takes the first free slot, so the comparison is `next > i`). The
+    /// `owner == Main.myPlayer` gate folds to the simulated-slot set (the
+    /// pool only updates local-owned slots). The 5-9× dust-220 burst
+    /// (`:73433-73441`, `Main.rand.Next(5, 10)` + the NewDust internals) is
+    /// SKIPPED with the dust layer — the draw gates nothing but the dust
+    /// count (the ai001 dust-skip convention, ANALYSIS). Kind-gated to the
+    /// 639; a dead slot never returns to `active`, so the spawn fires at
+    /// most once per death (the `spawn_inferno_blast` precedent).
+    fn moonlord_arrow_kill(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        if p.kind != MOONLORD_ARROW {
+            return;
+        }
+        let (x, y, vx, vy, damage, kb, owner, num) = (
+            p.local_ai[0],
+            p.local_ai[1],
+            p.ai[0],
+            p.ai[1],
+            p.damage,
+            p.knock_back,
+            p.owner,
+            p.kill_time_left,
+        );
+        // `:73444` — `int num379 = num + 1`.
+        let mut delay = num + 1;
+        // `GetNextSlot` (`:73445`) ran while the arrow was STILL active —
+        // the C# `Kill()`'s `active = false` lands at `:77262`, after this
+        // arm; the port's death convention zeroes it before the hook. The
+        // corpse flag is lifted for the scan so the ghost takes the NEXT
+        // free slot, exactly as the C#'s, then restored.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            MOONLORD_ARROW_TRAIL,
+            owner,
+            x,
+            y,
+            vx,
+            vy,
+            damage,
+            kb,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+        if let Some(new_slot) = spawned {
+            // `:73446-73449` — `Main.ProjectileUpdateLoopIndex < nextSlot &&
+            // != -1`: a ghost placed ABOVE the loop index is updated again
+            // this same tick (the port's `for i in 0..MAX` loop reaches it
+            // too), so the C# adds one more delay sub-step to compensate.
+            // The port's loop index is `slot` (always ≥ 0).
+            if slot < new_slot {
+                delay += 1;
+            }
+            // `:73451` — the ai1 payload rides after the slot-order bump.
+            self.slots[new_slot].ai[1] = delay as f32;
         }
     }
 
@@ -16362,6 +16979,14 @@ impl ProjectilePool {
             if p.kind == RAINBOW_CRYSTAL_EXPLOSION && !p.friendly {
                 continue;
             }
+            // The 266 slime minion carries the same gate (AI_026 slice
+            // C): its idle machine holds `friendly = false`
+            // (`Projectile.cs:61999-62002`) — `Damage_PVE_Inner`'s
+            // `!friendly` refusal (`:12611`) means an idle minion hits
+            // no NPC; the attack window (`:61949`) flips it true.
+            if p.kind == SLIME_MINION && !p.friendly {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -16537,6 +17162,15 @@ impl ProjectilePool {
             }
             if landed {
                 let p = &mut self.slots[slot];
+                // `Damage_PVE_Inner`'s moon-lord shot arm
+                // (`Projectile.cs:14177-14180`, S1-D-4): every landed hit
+                // decays the 638/639/640's damage by the `(int)((double)
+                // damage * 0.96)` truncation — AFTER this hit's strike
+                // (the C# arm runs below the damage application, ahead of
+                // `numHits++` `:14199`).
+                if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
+                    p.damage = (p.damage as f64 * 0.96) as i32;
+                }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -21419,6 +22053,7 @@ mod phasmal_projectile_tests {
             knock_back: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -21453,6 +22088,8 @@ mod phasmal_projectile_tests {
             ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
+            wants_shark_spawn: None,
+            wants_cloud_segment: None,
             w: 14.0,
             h: 14.0,
             tile_collide: true,
@@ -21463,6 +22100,7 @@ mod phasmal_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
@@ -21660,6 +22298,7 @@ mod ritual_projectile_tests {
             knock_back: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -21694,6 +22333,8 @@ mod ritual_projectile_tests {
             ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
+            wants_shark_spawn: None,
+            wants_cloud_segment: None,
             w: 32.0,
             h: 32.0,
             tile_collide: false,
@@ -21704,6 +22345,7 @@ mod ritual_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,

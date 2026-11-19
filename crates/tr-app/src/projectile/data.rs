@@ -193,6 +193,21 @@ pub const PHANTASMAL_BOLT: u16 = 462;
 /// smoke (`Projectile.cs:6691-6698`: 10x10, aiStyle 1, extraUpdates
 /// 2, timeLeft 3600).
 pub const BLOWUP_SMOKE_MOONLORD: u16 = 622;
+/// `ProjectileID.MoonlordBullet` (638) — the S.D.M.G.'s bullet
+/// (`Projectile.cs:6858-6872`: 4x4, aiStyle 1, extraUpdates 5, timeLeft 600,
+/// penetrate -1, ignoreWater, the local-immunity −1 pair). The AI_001 arm
+/// rides `projectile_ai_moonlord` (S1-D-4).
+pub const MOONLORD_BULLET: u16 = 638;
+/// `ProjectileID.MoonlordArrow` (639) — the Phantasm's arrow
+/// (`Projectile.cs:6873-6888`: 10x10, aiStyle 1, arrow, `MaxUpdates = 2`,
+/// `timeLeft = MaxUpdates * 45` = 90, penetrate 4, the local-immunity −1
+/// pair). Its `Kill()` spawns the 640 trail (`:73431-73452`).
+pub const MOONLORD_ARROW: u16 = 639;
+/// `ProjectileID.MoonlordArrowTrail` (640) — the arrow's ghost
+/// (`Projectile.cs:6889-6903`: 10x10, aiStyle 1, `MaxUpdates = 3`,
+/// timeLeft 90, penetrate 4, the local-immunity −1 pair). The `ai[1]`
+/// spawn-delay countdown (`:16679-16683`) is pool-side.
+pub const MOONLORD_ARROW_TRAIL: u16 = 640;
 pub const PIRATE_ARROW: u16 = 180;
 /// `ProjectileID.DD2JavelinHostile` (662) — the javelin throwers' spear
 /// (`Projectile.cs:7122-7130`: 16x16, aiStyle 1, hostile, penetrate -1;
@@ -265,6 +280,34 @@ pub const DUTCHMAN_SHELL: u16 = 240;
 /// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
 /// (`NPC.cs:44582`'s `TryMakingSpike`).
 pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// The Frost Moon projectile family (S1-D-4, `ProjectileID.cs:1244-1258`).
+/// `ProjectileID.PineNeedleHostile` (345) — Everscream's needle spray
+/// (`NPC.cs:32838`, `ai0 = Main.rand.Next(0, 31)`).
+pub const PINE_NEEDLE_HOSTILE: u16 = 345;
+/// `ProjectileID.OrnamentHostile` (346) — Everscream's ornament lob
+/// (`NPC.cs:32885`, `ai1 = Main.rand.Next(2)` picks the frame); on its last
+/// tick it bursts into five 347 shrapnel (`Projectile.cs:24883-24896`).
+pub const ORNAMENT_HOSTILE: u16 = 346;
+/// `ProjectileID.OrnamentHostileShrapnel` (347) — the ornament's burst
+/// fragment (the aiStyle-2 5-tick arm, `Projectile.cs:23503-23510`).
+pub const ORNAMENT_SHRAPNEL: u16 = 347;
+/// `ProjectileID.FrostWave` (348) — IceQueen's phase-0 side charge
+/// (`NPC.cs:33500`).
+pub const FROST_WAVE: u16 = 348;
+/// `ProjectileID.FrostShard` (349) — IceQueen's shard rain / spin barrage
+/// (`NPC.cs:33607`'s `ai0 = Main.rand.Next(5)` frame pick, `:33656`).
+pub const FROST_SHARD: u16 = 349;
+/// `ProjectileID.Missile` (350) — SantaNK1's missile salvo
+/// (`NPC.cs:33818`). Alias of `MISSILE` (the S1-F-13c row name) — one
+/// const per id; the S1-D-4 santa slice and the F-13c wiring landed the
+/// same ids independently (deduped at merge).
+pub use MISSILE as SANTA_MISSILE;
+/// `ProjectileID.Present` (351) — SantaNK1's present rain
+/// (`NPC.cs:33840`, the aiStyle-58 drop). Alias of `PRESENT`.
+pub use PRESENT as SANTA_PRESENT;
+/// `ProjectileID.Spike` (352) — SantaNK1's ornament spike
+/// (`NPC.cs:33798`, the aiStyle-14 alpha/scale pulse). Alias of `SPIKE`.
+pub use SPIKE as SANTA_SPIKE;
 /// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
 /// Deerclops' rubble chunk (the aiStyle-1 flight).
 pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
@@ -274,20 +317,9 @@ pub const FLAMING_WOOD: u16 = 325;
 // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring,
 // `ProjectileID.cs:1244-1258`). The Everscream / IceQueen / SantaNK1
 // machines (`npc_ai_frost_boss*.rs`) queue these; the rows below let the
-// drained `wants_hostile_shot(_ai)` requests spawn + fly.
-/// `ProjectileID.PineNeedleHostile` (345, `Projectile.cs:4353-4360`) — the
-/// Everscream's needle spray (4x4, aiStyle 1, scale 0.8).
-pub const PINE_NEEDLE_HOSTILE: u16 = 345;
-/// `ProjectileID.OrnamentHostile` (346, `Projectile.cs:4361-4369`) — the
-/// Everscream's ornament lob (18x18, aiStyle 14, penetrate -1, timeLeft 300).
-pub const ORNAMENT_HOSTILE: u16 = 346;
-/// `ProjectileID.FrostWave` (348, `Projectile.cs:4378-4389`) — the IceQueen's
-/// side charge (48x48, aiStyle 1, penetrate -1, tileCollide false,
-/// extraUpdates 1, timeLeft 900).
-pub const FROST_WAVE: u16 = 348;
-/// `ProjectileID.FrostShard` (349, `Projectile.cs:4390-4399`) — the IceQueen's
-/// shard rain / spin barrage (12x12, aiStyle 1, penetrate -1, timeLeft 900).
-pub const FROST_SHARD: u16 = 349;
+// drained `wants_hostile_shot(_ai)` requests spawn + fly. The 345/346/
+// 348/349 consts are the S1-D-4 family block above (deduped at merge —
+// one const per id; the rows are value-identical in both branches).
 /// `ProjectileID.Missile` (350, `Projectile.cs:4400-4410`) — the SantaNK1's
 /// missile salvo (14x14, aiStyle 1, penetrate -1, tileCollide false,
 /// alpha 255, timeLeft 300).
@@ -394,11 +426,21 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
-/// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
 
+/// The Lunar Flare's shot (645, `ProjectileID.LunarFlare`,
+/// `ProjectileID.cs:1844`) — the moon-lord drop spell
+/// (`Projectile.cs:6953-6965`: 10x10, aiStyle 1, magic, tileCollide false,
+/// extraUpdates 5, penetrate −1, the local-immunity −1 pair).
+/// NAME DEVIATION (recorded, S1-D-4 census): the constant was ported as
+/// `POISON_DART` citing `:6953-6966` as "the Blowgun's dart" — but the C#
+/// `ProjectileID.PoisonDart` is **98** (`ProjectileID.cs:750`, the Dart
+/// Trap's shot, already rowed as `TRAP_DART`); `:6953-6965` is the 645
+/// LunarFlare block. The value 645 and the row are correct for the
+/// LunarFlare; the rename is deferred to the in-flight ai001-C slice
+/// (`task/S1-D-5-aistyle1-types-c` owns the 645 arm under this name).
 pub const POISON_DART: u16 = 645;
 /// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
 pub const ENCHANTED_BOOMERANG: u16 = 6;
@@ -1414,8 +1456,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // when `lastVelocity.Y > 1f`) — unported; the port's `ai_spear`
             // kills on the tile scan instead (same ANALYSIS section).
             TRAP_SPIKY_BALL => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
-            // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
-            // `extraUpdates = 5`, the local immunity cooldown −1.
+            // `:6953-6965`: the Lunar Flare (645 — the `POISON_DART`
+            // constant's name deviation is documented at its definition,
+            // S1-D-4 doc-fix; the arm is ai001 slice C's) —
+            // `tileCollide = false`, `extraUpdates = 5`, the local immunity
+            // cooldown −1.
             // `Projectile.cs:2937-2945` — the Leaf Blower petal: 14x14,
             // aiStyle 40, penetrate 1, `alpha = 255` (the AI fades it in) and
             // the 360-tick lifetime.
@@ -2352,11 +2397,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (Phase 2's arm), aiStyle 158; the `friendly`/`drawLayer` lines
             // have no port consumer (the module doc).
             BABY_BIRD => (10.0, 10.0, 158, -1, 18000, 0, true, false, false, RESET_STATE),
-            // `Projectile.cs:3516-3525` (266) — the Slime Staff's minion,
-            // aiStyle 26 (the hop family, unported — the dispatch no-ops like
-            // the other unported styles), 24x16, `penetrate = -1`,
-            // `timeLeft *= 5` and the idStatic-12 pair.
-            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:3516-3528` (266) — the Slime Staff's minion,
+            // aiStyle 26 (the ground hop machine, AI_026 slice C —
+            // `projectile_ai026_c.rs`), 24x16, `penetrate = -1`,
+            // `timeLeft *= 5` and the idStatic-12 pair (`:3526-3527`,
+            // the state group below — NOT the local pair).
+            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 12, 0, 1.0)),
             // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
             // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
             // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
@@ -2444,6 +2490,27 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `alpha = 255`, local-immunity 10.
             MOONLORD_TURRET_LASER => {
                 (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 10, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6858-6872` — the S.D.M.G.'s bullet (638,
+            // S1-D-4): 4x4, aiStyle 1, `alpha = 255`, `extraUpdates = 5`,
+            // `timeLeft = 600`, `penetrate = -1`, the local-immunity −1
+            // pair; `ignoreWater` rides the tail below.
+            MOONLORD_BULLET => {
+                (4.0, 4.0, 1, -1, 600, 5, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6873-6888` — the Phantasm's arrow (639):
+            // `arrow = true`, 10x10, aiStyle 1, `MaxUpdates = 2` (the
+            // setter `:560-563` → extraUpdates 1), `timeLeft = MaxUpdates
+            // * 45` = 90, `penetrate = 4`, `alpha = 255`, the local −1 pair.
+            MOONLORD_ARROW => {
+                (10.0, 10.0, 1, 4, 90, 1, true, true, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6889-6903` — the arrow's ghost trail (640):
+            // 10x10, aiStyle 1, `MaxUpdates = 3` → extraUpdates 2,
+            // `timeLeft = 90`, `penetrate = 4`, `alpha = 255`, the local −1
+            // pair; NOT an arrow (no `this.arrow` line in the C# block).
+            MOONLORD_ARROW_TRAIL => {
+                (10.0, 10.0, 1, 4, 90, 2, true, false, false, (true, -1, false, -1, 255, 1.0))
             }
             // `Projectile.cs:6941-6952` — the crystal's shard (644): 14x14,
             // aiStyle 112, `penetrate = 1`, `timeLeft = 900`,
@@ -2604,6 +2671,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
+            // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
+            // alpha 255, timeLeft 300 (the stock tileCollide true).
+            SHARKNADO_BOLT => (30.0, 30.0, 65, -1, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4664-4675`: the ForceBubble (384): 150x42,
+            // aiStyle 64, penetrate -1, tileCollide false, ignoreWater,
+            // alpha 255, timeLeft 540.
+            FORCE_BUBBLE => (150.0, 42.0, 64, -1, 540, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4686-4697`: the Cthulunado (386): 150x42,
+            // aiStyle 64, penetrate -1, tileCollide false, ignoreWater,
+            // alpha 255, timeLeft 840.
+            CTHULUNADO => (150.0, 42.0, 64, -1, 840, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // ===== S1-D-4: the Empress of Light's projectiles =====
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
@@ -2645,6 +2724,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 30.0, 30.0, 180, -1, 180, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`):
+            // the 345/346/348/349/350/351/352 rows are the S1-F-13c wiring
+            // rows ABOVE (value-identical in both branches — deduped at
+            // merge, deny(unreachable_patterns) keeps one arm per id).
+            // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
+            // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
+            ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2664,7 +2750,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => (true, 18),
         ABIGAIL => (true, 20),
         BABY_BIRD => (true, 15),
-        SLIME_MINION => (true, 12),
+        // The 266's pair is idStatic-12 (`Projectile.cs:3526-3527`) —
+        // it rides its own row's state group, NOT this local overlay
+        // (AI_026 slice C's row witness caught the misfile).
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
@@ -2784,6 +2872,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // The aiStyle-67 pirate/frog rows set neither
                     // ignoreWater (`Projectile.cs:4755-4768`/`:7814-7828`).
                     | ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
+                    // The 266's block (`Projectile.cs:3516-3528`) sets no
+                    // ignoreWater either — the stock false (`:761`) stands
+                    // (AI_026 slice C; its wet-swim arm `:64475-64485` is a
+                    // live C# branch the port folds dry with the wet flags).
+                    | SLIME_MINION
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
@@ -2799,6 +2892,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == RAINBOW_CRYSTAL_EXPLOSION
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
+            // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
+            // (`Projectile.cs:4672`/`:4694`).
+            || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -2808,7 +2904,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | HALLOW_BOSS_DEATH_AURORA
                     | FAIRY_QUEEN_LANCE
                     | FAIRY_QUEEN_SUN_DANCE
-            ),
+            )
+            // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
+            // shots' `ignoreWater = true` (S1-D-4).
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -2847,6 +2946,20 @@ pub const BOULDER_PET: u16 = 1056;
 
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
+/// `ProjectileID.SharknadoBolt` (385) — Duke Fishron's sharknado bolt
+/// (`Projectile.cs:4676-4685`): 30x30, hostile, penetrate -1, aiStyle 65,
+/// alpha 255, timeLeft 300. S1-D-3 W-9 fishron wiring.
+pub const SHARKNADO_BOLT: u16 = 385;
+/// `ProjectileID.ForceBubble` (384) — the small sharknado cloud the
+/// unaimed bolt's death spawns (`Projectile.cs:4664-4675`): 150x42,
+/// hostile, penetrate -1, aiStyle 64, tileCollide false, ignoreWater,
+/// alpha 255, timeLeft 540. Its arm spawns the Sharkron 372.
+pub const FORCE_BUBBLE: u16 = 384;
+/// `ProjectileID.Cthulunado` (386) — the Greater Sharknado
+/// (`Projectile.cs:4686-4697`): 150x42, hostile, penetrate -1, aiStyle 64,
+/// tileCollide false, ignoreWater, alpha 255, timeLeft 840. Its aiStyle-64
+/// arm spawns the Sharkron2 373 (`:29502-29516`).
+pub const CTHULUNADO: u16 = 386;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
@@ -3003,6 +3116,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`:60240-60247`).
         SKELETRON_PET => 10,
         SKELETRON_PRIME_PET => 11,
+        // AI_026 slice C: the slime minion's 12-frame sheet
+        // (`Main.cs:8612`) — the fly-out frames 8-11
+        // (`Projectile.cs:61209`) and the ground frames 0-7
+        // (`:64445`/`:64470`) slice it.
+        SLIME_MINION => 12,
         // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
         // walk (0-3), bite (4-9) and flight (10-14) machines index it.
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
@@ -3059,6 +3177,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
         RAINBOW_CRYSTAL => 8,
+        // S1-D-3 W-9 fishron wiring — the sharknado family's strips
+        // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
+        FORCE_BUBBLE | CTHULUNADO => 6,
+        SHARKNADO_BOLT => 3,
         // The glow-stick's 4-frame sheet (`Main.cs:8664`) — the aiStyle-2
         // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
         // it, back to frame 1.
@@ -3070,6 +3192,19 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
         // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
         968 => 24,
+        // The Frost Moon family (S1-D-4): the present's 2-frame sheet
+        // (`Main.cs:8529`) — AI()'s aiStyle-58 arm pins frame 0/1
+        // (`Projectile.cs:28915`/`:28928`); the frost shard's 5-frame sheet
+        // (`Main.cs:8530`) — the 349 hook's `frame = (int)ai[0]` pin
+        // (`Projectile.cs:56223`); the ornament's 2-frame sheet
+        // (`Main.cs:8565`) — the 346 arm's `frame = (int)ai[1]` pin
+        // (`Projectile.cs:24874`, the `NPC.cs:32885` `Next(2)` payload); the
+        // shrapnel's 2-frame sheet (`Main.cs:8566`, no AI frame writer — the
+        // stock frame 0 reads the top row).
+        SANTA_PRESENT => 2,
+        FROST_SHARD => 5,
+        ORNAMENT_HOSTILE => 2,
+        ORNAMENT_SHRAPNEL => 2,
         _ => 1,
     }
 }
