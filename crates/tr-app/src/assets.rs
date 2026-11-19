@@ -1210,7 +1210,7 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // range, so the loader enumerates the files instead of a hand-list — an id
     // whose file is absent simply never registers and its draw code falls
     // through the coin/wall/tile fallbacks (the `item.rs` drop draw). Sorted
-    // ids keep the atlas layout reproducible: `Atlas::build`'s stable shelf
+    // ids keep the atlas layout reproducible: `Atlas::build`'s stable skyline
     // sort breaks size ties by input order. C5: decoded on Rayon's pool,
     // `par_iter().collect()` keeps iterator order.
     let item_ids = enumerate_item_icon_ids(dir);
@@ -3273,7 +3273,7 @@ mod tests {
 
     /// The world-swap fast path splits the sheet list in two (`world ++ static`)
     /// so the static half can be cached across swaps. The concatenation must be
-    /// the pre-split list, in order — `Atlas::build`'s shelf sort breaks size ties
+    /// the pre-split list, in order — `Atlas::build`'s skyline sort breaks size ties
     /// by input order, so a reordering would move every UV.
     #[test]
     fn test_the_world_and_static_split_concatenates_to_the_full_list() {
@@ -3558,6 +3558,109 @@ mod tests {
                 "id {id} uv {uv:?}"
             );
             assert!(w > 0.0 && h > 0.0);
+        }
+    }
+
+    /// S1-G-12b: the FULL sheet set — the current enumeration PLUS the two
+    /// SKIP-blocked branches' additions simulated here — must fit the 8192
+    /// strict-GPU bound under the skyline packer. The shelf packer overflowed
+    /// this set (8493 px with gore, 8664 px with gore + mount, measured by
+    /// tools/atlas_sim.js); the skyline packs it in 7932 px.
+    ///
+    /// Simulated additions:
+    /// - `task/S1-E-4b-gore-draw`: every `Images/Gore_<id>.xnb` except the
+    ///   leaf gores 910/911 (they already ride `STATIC_SHEET_NAMES`) —
+    ///   `AssetInitializer.cs:135-137`, the `enumerate_gore_sheet_ids` shape.
+    /// - `task/S1-L-8b-mount-data`: the 25 `STATIC_SHEET_NAMES` additions
+    ///   (the Drill glow strips, the mount GlowMasks, the corrected minecart
+    ///   names, the S1-L-9 land-mount sheets).
+    ///
+    /// UV correctness for every sheet is proven by
+    /// `tr_render::atlas::tests::skyline_copies_every_sheet_to_its_rect`;
+    /// this test pins the height bound on the real dims.
+    #[test]
+    fn the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound() {
+        let content = crate::app::find_content_dir()
+            .expect("assets/Content not found: the asset tests need the game content junction");
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let tiles = BTreeSet::new();
+        let walls = BTreeSet::new();
+        let (mut images, static_sheets) =
+            load_world_images(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls)
+                .expect("world image decode");
+        images.extend(static_sheets);
+
+        // E-4b: the gore enumeration (sorted, deduped, 910/911 excluded).
+        let mut gore_ids: Vec<u16> = std::fs::read_dir(&images_dir)
+            .expect("Images dir")
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name();
+                let name = name.to_str()?;
+                let id = name.strip_prefix("Gore_")?.strip_suffix(".xnb")?;
+                let id = id.parse::<u16>().ok()?;
+                (id != 910 && id != 911).then_some(id)
+            })
+            .collect();
+        gore_ids.sort_unstable();
+        gore_ids.dedup();
+        assert!(gore_ids.len() > 1000, "the ~1400-sheet gore set");
+        for id in gore_ids {
+            if let Ok(img) = load_png(&images_dir, &format!("Gore_{id}"), SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
+
+        // L-8b: the mount/glow/minecart additions (missing files skip, like
+        // the loader's own `load_png` arms).
+        for name in [
+            "Mount_Glow_DrillRing",
+            "Mount_Glow_DrillSeat",
+            "Mount_Glow_DrillDiode",
+            "Glow_283",
+            "Glow_284",
+            "Glow_285",
+            "Glow_370",
+            "Mount_MinecartMech",
+            "Mount_MinecartMechGlow",
+            "Mount_MinecartWood",
+            "Mount_MinecartMineCarp",
+            "Mount_MinecartDesert",
+            "Mount_Turtle",
+            "Extra_96",
+            "Extra_97",
+            "Extra_149",
+            "Extra_167",
+            "Extra_168",
+            "Extra_253",
+            "Extra_254",
+            "Extra_271",
+            "Extra_272",
+            "Extra_273",
+            "Extra_301",
+            "Extra_302",
+        ] {
+            if let Ok(img) = load_png(&images_dir, name, SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
+
+        let atlas = tr_render::Atlas::build(images, 8192);
+        assert!(
+            atlas.height <= 8192,
+            "the full gore+mount set packs {} px tall; the strict-GPU bound is 8192",
+            atlas.height
+        );
+        // Every gore sheet that decoded must be addressable (the E-4b draw
+        // pass reads `Lookups.gore_sheets` keyed by the parsed id).
+        for id in [1u16, 2, 100, 500, 1000, 1400] {
+            if images_dir.join(format!("Gore_{id}.xnb")).exists() {
+                assert!(
+                    atlas.sheet(&format!("Gore_{id}")).is_some(),
+                    "Gore_{id} must pack"
+                );
+            }
         }
     }
 }

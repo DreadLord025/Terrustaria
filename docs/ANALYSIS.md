@@ -24893,3 +24893,86 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+## The atlas skyline packer (S1-G-12b, 2026-11-19, code-only)
+
+**The bound.** The renderer draws ONE atlas through one instanced sprite
+pipeline (AGENTS.md rendering invariant; research/41 D-3 — the C# itself is
+per-texture, `TileBatch.cs:485-536`, so the packing algorithm is
+port-infrastructure, not game logic). The atlas is 8192 px wide and must stay
+≤ 8192 px tall (the strict-GPU max 2D dimension). The landed best-fit
+decreasing-height shelf packer (S1-F-13c slice B) held the main sheet set at
+~8121 px — 71 px of headroom. Two branches were SKIP-blocked on it:
+`task/S1-E-4b-gore-draw` adds ~1400 `Gore_<id>` sheets
+(`AssetInitializer.cs:135-137`, the `Main.DrawGore` source
+`Main.cs:21873-21907`) and `task/S1-L-8b-mount-data` adds 25
+`STATIC_SHEET_NAMES` rows (the Drill glow strips, the mount GlowMasks
+283/284/285/370, the corrected minecart file names, the S1-L-9 land-mount
+sheets).
+
+**Measured heights** (`tools/atlas_sim.js` — reads the REAL sheet dims out
+of the retail `.xnb` files through an LZX decoder ported from
+`crates/tr-content/src/lzx.rs`, mirrors the `assets.rs` enumeration
+including `proj_data`'s range arms and the two branches' additions; no
+compiler invoked). The sim's best-fit shelf height on the main set is
+8117 px vs the recorded 8121 — a 4 px census residual (a handful of sheets
+whose decode the sim skips), immaterial to the bound decision:
+
+| sheet set | best-fit shelves (main) | first-fit shelves (E-4b) | skyline waste | skyline span | maxrects BAF |
+| --- | --- | --- | --- | --- | --- |
+| main (test world, 7826 sheets) | 8117 | 8117 | **7289** | 7251 | 7070 |
+| main + gore (9228 sheets) | 8493 OVERFLOW | 8493 OVERFLOW | **7680** | 7643 | 7462 |
+| main + gore + mount + font (9254 sheets) | 8664 OVERFLOW | 8664 OVERFLOW | **7932** | 8091 | 7601 |
+
+**The choice: skyline bottom-left, waste tie-break** (option 1 of the task
+brief). Each rect tries every skyline node's left edge; the placement y is
+the max skyline height over the span; the winner minimises `(y, waste, x)`
+— bottom-left first, then the least area buried under the rect, then
+leftmost. All keys are integers and the scan order is fixed, so the layout
+is a pure function of the input list (the world-swap `build_ref` contract).
+The skyline backfills the width tails the shelf pass strands per row — the
+exact failure mode the ~1400 same-band gore sheets exposed. The span
+tie-break was evaluated and rejected: it wins on the smaller sets but packs
+the critical combined set at 8091 px (only 101 px headroom) vs the waste
+tie-break's 7932 px (260 px headroom). Maxrects best-area-fit packs tighter
+still (7601 px) but is more code (free-rect split + containment prune) for
+headroom the port does not need yet; it stays the documented next step if a
+future sheet wave eats the 260 px. A two-atlas split (option 4) was not
+needed and would break the one-atlas/one-pipeline invariant.
+
+**Name dedup** (option 3): the census found 41 duplicate decodes in the full
+set — 48 `Projectile_*` names ride both `STATIC_SHEET_NAMES` and the
+`proj_data` loop (minus the ones whose file is absent). The `sheets`
+HashMap keeps one rect per name, so the later copy's pixels were dead weight.
+`build_ref` now keeps the FIRST occurrence of each name — UV-neutral for
+every lookup (they already resolved to one rect), and it removes the dead
+pixels. No sheet a draw references was removed.
+
+**Implementation.** `crates/tr-render/src/atlas.rs`: `skyline_pack`
+(the pure packer over PAD-inflated rects in a `max_width - PAD` bin) +
+`build_ref`'s dedup/sort/skyline pass. The PAD geometry is unchanged:
+every sheet keeps the 2 px border and ≥ 2 px separation (the rects are
+inflated by PAD before packing and offset by PAD after). `build` delegates
+to `build_ref` exactly as before, so the owned and borrowed paths stay
+bit-identical. `font_atlas.rs`'s independent shelf packer is untouched.
+
+**Tests (WRITTEN, NOT RUN — code-only mode, no compiler invoked).**
+`tr-render/src/atlas.rs`: `skyline_layout_is_deterministic_across_runs`
+(two runs, identical pixels + rects), `skyline_copies_every_sheet_to_its_rect`
+(UV correctness: every sheet's pixels at its rect, rect in-bounds with the
+PAD border), `skyline_sheets_never_overlap_including_padding` (pairwise
+on the inflated rects), `skyline_backfills_the_tall_sheets_tail`
+(hand-computed 3-sheet witness, height 84 vs the shelf pass's 96),
+`duplicate_names_pack_once_first_wins`, `skyline_fits_the_gore_shaped_stress_set`
+(1400 small sheets + a tall band under 8192). The pre-existing
+`build_ref_matches_build_bit_for_bit` still pins the owned/borrowed
+contract. `tr-app/src/assets.rs`:
+`the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound` decodes the
+real content, appends the simulated E-4b gore enumeration (910/911 excluded)
+and the L-8b additions, and asserts height ≤ 8192 + every sampled gore sheet
+addressable.
+
+**Consequence for the goldens.** Like the E-4b branch's own packer change,
+the skyline moves every sheet's atlas position: all UVs shift, so the golden
+screenshot SHA256s change by construction and must be re-taken when a build
+is next allowed (no pixel-behaviour change — the same texels, new addresses).
+The E-4b and L-8b branches can now un-skip: their sheet sets fit.

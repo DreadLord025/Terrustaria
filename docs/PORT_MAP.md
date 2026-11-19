@@ -448,7 +448,7 @@ re-implement something that already exists, or to port the wrong file.
 | `SpriteBatch` / XNA draw calls | `crates/tr-render/src/sprite.rs`, `gpu.rs` | done |
 | `Main._multiplyBlendState` + `BlendState.Additive` batches (`Main.cs:27462-27490`) | `sprite.rs::BlendMode` + `draw_blend_runs` (S1-G-3) | done |
 | `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) + `AI_188_LightsBane` (`Projectile.cs:42229-42262`) | `crates/tr-app/src/projectile.rs::draw_lights_bane` / `lights_bane_quads` / `ai_lights_bane` (S1-G-3) | done (sound + dust skipped, ANALYSIS "The blend batches"); verifier fixes D1/D2/D3 code-only 2026-11-18 — re-verify before merge (ANALYSIS "The verifier fixes") |
-| texture atlas packing (RebuildAtlas usage) | `crates/tr-render/src/atlas.rs` | done |
+| texture atlas packing (RebuildAtlas usage) | `crates/tr-render/src/atlas.rs` (`skyline_pack` bottom-left + name dedup, S1-G-12b; port-infrastructure — the C# has no atlas, `TileBatch.cs:485-536`) | done (skyline 2026-11-19 code-only: full gore+mount set 7932 px ≤ 8192, `tools/atlas_sim.js` measured; tests written not run — ANALYSIS "The atlas skyline packer (S1-G-12b)") |
 
 ## Not ported (by design)
 
