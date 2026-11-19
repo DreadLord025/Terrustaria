@@ -501,6 +501,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
+            .chain(BEE_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1154,6 +1155,10 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
     343, // the Yeti
     344, // the Everscream
 ];
+
+/// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
+pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -2806,6 +2811,14 @@ pub(crate) fn draw_npcs(
                     [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
+            // The volley bees (S1-D-3 W-3): the case-49 group's draw —
+            // `Main.npcFrameCount[210/211] = 4` (`Main.cs:67082`); the
+            // generic anchor centres each frame on the box's centre-X
+            // with its centre 4 px below the bottom (`Main.cs:25511-25516`).
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                let ty = texture_net_id(n.kind);
+                generic_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // The bats: `Main.npcFrameCount` 49/51/60/66 = 5
                 // (`Main.cs:67082`); NPC_49/51/60 are 44x160 (5 rows of
@@ -3197,6 +3210,69 @@ pub(crate) fn draw_npcs(
 #[cfg(test)]
 mod anchor_tests {
     use super::*;
+
+    /// fix/player-motion-blur — the entity-snapping invariant: an unrotated
+    /// sprite's top-left lands on a WHOLE screen pixel at every zoom, even
+    /// with a fractional camera and a fractional world position. The C#
+    /// equivalent is the layers' `(int)(Position - Main.screenPosition + …)`
+    /// truncation (`PlayerDrawLayers.cs:1907/1939`) over the `(int)`-truncated
+    /// `Main.screenPosition` (`Main.cs:62646-62647`) under `PointClamp`
+    /// (`Camera.cs:44`, `Main.cs:2774-2784`) — whole pixels + nearest sampling
+    /// = pixel-perfect motion. The snap moves the sprite by at most half a
+    /// screen pixel per axis.
+    #[test]
+    fn entity_sprites_snap_to_whole_screen_pixels() {
+        let screen = Vec2::new(1280.0, 720.0);
+        for zoom in [1.0f32, 1.5, 2.0] {
+            for cam in [
+                Vec2::new(1000.37, 2000.61),
+                Vec2::new(-17.5, 3.25),
+                Vec2::new(640.0, 360.0),
+            ] {
+                let pos = [1234.567f32, 2345.891];
+                let snapped = snap_to_screen(pos, cam, zoom, screen);
+                let sx = (snapped[0] - cam.x) * zoom + screen.x * 0.5;
+                let sy = (snapped[1] - cam.y) * zoom + screen.y * 0.5;
+                assert!(
+                    (sx - sx.round()).abs() < 1e-3 && (sy - sy.round()).abs() < 1e-3,
+                    "zoom {zoom}, cam {cam:?}: snapped screen pos ({sx}, {sy}) must be whole pixels"
+                );
+                let raw_sx = (pos[0] - cam.x) * zoom + screen.x * 0.5;
+                let raw_sy = (pos[1] - cam.y) * zoom + screen.y * 0.5;
+                assert!(
+                    (sx - raw_sx).abs() <= 0.5 + 1e-3 && (sy - raw_sy).abs() <= 0.5 + 1e-3,
+                    "the snap never moves a sprite more than half a screen pixel"
+                );
+            }
+        }
+    }
+
+    /// fix/player-motion-blur — the draw reads the RAW fixed-step player, no
+    /// between-tick blend: `Main.DrawPlayers` hands `player.position` to the
+    /// renderer (`Main.cs:22298` → `LegacyPlayerRenderer.cs:468-475`, no
+    /// `oldPosition` lerp anywhere on that path). The removed
+    /// `Player::interpolated` moved the sprite to sub-pixel offsets between
+    /// the snapped integer camera steps and re-rasterised the nearest-sampled
+    /// art on a shifted grid every frame — the "character smears during any
+    /// movement" bug. Pin both ends so the blend cannot silently return.
+    #[test]
+    fn the_player_draw_has_no_between_tick_interpolation() {
+        let draw = include_str!("../app/frame/draw.rs");
+        assert!(
+            !draw.contains(".interpolated("),
+            "draw_region must clone the raw fixed-step player, not blend it"
+        );
+        let player = include_str!("../player.rs");
+        assert!(
+            !player.contains("pub fn interpolated"),
+            "Player::interpolated was removed — the C# has no render blend"
+        );
+        let follow = include_str!("../world_sim/player.rs");
+        assert!(
+            !follow.contains(".interpolated("),
+            "the camera follow targets the raw position (Main.cs:62567-62570)"
+        );
+    }
 
     /// A bare NPC at the spawn point (the port's test helper).
     fn bare(kind: NpcKind) -> Npc {

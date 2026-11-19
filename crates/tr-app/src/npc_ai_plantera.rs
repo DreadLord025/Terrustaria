@@ -268,7 +268,7 @@ pub fn phase2_cadence(counter: f32, life: i32, life_max: i32) -> (f32, bool) {
 /// `NPC.cs:31774` — the enrage gate: the player is out of the jungle, or
 /// above the surface line, or below the underworld layer. The port's
 /// `UnderworldLayer` stand-in is the WoF machine's `height - 200`
-/// (`npc.rs`'s `update_wof`, the documented convention).
+/// (`npc_ai_style27.rs`'s `style27_step`, the documented convention).
 pub fn enraged(world: &World, player: &Player) -> bool {
     let underworld_layer = world.height - 200;
     !player.zones.jungle

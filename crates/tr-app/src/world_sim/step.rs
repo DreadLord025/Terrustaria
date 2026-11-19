@@ -36,8 +36,10 @@ impl FixedStepper {
         steps
     }
 
-    /// The residual accumulator in seconds — the render interpolation position
-    /// between the last simulation step and now (`acc / step`).
+    /// The residual accumulator in seconds — the fraction of the next fixed
+    /// step already elapsed. (The old render interpolation read it; the draw
+    /// now uses the raw fixed-step state, fix/player-motion-blur.)
+    #[allow(dead_code)] // kept for the stepper tests; no render consumer since the smear fix
     pub(crate) fn residual(&self) -> f32 {
         self.accum
     }

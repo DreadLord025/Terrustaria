@@ -2904,6 +2904,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
     // (`NPC.cs:60302`) the fighter-moan gate reads.
     let zone_graveyard = app.scene_metrics.zone_graveyard;
+    // S1-F-13c wiring — the Everscream's per-tick dust arm (`NPC.cs:32821-
+    // 32825`) rolls `Main.rand` through the verbatim `DustPool::new_dust` on
+    // the SAME `UpdateNPCs` stream the AI draws ride (`Main.cs:17767-17769`'s
+    // `SwapRandom("UpdateNPCs")` wraps `NPC.UpdateNPC`, dust included). The
+    // frame's spawn ctx is captured HERE, before the `npcs_rng` mutable
+    // borrow (the helper borrows `app` immutably); the live pool is threaded
+    // into the tick closure below. Every other kind ignores them.
+    let dust_spawn_ctx = app.spawn_ctx();
     // The AI group's stream: `Main.SwapRandom("UpdateNPCs")` wraps
     // `NPC.UpdateNPC` (`Main.cs:17767-17769`) — the AI draws ride it in
     // slot order, one shared stream across the tick closure (the
@@ -2926,12 +2934,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.npcs[i].plantera_hook_anchor = anchor;
         }
     }
+    // S1-D-3 W-1: the WoF arm's live-count pre-pass — `NPC.CountNPCS(117)`
+    // (`NPC.cs:25710`'s `< 10` leech gate) and the Hungry (115) `ai[0]`
+    // collection in slot order capped at 10 (`:26003-26010`, the expert
+    // respawn roll's free-slot scan). The C# scans inside the wall's own
+    // AI tick; the port pre-computes once per tick over the pool (the
+    // Plantera centroid precedent above).
+    {
+        let leech_count = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::LeechHead && n.hp > 0)
+            .count() as i32;
+        let hungry_ai0s: Vec<f32> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Hungry && n.hp > 0)
+            .take(10)
+            .map(|n| n.ai[0])
+            .collect();
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::WallOfFlesh && n.hp > 0 {
+                n.wof_leech_count = leech_count;
+                n.wof_hungry_ai0s = hungry_ai0s.clone();
+            }
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
-        let world = &app.world;
+        // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
+        // INSIDE the loop, right after the wall's own update, so the
+        // eye/Hungry slots later in the tick read the fresh values exactly
+        // like the C#'s live `Main.wofDrawArea*`/`Main.npc[wofNPCIndex]`
+        // reads (`NPC.cs:25724`/`:26066`/`:26280`). Every other reader in
+        // the closure only reads.
+        let world = &mut app.world;
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
+        let dust = &mut app.dust;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
                 for (i, n) in npcs.iter_mut().enumerate() {
@@ -2939,6 +2980,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // spawn requests that carry an owner reference (the
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
+                    // `NPC.OnSpawn`'s type-113 arm (`NPC.cs:8404-8407`):
+                    // `Main.wofNPCIndex = whoAmI` at spawn — the presence
+                    // mirror stays on while the wall lives (the death
+                    // sweep's `ResetNPCSlotData` clears it, `:8379-8381`).
+                    if n.kind == NpcKind::WallOfFlesh && n.hp > 0 {
+                        world.wof_present = true;
+                        world.wof_npc_index = i as i32;
+                    }
                     // S1-E-21e — `AI_003_Fighters`' idle counter
                     // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
                     // movement integrates: `old_x` still holds the previous
@@ -2969,7 +3018,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             player_intersects,
                         );
                     }
-                    n.update_rng(world, player, step, npcs_rng);
+                    n.update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                    // S1-D-3 W-1 — the WoF statics write-back, right after
+                    // the wall's own update (the C# mutates the statics
+                    // inside the arm, `NPC.cs:25724`/`:25758-25842`, so
+                    // later slots in the same tick read the fresh values).
+                    // The arm staged them on the NPC (it holds `&World`).
+                    if n.kind == NpcKind::WallOfFlesh && n.hp > 0 {
+                        world.wof_draw_top = n.wof_band_top;
+                        world.wof_draw_bottom = n.wof_band_bottom;
+                        world.wof_npc_index = n.wof_npc_index_out;
+                        world.wof_x = n.x;
+                        world.wof_dir = n.facing;
+                        world.wof_life = n.hp;
+                        world.wof_life_max = n.max_hp;
+                        world.wof_width = n.size().0 as i32;
+                        world.wof_vx = n.vx;
+                        world.wof_center_x = n.center().0;
+                        world.wof_hp_ratio = n.hp as f32 / n.max_hp as f32;
+                    } else if n.kind == NpcKind::WallOfFlesh {
+                        // The wall died this tick — the presence mirror
+                        // clears like `ResetNPCSlotData` (`NPC.cs:8379-
+                        // 8381`), so the eye/Hungry slots later in the
+                        // tick see the death immediately.
+                        world.wof_present = false;
+                        world.wof_npc_index = -1;
+                        world.wof_life = 0;
+                    }
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `justHit`
+                    // clears at the update's end — the strike tick only
+                    // (S1-D-3 W-1: the Hungry's recoil arm reads it).
+                    n.just_hit = false;
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
@@ -3661,6 +3740,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut limbs);
+    // The Queen Bee's state-1 bee volley (S1-D-3 W-3, `NPC.cs:30623-30636`):
+    // the aiStyle-43 axis arm set `wants_bee` on a spawn tick (the
+    // Next(20)/Next(210,212) draws already rode the UpdateNPCs stream in
+    // C# order); this pass resolves the `NPC.NewNPC` — the (int)vector77
+    // truncation is in the payload, `Bottom = (X, Y)` (`NPC.cs:80770`),
+    // the normalized ×5 velocity toward the player and `localAI[0] = 60`
+    // (`:30633`). `CanBeReplacedByOtherNPCs` (`:30632`) has no port field
+    // — dropped (the module's recorded fold).
+    let mut bees = Vec::new();
+    for n in app.npcs.iter_mut() {
+        let Some(req) = n.wants_bee.take() else {
+            continue;
+        };
+        let kind = match req.kind {
+            crate::npc_ai_style43::BEE => NpcKind::Bee,
+            crate::npc_ai_style43::BEE_SMALL => NpcKind::BeeSmall,
+            _ => unreachable!("the volley draws only 210/211"),
+        };
+        let (bw, bh) = kind.size();
+        let mut bee = Npc::new(kind, req.x - bw * 0.5, req.y - bh, 1, 0.0);
+        bee.hp = bee.max_hp;
+        bee.vx = req.vx;
+        bee.vy = req.vy;
+        bee.local_ai[0] = req.local_ai0;
+        bee.net_update = true;
+        bees.push(bee);
+    }
+    app.npcs.append(&mut bees);
     // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
     // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
     // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
@@ -3910,15 +4017,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
-        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3) and Plantera's seeds
+        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball).
+        // ball) and the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
             || kind == crate::projectile::GOLEM_EYE_BEAM
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
+            || kind == crate::projectile::QUEEN_BEE_STINGER
         {
             300
         } else {
@@ -3959,101 +4067,75 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             shot.ai1,
         );
     }
-    // The WoF's spawn requests + the World state the Hungry reads
-    // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
-    // holds `&World`, so the writes land here).
-    let wof = app
+    // S1-D-3 W-1 — the WoF's `NPC.NewNPC` drain (`NPC.cs:25712`,
+    // `:26036`, `:26044-26049`). The faithful aiStyle-27 arm emits the
+    // requests in C# order (leech heads, the expert Hungry respawn, the
+    // ONE-TIME init: 2 mirror eyes + 11 Hungries at `localAI[0]` 1 → 2,
+    // `:26041-26043`); this pass resolves them with `NewNPC`'s
+    // `Bottom = (X, Y)` placement (`NPC.cs:80770`, `Entity.Bottom` setter:
+    // `position = (X - width/2, Y - height)`, `Entity.cs:122-131`).
+    // THE CATASTROPHIC FIX (census W-1): the v1 spawned the two eyes
+    // EVERY tick the wall lived (ungated loop) and never cleared
+    // `wants_hungry`/`wants_leech`, so 11 Hungries re-spawned every tick.
+    // Now the module's one-shot init owns the gating; the requests drain
+    // exactly once and the legacy flags clear after the drain.
+    let mut wof_new: Vec<Npc> = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::WallOfFlesh {
+            continue;
+        }
+        for req in n.wof_spawns.drain(..) {
+            // The vanilla type ids → port kinds. 24 (the getGood demon)
+            // has no port kind — getGoodWorld is false in the classic
+            // port so the arm never emits it; documented skip.
+            let kind = match req.npc_type {
+                117 => NpcKind::LeechHead,
+                114 => NpcKind::WallOfFleshEye,
+                115 => NpcKind::Hungry,
+                _ => continue,
+            };
+            let (w, h) = kind.size();
+            // `NewNPC` sets no direction — the ctor default
+            // `Entity.direction = 1` (`Entity.cs:20`) rides; the port's
+            // `Npc::new` facing argument carries it (`spriteDirection`
+            // stays the ctor's -1, `NPC.cs:6515`). `Start` is the C#'s
+            // slot-search start (`GetAvailableNPCSlot`, `:80796`) — the
+            // port's compacting pool appends instead (the established
+            // spawn convention); `ai0` rides the request.
+            let mut child = Npc::new(
+                kind,
+                req.x as f32 - w * 0.5,
+                req.y as f32 - h,
+                1,
+                0.0,
+            );
+            child.hp = child.max_hp;
+            child.ai[0] = req.ai0;
+            if let Some(vx) = req.vx {
+                // `Main.npc[num345].velocity.X = direction * 8`
+                // (`NPC.cs:25713`) — the leech head's slide.
+                child.vx = vx;
+            }
+            wof_new.push(child);
+        }
+        // The legacy request flags clear after the drain (the v1's
+        // never-cleared `wants_hungry` was the respawn loop's second half).
+        n.wants_hungry = false;
+        n.wants_leech = false;
+    }
+    app.npcs.append(&mut wof_new);
+    // The band ease/clamps moved INTO the arm (`style27_step`, the sim
+    // write-back above) — the v1's sim-side ease toward `wof_*_target`
+    // is retired with the targets. The presence mirror: the update loop
+    // arms it per living wall (the `OnSpawn` shape); when none lives the
+    // statics reset like `ResetNPCSlotData` (`NPC.cs:8379-8381`).
+    if !app
         .npcs
         .iter()
-        .find(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
-        .cloned();
-    if let Some(wof) = wof {
-        // The Leech head (`NPC.CountNPCS(117) < 10`): the head link spawns
-        // at the wall's centre with the slide velocity (`direction * 8`).
-        if wof.wants_leech {
-            if app
-                .npcs
-                .iter()
-                .filter(|n| n.kind == NpcKind::LeechHead && n.hp > 0)
-                .count()
-                < 10
-            {
-                let mut leech = Npc::new(
-                    NpcKind::LeechHead,
-                    wof.x + wof.size().0 * 0.5,
-                    wof.y + wof.size().1 * 0.5 + 20.0,
-                    wof.facing,
-                    0.0,
-                );
-                leech.vx = wof.facing as f32 * 8.0;
-                leech.hp = leech.max_hp;
-                app.npcs.push(leech);
-            }
-        }
-        // The Hungry init (`localAI[0]` 1 → 2): the 11 Hungries along the
-        // band (`ai[0] = i * 0.1 - 0.05`); the eye/mouth mirrors (114) are
-        // the render follow-up.
-        // The mirror eyes (`:26041-26051`): the two 114s at the band
-        // mid + the drawTop/drawBottom halves, the ai[0] sign picks the
-        // half each chases.
-        for top in [true, false] {
-            let ey = if top {
-                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_top) * 0.5
-            } else {
-                (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) * 0.5
-            };
-            let mut eye = Npc::new(NpcKind::WallOfFleshEye, wof.x, ey, wof.facing, 0.0);
-            eye.hp = eye.max_hp;
-            eye.ai[0] = if top { 1.0 } else { -1.0 };
-            app.npcs.push(eye);
-        }
-        if wof.wants_hungry {
-            let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
-            for i in 0..11 {
-                let mut hungry = Npc::new(NpcKind::Hungry, wof.x, mid, wof.facing, 0.0);
-                hungry.hp = hungry.max_hp;
-                hungry.ai[0] = i as f32 * 0.1 - 0.05;
-                app.npcs.push(hungry);
-            }
-        }
-        // The band ease (1 px per tick toward the wall's scan targets) +
-        // the clamp (`:25834-25840`).
-        if wof.wof_bottom_target >= 0.0 {
-            if app.world.wof_draw_bottom < 0.0 {
-                app.world.wof_draw_bottom = wof.wof_bottom_target;
-            } else if app.world.wof_draw_bottom > wof.wof_bottom_target {
-                app.world.wof_draw_bottom -= 1.0;
-                if app.world.wof_draw_bottom < wof.wof_bottom_target {
-                    app.world.wof_draw_bottom = wof.wof_bottom_target;
-                }
-            } else if app.world.wof_draw_bottom < wof.wof_bottom_target {
-                app.world.wof_draw_bottom += 1.0;
-                if app.world.wof_draw_bottom > wof.wof_bottom_target {
-                    app.world.wof_draw_bottom = wof.wof_bottom_target;
-                }
-            }
-        }
-        if wof.wof_top_target >= 0.0 {
-            if app.world.wof_draw_top < 0.0 {
-                app.world.wof_draw_top = wof.wof_top_target;
-            } else if app.world.wof_draw_top > wof.wof_top_target {
-                app.world.wof_draw_top -= 1.0;
-                if app.world.wof_draw_top < wof.wof_top_target {
-                    app.world.wof_draw_top = wof.wof_top_target;
-                }
-            } else if app.world.wof_draw_top < wof.wof_top_target {
-                app.world.wof_draw_top += 1.0;
-                if app.world.wof_draw_top > wof.wof_top_target {
-                    app.world.wof_draw_top = wof.wof_top_target;
-                }
-            }
-        }
-        app.world.wof_present = true;
-        app.world.wof_hp_ratio = wof.hp as f32 / wof.max_hp as f32;
-        app.world.wof_x = wof.x;
-        app.world.wof_dir = wof.facing;
-    } else {
+        .any(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
+    {
         app.world.wof_present = false;
+        app.world.wof_npc_index = -1;
     }
 
     // The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm,
@@ -6713,6 +6795,95 @@ mod invasion_tests {
             }
         }
     }
+
+    #[test]
+    fn s1_d_3_w3_the_sim_drains_the_bee_volley_and_the_stinger() {
+        // S1-D-3 W-3: the Queen Bee's aiStyle-43 axis arm writes the spawn
+        // requests; the sim's spawn pass resolves them — the bee at
+        // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) with the payload's
+        // velocity + `localAI[0] = 60`, the stinger as a hostile 719 with
+        // the `timeLeft = 300` override (`:30743`). The UpdateNPCs stream
+        // carries the arm's draws (Next(20) per tick + the type/jitter
+        // draws on a fire tick) — the witness replays them in order.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.seed = 7;
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        // The queen above the player, out of the jungle and above the
+        // surface (worldSurface 120 -> 1920 px): num619 = 2, the volley
+        // period (int)(40 - 18*2) = 4, the stinger period 40 - 10 = 30.
+        let mut qb = Npc::new(NpcKind::QueenBee, 150.0 * TILE_PX, 1000.0, 1, 0.0);
+        qb.hp = qb.max_hp;
+        qb.ai[0] = 1.0;
+        qb.ai[1] = 4.0; // ++ = 5 > 4 -> the volley tick on the first step.
+        app.npcs.push(qb);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The bee spawned: Bottom placement + the payload's state.
+        let bee = app
+            .npcs
+            .iter()
+            .find(|n| matches!(n.kind, NpcKind::Bee | NpcKind::BeeSmall))
+            .expect("the volley drain spawns a bee");
+        assert_eq!(bee.local_ai[0], 60.0, "localAI[0] = 60 (`:30633`)");
+        assert!(bee.net_update, "the spawn sets netUpdate (`:30634`)");
+        let sp = (bee.vx * bee.vx + bee.vy * bee.vy).sqrt();
+        assert!((sp - 5.0).abs() < 1e-3, "the normalized x5 velocity ({sp})");
+        // The request is drained (no stale re-spawn on the next tick).
+        assert!(app.npcs.iter().all(|n| n.wants_bee.is_none()));
+        // Tick-1 RNG parity: the queen alone rode the AI pass (the bee
+        // drains AFTER it; natural spawns ride the separate SpawnNpc
+        // stream), so UpdateNPCs carries exactly Next(20)+Next(210,212).
+        {
+            let mut w1 = UnifiedRandom::new(7);
+            let _o = w1.next_max(20);
+            let _t = w1.next_range(210, 212);
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdateNpcs),
+                w1,
+                "tick 1: the volley's two draws in C# order"
+            );
+        }
+        // The stinger barrage: state 3, ai[1] = 28 -> ++ = 29,
+        // 29 % 30 == 29 -> the fire tick; the queen's bottom is above the
+        // player's top and the CanHit line is open air.
+        app.npcs.retain(|n| n.kind == NpcKind::QueenBee);
+        {
+            let q = app.npcs.iter_mut().find(|n| n.kind == NpcKind::QueenBee).unwrap();
+            q.ai[0] = 3.0;
+            q.ai[1] = 28.0;
+            q.x = 150.0 * TILE_PX;
+            q.y = 1000.0;
+        }
+        update_npcs(&mut app, 1.0 / 60.0);
+        let stinger = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::QUEEN_BEE_STINGER)
+            .expect("the barrage drain spawns a 719 stinger");
+        assert_eq!(stinger.damage, 11, "the stinger damage (`:30742`)");
+        assert_eq!(stinger.time_left, 300, "the timeLeft override (`:30743`)");
+        assert!(!stinger.friendly, "the stinger is hostile");
+        // RNG parity: the UpdateNPCs stream after the two ticks replays
+        // the volley's Next(20)+Next(210,212) then the barrage's
+        // Next(20)+Next(-2,3)+Next(-2,3) (num619 = 2 floors the windows
+        // at 2), X before Y.
+        let mut witness = UnifiedRandom::new(7);
+        let _o1 = witness.next_max(20);
+        let _ty = witness.next_range(210, 212);
+        let _o2 = witness.next_max(20);
+        let _jx = witness.next_range(-2, 3);
+        let _jy = witness.next_range(-2, 3);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the UpdateNPCs stream carries the arm's draws in C# order"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -8255,6 +8426,247 @@ mod prime_limb_tests {
             "the head anchors the world's Prime fields"
         );
         assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
+    }
+}
+
+/// S1-D-3 W-1 — the WoF family WIRING witnesses (the census's P0
+/// catastrophic respawn-loop fix). The faithful modules
+/// (`npc_ai_style27/28/29`) are audited 1:1; these pin the SEAMS: the
+/// one-time init (no every-tick respawn), the `wants_*` drain-clears,
+/// the `UpdateNPCs`-stream RNG parity and the live leash/despawn gates.
+#[cfg(test)]
+mod wof_wire_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::player::Player;
+
+    /// A hell world: solid stone from row 500 down (the band scans find
+    /// their 15 tiles), 400×700 → `UnderworldLayer` 500, band rows
+    /// 510..580 (`NPC.cs:25722-25727`).
+    fn hell_world() -> World {
+        let mut w = World::new("hell".into(), 400, 700);
+        for x in 0..w.width {
+            for y in 500..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn wof_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 200.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        app.player = Some(player);
+        let mut wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            150.0 * TILE_PX,
+            540.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        wall.hp = wall.max_hp;
+        app.npcs.push(wall);
+        app
+    }
+
+    /// One sim tick with the ambient spawner held off (`npc_timer` resets
+    /// to 1/60 at the pass tail, so re-arm it each tick): the witnesses
+    /// assert exact minion counts / stream parity, and a stray ambient
+    /// spawn would pollute both.
+    fn tick(app: &mut App) {
+        app.npc_timer = 10.0;
+        update_npcs(app, 1.0 / 60.0);
+    }
+
+    fn count(app: &App, kind: NpcKind) -> usize {
+        app.npcs.iter().filter(|n| n.kind == kind && n.hp > 0).count()
+    }
+
+    /// THE catastrophic fix: the init fires ONCE (`localAI[0]` 1 → 2,
+    /// `NPC.cs:26041-26043`). Tick 1 spawns exactly 2 eyes + 11 Hungries;
+    /// the next ticks spawn NOTHING — the v1's ungated every-tick eye
+    /// loop + never-cleared `wants_hungry` pushed 13 NPCs per tick.
+    #[test]
+    fn the_init_spawns_fire_once_not_every_tick() {
+        let mut app = wof_app();
+        tick(&mut app);
+        assert_eq!(count(&app, NpcKind::WallOfFleshEye), 2, "the two mirrors");
+        assert_eq!(count(&app, NpcKind::Hungry), 11, "the 11 Hungries");
+        let wall = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::WallOfFlesh)
+            .expect("the wall lives");
+        assert_eq!(wall.local_ai[0], 2.0, "the one-shot latch");
+        assert!(!wall.wants_hungry, "the legacy flag cleared");
+        assert!(!wall.wants_leech, "the legacy flag cleared");
+        assert!(wall.wof_spawns.is_empty(), "the requests drained");
+        for _ in 0..10 {
+            tick(&mut app);
+            assert_eq!(count(&app, NpcKind::WallOfFleshEye), 2, "no re-spawn");
+            assert_eq!(count(&app, NpcKind::Hungry), 11, "no re-spawn");
+        }
+    }
+
+    /// The `NewNPC` Bottom placement (`NPC.cs:80770`, `Entity.cs:122-131`):
+    /// the eyes/Hungries sit at `(X - width/2, Y - height)` — the v1
+    /// spawned raw top-left, half a box right and a full box low. The
+    /// init payloads ride the wall's slot + the band halves
+    /// (`:26044-26049`); the Hungry `ai[0]` ladder is `i*0.1 - 0.05`.
+    #[test]
+    fn the_init_children_ride_the_bottom_placement_and_ai0_ladder() {
+        let mut app = wof_app();
+        tick(&mut app);
+        let wall = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::WallOfFlesh)
+            .unwrap()
+            .clone();
+        let (ww, wh) = wall.size();
+        // The init payloads read the wall's PRE-integration position (the
+        // arm emits them before the wrapper's `position += velocity` tail,
+        // `NPC.cs:90495-90498`); the Y pin keeps y fixed (vy = 0).
+        let spawn_x = wall.x - wall.vx;
+        let center_y = wall.y + wh * 0.5;
+        let eyes: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::WallOfFleshEye)
+            .collect();
+        assert_eq!(eyes.len(), 2);
+        for eye in &eyes {
+            let (ew, eh) = eye.size();
+            // X = (int)wall.X - width/2 (the Bottom setter's float half).
+            assert_eq!(eye.x, spawn_x as i32 as f32 - ew * 0.5);
+            let want_y = if eye.ai[0] > 0.0 {
+                ((center_y + app.world.wof_draw_top as f32) / 2.0) as i32 as f32 - eh
+            } else {
+                ((center_y + app.world.wof_draw_bottom as f32) / 2.0) as i32 as f32 - eh
+            };
+            assert_eq!(eye.y, want_y, "the band-half Bottom row");
+        }
+        assert_eq!(eyes.iter().filter(|e| e.ai[0] == 1.0).count(), 1);
+        assert_eq!(eyes.iter().filter(|e| e.ai[0] == -1.0).count(), 1);
+        let hungries: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Hungry)
+            .collect();
+        assert_eq!(hungries.len(), 11);
+        let row = ((center_y + app.world.wof_draw_bottom as f32) / 2.0) as i32 as f32;
+        for (i, h) in hungries.iter().enumerate() {
+            let (hw, hh) = h.size();
+            assert_eq!(h.x, spawn_x as i32 as f32 - hw * 0.5);
+            assert_eq!(h.y, row - hh);
+            assert_eq!(h.ai[0], i as f32 * 0.1 - 0.05, "the ai0 ladder");
+            let _ = ww;
+        }
+    }
+
+    /// RNG stream parity: the wall's roar cadence (`NPC.cs:25716-25721`)
+    /// draws `Next(1000)` EVERY tick (+ `Next(200)` only when the roar
+    /// fires) on the `UpdateNPCs` stream (`Main.cs:17767-17769`). A
+    /// mirror stream replaying the same draw order from the wall's
+    /// `localAI[3]` trajectory must land byte-equal — the v1 skipped the
+    /// draws as "cosmetic", desynchronising every later draw.
+    #[test]
+    fn the_roar_cadence_draws_ride_the_update_npcs_stream() {
+        let mut app = wof_app();
+        let mut mirror = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut roar_timer = 0.0f32;
+        for _ in 0..30 {
+            // Hold the ambient spawner off (it draws on `SpawnNpc`, but a
+            // spawned NPC would draw on `UpdateNpcs` next tick and pollute
+            // the mirror); the player stays far from the wall's column, so
+            // no contact-damage variance roll fires either.
+            tick(&mut app);
+            // Replay the wall's draws in the arm's order.
+            roar_timer += 1.0;
+            let threshold = 600 + mirror.next_max(1000);
+            if roar_timer >= threshold as f32 {
+                roar_timer = -(mirror.next_max(200) as f32);
+            }
+            let wall = app
+                .npcs
+                .iter()
+                .find(|n| n.kind == NpcKind::WallOfFlesh)
+                .unwrap();
+            assert_eq!(wall.local_ai[3], roar_timer, "the cadence trajectory");
+        }
+        assert_eq!(
+            mirror,
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            "the stream advanced exactly by the cited draws"
+        );
+    }
+
+    /// The live despawn gate: the wall's death clears the presence
+    /// mirror (`ResetNPCSlotData`, `NPC.cs:8379-8381`) and the
+    /// eye/Hungry arms deactivate on the NEXT tick (`:26055-26059` /
+    /// `:26215-26219`) — no orphan minions outlive the wall.
+    #[test]
+    fn the_minions_die_with_the_wall() {
+        let mut app = wof_app();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(count(&app, NpcKind::Hungry), 11);
+        // Kill the wall.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::WallOfFlesh {
+                n.hp = 0;
+            }
+        }
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.wof_present, "the presence mirror cleared");
+        assert_eq!(app.world.wof_npc_index, -1);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(count(&app, NpcKind::WallOfFleshEye), 0, "the eyes die");
+        assert_eq!(count(&app, NpcKind::Hungry), 0, "the Hungries die");
+    }
+
+    /// The live leash gate: a Hungry parked far outside the 300-px leash
+    /// steers back toward its band anchor (the arm's approach accel,
+    /// `NPC.cs:26305-26336`), and the strike-tick `justHit` arms the
+    /// recoil pause (`:26211-26214`) — the flag clears at the update's
+    /// tail (`:90516`), so the pause is ONE tick, not the v1's whole
+    /// `hurt_cd` cooldown.
+    #[test]
+    fn the_hungry_leash_and_strike_tick_recoil_are_live() {
+        let mut app = wof_app();
+        update_npcs(&mut app, 1.0 / 60.0);
+        // Park one Hungry 800 px right of its anchor (outside the 300
+        // leash) and zero its velocity.
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::Hungry)
+            .unwrap();
+        app.npcs[idx].x += 800.0;
+        app.npcs[idx].vx = 0.0;
+        app.npcs[idx].vy = 0.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs[idx].vx < 0.0,
+            "the leash steers back toward the anchor"
+        );
+        // The strike tick: hurt() arms just_hit; the next update reads it
+        // (ai[1] = 10) then the tail clears the flag.
+        let from_x = app.npcs[idx].x + 100.0;
+        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false));
+        assert!(app.npcs[idx].just_hit, "the strike arms the flag");
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[idx].ai[1], 9.0, "the recoil pause armed then ticked");
+        assert!(!app.npcs[idx].just_hit, "the tail cleared the flag");
     }
 }
 

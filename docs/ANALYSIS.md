@@ -1,4 +1,4 @@
-﻿# Source analysis вЂ” Terraria 1.4.5.8
+# Source analysis вЂ” Terraria 1.4.5.8
 
 All figures below come from decompiling the retail `Terraria.exe` (v1.4.5.8, 25.4 MB) with
 ILSpy into `decompiled/` (1 549 `.cs` files) and `ReLogic.dll` into `decompiled-libs/ReLogic`
@@ -1483,9 +1483,12 @@ zero at `(1 + |vx| / 3) * stepSpeed` px per tick, and the sprite is drawn at
 `position + gfxOffY` (`Player.VisualPosition`). Jumps gate on `velocity.Y == 0` after
 collision, exactly like `Player.cs`. Water buoyancy, half bricks (bottom 8 px solid) and
 ceiling slopes 3/4 (solid above the diagonal) follow the same code paths.
-The player steps at a fixed 60 Hz and `Player::interpolated(alpha)` blends the previous and
-current positions for rendering and camera follow, so a jump is not a 60 Hz staircase on a
-high-refresh display. NPCs use their own fixed 60 Hz accumulator (`NPC.cs` update rate);
+The player steps at a fixed 60 Hz and the draw reads the RAW fixed-step position
+(`draw_region` clones `self.player`; `Main.DrawPlayers` hands `player.position` to
+`LegacyPlayerRenderer`, `Main.cs:22298` → `LegacyPlayerRenderer.cs:468-475` — no
+between-tick blend exists in the C#; see "The player motion smear
+(fix/player-motion-blur)" below for the removed invented interpolation). NPCs use
+their own fixed 60 Hz accumulator (`NPC.cs` update rate);
 before that they advanced once per rendered frame and were far too fast at 500+ FPS.
 Respawn returns to `spawn_x/spawn_y` from the world header.
 
@@ -5220,17 +5223,19 @@ span the AI arm AND the sim resolve AND the missing context plumbing.
 The faithful port is `crates/tr-app/src/npc_ai_style27.rs`
 (`style27_step` + `Style27Context` + `Style27Spawn`), landed
 **code-only mode**: no compiler invoked, the 15 witness tests are
-written not run. It is **UNWIRED** вЂ” `update_rng`'s style axis does not
-claim 27 yet; the live `update_wof` + the sim write-through keep
-running byte-identical. The wiring round adds the `27 =>` dispatch arm
-and the context plumbing: the INT band statics (the port's
-`World.wof_draw_top/bottom` are f32 вЂ” convert or add int shadows), the
-`Player.gross` per-slot slice (`player.rs:1270`, S1-E-7c), the live
-`CountNPCS` counts (117/24/115), the Hungry `ai[0]` collection in slot
-order, the `Main.rand` pass-through (`UnifiedRandom`), and the
-Bottom-placement spawn resolve (`position = (X в€’ width/2, Y в€’ height)`,
-`Start` в†’ the slot-search seed, `ai0` в†’ the minion's `ai[0]`, the
-leech's `vx = direction * 8`).
+written not run. **WIRED 2026-11-19 (S1-D-3 W-1, code-only)** —
+`update_rng`'s style axis claims `27 => ai_027_wof_family`, the live
+`update_wof` is retired and the sim's catastrophic spawn block is
+replaced by the one-shot init drain (see "The WoF family wiring"
+below). The context plumbing the wiring round owed: the INT band
+statics (`World.wof_draw_top/bottom` converted f32 → i32), the
+`Player.gross` per-slot slice, the live `CountNPCS` counts (117/115;
+24 unread behind getGood false), the Hungry `ai[0]` collection in slot
+order, the `Main.rand` pass-through (`UnifiedRandom` on the
+`UpdateNPCs` stream), and the Bottom-placement spawn resolve
+(`position = (X − width/2, Y − height)`, `ai0` → the minion's `ai[0]`,
+the leech's `vx = direction * 8`; `Start` is the C#'s slot-search seed
+— the port's compacting pool appends, the established spawn convention).
 
 RNG argument (every `Next` cited, in stream order): classic draws
 exactly `Next(1000)` (`:25717`, every tick вЂ” the C# evaluates the
@@ -5307,16 +5312,18 @@ clause's line-by-line audit found these defect classes:
 
 The faithful port is `crates/tr-app/src/npc_ai_style29.rs`
 (`style29_step` + `Style29Context`), landed **code-only mode**: no
-compiler invoked, the 12 witness tests are written not run. It is
-**UNWIRED** вЂ” `update_rng`'s style axis does not claim 29 yet, the live
-`update_hungry` keeps running byte-identical. The wiring round adds the
-`29 =>` dispatch arm and the context plumbing: the wall's raw
-`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the sim's
-`World.wof_*` write-through carries presence/x/dir today), the INT band
-statics (`Main.wofDrawAreaTop/Bottom` are `int`, `Main.cs:757`/`:759` вЂ”
-the port's `World.wof_draw_top/bottom` are f32), the `justHit` per-tick
-flag (the live arm's `hurt_cd > 0` stand-in re-arms the pause for the
-whole cooldown, not one tick) and `whoAmI` (`Npc::slot`).
+compiler invoked, the 12 witness tests are written not run.
+**WIRED 2026-11-19 (S1-D-3 W-1, code-only)** — `update_rng`'s style axis
+claims `29 => ai_029_hungry_family`, the live `update_hungry` is retired.
+The context plumbing the wiring round owed: the wall's raw
+`life`/`lifeMax` ints + `width` + `velocity.X` + `Center.X` (the new
+`World.wof_life/wof_life_max/wof_width/wof_vx/wof_center_x` mirror,
+written in-loop right after the wall's update), the INT band statics
+(`World.wof_draw_top/bottom` converted f32 → i32), the `justHit`
+per-tick flag (`Npc.just_hit` — armed by the three hurt paths
+`NPC.cs:81274`, cleared at the update tail `:90516`; the live arm's
+`hurt_cd > 0` stand-in re-armed the pause for the whole cooldown, not
+one tick) and `whoAmI` (`Npc::slot`).
 
 Deviations (documented, same conventions as the sibling style-28 round):
 `active = false` в†’ the port's hp-0 death convention; the arm does not
@@ -5334,6 +5341,74 @@ or an hp-band comparison, and `TargetClosest` is a deterministic
 Manhattan scan; the fn takes no RNG parameter and the witness test
 `the_arm_is_deterministic_without_an_rng` pins two identical inputs to
 identical state over 300 ticks.
+
+### The WoF family wiring (S1-D-3 W-1, code-only mode)
+
+The census (`docs/research/50-entity-ai-census.md` §W-1, on
+`docs/entity-ai-census`) flagged the **P0 catastrophic live bug**: the
+faithful aiStyle-27/28/29 modules were UNWIRED — the live stand-ins
+(`update_wof`/`update_wof_eye`/`update_hungry`) kept running and the
+sim's spawn block (`world_sim/npcs.rs`, the old `:3943-4038`) pushed the
+two mirror eyes EVERY tick (ungated loop) while `wants_hungry` was never
+cleared (11 Hungries re-spawn every tick). The 2026-11-19 wiring round
+(`task/S1-D-3-wire-wof`, code-only — no compiler invoked):
+
+* **Dispatch claims** — `update_rng`'s style axis gains
+  `27 => ai_027_wof_family` / `28 => ai_028_wof_eye_family` /
+  `29 => ai_029_hungry_family` (`npc.rs`), each filling the module's
+  context seam and delegating to `style27_step`/`style28_step`/
+  `style29_step`. The kind-match arms carry `unreachable!` markers
+  (`ai_style()` maps 113/114/115 unconditionally, so the fallthrough
+  never reaches them — the aiStyle-5/9/57 marker precedent); the three
+  stand-ins are deleted. The
+  modules' draw census is preserved byte-for-byte: the wiring passes
+  the caller's stream straight through as `ctx.rng` (style 27) and the
+  style-28/29 arms take no RNG at all.
+* **RNG argument** — the sim's NPC loop already draws on the
+  `UpdateNPCs` group (`Main.SwapRandom("UpdateNPCs")`,
+  `Main.cs:17767-17769`); the wall's roar cadence (`Next(1000)` every
+  tick, `Next(200)` on the roar, `NPC.cs:25717`/`:25719`) now rides that
+  stream in slot order exactly like the C#. The sim witness
+  `the_roar_cadence_draws_ride_the_update_npcs_stream` replays the draw
+  order on a cloned mirror stream over 30 ticks and asserts byte-equality
+  (written not run). The expert/getGood draws stay parked behind the
+  classic flags (the module's documented stand-ins).
+* **The one-time init** — the sim's catastrophic block is replaced by a
+  `wof_spawns` drain: the module's `localAI[0]` 1→2 latch
+  (`NPC.cs:26041-26043`) emits 2 eyes + 11 Hungries ONCE (plus the
+  tongue-phase leech heads `:25712` and the expert respawn `:26036`),
+  and the sim resolves each `Style27Spawn` with `NewNPC`'s
+  `Bottom = (X, Y)` placement (`NPC.cs:80770`, `Entity.cs:122-131`:
+  `position = (X − width/2, Y − height)`). `wants_hungry`/`wants_leech`
+  clear after the drain (the legacy flags are never set by the faithful
+  arm). The witnesses pin: no re-spawn over 10 follow-up ticks, the
+  Bottom rows + the `i*0.1 − 0.05` ai0 ladder, the minion despawn on the
+  wall's death, and the live leash/recoil gates.
+* **The statics** — `World.wof_draw_top/bottom` converted f32 → i32 (the
+  C# statics are `int`, `Main.cs:757`/`:759`; the band midpoint `/2` is
+  INTEGER division). New mirror fields `wof_npc_index`/`wof_life`/
+  `wof_life_max`/`wof_width`/`wof_vx`/`wof_center_x` join the existing
+  presence/x/dir/ratio. The arm holds `&World`, so it stages the band
+  writes on `Npc.wof_band_*`/`wof_npc_index_out`; the sim copies them
+  onto the World IN-LOOP right after the wall's update — later slots in
+  the same tick read the fresh values, like the C#'s live
+  `Main.wofDrawArea*`/`Main.npc[wofNPCIndex]` reads. The presence mirror
+  arms per living wall (the `OnSpawn` type-113 shape, `NPC.cs:8404-8407`)
+  and clears on the death tick (`ResetNPCSlotData`, `:8379-8381`).
+* **justHit** — `Npc.just_hit` is the strike tick: the three hurt paths
+  arm it (`NPC.cs:81274`), the update tail clears it (`:90516`). The
+  Hungry's recoil (`ai[1] = 10`, `:26211-26214`) now fires for ONE tick
+  per strike, not the whole `hurt_cd` cooldown the v1 stood in with.
+* **Deviations (documented)** — `Start` (the C#'s `GetAvailableNPCSlot`
+  search seed, `NPC.cs:80796`) is not carried: the port's compacting
+  pool appends (the established spawn convention, the Prime-limb/Skeletron
+  precedent). `NewNPC`'s direction default is `Entity.direction = 1`
+  (`Entity.cs:20`); the children spawn facing 1 with the ctor's
+  `spriteDirection = -1` (`NPC.cs:6515`). The getGood demon (type 24)
+  has no port kind — getGoodWorld is false so the arm never emits it.
+  The `EverLastingTicker` stamp stays 0 (the `update_zombie` stand-in).
+  The noTileCollide integration (`NPC.cs:90495-90498`) rides the family
+  wrappers (the modules leave the step to the caller).
 
 ## The Eye of Cthulhu (M4-BOSS-1)
 
@@ -7096,6 +7171,73 @@ families land; the arrow item recovery on kill does not exist in 1.4.4
 pre-roll vs the C#'s post-cap roll) differs by one stream draw and is
 MP-invisible.
 
+### The spiky ball's row fix + the dead-arm purge (S1-D-4c, census P-1)
+
+Code-only mode 2026-11-19 (`task/S1-D-4c-dead-arm-purge`, no compiler
+invoked — tests written not run). Per-arm verdicts (each pair read whole
+at `c7fe175d`; the FIRST arm wins in a Rust match, later duplicates are
+unreachable — the compiler only warns):
+
+| dead arm (pre-purge line) | live arm | verdict |
+| --- | --- | --- |
+| proj style 1 :13433 (`ai_arrow`) | :13075-13099 (kind-gated `AI_001` slices A/B + generic `ai_arrow` fall-through) | SUPERSEDED — the live arm's `_` keeps the same generic flight; removed |
+| proj style 3 :13434 | :13100 `ai_boomerang(world, owner)` | byte-identical one-liner; removed |
+| proj style 14 :13435 | :13196 `ai_spear(world)` | byte-identical one-liner; removed |
+| proj style 16 :13436 | :13197 `ai_bomb(world)` | byte-identical one-liner; removed |
+| proj style 115 :14918 | :13437 `ai_yoyo_beam(world)` | byte-identical one-liner; removed |
+| proj style 99 :15032-15074 (43-line yoyo machine: flag/sweep/beam) | :13536-13578 | byte-identical block (case-sensitive line-join compare); removed |
+| npc `DD2Bartender` :4033 (`update_guide`) | :3773 (town group → `update_guide`) | same target, dead; removed |
+| npc saucer trio :4036-4038 (`update_saucer_mount`) | :3888-3890 | same target, dead; removed |
+
+Guards: `#[deny(unreachable_patterns)]` now sits on the projectile
+`match data.ai_style`, `update_kind_ai` and the `update_rng` style axis
+(the `NpcKind::to_u16`/`from_u16` S1-F-1 precedent) — a future appended
+duplicate fails the compile instead of silently no-opping a wiring edit.
+Coverage pins (tests-as-code, written NOT run):
+`s1_d_4c_every_rowed_style_has_exactly_one_live_arm` (65 armed styles;
+the 6 rowed-but-unarmed census §3c styles 31/120/147/181/193/194 are the
+documented exceptions), `s1_d_4c_every_kind_has_exactly_one_arm_in_update_kind_ai`
+(238 kinds, single arm each), `s1_d_4c_the_spiky_ball_row_matches_set_defaults_and_rides_style_14`.
+
+**proj-185**: the data row said aiStyle 1 (the WIRE-1 legacy lumped it
+with the trap darts); the C# `SetDefaults` (`Projectile.cs:2717-2727`)
+says 14×14, **aiStyle 14**, penetrate −1, `timeLeft` 900, trap — the row
+now carries those values verbatim and 185 rides the live style-14
+`ai_spear` arm. AI_014's body (`:24830-25307`) has **no 185-specific
+branch** — the generic default arm (`:25142-25160`: the `ai[0]` 5-cap,
+the 0.97 ground friction, the +0.2 gravity, the ×0.1 spin) serves it, so
+no per-type port was needed. The 185 gap that remains: the C# bounce is
+in `HandleMovement`'s collision block (`:19703-19713` — X reverses at
+×−0.9, Y at ×−0.9 when the incoming Y > 1), while the port's `ai_spear`
+keeps the documented tile-kill scan stand-in (`:25726-25737`'s probe,
+which in the C# belongs to the aiStyle-22 ice block, not AI_014) — the
+ball dies on a tile instead of bouncing. Porting the style-14 movement
+half (the `HandleMovement` bounce family) is the follow-up; the whole 14
+family was NOT ported here (scope: row fix + purge).
+
+**Overlap with R20 (`task/S1-D-5-projdata-deviations`, `6c221ac4`,
+pushed, NOT merged)**: that branch independently landed the same
+projectile-side P-1 work (the 6 dead style arms, the deny guard, the 185
+row split with the same C# values). This branch was cut from `origin/main`
+before R20 merged, so it carries its own copy of the projectile purge —
+the merger must dedupe the overlapping hunks (both sides delete the same
+dead arms and add the same guard/row; the resolutions are
+behaviour-identical). UNIQUE to this branch: the npc.rs 4 dead kind arms
++ the `update_kind_ai`/style-axis guards + the kind coverage pin (R20 did
+not touch npc.rs), and the 185 dispatch-probe pin. The proj-1001
+HorsemanPumpkin style-194 gap stays documented-unarmed (census §3c, the
+W-10 wiring slice) — NOT ported here.
+
+**The 186 SpearTrap row stays legacy (deliberate)**: the C#
+`SetDefaults` (`:2728-2740`) gives 186 aiStyle **37**, 10×14,
+`tileCollide = false`, `ignoreWater`, `timeLeft = 300` — the port's row
+carries the C# 185's values (the historical WIRE-1 185/186 swap). Fixing
+it needs the aiStyle-37 arm (unported), so the row keeps its current
+behaviour-frozen values with a corrected citation; the faithful row +
+`AI_037` port are a follow-up. The wiring drain (`world_sim/wiring.rs`)
+is untouched: the floor/ceiling spiky-ball traps spawn 185 (now correctly
+style 14) and the spear traps' 186 keeps the legacy ride.
+
 ## Boomerangs (M4-PROJ-3, the boomerang half)
 
 `AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
@@ -8621,6 +8763,144 @@ The micro-biome decorators over the finished world:
   Deviations: the `SetFrames`/`PlaceWall` framing rides the post-pipeline
   framing seam; the chest keeps the shared `place_chest` +
   `stock_placed_chest` stand-in (no special-seed loot arms); the
+  `dualDungeons` origin veto is deferred with the seed.
+- **The mining explosives** (`MiningExplosivesBiome`, `:10-83` - S1-K-2
+  wave B, 2026-11-19, **code-only**): the faithful port of the Micro
+  Biomes pass's explosives block (`WorldGen.cs:21061-21101`) - the
+  `actuallyNoTrapsForRealIMeanIt` + `!notTheBees || remix` gates (the step
+  adapter), the `ExplosiveTrapCount` config roll (Min 14 / Max 29 /
+  WorldArea) with the `(getGoodWorld || noTraps) && !notTheBees` x1.5
+  multiplier (`explosive_trap_count`, int truncation), the 3000-attempt
+  budget and the `RandomWorldPoint(rockLayer, 380, 200, 380)` origins
+  (x first; the remix band swaps to `worldSurface`/`rockLayer`). The
+  Place body: the solid-origin + spider-216/lizhahrd-187 wall vetoes, the
+  `Utils.SelectRandom` ore pick over the four rolled tier kinds (gold,
+  silver, iron, copper order - one `Next(4)`; the `GenVars.*Bar`
+  conditions map onto `world.ore_tiers`), the `NextDouble*2-1` direction,
+  the side-40 (`Right`/`Left`, origin-inclusive) + down-80 `IsSolid`
+  finds (`Conditions.cs:84-97` - the RAW `tileSolid` table with the
+  `InWorld(x,y,10)` gate, not `WorldGen.SolidTile`), the
+  `ShapeRunner(10.0, 20, (num, 1.0))` scan (`ShapeRunner.cs:23-58` - the
+  Manhattan-disc walker, the `num8 = (int)(num3/50)+1` double-decrement,
+  the `RandomVector2D(-0.5, 0.5)` velocity jitters + the +/-1 clamp) with
+  `Blotches()` (scale 2 - the two-`NextDouble` draws, first discarded,
+  the 0.3 spread over `Next(1-scale,1)..Next(0,scale)` x same) ->
+  `Scanner` -> `Modifiers.IsSolid` (`SolidOrSlopedTile`) -> `Scanner`; the
+  `solid < total/2` gate (integer division), the 30x20
+  `StructureMap.CanPlace` box (`GeneralPlacementTiles` =
+  `CreateBoolSet(true, ...)` - all kinds valid EXCEPT the 28 listed), the
+  `ModShapes.All` ore fill (insertion order - the port's deduped Vec
+  stands in for the `HashSet<Point16>`), the offset `Circle(5)` blotched
+  `ClearTile(frameNeighbors: true)` hollow (`(int)(num * -5.0)` x-shift),
+  the two down-10 finds with the `Next(4)==0` -> 3-else-7 width pick (the
+  C# `&` is non-short-circuiting - both finds always run), the 3-wide
+  5-tall detonator alcove with the `ResetToType(1)` floor reset (the
+  wall survives - `Tile.cs:249-259` keeps it), the `CanKillTile` veto
+  AFTER the writes (the C# bails late too), `Place1x1(141)`
+  (`WorldGen.cs:45188-45235` - the `SolidTile2` floor + empty cell) +
+  `Place2x2(411)` (`:51330-51423` - the 2x2 body at `(x-1,y-1)`,
+  `frameX = k*18`, `frameY = l*18`) and `WorldUtils.WireLine`
+  (`WorldUtils.cs:109-129` - the endpoint captures BEFORE the swaps: the
+  horizontal run rides the ORIGINAL `start.Y`, the vertical the ORIGINAL
+  `end.X`; red wire via the sparse side table). The step draws from a
+  fresh `pass_rng("Micro Biomes")` copy (the wave-A mahogany ledger
+  untouched - the per-pass re-seed model). The 141/411 frame-important
+  boot statics (`Main.cs:7750`/`:8314`) landed in `boot_statics`; the
+  ore kinds frame through the existing `SET_ORE`/merge-table arms (no
+  new framing arms needed - 141/411 keep their stored frames).
+  **Wave-B choice**: the alphabetically earlier unported classes are
+  `DeadMansChestBiome` (16 KB - not small), `DitherSnake*` (the
+  dual-dungeons seed machinery) and `HiveBiome` (10 KB + the faithful
+  `Beehives` rewrite + `GenVars.larvaX/Y`); `CorruptionPitBiome` is dead
+  code (no call site) and `GraniteBiome`/`MarbleBiome` are already
+  ported (M5-BIOME-2). `MiningExplosivesBiome.cs` (3.6 KB) is the first
+  small unported one; wave C took `ThinIceBiome` (3b445ed4).
+  **Pins (code-only deferral)**: `SEED42_512` UNCHANGED - the
+  `Next(380, maxTilesX-380)` beach band is empty on a 512-wide world
+  (the C# throws; the port's width guard skips the block before any
+  draw; wave C's deferral note missed this x-band collapse). The
+  `DEFAULT_WORLD` re-pin is DEFERRED: the traps move the default world
+  by design but no compiler may run on this branch, so the value cannot
+  be measured - the gate re-pins. The `fix/vines-destroy-walls` branch
+  (b95bfc60) also moves the worldgen pins (stale-by-design); both
+  branches re-pin at the gate, sequentially.
+  Deviations: the `setSelfFrames`/`TileFrame`/`SquareTileFrame` calls
+  ride the deferred post-pipeline framing seam; the
+  `tileSolid[162/232/229]` Larva/MicroBiomes-head toggles
+  (`WorldGen.cs:20897-20909`) are not modelled (the boot table stands -
+  the temple `solid_tile2_p2` precedent); the `dualDungeons` origin veto
+  is deferred with the seed (the `ocean.rs:620` precedent); the
+  `ShapeData` iteration order is insertion order (the .NET
+  `HashSet<Point16>` enumeration order is not reproducible - the same
+  recorded deviation the mahogany endpoints carry).
+  **Tests written NOT run** (7 new: the vetoes, the full placement, the
+  protected-box refusal, the pass determinism, the sub-vanilla skip, the
+  x1.5 multiplier, the WireLine original-axes quirk) + the pipeline
+  order/count tests updated (66 steps with wave C's thin ice).
+- **The thin ice sheets** (`ThinIceBiome`, `ThinIceBiome.cs:9-34` — S1-K-2
+  wave C, 2026-11-19, **code-only mode: written NOT run**): the faithful
+  port of the Micro Biomes pass's thin-ice block (`WorldGen.cs:20941-
+  20973`) — the `ThinIcePatchCount` config roll (Min 3 / Max 5 /
+  WorldWidth), `RandomWorldPoint(worldSurface+20, 50, 200, 50)` attempts
+  with the 1000-failure streak give-up (`:20963-20970`), the 50×50
+  `TileScanner(0, 59, 147, 1, 225)` gate (`:12-23` — any hive 225 vetoes;
+  snow 147 must strictly outnumber the mud 59 AND the air+dirt {0,1}),
+  then the shrinking circles (`:24-31`): radius `Next(10, 15)` stepping
+  down while > 5, per-circle x-offset `Next(-5, 5)`, the centre walking
+  down `radius - 2`; chain 1 = `Blotches(4)` + `OnlyTiles(147, 161, 224,
+  0, 1)` + `SetTile(162, setSelfFrames: true)`, chain 2 = `Blotches(4)` +
+  `HasLiquid()` + `SkipTiles(21, 467, 226, 237)` + `SetTile(162)` +
+  `SetLiquid(0, 0)` (freeze AND drain). The gate's `{0,1}` pair is
+  ACTIVE dirt 0 + stone 1 (`Actions.TileScanner` counts active cells
+  only, `Actions.cs:76-84`) — air is inactive and never counted. The exact per-cell draw order:
+  `Shapes.Circle` is **y-major** (`Shapes.cs:33-49`, the row-span
+  `min(r, (int)sqrt((r+1)²-dy²))`), `Blotches` draws two `NextDouble`s
+  per cell (first discarded) then the 0.3-spread box `Next(1-scale,1)..
+  Next(0,scale)`² (`Modifiers.cs:126-146`) — the shared
+  `mini_biomes::circle_gen`/`blotched_gen`/`only_tiles` helpers carry it.
+  `:32`'s `AddStructure(50×50, 8)` feeds the **non-protected** structure
+  list, which no vanilla `CanPlace` reads (`StructureMap.cs:19-52,68-85`)
+  — the port does not register it (the mahogany/honey passes register
+  PROTECTED rects). The step draws from its own fresh
+  `pass_rng("Micro Biomes")` stream (the name-mixed isolation — the
+  mahogany step's stream is untouched) and sits before `campsites` in
+  the port's grouped Micro Biomes slot (the vanilla block order: dead
+  man's chests `:20922` → thin ice `:20941` → shrines `:20979` →
+  campsites `:21031` → explosives `:21066` → mahogany `:21105`). The
+  framing's 162 arm (`WorldGen.cs:82040-82042` — `TileMergeAttempt(-2,
+  TileID.Sets.IcesSnow)` = {161, 200, 163, 164, 147}) landed in
+  `framing.rs`; the port's generic path reads the `-2` slots as open
+  sides (the compiled generic -2 blend tables stay the grass family's —
+  the same documented approximation the 383/384 arms carry).
+  **The gate is dead in the compact terrain**: the snow band is one 147
+  row over the 161 ice shell (`terrain.rs:320-330`), so no 50×50 box can
+  make snow dominate the active dirt+stone below the skin — the pass
+  places nothing on generated worlds until the faithful `Generate Ice
+  Biome` pass lands; the port
+  still runs the exact searches/gates/draws so the behaviour flips on
+  with the ice pass, no re-port needed. **Pins: `SEED42_512` and
+  `DEFAULT_WORLD` both UNCHANGED, re-pin deferred** — the dead gate
+  means zero tile writes and the fresh stream shifts no other step's
+  ledger; the 162 framing arm only fires on the new kind (no
+  pre-existing 162 tiles). Code-only mode: no compiler invoked, the 5
+  `the_thin_ice_*` tests + the `s1_k_2c_*` framing/pipeline tests are
+  written NOT run; the DEFAULT_WORLD re-pin (if the ice pass ever moves
+  it) rides that follow-up. Deviations: the `setSelfFrames` framing
+  rides the post-pipeline seam; the `dualDungeons` origin veto is
+  deferred with the seed.
+  Wave-C scope/disjointness: Granite/Marble (`biomes.rs::pass_marble/
+  pass_granite`) and Spider Caves (`spider_gem_moss.rs`) were already
+  ported (M5-BIOME-2 / M5-STRUCT-5) and the C# has no `SpiderNest` biome
+  class; sibling wave B (`task/S1-K-2b`) took `MiningExplosivesBiome`
+  (the wave-B bullet above — the merge reconciled the scope notes), wave
+  C took the LATER unported ThinIceBiome. Wave C's original
+  `MiningExplosivesBiome` deferral reasoning (the WorldArea count can
+  draw 1 on the 512 pin world with a "LIVE placement band") missed the
+  x-band: `RandomWorldPoint(top, 380, bottom, 380)` draws
+  `Next(380, maxTilesX - 380)` FIRST (`WorldGen.cs:27113`), which is
+  empty on a 512-wide world — the C# throws there and the port's width
+  guard skips the block before any draw, so `SEED42_512` stays unchanged
+  (the wave-B bullet's pin argument).
   `dualDungeons` origin veto is deferred with the seed. ThinIceBiome
   stays unported: its snow-dominance gate (`dictionary[147] >
   dictionary[0]+dictionary[1]` over the 50Г—50 box, `ThinIceBiome.cs:12-23`)
@@ -20251,6 +20531,67 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## The player motion smear (fix/player-motion-blur)
+
+User report: "персонаж мылится при любом движении" — the character smears/blurs
+during ANY movement. Diagnosis (the whole C# draw path vs the port):
+
+- **Sampler parity — already correct.** The C# world batch runs under
+  `Camera.Sampler` = `Main.DefaultSamplerState` (`Camera.cs:44`), which is
+  `SamplerState.PointClamp` whenever the frame renders through the capture
+  targets (`Main.cs:2774-2784`, `!drawToScreen`); `LegacyPlayerRenderer.
+  DrawPlayerFull` begins with it (`LegacyPlayerRenderer.cs:264-269`). The
+  port's atlas sampler is nearest/clamp on both axes — now extracted as
+  `tr_render::sprite::atlas_sampler_descriptor()` and test-pinned
+  (`atlas_sampler_is_point_clamp`). Not the culprit.
+- **Camera parity — already correct.** `DoDraw_UpdateCameraPosition` snaps to
+  `PlayerFocusedScreenPosition` and `(int)`-truncates `Main.screenPosition`
+  (`Main.cs:62633-62647`); the port's `update_camera_at_draw` does the same
+  (S1-B-4), and `draw_region` additionally snaps `cam * zoom` to whole screen
+  pixels (the documented tile-crawl fix). Not the culprit.
+- **The culprit — invented render interpolation.** `draw_region` used to draw
+  `p.interpolated(residual / step)`: a lerp between `prev_x/prev_y` and
+  `x/y` (plus a baked `gfxOffY` blend), and the camera follow targeted the
+  same blend. The C# has NO such blend: `Main.DrawPlayers` →
+  `LegacyPlayerRenderer.DrawPlayerFull` draws `position + netOffset +
+  (0, gfxOffY)` (`LegacyPlayerRenderer.cs:468-475`, the raw `player.position`
+  call sites `Main.cs:22298/38276`), the layer builders truncate the screen
+  position per component — `(int)(drawinfo.Position.X -
+  Main.screenPosition.X + …)` (`PlayerDrawLayers.cs:1907/1939` and the whole
+  family; wings/backpacks use `.Floor()`), and `PlayerDrawSet.BoringSetup`
+  stores the position unrounded (`PlayerDrawSet.cs:341`). Vanilla motion is a
+  60 Hz whole-pixel step under PointClamp. The port's blend moved the sprite
+  to sub-pixel offsets BETWEEN the integer camera steps on every rendered
+  frame (any refresh rate ≠ a multiple of 60, and the eased follow camera
+  made it worse), so the nearest-sampled art re-rasterised on a shifted grid
+  each frame — visible as smearing/crawling pixels during any movement.
+
+The fix (faithful, removes the invention):
+
+- `draw_region` clones the raw fixed-step player (`self.player`, dead-filter
+  unchanged); `gfxOffY` rides the draw as its own offset
+  (`PlayerCompositeState.gfx_off_y`), exactly like `LegacyPlayerRenderer.cs:468`.
+- `Player::interpolated` and the `prev_gfx_off_y` field are REMOVED;
+  `prev_x/prev_y` stay — they are the pressure-plate bridge's
+  `PressurePlateHelper.PlayerLastPosition` (`PressurePlateHelper.cs:16`),
+  not a render input.
+- The update-tail camera follow targets the raw position too
+  (`world_sim/player.rs`); the draw-time camera path was already faithful.
+- Tests-as-code (written, not run — code-only wave): the whole-pixel snap at
+  zooms 1/1.5/2 with fractional cameras (`entity_sprites_snap_to_whole_screen_pixels`),
+  the no-interpolation source pins (`the_player_draw_has_no_between_tick_interpolation`),
+  and the PointClamp sampler pin (`atlas_sampler_is_point_clamp`).
+- Verification deferred to the gate phase: `TR_SHOT` with `TR_HOLD=right`
+  (moving player) at zoom 1.0/1.5/2.0, compare sharpness against the
+  pre-fix binary — the sprite must sit on whole pixels with no sub-pixel
+  crawl between sim ticks; twin-run SHA256 equality per the harness rules.
+
+Known residual deviations (unchanged, documented elsewhere): the port's
+`snap_to_screen` rounds (`.round()`) where the C# player layers truncate
+(`(int)`) — identical for the integer cameras the follow path produces;
+the update-tail exponential camera ease is the port's stand-in for the
+mid-tick camera reads (the draw camera itself is the faithful snap).
+
 ## The loading screen + capture mode (S1-E-17)
 
 `crates/tr-app/src/ui/world_load.rs` ports the loading screen:
@@ -21954,6 +22295,97 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## Frost Moon boss wiring (S1-F-13c, W1-1 resolved, code-only mode, 2026-11-19)
+
+`task/S1-F-13c-wire-bosses` wires the three Frost Moon bosses — **Everscream
+(344, aiStyle 57)**, **IceQueen (345, aiStyle 60)** and **SantaNK1 (346,
+aiStyle 61)** — onto their faithful named machines. The verifier finding
+**W1-1** was that the live bosses still routed to the `update_hover`
+stand-ins (`npc.rs`'s kind arms), so the slice-C machines
+(`npc_ai_frost_boss.rs` 3ce99f36, `npc_ai_frost_boss_b.rs` 8e216a35) were
+DEAD CODE: the bosses never attacked and the RNG stream desynced ~4-15
+draws/tick. **Code-only mode**: no compiler invoked; the wiring witnesses
+are WRITTEN, NOT RUN.
+
+- **The style-axis claim** (`npc.rs::update_rng_dust`): the aiStyle match
+  gains three kind-gated arms — `57 if kind == Everscream`, `60 if kind ==
+  IceQueen`, `61 if kind == SantaNK1` — mirroring the MourningWood/Pumpking
+  precedent (`57 if kind == MourningWood`). aiStyle 57 is SHARED (325/344),
+  so the Everscream claim is kind-gated; 60/61 are each their style's only
+  user. The kind-match (`update_kind_ai`) arms for the three bosses are now
+  `unreachable!("… rides the style axis (S1-F-13c wiring)")` guards — the
+  hover stand-ins retired.
+- **The dust seam** (`Npc::update_rng_dust`): the Everscream's per-tick dust
+  arm (`NPC.cs:32821-32825`) rolls `Main.rand` through the verbatim
+  `DustPool::new_dust`, which needs the live `Main.dust` pool + the
+  `SpawnCtx` statics. `update_rng` now delegates to `update_rng_dust` with a
+  scratch pool + a permissive ctx (the tests' path — the AI-level draws
+  still ride the caller's stream); the live sim
+  (`world_sim/npcs.rs::update_npcs`) threads `app.dust` + the frame's
+  `spawn_ctx()` into the tick closure on the SAME `UpdateNPCs` stream
+  (`Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` wraps `NPC.UpdateNPC`,
+  dust included). The draw census is unchanged: `Next(5)` every phase-1
+  tick, then on 0 the `NextVector2Square` pair + the pool's own rolls — all
+  on the one stream, in the C#'s order.
+- **The wrappers** (`npc_ai_frost_boss_b.rs::frost_boss_b_step`,
+  `npc_ai_frost_boss.rs::ice_queen_step`): copy the AI-visible `Npc` fields
+  into `FrostBossBState`/`FrostBossState`, run `npc_target::target_closest`
+  where the C# arms call `TargetClosest()` (Everscream `:32768` night; Santa
+  `:33688` night + `:33725` the idle→volley flip; IceQueen `:33393`/`:33403`/
+  `:33518`/`:33622`/`:33670` — one pre-pass retarget covers them, the single
+  session player makes every call resolve to the same box and
+  `TargetClosest` draws no rand), run the dispatch (`frost_boss_b_ai_step` /
+  `frost_boss_ai_step`) on the caller's stream, copy the state back, drain
+  the shot requests into `wants_hostile_shot` (zero ai0/ai1) /
+  `wants_hostile_shot_ai` (the needle's `ai0 = Next(0,31)`, the ornament's
+  `ai1 = Next(2)`, the shard-drop's `ai0 = Next(5)`), and integrate the raw
+  velocity (all three set `noGravity`/`noTileCollide` — `NPC.cs:90495-90498`).
+  The day flee's `EncourageDespawn(10)` maps onto `despawn_timer` (the
+  `encourage_despawn` helper, the MourningWood precedent); `despawnEncouraged`
+  has no port field (no rand impact). The IceQueen's `time_left` is unread by
+  its arm (no `EncourageDespawn` in aiStyle 60).
+- **The shot rows + flight** (`projectile/data.rs`, `projectile_frost_shots.rs`):
+  the drained requests need `proj_data` rows to spawn — the seven kinds
+  (345 PineNeedle, 346 Ornament, 348 FrostWave, 349 FrostShard, 350 Missile,
+  351 Present, 352 Spike; `Projectile.cs:4353-4429`) were UNROWED, so the
+  requests silently dropped (W1-1's second half). The rows land verbatim;
+  the per-type flight arms ride a new gated module (`frost_shot_step`, the
+  dispatch claims ONLY these seven, every other kind byte-identical): the
+  needle's 50/0.5 gravity (`:57116-57128`, NOT the generic 15/0.1), the
+  wave/shard/missile resting counters (`flag3` false, `:55985-55987`) + their
+  alpha/scale pulses (`:56246-56273`/`:56221-56245`/`:55130-55163`), the
+  ornament/spike aiStyle-14 spear hooks (`:24867-24897`/`:24848-24866`), and
+  the whole rand-free aiStyle-58 Present arm (`:28906-28937`).
+- **Deliberate deferrals (no UpdateNPCs-stream impact)**: the 350 Missile's
+  two dust rolls (`Projectile.cs:55141-55156`, the `Next(3)`/`Next(10)`/
+  `Next(4)`/`Next(5)` draws) are skipped — the FLAMING_WOOD 325 precedent
+  (`projectile_ai001_a.rs`, the identical `:55175-55189` arm); they ride the
+  `UpdateProjectiles` stream, NOT the `UpdateNPCs` census this wiring pins.
+  The 346 Ornament's `timeLeft == 1` death burst (`:24883-24896`, five 347
+  Shrapnel spawns + rand) needs a pool-side spawn seam + the 347 row —
+  deferred. The `Lighting.AddLight` lines and sound cues are skipped
+  pool-wide (no such layers). These are projectile-side, not the boss AI's
+  `UpdateNPCs` draws — the W1-1 census (the boss machines' own rolls) is
+  fully consumed.
+- **Boundary**: R52 (`task/S1-F-13c-wire-mobs`, TR-wire12) owns the frost
+  MOBS 338-352 minus the bosses; this wiring owns ONLY 344/345/346. The
+  non-boss flyers 347/352 keep their hover stand-ins (their aiStyle-62/63
+  machines wire with R52); the walkers 348/349/350/351 keep the walker
+  family. The `projectile_frost_shots` module claims only the seven BOSS
+  shot kinds — the mobs' shots (e.g. the ElfArcher's 82 FlamingArrow) are
+  untouched.
+- **Witnesses (written, NOT run)**: `npc.rs::s1_f_13c_wire_tests` pins the
+  seam — the axis claims the three bosses (the machines' own state writes,
+  not the hover family's), the bosses attack through the shot lanes (the
+  needle/ornament ai payloads, the FrostWave + BulletDeadeye plain shots),
+  the RNG stream advances per the census (the Everscream idle pick's one
+  `Next(1,3)` at tick 300, the Santa idle's three unconditional rolls), the
+  stand-ins are retired (`should_panic` on `update_kind_ai`), and the seven
+  shot rows resolve. `projectile_frost_shots.rs`'s tests pin each flight arm
+  by hand arithmetic. The per-machine draw-order witnesses stay in the
+  modules' own tests (slice C). The full gate must run before this branch
+  merges.
 
 ## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
 
@@ -24410,26 +24842,44 @@ takes no RNG parameter and cannot perturb any stream; the witness
 of every kind (including the bomb's full fuse) to identical state
 and an untouched same-seed stream. When the dust/gore/audio feeds
 land, the draws must be re-armed in the C# order above.
-## The Queen Bee's aiStyle-43 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+## The Queen Bee's aiStyle-43 machine (S1-D-3, WIRED via W-3, code-only mode, 2026-11-19)
 
 `NPC.AI()`'s `else if (this.aiStyle == 43)` arm (`NPC.cs:30190-30860`) is
 ported 1:1 into `crates/tr-app/src/npc_ai_style43.rs` (`queen_bee_ai`) -
 the ONLY style-43 user is the Queen Bee (type 222, `SetDefaults`
 `NPC.cs:11855-11871`: 66x66, dmg 30, def 8, 3400 HP, kb 0, value 50000,
-boss, noGravity + noTileCollide, npcSlots 7; `NPCID.cs:11121`). The port's
-`NpcKind::QueenBee` already carries `ai_style() == 43` but runs the
-`update_queen_bee` v1 stand-in (an EoC-shaped cycle with the bee's numbers,
-`npc.rs`) - no enrage term, no state machine, no bees/stingers.
+boss, noGravity + noTileCollide, npcSlots 7; `NPCID.cs:11121`).
 
-**UNWIRED (the 8ac80b4e LostGirl precedent).** The hot `npc.rs` kind tables
-and the `update_rng` style axis are contested by the in-flight S1-D-3
-sibling branches, so this slice lands as pure functions. The merge step adds
-the `43 => crate::npc_ai_style43::queen_bee_ai(...)` axis arm, removes the
-v1 kind arm, and drains the `QueenBeeOut` payloads (the bee 210/211
-`NpcKind` rows + the 719 stinger `proj_data` row do not exist yet). The
-module writes velocity only - the C# `AI()` never integrates the position
-(`UpdateNPC`, `NPC.cs:90274`, does); the wiring keeps the sim's
-integration.
+**WIRED (S1-D-3 W-3, the census slice).** The `43 =>` arm of `update_rng`'s
+`match self.kind.ai_style()` axis (`npc.rs`) now calls `queen_bee_ai` with
+`player.zones.jungle` (the Golem's live-zone precedent) and `expert = false`
+(the single-difficulty fold). The `update_queen_bee` v1 stand-in (the
+EoC-shaped cycle with the bee's numbers - no enrage term, no state machine,
+no bees/stingers) is RETIRED: the kind arm in `update_kind_ai` is an
+`unreachable!` guard (the MourningWood precedent), and the v1 body + its
+`the_queen_bee_cycles_and_flees` test are removed. The axis arm ends with
+`integrate_no_tile_collide` (the C#'s `UpdateNPC` noTileCollide path,
+`NPC.cs:90495-90498`); the module itself writes velocity only.
+
+**The spawn drains.** The `QueenBeeOut` payloads resolve in the sim's spawn
+pass (`world_sim/npcs.rs`):
+- The state-1 bee (`wants_bee`) spawns `NpcKind::Bee` (210) / `BeeSmall`
+  (211) at `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) with the payload's
+  normalized x5 velocity and `localAI[0] = 60` (`:30633`), `netUpdate` set.
+  The two new kinds carry the verbatim `SetDefaults` rows
+  (`NPC.cs:11696-11721`: 12x12/8x8, aiStyle 5, dmg 20/15, def 5/2, 20/10 HP,
+  kb 0.5, noGravity, value 0), the protocol ids gate-reassigned to the free 149/152 holes (353 stays R54c smallkinds; L-B merge)
+  (the vanilla 210/211 slots ride the wave-A Twiggy/Female zombies), the
+  `NPC_Hit_1`/`NPC_Killed_1` cues, the `{20, 31}` debuff immunity
+  (`NPCID.cs:7312-7325`), the bestiary `Enemy(210/211)` entries and the
+  `NPC_210`/`NPC_211` 4-row sheets. The bees ride the aiStyle-5 axis
+  (`ai_005_hover_family`'s type-210/211 branch -> `update_bee_hover`, the
+  `NPC.cs:50384-50413` num3 ramp + the flag4 +/-0.023 ai[0] drift).
+- The state-3 stinger (`wants_hostile_shot`) spawns the hostile 719
+  (`projectile::QUEEN_BEE_STINGER`, the new `proj_data` row:
+  `Projectile.cs:7608-7616` 10x10, aiStyle 1, penetrate -1, tileCollide)
+  with the `timeLeft = 300` override (`NPC.cs:30743`) added to the sim
+  drain's timed list.
 
 **RNG argument (the arm is NOT draw-free).** Every `Main.rand` draw is
 cited and threaded through the caller's `UnifiedRandom` in C# order:
@@ -24465,7 +24915,7 @@ cross-seed divergence of the volley.
   layer for this kind yet.
 - The bee's `CanBeReplacedByOtherNPCs = true` (`:30632`) has no port
   field - dropped; `localAI[0] = 60` (`:30633`) and the `netUpdate`
-  ride the spawn payload for the wiring step.
+  ride the spawn payload into the sim drain (S1-D-3 W-3).
 - The expert state-1 player count (`:30590-30598`) loops the 255 slots;
   the port's one session player makes `num641 / 2` = 0 (INTEGER division)
   - kept verbatim over the one candidate.
@@ -24476,9 +24926,9 @@ cross-seed divergence of the volley.
   `num646` are kept `_`-named for the citations.
 - The `timeLeft < 60 -> 60` floor (`:30218-30221`) is verbatim over the
   port's `despawn_timer` (the -1 never-despawn default clamps to 60 here
-  exactly as the C#'s default 600 would); the wiring step's boss-despawn
-  gate owns the survival semantics. `EncourageDespawn(10)` (`:30269`)
-  rides `Npc::encourage_despawn` (only ever lowers).
+  exactly as the C#'s default 600 would); the sim's `tick_despawn` pass
+  owns the survival semantics (S1-D-3 W-3). `EncourageDespawn(10)`
+  (`:30269`) rides `Npc::encourage_despawn` (only ever lowers).
 - `Collision.CanHit` rides `projectile::can_hit` (`Collision.cs:381-479`
   Bresenham walk); the vector77/79 spawn points use the C#'s INTEGER
   `(width / 2)` half-width while the vector75..81 centres use the FLOAT
@@ -24496,6 +24946,37 @@ hand-off, the climb's strict 200 hand-off + the reversal double-add gate,
 the volley period/truncation/exit, the barrage period/bottom-edge gate/
 719-11-300 payload/expert ladder, the per-branch reversal boosts, the
 return steer + 2000 hand-off, the RNG witness, the bee line-of-sight gate.
+
+**W-3 wiring witnesses (WRITTEN NOT RUN, code-only mode):** the axis
+routing + UpdateNPCs stream parity (`npc.rs`
+`s1_d_3_w3_the_axis_routes_the_queen_bee_and_keeps_the_stream` — the
+state -1 `Next(3)` do-while replays draw-for-draw against a witness
+stream, the v1 counters stay untouched), the volley/barrage request
+payloads + RNG order (`s1_d_3_w3_the_volley_and_barrage_requests_fire` —
+`Next(20)` then `Next(210,212)`; `Next(20)` then the X-before-Y
+`Next(-2,3)` jitter pair at enrage 2), the bee kinds' SetDefaults rows +
+protocol round-trip + bestiary entries
+(`s1_d_3_w3_the_bee_kinds_carry_their_set_defaults_rows`), the bee hover's
+ai[1]/ai[0] counters + the 200 wrap
+(`s1_d_3_w3_the_bee_hover_ticks_its_ramp_and_drift`), and the sim-level
+drain (`world_sim/npcs.rs`
+`s1_d_3_w3_the_sim_drains_the_bee_volley_and_the_stinger` — the bee spawns
+at `Bottom` with `localAI[0]=60`/`netUpdate`/the x5 velocity, the request
+drains, the stinger lands as a hostile 719 dmg 11 `timeLeft=300`, and the
+UpdateNPCs stream replays both ticks' draws in C# order).
+
+**W-3 deliberate folds (the bee hover):** `update_bee_hover` runs the
+flag4 +/-0.023 ai[0] drift BEFORE `hover_step`'s aim normalize (the C#
+normalizes at `:50427-50444` then drifts at `:50446-50471`); the only
+velocity read of the normalize is the degenerate `num6 == 0` fallback, so
+the reorder deviates only at exact zero distance. The bee's
+`TargetClosestNonBees` (`:50246-50249`, the NPC-target search) folds to the
+single session player (the port has no NPC targets — the `npc_target`
+convention). The bee's death dust (`:85063-85075`, six `Next(2)` draws)
+and the bee-vs-bee friendly fire (`:90485-90489`'s `GetHurtByOtherNPCs`)
+are unported — no dust layer / NPC-vs-NPC damage pass yet; recorded here
+so the RNG census stays honest (those draws do not ride the UpdateNPCs
+stream in the port until the layers land).
 ## The Golem head's aiStyle-46 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_style46.rs` ports `NPC.AI()`'s aiStyle-46 arm
@@ -26016,6 +26497,108 @@ is already recorded (ANALYSIS "The Golem family (S1-D-3)" вЂ” axis 47
 delegates, style46/47 stay unwired references); the discarded TR-D3s48
 partial adds nothing the landed arm lacks except the G1 field sketch.
 Docs-only round — **no compiler invoked**.
+
+## The projectile data-row deviations (S1-D-5, 2026-11-19, code-only mode)
+
+Branch `task/S1-D-5-projdata-deviations` (worktree TR-D5fix). **CODE-ONLY
+mode**: file reads/writes + git only — no cargo/rustc/rustfmt/tests, **no
+compiler invoked**. The slice A/B audits' four data-row deviations were
+re-censused after merging `origin/main` (~150 commits ahead, incl. the
+P-split and the ai001 slice A/B landings); per-fix verdicts:
+
+1. **Spiky ball 185 rode aiStyle 1 — FIXED.** The C# `SetDefaults`
+   (`Projectile.cs:2717-2727`) gives `SpikyBallTrap` (185,
+   `ProjectileID.cs:924`) 14x14, **aiStyle 14**, `penetrate = -1`,
+   `timeLeft = 900`, `trap = true`, friendly AND hostile. The port's row
+   sat inside the dart group (`TRAP_DART | TRAP_SUPERDART |
+   TRAP_SPIKY_BALL | TRAP_VENOM_DART` → 10x10 aiStyle 1). 185 now has its
+   own arm with the C# values; the 14 dispatch arm (`ai_spear`,
+   `:25143-25158` + the tile-kill scan `:25726-25737`) handles it — the
+   counter/gravity/rotation are the right family. **Documented gaps that
+   remain**: (a) the tile BOUNCE — `HandleMovement`'s aiStyle-14 block
+   `:19626` reaches the `type == 185` arm `:19703-19713` (the changed
+   axis flips to `lastVelocity * -0.9f`, the Y only when
+   `lastVelocity.Y > 1f`); the port's `ai_spear` kills on the tile scan
+   instead, so a trapped spiky ball dies on first contact rather than
+   bouncing (M4-PROJ follow-up). (b) The row shape carries neither
+   `friendly` nor `hostile`; the trap spawn sites set the flags (the
+   wiring drain spawns via `spawn_device_kind`), same convention as the
+   dart rows. The spear trap's spear (186) is really 10x14 **aiStyle 37**
+   (`:2728-2740`, tileCollide false, ignoreWater, timeLeft 300); aiStyle
+   37 (`AI()` `:27472`) has no ported dispatch arm, so the 186 row keeps
+   the old shared stand-in values (14x14/14/900) — correcting it to 37
+   would park the spear in `_ => {}` forever. The aiStyle-37 port is the
+   follow-up; the stand-in is pinned by the family test.
+2. **The duplicate unreachable `MUSKET_BALL` arm — VERIFIED DEAD,
+   REMOVED.** The real row (`:950-961`: 4x4, aiStyle 1, penetrate 1,
+   light 0.5, alpha 255, scale 1.2, timeLeft 600, extraUpdates 1) sits at
+   the family head; the pirate merge appended a second `MUSKET_BALL =>`
+   (10x10, timeLeft 3600, extraUpdates 0) near the pirate rows —
+   unreachable behind the first (Rust only warns:
+   `unreachable_patterns`). The old comment called it "the Corsair's
+   musket ball 82" — wrong twice: `MUSKET_BALL` = 14, and the Corsair's
+   shot is kind **82 FlamingArrow** (`ProjectileID.cs:718`,
+   `Projectile.cs:1625-1631`: 10x10, aiStyle 1, hostile) which has **no
+   row yet** — the Corsair shooter (`npc.rs` `shooter_params`) requests
+   it and `spawn_hostile` drops it at `proj_data(82) == None`. That
+   missing row is a separate census gap (the 82 row + its hostile spawn
+   path), recorded here, not fixed in this task.
+3. **The alias rows — C# verdict per pair.** 436/438 are NOT aliases of
+   each other: `BrainScramblerBolt` = 436 (`ProjectileID.cs:1426`) and
+   `RayGunnerLaser` = 438 (`:1430`) are distinct ids with distinct
+   `SetDefaults` arms (`:5064-5071` / `:5081-5090`) — both rows stay.
+   The duplicates were the SAME-id Rust aliases `SCRAMBLER_SHOT` = 436
+   and `MARTIAN_RAY` = 438 appended by the martian merge — unreachable,
+   deleted (the alias consts stay for their callers). Likewise 462/622
+   are distinct (`PhantasmalBolt` = 462 `:1478`, `BlowupSmokeMoonlord` =
+   622 `:1798`): the moon-lord merge appended byte-identical second arms
+   for PHANTASMAL_BOLT/BLOWUP_SMOKE_MOONLORD (plus STARDUST_MARK,
+   NEBULA_EYE, TOWER_DAMAGE_BOLT, VORTEX_LIGHTNING|VORTEX_PORTAL,
+   VORTEX_RITUAL_BOLT, PHANTASMAL_EYE/SPHERE/DEATHRAY, MOON_LEECH) — all
+   unreachable, deleted. A NEW duplicate the re-census caught: `LEAF` =
+   206 = `LEAF_BLOWER` (`ProjectileID.cs:966` Leaf) — the melee-family
+   arm was value-identical to the live `:2937-2945` row; deleted.
+   **Alpha fix carried with the census**: the C# sets `alpha = 255` on
+   438 (`:5087`), 462 (`:5335`) and 622 (`:6696`); the rows had kept the
+   reset 0. 438/462 fade IN via the speed-scaled fade (`:55660-55671`,
+   ported in both ai001 slices) — the reset 0 lost the fade-in state.
+   622 never fades: the smoke is invisible for its whole 69-tick life
+   (`:56165-56183`), the visible effect is the dust 229 (a documented
+   skip) — carrying 255 keeps the state faithful for the draw's
+   `GetAlpha` path when it lands. The rows now carry 255; 438 left the
+   `BASELINE_ROWS` reset sweep (like the shadow hand/Dutchman shell).
+   The generic sprite draw does not read `alpha` yet (only
+   `frame_quad`'s fade does) — the visible change today is nil, the
+   state change is the fix. `ignoreWater` on 436/438/462/629 still has
+   no row slot (the resolver derives it for summons/Vilethorn only) —
+   unchanged gap, recorded.
+4. **The ROADMAP S1-D-4 six dead dispatch arms — re-censused post-merge,
+   all six removed.** The P-split moved the dispatch into
+   `ProjectilePool::update`'s `match data.ai_style`; the ai001 slice A/B
+   landings replaced the plain `1 =>` arm with the kind-gated ladder
+   (riders → slice A → slice B → generic `ai_arrow`). Census result: the
+   dead `1/3/14/16` quartet sat after the 129 arm (the dead `1` was NOT
+   byte-identical — it lacked the rider/slice gates, which is exactly
+   why a silent shadow was dangerous); the dead `115` sat before the 62
+   arm; the dead `99` (byte-identical to the live one, verified by
+   line-range comparison) survived after the 66 arm — deleted in this
+   pass. The live arms are untouched; the nested kind/tower/frame
+   matches were censused clean (distinct const arms + `_` tails, no
+   alias collisions, no range overlaps with the const arms). Both the
+   dispatch fn and `proj_data` now carry `#[deny(unreachable_patterns)]`
+   (the `npc/data.rs` `to_u16`/`from_u16` precedent) so a future appended
+   duplicate is a hard error, not a warning.
+
+**Verification.** Code-only: every row re-read against the C# lines
+cited; the alias/duplicate census ran as a scripted const-value walk
+over both matches (263 distinct kinds in `proj_data` after the fixes,
+zero duplicates, zero range overlaps); the dispatch census enumerated
+every top-level arm (one per style) and every nested match. The pinning
+tests `s1_d_5_data_row_tests` (7) + the updated
+`the_family_data_map_is_verbatim` / `BASELINE_ROWS` sweep are WRITTEN,
+NOT RUN — **no compiler invoked**. Follow-ups recorded: the 185 tile
+bounce, the aiStyle-37 spear port, the missing 82 FlamingArrow row, the
+row-slot `ignoreWater` flag.
 ### The slime family's aiStyle-1 re-port (S1-D-3, audit A1-4, code-only mode)
 
 The A-1 audit (`docs/research/54-audit-slime-eye.md` §1, branch
