@@ -941,6 +941,29 @@ impl SpriteRenderer {
         self.push_sprite_rot(tl, size, uv, color, rot);
     }
 
+    /// `push_sprite_origin_rot` with a `PaintID` — the vine-strip segments
+    /// (`TileDrawing.DrawVineStrip`'s `DrawNature`, `TileDrawing.cs:9124`)
+    /// draw through the paint system's recolored texture AND rotate about
+    /// the segment origin; the port folds both into one instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_sprite_origin_rot_paint(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        origin: [f32; 2],
+        paint: u8,
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.push_sprite_paint(tl, size, uv, color, rot, paint);
+    }
+
     /// always-rebuilt UI range so the cached world range (G6) stays reusable.
     pub fn push_ui_sprite_rot(
         &mut self,
