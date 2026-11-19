@@ -2790,6 +2790,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot order, one shared stream across the tick closure (the
     // scoped-bind pattern, `clock.rs:108-111`).
     let npcs_rng = app.rngs.stream(RngKey::UpdateNpcs);
+    // Plantera's hook-centroid anchor pre-pass (S1-D-3-plantera-minions,
+    // `NPC.cs:31743-31762`): the C# scans the NPC slots INSIDE the boss's
+    // own AI tick; the port pre-computes it once per tick over the pool
+    // (the carrier pre-pass precedent). `type_of` resolves the vanilla
+    // type — no NpcKind maps to 263 yet, so every kind reads its own
+    // protocol id and the centroid stays None (the boss-centre stand-in)
+    // until the hook kind lands with `npc_ai_style52`.
+    {
+        let type_of = |n: &Npc| n.kind.to_u16() as i32;
+        for i in 0..app.npcs.len() {
+            if app.npcs[i].kind != NpcKind::Plantera || app.npcs[i].hp <= 0 {
+                continue;
+            }
+            let anchor = crate::npc_ai_plantera_anchor::hook_centroid(&app.npcs, type_of);
+            app.npcs[i].plantera_hook_anchor = anchor;
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {

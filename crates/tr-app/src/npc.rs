@@ -1159,6 +1159,13 @@ pub struct Npc {
     /// Plantera's spore launch (`NPC.cs:32054-32073` — the 350-tick
     /// cadence's `NewNPC(..., 265)` with the jittered 8-px velocity).
     pub wants_plantera_spore: Option<(f32, f32)>,
+    /// Plantera's hook-centroid leash anchor, pre-computed by the sim's
+    /// pre-pass (`npc_ai_plantera_anchor::hook_anchor`, `NPC.cs:31743-31762`
+    /// — the first three live aiStyle-52 hooks' slot-order f32 average).
+    /// `None` = no hook lives: the machine falls back to Plantera's own
+    /// centre (the documented stand-in until kind 263 lands; the C# has
+    /// no zero-hook tick — `NewNPC` activates synchronously).
+    pub plantera_hook_anchor: Option<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -2156,6 +2163,7 @@ impl Npc {
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
+            plantera_hook_anchor: None,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -12635,7 +12643,10 @@ impl Npc {
     /// stand-in's per-tick facing write is dropped (the boss head rolls
     /// via `rotation`, `GetBossHeadRotation` `:7613-7616`).
     fn update_plantera(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        let anchor = self.center();
+        // The sim's pre-pass writes the hook centroid (`NPC.cs:31743-31762`,
+        // `npc_ai_plantera_anchor::hook_anchor`); no hook live = the own
+        // centre stand-in (the documented seam until kind 263 lands).
+        let anchor = self.plantera_hook_anchor.unwrap_or_else(|| self.center());
         crate::npc_ai_plantera::step(self, world, player, rng, anchor);
         // The stand-in's world-bottom despawn tail is kept (the C# arm
         // has no such kill — the generic despawn pass owns it; recorded
