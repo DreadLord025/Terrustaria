@@ -163,6 +163,7 @@ mod projectile_ai001_c;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
+mod projectile_ai_misc;
 mod rain;
 mod regen;
 mod research;
