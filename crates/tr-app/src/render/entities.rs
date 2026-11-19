@@ -498,6 +498,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         npc_sheets: PILLAR_SHEETS
             .iter()
             .chain(PUMPKIN_SHEETS)
+            .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
@@ -1105,6 +1106,15 @@ const PILLAR_SHEETS: &[u32] = &[
 /// (305-314) and the five named kinds (315/325/326/327/329/330) draws its own
 /// `NPC_<id>` art. Keyed by the vanilla net id
 /// ([`NpcKind::pumpkin_moon_type`]) in [`NpcAssets::npc_sheet`].
+/// S1-D-3ff wave A — the 24 LOW-id kinds' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `PUMPKIN_SHEETS`.
+pub(crate) const WAVE_A_SHEETS: &[u32] = &[
+    16, 59, 71, 81, 138, 147, 183, 184, 225, // the nine slimes
+    190, 191, 192, 193, 194, // the five demon-eye variants
+    52, 53, 132, 161, 186, 187, 188, 189, 200, 223, // the ten walkers
+];
+
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
     315, // the Headless Horseman
@@ -2847,6 +2857,42 @@ pub(crate) fn draw_npcs(
             | NpcKind::Hellhound
             | NpcKind::Poltergeist => {
                 let ty = n.kind.pumpkin_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
+            // S1-D-3ff wave A — the 24 LOW-id kinds draw their OWN sheet
+            // (`TextureAssets.Npc[type]` — the `WAVE_A_SHEETS` rows) at
+            // `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[type]` (`Main.cs:67082`: the slimes and
+            // eyes 2 rows, the walkers 3) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin family's shape. The
+            // C# `scale` rows (the slimes' 1.25/1.1/1.05) are unported
+            // outside the base slime variants — documented deviation
+            // (ANALYSIS "S1-D-3 FindFrame wave A").
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => {
+                let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
             // The Frost Moon family (`S1-F-13c` slice A): each kind draws
