@@ -20618,14 +20618,106 @@ then:
    removing the 3 inserted seam lines, reverting the two `pub(super)` seams
    and re-inserting both blocks at their original anchors: 419 954 bytes,
    `fc /b` empty diff, SHA256 of origin and reconstruction identical:
++ `cargo test -p tr-app --test main_anchors`). The anchors row for the moved
+marker was repointed to `editing/wiring.rs` in the same commit (MAIN-RULES §3
+rename rule) and a new S1-K-4d row added. No rustfmt was run on any file.
+
+## S1-K-4e INTERACT/DOORS family split (2026-11-18, code-only mode)
+
+`crates/tr-app/src/world_sim/editing/doors.rs` (999 lines) is the tile
+right-click INTERACT/DOORS family moved **verbatim** out of
+`world_sim/editing.rs` (9 593 → 8 634 lines): `interact_tile` (the port's
+`Player.TileInteractionsUse` hook — door open/close/blocked, the bank/chest
+shared toggle, the lever/switch/timer trip, chair sit, bed spawn/sleep, clock,
+candle, station filter), `interaction_events` (the App-free door/dial cue +
+drop mapping, `WorldGen.cs:37732/:31906`), `use_golem_altar` +
+`spawn_golem_on_altar` (`Player.cs:32755-32790`, `NPC.cs:80475-80531`),
+`within_snapping_range` (`Player.cs:17365-17372`), `bed_spawn_valid` +
+`BedSpawnFailure` + `check_bed_spawn` (`Player.CheckSpawn`,
+`Player.cs:54533-54590`) and `cell_blocked_by_entity`
+(`Collision.cs:1359-1378`), plus the family's 13 tests (the bed-sleep snap
+pair + the candelabra spawn scan with the `bed_app` rig, DW-4.1 door
+cue/drop mapping, the dw_2_1 dial pair, DW-4.3 entity gate, the
+switch/lever/timer pair, the 4 bank tests with the exclusive
+`set_container_tile`/`world_click` helpers, the Golem altar test) with all
+their C#-cite doc comments. Behaviour frozen; NOT the wiring family
+(sibling `task/S1-K-4d`, 1eda0824) and NOT the kill cascade
+(`task/S1-K-4c` owns `edit.rs`) — neither was touched. The door *break*
+tests (DW-1.1 mining branch, the locked golden door) test `break_tile` and
+stay in `editing.rs`.
+
+**Seams (K-4 precedent: verbatim extraction + pub(super) seams + re-exports):**
+- `editing.rs` gains `mod doors;` + `use doors::interact_tile;` +
+  `pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};` — the only
+  production caller (`update_editing`'s press-edge line, origin :1617) is
+  unchanged; `player.rs:1641` (`bed_spawn_valid`) and
+  `world_sim/player.rs:358` (`check_bed_spawn`) ride the re-exports unchanged.
+- One in-block visibility seam: `interact_tile` becomes `pub(super)` in
+  `doors` so the parent can import it privately. `bed_spawn_valid`/
+  `BedSpawnFailure`/`check_bed_spawn` keep `pub(crate)`;
+  `use_golem_altar`/`spawn_golem_on_altar`/`within_snapping_range`/
+  `interaction_events`/`cell_blocked_by_entity` stay private to `doors`.
+- Only visibility seams in `editing.rs`: `pub(super)` on the
+  `object_world`/`set_tile` test helpers (they serve the remaining mining/
+  placement tests and stay put); the moved tests import them via
+  `use super::super::tests::{object_world, set_tile};`.
+- `doors.rs` imports `tr_core::tiledata as td`, `tr_core::{TILE_PX, edit}`,
+  `crate::app::App`, `crate::npc::{Npc, NpcKind}`, `crate::player::Player`,
+  `crate::registry` and `super::super::items::spawn_item_drop` — the same
+  items the family used in `editing.rs`; everything else in the moved bodies
+  is fully qualified and unchanged.
+
+**Byte-equality proof WITHOUT compiling (file ops only).** Source of truth:
+the git blob `origin/main:crates/tr-app/src/world_sim/editing.rs`
+(419 954 bytes, LF, UTF-8 no BOM, SHA256
+`28f07b8788e314e09e6a92702ae3a9fd946d31db9c6b39679bb34c19e545cb11`; the
+worktree copy is CRLF via `core.autocrlf=true`, so all proof work ran on blob
+bytes). A scripted index-based transform with asserted line boundaries
+produced both files; then:
+1. The code block (origin lines 3761-4205, 445 lines, **19 799 bytes**) and
+   the six test blocks (bed rig+tests :4634-4722, 89 lines, 4 114 bytes;
+   Phase-4/DW-4.1 :4989-5030, 42 lines, 1 599 bytes; dial+DW-4.3
+   :5079-5127, 49 lines, 1 994 bytes; switch pair :6399-6425, 27 lines,
+   1 182 bytes; bank block :7510-7725, 216 lines, 9 487 bytes; Golem altar
+   :8942-9031, 90 lines, 3 464 bytes) were re-extracted from the written
+   `doors.rs` at their doc-comment/fn anchors (the one `pub(super)` seam
+   reverted) and compared to the origin slices: `fc /b` reports no
+   differences for all 7 pairs.
+2. The origin file was reconstructed from the written `editing.rs` by
+   removing the 4 inserted seam lines, reverting the two `pub(super)` helper
+   seams and re-inserting all 7 blocks (each with its trailing separator
+   blank) at their original anchors: 419 954 bytes, `fc /b` empty diff,
+   SHA256 of origin and reconstruction identical:
    `28f07b8788e314e09e6a92702ae3a9fd946d31db9c6b39679bb34c19e545cb11`.
 
 **Gate deferred**: this task ran in code-only mode — no cargo/rustc/rustfmt,
 no tests executed, no graphify update (the moved tests ride the merge-step
 gate: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
-+ `cargo test -p tr-app --test main_anchors`). The anchors row for the moved
-marker was repointed to `editing/wiring.rs` in the same commit (MAIN-RULES §3
-rename rule) and a new S1-K-4d row added. No rustfmt was run on any file.
++ `cargo test -p tr-app --test main_anchors`). No anchors row referenced a
+moved marker (verified by grep), so none needed repointing; a new S1-K-4e row
+was added. No rustfmt was run on any file.
+
+**Merger note — K4d/K4e sequential keep-both (origin/main bfe68db8 line
+numbers).** Both branches split the same base file; whoever merges second
+resolves `editing.rs` by KEEPING BOTH extractions:
+- Seams after origin :18-19: keep K4d's `mod wiring;` +
+  `pub(crate) use wiring::use_wiring_tool;` AND K4e's `mod doors;` +
+  `use doors::interact_tile;` +
+  `pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};`.
+- K4d removes origin :3363-3532 (wire code) and :6427-6559 (wire tests);
+  K4e removes origin :3761-4206, :4634-4723, :4989-5031, :5079-5128,
+  :6399-6426, :7510-7725, :8942-9031 (doors code + tests, ranges include
+  the trailing separator blank). The ranges are disjoint; K4d's test block
+  :6427 sits immediately after K4e's :6399-6426 switch-test removal — both
+  removals apply, the Actuation-Rod doc anchor at :6427 must survive only
+  in `wiring.rs`.
+- Helper seams: `object_world` → `pub(super)` is the IDENTICAL edit in both
+  branches (keep one); K4d adds `pub(super)` on `slot` (origin :4768), K4e
+  on `set_tile` (origin :6113) — keep both. `doors.rs` and `wiring.rs` are
+  new sibling files, no conflict.
+- After the keep-both resolution, re-run the reconstruction check against
+  the pre-split blob if in doubt, then the deferred compile/test gate.
+
 ## S1-G-1e special tiles (code-only mode, 2026-11-18)
 
 `crates/tr-app/src/render/special_tiles.rs` ports the S1-G-1 special/chest/
