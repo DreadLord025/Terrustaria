@@ -70,14 +70,13 @@
 //! into `npc_ai_plantera::step`'s `hook_anchor` parameter. No edit to
 //! any of the four sibling modules is needed — this module is new.
 //!
-//! UNWIRED (code-only mode): no `NpcKind` variant for 263 exists, so no
-//! caller passes hooks yet; the witnesses below are WRITTEN NOT RUN
-//! (no compiler invoked).
-
-// UNWIRED: the merge union (the sim's kind-262 dispatch) consumes these
-// fns once the hook kind lands — docs/ANALYSIS.md "The Plantera
-// hook-centroid anchor".
-#![allow(dead_code)]
+//! WIRED at the merge union (S1-D-3-plantera-minions): the sim's pre-pass
+//! (`world_sim/npcs.rs`, before the tick closure) computes
+//! `hook_centroid(&app.npcs, type_of)` per live Plantera and writes
+//! `Npc::plantera_hook_anchor`; `update_plantera` consumes it with the
+//! own-centre fallback. No `NpcKind` maps to 263 yet (`to_u16` has no 263
+//! row), so the centroid stays `None` until the hook kind lands with
+//! `npc_ai_style52` — the wiring is live, the data is the stand-in.
 
 use crate::npc::Npc;
 
@@ -117,6 +116,9 @@ pub fn hook_centroid(npcs: &[Npc], type_of: impl Fn(&Npc) -> i32) -> Option<(f32
 /// Plantera's own centre otherwise — exactly the parameter
 /// `npc_ai_plantera::step` (`ba8159fc`) receives as `hook_anchor`. The
 /// fallback is the sibling's documented stand-in (the C# NaN case).
+/// The sim's pre-pass stores the `Option` instead (the fallback lives in
+/// `update_plantera`), so this convenience wrapper is test-only.
+#[allow(dead_code)]
 pub fn hook_anchor(npcs: &[Npc], type_of: impl Fn(&Npc) -> i32, boss: &Npc) -> (f32, f32) {
     hook_centroid(npcs, type_of).unwrap_or_else(|| boss.center())
 }
