@@ -109,6 +109,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Zombie",
     },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(16)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "MotherSlime",
+        net_id: 16,
+        kind: NpcKind::MotherSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Mother Slime",
+    },
     BestiaryEntryDef {
         credit_id: "KingSlime",
         net_id: 50,
@@ -124,6 +135,61 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: true,
         name: "Eye of Cthulhu",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(52)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "DoctorBones",
+        net_id: 52,
+        kind: NpcKind::DoctorBones,
+        variant: None,
+        quick_unlock: false,
+        name: "Doctor Bones",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(53)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "TheGroom",
+        net_id: 53,
+        kind: NpcKind::TheGroom,
+        variant: None,
+        quick_unlock: false,
+        name: "The Groom",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(59)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "LavaSlime",
+        net_id: 59,
+        kind: NpcKind::LavaSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Lava Slime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(71)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "DungeonSlime",
+        net_id: 71,
+        kind: NpcKind::DungeonSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Dungeon Slime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(81)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "CorruptSlime",
+        net_id: 81,
+        kind: NpcKind::CorruptSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Slime",
     },
     BestiaryEntryDef {
         credit_id: "TheHungry",
@@ -148,6 +214,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Servant of Cthulhu",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(132)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "BaldZombie",
+        net_id: 132,
+        kind: NpcKind::BaldZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
     },
     BestiaryEntryDef {
         credit_id: "WanderingEye",
@@ -270,6 +347,193 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Fire Imp",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(138)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "IlluminantSlime",
+        net_id: 138,
+        kind: NpcKind::IlluminantSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Illuminant Slime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(147)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "IceSlime",
+        net_id: 147,
+        kind: NpcKind::IceSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Slime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(161)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "ZombieEskimo",
+        net_id: 161,
+        kind: NpcKind::ZombieEskimo,
+        variant: None,
+        quick_unlock: false,
+        name: "Frozen Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(183)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "Crimslime",
+        net_id: 183,
+        kind: NpcKind::Crimslime,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimslime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(184)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "SpikedIceSlime",
+        net_id: 184,
+        kind: NpcKind::SpikedIceSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Spiked Ice Slime",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(186)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "PincushionZombie",
+        net_id: 186,
+        kind: NpcKind::PincushionZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(187)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "SlimedZombie",
+        net_id: 187,
+        kind: NpcKind::SlimedZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(188)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "SwampZombie",
+        net_id: 188,
+        kind: NpcKind::SwampZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(189)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "TwiggyZombie",
+        net_id: 189,
+        kind: NpcKind::TwiggyZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(190)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "CataractEye",
+        net_id: 190,
+        kind: NpcKind::CataractEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(191)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "SleepyEye",
+        net_id: 191,
+        kind: NpcKind::SleepyEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(192)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "DialatedEye",
+        net_id: 192,
+        kind: NpcKind::DialatedEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(193)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "GreenEye",
+        net_id: 193,
+        kind: NpcKind::GreenEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(194)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "PurpleEye",
+        net_id: 194,
+        kind: NpcKind::PurpleEye,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(200)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "FemaleZombie",
+        net_id: 200,
+        kind: NpcKind::FemaleZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(223)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "ZombieRaincoat",
+        net_id: 223,
+        kind: NpcKind::ZombieRaincoat,
+        variant: None,
+        quick_unlock: false,
+        name: "Raincoat Zombie",
+    },
+    // S1-D-3ff wave A — `BestiaryEntry.Enemy(225)` (the automated
+    // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
+    // name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "UmbrellaSlime",
+        net_id: 225,
+        kind: NpcKind::UmbrellaSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Umbrella Slime",
     },
     BestiaryEntryDef {
         credit_id: "DesertDjinn",
@@ -1904,8 +2168,9 @@ mod tests {
             unlock_state(pinky, &kills),
             UnlockState::CanShowDropsWithDropRates
         );
-        // The boss quick-unlocks on the first kill.
-        let king = &ENTRIES[10];
+        // The boss quick-unlocks on the first kill. (Index 11 since the
+        // S1-D-3ff roster inserted MotherSlime at its vanilla-net-id slot.)
+        let king = &ENTRIES[11];
         assert_eq!(king.quick_unlock, true);
         kills.register_kill("KingSlime");
         assert_eq!(

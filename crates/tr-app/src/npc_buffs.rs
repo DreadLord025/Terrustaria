@@ -399,6 +399,37 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::GingerbreadMan => &[],
         NpcKind::Everscream => &[20, 31, 44, 324],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
+        // S1-D-3ff wave A — the `DebuffImmunitySets` rows verbatim:
+        // 16/71/81/138/183/225 `[20]` (`NPCID.cs:6171-6177`/`:6516-6522`/
+        // `:6557-6563`/`:6934-6940`/`:7189-7195`/`:7381-7387`), 59
+        // `[20, 24, 323]` (`:6431-6437`), 147/184 `[20, 44, 324]`
+        // (`:6997-7003`/`:7196-7202`), 161 `[44, 324]` (`:7065-7071`);
+        // the five eyes and 52/53/132/186-189/200/223 are null rows
+        // (`:7214-7218`/`:6394-6395`/`:6904`/`:7210-7213`/`:7248`/
+        // `:7379`) — no immunity, the C# else-branch.
+        NpcKind::MotherSlime
+        | NpcKind::DungeonSlime
+        | NpcKind::CorruptSlime
+        | NpcKind::IlluminantSlime
+        | NpcKind::Crimslime
+        | NpcKind::UmbrellaSlime => &[20],
+        NpcKind::LavaSlime => &[20, 24, 323],
+        NpcKind::IceSlime | NpcKind::SpikedIceSlime => &[20, 44, 324],
+        NpcKind::ZombieEskimo => &[44, 324],
+        NpcKind::CataractEye
+        | NpcKind::SleepyEye
+        | NpcKind::DialatedEye
+        | NpcKind::GreenEye
+        | NpcKind::PurpleEye
+        | NpcKind::DoctorBones
+        | NpcKind::TheGroom
+        | NpcKind::BaldZombie
+        | NpcKind::PincushionZombie
+        | NpcKind::SlimedZombie
+        | NpcKind::SwampZombie
+        | NpcKind::TwiggyZombie
+        | NpcKind::FemaleZombie
+        | NpcKind::ZombieRaincoat => &[],
     }
 }
 

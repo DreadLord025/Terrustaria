@@ -2785,11 +2785,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let water_candle_count = app.scene_metrics.water_candle_count;
     let peace_candle_count = app.scene_metrics.peace_candle_count;
     let camera_y = app.camera.y;
+    // S1-E-21e — `Main.player[target].ZoneGraveyard`, the fifth live term of
+    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+    // (`NPC.cs:60302`) the fighter-moan gate reads.
+    let zone_graveyard = app.scene_metrics.zone_graveyard;
     // The AI group's stream: `Main.SwapRandom("UpdateNPCs")` wraps
     // `NPC.UpdateNPC` (`Main.cs:17767-17769`) — the AI draws ride it in
     // slot order, one shared stream across the tick closure (the
     // scoped-bind pattern, `clock.rs:108-111`).
     let npcs_rng = app.rngs.stream(RngKey::UpdateNpcs);
+    // Plantera's hook-centroid anchor pre-pass (S1-D-3-plantera-minions,
+    // `NPC.cs:31743-31762`): the C# scans the NPC slots INSIDE the boss's
+    // own AI tick; the port pre-computes it once per tick over the pool
+    // (the carrier pre-pass precedent). `type_of` resolves the vanilla
+    // type — no NpcKind maps to 263 yet, so every kind reads its own
+    // protocol id and the centroid stays None (the boss-centre stand-in)
+    // until the hook kind lands with `npc_ai_style52`.
+    {
+        let type_of = |n: &Npc| n.kind.to_u16() as i32;
+        for i in 0..app.npcs.len() {
+            if app.npcs[i].kind != NpcKind::Plantera || app.npcs[i].hp <= 0 {
+                continue;
+            }
+            let anchor = crate::npc_ai_plantera_anchor::hook_centroid(&app.npcs, type_of);
+            app.npcs[i].plantera_hook_anchor = anchor;
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
@@ -2803,12 +2824,86 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // spawn requests that carry an owner reference (the
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
+                    // S1-E-21e — `AI_003_Fighters`' idle counter
+                    // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
+                    // movement integrates: `old_x` still holds the previous
+                    // tick's pre-integration stamp (`update_rng` re-stamps
+                    // it, `NPC.cs:90496`), which is the C#'s
+                    // `oldPosition.X` read (`:57126`). The plain-walker
+                    // kinds' `ai[3]` is free for it (`fighter_walker_kind`).
+                    // The player-hitbox reset (`:57146`) reads the live
+                    // boxes ahead of the move.
+                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
+                        let (nw, nh) = n.size();
+                        let player_intersects = n.x < player.x + crate::player::WIDTH
+                            && n.x + nw > player.x
+                            && n.y < player.y + crate::player::HEIGHT
+                            && n.y + nh > player.y;
+                        n.ai[3] = crate::ambient_sound::fighter_idle_counter(
+                            n.kind.cs_id() as i32,
+                            n.ai[2],
+                            n.ai[3],
+                            n.vx,
+                            n.vy,
+                            n.facing,
+                            n.x,
+                            n.old_x,
+                            // `justHit` rides the port's established
+                            // `hurt_cd > 0` stand-in (`npc.rs:13420`).
+                            n.hurt_cd > 0.0,
+                            player_intersects,
+                        );
+                    }
                     n.update_rng(world, player, step, npcs_rng);
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
                     if n.look_for_home_timeout > 0 {
                         n.look_for_home_timeout -= 1;
+                    }
+                    // S1-E-21e — `AI_003_Fighters`' ambient moan arms
+                    // (`NPC.cs:57336-57367`) ride the AI's tail, after its
+                    // draws and before `UpdateNPC_CritterSounds`
+                    // (`NPC.cs:90323`) — all on the `UpdateNPCs` stream
+                    // (`Main.cs:17767`). The gate is the full
+                    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+                    // (`NPC.cs:60300-60330`, `fighter_not_discouraged`):
+                    // the event/exclusion terms and the switch's critter-set
+                    // default all ride along — the excluded moan types (the
+                    // mummies, the face monster, …) are not discouraged even
+                    // by day above the surface. The kind gate keeps the
+                    // counter-only walkers (the scarecrows 305-314,
+                    // Splinterling 326, the renumbered goblins/pirates)
+                    // draw-free.
+                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
+                        let npc_type = n.kind.cs_id() as i32;
+                        let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+                            npc_type,
+                            n.y as f64,
+                            world.world_surface * 16.0,
+                            world.eclipse,
+                            world.day_time,
+                            n.spawned_from_statue,
+                            zone_graveyard,
+                            world.snow_moon,
+                            world.invasion_type,
+                            world
+                                .seeds
+                                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+                            n.ai[1],
+                            n.ai[2],
+                        );
+                        let (nx, ny) = (n.x, n.y);
+                        crate::ambient_sound::fighter_ambient_moans(
+                            npc_type,
+                            n.ai[3],
+                            not_discouraged,
+                            n.shimmer_transparency,
+                            npcs_rng,
+                            &mut |legacy_case, style, rng| {
+                                audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                            },
+                        );
                     }
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
@@ -3410,6 +3505,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut limbs);
+    // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
+    // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
+    // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
+    // port kinds/arms yet — the machine's core writes the requests and
+    // this pass drains them so they never go stale; the actual spawns
+    // land with the three minion machines (ANALYSIS "The Plantera
+    // machine", the documented follow-up). The hook-anchor average
+    // therefore reads Plantera's own centre until then.
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::Plantera {
+            continue;
+        }
+        n.wants_plantera_hooks = 0;
+        n.wants_plantera_tentacles = 0;
+        n.wants_plantera_spore = None;
+    }
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -3620,11 +3731,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         );
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
-        // (`NPC.cs:49891`) and the Frost Legion throws'
-        // (`NPC.cs:29022`/`:29084`).
+        // (`NPC.cs:49891`), the Frost Legion throws'
+        // (`NPC.cs:29022`/`:29084`) and Plantera's seeds
+        // (`NPC.cs:31966-31969` — every volley kind except the 277 thorn
+        // ball).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
+            || kind == crate::projectile::SEED_PLANTERA
+            || kind == crate::projectile::POISON_SEED_PLANTERA
         {
             300
         } else {
@@ -11853,6 +11968,35 @@ mod dw3_tests {
         twin.hp = twin.max_hp;
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
         twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
+        // S1-E-21e: `AI_003_Fighters`' ambient-moan arms (`NPC.cs:57336-57367`)
+        // ride the SAME `UpdateNPCs` stream after the AI's draws — the C#
+        // `UpdateNPC` includes them, so the twin replays the gate + arms too
+        // (the fixture's default world opens the NotDiscouraged gate; the
+        // type-3 arm spends its `Next(1000)` roll every tick).
+        let twin_not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+            twin.kind.cs_id() as i32,
+            twin.y as f64,
+            twin_world.world_surface * 16.0,
+            twin_world.eclipse,
+            twin_world.day_time,
+            twin.spawned_from_statue,
+            false, // the fixture's scene_metrics.zone_graveyard default
+            twin_world.snow_moon,
+            twin_world.invasion_type,
+            twin_world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            twin.ai[1],
+            twin.ai[2],
+        );
+        crate::ambient_sound::fighter_ambient_moans(
+            twin.kind.cs_id() as i32,
+            twin.ai[3],
+            twin_not_discouraged,
+            twin.shimmer_transparency,
+            &mut twin_rng,
+            &mut |_, _, _| {},
+        );
         assert_eq!(after, twin_rng, "one AI tick == one update_rng draw shape");
 
         // No other stage stream moved (the AI group's isolation).
@@ -12075,5 +12219,76 @@ mod dw3_tests {
                 key.name()
             );
         }
+    }
+
+    /// S1-E-21e — the fighter-moan wiring's stream contract: the idle counter
+    /// ticks BEFORE `update_rng` (the `old_x` still holds the prior-tick
+    /// stamp, `NPC.cs:57126`'s `oldPosition.X` read) and the moan arms run
+    /// AFTER the AI's draws, BEFORE the critter emitter (`NPC.cs:57336` vs
+    /// `:90323`), all on the `UpdateNPCs` stream (`Main.cs:17767`). A lone
+    /// stuck zombie above the surface: by day the `NotDiscouraged` gate is
+    /// closed (`NPC.cs:60302`) and the pass is draw-free; by night the gate
+    /// opens and the type-3 arm spends exactly one `Next(1000)` roll plus the
+    /// case-14 `Next(3)` slot draw inside `play_fighter_moan` — nothing else.
+    #[test]
+    fn s1_e_21e_the_moan_wiring_draws_on_the_npc_stream() {
+        let build = |day: bool| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.day_time = day;
+            app.world = world;
+            // Far from the zombie: no contact damage (which would draw the
+            // damage-variance roll) and no player-hitbox counter reset.
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            // Above the surface line (`world_surface * 16` = 800 px) so the
+            // day arm's surface term holds; the zombie falls only a fraction
+            // of a pixel in one tick and stays above it.
+            let mut zombie = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            app.npcs.push(zombie);
+            // Seed 146: the type-3 arm's `Next(1000)` hits 0, then the
+            // case-14 default `Next(3)` draws slot 1 (`Zombie_1`).
+            app.rngs = crate::app::rng::NamedRngs::new(146);
+            app
+        };
+        let mut control = build(true); // day + above surface: the gate closes
+        let mut app = build(false); // night: the gate opens
+        let control_before = control.audio.played_count();
+        let app_before = app.audio.played_count();
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The idle counter ticked once in both (stuck: `x == old_x` at AI
+        // time, `NPC.cs:57126`); it stays under the 60 cap so the moan gate's
+        // `ai[3] < num57` term passes.
+        assert_eq!(control.npcs[0].ai[3], 1.0, "the counter ticked (control)");
+        assert_eq!(app.npcs[0].ai[3], 1.0, "the counter ticked (app)");
+        // Control: the discouraged gate is draw-free — no play, no draw.
+        assert_eq!(
+            control.audio.played_count() - control_before,
+            0,
+            "the day gate plays nothing"
+        );
+        assert_eq!(
+            *control.rngs.stream(RngKey::UpdateNpcs),
+            UnifiedRandom::new(146),
+            "the closed gate consumes no UpdateNpcs draws"
+        );
+        // App: the moan fired — exactly the arm roll + the case-14 slot draw.
+        assert_eq!(
+            app.audio.played_count() - app_before,
+            1,
+            "the night moan played once"
+        );
+        let mut witness = UnifiedRandom::new(146);
+        let _ = witness.next_max(1000); // the type-3 arm's trigger roll
+        let _ = witness.next_range(0, 3); // case 14's default slot pick
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the moan spends exactly the arm roll + the slot draw"
+        );
     }
 }

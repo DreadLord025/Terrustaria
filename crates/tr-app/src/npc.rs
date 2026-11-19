@@ -790,6 +790,102 @@ pub enum NpcKind {
     /// dmg 75, def 8, 450 HP, kb 0.4, value 500, noGravity + noTileCollide,
     /// npcSlots 2 (`NPC.cs:13471-13487`).
     Flocko,
+    // ---- S1-D-3ff FindFrame coverage wave A (24 LOW-id kinds) ----
+    // The slime group (`FindFrame`'s case 1/16/59/71/81/138/147/183/184/225
+    // arm, `NPC.cs:70801-70846`): aiStyle 1, the 8-tick 2-row hop strip.
+    /// `NPCID.MotherSlime` (16, `NPCID.cs:10709`) — the jungle slime
+    /// (`SetDefaults` `NPC.cs:8963-8979`): 36x24, dmg 20, def 7, 90 HP,
+    /// kb 0.6, value 75, alpha 120, scale 1.25, npcSlots 2.
+    MotherSlime,
+    /// `NPCID.LavaSlime` (59, `NPCID.cs:10795`) — the underworld slime
+    /// (`NPC.cs:9516-9537`): 24x18, dmg 15, def 10, 50 HP, value 120,
+    /// scale 1.1, alpha 50, lavaImmune (the remixWorld override is
+    /// unported — the port has no remix flag).
+    LavaSlime,
+    /// `NPCID.DungeonSlime` (71, `NPCID.cs:10819`) — the dungeon slime
+    /// (`NPC.cs:9697-9713`): 36x24, dmg 30, def 7, 150 HP, kb 0.6,
+    /// value 150, alpha 60, scale 1.25, rarity 1, npcSlots 2.
+    DungeonSlime,
+    /// `NPCID.CorruptSlime` (81, `NPCID.cs:10839`) — the corruption slime
+    /// (`NPC.cs:9838-9851`): 40x30, dmg 55, def 20, 170 HP, value 400,
+    /// alpha 55, scale 1.1.
+    CorruptSlime,
+    /// `NPCID.IlluminantSlime` (138, `NPCID.cs:10953`) — the hallow slime
+    /// (`NPC.cs:10748-10762`): 24x18, dmg 70, def 30, 180 HP, kb 0.85,
+    /// value 400, alpha 100, scale 1.05, DeathSound 6.
+    IlluminantSlime,
+    /// `NPCID.IceSlime` (147, `NPCID.cs:10971`) — the snow slime
+    /// (`NPC.cs:10847+`): 24x18, dmg 8, def 4, 30 HP, value 50, alpha 50,
+    /// coldDamage.
+    IceSlime,
+    /// `NPCID.Crimslime` (183, `NPCID.cs:11043`) — the crimson slime
+    /// (`NPC.cs:11332+`): 40x30, dmg 60, def 26, 200 HP, value 400,
+    /// alpha 55, scale 1.1.
+    Crimslime,
+    /// `NPCID.SpikedIceSlime` (184, `NPCID.cs:11045`) — the spiked snow
+    /// slime (`NPC.cs:11346+`): 24x18, dmg 12, def 8, 60 HP, value 200,
+    /// scale 1.1, alpha 50, coldDamage.
+    SpikedIceSlime,
+    /// `NPCID.UmbrellaSlime` (225, `NPCID.cs:11127`) — the umbrella slime
+    /// (`NPC.cs:11898+`): 38x26, dmg 10, def 5, 35 HP, kb 0.75, value 200.
+    UmbrellaSlime,
+    // The eye group (`FindFrame`'s case 2/190-194 arm, `NPC.cs:73994-74059`):
+    // aiStyle 2, the 8-tick 2-row strip with the atan2 aim + sprite flip.
+    /// `NPCID.CataractEye` (190, `NPCID.cs:11057`) — the demon-eye variant
+    /// (`NPC.cs:11427-11439`): 30x32, dmg 18, def 4, 65 HP, kb 0.7,
+    /// value 75.
+    CataractEye,
+    /// `NPCID.SleepyEye` (191, `NPCID.cs:11059`) — (`NPC.cs:11440-11452`):
+    /// 30x32, dmg 16, def 2, 60 HP, kb 0.85, value 75.
+    SleepyEye,
+    /// `NPCID.DialatedEye` (192, `NPCID.cs:11061`) — (`NPC.cs:11453-11465`):
+    /// 30x32, dmg 18, def 2, 50 HP, kb 0.8, value 75.
+    DialatedEye,
+    /// `NPCID.GreenEye` (193, `NPCID.cs:11063`) — (`NPC.cs:11466-11478`):
+    /// 30x32, dmg 20, def 0, 60 HP, kb 0.8, value 75.
+    GreenEye,
+    /// `NPCID.PurpleEye` (194, `NPCID.cs:11065`) — (`NPC.cs:11479-11491`):
+    /// 30x32, dmg 14, def 4, 60 HP, kb 0.8, value 75.
+    PurpleEye,
+    // The walker group (`FindFrame`'s case 3/52/53/132/161/186-189/200/223
+    // arm, `NPC.cs:76324-76391`): aiStyle 3, the 3-row walk strip.
+    /// `NPCID.DoctorBones` (52, `NPCID.cs:10781`) — the jungle rare walker
+    /// (`NPC.cs:9418-9431`): 18x40, dmg 20, def 10, 500 HP, kb 0.5,
+    /// value 1000, rarity 2.
+    DoctorBones,
+    /// `NPCID.TheGroom` (53, `NPCID.cs:10783`) — the blood-moon rare walker
+    /// (`NPC.cs:9432-9445`): 18x40, dmg 14, def 8, 200 HP, kb 0.5,
+    /// value 1000, rarity 2.
+    TheGroom,
+    /// `NPCID.BaldZombie` (132, `NPCID.cs:10941`) — (`NPC.cs:10633-10645`):
+    /// 18x40, dmg 15, def 5, 40 HP, kb 0.5, value 65.
+    BaldZombie,
+    /// `NPCID.ZombieEskimo` (161, `NPCID.cs:10999`) — the snow zombie
+    /// (`NPC.cs:11017-11029`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
+    /// value 80.
+    ZombieEskimo,
+    /// `NPCID.PincushionZombie` (186, `NPCID.cs:11049`) —
+    /// (`NPC.cs:11375-11387`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
+    /// value 65.
+    PincushionZombie,
+    /// `NPCID.SlimedZombie` (187, `NPCID.cs:11051`) —
+    /// (`NPC.cs:11388-11400`): 18x40, dmg 13, def 6, 40 HP, kb 0.55,
+    /// value 55.
+    SlimedZombie,
+    /// `NPCID.SwampZombie` (188, `NPCID.cs:11053`) —
+    /// (`NPC.cs:11401-11413`): 18x40, dmg 13, def 8, 45 HP, kb 0.45,
+    /// value 80.
+    SwampZombie,
+    /// `NPCID.TwiggyZombie` (189, `NPCID.cs:11055`) —
+    /// (`NPC.cs:11414-11426`): 18x40, dmg 16, def 4, 45 HP, kb 0.55,
+    /// value 70.
+    TwiggyZombie,
+    /// `NPCID.FemaleZombie` (200, `NPCID.cs:11077`) —
+    /// (`NPC.cs:11559+`): 18x40, dmg 12, def 4, 38 HP, kb 0.6, value 65.
+    FemaleZombie,
+    /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) — the rain zombie
+    /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70.
+    ZombieRaincoat,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -962,6 +1058,13 @@ pub struct Npc {
     /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
     /// `num88` after a teleport; the shoot fires at the params' tick).
     pub cast_windup: i32,
+    /// `NPC.aiAction` (`NPC.cs:6449`, the int default 0): the AI's frame
+    /// hint — `FindFrame`'s default row picks frame 4 while it holds 1
+    /// (`NPC.cs:66697-66704`). The aiStyle-41 hop family writes 1 on the
+    /// grounded windup ticks (`NPC.cs:30112`) and never clears it inside
+    /// the arm (the C# quirk is kept).
+    #[allow(dead_code)] // the FindFrame row reader lands with the style-41 wiring
+    pub ai_action: i32,
     /// `NPC.directionY` (`NPC.cs:6441`, the default 1): the vertical facing.
     /// `FaceTarget` writes it (`:77649`) and the steering tails read it
     /// (`AI_109`'s `:66154-66185`).
@@ -1018,6 +1121,22 @@ pub struct Npc {
     /// the previous tick's `position.X` — equality flips the direction and
     /// arms the 60-tick no-retarget cooldown.
     pub frost_stuck_x: f32,
+    /// The `oldPosition.X` the aiStyle-26 machine reads (`NPC.cs:62441`'s
+    /// `position.X == oldPosition.X`): the C# latches `oldPosition` AFTER
+    /// the AI (`Collision_MoveWhileDry`, `NPC.cs:92605`), so the equality
+    /// means "did not move last tick". The port's `update_rng` latches
+    /// `old_x` BEFORE the AI, so `unicorn_step` carries its own end-of-tick
+    /// latch — the `frost_stuck_x` precedent above (S1-F-13b2 slice A).
+    pub unicorn_stuck_x: f32,
+    /// `NPC.gfxOffY` (`NPC.cs:6095`): the render-side step-up lift
+    /// accumulator — `AI_026_Unicorns`' inline step-up adds the lift here
+    /// (`NPC.cs:62792`); the `UpdateNPC` head decays it by
+    /// `(1 + |vx|/3) * stepSpeed` per tick, clamped ±16 (`:90397-90420`).
+    /// Slice A records the writes; the decay/render arms ride slice B.
+    pub gfx_off_y: f32,
+    /// `NPC.stepSpeed` (`NPC.cs:6097`): the step-up lift's decay rate —
+    /// 1 for lifts under 9 px, 2 above (`NPC.cs:62794-62801`).
+    pub step_speed: f32,
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
@@ -1174,6 +1293,26 @@ pub struct Npc {
     /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
     /// (`NPC.cs:44394`).
     pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
+    /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
+    /// 263/264/265 have no port arms yet, so the sim records the request
+    /// and the hook-anchor average falls back to Plantera's own centre
+    /// (S1-D-3-plantera, ANALYSIS "The Plantera machine").
+    pub wants_plantera_hooks: u8,
+    /// Plantera's phase-2 tentacle batch (`NPC.cs:31983-31994` — the
+    /// one-shot 8 `NewNPC(..., 264)` calls; getGood +6 and the expert
+    /// per-hook extras are constants-off).
+    pub wants_plantera_tentacles: u8,
+    /// Plantera's spore launch (`NPC.cs:32054-32073` — the 350-tick
+    /// cadence's `NewNPC(..., 265)` with the jittered 8-px velocity).
+    pub wants_plantera_spore: Option<(f32, f32)>,
+    /// Plantera's hook-centroid leash anchor, pre-computed by the sim's
+    /// pre-pass (`npc_ai_plantera_anchor::hook_anchor`, `NPC.cs:31743-31762`
+    /// — the first three live aiStyle-52 hooks' slot-order f32 average).
+    /// `None` = no hook lives: the machine falls back to Plantera's own
+    /// centre (the documented stand-in until kind 263 lands; the C# has
+    /// no zero-hook tick — `NewNPC` activates synchronously).
+    pub plantera_hook_anchor: Option<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -2051,6 +2190,23 @@ impl Npc {
         Some(Self::new(NpcKind::DemonEye, x, y, 1, 0.0))
     }
 
+    /// S1-D-3ff wave A: the demon-eye variants' spawn — the same
+    /// a-few-tiles-above-the-surface placement as [`Self::spawn_eye`],
+    /// on the kind's own box (the five share the 30x32 hitbox).
+    pub fn spawn_eye_variant(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h - 4.0 * TILE_PX;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, 1, 0.0))
+    }
+
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
@@ -2101,6 +2257,7 @@ impl Npc {
             despawn_timer: -1,
             caster_counter: 0,
             cast_windup: 0,
+            ai_action: 0,
             direction_y: 1,
             // `SetDefaults`' `ClearTarget()` (`NPC.cs:8539`,
             // `:42924-42927`): the fresh NPC targets the 255 sentinel.
@@ -2119,6 +2276,13 @@ impl Npc {
             old_vy: 0.0,
             dark_mage_local: [0.0; 3],
             frost_stuck_x: 0.0,
+            // `Entity.oldPosition`'s field default (0,0) (`Entity.cs:14`):
+            // the C# leaves it zero until the first `UpdateCollision`
+            // latches it (`NPC.cs:92605`), so a fresh NPC at x != 0 reads
+            // "moved" on its first aiStyle-26 tick — verbatim.
+            unicorn_stuck_x: 0.0,
+            gfx_off_y: 0.0,
+            step_speed: 0.0,
             wants_sphere: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
@@ -2161,6 +2325,10 @@ impl Npc {
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
+            wants_plantera_hooks: 0,
+            wants_plantera_tentacles: 0,
+            wants_plantera_spore: None,
+            plantera_hook_anchor: None,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -2509,6 +2677,33 @@ impl Npc {
             NpcKind::ElfCopter | NpcKind::Nutcracker | NpcKind::Flocko => 0.4,
             NpcKind::NutcrackerSpinning | NpcKind::Krampus => 0.1,
             NpcKind::ElfArcher => 0.45,
+            // S1-D-3ff wave A — the `SetDefaults` knockBackResist rows
+            // (the unlisted kinds keep the C# class default 1f,
+            // `NPC.cs:8533`): 16/71 0.6 (`:8978`/`:9711`), 138 0.85
+            // (`:10760`), 225 0.75 (`:11906` region), 190 0.7
+            // (`:11436`), 191 0.85 (`:11449`), 192/193/194 0.8
+            // (`:11462`/`:11475`/`:11488`), 52/53/132 0.5
+            // (`:9428`/`:9442`/`:10643`), 161/186/188/223 0.45
+            // (`:11027`/`:11385`/`:11411` region), 187/189 0.55
+            // (`:11398`/`:11424` region), 200 0.6 (`:11567` region).
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 0.6,
+            NpcKind::LavaSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime => 1.0,
+            NpcKind::IlluminantSlime => 0.85,
+            NpcKind::UmbrellaSlime => 0.75,
+            NpcKind::CataractEye => 0.7,
+            NpcKind::SleepyEye => 0.85,
+            NpcKind::DialatedEye | NpcKind::GreenEye | NpcKind::PurpleEye => 0.8,
+            NpcKind::DoctorBones | NpcKind::TheGroom | NpcKind::BaldZombie => 0.5,
+            NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SwampZombie
+            | NpcKind::ZombieRaincoat => 0.45,
+            NpcKind::SlimedZombie | NpcKind::TwiggyZombie => 0.55,
+            NpcKind::FemaleZombie => 0.6,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13295`/`:13302`/`:13310` —
             // 0.4/0.2/0.25), 341 0.25 (`:13325`), 342 0.2 (`:13337`),
@@ -2807,6 +3002,35 @@ impl Npc {
             NpcKind::ElfArcher => 30,
             NpcKind::Krampus => 40,
             NpcKind::Flocko => 8,
+            // S1-D-3ff wave A — the `SetDefaults` defense rows: 16/71 7
+            // (`NPC.cs:8970`/`:9704`), 59 10 (`:9522`), 81 20 (`:9844`),
+            // 138 30 (`:10754`), 147 4 (`:10853` region), 183 26
+            // (`:11338` region), 184 8 (`:11352` region), 225 5
+            // (`:11904` region); 190/194 4 (`:11433`/`:11485`), 191/192 2
+            // (`:11446`/`:11459`), 193 0 (`:11472`); 52 10 (`:9424`),
+            // 53/161/186/188/223 8 (`:9438`/`:11023`/`:11381`/`:11407`
+            // region/`:11878` region), 132 5 (`:10639`), 187 6
+            // (`:11394`), 189/200 4 (`:11420` region/`:11565` region).
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 7,
+            NpcKind::LavaSlime => 10,
+            NpcKind::CorruptSlime => 20,
+            NpcKind::IlluminantSlime => 30,
+            NpcKind::IceSlime => 4,
+            NpcKind::Crimslime => 26,
+            NpcKind::SpikedIceSlime => 8,
+            NpcKind::UmbrellaSlime => 5,
+            NpcKind::CataractEye | NpcKind::PurpleEye => 4,
+            NpcKind::SleepyEye | NpcKind::DialatedEye => 2,
+            NpcKind::GreenEye => 0,
+            NpcKind::DoctorBones => 10,
+            NpcKind::TheGroom
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SwampZombie
+            | NpcKind::ZombieRaincoat => 8,
+            NpcKind::BaldZombie => 5,
+            NpcKind::SlimedZombie => 6,
+            NpcKind::TwiggyZombie | NpcKind::FemaleZombie => 4,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13293`/`:13300`/`:13308` —
             // 18/24/14), 341 32 (`:13320`), 342 26 (`:13333`), 343 50
@@ -3106,6 +3330,33 @@ impl Npc {
             NpcKind::ElfArcher => 900.0,
             NpcKind::Krampus => 3000.0,
             NpcKind::Flocko => 500.0,
+            // S1-D-3ff wave A — the `SetDefaults` value rows (copper):
+            // 16 75 (`NPC.cs:8976`), 59 120 (`:9529` — the remixWorld
+            // override 25 at `:9535` is unported, no remix flag), 71 150
+            // (`:9709`), 81/138/183 400 (`:9849`/`:10759`/`:11340`
+            // region), 147 50 (`:10855` region), 184/225 200
+            // (`:11354` region/`:11908` region); the five eyes 75
+            // (`:11438`/`:11451`/`:11464`/`:11477`/`:11490`); 52/53 1000
+            // (`:9429`/`:9443`), 132/186/200 65 (`:10644`/`:11386`/
+            // `:11569` region), 161/188 80 (`:11028`/`:11412` region),
+            // 187 55 (`:11399`), 189/223 70 (`:11425` region/`:11882`
+            // region).
+            NpcKind::MotherSlime => 75.0,
+            NpcKind::LavaSlime => 120.0,
+            NpcKind::DungeonSlime => 150.0,
+            NpcKind::CorruptSlime | NpcKind::IlluminantSlime | NpcKind::Crimslime => 400.0,
+            NpcKind::IceSlime => 50.0,
+            NpcKind::SpikedIceSlime | NpcKind::UmbrellaSlime => 200.0,
+            NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => 75.0,
+            NpcKind::DoctorBones | NpcKind::TheGroom => 1000.0,
+            NpcKind::BaldZombie | NpcKind::PincushionZombie | NpcKind::FemaleZombie => 65.0,
+            NpcKind::ZombieEskimo | NpcKind::SwampZombie => 80.0,
+            NpcKind::SlimedZombie => 55.0,
+            NpcKind::TwiggyZombie | NpcKind::ZombieRaincoat => 70.0,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's 1200 (`NPC.cs:13288`), 341 2000 (`Item.buyPrice(0, 0,
             // 20)` = 20 silver, `:13324`), 342 1800 (`:13338`), 343 3000
@@ -3438,9 +3689,40 @@ impl Npc {
     /// at a time into the axis above; this match shrinks as they land.
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
-            NpcKind::Slime => self.update_slime(world, player, dt),
-            NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
-            NpcKind::Zombie => self.update_zombie(world, player, dt),
+            // S1-D-3ff wave A: the nine LOW-id slimes ride the same
+            // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
+            // for every slime type — the per-type rows are stats only),
+            // the five demon-eye variants the aiStyle-2 chase, and the
+            // ten zombie variants the aiStyle-3 walker (the documented
+            // stand-in routing, the pumpkin wave's precedent).
+            NpcKind::Slime
+            | NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => self.update_eye(world, player, dt),
+            NpcKind::Zombie
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => self.update_zombie(world, player, dt),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -3483,7 +3765,7 @@ impl Npc {
             // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
             NpcKind::Spazmatism => self.update_spazmatism(world, player),
-            NpcKind::Plantera => self.update_plantera(world, player),
+            NpcKind::Plantera => self.update_plantera(world, player, rng),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
@@ -3761,12 +4043,16 @@ impl Npc {
             | NpcKind::Scarecrow10
             | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
             // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
-            // (`AI_026_Unicorns`, `NPC.cs:62366+`) — their named machines ride
-            // the S1-F-13b2 row; until it lands the wave arm's documented
-            // stand-in is the walker family at the C#'s own chase cap
-            // (`num10 = 6f`, `:62622` — `ai3_walk_speed`'s family row).
+            // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
+            // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
+            // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
+            // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
+            // other aiStyle-26 kinds keep their own routings below — this
+            // arm is kind-scoped, not a style-axis claim. The gallop dust
+            // (with its draws), the FindFrame 315/329 arms and the
+            // AddLight ride slice B (module docs + ANALYSIS).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                self.update_skeleton(world, player, dt)
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
@@ -4103,6 +4389,33 @@ impl Npc {
             self.frame_counter = 0.0;
             self.frame = 1;
         }
+    }
+
+    /// S1-D-3ff wave A — the bridge into `npc_findframe_a`'s pure
+    /// machines: copy the four `FindFrame` fields out, run one tick,
+    /// copy them back. `ai_action` is 0 — the port carries no `aiAction`
+    /// field (the base Slime arm's `num2 == 4` attack class never fires
+    /// for these kinds either; the module's `FrameInput` keeps the row
+    /// for the later AI migration). `direction` is `facing` (the C#'s
+    /// `Entity.direction`).
+    fn find_frame_wave_a(&mut self, kind: crate::npc_findframe_a::FindFrameKind) {
+        let mut s = crate::npc_findframe_a::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_a::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai_action: 0,
+        };
+        crate::npc_findframe_a::find_frame_a(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
     }
 
     fn find_frame(&mut self) {
@@ -5209,6 +5522,11 @@ impl Npc {
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
             // per step, again when moving and a third time while attacking; at
             // 8.0 the frame advances and wraps over the 2-frame strip.
+            // S1-D-3ff wave A: the C#'s case list carries 16/59/71/81/
+            // 138/147/183/184/225 in the SAME arm (`NPC.cs:70801-70823`)
+            // — every one wraps over `Main.npcFrameCount[type]` = 2
+            // (`Main.cs:67082`). The 302/304 `spriteDirection` quirk
+            // (`:70824-70827`) belongs to kinds outside this wave.
             NpcKind::Slime => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
@@ -5219,6 +5537,20 @@ impl Npc {
                         self.frame + 1
                     };
                 }
+            }
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
             }
             // Case 4/5 — the eye and the servant (`NPC.cs:67247-67256`): the
             // counter ticks with the motion class, the frame wraps over the
@@ -5317,6 +5649,31 @@ impl Npc {
                     self.rotation = self.vy.atan2(self.vx) + 3.14;
                 }
             }
+            // S1-D-3ff wave A — the five demon-eye variants ride the
+            // FIRST rotation branch of the case 2/190-194 arm
+            // (`NPC.cs:73994-74059`): `spriteDirection` AND `rotation`
+            // off the velocity (`:74019-74031`) — `atan2(vy, vx)`, the
+            // literal `3.14f` added when moving left; both freeze while
+            // `velocity.X == 0` (neither `if` fires). Then the 8-tick
+            // counter (`num142 = 8f`, `:74045` — the 6f row is type 660
+            // only) wrapping over `Main.npcFrameCount[type]` = 2
+            // (`Main.cs:67082`). The existing DemonEye arm omits the
+            // `spriteDirection` writes; this arm carries them verbatim.
+            NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
+            }
+            // S1-D-3ff wave A: the C#'s walker case list carries 52/53/
+            // 132/161/186-189/200/223 in the SAME arm as type 3
+            // (`NPC.cs:76324-76346`) — all ten wrap over
+            // `Main.npcFrameCount[type]` = 3 (`Main.cs:67082`), the same
+            // three 48-px-row strip shape as NPC_3.
             NpcKind::Zombie => {
                 // `FindFrame`'s walker arm (`case 3` — a member of the
                 // `case 3/52/53/132/161/186-189/200/223/251/254/255/319-321/
@@ -5328,6 +5685,21 @@ impl Npc {
                 // night enemy never animated; and the draw divided the sheet
                 // by 1, so all three rows were squeezed into one 48-px quad.
                 self.walker_frame();
+            }
+            NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
@@ -6211,7 +6583,11 @@ impl Npc {
     }
 
     fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::Slime.size();
+        // S1-D-3ff: the wave-A slimes ride this machine on their OWN
+        // `SetDefaults` boxes (the C# arm reads `base.width/height`).
+        // `kind.size()` — NOT `self.size()` — keeps the base Slime's
+        // unscaled 24x18 box (the variant scale rides the draw only).
+        let (w, h) = self.kind.size();
         let (pcx, _) = player.center();
         let (cx, _) = self.center();
         self.hop_timer -= 1.0 / 60.0;
@@ -6288,7 +6664,10 @@ impl Npc {
     }
 
     fn update_eye(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::DemonEye.size();
+        // S1-D-3ff: the five eye variants share the 30x32 box, but read
+        // it off the kind like the C# arm does (`kind.size()` keeps the
+        // base DemonEye's behaviour byte-identical).
+        let (w, h) = self.kind.size();
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
         let dx = pcx - cx;
@@ -6327,7 +6706,10 @@ impl Npc {
 
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
     fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::Zombie.size();
+        // S1-D-3ff: the ten zombie variants share the 18x40 box; read it
+        // off the kind like the C# arm does (`kind.size()` keeps the
+        // base Zombie's behaviour byte-identical).
+        let (w, h) = self.kind.size();
         // S1-D-3p — the shared selection (`NPC.TargetClosest`,
         // `NPC.cs:77652-77781`, `npc_target.rs`) replaces the ad-hoc
         // dx-sign facing and the invented 80×40-tile aggro window:
@@ -6370,8 +6752,11 @@ impl Npc {
                 // default group, `NPC.cs:58322-58374`): 1f. The port keeps
                 // its direct velocity write (the C#'s 0.07 approach lands
                 // with the full AI_003 migration — ANALYSIS, S1-D-3p).
+                // S1-D-3ff: the cap rides the KIND's `num107` row
+                // (`AI_003_Fighters`, `NPC.cs:58324-58376`) — the zombie
+                // keeps its 1f default, the variants their own rows.
                 self.vx =
-                    self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+                    self.facing as f32 * self.kind.ai3_walk_speed().unwrap_or(1.0);
             } else {
                 self.vx *= 0.9;
             }
@@ -12941,61 +13326,27 @@ impl Npc {
         }
     }
 
-    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
-    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
-    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
-    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
-    /// rage = the follow-ups.
-    fn update_plantera(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        let hover_y = pcy - 250.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.1;
-            if self.vx.abs() > 8.0 {
-                self.vx = 8.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.1;
-            if self.vy.abs() > 8.0 {
-                self.vy = 8.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 7.5;
-            self.vy = dy / d * 7.5;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
-            }
-        }
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.x += self.vx;
-        self.y += self.vy;
+    /// Plantera (262) — the `aiStyle == 51` machine (`NPC.cs:31717-32075`),
+    /// S1-D-3-plantera. The pre-port arm was an EoC-shaped stand-in (the
+    /// 480-tick hover→charge→decel cycle with invented numbers); the real
+    /// machine is the hook-anchor leash movement + the seed volleys + the
+    /// phase-2 tentacle/spore transition, ported in `npc_ai_plantera`.
+    /// The seam is kind-262-specific: the hook average (`:31743-31762`)
+    /// reads the live aiStyle-52 hooks — kinds 263/264/265 have no port
+    /// arms yet, so the anchor falls back to Plantera's own centre (the
+    /// documented seam; the C# would divide by a zero hook count there).
+    /// The C# arm writes neither `direction` nor `spriteDirection` — the
+    /// stand-in's per-tick facing write is dropped (the boss head rolls
+    /// via `rotation`, `GetBossHeadRotation` `:7613-7616`).
+    fn update_plantera(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // The sim's pre-pass writes the hook centroid (`NPC.cs:31743-31762`,
+        // `npc_ai_plantera_anchor::hook_anchor`); no hook live = the own
+        // centre stand-in (the documented seam until kind 263 lands).
+        let anchor = self.plantera_hook_anchor.unwrap_or_else(|| self.center());
+        crate::npc_ai_plantera::step(self, world, player, rng, anchor);
+        // The stand-in's world-bottom despawn tail is kept (the C# arm
+        // has no such kill — the generic despawn pass owns it; recorded
+        // in ANALYSIS "The Plantera machine").
         if self.y > world.height as f32 * TILE_PX + 400.0 {
             self.hp = 0;
         }
@@ -14854,6 +15205,31 @@ impl Npc {
             NpcKind::ElfArcher => 350,
             NpcKind::Krampus => 351,
             NpcKind::Flocko => 352,
+            // S1-D-3ff wave A — the vanilla `NPCID` per kind.
+            NpcKind::MotherSlime => 16,
+            NpcKind::LavaSlime => 59,
+            NpcKind::DungeonSlime => 71,
+            NpcKind::CorruptSlime => 81,
+            NpcKind::IlluminantSlime => 138,
+            NpcKind::IceSlime => 147,
+            NpcKind::Crimslime => 183,
+            NpcKind::SpikedIceSlime => 184,
+            NpcKind::UmbrellaSlime => 225,
+            NpcKind::CataractEye => 190,
+            NpcKind::SleepyEye => 191,
+            NpcKind::DialatedEye => 192,
+            NpcKind::GreenEye => 193,
+            NpcKind::PurpleEye => 194,
+            NpcKind::DoctorBones => 52,
+            NpcKind::TheGroom => 53,
+            NpcKind::BaldZombie => 132,
+            NpcKind::ZombieEskimo => 161,
+            NpcKind::PincushionZombie => 186,
+            NpcKind::SlimedZombie => 187,
+            NpcKind::SwampZombie => 188,
+            NpcKind::TwiggyZombie => 189,
+            NpcKind::FemaleZombie => 200,
+            NpcKind::ZombieRaincoat => 223,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla type
             // ids (the same values `to_u16` rides) — unused by every arm
             // above, so the G6 key stays injective.
@@ -15789,7 +16165,7 @@ mod tests {
         p
     }
 
-    fn ground() -> World {
+    pub(super) fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
         for x in 0..64 {
             for y in 30..64 {
@@ -16150,7 +16526,7 @@ mod tests {
         }
     }
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
@@ -18046,8 +18422,11 @@ mod tests {
 
     #[test]
     fn the_plantera_cycles_and_maps() {
-        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 7.5) → the decel.
+        // S1-D-3-plantera: the aiStyle-51 machine (`NPC.cs:31717-32075`)
+        // replaced the EoC-shaped stand-in — the first tick latches the
+        // hook spawn and the phase-1 stats, and the movement rides the
+        // hook-anchor leash (the full behaviour tests live in
+        // `npc_ai_plantera::tests`).
         let mut w = ground_air();
         w.day_time = false;
         let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -18055,13 +18434,11 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        }
-        assert!(pl.cast_windup == 1, "the charge phase armed");
         pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
-        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        assert_eq!(pl.local_ai[0], 1.0, "the hook init latch");
+        assert_eq!(pl.wants_plantera_hooks, 3);
+        assert!(pl.defense_override.is_some(), "the phase stats write");
+        assert!(pl.damage_override.is_some());
         // The stats round-trip.
         assert_eq!(pl.size(), (86.0, 86.0));
         assert_eq!(pl.max_hp, 30000);
@@ -18502,7 +18879,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    const ALL_KINDS: [NpcKind; 214] = [
+    pub(super) const ALL_KINDS: [NpcKind; 238] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -18711,6 +19088,30 @@ mod tests {
         NpcKind::ElfArcher,
         NpcKind::Krampus,
         NpcKind::Flocko,
+        NpcKind::MotherSlime,
+        NpcKind::LavaSlime,
+        NpcKind::DungeonSlime,
+        NpcKind::CorruptSlime,
+        NpcKind::IlluminantSlime,
+        NpcKind::IceSlime,
+        NpcKind::Crimslime,
+        NpcKind::SpikedIceSlime,
+        NpcKind::UmbrellaSlime,
+        NpcKind::CataractEye,
+        NpcKind::SleepyEye,
+        NpcKind::DialatedEye,
+        NpcKind::GreenEye,
+        NpcKind::PurpleEye,
+        NpcKind::DoctorBones,
+        NpcKind::TheGroom,
+        NpcKind::BaldZombie,
+        NpcKind::ZombieEskimo,
+        NpcKind::PincushionZombie,
+        NpcKind::SlimedZombie,
+        NpcKind::SwampZombie,
+        NpcKind::TwiggyZombie,
+        NpcKind::FemaleZombie,
+        NpcKind::ZombieRaincoat,
         NpcKind::ZombieElf,
         NpcKind::ZombieElfBeard,
         NpcKind::ZombieElfGirl,
@@ -21714,7 +22115,7 @@ mod s1_d_3b_tests {
     use super::*;
     use tr_core::world::World;
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
@@ -21990,8 +22391,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            214,
-            "every decodable kind resolves (the wire roster's size — 214 after S1-F-13c slices A+B's frost fifteen)"
+            238,
+            "every decodable kind resolves (the wire roster's size - 238 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen)"
         );
         assert!(
             covered > 43,
@@ -23367,8 +23768,9 @@ mod s1_f_13b_tests {
         // the five stat pairs' `num85` caps (305/310 → 2f, 306/311 → 1.25f,
         // 307/312 → 2.25f, 308/313 → 1.5f, 309/314 → 1f) — plus Splinterling
         // in the cap-2 group (`:57554-57578`). The Headless Horseman (315) and
-        // the Hellhound (329) ride their aiStyle-26 stand-in cap
-        // (`num10 = 6f`, `:62622`) while their named machine rides S1-F-13b2.
+        // the Hellhound (329) ride the named aiStyle-26 machine
+        // (`npc_ai_unicorn.rs`, S1-F-13b2 slice A); this row pins its chase
+        // cap — the machine's own `num10 = 6f` (`NPC.cs:62617`).
         let expected: [(NpcKind, f32); 13] = [
             (NpcKind::Scarecrow1, 2.0),
             (NpcKind::Scarecrow2, 1.25),
@@ -23455,11 +23857,13 @@ mod s1_f_13b_tests {
     #[test]
     fn s1_f_13b_the_family_machines_route_to_their_stand_ins() {
         // DW-2.5's routing: the wave roster rides live — the 11 aiStyle-3
-        // walkers and the two aiStyle-26 kinds walk on the walker family (the
-        // speed rows pin their caps), the Mourning Wood and the Pumpking fly
-        // their named machines (S1-F-13b2 slice B retired the hover
+        // walkers walk on the walker family (the speed rows pin their
+        // caps); the Headless Horseman and the Hellhound ride the named
+        // aiStyle-26 machine (`npc_ai_unicorn.rs`, S1-F-13b2 slice A —
+        // same 6f cap, its own `num10`); the Mourning Wood and the
+        // Pumpking fly their named machines (slice B retired the hover
         // stand-ins), and the Poltergeist rides its named aiStyle-22
-        // machine (`npc_ai_poltergeist.rs`, S1-F-13b2 slice C).
+        // machine (`npc_ai_poltergeist.rs`, slice C).
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -23471,6 +23875,9 @@ mod s1_f_13b_tests {
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
+        // The aiStyle-26 machine only retargets inside the pumpkin moon
+        // (`NPC.cs:62583-62590`) — outside it, it encourages despawn.
+        w.pumpkin_moon = true;
         let mut player = crate::player::Player::spawn(&w);
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;
@@ -23525,7 +23932,10 @@ mod s1_f_13b_tests {
         // seam check only proves the dispatch. Outside the Pumpkin Moon the
         // machine's flee row arms the 10-tick despawn encouragement
         // (`NPC.cs:25158`) and zeroes the SetDefaults alpha 100 every tick
-        // (`:25150`) — neither happens on the old caster stand.
+        // (`:25150`) — neither happens on the old caster stand. The walkers
+        // above ran on-moon (slice A's retarget gate); flip off for the flee
+        // witness.
+        w.pumpkin_moon = false;
         let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         ghost.hp = ghost.max_hp;
         ghost.vx = 2.0;
@@ -23590,13 +24000,15 @@ mod s1_f_13b_tests {
     /// hover_behaviour` pattern): the aiStyle-22 machine is gated to the
     /// Poltergeist kind ALONE — every other kind's dispatch arm must stay
     /// byte-identical to its pre-slice body. The B run replays the pre-slice
-    /// arms verbatim (the walker stand for the 13 walkers incl. the two
-    /// aiStyle-26 kinds, the caster machine for the five casters the
+    /// arms verbatim (the walker stand for the 11 aiStyle-3 walkers, the
+    /// caster machine for the five casters the
     /// Poltergeist used to share) behind the same
     /// `update_rng` prelude; every tick's kinematics, ai[], frame state and
     /// the RNG stream position must be bit-equal. The 325/327 hover stands
     /// left this pin when slice B landed their named machines
-    /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now).
+    /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now);
+    /// the 315/329 walker stands left with slice A (`npc_ai_unicorn.rs`'s
+    /// witnesses cover them).
     /// The closing witness runs
     /// one Poltergeist tick both ways and asserts the runs DIVERGE (the
     /// machine's alpha-0 row vs the stand's untouched SetDefaults 100) —
@@ -23627,8 +24039,6 @@ mod s1_f_13b_tests {
             NpcKind::Scarecrow9,
             NpcKind::Scarecrow10,
             NpcKind::Splinterling,
-            NpcKind::HeadlessHorseman,
-            NpcKind::Hellhound,
         ];
         // The casters: the Poltergeist's OLD stand-in family — their shared
         // `update_caster` arm must not have moved either.
@@ -23672,9 +24082,7 @@ mod s1_f_13b_tests {
                     | NpcKind::Scarecrow8
                     | NpcKind::Scarecrow9
                     | NpcKind::Scarecrow10
-                    | NpcKind::Splinterling
-                    | NpcKind::HeadlessHorseman
-                    | NpcKind::Hellhound => {
+                    | NpcKind::Splinterling => {
                         legacy.update_skeleton(&w, &mut player_b, 1.0 / 60.0)
                     }
                     NpcKind::GoblinSorcerer
@@ -25416,6 +25824,9 @@ mod s1_f_13c2_tests {
 #[cfg(test)]
 mod s1_d_2_tests {
     use super::*;
+    // The S1-D-3ff wave-A witnesses below reuse the main tests module's
+    // scratch helpers (MERGER-P6 first-compile fix).
+    use super::tests::{bare, ground, ALL_KINDS};
     use tr_core::world::World;
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
@@ -25616,4 +26027,451 @@ mod s1_d_2_tests {
             }
         }
     }
+
+    // ---- S1-D-3ff wave A — the `find_frame` wiring into `npc_findframe_a` ----
+    // The pure machines carry their own 11 pinned tests in
+    // `npc_findframe_a.rs`; these pin the NPC-side bridge: the arms route
+    // the 24 kinds through `find_frame_wave_a`, the four fields copy
+    // both ways, and the per-kind `SetDefaults`/`num107`/immunity rows
+    // land on the kind. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The nine wave-A slimes ride the case-1 hop strip through the
+    /// bridge (`NPC.cs:70801-70846`): idle +1 a tick over the 2 rows,
+    /// moving/airborne +2 (`num2 > 0`), and neither `spriteDirection`
+    /// nor `rotation` is written (the 302/304 snap is not this wave's).
+    #[test]
+    fn s1_d_3ff_the_wave_a_slimes_hop_the_two_row_strip() {
+        for kind in [
+            NpcKind::MotherSlime,
+            NpcKind::LavaSlime,
+            NpcKind::DungeonSlime,
+            NpcKind::CorruptSlime,
+            NpcKind::IlluminantSlime,
+            NpcKind::IceSlime,
+            NpcKind::Crimslime,
+            NpcKind::SpikedIceSlime,
+            NpcKind::UmbrellaSlime,
+        ] {
+            let mut n = bare(kind);
+            n.sprite_dir = -1;
+            n.rotation = 0.5;
+            // Idle: the row steps at the 8th tick and wraps at 16.
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "{kind:?} idle hop"
+            );
+            // Moving (num2 = 1) doubles the clock: the step at tick 4.
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            n.vx = 1.0;
+            n.vy = 0.0;
+            let mut rows = Vec::new();
+            for _ in 0..8 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(rows, [0, 0, 0, 1, 1, 1, 1, 0], "{kind:?} moving hop");
+            // Rising (num2 = 2) and falling (num2 = 3) ride the same
+            // doubled clock.
+            for vy in [-2.0, 2.0] {
+                n.frame = 0;
+                n.frame_counter = 0.0;
+                n.vx = 0.0;
+                n.vy = vy;
+                let mut rows = Vec::new();
+                for _ in 0..8 {
+                    n.find_frame();
+                    rows.push(n.frame);
+                }
+                assert_eq!(rows, [0, 0, 0, 1, 1, 1, 1, 0], "{kind:?} vy {vy}");
+            }
+            // The arm writes neither the flip nor the rotation.
+            assert_eq!(n.sprite_dir, -1, "{kind:?} no flip write");
+            assert_eq!(n.rotation, 0.5, "{kind:?} no rotation write");
+        }
+    }
+
+    /// The five wave-A eyes ride the case-2 FIRST aim branch
+    /// (`NPC.cs:74019-74031`): the flip AND the rotation off the
+    /// velocity, the `3.14f` literal (not PI) on the left, both frozen
+    /// at `vx == 0`; then the 8-tick 2-row strip (`:74044-74058`).
+    #[test]
+    fn s1_d_3ff_the_wave_a_eyes_aim_and_cycle() {
+        for kind in [
+            NpcKind::CataractEye,
+            NpcKind::SleepyEye,
+            NpcKind::DialatedEye,
+            NpcKind::GreenEye,
+            NpcKind::PurpleEye,
+        ] {
+            let mut n = bare(kind);
+            n.sprite_dir = -1;
+            n.rotation = 0.5;
+            // vx == 0 freezes both (neither `if` fires).
+            n.vx = 0.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5), "{kind:?} freeze");
+            // Right: +1 and atan2(vy, vx).
+            n.vx = 1.0;
+            n.vy = 1.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, 1, "{kind:?} right flip");
+            assert!(
+                (n.rotation - std::f32::consts::FRAC_PI_4).abs() < 1e-6,
+                "{kind:?} right aim"
+            );
+            // Left: -1 and atan2 + the 3.14f literal.
+            n.vx = -1.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, -1, "{kind:?} left flip");
+            assert!(
+                (n.rotation - (std::f32::consts::PI + 3.14)).abs() < 1e-5,
+                "{kind:?} the 3.14f literal, not PI"
+            );
+            // The strip: +1 a tick regardless of motion, 8 ticks a row.
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            n.vx = 2.0;
+            n.vy = -1.0;
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "{kind:?} eye strip"
+            );
+        }
+    }
+
+    /// The ten wave-A walkers ride the case-3 arm (`NPC.cs:76324-76391`)
+    /// through the bridge: the stand row 0, the |vx| bands 8/16/24/32
+    /// stepping rows 0/1/2/1, the reset-tick row-hold quirk, the air/turn
+    /// pin to row 2, and the grounded ±1-only flip.
+    #[test]
+    fn s1_d_3ff_the_wave_a_walkers_walk_the_three_rows() {
+        for kind in [
+            NpcKind::DoctorBones,
+            NpcKind::TheGroom,
+            NpcKind::BaldZombie,
+            NpcKind::ZombieEskimo,
+            NpcKind::PincushionZombie,
+            NpcKind::SlimedZombie,
+            NpcKind::SwampZombie,
+            NpcKind::TwiggyZombie,
+            NpcKind::FemaleZombie,
+            NpcKind::ZombieRaincoat,
+        ] {
+            let mut n = bare(kind);
+            // Stand: row 0, the accumulator reset.
+            n.frame = 2;
+            n.frame_counter = 12.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 0.0), "{kind:?} stand");
+            // The bands at vx 2: the 32-tick zeroes the counter and
+            // HOLDS row 1 (the vanilla no-write quirk, `:76387-76390`).
+            n.vx = 2.0;
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1],
+                "{kind:?} walk bands"
+            );
+            assert_eq!(n.frame_counter, 0.0, "{kind:?} the reset tick");
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 2.0), "{kind:?} next lap");
+            // Airborne pins row 2 and never writes the flip.
+            n.sprite_dir = 1;
+            n.facing = -1;
+            n.vx = 0.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 0.0, 1), "{kind:?} air");
+            // Turning in place (direction against the motion) pins row 2.
+            n.vy = 0.0;
+            n.vx = 0.5;
+            n.find_frame();
+            assert_eq!((n.frame, n.sprite_dir), (2, -1), "{kind:?} turn");
+            // Grounded on the motion: the flip follows the facing.
+            n.facing = 1;
+            n.vx = 0.5;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, 1, "{kind:?} ground flip");
+        }
+    }
+
+    /// The bridge copies all four `FindFrame` fields both ways and the
+    /// `NpcKind` → `FindFrameKind` mapping is the 24-kind bijection.
+    #[test]
+    fn s1_d_3ff_the_bridge_maps_the_24_kinds_and_copies_the_fields() {
+        use crate::npc_findframe_a::{find_frame_kind, FindFrameKind};
+        let table = [
+            (NpcKind::MotherSlime, FindFrameKind::MotherSlime),
+            (NpcKind::LavaSlime, FindFrameKind::LavaSlime),
+            (NpcKind::DungeonSlime, FindFrameKind::DungeonSlime),
+            (NpcKind::CorruptSlime, FindFrameKind::CorruptSlime),
+            (NpcKind::IlluminantSlime, FindFrameKind::IlluminantSlime),
+            (NpcKind::IceSlime, FindFrameKind::IceSlime),
+            (NpcKind::Crimslime, FindFrameKind::Crimslime),
+            (NpcKind::SpikedIceSlime, FindFrameKind::SpikedIceSlime),
+            (NpcKind::UmbrellaSlime, FindFrameKind::UmbrellaSlime),
+            (NpcKind::CataractEye, FindFrameKind::CataractEye),
+            (NpcKind::SleepyEye, FindFrameKind::SleepyEye),
+            (NpcKind::DialatedEye, FindFrameKind::DialatedEye),
+            (NpcKind::GreenEye, FindFrameKind::GreenEye),
+            (NpcKind::PurpleEye, FindFrameKind::PurpleEye),
+            (NpcKind::DoctorBones, FindFrameKind::DoctorBones),
+            (NpcKind::TheGroom, FindFrameKind::TheGroom),
+            (NpcKind::BaldZombie, FindFrameKind::BaldZombie),
+            (NpcKind::ZombieEskimo, FindFrameKind::ZombieEskimo),
+            (NpcKind::PincushionZombie, FindFrameKind::PincushionZombie),
+            (NpcKind::SlimedZombie, FindFrameKind::SlimedZombie),
+            (NpcKind::SwampZombie, FindFrameKind::SwampZombie),
+            (NpcKind::TwiggyZombie, FindFrameKind::TwiggyZombie),
+            (NpcKind::FemaleZombie, FindFrameKind::FemaleZombie),
+            (NpcKind::ZombieRaincoat, FindFrameKind::ZombieRaincoat),
+        ];
+        for (kind, ff) in table {
+            assert_eq!(find_frame_kind(kind), Some(ff), "{kind:?} mapping");
+            assert_eq!(ff.vanilla_type() as i32, kind.net_id(), "{kind:?} net id");
+        }
+        // The base kinds keep their own `npc.rs` arms (no mapping).
+        assert_eq!(find_frame_kind(NpcKind::Slime), None);
+        assert_eq!(find_frame_kind(NpcKind::DemonEye), None);
+        assert_eq!(find_frame_kind(NpcKind::Zombie), None);
+        // The field copy: a mid-strip state survives the round trip.
+        let mut n = bare(NpcKind::MotherSlime);
+        n.frame = 1;
+        n.frame_counter = 7.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.25;
+        n.find_frame();
+        // The 8th tick steps the row and wraps to 0, counter reset.
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.25), "untouched fields ride back");
+    }
+
+    /// The 24 `SetDefaults` stat rows land on the kind (`NPC.cs`'s
+    /// per-type blocks — the cites in the enum): size, aiStyle, HP,
+    /// damage, defense, value, knockBackResist.
+    #[test]
+    fn s1_d_3ff_the_wave_a_setdefaults_rows() {
+        // (kind, w, h, ai, hp, dmg, def, value, kb, NPC.cs block)
+        let table = [
+            (NpcKind::MotherSlime, 36.0, 24.0, 1, 90, 20, 7, 75.0, 0.6),
+            (NpcKind::LavaSlime, 24.0, 18.0, 1, 50, 15, 10, 120.0, 1.0),
+            (NpcKind::DungeonSlime, 36.0, 24.0, 1, 150, 30, 7, 150.0, 0.6),
+            (NpcKind::CorruptSlime, 40.0, 30.0, 1, 170, 55, 20, 400.0, 1.0),
+            (NpcKind::IlluminantSlime, 24.0, 18.0, 1, 180, 70, 30, 400.0, 0.85),
+            (NpcKind::IceSlime, 24.0, 18.0, 1, 30, 8, 4, 50.0, 1.0),
+            (NpcKind::Crimslime, 40.0, 30.0, 1, 200, 60, 26, 400.0, 1.0),
+            (NpcKind::SpikedIceSlime, 24.0, 18.0, 1, 60, 12, 8, 200.0, 1.0),
+            (NpcKind::UmbrellaSlime, 38.0, 26.0, 1, 35, 10, 5, 200.0, 0.75),
+            (NpcKind::CataractEye, 30.0, 32.0, 2, 65, 18, 4, 75.0, 0.7),
+            (NpcKind::SleepyEye, 30.0, 32.0, 2, 60, 16, 2, 75.0, 0.85),
+            (NpcKind::DialatedEye, 30.0, 32.0, 2, 50, 18, 2, 75.0, 0.8),
+            (NpcKind::GreenEye, 30.0, 32.0, 2, 60, 20, 0, 75.0, 0.8),
+            (NpcKind::PurpleEye, 30.0, 32.0, 2, 60, 14, 4, 75.0, 0.8),
+            (NpcKind::DoctorBones, 18.0, 40.0, 3, 500, 20, 10, 1000.0, 0.5),
+            (NpcKind::TheGroom, 18.0, 40.0, 3, 200, 14, 8, 1000.0, 0.5),
+            (NpcKind::BaldZombie, 18.0, 40.0, 3, 40, 15, 5, 65.0, 0.5),
+            (NpcKind::ZombieEskimo, 18.0, 40.0, 3, 50, 16, 8, 80.0, 0.45),
+            (NpcKind::PincushionZombie, 18.0, 40.0, 3, 50, 16, 8, 65.0, 0.45),
+            (NpcKind::SlimedZombie, 18.0, 40.0, 3, 40, 13, 6, 55.0, 0.55),
+            (NpcKind::SwampZombie, 18.0, 40.0, 3, 45, 13, 8, 80.0, 0.45),
+            (NpcKind::TwiggyZombie, 18.0, 40.0, 3, 45, 16, 4, 70.0, 0.55),
+            (NpcKind::FemaleZombie, 18.0, 40.0, 3, 38, 12, 4, 65.0, 0.6),
+            (NpcKind::ZombieRaincoat, 18.0, 40.0, 3, 50, 16, 8, 70.0, 0.45),
+        ];
+        for (kind, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            // Every kind's HitSound is NPCHit1; the death cue splits
+            // slimes/eyes 1, IlluminantSlime 6, walkers 2.
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            let death = if kind == NpcKind::IlluminantSlime {
+                "NPC_Killed_6"
+            } else if ai == 3 {
+                "NPC_Killed_2"
+            } else {
+                "NPC_Killed_1"
+            };
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+        }
+    }
+
+    /// The `num107` walk caps (`AI_003_Fighters`, `NPC.cs:58324-58376`):
+    /// the per-type rows for the ten walkers, the 1f default for
+    /// 52/53/161, and the machine rides the KIND's row.
+    #[test]
+    fn s1_d_3ff_the_wave_a_walk_caps() {
+        let table = [
+            (NpcKind::DoctorBones, 1.0),
+            (NpcKind::TheGroom, 1.0),
+            (NpcKind::ZombieEskimo, 1.0),
+            (NpcKind::BaldZombie, 0.95),
+            (NpcKind::PincushionZombie, 1.1),
+            (NpcKind::SlimedZombie, 0.9),
+            (NpcKind::SwampZombie, 1.2),
+            (NpcKind::TwiggyZombie, 0.8),
+            (NpcKind::FemaleZombie, 0.87),
+            (NpcKind::ZombieRaincoat, 1.05),
+        ];
+        for (kind, cap) in table {
+            assert_eq!(kind.ai3_walk_speed(), Some(cap), "{kind:?} num107");
+        }
+        // The slimes and eyes carry no aiStyle-3 row.
+        assert_eq!(NpcKind::MotherSlime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::CataractEye.ai3_walk_speed(), None);
+    }
+
+    /// The `DebuffImmunitySets` rows (`NPCID.cs`) through
+    /// `NpcBuffs::for_kind`: the slimes' poison family (20 also grants
+    /// 30/375 — the C#'s poison-chain), the lava/ice extras,
+    /// ZombieEskimo's frost pair, and the null rows for the eyes and the
+    /// other walkers.
+    #[test]
+    fn s1_d_3ff_the_wave_a_immunities() {
+        fn immune(kind: NpcKind, id: usize) -> bool {
+            crate::npc_buffs::NpcBuffs::for_kind(kind).buff_immune[id]
+        }
+        for kind in [
+            NpcKind::MotherSlime,
+            NpcKind::DungeonSlime,
+            NpcKind::CorruptSlime,
+            NpcKind::IlluminantSlime,
+            NpcKind::Crimslime,
+            NpcKind::UmbrellaSlime,
+        ] {
+            assert!(immune(kind, 20), "{kind:?} poison");
+            assert!(immune(kind, 30) && immune(kind, 375), "{kind:?} poison chain");
+            assert!(!immune(kind, 24) && !immune(kind, 44), "{kind:?} no extras");
+        }
+        let lava = NpcKind::LavaSlime;
+        assert!(immune(lava, 20) && immune(lava, 24) && immune(lava, 323));
+        for kind in [NpcKind::IceSlime, NpcKind::SpikedIceSlime] {
+            assert!(immune(kind, 20) && immune(kind, 44) && immune(kind, 324), "{kind:?}");
+            assert!(!immune(kind, 24), "{kind:?} not lava-immune");
+        }
+        let esk = NpcKind::ZombieEskimo;
+        assert!(immune(esk, 44) && immune(esk, 324));
+        assert!(!immune(esk, 20), "the frost pair carries no poison row");
+        for kind in [
+            NpcKind::CataractEye,
+            NpcKind::SleepyEye,
+            NpcKind::DialatedEye,
+            NpcKind::GreenEye,
+            NpcKind::PurpleEye,
+            NpcKind::DoctorBones,
+            NpcKind::TheGroom,
+            NpcKind::BaldZombie,
+            NpcKind::PincushionZombie,
+            NpcKind::SlimedZombie,
+            NpcKind::SwampZombie,
+            NpcKind::TwiggyZombie,
+            NpcKind::FemaleZombie,
+            NpcKind::ZombieRaincoat,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(
+                !b.buff_immune.iter().any(|x| *x),
+                "{kind:?} null row — no immunity"
+            );
+        }
+    }
+
+    /// The bestiary rows: every wave-A kind resolves its own entry with
+    /// the vanilla net id, the NPCID credit name and the en-US display
+    /// name; `quick_unlock` is false (the boss-only rule,
+    /// `BestiaryEntry.cs:37-41`).
+    #[test]
+    fn s1_d_3ff_the_wave_a_bestiary_entries() {
+        let table = [
+            (NpcKind::MotherSlime, 16, "MotherSlime", "Mother Slime"),
+            (NpcKind::LavaSlime, 59, "LavaSlime", "Lava Slime"),
+            (NpcKind::DungeonSlime, 71, "DungeonSlime", "Dungeon Slime"),
+            (NpcKind::CorruptSlime, 81, "CorruptSlime", "Corrupt Slime"),
+            (NpcKind::IlluminantSlime, 138, "IlluminantSlime", "Illuminant Slime"),
+            (NpcKind::IceSlime, 147, "IceSlime", "Ice Slime"),
+            (NpcKind::Crimslime, 183, "Crimslime", "Crimslime"),
+            (NpcKind::SpikedIceSlime, 184, "SpikedIceSlime", "Spiked Ice Slime"),
+            (NpcKind::UmbrellaSlime, 225, "UmbrellaSlime", "Umbrella Slime"),
+            (NpcKind::CataractEye, 190, "CataractEye", "Demon Eye"),
+            (NpcKind::SleepyEye, 191, "SleepyEye", "Demon Eye"),
+            (NpcKind::DialatedEye, 192, "DialatedEye", "Demon Eye"),
+            (NpcKind::GreenEye, 193, "GreenEye", "Demon Eye"),
+            (NpcKind::PurpleEye, 194, "PurpleEye", "Demon Eye"),
+            (NpcKind::DoctorBones, 52, "DoctorBones", "Doctor Bones"),
+            (NpcKind::TheGroom, 53, "TheGroom", "The Groom"),
+            (NpcKind::BaldZombie, 132, "BaldZombie", "Zombie"),
+            (NpcKind::ZombieEskimo, 161, "ZombieEskimo", "Frozen Zombie"),
+            (NpcKind::PincushionZombie, 186, "PincushionZombie", "Zombie"),
+            (NpcKind::SlimedZombie, 187, "SlimedZombie", "Zombie"),
+            (NpcKind::SwampZombie, 188, "SwampZombie", "Zombie"),
+            (NpcKind::TwiggyZombie, 189, "TwiggyZombie", "Zombie"),
+            (NpcKind::FemaleZombie, 200, "FemaleZombie", "Zombie"),
+            (NpcKind::ZombieRaincoat, 223, "ZombieRaincoat", "Raincoat Zombie"),
+        ];
+        for (kind, net, credit, name) in table {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.kind, kind, "{kind:?} entry kind");
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} display name");
+            assert_eq!(e.variant, None, "{kind:?} no variant");
+            assert!(!e.quick_unlock, "{kind:?} not a boss");
+            assert_eq!(kind.net_id(), net, "{kind:?} net_id reads the entry");
+        }
+    }
+
+
+    /// The AI routing: the 24 kinds ride their family machines through a
+    /// full `update` tick (the documented stand-in routing — the C#'s
+    /// `AI_001_Slimes`/`AI_002`/`AI_003_Fighters` are one arm per style,
+    /// the per-type rows are stats). Each kind steps without panicking,
+    /// stays inside its own strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn s1_d_3ff_the_wave_a_kinds_step_their_family_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in ALL_KINDS {
+            if crate::npc_findframe_a::find_frame_kind(kind).is_none() {
+                continue;
+            }
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
 }
