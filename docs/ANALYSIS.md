@@ -21800,3 +21800,88 @@ four sibling modules (`npc_ai_plantera.rs`, `npc_ai_style52.rs`,
 new and disjoint. The sibling branches are NOT merged to main yet
 (verified `git merge-base --is-ancestor` for all four); the union rides
 their merge order, and this branch touches none of their files.
+## The jungle hopper family's aiStyle-41 arm (S1-D-3 aiStyle-41, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style41.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 41)` block (`NPC.cs:29899-30159`) as a pure
+function (`style41_step`) over `Npc`, keyed on the C# type id. The
+three kinds — the Herpling 174 (`SetDefaults` `NPC.cs:11194-11207`:
+52x26, damage 65, defense 26, lifeMax 220, kb 0.3, value 450), the
+Derpling 177 (`:11238-11251`: 58x44, damage 80, defense 26, lifeMax
+300, kb 0.5, value 500) and the Chattering Teeth Bomb 378
+(`:13825-13838`: 20x26, damage 120, defense 30, lifeMax 200, kb 0.5,
+value 450; `ID/NPCID.cs:11025`/`:11031`/`:11433`) — have NO `NpcKind`
+variants yet, so unlike the aiStyle-28 round there is no live arm to
+make unreachable: the module lands unwired (the aiStyle-28 pattern)
+and the kinds + the `update_rng` `41 =>` dispatch claim are the
+follow-up. **Code-only mode**: no cargo/rustc/rustfmt/tests were run;
+the 14 witness tests are written, not executed. The only hot-file
+touch is `Npc.ai_action` (`NPC.aiAction`, `NPC.cs:6449`, the int
+default 0) — the arm's windup frame hint (`:30112`, `FindFrame`'s
+frame-4 row `:66701-66704`) had no port field.
+
+Faithfulness points the port keeps:
+
+- `base.direction *= -base.direction` (`:29988`) is a SET TO -1
+  (dir * -dir = -dir² = -1 for ±1), NOT a flip — kept literally.
+- The explosion re-centring (`:29929-29934`) adds the OLD box's
+  INTEGER half-extents (`base.width / 2` — 20/2 = 10, 26/2 = 13) then
+  subtracts the NEW 160 box's halves (80): the net shift is
+  (-70, -67) on the first explosion tick and (0, 0) afterwards.
+- The windup bonus computes `400 / dist` FIRST then ×10 (non-177) /
+  ×5 (177) (`:30039-30040` — the multiply order matters in f32), caps
+  at 30 and truncates with the C# unchecked `(int)` cast (`:30045`):
+  NaN/±inf → `int.MinValue` (the x86 `cvttss2si`), not Rust's
+  saturating `as i32` (`csharp_int_cast`).
+- The band bonus is STRICT on both ends (`num614 < 350f &&
+  num614 > 200f`, `:30059`/`:30071`/`:30089`/`:30101`).
+- The f64 deadbands are kept: ±0.1 on the grounded walk (`:30023`)
+  and the airborne accel/damp gate (`:30137`/`:30149`).
+- The 378 arming is an `if` and the wet bounce an `else if`
+  (`:29974`/`:29984`) — an unarmed bomb NEVER runs the wet bounce;
+  the Derpling (177) is excluded from it entirely.
+- The wet floor bounce reads `oldVelocity.Y` (`:29994`, captured
+  pre-resolve at `NPC.cs:92538`): rising → 5, else −2 — then the
+  buoyancy damps above 4 (×0.95), lifts 0.3 and caps at −4.
+- The ai[3] stuck detector (`:30016-30020`) flips the direction and
+  arms ai[2] = 300; the hop re-aim only runs while ai[2] == 1
+  (`:30049-30052`), so the 300-tick cooldown keeps the flipped side.
+- `aiAction = 1` (`:30112`) is never cleared inside the arm — the
+  C# quirk is kept (`Npc.ai_action` latches).
+- The AI/integration split: the C#'s three `return`s (`:29971`,
+  `:29981`, `:30120`) exit `AI()` only — `UpdateNPC` still integrates
+  afterwards. `style41_step` runs `ai_041_body` then the generic
+  integration on EVERY path: gravity 0.3 / maxFallSpeed 10
+  (`UpdateNPC_UpdateGravity`, `NPC.cs:90880-90881` — NOT the port's
+  generic 0.4/8, a pre-existing deviation outside this task), the
+  ±0.005 f64 X deadband (`:90473-90476`), the wet 0.5 slowdown
+  (`Collision_MoveWhileWet`, `:92785-92804`, `waterMovementSpeed`
+  `:6015`), the `oldVelocity` capture (`:92538`) and the
+  `collideX`/`collideY` changed-axis latches (`:92597-92604`).
+
+Documented stand-ins: `NPC.wet` rides the port's `is_wet` (any water
+tile overlapping the body — the swimmer's stand-in; honey/lava/
+shimmer wet unported); `Main.player[this.target]` reads the one
+session player (the C# reads slot 255's inactive zero player before
+the first pick — the airborne `target >= 255` return is kept
+literally); `life = -1; HitEffect(); active = false` (`:29966-29968`)
+rides the hp-0 death convention (the sim's retain drops it); the
+tile resolve is the axis-separated `collides_rect` stand-in (the
+frost-legion shape; slopes/platforms unported like every family arm);
+the `netOffset` add/subtract pairs net to zero and are omitted; the
+`EverLastingTicker` stamp passes 0 (the S1-D-3p stand-in).
+
+**RNG by construction**: every `Main.rand` draw in the arm rides an
+emission the port skips — (1) the 378 fuse trail gate `Next(3)`
+(`:29916`) is the gate OF the dust spawn; (2) the `ai[2] > 7`
+explosion burst's 8 + 32×2 `Dust.NewDust` rolls and the 2 gore
+iterations' `Next(100)`×2 / `Next(61, 64)` / `Next(-10, 11)`×2
+(`:29939-29958`); (3) the sounds (`:29961` Item14, `:30083` style
+29/124 — the `LegacySoundPlayer` pitch jitter draws ride the audio
+pass, `LegacySoundPlayer.cs:613-632`). Skipping the emissions skips
+their draws (the S1-D-3e/f/9 dust precedent), so `style41_step`
+takes no RNG parameter and cannot perturb any stream; the witness
+`s1_d_3_s41_the_arm_is_deterministic_without_an_rng` pins 200 steps
+of every kind (including the bomb's full fuse) to identical state
+and an untouched same-seed stream. When the dust/gore/audio feeds
+land, the draws must be re-armed in the C# order above.
