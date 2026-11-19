@@ -24893,3 +24893,179 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+## The Prime limbs' aiStyle-34/35/36 arms (S1-D-3 prime limbs, 2026-11-19, code-only mode)
+
+`crates/tr-app/src/npc_ai_prime_limbs.rs` ports `NPC.AI()`'s three
+inline sibling arms of the saw (there are no `AI_034/035/036`
+functions): the Vice (`aiStyle == 34`, `NPC.cs:28245-28521`), the
+Cannon (`aiStyle == 35`, `:28522-28756`) and the Laser
+(`aiStyle == 36`, `:28757-28990`) as pure step functions
+(`style34_step`/`style35_step`/`style36_step`) over `Npc` + the shared
+`PrimeLimbContext` seam, with the kind-keyed dispatcher
+`prime_limb_step` as the future wiring round's entry point.
+**Identity corrected**: the task brief's ids were off by one — 127 is
+the HEAD (`NPCID.SkeletronPrime`, aiStyle 32, `ID/NPCID.cs:10931`).
+The real rows: **PrimeCannon = 128 → aiStyle 35** (`NPCID.cs:10933`,
+`SetDefaults` `NPC.cs:10573-10587`: 52×52, dmg 30, def 23, lifeMax
+7000), **PrimeVice = 130 → aiStyle 34** (`:10937`, `:10603-10617`:
+dmg 52, def 34, lifeMax 9000), **PrimeLaser = 131 → aiStyle 36**
+(`:10939`, `:10618-10632`: dmg 29, def 20, lifeMax 6000); all
+noGravity/noTileCollide, knockBackResist 0, netAlways,
+NPCHit4/NPCDeath14. The port's static tables already carry the styles
+(`npc/data.rs`: `PrimeVice => 34`, `PrimeCannon => 35`,
+`PrimeLaser => 36`). There are NO per-type branches inside any arm —
+each block IS its family. **Code-only mode**: no cargo/rustc/rustfmt/
+tests were run; the 16 witness tests are written, not executed. The
+live `npc.rs::update_prime_limb` (the v1 shared tether approximation
+for all four limbs) stays byte-identical until the wiring round claims
+each limb's share — the saw sibling (`npc_ai_style33.rs`, e5faaf42)
+and the style-28 pattern (040df4c5).
+
+### Per-limb verdicts (the whole arm re-read line-by-line against the port)
+
+- **Vice (34) — FAITHFUL.** The saw-shaped prologue: the dock vector
+  `(headCentre − 200·ai[0], head.Y + 230)` with the INTEGER head
+  half-width (`:28248-28250`), the STRICT >800/<400 desync hysteresis
+  into state 99 (`:28252-28262` — the band between holds), the
+  head-gone despawn (`:28263-28272`). State 99's return damps only
+  against the motion at 0.96, steps 0.1 Y / 0.5 X, one-sided caps ±8/±12
+  (`:28273-28323`). The 0/3 block: `head.ai[1] == 3` →
+  `EncourageDespawn(10)` (`:28326-28329`); `head.ai[1] != 0` → the
+  DOUBLE `TargetClosest` (`:28332-28333`, both kept — the second
+  re-stamps the tracking values), the dead-target 0.1 sink to 16 that
+  never ticks the 600-reset, the alive chase's 12-speed aim +
+  `|vx|+|vy| < 2` STRICT snap-vs-unconditional-0.97-damp
+  (`:28344-28361`) + the 600-tick reset-to-0 INSIDE the alive branch
+  (`:28362-28368`); the hover's 600-tick `ai[2]++` FIRST, then the
+  300/230 TOP-edge Y band (a 70-px dead band) and the ASYMMETRIC centre
+  X band (right edge headCentre+250 at −0.3/+9, left edge headCentre at
+  +0.2/−8, 0.94 damp, `:28373-28427`); the dock rotation recomputed
+  AFTER both sub-branches OVERWRITES the chase aim (`:28429-28433`).
+  State 1: damp only downward Y at 0.9, the WIDER 280 dock rotation,
+  the `(vx·5 + head.vx)/6` X blend + 0.5/−0.5 steps, −9 cap, and the
+  STRICT `y < head.Y − 280` gate into the 20-speed dash
+  (`:28435-28464`). State 2's below-player-TOP-edge/upswing four-dash
+  cycle (`:28466-28481`), state 4's `(vy·5 + head.vy)/6` blend +
+  right-push to 12 + the ±500 CENTRE gate into the 17-speed side dash
+  (`:28482-28507`), state 5's end gate riding the ELSE-IF CONDITION
+  itself (centre < playerCentre − 100 STRICT, `:28508-28520`).
+- **Cannon (35) — FAITHFUL.** NO desync hysteresis, NO state 99 — only
+  0 and 1; anything else RETURNS (`:28679-28682`). State 0: the
+  attack gate pre-loads `localAI[0] += 2` (`:28543`) and tightens
+  onto head.Y−100 (±0.07/±6) / headCentre−120·ai[0] (±0.1/±8); the
+  hover's 1100-tick jump-to-1 zeroes the cadence BEFORE the shot block
+  ticks it (`:28595-28602`), with the loose head.Y−150 (±0.04/±3) /
+  headCentre+200/+160 bands (±0.2/±8 — BOTH right of the head,
+  regardless of the seat). Then the dock rotation (`:28652-28656` —
+  `num525`'s sqrt IS read, the shot normaliser) and the UNCONDITIONAL
+  140-tick bomb at the REVERSED dock vector `(0f − num)·(12/dist)`
+  (`:28657-28675`): type 102 (`ProjectileID.BombSkeletronPrime`,
+  `ID/ProjectileID.cs:758`, aiStyle 16 — the rising bomb,
+  `Projectile.cs:22495-22502`), damage 0, ±0.4 jitter (two
+  `Next(-40, 41)` draws ×0.01), spawn FOUR velocity units ahead.
+  State 1: the 300-tick return-to-0 (zeroes the cadence, the shot block
+  still ticks it this tick), the 6-speed aim at X=headCentre /
+  Y=playerCentre−80 where `:28693`'s head-Y read is a DEAD STORE
+  overwritten by `:28694` (both kept in order), the four independent
+  0.9-damp comparisons (X ±0.04, Y ±0.08, no caps), the post-steer
+  `TargetClosest` (`:28730`), the player-aim rotation −1.57, and the
+  40-tick player bomb at speed 10 (`:28736-28753`). The arm's ONLY
+  TargetClosest is the state-1 one.
+- **Laser (36) — FAITHFUL.** Only 0/3 and 1 (else RETURNS,
+  `:28914-28917`). The attack gate pre-loads `localAI[0] += 3`
+  (`:28778`) with the same −100/−120·side anchor as the cannon's
+  attack branch; the hover's 800-tick `ai[2]++` (`:28830-28836` —
+  NOT a jump-to-1: from 3 it reaches 4 and returns forever; the C#
+  never enters 3 from inside this arm — kept verbatim) with the
+  head.Y−100 (±0.1/±3) / headCentre−180·ai[0] (±0.14/±8) anchor. Then
+  the UNCONDITIONAL `TargetClosest` + player aim −1.57
+  (`:28886-28891` — both sub-branches reach it) and the 200-tick
+  volley (`:28892-28910`): speed 8, type 100
+  (`ProjectileID.DeathLaser`, `ID/ProjectileID.cs:754`; the port's
+  constant is named `DESTROYER_LASER` but carries the same id),
+  damage 25, ±2.0 jitter (two `Next(-40, 41)` draws ×0.05 — FIVE
+  times the cannon's), spawn EIGHT velocity units ahead. State 1: the
+  200-tick return, the 7-speed flank aim at playerCentre−350/−20 (LEFT
+  of the player regardless of the seat), X ±0.1 / Y ±0.03 steps under
+  the 0.9 damps, the post-steer `TargetClosest` (`:28964`) and the
+  80-tick volley at speed 10 (`:28970-28988`).
+
+### Faithfulness traps kept (the W66/W94 catalogue)
+
+- **Draw-before-early-return**: `spriteDirection = -(int)this.ai[0]`
+  (the TRUNCATED int negation) is the FIRST write in all three arms
+  (`:28247/:28524/:28759`), BEFORE the head-gone despawn gate — the
+  port writes `sprite_dir` first too (witness tests pin it on the
+  despawn tick).
+- **Two different centres**: the band comparisons use INTEGER
+  half-widths (`(float)(width / 2)` on both entities) while the
+  dock/aim vectors use the FLOAT centre (`width * 0.5f`) — kept
+  distinct (`half_w` vs `dock_vector`).
+- **f64-on-f32**: `Math.Sqrt`/`Math.Atan2` are DOUBLE calls on f32
+  operands — the port computes `((x*x + y*y) as f64).sqrt() as f32`
+  and `(y as f64).atan2(x as f64) as f32` (`cs_sqrt`/`cs_atan2`);
+  the sums/products stay f32 and the `speed / (float)Math.Sqrt(...)`
+  divisions are f32 divides of an f64-rounded sqrt. The literal
+  `1.57f`, not FRAC_PI_2.
+- **Strict bounds**: the hysteresis >800/<400, the snap |vx|+|vy|<2,
+  the rise gate y<head.Y−280, the ±500 centre gate, the state-5
+  playerCentre−100 condition, and ALL four shot cadences (>140, >40,
+  >200, >80 — the ++ runs first, so equality holds) are STRICT, pinned
+  by boundary witness tests.
+- **Dead stores annotated**: the vice's `num516` (`:28432`),
+  `num519`'s first value (`:28444`, the name is reused for the dash
+  scale at `:28460`), `num522`'s first value (`:28487`, reused at
+  `:28502`), and the cannon's `num531` head-Y read (`:28693`,
+  overwritten at `:28694`) — kept verbatim, no observable effect. The
+  cannon's `num525`/`num532` and the laser's `num539`/`num546`
+  ARE read (the shot normalisers) — not dead.
+- **No epsilon floor**: the normalisers divide by the distance
+  verbatim — a zero distance yields the C#'s NaN/Inf (the live arm
+  floors at 0.001; the port does not). The cannon's reversed vector is
+  `(0f − num) * scale` verbatim (`-0.0` preserved).
+- **No integration**: all three are noTileCollide, so `UpdateNPC`
+  integrates `position += velocity` after `AI()`
+  (`NPC.cs:90498`); the step fns do not move the limb.
+- **Despawn fall-through = early return**: `ai[2] += 10` per tick,
+  `> 50 || netMode != 2` kills (single-player dies on the first
+  tick); after the kill `ai[2]` is 10 or ≥60 so no state branch
+  matches — the port's early return is observationally identical. The
+  `life = -1; HitEffect(); active = false` rides the hp-0 convention.
+- `EncourageDespawn(10)` rides `Npc::encourage_despawn`
+  (`NPC.cs:7249-7256` — only ever lowers the window).
+
+### RNG by construction
+
+The vice arm draws NO `Main.rand` — every counter is deterministic;
+`style34_step` takes no RNG parameter and the dispatcher witness
+pins the stream bit-identical after a vice tick. The cannon and laser
+each draw exactly TWO `Main.rand.Next(-40, 41)` values (X then Y) per
+FIRED shot — the reversed-dock bomb `:28669-28670`, the player bomb
+`:28748-28749`, the hover volley `:28904-28905`, the flank volley
+`:28982-28983` — and nothing else. Both draws sit INSIDE
+`Main.netMode != 1` AND the STRICT `localAI[0] >` threshold, so a
+client or a non-firing tick draws ZERO; `UnifiedRandom::next_range`
+is the exact `Next(min, maxExclusive)` stream
+(`Utilities/UnifiedRandom.cs:120-132`). The stream-clone witness
+tests pin the exact draw count and order per firing tick and the
+zero-draw gates. The despawn's `HitEffect()` reaches the
+type-128..131 gore arm (`NPC.cs:89433-89469`) whose four
+`Main.rand.Next(61, 64)` picks (`:89452/:89456/:89460/:89464`) are
+COSMETIC gore — the dust/gore skip precedent (S1-D-3e/f/g and the saw
+sibling), so the despawn draws nothing. `npc_target::target_closest`
+is RNG-free. The shots ride `Npc::wants_hostile_shot` (the style-28
+seam); the C#'s knockback `0f` and `Main.myPlayer` owner are the
+tuple's documented non-carried fields.
+
+### The head seam
+
+`PrimeLimbContext` names every head field the arms read:
+`active`/`aiStyle` (must be 32 — any other style in the head slot
+despawns the limb), `position`, `width` (INT — the half-width is
+integer division), `velocity` (ONLY the vice's rise/fly blends read
+it, `:28446/:28489`), `ai[1]` (the head's phase: 0 hover, 1 charge,
+2 rage, 3 despawn), plus `net_mode` and the `EverLastingTicker`
+stamp. Same shape as the sibling's `Style33Context` plus the
+velocity pair — the port's `World.prime_*` write-through carries
+only the position today, so the wiring round must extend it (or read
+the head's NPC slot directly) before claiming the dispatch.

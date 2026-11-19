@@ -26,8 +26,8 @@
 //!   lifeMax 6000, same flags.
 //! * (`NPCID.SkeletronPrime = 127`, `ID/NPCID.cs:10931`, aiStyle 32 — the
 //!   head; `NPCID.PrimeSaw = 129`, aiStyle 33 — the sibling's arm.)
-//! The port's static tables already carry the styles (`npc/data.rs:1541-
-//! 1545`: `PrimeVice => 34`, `PrimeCannon => 35`, `PrimeLaser => 36`).
+//! The port's static tables already carry the styles (`npc/data.rs:1952-
+//! 1956`: `PrimeVice => 34`, `PrimeCannon => 35`, `PrimeLaser => 36`).
 //! There are NO per-type branches inside any of the three arms — each
 //! block below IS its family.
 //!
