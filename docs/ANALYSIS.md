@@ -23318,3 +23318,92 @@ Host-path folds (the module header carries the same list):
   standing `wants_hostile_shot` convention (always request, no source).
 - The beams' `timeLeft = 300` rides the sim's timed-spawn list at the merge
   step (see above).
+## The Angry Nimbus' aiStyle-49 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_style49.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 49)` arm (`NPC.cs:31587-31650`) — the Angry
+Nimbus (250, `NPCID.cs:11177`), the style's ONLY user (`SetDefaults`
+case 250, `NPC.cs:12221-12233`). **Code-only mode**: no compiler invoked
+(no cargo/rustc/rustfmt/tests); the 9 witness tests are WRITTEN NOT RUN.
+
+**The machine, verbatim.** Every tick: `noGravity = true` (`:31589`),
+`TargetClosest()` (`:31590`, through the shared `npc_target::target_closest`,
+S1-D-3p — the inline slot-0 candidate, the `update_zombie` convention;
+the `session_candidate` seam lives only on the unmerged style-42 branch),
+then the aim at the player's centre with the y offset **−200f** (`:31595`
+— the cloud hovers 200 px ABOVE the player), normalized to the 4f speed
+(`:31591`/`:31604-31606`) unless the distance is strictly `< 20f`, in
+which case the CURRENT velocity is the aim (`:31597-31601`). Each axis
+approaches the aim by ±0.25f (`:31592`), with the extra ±0.5f while the
+velocity still points the other way (`:31611-31613`/`:31619-31621` on x,
+`:31627-31629`/`:31635-31637` on y) — all comparisons strict.
+
+**The rain window** (`:31640-31648`): the cloud's box horizontally spans
+the player's box, its bottom edge is strictly ABOVE the player's top,
+`Collision.CanHit` (the port's Manhattan walk, `projectile::can_hit`,
+`Collision.cs:381-479`) and `Main.netMode != 1` → `ai[0]++`; at
+`ai[0] > 8f` (strict — the 9th qualifying tick) reset to 0 and fire the
+Rain projectile **264**: X = `(int)(position.X + 10f + Next(width - 20))`
+(width 34 → `Next(14)`, 0..=13), Y = `(int)(position.Y + height + 4f)`,
+SpeedX 0, SpeedY 5, Damage 20, KnockBack 0. The shot rides the plain
+`Npc::wants_hostile_shot` list (the C# call passes no `ai0`/`ai1`); the
+drain (`world_sim/npcs.rs`) spawns it with knockback 0. The 264
+`SetDefaults` row (`Projectile.cs:3491-3502`: 4×40, aiStyle 45, hostile,
+penetrate −1, timeLeft 120, scale 1.1, extraUpdates 1, ignoreWater) and
+the projectile aiStyle-45 arm itself are M4-PROJ work — the request
+carries the cited kind/position/velocity/damage only.
+
+**RNG order (by construction).** The arm's ONLY `Main.rand` draw is the
+shot's x pick (`:31646`), drawn AFTER the `ai[0] = 0` reset and BEFORE
+`Projectile.NewProjectile`. `TargetClosest` (`:77652-77781`) draws
+nothing. So `angry_nimbus_ai` takes the caller's `UnifiedRandom` and
+consumes exactly one `next_max(14)` per fired shot, zero otherwise —
+witnessed by `s1_d_3_s49_the_stream_advances_once_per_shot` (two seeded
+streams, 8 non-firing ticks draw-free, the firing tick's x equals the
+control's `Next(14)`).
+
+**The movement tail.** Type 250 has no special arm in
+`ApplyTileCollision` (`:92612-92627`) → `Collision_MoveNormal`
+(`:92723-92726`, plain `Collision.TileCollision`) +
+`Collision_MoveWhileDry` (`:92591-92607`: the `Collision.up` 0.01f
+ceiling nudge, the `collideX`/`collideY` latches off `oldVelocity`, the
+`oldPosition` stamp, `position += velocity`). The 250 defaults set
+`noGravity` ONLY — `noTileCollide` stays false, so the cloud DOES
+collide with tiles. `Collision_DecideFallThroughPlatforms` includes the
+aiStyle-49 row (`:92952-92955`, `fall = true`): the cloud drops through
+platforms. `nimbus_step` ports the dry, no-slope path on the stand-in
+`collides_rect` walk (the zombie convention: a blocked axis zeroes its
+velocity component instead of the C#'s pixel-snap — the snap lands with
+the shared Collision port; the stand-in does not model platforms, so
+the wiring passes `fall = true` into the shared `TileCollision`).
+
+**The frame clock.** `FindFrame` case 250 (`NPC.cs:72884-72897`, shared
+with the Rain 264 / Sharknado 268): `frameCounter++`, at `>= 6.0` advance
+the frame row and reset; wrap at `num * Main.npcFrameCount[250]`.
+`Main.npcFrameCount[250] = 4` — the initializer `Main.cs:67082`, ten
+entries per row from `:67084` (ids 0-9), so `:67109` covers ids 250-259
+(`4, 3, 5, 3, 3, 3, 4, 5, 6, 4`) and index 250 is its first entry.
+`nimbus_find_frame` is the pure twin over the frame INDEX (the port's
+`Npc::frame` convention); the private `frame_counter` reset is the
+wiring step inside `npc.rs::find_frame`.
+
+**Deliberate stand-ins / skips.**
+- `Main.netMode != 1` (`:31640`) folds to the host path (the port is
+  single-player/host) — the rain gate always passes.
+- The thunder ambient roll (`NPC.cs:90111-90113`: type 250,
+  `Next(700) == 0` → sound 29 style `Next(41, 44)`) is `UpdateNPC`'s
+  sound layer — unported; when it lands it draws BEFORE the AI arm each
+  tick (the RNG-order note for the wiring step).
+- The `HitEffect` dust/gore rows (`:88959-88979`: the cloud puff 54
+  burst, `dmg / lifeMax * 50` dusts while alive, 20 + the two gore 99s
+  on death) are the dust-layer skip (the S1-D-3e/f precedent).
+- The wet/slope/conveyor collision halves (`:92545-92562`,
+  `:92574-92578`) are unported engine layers.
+- The stat row (34×26, dmg 50, def 24, 300 HP, kb 0.3, value 300f =
+  3 silver, HitSound NPCHit30 / DeathSound NPCDeath33) rides the
+  `ANGRY_NIMBUS` cited `NimbusDefaults` const for the wiring step — no
+  `NpcKind::AngryNimbus` exists yet and the kind tables are contested by
+  the in-flight S1-D-3 sibling branches, so this slice is UNWIRED (the
+  `npc_ai_style42.rs` precedent, `8ac80b4e`): `#![allow(dead_code)]`,
+  the `mod npc_ai_style49;` registration, the kind-table rows + the
+  `49 =>` dispatch arm are the family's merge step.
