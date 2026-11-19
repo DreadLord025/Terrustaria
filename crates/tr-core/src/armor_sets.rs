@@ -2,7 +2,8 @@
 //! `ArmorSetBonuses.Initialize` (`DataStructures/ArmorSetBonuses.cs:10-493`)
 //! and the defense consumer (`Player.Hurt`'s `statDefense * 0.5` reduction).
 //! The scalar stat rows live in [`SET_STATS`]; the flag-only benefits
-//! (Shadow/Crimson/Meteor/AshWood/Gladiator/Angler/Fossil) ride the app-side
+//! (Shadow/Crimson/Meteor/Frost's frostBurn/Molten's fireWalk + gated
+//! buffImmune[24]/AshWood/Gladiator/Fossil/the ammo sets) ride the app-side
 //! `armor_sets.rs` seam (S1-C-12 wave D).
 
 /// `ArmorSetBonuses.Benefits.MetalTier1` (+2): the copper (89/80/76), the
@@ -119,9 +120,9 @@ mod tests {
     }
 
     /// `ArmorSetBonuses.cs:446` — the Mining set's 3×2×2 product: the three
-    /// helmets (88 Mining, 5588 Ancient Cobalt, 4008 Cobalt) against the two
-    /// bodies (410/5589) and legs (411/5590) — `pickSpeed -= 0.1f`
-    /// (`Benefits.Mining`, `:297-300`).
+    /// helmets (88 Mining, 5588 UpgradedMining/Prospector, 4008 Ultrabright
+    /// — `ItemID.cs`) against the two bodies (410/5589) and legs (411/5590)
+    /// — `pickSpeed -= 0.1f` (`Benefits.Mining`, `:297-300`).
     #[test]
     fn s1_c_12d_the_mining_set_expands_all_twelve_triples() {
         for head in [88, 5588, 4008] {
@@ -154,8 +155,10 @@ mod tests {
             }
         }
         assert!(set_buff_immunity(803, 804, 233).is_empty());
-        // The Molten row stays single-triple (`:444` — a plain `Add`).
-        assert_eq!(set_buff_immunity(231, 232, 233), &[24]);
+        // The Molten `buffImmune[24]` row is gated on
+        // `!vampireBurningInSunlight` (`:285-288`) and rides the app-side
+        // seam — this ungated table must NOT carry it (no double-apply).
+        assert!(set_buff_immunity(231, 232, 233).is_empty());
         assert!(set_buff_immunity(231, 232, 980).is_empty());
     }
 }
@@ -339,15 +342,16 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         SetStats { mana_max: 60, ..stats() },
     ),
     // `:444` Benefits.Molten — `meleeDamage += 0.1f` (`:281-289`; the
-    // `fireWalk` and `buffImmune[24]` halves ride their own systems — the
-    // app-side `armor_sets.rs` seam and `set_buff_immunity`).
+    // `fireWalk` and the GATED `buffImmune[24]` halves ride the app-side
+    // `armor_sets.rs` seam — the gate needs the player flag).
     (
         "Molten",
         (231, 232, 233),
         SetStats { melee_damage: 0.1, ..stats() },
     ),
     // `:442` Benefits.Frost — `meleeDamage += 0.1f; rangedDamage += 0.1f`
-    // (`:269-274`; the `frostBurn` flag half has no ported consumer).
+    // (`:269-274`; the `frostBurn` flag half rides the app-side seam — its
+    // on-hit consumers are unported, ANALYSIS "S1-C-12 wave D").
     (
         "Frost",
         (684, 685, 686),
@@ -560,20 +564,21 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
     ),
 ];
 
-/// `ArmorSetBonuses.Benefits`' immunity rows: the Snow set's `buffImmune[46]`
-/// and `buffImmune[47]` (`ArmorSetBonuses.cs:291-295`) and the Molten set's
-/// `buffImmune[24]` (`:281-289`). Returns the debuff ids the completed set
-/// makes the player immune to.
+/// `ArmorSetBonuses.Benefits`' UNGATED immunity rows: the Snow set's
+/// `buffImmune[46]` and `buffImmune[47]` (`ArmorSetBonuses.cs:291-295`).
+/// Returns the debuff ids the completed set makes the player immune to.
 ///
 /// The Snow registration (`:445`) is `Set(new int[2]{803,978},
 /// new int[2]{804,979}, new int[2]{805,980})` — the array overload's cartesian
 /// product (`ArmorSetBonus.cs:98-126`): the ancient pieces (978/979/980) mix
 /// freely with the regular ones, 8 triples.
 ///
-/// The Molten `buffImmune[24]` row is gated on `!vampireBurningInSunlight`
-/// (`:285-288`); the flag's granter (`VampireSeedSunlightExposure`,
-/// `Player.cs:28672-28719`) is unported and never set, so the gate is a
-/// no-op `true` today (ANALYSIS "S1-C-12 wave D").
+/// The Molten `buffImmune[24]` row (`:285-288`) is GATED on
+/// `!vampireBurningInSunlight` and therefore does NOT live here — the gate
+/// needs the player flag, so the row rides the app-side `armor_sets.rs`
+/// seam (`SetFlag::MoltenFireImmune`, S1-C-12 wave D). The flag's granter
+/// (`VampireSeedSunlightExposure`, `Player.cs:28672-28719`) is unported and
+/// never set, so the gate always passes today (ANALYSIS "S1-C-12 wave D").
 pub fn set_buff_immunity(head: i32, body: i32, legs: i32) -> &'static [i32] {
     const SNOW: [(i32, i32, i32); 8] = [
         (803, 804, 805),
@@ -585,12 +590,8 @@ pub fn set_buff_immunity(head: i32, body: i32, legs: i32) -> &'static [i32] {
         (978, 979, 805),
         (978, 979, 980),
     ];
-    const MOLTEN: (i32, i32, i32) = (231, 232, 233);
-    let triple = (head, body, legs);
-    if SNOW.contains(&triple) {
+    if SNOW.contains(&(head, body, legs)) {
         &[46, 47]
-    } else if triple == MOLTEN {
-        &[24]
     } else {
         &[]
     }

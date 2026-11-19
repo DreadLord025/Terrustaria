@@ -682,7 +682,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if base_mana > 0 && p.silence {
                 return;
             }
-            let mana_cost = (base_mana as f32 * p.mana_cost) as i32;
+            // S1-C-12 wave D — `ItemCheck_PayMana_ShouldSkipManaUse`'s
+            // spaceGun arm (`Player.cs:52695-52698`): the Meteor set makes
+            // the four laser weapons cost no mana; the same ids skip the
+            // regen delay (`ItemCheck_ApplyManaRegenDelay`, `:50587-50593`)
+            // — no pay, no delay. The 3269 arm (`:52691-52694`) and the
+            // turret/minion alt-fire arms (`:52699-52706`) stay out (no
+            // port items/seam).
+            let skip_mana = crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind);
+            let mana_cost = if skip_mana {
+                0
+            } else {
+                (base_mana as f32 * p.mana_cost) as i32
+            };
             if mana_cost > 0 {
                 // `Player.CheckMana`'s pay arm: a failed check blocks the use.
                 if p.mana < mana_cost {

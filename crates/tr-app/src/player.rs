@@ -1389,6 +1389,32 @@ pub struct Player {
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
+    // ---- S1-C-12 wave D: the LOW-tier armor sets' flag halves
+    // (`ArmorSetBonuses.Benefits`, the `armor_sets.rs` seam grants them at
+    // the `UpdateArmorSets` position, `Player.cs:25685`).
+    /// `Player.shadowArmor` (`ArmorSetBonuses.cs:312-315`): the Shadow Scale
+    /// set's movement boost (`Player.cs:26511-26517`). `ResetEffects` clears
+    /// it (`:18458`).
+    pub shadow_armor: bool,
+    /// `Player.crimsonRegen` (`ArmorSetBonuses.cs:248-251`): the Crimson
+    /// set's regen boost — `lifeRegenTime++` (`Player.cs:19117-19120`) and
+    /// the ramp ×1.5 (`:19242-19245`), fed through `RegenInputs`.
+    /// `ResetEffects` clears it (`:18722`).
+    pub crimson_regen: bool,
+    /// `Player.ashWoodBonus` (`ArmorSetBonuses.cs:380-383`): the Ash Wood
+    /// set's lava-hit halves (`Player.cs:27694-27702`). `ResetEffects`
+    /// clears it (`:18325`).
+    pub ash_wood_bonus: bool,
+    /// `Player.frostBurn` (`ArmorSetBonuses.cs:271`): the Frost set's
+    /// on-hit Frostburn flag — the melee/projectile consumers are unported
+    /// (ANALYSIS "S1-C-12 wave D"). `ResetEffects` clears it (`:18686`).
+    pub frost_burn: bool,
+    /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
+    /// seed's sun-scorch flag — the gate on the Molten set's
+    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
+    /// (`VampireSeedSunlightExposure`, `:28672-28719`) is unported, so the
+    /// flag stays false in play; `ResetEffects` clears it (`:18730`).
+    pub vampire_burning_in_sunlight: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -2086,6 +2112,11 @@ impl Player {
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,
+            shadow_armor: false,
+            crimson_regen: false,
+            ash_wood_bonus: false,
+            frost_burn: false,
+            vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             acc_sentry_backpack: false,
@@ -2544,6 +2575,16 @@ impl Player {
 
     pub(crate) fn max_run_speed_value(&self) -> f32 {
         self.max_run_speed
+    }
+
+    /// S1-C-12 wave D — the run-acceleration/slowdown inspection reads (the
+    /// Shadow Scale boost's witnesses, `Player.cs:26511-26517`).
+    pub(crate) fn run_acceleration_value(&self) -> f32 {
+        self.run_acceleration
+    }
+
+    pub(crate) fn run_slowdown_value(&self) -> f32 {
+        self.run_slowdown
     }
 
     pub(crate) fn accessory_life_regen_value(&self) -> i32 {
@@ -4272,6 +4313,19 @@ impl Player {
         // `:18705` silence) — the buff arms below re-set them per tick.
         self.lava_immune = false;
         self.fire_walk = false;
+        // S1-C-12 wave D — the armor-set flag clears of `ResetEffects`
+        // (`Player.cs:18325` ashWoodBonus, `:18364` spaceGun, `:18458`
+        // shadowArmor, `:18686` frostBurn, `:18722` crimsonRegen, `:18730`
+        // vampireBurningInSunlight): the `armor_sets.rs` seam re-grants
+        // them per tick at the `UpdateArmorSets` position (`:25685`).
+        // `noKnockback`'s `:18356` clear rides the accessory-flag block
+        // below (the shields share it).
+        self.ash_wood_bonus = false;
+        self.space_gun = false;
+        self.shadow_armor = false;
+        self.frost_burn = false;
+        self.crimson_regen = false;
+        self.vampire_burning_in_sunlight = false;
         self.gills = false;
         self.mana_regen_buff = false;
         self.slow_fall = false;
@@ -4459,7 +4513,8 @@ impl Player {
             self.minion_damage += 0.1;
         }
         // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
-        // the completed Snow/Molten sets (`set_buff_immunity`).
+        // the completed Snow set (`set_buff_immunity` — the Molten row is
+        // gated and rides the wave-D `armor_sets.rs` seam below).
         for (kind, ids) in BUFF_IMMUNITY_ROWS {
             if self.equipped[..10].contains(kind) {
                 for id in *ids {
@@ -4814,6 +4869,17 @@ impl Player {
         // OR grants with no RNG draw — a second pass over the same slots
         // is order-identical to the C#'s interleaved rows.
         crate::accessory_defense::apply_defense_accessories(self);
+        // S1-C-12 wave D — `Player.UpdateArmorSets` (`Player.cs:25685` →
+        // `:16304-16306`: `ArmorSetBonuses.GetCompleteSet(...)?.Effect`):
+        // the completed LOW-tier set's FLAG halves (shadow/crimson/meteor/
+        // molten/frost/ash-wood/gladiator). The stat halves already applied
+        // above (`set_stats`/`set_bonus_defense`/`set_buff_immunity`) are
+        // NOT re-applied — the seam's rows are disjoint. The ammo-cost
+        // flags ride `grant_set_ammo_flags` in the ammo-mastery seam (its
+        // per-tick clear runs after this update). The C# call sits after
+        // `UpdateEquips` (`:25633`) and the equipment-flag clears
+        // (`ResetEffects` `:25491`), matching this position.
+        crate::armor_sets::apply_armor_set_bonuses(self);
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
@@ -4912,10 +4978,24 @@ impl Player {
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
         self.acc_run_speed *= self.strongest_move_speed_debuff;
+        // `Player.cs:26511-26517` — the Shadow Scale set's movement boost
+        // (S1-C-12 wave D): acceleration ×1.75, max/acc run speed ×1.15,
+        // slowdown ×1.75. The C# gates the whole block on
+        // `grappling[0] == -1 && !tongued` (`:26494`); the port's grapple
+        // bypass below covers the first half, the tongue flag (E-7c's
+        // buff arm) the second. The empressBrooch/Magiluminescence arms
+        // (`:26500-26510`) have no port fields and stay out (ANALYSIS).
+        if !self.grappling_active && !self.tongued && self.shadow_armor {
+            self.run_acceleration *= 1.75;
+            self.max_run_speed *= 1.15;
+            self.acc_run_speed *= 1.15;
+            self.run_slowdown *= 1.75;
+        }
         // `Player.cs:26522-26579`: the floor-tile modifiers, one else-if chain.
         // The flags come from the previous tick's `FloorVisuals` sample — one
         // tick stale, like the original's call order. The empress-brooch /
-        // Magiluminescence / shadow-armor boosts land with M3-EQUIP-3.
+        // Magiluminescence boosts have no port fields (ANALYSIS "S1-C-12
+        // wave D"); the shadow-armor boost landed above.
         if self.sticky {
             self.max_run_speed *= 0.25;
             self.run_acceleration *= 0.25;
@@ -8195,7 +8275,7 @@ impl Player {
         }
     }
 
-    fn update_survival(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+    pub(crate) fn update_survival(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
         // (`Player.cs:11740-11751, 18949-19103`).
@@ -8226,6 +8306,12 @@ impl Player {
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
                 extra_regen: self.accessory_life_regen,
+                // S1-C-12 wave D — the Crimson set's regen halves
+                // (`ArmorSetBonuses.cs:248-251` grants the flag):
+                // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
+                // ×1.5 (`:19242-19245`), in the engine's own input slots.
+                extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -8249,6 +8335,18 @@ impl Player {
                 self.lava_time -= 1;
             } else if self.hurt_cd <= 0.0 {
                 let cx = self.x + WIDTH * 0.5;
+                // `Player.cs:27687-27707`: the hit's damage/burn pair —
+                // 80/420 classic, halved by the Ash Wood set
+                // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
+                // `:27694-27702`, S1-C-12 wave D). The remix-world
+                // variants (`:27689-27693`, `:27696-27699`) and the
+                // `lavaRose` halves (`:27703-27707`) have no port fields
+                // and stay out (ANALYSIS "S1-C-12 wave D").
+                let (mut num79, mut num80) = (80, 420);
+                if self.ash_wood_bonus {
+                    num79 /= 2;
+                    num80 -= 210;
+                }
                 // The lava hit rolls the dodge block like any `Hurt` — the
                 // stream rides in from the `UpdatePlayers` stage through the
                 // update chain, `dodgeable` keeps `Hurt`'s default `true`
@@ -8256,12 +8354,11 @@ impl Player {
                 // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
                 // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
                 // the S1-C-7 wave B retaliate lane stays off.
-                if self.hurt_inner(80, cx, true, rng, true, false, None, false) {
+                if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
                     // The Hurt return `num81 > 0.0` gates the OnFire grant
-                    // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants
-                    // out of scope). `AddBuff` applies the expert ×2 itself (24
-                    // is in the difficulty set, `BuffID.cs:50`).
-                    self.buffs.add_buff(24, 420);
+                    // (`Player.cs:27709-27711`). `AddBuff` applies the expert
+                    // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
+                    self.buffs.add_buff(24, num80);
                 }
             }
         } else if self.lava_time < self.lava_max {
@@ -9040,7 +9137,9 @@ mod tests {
             assert!(p.buffs.buff_immune[id], "the ankh row {}", id);
         }
         assert!(!p.buffs.buff_immune[24], "On Fire is not an ankh immunity");
-        // The Molten set (231/232/233) is.
+        // The Molten set (231/232/233) is — the gated row rides the wave-D
+        // `armor_sets.rs` seam (`SetFlag::MoltenFireImmune`); the vampire
+        // sun-scorch gate always passes today (the granter is unported).
         p.equipped[3] = 0;
         p.equipped[0] = 231;
         p.equipped[1] = 232;

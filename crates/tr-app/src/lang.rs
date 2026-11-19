@@ -626,6 +626,26 @@ pub fn text_args(key: &str, args: &[String]) -> String {
     manager().lock().unwrap().get_text_value_args(key, args)
 }
 
+/// `LocalizedText.FormatWith(substitutes)` (`ReLogic.Localization`,
+/// the `ArmorSetBonus.GetTooltipFor*` callers, `ArmorSetBonus.cs:202-220`):
+/// the value with the caller's NAMED substitutions applied. The C# reflects
+/// the substitutes object's properties; the port takes the `(name, value)`
+/// pairs directly. Names the caller does not supply fall back to the
+/// manager's global substitutions (`Lang.GetGlobalSubstitution`) — the
+/// wave-D rows carry none, so the fallback is inert for them.
+pub fn text_format_with(key: &str, args: &[(&str, Substitution)]) -> String {
+    let mut m = manager().lock().unwrap();
+    // Clone out of the map so the lookup closure can re-borrow the manager
+    // for the global-substitution fallback.
+    let text = m.get_text(key).clone();
+    text.value_with(&|name| {
+        args.iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v.clone())
+            .or_else(|| m.substitution(name))
+    })
+}
+
 /// `Language.GetTextValue("GameUI.<name>", args)` — the `GameUI` category
 /// rows the tooltip prints (`Main.cs:20805-20816`'s fishing rows).
 pub fn game_ui_fmt(key: &str, value: i32) -> String {

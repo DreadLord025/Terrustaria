@@ -132,6 +132,14 @@ pub(crate) fn grant_ammo_mastery(
             _ => {}
         }
     }
+    // S1-C-12 wave D — the completed ammo sets' cost flags
+    // (`ArmorSetBonuses.Benefits.Fossil`/`CobaltRanged`/`MythrilRanged` →
+    // `ammoCost80`, `AdamantiteRanged` → `ammoCost75`,
+    // `ArmorSetBonuses.cs:337-340`/`:174-177`/`:189-192`/`:205-208`). The
+    // C# grants them inside `UpdateArmorSets` (`Player.cs:25685`), but the
+    // port's clear above runs AFTER that update in the tick — so the grant
+    // lives here, after the clear, before the shoot path reads the flags.
+    crate::armor_sets::grant_set_ammo_flags(p, armor);
 }
 
 /// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the

@@ -1,5 +1,5 @@
 //! S1-C-12 wave D — the LOW-tier armor sets' FLAG halves
-//! (`ArmorSetBonuses.Benefits`, `DataStructures/ArmorSetBonuses.cs:8-384`,
+//! (`ArmorSetBonuses.Benefits`, `DataStructures/ArmorSetBonuses.cs:10-384`,
 //! the registration rows `:390-493`), kept in a module disjoint from the
 //! stat halves (`tr-core/src/armor_sets.rs`) and the accessory families
 //! (waves A/B/C).
@@ -41,8 +41,8 @@
 //! arms (pets/imbues/tongued/…), not these set flags. The ammo-cost flags
 //! are granted in `world_sim/player.rs::grant_ammo_mastery` instead of
 //! the main seam: that pass clears and re-derives the ammo flags AFTER
-//! `update_with_grapple` runs (`world_sim/player.rs:688` → `:762`), so a
-//! grant here would be wiped the same tick.
+//! `update_with_grapple` runs (the call site, `world_sim/player.rs:796`),
+//! so a grant here would be wiped the same tick.
 //!
 //! Deliberately deferred (cited, ANALYSIS): the `frostBurn` on-hit
 //! consumers (`Player.cs:6548-6551` StatusToNPC, `Projectile.cs:11518-
@@ -688,6 +688,8 @@ mod tests {
 
     /// `:402` + `:380-383` — Ash Wood: the flag and the lava halves
     /// (`Player.cs:27694-27702`: 80/2 = 40 damage, 420−210 = 210 burn).
+    /// The set's own 7 defense (2+3+2) floors the reduction at 3
+    /// (`reduce_damage`: floor(40 − 7×0.5) = 36), so hp lands at 64.
     #[test]
     fn the_ash_wood_set_halves_the_lava_hit() {
         let (w, mut p) = rig();
@@ -700,9 +702,20 @@ mod tests {
         p.hurt_cd = 0.0;
         p.in_lava = true;
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
-        assert_eq!(p.hp, 60, "the halved 40-damage lava hit");
+        assert_eq!(p.hp, 64, "the halved 40-damage lava hit, floor(40−3.5)=36");
         let idx = p.buffs.find_buff_index(24).expect("On Fire");
         assert_eq!(p.buffs.buff_time[idx], 210, "the 420-210 burn");
+        // Without the set the same hit is the full 80 (floor(80−3.5)=76).
+        // The first hit armed the General window — clear both halves
+        // (`hurt_inner` gates on `immune` AND `hurt_cd`, `:38210-38216`).
+        p.ash_wood_bonus = false;
+        p.hp = 100;
+        p.immune = false;
+        p.hurt_cd = 0.0;
+        p.buffs.clear_buff(24);
+        p.in_lava = true;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.hp, 24, "the unhalved 80-damage lava hit");
     }
 
     /// `:416`/`:456`/`:459`/`:462` — the ammo sets grant their cost
@@ -762,13 +775,14 @@ mod tests {
         assert!((boosted.1 - base.1 * 1.15).abs() < 1e-4);
         assert!((boosted.2 - base.2 * 1.75).abs() < 1e-4);
         assert!((boosted.3 - base.3 * 1.75).abs() < 1e-4);
-        // The `!tongued` half of the `:26494` gate: buff 38 pins the
-        // tongue (E-7c's arm), the boost stays out.
-        p.buffs.add_buff(38, 100);
+        // The `!tongued` half of the `:26494` gate: the flag (E-7c's arm,
+        // granted by the world-sim buff pass, not `Player::update`) pins
+        // the boost out. Set it directly — the seam only reads it.
+        p.tongued = true;
         p.update(&w, PlayerInput::default());
-        assert!(p.tongued);
         assert!((p.max_run_speed_value() - base.0).abs() < 1e-4);
         assert!((p.run_acceleration_value() - base.2).abs() < 1e-4);
+        p.tongued = false;
     }
 
     /// `ArmorSetBonus.cs:174-193` — the wildcard count: a 0-needed piece
