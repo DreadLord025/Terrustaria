@@ -187,7 +187,18 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         let def = tileobject::def_for_tile(kind).unwrap();
-        let inst = tileobject::can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        let inst = tileobject::can_place(
+            &w,
+            10,
+            19,
+            def,
+            0,
+            1,
+            None,
+            &mut tr_core::unified_random::UnifiedRandom::new(0),
+            None,
+        )
+        .unwrap();
         assert!(tileobject::place(&mut w, &inst));
         let mut app = flow_app(None, vec![], vec![]);
         app.world = w;
