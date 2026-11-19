@@ -4958,6 +4958,76 @@ Deferrals (the follow-up slices): the 672 defeat-scene projectile
 `!NPC.AnyNPCs(548)` в†’ `StopInvasion` guard (`:203-206`); the
 `InvasionStart` broadcast (`:278`, pre-existing gap); the netplay
 tails (`SendData(114/23/32/7)`).
+## DD2 lane portals (S1-E-12d — audit B-6c, dead code revived)
+
+The audit (research/53 §4.2 on `origin/docs/audit-pillars-dd2lanes`)
+found the whole landed lane machinery unreachable in live play: no live
+code created the two 549 `DD2LanePortal`s — every construction site was
+a test. The wire (C# first):
+
+* **The arena walker** — `tr_core::stray` ports
+  `StrayMethods.CheckArenaScore` (`StrayMethods.cs:83-105`) +
+  `SendWalker` (`:107-156`) + their two dependencies:
+  `Collision.ExpandVertically` (`Collision.cs:4372-4416`, the inclusive
+  ends, the `InWorld(x,y,10)` gate, the `topY < 10` /
+  `bottomY >= maxTilesY-10` bounds) and `WorldGen.SolidTile3`
+  (`WorldGen.cs:70465-70483` — `nactive && tileSolid && !tileSolidTop`,
+  the LOOSE solid test: no slope/half-brick/inactive term, deliberately
+  NOT the port's strict `edit::solid_tile`). Constants: maxDistance =
+  `Main.MaxWorldViewSize.X/16` = 1920/16 = 120 (`Main.cs:66714`), height
+  10, the 3-up solid skip, the 6-down floor probe, the
+  `bottomY-topY < height-1` headroom break. The `showDebug` dust arms
+  are dead at the only caller (`bool flag = false`, `:85`).
+* **RNG by construction — a census, not a stream argument:** neither
+  `CheckArenaScore` nor `SendWalker` nor `ExpandVertically` nor
+  `SolidTile3` contains a single `Main.rand` call; the walker is a pure
+  function of the tile grid. The crystal's spawn arm
+  (`NPC.cs:40744-40755`) draws nothing either (`NewNPC`'s getGoodWorld
+  remap `:80752` only fires for types 46/62). The witness
+  `stray::tests::the_walker_draws_no_rng` pins a seeded stream pristine
+  across a full walk.
+* **The crystal's one-shot** — `update_eternia_crystal`'s live branch
+  gains the `ai[1] == 0` arm's portal spawn: at the 180th shield tick
+  (the port's `caster_counter == 179` pre-increment — the C# counts
+  `ai[0]` DOWN from 180, `:40736-40742`; same tick, the shield release
+  and the spawn coincide as in the C#) with `local_ai[0] == 0`, the
+  latch flips and `wants_lane_portals = Some(base.Bottom)` rides the
+  `wants_dd2_spawn` seam (the machine holds `&World`, the pool lives in
+  the sim). `Main.netMode != 1` folds away (single-player).
+* **The sim resolve** — `world_sim/npcs.rs` drains the request BEFORE
+  the lane-spawn pass: `check_arena_score(bottom)`, the `±2` inward
+  nudge (`:40748-40749`), then two 549s at
+  `Bottom = end.ToWorldCoordinates(8,16)` (`:40750-40753` →
+  `x = end.X*16+8-39`, `y = end.Y*16+16-130`, the 78x130 box
+  `NPC.cs:16037-16038`), the right one `ai[2] = 1` (the `1f` in
+  `NewNPC`'s **ai2** slot, `:40751` — the audit's shorthand "ai[2]=1"
+  verified against the signature `NPC.cs:80750`), both
+  `dontTakeDamage = true` (`SetDefaults` `:16049`).
+* **The use gate** — `use_etherian_crystal` now runs
+  `WouldFailSpawningHere` (`DD2Event.cs:603-613`, `Player.cs:32432`):
+  < 60 walkable tiles on either side of the stand column refuses with
+  `FailureMessage`'s yellow `DungeonDefenders2.BartenderWarning`
+  (`:614-627`); nothing consumes. The old "folds to the stand-tile
+  check" deviation is retired. The C#'s `num28` bottom-row derivation
+  (frameY 0/18/36 → +3/+2/+1, `Player.cs:32404-32417`) rides the
+  fixture's frameY.
+* **Deliberate deferrals:** `DD2Event.FindArenaHitbox()` (`:40754`,
+  `DD2Event.cs:753-795`) — the rect feeds ONLY `ShouldBlockBuilding`
+  (`Player.cs:25963-25969`'s `noBuilding` + buff 199), itself unported;
+  porting the rect without its consumer would be dead state, so both
+  land with the arena-block slice. The win scene (`ai[1] == 2`,
+  `:40758-40860`) stays R43's (victory wiring); the lane machine's
+  fade-window constant and the wave-5 pair stay R71's — this slice
+  touched neither.
+* **Witnesses WRITTEN NOT RUN (code-only round):**
+  `stray::tests` (7: the loose-solid census, the inclusive expand, the
+  flat-floor caps, the wall stop with the C#'s spot-before-check
+  semantics, the ±1 nudge, the 3-up/6-down terrain walk, the zero-RNG
+  pin) + `dd2_portal_wire_tests` (3: crystal use → two portals at tick
+  180 with the exact Bottom anchoring + the one-shot latch; the lanes
+  activate — goblins spawn in live play; the short-arena refusal +
+  warning). No compiler invoked.
+
 ## The Old One's Army's victory slice (S1-E-12b)
 
 `tr_core::dd2_victory` ports the win-side decisions of `DD2Event.cs`,
@@ -4977,10 +5047,11 @@ disjoint from the loss path (a separate slice):
   `(ai0, ai1) = (2, 2)` and every 549 to `(0, 1)` вЂ” but with no crystal
   the C# returns at `:489-492` before the portal loop, so the plan's
   portal list is empty. The scene's *presentation* (the CrystalWin
-  filter, the damage tracker's `Stop(won: true)` `:484-487`, the
-  achievement 23 `:338`) is **deferred** вЂ” no filter/tracker/achievement
-  port exists yet; the ai flips are the behavioural half.
-* `attempt_skip_wait_time` / `is_stand_active` вЂ” the wave-break skip
+  filter, the damage tracker's `Stop(won: true)` `:484-487`) is
+  **deferred** — no filter/tracker port exists yet; the ai flips are the
+  behavioural half. (The achievement 23 `:338` is now wired through the
+  existing progression seam — see S1-E-12c below.)
+* `attempt_skip_wait_time` / `is_stand_active` — the wave-break skip
   (`:1779-1801`, `:1765-1777`): strict `> 60` clamps the hold to 60; the
   stand check is `Bottom.Distance((x*16+8, y*16+8)) < 36f` (squared
   compare, exact f32). The `NPCDeath7` cue and the netMode arms collapse
@@ -4998,10 +5069,85 @@ Deliberate reductions: the `netMode != 0 && expertMode` balance rescale
 reduction as the kill-worth slice). The decisions draw **no RNG**: every
 drop's rolls live inside `Item.NewItem` on the caller's stream; the
 witness test `the_victory_decisions_draw_no_rng` pins a seeded
-`UnifiedRandom` pristine across all of them. The app-side wiring (the
-548/549 sweeps, the medal/crystal spawns, the skip click, the win
-broadcast `DungeonDefenders2.InvasionWin` `:341`) lands with the driver
-slice; this module is the pure seam it calls.
+`UnifiedRandom` pristine across all of them. The app-side wiring landed
+with S1-E-12c (below); this module is the pure seam it calls.
+
+## The Old One's Army's victory wiring (S1-E-12c)
+
+The S1-E-12b decision seam is now **wired** into the driver — the verifier
+finding W1-3 (`dd2_victory.rs` fns had zero callers: no crystal drops, no
+medals, no win sentinel) is resolved. The wiring rides the C#'s positions:
+
+* **Win sentinel** — `dd2_report_kill` (`world_sim/npcs.rs`) now runs
+  `CheckProgress`'s second `GetInvasionStatus(currentlyInCheckProgress:
+  true)` (`DD2Event.cs:381`): the tier's sentinel wave (t1's 6 `:998-1005`,
+  t2/t3's 8 `:1186-1193`/`:1496-1503`) rewrites `dd2_wave` back to the last
+  wave and calls `StartVictoryScene` through `victory_scene`'s plan —
+  `World::dd2_won` latches (`:483`), the first live 548 flips to
+  `(ai0, ai1) = (2, 2)` (`:493-494`) and every live 549 to `(0, 1)`
+  (`:496-504`, only with a crystal — the `:489-492` early return). The win
+  arm reports the sentinel's `(1, 1, wave)` pair (`:384-395`) and returns
+  before the break/broadcast/medals. `dd2_won` joins `dd2_lost` in the
+  `:364` kill gate.
+* **Win scene machine** — `update_eternia_crystal` (`npc.rs`) gains the
+  `ai[1] == 2` arm (`NPC.cs:40758-40857`): the shield + `life = lifeMax`,
+  the 120-tick cosine bob (`vy = cos(ai0/120·2π)·0.25 − 0.25`) then hold,
+  and the 600-tick end (`wants_event_stop`, `hp = 0`). The old `ai[1] == 0`
+  600-tick "win-death" hack is **removed** — the C#'s spawn-in arm never
+  kills the crystal; the win end rides the `ai[1] == 2` arm now.
+* **Win stop** — `update_dd2_event`'s scene-end resolve reads the win
+  (`dd2_won` or the stopping crystal's `ai[1] == 2`) and runs
+  `WinInvasionInternal` (`:314-342`) FIRST — the `>= n` tier latches
+  (`World::dd2_downed_t1/2/3`, now persisted through `wld/sections/flags.rs`
+  `:1373-1375`/`:2214-2218`), the tier-3 progression event 23 (`:338`,
+  through `notify_progression_net`), the 3/15/60 `DropMedals` stacks
+  (`dd2_drop_medals` → `spawn_item_drop_px`, one per live crystal) and the
+  green `InvasionWin` broadcast (`:341`, `INFO_START_INVASION_COLOR` =
+  `ChatColors.World` (50,255,130), `ChatColors.cs:24`) — then the shared
+  counter-clear + `WipeEntities` (the wipe is unconditional in
+  `StopInvasion`, `:301-308`, both outcomes).
+* **Wave-complete medals + broadcast** — the non-sentinel wave advance
+  broadcasts `WaveComplete`/`WaveCompleteFirst` (`:398-403`,
+  `INFO_NEW_WAVE_COLOR` (175,55,255)), arms the 1800-tick break (`:404`)
+  and pays `wave_complete_medals` on the NEW wave (`:405-449`).
+* **Crystal drops** — `dd2_crystal_drop` rides the dead-NPC loop BEFORE the
+  kill report (the C#'s `DoDeathEvents` runs inside `NPCLoot`, before
+  `CheckProgress`, `NPC.cs:78223`→`:78856`→`:78230`): the budget decision
+  (`should_drop_crystals`) reads the pre-kill invasion pair, true drops one
+  3822 at the body's centre. The goblin trio's `Ongoing` gate (`:79243`)
+  and the 555-565/568-578 band (`:79252-79278`) match the checkDead arms.
+* **New-wave broadcast + Betsy** — `UpdateTime`'s hold zero-crossing
+  (`:219-236`) `!LostThisRun` arm broadcasts `Lang.GetInvasionWaveText`
+  (`dd2_wave_text`, `Lang.cs:1136-1156`) on the tier's roster and the
+  tier-3 wave-7 opening summons Betsy once (`dd2_summon_betsy`,
+  `SummonBetsy` `:914-927`, `World::dd2_betsy_spawned`).
+* **Start reset** — `use_etherian_crystal` clears `dd2_won` (`:272`), the
+  crystal-drop budget (`:257-259`) and `dd2_betsy_spawned` (`:270`).
+* **Tavernkeeper chat** — `dd2_downed_t1/2` now read the persisted tier
+  latches, not the per-run wave-boss deaths (a pre-existing mis-wiring).
+
+**No-double-with-loss**: the win machine holds `life = lifeMax` every tick
+so the checkDead intercept never sees a winning crystal; the resolve adds
+an explicit `ai[1] != 2` guard, `dd2_won` gates the kill report, and the
+loss stop (`win: false`) never pays medals/broadcast/latches. Witnesses
+(`dd2_victory_tests`, `dd2_victory.rs`'s won-gate test): victory fires once,
+medals per tier, crystal pace, loss-stop pays no win, winning crystal
+cannot enter the loss scene, Betsy summons once.
+
+**Deferred presentation** (the 548/549 ai sweeps themselves ARE wired): the
+`ai[0] == 3` `DD2_WinScene` cue + the 713 win projectile + the redundant
+portal re-mark (`NPC.cs:40762-40778` — `StartVictoryScene` already flipped
+every 549), the win dust rings (`:40804-40856`), the
+`MoonlordDeathDrama.RequestLight` (`:40791-40795`), the CrystalWin scene
+filter and the `_damageTracker.Stop(won: true)` (`:484-487`). The
+`AnnounceGoblinDeath`/`_deadGoblinSpots` list (`:694-697`) stays deferred
+with the Dark Mage's `RaiseGoblins`. The wave-break skip click
+(`attempt_skip_wait_time`/`is_stand_active`) is still unwired — it needs
+the stand-interaction input seam (a separate slice).
+
+**Code-only mode** (user directive): tests WRITTEN, NOT RUN; no compiler
+invoked this round. Every citation re-verified against the decompiled
+source.
 
 ## The Ancient Cultist (M4-EVENT-6)
 

@@ -234,8 +234,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // `Player.HasItem(5275)` — the cola the Dryad's line asks about; the
     // port scans the inventory slots (no equipment scans yet).
     let has_cola = app.inventory.iter().any(|s| s.kind == 5275);
-    let dd2_t1 = app.world.dd2_latches.dark_mage_t1;
-    let dd2_t2 = app.world.dd2_latches.ogre_t2;
+    // `DD2Event.DownedInvasionT1/2` — the persisted tier-victory latches
+    // (S1-E-12c), NOT the per-run wave-boss death latches.
+    let dd2_t1 = app.world.dd2_downed_t1;
+    let dd2_t2 = app.world.dd2_downed_t2;
     let dd2_ongoing = app.world.dd2_event_ongoing;
     let rng = app.rngs.global();
     let mut draw = |n: i32| rng.next_max(n);
@@ -2151,7 +2153,11 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     // EnemySpawningIsOnHold` — the lost run scores nothing at all (the
     // loss scene's kill wipe must not advance the wave), and the hold's
     // refusal runs FIRST — the kill under the break scores nothing.
-    if !app.world.dd2_event_ongoing || app.world.dd2_lost || app.world.dd2_spawn_hold != 0 {
+    if !app.world.dd2_event_ongoing
+        || app.world.dd2_lost
+        || app.world.dd2_won
+        || app.world.dd2_spawn_hold != 0
+    {
         return;
     }
     // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
@@ -2191,15 +2197,86 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     );
     app.world.dd2_wave_kills += worth as f32;
     // `:376-380`: the count at or past the tier's budget resets the counter,
-    // opens the next wave and sets `flag`; `:404`'s 1800-tick break follows.
-    // The second `GetInvasionStatus` (`:381`) — the wave-6/8 win sentinel
-    // and its victory scene — is a separate task.
+    // opens the next wave and sets `flag`; `:404`'s 1800-tick break follows
+    // the win sentinel's refusal.
     let mut completed = false;
     if app.world.dd2_wave_kills >= required as f32 && required != 0 {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
-        app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
         completed = true;
+        // `:381`: the second `GetInvasionStatus(currentlyInCheckProgress:
+        // true)` — the sentinel wave's arm (tier 1's 6 `:998-1005`, tier
+        // 2/3's 8 `:1186-1193`/`:1496-1503`) rewrites `waveNumber` back to
+        // the last wave, `currentKillCount` to 1, returns the budget 1 and
+        // runs `StartVictoryScene` (`:481-505`): `WonThisRun` latches, the
+        // first crystal (548) flips to `(ai0, ai1) = (2, 2)` and every live
+        // portal (549) to `(0, 1)`. S1-E-12c: the scene's ai flips ride
+        // `tr_core::dd2_victory::victory_scene`'s plan here.
+        let sentinel = match tier {
+            2 | 3 => 8,
+            _ => 6,
+        };
+        if app.world.dd2_wave == sentinel {
+            app.world.dd2_wave = sentinel - 1; // `:999` / `:1187` / `:1497`
+            let crystal = app
+                .npcs
+                .iter()
+                .position(|n| n.kind == NpcKind::DD2EterniaCrystal && n.hp > 0);
+            let portals: Vec<usize> = app
+                .npcs
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| n.kind == NpcKind::DD2LanePortal && n.hp > 0)
+                .map(|(i, _)| i)
+                .collect();
+            let plan = tr_core::dd2_victory::victory_scene(crystal, &portals);
+            app.world.dd2_won = plan.won; // `:483` — before the lookup
+            if let Some(i) = plan.crystal_slot {
+                // `:493-494`: ai[1] first, then ai[0].
+                app.npcs[i].ai[1] = 2.0;
+                app.npcs[i].ai[0] = 2.0;
+            }
+            // `:496-504`: every live 549 — only with a crystal (`:489-492`'s
+            // early return leaves `portal_slots` empty otherwise).
+            for &i in plan.portal_slots {
+                app.npcs[i].ai[0] = 0.0;
+                app.npcs[i].ai[1] = 1.0;
+            }
+            // `:382-396`: the WonThisRun arm — the report is the sentinel's
+            // `(1, budget 1, wave)` pair when the count moved and the worth
+            // is non-zero (`:384`), then `CheckProgress` RETURNS (`:395` —
+            // no wave-complete broadcast, no break hold, no medals, and the
+            // `:451` refusal never runs for this arm).
+            if 1.0 != wave_kills_before && worth != 0 {
+                app.invasion_progress = 1;
+                app.invasion_progress_max = 1;
+                app.invasion_progress_icon = 3;
+                app.invasion_progress_wave = app.world.dd2_wave;
+                app.invasion_progress_display_left = 160;
+            }
+            return;
+        } else {
+            // `:398-403`: the wave-complete broadcast — the wave-2 opening
+            // takes the `WaveCompleteFirst` key, every other wave
+            // `WaveComplete`, both in `INFO_NEW_WAVE_COLOR` (`:1810`).
+            let key = if app.world.dd2_wave == 2 {
+                "DungeonDefenders2.WaveCompleteFirst"
+            } else {
+                "DungeonDefenders2.WaveComplete"
+            };
+            app.chat
+                .new_text(crate::lang::text(key), tr_core::dd2::INFO_NEW_WAVE_COLOR);
+            // `:404`: `SetEnemySpawningOnHold(1800)` — only past the win
+            // sentinel (the C# returns at `:395` before it).
+            app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+            // `:405-449`: the wave-complete medal rows, read on the NEW
+            // wave (`num3`) — one `DropMedals` stack per live crystal.
+            if let Some(medals) =
+                tr_core::dd2_victory::wave_complete_medals(tier, app.world.dd2_wave)
+            {
+                dd2_drop_medals(app, medals);
+            }
+        }
     }
     // `:451-454`: a kill that moved no count reports nothing.
     if (kills_i + worth) as f32 == wave_kills_before {
@@ -2222,6 +2299,173 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     app.invasion_progress_icon = 3;
     app.invasion_progress_wave = wave;
     app.invasion_progress_display_left = 160;
+}
+
+/// `DD2Event.DropMedals` (`DD2Event.cs:802-813`) — one `Item.NewItem(...,
+/// 3817, numberOfMedals, noBroadcast: true)` stack per live Eternia Crystal
+/// (548), in `Main.npc` order, at the crystal's rect centre (the obsolete
+/// rect overload's `X + Width/2, Y + Height/2`, `Item.cs:49651`). The rolls
+/// ride the caller's stream through the `spawn_item_drop_px` seam (the
+/// module's zero-RNG-decisions contract — the decision draws nothing, the
+/// spawn's velocity/phase triplet + prefix ride `Item.NewItem`'s
+/// `Main.rand`). `MakeInstanced` (`:810`) is netplay-only (constants-off).
+fn dd2_drop_medals(app: &mut App, medals: i32) {
+    if medals <= 0 {
+        return;
+    }
+    // `nPC.active` (`:807`): at the win stop the C# runs `WinInvasionInternal`
+    // BEFORE the crystal's `life = 0` + `checkDead` (`NPC.cs:40798-40801`),
+    // so the stopping crystal is still active. The port's machine zeroes
+    // `hp` in the same tick — the `wants_event_stop` term keeps that crystal
+    // in the scan (the death retain has not run yet). A wave-complete drop
+    // never sees one: the stop resolve removes it the same tick.
+    let spots: Vec<Vec2> = app
+        .npcs
+        .iter()
+        .filter(|n| {
+            n.kind == NpcKind::DD2EterniaCrystal && (n.hp > 0 || n.wants_event_stop)
+        })
+        .map(|n| Vec2::new(n.center().0, n.center().1))
+        .collect();
+    for pos in spots {
+        // The kill path's stage: `checkDead` runs under the NPC pass's
+        // swap in the port's batched-death model (the S1-E-21c recorded
+        // deviation — the C# strikes under the player's stage).
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            tr_core::dd2::MEDAL_ITEM,
+            medals as u32,
+            pos,
+        );
+    }
+}
+
+/// `DD2Event.WinInvasionInternal` (`DD2Event.cs:314-342`) — the win stop's
+/// resolve: the `>= n` downed-tier latches (`:316-327`), the tier's medal
+/// stack (`:328-340` — 3/15/60 via `DropMedals`), the tier-3 progression
+/// event 23 (`:338`, `AchievementsHelper.NotifyProgressionEvent`) and the
+/// green `InvasionWin` broadcast (`:341`, `INFO_START_INVASION_COLOR` =
+/// `ChatColors.World`, `ChatColors.cs:24`).
+fn dd2_win_invasion(app: &mut App) {
+    let tier = dd2_tier(app);
+    let (t1, t2, t3) = tr_core::dd2_victory::victory_downed_flags(tier);
+    // The latches only raise (`if (>= n) flag = true` — never clear).
+    app.world.dd2_downed_t1 |= t1;
+    app.world.dd2_downed_t2 |= t2;
+    app.world.dd2_downed_t3 |= t3;
+    if tier == 3 {
+        // `:338`: BEFORE the medals (the C#'s statement order).
+        let _ = app.notify_progression_net(23);
+    }
+    if let Some(medals) = tr_core::dd2_victory::victory_medals(tier) {
+        dd2_drop_medals(app, medals);
+    }
+    app.chat.new_text(
+        crate::lang::text("DungeonDefenders2.InvasionWin"),
+        tr_core::dd2::INFO_START_INVASION_COLOR,
+    );
+}
+
+/// `DD2Event.ShouldDropCrystals`'s per-kill caller (`NPC.checkDead`'s DD2
+/// arms, `NPC.cs:79240-79278`) — the budget decision reads the CURRENT
+/// invasion pair (`GetInvasionStatus`, `:817`); true drops one energy
+/// crystal (3822) at the dead body's centre (`Item.NewItem(source, Center,
+/// 3822)`). The goblin trio's `AnnounceGoblinDeath` (`:79245`,
+/// `DD2Event.cs:694-697` — the `_deadGoblinSpots` list) stays deferred with
+/// the Dark Mage's `RaiseGoblins` (ANALYSIS). The rolls ride the caller's
+/// stream through `spawn_item_drop_px` (zero-RNG-decisions contract).
+fn dd2_crystal_drop(app: &mut App, dead: &Npc) {
+    let Some(id) = dd2_pool_id(dead.kind) else {
+        return;
+    };
+    // The two arm sets: 552/553/554 (the goblins, `:79240-79251`, gated on
+    // `DD2Event.Ongoing`) and the 555-565/568-578 band (`:79252-79278`, no
+    // ongoing gate — an orphan body still consults the budget). Betsy
+    // (551), the crystal (548), the portals (549) and the bartender (550)
+    // have no arm.
+    let goblin_arm = matches!(id, 552 | 553 | 554);
+    let band_arm = (555..=565).contains(&id) || (568..=578).contains(&id);
+    if goblin_arm && !app.world.dd2_event_ongoing {
+        return;
+    }
+    if !goblin_arm && !band_arm {
+        return;
+    }
+    // `GetInvasionStatus` (`:517-534`) on the live wave — the same pair the
+    // kill report reads (the tier's budget table + its caps).
+    let tier = dd2_tier(app);
+    let wave = app.world.dd2_wave;
+    let mut kills = app.world.dd2_wave_kills as i32;
+    let required = match tier {
+        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills, app.world.dd2_latches.ogre_t2),
+        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills, dd2_betsy_hp_ratio(app)),
+        _ => tr_core::dd2::required_wave_kills(wave, &mut kills, app.world.dd2_latches.dark_mage_t1),
+    };
+    if !tr_core::dd2_victory::should_drop_crystals(
+        &mut app.world.dd2_crystal_drops,
+        tier,
+        wave,
+        required,
+        kills,
+    ) {
+        return;
+    }
+    let (cx, cy) = dead.center();
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    crate::world_sim::items::spawn_item_drop_px(
+        &mut app.items,
+        rng,
+        tr_core::dd2::ENERGY_CRYSTAL_ITEM,
+        1,
+        Vec2::new(cx, cy),
+    );
+}
+
+/// `Lang.GetInvasionWaveText` (`Lang.cs:1136-1156`) — the new-wave
+/// broadcast's text: `Game.FirstWave` at wave 1, `Game.Wave` (with the
+/// number) otherwise, joined with the wave roster's NPC names through the
+/// `Game.InvasionWave_Type<roster len>` row. The `wave == -1`
+/// `Game.FinalWave` arm is unreachable from `UpdateTime` (the sentinel
+/// rewrites the wave before any broadcast).
+fn dd2_wave_text(wave: i32, roster: &[u16]) -> String {
+    let head = if wave == 1 {
+        crate::lang::text("Game.FirstWave")
+    } else {
+        crate::lang::text_args("Game.Wave", &[wave.to_string()])
+    };
+    let mut args = vec![head];
+    args.extend(roster.iter().map(|&id| crate::lang::npc_name(id as i32)));
+    crate::lang::text_args(&format!("Game.InvasionWave_Type{}", roster.len()), &args)
+}
+
+/// `DD2Event.SummonBetsy` (`DD2Event.cs:914-927`) — the tier-3 wave-7
+/// opening's boss: once per invasion (`_spawnedBetsyT3`) and only with no
+/// live Betsy, `NPC.SpawnOnPlayer(Player.FindClosest(crystalCenter, 1, 1),
+/// 551)`. The port spawns at the player (the boss-summon convention —
+/// `SpawnOnPlayer`'s surface scan is the recorded deviation, the
+/// `use_boss_summon_item` family).
+fn dd2_summon_betsy(app: &mut App) {
+    if app.world.dd2_betsy_spawned {
+        return;
+    }
+    if app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::DD2Betsy && n.hp > 0)
+    {
+        return;
+    }
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((0.0, 0.0));
+    let mut betsy = Npc::new(NpcKind::DD2Betsy, px, py, 1, 0.0);
+    betsy.hp = betsy.max_hp;
+    app.npcs.push(betsy);
+    app.world.dd2_betsy_spawned = true; // `:925`
 }
 
 /// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
@@ -2266,9 +2510,6 @@ fn nid_of(id: u16) -> Option<NpcKind> {
     })
 }
 
-/// The Old One's Army's tick (`DD2Event.Update`): the spawn hold's decay
-/// and the crystal's 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
-/// `:40959-40966`) — the hold's expiry opens the lane spawns.
 /// `DD2Event.LaneSpawnRate` (`DD2Event.cs:1813`) — the lane gate's spawn
 /// interval, set from the wave's roster (`enemies_for_wave`'s second
 /// element) at the wave start.
@@ -2397,6 +2638,12 @@ fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
     Some(id)
 }
 
+/// The Old One's Army's tick (`DD2Event.UpdateTime`, `DD2Event.cs:194-251`,
+/// + the crystal's scene resolves): the loss intercept, the spawn hold's
+/// decay + zero-crossing broadcast (new wave / loss), the crystal-alive
+/// flag, and the scene-end stop — `StopInvasion(win: true)` pays
+/// `WinInvasionInternal` first (S1-E-12c), both outcomes clear the counters
+/// and wipe the entities.
 pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     if !app.world.dd2_event_ongoing {
         app.world.dd2_crystal_alive = false;
@@ -2413,11 +2660,18 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene
     // projectile (`:40883`, aiStyle 132's filters/sound/gore drama) is
     // deferred — the port carries no scene filters yet (ANALYSIS).
+    // The win scene's shield (`NPC.cs:40760-40761`: `life = lifeMax` every
+    // tick) keeps the crystal's hp positive, so the `hp <= 0` gate below
+    // never sees a winning crystal — the C#'s intercept (`:78087`,
+    // `ai[1] != 1`) cannot fire mid-win-scene. The `ai[1] != 2` term pins
+    // that invariant explicitly (S1-E-12c: victory must not double-fire
+    // with loss).
     let mut loss_entered = false;
     for n in app.npcs.iter_mut() {
         if n.kind == NpcKind::DD2EterniaCrystal
             && n.hp <= 0
             && !n.wants_event_stop
+            && n.ai[1] != 2.0
             && tr_core::dd2::crystal_death_starts_loss_scene(n.ai[1])
         {
             n.ai[1] = 1.0;
@@ -2440,17 +2694,38 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         tr_core::dd2::report_loss(&mut app.world.dd2_lost, &mut app.world.dd2_spawn_hold);
     }
     // `DD2Event.UpdateTime` (`DD2Event.cs:194-251`): the hold's decay,
-    // then — at the exact zero crossing (`:222-236`) — the loss arm
-    // broadcasts `LoseInvasionMessage` (`:344-347`, the red
-    // `INFO_FAILURE_INVASION_COLOR`). The `!LostThisRun` arm's new-wave
-    // broadcast + Betsy summon (`:227-231`) is the victory slice's scope.
+    // then — at the exact zero crossing (`:222-236`) — the `!LostThisRun`
+    // arm broadcasts the new wave (`Lang.GetInvasionWaveText` on the tier's
+    // roster, `INFO_NEW_WAVE_COLOR`) and the tier-3 wave-7 opening summons
+    // Betsy (`:228-231`); the loss arm broadcasts `LoseInvasionMessage`
+    // (`:344-347`, the red `INFO_FAILURE_INVASION_COLOR`).
     if app.world.dd2_spawn_hold > 0 {
         app.world.dd2_spawn_hold -= 1;
-        if app.world.dd2_spawn_hold == 0 && app.world.dd2_lost {
-            app.chat.new_text(
-                crate::lang::text("DungeonDefenders2.InvasionLose"),
-                tr_core::dd2::INFO_FAILURE_INVASION_COLOR,
-            );
+        if app.world.dd2_spawn_hold == 0 {
+            if !app.world.dd2_lost {
+                // `:224`: `GetInvasionStatus` — the live wave (the win
+                // sentinel already rewrote it back to the last wave).
+                let tier = dd2_tier(app);
+                let wave = app.world.dd2_wave;
+                let (roster, _) = match tier {
+                    2 => tr_core::dd2::enemies_for_wave_t2(wave),
+                    3 => tr_core::dd2::enemies_for_wave_t3(wave),
+                    _ => tr_core::dd2::enemies_for_wave(wave),
+                };
+                app.chat.new_text(
+                    dd2_wave_text(wave, roster),
+                    tr_core::dd2::INFO_NEW_WAVE_COLOR,
+                );
+                // `:228-231`: the tier-3 wave-7 Betsy summon.
+                if wave == 7 && tier == 3 {
+                    dd2_summon_betsy(app);
+                }
+            } else {
+                app.chat.new_text(
+                    crate::lang::text("DungeonDefenders2.InvasionLose"),
+                    tr_core::dd2::INFO_FAILURE_INVASION_COLOR,
+                );
+            }
         }
     }
     // `NPC.AnyNPCs(548)`'s port: the lane gates' aiStyle-106 arm reads it
@@ -2460,15 +2735,34 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         .iter()
         .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.hp > 0);
     // The scene-end resolve (`AI`'s aiStyle-105 arm's
-    // `DD2Event.StopInvasion`, `NPC.cs:40956`): the event stops and the
-    // crystal goes. The loss form wipes the entities (`DD2Event.cs:308`);
-    // the win form's wipe belongs to the victory slice.
+    // `DD2Event.StopInvasion`, `NPC.cs:40798` win / `:40956` loss): the
+    // event stops and the crystal goes. `StopInvasion` (`DD2Event.cs:
+    // 293-312`) runs `WinInvasionInternal` FIRST when `win` (`:297-300`),
+    // then clears the counters and wipes the entities (`:301-308`) — the
+    // wipe is unconditional, both outcomes. The win arm reads the scene's
+    // crystal (`ai[1] == 2`, the win machine) or the `dd2_won` latch; the
+    // loss arm is everything else (`ai[1] == 1`, the loss machine). The
+    // two never both fire: `dd2_won` gates `dd2_report_kill` (`:364`) and
+    // the loss intercept refuses the winning crystal above.
     if app
         .npcs
         .iter()
         .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
     {
-        let was_lost = app.world.dd2_lost;
+        let win = app.world.dd2_won
+            || app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop && n.ai[1] == 2.0);
+        // `WinInvasionInternal` runs BEFORE `Ongoing = false` and BEFORE the
+        // wipe — the medals drop on the still-live crystal (`:297-308`).
+        if win {
+            dd2_win_invasion(app);
+        }
+        // The counter-clear + `Ongoing = false` is the SAME for both outcomes
+        // (`StopInvasion`'s body, `:301-307` — the `win` flag only gates the
+        // `WinInvasionInternal` call above), so the loss-named helper serves
+        // the win stop too.
         if tr_core::dd2::stop_invasion_loss(
             &mut app.world.dd2_event_ongoing,
             &mut app.world.dd2_wave,
@@ -2477,9 +2771,7 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
             app.world.dd2_spawn_hold = 0;
             app.npcs
                 .retain(|n| !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop));
-            if was_lost {
-                wipe_dd2_entities(app);
-            }
+            wipe_dd2_entities(app);
         }
     }
 }
@@ -2521,11 +2813,13 @@ pub(crate) fn wipe_dd2_entities(app: &mut App) {
 
 fn report_invasion_kill(app: &mut App, kind: NpcKind) {
     // The Old One's Army's wave progress (`DD2Event.CheckProgress`,
-    // `DD2Event.cs:366-392`) rides its own counter — the invasion
-    // framework's group gate does not apply.
+    // `DD2Event.cs:362-479`) rides its own counter and self-gates on
+    // `Ongoing` (`:364`) — the C# runs it (`NPC.cs:78230`) BEFORE the
+    // invasion group's match (`:78233`), which then runs regardless (a
+    // DD2 event carries `invasionType == 0`, so the group gate refuses
+    // there anyway).
     if app.world.dd2_event_ongoing {
         dd2_report_kill(app, kind);
-        return;
     }
     let group = npc_invasion_group(kind);
     if group <= 0 || group != app.world.invasion_type {
@@ -3764,6 +4058,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if npc.has_carrier() {
             continue;
         }
+        // `NPC.checkDead`'s DD2 crystal arms (`NPC.cs:79240-79278`,
+        // `DoDeathEvents`'s 552-578 rows — they run inside `NPCLoot`
+        // (`:78223` → `:78856`), BEFORE `CheckProgress` at `:78230`): the
+        // budget decision reads the pre-kill invasion pair, so the drop
+        // walk rides ahead of the kill report's wave advance. S1-E-12c.
+        dd2_crystal_drop(app, npc);
         report_invasion_kill(app, npc.kind);
         // `NPC.cs:78230-78232`'s death-site pair — `CheckProgressFrostMoon`
         // then `CheckProgressPumpkinMoon` — the C# runs them right after
@@ -4470,6 +4770,54 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut servants);
+    // B-6c (S1-E-12d): the crystal's lane-portal spawn (`NPC.cs:40744-40755`'s
+    // `localAI[0]` one-shot): the update pass set `wants_lane_portals` with
+    // `base.Bottom`, this pass runs the arena walker and spawns the two 549s
+    // — BEFORE the lane-spawn resolve below, so a portal created this tick
+    // enters the gate machine on the next one (the C#'s `NewNPC` slots
+    // update from the following `UpdateNPCs` frame too).
+    let mut portal_requests = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some(bottom) = n.wants_lane_portals.take() {
+            portal_requests.push(bottom);
+        }
+    }
+    for bottom in portal_requests {
+        // `StrayMethods.CheckArenaScore(base.Bottom, out xLeftEnd, out
+        // xRightEnd)` (`:40746`, `StrayMethods.cs:83-105`) — pure tile
+        // walk, ZERO RNG draws (census in `tr_core::stray`).
+        let (mut left_end, mut right_end) = tr_core::stray::check_arena_score(&app.world, bottom);
+        // `:40748-40749`: the ends nudge 2 tiles toward the centre.
+        left_end.0 += 2;
+        right_end.0 -= 2;
+        // `:40750-40753`: `NewNPC(xEnd.X, xEnd.Y, 549)` spawns Bottom-
+        // anchored at the tile corner (`NPC.cs:80770`), then `Bottom =
+        // end.ToWorldCoordinates(8, 16)` (`Utils.cs:1762-1765`: tile*16 +
+        // (8,16)) re-centres it — the net placement is `x = end.X*16 + 8 -
+        // 78/2`, `y = end.Y*16 + 16 - 130` (the 549 box, `NPC.cs:16037-
+        // 16038`). The right portal carries `ai[2] = 1` (`:40751`'s `1f`
+        // in `NewNPC`'s `ai2` slot — the `leftGate` flag the lane machine
+        // reads, `:40972`). `dontTakeDamage = true` is the 549's
+        // `SetDefaults` row (`NPC.cs:16049`).
+        for (end, right) in [(left_end, false), (right_end, true)] {
+            let mut gate = Npc::new(
+                NpcKind::DD2LanePortal,
+                end.0 as f32 * TILE_PX + 8.0 - 78.0 * 0.5,
+                end.1 as f32 * TILE_PX + 16.0 - 130.0,
+                1,
+                0.0,
+            );
+            gate.hp = gate.max_hp;
+            gate.dont_take_damage = true;
+            if right {
+                gate.ai[2] = 1.0;
+            }
+            app.npcs.push(gate);
+        }
+        // `DD2Event.FindArenaHitbox()` (`:40754`) — the arena rect feeds
+        // only `ShouldBlockBuilding` (`Player.cs:25963-25969`'s noBuilding
+        // + buff 199), unported; deferred with that pass (ANALYSIS).
+    }
     // The Old One's Army's lane spawns (`DD2Event.cs:556-570`'s
     // `SpawnMonsterFromGate`, whose `Difficulty_N_SpawnMonsterFromGate` picks
     // the wave's bodies): the update pass set `wants_dd2_spawn`, this pass
@@ -9960,6 +10308,198 @@ mod crystal_summon_tests {
 }
 
 #[cfg(test)]
+mod dd2_portal_wire_tests {
+    //! B-6c (S1-E-12d) witnesses — WRITTEN NOT RUN (code-only round).
+    //! The dead-code revival chain: crystal use → the 180-tick one-shot →
+    //! two 549 portals at the walker's ends → the landed lane machine
+    //! spawns the wave's bodies. Every citation re-read against the
+    //! decompiled source; the walker's maths pinned in `tr_core::stray`.
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The stand's ANCHOR tile at (150, 116), frame (0,0) — the real
+        // 5x4 stand's top row (`WorldGen.Place5x4`, `WorldGen.cs:60149`):
+        // the crystal's spawn point rides anchor*16 + (40, 64)
+        // (`DD2Event.cs:590-594`), so its Bottom lands on the floor row
+        // 120 exactly (116*16 + 64 = 1920) — the walker's start row.
+        let i = w.index(150, 116);
+        w.tiles[i].kind = 466;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 152.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app
+    }
+
+    fn summon(app: &mut App) {
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 116.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(crate::world_sim::editing::use_etherian_crystal(app));
+    }
+
+    #[test]
+    fn the_crystal_use_spawns_two_lane_portals_at_tick_180() {
+        // `NPC.cs:40734-40756`: the ai[0] countdown hits 0 on the 180th
+        // tick, `localAI[0]` latches and the two 549s spawn. The stand
+        // anchor (150, 116) → spawn point (2440, 1920) (`DD2Event.cs:
+        // 590-594`); the crystal's Bottom column is 2440/16 = 152, its
+        // row drops to the floor 120 (`CheckArenaScore`'s 4-down probe /
+        // the walker's 3-up skip, `StrayMethods.cs:89-90`/`:114-121`).
+        // The flat 300-wide world walks to the ±120 caps (`SendWalker`'s
+        // last spot is one step PAST the 120th advance), so the ends are
+        // 152-120+1+2 = 35 and 152+120-1-2 = 269 (`:97-98`'s ±1 + the
+        // caller's ±2, `NPC.cs:40748-40749`).
+        let mut app = base_app();
+        summon(&mut app);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DD2LanePortal),
+            "no portals before the countdown"
+        );
+        for _ in 0..179 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DD2LanePortal),
+            "179 ticks: the shield still holds, no portals"
+        );
+        update_npcs(&mut app, 1.0 / 60.0);
+        let portals: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::DD2LanePortal)
+            .collect();
+        assert_eq!(portals.len(), 2, "the two lane portals exist");
+        // `Bottom = end.ToWorldCoordinates(8, 16)` (`:40750-40753`), the
+        // 78x130 box (`NPC.cs:16037-16038`): x = end*16 + 8 - 39.
+        let left = portals.iter().find(|n| n.ai[2] == 0.0).unwrap();
+        let right = portals.iter().find(|n| n.ai[2] == 1.0).unwrap();
+        assert_eq!(left.x, 35.0 * 16.0 + 8.0 - 39.0, "the left end");
+        assert_eq!(right.x, 269.0 * 16.0 + 8.0 - 39.0, "the right end");
+        assert_eq!(left.y, 119.0 * 16.0 + 16.0 - 130.0, "Bottom anchored");
+        assert_eq!(right.y, left.y);
+        assert!(left.dont_take_damage && right.dont_take_damage);
+        // The one-shot: `localAI[0] = 1` (`:40747`) — 400 more ticks
+        // never re-spawn (the C#'s ai[0] rearm keeps counting, the
+        // localAI gate refuses).
+        for _ in 0..400 {
+            update_npcs(&mut app, 1.0 / 60.0);
+            let count = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::DD2LanePortal)
+                .count();
+            assert!(count <= 2, "the localAI[0] latch refuses a re-spawn");
+        }
+        let c = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .expect("the crystal stands (the gates' AnyNPCs(548) guard)");
+        assert_eq!(c.local_ai[0], 1.0);
+    }
+
+    #[test]
+    fn the_lanes_activate_once_the_portals_exist() {
+        // The dead-code-revived proof: with the portals live, the landed
+        // aiStyle-106 machine (`update_dd2_lane`) opens spawn attempts at
+        // the wave-1 rate (90, `DD2Event.cs:953-975`) and the tier-1 roll
+        // spawns the goblin (552) — the whole chain from the item use.
+        let mut app = base_app();
+        summon(&mut app);
+        // 180 (the portal spawn) + 300 (the StartInvasion hold, the
+        // counters park under it) + 90 (the first rate crossing).
+        for _ in 0..(180 + 300 + 91) {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::DD2GoblinT1),
+            "the lane machine spawns the wave's bodies in live play"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.wants_lane_right || n.ai[2] == 1.0),
+            "the right gate's flag rides"
+        );
+    }
+
+    #[test]
+    fn a_short_arena_refuses_the_use_with_the_bartender_warning() {
+        // `WouldFailSpawningHere` (`DD2Event.cs:603-613`): < 60 walkable
+        // tiles on either side refuses; `FailureMessage` (`:614-627`)
+        // broadcasts the yellow warning; nothing consumes.
+        let mut app = base_app();
+        // Wall off the right side 40 tiles out (x = 190, rows 100-119 —
+        // taller than the 3-up skip).
+        for y in 100..120 {
+            let i = app.world.index(190, y);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let camx = app.camera;
+        app.mouse_pos = {
+            let (w, h) = app.screen_size();
+            // The click lands ON the stand anchor tile (150, 116) — the
+            // C#'s myX/myY is the clicked 466 cell (`Player.cs:32401`);
+            // frameY 0 → num28 = 116+3 = 119, the walker's floor probe.
+            let wp = Vec2::new(150.0 * TILE_PX + 8.0, 116.0 * TILE_PX + 8.0);
+            let screen = Vec2::new(w, h) * 0.5;
+            (wp - camx) * app.zoom + screen
+        };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3828,
+            name: "Etherian Crystal".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !crate::world_sim::editing::use_etherian_crystal(&mut app),
+            "the 40-tile right span refuses"
+        );
+        assert!(!app.world.dd2_event_ongoing, "no event");
+        assert_eq!(app.inventory[app.selected].count, 1, "nothing consumed");
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.color == [255, 255, 0]
+                    && m.text == crate::lang::text("DungeonDefenders2.BartenderWarning")),
+            "the bartender warning rides"
+        );
+    }
+}
+
+#[cfg(test)]
 mod dd2_wave_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -10057,12 +10597,17 @@ mod dd2_wave_tests {
         assert!(!app.world.dd2_latches.dark_mage_t1);
         report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
         assert!(app.world.dd2_latches.dark_mage_t1, "`:1112`'s latch");
-        assert_eq!(app.world.dd2_wave, 6, "the boss kill passes the budget");
+        // `:998-1005`: the wave-6 sentinel rewrites the wave BACK to 5 and
+        // runs `StartVictoryScene` — `WonThisRun` latches (S1-E-12c).
+        assert_eq!(app.world.dd2_wave, 5, "the sentinel's rewrite (`:999`)");
         assert_eq!(app.world.dd2_wave_kills, 0.0);
-        // `:455-462`: the wave-completing report is the fresh 1/1 pair.
+        assert!(app.world.dd2_won, "WonThisRun (`:483`)");
+        // `:384-395`: the win arm's report is the sentinel's 1/1 pair under
+        // the rewritten wave; no 1800-tick break (`:404` never runs).
         assert_eq!(app.invasion_progress, 1);
         assert_eq!(app.invasion_progress_max, 1);
         assert_eq!(app.invasion_progress_wave, 5);
+        assert_eq!(app.world.dd2_spawn_hold, 0, "the win takes no break");
     }
 
     #[test]
@@ -10088,7 +10633,9 @@ mod dd2_wave_tests {
         assert_eq!(app.invasion_progress_max, 0);
         report_invasion_kill(&mut app, NpcKind::DD2OgreT2);
         assert!(app.world.dd2_latches.ogre_t2, "`:1205`'s latch");
-        assert_eq!(app.world.dd2_wave, 8, "the Ogre passes the budget");
+        // `:1186-1193`: the tier-2 wave-8 sentinel rewrites to 7 and wins.
+        assert_eq!(app.world.dd2_wave, 7, "the sentinel's rewrite (`:1187`)");
+        assert!(app.world.dd2_won, "WonThisRun (`:483`)");
     }
 
     #[test]
@@ -10157,9 +10704,11 @@ mod crystal_death_tests {
 
     #[test]
     fn the_crystal_win_death_stops_the_army() {
-        // `AI`'s aiStyle-105 arm's win-death (`NPC.cs:40959-40966`):
-        // `ai[0] >= 600` → `DD2Event.StopInvasion` + `life = 0` — via
-        // update_dd2_event's resolve the event clears and the crystal goes.
+        // `AI`'s aiStyle-105 WIN-scene arm (`NPC.cs:40796-40803`,
+        // `ai[1] == 2`): `ai[0] >= 600` → `DD2Event.StopInvasion(win: true)`
+        // + `life = 0` — via update_dd2_event's resolve the event clears
+        // and the crystal goes. S1-E-12c: the scene entry is the win
+        // sentinel's `(2,2)` flip (the old ai[1] == 0 hack is gone).
         let mut app = base_app();
         let mut player = Player::spawn(&app.world);
         player.x = 160.0 * TILE_PX;
@@ -10172,8 +10721,10 @@ mod crystal_death_tests {
             0.0,
         );
         n.hp = n.max_hp;
+        n.ai[1] = 2.0; // the win scene
         n.ai[0] = 599.0;
         app.world.dd2_event_ongoing = true;
+        app.world.dd2_won = true;
         app.world.dd2_spawn_hold = 0;
         app.npcs.push(n);
         app.player = Some(player);
@@ -10467,6 +11018,359 @@ mod dd2_loss_tests {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
         assert_eq!(n.alpha, 255, "the fade caps at 255");
+    }
+}
+
+/// S1-E-12c — the victory wiring's witnesses (WRITTEN, NOT RUN — the
+/// code-only round): the win sentinel fires once, the medals pay per tier,
+/// the crystal budget paces the drops, and the win never double-fires with
+/// the loss path.
+#[cfg(test)]
+mod dd2_victory_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_spawn_hold = 0;
+        app
+    }
+
+    fn crystal(app: &mut App) {
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.caster_counter = 200; // past the spawn-in shield
+        app.npcs.push(n);
+    }
+
+    fn portal(app: &mut App) {
+        let mut n = Npc::new(
+            NpcKind::DD2LanePortal,
+            140.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+    }
+
+    fn medal_stacks(app: &App) -> Vec<u32> {
+        app.items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::MEDAL_ITEM)
+            .map(|d| d.count)
+            .collect()
+    }
+
+    fn win_broadcasts(app: &App) -> usize {
+        app.chat
+            .messages
+            .iter()
+            .filter(|m| m.color == tr_core::dd2::INFO_START_INVASION_COLOR)
+            .count()
+    }
+
+    #[test]
+    fn the_win_sentinel_fires_once_and_the_scene_stops_the_army() {
+        // `CheckProgress`'s second `GetInvasionStatus` (`DD2Event.cs:381`)
+        // → the tier-1 wave-6 sentinel (`:998-1005`) → `StartVictoryScene`
+        // (`:481-505`): WonThisRun latches, the crystal flips to (2,2),
+        // every portal to (0,1). The 600-tick scene end (`NPC.cs:
+        // 40796-40803`) runs `StopInvasion(win: true)` → `WinInvasionInternal`
+        // (`:314-342`): the tier-1 latch + 3 medals + the green broadcast,
+        // then the counters clear and `WipeEntities` sweeps. A second pass
+        // adds nothing — the win fires ONCE.
+        let mut app = base_app();
+        crystal(&mut app);
+        portal(&mut app);
+        app.world.dd2_wave = 5;
+        app.world.dd2_wave_kills = 139.0;
+        report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
+        assert!(app.world.dd2_won, "WonThisRun (`:483`)");
+        assert_eq!(app.world.dd2_wave, 5, "the sentinel rewrite (`:999`)");
+        assert_eq!(app.world.dd2_spawn_hold, 0, "no break on the win arm");
+        let c = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        assert_eq!((c.ai[0], c.ai[1]), (2.0, 2.0), "`:493-494`");
+        let g = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2LanePortal)
+            .unwrap();
+        assert_eq!((g.ai[0], g.ai[1]), (0.0, 1.0), "`:500-501`");
+        // The won gate (`:364`): further kills score nothing.
+        let kills = app.world.dd2_wave_kills;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave_kills, kills);
+        assert!(medal_stacks(&app).is_empty(), "no medals before the stop");
+        // One tick from the scene's end: the machine writes the stop
+        // request, the resolve pays the win.
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].ai[0] = 599.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "StopInvasion (`:301`)");
+        assert!(app.world.dd2_downed_t1, "the tier-1 latch (`:318`)");
+        assert!(!app.world.dd2_downed_t2 && !app.world.dd2_downed_t3);
+        assert_eq!(medal_stacks(&app), vec![3], "DropMedals(3) (`:330`)");
+        assert_eq!(win_broadcasts(&app), 1, "InvasionWin (`:341`)");
+        assert!(
+            !app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DD2EterniaCrystal),
+            "the crystal's real death (`NPC.cs:40800-40801`)"
+        );
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::DD2LanePortal),
+            "WipeEntities (`:308`)"
+        );
+        // The second pass: no second broadcast, no second medal stack.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(win_broadcasts(&app), 1, "the win fires once");
+        assert_eq!(medal_stacks(&app), vec![3]);
+    }
+
+    #[test]
+    fn the_medals_pay_per_tier() {
+        // `WinInvasionInternal` (`:328-340`): tier 2 → 15, tier 3 → 60
+        // (tier 1's 3 rides the once-test above). The tier-3 arm also fires
+        // progression event 23 (`:338`) — the achievement seam.
+        for (tier, medals) in [(2, 15u32), (3, 60u32)] {
+            let mut app = base_app();
+            crystal(&mut app);
+            app.world.hard_mode = true;
+            if tier == 2 {
+                app.world.downed_mech_boss1 = true;
+                app.world.dd2_wave = 7;
+                app.world.dd2_wave_kills = 219.0;
+                report_invasion_kill(&mut app, NpcKind::DD2OgreT2);
+            } else {
+                app.world.downed_golem = true;
+                app.world.dd2_wave = 7;
+                // No live Betsy: the budget's `-1` arm is 1 (`:1489-1492`),
+                // so the Betsy kill (worth 1, `:1513`) passes it.
+                app.world.dd2_wave_kills = 0.0;
+                report_invasion_kill(&mut app, NpcKind::DD2Betsy);
+            }
+            assert!(app.world.dd2_won, "tier {tier}: the sentinel wins");
+            let ci = app
+                .npcs
+                .iter()
+                .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+                .unwrap();
+            app.npcs[ci].ai[0] = 599.0;
+            update_npcs(&mut app, 1.0 / 60.0);
+            assert_eq!(medal_stacks(&app), vec![medals], "tier {tier}");
+            assert!(app.world.dd2_downed_t1, "tier {tier}: `>= 1` latches");
+            assert_eq!(app.world.dd2_downed_t2, tier >= 2, "`>= 2`");
+            assert_eq!(app.world.dd2_downed_t3, tier >= 3, "`>= 3`");
+        }
+    }
+
+    #[test]
+    fn the_wave_complete_medal_rows_pay_on_the_new_wave() {
+        // `CheckProgress` (`:405-449`): the tier-1 wave 3→4 completion pays
+        // `DropMedals(1)` (`:413`), broadcasts `WaveComplete` in
+        // `INFO_NEW_WAVE_COLOR` (`:403`) and arms the 1800-tick break
+        // (`:404`). The wave-2 opening takes the `WaveCompleteFirst` key.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_wave = 3;
+        app.world.dd2_wave_kills = 99.0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 4);
+        assert!(!app.world.dd2_won, "wave 4 is not the sentinel");
+        assert_eq!(medal_stacks(&app), vec![1], "`:413`'s DropMedals(1)");
+        assert_eq!(
+            app.world.dd2_spawn_hold,
+            tr_core::dd2::SPAWN_HOLD_WAVE_BREAK
+        );
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.color == tr_core::dd2::INFO_NEW_WAVE_COLOR
+                    && m.text == crate::lang::text("DungeonDefenders2.WaveComplete")),
+            "the wave-complete broadcast (`:403`)"
+        );
+        // The wave-1→2 opening: the First key, no medal row.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_wave = 1;
+        app.world.dd2_wave_kills = 59.0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave, 2);
+        assert!(medal_stacks(&app).is_empty(), "no row for wave 2");
+        assert!(
+            app.chat.messages.iter().any(|m| m.text
+                == crate::lang::text("DungeonDefenders2.WaveCompleteFirst")),
+            "`:399-402`'s key swap"
+        );
+    }
+
+    #[test]
+    fn the_crystal_budget_paces_the_kill_drops() {
+        // `ShouldDropCrystals` (`:815-912`) through the checkDead caller
+        // (`NPC.cs:79246-79248`): tier 1 wave 1, budget 20, required 60 —
+        // at 30 kills the pace is 20 * 30/60 = 10 energy-crystal drops,
+        // each one 3822 at the body's centre. The decision draws no RNG;
+        // the spawns ride the caller's stream (the core module's witness).
+        let mut app = base_app();
+        app.world.dd2_wave = 1;
+        let dead = Npc::new(NpcKind::DD2GoblinT1, 100.0, 100.0, 1, 0.0);
+        for kills in 0..=30 {
+            app.world.dd2_wave_kills = kills as f32;
+            dd2_crystal_drop(&mut app, &dead);
+        }
+        let crystals: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM)
+            .collect();
+        assert_eq!(crystals.len(), 10, "20 * 30/60");
+        assert!(crystals.iter().all(|d| d.count == 1), "one per drop");
+        assert_eq!(app.world.dd2_crystal_drops.already_dropped, 10);
+        assert_eq!(app.world.dd2_crystal_drops.to_drop, 20);
+        // Past the pace: no more drops at the same progress.
+        dd2_crystal_drop(&mut app, &dead);
+        assert_eq!(
+            app.items
+                .iter()
+                .filter(|d| d.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM)
+                .count(),
+            10
+        );
+        // Betsy (551) has no checkDead arm — no budget draw, no drop.
+        let betsy = Npc::new(NpcKind::DD2Betsy, 100.0, 100.0, 1, 0.0);
+        app.world.dd2_wave_kills = 60.0;
+        dd2_crystal_drop(&mut app, &betsy);
+        assert_eq!(app.world.dd2_crystal_drops.already_dropped, 10);
+    }
+
+    #[test]
+    fn the_loss_stop_never_pays_the_win() {
+        // The loss scene's 600-tick end (`NPC.cs:40954-40967`) runs
+        // `StopInvasion()` — win: false. No medals, no green broadcast, no
+        // tier latches; the red loss message already rode the hold's zero
+        // crossing. Victory must not double-fire with loss.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_lost = true;
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].ai[1] = 1.0;
+        app.npcs[ci].ai[0] = 599.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the loss stop runs");
+        assert!(!app.world.dd2_won);
+        assert!(medal_stacks(&app).is_empty(), "no medals on the loss");
+        assert_eq!(win_broadcasts(&app), 0, "no InvasionWin on the loss");
+        assert!(
+            !app.world.dd2_downed_t1 && !app.world.dd2_downed_t2 && !app.world.dd2_downed_t3,
+            "no tier latches on the loss"
+        );
+    }
+
+    #[test]
+    fn the_winning_crystal_cannot_enter_the_loss_scene() {
+        // The win machine holds `life = lifeMax` every tick (`NPC.cs:
+        // 40760-40761`), so the checkDead intercept (`:78087`) never sees
+        // a winning crystal; the resolve's `ai[1] != 2` guard pins it. A
+        // zero-hp winning crystal stays in the win scene — no ReportLoss.
+        let mut app = base_app();
+        crystal(&mut app);
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].ai[1] = 2.0;
+        app.npcs[ci].ai[0] = 10.0;
+        app.npcs[ci].hp = 0; // the forced edge the guard refuses
+        update_dd2_event(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_lost, "no loss on the winning crystal");
+        assert_eq!(app.npcs[ci].ai[1], 2.0, "the win scene holds");
+        assert_eq!(app.npcs[ci].hp, 0, "the intercept did not refill it");
+    }
+
+    #[test]
+    fn the_break_expiry_broadcasts_the_wave_and_summons_betsy_once() {
+        // `UpdateTime` (`:219-236`): the hold's zero crossing with
+        // `!LostThisRun` broadcasts `Lang.GetInvasionWaveText` on the
+        // tier's roster in `INFO_NEW_WAVE_COLOR`; the tier-3 wave-7
+        // opening summons Betsy once (`SummonBetsy`, `:914-927` —
+        // `_spawnedBetsyT3`).
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.hard_mode = true;
+        app.world.downed_golem = true;
+        app.world.dd2_wave = 7;
+        app.world.dd2_spawn_hold = 1;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.dd2_spawn_hold, 0);
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.color == tr_core::dd2::INFO_NEW_WAVE_COLOR),
+            "the new-wave broadcast (`:227`)"
+        );
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::DD2Betsy && n.hp > 0)
+                .count(),
+            1,
+            "SummonBetsy (`:230`)"
+        );
+        assert!(app.world.dd2_betsy_spawned, "`:925`'s latch");
+        // A second crossing: the broadcast rides again, Betsy does not.
+        app.world.dd2_spawn_hold = 1;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::DD2Betsy && n.hp > 0)
+                .count(),
+            1,
+            "the latch refuses a second summon"
+        );
     }
 }
 
