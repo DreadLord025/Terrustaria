@@ -6815,6 +6815,80 @@ notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
 
+## The decorations split (S1-K-3c)
+
+The second themed group of the S1-K-3 `growth.rs` split (after the tree
+family → `growth/trees.rs`), executed in **code-only mode**: file
+reads/writes + git only — no cargo/rustc/rustfmt/tests were invoked, so
+the byte-equality of the move is proven mechanically instead of by the
+world-hash pins (those run when the branch merges, per MAIN-RULES §1).
+
+**What moved** (verbatim, from `origin/main:crates/tr-core/src/growth.rs`
+at `bfe68db8`):
+
+- Functions block, origin lines **3849–4526** (678 lines): the
+  `CAT_TAIL_DISTANCE` const, the `cell`/`nactive` accessors,
+  `check_cat_tail` (`WorldGen.cs:58744-58930`), `grow_cat_tail`
+  (`:58974-59082`), `grow_check_seaweed` (`:58917-58973`), `grow_web`
+  (`:74088-74122`), `DYE_FREE_SIDES`, `place_dye` (`:53988-54065`),
+  `try_growing_abigails_flower` (`:73049-73073`),
+  `has_valid_ground_for_abigails_flower_below_spot` (`:73026-73046`),
+  `no_nearby_abigails_flower` (`:73076-73095`), `plant_dye`
+  (`:71286-71436`) and `dye_density_blocked` (`:71310-71322`) — with
+  every doc-comment cite.
+- Tests block, origin lines **2495–2954** (460 lines, 12 tests): the
+  three cattail tests, the two seaweed tests, the dungeon-web test, the
+  three dye-plant tests, the dispatcher-arrival test and the two
+  Abigail's-flower tests — moved unchanged, NOT run (code-only mode).
+
+Into `growth/decorations.rs` (1 166 lines with the module header and the
+test scaffolding); `growth.rs` 4 651 → 3 517 lines.
+
+**Seams (the only byte changes inside the moved blocks):** `grow_web`
+and `try_growing_abigails_flower` were private but are called by the
+staying dispatchers (`update_world_underground_tile` `:73803-73806` web
+arm; `update_world_overground_tile` `:72063-72067` tombstone arm), so
+they gain `pub(super)` — the same visibility-seam pattern the tree split
+used on `kill_invalid_tree_above`. The five pub fns (`check_cat_tail`,
+`grow_cat_tail`, `grow_check_seaweed`, `place_dye`, `plant_dye`) are
+re-exported from `growth`, so every caller path is unchanged (there are
+no callers outside `growth.rs` — verified by `git grep` over the whole
+workspace; `worldgen/ocean.rs`'s `grow_check_seaweed` is its own private
+worldgen twin, untouched). The test scaffolding follows the trees
+precedent: `world`/`put` come from `growth::test_fixtures`, the two
+dispatchers are imported from `crate::growth`, and the 4-line `set_wall`
+test helper is copied verbatim (the staying wall-arm tests keep theirs).
+
+**Byte-equality proof (mechanical string diff, file ops only).** The move
+was performed by a Python script that slices the origin blob
+(`git show origin/main:crates/tr-core/src/growth.rs`, LF bytes) by line
+range and re-assembles both files; the same script then re-reads the
+written files from disk and checks:
+
+1. Functions block in `decorations.rs` == origin block + exactly the two
+   `pub(super)` insertions — SHA256 of origin block
+   `93a12bd3a35e1a9c1a7e38a02aab073668de3d8b39936427c330505531af0b58`,
+   of origin+seams and of the moved block both
+   `a720374c64cd0b5e353b4c4ab9203933833646c756762d0037c8eb522192692f`.
+   Reversing the two seam edits restores the origin bytes exactly.
+2. Tests block == origin block byte-for-byte, zero changes — SHA256
+   `bbe030ea87b208dcbdc5450ae3608cbfb7c2d25ec2adcdc99b48f45e7f54849b`
+   on both sides.
+3. New `growth.rs` == origin minus the two deleted ranges plus the six
+   added lines (`mod decorations;`, the comment pair, the `pub use` and
+   the private `use`) — byte-for-byte reconstruction check passed.
+4. Every staying `growth.rs` line is unchanged and in order (line-list
+   equality after removing the added lines).
+
+Origin blob SHA256 `b12149972c1da57eb42fc816e1f3eaab10b0370436f065302352e8b2b38ad322`;
+new `growth.rs` `f66f6c41a3e4e8fd0adef769d1bccb7fb0faa37fe5a290c65f72644ead734d83`;
+`decorations.rs` `d124bf15474e92882c445bd925e209d5d046feabdc1becd4eb251ef33bfe0ffb`.
+All five checks printed `True` / `ALL PROOF CHECKS PASSED`. No rustfmt
+was run; the moved bytes keep the origin formatting. Compile + the
+workspace tests + the world-hash pins are deferred to the merge pass
+(MAIN-RULES §1); the sibling grass/spread split (`task/S1-K-3b`) owns
+that group — this branch does not touch it.
+
 ## Worldgen pass pipeline (M5-GEN-1)
 
 The scaffold wraps the already-landed passes in the vanilla pipeline shape
@@ -16960,7 +17034,8 @@ feed cannot change the fixed-step order or any stream.
   divergence that a later refactor could misread as a *missing* port. The
   Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
   under water where a plain torch goes dark.
-* **Remaining source families.** Projectile (107 call sites), Player (46),
+* **Remaining source families.** Projectile (107 call sites — the `ProjLight`
+  chain's common tail `:16659` landed 2026-11-18, see below), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
@@ -17020,6 +17095,7 @@ Imp's else-arm centre light, and the dark casters; `npc.rs`'s
 `the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
 the skipped volley; the protocol round-trip roster grew 198 → 199.
 
+<<<<<<< HEAD
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
@@ -17107,6 +17183,98 @@ in `player_lights.rs` (18, incl. the biome-zone order, the unlock gate, the
 slot-range walk, the holdStyle-6 anchor and the negative-coordinate
 truncation) are written but **not run**; the first build after the merge
 must run `cargo test -p tr-app player_lights` plus the catalog command.
+=======
+### The projectile family (S1-E-5, 2026-11-18)
+
+**Code-only mode**: this round ran with no compiler invoked — no `cargo`, no
+`rustc`, no `rustfmt`, no test runs, no graphify. The port and its tests are
+written but not executed; verification is the C# citations plus the witness
+tests below, to be run by the next build pass.
+
+`crates/tr-app/src/proj_lights.rs::proj_light` ports `Projectile.ProjLight`
+(`Projectile.cs:16153-16661`) — the per-type colour chain that multiplies the
+slot's `light` amount into one `AddLight` at the integer-halved centre
+(`:16659`). `Update` calls it once per movement sub-step (`:17031`), after
+`HandleMovement` and the active re-check (`:17027-17030`). The feed is ONE loop
+in `app/frame/draw.rs` beside the item and NPC feeds, after the step, in
+`Main.projectile` slot order, into the **same** `EntityLights` pair (the pair is
+not duplicated); the one-frame delay is the existing `end_frame`/`visible`
+machinery. Of the Projectile family's **107 call sites, the chain's common tail
+landed**, serving every chain arm whose kind has a `proj_data` row — 36 kinds:
+the torch/bullet commons (2 FlameArrow, 6 EnchantedBoomerang, 14/110/180 the
+`:16338` bullet arm), the hooks (73/74 DualHook, 332 Christmas, 446 AntiGravity,
+488 Illuminant), the magic family (15/16/27/34/94/95/96/113/114/115/116/132/156/
+157/173/253/254/308/1134), the lasers (20/83/88/100/389), 45 DemonScythe, 79
+RainbowRodBullet (the `Main.DiscoR/G/B` overwrite rides `LightParams::disco`),
+80 IceBlock, 259 GolemEyeBeam (the `Main.getGoodWorld` blackout `:16237-16242`
+rides the world's For-the-Worthy seed flag) and 180 PirateArrow.
+
+**The amount's journey.** `Projectile.light` (`:378`/`:773`'s stock `0f`) rides a
+new `light: f32` field on `ProjData` + `Projectile`; the `SetDefaults` slice is
+`projectile.rs::set_defaults_light` (36 rows, each cited to its `this.light =`
+line), copied onto the slot by the data-carrying spawn. The aiStyle-24 arm
+rewrites its shard's amount per tick — `this.light = this.scale * 0.5f`
+(`:25953`) — now live in `ai_crystal_storm`, **before** that tick's fade, so a
+faded shard's frame contribution reads the pre-fade scale's half.
+
+**Stream neutrality (by construction).** `proj_light` is pure — it takes no RNG
+and no ported arm draws `Main.rand`. The two rand-bearing chain arms (867
+`:16217`, 1000 `:16224` — `Main.rand.Next(28, 42)`) have **no `proj_data` rows**,
+so no slot can ever reach them; they are absent wholesale and the
+`UpdateProjectiles` stream is untouched. The feed's placement after the step is
+therefore list-order-only (the item/NPC argument above applies verbatim). The
+witness test `test_s1_e_5_the_light_feed_leaves_the_rng_stream_untouched`
+interleaves the feed with 60 seeded steps and pins the stream state against a
+feed-less run.
+
+**The centre anchor is exact, not approximate.** `:16659` halves the **integer**
+width/height before the float cast (`(float)(width / 2)`); `XAnchor::Center`
+halves in float. The forms differ only for odd sides — and every lit
+`proj_data` row has even sides (the only odd-sided row, 449 SaucerLaser 5×5,
+carries no light). `proj_center_matches_the_float_anchor_for_every_lit_row`
+walks `spawnable_kinds()` and pins both the even-side invariant and the
+anchor agreement at a fractional position.
+
+**What stays dropped, exactly:**
+
+* The 870 Jack 'O Lantern's `FloodFillTile` + `AddLight` pair (`:16648-16656`):
+  no row, and the flood fill has no port.
+* The RNG arms 867/1000 (`:16215-16228`): no rows; absent wholesale (above).
+* The disco arms 993 (`:16194-16198`, the glowstick-bobber `switch`), 1089
+  (`:16434-16439`) and 251 (`:16630-16641`, the `(disco+1)/2 × light` form):
+  no rows — cheap follow-ups once their kinds land (`LightParams::disco` is
+  already threaded for the 79 arm).
+* The 211 Shadowbeam arm (`:16601-16614`) **writes** `this.light` (1.5/1.0 by
+  `localAI[0]`): no row, and a write inside the draw-pass feed would be a state
+  mutation — it lands with its AI.
+* The 209 alpha-scaled arm (`:16615-16623`): no row.
+* The per-tick `light` writers outside `ProjLight`: the aiStyle-5 writers
+  (`:23982`/`:24053` — kinds 12/955/92, none with rows; the gem bolts ride
+  aiStyle 29, not this chain) and the aiStyle-8 tail's **502 disco light**
+  (`:24302-24307` — `(0.5 + DiscoX/255)/2` per channel at `base.Center`, NOT
+  scaled by `light`; the kind has no row, `ai_ball_of_fire` already skips the
+  block). The FlameArrow's water transform (`:16822-16826` — `TransformType(1)`
+  + `light = 0f`) drops with the projectile-water work: **until it lands, a wet
+  FlameArrow keeps its light where the C# zeroes it** — a recorded deviation.
+* The remaining **~105 non-`ProjLight` AI-arm call sites** (the mount's
+  `:17343`, the electrification particles `:78556`, the boss/summon AI lights
+  `:24877`/`:39020-39021`, etc.): each needs its AI family or a rand-bearing
+  dust arm first.
+* The WaterBolt 27's `:16380-16385` colour arm is ported but **unreachable**:
+  its `SetDefaults` arm (`:1095-1105`) writes no `this.light`, so the slot keeps
+  the `0f` reset and `ProjLight` early-returns — dead code in the C# too. The
+  missing `set_defaults_light` row is faithful; the witness test
+  `test_s1_e_5_the_water_bolt_has_no_set_defaults_light` pins it.
+
+Tests (written, **not run** — code-only mode): `proj_lights.rs` pins the
+`light > 0f` gate (incl. NaN/negative), the 14/110/180 bullet commons, the
+absolute-colour arms (15/16/27/45/173/253/488), the 79 disco params, the 259
+good-world blackout (the zeroed light is still appended), the 94/1134 shard
+colours, the laser/hook arm colours, the negative-coordinate truncation and the
+even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
+spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
+dark WaterBolt and the stream-neutrality witness.
+>>>>>>> origin/main
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
