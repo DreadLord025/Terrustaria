@@ -24834,8 +24834,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            251,
-            "every decodable kind resolves (the wire roster's size - 251 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four)"
+            252,
+            "every decodable kind resolves (the wire roster's size - 252 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail)"
         );
         assert!(
             covered > 43,
