@@ -3198,6 +3198,69 @@ pub(crate) fn draw_npcs(
 mod anchor_tests {
     use super::*;
 
+    /// fix/player-motion-blur — the entity-snapping invariant: an unrotated
+    /// sprite's top-left lands on a WHOLE screen pixel at every zoom, even
+    /// with a fractional camera and a fractional world position. The C#
+    /// equivalent is the layers' `(int)(Position - Main.screenPosition + …)`
+    /// truncation (`PlayerDrawLayers.cs:1907/1939`) over the `(int)`-truncated
+    /// `Main.screenPosition` (`Main.cs:62646-62647`) under `PointClamp`
+    /// (`Camera.cs:44`, `Main.cs:2774-2784`) — whole pixels + nearest sampling
+    /// = pixel-perfect motion. The snap moves the sprite by at most half a
+    /// screen pixel per axis.
+    #[test]
+    fn entity_sprites_snap_to_whole_screen_pixels() {
+        let screen = Vec2::new(1280.0, 720.0);
+        for zoom in [1.0f32, 1.5, 2.0] {
+            for cam in [
+                Vec2::new(1000.37, 2000.61),
+                Vec2::new(-17.5, 3.25),
+                Vec2::new(640.0, 360.0),
+            ] {
+                let pos = [1234.567f32, 2345.891];
+                let snapped = snap_to_screen(pos, cam, zoom, screen);
+                let sx = (snapped[0] - cam.x) * zoom + screen.x * 0.5;
+                let sy = (snapped[1] - cam.y) * zoom + screen.y * 0.5;
+                assert!(
+                    (sx - sx.round()).abs() < 1e-3 && (sy - sy.round()).abs() < 1e-3,
+                    "zoom {zoom}, cam {cam:?}: snapped screen pos ({sx}, {sy}) must be whole pixels"
+                );
+                let raw_sx = (pos[0] - cam.x) * zoom + screen.x * 0.5;
+                let raw_sy = (pos[1] - cam.y) * zoom + screen.y * 0.5;
+                assert!(
+                    (sx - raw_sx).abs() <= 0.5 + 1e-3 && (sy - raw_sy).abs() <= 0.5 + 1e-3,
+                    "the snap never moves a sprite more than half a screen pixel"
+                );
+            }
+        }
+    }
+
+    /// fix/player-motion-blur — the draw reads the RAW fixed-step player, no
+    /// between-tick blend: `Main.DrawPlayers` hands `player.position` to the
+    /// renderer (`Main.cs:22298` → `LegacyPlayerRenderer.cs:468-475`, no
+    /// `oldPosition` lerp anywhere on that path). The removed
+    /// `Player::interpolated` moved the sprite to sub-pixel offsets between
+    /// the snapped integer camera steps and re-rasterised the nearest-sampled
+    /// art on a shifted grid every frame — the "character smears during any
+    /// movement" bug. Pin both ends so the blend cannot silently return.
+    #[test]
+    fn the_player_draw_has_no_between_tick_interpolation() {
+        let draw = include_str!("../app/frame/draw.rs");
+        assert!(
+            !draw.contains(".interpolated("),
+            "draw_region must clone the raw fixed-step player, not blend it"
+        );
+        let player = include_str!("../player.rs");
+        assert!(
+            !player.contains("pub fn interpolated"),
+            "Player::interpolated was removed — the C# has no render blend"
+        );
+        let follow = include_str!("../world_sim/player.rs");
+        assert!(
+            !follow.contains(".interpolated("),
+            "the camera follow targets the raw position (Main.cs:62567-62570)"
+        );
+    }
+
     /// A bare NPC at the spawn point (the port's test helper).
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)

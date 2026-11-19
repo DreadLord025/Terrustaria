@@ -13080,6 +13080,14 @@ impl ProjectilePool {
                     // S1-D-5's fn-scoped `#[deny(unreachable_patterns)]` on
                     // `update` already covers this match (deduped at merge —
                     // one attribute per match, S1-D-4c's rule).
+                    // The Frost Moon bosses' hostile shots (S1-F-13c wiring):
+                    // the seven kinds the Everscream/IceQueen/SantaNK1 machines
+                    // queue ride their own per-type AI_001/14/58 arms
+                    // (`projectile_frost_shots.rs`) — the generic aiStyle-1
+                    // flight / `_ => {}` no-op would mis-fly every one of them.
+                    if crate::projectile_frost_shots::handles(self.slots[i].kind) {
+                        crate::projectile_frost_shots::frost_shot_step(&mut self.slots[i], world);
+                    } else {
                     match data.ai_style {
                         // The aiStyle-1 riders of M4-PROJ-6 Phase 3 gate
                         // ahead of the generic arm: the Book of Skulls and
@@ -15098,10 +15106,12 @@ impl ProjectilePool {
                         }
                         _ => {}
                     }
+                    }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
                     // ported arrow/bomb/shuriken arms keep their pre-existing
                     // no-wind behaviour — a recorded deviation, not a fix).
+                    // The frost-shot kinds (1/14/58) are not wind-eligible.
                     if uses_wind_physics(data.ai_style) {
                         self.slots[i].wind_tail(world, self.wind_speed);
                     }
@@ -16318,9 +16328,19 @@ mod tests {
         // follow-ups). 185's old aiStyle-1 mislabel is fixed — style 14 is
         // armed, so the spiky ball is NOT in this list.
         const UNARMED_ROWED: [u8; 6] = [31, 120, 147, 181, 193, 194];
+        // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
+        // KIND-gated `projectile_frost_shots::handles` arm ahead of the
+        // aiStyle dispatch — their styles are armed there, not in the
+        // style match (the Present's aiStyle 58 lives only in that module).
+        let frost_gated: std::collections::BTreeSet<u8> = (0..=2048u16)
+            .filter(|&k| crate::projectile_frost_shots::handles(k))
+            .filter_map(|k| proj_data(k).map(|d| d.ai_style))
+            .collect();
         for style in &rowed {
             assert!(
-                counts.contains_key(style) || UNARMED_ROWED.contains(style),
+                counts.contains_key(style)
+                    || UNARMED_ROWED.contains(style)
+                    || frost_gated.contains(style),
                 "aiStyle {style} has a data row but no dispatch arm and no census entry"
             );
         }

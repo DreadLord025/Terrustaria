@@ -1,15 +1,17 @@
 //! The aiStyle-27 arm — the Wall of Flesh (`NPC.AI()`'s
 //! `else if (this.aiStyle == 27)` block, `NPC.cs:25635-26052`, 418 lines).
 //!
-//! S1-D-3 (aiStyle-27 round, code-only mode): this module is the faithful
-//! 1:1 port of the arm as a pure function over `Npc` + a small context
-//! seam. It is NOT wired into `Npc::update_rng`'s style axis yet — the
-//! live `npc.rs::update_wof` + the sim's WoF write-through
-//! (`world_sim/npcs.rs:3557-3652`) keep running byte-identical until the
-//! wiring round (the sibling D-3 rounds land the same way: module +
-//! tests first, dispatch claim second — `npc_ai_style29.rs`/f1701eb0,
-//! style-28/040df4c5). Every other file is byte-identical except the one
-//! `mod` line in `main.rs` and the docs.
+//! S1-D-3 (aiStyle-27 round): this module is the faithful 1:1 port of the
+//! arm as a pure function over `Npc` + a small context seam.
+//! **WIRED (S1-D-3 W-1)**: `Npc::update_rng`'s style axis claims 27 →
+//! `npc.rs::ai_027_wof_family` → `style27_step`; the defective
+//! `update_wof` stand-in is retired and the sim's catastrophic
+//! every-tick eye/Hungry respawn loop is replaced by the one-shot init
+//! drain (`world_sim/npcs.rs`, the `wof_spawns` resolve). The wiring
+//! passes the `UpdateNPCs` stream as `ctx.rng` (the roar cadence's draws
+//! ride the C#'s `Main.rand` swap, `Main.cs:17767-17769`), the World's
+//! INT band statics through the in-out seam and the sim pre-pass's live
+//! counts; the spawn requests resolve with the `NewNPC` Bottom placement.
 //!
 //! The only type on this style is `NPCID.WallOfFlesh` (113); its
 //! `SetDefaults` row (`NPC.cs:10342-10360`): 100×100 base × scale 1.2 →
@@ -133,8 +135,8 @@
 //!   out-field the caller writes back to the World presence seam.
 //! * The band statics are INTs in the C# (`Main.cs:757`/`:759`); the
 //!   context carries them as `i32` and the caller owns the write-back
-//!   (the port's `World.wof_draw_top/bottom` are f32 today — the wiring
-//!   round converts or adds int shadows).
+//!   (S1-D-3 W-1 converted `World.wof_draw_top/bottom` f32 → i32; the
+//!   sim copies the arm's staged values right after the wall's update).
 //! * `NPC.NewNPC` spawns are REQUESTS (`Style27Spawn`), resolved by the
 //!   caller in C# order: leech (`:25712`), respawn Hungry (`:26036`),
 //!   then the init eyes + 11 Hungries (`:26044-26049`). Each carries
@@ -150,7 +152,7 @@
 //! * The arm does NOT integrate `position += velocity` — the wall is
 //!   `noTileCollide` (`:10354`), `UpdateNPC` owns the step (the live
 //!   arm integrates inline; the wiring moves it out).
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dispatch claim is the follow-up round
+#![allow(dead_code)] // WIRED (S1-D-3 W-1); the expert/getGood arms stay parked behind the classic flags
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

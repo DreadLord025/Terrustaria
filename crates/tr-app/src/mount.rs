@@ -1921,7 +1921,8 @@ pub(crate) struct Equip {
 }
 
 /// The mount instance state — `Mount` (`Mount.cs:325-383`). Plain data so the
-/// per-tick `Player` clone (interpolated) stays cheap; the per-type payload
+/// per-tick `Player` clone (the draw's raw fixed-step copy) stays cheap; the
+/// per-type payload
 /// `_mountSpecificData` (drill/dash-toggle/fly-permission) belongs to
 /// M2-MOUNT-2/4 and is not carried yet.
 #[derive(Clone, Debug, PartialEq)]
