@@ -21517,16 +21517,29 @@ mod tests {
         assert_eq!(free.local_ai[0], 1.0, "the PRE-pin window stored 1");
         free.find_frame();
         assert_eq!(free.frame, 1, "the pinned tick keeps the mouth OPEN (R23 G5)");
-        // With the flag down the tail tile-collides. The hover aim is
+        // With the flag down the tail tile-collides. The re-block leg above
+        // RE-SET the fly flag (the line is blocked again), so the impact leg
+        // must clear the plug AND drop the head onto the floor first: the
+        // clear line + the solid overlap releases the flag at the arm top,
+        // and the SAME tick's tail runs the collision pass. The hover aim is
         // UP (the player sits above the head's centre - 300): vy steps
         // to -0.05, and the box already overlaps the solid floor — the
         // y-pass zeroes vy and latches collide_y instead of integrating
         // (the C#'s TileCollision stand-in). The old unconditional raw
         // tail moved y by -0.05 with collide_y false.
+        for x in 95..106 {
+            for y in 129..131 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        free.x = 100.0 * 16.0;
+        free.y = 131.0 * 16.0; // box rows 131-135.4, floor at row 135
         free.vx = 0.0;
         free.vy = 0.0;
         let y_before = free.y;
         free.update_golem(&w, &player);
+        assert_eq!(free.local_ai[1], 0.0, "clear line + solids: released");
         assert_eq!(free.vy, 0.0, "the impact zeroed vy");
         assert!(free.collide_y, "the impact latched collideY");
         assert_eq!(free.y, y_before, "no integration into the floor");
@@ -26716,6 +26729,9 @@ mod s1_f_13b_tests {
         // The pair with no scale row (305/310) rides the `SetDefaults` 1f.
         assert_eq!(Npc::new(NpcKind::Scarecrow6, 0.0, 0.0, 1, 0.0).scale, 1.0);
         // No drift: the pre-existing kinds keep their hardcoded start state.
+        // (Golem's ctor alpha is 255 BY DESIGN since R22 G3 /
+        // fix/verifier-w1-golem-plantera — `SetDefaults` 245 `NPC.cs:12175`,
+        // the 26-tick spawn fade starts at the ctor.)
         for kind in [
             NpcKind::Slime,
             NpcKind::Zombie,
@@ -26724,7 +26740,8 @@ mod s1_f_13b_tests {
         ] {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert_eq!(n.scale, 1.0, "{kind:?} scale drifted");
-            assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
+            let alpha = if kind == NpcKind::Golem { 255 } else { 0 };
+            assert_eq!(n.alpha, alpha, "{kind:?} alpha drifted");
         }
     }
 
@@ -27609,6 +27626,7 @@ mod s1_f_13c_tests {
             assert_eq!(n.alpha, 0, "{kind:?} alpha");
         }
         // No drift: the pre-existing kinds keep their hardcoded start state.
+        // (Golem's ctor alpha is 255 BY DESIGN since R22 G3 — `NPC.cs:12175`.)
         for kind in [
             NpcKind::Slime,
             NpcKind::Zombie,
@@ -27618,7 +27636,8 @@ mod s1_f_13c_tests {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             let expect = if kind == NpcKind::Scarecrow3 { 0.9 } else { 1.0 };
             assert_eq!(n.scale, expect, "{kind:?} scale drifted");
-            assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
+            let alpha = if kind == NpcKind::Golem { 255 } else { 0 };
+            assert_eq!(n.alpha, alpha, "{kind:?} alpha drifted");
         }
     }
 
