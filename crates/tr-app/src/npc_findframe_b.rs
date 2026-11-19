@@ -732,7 +732,10 @@ mod tests {
         find_frame_b(FindFrameKind::Mummy, &mut s, &input(0.0, 0.0));
         assert_eq!((s.row, s.counter), (0, 0.0));
         find_frame_b(FindFrameKind::Mummy, &mut s, &input(0.0, 2.0));
-        assert_eq!((s.row, s.counter, s.sprite_dir), (1, 0.0, -1));
+        // The idle tick above ran with the default `direction = 1`, so the
+        // grounded flip (`NPC.cs:68648-68651`) already wrote +1; the air
+        // tick itself never writes `spriteDirection` and leaves it at 1.
+        assert_eq!((s.row, s.counter, s.sprite_dir), (1, 0.0, 1));
         find_frame_b(FindFrameKind::AngryBones, &mut s, &input(0.0, 2.0));
         assert_eq!(s.row, 0);
         find_frame_b(FindFrameKind::Werewolf, &mut s, &input(0.0, -2.0));
@@ -1037,7 +1040,11 @@ mod tests {
         let turn = FrameInput { vx: -1.0, direction: 1, ..Default::default() };
         let mut s = FrameState { row: 5, ..Default::default() };
         find_frame_b(FindFrameKind::Wolf, &mut s, &turn);
-        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, 1));
+        // The snap (`NPC.cs:74332-74336`) zeroes the counter, then the SAME
+        // tick falls through to `if (num283 < 2) frameCounter++` (`:74337`)
+        // — the counter is 1.0, not 0.0 (the 14-tick list below is derived
+        // from that 1.0 start).
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 1.0, 1));
         let mut rows = Vec::new();
         for _ in 0..14 {
             find_frame_b(FindFrameKind::Wolf, &mut s, &turn);
