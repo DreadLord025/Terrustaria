@@ -1040,20 +1040,22 @@ mod tests {
 
     fn pet(kind: u16, x: f32, y: f32) -> Projectile {
         let data = proj_data(kind).expect("slice-A row");
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            pos: Vec2::new(x, y),
-            w: data.w,
-            h: data.h,
-            friendly: true,
-            time_left: data.time_left,
-            penetrate: data.penetrate,
-            max_penetrate: data.penetrate,
-            tile_collide: data.tile_collide,
-            ..Default::default()
-        }
+        // Field-by-field on `Default` (the struct has private bookkeeping
+        // fields — a struct literal with `..Default::default()` cannot be
+        // written outside projectile.rs, E0451).
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = data.w;
+        p.h = data.h;
+        p.friendly = true;
+        p.time_left = data.time_left;
+        p.penetrate = data.penetrate;
+        p.max_penetrate = data.penetrate;
+        p.tile_collide = data.tile_collide;
+        p
     }
 
     /// The 14 rows carry the C# `SetDefaults` slice (the box, aiStyle 26,
