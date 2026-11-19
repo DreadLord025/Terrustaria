@@ -28,17 +28,20 @@
 //! (`netSyncSkippedForPlayer`, `Projectile.cs:386`). A targeted send clears
 //! that player's flag (`NetMessage.cs:1821-1823`).
 //!
-//! # Wiring status (dead-code parity, R-36-2 pattern)
+//! # Wiring status (S1-I-4d SWAP)
 //!
-//! The live loop still runs `netglue.rs::projectile_sync_plan` (the 10 Hz
-//! diff approximation). This module is the faithful 60 Hz replacement; the
-//! swap happens at the wave merge so the two send paths never double-send
-//! (see `roadmap-pending/proj-cadence.md`). The `netUpdate = true` producers
-//! (337 C# AI sites) are likewise a follow-up — the port's AI arms currently
-//! skip the writes ("net code - SKIPPED" comments in `projectile.rs`).
+//! `netglue.rs::proj_sync_cadence` steps `ProjSync` per fixed step and
+//! `drain_proj_outbox` sends the result through the existing `27`/`29` wires.
+//! This REPLACED `netglue.rs::projectile_sync_plan`'s 10 Hz diff — the two send
+//! paths never both run (the no-double-send witnesses pin it). The `netUpdate
+//! = true` producers (337 C# AI sites) are still a follow-up: until they land,
+//! an interim change-detect producer arms `mark_dirty` (recorded in ANALYSIS),
+//! and the port's AI arms keep their "net code - SKIPPED" comments. The send
+//! BUDGET itself is the faithful C# gate, not the diff.
 
-// Wired at the wave merge; the cadence engine is exercised by the per-site
-// tests below until then (dead-code parity, the R-36-2 film-framework pattern).
+// The cadence engine is wired through netglue; the event-site helpers
+// (sync_now / despawn_mark_applies / recheck_sections) stay exercised by the
+// per-site tests until their simulation callers land.
 #![allow(dead_code)]
 
 use crate::net;
@@ -364,11 +367,11 @@ impl ProjSync {
         Some(ProjSend::Sync(state_of(pool, slot)))
     }
 
-    /// The per-fixed-step hook the frame will call once the waves merge
-    /// (replacing `netglue.rs::projectile_sync_plan`): the update-tail
-    /// cadence pass over the whole pool, in slot order. Spawn/kill/AI
-    /// immediate sends are event-driven at their simulation sites and are
-    /// NOT re-emitted here — that split is what keeps the C#'s send order.
+    /// The per-fixed-step hook `netglue.rs::proj_sync_cadence` calls (S1-I-4d,
+    /// replacing `netglue.rs::projectile_sync_plan`): the update-tail cadence
+    /// pass over the whole pool, in slot order. Spawn/kill/AI immediate sends
+    /// are event-driven at their simulation sites and are NOT re-emitted here
+    /// — that split is what keeps the C#'s send order.
     pub(crate) fn step(
         &mut self,
         pool: &ProjectilePool,

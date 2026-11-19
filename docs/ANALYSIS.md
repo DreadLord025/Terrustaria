@@ -6668,6 +6668,11 @@ Deviations:
   goat's `GlowMask[284]` glow pass has no content file (`GlowMask_284` does not exist
   in `assets/Content/Images`), so the row draws without the glow.
 - **`miscEquips[3]`** вЂ” the equipment mount slot is not ported (M3-EQUIP); the
+  goat's `GlowMask[284]` glow pass is data-only: S1-L-8b corrected the sheet name
+  to `Glow_284` (the loader reads `Images/Glow_{id}.xnb`, `AssetInitializer.cs:352-354` —
+  the old `GlowMask_284` spelling matched no file), but the glow draw itself still
+  waits for the mount glow pass.
+- **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
   quick-mount scan walks the inventory only.
 
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
@@ -6677,6 +6682,89 @@ the animator states, the draw math; S1-L-9 adds the 66-row per-id table, the
 item rows, the SuperCart statics, the `SetMount`/`Dismount` extras, the Chillemt
 damage bonus and the rat's idle band); `TR_SHOT` twin runs SHA256-equal with
 `TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
+
+### Per-id data fidelity (S1-L-8b)
+
+**Code-only mode** — this pass ran with no compiler/test invocation (no
+cargo/rustc/rustfmt); the fixes were re-read against `Mount.cs` line-by-line and
+the tests were **written, not run** (7 new `s1_l_8b_*` tests plus updated pins in
+the cart/SpookyWood tests). What landed, all data-only — the activation logic
+(S1-L-8), the per-tick block and the draw consumers are untouched:
+
+- **Struct/BASE**: `MountData` gains the three missing texture slots
+  (`frontTextureGlow` `Mount.cs:141`, `backTextureExtraGlow` `:137`,
+  `frontTextureExtraGlow` `:145`) as `front_glow_sheet`/`back_extra_glow_sheet`/
+  `front_extra_glow_sheet`; the BASE `light_color` default is `(1,1,1)` — the C#
+  `Vector3.One` (`:259`), not the port's old `(0,0,0)`. Only the three
+  `emitsLight` rows override it (Drill `:1289-1290`, SpookyWood `:1951-1952`,
+  LavaShark `:2159-2160`).
+- **Missing field values**: Drill light `(0.3,0.3,0.4)` + `idleFrameStart` 8
+  (`:1316`); LavaShark light `(0.3,0.15,0.1)`; Bat/Pixie `fatigueMax` 320
+  (`:2426`/`:2490`); mech cart `spawnDust` 213 (`:1488`); fart carts `spawnDust`
+  211 (`:1098`/`:1106`, overwriting the `SetAsMinecart` 213).
+- **Swim bands that copy another band**: Bunny = inAir (`:848-850`), Unicorn
+  (`:1471-1473`), Basilisk (`:1681-1683`), horses (`SetAsHorse` `:2656-2658`),
+  WoF goat (`:2089-2091`) — all had zero swim bands in the port.
+- **Texture-slot corrections**: Bee `backTextureExtra = Mount_BeeWings`
+  (`:1212`); CuteFishron `backTextureGlow = Mount_CuteFishron2` (`:1585`);
+  Drill's three glow strips `Mount_Glow_Drill{Ring,Seat,Diode}`
+  (`:1323`/`:1327`/`:1329`); mech cart's glow is `frontTextureGlow` (`:1531`),
+  not a front-extra; shroom cart's `Extra_116` is `frontTextureGlow` (`:985`);
+  coffin cart `backTexture = frontTexture = Extra_150` (`:1030`); Bat
+  `frontTextureGlow = Glow_370` (`:2474`). The UFO keeps its glow in
+  `frontTextureExtra` — that IS the C# slot (`:1269`).
+- **Fart-cart offsets**: `SetAsMinecart(..., -10, -8)` gives
+  `playerYOffsets = 8 - (-10) + (-8) = 10` (`:2767`) — the port's old
+  `CART_VO_Y_OFFSETS` was `[0;3]`; `yOffset = 13 + (-10) = 3` (`:2772`) was right.
+- **Sheet names now match the content files** (`AssetInitializer.cs:352-354`,
+  `:435-441`): `GlowMask_283/284` → `Glow_283/284`, `MinecartMechMount(Glow)` →
+  `Mount_MinecartMech(Glow)`, `MinecartWoodMount` → `Mount_MinecartWood`,
+  `Mount_FishMinecart` → `Mount_MinecartMineCarp`, `Mount_DesertMinecart` →
+  `Mount_MinecartDesert`. The old spellings matched no `.xnb` — the loader reads
+  `dir/{name}.xnb` with no aliases (`assets.rs` `load_sheet`).
+- **Packing list catches up** (`assets.rs` `STATIC_SHEET_NAMES`): the renamed
+  cart sheets, the new glow strips, and 13 sheets the S1-L-9 rows named but
+  never packed (`Mount_Turtle`, GolfCart's `Extra_96/97`, Flamingo `Extra_149`,
+  SpookyWood `Extra_167`, Santank `Extra_168`, Wolf `Extra_253/254`,
+  Velociraptor `Extra_271/272`, Rat `Extra_273`, Chillemt `Extra_301/302`) — the
+  M4-NPC-3v failure mode (a row names a sheet the atlas lacks → draws nothing).
+  The new test `s1_l_8b_every_named_mount_sheet_is_packed` pins all eight slots
+  of all 66 rows against the list.
+
+Still data-only: the glow/extra draw passes, the Drill light and the per-type
+animator arms wait for M2-MOUNT-2/3/4; filling the fields changes no pixels
+today (the renderer reads `back_sheet`/`front_sheet` only, and the renamed
+cart sheets fix rows whose textures never loaded).
+
+**Atlas overflow — measured 2026-11-19 re-sync (code-only mode, no compiler
+invoked).** The branch is re-synced onto main `c7fe175d` (the S1-F-13c slice-B
+best-fit shelf packer, `atlas.rs:98-105`, is in). The overflow persists WITH
+the mount sheets: a Python reimplementation of the exact pack (the
+`content_lookups` input set — `STATIC_SHEET_NAMES` + the 321 `spawnable_kinds`
+projectiles + all enumerated `Item_*`/`Buff_*` icons + trees/clouds/liquids/
+waterfalls/flames/glows + the `World::new` default-bg world half — sorted
+tallest-first, best-fit decreasing-height shelves, width 8192, PAD 2; sheet
+dimensions decoded from the retail `.xnb` headers via a transcription of
+`tr-content/src/lzx.rs`) measures:
+
+- **8361 px with all 20 branch-added sheets** (169 px over the 8192 strict-GPU
+  bound; 7856 sheets, 43 shelves) — `item_icon_uvs_are_normalized_and_atlas_fits`
+  still fails at merge verification.
+- 8321 px without the 7 glow strips; 8269 px without the 13 S1-L-9 catch-up
+  sheets; **8121 px without both** — exactly main's landed baseline (the
+  renamed cart sheets are swaps, zero height delta). The branch's own cost is
+  **+240 px**: the tall glow strips (`Glow_284` 94×1376, `Glow_370` 56×1088,
+  `Glow_283` 64×592, `Glow_285` 138×576) and the never-packed S1-L-9 body
+  strips (`Extra_168` 70×1296, `Extra_271/272` 90×1218, `Extra_301/302`
+  130×988, …).
+
+The old pre-best-fit measurement was 8311 px (`p1-l8b-gate2.log`, next-fit
+shelves); best-fit saves ~228 px on main's set but the mount additions still
+push past the bound. **Dependency: `task/S1-G-12-atlas-packer` (R1)** — a
+better packer (or a second atlas / sheet-split policy) must land before this
+branch can merge; the packing is NOT attempted here. The measurement scripts
+are session scratch (`Temp/opencode/l8b-atlas/{lzx_py,measure_atlas}.py`), not
+repo code.
 
 ## Projectile pool (M4-PROJ-1)
 
@@ -10571,6 +10659,17 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   head-index town NPC ever has; (3) `CanBeRemovedByNetMessage` is empty in
   this decompilation (`BuffID.cs:48`), so `137` is ported as a gated-off
   no-op, not omitted.
+- **S1-I-4b — the NPC send cadence is ported; WIRED by S1-I-4d (see "The net
+  sync swap" below).** `app/net_npc_sync.rs` ports `NPC.UpdateNetworkCode` +
+  the `NetMessage` `case 23`/`case 28` fan-out 1:1 (citations in the ROADMAP
+  S1-I-4 row) as pure functions. Deliberate shape choices: (1) the per-client
+  `broadcast`/`IsConnected` gates ride a caller-supplied `PlayerView` array
+  (the port's `Server::slot_ids` + section bookkeeping map onto it); (2)
+  `NPC.oldHomeless/oldHomeTileX/Y` start at the C# `false/0/0` defaults — the
+  port's `old_home: None` fires one extra `60` on the very first observation
+  of a `(false, 0, 0)` home, which no head-index town NPC ever has; (3)
+  `CanBeRemovedByNetMessage` is empty in this decompilation (`BuffID.cs:48`),
+  so `137` is ported as a gated-off no-op, not omitted.
 ## Localized item tooltips (M6-LOCALIZE-wire)
 
 The "wire the localization core into the HUD/menus" row's item-hover slice:
@@ -16158,6 +16257,9 @@ phase of the fixed step вЂ” between `npcs` and `projectiles`, the C# order a
 toggle drives the same `ChildSafety.Disabled` static for both pools
 (`ChildSafety.cs:15` вЂ” one static in the C#, so `sync_child_safety` sets both).
 The draw pass stays unported, which is why no gore is visible yet.
+(`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
+The front draw pass landed with S1-E-4b (below); `DrawGoreBehind` stays
+unported.
 
 Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
 velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
@@ -16166,6 +16268,121 @@ gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
 `:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
 App's phase-order golden test now pins `gores` between `npcs` and
 `projectiles`.
+
+## The gore draw pass (S1-E-4b, 2026-11-18)
+
+`crates/tr-app/src/render/gore.rs` ports `Main.DrawGore`
+(`Main.cs:21873-21907`) read-only over `App.gore`: the 600-slot walk, the
+inactive/`type <= 0` skip (`:21879-21882`), the drip gate (`:21883-21887` —
+`GoreID.Sets.IsDrip` rows outside frames 7..=9 belong to `DrawGoreBehind`
+and latch `Main.drawBackGore`), the framed/unframed source split
+(`:21889`/`:21900`) and the `SpriteBatch.Draw` call's integer-half origins,
+the framed path's `- 2f` Y lift and the type-1217 `+ 4f` nudge
+(`:21892-21898`). The seam sits between the rain and the dust draws in
+`app/frame/draw.rs` — the C# order `DrawRain` (`Main.cs:62279`) → `DrawGore`
+(`:62282`) → `DrawDust` (`:62293`) — in the same world-effect (fx) range the
+rain/sand/leaf draws use. No kill-at-draw arm exists in `DrawGore` (unlike
+`DrawDust`'s black-death), and none was added: the pool update is untouched.
+
+The tint is `Gore.GetAlpha` (`Gore.cs:1464-1505`) verbatim — the 16/17,
+716/1383, 570-572 (`b/2` integer), 331 and 1225 (float ctor) arms, the
+default path's `(int)(byte * num)` truncating multiplies, the alpha clamp
+(`:1491-1499`) and the 1202-1204 cap at 20. The light input is
+`Lighting.GetColor(int, int)` (`Lighting.cs:216-242`) through the active
+`LightStyle::shade` (the wires-pass convention), byte-truncated at 255 with
+alpha 255. The source cell is `SpriteFrame.GetSourceRectangle`
+(`SpriteFrame.cs:72-77`): `texture / count` integer cells, the 2 px padding
+subtracted only on multi-cell axes. The light-sample tile keeps both C#
+cast orders (`Main.cs:21897`/`:21902`): X casts the sum before the integer
+`/ 16`, Y divides before the cast. The rotation emulation is the
+`push_sprite_origin_rot` top-left shift with `origin · scale · zoom`, in the
+fx range (no world-range cache key change — the fx range rebuilds per frame
+like the rain).
+
+Asset loading: `LoadGore` (`Main.cs:59100-59106`) is a lazy texture request;
+the port packs every `Images/Gore_<id>.xnb` up front beside the item/buff
+icons (`assets.rs::load_static_sheets`, `enumerate_gore_sheet_ids` — the
+same file-scan shape, ~1 400 small sheets, ~0.7 MB compressed), exposed as
+`Lookups.gore_sheets` keyed by the parsed id. The leaf gores 910/911 keep
+their existing `STATIC_SHEET_NAMES` slot (the enumeration excludes them so
+nothing double-packs) and appear in both maps.
+
+Atlas packing (**re-sync 2026-11-19**): this branch originally carried its own
+first-fit decreasing-height shelf experiment in `tr-render/src/atlas.rs`; the
+M8 merge wave SKIP-blocked the branch on the atlas bound (first-fit measured
+8 305 px > 8 192 with the gore sheets) and the experiment was reverted —
+`atlas.rs` on this branch now equals **main's P4 best-fit decreasing-height
+shelves** (`2795277e`, the frost-wave fix, 8 416 → 8 121 px on main's set).
+The overflow was re-measured on the synced branch in code-only mode: a JS
+simulation (`Temp/opencode/e4b-atlas-sim.js` — the LZX/XNB header decode
+translated from `tr-content/src/lzx.rs`/`xnb.rs`, the sheet enumeration
+mirroring `assets.rs::tests::content_lookups` with `World::new` 8×8 and empty
+tile/wall sets, and the packer translated arm-for-arm from main's `build_ref`)
+reads every sheet's real dimensions from the retail `.xnb` headers:
+
+* main's set (no gore): **7 779 sheets, 42 shelves, 8 117 px** (the ~4 px
+  delta to the recorded 8 121 is the 5 file-less `Minecart*`/`Mount_*` names
+  in `STATIC_SHEET_NAMES` whose retail files carry different names — they
+  never decode at startup either);
+* with the branch's **1 402 gore sheets** (1 404 files minus the 910/911
+  leaf gores that keep their `STATIC_SHEET_NAMES` slot): **9 181 sheets,
+  49 shelves, 8 489 px — 297 px over the 8 192 strict-GPU bound**;
+* the gore band's ideal area is only ~374 px of shelf height
+  (Σ(w+2)(h+2) = 3 066 912 px² / 8 192), but the height-descending sort
+  interleaves the 6..300 px gore strips with the item/icon band, so seven
+  extra shelves open (the marginal band: 24/24/24/22/22/20/18… px rows of
+  ~300 items+gores each) and the pack ends 372 px taller than main's;
+* cross-check of the packer translations on the same input: next-fit
+  8 763 px, first-fit 8 489 px, best-fit 8 489 px (with gore); next-fit
+  8 410 px vs best-fit 8 117 px (without) — consistent with the recorded
+  8 416 → 8 121 main fix and the 8 305 first-fit SKIP measurement (that
+  number was taken on the pre-frost/pre-chat sheet set).
+
+**The branch stays MERGE-BLOCKED on `task/S1-G-12-atlas-packer` (R1)** — the
+packing algorithm is R1-owned; this branch makes no packer change. Any repack
+moves every sheet's atlas position, so all UVs shift and the golden screenshot
+SHA256s change by construction — re-take owed when a build is next allowed
+(no pixel-behaviour change — the same texels, new addresses).
+
+Documented drops: **`DrawGoreBehind`** (`Main.cs:21842-21871`, the
+behind-tiles drip rows at `:56937`/`:63424`) is not ported — it needs a
+draw seam inside the tile batch, and the `drawBackGore` latch is therefore
+not carried; hanging drips simply do not draw until that seam lands. A
+gore type whose sheet file is absent stays undrawn (the lazy `LoadGore`
+never resolving). Six tests (`s1_e_4b_*`) pin the source-rect maths, every
+`GetAlpha` arm, the byte multiplies, the light-tile cast orders, the quad
+geometry (lift/nudge/scaled origin/rotation) and the drip gate.
+
+**Code-only mode (user directive, 2026-11-18):** this pass was written and
+committed without invoking any compiler — no cargo/rustc/rustfmt/test
+runs. The six tests are written NOT run; the tint's TWO-step truncation
+(the light byte `(int)(c·255)` first, then `GetAlpha`'s `(int)(byte·num)`
+— never fused into one multiply, the G-3 verifier finding on fused
+tints) was hand-checked against the C# literals, as was every test's
+expected value. Compilation, the test run and the re-taken screenshots
+are owed before this branch merges.
+
+**Re-sync verification (2026-11-19, code-only mode):** after merging main
+(K-4 splits, G-1 passes, the P4 best-fit packer, the E-5 light feeds, the
+D-3 AI families) the draw pass was re-read line-for-line against the C#:
+`Main.DrawGore` (`Main.cs:21873-21907` — the walk/gates/source split/integer
+halves/−2f lift/1217 nudge/both light-tile cast orders), `Gore.GetAlpha`
+(`Gore.cs:1464-1505` — every arm, the `(byte)(255-alpha)` wrap, the float
+ctor's ×255-then-truncate, the default path's `(int)(byte·num)` products and
+the alpha clamp/cap) and `SpriteFrame.GetSourceRectangle`
+(`DataStructures/SpriteFrame.cs:72-77` — the port's `max(1)` guards only
+diverge on a zero-count frame the pool never constructs). The TWO-step byte
+truncation is intact: `light_color` truncates `(int)(c·255)` per channel
+first (the `Lighting.GetColor` byte, `Lighting.cs:216-242`, alpha 255 via
+`-16777216`), then `get_alpha` multiplies that byte by `num` and truncates
+again — never fused. The draw seam still sits between `rain.draw` and
+`crate::sand::draw` in `app/frame/draw.rs`'s fx range (the C# order
+`Main.cs:62279`→`:62282`→`:62293`), and the G-3 blend-batch landing did not
+disturb it (`push_fx_sprite_rot` writes `blend: 0`, the alpha-blend default
+`SpriteBatch.Begin()` uses for `DrawGore`). The rotation fold matches
+`push_sprite_origin_rot`'s convention with the origin pre-scaled by
+`scale·zoom` (XNA scales the origin with the sprite). No compiler invoked.
+
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
@@ -23677,6 +23894,77 @@ functions (`ProjSync`), disjoint from `netglue.rs` (wave A) and
    `Projectile` so `projectile.rs` stays untouched by this wave.
 Verification: `cargo test -p tr-app net_proj_sync` РІР‚вЂќ 10 per-site tests green
 (`test result: ok. 10 passed; 0 failed`).
+Verification: `cargo test -p tr-app net_proj_sync` вЂ” 10 per-site tests green
+(`test result: ok. 10 passed; 0 failed`). **Superseded by the wave-D swap below
+(`projectile_sync_plan` is deleted; the engine is live).**
+
+## The net sync swap (S1-I-4d, code-only mode, 2026-11-19)
+
+The wave-B (`net_npc_sync.rs`) and wave-C (`net_proj_sync.rs`) decision layers
+landed INERT (zero callers). This wave SWAPS them into the live loop and DELETES
+the old duplicate sends — wiring both would double-send, so the swap is atomic.
+
+**What was removed (the old paths):**
+- `netglue.rs::net_tick`'s whole-set 10 Hz `23 NPCInfo` broadcast (one message per
+  live NPC every cadence tick) — replaced by the per-NPC `netSpam` cadence.
+- `netglue.rs::projectile_sync_plan` (the 10 Hz `27` change-diff + the vanished-key
+  `29` feed) and its `App.net_proj_last` / `net_proj_spam` maps — replaced by
+  `ProjSync`'s faithful budget.
+- The client's absence-from-the-stream despawn prune (`App.net_npc_seen`,
+  `net_npcs_seen_at`, the `NPC_STALE` const) — the event-driven `23` stream has no
+  "whole set" to diff against; despawns are explicit life-0 bodies now.
+
+**What was wired (the new paths):**
+- `App::npc_sync_cadence` (host-only, `NPC.cs:90590`) steps
+  `net_npc_sync::update_network_code` per NPC per fixed step, in slot order
+  (`Main.cs:17948-17952`). State is keyed by the stable `Npc.uid` (the port's Vec
+  compacts on death, so the index is not stable). `App::flush_npc_outbox` drains
+  the `NpcSend` outbox through `S2c::NpcInfo` / `NpcHouse` / `NpcBuffs`.
+- `App::proj_sync_cadence` steps `net_proj_sync::ProjSync` per fixed step
+  (`Projectile.cs:17210-17244`); spawn `27` (`:11096`), kill `29` with the entry
+  position (`:77254-77257`, `:70648`), and the budget pass. `App::drain_proj_outbox`
+  sends through `S2c::Projectile` / `ProjectileDead` (host) or `C2s` (client).
+- Both cadences run on a 60 Hz accumulator (`App.net_sync_cadence_timer`) inside
+  `net_tick`, so the real frame loop AND the net-only test pump drive them; the
+  outboxes drain on the 10 Hz tick. The message-id table (S1-I-1) is UNCHANGED.
+
+**Swap proof (no double-send):** each subsystem has exactly ONE producer now.
+The NPC `23` comes only from `npc_sync_cadence` → `flush_npc_outbox` (the old
+broadcast loop is gone); the projectile `27`/`29` only from `proj_sync_cadence` →
+`drain_proj_outbox` (`projectile_sync_plan` is gone). Within the projectile
+cadence the spawn site and the change-detect producer are disjoint (the `fresh`
+set skips first-sight), so a spawn emits ONE `27`, not two. Witnesses:
+`the_npc_cadence_sends_once_then_throttles_not_every_tick`,
+`the_proj_cadence_spawn_sends_one_27_not_two`,
+`the_npc_cadence_throttles_a_moving_npc_to_the_netSpam_rate` (cadence parity),
+`the_npc_despawn_streams_one_life0_body_and_the_client_drops_it` (stream-order).
+
+**Deliberate deviations / interim stand-ins (recorded, not silent):**
+1. **Interim change-detect producers.** The C# `netUpdate = true` comes from ~337
+   projectile AI sites + the NPC AI arms. The NPC arms already set
+   `Npc.net_update`; one projectile producer is wired (the gem-staff retarget,
+   `Projectile.cs:37891`, via the new `Projectile.net_update` field). Until the
+   full census lands, a state change vs the last body ALSO arms the dirty flag
+   (`npc_sync_cadence` / `proj_sync_cadence`), so moving entities still sync. The
+   send BUDGET is the faithful C# gate, not the diff — the diff only decides
+   *whether* to dirty, the `netSpam` throttle decides *when* to send.
+2. **The despawn feed** is the uid gone-diff (a uid the cadence knew that left the
+   live set emits one life-0 `23`), not the C#'s per-slot `active=false` — the
+   port's Vec removes dead NPCs, so the cadence (not the removed slot) emits it.
+   The client removes on life≤0 with a generation guard (`MessageBuffer.cs:1661`).
+3. **Hostile shots (owner 255)** are out of the projectile budget sync (the owner
+   gate matches `Projectile.cs:17210` and the old diff's scope). On the C# server
+   `Main.myPlayer == 255` folds them in; the port's host keeps a local player
+   (owner 0), so hostile-shot sync lands with the owner-model reconcile.
+4. **`has_head_index`** rides `NpcKind::is_town_npc()` (the town roster) until the
+   `TypeToDefaultHeadIndex` table lands (`NPC.cs:90621`).
+5. **The event-site helpers** (`sync_now`, `recheck_sections`, `note_broadcast`,
+   `despawn_mark_applies`) stay dead-code-parity until their simulation callers
+   land; the cadence's section culling rides the decision layer's own fan-out.
+Verification: code-only mode — no compiler/test run this wave; the decision
+layers' landed per-site tests (`net_npc_sync` 20, `net_proj_sync` 10) plus the
+four new wiring witnesses are the tests-as-code. C# cross-reads cited per block.
+
 ## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
 `crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
 `if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) вЂ” the Cursed Skull

@@ -7,10 +7,13 @@
 //! `NetMessage.SendData`'s `case 23` / `case 28` arms
 //! (`NetMessage.cs:1719-1762`). This module ports that cadence 1:1 as pure
 //! decision functions over an outbox of [`NpcSend`]s, in the exact C# send
-//! order. It is deliberately disjoint from `netglue.rs` (wave A, world-item
-//! sync, edits that file): `net_tick` can later drain the outbox through the
-//! existing `S2c::NpcInfo` / `NpcStrike` / `NpcBuffs` wires. No message-id
-//! table changes (I-1 in flight).
+//! order.
+//!
+//! WIRED (S1-I-4d): `netglue.rs::npc_sync_cadence` steps `update_network_code`
+//! per NPC per fixed step (host-only) and `flush_npc_outbox` drains the result
+//! through the existing `S2c::NpcInfo` / `NpcHouse` / `NpcBuffs` wires. This
+//! REPLACED the old whole-set 10 Hz broadcast — the two paths never both run.
+//! No message-id table changes (I-1).
 //!
 //! Site map (the NPC life/ai/buff sync sites of the research/17 census):
 //! - `23 SyncNPC` cadence gate: `NPC.cs:90602-90614` (netSpam throttle).

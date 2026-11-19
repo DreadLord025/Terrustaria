@@ -72,6 +72,30 @@ fn enumerate_buff_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
+/// The `Images/Gore_<id>.xnb` sheet ids (`enumerate_item_icon_ids`'s shape) —
+/// `AssetInitializer.cs:135-137` fills `TextureAssets.Gore[l]` with
+/// `Images/Gore_<l>` for the whole range. The two ambient leaf gores
+/// (910/911) are excluded: they already ride `STATIC_SHEET_NAMES` at their
+/// fixed slot, so a second decode would double-pack them.
+fn enumerate_gore_sheet_ids(images_dir: &Path) -> Vec<u16> {
+    let Ok(entries) = std::fs::read_dir(images_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<u16> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let id = name.strip_prefix("Gore_")?.strip_suffix(".xnb")?;
+            let id = id.parse::<u16>().ok()?;
+            (id != 910 && id != 911).then_some(id)
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// The two halves of the atlas content: the world-derived sheets (the tile and
 /// wall sheets this world's usage scan asked for) and the world-independent
 /// ones (backgrounds, NPCs, items, UI, …).
@@ -372,6 +396,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Mount_DrillRing",
         "Mount_DrillSeat",
         "Mount_DrillDiode",
+        // S1-L-8b: the glow strips the mount rows now name (data-only until
+        // the glow draw pass lands). The Drill's three `DrillMount[3..5]`
+        // (`Mount.cs:1323`/`:1327`/`:1329`, `AssetInitializer.cs:449-451`).
+        "Mount_Glow_DrillRing",
+        "Mount_Glow_DrillSeat",
+        "Mount_Glow_DrillDiode",
         "Mount_CuteFishron1",
         "Mount_CuteFishron2",
         "Extra_113",
@@ -381,15 +411,26 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_274",
         "Extra_290",
         "Extra_291",
+        // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
+        // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
+        // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
+        // (`AssetInitializer.cs:352-354`). Data-only until the glow draw pass.
+        "Glow_283",
+        "Glow_284",
+        "Glow_285",
+        "Glow_370",
         // The minecart rows and their `Mount.SetAsMinecart` cosmetic variants
         // (`Mount.cs:912-1110`): the base cart, the mech body + glow, wood and
-        // fish cart textures, then the `Extra_*` strip per variant.
+        // fish cart textures, then the `Extra_*` strip per variant. S1-L-8b:
+        // the names are the actual content files (`AssetInitializer.cs:435-441`)
+        // — the old `MinecartMechMount*`/`MinecartWoodMount`/`Mount_FishMinecart`/
+        // `Mount_DesertMinecart` spellings matched no `.xnb`.
         "Mount_Minecart",
-        "MinecartMechMount",
-        "MinecartMechMountGlow",
-        "MinecartWoodMount",
-        "Mount_FishMinecart",
-        "Mount_DesertMinecart",
+        "Mount_MinecartMech",
+        "Mount_MinecartMechGlow",
+        "Mount_MinecartWood",
+        "Mount_MinecartMineCarp",
+        "Mount_MinecartDesert",
         "Extra_108",
         "Extra_109",
         "Extra_110",
@@ -414,6 +455,28 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_165",
         "Extra_246",
         "Extra_251",
+        // S1-L-8b: the S1-L-9 land-mount rows' sheets were never packed — the
+        // Turtle (`Mount.cs:1112-1162`), GolfCart 17 (`:1694-1739`, Extra_97
+        // + its Extra_96 back extra, `:1733-1734`), Flamingo 37 (`:1796-1841`, Extra_149),
+        // SpookyWood 45 (`:1940-1985`, Extra_167), Santank 46 (`:1987-2039`,
+        // Extra_168 body + tracks), Wolf 52 (`:2246-2308`, Extra_253/254),
+        // Velociraptor 54 (`:2310-2360`, Extra_271/272), Rat 55
+        // (`:2362-2415`, Extra_273) and the Chillemts 62-65
+        // (`SetAsChillet` `:2670-2745`, Extra_301/302). Same silent-nothing
+        // failure mode as M4-NPC-3v: the row names a sheet the atlas lacks.
+        "Mount_Turtle",
+        "Extra_96",
+        "Extra_97",
+        "Extra_149",
+        "Extra_167",
+        "Extra_168",
+        "Extra_253",
+        "Extra_254",
+        "Extra_271",
+        "Extra_272",
+        "Extra_273",
+        "Extra_301",
+        "Extra_302",
         // S1-E-16 screen effects: `Extra_49` is the `ScreenObstruction` border
         // diamond (`ScreenObstruction.cs:53`), `Extra_98` the paladin-shield
         // boundary arc (`Main.cs:57248`) and `FlameRing` the inferno halo
@@ -1242,6 +1305,21 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
             images.push(img);
         }
     }
+    // The gore sheets (`TextureAssets.Gore[type]`, `Images/Gore_<id>`,
+    // `AssetInitializer.cs:135-137`): the `Main.DrawGore` source
+    // (`Main.cs:21873-21907`). The C# `LoadGore` requests them lazily
+    // (`Main.cs:59100-59106`); the port packs the whole ~0.7 MB set up front
+    // like the items — a missing file just leaves that type undrawn.
+    let gore_ids = enumerate_gore_sheet_ids(dir);
+    let gore_images: Vec<(u16, Result<AtlasImage>)> = gore_ids
+        .par_iter()
+        .map(|&id| (id, load_png(dir, &format!("Gore_{id}"), SheetLayout::Raw)))
+        .collect();
+    for (id, result) in gore_images {
+        if let Ok(img) = result {
+            images.push(img);
+        }
+    }
     if !failed_items.is_empty() {
         log::warn!(
             "{} item icons failed to decode (first 10: {:?})",
@@ -1822,6 +1900,11 @@ pub struct Lookups {
     /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
     /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
     pub leaf_gores: [Option<tr_render::SheetRect>; 2],
+    /// `TextureAssets.Gore[type]` — one packed sheet per gore id whose
+    /// `Images/Gore_<id>` file exists (`AssetInitializer.cs:135-137`), the
+    /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
+    /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
+    pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
@@ -2212,6 +2295,19 @@ impl Lookups {
                 })
                 .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
+            // Every `Gore_<id>` sheet that made it into the atlas, keyed by
+            // the parsed id (`AssetInitializer.cs:135-137` names them
+            // `Images/Gore_<l>`) — the same prefix scan as `item_icons`; an
+            // id without a texture file never registers, so `DrawGore`
+            // skips it like the lazy `LoadGore` never resolving.
+            gore_sheets: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    let id = name.strip_prefix("Gore_")?.parse::<u16>().ok()?;
+                    Some((id, *rect))
+                })
+                .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
