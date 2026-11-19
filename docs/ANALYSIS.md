@@ -19896,14 +19896,17 @@ byte-identical.
   NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
   **and the footer**; the prologue framing + importance bitmap match with the
   pointer table zeroed.
-- The header/flags block diverges in **exactly the unowned fields**, pinned
-  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
-  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
-  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
-  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
-  (no `.wld` store), the tree-top variations (no store) and the world-gen
-  manifest JSON (the port writes the empty string). These are documented
-  divergences, not faked parity.
+- The header/flags block diverges in **exactly four unowned spots**, pinned
+  field-by-field (`s1_j_3_the_header_flags_divergences_are_exactly_the_unowned_fields`):
+  the banner kill/claimable counts (`killCount[1]`/`claimable[1]`, no `.wld`
+  store), the tree-top variations (`treeTop[0]`, no store) and the world-gen
+  manifest JSON (`manifest`, the port writes the empty string). These are
+  documented divergences, not faked parity. **S1-J-3b closed the rest** (see
+  the next subsection): `CreationTime`, the file-faithful `spawnTileY`, the
+  seven ore tiers, the saved-NPC flags, the angler quest index, the
+  cultist/Moon Lord/Queen Slime kills, the tower downeds/actives + apocalypse
+  phase (with the load-time shield restore) and the party-girl/princess
+  spawn unlocks.
 - The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
   (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
@@ -19918,6 +19921,88 @@ byte-identical.
   regenerated fixture end-to-end (see "The `.plr` legacy-subset shim +
   default policy", increment 3).
 
+### S1-J-3b — the header/flags parity remainder (code-only mode, 2026-11-18)
+
+`task/S1-J-3b-wld-header` wired the newly-owned `World` fields into the
+`.wld` flags writer/reader (`wld/sections/flags.rs`), closing every header/flags
+divergence except the four unowned spots above. **This increment ran in
+code-only mode: no cargo/rustc/rustfmt/test run, no dotnet/harness run, no
+graphify** — verification is C# cross-read + git only; the tests below are
+written, NOT executed. The compile window runs them.
+
+Closed (write + read, each cited to `IO/WorldFile.cs`):
+- `CreationTime` (`World.creation_time`, write `:1250`/read `:2044`, ≥141) and
+  `LastPlayed` (`:1251`/`:2048`, ≥284) — already S1-J-2's `last_played`, the
+  creation clock added here.
+- `spawnTileY` — the file's own row (`LoadWorldFlags:2069`), no derivation; the
+  old `World::compute_spawn_y` override (a deviation) removed, no callers left.
+- The seven ore tiers (`World.ore_tiers`): the hardmode trio (`:1315-1317`/
+  `:2131-2133`) and the pre-hardmode quartet (`:1388-1391`/`:2344-2347`), with
+  the pre-216 −1 reset arm (`:2351-2354`) and the post-load `CheckSavedOreTiers`
+  re-derivation (`:730` call, `:794-849` body; `WorldGen.CountTileTypesInWorld`
+  `WorldGen.cs:86885-86908`, active tiles only, classic wins on strictly greater
+  count else the alternate). `saveglue.rs::save_world` snapshots the App's
+  runtime `ore_tiers` into `World.ore_tiers` before the write.
+- The saved-NPC flags: wizard/mech (`:1294-1295`, ungated read), angler (`:1334`/
+  `:2161` ≥99), stylist (`:1336`/`:2171` ≥104), taxCollector (`:1337`/`:2174`
+  ≥129), golfer (`:1338`/`:2178` ≥201).
+- The angler quest index (`Main.anglerQuest`, `:1335`/`:2166` ≥101): i32 in the
+  file, u8 on `World.angler_quest` (the 41-entry pool `Main.cs:67032`, values
+  0..40 fit) — cast on write/read.
+- The event bosses: downedAncientCultist/downedMoonlord (`:1345-1346`/
+  `:2215-2216` ≥131), downedQueenSlime (`:1396`/`:2371` ≥223).
+- The four tower downeds/actives + LunarApocalypseIsUp (`:1352-1360`/
+  `:2226-2234` ≥140), **with the load-time shield restore**: an active tower
+  comes back at `ShieldStrengthTowerMax` (`LoadWorldFlags:2235-2250`;
+  `NPC.cs:6795-6806` = `LunarShieldPowerNormal`, halved once the Moon Lord is
+  downed). The `.wld` does NOT serialize the shield strengths (only the `.trwld`
+  does, `save.rs:503-506`/`:562-565`), so the restore is computed in the tr-core
+  read from `World.lunar_shield_power_normal` (the tr-app `tower_shield_max`
+  twin, `world_sim/npcs.rs:1602`).
+- The party-girl/princess spawn unlocks (`:1401`/`:1406`, read `:2398`/`:2403`
+  ≥251). These are **genuine persisted C# state** — set on the NPC's arrival
+  (`WorldGen.cs:5577-5604` cases 208/663), read at the spawn gates
+  (`Main.cs:65949-65952` princess, `:65785-65799` party girl); the port's
+  `town_arrival.rs:212`/`:217` reads both at those exact gates. The `AnyNPCs`
+  re-derivation (`WorldFile.cs:2943-2953`) is only a pre-251 back-compat path
+  inside `LoadNPCs`, NOT the flags block. (The old "debug override" doc label
+  was a mislabel.)
+
+Kept unowned (no `World` store / deliberate collapse, written at the C# default):
+the `anglerWhoFinishedToday` name list (the port collapses it to the bool
+`World.angler_quest_turned_in`, no name store → write 0 count, skip read),
+downedFishron/EmpressOfLight/Clown, savedBartender + the DD2 T1-T3 tier flags
+(`dd2_latches` is the wave-boss death latches, NOT the tiers), boughtCat/Dog/Bunny,
+combatBook/VolumeTwo/peddlersSatchel (live in `FishingContext`, not `World`),
+crimson, dungeonX/Y, clouds/wind, the banner counts, treeTop, the manifest,
+party/lantern/cultistDelay/afterPartyOfDoom (App-owned `world_events.rs`),
+forceSeasons, meteorShower/coinRain, extraSpawnPoints, the secret micro-seeds
+(vampire/infected/teamBased/dualDungeons/moreLightning/noLightning → the
+`MicroSeedFlags` bitmask rides the `.trwld` v12 tail only, the `.wld` parse does
+not derive `micro_seeds`), and the other unlocks (Merchant/Demo/DyeTrader/
+Truffle/ArmsDealer/Nurse/slime colours except rainbow).
+
+**Fixture regen: deferred, and `golden.wld` needs none.** The fixture keeps
+every newly-wired flag at its C# default (`Shims/Globals.cs` — `Program.cs`
+never sets them), so the wiring is byte-identity-preserving: the divergence
+walk still names exactly `killCount[1]`/`claimable[1]`/`treeTop[0]`/`manifest`.
+The compile-window regen commands (if a future fixture change needs them):
+`powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`. The `.plr`
+AES-envelope PKCS7 fix + its `golden.plr` regen belong to the sibling
+`task/S1-J-5c-plr-crypto` (content commit `6e93ec74`, not an ancestor of this
+branch's HEAD); this increment does not touch the `.plr` writer/envelope.
+
+Tests written (NOT run): `s1_j_3b_the_newly_owned_flags_land_at_their_csharp_byte_offsets`
+(each flag patched into the independent `flags_tail` table at its C# offset,
+then read back; plus the owned-world block vs `expected_flags_block` byte-for-byte),
+`s1_j_3b_active_towers_restore_their_shields_on_load` (full 100 / halved 50,
+inactive towers keep 0), `s1_j_3b_the_saved_npc_and_unlock_gates_follow_the_csharp`
+(v98/100/102/104/250/251 gates), and the extended `owned_world`/`assert_owned_fields`
+round-trip sweep. The tail offsets were hand-verified against `flags_tail`
+(wizard@23/mech@24, angler@110/quest@111/stylist@115/tax@116/golfer@117,
+cultist@1891/moonlord@1892, towers@1898-1906, queenSlime@2025,
+partyGirl@2030/princess@2035; block 2200 bytes).
 ## The worldgen parity proof (S1-A-7)
 
 `ROADMAP` S1-A-7 asks for a comparison against a **C#-generated world**, not the
@@ -20705,8 +20790,63 @@ timer engine untouched. Deliberate deviations:
   block covers 71, 73-79 only, verbatim.
 ## The pirate family, first slice (S1-D-4b-7)
 
-## S1-D-3 FindFrame wave A (code-only mode, task/S1-D-3-findframe-a, 2026-11-18)
+## The aiStyle-3 velocity ladder (S1-D-3, code-only mode)
 
+`crates/tr-app/src/npc_ai3_speeds.rs::apply_ladder` ports `AI_003_Fighters`'
+per-type velocity ladder (`NPC.cs:57403-58401`) arm-for-arm in the C#'s
+if-else order. The C# runs it after the shared target/stuck core
+(`:57120-57402`) and before the lighting block (`:58402+`) and the position
+integration; the port wires it at the same position — `npc_ai.rs`'s
+`walker_step_ladder` sets the facing/sprite (the target-core stand-in), runs
+the ladder in place of the direct `vx = facing * speed` write, then
+integrates (`walker_integrate`, extracted verbatim from `walker_step`);
+`npc.rs::update_zombie` calls `run_ai3_ladder` at the same slot. Converted
+sites: zombie, skeleton (the cave walkers, the goblin fighters, the martian
+ground group, the pirates, the scarecrows and the Splinterling all ride it),
+scutlix, solar drakomire, solar selenian, vortex headcrab, vortex rifleman,
+goblin, solar spearman, vortex soldier. The gate is `kind.ai_style() == 3`
+plus the ladder's own coverage — a declined kind (non-style-3, the frost
+block, the shooter exclusions) falls back to the direct write, so every
+other caller's behaviour is byte-identical.
+
+**RNG: none.** The whole block draws no `Main.rand` value — every arm is
+deterministic arithmetic on velocity/direction/scale/life/target-centre.
+(The shooter block `:59069+` draws `Next(-40, 41)` per axis; it is out of
+this module.) The 18 test fns pin each arm's constants to the C# literals;
+they were **written, not run** — this task ran in code-only mode (no
+cargo/rustc/rustfmt/test invocation, no compiler invoked).
+
+**Skipped kinds (documented pointers):**
+- Frost Moon walkers **338-352**: the sibling `npc_ai_frost_mob.rs`
+  (commit `5ef9b24b`) owns the whole block — including 341/344-347/352,
+  which the C# folds into the num107 default. `apply_ladder` returns `None`
+  for every id in the range.
+- Frost Legion **143/144/145**: aiStyle 38 (`update_frost_legion`,
+  `NPC.cs:28995-29145`) — they never appear in the ladder; the style gate
+  keeps them off it.
+- The **shooter block** (`:59069-59800`, the `:58322` exclusion set:
+  110/111/206/214-216/290-293/350/379-382/449-452/468/481/411/409/
+  498-506/424/426/520) and the **aiStyle-7 casters**: out of scope, their
+  walk sites stay on `walker_step`.
+
+**Deferrals (deliberate, recorded):**
+- **181 remix** (`:57609-57612`, `Main.remixWorld` → 3.75) and **489
+  expert** (`:58372`, `Main.expertMode` → `(3 - d) * 0.8`): the world flags
+  are unported — the normal-world terms ship (181 base 1.5, 489
+  `(2.5 - d) * 0.8`).
+- **The hop flag** (`:57847`): the C#'s obstacle-jump scan (`:59831`)
+  consumes it; the port's collision-jump is that scan's stand-in, so
+  `LadderFx.hop_flag` is carried but not yet read.
+- **The gravity stand-in**: the C#'s `NPC.gravity` static (`NPC.cs:90881`,
+  default 0.3f) gates the lerp machine's airborne weight bump; the port
+  passes its effective per-tick gravity (0.4) as `ctx.gravity`.
+- **CanHit**: the charge family's stop gate (`:58299`) rides the port's
+  `projectile::can_hit_line` seam (the `Collision.CanHitLine` port) at the
+  same 1×1 centres.
+- The 430-family side effects (`damage` restore/×1.5, `ai[2]`/`ai[3]`)
+  ride `LadderFx` and are written back by `run_ai3_ladder`; `defDamage`
+  stands in via `kind.contact_damage()` (widened to `pub(crate)`).
+## S1-D-3 FindFrame wave A (code-only mode, task/S1-D-3-findframe-a, 2026-11-18)
 `crates/tr-app/src/npc_findframe_a.rs` ports `NPC.FindFrame`
 (`NPC.cs:66684-77370`) for **24 LOW-id kinds** the port's `npc.rs`
 `find_frame` match does not carry: the 9 slime variants (16 MotherSlime,
@@ -20726,7 +20866,6 @@ are not touched. Wave B (`task/S1-D-3-findframe-b`, `b2952047`) owns the
 25 MID/HIGH-id kinds; 338-352 ride the frost siblings, the pumpkin
 family rides S1-F-13b, and the bosses with in-flight AI keep their arms.
 The kind ids were verified against `NPCID.cs:10709-11127`'s const rows.
-
 **Code-only mode**: this wave ran with NO cargo/rustc/rustfmt/tests —
 the 11 test functions (the 24-row `Main.npcFrameCount` pin plus 10
 sequence pins covering all 24 kinds) are WRITTEN NOT RUN; their
@@ -20736,9 +20875,7 @@ extracted entry-by-entry from the `Main.cs:67082` 697-entry initializer
 cross-checked against the port's existing anchors (slime 1 = 2, demon
 eye 2 = 2, zombie 3 = 3, KingSlime 4 = 6, bat 49 = 5 — all agree): every
 slime and eye variant carries 2 rows, every walker 3.
-
 Shape and deviations:
-
 - **Wiring landed with the roster (S1-D-3ff, MERGER-P6 2026-11-19)**:
   the original wave-A commit deferred it (the
   `npc_findframe_b.rs`/`drawdata_anim.rs` precedent — pure functions over
@@ -20775,9 +20912,7 @@ Shape and deviations:
   `app/netglue.rs`) was present in this worktree during the task; it was
   left untouched and is NOT part of this branch's commit (only the six
   wave-A files are staged).
-
 ### The S1-D-3ff roster completion (MERGER-P6, 2026-11-19)
-
 The complementary roster wave (the LEAD-COORDINATION-NOTE's option 1) is
 committed on this branch on top of `58b4310a`, so the branch is a
 superset of its findframe name: frames + kinds together. It adds the 24
@@ -21249,9 +21384,7 @@ compile/test gate remains deferred to the merge step. Merger line-ranges
 for conflict resolution: `edit.rs` seams at 14-22 (re-exports) and
 1334/1357 (`pub(super)` helpers); `kill.rs` is a new file — a sibling
 touching the kill family should merge into it, not re-add to `edit.rs`.
-
 ## S1-K-4d actuation/wire family split (2026-11-18, code-only mode)
-
 `crates/tr-app/src/world_sim/editing/wiring.rs` (324 lines) is the
 actuation/wire tool family moved **verbatim** out of `world_sim/editing.rs`
 (9 593 → 9 291 lines): `WIRE_ITEM` (530), the `WiringTool` enum, `wiring_tool`,
@@ -21261,7 +21394,6 @@ actuation/wire tool family moved **verbatim** out of `world_sim/editing.rs`
 rows, the cutter drop, the Actuator item, the temple-wall refusal) with all
 their C#-cite doc comments. Behaviour frozen; the sibling `task/S1-K-4c` owns
 the kill cascade in `edit.rs` and was not touched.
-
 **Seams (K-4 precedent: verbatim extraction + pub(super) seams + re-exports):**
 - `editing.rs` gains `mod wiring;` + `pub(crate) use wiring::use_wiring_tool;`
   — the only caller (`update_editing`, the `Player.cs:43572` wiring-tools arm)
@@ -21276,7 +21408,6 @@ the kill cascade in `edit.rs` and was not touched.
   `super::super::items::spawn_item_drop` (the same items the family used in
   `editing.rs`); everything else it reads is fully qualified in the moved
   bodies and unchanged.
-
 **Byte-equality proof WITHOUT compiling (file ops only).** The source of
 truth is the git blob `origin/main:crates/tr-app/src/world_sim/editing.rs`
 (419 954 bytes, LF, UTF-8 no BOM; the worktree copy is CRLF via
@@ -21295,9 +21426,7 @@ then:
 + `cargo test -p tr-app --test main_anchors`). The anchors row for the moved
 marker was repointed to `editing/wiring.rs` in the same commit (MAIN-RULES §3
 rename rule) and a new S1-K-4d row added. No rustfmt was run on any file.
-
 ## S1-K-4e INTERACT/DOORS family split (2026-11-18, code-only mode)
-
 `crates/tr-app/src/world_sim/editing/doors.rs` (999 lines) is the tile
 right-click INTERACT/DOORS family moved **verbatim** out of
 `world_sim/editing.rs` (9 593 → 8 634 lines): `interact_tile` (the port's
@@ -21319,7 +21448,6 @@ their C#-cite doc comments. Behaviour frozen; NOT the wiring family
 (`task/S1-K-4c` owns `edit.rs`) — neither was touched. The door *break*
 tests (DW-1.1 mining branch, the locked golden door) test `break_tile` and
 stay in `editing.rs`.
-
 **Seams (K-4 precedent: verbatim extraction + pub(super) seams + re-exports):**
 - `editing.rs` gains `mod doors;` + `use doors::interact_tile;` +
   `pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};` — the only
@@ -21340,7 +21468,6 @@ stay in `editing.rs`.
   `crate::registry` and `super::super::items::spawn_item_drop` — the same
   items the family used in `editing.rs`; everything else in the moved bodies
   is fully qualified and unchanged.
-
 **Byte-equality proof WITHOUT compiling (file ops only).** Source of truth:
 the git blob `origin/main:crates/tr-app/src/world_sim/editing.rs`
 (419 954 bytes, LF, UTF-8 no BOM, SHA256
@@ -21363,14 +21490,12 @@ produced both files; then:
    blank) at their original anchors: 419 954 bytes, `fc /b` empty diff,
    SHA256 of origin and reconstruction identical:
    `28f07b8788e314e09e6a92702ae3a9fd946d31db9c6b39679bb34c19e545cb11`.
-
 **Gate deferred**: this task ran in code-only mode — no cargo/rustc/rustfmt,
 no tests executed, no graphify update (the moved tests ride the merge-step
 gate: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
 + `cargo test -p tr-app --test main_anchors`). No anchors row referenced a
 moved marker (verified by grep), so none needed repointing; a new S1-K-4e row
 was added. No rustfmt was run on any file.
-
 **Merger note — K4d/K4e sequential keep-both (origin/main bfe68db8 line
 numbers).** Both branches split the same base file; whoever merges second
 resolves `editing.rs` by KEEPING BOTH extractions:
@@ -21391,7 +21516,6 @@ resolves `editing.rs` by KEEPING BOTH extractions:
   new sibling files, no conflict.
 - After the keep-both resolution, re-run the reconstruction check against
   the pre-split blob if in doubt, then the deferred compile/test gate.
-
 ## S1-G-1e special tiles (code-only mode, 2026-11-18)
 `crates/tr-app/src/render/special_tiles.rs` ports the S1-G-1 special/chest/
 platform slice: `DrawSpecialTilesLegacy` (`TileDrawing.cs:7893-8024`), the
@@ -21444,6 +21568,144 @@ the tests. Deliberate deviations:
   decodes (`TextureAssets.SunOrb`, the item sheets) and
   `Main.sunCircle`/`mouseTextColor` are caller inputs. The additive alpha-0
   tints ride the port's existing blend deviation (S1-G-3).
+## The world-sounds wave (S1-E-21i, 2026-11-18)
+
+**Code-only mode**: this wave was implemented without invoking any compiler —
+no cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The seven `s1_e_21i_*` witness tests are WRITTEN, NOT RUN; the
+branch `task/S1-E-21i-world-sounds` is pushed unmerged for a verification pass.
+
+### Census (what this wave covers, what it skips)
+
+The WorldGen/Wiring world-event `PlaySound` sites, after the landed waves
+(item-use A, tile-place B, NPC-hit C, footsteps D, tile-break table S1-E-21c)
+and the sibling-owned scopes (ambience E21e, player E21f, NPC E21g, projectile
+E21h):
+
+- **Wall break** — `WorldGen.KillWall_PlaySounds` (`WorldGen.cs:60423-60441`),
+  played from `KillWall` (`:60385`) BEFORE the dust (`:60391-60394`) and the
+  drop (`:60400`). The port's `break_wall` played a hardcoded `Dig_2` — replaced
+  by `tr_core::edit::kill_wall_sound` + `Audio::play_wall_break_sound`.
+- **Wiring switch clicks** — `Wiring.HitSwitch`'s seven
+  `SoundEngine.PlaySound(28, ...)` sites (`Wiring.cs:267` the 135/314/423/428/
+  442/476 family, `:272` the wide 440 at `i*16+16, j*16+16`, `:285` the lever
+  136, `:310` the timer 144, `:323` the 441/468 flags/buttons at the clicked
+  cell, `:339` the 467 gem lock ONLY when `frameX/36 == 4`, `:375` the 132/411
+  else-arm). The mine (210) and the geyser (443) are silent (`:288-296` carry
+  no play). The port's `hit_switch` had a D19 "unported" comment on the
+  else-arm — now queued.
+- **Doors** — `WorldGen.OpenDoor` (`WorldGen.cs:37727`, `PlaySound(8)`) and
+  `CloseDoor` (`:31908`, `PlaySound(9)`), success-path only. The port already
+  played `Door_Opened`/`Door_Closed` through the plain `play_at` (no pitch);
+  upgraded to `Audio::play_door_sound`'s case-8/9 pitched path.
+- **Skipped (already landed + wired)**: the liquid-change cues (S1-E-25),
+  the chest/menu cues (`chest.rs`), the tile-break table (`kill_cue`,
+  S1-E-21c — untouched, its D3 pin stands).
+
+### The plays and their RNG streams
+
+Every play gates attenuation FIRST (`LegacySoundPlayer.cs:369-436` precedes
+the type switch) and only then draws; the draws ride the CALLER's `Main.rand`
+stage stream, never the wiring stand-in `Wiring::rand` (that stream is the
+device-effects substitute — cannons/traps/teleport rolls):
+
+| Site | C# | Stream |
+| --- | --- | --- |
+| Hammer wall break | `Player.PickWall` `Player.cs:45949` | `UpdatePlayers` (`Main.cs:17754`) |
+| Player switch bridge / minecart trip / tile-use click | `Collision.SwitchTiles` (`Player.cs:28274`), `Minecart.HitTrackSwitch` (`Minecart.cs:1281-1288`), `Player.cs:32174-32178` | `UpdatePlayers` |
+| Weighted pressure plates | `PressurePlateHelper.Update` (`Main.cs:17763-17765`) | `UpdatePressurePlates` |
+| NPC switch bridge | `NPC.cs:90504` | `UpdateNPCs` (`Main.cs:17767`) |
+| Wiring tick (timer expiries) + logic sensors | `Wiring.UpdateMech` (`WorldGen.cs:71509`) + `TileEntity.PerformUpdates` (`:71510`) inside `UpdateWorld` | `UpdateWorldGen` (`Main.cs:17802-17805`) |
+| Net replays (`17` wall break `MessageBuffer.cs:1177`, `59` switch `:2682-2693`, the rigged chest `:1887-1893`) | message handlers run outside every swap (`Main.cs:16895` NpcStrike precedent) | `rngs.global()` (the bare stream) |
+
+The case maths, per arm:
+
+- **13 Shatter** (`:783-792`): NO draws, no pitch.
+- **6 Grass** (`:706-716`): one `Next(-30, 31) * 0.01` (`:714`) —
+  `sound::Family::Grass`.
+- **3 style 25** (`SoundID.NPCHit25`, `SoundID.cs:1281`): wave C's style
+  façade — the audio-only `GetRandomPitch` NextFloat (drawn even at variance
+  0, `SoundEngine.cs:99`), the ×0.5 volume arm and one `Next(-10, 11)` pitch
+  draw (`:670`), delegated to `play_npc_hit_sound("NPC_Hit_25", …)`.
+- **0 Dig** (`:440-452`): wave B's case-0 path — the `Next(3)` variation pick
+  + `Next(-10, 11) * 0.01`, delegated to `play_place_sound((0, 1), …)`.
+- **8/9 doors** (`:728-749`): one shared `Next(-20, 21) * 0.01`
+  (`:736`/`:747`) — `sound::Family::Door`. The int overload
+  (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch`.
+- **28 Mech** (`:997-1007`): the `SoundInstanceMech[0].State == Playing`
+  guard (`:998-1001`) returns BEFORE the one `Next(-10, 11) * 0.01` (`:1005`)
+  — `sound::mech_case28(playing_0, rng)`. The play overwrites the slot
+  WITHOUT a Stop (`:1002`); the port models the slot as
+  `mech_slots: [Option<Sink>; 1]` and detaches the old sink. `Mech_0` joins
+  `SFX_CUES` (id 28; `SoundMech[0]` loads `Sounds/Mech_0`,
+  `LegacySoundPlayer.cs:22`/`:176`).
+
+The wiring queue is the `take_statue_spawns` event-queue seam:
+`Wiring::switch_clicks: Vec<(i32, i32)>` fills in play order inside
+`hit_switch` (world pixels; the queue itself draws NOTHING), and each app
+drain site plays on its own stage's stream immediately after the triggering
+pass — the C# draws mid-walk, the port drains at the pass tail (the same
+deviation wave C recorded for the projectile strikes).
+
+### Deliberate deviations / deferrals
+
+- **The `KillWall` fail-path plays are missing.** The C# plays the sound table
+  even when the break fails (`KillWall_CheckFailure` `:60410-60421`: the
+  dungeon walls `{7,8,9,94-99}` before Skeletron, wall 87 before Golem —
+  `Main.cs:10598-10606`; `Player.PickWall` calls `KillWall(fail: true)` on
+  every sub-100 damage tick, `Player.cs:45957`). The port's `break_wall` has
+  no fail parameter and no hit-tile damage model, so the cue rides the
+  successful break only. The fail gating needs the `hitTile` damage
+  accumulator + the progression flags — a follow-up, not this wave.
+- **The explosion wall-walk plays are deferred (E21h-owned).**
+  `Projectile.ExplodeTiles`' 3×3 wall walk calls `WorldGen.KillWall`
+  (`Projectile.cs:78745`) under the `UpdateProjectiles` swap
+  (`Main.cs:17775`); the port's walk (`projectile.rs` explode_bomb) calls
+  `tr_core::edit::break_wall` directly with no sound. That file belongs to
+  the projectile wave — recorded here, not touched.
+- **The load-rig `TR_TOGGLES` path stays log-only** (`app/mod.rs`
+  `apply_tr_toggles`): no player exists at load, the C# `gameMenu`/loading
+  gate would refuse the positioned plays anyway.
+- **The wiring arm order differs from the C#.** The port groups
+  135/314/423/428/442/476 first and puts 210/443 before the 132/411 else-arm;
+  the click pushes match each arm's C# position semantics regardless (441/468
+  click at the clicked cell, NOT the derived trip corner; 467 only on the
+  trigger variant).
+- **The `kill_cue` D3 pin is untouched.** The landed tile-break wave's
+  pinned/no-jitter mapping (`editing.rs::kill_cue`) stays as-is; the new
+  wall/door/switch paths use the pitched RNG contract instead.
+- **The case-28 playing guard is device-bound.** Headless (no output device)
+  `emit` returns `None`, the slot stays empty and the guard never trips —
+  every audible click draws, matching the fresh-instance behaviour. With a
+  device, a live click refuses the next one draw-free (the C# semantics).
+- **The door cue strings are unchanged** (`Door_Opened`/`Door_Closed`) — the
+  existing `interaction_events` tests keep passing their shape; only the
+  play path gained the pitch draw.
+- **One borrow re-fetch in `world_sim/player.rs`**: the accessory buff-arms
+  call re-fetches `stream(UpdatePlayers)` instead of reusing the tick's `rng`
+  binding (the switch-click drains borrowed the pool in between) — the
+  stream identity and the draw order are unchanged.
+
+### Witness tests (written, NOT run)
+
+- `tr-core/edit/wall.rs::s1_e_21i_kill_wall_sound_table_arms` — every arm's
+  membership verbatim + the window boundaries (87/94 outside 88..93).
+- `tr-core/wiring.rs::s1_e_21i_hit_switch_queues_the_mech_clicks_per_type` —
+  the seven sites' positions, the 440 corner, the 467 variant gate, the
+  silent 210/443 and non-switch tiles, the queue draws nothing from the
+  wiring stream.
+- `sound.rs::s1_e_21i_the_grass_and_door_pitch_windows` — the exact windows
+  and the 0.01 scale.
+- `sound.rs::s1_e_21i_mech_case28_guards_before_the_pitch_draw` — the guarded
+  play draws nothing (a panicking roll closure), the fresh slot draws one.
+- `audio.rs::s1_e_21i_the_wall_break_draws_ride_the_passed_stream_only_when_audible`
+  — per-arm draw counts against a witness stream (13: zero, 6: one, 3/25:
+  one, 0: two), muted/out-of-range draw-free, the bank rows registered.
+- `audio.rs::s1_e_21i_the_door_pitch_draws_ride_the_passed_stream` — one
+  `Next(-20, 21)` per open/close, muted/out-of-range draw-free.
+- `audio.rs::s1_e_21i_the_switch_click_draws_ride_the_passed_stream` — one
+  `Next(-10, 11)` per click, two clicks two draws headless, muted/out-of-range
+  draw-free.
 ## Test temp-path isolation (fix/test-temp-path-isolation, 2026-11-18)
 `crates/tr-app/src/npc_findframe_b.rs` ports `NPC.FindFrame`
 (`NPC.cs:66684-77370`) for **25 MID/HIGH-id kinds** the port's `npc.rs`

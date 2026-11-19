@@ -3820,7 +3820,8 @@ impl Npc {
             NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
             NpcKind::SolarSpearman => {
                 let (pcx, pcy) = player.center();
-                crate::npc_ai::walker_step(
+                // S1-D-3: the 518 carrier row (`NPC.cs:58226-58231`).
+                crate::npc_ai::walker_step_ladder(
                     self,
                     world,
                     pcx,
@@ -3833,6 +3834,7 @@ impl Npc {
                     },
                     GRAVITY,
                     MAX_FALL,
+                    player.dead,
                 );
             }
             // The stardust/solar tower mobs: the spider pair, the soldier,
@@ -3868,7 +3870,8 @@ impl Npc {
             // `:57681`: the soldier's walk speed is the 4-px cap.
             NpcKind::VortexSoldier => {
                 let (pcx, pcy) = player.center();
-                crate::npc_ai::walker_step(
+                // S1-D-3: the 429 num83 row (`NPC.cs:57681-57684`).
+                crate::npc_ai::walker_step_ladder(
                     self,
                     world,
                     pcx,
@@ -3881,6 +3884,7 @@ impl Npc {
                     },
                     GRAVITY,
                     MAX_FALL,
+                    player.dead,
                 );
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
@@ -6386,15 +6390,18 @@ impl Npc {
             crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
             self.sprite_dir = self.facing;
             if !player.dead {
-                // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
-                // default group, `NPC.cs:58322-58374`): 1f. The port keeps
-                // its direct velocity write (the C#'s 0.07 approach lands
-                // with the full AI_003 migration — ANALYSIS, S1-D-3p).
-                // S1-D-3ff: the cap rides the KIND's `num107` row
-                // (`AI_003_Fighters`, `NPC.cs:58324-58376`) — the zombie
-                // keeps its 1f default, the variants their own rows.
-                self.vx =
-                    self.facing as f32 * self.kind.ai3_walk_speed().unwrap_or(1.0);
+                // S1-D-3 (speed table): the C#'s `num107` default arm
+                // (`NPC.cs:58322-58401`) — the 1f cap with the scale row,
+                // the 0.07 accel and the grounded over-cap ×0.8 brake —
+                // replaces the direct velocity write at the C#'s ladder
+                // position (after the target core, before integration).
+                // The fallback keeps the S1-D-3ff kind-row cap (the zombie
+                // 1f default, the variants their own rows).
+                let (pcx, pcy) = player.center();
+                if !crate::npc_ai::run_ai3_ladder(self, world, pcx, pcy, GRAVITY, false) {
+                    self.vx =
+                        self.facing as f32 * self.kind.ai3_walk_speed().unwrap_or(1.0);
+                }
             } else {
                 self.vx *= 0.9;
             }
@@ -7083,7 +7090,10 @@ impl Npc {
     /// `Main.cs:67082`).
     fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3 (speed table): the ladder variant — the aiStyle-3 kinds
+        // ride the C#'s per-type accel/brake (`NPC.cs:57403-58401`); the
+        // direct-write kinds keep the old step byte-for-byte.
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -7104,6 +7114,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // The frame: the same accumulator as the zombie's, wrapping over
         // the 15-frame strip.
@@ -8742,7 +8753,8 @@ impl Npc {
         {
             self.ai[2] = 1.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 391 carrier row (`NPC.cs:58205-58207`'s 5/0.25/0.7).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -8755,6 +8767,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
         if self.ai[2] > 0.0 && self.on_ground {
@@ -10253,8 +10266,9 @@ impl Npc {
                 self.wants_hostile_shot.push((577u16, mx, my, vx, vy, 75));
             }
         }
-        // `:57677`: the rifleman's walk speed is 6.
-        crate::npc_ai::walker_step(
+        // `:57677`: the rifleman's walk speed is 6 — S1-D-3: the num83
+        // row's 0.07 accel rides the ladder (`NPC.cs:57677-57680`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -10267,6 +10281,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
@@ -11020,7 +11035,8 @@ impl Npc {
     /// with the mob-specific speed, hidden while a 416 rides it.
     fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 415 carrier row (`NPC.cs:58214-58219`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -11033,6 +11049,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
@@ -11224,7 +11241,8 @@ impl Npc {
     /// speed and the roller's drag.
     fn update_solar_selenian(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 419 carrier row (`NPC.cs:58220-58225`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -11237,6 +11255,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
@@ -11677,7 +11696,8 @@ impl Npc {
     /// on the 300-tick counter behind the empty 3x2 box above its centre.
     fn update_vortex_headcrab(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 428 slow arm (`NPC.cs:57881-57906`'s 0.5/0.03/0.7).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -11690,6 +11710,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // `:58834-58841`'s rotation: grounded flat, rolling in the air.
         if self.vy == 0.0 {
@@ -14379,7 +14400,9 @@ impl Npc {
     /// player and jump the obstacles (the same machine as the zombie).
     fn update_goblin(&mut self, world: &World, player: &mut Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the ladder variant (the goblin rows: 26 num83 1.5,
+        // 27 cap-2, 28 num107 1 — `NPC.cs:57606`/`:57554`/`:58322`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -14392,6 +14415,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
