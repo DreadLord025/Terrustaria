@@ -3256,6 +3256,15 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
+            // (`NPC.cs:32761-33043` / `:33044-33197`) — claimed for these
+            // two kinds only (the aiStyle-26/22 kinds ride another slice).
+            57 if self.kind == NpcKind::MourningWood => {
+                crate::npc_ai_pumpkin_boss::mourning_wood_step(self, world, player, rng)
+            }
+            58 if self.kind == NpcKind::Pumpking => {
+                crate::npc_ai_pumpkin_boss::pumpking_step(self, world, player, rng)
+            }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         self.find_frame();
@@ -3321,8 +3330,12 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            // The Retinazer (325) rides the aiStyle-57 machine; the
-            // Spazmatism (326) is an aiStyle-3 fighter (the walker).
+            // The Retinazer (C# type 125) rides its own machine
+            // (`update_retinazer`, the S1-D-3i port of the shared aiStyle-57
+            // block shape); the Spazmatism (126) is an aiStyle-31 fighter —
+            // the SetDefaults rows (`NPC.cs:10526`/`:10543`, the S1-D-2
+            // extraction's doc-drift correction). The Pumpkin bosses'
+            // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
             NpcKind::Spazmatism => self.update_spazmatism(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
@@ -3615,39 +3628,14 @@ impl Npc {
             // `_ => return` leaves it shotless until the named machine lands).
             NpcKind::Poltergeist => self.update_caster(world, player, rng),
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
-            // aiStyle 58): the gravity-off floaters. Their named machines ride
-            // the S1-F-13b2 row; until then the wave arm's documented
-            // stand-ins are the hover family at each machine's own base
-            // speed/approach — 325: aiStyle-57's `num836 = 2f` (`:32762`) with
-            // its `(num836 − vx)/21` approach (`:32983`, accel 0.1); 327:
-            // aiStyle-58's `num875 = 6` (`:33087`) with its `/15` lerp (accel
-            // 0.4). Both fly through the tiles (their `noTileCollide` rows).
-            NpcKind::MourningWood => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 2.0,
-                    accel: 0.1,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
-            NpcKind::Pumpking => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 6.0,
-                    accel: 0.4,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
+            // aiStyle 58): S1-F-13b2 slice B landed their named machines
+            // (`npc_ai_pumpkin_boss.rs`, `NPC.cs:32761-33043` /
+            // `:33044-33197`) — the style axis claims them, so these arms
+            // are unreachable through `update_rng` (the S1-F-13b hover
+            // stand-ins are retired).
+            NpcKind::MourningWood | NpcKind::Pumpking => {
+                unreachable!("aiStyles 57/58 ride the style axis (S1-F-13b2)")
+            }
         }
     }
 
@@ -22745,9 +22733,11 @@ mod s1_f_13b_tests {
     fn s1_f_13b_the_family_machines_route_to_their_stand_ins() {
         // DW-2.5's routing: the wave roster rides live — the 11 aiStyle-3
         // walkers and the two aiStyle-26 kinds walk on the walker family (the
-        // speed rows pin their caps), the Mourning Wood and the Pumpking
-        // hover, and the Poltergeist rides the caster stand (it holds still —
-        // its shot arm returns until the named machine lands with S1-F-13b2).
+        // speed rows pin their caps), the Mourning Wood and the Pumpking fly
+        // their named machines (S1-F-13b2 slice B retired the hover
+        // stand-ins), and the Poltergeist rides the caster stand (it holds
+        // still — its shot arm returns until the named machine lands with
+        // S1-F-13b2 slice A).
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -22788,8 +22778,9 @@ mod s1_f_13b_tests {
                 "{kind:?} never closed the gap"
             );
         }
-        // The floaters: the Mourning Wood and the Pumpking hold the hover (the
-        // gravity-off fly toward the player), the Poltergeist stands.
+        // The bosses: the Mourning Wood's approach/hover and the Pumpking's
+        // /15 lerp (their named machines, `npc_ai_pumpkin_boss.rs`) close the
+        // gap; the Poltergeist stands.
         for kind in [NpcKind::MourningWood, NpcKind::Pumpking] {
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
