@@ -4839,6 +4839,52 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Buff effect table, wave A (S1-E-7a, 2026-11-18)
+
+The potion-buff block of `Player.UpdateBuffs` (`Player.cs:9875-9880` +
+`:9948-10048`) — 18 arms, 18 new ids — landed in the inline effect scan
+(`player.rs`, the `ResetEffects`-cleared flags re-derived per tick from the
+buff slots). Consumers wired: ObsidianSkin 1 → the lava gate (`:27676`) +
+`touch_damage`'s `fire_walk` read + `buffImmune[24]`; Gills 4 →
+`check_drowning`'s probe flip (`:23226-23229`, the For-the-Worthy inversion
+included); ManaRegeneration 6 → `RegenInputs::mana_regen_buff`; Featherfall 8
+→ the `:27369-27376` fall caps (after the whole flight else-if chain, the
+`mount.Type != 5` gate included), the `:27022-27033` gravity/3(/10) arm placed
+BEFORE the wing glide, and the `:25379` slow-fall fall-origin term;
+Invisibility 10 / Battle 13 → the spawner's `SpawnFlags` (`NPC.cs:702-740`);
+Shine 11 → `entity_lights::shine_light` (the truncating `(int)center / 16`
+anchor); NightOwl 12 → the legacy light pass's `night_vision` input; Confused
+31 → the `:24996-25004` control swap; Silenced 35 → the `:52221-52224`
+mana-item refusal (base `Item.mana`, before the manaCost scale); Dazed 160 →
+the `:19637-19641` jump-static clamp (after the sticky one).
+
+Deliberate deviations (all flag-only or collapsed branches):
+
+- **Flag-only arms** — Spelunker 9 (`findTreasure`), BiomeSight 343
+  (`biomeSight`), Hunter 17 (`detectCreature`): the highlight draw passes are
+  unported; WaterWalking 15 (`waterWalk`): the `Collision.WaterCollision`
+  surface-walk half is unported (the lava-probe height trim `:27664-27667`
+  rides it); Gravitation 18 (`gravControl`): the gravity-flip key
+  (`:26694`) is unported (`gravDir` is fixed −1). Each flag is set/cleared
+  1:1 so the consumers land against a live source.
+- **Confused's up/down half collapses** — the C# swaps four controls
+  (`:24998-25003`); the port has no `controlUp` key, so with up ≡ false the
+  down half becomes `controlDown = false` and the up half has no field.
+- **Shine's light rides the frame feed, not the sim tick** — the S1-E-5
+  pattern (`app/frame/draw.rs` after the NPC lights): the C# adds it inside
+  `UpdateBuffs`; the port's one-frame-delayed `EntityLights` pair makes the
+  placement observable-equivalent, and no RNG is drawn either way.
+- **The `slowFall` wet term** — `:25379`'s `base.wet` covers honey; the port
+  keeps its water-only `in_water` stand-in (the Phase-4 deviation), with the
+  `slow_fall` term added beside it.
+- **The `DebugOptions.ManaV2` branch (7)** assigns the same 0.2 both ways —
+  folded to the constant. The carpet's `slowFall = false` (`:21888`) and the
+  spiked-boot gravity arms (`:21644`/`:21782`) are unported systems; the
+  flag stays as the buff set it.
+
+Tests: 12 `s1_e_7a_*` (player.rs ×9, spawner.rs ×1, entity_lights.rs ×1,
+world_sim/editing.rs ×1), each naming its C# lines.
+
 ## Town chatter (S1-E-10a, 2026-11-14)
 
 `crates/tr-app/src/npc_chat.rs` ports `NPC.GetChat` (`NPC.cs:93766-94800`):

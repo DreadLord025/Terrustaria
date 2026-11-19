@@ -404,6 +404,15 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
+                    // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
+                    // center tile while buff 11 is held. No RNG — the feed
+                    // leaves the streams untouched.
+                    if let Some(p) = player.as_ref() {
+                        if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -564,9 +573,10 @@ impl App {
                         let legacy_inputs = tr_core::lighting::legacy::LegacyInputs {
                             render_phases: self.gfx_quality.render_phases,
                             water_style: legacy_water_style as u8,
-                            // The buff flags beyond `blind` are not ported
-                            // (`Player.nightVision/blackout/headcovered`).
-                            night_vision: false,
+                            // NightOwl (buff 12) arms `nightVision` per tick
+                            // (`Player.cs:9999`, S1-E-7 wave A); blackout /
+                            // headcovered have no ported sources yet.
+                            night_vision: player.as_ref().is_some_and(|p| p.night_vision),
                             blind: player.as_ref().is_some_and(|p| p.blind),
                             blackout: false,
                             headcovered: false,
