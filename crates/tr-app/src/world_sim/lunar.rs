@@ -130,9 +130,14 @@ pub fn update_lunar_apocalypse(app: &mut App) {
         if n.hp <= 0 {
             continue;
         }
+        // `:86708-86725`'s per-type flags (517 solar / 422 vortex /
+        // 507 nebula / 493 stardust). B-6d: the duplicate `NebulaTower`
+        // arm left slot 2 (vortex) never set — the vortex flag cleared
+        // on the first update after any tower death and the all-four
+        // doom check could fire while the Vortex pillar still stood.
         let slot = match n.kind {
             NpcKind::SolarTower => 1,
-            NpcKind::NebulaTower => 2,
+            NpcKind::VortexTower => 2,
             NpcKind::NebulaTower => 3,
             NpcKind::StardustTower => 4,
             NpcKind::MoonLordCore
@@ -252,4 +257,84 @@ fn tower_slot_clear(world: &tr_core::World, tx: i32, ty: i32) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    fn tower(kind: NpcKind) -> Npc {
+        let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    #[test]
+    fn b6d_all_four_towers_count_once_each() {
+        // `WorldGen.UpdateLunarApocalypse` (`WorldGen.cs:86708-86725`):
+        // each of the four tower types sets its OWN flag. The duplicate
+        // `NebulaTower` arm left slot 2 (vortex) never set, so a live
+        // Vortex pillar read as dead on every update.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.lunar_apocalypse_is_up = true;
+        for kind in TOWER_ORDER {
+            app.npcs.push(tower(kind));
+        }
+        update_lunar_apocalypse(&mut app);
+        assert!(app.world.tower_active_solar, "517 counts");
+        assert!(app.world.tower_active_vortex, "422 counts");
+        assert!(app.world.tower_active_nebula, "507 counts");
+        assert!(app.world.tower_active_stardust, "493 counts");
+        assert!(
+            app.world.lunar_apocalypse_is_up,
+            "four standing towers never arm the doom"
+        );
+    }
+
+    #[test]
+    fn b6d_the_vortex_death_alone_never_arms_the_doom() {
+        // The premature-doom witness: with Solar/Nebula/Stardust alive and
+        // only the Vortex dead, `:86744`'s all-four gate must NOT fire.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.lunar_apocalypse_is_up = true;
+        for kind in [
+            NpcKind::SolarTower,
+            NpcKind::NebulaTower,
+            NpcKind::StardustTower,
+        ] {
+            app.npcs.push(tower(kind));
+        }
+        update_lunar_apocalypse(&mut app);
+        assert!(app.world.tower_active_solar);
+        assert!(!app.world.tower_active_vortex, "the dead vortex clears");
+        assert!(app.world.tower_active_nebula);
+        assert!(app.world.tower_active_stardust);
+        assert!(
+            app.world.lunar_apocalypse_is_up,
+            "three towers stand — no doom"
+        );
+    }
+
+    #[test]
+    fn b6d_all_four_down_arms_the_doom() {
+        // `:86744-86746`: no tower and no Moon Lord part alive →
+        // `StartImpendingDoom(3600)`.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.lunar_apocalypse_is_up = true;
+        update_lunar_apocalypse(&mut app);
+        assert!(!app.world.lunar_apocalypse_is_up);
+        assert_eq!(app.world.moon_lord_countdown, NATURAL_COUNTDOWN);
+    }
+
+    #[test]
+    fn b6d_a_living_moon_lord_part_holds_the_doom() {
+        // `:86710-86712`/`:86744`: the core (398) alive keeps `flag` set —
+        // the countdown must not re-arm while the boss fight runs.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.lunar_apocalypse_is_up = true;
+        app.npcs.push(tower(NpcKind::MoonLordCore));
+        update_lunar_apocalypse(&mut app);
+        assert!(app.world.lunar_apocalypse_is_up, "the core holds the doom");
+    }
 }

@@ -29845,3 +29845,181 @@ hook chain nesting, the flag3 switch membership, the HandleMovement stick
 arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
 Update countdown position). The 10 witness tests in
 `projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.
+## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
+
+Audit source: `docs/research/53-audit-pillars.md` (branch
+`origin/docs/audit-pillars-dd2lanes`), the B-6d slice. Five findings
+re-verified against the C# line-by-line; four fixed, one proved a false
+positive. No cargo/rustc/rustfmt/tests invoked — every witness test is
+WRITTEN NOT RUN; verification = whole-block C# re-reads + hand arithmetic.
+
+### B-6d-1 — the apocalypse slot table (FIXED)
+
+`WorldGen.UpdateLunarApocalypse` (`WorldGen.cs:86693-86748`) sets one
+flag per tower TYPE (517 solar / 422 vortex / 507 nebula / 493 stardust,
+`:86708-86725`). The port's match had `NebulaTower => 2` AND
+`NebulaTower => 3` — the second arm unreachable, slot 2 (vortex) never
+set, so `tower_active_vortex` cleared on the first update after any
+tower death and `:86744`'s all-four doom gate could fire with the Vortex
+pillar standing. Fixed to `VortexTower => 2` / `NebulaTower => 3` — the
+slot order keeps the flag writes (`lunar.rs:147-150`) consistent (the
+audit's alternative "VortexTower => 3" would have crossed the
+vortex/nebula flags). Witnesses: all four towers counted once each, the
+vortex-only death never arms the doom, all-down arms it, a living core
+(398) holds it.
+
+### B-6d-2 — the 629 bolt's shield spend (FIXED, three counts)
+
+C# `Projectile.Kill()`'s type-629 block (`Projectile.cs:72944-72979`,
+read whole):
+1. the spend is `Clamp(ShieldStrengthTower<Kind> - 1, 0,
+   ShieldStrengthTowerMax)` (`:72953` etc.) — ONE per bolt, regardless
+   of damage (the 629 spawns with damage 0, `NPC.cs:79290`); the port
+   drained `slot.damage`;
+2. the shield is picked by `Main.npc[(int)ai[0]].type` (`:72946`) —
+   `ai[0]` is the HOST NPC INDEX, not a tower ordinal; the port matched
+   `ai[0] as usize` 0/1/2/3 against the four shields, so with the
+   compacted vec the spend hit an arbitrary shield;
+3. the host's `ai[3] = 1f` shield-flash (`:72951` etc.) fires only while
+   the shield is non-zero — the port never set it.
+All three fixed in the aiStyle-122 dispatch arm; the switch's missing
+default is kept (a non-tower host spends nothing); the clamp max rides
+`tower_shield_max` (`NPC.cs:6795-6806`, halved post-Moon-Lord). The
+`:72977-72978` netUpdate/SendData(101) tail stays unmodelled
+(single-player). The spend is still only reachable once B-6b wires the
+spawn sites — no live code spawns 629 yet (R72 owns that loop).
+
+### B-6d-3 — the 579 ritual payload (FIXED, both defects)
+
+`Projectile.cs:33844-33856` (`AI_108`'s 579 arm at `ai[0] == 90`):
+- `for (num815 = 0; num815 < 2; ...)` spawns TWO VortexAliens (427). The
+  port wrote both into one `Option` — the first was overwritten. The
+  seam is now `wants_mark_spawn: Vec<(kind, x, y, vx, vy)>`; the
+  aiStyle-103 stardust mark pushes its single request, the 579 pushes
+  two, `drain_mark_spawns` appends per slot. The world_sim resolver
+  (`world_sim/projectiles.rs`) already iterates the drained vec — both
+  aliens now reach the NPC vec.
+- the velocity is `-UnitY.RotatedByRandom(2π) * Main.rand.Next(4, 9) -
+  UnitY*2` — an INTEGER magnitude 4..=8. The port drew
+  `4.0 + next_float()*5.0` (continuous 4..9). Fixed to
+  `rng.next_range(4, 9)`.
+- the rotation shape is now faithful too: `RotatedByRandom`
+  (`Utils.cs:1697-1700`) draws TWO NextDouble values
+  (`NextDouble()*max - NextDouble()*max`); the port maps NextDouble onto
+  the shared stream's `next_float` (the `projectile_ai067_b.rs`
+  convention) and rotates UnitY by `RotatedBy` (`Utils.cs:1675-1684`):
+  `(sin a, -cos a) * mag` after the leading minus, then `(0, -2)`.
+- the `:33848` burst latch `ai[1] = 1f` is now set (it gates nothing
+  else in the ported timeline, but the net-synced state is behaviour).
+RNG witnesses: a scripted stream pins the per-alien draw order
+(float, float, int) and the `Next(4, 9)` bounds; the reworked 90th-tick
+test asserts BOTH aliens drain with integer-magnitude bounds
+(vy ∈ [-10, 6], |vx| ≤ 8).
+Still open (audit-flagged, not this slice): the 580 bolt's
+`ai1 = Main.rand.Next(80)` (`:33841`) is not drawn by
+`wants_ritual_bolt` — the resolver defaults ai1 = 0; B-6b's wiring wave
+should resolve it with the spawn sites.
+
+### B-6d-4 — the DD2 lane fade window (AUDIT FALSE POSITIVE, no change)
+
+Audit 53 §4.1 defect 1 claimed `npc.rs:10769` ramps 500→550 while C#
+ramps 500→600, and that the port's scale at death is 0.05 vs C#'s 0.525.
+Re-verified against source — the claim miscomputes its own cite:
+- C# `NPC.cs:41028`: `scale = Lerp(1, 0.05, GetLerpValue(500, 600,
+  ai[0], clamped: true))`.
+- `Utils.GetLerpValue` (`Utils.cs:315-343`) with clamped=true returns
+  0 below 500, 1 above 600, else `(t - from) / (to - from)` =
+  `(ai[0] - 500) / (600 - 500)` = `(ai[0] - 500) / 100`.
+- The port: `let t = ((self.ai[0] - 500.0) / 100.0).clamp(0.0, 1.0);
+  self.scale = 1.0 + (0.05 - 1.0) * t;` — algebraically IDENTICAL.
+- At the death tick `ai[0] == 550` (`NPC.cs:41038`): t = 0.5, scale =
+  1 − 0.95·0.5 = 0.525 in BOTH. The gate dies mid-fade in vanilla too;
+  the 600 endpoint is never reached. The audit's "port finishes at 550"
+  reading treated the `/100` divisor as a 100-tick window ending at the
+  death tick — but the divisor is the C#'s own `to - from`.
+No code change (the golden rule forbids "fixing" faithful code). A
+witness test pins the window at 500 (scale 1), 525 (0.7625) and the 550
+death (0.525, hp 0, unshielded) so no future pass narrows it.
+
+### B-6d-5 — the DD2 wave-5 spawn drop (FIXED)
+
+C# `DD2Event.Difficulty_1_SpawnMonsterFromGate` case 5
+(`DD2Event.cs:1075-1095`): the Dark Mage's `if` (`:1078-1081`) runs its
+`NewNPC`, and the chain after it (`:1082-1093`) runs its OWN `NewNPC` —
+`num4` is only the net-sync handle (`:1100-1103`), re-assigning it does
+not un-spawn the mage. The port returned `chain.or(boss)` — one body,
+the mage dropped whenever the chain fired. Fixed to
+`LaneSpawn { first: boss, second: chain }`; the resolver
+(`spawn_dd2_from_gate`) already iterates `[first, second]` in order, so
+the mage spawns first, the chain body second — the C#'s statement order.
+Witnesses: mage+wyvern, mage+javeliner, mage+goblin, the right-lane
+`Next(2)` miss (chain alone), and the live-mage `AnyNPCs(564)` gate.
+
+### B-6e — the DD2 wave-6 spawn drop (FIXED, branch fix/dd2-wave6-spawn-drop)
+
+The new finding handed to the Lead by B-6d, resolved on
+`fix/dd2-wave6-spawn-drop` (based on `fix/lunar-dd2-small-wrongs`
+6e3d201e — the chain lands both). Code-only wave: no compiler invoked,
+witnesses WRITTEN NOT RUN; verification = whole-block C# re-reads +
+hand-traced draw sequences.
+
+C# `DD2Event.Difficulty_3_SpawnMonsterFromGate` case 6
+(`DD2Event.cs:1691-1728`, read whole): TWO independent `if` chains.
+The first (`:1692-1707`) rolls `Next(20)`/`Next(20)`/`Next(12)`/`Next(25)`
+for the balista 577 / sapper 565 / mystic 571 / drake 569 and runs its
+`NewNPC`. The second (`:1708-1727`) is a SEPARATE statement — its
+`Next(7)` glider 578, `Next(7)`+`Next(3)` mystic/frost-mage, `Next(5)`
+javeliner 563, or the squire arm: `Next(3)` spawns the 557 into `num8`
+(`:1724`) and the 554 ALWAYS spawns into `num9` (`:1726`). `num8`/`num9`
+are only net-sync handles (`:1755-1762`); re-assigning `num8` does not
+un-spawn the first chain's body. Up to THREE bodies per pass.
+
+The port returned `second.first.or(first)` — the first chain's body was
+dropped whenever the second fired, and the squire's unconditional 554
+rode the optional `second` slot. Fixed: `LaneSpawn` gains a `third`
+field (only this arm fills it — the always-spawned 554), the wave-6 pick
+is `{ first, second: second.first, third: second.third }`, and the
+resolver (`spawn_dd2_from_gate`) iterates `[first, second, third]` in
+the C#'s spawn order (first chain, then 557-on-roll, then 554). RNG is
+unchanged BY CONSTRUCTION: every roll and its order is untouched — the
+bug was purely the post-roll body selection.
+
+**Census of every wave row** (all three switches read whole):
+
+| Row | C# block | Shape | Verdict |
+| --- | --- | --- | --- |
+| D1 w1-4 | `:1039-1074` | single else-if chain, max 1 body | ✅ faithful |
+| D1 w5 | `:1075-1095` | mage `if` + independent chain, 2 bodies | ✅ fixed by B-6d-5 (R71) |
+| D2 w1-7 | `:1270-1425` | single else-if chains; squire-pair arms (`:1309-1313`, `:1353-1357`, `:1383-1387`, `:1415-1419`) spawn 2 via `pair()` | ✅ faithful, no `.or()` collapse |
+| D3 w1-5, 7 | `:1581-1690`, `:1729-1750` | single else-if chains + squire pairs, max 2 | ✅ faithful |
+| D3 w6 | `:1691-1728` | two independent chains + always-554, max 3 | ❌→✅ FIXED here (B-6e) |
+
+Witnesses (WRITTEN NOT RUN): `b6e_wave_six_spawns_all_three_bodies_in_c_order`
+(577+557+554 in order; the pair alone when the first chain misses; the
+554 alone when its `Next(3)` misses; the two-body glider arm),
+`b6e_per_wave_spawn_count_pins` (the census as per-wave max-count
+assertions, `third` None outside D3 w6), and the repointed
+`the_tier_three_wave_six_chains_run_side_by_side` (spawn-both, not
+outrank). Pre-existing note (unchanged, outside B-6e's scope): the
+other waves' squire pairs use `pair()`, which keeps the squire in
+`first` and the rolled companion in `second`, while the C# spawns the
+companion first — both bodies spawn either way; only the intra-pass
+order differs. The wave-6 arm uses the strict C# order.
+
+### Deliberate deviations kept (unchanged this wave)
+
+- The DD2 rolls' `next_float() < 1/N` vs C# `Next(N) == 0` consumption
+  shape (recorded, `dd2.rs:386-389`).
+- The 629 arm's centre-box contact test vs `Hitbox.Intersects` and the
+  unmodelled red QuickDust (audit §3.1, arm-side — B-6b's slice).
+- The ritual markers' dust arms (229/240/5) unmodelled; their draws are
+  NOT taken (the documented zero-dust deviation predates this wave).
+- The 579's `netUpdate` (`:33849/33854`) unmodelled (single-player).
+
+Verification: C# re-reads (`WorldGen.cs:86693-86748`,
+`Projectile.cs:72944-72979` whole + `:33825-33857` + `:34896-34965`,
+`NPC.cs:41010-41047`, `DD2Event.cs:1060-1104` + `:1691-1727`,
+`Utils.cs:315-343`/`:1675-1700`) against the port line-by-line; the
+fade-window arithmetic hand-computed at 500/525/550. 15 new/reworked
+witness tests WRITTEN NOT RUN — **no compiler invoked**.
+

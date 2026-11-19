@@ -1077,3 +1077,37 @@ sibling note) at the wave merge:
     the hostile-shot (owner 255) budget sync, the event-site helpers
     (`sync_now`/`recheck_sections`/`despawn_mark_applies`) at their simulation
     callers, and the player-state / tile-edit / container cadences.
+# B-6d — the lunar/DD2 small WRONGs (audit 53, branch fix/lunar-dd2-small-wrongs)
+
+Audit source: `docs/research/53-audit-pillars.md` on branch
+`origin/docs/audit-pillars-dd2lanes` (§2.4, §3.1, §3.2, §4.1, §4.3).
+Code-only wave 2026-11-19: no cargo/rustc/rustfmt/tests invoked — tests
+WRITTEN NOT RUN; verification = whole-block C# re-reads + hand arithmetic.
+
+| Status | Task | Description | Size | Sev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 🟡 B-6d-1 | `update_lunar_apocalypse` slot table | `lunar.rs:133-143`'s duplicate `NebulaTower` arm left slot 2 (vortex) never set — `tower_active_vortex` cleared on the first update after any tower death and the all-four doom gate (`WorldGen.cs:86744`) could fire while the Vortex pillar stood. Fixed: `VortexTower => 2`, `NebulaTower => 3` (slot order consistent with the flag writes `:147-150`; C# `:86708-86725` counts per type 517/422/507/493) | XS | B | research/53 §2.4 | — | 4 witness tests (`lunar.rs::tests::b6d_*`: all-four-count-once, vortex-death-alone no doom, all-down arms doom, living core holds doom) — WRITTEN NOT RUN |
+| 🟡 B-6d-2 | 629 bolt shield spend | `projectile.rs`'s aiStyle-122 contact spend drained `slot.damage` by `ai[0]` as a tower ORDINAL; C# `Projectile.Kill()`'s 629 block (`Projectile.cs:72944-72979`, read whole) switches on `Main.npc[(int)ai[0]].type` (517/422/507/493 — ai[0] is the host NPC INDEX), spends `Clamp(strength - 1, 0, ShieldStrengthTowerMax)` per bolt regardless of damage (the 629 spawns with damage 0, `NPC.cs:79290`), and sets the host's `ai[3] = 1f` flash only while the shield is non-zero. All three fixed; non-tower hosts spend nothing (the switch has no default); the netUpdate/SendData(101) tail is unmodelled | S | B | research/53 §3.1 | — | 4 witness tests (`phasmal_projectile_tests::b6d_*`: −1-not-damage by host type at index 1, per-type shield map, empty-shield no-flash + zero clamp, post-Moon-Lord max clamp) — WRITTEN NOT RUN |
+| 🟡 B-6d-3 | 579 ritual payload | Two defects (`projectile.rs` `ai_vortex_ritual` vs `Projectile.cs:33844-33856`): (a) the two VortexAliens wrote one `Option` — the first was overwritten; the seam is now `wants_mark_spawn: Vec<…>` (both the aiStyle-103 mark and the 579 pair push; the drain appends), (b) the magnitude was a continuous `4 + NextFloat*5`; C# draws the INTEGER `Next(4, 9)` (4..=8). Also ported the `:33848` `ai[1] = 1f` burst latch and the faithful `RotatedByRandom` shape (`Utils.cs:1697-1700`: TWO NextDouble draws `d1*max − d2*max`, mapped onto next_float per the ai067_b convention; `RotatedBy` `Utils.cs:1675-1684` on UnitY) | S | B | research/53 §3.2 | — | spawn-both + scripted-RNG witness (`ritual_projectile_tests::the_portal_spawns_two_aliens_on_the_90th_tick` reworked to len 2; `b6d_the_579_burst_draws_two_angles_then_an_integer_magnitude_per_alien` pins the float,float,int draw order per alien and the Next(4,9) bounds) — WRITTEN NOT RUN |
+| ✅ B-6d-4 | DD2 lane fade window — AUDIT FALSE POSITIVE | Audit 53 §4.1 defect 1 claimed the port ramps 500→550 vs C# 500→600. Re-verified against source: `npc.rs:10769` `((ai[0]-500)/100).clamp(0,1)` IS `Utils.GetLerpValue(500, 600, ai[0], clamped)` (`Utils.cs:315-343`: `(t-from)/(to-from)` = `(t-500)/100`), and `Lerp(1, 0.05, t)` (`NPC.cs:41028`) matches the port's `1 + (0.05-1)*t`. At the 550 death tick both give t=0.5 → scale 0.525 — the exact value the audit attributes to C# alone. NO code change; a witness test pins the window (`npcs.rs …::b6d_the_gate_fade_ramps_500_to_600`: scale 1 at 500, 0.7625 at 525, 0.525 at the 550 death) | XS | — | research/53 §4.1 (correction) | — | witness WRITTEN NOT RUN; audit correction recorded in ANALYSIS |
+| 🟡 B-6d-5 | DD2 wave-5 spawn drop | `dd2.rs` `lane_spawn_roll_d1` wave 5 returned `chain.or(boss)` — one body; C# `DD2Event.cs:1078-1093` runs the Dark Mage's `NewNPC` AND then the chain's `NewNPC` (`num4` is only the net-sync handle). Fixed to `LaneSpawn { first: boss, second: chain }` (the pair seam already existed); the misreading comment corrected. The resolver (`npcs.rs spawn_dd2_from_gate`) already spawns both fields in order | S | B | research/53 §4.3 | — | spawn-both witnesses (`npcs.rs …::b6d_wave_five_spawns_the_mage_and_the_chain_together`: mage+wyvern, mage+javeliner, mage+goblin, right-lane miss, live-mage gate; the old wave-5 rows repointed) — WRITTEN NOT RUN |
+
+**Out of scope (documented, NOT touched):**
+- **Tower net-id collision** (towers 113/114/115/146 → 422/493/507/517,
+  audit 53 §0/§5): joins the S1-F-1 collision family, needs a save
+  migration — separate task.
+- **B-6a** pillar machine re-port (audit §2.5) — queued, not this wave.
+- **B-6b** 629 spawn-loop + shield wiring (`NPC.cs:79279-79320`) — R72 owns.
+- **B-6c** DD2 portal creation + arena walker (audit §4.2) — R73 owns.
+- ~~**NEW FINDING (for the Lead):** `lane_spawn_roll_d3` wave 6 spawn-drop~~
+  — RESOLVED as B-6e below (branch `fix/dd2-wave6-spawn-drop`, based on
+  `fix/lunar-dd2-small-wrongs` 6e3d201e so the chain lands both).
+
+| Status | Task | Description | Size | Sev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 🟡 B-6e | DD2 wave-6 spawn drop + census | `dd2.rs` `lane_spawn_roll_d3` wave 6 returned `second.first.or(first)` — the same collapse as B-6d-5. C# `DD2Event.cs:1691-1727` (read whole) runs TWO independent `if` chains: the first (`:1692-1707`, balista/sapper/mystic/drake) spawns its body, then the second (`:1708-1727`) spawns its OWN; the squire arm rolls the 557 (`:1722-1724`) and ALWAYS spawns the 554 (`:1726`, `num9`) — up to THREE bodies per pass. Fixed: `LaneSpawn` gains a `third` slot (only this arm fills it), the pick is `{ first, second: second.first, third: second.third }`, and the resolver (`npcs.rs spawn_dd2_from_gate`) iterates `[first, second, third]` in the C#'s spawn order. RNG unchanged by construction — the drop was post-roll. Census of ALL wave rows: D1 w1-4 single chains, w5 already fixed (B-6d-5, `:1075-1095`); D2 w1-7 single else-if chains with squire-pair arms (`:1270-1425`) — no `.or()` collapse anywhere; D3 w1-5/7 single chains (`:1581-1690`, `:1729-1750`) — wave 6 was the ONLY remaining collapse | S | B | research/53 §4.3 (escalation) | B-6d-5 (base 6e3d201e) | witnesses (`npcs.rs …::b6e_wave_six_spawns_all_three_bodies_in_c_order`: 577+557+554 all three, pair-alone, squire-on-missed-roll, two-body arm; `…::b6e_per_wave_spawn_count_pins`: per-wave max-count census; `…::the_tier_three_wave_six_chains_run_side_by_side` repointed to spawn-both) — WRITTEN NOT RUN (code-only wave) |
+- Audit 53 §3.2's flagged 580-bolt `ai1 = Next(80)` (`Projectile.cs:33841`)
+  draw: still not drawn by `wants_ritual_bolt` (the resolver defaults
+  ai1=0) — flagged by the audit as "not fully traced", left for B-6b's
+  wiring wave to resolve with the spawn sites.
+
