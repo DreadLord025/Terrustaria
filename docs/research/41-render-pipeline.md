@@ -103,8 +103,8 @@ format and alpha behaviour as the vanilla XNA stack, so the frame is pixel-ident
 | Vanilla is **per-texture**, not an atlas | PORTED (divergent by design) | `sprite.rs::draw_ranges` (1034) vs `TileBatch.cs::SwitchBatch` (485) / `Main.spriteBatch.Draw` × 824 | Verified: the vanilla draws per texture (`TileBatch` batches by `Texture` + `LayerStack`, `TileBatch.cs:485-536`), no atlas exists in C#. The port merges every sheet into one 8192-wide atlas — a deliberate architectural divergence, pixel-equivalent only if sampling is texel-exact (see Deviations D-3, D-4). |
 | Draw-call structure | PARTIAL | `sprite.rs::draw_ranges` (1195-1239) | Vanilla: 105 `Main.spriteBatch.Begin` calls (+16 on `mySpriteBatch`) + one `SpriteBatch` flush **per texture switch** (hundreds of draw calls/frame) plus the `TileBatch`'s per-texture layer batches. Port: **one `pass.draw` per range** → up to **6** per frame (back, world, fx, map_back, map, ui); with `TR_POST=1` the split is 3 + 3 plus 1..`MAX_CHAIN`(4) filter passes. `ROADMAP.md:64`'s "2 draw calls" is **wrong** (see D-1). |
 | Blend state: world `BlendState.AlphaBlend` | PORTED (documented approximation) | `sprite.rs:327-338`, `sprite.wgsl:232-242` | The pipeline is a single `(One, OneMinusSrcAlpha)` premultiplied-source blend; the fragment deliberately does **not** multiply rgb by alpha (`sprite.wgsl:236-239`), because the atlas is assumed premultiplied (the comment claims the content pipeline premultiplies and that `rgb <= a` was verified over the asset set). XNA's own `BlendState.AlphaBlend` is *not* in this repo's decompile (only ReLogic is) → the convention is asserted, not verifiable here (D-2). |
-| Blend state: `BlendState.Additive` (`Main.cs:27490`) | MISSING | — | The port has exactly one blend state (`sprite.rs:327`). Lightsbane's additive magenta glow (`Main.cs:27491-27492`) and any other additive batch cannot be expressed. |
-| Blend state: custom "multiply"/ReverseSubtract (`Main.cs:27462-27473`) | MISSING | — | Same single-blend limitation; the vanilla's `ReverseSubtract` multiply pass has no equivalent. |
+| Blend state: `BlendState.Additive` (`Main.cs:27490`) | PORTED (S1-G-3, 2026-11-18) | `sprite.rs::BlendMode::Additive` + `pipelines[1]`, `projectile.rs::draw_lights_bane` | XNA's stock `(SourceAlpha, One)` Add on both channels; the Lightsbane magenta glow (`Main.cs:27491-27492`) rides it. `blend_equations_land_on_the_csharp_batches` pins the equation on sRGB + UNORM targets. |
+| Blend state: custom "multiply"/ReverseSubtract (`Main.cs:27462-27473`) | PORTED (S1-G-3, 2026-11-18) | `sprite.rs::BlendMode::Multiply` + `pipelines[2]`, `projectile.rs::draw_lights_bane` | `ReverseSubtract`, SourceAlpha/One on color AND alpha (`Main.cs:27462-27470`) — `dst − src·srcAlpha` clamped at 0. The six multiply quads (`:27483-27488`) ride it; the per-instance `blend` tag + `draw_blend_runs` reproduce the C#'s `End`/`Begin` batch boundaries. |
 | Blend state: `null` blend (`Main.cs:40415`, `43156`, `46458`) | PORTED (implied) | `sprite.rs:327` | `SpriteBatch.Begin(..., blendState: null, ...)` resolves to the default alpha blend in XNA/MonoGame; the port's single blend covers it. |
 | Depth / rasterizer state | PORTED (by omission) | `sprite.rs:345-349`, `water_mask.rs:102-107` | Vanilla: `DepthStencilState.None` for the world, `DepthStencilState.Default` for the immediate batches (`Main.cs:23696`, `38835`), `RasterizerState.CullNone` in several places, `Main.Rasterizer` = `CullCounterClockwise`/`CullClockwise` elsewhere. Port: `depth_stencil: None`, `cull_mode: None` everywhere — draw order is the only ordering, which matches the vanilla's `CullNone` majority but silently accepts the two `CullCounterClockwise` batches (`Main.cs:57948`, `58037`) whose winding the port does not reproduce (D-6). |
 | Sampler state: `PointClamp` | PORTED | `sprite.rs:179-187` | One nearest + clamp-to-edge sampler for the whole atlas; matches `Main.DefaultSamplerState = PointClamp` (`Main.cs:2780`). |
@@ -165,6 +165,13 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   The `BENCH draws=` line (`frame.rs:1774`) prints the real number. Not admitted in
   ROADMAP/ANALYSIS → fix the row text.
 - **D-2 — One blend state for the whole frame (behavioural + pixel, medium).**
+  **PARTIALLY CLOSED 2026-11-18** (`task/S1-G-3`): the additive and
+  reverse-subtract batches landed — `sprite.rs::BlendMode` + one pipeline per
+  mode, the per-instance `blend` tag and `draw_blend_runs`' contiguous-run
+  split, and `DrawProj_LightsBane` (`Main.cs:27455-27495`) wired onto them
+  (the only vanilla site that uses either state). The alpha-blend default's
+  premultiplied convention stays asserted, not verifiable from the decompile
+  (the original text follows).
   The vanilla uses at least four blend configurations (`AlphaBlend` `Main.cs:22193`,
   `Additive` `Main.cs:27490`, the custom `ReverseSubtract` "multiply"
   `Main.cs:27462-27473`, and `null`→default `Main.cs:40415`). The port has exactly one
@@ -283,9 +290,12 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   in `docs/ANALYSIS.md`; if the atlas is *not* premultiplied, switch the pipeline to
   XNA's `SourceAlpha` source factor or pre-multiply in the shader. Depends on the S
   blend test.
-- **M** — Implement a second blend state (an additive and a `ReverseSubtract`
+- **M** — ~~Implement a second blend state (an additive and a `ReverseSubtract`
   multiply pipeline) and port `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`)
-  onto it; the instance data already carries a per-instance tint, so the port needs a
+  onto it~~ **consumed by S1-G-3 (2026-11-18)**: `BlendMode` + three pipelines,
+  the per-instance blend tag and the contiguous-run split in `draw_ranges`;
+  the drawer's eight quads ride the multiply/additive batches in the C#'s
+  order. The instance data already carries a per-instance tint, so the port needs a
   per-range or per-instance blend selector (a small pipeline switch in
   `draw_ranges`). Depends on the S blend test (to keep both equations provable).
 - **M** — Add scissor support: a `wgpu::RenderPass::set_scissor_rect` driven by a
