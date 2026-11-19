@@ -118,6 +118,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // and `CloseDoor` (`:31906`).
     ("Door_Opened", 8),
     ("Door_Closed", 9),
+    // S1-E-21i — the wiring switch click (`Wiring.HitSwitch`'s seven
+    // `PlaySound(28, ...)` sites, `Wiring.cs:267`/`:272`/`:285`/`:310`/
+    // `:323`/`:339`/`:375`); `SoundMech[0]` loads `Sounds/Mech_0`
+    // (`LegacySoundPlayer.cs:22`/:176, the one-entry array).
+    ("Mech_0", 28),
     // `SoundID.Item4 = new LegacySoundStyle(2, 4)` (`SoundID.cs:1387`) — the
     // dial arm (`Player.cs:32642`/:32652, `SoundEngine.PlaySound(SoundID.Item4,
     // ...)`); the legacy Item track, like `Item_1` above.
@@ -133,6 +138,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Menu_Open", 10),
     ("Menu_Close", 11),
     ("Menu_Tick", 12),
+    // `SoundEngine.PlaySound(24)` — the town-NPC talk open
+    // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
+    // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
+    ("Chat", 24),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
@@ -288,6 +297,28 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_128", 68),
     ("Zombie_129", 69),
     ("Zombie_130", 69),
+    // S1-E-21e — the fighter-moan slots (`AI_003_Fighters`,
+    // `NPC.cs:57340-57367`): case 14's default `Next(3)` (`:817`), the
+    // style-542 slot 7 (`:796`) and the 489/586 `Next(21, 24)` (`:808`);
+    // case 26's `Next(3, 5)` (`:971`); case 29's Style-is-the-slot rows
+    // 6/7/8 (`:1045`) and the full per-style switch's named slots (the
+    // later waves' callers); case 45's pinned slot 109 (the duck quack,
+    // `NPC.cs:23678-23681`, `:1060`). Cases 14/26/29 are NOT on the
+    // ambient-scaling list (`LegacySoundPlayer.cs:1444-1457`) — they ride
+    // `Main.soundVolume`; case 45 does scale.
+    ("Zombie_0", 14),
+    ("Zombie_1", 14),
+    ("Zombie_2", 14),
+    ("Zombie_3", 26),
+    ("Zombie_4", 26),
+    ("Zombie_5", 29),
+    ("Zombie_6", 29),
+    ("Zombie_7", 29),
+    ("Zombie_8", 29),
+    ("Zombie_21", 14),
+    ("Zombie_22", 14),
+    ("Zombie_23", 14),
+    ("Zombie_109", 45),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
@@ -504,6 +535,11 @@ pub struct Audio {
     /// replaces the array entry while the old instance keeps playing
     /// (`:1051-1062`).
     zombie_slots: HashMap<usize, rodio::Sink>,
+    /// The `SoundInstanceMech[1]` slot (`LegacySoundPlayer.cs:24`): case
+    /// 28's playing guard reads it (`:998-1001`) and the play overwrites
+    /// the entry WITHOUT a Stop (`:1002`) — the wiring switch click,
+    /// S1-E-21i.
+    mech_slots: [Option<rodio::Sink>; 1],
 }
 
 impl Audio {
@@ -604,6 +640,7 @@ impl Audio {
             thunder_slots: [None, None, None, None, None, None],
             splash_slots: [None, None, None, None, None, None],
             zombie_slots: HashMap::new(),
+            mech_slots: [None],
         }
     }
 
@@ -756,6 +793,58 @@ impl Audio {
         if let Some(old) = self.zombie_slots.insert(voice.slot, sink) {
             old.detach();
         }
+    }
+
+    /// S1-E-21e — one fighter-moan play (`AI_003_Fighters`' ambient arms,
+    /// `NPC.cs:57340-57367`: `PlaySound(14/26/29, (int)position.X,
+    /// (int)position.Y[, Style])` — the int overload, `SoundEngine.cs:102-108`,
+    /// draws NO `GetRandomPitch` NextFloat). The attenuation gate
+    /// (`LegacySoundPlayer.cs:369-436`) runs FIRST — a muted or out-of-range
+    /// play consumes nothing — then the case's slot/pitch draws ride the
+    /// caller's stream (the moan rolls run under the `UpdateNPCs` swap,
+    /// `Main.cs:17767`) through [`crate::ambient_sound::critter_legacy_voice`]:
+    ///
+    /// * case 14 (`:793-824`): the style-542 slot 7 (no draw), the 489/586
+    ///   `Next(21, 24)` or the default `Next(3)` — ONE slot draw, NO pitch
+    ///   draw, ×0.4, the array entry overwritten without a Stop.
+    /// * case 26 (`:969-978`): `Next(3, 5)` + one `Next(-10, 11)` pitch,
+    ///   ×0.9, overwrite without a Stop.
+    /// * case 29 (`:1008-1050`): the Style IS the slot, the per-style volume
+    ///   arms, the playing guard returns BEFORE the pitch draw, ×mult, one
+    ///   `Next(-10, 11)` pitch.
+    ///
+    /// Cases 14/26/29 are not on the ambient-scaling list
+    /// (`LegacySoundPlayer.cs:1444-1457`) — the gate scales `Main.soundVolume`.
+    /// Returns the asset played; `None` when the gate refused, the id is not
+    /// a moan case, or a case-29 playing guard blocked the slot.
+    pub fn play_fighter_moan(
+        &mut self,
+        legacy_id: u32,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The moan arms' three cases only — anything else is a caller bug.
+        if !matches!(legacy_id, 14 | 26 | 29) {
+            return None;
+        }
+        // The attenuation gate first — the int overload draws nothing
+        // before the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(legacy_id, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let voice = crate::ambient_sound::critter_legacy_voice(
+            legacy_id,
+            style as u32,
+            &mut |lo, hi| rng.next_range(lo, hi),
+            &|slot| self.zombie_playing(slot),
+        )?;
+        // The slot handling is the critter family's: detach-not-stop on the
+        // overwrite (case 14/26 replace the entry without a Stop, case 29's
+        // guard already refused a busy slot).
+        self.play_critter(voice, x, y);
+        Some(voice.asset)
     }
 
     /// `WorldGen.PlayLiquidChangeSound` (`WorldGen.cs:4632-4650`, S1-E-25):
@@ -1166,6 +1255,142 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Run", x, y, 1.0, pitch.clamp(-1.0, 1.0));
         Some("Run")
+    }
+
+    /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
+    /// `WorldGen.KillWall_PlaySounds` table `WorldGen.cs:60423-60441`,
+    /// played from `KillWall` `:60385` BEFORE the dust and the drop).
+    ///
+    /// All four arms are the int overload (`SoundEngine.cs:102-108` — NO
+    /// `GetRandomPitch` draw) except the NPCHit25 style arm:
+    /// - 13 (Shatter, `LegacySoundPlayer.cs:783-792`): no draws, no pitch.
+    /// - 6 (Grass, `:706-716`): one `Main.rand.Next(-30, 31) * 0.01` (`:714`).
+    /// - 3 style 25 (`SoundID.NPCHit25`, `SoundID.cs:1281`): wave C's style
+    ///   façade — the audio-only `GetRandomPitch` NextFloat, the ×0.5 volume
+    ///   arm and the one `Next(-10, 11)` pitch draw (`:670`).
+    /// - 0 (Dig, `:440-452`): wave B's case-0 path — the `Next(3)` variation
+    ///   pick + the `Next(-10, 11) * 0.01` pitch.
+    ///
+    /// The gameplay draws ride the caller's stream (the hammer break runs
+    /// in `Player.PickWall` `Player.cs:45949` under the `Main.cs:17754`
+    /// `UpdatePlayers` swap; the explosion walk `Projectile.cs:78745` under
+    /// `:17775` `UpdateProjectiles`; the net replay `MessageBuffer.cs:1177`
+    /// on the bare stream) and only AFTER the attenuation gate passed
+    /// (`:369-436` precedes the switch). Returns the cue played; `None`
+    /// when the gate refused. The instance stop/re-create pools are the
+    /// standing D4 deviation.
+    pub fn play_wall_break_sound(
+        &mut self,
+        (id, style): tr_core::edit::SoundCue,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        match id {
+            13 => {
+                // The attenuation gate first — case 13 draws nothing.
+                if sound::play_sound(13, x, y, self.listener, 1.0).is_none() {
+                    return None;
+                }
+                self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.emit("Shatter", x, y, 1.0, 0.0);
+                Some("Shatter")
+            }
+            6 => {
+                if sound::play_sound(6, x, y, self.listener, 1.0).is_none() {
+                    return None;
+                }
+                // Case 6 (`:714`): the grass pitch roll.
+                let pitch = sound::legacy_family_pitch(sound::Family::Grass, &mut |lo, hi| {
+                    rng.next_range(lo, hi)
+                });
+                self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.emit("Grass", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+                Some("Grass")
+            }
+            // The NPCHit25 style arm — wave C's case-3 façade.
+            3 if style == 25 => self.play_npc_hit_sound("NPC_Hit_25", x, y, rng),
+            // The default Dig arm — wave B's case-0 path.
+            0 => self.play_place_sound((0, 1), x, y, rng),
+            _ => None,
+        }
+    }
+
+    /// S1-E-21i — one door open/close play (`WorldGen.OpenDoor`
+    /// `WorldGen.cs:37727`: `PlaySound(8, i * 16, j * 16)`; `CloseDoor`
+    /// `:31908`: `PlaySound(9, ...)` — both success-only). The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Cases 8/9 (`LegacySoundPlayer.cs:728-749`): one
+    /// `Main.rand.Next(-20, 21) * 0.01` pitch draw (`:736`/`:747`) on the
+    /// caller's stream — the door interaction runs in `Player.ItemCheck`
+    /// (`Player.cs:32841`/`:32848`/`:32859`'s tile-use path) under the
+    /// `Main.cs:17754` `UpdatePlayers` swap — only AFTER the attenuation
+    /// gate passed. The
+    /// previous instance's Stop (`:729-732`/`:740-743`) is the standing D4
+    /// deviation (no guard — a fresh source per play). Returns the cue
+    /// played; `None` when the gate refused.
+    pub fn play_door_sound(
+        &mut self,
+        open: bool,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let id = if open { 8 } else { 9 };
+        // The attenuation gate first — the int overload draws nothing
+        // before the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(id, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        // Cases 8/9 (`:736`/`:747`): the shared door pitch window.
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Door, &mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cue = if open { "Door_Opened" } else { "Door_Closed" };
+        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21i — one wiring switch click (`Wiring.HitSwitch`'s seven
+    /// `SoundEngine.PlaySound(28, x, y, 0)` sites, `Wiring.cs:267`/`:272`/
+    /// `:285`/`:310`/`:323`/`:339`/`:375`). The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat; the
+    /// explicit Style 0 indexes the one-entry `SoundMech` array
+    /// (`LegacySoundPlayer.cs:22`/:176).
+    ///
+    /// Case 28 (`LegacySoundPlayer.cs:997-1007`): the
+    /// `SoundInstanceMech[0].State == Playing` guard (`:998-1001`) returns
+    /// BEFORE the one `Main.rand.Next(-10, 11) * 0.01` pitch draw (`:1005`)
+    /// — [`crate::sound::mech_case28`]. The draw rides the caller's stream:
+    /// the stage swap wrapping the `HitSwitch` call (`UpdatePlayers` for
+    /// the player/minecart trips and the tile-use click,
+    /// `UpdatePressurePlates` for the weighted plates, `UpdateNPCs` for the
+    /// NPC trips, `UpdateWorldGen` for the wiring tick and the logic
+    /// sensors, the bare stream for the net replays) — never the wiring
+    /// stand-in stream. The play overwrites the slot WITHOUT a Stop
+    /// (`:1002`). Returns the cue played; `None` when the gate or the
+    /// playing guard refused (both draw-free past the gate).
+    pub fn play_switch_click(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(28, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let playing_0 = self.mech_slots[0].as_ref().is_some_and(|s| !s.empty());
+        let pitch = sound::mech_case28(playing_0, &mut |lo, hi| rng.next_range(lo, hi))?;
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // `:1002` — the array entry is replaced with no Stop.
+        let old = self.mech_slots[0].take();
+        self.mech_slots[0] = self.emit("Mech_0", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        if let Some(old) = old {
+            old.detach();
+        }
+        Some("Mech_0")
     }
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
@@ -2784,6 +3009,277 @@ mod tests {
         for name in ["Run", "Item_24"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+    }
+
+    /// S1-E-21e — the fighter moans' RNG contract: the moan arms' rolls ride
+    /// the caller's stream (`UpdateNPCs`, `Main.cs:17767`), and each legacy
+    /// case's slot/pitch draws run AFTER the attenuation gate on the SAME
+    /// stream (`LegacySoundPlayer.cs:369-436`'s prologue precedes the
+    /// switch). Case 14 draws one slot and no pitch (`:793-824`), case 26 a
+    /// slot + a pitch (`:969-978`), case 29 one pitch behind the playing
+    /// guard (`:1008-1050`); a muted or out-of-range play consumes nothing.
+    #[test]
+    fn s1_e_21e_the_moan_draws_ride_the_passed_stream_after_the_gate() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 14 default (`:817`): exactly one Next(3) slot draw, NO pitch.
+        // Seed 7 draws 1 → Zombie_1.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(0, 3);
+        assert_eq!(
+            audio.play_fighter_moan(14, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        // Case 14 style 542 (`:796-803`): slot 7 pinned, ZERO draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_fighter_moan(14, 542, 0.0, 0.0, &mut rng),
+            Some("Zombie_7")
+        );
+        assert_eq!(rng.peek(), peek, "the pinned slot draws nothing");
+        // Case 14 styles 489/586 (`:805-813`): the Next(21, 24) slot arm,
+        // still no pitch. Seed 7 draws 22 → Zombie_22.
+        for style in [489, 586] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _slot = witness.next_range(21, 24);
+            assert_eq!(
+                audio.play_fighter_moan(14, style, 0.0, 0.0, &mut rng),
+                Some("Zombie_22")
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        }
+        // Case 26 (`:969-978`): Next(3, 5) + one Next(-10, 11) pitch. Seed 7
+        // draws 3 then 8 → Zombie_3.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(3, 5);
+        let _pitch = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_fighter_moan(26, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_3")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "slot + pitch");
+        // Case 29 (`:1008-1050`): the Style IS the slot, one pitch draw.
+        // Seed 7 draws -2; the moan styles 6/7/8 keep mult 1.0.
+        for style in [6, 7, 8] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _pitch = witness.next_range(-10, 11);
+            assert_eq!(
+                audio.play_fighter_moan(29, style, 0.0, 0.0, &mut rng),
+                Some(match style {
+                    6 => "Zombie_6",
+                    7 => "Zombie_7",
+                    _ => "Zombie_8",
+                })
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one pitch draw");
+        }
+        // Muted (soundVolume 0): cases 14/26/29 are NOT ambient-scaling
+        // (`LegacySoundPlayer.cs:1444-1457`) — the gate precedes the switch
+        // and the play is draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (14, 542), (14, 489), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_fighter_moan(case, style, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "case {case}: the muted play is draw-free");
+        }
+        // Out of range (distance >= SOUND_ATTENUATION_DISTANCE): the gate
+        // refuses before any draw, volume back at 1.
+        let mut l = audio.listener;
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(
+                audio.play_fighter_moan(case, style, 3000.0, 0.0, &mut rng),
+                None
+            );
+            assert_eq!(rng.peek(), peek, "case {case}: the far play is draw-free");
+        }
+        // Every moan asset resolves to a registered bank row.
+        for name in [
+            "Zombie_0",
+            "Zombie_1",
+            "Zombie_2",
+            "Zombie_3",
+            "Zombie_4",
+            "Zombie_5",
+            "Zombie_6",
+            "Zombie_7",
+            "Zombie_8",
+            "Zombie_21",
+            "Zombie_22",
+            "Zombie_23",
+            "Zombie_109",
+        ] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21i — the wall-break play's RNG contract
+    /// (`WorldGen.cs:60423-60441`'s four arms): Shatter (13) draws NOTHING,
+    /// Grass (6) draws one `Next(-30, 31)`, NPCHit25 draws one
+    /// `Next(-10, 11)` (wave C's façade), Dig (0) draws the `Next(3)`
+    /// variation + one `Next(-10, 11)` (wave B's case 0) — each on the
+    /// caller's stream, only after the attenuation gate passed.
+    #[test]
+    fn s1_e_21i_the_wall_break_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Shatter: no gameplay draw, no pitch (`LegacySoundPlayer.cs:783-792`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_wall_break_sound((13, 1), 0.0, 0.0, &mut rng),
+            Some("Shatter")
+        );
+        assert_eq!(rng.peek(), peek, "case 13 consumes no gameplay draw");
+        // Grass: exactly one Next(-30, 31) (`:714`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-30, 31);
+        assert_eq!(
+            audio.play_wall_break_sound((6, 1), 0.0, 0.0, &mut rng),
+            Some("Grass")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 30, "the window is -30..=30");
+        // NPCHit25: wave C's case-3 façade — one Next(-10, 11) (`:670`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_wall_break_sound((3, 25), 0.0, 0.0, &mut rng),
+            Some("NPC_Hit_25")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Dig: wave B's case-0 path — Next(3) + Next(-10, 11) (`:442`/:450).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_wall_break_sound((0, 1), 0.0, 0.0, &mut rng);
+        let want = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        assert_eq!(cue, Some(want), "the variation pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // Muted (soundVolume 0): every arm is draw-free — the gate
+        // (`:369-436`) precedes the switch.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for cue_id in [(13u16, 1u16), (6, 1), (3, 25), (0, 1)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_wall_break_sound(cue_id, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "{cue_id:?}: the muted play is draw-free");
+        }
+        // Out of attenuation range: also draw-free (`:390-397`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_wall_break_sound((6, 1), 5000.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek);
+        // The wall cues resolve to registered bank assets.
+        assert_eq!(sound_type("Mech_0"), 28);
+        for name in ["Shatter", "Grass", "NPC_Hit_25", "Dig_0", "Mech_0"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21i — the door play's RNG contract: cases 8/9
+    /// (`LegacySoundPlayer.cs:736`/`:747`) draw exactly one
+    /// `Next(-20, 21) * 0.01` on the caller's stream after the gate; the
+    /// int overload draws no `GetRandomPitch` NextFloat; a muted or
+    /// out-of-range play draws nothing.
+    #[test]
+    fn s1_e_21i_the_door_pitch_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        for open in [true, false] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let roll = witness.next_range(-20, 21);
+            let want = if open { "Door_Opened" } else { "Door_Closed" };
+            assert_eq!(audio.play_door_sound(open, 0.0, 0.0, &mut rng), Some(want));
+            assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+            assert!(roll.abs() <= 20, "the window is -20..=20");
+        }
+        // Muted: both arms draw-free.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for open in [true, false] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_door_sound(open, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the muted door play is draw-free");
+        }
+        // Out of range: draw-free too.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_door_sound(true, 5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21i — the switch-click play's RNG contract: case 28
+    /// (`LegacySoundPlayer.cs:997-1007`) draws exactly one
+    /// `Next(-10, 11) * 0.01` (`:1005`) on the caller's stream after the
+    /// gate; the playing guard (`:998-1001`) refuses BEFORE the draw; a
+    /// muted or out-of-range play draws nothing. Headless (no output
+    /// device) the slot never plays, so the guard never trips — the
+    /// engine's fresh-instance behaviour.
+    #[test]
+    fn s1_e_21i_the_switch_click_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(roll.abs() <= 10, "the window is -10..=10");
+        // A second click still plays headless — the sink is empty (the
+        // C#'s guard reads a Playing instance; none exists without a
+        // device), so another draw rides the stream.
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let _ = witness.next_range(-10, 11);
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), Some("Mech_0"));
+        assert_eq!(rng.peek(), witness.peek(), "two clicks, two draws");
+        // Muted: draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_switch_click(0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted click is draw-free");
+        // Out of range: draw-free.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_switch_click(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// The front-end ladder (`Main.cs:12455-12532`'s `if (Main.gameMenu)`

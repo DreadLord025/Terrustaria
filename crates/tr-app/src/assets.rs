@@ -421,6 +421,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
+        // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
+        // `:8612`) and the void lens's selection mask (`Extra[93]`,
+        // `VoidLensHelper.cs:101`). The lens sprite itself is
+        // `Projectile_734`, packed by `load_static_sheets`' projectile loop.
+        "Extra_181",
+        "Extra_198",
+        "Extra_93",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -788,6 +796,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
+        // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
+        // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
+        // panel's back splices (`TextureAssets.ChatBack`,
+        // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
+        "Chat",
+        "Chat_Back",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1092,6 +1106,33 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_117",
+        // S1-D-3ff wave A — the 24 LOW-id kinds' sheets, one per kind,
+        // keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s WAVE_A_SHEETS).
+        "NPC_16",
+        "NPC_52",
+        "NPC_53",
+        "NPC_59",
+        "NPC_71",
+        "NPC_81",
+        "NPC_132",
+        "NPC_138",
+        "NPC_147",
+        "NPC_161",
+        "NPC_183",
+        "NPC_184",
+        "NPC_186",
+        "NPC_187",
+        "NPC_188",
+        "NPC_189",
+        "NPC_190",
+        "NPC_191",
+        "NPC_192",
+        "NPC_193",
+        "NPC_194",
+        "NPC_200",
+        "NPC_223",
+        "NPC_225",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in
@@ -1112,6 +1153,27 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_327",
         "NPC_329",
         "NPC_330",
+        // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per
+        // kind — the Zombie Elf trio (338-340), the Present Mimic (341),
+        // the Gingerbread Man (342), the Yeti (343) and the Everscream
+        // (344) — keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SNOW_SHEETS).
+        "NPC_338",
+        "NPC_339",
+        "NPC_340",
+        "NPC_341",
+        "NPC_342",
+        "NPC_343",
+        "NPC_344",
+        // The Frost Moon wave family (`S1-F-13c` slice B — `FROST_SHEETS`).
+        "NPC_345",
+        "NPC_346",
+        "NPC_347",
+        "NPC_348",
+        "NPC_349",
+        "NPC_350",
+        "NPC_351",
+        "NPC_352",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1137,6 +1199,14 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match load_png(dir, &name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => { /* the shuriken fallback covers it */ }
+        }
+    }
+    // S1-G-1 wave D: the void lens draws `TextureAssets.Projectile[734]`
+    // (`VoidLensHelper.cs:79-80`) even though the projectile itself is
+    // unspawnable — pack its sheet outside `spawnable_kinds`.
+    if !crate::projectile::spawnable_kinds().contains(&734) {
+        if let Ok(img) = load_png(dir, "Projectile_734", SheetLayout::Raw) {
+            images.push(img);
         }
     }
 
@@ -1255,7 +1325,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
     // and `TextureAssets.Actuator` the actuator plate drawn on every
     // actuator-carrying tile.
-    for name in ["WiresNew", "Actuator"] {
+    // `TextureAssets.TileCrack` (`Images/TileCracks`, the mining-progress
+    // crack overlay — `Main.DrawTileCracks`, `Main.cs:61533-61626`,
+    // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
+    for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
             images.push(img);
         }
@@ -1548,6 +1621,10 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_299",
     "Glow_300",
     "Glow_325",
+    // The shimmer-vine glowmask (`GetTileDrawData` case 638,
+    // `TileDrawing.cs:6080-6084`) — the vine strip pass draws it over the
+    // segment (`DrawVineStrip`, `:9125-9128`, S1-G-1).
+    "Glow_327",
     "Glow_334",
     "Glow_335",
     // The named single-sheet textures.
@@ -1938,6 +2015,14 @@ pub struct Lookups {
     pub ach_categories: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat` (`TextureAssets.Chat`, `AssetInitializer.cs:563`):
+    /// the town-NPC hover bubble (`Main.DrawNPCChatBubble`,
+    /// `Main.cs:43135-43161`).
+    pub ui_chat_bubble: Option<tr_render::SheetRect>,
+    /// `Images/Chat_Back` (`TextureAssets.ChatBack`,
+    /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
+    /// splices (`NPCChatPanel.cs:71-72`).
+    pub ui_chat_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2434,6 +2519,8 @@ impl Lookups {
             ach_inner_bottom_large: atlas.sheet("UI/Achievement_InnerPanelBottom_Large").copied(),
             ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
+            ui_chat_bubble: atlas.sheet("Chat").copied(),
+            ui_chat_back: atlas.sheet("Chat_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),

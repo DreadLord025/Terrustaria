@@ -505,6 +505,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         npc_sheets: PILLAR_SHEETS
             .iter()
             .chain(PUMPKIN_SHEETS)
+            .chain(FROST_SHEETS)
+            .chain(WAVE_A_SHEETS)
+            .chain(SNOW_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1113,6 +1116,15 @@ const PILLAR_SHEETS: &[u32] = &[
 /// (305-314) and the five named kinds (315/325/326/327/329/330) draws its own
 /// `NPC_<id>` art. Keyed by the vanilla net id
 /// ([`NpcKind::pumpkin_moon_type`]) in [`NpcAssets::npc_sheet`].
+/// S1-D-3ff wave A — the 24 LOW-id kinds' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `PUMPKIN_SHEETS`.
+pub(crate) const WAVE_A_SHEETS: &[u32] = &[
+    16, 59, 71, 81, 138, 147, 183, 184, 225, // the nine slimes
+    190, 191, 192, 193, 194, // the five demon-eye variants
+    52, 53, 132, 161, 186, 187, 188, 189, 200, 223, // the ten walkers
+];
+
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
     315, // the Headless Horseman
@@ -1121,6 +1133,35 @@ pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     327, // the Pumpking
     329, // the Hellhound
     330, // the Poltergeist
+];
+
+/// The Frost Moon wave family's sheets (`S1-F-13c` slice B): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each of the
+/// eight (345-352) draws its own `NPC_<id>` art. Keyed by the vanilla net id
+/// ([`NpcKind::frost_moon_type`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const FROST_SHEETS: &[u32] = &[
+    345, // the Ice Queen
+    346, // the Santa-NK1
+    347, // the Elf Copter
+    348, // the Nutcracker
+    349, // the spinning Nutcracker
+    350, // the Elf Archer
+    351, // Krampus
+    352, // Flocko
+];
+
+/// The Frost Moon wave family's sheets (`S1-F-13c` slice A): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the Zombie Elf
+/// trio (338-340), the Present Mimic (341), the Gingerbread Man (342), the
+/// Yeti (343) and the Everscream (344) each draw their own `NPC_<id>` art.
+/// Keyed by the vanilla net id ([`NpcKind::frost_moon_type`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const SNOW_SHEETS: &[u32] = &[
+    338, 339, 340, // the Zombie Elf trio
+    341, // the Present Mimic
+    342, // the Gingerbread Man
+    343, // the Yeti
+    344, // the Everscream
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2856,6 +2897,76 @@ pub(crate) fn draw_npcs(
                 let ty = n.kind.pumpkin_moon_type().expect("a family kind");
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
+            // The Frost Moon family (`S1-F-13c` slice B): the same generic
+            // centre anchor + `SetFrameSize` row height (`FROST_SHEETS`
+            // rows). The bosses' extra overlays — the Santa-NK1's below-half
+            // `SantaTank` sheet (`Main.cs:25279-25282`) and the Ice Queen's
+            // `IceQueen` face + four velocity trail ghosts (`:25689-25696`)
+            // — are parked like the pumpkin bosses' TreeFace/PumpkingFace
+            // faces (ANALYSIS).
+            NpcKind::IceQueen
+            | NpcKind::SantaNK1
+            | NpcKind::ElfCopter
+            | NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus
+            | NpcKind::Flocko => {
+                let ty = n.kind.frost_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
+            // S1-D-3ff wave A — the 24 LOW-id kinds draw their OWN sheet
+            // (`TextureAssets.Npc[type]` — the `WAVE_A_SHEETS` rows) at
+            // `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[type]` (`Main.cs:67082`: the slimes and
+            // eyes 2 rows, the walkers 3) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin family's shape. The
+            // C# `scale` rows (the slimes' 1.25/1.1/1.05) are unported
+            // outside the base slime variants — documented deviation
+            // (ANALYSIS "S1-D-3 FindFrame wave A").
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
+            // The Frost Moon family (`S1-F-13c` slice A): each kind draws
+            // its own sheet (the `SNOW_SHEETS` rows) at `SetFrameSize`'s row
+            // height over the C#'s `Main.npcFrameCount[type]`
+            // (`Main.cs:67082`: 338-340 fifteen frames, 341 six, 342 three,
+            // 343 ten, 344 ten) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the same shape as the pumpkin arm.
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::PresentMimic
+            | NpcKind::GingerbreadMan
+            | NpcKind::Yeti
+            | NpcKind::Everscream => {
+                let ty = n.kind.frost_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
         };
         let Some(tex) = tex else {
             continue;
@@ -3211,6 +3322,45 @@ mod anchor_tests {
         for &(kind, rows) in cases {
             let net = texture_net_id(kind);
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }
+
+    #[test]
+    fn the_frost_rows_match_between_the_draw_and_the_machine() {
+        // The Frost Moon family (`S1-F-13c` slice B): each of the eight draws
+        // its own `NPC_<id>` sheet (`FROST_SHEETS`), and `FindFrame` walks
+        // `npc_rows(texture_net_id(kind))` — the same drift check as the
+        // pillar family above, over the `Main.npcFrameCount` rows
+        // (`Main.cs:67082`): 345→6, 346→9, 347→8, 348→9, 349→8, 350→20,
+        // 351→10, 352→6.
+        let cases: &[(NpcKind, u32)] = &[
+            (NpcKind::IceQueen, 6),
+            (NpcKind::SantaNK1, 9),
+            (NpcKind::ElfCopter, 8),
+            (NpcKind::Nutcracker, 9),
+            (NpcKind::NutcrackerSpinning, 8),
+            (NpcKind::ElfArcher, 20),
+            (NpcKind::Krampus, 10),
+            (NpcKind::Flocko, 6),
+        ];
+        for &(kind, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(net, kind.to_u16(), "{kind:?} draws its own sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(
+                FROST_SHEETS.contains(&(net as u32)),
+                "{kind:?}: NPC_{net} has no by-net-id sheet row"
+            );
+        }
+        // Every frost sheet the draw asks for is packed into the atlas —
+        // the M4-NPC-3v audit, frost edition.
+        use crate::assets::STATIC_SHEET_NAMES;
+        for &id in FROST_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
         }
     }
 

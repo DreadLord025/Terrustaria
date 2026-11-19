@@ -58,6 +58,20 @@ pub struct World {
     /// reproducible there; the port seeds deterministically from the world seed
     /// via [`World::seed_frame_rng`].
     pub frame_rng: crate::unified_random::UnifiedRandom,
+    /// The placement random-style stream — the port's `Main.rand` stand-in
+    /// for `TileObject.CanPlace`'s `RandomStyleRange`/`SpecificRandomStyles`
+    /// draws (`TileObject.cs:787`/:819, S1-F-7b). A dedicated stream like
+    /// `craft_rng`/`frame_rng` (vanilla shares one `Main.rand`; the port keeps
+    /// per-consumer streams so the worldgen contract streams stay untouched),
+    /// seeded beside `frame_rng` via [`World::seed_frame_rng`].
+    pub place_rng: crate::unified_random::UnifiedRandom,
+    /// `TileObjectPreviewData.randomCache` (`TileObjectPreviewData.cs:31`) —
+    /// the random-style stickiness cache `TileObject.CanPlace` reads
+    /// (`TileObject.cs:764-792`/:796-824). `None` = the C# null static (the
+    /// null-create :764-767 zero-initialises); the only writer is the
+    /// `onlyCheck` preview writeback (:826-837), which the port does not run,
+    /// so production stays `None`.
+    pub tile_object_random_cache: Option<crate::tileobject::RandomCache>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -251,10 +265,28 @@ pub struct World {
     pub unlocked_slime_rainbow_spawn: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
-    /// (0, -9 * scale)`, `NPC.cs:19261-19265`) — the WoF write-through
+    /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
     /// shape. The head's tether (`aiStyle 46`, `:31148-31160`) does NOT
     /// carry the term.
     pub golem_vx: f32,
+    /// The body's `velocity.Y` — the SAME anchor's Y term (S1-D-3: the
+    /// v1 folded only X; `nPC.velocity` is the full vector,
+    /// `NPC.cs:19258`).
+    pub golem_vy: f32,
+    /// The body's `life` / `lifeMax` — the free head's cadence ladders
+    /// mix DOUBLE (`lifeMax * 0.8`, `:31420`) and INTEGER (`lifeMax / 2`,
+    /// `:31477`) comparisons, so the ratio alone cannot carry them
+    /// (S1-D-3). The sim's anchor pass writes both.
+    pub golem_hp: i32,
+    pub golem_max_hp: i32,
+    /// The body's part scan (`AI_045`'s `flag`/`flag2`/`flag3`,
+    /// `NPC.cs:19544-19566`): the attached head 246 / left fist 247 /
+    /// right fist 248 alive — the charge ladder's +2-per-dead-part
+    /// inputs (`:19646-19657`) and the shield's `dontTakeDamage = flag`
+    /// (`:19567`). The sim's anchor pass scans the pool (S1-D-3).
+    pub golem_head_alive: bool,
+    pub golem_fist_left_alive: bool,
+    pub golem_fist_right_alive: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -476,6 +508,10 @@ pub struct World {
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
+    /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
+    /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
+    /// the port stamps no wall clock; a loaded file's value round-trips.
+    pub creation_time: i64,
 }
 
 impl World {
@@ -487,6 +523,8 @@ impl World {
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
+            place_rng: crate::unified_random::UnifiedRandom::new(0),
+            tile_object_random_cache: None,
             // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
             // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
             // (`Main.cs:66530`).
@@ -538,6 +576,12 @@ impl World {
             skeletron_y: 0.0,
             skeletron_red_hat: false,
             golem_y: 0.0,
+            golem_vy: 0.0,
+            golem_hp: 0,
+            golem_max_hp: 0,
+            golem_head_alive: false,
+            golem_fist_left_alive: false,
+            golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
             slime_rain: false,
@@ -647,6 +691,7 @@ impl World {
             unique_id: [0u8; 16],
             world_id: 0,
             last_played: 0,
+            creation_time: 0,
         }
     }
 
@@ -1039,6 +1084,10 @@ impl World {
     /// generated or loaded world, before any edit can reframe.
     pub fn seed_frame_rng(&mut self) {
         self.frame_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
+        // S1-F-7b: the placement random-style stream (`TileObject.cs:787`/
+        // :819) seeds from the same world seed — a distinct `UnifiedRandom`
+        // instance, so its draws never interleave with the framing rolls.
+        self.place_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
     }
 
     /// `Tile.frameNumber()` (`Tile.cs:464-470`, `bTileHeader2` bits 4-5).
@@ -1199,17 +1248,6 @@ impl World {
     #[inline]
     pub fn is_active(&self, x: i32, y: i32) -> bool {
         self.tile(x, y).is_some_and(|t| t.active())
-    }
-
-    /// Approximate surface (first active tile scanning down the middle column).
-    pub fn compute_spawn_y(&mut self) {
-        let x = self.width / 2;
-        for y in 0..self.height {
-            if self.is_active(x, y) {
-                self.spawn_y = (y - 6).max(0);
-                return;
-            }
-        }
     }
 
     pub fn memory_bytes(&self) -> usize {

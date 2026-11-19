@@ -19,7 +19,7 @@ pub fn event_ongoing() -> bool {
 }
 
 pub const SPAWN_HOLD_WAVE_BREAK: i32 = 1800;
-/// `DD2Event.SetEnemySpawningOnHold(300)` at `StartInvasion` (`:299`).
+/// `DD2Event.SetEnemySpawningOnHold(300)` at `StartInvasion` (`:288`).
 pub const SPAWN_HOLD_START: i32 = 300;
 
 /// `DD2Event.Difficulty_1_GetEnemiesForWave` (`:956-985`) — the wave's
@@ -769,6 +769,72 @@ fn roll_second(rng01: &impl Fn() -> f32, n: f32, kind: u16) -> Option<u16> {
     }
 }
 
+/// `DD2Event.ReportLoss`'s `SetEnemySpawningOnHold(30)` (`DD2Event.cs:514`)
+/// — the loss's short spawn hold; its expiry broadcasts the loss message
+/// (`UpdateTime`, `:233-236`).
+pub const SPAWN_HOLD_LOSS: i32 = 30;
+
+/// `DD2Event.INFO_FAILURE_INVASION_COLOR` (`DD2Event.cs:1812`) —
+/// `new Color(255, 0, 0)`: the loss broadcast's red.
+pub const INFO_FAILURE_INVASION_COLOR: [u8; 3] = [255, 0, 0];
+
+/// `DD2Event.ClearAllDD2EnergyCrystalsInChests`'s item id (`:682`) — the
+/// Elder Crystal (3822) the wipe turns to air in the open chests.
+pub const ENERGY_CRYSTAL_ITEM: u16 = 3822;
+
+/// `NPCID.Sets.BelongsToInvasionOldOnesArmy` (`NPCID.cs:10432`) — the 30
+/// ids `ClearAllDD2HostilesInGame` wipes (`DD2Event.cs:651-664`): the
+/// crystal (548) and the portals (549) plus the contiguous 551-578 monster
+/// band. The bartender (550) is NOT in the set.
+pub fn belongs_to_ooa(id: u16) -> bool {
+    id == 548 || id == 549 || (551..=578).contains(&id)
+}
+
+/// `ProjectileID.Sets.IsADD2Turret` (`ProjectileID.cs:526`) — the 12
+/// sentry projectile ids `ClearAllTowersInGame` kills (`DD2Event.cs:640-649`).
+pub fn is_dd2_turret(id: u16) -> bool {
+    matches!(
+        id,
+        663 | 665 | 667 | 677 | 678 | 679 | 688 | 689 | 690 | 691 | 692 | 693
+    )
+}
+
+/// `DD2Event.ReportLoss` (`DD2Event.cs:507-515`) — the crystal's loss
+/// scene entry (`NPC.cs:40882`): `LostThisRun = true` and the 30-tick
+/// spawn hold. The `_damageTracker.Stop(won: false)` half (`:509-512`)
+/// is unported (the port carries no damage tracker — ANALYSIS).
+pub fn report_loss(lost: &mut bool, spawn_hold: &mut i32) {
+    *lost = true;
+    *spawn_hold = SPAWN_HOLD_LOSS;
+}
+
+/// `NPC.checkDead`'s crystal intercept (`NPC.cs:78087-78095`):
+/// `type == 548 && ai[1] != 1` — the crystal's death does NOT kill it; it
+/// flips into the loss scene (`ai[1] = 1`, `ai[0] = 0`, `life = lifeMax`,
+/// `dontTakeDamageFromHostiles = true`) and `checkDead` returns. Once the
+/// scene runs (`ai[1] == 1`) the guard no longer fires — the 600-tick end
+/// (`NPC.cs:40954-40967`) kills it for real.
+pub fn crystal_death_starts_loss_scene(ai1: f32) -> bool {
+    ai1 != 1.0
+}
+
+/// `DD2Event.StopInvasion(win: false)` (`DD2Event.cs:293-312`) — the loss
+/// form: only an ongoing event stops; the counters clear
+/// (`totalInvasionPoints = 0`, `waveKills = 0`, `waveNumber = 0`,
+/// `:305-307`) and `WipeEntities` (`:308`) runs. Returns whether the stop
+/// happened (the caller runs the wipe). The `win` arm
+/// (`WinInvasionInternal`, `:314-342` — the downed-tier flags + medals)
+/// is the victory slice's scope.
+pub fn stop_invasion_loss(ongoing: &mut bool, wave: &mut i32, wave_kills: &mut f32) -> bool {
+    if !*ongoing {
+        return false;
+    }
+    *ongoing = false;
+    *wave_kills = 0.0;
+    *wave = 0;
+    true
+}
+
 #[cfg(test)]
 mod worth_tests {
     use super::*;
@@ -869,5 +935,76 @@ mod worth_tests {
         let mut kills = 260;
         assert_eq!(required_wave_kills_t2(7, &mut kills, true), 220);
         assert_eq!(kills, 260);
+    }
+}
+
+#[cfg(test)]
+mod loss_tests {
+    use super::*;
+
+    #[test]
+    fn report_loss_latches_and_holds_the_spawns_30() {
+        // `ReportLoss` (`DD2Event.cs:507-515`): LostThisRun = true,
+        // SetEnemySpawningOnHold(30).
+        let (mut lost, mut hold) = (false, 1800);
+        report_loss(&mut lost, &mut hold);
+        assert!(lost);
+        assert_eq!(hold, SPAWN_HOLD_LOSS);
+        assert_eq!(hold, 30);
+    }
+
+    #[test]
+    fn the_crystal_death_flips_into_the_loss_scene_once() {
+        // `NPC.checkDead`'s intercept (`NPC.cs:78087-78095`): ai[1] != 1
+        // → the loss scene; ai[1] == 1 (the scene already running) → the
+        // real death passes.
+        assert!(crystal_death_starts_loss_scene(0.0));
+        assert!(crystal_death_starts_loss_scene(2.0));
+        assert!(!crystal_death_starts_loss_scene(1.0));
+    }
+
+    #[test]
+    fn the_loss_stop_clears_the_counters_only_while_ongoing() {
+        // `StopInvasion(win: false)` (`DD2Event.cs:293-312`).
+        let (mut ongoing, mut wave, mut kills) = (true, 3, 45.0);
+        assert!(stop_invasion_loss(&mut ongoing, &mut wave, &mut kills));
+        assert!(!ongoing);
+        assert_eq!(wave, 0);
+        assert_eq!(kills, 0.0);
+        // The second call refuses — `if (DD2Event.Ongoing)` (`:295`).
+        let (mut wave, mut kills) = (7, 12.0);
+        assert!(!stop_invasion_loss(&mut ongoing, &mut wave, &mut kills));
+        assert_eq!(wave, 7, "a stopped event's counters stay");
+        assert_eq!(kills, 12.0);
+    }
+
+    #[test]
+    fn the_wipe_sets_match_the_vanilla_factories() {
+        // `NPCID.Sets.BelongsToInvasionOldOnesArmy` (`NPCID.cs:10432`):
+        // 548/549 + 551-578 — the bartender 550 is out.
+        for id in [548, 549, 551, 564, 566, 567, 578] {
+            assert!(belongs_to_ooa(id), "{id}");
+        }
+        for id in [0, 547, 550, 579, 650] {
+            assert!(!belongs_to_ooa(id), "{id}");
+        }
+        // `ProjectileID.Sets.IsADD2Turret` (`ProjectileID.cs:526`).
+        for id in [663, 665, 667, 677, 678, 679, 688, 689, 690, 691, 692, 693] {
+            assert!(is_dd2_turret(id), "{id}");
+        }
+        for id in [662, 664, 666, 668, 672, 676, 680, 687, 694, 713] {
+            assert!(!is_dd2_turret(id), "{id}");
+        }
+        // `ClearAllDD2EnergyCrystalsInChests`'s item (`:682`).
+        assert_eq!(ENERGY_CRYSTAL_ITEM, 3822);
+        // `INFO_FAILURE_INVASION_COLOR` (`:1812`) — pure red.
+        assert_eq!(INFO_FAILURE_INVASION_COLOR, [255, 0, 0]);
+    }
+
+    #[test]
+    fn the_lost_flag_refuses_the_kill_progress() {
+        // `CheckProgress`'s gate (`DD2Event.cs:364`): LostThisRun refuses
+        // the whole kill — no worth, no wave advance during the loss scene.
+        assert!(check_progress(true, true, false, 0, 1, 59.0, 59.0, 1.0, false).is_none());
     }
 }
