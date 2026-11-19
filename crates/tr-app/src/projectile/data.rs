@@ -2517,8 +2517,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // spawn-time UpdateNPCs-stream draw — the row carries the
             // 1f base, the roll rides the lob's queue site at union
             // (`npc_ai_unicorn_b.rs::horseman_pumpkin_scale`, module
-            // docs union point 5). The aiStyle-194 flight
-            // (`AI_194_HorsemanPumpkin`, `:41293`) is a follow-up.
+            // docs union point 5 — wired by S1-D-4 W-10). The
+            // aiStyle-194 flight (`AI_194_HorsemanPumpkin`, `:41293`)
+            // is armed: `ai_horseman_pumpkin` (S1-D-4 census W-10).
             HORSEMAN_PUMPKIN => (
                 26.0,
                 26.0,
