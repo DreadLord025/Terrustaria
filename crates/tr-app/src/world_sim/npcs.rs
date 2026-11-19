@@ -11968,6 +11968,35 @@ mod dw3_tests {
         twin.hp = twin.max_hp;
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
         twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
+        // S1-E-21e: `AI_003_Fighters`' ambient-moan arms (`NPC.cs:57336-57367`)
+        // ride the SAME `UpdateNPCs` stream after the AI's draws — the C#
+        // `UpdateNPC` includes them, so the twin replays the gate + arms too
+        // (the fixture's default world opens the NotDiscouraged gate; the
+        // type-3 arm spends its `Next(1000)` roll every tick).
+        let twin_not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+            twin.kind.cs_id() as i32,
+            twin.y as f64,
+            twin_world.world_surface * 16.0,
+            twin_world.eclipse,
+            twin_world.day_time,
+            twin.spawned_from_statue,
+            false, // the fixture's scene_metrics.zone_graveyard default
+            twin_world.snow_moon,
+            twin_world.invasion_type,
+            twin_world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            twin.ai[1],
+            twin.ai[2],
+        );
+        crate::ambient_sound::fighter_ambient_moans(
+            twin.kind.cs_id() as i32,
+            twin.ai[3],
+            twin_not_discouraged,
+            twin.shimmer_transparency,
+            &mut twin_rng,
+            &mut |_, _, _| {},
+        );
         assert_eq!(after, twin_rng, "one AI tick == one update_rng draw shape");
 
         // No other stage stream moved (the AI group's isolation).
