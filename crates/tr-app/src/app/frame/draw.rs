@@ -407,21 +407,17 @@ impl App {
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
                     // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
                     // center tile while buff 11 is held. No RNG — the feed
-<<<<<<< HEAD
                     // leaves the streams untouched. This stays the LIVE
                     // Shine feed: `player_lights.rs` below deliberately
                     // skips buff 11 so the family never double-feeds it.
-=======
-                    // leaves the streams untouched. (Feed order follows
-                    // `Main.Update`'s family order: Players, NPCs,
-                    // Projectiles, Items, Dust — `Main.cs:17754-17783`.)
->>>>>>> origin/main
+                    // (Feed order follows `Main.Update`'s family order:
+                    // Players, NPCs, Projectiles, Items, Dust —
+                    // `Main.cs:17754-17783`.)
                     if let Some(p) = player.as_ref() {
                         if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
-<<<<<<< HEAD
                     // The Player `AddLight` family (S1-E-5,
                     // `player_lights.rs`): the `UpdateBuffs` buff arms
                     // (`Player.cs:10215`/`:10316`/`:10466` — Shine `:9995`
@@ -457,7 +453,10 @@ impl App {
                             p.zones,
                             world,
                             &params,
-=======
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     // `Projectile.ProjLight` (S1-E-5, `Projectile.cs:
                     // 16153-16661`): `Update` calls it once per movement
                     // sub-step (`:17031`), after `HandleMovement` and the
@@ -475,7 +474,6 @@ impl App {
                     for p in projectiles.slots().iter().filter(|p| p.active) {
                         if let Some((x, y, rgb)) = crate::proj_lights::proj_light(
                             p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
->>>>>>> origin/main
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
