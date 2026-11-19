@@ -8534,7 +8534,8 @@ mod wof_wire_tests {
         );
         // The strike tick: hurt() arms just_hit; the next update reads it
         // (ai[1] = 10) then the tail clears the flag.
-        assert!(app.npcs[idx].hurt(5, app.npcs[idx].x + 100.0, 0.0, false));
+        let from_x = app.npcs[idx].x + 100.0;
+        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false));
         assert!(app.npcs[idx].just_hit, "the strike arms the flag");
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.npcs[idx].ai[1], 9.0, "the recoil pause armed then ticked");

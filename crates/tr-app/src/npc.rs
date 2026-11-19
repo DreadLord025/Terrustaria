@@ -1200,11 +1200,6 @@ pub struct Npc {
     pub wof_band_bottom: i32,
     /// The wall arm's `Main.wofNPCIndex` write-back staging (`:25724`).
     pub wof_npc_index_out: i32,
-    /// `NPC.justHit` (`NPC.cs:81274` sets it on a strike, `:90516`/
-    /// `:90390` clear it at the update's tail/death). S1-D-3 W-1: the
-    /// Hungry's recoil arm (`:26211-26214`) reads the STRIKE tick, not
-    /// the whole `hurt_cd` cooldown the v1 stood in with.
-    pub just_hit: bool,
     /// The AI's per-tick contact-damage override (the Hungry's
     /// damage tiers, `aiStyle 29`'s `num388`).
     pub damage_override: Option<i32>,
@@ -2263,7 +2258,8 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
-            // `SetDefaults`' field reset (`NPC.cs:8506`).
+            // `SetDefaults`' field reset (`NPC.cs:8506`) — also the
+            // Hungry's strike-tick read (S1-D-3 W-1/W-2 shared field).
             just_hit: false,
             immune: [0; 256],
             player_interaction: [false; 256],
@@ -2335,7 +2331,6 @@ impl Npc {
             wof_band_top: -1,
             wof_band_bottom: -1,
             wof_npc_index_out: -1,
-            just_hit: false,
             damage_override: None,
             wet_x: 0.0,
             ai: [0.0; 4],
