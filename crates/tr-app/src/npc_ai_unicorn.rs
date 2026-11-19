@@ -766,7 +766,7 @@ mod tests {
     #[test]
     fn s1_f_13b2_the_jump_probe_reads_the_wall_height() {
         let mut rng = UnifiedRandom::new(0);
-        for (wall_h, want) in [(2usize, -7.0f32), (3, -7.5), (4, -8.5)] {
+        for (wall_h, want) in [(2i32, -7.0f32), (3, -7.5), (4, -8.5)] {
             let mut w = ground();
             // A wall at tile x=70, `wall_h` tiles tall on the floor.
             for y in (100 - wall_h)..100 {

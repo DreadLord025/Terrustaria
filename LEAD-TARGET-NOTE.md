@@ -1,0 +1,3 @@
+# LEAD SPEED NOTE — switch to per-lane target dir (apply at your NEXT gate; delete before commit)
+Overseer L6: shared TR-L7-TARGET lock + cross-lane cache churn = 10-20min waits. FIX: from your NEXT cargo command use cmd /c "set CARGO_TARGET_DIR=C:\Users\DreadLord\Desktop\TR-P5-TARGET&& cargo test ..." — one cold build (~10min), then your lane's gates incremental (~1-3min), no lock contention. Your lane has 6+ branches left — the cold build pays for itself immediately.
+ALSO: P2 reported a MourningWood tick-0 x-drift (~0.28px) failing the A/B pin on main AFTER your bosses landing. If your unicorn gate shows it too, it may be a REAL defect in the bosses port (tick-0 kinematics) — diagnose against NPC.cs:32761+ init order; fix surgically if confirmed yours.
