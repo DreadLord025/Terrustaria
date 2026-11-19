@@ -62,6 +62,7 @@ mod npc_spatial;
 mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
+mod npc_ai_style64;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
 mod npc_ai_frost_mob_b;
@@ -96,6 +97,10 @@ mod npc_ai_style41;
 // dispatch arm are the family's merge step (see the module doc).
 mod npc_ai_style42;
 mod npc_ai_style43;
+// S1-D-3 (aiStyle-44): UNWIRED flying-fish / flying-antlion swimmer
+// family - the four kind rows + dispatch claim are the wiring round
+// (see the module doc).
+mod npc_ai_style44;
 // S1-D-3 (aiStyle-46): UNWIRED Golem-head machine - the kind-arm swap +
 // style-axis claim are the golem family's merge step (see the module doc).
 mod npc_ai_style46;
@@ -105,6 +110,7 @@ mod npc_ai_style52;
 mod npc_ai_style53;
 mod npc_ai_style55;
 mod npc_ai_style56;
+mod npc_ai_style59;
 mod npc_ai_style72;
 mod npc_ai_style9;
 mod npc_ai_style31;
