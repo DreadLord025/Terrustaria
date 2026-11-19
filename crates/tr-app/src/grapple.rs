@@ -269,14 +269,25 @@ pub(crate) fn quick_grapple_item(
     misc_equips: &[crate::item::ItemSlot],
     inventory: &[crate::item::ItemSlot],
 ) -> Option<u16> {
+    quick_grapple_item_kind(misc_equips, inventory).map(|(_, shoot)| shoot)
+}
+
+/// S1-E-21f — [`quick_grapple_item`] with the granting ITEM kind alongside
+/// the hook projectile: `QuickGrapple` plays `item.UseSound` at `position`
+/// (`Player.cs:6408`) — the hook item's own use-sound row (the vanilla
+/// Grappling Hook 84 → `SoundID.Item1`, style index 126), not a fixed cue.
+pub(crate) fn quick_grapple_item_kind(
+    misc_equips: &[crate::item::ItemSlot],
+    inventory: &[crate::item::ItemSlot],
+) -> Option<(u16, u16)> {
     let pick = |slot: &crate::item::ItemSlot| {
         let shoot = crate::itemdata::ITEMS.get(slot.kind as usize)?.projectile?;
-        is_hook_projectile(shoot).then_some(shoot)
+        is_hook_projectile(shoot).then_some((slot.kind, shoot))
     };
     // `:6484-6487` — the grapple misc-equip slot wins.
     if let Some(slot) = misc_equips.get(4) {
-        if let Some(kind) = pick(slot) {
-            return Some(kind);
+        if let Some(found) = pick(slot) {
+            return Some(found);
         }
     }
     // `:6490-6497` — the inventory scan.

@@ -1409,6 +1409,12 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     }
     let is_coin = registry::is_coin(src.kind); // `Item.IsACoin` (`Item.cs:373-383`)
     let mut remainder = src.count;
+    // S1-E-21f — the fill chimes are `PlaySound(IsACoin ? 38 : 7)`
+    // (`Player.cs:39444`/`:39559`) through the case-7/case-38 maths. The
+    // chest transfer runs from the CLICK handler, outside every SwapRandom
+    // block — the bare-`Main.rand` stand-in (the wave-C net-strike
+    // precedent), snapshotted before the field borrows below.
+    let mut pickup_rng = std::mem::replace(app.rngs.global(), tr_core::UnifiedRandom::default());
     let App {
         inventory,
         equip,
@@ -1418,12 +1424,11 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     } = app;
     // The occupied-slot pass (`Player.cs:39353-39364`): coins start at the C#
     // coin slots 50-53 (the `num2 = -4` arm, `:39340-39343`), then the grid.
-    // `:39444` — `IsACoin ? 38 : 7` per accepted slot; the port's coin cue is
-    // "Coin_0" (the drop-pickup precedent).
+    // `:39444` — `IsACoin ? 38 : 7` per accepted slot.
     if is_coin {
         for s in equip.coins.iter_mut() {
             if merge_into(s, &src, &mut remainder) > 0 {
-                audio.play("Coin_0");
+                audio.play_pickup_sound(true, &mut pickup_rng);
             }
             if remainder == 0 {
                 break;
@@ -1432,7 +1437,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     }
     for s in inventory[..INV].iter_mut() {
         if merge_into(s, &src, &mut remainder) > 0 {
-            audio.play("Grab"); // `:39444` — the non-coin arm
+            audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39444`
         }
         if remainder == 0 {
             break;
@@ -1447,7 +1452,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     if remainder > 0 && crate::item::use_style(src.kind) != 0 {
         for s in inventory[..HOTBAR].iter_mut() {
             if fill_empty(s, &src, &mut remainder) {
-                audio.play("Grab"); // `:39559`
+                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
                 break;
             }
         }
@@ -1455,7 +1460,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     if remainder > 0 && is_coin {
         for s in equip.coins.iter_mut().rev() {
             if fill_empty(s, &src, &mut remainder) {
-                audio.play("Coin_0"); // `:39559`
+                audio.play_pickup_sound(true, &mut pickup_rng); // `:39559`
                 break;
             }
         }
@@ -1463,7 +1468,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     if remainder > 0 {
         for s in inventory[..INV].iter_mut().rev() {
             if fill_empty(s, &src, &mut remainder) {
-                audio.play("Grab"); // `:39559`
+                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
                 break;
             }
         }
@@ -1480,6 +1485,9 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
             ..src
         },
     );
+    // Return the bare stream with its draws consumed (the snapshot pattern) —
+    // after the field borrows end.
+    *app.rngs.global() = pickup_rng;
 }
 
 // --- Rename flow (M3-CHEST-UI phase 5) ---------------------------------------
@@ -3594,5 +3602,43 @@ mod tests {
             codec.contains("WorldFile.LoadChests:2723"),
             "codec read anchor"
         );
+    }
+
+    /// S1-E-21f — the chest transfer's chimes (`Player.cs:39444`/`:39559`,
+    /// `IsACoin ? 38 : 7`) play through the case-7/38 maths on the
+    /// bare-`Main.rand` stand-in (the click handler runs outside every
+    /// SwapRandom block — the wave-C net-strike precedent); the stage
+    /// streams stay pristine.
+    #[test]
+    fn s1_e_21f_the_chest_transfer_chimes_ride_the_bare_stream() {
+        // A non-coin take: one Grab chime, one Next(-10, 11) draw.
+        let mut app = transfer_app(vec![slot(9, 40)]);
+        let before = app.audio.played_count();
+        let bare_before = app.rngs.global().clone();
+        let streams_before: Vec<_> = crate::app::RngKey::ALL
+            .iter()
+            .map(|k| app.rngs.stream(*k).clone())
+            .collect();
+        quick_transfer_from_slot(&mut app, 0);
+        assert_eq!(app.audio.played_count(), before + 1, "the Grab chime, once");
+        let mut witness = bare_before.clone();
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(*app.rngs.global(), witness, "one case-7 pitch draw");
+        for (k, before) in crate::app::RngKey::ALL.iter().zip(streams_before) {
+            assert_eq!(
+                *app.rngs.stream(*k),
+                before,
+                "{} stayed pristine",
+                k.name()
+            );
+        }
+        // A coin take: the case-38 two draws (slot, then pitch).
+        let mut app = transfer_app(vec![slot(71, 40)]);
+        let bare_before = app.rngs.global().clone();
+        quick_transfer_from_slot(&mut app, 0);
+        let mut witness = bare_before.clone();
+        let _ = witness.next_range(0, 5);
+        let _ = witness.next_range(-40, 41);
+        assert_eq!(*app.rngs.global(), witness, "the case-38 slot+pitch draws");
     }
 }

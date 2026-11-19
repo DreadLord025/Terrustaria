@@ -47,11 +47,32 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_177", 2),
     ("NPC_Hit_25", 3),
     ("Item_1", 2),
-    ("Coin_0", 18),
+    // S1-E-21f — the coin-pickup chime family (`SoundCoin[5]`,
+    // `LegacySoundPlayer.cs:42`/:211-213): case 38 (`:1337-1350`) picks
+    // `Coin_<Next(5)>` — the pickup sites `Player.cs:39444`/`:39491`/
+    // `:39534`/`:39559` (`IsACoin ? 38 : 7`) and the revenge `moneyPing`
+    // (`NPC.cs:90054`). NOTE: legacy id 18 plays the DIFFERENT `Coins`
+    // asset (`Sounds/Coins.xnb`, the tile-place coin-pile cue) — the
+    // pre-wave stand-in row that aliased `Coin_0` to id 18 is retired;
+    // `sound_type` must answer 38 for the case-38 pitch/attenuation path.
+    ("Coin_0", 38),
+    ("Coin_1", 38),
+    ("Coin_2", 38),
+    ("Coin_3", 38),
+    ("Coin_4", 38),
+    // S1-E-21f — the hurt family's slots 1/2 (`SoundPlayerHit[3]`,
+    // `LegacySoundPlayer.cs:195-197`): case 1 (`:503-515`) picks
+    // `Player_Hit_<Next(3)>`.
     ("Player_Hit_0", 1),
+    ("Player_Hit_1", 1),
+    ("Player_Hit_2", 1),
     // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
-    // `Player.cs:38737`) — the `Sounds/Player_Killed.xnb` asset.
+    // `Player.cs:38745`) — the `Sounds/Player_Killed.xnb` asset.
     ("Player_Killed", 5),
+    // S1-E-21f — the drowning gasp (`Player.CheckDrowning`'s breath-zero
+    // arm, `Player.cs:23257`): `SoundID.Drown = 23` (`SoundID.cs:68`),
+    // case 23 (`LegacySoundPlayer.cs:947-956`) — Volume/Pan only, no draws.
+    ("Drown", 23),
     ("NPC_Hit_1", 3),
     // The NPC hit family (the C#'s sound id 3, `LegacySoundPlayer.cs:646`):
     // the per-kind hit cues (`NPC.HitSound`, `NPC.cs:6475`) — the Skeletron's
@@ -257,7 +278,19 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Thunder_5", 43),
     // `LegacySoundPlayer` case 19 (`:871-911`) — the splash family; the
     // liquid-merge shimmer arm plays `SoundSplash[4]` (`WorldGen.cs:4644`).
+    // S1-E-21f — the player entry/exit splashes (`Player.cs:27806`/`:27819`/
+    // `:27832`/`:27846` + the `:27900-27940` exit twins): styles 0 (water),
+    // 1 (honey/lava, the default Style 1), 2/3 (shimmer, ×0.75).
+    ("Splash_0", 19),
+    ("Splash_1", 19),
+    ("Splash_2", 19),
+    ("Splash_3", 19),
     ("Splash_4", 19),
+    // S1-E-21f — slot 5 completes the `SoundSplash[6]` bank
+    // (`LegacySoundPlayer.cs:206-210`); case 19's 4/5 cross-suppression
+    // (`:892-909`) gates the returned instance only — the port spawns a
+    // fresh source (the standing D4 deviation), so both slots play.
+    ("Splash_5", 19),
     // The zombie bank's critter slots (`LegacySoundPlayer.cs:214-222`'s
     // `Sounds/Zombie_ + k`, the 131-entry bank `:112`) behind the critter
     // table's legacy ids (S1-E-25: `NPC.UpdateNPC_CritterSounds`): the sound
@@ -1247,6 +1280,236 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Run", x, y, 1.0, pitch.clamp(-1.0, 1.0));
         Some("Run")
+    }
+
+    /// S1-E-21f — one player-hurt play (`Player.PlayHurtSound`,
+    /// `Player.cs:38569-38712`): the legacy id-1 family (voice variant 1,
+    /// the default `Player.cs:56045` arm `:38704`). The local player's cue
+    /// is unpositioned (`:38572-38575`: `vector = (-1, -1)`), so the C#'s
+    /// attenuation walk takes the `x == -1` flag arm — no distance gate,
+    /// only the volume-slider checks.
+    ///
+    /// Case 1 (`LegacySoundPlayer.cs:503-515`): ONE `Main.rand.Next(3)`
+    /// variation pick (`:505`) — `Player_Hit_<n>`, NO pitch draw; the
+    /// caller's `pitchOffset` (`Utils.Remap(voicePitchOffset, -1, 1, -0.7,
+    /// 0.7)`, `Player.cs:38699-38700`) clamps at `:1410`. The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat. The
+    /// pick rides the `UpdatePlayers` stream (`Player.Hurt` runs under the
+    /// `Main.cs:17754` swap) and only AFTER the gate passed. The instance
+    /// Stop + re-create (`:506-510`) is the standing D4 deviation.
+    /// Returns the cue played; `None` when the gate refused.
+    pub fn play_hurt_sound(
+        &mut self,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The unpositioned gate first — the flag arm still checks the
+        // volume slider (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(1, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let slot = sound::player_hit_case1(&mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cue = match slot {
+            0 => "Player_Hit_0",
+            1 => "Player_Hit_1",
+            _ => "Player_Hit_2",
+        };
+        self.emit(cue, -1.0, -1.0, 1.0, pitch_offset.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21f — the player-death play (`Player.PlayDeathSound`,
+    /// `Player.cs:38715-38746`: the default arm `PlaySound(5,
+    /// base.position)` `:38745` — the TOP-LEFT position, not the centre).
+    /// Case 5 (`LegacySoundPlayer.cs:696-705`): Volume/Pan only — NO
+    /// draws, no pitch. The int overload draws no `GetRandomPitch`. The
+    /// `SoundInstancePlayerKilled` Stop + re-create (`:697-701`) is the
+    /// standing D4 deviation. Returns the cue; `None` when the gate
+    /// refused.
+    pub fn play_death_sound(&mut self, x: f32, y: f32) -> Option<&'static str> {
+        if sound::play_sound(5, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Player_Killed", x, y, 1.0, 0.0);
+        Some("Player_Killed")
+    }
+
+    /// S1-E-21f — one extra-jump play (the `Player.cs:20793-21004` chain's
+    /// eight `PlaySound(16, (int)position.X, (int)position.Y)` sites:
+    /// Sandstorm `:20793`, Blizzard `:20803`, Sail `:20815`, Unicorn
+    /// `:20871`, WallOfFleshGoat `:20899`, Basilisk `:20927`, Santank
+    /// `:20957`, Cloud `:21004`). The int overload (`SoundEngine.cs:102-108`)
+    /// draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Case 16 (`LegacySoundPlayer.cs:843-853`): ONE
+    /// `Main.rand.Next(-10, 11) * 0.01` pitch draw (`:851`) on the
+    /// `UpdatePlayers` stream (`Player.Update`'s `Main.cs:17754` swap),
+    /// only AFTER the attenuation gate passed. The
+    /// `SoundInstanceDoubleJump` Stop + re-create is the standing D4
+    /// deviation. Returns the cue; `None` when the gate refused.
+    pub fn play_double_jump_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(16, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let pitch = sound::legacy_family_pitch(sound::Family::DoubleJump, &mut |lo, hi| {
+            rng.next_range(lo, hi)
+        });
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Double_Jump", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some("Double_Jump")
+    }
+
+    /// S1-E-21f — one splash play (the player entry/exit sites,
+    /// `Player.cs:27806`/`:27819`/`:27832`/`:27846` + the `:27900-27940`
+    /// exit twins: `PlaySound(19, (int)position.X, (int)position.Y[, Style])`
+    /// — water style 0, honey/lava the default style 1, shimmer styles
+    /// 2 (entry) / 3 (exit)). The int overload draws NO `GetRandomPitch`.
+    ///
+    /// Case 19 (`LegacySoundPlayer.cs:871-910`): the
+    /// `SoundInstanceSplash[style]` playing guard (`:872-874`) refuses
+    /// BEFORE any draw; styles 2/3 cut ×0.75, every style rolls ONE
+    /// `Next(-10, 11) * 0.01` pitch (`:888`) on the `UpdatePlayers`
+    /// stream, after the attenuation gate. The slot is overwritten
+    /// (detached, the case creates a fresh instance `:876`). Returns the
+    /// cue played; `None` when the gate or the playing guard refused.
+    pub fn play_splash_sound(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if !(0..6).contains(&style) {
+            return None;
+        }
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(19, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let playing = self.splash_slots[style as usize]
+            .as_ref()
+            .is_some_and(|s| !s.empty());
+        let (tweak, pitch) =
+            sound::splash_case19(style, playing, &mut |lo, hi| rng.next_range(lo, hi))?;
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cue = match style {
+            0 => "Splash_0",
+            1 => "Splash_1",
+            2 => "Splash_2",
+            3 => "Splash_3",
+            4 => "Splash_4",
+            _ => "Splash_5",
+        };
+        // `:876` — the array entry is replaced; the old instance was
+        // refused by the guard, so nothing to detach in practice.
+        let sink = self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
+        if let Some(old) = self.splash_slots[style as usize].take() {
+            old.detach();
+        }
+        self.splash_slots[style as usize] = sink;
+        Some(cue)
+    }
+
+    /// S1-E-21f — one pickup chime (`Player.GetItem`'s four fill sites,
+    /// `Player.cs:39444`/`:39491`/`:39534`/`:39559`:
+    /// `PlaySound(newItem.IsACoin ? 38 : 7)` — UNPOSITIONED, the flag arm).
+    /// The int overload draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Case 7 (`LegacySoundPlayer.cs:717-727`): ONE `Next(-10, 11) * 0.01`
+    /// pitch (`:725`). Case 38 (`:1337-1350`): `Main.starGame` cuts ×0.15,
+    /// then TWO draws — `Next(5)` slot, `Next(-40, 41) * 0.002` pitch. The
+    /// draws ride the caller's stream: the world-drop pickup runs inside
+    /// `Player.GrabItems` → `Player.PickupItem` under the `Main.cs:17754`
+    /// `UpdatePlayers` swap; the chest/inventory transfers run from the
+    /// click handlers OUTSIDE every swap (the bare-`Main.rand` stand-in,
+    /// the wave-C net-strike precedent). Both run only AFTER the gate
+    /// passed. The Grab/Coin instance overwrites are the standing D4
+    /// deviation. Returns the cue played; `None` when the gate refused.
+    pub fn play_pickup_sound(
+        &mut self,
+        is_coin: bool,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let id = if is_coin { 38 } else { 7 };
+        // The unpositioned gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(id, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (cue, tweak, pitch) = if is_coin {
+            // Case 38 — the port has no `Main.starGame` (the star seed is
+            // unported; ANALYSIS S1-E-21f), so the ×0.15 arm is off.
+            let (slot, tweak, pitch) =
+                sound::coin_pickup_case38(false, &mut |lo, hi| rng.next_range(lo, hi));
+            let cue = match slot {
+                0 => "Coin_0",
+                1 => "Coin_1",
+                2 => "Coin_2",
+                3 => "Coin_3",
+                _ => "Coin_4",
+            };
+            (cue, tweak, pitch)
+        } else {
+            let pitch =
+                sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
+            ("Grab", 1.0, pitch)
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, -1.0, -1.0, tweak, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21f — the revenge pickup's coin ping (`NPC.moneyPing`,
+    /// `NPC.cs:90052-90054`: `PlaySound(38, pos)` at the DROP's top-left
+    /// position — positioned, unlike the inventory chime). Same case-38
+    /// draws as [`Audio::play_pickup_sound`]; the caller passes the
+    /// `UpdateItems` stream (`WorldItem.UpdateItem` runs under the
+    /// `Main.cs:18024` swap). The dust burst (`:90068-90072`) is a visual
+    /// seam. Returns the cue played; `None` when the gate refused.
+    pub fn play_coin_ping(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(38, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (slot, tweak, pitch) =
+            sound::coin_pickup_case38(false, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = match slot {
+            0 => "Coin_0",
+            1 => "Coin_1",
+            2 => "Coin_2",
+            3 => "Coin_3",
+            _ => "Coin_4",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21f — the drowning gasp (`Player.CheckDrowning`'s breath-zero
+    /// arm, `Player.cs:23255-23258`: `PlaySound(23)` — UNPOSITIONED).
+    /// Case 23 (`LegacySoundPlayer.cs:947-956`): Volume/Pan only — NO
+    /// draws, no pitch; the int overload draws no `GetRandomPitch`. The
+    /// `SoundInstanceDrown` Stop + re-create is the standing D4
+    /// deviation. Returns the cue; `None` when the gate refused.
+    pub fn play_drown_sound(&mut self) -> Option<&'static str> {
+        if sound::play_sound(23, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
+        Some("Drown")
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -3343,6 +3606,160 @@ mod tests {
         e.music_volume = 0.0;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 0);
+    }
+
+    /// S1-E-21f — the player hurt/death/drown plays' RNG contract: case 1
+    /// draws exactly ONE `Next(3)` slot pick on the passed stream
+    /// (`LegacySoundPlayer.cs:505`), cases 5/23 draw NOTHING; a muted gate
+    /// refuses before any draw. The int overload draws no GetRandomPitch.
+    #[test]
+    fn s1_e_21f_the_hurt_death_drown_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 1: one Next(0, 3) — the Player_Hit_<n> slot pick.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_hurt_sound(0.0, &mut rng);
+        let want = match slot {
+            0 => "Player_Hit_0",
+            1 => "Player_Hit_1",
+            _ => "Player_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 5 (death) and case 23 (drown): Volume/Pan only — no draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_death_sound(0.0, 0.0), Some("Player_Killed"));
+        assert_eq!(audio.play_drown_sound(), Some("Drown"));
+        assert_eq!(rng.peek(), peek, "the draw-free cases consume nothing");
+        // Muted: the gate precedes the switch — every play is draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_hurt_sound(0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted hurt is draw-free");
+        assert_eq!(audio.play_death_sound(0.0, 0.0), None);
+        assert_eq!(audio.play_drown_sound(), None);
+        // The bank rows resolve (the case-38 coin family included).
+        assert_eq!(sound_type("Player_Hit_1"), 1);
+        assert_eq!(sound_type("Player_Hit_2"), 1);
+        assert_eq!(sound_type("Drown"), 23);
+        assert_eq!(sound_type("Coin_0"), 38, "the id-18 alias is retired");
+        for n in 0..5 {
+            let name = format!("Coin_{n}");
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21f — the double-jump and splash plays: case 16 draws one
+    /// `Next(-10, 11)` pitch after the gate; case 19's playing guard is
+    /// modelled by the splash slots (headless: always fresh), one pitch per
+    /// play; an out-of-range play draws nothing.
+    #[test]
+    fn s1_e_21f_the_jump_and_splash_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 16: one Next(-10, 11) (`:851`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_double_jump_sound(0.0, 0.0, &mut rng),
+            Some("Double_Jump")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 19: one pitch per style; the shimmer styles play their slot.
+        for (style, cue, window) in [
+            (0, "Splash_0", (-10, 11)),
+            (1, "Splash_1", (-10, 11)),
+            (2, "Splash_2", (-10, 11)),
+            (3, "Splash_3", (-10, 11)),
+            (4, "Splash_4", (-20, 1)),
+            (5, "Splash_5", (-20, 1)),
+        ] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _ = witness.next_range(window.0, window.1);
+            assert_eq!(
+                audio.play_splash_sound(style, 0.0, 0.0, &mut rng),
+                Some(cue),
+                "style {style}"
+            );
+            assert_eq!(rng.peek(), witness.peek(), "style {style}: one draw");
+        }
+        // An unknown style plays nothing and draws nothing.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_splash_sound(6, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // Out of attenuation range: draw-free (`:390-397`).
+        let fns: [fn(&mut Audio, &mut UnifiedRandom) -> bool; 2] = [
+            |a, r| a.play_double_jump_sound(5000.0, 0.0, r).is_none(),
+            |a, r| a.play_splash_sound(0, 5000.0, 0.0, r).is_none(),
+        ];
+        for f in fns {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert!(f(&mut audio, &mut rng));
+            assert_eq!(rng.peek(), peek, "the out-of-range play is draw-free");
+        }
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Splash_5"));
+    }
+
+    /// S1-E-21f — the pickup chimes: case 7 draws ONE ±0.10 pitch; case 38
+    /// draws TWO — `Next(5)` slot then `Next(-40, 41) * 0.002` pitch. The
+    /// unpositioned chime ignores distance; the positioned coin ping does
+    /// not. Muted plays draw nothing.
+    #[test]
+    fn s1_e_21f_the_pickup_chime_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 7 (Grab): one Next(-10, 11) (`:725`).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_pickup_sound(false, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Case 38 (coin): Next(5) then Next(-40, 41) (`:1343`/:1347).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 5);
+        let _ = witness.next_range(-40, 41);
+        let cue = audio.play_pickup_sound(true, &mut rng);
+        assert_eq!(cue, Some(match slot {
+            0 => "Coin_0",
+            1 => "Coin_1",
+            2 => "Coin_2",
+            3 => "Coin_3",
+            _ => "Coin_4",
+        }));
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // The positioned revenge ping: same two draws, distance-gated.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(0, 5);
+        let _ = witness.next_range(-40, 41);
+        assert!(audio.play_coin_ping(0.0, 0.0, &mut rng).is_some());
+        assert_eq!(rng.peek(), witness.peek());
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_coin_ping(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the out-of-range ping is draw-free");
+        // Muted: both chimes draw-free (the unpositioned flag arm still
+        // checks the volume slider, `:369-371`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for coin in [false, true] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_pickup_sound(coin, &mut rng), None);
+            assert_eq!(rng.peek(), peek);
+        }
     }
 }
 
