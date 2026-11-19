@@ -3058,6 +3058,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::PrimeSaw
                     | NpcKind::PrimeVice
                     | NpcKind::PrimeLaser
+                    // The Skeletron hand's dock/strike aim (`AI()`'s
+                    // aiStyle-12 rotation writes, `NPC.cs:22500`/
+                    // `:22508`/`:22559` — B-1 H8, the prime-limb v2
+                    // precedent).
+                    | NpcKind::SkeletronHand
                     // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
                     // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
                     // rotates every NPC by `npc.rotation` (`Main.cs:26632`).

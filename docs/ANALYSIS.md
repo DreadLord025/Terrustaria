@@ -5519,13 +5519,7 @@ Follow-up S1-E-14b (2026-11-18, `task/S1-E-14b`, COMPLETED): `Npc.local_ai:
   end-to-end.
 - `spawn_loot` feeds the live `npc.local_ai` to the seam (was `[0.0; 4]`).
 
-Deviations kept: the head 35's `ai[3]` stays the port's live hands-count
-stand-in (the sim write-through, `NPC.cs:21962-21970`'s expert `num168`
-scan) — the C# head's `ai[3]` is the red-hat latch set by
-`NPC.RedHatSkeletron`/`SpawnSkeletron(redHatMode)` (`NPC.cs:80394-80470`,
-the killClothier trigger unported); `skeletron_red_hat` mirrors that same
-slot, so the 36/32 paths activate exactly when the port's head slot reads
-1. The other AIs keep their bespoke named localAI stand-ins
+Deviations kept: the other AIs keep their bespoke named localAI stand-ins
 (`caster_counter`, the WoF/KingSlime/brain fields) — the generic vector is
 not retro-fitted onto them (behaviour frozen). No RNG draws added or
 reordered: the new arms are pure reads/writes. Acceptance:
@@ -5533,6 +5527,27 @@ reordered: the new arms are pure reads/writes. Acceptance:
 10-case predicate matrix on real Npcs, the hand mirror, the caster latch +
 stickiness + frame +3, the latched sphere's `ai[3] = 1`, and the loot-seam
 `Cond::RedHatSkeletron` reachability for 36/32.
+
+**B-1 correction (2026-11-19, `fix/skeletron-audit-defects`, code-only):**
+the "head 35's `ai[3]` stays the hands-count stand-in" deviation above was
+a **slot collision**, not a benign stand-in: the sim wrote
+`head.ai[3] = hands_alive` every tick, and with 2 hands spawned the count
+runs 2 → 1 → 0 — so **every fight's last-hand phase read `ai[3] == 1` and
+activated fake red-hat mode** for the head (damage ×1.3, the ×1.35 accel
+ladder, the +0.5 timer), the hands' `localAI[3]` mirror and the Dark
+Caster latch (research/51 S3). The count now rides its own
+`World.skeletron_hands_alive` mirror (the C#'s `num168` is a LOCAL,
+`NPC.cs:21963-21972`); `head.ai[3]` is the red-hat latch only, and
+`skeletron_red_hat` mirrors that raw slot. The trigger
+(`SpawnSkeletron(redHatMode)`, `NPC.cs:80394-80470`) stays unported, so
+the slot is 0 in live play and the 36/32 paths are dormant until it
+lands. The hand's mirror copies the RAW slot via
+`World.skeletron_head_ai3` (`NPC.cs:22315`), and the caster teleport's
+`AnyNPCs(35)` gate reads the new `World.skeletron_head_present` (the old
+mirror made a two-hand head read NOT alive). Regression witnesses:
+`b1_skeletron_tests::b1_the_hands_count_never_latches_the_red_hat_slot`,
+`b1_skeletron_sim_tests::b1_the_sim_keeps_the_hands_count_out_of_the_red_hat_slot`
++ the updated `s1_e_14b` mirror block.
 
 ### The caster aiStyle-8 re-port (S1-D-3, code-only mode)
 
@@ -16646,9 +16661,10 @@ The arm now carries the C#'s machine:
 
 The hands' spawn rides the sim's pass (the C#'s `ai[0] == 0` init,
 `:21924-21941`): the lower hand (`ai[0] = -1`) and the upper hand
-(`ai[0] = 1`, `ai[3] = 150`). The live hand count — the C#'s `num168` —
-rides the head's `ai[3]` (the sim's write), because the arm reads it for
-the expert's shot cadence and the charge's speed.
+(`ai[0] = 1`, `ai[3] = 150`). The live hand count — the C#'s LOCAL
+`num168` — rides `World.skeletron_hands_alive` (B-1: it used to ride the
+head's `ai[3]`, which collided with the red-hat latch — see "Loot rule
+classes" above).
 
 Deviations:
 
@@ -16661,6 +16677,96 @@ Deviations:
   the classic values.
 * **The MP-only branches** (`Main.netMode != 0`) use the single-player
   values.
+
+### The B-1 audit fix round (2026-11-19, `fix/skeletron-audit-defects`, code-only)
+
+research/51 §3/§4 re-read both arms WHOLE against `NPC.cs:21919-22299`
+(head) / `:22300-22614` (hands) and found the "verbatim" claims failed.
+Fixed in place, per defect:
+
+**Head (`npc.rs::update_skeletron`, dispatch passes `expert: false`):**
+
+* **S1** — `world.hard_mode` proxied `Main.expertMode` (hardmode ≠
+  expert). The expert rows now ride an `expert` seam parameter (the
+  style31 `Style31Env` precedent); the live dispatch passes false — the
+  documented classic-solo stand-in until the difficulty flag lands. A
+  post-WoF classic world no longer gets expert stats/shots.
+* **S2** — the `defense = defDefense + num168*25` expert ladder
+  (`:21973`) restored; the spin's −10 (`:22165`) subtracts from the
+  ladder.
+* **S3** — the hands-count/red-hat slot collision (see "Loot rule
+  classes" above): the count moved to `World.skeletron_hands_alive`.
+* **S4** — the spin-shot gate `(num168 < 2 || life < lifeMax*0.75) &&
+  ai[1] == 0` (`:21974`) restored — with both hands at full hp the head
+  does not shoot (and draws nothing).
+* **S5/S6** — the shot vector folds `base.velocity` BEFORE the ×5 spawn
+  origin and the shot velocity (`:22006-22011`); the second normalize
+  mirrors `Vector2.Normalize` (zero → zero, no `.max(1.0)` floor); the
+  raw-distance floor is the C#'s `<= 0 → 1` (`:21998-22001`); the f64
+  hp comparison mirrors the C#'s `(double)` casts.
+* **S7** — the spin damage is
+  `GetAttackDamage_LerpBetweenFinalValues(defDamage, defDamage*1.3)`
+  (`:22186`, `attack_damage_lerp_skeletron`); classic endpoint =
+  defDamage (the old flat ×1.3-if-hardmode is gone).
+* **S8** — state 3 calls `EncourageDespawn(50)` (`:22281`) through the
+  port's despawn seam.
+* **S9** — `TargetClosest` at the init, the dead/far second chance and
+  the 800-tick spin transition (`:21926`/`:21951`/`:22034`) through
+  `target_closest_solo` (the shared `npc_target` selection, solo slot 0).
+* **S11 (RNG)** — the shot's 4 draws (X, Y, jitterX, jitterY,
+  `:21995-22003`) now fire ONLY on ticks the C# gate allows; classic
+  ticks draw nothing (the old hardmode proxy desynced the shared
+  `UpdateNPCs` stream on every post-WoF firing tick). The red-hat
+  taunt/caster-spawn draws stay skipped with their unported blocks.
+* **S10/S12 (kept skips)** — getGood rows, the red-hat Dark-Caster spawn
+  block (`:22119-22163`, a follow-up once the red-hat trigger lands),
+  the dust tail (`:22283-22297` — no rand draws, cosmetic only).
+* The Skull's `timeLeft = 300` override (`:22013`) joined the sim's shot
+  drain; the hands' init position now uses `NewNPC`'s Bottom semantics
+  (`:21930`/`:80770` — centre (headCX, headCY − 26), the invented −75/−75
+  offset gone).
+
+**Hands (`npc.rs::update_skeletron_hand` + `steer_hover_dock`):**
+
+* **H1** — the kill cascade (`:22303-22312`): head gone → `ai[2] += 10`,
+  single-player dies at once (`hp = 0`, the prime-limb precedent); the
+  head check rides `World.skeletron_head_present`. The hands no longer
+  slam a dead head's anchor forever.
+* **H2** — the dock steering gates on `head.ai[1] != 0`
+  (`World.skeletron_head_state`, `:22328`); the 300-tick timer runs only
+  during the head's hover; the head's despawn phase calls
+  `EncourageDespawn(10)` (`:22324-22327`).
+* **H3** — the rise damps `vx *= 0.95` every tick (`:22509`).
+* **H4** — the Y thresholds compare `position.Y` (TOP), the X stations
+  the centre (`:22447`/`:22532`).
+* **H5** — state 2 keeps its 18-speed vector until the REAL exit test
+  (`:22548`: below the player's top, dot ≤ 0, centre-distance > 2000 or
+  vy < 0). The invented ×0.95 decay that made the slam never fly is
+  gone.
+* **H6 (audit correction)** — states 4/5 are NOT dead code: the timer's
+  `ai[2]++` (`:22392`) from state 3 reaches 4 whenever the head hovers
+  again after its spin. Both arms ported verbatim (the wind-out
+  ±0.1·(−side) with the ±8/±12/±15 caps, the ±500 window → the 17/22/25
+  strike, the crossed-player return).
+* **H7** — the strike tiers 18/21/24 and 17/22/25 behind the expert seam
+  + the red-hat predicate.
+* **H8** — the dock aim rotation written in 0/3, 1 and 4
+  (`:22500`/`:22508`/`:22559`); `SkeletronHand` joined the renderer's
+  rotation whitelist (the prime-limb precedent).
+* **H9** — both Y branches (the missing descent `:22459-22470`), both
+  independent X ifs, damp BEFORE accel, one-sided caps; expert runs the
+  hover-dock block twice (`:22396-22494`).
+* **H10** — the timer's +1 red-hat / +0.5 expert increments
+  (`:22381-22389`).
+* **H11** — `localAI[3]` copies the head's RAW slot
+  (`World.skeletron_head_ai3`, `:22315`).
+
+RNG: neither arm adds or reorders draws — the head's only draws are the
+shot's 4 (now correctly gated), the hands draw nothing (the C# arm has
+no `Main.rand` call). Witnesses WRITTEN NOT RUN (no compiler invoked):
+`npc.rs::b1_skeletron_tests` (15) + `world_sim/npcs.rs::b1_skeletron_sim_tests`
+(4), incl. the red-hat-slot regression, the slam-flies pin, the
+hands-die cascade and the shot-stream fork proof.
 
 ## The King Slime's machine (S1-D-3g, 2026-11-14)
 
@@ -18004,10 +18110,10 @@ framework (deleted) with the faithful whole-block port:
   Their trigger/wrap/shoot arms (`:21011-21050`, `:21075-21078`, `:21177-21227`,
   `:21248-21274`) are cited but not armed; the module's `else` group covers only the
   ported standard casters + Fire Imp + Djinn.
-* **`AnyNPCs(35)` rides the `skeletron_red_hat` mirror** (`world_sim/npcs.rs:3377`),
-  whose hands-count stand-in means a live head with one hand reads alive but a
-  two-hand head does not. The exact `NPC.AnyNPCs(35)` check lands with the mirror's
-  rework; a stock world (no head) reads false, which is the common case.
+* **`AnyNPCs(35)` rides the `skeletron_head_present` mirror** (B-1 fix,
+  `world_sim/npcs.rs`): the old `skeletron_red_hat` hands-count stand-in made a
+  live head with one hand read alive but a two-hand head not; the presence
+  mirror now matches `NPC.AnyNPCs(35)` for the single-head port.
 * **The generic gravity + collision tail** (`NPC.cs:90465-90493`) runs AFTER `AI()`
   returns in `NPC.UpdateNPC`; the port applies it at the end of the step (the
   pre-existing ordering deviation, unchanged — the windup countdown sees the

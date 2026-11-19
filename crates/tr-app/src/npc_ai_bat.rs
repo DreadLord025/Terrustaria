@@ -115,10 +115,11 @@ fn solid_tiles(world: &World, start_x: i32, end_x: i32, start_y: i32, end_y: i32
 /// `:19003` sits outside the `flag2` test).
 ///
 /// `skeletron_alive` is `NPC.AnyNPCs(35)` (`:18962`) — the port passes the
-/// sim's live-head mirror (`world.skeletron_red_hat`, false with no live
-/// head). The mirror's hands-count stand-in means a live head with one
-/// hand reads alive but a two-hand head does not; the exact `AnyNPCs`
-/// check lands with the mirror's rework (ANALYSIS).
+/// sim's live-head mirror (`world.skeletron_head_present`, false with no
+/// live head). B-1 fix: the old `skeletron_red_hat` stand-in read the
+/// hands count out of `ai[3]` (a live head with one hand read alive but a
+/// two-hand head did not); the count now rides its own World mirror and
+/// this gate reads presence directly.
 pub fn attempt_find_teleport_spot(
     world: &World,
     rng: &mut UnifiedRandom,
@@ -365,7 +366,8 @@ pub fn ai_style_8_step(
         let num88 = if npc.kind == NpcKind::FireImp { 5 } else { 20 };
         // `:21094` — the 693 near-books attempt is deferred with its kind.
         // `:21097` — the shared attempt; `AnyNPCs(35)` rides the sim's
-        // live-head mirror (false with no head, `world_sim/npcs.rs`).
+        // live-head presence mirror (B-1: was the red-hat hands-count
+        // stand-in).
         if let Some((tx, ty)) = attempt_find_teleport_spot(
             world,
             rng,
@@ -374,7 +376,7 @@ pub fn ai_style_8_step(
             target_tile,
             num88,
             &TelefragPlayer::from_player(player),
-            world.skeletron_red_hat,
+            world.skeletron_head_present,
         ) {
             // `:21099-21104` — the destination rides ai[2]/ai[3]; the
             // placement happens on the NEXT tick (`:20855`).
