@@ -120,8 +120,13 @@ impl App {
         // the settings screen's edits become the live table.
         self.keybinds = self.settings.keybinds.clone();
         self.map_binds = self.settings.map_binds.clone();
-        let new_mode = tr_core::lighting::LightMode::ALL
-            [(self.settings.light_mode as usize).min(3)];
+        // `TR_LIGHT_MODE` pins the mode for screenshots (env.rs:761): like
+        // `TR_ZOOM`'s `zoom_pinned` guard below, the config value must not
+        // clobber the pin — the boot `apply_settings()` (main.rs:199) runs
+        // after `App::new` seeded the pin.
+        let new_mode = crate::env::light_mode().unwrap_or(
+            tr_core::lighting::LightMode::ALL[(self.settings.light_mode as usize).min(3)],
+        );
         if new_mode != self.light_mode {
             // The `Lighting.Mode` setter (`Lighting.cs:29-61`) resets
             // `renderCount`; the settings path also clears the presented
@@ -137,5 +142,40 @@ impl App {
         }
         // The light cache and the world range depend on the mode.
         self.world_key = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::lighting::LightMode;
+
+    /// S1-E-19 wave B: `TR_LIGHT_MODE` survives `apply_settings`. The boot
+    /// order is `App::new` (seeds the pin, `mod.rs:3361`) then
+    /// `apply_settings` (`main.rs:199`); before the fix the settings read
+    /// clobbered the pin back to the config's mode, so every per-mode
+    /// screenshot came out Color-identical.
+    #[test]
+    fn s1_e_19b_light_mode_pin_survives_apply_settings() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.settings.light_mode = 0; // the port ordinal for Color
+        let _env = crate::app::tr_hooks::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("TR_LIGHT_MODE", "retro") };
+        app.apply_settings();
+        assert_eq!(app.light_mode, LightMode::Retro, "the pin wins");
+        // A second apply (the settings-screen close path) keeps it too.
+        app.settings.light_mode = 1;
+        app.apply_settings();
+        assert_eq!(app.light_mode, LightMode::Retro, "still pinned");
+        unsafe { std::env::remove_var("TR_LIGHT_MODE") };
+        // Without the pin the config value applies (port ordinal 1 = White).
+        app.apply_settings();
+        assert_eq!(app.light_mode, LightMode::White);
+        app.settings.light_mode = 0;
+        app.apply_settings();
+        assert_eq!(app.light_mode, LightMode::Color, "config Color restores");
     }
 }
