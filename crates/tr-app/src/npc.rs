@@ -80,17 +80,21 @@ pub enum NpcKind {
     GoblinSummoner,
 
     /// `NPCID.SnowmanGangsta` (143) — the Frost Legion's bottle-thrower
-    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7; the throw
-    /// arm lands with the projectile work), dmg 50, def 20, 200 HP,
-    /// kb 0.6, value 400).
+    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7), dmg 50,
+    /// def 20, 200 HP, kb 0.6, value 400).
     SnowmanGangsta,
-    /// `NPCID.SnowBalla` (144) — the kicker (`NPC.cs`: 26×40, aiStyle 38
-    /// (the speed 3.5/accel 0.8; the kick arm = the follow-up), dmg 65,
-    /// def 26, 240 HP, kb 0.6, value 400).
+    /// Net 144 = `NPCID.MisterStabby` (`NPCID.cs:10965`) — the kicker
+    /// (`NPC.cs`: 26×40, aiStyle 38 (the default speed 4/accel 1),
+    /// dmg 65, def 26, 240 HP, kb 0.6, value 400). The port's kind name
+    /// `SnowBalla` is the pre-existing roster label — the C#'s SnowBalla
+    /// is net 145 (the port's `MysterySnowman`); the rename is the
+    /// bestiary pass's concern (ANALYSIS "the Frost Legion residuals").
     SnowBalla,
-    /// `NPCID.MysterySnowman` (145) — the jumper (`NPC.cs`: 26×40,
-    /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
-    /// 220 HP, kb 0.6, value 400).
+    /// `NPCID.MysterySnowman` is not a 1.4.5 id — net 145 is
+    /// `NPCID.SnowBalla` (`NPCID.cs:10967`), the snowball
+    /// thrower (`NPC.cs`: 26×40, aiStyle 38 (the speed 3.5/accel 0.8),
+    /// dmg 55, def 22, 220 HP, kb 0.6, value 400). The port's kind name
+    /// `MysterySnowman` is the pre-existing roster label (see above).
     MysterySnowman,
     /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
@@ -4460,9 +4464,9 @@ impl Npc {
             NpcKind::GoblinThief | NpcKind::GoblinWarrior | NpcKind::GoblinPeon => {
                 self.update_skeleton(world, player, dt)
             }
-            // The frost trio: aiStyle 38's own machine (`NPC.cs:28995-29145`,
+            // The frost trio: aiStyle 38's own machine (`NPC.cs:28995-29144`,
             // R-25-1) — the hop cycle, the per-type 3/4/3.5 speeds, the
-            // Gangsta's bottle throw, the Balla's pause, the Mystery's aim.
+            // Gangsta's bottle throw, the Stabby's pause, the Balla's aim.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_frost_legion(world, player, dt)
             }
@@ -5124,19 +5128,12 @@ impl Npc {
                     self.frame = (self.frame + 1) % 2;
                 }
             }
-            // The frost trio: the 4/5/7-frame strips (the same walker
-            // accumulator).
+            // The frost trio: `FindFrame`'s cases 143/144/145
+            // (`NPC.cs:73268-73379`) — the vy-driven frameCounter bands
+            // over the 4/5/7-frame strips (`Main.npcFrameCount`,
+            // `Main.cs:67082`), the 144 idle blink and the 145 windup row.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    let count = match self.kind {
-                        NpcKind::SnowmanGangsta => 4,
-                        NpcKind::SnowBalla => 5,
-                        _ => 7,
-                    };
-                    self.frame = (self.frame + 1) % count;
-                }
+                self.frost_legion_find_frame();
             }
             // ═══════════════════════════════════════════════════════════
             // The martians (`NPC.cs:71578-71921`, the 16 kinds of the
@@ -8194,18 +8191,20 @@ impl Npc {
     /// Legion trio. The constant hop cycle (`velocity.Y = -6f` per beat,
     /// the every-third `ai[0] > 2f` beat → `-8.2f` + `ai[1]++`), the
     /// per-type speed/accel pair (`num551`/`num552`: the Gangsta 3/0.7,
-    /// the Balla 4/1, the Mystery 3.5/0.8 — the defaults 4/1), the stuck
-    /// flip (`localAI[2]` = the previous `position.X`, the port's
+    /// the Stabby (net 144) 4/1, the Balla (net 145) 3.5/0.8 — the
+    /// defaults 4/1), the stuck flip (`localAI[2]` = the previous
+    /// `position.X`, the port's
     /// `frost_stuck_x`) with the 60-tick no-retarget cooldown, the walk
     /// acceleration `direction * num552 * 0.01` and the `num551` clamp.
     /// The type arms: the Gangsta's 120-tick bottle throw (the hostile
     /// `BulletSnowman` 110 at 12×spriteDirection, 25 dmg, `timeLeft = 300`
-    /// behind `AI_GlobalFiringDistanceCheck`), the Balla's post-3-hops
+    /// behind `AI_GlobalFiringDistanceCheck`), the Stabby's post-3-hops
     /// 200-tick pause (`ai[1] >= 3f` → the vx decay + the reset), the
-    /// Mystery's 16-tick windup into the aimed `SnowBallHostile` 109
+    /// Balla's 16-tick windup into the aimed `SnowBallHostile` 109
     /// (35 dmg, speed 10 at the player's top-centre). The `confused`
-    /// resets (`:29015-29017`/`:29131-29135`) ride the NPC confusion
-    /// debuff, which is not ported yet.
+    /// resets (`:29012-29015`/`:29123-29128`) read the buff engine's
+    /// Confused (31) directly — the C# latches `this.confused` from the
+    /// same buff scan (`NPC.cs:92029-92032`; the `npc_target.rs` shape).
     fn update_frost_legion(&mut self, world: &World, player: &mut Player, _dt: f32) {
         let _ = world;
         let (mut num551, mut num552) = (4.0f32, 1.0f32);
@@ -8217,6 +8216,7 @@ impl Npc {
             num551 = 3.5;
             num552 = 0.8;
         }
+        let confused = self.buffs.find_buff_index(31).is_some();
         let (pcx, pcy) = player.center();
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -8226,23 +8226,36 @@ impl Npc {
             n.facing = if pcx >= cx { 1 } else { -1 };
             n.sprite_dir = n.facing;
         }
-        // `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55842`): the
-        // target centre's `Main.MaxWorldViewSize` rect (1920×1200) deflated
-        // by 50 — a plain axis box.
+        // `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55841`):
+        // `Utils.CenteredRectangle(targetPos.ToPoint(), Main.MaxWorldViewSize)`
+        // (`Utils.cs:947-950` — the int-truncated centre, the 1920×1200
+        // size from `Main.cs:66714`), `Inflate(-50, -50)` → the 1820×1100
+        // box at `(centre - 910, centre - 550)`, then `Rectangle.Contains`
+        // on the shooter's `ToPoint()` — the half-open `[left, left+width)`
+        // test over the truncated coordinates.
         let firing_distance = |sx: f32, sy: f32| -> bool {
-            (sx - pcx).abs() <= 1920.0 / 2.0 - 50.0 && (sy - pcy).abs() <= 1200.0 / 2.0 - 50.0
+            let (sx, sy) = (sx as i32, sy as i32);
+            let (px, py) = (pcx as i32, pcy as i32);
+            sx >= px - 910 && sx < px + 910 && sy >= py - 550 && sy < py + 550
         };
         let player_alive = player.hp > 0;
 
-        // The Gangsta's throw arm (`:29012-29037`) — independent of the
+        // The Gangsta's throw arm (`:29009-29032`) — independent of the
         // hop core below.
         if self.kind == NpcKind::SnowmanGangsta {
             self.ai[2] += 1.0;
+            // The confused reset (`:29012-29015`).
+            if confused {
+                self.ai[2] = 0.0;
+            }
             if self.ai[2] >= 120.0 {
                 self.ai[2] = 0.0;
                 let sx = self.x + w * 0.5 - (self.facing * 12) as f32;
                 let sy = self.y + h * 0.5;
-                if player_alive && firing_distance(sx, sy) {
+                // The check reads `base.Center`, NOT the throw origin
+                // (`NPC.cs:29020` — `AI_GlobalFiringDistanceCheck(base.Center,
+                // player9.Center)`; the origin at `:29023` is only the spawn).
+                if player_alive && firing_distance(cx, cy) {
                     self.wants_hostile_shot.push((
                         crate::projectile::BULLET_SNOWMAN,
                         sx,
@@ -8255,8 +8268,8 @@ impl Npc {
             }
         }
 
-        // The Balla/Mystery attack states; everything else — and the whole
-        // Gangsta — rides the hop core (`:29089-29136`).
+        // The Stabby/Balla attack states; everything else — and the whole
+        // Gangsta — rides the hop core (`:29094-29131`).
         let in_attack_state = match self.kind {
             NpcKind::SnowBalla if self.ai[1] >= 3.0 => {
                 target_closest(self, pcx, cx);
@@ -8289,11 +8302,14 @@ impl Npc {
                         self.ai[1] = 0.0;
                     }
                 }
-                // The windup throw (`:29078-29087`): at `ai[2] == 8` the
+                // The windup throw (`:29079-29092`): at `ai[2] == 8` the
                 // aim is the player's top-centre from `(cx - facing*12,
                 // y + h*0.25)`, speed 10 normalised, 35 dmg, `timeLeft =
-                // 300`, `ai[0] = 2` (inert for type 109 — only type 31
-                // reads it, `Projectile.cs:57828`).
+                // 300`, `ai[0] = 2` — for type 109 the value keeps tile
+                // collision on (`AI_010`'s `ai[0] == 0f` disarm block,
+                // `Projectile.cs:57953-57996`) while both gravity arms
+                // exclude 109 (`:58006`/`:58022`), so the shot flies dead
+                // straight with the `rotation += 0.1f` spin (`:58092-58099`).
                 if self.ai[2] == 8.0 {
                     let sx = self.x + w * 0.5 - (self.facing * 12) as f32;
                     let sy = self.y + h * 0.25;
@@ -8335,6 +8351,11 @@ impl Npc {
                 self.vx += self.facing as f32 * num552 * 0.9;
             }
             self.sprite_dir = self.facing;
+            // The confused hop reset (`:29123-29128`).
+            if confused {
+                self.ai[0] = 0.0;
+                self.ai[1] = 0.0;
+            }
         }
         if !in_attack_state {
             self.vx += self.facing as f32 * num552 * 0.01;
@@ -8373,6 +8394,66 @@ impl Npc {
             let ty = (ny / TILE_PX).floor() as i32;
             self.y = (ty + 1) as f32 * TILE_PX;
             self.vy = 0.0;
+        }
+    }
+
+    /// `FindFrame`'s frost-trio cases 143/144/145 (`NPC.cs:73268-73379`).
+    /// All three ride the vy-driven `frameCounter` (fall → ++, rise → --,
+    /// clamped 0..17) over three-row bands; the strips are 4/5/7 rows
+    /// (`Main.npcFrameCount`, `Main.cs:67082`). The Gangsta's band is rows
+    /// 1-3 (`:73277-73288` — row 0 never shows); the Stabby (net 144, the
+    /// port's `SnowBalla`) blinks on the fully-still idle via `localAI[3]`
+    /// (rows 0/1, reset at ≥11, `:73299-73314`) and flies rows 2-4; the
+    /// Balla (net 145, the port's `MysterySnowman`) shows the windup row
+    /// `max(0, min(3, (int)(ai[2]/4)))` while grounded with `ai[1] >= 3`
+    /// (`:73346-73350`) and flies rows 4-6. The port's `frame` is the row
+    /// index (the C#'s `frame.Y / num`).
+    fn frost_legion_find_frame(&mut self) {
+        // The 144 idle blink (`:73299-73315`): both velocity axes zero.
+        if self.kind == NpcKind::SnowBalla && self.vx == 0.0 && self.vy == 0.0 {
+            self.local_ai[3] += 1.0;
+            if self.local_ai[3] < 6.0 {
+                self.frame = 0;
+            } else if self.local_ai[3] < 12.0 {
+                self.frame = 1;
+            }
+            if self.local_ai[3] >= 11.0 {
+                self.local_ai[3] = 0.0;
+            }
+            return;
+        }
+        // The 145 windup row (`:73346-73350`): grounded + the post-3-hop
+        // attack state. `(int)` truncates toward zero — the Rust `as`.
+        if self.kind == NpcKind::MysterySnowman && self.vy == 0.0 && self.ai[1] >= 3.0 {
+            self.frame = ((self.ai[2] / 4.0) as i32).clamp(0, 3) as u32;
+            return;
+        }
+        // The shared vy-driven counter (`:73269-73276` and twins).
+        if self.vy > 0.0 {
+            self.frame_counter += 1.0;
+        } else if self.vy < 0.0 {
+            self.frame_counter -= 1.0;
+        }
+        // The three-row bands: the Gangsta rows 1-3, the Stabby 2-4, the
+        // Balla 4-6 (`:73277-73288`/`:73324-73335`/`:73359-73370`).
+        let base_row = match self.kind {
+            NpcKind::SnowmanGangsta => 1,
+            NpcKind::SnowBalla => 2,
+            _ => 4,
+        };
+        if self.frame_counter < 6.0 {
+            self.frame = base_row;
+        } else if self.frame_counter < 12.0 {
+            self.frame = base_row + 1;
+        } else if self.frame_counter < 18.0 {
+            self.frame = base_row + 2;
+        }
+        // The counter clamps (`:73289-73296` and twins).
+        if self.frame_counter < 0.0 {
+            self.frame_counter = 0.0;
+        }
+        if self.frame_counter > 17.0 {
+            self.frame_counter = 17.0;
         }
     }
 
@@ -23283,7 +23364,7 @@ mod s1_d_3b_tests {
 
     #[test]
     fn frost_legion_hops_with_the_big_third_beat_and_the_speed_clamp() {
-        // `NPC.cs:29089-29144`: the hop cycle — `ai[0]` beats 0..2, every
+        // `NPC.cs:29094-29144`: the hop cycle — `ai[0]` beats 0..2, every
         // third launches `-8.2f` and bumps `ai[1]`; the walk acceleration
         // `direction * num552 * 0.01` clamps at `num551` (the Gangsta 3).
         let w = flat_world();
@@ -23306,7 +23387,7 @@ mod s1_d_3b_tests {
         assert!(big_hops >= 3, "the every-third beat fired {big_hops} times");
         assert!(n.vx != 0.0, "the walk acceleration moved it");
         // The `num551` clamp binds along the facing only
-        // (`NPC.cs:29139-29144`): a right-facing Gangsta's +vx clamps at 3.
+        // (`NPC.cs:29136-29143`): a right-facing Gangsta's +vx clamps at 3.
         n.facing = 1;
         n.vx = 5.0;
         n.update(&w, &mut player, 1.0 / 60.0);
@@ -23315,7 +23396,7 @@ mod s1_d_3b_tests {
 
     #[test]
     fn frost_gangsta_throws_the_bottle_every_120_ticks() {
-        // `NPC.cs:29012-29037`: `ai[2]` counts to 120, then the hostile
+        // `NPC.cs:29009-29032`: `ai[2]` counts to 120, then the hostile
         // `BulletSnowman` 110 rides `wants_hostile_shot` at
         // `12 * spriteDirection`, 25 dmg — behind the firing-distance box.
         let w = flat_world();
@@ -23344,7 +23425,7 @@ mod s1_d_3b_tests {
 
     #[test]
     fn frost_balla_pauses_after_three_hops_and_resets() {
-        // `NPC.cs:29039-29056`: `ai[1] >= 3f` — the grounded pause (the vx
+        // `NPC.cs:29033-29052`: `ai[1] >= 3f` — the grounded pause (the vx
         // decay) counts `ai[2]` to 200 and resets the hop count.
         let w = flat_world();
         let mut player = crate::player::Player::spawn(&w);
@@ -23360,7 +23441,7 @@ mod s1_d_3b_tests {
 
     #[test]
     fn frost_mystery_throws_the_aimed_snowball_at_windup_8() {
-        // `NPC.cs:29078-29087`: the 16-tick windup — at `ai[2] == 8` the
+        // `NPC.cs:29079-29092`: the 16-tick windup — at `ai[2] == 8` the
         // aimed `SnowBallHostile` 109 fires at speed 10, 35 dmg, from
         // `(cx - facing*12, y + h*0.25)` toward the player's top-centre.
         let w = flat_world();
@@ -23385,7 +23466,7 @@ mod s1_d_3b_tests {
 
     #[test]
     fn frost_stuck_position_flips_the_direction() {
-        // `NPC.cs:29093-29098`: `localAI[2] == position.X` on a grounded
+        // `NPC.cs:29096-29104`: `localAI[2] == position.X` on a grounded
         // tick flips the direction and arms the 60-tick cooldown.
         let w = flat_world();
         let mut player = crate::player::Player::spawn(&w);
@@ -23398,8 +23479,209 @@ mod s1_d_3b_tests {
         let before = n.facing;
         n.update(&w, &mut player, 1.0 / 60.0);
         assert_eq!(n.facing, -before, "the stuck flip");
-        // `ai[3] = 60f` and the same-tick `ai[3]--` (`:29137`) land on 59.
+        // `ai[3] = 60f` and the same-tick `ai[3]--` (`:29132-29135`) land on 59.
         assert_eq!(n.ai[3], 59.0, "the cooldown after the same-tick decrement");
+    }
+
+    #[test]
+    fn frost_legion_per_type_speeds_and_accel_match_the_csharp() {
+        // `NPC.cs:28997-29008`: the Gangsta (143) 3/0.7, the Balla (145,
+        // the port's MysterySnowman) 3.5/0.8, the Stabby (144, the port's
+        // SnowBalla) the defaults 4/1. The small hop beat adds
+        // `direction * num552 * 0.9` (`:29120`) plus the per-tick
+        // `* 0.01` (`:29130`) — 0.91 * num552 on the first grounded tick.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 140.0 * 16.0;
+        player.y = 66.0 * 16.0;
+        for (kind, cap, accel) in [
+            (NpcKind::SnowmanGangsta, 3.0f32, 0.7f32),
+            (NpcKind::SnowBalla, 4.0, 1.0),
+            (NpcKind::MysterySnowman, 3.5, 0.8),
+        ] {
+            let mut n = bare(kind);
+            n.x = 90.0 * 16.0;
+            n.y = 66.0 * 16.0;
+            n.facing = 1;
+            n.ai = [0.0, 0.0, 0.0, 60.0]; // no retarget this tick
+            n.frost_stuck_x = n.x + 1.0; // no stuck flip
+            n.vy = 0.0;
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(
+                (n.vx - 0.91 * accel).abs() < 1e-4,
+                "{kind:?}: the first-beat accel 0.91*{accel}: {}",
+                n.vx
+            );
+            // The direction-gated clamp (`:29136-29143`).
+            n.vx = 10.0;
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(n.vx <= cap + 1e-4, "{kind:?}: the +clamp {cap}: {}", n.vx);
+            n.facing = -1;
+            n.ai[3] = 60.0;
+            n.vx = -10.0;
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(n.vx >= -cap - 1e-4, "{kind:?}: the -clamp {cap}: {}", n.vx);
+        }
+    }
+
+    #[test]
+    fn frost_gangsta_frame_bands_ride_the_vy_counter() {
+        // `FindFrame` case 143 (`NPC.cs:73268-73297`): the vy-driven
+        // counter over rows 1/2/3 (row 0 never shows), clamped 0..17.
+        let mut n = bare(NpcKind::SnowmanGangsta);
+        n.vy = 1.0;
+        n.frame_counter = 0.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 1, "counter < 6 → row 1");
+        n.frame_counter = 6.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 2, "counter < 12 → row 2");
+        n.frame_counter = 12.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 3, "counter < 18 → row 3");
+        // The rise decrements; below zero clamps back to 0.
+        n.frame_counter = 0.0;
+        n.vy = -1.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame_counter, 0.0, "the negative clamp");
+        // At the 17 cap a further fall leaves the row untouched
+        // (`:73285-73296` — no band matches ≥ 18).
+        n.vy = 1.0;
+        n.frame_counter = 17.0;
+        n.frame = 3;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame_counter, 17.0, "the 17 clamp");
+        assert_eq!(n.frame, 3, "the row holds past the bands");
+    }
+
+    #[test]
+    fn frost_stabby_idle_blinks_and_flies_rows_two_to_four() {
+        // `FindFrame` case 144 (`NPC.cs:73298-73344`): the fully-still
+        // idle blinks via `localAI[3]` (rows 0/1, reset at ≥ 11); the
+        // moving/air arm flies rows 2-4.
+        let mut n = bare(NpcKind::SnowBalla);
+        n.vx = 0.0;
+        n.vy = 0.0;
+        for i in 1..=5 {
+            n.frost_legion_find_frame();
+            assert_eq!(n.frame, 0, "idle tick {i} < 6 → row 0");
+        }
+        n.frost_legion_find_frame(); // localAI[3] = 6
+        assert_eq!(n.frame, 1, "the blink row");
+        for _ in 0..5 {
+            n.frost_legion_find_frame(); // 7..11 — the reset at 11
+        }
+        assert_eq!(n.local_ai[3], 0.0, "the ≥ 11 reset");
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 0, "the blink cycle restarts");
+        // The air bands: rows 2/3/4.
+        n.vx = 1.0;
+        n.vy = 1.0;
+        n.frame_counter = 0.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 2);
+        n.frame_counter = 6.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 3);
+        n.frame_counter = 12.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 4);
+    }
+
+    #[test]
+    fn frost_balla_windup_row_and_air_rows_four_to_six() {
+        // `FindFrame` case 145 (`NPC.cs:73345-73379`): grounded with
+        // `ai[1] >= 3` the windup row is `max(0, min(3, (int)(ai[2]/4)))`;
+        // the air arm flies rows 4-6.
+        let mut n = bare(NpcKind::MysterySnowman);
+        n.vy = 0.0;
+        n.ai[1] = 3.0;
+        for (timer, row) in [(0.0f32, 0u32), (4.0, 1), (8.0, 2), (12.0, 3), (20.0, 3)] {
+            n.ai[2] = timer;
+            n.frost_legion_find_frame();
+            assert_eq!(n.frame, row, "the windup row at ai[2] = {timer}");
+        }
+        // Below the attack state the air bands take over.
+        n.ai[1] = 0.0;
+        n.vy = 1.0;
+        n.frame_counter = 0.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 4);
+        n.frame_counter = 6.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 5);
+        n.frame_counter = 12.0;
+        n.frost_legion_find_frame();
+        assert_eq!(n.frame, 6);
+    }
+
+    #[test]
+    fn frost_confused_resets_the_throw_timer_and_the_hop_state() {
+        // `NPC.cs:29012-29015`: the confused Gangsta's `ai[2]` zeroes
+        // before the 120 gate — no throw. `:29123-29128`: the confused
+        // hop resets `ai[0]`/`ai[1]` after the beat. The buff engine's
+        // Confused (31) stands in for the C#'s `this.confused` latch
+        // (`NPC.cs:92029-92032`).
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 92.0 * 16.0;
+        player.y = 66.0 * 16.0;
+        let mut n = bare(NpcKind::SnowmanGangsta);
+        n.x = 90.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai = [0.0, 0.0, 119.0, 0.0];
+        n.buffs.add_buff(31, 600);
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.ai[2], 0.0, "the confused throw-timer reset");
+        assert!(
+            !n.wants_hostile_shot
+                .iter()
+                .any(|s| s.0 == crate::projectile::BULLET_SNOWMAN),
+            "the confused Gangsta never throws"
+        );
+        // The hop reset: the big beat bumps ai[1] (2 → 3), then confused
+        // zeroes it — the state must start below 3 or the pause arm runs.
+        let mut n = bare(NpcKind::SnowBalla);
+        n.x = 90.0 * 16.0;
+        n.y = 66.0 * 16.0;
+        n.ai = [2.0, 2.0, 0.0, 0.0];
+        n.vy = 0.0;
+        n.frost_stuck_x = n.x + 1.0;
+        n.buffs.add_buff(31, 600);
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.ai[0], 0.0, "the confused hop-beat reset");
+        assert_eq!(n.ai[1], 0.0, "the confused hop-count reset");
+    }
+
+    #[test]
+    fn frost_firing_box_truncates_like_the_csharp_rectangle() {
+        // `AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55841` +
+        // `Utils.cs:947-950`): both centres truncate via `ToPoint()`,
+        // the deflated box is 1820×1100 and `Rectangle.Contains` is
+        // half-open — the shooter CENTRE (`base.Center`, `NPC.cs:29020`,
+        // `n.x + 13` for the 26-wide trio) at exactly `pcx + 910` is OUT,
+        // at `pcx + 909.5` (truncating to +909) is IN.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0; // centre x = 1610
+        player.y = 66.0 * 16.0; // centre y = 1077
+        let pcx = player.center().0;
+        for (nx, fires) in [(pcx + 910.0 - 13.0, false), (pcx + 909.5 - 13.0, true)] {
+            let mut n = bare(NpcKind::SnowmanGangsta);
+            // The check reads the NPC centre `n.x + 13` — not the throw
+            // origin (`cx - facing*12`, which only places the spawn).
+            n.x = nx;
+            n.y = 60.0 * 16.0;
+            n.facing = 1;
+            n.ai = [0.0, 0.0, 119.0, 60.0];
+            n.frost_stuck_x = n.x + 1.0;
+            n.update(&w, &mut player, 1.0 / 60.0);
+            let fired = n
+                .wants_hostile_shot
+                .iter()
+                .any(|s| s.0 == crate::projectile::BULLET_SNOWMAN);
+            assert_eq!(fired, fires, "the half-open box at shooter centre x = {}", nx + 13.0);
+        }
     }
 }
 
