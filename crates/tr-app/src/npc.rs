@@ -29552,8 +29552,10 @@ mod s1_f_13d_tests {
         assert_eq!(NpcKind::from_u16(387), None);
         // GATE UPDATE (L-B): the branch's free holes 149/152-155 were taken
         // by the landed queenbee bees (149/152) + plantera minions
-        // (153/154/155); 148 stays reserved (R78 LeechTail, L-G lane).
-        assert_eq!(NpcKind::from_u16(148), None, "hole 148 stays free");
+        // (153/154/155); 148 was reserved for R78 LeechTail (L-G lane).
+        // GATE UPDATE (L-G): R78 LANDED — the reservation is consumed,
+        // 148 now decodes to LeechTail (the W-A2-3 roster row).
+        assert_eq!(NpcKind::from_u16(148), Some(NpcKind::LeechTail), "R78's LeechTail took the reserved 148");
         assert!(!(78..=84).contains(&213));
         assert!(!(78..=84).contains(&214));
         // Wave A's band stays untouched (GATE UPDATE L-B: 189 is MotherSlime
