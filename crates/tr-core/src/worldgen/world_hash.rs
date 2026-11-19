@@ -220,6 +220,14 @@ mod tests {
     // `Next(worldSurface + 50, maxTilesY - 500)` band collapses), and the
     // framing's 383/384 merge arms (`WorldGen.cs:82077-82082`) only fire
     // on the new kinds.
+    // STALE after fix/vines-destroy-walls: the Vines pass write is now the
+    // C#'s field-only form (`WorldGen.cs:20246-20251` — active/type/
+    // ClearSlope), so generated vine cells KEEP their wall/wall_frame/
+    // liquid/paint instead of zeroing them. The RNG draw order is unchanged
+    // (the write draws nothing), so `generation_is_reproducible_for_a_seed`
+    // (a == b) stays green, but the pinned VALUES below predate the fix and
+    // MUST be re-measured at the merge gate (code-only mode: no compiler
+    // invoked on this branch). Re-pin both constants to the merged tree.
     const SEED42_512: u32 = 2673964944;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

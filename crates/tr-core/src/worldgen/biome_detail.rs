@@ -26,7 +26,8 @@
 use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUSHROOM_GRASS};
 use super::Rng;
 use crate::tile::{
-    FLAG_ACTIVE, FLAG_INACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER, Tile,
+    FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA,
+    FLAG_LIQUID_SHIMMER, Tile,
 };
 use crate::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
@@ -807,12 +808,20 @@ pub(crate) fn pass_vines(world: &mut World, rng: &mut Rng) {
                     break;
                 }
                 let i = world.index(x, py);
-                world.tiles[i] = Tile {
-                    kind: vine,
-                    frame_x: 0,
-                    ..Default::default()
-                };
-                world.tiles[i].flags |= FLAG_ACTIVE;
+                // The Vines pass write (`WorldGen.cs:20246-20251`, the 52 arm
+                // `:20210-20216`): `active(true)`, `type = <vine>`,
+                // `ClearSlope()` — the cell's wall, wall frame, liquid and
+                // paint stay untouched (fix/vines-destroy-walls: the old
+                // whole-Tile replacement erased the background wall under
+                // every generated vine — the mini-cave dirt walls vanished
+                // where a vine grew).
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = vine;
+                // `Tile.ClearSlope` (`Tile.cs:130-134`): slope 0 + no half-brick.
+                t.set_slope(0);
+                t.flags &= !FLAG_HALF_BRICK;
+                t.frame_x = 0;
             }
         }
     }
@@ -1756,5 +1765,116 @@ mod tests {
                 assert_eq!(wall, WALL_DIRT, "column 0 row {m} kept");
             }
         }
+    }
+
+    // --- fix/vines-destroy-walls: the Vines pass keeps the wall ---------------
+
+    /// The Vines pass write (`WorldGen.cs:20246-20251` — `active(true)`,
+    /// `type = 62`, `ClearSlope()`; the 52 arm `:20210-20216`) never touches
+    /// `tile.wall`/`wallFrame`: a jungle-grass overhang above a mini-cave
+    /// pocket with a dirt wall grows its vine WITH the wall behind it. The
+    /// pre-fix whole-Tile replacement erased wall + wall_frame + liquid +
+    /// paint (the user report: the destructible dirt wall vanishes and a
+    /// vine stands in its place).
+    #[test]
+    fn vines_grow_without_erasing_the_background_wall() {
+        let mut w = World::new("t".into(), 60, 60);
+        // A jungle-grass overhang at (20, 20); rows 21..30 are the free
+        // mini-cave pocket carrying the natural dirt wall + its autotile
+        // frame + a paint coat + a puddle — every field the old write erased.
+        let gi = w.index(20, 20);
+        w.tiles[gi].kind = TILE_JUNGLE_GRASS;
+        w.tiles[gi].flags |= FLAG_ACTIVE;
+        for y in 21..30 {
+            let i = w.index(20, y);
+            w.tiles[i].wall = WALL_DIRT;
+            w.tiles[i].set_wall_frame(5, 2);
+            w.tiles[i].set_paint(7);
+            w.tiles[i].liquid = 40;
+        }
+        // Seed hunt: the overhang roll `range(0, 3) == 0` must fire so the
+        // pass actually plants (the same fixture pattern as the tree tests).
+        let mut planted = false;
+        for seed in 1u64..200 {
+            let mut w2 = w.clone();
+            let mut rng = Rng(seed);
+            pass_vines(&mut w2, &mut rng);
+            let grew = (21..30).any(|y| {
+                w2.tile(20, y)
+                    .is_some_and(|t| t.active() && t.kind == TILE_JUNGLE_VINES)
+            });
+            if !grew {
+                continue;
+            }
+            planted = true;
+            for y in 21..30 {
+                let t = w2.tile(20, y).unwrap();
+                if t.active() && t.kind == TILE_JUNGLE_VINES {
+                    assert_eq!(t.wall, WALL_DIRT, "vine cell (20,{y}) keeps the wall");
+                    assert_eq!(
+                        (t.wall_col(), t.wall_row()),
+                        (5, 2),
+                        "vine cell (20,{y}) keeps the wall autotile frame"
+                    );
+                    // The C# write is active/type/ClearSlope only — the paint
+                    // and the liquid ride the cell untouched (`:20246-20251`).
+                    assert_eq!(t.paint(), 7, "vine cell (20,{y}) keeps the paint");
+                    assert_eq!(t.liquid, 40, "vine cell (20,{y}) keeps the liquid");
+                    assert_eq!(t.slope(), 0, "ClearSlope ran");
+                    assert!(!t.half_brick(), "ClearSlope ran");
+                } else {
+                    // Untouched pocket cells keep everything.
+                    assert_eq!(t.wall, WALL_DIRT);
+                    assert_eq!((t.wall_col(), t.wall_row()), (5, 2));
+                }
+            }
+            // The grass anchor itself is never rewritten.
+            let g = w2.tile(20, 20).unwrap();
+            assert!(g.active() && g.kind == TILE_JUNGLE_GRASS);
+            break;
+        }
+        assert!(planted, "a seed grows the jungle vine under the overhang");
+    }
+
+    /// The forest arm (`WorldGen.cs:20210-20216`, type 52) keeps the wall too,
+    /// and `ClearSlope` clears a slope/half-brick the free cell may carry.
+    #[test]
+    fn forest_vines_keep_the_wall_and_clear_the_slope() {
+        let mut w = World::new("t".into(), 60, 60);
+        let gi = w.index(20, 20);
+        w.tiles[gi].kind = 2; // grass
+        w.tiles[gi].flags |= FLAG_ACTIVE;
+        for y in 21..28 {
+            let i = w.index(20, y);
+            w.tiles[i].wall = WALL_DIRT;
+            w.tiles[i].set_wall_frame(3, 1);
+            // A leftover slope + half-brick on the free cell: ClearSlope
+            // (`Tile.cs:130-134`) wipes both, the wall stays.
+            w.tiles[i].set_slope(3);
+            w.tiles[i].flags |= FLAG_HALF_BRICK;
+        }
+        let mut planted = false;
+        for seed in 1u64..200 {
+            let mut w2 = w.clone();
+            let mut rng = Rng(seed);
+            pass_vines(&mut w2, &mut rng);
+            let grew = (21..28)
+                .any(|y| w2.tile(20, y).is_some_and(|t| t.active() && t.kind == TILE_VINES));
+            if !grew {
+                continue;
+            }
+            planted = true;
+            for y in 21..28 {
+                let t = w2.tile(20, y).unwrap();
+                assert_eq!(t.wall, WALL_DIRT, "cell (20,{y}) keeps the wall");
+                assert_eq!((t.wall_col(), t.wall_row()), (3, 1));
+                if t.active() && t.kind == TILE_VINES {
+                    assert_eq!(t.slope(), 0);
+                    assert!(!t.half_brick());
+                }
+            }
+            break;
+        }
+        assert!(planted, "a seed grows the forest vine under the overhang");
     }
 }
