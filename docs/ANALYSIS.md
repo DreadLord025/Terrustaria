@@ -24455,12 +24455,50 @@ construction once executed.
 **Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
 witness tests in the module are WRITTEN, NOT RUN.
 
-**Wiring deferred**: the live routing keeps the `update_creeper`
-stand-in (`npc.rs:13424`) untouched this round; the merge step swaps it
-onto `ai_055_step` (the `Ai55Effects::deactivate` request then feeds
-the pool removal the sim's `update_brain_state` pass already does).
+**WIRED (S1-D-3 W-2, 2026-11-19, code-only mode — no compiler invoked):**
+the aiStyle axis claims `55 =>` (`npc.rs::ai_055_creeper_family` ->
+`ai_055_step`) and the `update_creeper` stand-in is RETIRED (the kind arm
+is the axis-unreachable marker, the style-5/9 precedent). The seam feeds
+`Ai55Ctx`: `brain_anchor` over the sim's `world.brain_*` write-through,
+`npc_target::session_candidate` as the slot-0 candidate,
+`player.buffs.expert_mode` (the retaliate convention,
+`world_sim/npcs.rs`), `SeedFlags::FOR_THE_WORTHY` for `getGoodWorld` (the
+`npc_ai_bat` convention), and the new one-tick `Npc::just_hit` field
+(`NPC.cs:6453`) — armed by the strike paths (`hurt`,
+`hurt_from_projectile`, `strike_pooled` — `strike_melee`/
+`strike_projectile` delegate there; `NPC.cs:81274`), read by the arm,
+cleared once per `update_rng` after the AI (`NPC.cs:90516`; the clear
+sits BEFORE the port's folded-in `contact` pass so a thorns reflect
+survives to the next tick's AI like the C#'s player-update strike).
+`ticker` stays 0 (the zombie's `target_closest` precedent). The
+`Ai55Effects::deactivate` request drains via `EncourageDespawn(0)` — the
+same-tick pool removal (`world_sim/npcs.rs`'s `despawn_expired` retain),
+the port's `active = false` shape without the death effects `hp = 0`
+would trigger; the sim's `update_brain_state` retain
+(`world_sim/npcs.rs:1040`) is the backstop.
+
+**RNG parity of the swap (classic worlds):** the stand-in drew exactly
+one `Next(200)` per in-ring state-0 tick and nothing elsewhere; the
+faithful arm draws the identical census — the expert `Next(100)` half
+short-circuits BEFORE drawing on classic (`ctx.expert_mode == false`),
+the far-orbit return precedes the roll, the state-1 tail draws nothing,
+and `TargetClosest`/the aim/`netUpdate` writes are RNG-free. The shared
+`UpdateNpcs` stream therefore stays in step on classic worlds (witness
+`s1_d_3_w2_the_wired_classic_draw_census_matches_the_mirror`). Expert
+worlds gain the C#'s real draw shape (a faithful fix, not a regression).
+
+The wiring witnesses (`npc.rs`, WRITTEN NOT RUN): the repointed
+`the_creeper_orbits_brain_and_lunges` (now through the axis arm, plus the
+one-tick-flag lifecycle: strike-tick recoil, update-tail clear, the
+cooldown tail no longer recoils),
+`s1_d_3_w2_the_700_leash_is_live_through_the_axis`,
+`s1_d_3_w2_the_lunge_retargets_and_syncs_through_the_axis`,
+`s1_d_3_w2_the_wired_classic_draw_census_matches_the_mirror`,
+`s1_d_3_w2_the_brainless_creeper_despawns_same_tick`.
+
 The line-by-line audit of the stand-in against the C# block (the W66
-defect classes) found these real deviations, all fixed in the module:
+defect classes) found these real deviations, all fixed in the module
+(and now LIVE via the wiring):
 - **Missing 700-px leash** (`:32715-32721`): the stand-in's lunging
   Creepers never drop back to the orbit on distance — they lunge forever.
 - **Missing `TargetClosest`** (`:32688`): the stand-in aims at the
@@ -24491,9 +24529,10 @@ Deliberate folds, all cited in the module:
 - `active = false` leaves as `Ai55Effects::deactivate` (the port's
   `Npc` has no `active` field; the sim's pass retains the Creepers
   away when the Brain dies).
-- `NPC.justHit` has no port field — `Ai55Ctx::just_hit` carries it
-  (the `Ai16Ctx::just_hit` precedent); the strike path supplies it at
-  the wiring step.
+- `NPC.justHit` → the port's `Npc::just_hit` one-tick field (the W-2
+  wiring landed it: armed `NPC.cs:81274`, cleared `:90516`; the
+  `Ai55Ctx::just_hit` seam carries it into the pure arm — the
+  `Ai16Ctx::just_hit` precedent).
 - `Math.Sqrt` keeps the C#'s f32-sum → f64-root → f32-cast shape
   (provably bit-identical to a direct f32 sqrt for this input shape, but
   transcribed literally); `Vector2.Normalize()` is XNA's
