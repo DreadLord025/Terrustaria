@@ -370,12 +370,15 @@ impl NpcKind {
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
             NpcKind::TheDestroyer => 50,
-            // S1-D-3-wire-destroyer: the body/tail kinds ride the free
-            // 148/149 protocol holes (the vanilla types are 135/136,
-            // `NPCID.cs:10947-10949`; the protocol space is port-local).
-            NpcKind::TheDestroyerBody => 148,
-            NpcKind::TheDestroyerTail => 149,
-            NpcKind::Probe => 152,
+            // S1-D-3-wire-destroyer: the body/tail/probe kinds (vanilla
+            // types 135/136/139, `NPCID.cs:10947-10949`/`:10955`; the
+            // protocol space is port-local). GATE REASSIGN (L-B): the
+            // branch's 148/149/152 collide with the landed queenbee bees
+            // (149/152, save-compat) + R78's reserved LeechTail 148; the
+            // three take the next-free 216/217/218 (213/214 R10 reserved).
+            NpcKind::TheDestroyerBody => 216,
+            NpcKind::TheDestroyerTail => 217,
+            NpcKind::Probe => 218,
             NpcKind::SkeletronPrime => 51,
             NpcKind::Retinazer => 52,
             NpcKind::Spazmatism => 53,
@@ -669,12 +672,11 @@ impl NpcKind {
             48 => NpcKind::LeechHead,
             49 => NpcKind::LeechBody,
             50 => NpcKind::TheDestroyer,
-            // S1-D-3-wire-destroyer: the body/tail protocol holes (the
-            // vanilla types 135/136, `NPCID.cs:10947-10949`).
-            148 => NpcKind::TheDestroyerBody,
-            149 => NpcKind::TheDestroyerTail,
-            // The Probe (vanilla 139) takes the free 152 hole.
-            152 => NpcKind::Probe,
+            // S1-D-3-wire-destroyer: the gate-reassigned 216/217/218
+            // holes (`to_u16` above; vanilla types 135/136/139).
+            216 => NpcKind::TheDestroyerBody,
+            217 => NpcKind::TheDestroyerTail,
+            218 => NpcKind::Probe,
             51 => NpcKind::SkeletronPrime,
             52 => NpcKind::Retinazer,
             53 => NpcKind::Spazmatism,
