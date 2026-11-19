@@ -5568,12 +5568,107 @@ Painter (227), the Witch Doctor (228), the Travelling Merchant (368), the
 Angler (369), the Sleeping Angler (376), the Tax Collector (441), the
 Golfer (588), the Zoologist (633) and the Princess (663).
 
-Deviations: the chat **UI** is not wired yet — the C#'s right-click
-(`Main.cs:43069-43083` → `Main.npcChatText`) and the bubble
-(`Main.DrawNPCChatBubble` `:43135-43159`) and the dialogue panel
-(`NPCChatPanel.cs`) still wait for the panel task; the port's
+Deviations: the chat UI landed with S1-E-10b (below); the port's
 `ConditionalDialogue` (the pending-dialogue half, `NPC.cs:6539`) is not
 ported; the C#'s `nextDialogue` branch (`:93768-93771`) comes with it.
+
+## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter —
+the dialogue panel (`NPCChatPanel.cs`) and the hover bubble
+(`Main.DrawNPCChatBubble`, `Main.cs:43135-43161`). **Code-only mode**: no
+compiler/tests were invoked; the four new tests are written not run and the
+port was verified by re-reading the C#.
+
+What landed:
+
+- **The panel** (`NPCChatPanel.Draw` `:52-86`): the box
+  `screenWidth/2 − 250, 100, 500, 30 + 30·lines + 30·il + max(0, 2·(il−1))`
+  (`:65-68`, via the selection half's `chat_box_rect`/`chat_box_height`),
+  the two `ChatBack` source splices at `Color(200,200,200,200)` drawn at the
+  TEXTURE's width, scale 1 (`:71-72`), the wrapped lines at `+(20,20)`
+  stepping 30 px in `Color(num×4)` with `num = (mouseTextColor·2 + 255)/3`
+  (`:63-64`, `DrawText` `:217-235`), and the Close button row
+  (`DrawButtons` `:88-162`). The text rides the `allowRichText` path's
+  `DrawColorCodedStringWithShadow` (`:228`): the black four-way shadow at
+  spread 2 (`ChatManager.cs:246-249`, `ShadowDirections` ±X/±Y `:376-382`).
+- **The wrap** (`panel_lines`): `TextDisplayCache.PrepareCache`'s
+  `Utils.WordwrapString(text, MouseText, 460, 10)` (`TextDisplayCache.cs:27`,
+  `Utils.cs:860-867`) — greedy word wrap measured through the retail
+  `Mouse_Text` sheet (`ui_font_width`), capped at 10 lines. The bitmap
+  fallback estimates 8 px per char (the same recorded approximation the
+  selection half's `format_chat_lines` carries, which keeps its char-count
+  wrap for its own tests).
+- **The Close button** (`CloseChat`, `NPCInteractions.cs:271-287`,
+  `Condition() => true`, label `Lang.inter[52]`): the row origin
+  `BottomLeft + (30, −22·il + max(0, 2·(il−1)) − 4)` (`:93`), width
+  `(int)(stringSize.X·shrink)` with the 260 px clamp (`:113-117`), idle
+  scale 0.9 / hover 1.2 (`:96`/`:119`), label colour `(b, b/1.1, b/2, b)`
+  (`:102`), shadow Black idle / `Color.Brown` (165,42,42) hovered (`:121`)
+  through the four ±2 px `DrawColorCodedStringShadow` passes (`:132`), the
+  origin `(0, stringSize.Y·0.5)` measured at 0.9 (`:112`/`:120`) applied at
+  the draw scale, and the hover x-shift `(int)((1.2−0.9)·width·0.5)`
+  (`:125`). The hover-change edge plays sound 12 (`:157-160`).
+- **The click seam** (`App.handle_npc_chat_clicks`, `app/clicks.rs`, wired
+  in the pre-gate click cluster before the chest/crafting/inventory
+  handlers): the press consumes (`mouseLeftRelease = false`, `:152`) and
+  runs `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
+  (`Main.cs:40680-40692`): `SetTalkNPC(-1)`, `npcChatText = ""`, sound 11,
+  `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). `_lastHovered`
+  rides `App.npc_chat_last_hovered`; like the C# it keeps its value while
+  the panel is closed (`DrawButtons` simply does not run).
+- **The bubble** (`draw_bubble`): `num = −(width/2 + 8)` with the integer
+  divisions (`:43137`/`:43154`), flipping to `+(width/2 + 8)` +
+  `FlipHorizontally` at `spriteDirection == −1` (`:43144-43148`), y =
+  `npc.y − Chat.Height()` (`:43138`) −18 more for the cat's ai[0]==5 sit
+  (`:43139-43142`), tint `mouseTextColor` on all four channels (`:43158`),
+  drawn under the emote world→UI transform
+  (`DrawInterface_1_1_DrawEmoteBubblesInWorld`, `Main.cs:46460-46464`).
+  The hover pick (`bubble_npc`) stands in for `HoverOverNPCs`'
+  `currentNPCShowingChatBubble = i` (`:43069`): the first live town-like
+  NPC whose box holds the pointer AND intersects the player's
+  `TileReachCheckSettings.Simple` region (`chat_world_region`, reused from
+  the talk arm), while the player lives (`:43065`).
+- **The assets**: the `Chat`/`Chat_Back` sheets (`AssetInitializer.cs:563-565`)
+  join the packing list + `Lookups` (`ui_chat_bubble`/`ui_chat_back`), and
+  the `Chat` sound cue joins `SFX_CUES` at legacy id 24 (`SoundID.Chat`,
+  `SoundID.cs:70`; `LegacySoundPlayer.cs:202`/`:957-962`).
+
+Deliberate deviations / deferred:
+
+- **The other interaction buttons** (`NPCInteractions.All`,
+  `NPCInteractions.cs:486-531` — shop, happiness, housing, reforge, the
+  Dryad/Tavernkeep/Dye-Trader specials, …) are deferred: they ride systems
+  this panel task does not own. The port renders only `CloseChat`, so
+  `_neededInteractionLines` is the constant 1 (`ceil(1/4)`, `:174`).
+- **The portrait** (`Main.DrawNPCPortrait`, `Main.cs:40318`, called at
+  `NPCChatPanel.cs:79`) and **the corner item**
+  (`Main.DrawNPCChatBottomRightItem`, `:39789`/`:80`) are deferred.
+- **The sign half**: `CanHoldConversation`'s `sign != -1` arm (`:276-283`),
+  the `editSign` blinker/IME composition (`DrawText` `:236-262`) and
+  `CloseNPCChatOrSign`'s `CloseSign` (`Main.cs:40682`) are unported — the
+  port's panel draws only while `talk_npc` holds.
+- **The Dryad Stardew override** (`OverrideChatTextWithShenanigans`,
+  `:195-213`) is deferred with the animation system.
+- **The gamepad/virtual-keyboard arms** (`PrepareVirtualKeyboard`
+  `:177-186`, `UILinkPointNavigator`, the `UsingGamepad` hover gate) are
+  deferred; the hover gate collapses to always-true.
+- **The bubble's gravity-flip arm** (`:43149-43153`) is unreachable: the
+  port keeps `gravDir = 1`.
+- **The hover gates** the port lacks: `mouseInterface`, the stinky /
+  projectile-651 exclusions (`Main.cs:43053-43064`) and the per-NPC frame
+  rect hit box (`:43003` — the port uses `Npc::contains`'s size box).
+- **The open sound**: `talk_to_npc` (S1-E-10a wiring) does not play
+  `Main.cs:43083`'s sound 24 yet — the cue is registered, the call site
+  belongs to the selection-wiring task.
+- **`mouseInterface`**: `draw_panel` returns the panel-hover flag (the
+  C#'s `:81-84` arm) but the port has no `mouseInterface` field to set.
+- **Layer order**: the port draws the panel in `draw_hud` right after the
+  emote bubbles (layer 1.1) rather than at the C#'s layer 23
+  (`DrawInterface_23_NPCSignsDialog`, `Main.cs:45713-45716`) — the port's
+  HUD spine draws the chat input strip early too; the panel sits under the
+  inventory/bestiary/options layers, which is the visible-order difference
+  that matters.
 
 ## Town housing (S1-E-11a, 2026-11-14)
 
@@ -20015,14 +20110,17 @@ byte-identical.
   NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
   **and the footer**; the prologue framing + importance bitmap match with the
   pointer table zeroed.
-- The header/flags block diverges in **exactly the unowned fields**, pinned
-  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
-  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
-  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
-  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
-  (no `.wld` store), the tree-top variations (no store) and the world-gen
-  manifest JSON (the port writes the empty string). These are documented
-  divergences, not faked parity.
+- The header/flags block diverges in **exactly four unowned spots**, pinned
+  field-by-field (`s1_j_3_the_header_flags_divergences_are_exactly_the_unowned_fields`):
+  the banner kill/claimable counts (`killCount[1]`/`claimable[1]`, no `.wld`
+  store), the tree-top variations (`treeTop[0]`, no store) and the world-gen
+  manifest JSON (`manifest`, the port writes the empty string). These are
+  documented divergences, not faked parity. **S1-J-3b closed the rest** (see
+  the next subsection): `CreationTime`, the file-faithful `spawnTileY`, the
+  seven ore tiers, the saved-NPC flags, the angler quest index, the
+  cultist/Moon Lord/Queen Slime kills, the tower downeds/actives + apocalypse
+  phase (with the load-time shield restore) and the party-girl/princess
+  spawn unlocks.
 - The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
   (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
@@ -20037,6 +20135,88 @@ byte-identical.
   regenerated fixture end-to-end (see "The `.plr` legacy-subset shim +
   default policy", increment 3).
 
+### S1-J-3b — the header/flags parity remainder (code-only mode, 2026-11-18)
+
+`task/S1-J-3b-wld-header` wired the newly-owned `World` fields into the
+`.wld` flags writer/reader (`wld/sections/flags.rs`), closing every header/flags
+divergence except the four unowned spots above. **This increment ran in
+code-only mode: no cargo/rustc/rustfmt/test run, no dotnet/harness run, no
+graphify** — verification is C# cross-read + git only; the tests below are
+written, NOT executed. The compile window runs them.
+
+Closed (write + read, each cited to `IO/WorldFile.cs`):
+- `CreationTime` (`World.creation_time`, write `:1250`/read `:2044`, ≥141) and
+  `LastPlayed` (`:1251`/`:2048`, ≥284) — already S1-J-2's `last_played`, the
+  creation clock added here.
+- `spawnTileY` — the file's own row (`LoadWorldFlags:2069`), no derivation; the
+  old `World::compute_spawn_y` override (a deviation) removed, no callers left.
+- The seven ore tiers (`World.ore_tiers`): the hardmode trio (`:1315-1317`/
+  `:2131-2133`) and the pre-hardmode quartet (`:1388-1391`/`:2344-2347`), with
+  the pre-216 −1 reset arm (`:2351-2354`) and the post-load `CheckSavedOreTiers`
+  re-derivation (`:730` call, `:794-849` body; `WorldGen.CountTileTypesInWorld`
+  `WorldGen.cs:86885-86908`, active tiles only, classic wins on strictly greater
+  count else the alternate). `saveglue.rs::save_world` snapshots the App's
+  runtime `ore_tiers` into `World.ore_tiers` before the write.
+- The saved-NPC flags: wizard/mech (`:1294-1295`, ungated read), angler (`:1334`/
+  `:2161` ≥99), stylist (`:1336`/`:2171` ≥104), taxCollector (`:1337`/`:2174`
+  ≥129), golfer (`:1338`/`:2178` ≥201).
+- The angler quest index (`Main.anglerQuest`, `:1335`/`:2166` ≥101): i32 in the
+  file, u8 on `World.angler_quest` (the 41-entry pool `Main.cs:67032`, values
+  0..40 fit) — cast on write/read.
+- The event bosses: downedAncientCultist/downedMoonlord (`:1345-1346`/
+  `:2215-2216` ≥131), downedQueenSlime (`:1396`/`:2371` ≥223).
+- The four tower downeds/actives + LunarApocalypseIsUp (`:1352-1360`/
+  `:2226-2234` ≥140), **with the load-time shield restore**: an active tower
+  comes back at `ShieldStrengthTowerMax` (`LoadWorldFlags:2235-2250`;
+  `NPC.cs:6795-6806` = `LunarShieldPowerNormal`, halved once the Moon Lord is
+  downed). The `.wld` does NOT serialize the shield strengths (only the `.trwld`
+  does, `save.rs:503-506`/`:562-565`), so the restore is computed in the tr-core
+  read from `World.lunar_shield_power_normal` (the tr-app `tower_shield_max`
+  twin, `world_sim/npcs.rs:1602`).
+- The party-girl/princess spawn unlocks (`:1401`/`:1406`, read `:2398`/`:2403`
+  ≥251). These are **genuine persisted C# state** — set on the NPC's arrival
+  (`WorldGen.cs:5577-5604` cases 208/663), read at the spawn gates
+  (`Main.cs:65949-65952` princess, `:65785-65799` party girl); the port's
+  `town_arrival.rs:212`/`:217` reads both at those exact gates. The `AnyNPCs`
+  re-derivation (`WorldFile.cs:2943-2953`) is only a pre-251 back-compat path
+  inside `LoadNPCs`, NOT the flags block. (The old "debug override" doc label
+  was a mislabel.)
+
+Kept unowned (no `World` store / deliberate collapse, written at the C# default):
+the `anglerWhoFinishedToday` name list (the port collapses it to the bool
+`World.angler_quest_turned_in`, no name store → write 0 count, skip read),
+downedFishron/EmpressOfLight/Clown, savedBartender + the DD2 T1-T3 tier flags
+(`dd2_latches` is the wave-boss death latches, NOT the tiers), boughtCat/Dog/Bunny,
+combatBook/VolumeTwo/peddlersSatchel (live in `FishingContext`, not `World`),
+crimson, dungeonX/Y, clouds/wind, the banner counts, treeTop, the manifest,
+party/lantern/cultistDelay/afterPartyOfDoom (App-owned `world_events.rs`),
+forceSeasons, meteorShower/coinRain, extraSpawnPoints, the secret micro-seeds
+(vampire/infected/teamBased/dualDungeons/moreLightning/noLightning → the
+`MicroSeedFlags` bitmask rides the `.trwld` v12 tail only, the `.wld` parse does
+not derive `micro_seeds`), and the other unlocks (Merchant/Demo/DyeTrader/
+Truffle/ArmsDealer/Nurse/slime colours except rainbow).
+
+**Fixture regen: deferred, and `golden.wld` needs none.** The fixture keeps
+every newly-wired flag at its C# default (`Shims/Globals.cs` — `Program.cs`
+never sets them), so the wiring is byte-identity-preserving: the divergence
+walk still names exactly `killCount[1]`/`claimable[1]`/`treeTop[0]`/`manifest`.
+The compile-window regen commands (if a future fixture change needs them):
+`powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`. The `.plr`
+AES-envelope PKCS7 fix + its `golden.plr` regen belong to the sibling
+`task/S1-J-5c-plr-crypto` (content commit `6e93ec74`, not an ancestor of this
+branch's HEAD); this increment does not touch the `.plr` writer/envelope.
+
+Tests written (NOT run): `s1_j_3b_the_newly_owned_flags_land_at_their_csharp_byte_offsets`
+(each flag patched into the independent `flags_tail` table at its C# offset,
+then read back; plus the owned-world block vs `expected_flags_block` byte-for-byte),
+`s1_j_3b_active_towers_restore_their_shields_on_load` (full 100 / halved 50,
+inactive towers keep 0), `s1_j_3b_the_saved_npc_and_unlock_gates_follow_the_csharp`
+(v98/100/102/104/250/251 gates), and the extended `owned_world`/`assert_owned_fields`
+round-trip sweep. The tail offsets were hand-verified against `flags_tail`
+(wizard@23/mech@24, angler@110/quest@111/stylist@115/tax@116/golfer@117,
+cultist@1891/moonlord@1892, towers@1898-1906, queenSlime@2025,
+partyGirl@2030/princess@2035; block 2200 bytes).
 ## The worldgen parity proof (S1-A-7)
 
 `ROADMAP` S1-A-7 asks for a comparison against a **C#-generated world**, not the
