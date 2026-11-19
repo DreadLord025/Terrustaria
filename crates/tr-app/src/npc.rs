@@ -18126,11 +18126,22 @@ mod tests {
         let mut zombie = Npc::spawn_zombie(&w, 30).unwrap();
         assert_eq!(zombie.kind, NpcKind::Zombie);
         let start_x = zombie.x;
+        let mut min_x = start_x;
         for _ in 0..600 {
             zombie.update(&w, &mut player, 1.0 / 60.0);
+            min_x = min_x.min(zombie.x);
         }
-        assert!(zombie.x < start_x, "zombie walked the wrong way");
+        // The zombie walks LEFT toward the player (the spawn faces -1 and
+        // the player stands at column 20); the faithful contact pass
+        // bounces it back at the player, and the new probe ladder hops it
+        // over — so the walk is pinned by the leftmost reach, not the
+        // 600-tick end position.
+        assert!(min_x < start_x - 32.0, "zombie never walked toward the player: min {min_x} start {start_x}");
         assert!(player.hp < player.max_hp, "hp {}", player.hp);
+        // Park the zombie beside the player for the dawn leg (the contact
+        // bounce may have carried it right of the spawn by tick 600).
+        zombie.x = player.x + crate::player::WIDTH + 4.0;
+        zombie.vx = 0.0;
 
         // Daylight: the zombie takes NO damage (the burn is gone) but the
         // discouraged arm arms the 10-tick despawn window.
