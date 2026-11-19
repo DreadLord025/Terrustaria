@@ -272,6 +272,15 @@ pub const GREEK_FIRE_3: u16 = 328;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
+/// `ProjectileID.SeedPlantera` (275, `Projectile.cs:3614-3621`) —
+/// Plantera's phase-1 seed (the aiStyle-1 flight, hostile, alpha 255).
+pub const SEED_PLANTERA: u16 = 275;
+/// `ProjectileID.PoisonSeedPlantera` (276, `Projectile.cs:3622-3629`) —
+/// the poison seed (the same 14x14 aiStyle-1 row).
+pub const POISON_SEED_PLANTERA: u16 = 276;
+/// `ProjectileID.ThornBall` (277, `Projectile.cs:3630-3637`) — the thorn
+/// ball (38x38, the aiStyle-14 flight, hostile, alpha 255).
+pub const THORN_BALL: u16 = 277;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
@@ -511,6 +520,21 @@ pub const GEM_BOLTS: [u16; 7] = [
     GEM_BOLT_DIAMOND,
     GEM_BOLT_AMBER,
 ];
+/// `ProjectileID.BlueDungeonDebris` (736, `ProjectileID.cs:2026`) — the
+/// cracked blue dungeon brick's fall shard: aiStyle 10, 10x10
+/// (`Projectile.cs:7748-7755`).
+pub const BLUE_DUNGEON_DEBRIS: u16 = 736;
+/// `ProjectileID.GreenDungeonDebris` (737, `ProjectileID.cs:2028`) — the
+/// green twin of the 736.
+pub const GREEN_DUNGEON_DEBRIS: u16 = 737;
+/// `ProjectileID.PinkDungeonDebris` (738, `ProjectileID.cs:2030`) — the
+/// pink twin of the 736.
+pub const PINK_DUNGEON_DEBRIS: u16 = 738;
+/// The dungeon-debris trio the `AI_010` arm and the kill hook gate on — the
+/// C# spells the set as `type >= 736 && type <= 738` (`Projectile.cs:57927`,
+/// `:57942`, `:58073`, `:77369`).
+pub const DUNGEON_DEBRIS: [u16; 3] =
+    [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -1098,6 +1122,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 26.0,
                 1,
                 3,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3614-3629` — Plantera's seeds: 14x14, aiStyle
+            // 1, hostile, `alpha = 255`; the stock penetrate 1 / tileCollide
+            // / timeLeft 3600 (`:774-787`) — the AI's call site overrides
+            // the seeds' timeLeft to 300 (`NPC.cs:31966-31969`).
+            SEED_PLANTERA | POISON_SEED_PLANTERA => (
+                14.0,
+                14.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3630-3637` — the thorn ball: 38x38, aiStyle
+            // 14, hostile, `alpha = 255`; the stock life (no override).
+            THORN_BALL => (
+                38.0,
+                38.0,
+                14,
+                1,
                 TIME_LEFT_DEFAULT,
                 0,
                 true,
@@ -2169,6 +2223,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the other unported styles), 24x16, `penetrate = -1`,
             // `timeLeft *= 5` and the idStatic-12 pair.
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
+            // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
+            // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
+            // block; 889 SkeletronPrimePet): 20x20, aiStyle 26,
+            // friendly, `penetrate = -1`, `timeLeft *= 5` (3600 →
+            // 18000), the stock `tileCollide = true` reset (`:745`) —
+            // the arm sets it false on its first tick (`:60096`), so
+            // `HandleMovement` never collides them. `netImportant`
+            // (`:8488`/`:8523`) rides the overlay below.
+            SKELETRON_PET | SKELETRON_PRIME_PET => {
+                (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE)
+            }
+
             // AI_026 slice A (S1-D-4b-10) — the 14 early-return flyer pets.
             // Every row: aiStyle 26, friendly, `penetrate = -1`,
             // `timeLeft *= 5` (3600 → 18000), the stock `tileCollide = true`
@@ -2355,6 +2422,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
+            // aiStyle 10, `penetrate = -1`; everything else keeps the reset
+            // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
+            // `extraUpdates` 0 `:771`). The stock `friendly`/`hostile` are
+            // both false (`:788`/`:764` — the arm touches neither), so the
+            // trio damages nothing; the pool's slot default is
+            // `friendly = true`, so `ai_dungeon_debris` holds the C# state
+            // explicitly. The per-type `knockBack = 6f` is dropped — the
+            // spawner's input wins (the sand-row precedent above; the debris
+            // spawner passes 0, `WorldGen.cs:63844`).
+            BLUE_DUNGEON_DEBRIS | GREEN_DUNGEON_DEBRIS | PINK_DUNGEON_DEBRIS => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:9511-9522` — the Horseman's pumpkin lob
             // (1001, S1-F-13b2 slice B): 26×26, aiStyle 194, hostile,
             // `tileCollide = false`, `ignoreWater`, `timeLeft = 360`,
@@ -2498,7 +2578,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry
+        net_important: minion
+            || sentry
+            // AI_026 slice B: the boss-head pets' `netImportant = true`
+            // (`Projectile.cs:8488`/`:8523`).
+            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -2563,6 +2647,15 @@ pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
+/// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the
+/// spinning Skeletron-head pet (`Projectile.cs:60092-60253`'s shared
+/// 885/889 arm; buff 288's pet, `Player.cs:11105`).
+pub const SKELETRON_PET: u16 = 885;
+/// `ProjectileID.SkeletronPrimePet` (889) — AI_026 slice B: the spinning
+/// Skeletron-Prime-head pet with the `localAI[0]` laser-eye accumulator
+/// (buff 292's pet, `Player.cs:11121`).
+pub const SKELETRON_PRIME_PET: u16 = 889;
+
 // AI_026 slice A (S1-D-4b-10): the 14 early-return flyer pets of
 // `AI_026` (`Projectile.cs:59120-60091`) — `ProjectileID.cs:904/948/950/
 // 952/976/1314/2102/2184/2188/2326/2338/2342/2356/2646`. Everything else
@@ -2699,6 +2792,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
+        // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
+        // (`Projectile.cs:60192`) and the walk steps frames 0-5
+        // (`:60240-60247`).
+        SKELETRON_PET => 10,
+        SKELETRON_PRIME_PET => 11,
         // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
         // walk (0-3), bite (4-9) and flight (10-14) machines index it.
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
@@ -2724,6 +2823,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The dungeon-debris trio's 3-frame sheets (`Main.cs:8445-8447`) —
+        // `AI_010`'s first-tick frame roll (`Projectile.cs:57946`) picks the
+        // row and the per-frame rotation (`:58073-58086`) spins it.
+        BLUE_DUNGEON_DEBRIS | GREEN_DUNGEON_DEBRIS | PINK_DUNGEON_DEBRIS => 3,
         // AI_026 slice A (S1-D-4b-10) — the flyer pets' sheets
         // (`Main.cs:8585/8593/8594/8600/8623/8637/8639/8641/8674/8680/
         // 8682/8689/8718`). The 197 has no override anywhere in the table —
