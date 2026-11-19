@@ -15794,7 +15794,7 @@ mod tests {
         p
     }
 
-    fn ground() -> World {
+    pub(super) fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
         for x in 0..64 {
             for y in 30..64 {
@@ -16155,7 +16155,7 @@ mod tests {
         }
     }
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
@@ -18507,7 +18507,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    const ALL_KINDS: [NpcKind; 230] = [
+    pub(super) const ALL_KINDS: [NpcKind; 230] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -21734,7 +21734,7 @@ mod s1_d_3b_tests {
     use super::*;
     use tr_core::world::World;
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
