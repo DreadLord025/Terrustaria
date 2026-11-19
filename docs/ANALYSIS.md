@@ -3014,6 +3014,54 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
+
+The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
+themed group per pass, verbatim move) moved the grass/spread family out of
+`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
+`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
+`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
+consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
+hallow source-set slices, `box_has_source`, `spread_grass_walls`,
+`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
+wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
+2 MossConversion tests). Public seams re-exported from `growth`
+(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
+`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
+(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces the
+compile gate for this pass:
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
+  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
+  3227-3255, 3320-3422 for the tests) and string-compared against the new
+  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
+  verbatim** (per-block sha256 recorded in the move script's output;
+  grass.rs LF sha256 `4326a23c…cf44366`).
+- the only content differences are the declared visibility seams:
+  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
+  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
+  `set_wall` helper in growth.rs (the moved wall-arms test imports
+  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
+  the now-unused `use trees::kill_invalid_tree_above;` import left
+  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
+- a full unified diff of the new growth.rs against the origin blob shows
+  the added lines are exactly the `mod grass;` + re-export block + the two
+  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
+  moved blocks — no other edit.
+
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
 ## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
 
 `TileDrawing.GetTileDrawData` (`TileDrawing.cs:4527`, the type switch at
@@ -3122,11 +3170,15 @@ rand, generating_or_loading)`:
 - `490` (`:4742`): the bob needs `InAPlaceWithWind` + `Main.WindForVisuals` +
   `Main.weatherVaneBobframe`; outside wind C# yields addFrY 0 — the same 0
   the port produces at t=0. Top 2 ported.
-- `529` (`:4827-4849`): the `addFrY += 34 * <biome/beach pick> - tileFrameY`
-  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band;
-  32 px tall / top −14 / flip are ported.
-- `530` (`:4705-4722`): the `addFrY += 36 * <biome pick>` rewrite needs
-  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750); top 2 ported.
+- `529` (`:4827-4849`): ~~the `addFrY += 34 * <biome/beach pick> - tileFrameY`
+  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band~~ —
+  **S1-F-9d slice A (2026-11-18)**: ported in the delegated pass
+  (`tr-app/src/drawdata_cases_a.rs::sea_oats_add_fr_y`); 32 px tall /
+  top −14 / flip stay in `drawdata.rs`.
+- `530` (`:4705-4722`): ~~the `addFrY += 36 * <biome pick>` rewrite needs
+  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750)~~ — **S1-F-9d slice A
+  (2026-11-18)**: ported (`drawdata_cases_a.rs::oasis_plants_add_fr_y`);
+  top 2 stays in `drawdata.rs`.
 - `485` (`:4727-4730`): the `tileFrameCounter`-driven addFrY is not ported;
   top 2 is.
 - `428` (`:5605`): a pressed `PressurePlateHelper` plate adds addFrX 18; the
@@ -3174,7 +3226,11 @@ rand, generating_or_loading)`:
   before `draw_data`, so the table arm remains dead in the app but complete.
   Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
   (`tree.rs::Foliage::for_ground` deviation stands).
-- `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
+- ~~`518` (`:4604-4630`)~~ — **S1-F-9d slice A (2026-11-18)**: the LilyPad
+  liquid float (needs `tile.liquid` + the block type below) is ported in
+  the delegated pass (`tr-app/src/drawdata_cases_a.rs::lily_pad_top_delta`,
+  `WorldGen.SolidTile` + `Tile.blockType` verbatim); the static table arm
+  stays default 16×16.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
 - `453|456` (`:5412-5417`), `507|508` (`:6007-6013`): `Main.tileFrameCounter`
@@ -3189,8 +3245,11 @@ rand, generating_or_loading)`:
   generated and untouched): `addFrY = tileFrame*36` below frameY 36, else
   252; top 2.
 - The halfBrick epilogue (`:6045-6048`) is the tile pass's separate
-  half-brick draw path, not `draw_data`. The glow switch (`:6049-`) is
-  TILE-DRAW-2, except 564's addFrY reset (`:6105-6113`) noted above.
+  half-brick draw path, not `draw_data`. ~~The glow switch (`:6049-`) is
+  TILE-DRAW-2~~ — **S1-F-9d slice A (2026-11-18)** ports its data side (see
+  "S1-F-9d cases A" below); only the glow TEXTURE binding stays TILE-DRAW-2.
+  564's addFrY reset (`:6105-6113`) is folded into `drawdata.rs`'s arm, noted
+  above.
 - The caller-side source-rect corrections of `DrawSingleTile` (`:1125-1150`)
   are ported as `TileDrawData::apply_world_corrections`: palm 323
   `frameY = 22 * GetPalmTreeBiome` (`:1726`, `:4670`), dye plants 227 with
@@ -3241,6 +3300,57 @@ rand, generating_or_loading)`:
   from `TileDrawing.DrawTrees`, so the single-tile pass must not draw it too). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
+
+### S1-F-9d cases A (2026-11-18, branch `task/S1-F-9d-cases-a` — code-only mode)
+
+Written in **code-only mode** (user directive: no cargo/rustc/rustfmt/test
+runs): the module, the dispatch seam and the 13 `test_DW_F9d_*` per-case
+coverage tests are written but NOT compiled or run; verification is pending
+a build-capable session.
+
+`crates/tr-app/src/drawdata_cases_a.rs` ports the remaining STATIC
+`GetTileDrawData` case ids as a delegated pass after `draw_data` +
+`apply_world_corrections` (`render/tiles.rs` dispatch site), matching the C#
+order (the glow switch runs after the main switch and the campfire/half-brick
+epilogue, `TileDrawing.cs:6033-6049`). `drawdata.rs` is untouched — waves B
+(animator) / C (furniture) own it.
+
+- First-switch world probes: **518** LilyPad (`:4604-4630` — the liquid
+  float, `WorldGen.SolidTile` clamp `WorldGen.cs:70111-70132`,
+  `Tile.blockType` below `Tile.cs:202-214`), **530** OasisPlants / **529**
+  SeaOats biome rows (`:4705-4722` / `:4827-4849`,
+  `WorldGen.GetBiomeInfluence` `WorldGen.cs:47750-47777` over the generated
+  `SET_CORRUPT`/`SET_CRIMSON`/`SET_HALLOW` tables; the beach band rides the
+  380 `WorldGen.beachDistance` constant `WorldGen.cs:86914`).
+- Second switch: ALL 38 case ids (`:6049-6507`) — the glow-mask index, source
+  rect and colour, the unconditional 1998/2016/2040/2014 style-stride
+  unwinds (88/87/89/101/104/42/93/15/497/172) and the two `tileTop` rewrites
+  (93 `+= 2`, 104 `= 2`). The glow gates read the RAW `tileFrameX/Y` (the C#
+  locals are never rewritten by this switch): a style-block-1 dresser
+  (`fx = 1998 + 24*54`) unwinds its frame but does NOT glow — its raw column
+  is 61, not 24. Source rects stay on the 16 px / 18 px sheet grid (2 px
+  padding); the candle case's 22 px row stride is the sheet's own grid.
+
+Deviations (all parked data, no pixel change until the glow pass lands):
+
+- The glow TEXTURE binding (GlowMask sheet indices) is the renderer's glow
+  pass (TILE-DRAW-2); until it lands the `GlowData` record rides unused
+  (`let _glow` at the dispatch site).
+- Case **637**'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
+  painted sheet) is not routed — `mask 0` placeholder; its rect + 75% lerp
+  port. Case **184** column 220's `Main.DiscoR/G/B` colour is engine state
+  the port does not route — parked `[0,0,0,255]`; its rect ports.
+- Case **564**'s unconditional `addFrY = 0` (`:6112`) is already folded into
+  `drawdata.rs`'s 564 arm — the pass must not (and does not) apply it twice.
+- `Main.mouseTextColor` (656/701/564): the dispatch site passes 255 (the
+  steady full-bright value) until the UI text pulse rides in; the functions
+  take the value so it can be fed later.
+- `Main.martianLight` is 0 outside the (unported) Martian Madness event;
+  `martian_glow(light)` takes the value (`:498-499`, the truncating byte
+  cast) so the event can feed it.
+- The cell colour for the 637/638 lerps converts `LightMap::get`'s f32
+  channels to XNA bytes (`×255`, clamp, alpha 255 — `Lighting.GetColor`
+  has no alpha).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
@@ -11173,9 +11283,10 @@ Deviations and notes:
     take their positive branch (no gravity potion in the port); the sleeping/sitting
     offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
     The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
-    but their own AI arms (53/197/130) do not call the reposition yet — 134/137/138 reach
-    it, and since S1-D-4b-3 the 123 pair (the 641/643 sentries) and the 642 beam's
-    carried ride (`:31414-31417`, the aiStyle-84 head anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    but their own AI arms (53/197) do not call the reposition yet — 134/137/138 reach
+    it, 130 joined them with S1-D-4b-9, and since S1-D-4b-3 the 123 pair (the 641/643
+    sentries) and the 642 beam's carried ride (`:31414-31417`, the aiStyle-84 head
+    anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
     C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
     `_type = -1`; the port's `dismount()` likewise resets the kind).
   - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
@@ -11265,6 +11376,74 @@ Deviations and notes:
   - **120/130 deferred**: the Stardust Guardian's aiStyle-120 arm (`:44634-44964`) and the
     Flame Burst Tower's aiStyle-130 arm (`:68107-68361`) stay unported — the next round of
     S1-D-4b-3; their rows keep holding position (the ROADMAP row carries the split).
+
+### The Flame Burst Tower slice (S1-D-4b-9, code-only mode)
+
+**Code-only mode**: this task ran without a compiler — no `cargo`/`rustc`/`rustfmt`,
+no test run, no graphify. The port was verified by re-reading the C# line by line;
+the tests below are written as code, NOT executed. The sibling branch
+`task/S1-D-4b-3` owns aiStyle 123 and the shots 642/644; this slice touches neither.
+
+S1-D-4b-9 ported aiStyle **130** (Flame Burst Tower, `AI_130_FlameBurstTower`,
+`Projectile.cs:68107-68360`) + its target pick (`AI_130_FlameBurstTower_FindTarget`,
+`:68362-68407`) and the aiStyle-**131** shot (`AI_131_FlameBurstShot`, `:68456-68508`,
+the 664/666/668 rows `:7153-7162` — 16x16, alpha 255, local-immunity −1), plus the
+Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
+`:485`/`:489`) and the towers' `proj_frames` 7/9/9 (`Main.cs:8458-8460`).
+
+- **The arm mirrors the 134 Ballista inline precedent** (the per-kind constants, the
+  muzzle captured BEFORE the backpack reposition — Bottom + (direction*6, −40/−44/−46),
+  the 300-wrap `localAI[0]`, the init latch, the backpack branch, the reload/target
+  state, the fire state at `ai[1] == 12` with the frame `1 + ai[1]/4`, the cycle wrap
+  `num6*num7` into the 80/70/60-tick reload, the gravity tail + `dd2_sentry_step`).
+  The Apprentice T2 buffs (`:68275-68280`) tighten the angle cone to 0.1 and multiply
+  the range ×1.5 / the speed ×1.4. The fire-state scan passes
+  `canChangeDirection: false` (rejects targets behind the facing).
+- **The cone differs from the Ballista's**: `|dir.X| < |dir.Y| * angleRatioMax`
+  rejects steep targets BOTH above and below (`:68378`/`:68400` have NO `dir.Y > 0`
+  clause, unlike `AI_134_Ballista_FindTarget`'s dead-bottom cone). The reload-state
+  facing flip reads `Math.Sign(DirectionTo(npc.Center).X)` from the tower's CENTRE
+  (`Entity.cs:205-208`), not the muzzle.
+- **The shot spawn has NO ±16 clamp**: aiStyle 131 ≠ 1, so `NewProjectile`'s
+  aiStyle-1 velocity decay (`:10895-10902`) does not run — the 12/15/18-px shots
+  (16.8/21/25.2 with Apprentice T2) fly at full speed from the centred muzzle
+  (`x − 8, y − 8`).
+- **RNG order preserved by construction** (unlike the 137 skip-and-document
+  precedent, this task draws the gates): per tick the 130 arm draws the type-270
+  dust gate `Next(2)` (`:68138`/`:68190`/`:68242`, only while `ai[2] != 1` — the
+  flag is captured BEFORE the pickup latch, `:68119`); on a 0 the two
+  UNCONDITIONAL `NextFloat`s follow (`fadeIn` `:68141`, `velocity.X` `:68146` —
+  they draw even when `NewDustDirect` returns the culled dummy slot 6000); then
+  the smoke gates `Next(5)` × 1/2/3 per tier (`:68158`/`:68210`/`:68262`). The
+  131 shot draws `Next(2)` × 1/2/3 per tier (`:68495`) and, on a non-zero, the
+  always-0-but-consuming `Next(1)` (`:68500`). The targeting, the fire, the shot
+  spawn and the alpha fade draw nothing. Tests
+  `s1_d_4b_9_the_tower_dust_gates_draw_in_the_csharp_order` /
+  `s1_d_4b_9_the_shot_dust_gates_draw_in_the_csharp_order` replay the exact draw
+  sequence against a reference `FastRandom` stream.
+- **Skipped layers**: the dust BODIES and `Dust.NewDust`'s pool-occupancy-dependent
+  internal draws (`Dust.cs:116-146`/`:170-175` — they cannot be reproduced without
+  a dust pool; the gate/NextFloat draws above ARE kept), the `Lighting.AddLight`
+  casts (`:68124-68125` etc.), the 131's tracked sound latch (`:68465-68475`), the
+  `netUpdate` writes (port-wide convention). The 664/666/668 on-hit `StatusNPC`
+  On Fire rolls (`:11319-11330`) ride the port-wide `StatusNPC` per-type skip
+  (S1-C-8); the 664/666/668 kill-dust burst (`:71821+`) and the draw tint
+  (`:79280-79283`) are decor.
+- **The 131 shot's movement** rides the generic `kill_step` (the aiStyle-28 frost
+  bolt precedent): the shot keeps `tileCollide = true`, integrates `pos += vel`
+  and dies on a tile hit — the generic `HandleMovement` tail, not a per-type arm.
+- **Deferred — aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
+  scope took the tower style first. The Guardian needs unported player machinery
+  (`tankPet`/`tankPetReset` `Player.cs:870-872`/`:24539-24547`,
+  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` — the rest-hover states 1/3
+  depend on them; without the rest target they revert to the idle state) plus its
+  19-frame sheet (`Main.cs:8497`) and the teleport dust bursts. It stays on the
+  S1-D-4b-3 row.
+- Tests (written, not run): `s1_d_4b_9_flame_burst_tests` — the row/frame pins,
+  the dispatch + 300-wrap, the unclamped shot fire + muzzle centring + same-tick
+  shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
+  facing flip, the backpack ride, the shot fade/rotation and the two RNG-order
+  proofs; `player.rs`'s armor-set test gained the Apprentice T2/T3 triples.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -12006,7 +12185,7 @@ port (`Sets.SpreadUnderground` excludes 32/352).
 
 ### The wall chains
 
-`convert_wall_by_case` (growth.rs) was the three evil types' flat
+`convert_wall_by_case` (growth/grass.rs, re-exported from growth) was the three evil types' flat
 Grass/Stone/HardenedSand/Sandstone/NewWall ladder. It now carries every
 conversion type's wall arm in the C#'s order: the missing `Dirt`/`Snow`/`Ice`
 sets (`WallID.cs:39-41`), the glowing-mushroom set (`WallID.cs:88`), and the
@@ -16933,7 +17112,9 @@ Documented deviations, all deliberate:
   aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
   own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
   = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
-  rows). Each stand-in cites its machine's own constants.
+  rows). Each stand-in cites its machine's own constants. (Slice B retired
+  the two bosses' stand-ins — see "The Pumpkin Moon bosses" below; the
+  aiStyle-26/22 stand-ins remain for slice A.)
 - **The unported wave kinds still consume**: the frost family (F-13c) and
   the wave-20 unported bosses draw their vanilla rolls and spawn nothing
   (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
@@ -16951,6 +17132,98 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The Pumpkin Moon bosses (S1-F-13b2 slice B, 2026-11-18)
+
+The Mourning Wood (325, aiStyle 57) and the Pumpking (327, aiStyle 58) leave
+the S1-F-13b hover stand-ins for their named machines —
+`npc_ai_pumpkin_boss.rs` (`mourning_wood_step` / `pumpking_step`), the style
+axis in `npc.rs::update_rng` claiming `57 if kind == MourningWood` /
+`58 if kind == Pumpking` (the aiStyle-26/22 kinds ride slice A; the
+Retinazer's own `update_retinazer` — aiStyle 30 per its SetDefaults row,
+`NPC.cs:10526` — is untouched).
+
+Ported verbatim with in-place citations:
+
+* **The Wood** (`NPC.cs:32761-33043`, the type-325 arms): the hp-band
+  `num836` 2/3/4 (`:32771-32778`), the dawn flee 8 + `EncourageDespawn(10)`
+  (`:32787-32791`), the idle counter's hp-multiplied ticks and the 300-tick
+  `Next(1,3)`/`Next(3,5)` pick (`:32792-32816`), the stomp (flaming wood 325,
+  15-tick, speed 10, ±20×0.01 jitters, 50 dmg, `:32846-32865`), the spin
+  (Greek fires 326-328, the 8th ticks strictly inside (60,240), the
+  10+|dx|×0.004 cap-14 lob with the −|dx|×0.3 aim lift, 40 dmg,
+  `:32893-32920`), the beam (30-tick, speed 16, ±20×0.001, 75 dmg,
+  `:32922-32941`), the barrage (10-tick, the 12+|dx|×0.002 cap-16 lob,
+  ±30×0.005, 50 dmg, `:32942-32969`), the horizontal damp/approach
+  (`:32970-32992`) and the vertical hover — the player-overlap drop, the
+  80×20 `Collision.SolidCollision` probe at bottom−20 and the rise/fall
+  ramps (`:32993-33042`). Every shot aims the player's TOP-centre
+  (`position.Y`, not the centre) from centre+30y.
+* **The Pumpking** (`NPC.cs:33044-33197`): the `localAI` frame cycle
+  (`:33046-33055`), the 300-tick `Next(3)` mode pick (`:33061-33069`), the
+  mode-0 Greek-fire lob — every 30th tick past 30, gated on
+  `!WorldGen.SolidTile(origin/16)` with the `(dy + Next(50,201))×0.2`
+  flattening (`:33070-33085`), the one-time init (`:33087-33104`), the
+  dead/2000-px flee retarget (`:33105-33117`), the dawn fall
+  (`:33118-33122`), the hover — the 200-px-over-centre aim, `num875` 6 (mode
+  1 bands 8/10/12 by distance) on the `/15` lerp, the 300-tick gate
+  (`:33123-33169`), the scythe charge (16-speed `/50` lerp, 600 ticks or
+  mode≠1 exits, `:33170-33185`), the flee (+0.1 sink, ×0.95 decays,
+  `EncourageDespawn(500)`, `:33186-33195`) and the `vx×−0.02` rotation tilt
+  (`:33196`). Both machines end with the `noTileCollide` integration
+  (`NPC.cs:90495-90498`).
+
+**The RNG draw ORDER (the slice's critical invariant).** C# evaluates a
+call's named arguments in TEXTUAL order, and in all three Greek-fire calls
+(`:32913`, `:32962`, `:33083`) `Type: Main.rand.Next(326, 329)` sits AFTER
+`SpeedX:`/`SpeedY:` — so each shot draws aim-x jitter → aim-y jitter →
+SpeedX jitter → SpeedY jitter → **kind LAST**. The module runs that order
+and 19 `s1_f_13b2_*` tests pin it: stream-equality witnesses replay every
+draw by hand on a fresh `UnifiedRandom` (the idle pick, the stomp jitters,
+the spin/barrage/lob five-draw sequences with the kind FIFTH, the mode
+`Next(3)`, the solid-origin gate suppressing ALL five draws) and assert
+`rng == witness` after each machine tick — plus the wiring test through
+`update_rng`, proving the UpdateNPCs stream order survives the axis.
+
+Documented deviations, all deliberate:
+
+* **The lights are skipped** — `Lighting.AddLight` (`:32781`/`:32785` for
+  the Wood's two type arms, `:33059` for the Pumpking): no entity-light
+  layer on these machines yet (the Retinazer port's precedent); no
+  `Main.rand` draws in them, so the stream is untouched.
+* **The type-344 dust arm is skipped** (`:32821-32825`, the Everscream's
+  `Dust.NewDust` — the only rand-drawing line in the skipped region): the
+  kind is unported (S1-F-13c), the arm is unreachable for type 325, and
+  skipping it keeps the stream exact for the ported kinds.
+* **The type-344 (Everscream) branches are not ported** — the kind does not
+  exist in the roster (S1-F-13c); only the type-325 arms run (the idle's
+  low-hp pick reads {3,4}; the 344 kind always falls to the else arm's
+  {1,2} pick, `:32806-32812`).
+* **The Pumpking's two PumpkingBlade (328, aiStyle 59) spawns are deferred**
+  (`:33093-33103`): the blade kind is unported. `NPC.NewNPC` draws no
+  `Main.rand` outside the `getGoodWorld` variant roll (`NPC.cs:80752`),
+  which the port's spawn plumbing does not model (`variants.rs`), so
+  skipping the two calls keeps the stream exact; the blades land with
+  their kind.
+* **The `player13` re-reads after retargets** (`:33090`/`:33108`/`:33139`)
+  are kept as `ptop`/centre refreshes even where the lob arm already ran
+  this tick (the `#[allow(unused_assignments)]` arms) — the 1:1 shape.
+
+**Test-world note.** `Collision.SolidCollision` clamps its sample rows to
+`maxTilesY − 40` (`Collision.cs:2712-2713`), so the module's probe tests run
+in a 200-tile-tall world — a 120-tall one would clamp row 100 away and the
+floor probe would never fire.
+
+**Verification status — tests written, NOT yet run (code-only mode,
+2026-11-18).** The user reserved the CPU: no cargo/rustc/test invocation on
+this slice. The port was verified by line-by-line re-reading of the C#
+blocks (`NPC.cs:32761-33043`/`:33044-33197`, the `WorldGen.SolidTile`
+catch semantics `:70115-70131`, `EncourageDespawn` `:7249-7256`, the
+noTileCollide integration `:90490-90503`) and by hand-tracing every test's
+math (including the f32 rounding edge cases). The 19 `s1_f_13b2_*` tests
+run in the lead's compile window before the merge — the catalog command
+plus the anchors tripwire gate the landing.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
