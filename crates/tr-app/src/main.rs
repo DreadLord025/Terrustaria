@@ -94,6 +94,10 @@ mod npc_ai_style41;
 // dispatch arm are the family's merge step (see the module doc).
 mod npc_ai_style42;
 mod npc_ai_style43;
+// S1-D-3 (aiStyle-44): UNWIRED flying-fish / flying-antlion swimmer
+// family - the four kind rows + dispatch claim are the wiring round
+// (see the module doc).
+mod npc_ai_style44;
 // S1-D-3 (aiStyle-46): UNWIRED Golem-head machine - the kind-arm swap +
 // style-axis claim are the golem family's merge step (see the module doc).
 mod npc_ai_style46;
