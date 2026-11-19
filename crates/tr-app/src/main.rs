@@ -32,11 +32,8 @@ mod emotes;
 mod env;
 mod entity_lights;
 mod npc_lights;
-<<<<<<< HEAD
 mod player_lights;
-=======
 mod proj_lights;
->>>>>>> origin/main
 mod eoc_fight;
 mod input_map;
 mod inv;
