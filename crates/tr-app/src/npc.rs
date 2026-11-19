@@ -742,9 +742,9 @@ pub enum NpcKind {
     /// `NPCID.Hellhound` (329) — the wave's flyer (`aiStyle 26`): 46x30,
     /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000.
     Hellhound,
-    /// `NPCID.Poltergeist` (330) — the wave's caster (`aiStyle 22`): 24x44,
-    /// dmg 90, def 44, 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4,
-    /// value 4500.
+    /// `NPCID.Poltergeist` (330) — the wave's ghost (`aiStyle 22`, the
+    /// dwell/dash machine — S1-F-13b2 slice C): 24x44, dmg 90, def 44,
+    /// 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4, value 4500.
     Poltergeist,
 }
 
@@ -833,9 +833,10 @@ pub struct Npc {
     pub frame: u32,
     /// `NPC.frameCounter`: the per-kind accumulator `FindFrame` checks.
     frame_counter: f32,
-    /// `NPC.rotation`: the aim tilt. Only the demon eye sets it
+    /// `NPC.rotation`: the aim tilt. The demon eye sets it
     /// (`NPC.cs:74019-74031`: `atan2(velocity.Y, velocity.X)`, `+ π` when
-    /// `velocity.X < 0`).
+    /// `velocity.X < 0`); the Poltergeist tilts at `velocity.X * 0.15`
+    /// (`NPC.cs:74895`).
     pub rotation: f32,
     /// `NPC.scale` (`NPC.cs:6171`) — the draw/hitbox multiplier: the
     /// slime variants ride their `SetDefaults` scale, the Stardust
@@ -3627,10 +3628,13 @@ impl Npc {
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
                 self.update_skeleton(world, player, dt)
             }
-            // The Poltergeist (330): aiStyle 22 — the port's own caster
-            // machine (the Fire Imp family; `update_caster`'s shot arm's
-            // `_ => return` leaves it shotless until the named machine lands).
-            NpcKind::Poltergeist => self.update_caster(world, player, rng),
+            // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
+            // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
+            // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
+            // is the 90-damage contact body.
+            NpcKind::Poltergeist => {
+                crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+            }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
             // aiStyle 58): S1-F-13b2 slice B landed their named machines
             // (`npc_ai_pumpkin_boss.rs`, `NPC.cs:32761-33043` /
@@ -3730,6 +3734,31 @@ impl Npc {
             } else {
                 self.frame_counter = 0.0;
             }
+        }
+    }
+
+    /// `FindFrame`'s `case 330` arm (`NPC.cs:74886-74906`), S1-F-13b2 slice
+    /// C: `spriteDirection` follows the velocity's sign, the ghost tilts at
+    /// `velocity.X * 0.15`, and the strip steps one row every 8 ticks,
+    /// wrapping over `npcFrameCount[330]` = 8 (`Main.cs:67082`).
+    fn poltergeist_frame(&mut self) {
+        // `:74887-74894`.
+        if self.vx > 0.0 {
+            self.sprite_dir = 1;
+        }
+        if self.vx < 0.0 {
+            self.sprite_dir = -1;
+        }
+        // `:74895`.
+        self.rotation = self.vx * 0.15;
+        // `:74896-74905`.
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame += 1;
+            self.frame_counter = 0.0;
+        }
+        if self.frame >= crate::render::entities::npc_rows(330) {
+            self.frame = 0;
         }
     }
 
@@ -5578,14 +5607,13 @@ impl Npc {
                 let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
                 self.frame = if mouth { 1 } else { 0 };
             }
-            // The Pumpkin Moon family (`S1-F-13b` Phase 2): all 16 kinds ride
+            // The Pumpkin Moon family (`S1-F-13b` Phase 2): the walkers ride
             // `FindFrame`'s plain walker strip. `FindFrame`'s humanoid-group
             // case list carries 310-314 and 326 (`NPC.cs:68543-68600`) and its
             // default arm (`:69481+`, the `|vx| * 2` accumulator, row 0 idle
             // / rows 2..count-1 walk) carries every other kind — 305-309 and
-            // the five named kinds included — so the walker frame stands for
-            // the whole family, each wrapping over its own `npcFrameCount`
-            // row (`Main.cs:67082`).
+            // the named kinds — so the walker frame stands for them, each
+            // wrapping over its own `npcFrameCount` row (`Main.cs:67082`).
             NpcKind::Scarecrow1
             | NpcKind::Scarecrow2
             | NpcKind::Scarecrow3
@@ -5600,8 +5628,10 @@ impl Npc {
             | NpcKind::MourningWood
             | NpcKind::Splinterling
             | NpcKind::Pumpking
-            | NpcKind::Hellhound
-            | NpcKind::Poltergeist => self.walker_frame(),
+            | NpcKind::Hellhound => self.walker_frame(),
+            // The Poltergeist rides its own `FindFrame` arm (S1-F-13b2 slice
+            // C) — the case-330 strip, not the walker stand-in.
+            NpcKind::Poltergeist => self.poltergeist_frame(),
         }
     }
 
@@ -22760,9 +22790,8 @@ mod s1_f_13b_tests {
         // walkers and the two aiStyle-26 kinds walk on the walker family (the
         // speed rows pin their caps), the Mourning Wood and the Pumpking fly
         // their named machines (S1-F-13b2 slice B retired the hover
-        // stand-ins), and the Poltergeist rides the caster stand (it holds
-        // still — its shot arm returns until the named machine lands with
-        // S1-F-13b2 slice A).
+        // stand-ins), and the Poltergeist rides its named aiStyle-22
+        // machine (`npc_ai_poltergeist.rs`, S1-F-13b2 slice C).
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -22805,7 +22834,7 @@ mod s1_f_13b_tests {
         }
         // The bosses: the Mourning Wood's approach/hover and the Pumpking's
         // /15 lerp (their named machines, `npc_ai_pumpkin_boss.rs`) close the
-        // gap; the Poltergeist stands.
+        // gap.
         for kind in [NpcKind::MourningWood, NpcKind::Pumpking] {
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
@@ -22823,38 +22852,234 @@ mod s1_f_13b_tests {
                 "{kind:?} never flew toward the player"
             );
         }
+        // The Poltergeist routes to its named aiStyle-22 machine — the
+        // module's own tests (`npc_ai_poltergeist.rs`) pin the maths; this
+        // seam check only proves the dispatch. Outside the Pumpkin Moon the
+        // machine's flee row arms the 10-tick despawn encouragement
+        // (`NPC.cs:25158`) and zeroes the SetDefaults alpha 100 every tick
+        // (`:25150`) — neither happens on the old caster stand.
         let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         ghost.hp = ghost.max_hp;
         ghost.vx = 2.0;
-        // The stand's park is the C#'s own decay — `velocity.X *= 0.93f`
-        // snapped to 0 inside ±0.1 (`NPC.cs:20831-20835`): from vx 2.0 the
-        // curve reads 0.227 at frame 30 and crosses the snap at frame 42,
-        // where it parks at exact 0.0. (The first draft of this assert
-        // expected 0.0 at frame 30 — under the C#'s curve that frame-30
-        // value is 0.2267, so the test was wrong, not the port.)
-        for _ in 0..30 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-        }
-        let mut expect = 2.0f32;
-        for _ in 0..30 {
-            expect *= 0.93;
-        }
-        assert_eq!(
-            ghost.vx, expect,
-            "the caster stand rides the C#'s 0.93 decay"
+        assert_eq!(ghost.alpha, 100, "the SetDefaults row spawns at 100");
+        assert!(
+            !w.pumpkin_moon,
+            "the test world is off-moon — the flee path"
         );
-        for _ in 0..30 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            expect *= 0.93;
-            if expect > -0.1 && expect < 0.1 {
-                expect = 0.0;
+        ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(ghost.alpha, 0, "the machine's 330 row zeroes the alpha");
+        assert_eq!(
+            ghost.despawn_timer, 10,
+            "EncourageDespawn(10), the flee row"
+        );
+        // On-moon the machine latches the dwell anchor instead (`:24756-24762`)
+        // — ai[0..1] take the pre-integration position, ai[2] rests at 0.
+        w.pumpkin_moon = true;
+        let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ghost.hp = ghost.max_hp;
+        ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(ghost.ai[0], 60.0 * TILE_PX);
+        assert_eq!(ghost.ai[1], 60.0 * TILE_PX);
+        assert_eq!(ghost.ai[2], 0.0);
+        assert!(ghost.net_update, "the anchor latch arms netUpdate");
+        assert_eq!(ghost.facing, 1, "TargetClosest faces the player (right)");
+    }
+
+    /// S1-F-13b2 slice C: the Poltergeist's `FindFrame` arm is its own
+    /// `case 330` strip (`NPC.cs:74886-74906`) — the velocity-sign sprite
+    /// flip, the `vx * 0.15` tilt and the 8-tick row step wrapping over the
+    /// 8-row sheet, not the walker stand-in.
+    #[test]
+    fn s1_f_13b2c_the_poltergeist_frame_rides_the_case_330_strip() {
+        let mut n = Npc::new(NpcKind::Poltergeist, 0.0, 0.0, 1, 0.0);
+        n.vx = 2.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, 1, "vx > 0 flips the sprite right (:74887)");
+        assert_eq!(n.rotation, 2.0f32 * 0.15, "the tilt is vx * 0.15 (:74895)");
+        assert_eq!(n.frame, 0, "the row steps only every 8 ticks");
+        for _ in 0..7 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 1, "the 8th tick steps the row (:74897-74901)");
+        // 7 more rows × 8 ticks wrap the 8-row sheet back to row 0.
+        for _ in 0..56 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0, "frame.Y >= num * npcFrameCount[330] wraps");
+        // vx < 0 mirrors; vx == 0 leaves the sprite direction alone
+        // (:74891-74894 writes only on a non-zero velocity).
+        n.vx = -2.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1);
+        assert_eq!(n.rotation, -2.0f32 * 0.15);
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1, "a parked ghost keeps its last flip");
+        assert_eq!(n.rotation, 0.0);
+    }
+
+    /// S1-F-13b2 slice C's A/B pin (the `s1_d_2_the_style_axis_keeps_the_
+    /// hover_behaviour` pattern): the aiStyle-22 machine is gated to the
+    /// Poltergeist kind ALONE — every other kind's dispatch arm must stay
+    /// byte-identical to its pre-slice body. The B run replays the pre-slice
+    /// arms verbatim (the walker stand for the 13 walkers incl. the two
+    /// aiStyle-26 kinds, the caster machine for the five casters the
+    /// Poltergeist used to share) behind the same
+    /// `update_rng` prelude; every tick's kinematics, ai[], frame state and
+    /// the RNG stream position must be bit-equal. The 325/327 hover stands
+    /// left this pin when slice B landed their named machines
+    /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now).
+    /// The closing witness runs
+    /// one Poltergeist tick both ways and asserts the runs DIVERGE (the
+    /// machine's alpha-0 row vs the stand's untouched SetDefaults 100) —
+    /// proving the comparison has teeth and the gate is real.
+    #[test]
+    fn s1_f_13b2c_the_generic_arms_stay_byte_identical() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
-        assert_eq!(ghost.vx, 0.0, "the caster stand parks the Poltergeist");
-        for _ in 0..10 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        w.pumpkin_moon = true;
+        let mut kinds = vec![
+            NpcKind::Scarecrow1,
+            NpcKind::Scarecrow2,
+            NpcKind::Scarecrow3,
+            NpcKind::Scarecrow4,
+            NpcKind::Scarecrow5,
+            NpcKind::Scarecrow6,
+            NpcKind::Scarecrow7,
+            NpcKind::Scarecrow8,
+            NpcKind::Scarecrow9,
+            NpcKind::Scarecrow10,
+            NpcKind::Splinterling,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Hellhound,
+        ];
+        // The casters: the Poltergeist's OLD stand-in family — their shared
+        // `update_caster` arm must not have moved either.
+        kinds.extend([
+            NpcKind::GoblinSorcerer,
+            NpcKind::Tim,
+            NpcKind::DarkCaster,
+            NpcKind::FireImp,
+            NpcKind::DesertDjinn,
+        ]);
+        for kind in kinds {
+            let mut player_a = crate::player::Player::spawn(&w);
+            player_a.x = 120.0 * TILE_PX;
+            player_a.y = 95.0 * TILE_PX;
+            let mut player_b = player_a.clone();
+            let mut axis = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(31);
+            let mut rng_b = UnifiedRandom::new(31);
+            for tick in 0..180 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-slice `update_rng` prelude, verbatim.
+                legacy.old_x = legacy.x;
+                legacy.old_y = legacy.y;
+                legacy.buffs.update_buffs_tick(&mut legacy.hp, legacy.max_hp);
+                legacy.hurt_cd = (legacy.hurt_cd - 1.0 / 60.0).max(0.0);
+                for v in legacy.immune.iter_mut() {
+                    *v = v.saturating_sub(1);
+                }
+                legacy.anim += 1.0 / 60.0;
+                // The pre-slice kind-match arms, verbatim.
+                match kind {
+                    NpcKind::Scarecrow1
+                    | NpcKind::Scarecrow2
+                    | NpcKind::Scarecrow3
+                    | NpcKind::Scarecrow4
+                    | NpcKind::Scarecrow5
+                    | NpcKind::Scarecrow6
+                    | NpcKind::Scarecrow7
+                    | NpcKind::Scarecrow8
+                    | NpcKind::Scarecrow9
+                    | NpcKind::Scarecrow10
+                    | NpcKind::Splinterling
+                    | NpcKind::HeadlessHorseman
+                    | NpcKind::Hellhound => {
+                        legacy.update_skeleton(&w, &mut player_b, 1.0 / 60.0)
+                    }
+                    NpcKind::GoblinSorcerer
+                    | NpcKind::Tim
+                    | NpcKind::DarkCaster
+                    | NpcKind::FireImp
+                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for slot in 0..4 {
+                    assert_eq!(
+                        axis.ai[slot].to_bits(),
+                        legacy.ai[slot].to_bits(),
+                        "{kind:?} ai[{slot}] @{tick}"
+                    );
+                }
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(
+                    axis.frame_counter.to_bits(),
+                    legacy.frame_counter.to_bits(),
+                    "{kind:?} frame_counter @{tick}"
+                );
+                assert_eq!(
+                    axis.rotation.to_bits(),
+                    legacy.rotation.to_bits(),
+                    "{kind:?} rot @{tick}"
+                );
+                assert_eq!(axis.sprite_dir, legacy.sprite_dir, "{kind:?} dir @{tick}");
+                assert_eq!(axis.facing, legacy.facing, "{kind:?} facing @{tick}");
+                assert_eq!(axis.on_ground, legacy.on_ground, "{kind:?} ground @{tick}");
+                assert_eq!(axis.alpha, legacy.alpha, "{kind:?} alpha @{tick}");
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(player_a.hp, player_b.hp, "{kind:?} player hp @{tick}");
+                assert_eq!(
+                    rng_a.peek(),
+                    rng_b.peek(),
+                    "{kind:?} the RNG stream must not move @{tick}"
+                );
+            }
         }
-        assert_eq!(ghost.vx, 0.0, "the parked ghost stays parked");
+        // The divergence witness: the SAME harness on the Poltergeist must
+        // NOT be equal — the gate changed exactly one kind. One off-moon
+        // tick: the named machine zeroes the alpha (`NPC.cs:25150`) and
+        // arms EncourageDespawn(10) (`:25158`); the old caster stand does
+        // neither.
+        w.pumpkin_moon = false;
+        let mut player_a = crate::player::Player::spawn(&w);
+        player_a.x = 120.0 * TILE_PX;
+        player_a.y = 95.0 * TILE_PX;
+        let mut player_b = player_a.clone();
+        let mut named = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        named.hp = named.max_hp;
+        let mut stand = named.clone();
+        let mut rng_a = UnifiedRandom::new(31);
+        let mut rng_b = UnifiedRandom::new(31);
+        named.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+        stand.update_caster(&w, &player_b, &mut rng_b);
+        stand.find_frame();
+        stand.contact(&mut player_b, &mut rng_b);
+        assert_eq!(named.alpha, 0, "the named machine's 330 row");
+        assert_eq!(stand.alpha, 100, "the old stand leaves SetDefaults alone");
+        assert_ne!(
+            named.alpha, stand.alpha,
+            "the witness must diverge — a vacuous A/B proves nothing"
+        );
+        assert_eq!(named.despawn_timer, 10);
+        assert_eq!(stand.despawn_timer, -1);
     }
 
     #[test]
