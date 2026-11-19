@@ -287,6 +287,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
     }
     app.swing = (app.swing - dt).max(0.0);
+    // `Player.ItemCheck`'s animation head (`Player.cs:42808-42813`): EVERY
+    // tick `itemAnimation > 0` on a mana item re-arms the regen delay
+    // (`ItemCheck_ApplyManaRegenDelay` `:50587-50593`) — not once per cast.
+    // The spaceGun quad skips it (the Meteor free-lasers); the port's
+    // animation stand-in is `app.swing`. Runs before the use-start block so
+    // a fresh press's pay below re-arms from the post-pay mana last.
+    if app.swing > 0.0 {
+        let held_kind = app.inventory[app.selected].kind;
+        let held_count = app.inventory[app.selected].count;
+        let mana = registry::get(held_kind).map_or(0, |d| d.mana);
+        if held_count > 0 && mana > 0 {
+            if let Some(p) = app.player.as_mut() {
+                if !crate::armor_sets::space_gun_skips_mana(p.space_gun, held_kind) {
+                    crate::regen::apply_mana_regen_delay(
+                        &mut p.regen,
+                        p.mana_max,
+                        p.mana,
+                        p.mana_regen_buff,
+                    );
+                }
+            }
+        }
+    }
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
     if app.swing > 0.0 && app.swing_style == 5 {
@@ -563,6 +586,61 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_timer = 0.0;
             return;
         }
+        // The mana potions (`Player.cs:42867-42875`'s `healLife > 0 ||
+        // healMana > 0` arm → `ApplyLifeAndOrMana` `:51888-51952`): the
+        // restore clamps at `statManaMax2`, the Mana Sickness buff 94
+        // grants for `manaSickTime` = 300 ticks (`:51938`, `:57101` — the
+        // ONLY grant site; weapons never grant it), and a mid-swing drink
+        // undoes the ManaV2 slow cast (`UndoSlowMagicUse` `:51954-51966`).
+        // The `DebugOptions.ManaPotionDelay` half (`:51939-51943`) is false
+        // in the shipped statics (`DebugOptions.cs:86`) — folded out. The
+        // stock mana potions are `potion: false` (`Item.cs:2680-2691` et
+        // al.), so no Potion Sickness gate rides this arm; the
+        // `ApplyManaPotionManaHeat` method (`:51968-52003`) has NO caller in
+        // the source — dead code, not ported (ANALYSIS "The mana machinery
+        // (S1-P-i19)").
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| d.heal_mana > 0) {
+            let Some(def) = def else { unreachable!() };
+            let heal_mana = def.heal_mana;
+            if let Some(p) = app.player.as_mut() {
+                // `:51918-51928`: `statMana += healMana` (the ×1f line is a
+                // no-op), capped at the effective max.
+                p.mana = (p.mana + heal_mana).min(p.mana_max);
+                // `:51937-51938`: `manaPotionDelay = 0` has no port field
+                // (the debug flag is off); the buff grants 300 ticks, the
+                // additive cap 600 rides `BuffSlots::add_buff` (`buffs.rs`).
+                p.buffs.add_buff(94, 300);
+                // `UndoSlowMagicUse` (`:51946-51949`, `:51954-51966`): only
+                // mid-animation AND mid-itemTime; the four timers scale by
+                // 1/2.5 floored at 2 ticks, then the flag clears. The
+                // press-tick drink has no animation yet — the arm is a
+                // no-op there, exactly like the C#'s use-start order.
+                if p.slow_magic_use && app.swing > 0.0 && app.item_time > 0.0 {
+                    let rate = 1.0 / crate::regen::SLOW_MAGIC_MULTIPLIER;
+                    let floor2 = 2.0 / 60.0;
+                    app.swing_max = (app.swing_max * rate).max(floor2);
+                    app.swing = (app.swing * rate).max(floor2);
+                    app.item_time = (app.item_time * rate).max(floor2);
+                    p.slow_magic_use = false;
+                }
+                // `ManaEffect(healMana)` (`:51950`, `:4531-4538`): the
+                // HealMana combat text — the cuffs' queue convention.
+                p.queue_mana_effect(heal_mana);
+            }
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+            return;
+        }
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -664,11 +742,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
-            // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
+            // `Player.ItemCheck_ActuallyPayMana` → `CheckMana`
+            // (`Player.cs:52638-52655`, `:52576-52617`): the magic items pay
             // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
             // the accessories, the casters' sets and Magic Power lower (M3-
-            // EQUIP-9). A failed check blocks the use; the pay resets the mana
-            // regen delay (`apply_mana_regen_delay`).
+            // EQUIP-9). Under the shipped `DebugOptions.ManaV2`
+            // (`DebugOptions.cs:85`, S1-P-i19) the check NEVER refuses: enough
+            // mana pays, not enough drains the bar to 0 and arms the 2.5×
+            // slow cast (`slowMagicUse`, `DoRunOutOfManaEffect` `:52619-52622`).
             let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
@@ -678,7 +759,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
             // Silenced debuff (35) refuses every mana-paying item — the gate
             // reads the item's BASE mana, before the manaCost scale (S1-E-7
-            // wave A; the buff arm is `UpdateBuffs` `:10043`).
+            // wave A; the buff arm is `UpdateBuffs` `:10043`). This refusal is
+            // upstream of CheckMana and survives ManaV2.
             if base_mana > 0 && p.silence {
                 return;
             }
@@ -690,18 +772,34 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // turret/minion alt-fire arms (`:52699-52706`) stay out (no
             // port items/seam).
             let skip_mana = crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind);
-            let mana_cost = if skip_mana {
-                0
-            } else {
-                (base_mana as f32 * p.mana_cost) as i32
-            };
-            if mana_cost > 0 {
-                // `Player.CheckMana`'s pay arm: a failed check blocks the use.
-                if p.mana < mana_cost {
-                    return;
-                }
-                p.mana -= mana_cost;
-                crate::regen::apply_mana_regen_delay(&mut p.regen, p.mana_max, p.mana, false);
+            if base_mana > 0 && !skip_mana {
+                // `CheckMana(rawAmountToPay, pay: true)` (`:52650`): the
+                // entry clears `slowMagicUse` (`:52578`); the ManaV2 empty
+                // arm re-arms it. `ItemCheck_PayMana_GetManaCostToPay`
+                // (`:52679-52687`) is the plain `item.mana` here (the 3852
+                // alt-fire ×2 has no port seam).
+                crate::regen::check_mana(
+                    &mut p.mana,
+                    &mut p.slow_magic_use,
+                    base_mana,
+                    p.mana_cost,
+                    true,
+                );
+                // The use-start tick's `ItemCheck_ApplyManaRegenDelay`
+                // (`Player.cs:42808-42813` → `:50587-50593`): the animation
+                // was just armed by `StartActualUse`, so the delay re-arms
+                // from the POST-pay mana this same tick. The ongoing
+                // animation ticks re-arm it at the `update_editing` head.
+                crate::regen::apply_mana_regen_delay(
+                    &mut p.regen,
+                    p.mana_max,
+                    p.mana,
+                    p.mana_regen_buff,
+                );
+            } else if base_mana > 0 {
+                // spaceGun skip: `ItemCheck_ActuallyPayMana`'s skipUsageCheck
+                // arm clears `slowMagicUse` (`:52645-52648`) and pays nothing.
+                p.slow_magic_use = false;
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
             // rides the use start.
@@ -1071,7 +1169,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
                     // matches so the throw repeats only when the swing is over.
-                    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+                    // The ManaV2 slow cast (`:4478-4483`): a mana item whose
+                    // `CheckMana` drained the bar stretches the animation ×2.5
+                    // (`GetSlowMagicMultiplier` `:47046-47049`); the same
+                    // multiplier rides `ApplyItemTime` at the shoot
+                    // (`:47187-47194`) — the port's non-ammo mana weapons fire
+                    // at the use start, so the stretched swing IS the cadence.
+                    let slow = if base_mana > 0
+                        && !skip_mana
+                        && app.player.as_ref().is_some_and(|p| p.slow_magic_use)
+                    {
+                        crate::regen::SLOW_MAGIC_MULTIPLIER
+                    } else {
+                        1.0
+                    };
+                    app.swing_max =
+                        crate::item::use_animation_secs_of(held.kind, held.prefix) * slow;
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
@@ -7006,13 +7119,143 @@ mod tests {
 
     #[test]
     fn test_dw_5_3_the_low_mana_use_is_blocked() {
-        // The mana gate (`Player.CheckMana`, `Player.cs:52576`): a staff
-        // without the mana does not fire.
+        // S1-P-i19 — under the shipped `DebugOptions.ManaV2`
+        // (`DebugOptions.cs:85`, never toggled false) `CheckMana` NEVER
+        // refuses (`Player.cs:52610-52614`): a staff without the mana drains
+        // the bar to 0, arms the 2.5× slow cast and STILL fires. The old
+        // V1 "no mana, no shot" expectation was the pre-1.4.5 machine the
+        // source no longer ships.
         let mut app = staff_app(127, "Space Gun");
         app.player.as_mut().unwrap().mana = 0;
         fire_once(&mut app);
         let fired = app.projectiles.slots().iter().filter(|p| p.active).count();
-        assert_eq!(fired, 0, "no mana, no shot");
+        assert_eq!(fired, 1, "ManaV2: the empty-bar cast still fires");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 0, "the bar stays drained");
+        assert!(p.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
+        // The slow cast stretches the swing ×2.5 (`ApplyItemAnimation`
+        // `:4478-4483`): the Space Gun's 17-tick animation becomes 42
+        // ((int)(17 × 2.5) = 42).
+        assert!(
+            (app.swing_max - 42.0 / 60.0).abs() < 1e-4,
+            "the 2.5× slow-cast animation, got {}",
+            app.swing_max
+        );
+        // The regen delay re-armed from the empty bar: the long curve
+        // (1×240+45)×0.7 = 199.5 → 199 (`:19398`, mana 0 keeps it).
+        assert_eq!(p.regen.mana_regen_delay, 199.0);
+    }
+
+    #[test]
+    fn s1_p_i19_the_paid_cast_keeps_the_normal_pacing_and_four_tick_delay() {
+        // A staff WITH mana pays `(int)(mana × manaCost)` and keeps its
+        // normal animation; the ManaV2 delay pins at 4 while mana remains
+        // (`Player.cs:19403-19415`).
+        let mut app = staff_app(743, "Ruby Staff"); // mana 9, useAnimation 28
+        fire_once(&mut app);
+        let fired = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(fired, 1);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 20 - 9, "the plain pay at manaCost 1");
+        assert!(!p.slow_magic_use, "enough mana — no slow cast");
+        assert!(
+            (app.swing_max - 28.0 / 60.0).abs() < 1e-4,
+            "the normal 28-tick animation"
+        );
+        assert_eq!(p.regen.mana_regen_delay, 4.0, "the V2 pin while mana remains");
+    }
+
+    #[test]
+    fn s1_p_i19_the_animation_ticks_re_arm_the_regen_delay() {
+        // `Player.cs:42808-42813`: EVERY animation tick of a mana item
+        // re-arms the delay (`ItemCheck_ApplyManaRegenDelay`), not once per
+        // cast — the regen engine's decrement never wins mid-swing.
+        let mut app = staff_app(743, "Ruby Staff");
+        fire_once(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().regen.mana_regen_delay, 4.0);
+        // The next editing tick decays the swing (still > 0) and re-arms
+        // the delay back to 4 — without the per-tick site it would sit at 3.
+        fire_once(&mut app);
+        assert!(app.swing > 0.0, "the 28-tick swing still runs");
+        assert_eq!(
+            app.player.as_ref().unwrap().regen.mana_regen_delay,
+            4.0,
+            "the animation head re-arms the delay every tick"
+        );
+    }
+
+    #[test]
+    fn s1_p_i19_the_mana_cost_modifiers_scale_the_pay() {
+        // `CheckMana` pays `(int)(item.mana × manaCost)` (`:52579`): the
+        // Nature's Gift's −0.06 (`:15110-15113`) turns the Ruby Staff's 9
+        // into (int)(9 × 0.94) = 8. The fold runs on the player directly
+        // (the equip grant pass), keeping the pay deterministic.
+        let mut app = staff_app(743, "Ruby Staff");
+        {
+            let p = app.player.as_mut().unwrap();
+            p.equipped[3] = 223; // Nature's Gift, accessory slot 0
+            p.update(&app.world, crate::player::PlayerInput::default());
+            assert!(
+                (p.mana_cost - 0.94).abs() < 1e-4,
+                "the accessory row folded, got {}",
+                p.mana_cost
+            );
+        }
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 20 - 8, "the scaled pay: (int)(9 × 0.94) = 8");
+    }
+
+    #[test]
+    fn s1_p_i19_the_mana_potion_grants_sickness_and_restores() {
+        // `ApplyLifeAndOrMana` (`Player.cs:51888-51952`): the drink restores
+        // `healMana` capped at the max and grants Mana Sickness (94) for
+        // 300 ticks — the ONLY grant site; weapons never grant it.
+        let mut app = staff_app(110, "Lesser Mana Potion"); // healMana 50
+        app.player.as_mut().unwrap().mana = 0;
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 20, "50 restored, capped at the 20 max");
+        let idx = p.buffs.find_buff_index(94).expect("Mana Sickness granted");
+        assert_eq!(p.buffs.buff_time[idx], 300, "manaSickTime (:57101)");
+        assert_eq!(app.inventory[app.selected].count, 0, "the potion consumed");
+        // A weapon cast grants NO sickness (`CheckMana` has no buff grant).
+        let mut app = staff_app(743, "Ruby Staff");
+        fire_once(&mut app);
+        assert!(
+            app.player.as_ref().unwrap().buffs.find_buff_index(94).is_none(),
+            "weapons never grant Mana Sickness"
+        );
+    }
+
+    #[test]
+    fn s1_p_i19_the_sickness_cuts_magic_damage_by_the_decaying_fraction() {
+        // `UpdateBuffs`' 94 arm (`Player.cs:10318-10326`): reduction =
+        // 0.25 × buffTime/300 read AFTER the tick-head decrement
+        // (`update_buffs_tick` runs first, `:24535`); the recalc multiplies
+        // magicDamage by 1 − reduction (`:25900-25902`).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = crate::player::Player::spawn(&w);
+        p.buffs.add_buff(94, 301); // the head decrement leaves 300
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.mana_sick);
+        assert!((p.mana_sick_reduction - 0.25).abs() < 1e-4);
+        assert!(
+            (p.magic_damage - 0.75).abs() < 1e-4,
+            "the full 25% cut at fresh sickness, got {}",
+            p.magic_damage
+        );
+        // Half-expired: 150/300 → 12.5% cut.
+        let idx = p.buffs.find_buff_index(94).unwrap();
+        p.buffs.buff_time[idx] = 151; // the decrement leaves 150
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!((p.mana_sick_reduction - 0.125).abs() < 1e-4);
+        assert!((p.magic_damage - 0.875).abs() < 1e-4);
+        // Expired: the flag clears in ResetEffects, the damage returns to 1.
+        p.buffs.del_buff(idx);
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(!p.mana_sick);
+        assert!((p.magic_damage - 1.0).abs() < 1e-4);
     }
 
     #[test]

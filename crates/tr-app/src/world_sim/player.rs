@@ -713,6 +713,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // the port's `prev_x`/`prev_y` hold it until this tick's update
             // overwrites them.
             let plate_last = (p.prev_x, p.prev_y);
+            // `Player.cs:19420` — `UpdateManaRegen`'s `flag` reads the LIVE
+            // `itemAnimation`/`reuseDelay`; the port's stand-ins are the
+            // App's swing/reuse timers (fed before the tick, the
+            // `frame_inputs` convention).
+            p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
             p.update_with_grapple(
                 &app.world,
                 input,
