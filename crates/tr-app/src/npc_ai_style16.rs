@@ -17,7 +17,21 @@
 //! other ten are ported verbatim and reachable through [`ai_016_arm`]'s
 //! `ty` parameter (the witness tests drive them with a stand-in body).
 //!
-//! Seam (the `buff_effects_misc.rs` precedent): the module only writes the
+//! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
+//! `npc.rs::update_swimmer` routes the three kinds through [`ai_016_step`]
+//! (the `is_wet` pass + the session-player `Ai16Ctx`; `justHit` rides the
+//! established `hurt_cd > 0` stand-in — only the unported Pufferfish reads
+//! it) and integrates through the no-gravity `integrate_flyer_collision`
+//! stand-in (`UpdateCollision`, `NPC.cs:92523-92580`; the wet halving is
+//! `waterMovementSpeed` 0.5, `:6015`/`:92561`). The bob phase rides the
+//! C#'s own `ai[0]` now — the port's `swim_phase` mirror and the
+//! `npc_ai::swim_step` approximation are retired. The distrust-verbatim
+//! audit re-read the whole arm against `NPC.cs:23492-24021` at the wiring
+//! — verdict FAITHFUL (the Dolphin draw-before-increment order, the flop
+//! triple order, the Arapaima snap caps and the 157 damp exemption all
+//! match; no f1701eb0-class defect found).
+//!
+//! Seam: the module only writes the
 //! fields the C# AI writes — velocity, `ai`/`localAI`, `direction`
 //! (`Npc::facing`), `directionY`, `rotation`, `netUpdate` — and reads
 //! `wet`/`collideX`/`collideY` a tick late, exactly like the source (the
@@ -45,7 +59,10 @@
 //! NOTHING — the `the_wet_goldfish_idle_draws_no_rng` witness pins the
 //! stream state byte-for-byte (`UnifiedRandom: PartialEq`).
 
-#![allow(dead_code)] // the update_swimmer wiring is the merge step (S1-D-3)
+// WIRED by the S1-D-3 bat/fish reconcile (`update_swimmer`'s migration).
+// `Ai16Effects::light` stays write-only until the AnglerFish (102) lands
+// its kind + the entity-lights feed — the allow covers that seam.
+#![allow(dead_code)]
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};

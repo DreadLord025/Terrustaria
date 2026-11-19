@@ -4439,7 +4439,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
         // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball) and the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3).
+        // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3) and
+        // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
+        // reconcile's `bat_ai` shot drain).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
@@ -4447,6 +4449,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
+            || kind == crate::projectile::DEMON_SICKLE
         {
             300
         } else {
