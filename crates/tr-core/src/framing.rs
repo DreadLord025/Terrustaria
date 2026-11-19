@@ -988,6 +988,16 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
         }
         merge(&mut n, num, |v| td::SET_MUD.has(v));
     }
+    // `WorldGen.cs:82040-82042`: case 162 — `TileMergeAttempt(-2,
+    // TileID.Sets.IcesSnow, …)` (`TileID.cs:561`: {161, 200, 163, 164,
+    // 147}). The IcesSnow neighbours become the `-2` marker, read by the
+    // generic -2 side/corner tables (`:83419-83797`) — the thin ice
+    // (S1-K-2 wave C) blends into the snow/ice mass. No pre-existing 162
+    // tiles exist in the port's worlds, so the arm only fires on the new
+    // kind (`SEED42_512` unchanged).
+    if me == 162 {
+        merge(&mut n, -2, |v| td::SET_ICES_SNOW.has(v));
+    }
     if td::TILE_MOSS.has(me) || td::SET_TILE_MOSS_BRICK.has(me) {
         merge(&mut n, num, |v| td::SET_DIRT.has(v));
     } else if td::SET_DIRT.has(me) {
@@ -1691,5 +1701,46 @@ mod tests {
         let _ = wall_reset_roll(&mut plain, 2);
         let _ = mirror2.next_range(0, 3);
         assert_eq!(plain.next(), mirror2.next());
+    }
+
+    /// S1-K-2 wave C: the thin ice (162) carries the `IcesSnow` merge arm
+    /// — `WorldGen.cs:82040-82042`'s `TileMergeAttempt(-2, IcesSnow, …)`
+    /// marks the 147/161 neighbours `-2` (the generic merge table may
+    /// already fold them, exactly as the C# runs both). The arm keeps the
+    /// C# structure; the port's generic path reads `-2` slots as open
+    /// sides (the compiled generic -2 blend tables stay the grass
+    /// family's — the same documented approximation the 383/384 arms
+    /// carry). The test pins the structural invariant: a 162 mass frames
+    /// without panic, its interior cell takes the plain frame, and the
+    /// snow-facing edge resolves to a legal 162 frame (not the isolated
+    /// tile). Code-only mode: written NOT run.
+    #[test]
+    fn s1_k_2c_the_thin_ice_marks_the_snow_neighbours() {
+        let mut w = World::new("t".into(), 11, 11);
+        // A 162 slab; snow under its bottom row, 162 everywhere else.
+        for y in 3..7 {
+            for x in 3..8 {
+                solid(&mut w, x, y, 162);
+            }
+        }
+        for x in 3..8 {
+            solid(&mut w, x, 7, 147);
+        }
+        frame_world(&mut w);
+        // The interior cell keeps the plain frame.
+        let t = *w.tile(5, 5).unwrap();
+        assert!(
+            matches!((t.frame_x, t.frame_y), (18, 18) | (36, 18) | (54, 18)),
+            "interior frame was {:?}",
+            (t.frame_x, t.frame_y)
+        );
+        // The snow-facing edge frames against the snow mass — never the
+        // isolated-tile frame (162/180/198, 54).
+        let t = *w.tile(5, 6).unwrap();
+        assert!(
+            !matches!((t.frame_x, t.frame_y), (162, 54) | (180, 54) | (198, 54)),
+            "snow-facing edge framed as isolated: {:?}",
+            (t.frame_x, t.frame_y)
+        );
     }
 }
