@@ -369,6 +369,9 @@ impl NpcKind {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            // W-A2-3: the leech tail takes the free 148 hole (the
+            // port-local protocol space, the S1-F-1 pattern).
+            NpcKind::LeechTail => 148,
             NpcKind::TheDestroyer => 50,
             // S1-D-3-wire-destroyer: the body/tail/probe kinds (vanilla
             // types 135/136/139, `NPCID.cs:10947-10949`/`:10955`; the
@@ -679,6 +682,7 @@ impl NpcKind {
             47 => NpcKind::Hungry,
             48 => NpcKind::LeechHead,
             49 => NpcKind::LeechBody,
+            148 => NpcKind::LeechTail,
             50 => NpcKind::TheDestroyer,
             // S1-D-3-wire-destroyer: the gate-reassigned 216/217/218
             // holes (`to_u16` above; vanilla types 135/136/139).
@@ -878,9 +882,16 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
+                // W-A2-3 (T3f): the stardust worm head IS an AI_006 kind
+                // (`NPC.cs:51564-51567`'s `flag3 = true`, the `:51740`
+                // tunables) — a lone minion with no chain (type 402 sits
+                // outside the `:51301` spawn lists, so `is_worm_head`
+                // stays false and the init never grows links).
+                | NpcKind::StardustWormHead
         )
     }
 
@@ -903,6 +914,7 @@ impl NpcKind {
                 | NpcKind::GiantWormTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::TheDestroyer
                 | NpcKind::TheDestroyerBody
                 | NpcKind::TheDestroyerTail
@@ -962,7 +974,10 @@ impl NpcKind {
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
-            NpcKind::LeechBody => NpcKind::LeechBody,
+            // W-A2-3 (T3e): the budget-exhausted body spawns `type + 1`
+            // = the 119 tail (`NPC.cs:51357`); the tail closes the chain
+            // (it sits outside both spawn lists, `:51301`/`:51350`).
+            NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechTail,
             // The crawltipede chain (`:51375-51381`'s per-index kind):
             // the bodies self-chain and the tail closes it.
             NpcKind::SolarCrawltipedeHead => NpcKind::SolarCrawltipedeBody,
@@ -1390,7 +1405,8 @@ impl NpcKind {
             NpcKind::KingSlime => "NPC_Hit_1",
             NpcKind::EyeOfCthulhu => "NPC_Hit_1",
             NpcKind::Hungry => "NPC_Hit_9",
-            NpcKind::LeechHead => "NPC_Hit_9",
+            // 117-119 share NPCHit9 (`NPC.cs:10414`/`:10430`/`:10446`).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => "NPC_Hit_9",
             NpcKind::ServantOfCthulhu => "NPC_Hit_1",
             NpcKind::WanderingEye => "NPC_Hit_1",
             NpcKind::Guide => "NPC_Hit_1",
@@ -1660,7 +1676,8 @@ impl NpcKind {
             NpcKind::KingSlime => "NPC_Killed_1",
             NpcKind::EyeOfCthulhu => "NPC_Killed_1",
             NpcKind::Hungry => "NPC_Killed_11",
-            NpcKind::LeechHead => "NPC_Killed_12",
+            // 117-119 share NPCDeath12 (`NPC.cs:10415`/`:10431`/`:10447`).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => "NPC_Killed_12",
             NpcKind::ServantOfCthulhu => "NPC_Killed_1",
             NpcKind::WanderingEye => "NPC_Killed_1",
             NpcKind::Guide => "NPC_Killed_1",
@@ -1987,11 +2004,12 @@ impl NpcKind {
             // The Queen Bee's volley bees — `NPC.cs:11700`/`:11713`
             // (the type-210/211 branch of AI_005, `:50384-50413`).
             NpcKind::Bee | NpcKind::BeeSmall => 5,
-            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :15010, :15269, :15287, :15305
+            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :10441 (the leech tail, W-A2-3), :15010, :15269, :15287, :15305
             NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
-            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody |
+            NpcKind::LeechTail => 6,
             // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
             NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
             NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
@@ -2558,7 +2576,8 @@ impl NpcKind {
             NpcKind::ServantOfCthulhu => (20.0, 20.0),
             // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
             NpcKind::Hungry => (30.0, 30.0),
-            NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
+            // `NPC.cs:10407`/`:10423`/`:10439`: 14x14 (W-A2-3: the tail).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => (14.0, 14.0),
             // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group and
             // the Splinterling share the C#'s 18x40 (`NPC.cs:12929-12977`
             // /`:13129-13133`); 315 is 74x70 (`:12978`), 325 164x154
@@ -2818,6 +2837,7 @@ impl NpcKind {
                 | NpcKind::Hungry
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::TheDestroyer
                 | NpcKind::TheDestroyerBody
                 | NpcKind::TheDestroyerTail
@@ -2906,9 +2926,10 @@ impl NpcKind {
             NpcKind::SkeletronHead => 4400,
             // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
             NpcKind::WallOfFlesh => 8000,
-            // `NPC.cs`'s 115 (240) / 117-118 (60).
+            // `NPC.cs`'s 115 (240) / 117-119 (60 — the tail `:10445`,
+            // W-A2-3).
             NpcKind::Hungry => 240,
-            NpcKind::LeechHead | NpcKind::LeechBody => 60,
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 60,
             // `SetDefaults` case 134 (`NPC.cs:10667`): 80000 HP — the
             // vanilla's `realLife` pool: every segment of the Destroyer
             // shares the head's life (`NPC.cs:49836-49853`), so the worm
@@ -3252,10 +3273,12 @@ impl NpcKind {
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
-            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22).
+            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22) / 119 (18,
+            // `:10443` — W-A2-3).
             NpcKind::Hungry => 30,
             NpcKind::LeechHead => 26,
             NpcKind::LeechBody => 22,
+            NpcKind::LeechTail => 18,
             NpcKind::TheDestroyer => 70,
             // `NPC.cs`'s 135 (55, `:10686`) / 136 (40, `:10706`) / 139 (50,
             // `:10726`).

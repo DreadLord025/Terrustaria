@@ -2140,6 +2140,9 @@ pub fn try_entry_for_npc(
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold like every other worm family (the
+        // vanilla credits the whole leech to 117).
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2175,6 +2178,8 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold onto 117 like every other worm.
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

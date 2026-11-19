@@ -30404,3 +30404,129 @@ against the actual signatures by read/grep (`spawn_hostile_ai`,
 `RngKey::ALL` census shape). 7 new witnesses
 (`pillar_shield_loop_tests`) + the reshaped absorb test WRITTEN, NOT
 RUN — **no compiler invoked**.
+## W-A2-3 — the EoW/leech defect fixes (fix/eow-leech-worm-defects, 2026-11-19, code-only mode)
+
+The worm audit's fix wave 3 (`docs/audit-worms`, research/55 T3b/T3c/
+T3e/T3f), landed IN PLACE at the split/orb/chain sites. Four defects,
+four C#-cited fixes:
+
+1. **T3c — the orb summon gate** (`world_sim/npcs.rs`'s third-orb
+   block). The port polled `shadow_orb_count >= 3 && !downed_eow`:
+   once the EoW was killed the orbs PERMANENTLY stopped summoning it.
+   The C# (`WorldGen.cs:54294-54321`) gates on the LIVING boss:
+   `!(AnyNPCs(266) & flag) && (!AnyNPCs(13) || flag)` — the corruption
+   arm reduces to `!AnyNPCs(13)`. The fix scans for a living
+   `EaterOfWorldsHead` (`hp > 0`); the counter reset stays inside
+   the gate exactly as the C# (a blocked gate leaves the count at 3).
+   The crimson-Heart → Brain arm still rides the heart-detection wave
+   (the pre-existing documented deviation, unchanged).
+2. **T3b — the EoW split** (`update_worms_in`'s two split sites). The
+   port swapped `kind` only. `NPC.Transform`
+   (`NPC.cs:81084-81145`) does more: the bottom-anchored reposition
+   (`position.Y += height` before `SetDefaults`, `-= height`
+   after, `:81092-81100`) and the life rescale
+   (`life = oldLife * newLifeMax / oldLifeMax`, min 1,
+   `:81106-81110` — the integer multiply-then-divide order). Both
+   sites now carry `y += old_h - new_h` and
+   `hp = (old_hp * new_max / old_max).max(1)`; `max_hp` refreshes
+   from the new kind's row. The port's EoW rows share lifeMax 150
+   (`NPC.cs:8912`/`:8931`/`:8951`) and size 38x38, so today the
+   ratio is 1:1 and Δy = 0 — the rescale is still behaviour (a wounded
+   body keeps its wound through the transform; the min-1 floor holds)
+   and the reposition is faithful for any future row divergence. The
+   chain links ride on (the C#'s `ai[0]`/`ai[1]` keep their slots;
+   the port's `worm_id`/`seg_index` are untouched), and the
+   no-respawn property holds by construction (`seg_index > 0` blocks
+   the budget re-roll — the C#'s `ai[2] = 0`). The kind-keyed tables
+   refresh defense/damage automatically; `TargetClosest` is the
+   port's per-tick target resolution (unchanged).
+3. **T3e — LeechTail 119** (`npc/data.rs` + the roster rows). The C#
+   chain: 117 rolls `Next(3, 6)` (`NPC.cs:51341`), spawns 118; each
+   118 with budget spawns 118 (`:51350-51353`); the exhausted body
+   spawns `type + 1` = 119 (`:51357`); 119 rides the leader-death
+   list (`:51411`). The port's `worm_next(LeechBody) == LeechBody`
+   ended the chain tailless (the same-kind arm's `None`). Fix:
+   `NpcKind::LeechTail` (protocol id 148 — the free hole, the S1-F-1
+   port-local pattern; G6 render key 56 — the free slot),
+   `worm_next(LeechBody) → LeechTail`, membership in `is_worm`/
+   `shares_carrier_life` (NOT head/mid — the tail closes the chain),
+   the `SetDefaults` row (`NPC.cs:10437-10452`: 14x14, aiStyle 6,
+   dmg 18, def 10, 60 HP, NPCHit9/NPCDeath12, kb 0, behindTiles, no
+   value), the bestiary fold onto 117 (the leech BODY fold was missing
+   too — a latent `entry_for_npc` panic, fixed in the same hunk),
+   the buffs/sheet/netglue/portrait rows. The budget roll itself is
+   unchanged (one `Next(3,6)` per head; R77's W-A2-1 owns the
+   discarded-draw order).
+4. **T3f — StardustWormHead 144** (`npc/data.rs::is_worm`). The kind
+   + the 9/0.3 tunables row existed but `is_worm` excluded it — the
+   worm pass never saw it (the audit's ORPHANED verdict). C# chain
+   behaviour verified first: type 402 sits OUTSIDE the `:51301`
+   chain-spawn lists (no links ever), but it IS an AI_006 kind —
+   `flag3 = true` always (`:51564-51567`) with its own 9/0.3 row
+   (`:51740-51743`). Fix: 144 joins `is_worm` ONLY (not
+   `is_worm_head`/`is_worm_mid` — the init claims it and grows no
+   chain; the trail pass skips it at `seg_index == 0`; the head
+   machine never touches it), and `update_stardust_worm_head` reads
+   its 9/0.3 from the shared `worm_tunables` row instead of the
+   hardcoded pair. The 600-tick mark cycle stays its own machine (the
+   audit's full 402-arm port — the dust burst, the mark resolve —
+   rides W-A2-4).
+
+**RNG argument (by construction).** No fix adds or reorders a draw:
+(1) the gate is a scan + arithmetic; (2) the rescale/reposition are
+arithmetic at the split site (the split itself draws nothing in
+either port); (3) the tail spawn REPLACES the old chain-end `None`
+arm — the head's single `Next(3,6)` budget roll is unchanged, the
+child spawn draws nothing; (4) the 402 membership adds no spawn (it
+never enters the spawn lists) and the tunables read is a constant
+lookup. One guard hunk was REQUIRED to keep (3) stream-neutral: the
+sim's Destroyer-laser block keyed on `worm_next() == kind &&
+seg_index > 0` alone, and every self-mapping tail (DevourerTail/
+GiantWormTail — and the new LeechTail, the same chain-end convention)
+matches that predicate. Without a kind gate the new tail would have
+leaked two rand draws per tick (a NEW drift this wave would have
+introduced). The hunk adds `kind == TheDestroyer` — the C#'s own
+`:49856` `type == 135` gate — which also closes the audit's §5
+"tail-laser leak" for the classic tails (a strict C#-faithful
+narrowing; R55's Destroyer work owns the rest of that arm, the merger
+reconciles). The leech witness pins the draw census: the assembled
+leech chain consumes exactly the head's one budget roll.
+
+**MERGE-GATE ADAPTATION (lane L-G, post-R55/R77 main).** The guard
+hunk's TARGET no longer exists on main: R55 (S1-D-3-wire-destroyer,
+landed before this wave) DELETED the sim's Destroyer-laser block from
+`update_worms_in` wholesale — the family is not `is_worm()` and its
+laser runs in the wired `npc_ai_style37::destroyer_family_step`'s own
+`npc_type == 135` arm (`NPC.cs:49856`'s gate, already C#-faithful).
+The merge KEEPS R55's deletion (the branch's guarded block was dropped
+at the conflict, recorded here) — no self-mapping classic tail can
+reach a laser block in the worm pass, so the audit §5 leak is closed
+by construction. The leech draw-census witness was ADAPTED to R77's
+landed budget ledger: the oracle now replays the discarded
+`Next(8,13)` (`:51310`) BEFORE the `Next(3,6)` override (`:51341`) —
+two draws, not one; the tail spawn and every link still draw nothing.
+The `ALL_KINDS` count pin moved 239 → 252 (main's merged union was
+251 at this landing; the branch's stale 239 pin replaced). Protocol
+id 148 + render key 56 re-verified FREE on main at the merge (the
+LB id plan reserved 148; SantaNK1's `=> 56` hit is `defense()`, its
+render key is 346).
+
+**Boundary.** R77 owns the shared sim-pass (rotation whitelist, budget
+draw order, crumble, chain assembly order/placement) — this wave's
+hunks sit at the split sites, the orb gate and the kind tables only.
+The EoW classic alpha fade (T3d) + the expert debt (70 segments,
+12/0.15, VileSpit 666) stay the audit's W-A2-3 remainder / the expert
+wave. The leech render rotation (the whitelist lacks 117-119 today)
+rides R77's T1a rotation hunk — the tail draws unrotated exactly like
+its head/body do today (no regression).
+
+**Verification.** Code-only: the C# blocks re-read whole
+(`WorldGen.cs:54256-54330`, `NPC.cs:81084-81145`, `:51300-51529`,
+`:10405-10452`, `:8903-8962`, `:51560-51571`, `:51735-51744`); every
+exhaustive `NpcKind` match enumerated by grep and given its LeechTail
+arm (data.rs's to_u16/from_u16/ai_style/size/max_hp/contact_damage/
+sounds, npc.rs's defense/value/knock_back/update_kind_ai/find_frame/
+render_key, npc_buffs, netglue's npc_seed, the bestiary folds +
+portrait); the wildcard matches verified untouched. 4 new witness
+tests + the extended leech stats test are WRITTEN, NOT RUN —
+**no compiler invoked** (no cargo/rustc/rustfmt/tests/dotnet/graphify).
