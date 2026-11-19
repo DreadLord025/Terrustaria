@@ -19516,3 +19516,138 @@ perturb any stream; the witness
 `the_arm_is_deterministic_without_an_rng` pins identical inputs to
 identical state over 50 ticks, and pins that the saw fires no shot
 (`wants_hostile_shot` stays empty — the dash IS the attack).
+## The aiStyle-51 census audit (S1-D-3, code-only mode)
+**Code-only mode**: this task ran with NO compiler invoked — no cargo, no
+rustc, no rustfmt, no tests run, no graphify refresh. Every claim below is
+verified by reading the C# and the Rust side by side, not by execution.
+**Census (the first check)**: `aiStyle = 51` appears exactly ONCE in the
+NPC `SetDefaults` census — `NPC.cs:12384`, type **262 Plantera**
+(`ID/NPCID.cs:11201`), row `:12379-12395` (86×86, dmg 50 / def 14 /
+lifeMax 30000, kb 0, value `Item.buyPrice(0, 15)` = 150000
+(`Item.cs:49417-49420`), noGravity + noTileCollide, boss, npcSlots 16).
+No named-constant assignments (`aiStyle = NPCAIStyleID.*`) exist in
+`NPC.cs`. The two other `aiStyle = 51` hits are **projectile** styles —
+`Projectile.cs:3830` (type 293 `LostSoulHostile`) and `:3874` (type 297
+`LostSoulFriendly`, `ID/ProjectileID.cs:1140`/`:1148`) — a different
+machine, S1-D-4's territory, out of the NPC census. The satellites ride
+OTHER styles: Hook 263 → 52 (`NPC.cs:12402`), Tentacle 264 → 53
+(`:12414`), Spore 265 → 50 (`:12427`); Brain of Cthulhu 266 → 54
+(`:12443`, S1-D-3e's census, untouched). **Verdict: Plantera only → this
+task is a docs-only census audit of the sibling's coverage; no new code.**
+**The sibling under audit**: `ba8159fc` (`task/S1-D-3-plantera-audit`,
+pushed, NOT in `origin/main` at audit time — `git merge-base
+--is-ancestor ba8159fc origin/main` exits 1). It ports the machine to
+`crates/tr-app/src/npc_ai_plantera.rs` (604 lines, 11 witness tests
+WRITTEN NOT RUN) and wires the kind-262 seam. The distrust-verbatim
+re-read of the whole arm (`NPC.cs:31717-32075`) against that module
+confirms the bulk of the port (the tuning ladder `:31763-31808`, the
+500-px leash + in-band hover quirk `:31799-31831`, the reversal-×2
+approach `:31832-31863`, the phase stats 36/50 ×2 and 10/70 def×4 dmg×2
+`:31866-31875`/`:31973-31980`, the >80 seed cadence with the f64
+0.9/0.8/0.7/0.6 bumps + enrage +3 `:31880-31917`, the 22/275 →
+27/276 (`Next(4)`, −30) → 31/277 (`Next(8)`, −120) volley with the
+`<0.8`-gated else-if short-circuit `:31937-31957`, the ×3 muzzle
+`:31963-31964`, timeLeft 300 unless 277 `:31966-31969`, the one-shot
+8-tentacle latch `:31983-31994`, the ≥350 spore cadence with the f64
+0.4/0.3/0.2/0.1 bumps `:32037-32054`, the X-first ±10 jitters
+`:32058`/`:32060`) — but finds these gaps:
+* **G1 — the rotation atan2 is SWAPPED (behavioural defect).**
+  `NPC.cs:31865` is `Math.Atan2(x: playerCX − cx, y: playerCY − cy) +
+  1.57f`. The NAMED arguments bind dx to `Atan2(double y, double x)`'s
+  **x-parameter** and dy to its **y-parameter** — the value is the
+  STANDARD `atan2(dy, dx)`, computed in double, cast to float BEFORE the
+  `+1.57f`. The sibling (`npc_ai_plantera.rs:170-172`) reads the named
+  args as positional and ports `dx.atan2(dy)`; its comment ("the
+  arguments are SWAPPED vs the usual atan2(dy, dx); ported verbatim")
+  and its witness test `the_rotation_uses_the_swapped_atan2` (`:530-537`)
+  pin the WRONG value. Player directly right (dx=100, dy=0): C# →
+  `atan2(0,100) = 0` → rotation 1.57; sibling → `atan2(100,0) = π/2` →
+  ≈3.14. The boss head's roll is wrong on every tick. Fix wave: swap to
+  `dy.atan2(dx)` through f64 (`((dy as f64).atan2(dx as f64)) as f32 +
+  1.57`) and repoint the witness.
+* **G2 — the spore lift condition is INVERTED (behavioural defect).**
+  `NPC.cs:32059-32065`: `num773 = |num772 * 0.2|`; `if (num774 > 0)
+  num773 = 0;` then `num774 -= num773` — the upward lead is subtracted
+  ONLY when the jittered dy ≤ 0 (target at/above the boss); a target
+  below gets NO lift. The sibling (`:414-420`) computes the lead
+  correctly but writes `if dy > 0.0 { dy -= lead; }` — the exact
+  opposite gate (its own comment describes the C# correctly; the code
+  contradicts it). No witness test covers the spore aim, so the 11
+  tests do not catch it.
+* **G3 — the gore burst consumes 6 of the C#'s 12 RNG draws (stream
+  drift).** `NPC.cs:32028-32030` draws `Next(width)` then `Next(height)`
+  per gore (the sibling ports these, `:394-401`), but `Gore.NewGore`
+  itself then draws `Next(10, 31)` (the vy kick) and `Next(-20, 21)`
+  (the vx kick) per gore (`Gore.cs:1327-1328`) — 6 more draws the
+  sibling skips with the emit ("documented skip, Brain precedent").
+  The ChildSafety re-roll (`Gore.cs:1334-1340`) never fires
+  (`ChildSafety.Disabled = true`, `GameContent/ChildSafety.cs:33`), and
+  the full-pool early-out that would skip the velocity draws
+  (`Gore.cs:1317-1320`) is unreachable in practice (600 slots vs a
+  3-gore burst). The shared `Main.rand` stream therefore drifts by 6
+  draws at the one-shot shell-break tick (`localAI[2]` latch). The
+  sibling's ANALYSIS row "RNG order preserved (2 draws per gore)" is
+  inaccurate — the true order is 4 per gore. Fix wave: draw the two
+  kicks per gore (or emit fully-rolled gore requests the wiring inserts
+  without re-rolling).
+* **G4 — the first-tick NaN claim is wrong (doc inaccuracy).** The
+  sibling's ANALYSIS says the C# "would divide by a zero hook count on
+  the very first tick before its own spawns resolve". `NPC.NewNPC`
+  activates the slot synchronously (`NPC.cs:80767-80771`,
+  `active = true`), and the three hook spawns (`:31739-31741`) run
+  BEFORE the centroid scan (`:31747`) in the same `AI()` call — the
+  first tick sees 3 hooks. The 0/0 NaN centroid (`:31761-31762`) arises
+  only when ALL hooks are later dead (or the roster was full at init).
+  The port's own-centre fallback remains a valid documented stand-in
+  either way; only the justification is wrong.
+* **G5 — minor precision seam.** The C#'s distance/aim norms are
+  `(float)Math.Sqrt(f32 sum)` — double sqrt of the f32-promoted sum,
+  cast back (`:31799`/`:31820`/`:31934`/`:32066`); the sibling uses f32
+  `.sqrt()` throughout (≤1-ulp divergence per call). Same class as
+  G1's double-atan2 cast. Recorded for the fix wave, not a structural
+  defect.
+**Recorded skips confirmed acceptable** (the sibling documents them):
+`TargetClosest` (`:31721`) rides the passed-player convention (the
+S1-D-3p migration is its own catalog row); the `timeLeft` refresh
+(`:31727-31734`, `NPC.activeTime = 750` `:95186`) and `NPC.plantBoss`
+(`:31735`) have no port fields; the expert/getGoodWorld arms
+(`:31780-31789`, `:31805-31808`, `:31901-31912`, `:31928-31931`,
+`:31941-31945`, `:31987-31990`, `:31995-32024`) are constants-off
+(single-difficulty classic — note the ftw wiring wave must also account
+for `NewNPC`'s per-spawn `Next(3)` under `Main.getGoodWorld`,
+`NPC.cs:80752`); the net-client early returns (`:31876`/`:32033`) fold
+out at netMode 0; the stand-in's world-bottom despawn tail is kept as
+the port's safety convention.
+**Wiring verified on the sibling branch** (by `git show ba8159fc`, not
+by execution): `main.rs` declares `mod npc_ai_plantera`; `npc.rs`'s
+kind-262 dispatch passes the rng (`NpcKind::Plantera =>
+self.update_plantera(world, player, rng)`), the three
+`wants_plantera_hooks/_tentacles/_spore` request fields exist and are
+initialized; `world_sim/npcs.rs` drains the requests each tick and the
+timeLeft-300 list covers 275/276 (not 277); `projectile/data.rs` carries
+the 275/276/277 rows (`Projectile.cs:3614-3637`); the stale 480-tick
+cycle test is repointed; `anchors.txt` has the `pub fn step` canary row.
+The 11 witness tests exist as claimed — but one pins G1's wrong value,
+and there are NO witnesses for the spore aim (G2), the volley RNG order
+or the gore draws (G3): the fix wave must add them.
+**Follow-ups (the fix/wiring wave, NOT this task)**: G1/G2/G3 corrections
++ their witnesses on the sibling branch (or after its merge); the three
+minion machines (263/264/265) + the real hook-centroid scan; the test
+run. This audit adds no code and touches no sibling file — the sibling
+stays byte-identical.
+## The aiStyle-51 port attempt (superseded — provenance note)
+The prior `task/S1-D-3-aistyle51` session (2026-11-18) began porting the
+arm into a pure `crates/tr-app/src/npc_ai_style51.rs` module but died
+mid-write: the file was an incomplete stub (module docs + types only,
+ending at a `// __CONTINUE__` marker — no `ai_style51` function, no
+tests) and was never committed. The restarted session's census (see
+"The aiStyle-51 census audit (S1-D-3, code-only mode)" above) found
+aiStyle 51 is Plantera-only and the sibling `ba8159fc`
+(`task/S1-D-3-plantera-audit`) already ports the machine, so the stub
+was discarded, its `mod npc_ai_style51;` line and its canary row
+removed, and this task landed as the docs-only census audit instead.
+The stub's module-doc citations (the RNG order incl. `Gore.NewGore`'s
+velocity kicks `Gore.cs:1327-1328`, the named-arg `Atan2(x: dx, y: dy)`
+reading, the classic-difficulty identities) were independently
+re-verified against the C# during the audit and are reflected in the
+census section's G1/G3/G5 findings against the sibling.
