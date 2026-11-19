@@ -1039,6 +1039,79 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Everscream",
     },
+    // The Frost Moon wave family (`S1-F-13c` slice B): the credit ids are
+    // `NPCID.Search.GetName`'s persistent names (`ContentSamples.cs:868-870`;
+    // `NPCID.cs:11367-11381`) — 348/349 carry DISTINCT credits despite the
+    // shared "Nutcracker" display name (`NPCs.json`'s 349 row). None of the
+    // eight rides the quick-unlock provider dict
+    // (`BestiaryDatabaseNPCsPopulator.cs:683-701` — 345/346 included: the
+    // event bosses unlock on the normal kill ladder), and each carries the
+    // FrostMoon spawn-condition tag (`:1382`/`:1521`/`:1537`/`:1671-1672`/
+    // `:1709`/`:1720`/`:1733`).
+    BestiaryEntryDef {
+        credit_id: "IceQueen",
+        net_id: 345,
+        kind: NpcKind::IceQueen,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Queen",
+    },
+    BestiaryEntryDef {
+        credit_id: "SantaNK1",
+        net_id: 346,
+        kind: NpcKind::SantaNK1,
+        variant: None,
+        quick_unlock: false,
+        name: "Santa-NK1",
+    },
+    BestiaryEntryDef {
+        credit_id: "ElfCopter",
+        net_id: 347,
+        kind: NpcKind::ElfCopter,
+        variant: None,
+        quick_unlock: false,
+        name: "Elf Copter",
+    },
+    BestiaryEntryDef {
+        credit_id: "Nutcracker",
+        net_id: 348,
+        kind: NpcKind::Nutcracker,
+        variant: None,
+        quick_unlock: false,
+        name: "Nutcracker",
+    },
+    BestiaryEntryDef {
+        credit_id: "NutcrackerSpinning",
+        net_id: 349,
+        kind: NpcKind::NutcrackerSpinning,
+        variant: None,
+        quick_unlock: false,
+        name: "Nutcracker",
+    },
+    BestiaryEntryDef {
+        credit_id: "ElfArcher",
+        net_id: 350,
+        kind: NpcKind::ElfArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Elf Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Krampus",
+        net_id: 351,
+        kind: NpcKind::Krampus,
+        variant: None,
+        quick_unlock: false,
+        name: "Krampus",
+    },
+    BestiaryEntryDef {
+        credit_id: "Flocko",
+        net_id: 352,
+        kind: NpcKind::Flocko,
+        variant: None,
+        quick_unlock: false,
+        name: "Flocko",
+    },
     BestiaryEntryDef {
         credit_id: "GoblinThief",
         net_id: 27,
@@ -1900,6 +1973,13 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
 /// over the whole roster. The Zoologist's shop gates read it
 /// (`Chest.cs:3265`).
 pub fn completion_percent(kills: &KillTracker) -> f32 {
+    // `BestiaryUnlockProgressReport.CompletionPercent`
+    // (`BestiaryUnlockProgressReport.cs:9-19`): 1 for an empty roster,
+    // else the known share (`UIBestiaryTest.GetUnlockProgress`, `:497-513`,
+    // counts `> NotKnownAtAll_0`).
+    if ENTRIES.is_empty() {
+        return 1.0;
+    }
     let seen = ENTRIES
         .iter()
         .filter(|e| unlock_state(e, kills).known())
