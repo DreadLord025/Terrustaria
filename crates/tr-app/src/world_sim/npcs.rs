@@ -4791,10 +4791,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
                 let mut hands = Vec::new();
                 for (side, ai3) in [(-1.0f32, 0.0f32), (1.0, 150.0)] {
+                    // `NPC.NewNPC(X: headCX, Y: headTop + height/2)`
+                    // (`:21930`/`:21935`) sets the hand's BOTTOM at the
+                    // head's vertical centre (`NPC.cs:80770`) — the
+                    // 52×52 hand box centres on (headCX, headCY − 26).
+                    // The old invented −75/−75 offset is gone (B-1 §3).
                     let mut hand = Npc::new(
                         NpcKind::SkeletronHand,
-                        head.x + hw * 0.5 - 75.0,
-                        head.y + hh * 0.5 - 75.0,
+                        head.x + hw * 0.5 - 26.0,
+                        head.y + hh * 0.5 - 52.0,
                         0,
                         0.0,
                     );
@@ -4806,24 +4811,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs.append(&mut hands);
             }
         }
-        // The live hand count (the C#'s `num168`): the expert mode's spin
-        // shot and the charge's speed scale with it.
+        // The live hand count (the C#'s LOCAL `num168`, `NPC.cs:21963-
+        // 21972`): B-1 S3 — it rides a World mirror, NOT `head.ai[3]`.
+        // The C# head's `ai[3]` is the RED-HAT LATCH
+        // (`RedHatSkeletronAdjustmentsEnabled`, `NPC.cs:66673` reads
+        // `type == 35 && ai[3] == 1`); writing the hands count there made
+        // every fight's last-hand phase (count == 1) spuriously activate
+        // red-hat mode for the head, the hands' `localAI[3]` mirror and
+        // the Dark Caster latch.
         let hands_alive = app
             .npcs
             .iter()
             .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
             .count() as f32;
+        app.world.skeletron_hands_alive = hands_alive;
         if let Some(head) = app
             .npcs
-            .iter_mut()
+            .iter()
             .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
-            head.ai[3] = hands_alive;
-            // S1-E-14b: the `FindFirstNPC(35)` mirror the hand's
-            // `localAI[3]` copy (`NPC.cs:22315`) and the Dark Caster's
-            // `aiStyle 8` latch (`NPC.cs:20820-20827`) read — the head's
-            // live `ai[3]` (the port's hands-count stand-in; the red-hat
-            // head model deviation is recorded in ANALYSIS).
+            // B-1 H1/H2/H11: the head-present check, the `ai[1]` state
+            // and the RAW `ai[3]` slot the hand's machine reads
+            // (`NPC.cs:22303`/`:22324-22328`/`:22315`).
+            app.world.skeletron_head_present = true;
+            app.world.skeletron_head_state = head.ai[1];
+            app.world.skeletron_head_ai3 = head.ai[3];
+            // S1-E-14b: the `FindFirstNPC(35)` mirror the Dark Caster's
+            // `aiStyle 8` latch (`NPC.cs:20820-20827`) reads — the head's
+            // RAW red-hat slot. The trigger itself (`SpawnSkeletron(
+            // redHatMode)`, `NPC.cs:80394-80470`) is unported, so the
+            // slot stays 0 in live play — red-hat mode never activates
+            // spuriously.
             app.world.skeletron_red_hat = head.ai[3] == 1.0;
         }
         if !app
@@ -4832,6 +4850,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
             app.world.skeletron_red_hat = false;
+            app.world.skeletron_head_present = false;
+            app.world.skeletron_head_state = 0.0;
+            app.world.skeletron_head_ai3 = 0.0;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -5027,9 +5048,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
         // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3) and
+        // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
-        // reconcile's `bat_ai` shot drain).
+        // reconcile's `bat_ai` shot drain) and the Skeletron head's
+        // spin-shot Skull (`NPC.cs:22013` - B-1).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
@@ -5038,6 +5060,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::DEMON_SICKLE
+            || kind == crate::projectile::SKULL
         {
             300
         } else {
@@ -15710,5 +15733,221 @@ mod fishron_wiring_tests {
         let s = sharks[0];
         assert_eq!(s.ai[3], -1.5, "the rise preset");
         assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
+    }
+}
+
+/// B-1 audit witnesses — the sim-side seams (research/51 §3: the S3
+/// slot split, the hands' init position, the kill cascade through the
+/// live pass). WRITTEN NOT RUN in the code-only wave — no compiler
+/// invoked.
+#[cfg(test)]
+mod b1_skeletron_sim_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.day_time = false;
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    fn skeletron_head(x: f32, y: f32) -> Npc {
+        let mut head = Npc::new(NpcKind::SkeletronHead, x, y, 1, 0.0);
+        head.hp = head.max_hp;
+        head
+    }
+
+    /// S3 regression — the live pass NEVER writes the hands count into
+    /// `head.ai[3]`: with two hands spawned the slot stays 0 and the
+    /// red-hat mirror stays false through the whole 2 → 1 → 0 countdown
+    /// (the old port activated fake red-hat mode at count == 1).
+    #[test]
+    fn b1_the_sim_keeps_the_hands_count_out_of_the_red_hat_slot() {
+        let (mut app, _player) = app_with_player();
+        app.npcs
+            .push(skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX));
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The init spawned the two hands (`NPC.cs:21930-21940`).
+        let hands: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand)
+            .collect();
+        assert_eq!(hands.len(), 2, "the two hands spawn");
+        assert_eq!(app.world.skeletron_hands_alive, 2.0);
+        assert!(!app.world.skeletron_red_hat);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        assert_eq!(head.ai[3], 0.0, "ai[3] is the latch slot, not the count");
+        // Kill one hand: the last-hand phase — count 1, still no latch.
+        let hand_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::SkeletronHand)
+            .unwrap();
+        app.npcs[hand_idx].hp = 0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.skeletron_hands_alive, 1.0);
+        assert!(
+            !app.world.skeletron_red_hat,
+            "one hand alive must not read RED-HAT MODE"
+        );
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        assert_eq!(head.ai[3], 0.0);
+        assert!(!head.red_hat_skeletron_adjustments_enabled());
+        // The Dark Caster latch never fires either (the aiStyle-8 step
+        // through the public dispatch).
+        let mut dc = Npc::new(NpcKind::DarkCaster, 140.0 * TILE_PX, 110.0 * TILE_PX, 2, 0.0);
+        dc.hp = dc.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut player = app.player.clone().unwrap();
+        dc.update_rng(&app.world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(dc.local_ai[3], 0.0, "no spurious caster latch");
+    }
+
+    /// H1 through the live pass — the head's death drops BOTH hands on
+    /// the next tick (the head-gone cascade, `NPC.cs:22303-22312`).
+    #[test]
+    fn b1_the_hands_die_with_the_head_through_the_live_pass() {
+        let (mut app, _player) = app_with_player();
+        app.npcs
+            .push(skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX));
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::SkeletronHand)
+                .count(),
+            2
+        );
+        // Kill the head.
+        let head_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        app.npcs[head_idx].hp = 0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.world.skeletron_head_present,
+            "the head-gone mirror clears"
+        );
+        // One more pass: the hands' machine sees the cleared mirror
+        // (the mirror pass runs after the update loop — the same
+        // one-tick lag the prime limbs have) and the cascade kills them.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
+                .count(),
+            0,
+            "the hands never keep slamming a dead head's anchor"
+        );
+    }
+
+    /// The hands' init position (`NPC.cs:21930`/`:80770`): NewNPC sets
+    /// the hand's BOTTOM at (headCX, headTop + headHeight/2) — the
+    /// 52×52 box centres on (headCX, headCY − 26), not the invented
+    /// −75/−75 offset.
+    #[test]
+    fn b1_the_hands_spawn_at_the_csharp_bottom_anchor() {
+        let (mut app, _player) = app_with_player();
+        let hx = 150.0 * TILE_PX;
+        let hy = 100.0 * TILE_PX;
+        app.npcs.push(skeletron_head(hx, hy));
+        update_npcs(&mut app, 1.0 / 60.0);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        let (hw, hh) = head.size();
+        for hand in app.npcs.iter().filter(|n| n.kind == NpcKind::SkeletronHand) {
+            let (w, h) = hand.size();
+            assert_eq!((w, h), (52.0, 52.0));
+            // The spawn seats (the head has moved only fractionally on
+            // its init tick — the sim's spawn pass runs after the
+            // update loop and reads the same live position).
+            assert!(
+                (hand.x + w * 0.5 - (head.x + hw * 0.5)).abs() < 1e-2,
+                "the centre X"
+            );
+            assert!(
+                (hand.y + h - (head.y + hh * 0.5)).abs() < 1e-2,
+                "the Bottom anchor"
+            );
+        }
+        // The seat signs and the +1 hand's 150 timer head start.
+        let mut seats: Vec<(f32, f32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand)
+            .map(|n| (n.ai[0], n.ai[3]))
+            .collect();
+        seats.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        assert_eq!(seats, vec![(-1.0, 0.0), (1.0, 150.0)]);
+    }
+
+    /// The Skull's `timeLeft = 300` override (`NPC.cs:22013`) rides the
+    /// shot drain.
+    #[test]
+    fn b1_the_skull_shot_drains_with_the_300_tick_lifetime() {
+        let (mut app, _player) = app_with_player();
+        let mut head = skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX);
+        head.ai[0] = 1.0;
+        head.wants_hostile_shot.push((
+            crate::projectile::SKULL,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            3.0,
+            1.0,
+            17,
+        ));
+        app.npcs.push(head);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let skull = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::SKULL)
+            .expect("the skull spawned");
+        // The projectile pass may have ticked it once already; the
+        // override is 300, never the default lifetime.
+        assert!(
+            skull.time_left >= 298 && skull.time_left <= 300,
+            "the 300-tick override ({})",
+            skull.time_left
+        );
     }
 }

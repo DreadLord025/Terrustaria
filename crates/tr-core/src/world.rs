@@ -260,8 +260,28 @@ pub struct World {
     pub skeletron_y: f32,
     /// `FindFirstNPC(35)`'s `ai[3]` mirror (S1-E-14b): the Dark Caster's
     /// `aiStyle 8` arm reads the first active Skeletron head's red-hat
-    /// latch (`NPC.cs:20820-20827`); false with no live head.
+    /// latch (`NPC.cs:20820-20827`); false with no live head. B-1 audit
+    /// fix: this is the RAW `ai[3] == 1` latch ONLY — the hands count no
+    /// longer rides `ai[3]` (it lives in `skeletron_hands_alive`), so the
+    /// last-hand phase can never spuriously activate red-hat mode.
     pub skeletron_red_hat: bool,
+    /// B-1 (S3): the head's live-hands count — the C#'s LOCAL `num168`
+    /// (`NPC.cs:21963-21972`, the expert scan of active type+1). A World
+    /// mirror, NOT `head.ai[3]`: the C# head's `ai[3]` is the red-hat
+    /// latch (`RedHatSkeletronAdjustmentsEnabled`, `NPC.cs:66673`).
+    pub skeletron_hands_alive: f32,
+    /// B-1 (H1): `Main.npc[hand.ai[1]].active && aiStyle == 11` — the
+    /// head-present check the hand's death cascade reads
+    /// (`NPC.cs:22303-22312`; the prime limb's `prime_present` pattern).
+    pub skeletron_head_present: bool,
+    /// B-1 (H2): the head's `ai[1]` state mirror — the hand's dock-return
+    /// gate (`NPC.cs:22324-22328`: 3 → EncourageDespawn(10), != 0 → the
+    /// spin-dock steering, 0 → the 300-tick attack timer).
+    pub skeletron_head_state: f32,
+    /// B-1 (H11): the head's RAW `ai[3]` slot — the hand's
+    /// `localAI[3] = head.ai[3]` copy (`NPC.cs:22315`) mirrors the value,
+    /// not a bool-ised predicate.
+    pub skeletron_head_ai3: f32,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -639,6 +659,10 @@ impl World {
             prime_head_ai1: 0.0,
             skeletron_y: 0.0,
             skeletron_red_hat: false,
+            skeletron_hands_alive: 0.0,
+            skeletron_head_present: false,
+            skeletron_head_state: 0.0,
+            skeletron_head_ai3: 0.0,
             golem_y: 0.0,
             golem_vy: 0.0,
             golem_hp: 0,

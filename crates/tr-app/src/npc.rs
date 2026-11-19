@@ -2109,6 +2109,23 @@ pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
     count as f32 * TILE_PX
 }
 
+/// `NPC.GetAttackDamage_LerpBetweenFinalValues` (`NPC.cs:7047-7050`) for
+/// the Skeletron head's spin damage (`:22186`): the classic/expert
+/// difficulty remap (`npc_ai_style39.rs::attack_damage_lerp` is the same
+/// formula). Classic = 1, Expert = 2 — the classic endpoint is
+/// `defDamage`, so the classic-only impact is nil until the difficulty
+/// flag lands (S7).
+fn attack_damage_lerp_skeletron(difficulty: f32, normal: f32, expert: f32) -> i32 {
+    let t = if difficulty < 1.0 {
+        0.0
+    } else if difficulty > 2.0 {
+        1.0
+    } else {
+        difficulty - 1.0
+    };
+    (normal + (expert - normal) * t) as i32
+}
+
 impl Npc {
     /// `NPC.EncourageDespawn` (`NPC.cs:7249-7256`): only ever LOWERS the
     /// `timeLeft` window — a later arm cannot extend it.
@@ -3775,9 +3792,8 @@ impl Npc {
     /// are dodgeable only outside their `ai[1] == 2f` state (`case 35`
     /// `NPCID.SkeletronHead`, `case 127` `NPCID.SkeletronPrime`; the Dungeon
     /// Guardian, `case 68`, rides the same arm but has no port kind yet).
-    /// The port's Prime machine maintains `ai[1]` (`update_prime`); the
-    /// Skeletron Head's stand-in leaves it 0 — also `!= 2f`, the C#'s
-    /// non-spin state. Everything else defaults true; the Empress of Light's
+    /// Both machines maintain `ai[1]` (`update_prime`/`update_skeletron`);
+    /// everything else defaults true; the Empress of Light's
     /// `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with its unported
     /// kind (docs/ANALYSIS.md, "The dodge family").
     pub fn is_damage_dodgeable(&self) -> bool {
@@ -4920,8 +4936,11 @@ impl Npc {
             NpcKind::Bee | NpcKind::BeeSmall => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
-            NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
+            // B-1: the expert seam — the port is single-difficulty (the
+            // classic solo stand-in, the style31 CLASSIC_SOLO precedent);
+            // hard_mode is NOT expertMode (research/51 S1).
+            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng, false),
+            NpcKind::SkeletronHand => self.update_skeletron_hand(world, player, false),
             // S1-D-3 W-1: the WoF family's aiStyles 27/28/29 ride the
             // style axis above (the faithful modules); `ai_style()` maps
             // these kinds unconditionally, so the fallthrough never
@@ -9457,8 +9476,8 @@ impl Npc {
     }
 
     /// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`):
-    /// type 35 reads `ai[3] == 1` (the loot seam's live hand-count write
-    /// keeps its own model — `world_sim/npcs.rs`), 36/32 read
+    /// type 35 reads `ai[3] == 1` (the red-hat latch ONLY — B-1: the
+    /// hands count moved to `World.skeletron_hands_alive`), 36/32 read
     /// `localAI[3] == 1`, 33 reads `ai[3] == 1`, everything else false.
     pub fn red_hat_skeletron_adjustments_enabled(&self) -> bool {
         match self.kind {
@@ -9566,32 +9585,94 @@ impl Npc {
         self.update_hover(world, player, params);
     }
 
-    /// `AI_011`'s Skeletron head v1 (`NPC.cs`'s aiStyle 11 machine) — the
-    /// EoC's cycle shape with the skull's numbers: the hover (the ±0.07,
-    /// the 7 cap), the charge (the 480-tick cycle, the direct velocity
-    /// x 8), the decel (the 40 ticks x0.98). The spinning hands (the
-    /// separate NPCs 36) = the follow-ups.
-    /// `AI()`'s aiStyle-11 block (`NPC.cs:21919-22298`) — the Skeletron
-    /// head's machine: the spin state (0), the charge (1), the enraged
-    /// day-time state (2) and the despawn (3).
+    /// `NPC.TargetClosest()` (`NPC.cs:77652-77666`) through the shared
+    /// selection — the single session player as slot 0 (the S1-D-3p /
+    /// style31 convention). The Skeletron head/hand call sites pass
+    /// their C# style (11/12).
+    fn target_closest_solo(&mut self, world: &World, player: &Player, ai_style: i32) {
+        let cand = crate::npc_target::TargetCandidate {
+            active: true,
+            dead: player.dead,
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        crate::npc_target::target_closest(self, world, &[cand], true, ai_style, 0);
+    }
+
+    /// `AI()`'s aiStyle-11 block (`NPC.cs:21919-22299`) — the Skeletron
+    /// head's machine: the hover state (0), the spin/charge (1), the
+    /// enraged day-time state (2) and the despawn (3). B-1 audit fix
+    /// round (research/51 §3, S1-S9, S11):
+    ///
+    /// * S3 — the live hands count is the C#'s LOCAL `num168`
+    ///   (`:21963-21972`), NOT `ai[3]`: the head's `ai[3]` is the red-hat
+    ///   latch (`RedHatSkeletronAdjustmentsEnabled`, `:66673`). The count
+    ///   rides the sim's `World.skeletron_hands_alive` mirror.
+    /// * S1 — `Main.expertMode` is NOT `hard_mode`. The expert rows ride
+    ///   the `expert` seam parameter (the style31 `Style31Env` precedent);
+    ///   the live dispatch passes `false` (the port is single-difficulty —
+    ///   the classic solo stand-in, ANALYSIS). Until the difficulty flag
+    ///   lands the expert rows are constants-off, never hardmode-proxied.
+    /// * S2 — the per-tick `defense = defDefense + hands*25` expert ladder
+    ///   (`:21923`/`:21973`); the spin subtracts 10 from THAT (`:22165`).
+    /// * S4 — the spin shot's hands/hp gate (`:21974`): with both hands
+    ///   alive and hp >= 75% the head does not shoot.
+    /// * S5/S6 — the shot vector folds `base.velocity` BEFORE both the
+    ///   ×5 spawn origin and the shot velocity (`:22006-22011`); the
+    ///   second normalize mirrors `Vector2.Normalize` (zero → zero, no
+    ///   floor).
+    /// * S7 — the spin damage is the difficulty lerp
+    ///   `GetAttackDamage_LerpBetweenFinalValues(defDamage, defDamage*1.3)`
+    ///   (`:22186`) — classic endpoint = defDamage.
+    /// * S8 — state 3 calls `EncourageDespawn(50)` (`:22281`).
+    /// * S9 — `TargetClosest()` at the init, the dead/far second chance
+    ///   and the 800-tick spin transition (`:21926`/`:21951`/`:22034`).
     ///
     /// The hands' spawn rides the sim's pass (the C#'s `ai[0] == 0` init,
-    /// `:21924-21941`); the arm reads the live hand count from `ai[3]`
-    /// (the sim's write).
-    ///
-    /// The dust (`:22280-22296`) and the sounds are SKIPPED — no dust/sound
-    /// layer.
-    fn update_skeletron(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// `:21924-21941`). The dust (`:22283-22297` — no rand draws, fixed
+    /// velocities), the sounds, the red-hat `flag21` rows and the
+    /// getGoodWorld rows (the Dark-Caster spawn block `:22119-22163`) are
+    /// the documented skips (S10/S12; the red-hat trigger itself is
+    /// unported — `SpawnSkeletron(redHatMode)`).
+    fn update_skeletron(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        expert: bool,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        // `:21923` — the defense resets to the kind's base every tick.
+        // `:21921` — the red-hat latch reads the head's own ai[3] (the
+        // slot the hands count no longer contaminates).
+        let flag21 = self.red_hat_skeletron_adjustments_enabled();
+        // `:21923` — the defense resets to the kind's base every tick
+        // (`defDefense` — read AFTER the reset so a stale override from
+        // the previous state cannot leak into the expert ladder).
         self.defense_override = None;
-        // `:21949-21957` — a dead player or one 2000 px away → the despawn.
+        let def_defense = self.defense();
+        // `:21924-21927` — the init latch's TargetClosest (the hands'
+        // spawn itself rides the sim's pass).
+        if self.ai[0] == 0.0 {
+            self.target_closest_solo(world, player, 11);
+        }
+        // `:21949-21957` — a dead player or one 2000 px away: the
+        // second-chance retarget, THEN the despawn state.
         let far = (self.x - player.x).abs() > 2000.0 || (self.y - player.y).abs() > 2000.0;
         if player.dead || far {
-            self.ai[1] = 3.0;
+            self.target_closest_solo(world, player, 11);
+            if player.dead || far {
+                self.ai[1] = 3.0;
+            }
         }
         // `:21958-21962` — the daytime → the enraged state.
         if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
@@ -9610,21 +9691,108 @@ impl Npc {
                 y: self.y,
             });
         }
+        // `:21963-22017` — the expert block: the hands scan (the sim's
+        // mirror stands for the C#'s local loop), the +25/hand defense
+        // and the gated spin shot. Classic worlds draw NOTHING here.
+        let hands = world.skeletron_hands_alive as i32;
+        if expert {
+            // `:21973` — the defense ladder.
+            let ladder = def_defense + hands * 25;
+            self.defense_override = Some(ladder);
+            // `:21974` — the hands/hp gate: both hands alive at hp >= 75%
+            // means no shots.
+            if (hands < 2 || (self.hp as f64) < (self.max_hp as f64) * 0.75)
+                && self.ai[1] == 0.0
+            {
+                // `:21976-21984` — the 80-tick cadence, halved with no
+                // hands (the getGood ×0.8 is a documented skip).
+                let period = if hands == 0 { 40.0f32 } else { 80.0 };
+                // `:21985-21988` — the mod gate, THEN CanHit.
+                if self.ai[2] % period == 0.0
+                    && crate::projectile::can_hit(
+                        world,
+                        cx,
+                        cy,
+                        1.0,
+                        1.0,
+                        player.x,
+                        player.y,
+                        crate::player::WIDTH,
+                        player.height,
+                    )
+                {
+                    // `:21990-22008` — the shot vector: normalize with
+                    // the <= 0 → 1 raw-distance floor, the ±0.5 jitters,
+                    // the floorless Normalize, ×speed, THEN + velocity —
+                    // the SAME vector feeds the origin and the shot.
+                    let speed = if hands == 0 { 5.0f32 } else { 3.0 };
+                    let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
+                    let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
+                    let mut d = (dx * dx + dy * dy).sqrt();
+                    if d <= 0.0 {
+                        d = 1.0;
+                    }
+                    let k = speed / d;
+                    dx = dx * k * 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+                    dy = dy * k * 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+                    // `Vector2.Normalize` (`:22004`): zero → zero.
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len > 0.0 {
+                        dx /= len;
+                        dy /= len;
+                    }
+                    dx = dx * speed + self.vx;
+                    dy = dy * speed + self.vy;
+                    // `:22009-22013` — the Skull 270 at the ×5 origin
+                    // (post-velocity); the timeLeft = 300 override rides
+                    // the sim's shot drain.
+                    self.wants_hostile_shot.push((
+                        crate::projectile::SKULL,
+                        cx + dx * 5.0,
+                        cy + dy * 5.0,
+                        dx,
+                        dy,
+                        17,
+                    ));
+                }
+            }
+        }
         match self.ai[1] as i32 {
             0 => {
-                // `:22019-22051` — the spin: the timer (800 ticks → the
-                // charge), the rotation and the hover acceleration.
+                // `:22018-22116` — the hover: the damage reset, the timer
+                // (800 ticks → the spin, with the retarget), the rotation
+                // and the hover acceleration.
+                // `:22020-22024` — damage = defDamage, red-hat ×1.3.
+                self.damage_override = if flag21 {
+                    Some((self.kind.contact_damage() as f64 * 1.3) as i32)
+                } else {
+                    None
+                };
                 self.ai[2] += 1.0;
+                if flag21 {
+                    self.ai[2] += 0.5;
+                }
                 if self.ai[2] >= 800.0 {
                     self.ai[2] = 0.0;
                     self.ai[1] = 1.0;
+                    // `:22034` — the transition's TargetClosest.
+                    self.target_closest_solo(world, player, 11);
+                    self.net_update = true;
                 }
                 self.rotation = self.vx / 15.0;
-                let (accel_y, cap_y, accel_x, cap_x) = if world.hard_mode {
+                let (mut accel_y, mut cap_y, mut accel_x, mut cap_x) = if expert {
                     (0.03f32, 4.0f32, 0.07f32, 9.5f32)
                 } else {
                     (0.02, 2.0, 0.05, 8.0)
                 };
+                if flag21 {
+                    // `:22053-22060` — the red-hat ×1.35 ladder (the
+                    // getGood +0.01/+1/+0.05/+2 else-arm is parked).
+                    accel_y *= 1.35;
+                    cap_y *= 1.35;
+                    accel_x *= 1.35;
+                    cap_x *= 1.35;
+                }
                 if self.y > player.y - 250.0 {
                     if self.vy > 0.0 {
                         self.vy *= 0.98;
@@ -9660,52 +9828,13 @@ impl Npc {
                         self.vx = -cap_x;
                     }
                 }
-                // `:21978-22018` — the expert mode's spin shot: every 80
-                // ticks (40 with no hand left) the head fires a skull.
-                if world.hard_mode {
-                    let hands = self.ai[3] as i32;
-                    let period = if hands == 0 { 40.0 } else { 80.0 };
-                    if self.ai[2] % period == 0.0
-                        && crate::projectile::can_hit(
-                            world,
-                            cx,
-                            cy,
-                            1.0,
-                            1.0,
-                            player.x,
-                            player.y,
-                            crate::player::WIDTH,
-                            player.height,
-                        )
-                    {
-                        let speed = if hands == 0 { 5.0 } else { 3.0 };
-                        let mut dx =
-                            pcx - cx + rng.next_range(-20, 21) as f32;
-                        let mut dy =
-                            pcy - cy + rng.next_range(-20, 21) as f32;
-                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                        dx = dx / d * speed;
-                        dy = dy / d * speed;
-                        // The jitter (`:22005-22006`).
-                        dx += rng.next_range(-50, 51) as f32 * 0.01;
-                        dy += rng.next_range(-50, 51) as f32 * 0.01;
-                        let len = (dx * dx + dy * dy).sqrt().max(1.0);
-                        dx = dx / len * speed;
-                        dy = dy / len * speed;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::SKULL,
-                            cx + dx * 5.0,
-                            cy + dy * 5.0,
-                            dx + self.vx,
-                            dy + self.vy,
-                            17,
-                        ));
-                    }
-                }
             }
             1 => {
-                // `:22118-22244` — the charge: the defense drops by 10, the
-                // timer (400 ticks → the spin) and the 1.5-px rush.
+                // `:22117-22255` — the spin: the defense drops by 10
+                // (from the expert ladder when it applied), the timer
+                // (400 ticks → the hover) and the rush. The getGood /
+                // red-hat Dark-Caster spawn block (`:22119-22163`) is a
+                // documented skip (S10).
                 self.defense_override = Some(self.defense() - 10);
                 self.ai[2] += 1.0;
                 // S1-E-21g — `NPC.cs:22166-22170`: the charge's second
@@ -9725,10 +9854,25 @@ impl Npc {
                 self.rotation += self.facing as f32 * 0.3;
                 let dx = pcx - cx;
                 let dy = pcy - cy;
-                let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                let mut speed = if world.hard_mode { 3.5 } else { 1.5 };
-                if world.hard_mode {
-                    // `:22188-22227` — the expert's distance ramp.
+                let mut d = (dx * dx + dy * dy).sqrt();
+                if d <= 0.0 {
+                    d = 1.0;
+                }
+                // `:22186-22190` — the difficulty damage lerp (classic
+                // endpoint = defDamage; the red-hat ×1.3 on top).
+                let def_damage = self.kind.contact_damage();
+                let mut damage = attack_damage_lerp_skeletron(
+                    if expert { 2.0 } else { 1.0 },
+                    def_damage as f32,
+                    def_damage as f32 * 1.3,
+                );
+                if flag21 {
+                    damage = (damage as f64 * 1.3) as i32;
+                }
+                self.damage_override = Some(damage);
+                let mut speed = if expert { 3.5f32 } else { 1.5 };
+                if expert {
+                    // `:22194-22233` — the expert's distance ramp.
                     if d > 150.0 {
                         speed *= 1.05;
                     }
@@ -9739,50 +9883,47 @@ impl Npc {
                             speed *= 1.1;
                         }
                     }
-                    // `:22228-22236` — the hand count's share.
-                    match self.ai[3] as i32 {
+                    // `:22234-22242` — the hand count's share.
+                    match hands {
                         0 => speed *= 1.1,
                         1 => speed *= 1.05,
                         _ => {}
                     }
+                }
+                if flag21 {
+                    speed *= 1.4;
                 }
                 let k = speed / d;
                 self.vx = dx * k;
                 self.vy = dy * k;
             }
             2 => {
-                // `:22245-22259` — the enraged state: the invulnerable
+                // `:22256-22272` — the enraged state: the invulnerable
                 // 8-px rush.
                 self.damage_override = Some(9999);
                 self.defense_override = Some(9999);
                 self.rotation += self.facing as f32 * 0.3;
                 let dx = pcx - cx;
                 let dy = pcy - cy;
-                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let mut d = (dx * dx + dy * dy).sqrt();
+                if d <= 0.0 {
+                    d = 1.0;
+                }
                 let k = 8.0 / d;
                 self.vx = dx * k;
                 self.vy = dy * k;
             }
             3 => {
-                // `:22260-22270` — the despawn: the sink and the damp.
+                // `:22273-22282` — the despawn: the sink, the damp and
+                // the 50-tick EncourageDespawn (S8).
                 self.vy += 0.1;
                 if self.vy < 0.0 {
                     self.vy *= 0.95;
                 }
                 self.vx *= 0.95;
+                self.encourage_despawn(50);
             }
             _ => {}
-        }
-        // `:22019` — the spin state restores the kind's damage.
-        if self.ai[1] == 0.0 {
-            self.damage_override = None;
-        } else if self.ai[1] == 1.0 {
-            let base_damage = self.kind.contact_damage();
-            self.damage_override = Some(if world.hard_mode {
-                (base_damage as f32 * 1.3) as i32
-            } else {
-                base_damage
-            });
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -14753,83 +14894,322 @@ impl Npc {
     // the INTEGER band midpoint, the localAI[1]/[2] pacing, the CanHit
     // gate BEFORE the counter reset, the distance-scaled aim rotation.
 
-    /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22613`): the
-    /// tether return to the orbit slot `(headCenter.X - 200 * side,
-    /// head.Y + 230)`, the 300-tick lunge cadence, the -8 rise to 200
-    /// above the head, the 18 px/tick strike at the player's centre,
-    /// the return. The head's centre rides the World's skeletron anchor
-    /// (the WoF write-through shape). The vanilla's `ai[2] += 10f`
-    /// head-death despawn rides the sim.
-    fn update_skeletron_hand(&mut self, world: &World, player: &Player) {
-        // `NPC.cs:22313-22316` — while the head is a live aiStyle-11 NPC
-        // the hand mirrors its `ai[3]` into `localAI[3]` (the red-hat
-        // latch rides the head; the sim's `skeletron_x/y` write-through
-        // stands for the active-head check).
-        self.local_ai[3] = if world.skeletron_red_hat { 1.0 } else { 0.0 };
+    /// The Skeletron's hand (`aiStyle 12`, `NPC.cs:22300-22614`) — the
+    /// full 6-state machine on `ai[2]`: 0/3 dock-return, 1 rise,
+    /// 2 slam-flight, 4 horizontal wind-out, 5 horizontal strike.
+    /// B-1 audit fix round (research/51 §4, H1-H5, H7-H11):
+    ///
+    /// * H1 — the head-gone cascade (`:22303-22312`): `ai[2] += 10`,
+    ///   `> 50 || netMode != 2` → die. Single-player dies at once; the
+    ///   head check rides the sim's `skeletron_head_present` mirror (the
+    ///   prime limb's `prime_present` pattern).
+    /// * H2 — the dock steering only runs while the head spins/enrages
+    ///   (`head.ai[1] != 0`, `:22328`); while the head HOVERS the 300-tick
+    ///   attack timer runs (`:22381-22395`). The head state rides
+    ///   `World.skeletron_head_state`.
+    /// * H3 — the rise damps `vx *= 0.95` every tick (`:22509`).
+    /// * H4 — the Y thresholds compare `position.Y` (TOP), not the centre
+    ///   (`:22447`/`:22532`); the X stations compare the CENTRE.
+    /// * H5 — state 2 KEEPS its 18-speed vector until the real exit test
+    ///   (`:22548`): below the player's top, the dot product flips, the
+    ///   centre-distance exceeds 2000 or vy goes negative. The old
+    ///   invented ×0.95 decay is gone — the slam flies.
+    /// * H8 — the dock aim rotation is written in 0/3, 1 and 4
+    ///   (`:22500`/`:22508`/`:22559`).
+    /// * H9 — both Y branches (ascend AND descend, `:22447-22470`), both
+    ///   independent X ifs, the damp BEFORE the accel, the one-sided
+    ///   caps; expert runs BOTH steering blocks (`:22396-22494`).
+    /// * H11 — `localAI[3]` copies the head's RAW `ai[3]` slot
+    ///   (`:22315`, the sim's `skeletron_head_ai3` mirror) — no bool-ised
+    ///   hands-count contamination.
+    ///
+    /// States 4/5: the audit called them dead code, but the timer's
+    /// `ai[2]++` (`:22392`) from state 3 DOES reach 4 (the head hovers
+    /// again after its 400-tick spin) — they are ported verbatim.
+    /// `Main.expertMode` rides the `expert` seam (the dispatch passes
+    /// false — the classic solo stand-in, S1). The dust/sound rows and
+    /// `netUpdate` MP sends are the documented skips.
+    fn update_skeletron_hand(&mut self, world: &World, player: &Player, expert: bool) {
+        // `:22302` — spriteDirection = -(int)ai[0].
+        self.sprite_dir = -(self.ai[0] as i32);
+        // `:22303-22312` — the head-gone cascade. Single-player
+        // (`netMode != 2`) dies immediately; the port's death is hp = 0
+        // (the sim's retain drops it — the prime-limb precedent).
+        if !world.skeletron_head_present {
+            self.ai[2] += 10.0;
+            // `> 50 || netMode != 2` — the SP arm always fires.
+            self.hp = 0;
+            return;
+        }
+        // `:22315` — the RAW slot copy (H11).
+        self.local_ai[3] = world.skeletron_head_ai3;
+        let flag22 = self.red_hat_skeletron_adjustments_enabled();
+        if flag22 {
+            // `:22318-22321` — the red-hat damage ×1.3.
+            self.damage_override =
+                Some((self.kind.contact_damage() as f32 * 1.3) as i32);
+        }
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let side = if self.ai[0] < 0.0 { -1.0 } else { 1.0 };
-        // The orbit slot: 200 to the side, 230 below the head's top.
-        let slot_x = world.skeletron_x - 200.0 * side;
-        let slot_y = world.skeletron_y + 230.0;
+        // The head anchor: centre X, TOP Y (the sim's write-through).
+        let head_cx = world.skeletron_x;
+        let head_y = world.skeletron_y;
+        let side = self.ai[0];
         match self.ai[2] as i32 {
             0 | 3 => {
-                // The drift-return (`:22447-22504`).
-                self.ai[3] += 1.0;
-                if self.ai[3] >= 300.0 {
-                    self.ai[2] = 1.0;
-                    self.ai[3] = 0.0;
+                // `:22324-22327` — the head's despawn phase discourages.
+                if world.skeletron_head_state == 3.0 {
+                    self.encourage_despawn(10);
                 }
-                if cy > slot_y {
-                    self.vy -= 0.04;
-                    if self.vy > 0.0 {
-                        self.vy *= 0.96;
+                if world.skeletron_head_state != 0.0 && !flag22 {
+                    // `:22330-22377` — the spin-dock: Y to head.Y − 100
+                    // (±0.07, cap 6), X to headCX − 120·side (±0.1,
+                    // cap 8) — two independent ifs, damp-then-accel.
+                    let dock_y = head_y - 100.0;
+                    if self.y > dock_y {
+                        if self.vy > 0.0 {
+                            self.vy *= 0.96;
+                        }
+                        self.vy -= 0.07;
+                        if self.vy > 6.0 {
+                            self.vy = 6.0;
+                        }
+                    } else if self.y < dock_y {
+                        if self.vy < 0.0 {
+                            self.vy *= 0.96;
+                        }
+                        self.vy += 0.07;
+                        if self.vy < -6.0 {
+                            self.vy = -6.0;
+                        }
                     }
-                    self.vy = self.vy.clamp(-3.0, 3.0);
-                }
-                if cx > slot_x {
-                    self.vx -= 0.07;
-                    if self.vx > 0.0 {
-                        self.vx *= 0.96;
+                    let dock_x = head_cx - 120.0 * side;
+                    if cx > dock_x {
+                        if self.vx > 0.0 {
+                            self.vx *= 0.96;
+                        }
+                        self.vx -= 0.1;
+                        if self.vx > 8.0 {
+                            self.vx = 8.0;
+                        }
                     }
-                    self.vx = self.vx.clamp(-8.0, 8.0);
+                    if cx < dock_x {
+                        if self.vx < 0.0 {
+                            self.vx *= 0.96;
+                        }
+                        self.vx += 0.1;
+                        if self.vx < -8.0 {
+                            self.vx = -8.0;
+                        }
+                    }
                 } else {
-                    self.vx += 0.07;
-                    if self.vx < 0.0 {
-                        self.vx *= 0.96;
+                    // `:22381-22395` — the 300-tick attack timer (+1
+                    // red-hat, +0.5 expert). `ai[2]++` from 0 → 1 (the
+                    // rise); from 3 → 4 (the horizontal wind-out).
+                    self.ai[3] += 1.0;
+                    if flag22 {
+                        self.ai[3] += 1.0;
                     }
-                    self.vx = self.vx.clamp(-8.0, 8.0);
+                    if expert {
+                        self.ai[3] += 0.5;
+                    }
+                    if self.ai[3] >= 300.0 {
+                        self.ai[2] += 1.0;
+                        self.ai[3] = 0.0;
+                        self.net_update = true;
+                    }
+                    // `:22396-22446` — expert runs the hover-dock block
+                    // TWICE (this copy, then the unconditional one).
+                    if expert {
+                        self.steer_hover_dock(head_cx, head_y, side, cx);
+                    }
+                    // `:22447-22494` — the hover-dock: Y to head.Y + 230
+                    // (BOTH branches — H9's missing descent), X to
+                    // headCX − 200·side.
+                    self.steer_hover_dock(head_cx, head_y, side, cx);
                 }
-                // The rotation write folds — the port's draw reads the
-                // velocity direction for the hand's tilt.
+                // `:22496-22500` — the dock aim rotation (the sqrt
+                // num202 is computed but unused in the C#).
+                let dx = head_cx - 200.0 * side - cx;
+                let dy = head_y + 230.0 - cy;
+                self.rotation = dy.atan2(dx) + 1.57;
             }
             1 => {
-                // The rise (`:22506-22539`): the -0.1 climb, the -8 cap,
-                // the 18 px/tick strike at the player above 200.
+                // `:22502-22544` — the rise: the dock aim, the X damp
+                // (H3), the −0.1 climb (−0.06 more expert, −0.09 more
+                // red-hat) with the −8/−13/−15 caps.
+                let dx = head_cx - 200.0 * side - cx;
+                let dy = head_y + 230.0 - cy;
+                self.rotation = dy.atan2(dx) + 1.57;
+                self.vx *= 0.95;
                 self.vy -= 0.1;
-                if self.vy < -8.0 {
+                if flag22 {
+                    self.vy -= 0.09;
+                    if self.vy < -15.0 {
+                        self.vy = -15.0;
+                    }
+                } else if expert {
+                    self.vy -= 0.06;
+                    if self.vy < -13.0 {
+                        self.vy = -13.0;
+                    }
+                } else if self.vy < -8.0 {
                     self.vy = -8.0;
                 }
-                if cy < world.skeletron_y - 200.0 {
+                // `:22532-22543` — above head.Y − 200 (TOP compare):
+                // retarget and the strike at the player's centre —
+                // 18 classic / 21 expert / 24 red-hat (H7).
+                if self.y < head_y - 200.0 {
+                    self.target_closest_solo(world, player, 12);
+                    self.ai[2] = 2.0;
                     let dx = pcx - cx;
                     let dy = pcy - cy;
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.vx = dx / d * 18.0;
-                    self.vy = dy / d * 18.0;
-                    self.ai[2] = 2.0;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.01);
+                    let speed = if flag22 {
+                        24.0
+                    } else if !expert {
+                        18.0
+                    } else {
+                        21.0
+                    };
+                    let k = speed / d;
+                    self.vx = dx * k;
+                    self.vy = dy * k;
+                    self.net_update = true;
                 }
             }
-            _ => {
-                // The strike/return states decel.
-                self.vx *= 0.95;
-                self.vy *= 0.95;
-                self.ai[2] = 3.0;
+            2 => {
+                // `:22546-22552` — the slam FLIES: no damp, no decay —
+                // the 18-speed vector holds until the exit test (H5):
+                // below the player's TOP, the dot product flips, the
+                // CENTRE-to-player-position distance exceeds 2000
+                // (`Entity.Distance`, `Entity.cs:194-197`) or vy < 0.
+                let dot = self.vx * (pcx - cx) + self.vy * (pcy - cy);
+                let dist = ((cx - player.x) * (cx - player.x)
+                    + (cy - player.y) * (cy - player.y))
+                    .sqrt();
+                if self.y > player.y || dot <= 0.0 || dist > 2000.0 || self.vy < 0.0 {
+                    self.ai[2] = 3.0;
+                }
             }
+            4 => {
+                // `:22553-22608` — the horizontal wind-out (reachable
+                // from state 3's timer `ai[2]++`): the dock aim, the Y
+                // damp, the X accel away from the head (0.1·(−side),
+                // doubled red-hat / +0.07 expert) with the ±8/±12/±15
+                // caps; past ±500 of the head's centre → the 17/22/25
+                // strike.
+                let dx = head_cx - 200.0 * side - cx;
+                let dy = head_y + 230.0 - cy;
+                self.rotation = dy.atan2(dx) + 1.57;
+                self.vy *= 0.95;
+                self.vx += 0.1 * (0.0 - side);
+                if flag22 {
+                    self.vx += 0.1 * (0.0 - side);
+                    if self.vx < -15.0 {
+                        self.vx = -15.0;
+                    } else if self.vx > 15.0 {
+                        self.vx = 15.0;
+                    }
+                } else if expert {
+                    self.vx += 0.07 * (0.0 - side);
+                    if self.vx < -12.0 {
+                        self.vx = -12.0;
+                    } else if self.vx > 12.0 {
+                        self.vx = 12.0;
+                    }
+                } else if self.vx < -8.0 {
+                    self.vx = -8.0;
+                } else if self.vx > 8.0 {
+                    self.vx = 8.0;
+                }
+                if cx < head_cx - 500.0 || cx > head_cx + 500.0 {
+                    self.target_closest_solo(world, player, 12);
+                    self.ai[2] = 5.0;
+                    let dx = pcx - cx;
+                    let dy = pcy - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.01);
+                    let speed = if flag22 {
+                        25.0
+                    } else if !expert {
+                        17.0
+                    } else {
+                        22.0
+                    };
+                    let k = speed / d;
+                    self.vx = dx * k;
+                    self.vy = dy * k;
+                    self.net_update = true;
+                }
+            }
+            5 => {
+                // `:22609-22612` — the horizontal strike ends when the
+                // hand crosses the player's centre (in its travel
+                // direction), the dot flips or the distance exceeds
+                // 2000 → back to the dock.
+                let dot = self.vx * (pcx - cx) + self.vy * (pcy - cy);
+                let dist = ((cx - player.x) * (cx - player.x)
+                    + (cy - player.y) * (cy - player.y))
+                    .sqrt();
+                if (self.vx > 0.0 && cx > pcx)
+                    || (self.vx < 0.0 && cx < pcx)
+                    || dot <= 0.0
+                    || dist > 2000.0
+                {
+                    self.ai[2] = 0.0;
+                }
+            }
+            _ => {}
         }
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// The hand's hover-dock steering block (`NPC.cs:22447-22494`): Y to
+    /// `head.Y + 230` (±0.04, one-sided cap 3, damp-then-accel, BOTH
+    /// branches), X to `headCX − 200·side` (±0.07, one-sided cap 8, two
+    /// independent ifs). The C# compares position.Y (TOP) for Y and the
+    /// centre X for X (H4). Expert runs this block twice per tick.
+    fn steer_hover_dock(&mut self, head_cx: f32, head_y: f32, side: f32, cx: f32) {
+        let dock_y = head_y + 230.0;
+        if self.y > dock_y {
+            if self.vy > 0.0 {
+                self.vy *= 0.96;
+            }
+            self.vy -= 0.04;
+            if self.vy > 3.0 {
+                self.vy = 3.0;
+            }
+        } else if self.y < dock_y {
+            if self.vy < 0.0 {
+                self.vy *= 0.96;
+            }
+            self.vy += 0.04;
+            if self.vy < -3.0 {
+                self.vy = -3.0;
+            }
+        }
+        let dock_x = head_cx - 200.0 * side;
+        if cx > dock_x {
+            if self.vx > 0.0 {
+                self.vx *= 0.96;
+            }
+            self.vx -= 0.07;
+            if self.vx > 8.0 {
+                self.vx = 8.0;
+            }
+        }
+        if cx < dock_x {
+            if self.vx < 0.0 {
+                self.vx *= 0.96;
+            }
+            self.vx += 0.07;
+            if self.vx < -8.0 {
+                self.vx = -8.0;
+            }
+        }
     }
 
     fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
@@ -17920,12 +18300,14 @@ mod tests {
     }
 
     fn the_skeletron_hand_tethers_and_lunges() {
-        // `aiStyle 12` (`NPC.cs:22300-22613`): the orbit return to
+        // `aiStyle 12` (`NPC.cs:22300-22614`): the orbit return to
         // `(headCenter.X - 200*side, head.Y + 230)`, the 300-tick lunge
-        // cadence, the -8 rise, the 18 px/tick strike.
+        // cadence, the -8 rise, the 18 px/tick strike. B-1: the head
+        // mirrors ride the World (the head-gone cascade kills otherwise).
         let mut w = ground_air();
         w.skeletron_x = 100.0 * 16.0;
         w.skeletron_y = 100.0 * 16.0;
+        w.skeletron_head_present = true;
         let mut player = crate::player::Player::spawn(&w);
         player.x = 100.0 * 16.0;
         player.y = 100.0 * 16.0;
@@ -17936,18 +18318,24 @@ mod tests {
         hand.ai[2] = 0.0;
         // The drift-return pulls toward the slot (left of the head).
         let before = hand.x;
-        hand.update_skeletron_hand(&w, &player);
+        hand.update_skeletron_hand(&w, &player, false);
         assert!(hand.x < before, "the orbit pulls to the slot");
         // The 300-tick cadence: after 300 ticks the hand rises.
         for _ in 0..300 {
-            hand.update_skeletron_hand(&w, &player);
+            hand.update_skeletron_hand(&w, &player, false);
         }
         assert!(hand.ai[2] >= 1.0, "the lunge state entered");
+        // A clean rise tick (the dock oscillation's vy phase is free).
+        hand.ai[2] = 1.0;
+        hand.vy = 0.0;
+        hand.y = 100.0 * 16.0; // below the head.Y - 200 strike threshold
+        hand.update_skeletron_hand(&w, &player, false);
         let rise = hand.vy;
         assert!(rise < 0.0, "the rise velocity ({rise})");
-        // Above 200 px from the head: the strike velocity.
+        // Above 200 px from the head's TOP: the strike velocity.
+        hand.ai[2] = 1.0;
         hand.y = 60.0 * 16.0; // 40 tiles above the head
-        hand.update_skeletron_hand(&w, &player);
+        hand.update_skeletron_hand(&w, &player, false);
         let strike = (hand.vx * hand.vx + hand.vy * hand.vy).sqrt();
         assert!((strike - 18.0).abs() < 2.0, "the 18-strike ({strike})");
     }
@@ -19784,24 +20172,33 @@ mod tests {
             );
         }
 
-        // 36 — the hand mirrors the head's `ai[3]` into `localAI[3]`
-        // (`NPC.cs:22313-22316`; the sim's `skeletron_red_hat` mirror
-        // stands for the active-head check).
+        // 36 — the hand mirrors the head's RAW `ai[3]` slot into
+        // `localAI[3]` (`NPC.cs:22313-22316`; B-1 H11: the sim's
+        // `skeletron_head_ai3` mirror, `skeletron_head_present` stands
+        // for the active-head check).
         let mut wh = ground_air();
         let mut hand = Npc::new(NpcKind::SkeletronHand, 112.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hand.hp = hand.max_hp;
         hand.ai[0] = -1.0;
         wh.skeletron_x = 100.0 * 16.0;
         wh.skeletron_y = 100.0 * 16.0;
-        hand.update_skeletron_hand(&wh, &player);
+        wh.skeletron_head_present = true;
+        hand.update_skeletron_hand(&wh, &player, false);
         assert_eq!(hand.local_ai[3], 0.0, "no red-hat head, no latch");
         assert!(!hand.red_hat_skeletron_adjustments_enabled());
-        wh.skeletron_red_hat = true;
-        hand.update_skeletron_hand(&wh, &player);
-        assert_eq!(hand.local_ai[3], 1.0, "`:22315`'s mirror");
+        wh.skeletron_head_ai3 = 1.0;
+        hand.update_skeletron_hand(&wh, &player, false);
+        assert_eq!(hand.local_ai[3], 1.0, "`:22315`'s raw-slot mirror");
         assert!(hand.red_hat_skeletron_adjustments_enabled());
-        wh.skeletron_red_hat = false;
-        hand.update_skeletron_hand(&wh, &player);
+        wh.skeletron_head_ai3 = 0.0;
+        hand.update_skeletron_hand(&wh, &player, false);
         assert_eq!(hand.local_ai[3], 0.0, "the mirror tracks the head");
+        // B-1 S3 regression: a hands count of 1 or 2 in its own mirror
+        // never activates the latch (the old ai[3] collision did).
+        wh.skeletron_hands_alive = 1.0;
+        hand.update_skeletron_hand(&wh, &player, false);
+        assert_eq!(hand.local_ai[3], 0.0, "the hands count is not the latch");
+        assert!(!hand.red_hat_skeletron_adjustments_enabled());
 
         // 32 — the Dark Caster latches from `FindFirstNPC(35)`'s
         // `ai[3] == 1` (`NPC.cs:20820-20827`); no reset arm exists.
@@ -25377,11 +25774,11 @@ mod s1_d_3f_tests {
         sk.hp = sk.max_hp;
         let mut rng = UnifiedRandom::new(12345);
         // The night: the head spins (the state 0) and hovers.
-        sk.update_skeletron(&w, &player, &mut rng);
+        sk.update_skeletron(&w, &player, &mut rng, false);
         assert_eq!(sk.ai[1], 0.0, "the head spins at night");
         // The daylight: the enraged state.
         w.day_time = true;
-        sk.update_skeletron(&w, &player, &mut rng);
+        sk.update_skeletron(&w, &player, &mut rng, false);
         assert_eq!(sk.ai[1], 2.0, "the daylight enrages the head");
         assert_eq!(sk.damage_override, Some(9999), "the enraged damage");
         assert_eq!(sk.defense_override, Some(9999), "the enraged defense");
@@ -25403,7 +25800,7 @@ mod s1_d_3f_tests {
         sk.ai[1] = 1.0; // the charge state
         let base_defense = sk.defense();
         let mut rng = UnifiedRandom::new(12345);
-        sk.update_skeletron(&w, &player, &mut rng);
+        sk.update_skeletron(&w, &player, &mut rng, false);
         assert_eq!(
             sk.defense_override,
             Some(base_defense - 10),
@@ -29509,6 +29906,423 @@ mod s1_d_3_wire_plantera_minions_tests {
             crate::npc_ai_plantera_anchor::hook_centroid(&pool, type_of),
             Some(hook.center()),
             "the hook kind resolves to 263 through cs_id"
+        );
+    }
+}
+
+/// B-1 audit witnesses (research/51 §3/§4 — the Skeletron head/hands
+/// defect round). WRITTEN NOT RUN in the code-only wave — no compiler
+/// invoked; each test cites the C# line it pins.
+#[cfg(test)]
+mod b1_skeletron_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// Air above row 30, solid below (the s1_d_3f fixture).
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn night_player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 200.0;
+        p
+    }
+
+    fn head() -> Npc {
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
+        sk.hp = sk.max_hp;
+        sk.ai[0] = 1.0; // past the init latch (the sim owns the spawn)
+        sk
+    }
+
+    /// S3 regression — the hands count lives in its own World mirror;
+    /// the head's `ai[3]` (the RED-HAT LATCH, `NPC.cs:66673`) is never
+    /// written by the count. One hand alive must NOT activate red-hat
+    /// mode on the head.
+    #[test]
+    fn b1_the_hands_count_never_latches_the_red_hat_slot() {
+        let mut w = world();
+        w.day_time = false;
+        w.skeletron_hands_alive = 1.0; // the last-hand phase
+        let player = night_player(&w);
+        let mut sk = head();
+        let mut rng = UnifiedRandom::new(1);
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert_eq!(sk.ai[3], 0.0, "the count never rides ai[3]");
+        assert!(
+            !sk.red_hat_skeletron_adjustments_enabled(),
+            "one hand alive is not the red hat"
+        );
+        // The hover damage stays defDamage (no red-hat x1.3).
+        assert_eq!(sk.damage_override, None);
+    }
+
+    /// S2 — `defense = defDefense + num168*25` in expert (`NPC.cs:21973`);
+    /// the spin subtracts 10 from THAT (`:22165`).
+    #[test]
+    fn b1_the_expert_defense_ladder_counts_living_hands() {
+        let mut w = world();
+        w.day_time = false;
+        w.skeletron_hands_alive = 2.0;
+        let player = night_player(&w);
+        let mut sk = head();
+        let base = sk.defense();
+        let mut rng = UnifiedRandom::new(1);
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert_eq!(sk.defense_override, Some(base + 50), "the +25/hand ladder");
+        // The spin: -10 from the ladder, not from the base.
+        sk.ai[1] = 1.0;
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert_eq!(sk.defense_override, Some(base + 40), "the spin's -10");
+    }
+
+    /// S4 + S11 — the spin-shot gate (`NPC.cs:21974`): both hands alive
+    /// at hp >= 75% means NO shot and NO draws; one hand opens the gate
+    /// and the firing tick draws exactly 4 (X, Y, jitterX, jitterY —
+    /// `:21995-22003`).
+    #[test]
+    fn b1_the_spin_shot_gates_on_hands_and_hp() {
+        let mut w = world();
+        w.day_time = false;
+        w.skeletron_hands_alive = 2.0;
+        let player = night_player(&w);
+        let mut sk = head();
+        sk.ai[2] = 80.0; // a would-be firing tick (80 % 80 == 0)
+        let mut rng = UnifiedRandom::new(5);
+        let fork = rng.clone();
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert!(sk.wants_hostile_shot.is_empty(), "the 2-hand/full-hp gate");
+        assert_eq!(rng, fork, "a gated tick consumes no draws");
+        // One hand: the gate opens, 4 draws in C# order.
+        w.skeletron_hands_alive = 1.0;
+        sk.ai[2] = 80.0;
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert_eq!(sk.wants_hostile_shot.len(), 1, "the 1-hand shot");
+        let mut witness = fork;
+        let _ = witness.next_range(-20, 21);
+        let _ = witness.next_range(-20, 21);
+        let _ = witness.next_range(-50, 51);
+        let _ = witness.next_range(-50, 51);
+        assert_eq!(rng, witness, "the shot draws exactly 4, X-then-Y");
+        // Both hands but hp < 75%: the gate opens too.
+        w.skeletron_hands_alive = 2.0;
+        sk.hp = sk.max_hp / 2;
+        sk.ai[2] = 80.0;
+        sk.wants_hostile_shot.clear();
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        assert_eq!(sk.wants_hostile_shot.len(), 1, "the wounded-head shot");
+    }
+
+    /// S5 — the shot vector folds `base.velocity` BEFORE both the x5
+    /// spawn origin and the shot velocity (`NPC.cs:22006-22011`).
+    #[test]
+    fn b1_the_shot_origin_includes_the_velocity_term() {
+        let mut w = world();
+        w.day_time = false;
+        w.skeletron_hands_alive = 0.0;
+        let player = night_player(&w);
+        let mut sk = head();
+        sk.ai[2] = 40.0; // the no-hand 40-tick cadence
+        sk.vx = 2.0;
+        sk.vy = 1.0;
+        let (hw, hh) = sk.size();
+        let (cx, cy) = (sk.x + hw * 0.5, sk.y + hh * 0.5);
+        let mut rng = UnifiedRandom::new(9);
+        sk.update_skeletron(&w, &player, &mut rng, true);
+        let shot = sk.wants_hostile_shot.last().copied().expect("the shot");
+        assert_eq!(shot.0, crate::projectile::SKULL);
+        // The origin is centre + FINAL velocity x5 (the velocity term
+        // included — the old port omitted it from the origin).
+        assert!((shot.1 - (cx + shot.3 * 5.0)).abs() < 1e-3);
+        assert!((shot.2 - (cy + shot.4 * 5.0)).abs() < 1e-3);
+        // The final velocity = normalize x 5 + the head's velocity.
+        let rel =
+            ((shot.3 - 2.0) * (shot.3 - 2.0) + (shot.4 - 1.0) * (shot.4 - 1.0)).sqrt();
+        assert!((rel - 5.0).abs() < 1e-3, "the 5-speed core ({rel})");
+        assert_eq!(shot.5, 17, "GetAttackDamage_ForProjectiles(17, 17)");
+    }
+
+    /// S1 — `hard_mode` is NOT `expertMode`: a post-WoF classic world
+    /// keeps the classic stats and fires nothing.
+    #[test]
+    fn b1_hard_mode_does_not_proxy_expert() {
+        let mut w = world();
+        w.day_time = false;
+        w.hard_mode = true;
+        w.skeletron_hands_alive = 0.0;
+        let player = night_player(&w);
+        let mut sk = head();
+        sk.ai[2] = 40.0;
+        let base = sk.defense();
+        let mut rng = UnifiedRandom::new(3);
+        let fork = rng.clone();
+        sk.update_skeletron(&w, &player, &mut rng, false);
+        assert!(sk.wants_hostile_shot.is_empty(), "classic fires nothing");
+        assert_eq!(rng, fork, "classic draws nothing");
+        assert_eq!(sk.defense_override, None, "no expert ladder");
+        sk.ai[1] = 1.0;
+        sk.update_skeletron(&w, &player, &mut rng, false);
+        assert_eq!(sk.defense_override, Some(base - 10));
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 1.5).abs() < 0.01, "the classic 1.5 rush");
+        // S7: the classic damage lerp endpoint is defDamage.
+        assert_eq!(
+            sk.damage_override,
+            Some(NpcKind::SkeletronHead.contact_damage())
+        );
+    }
+
+    /// S8 — state 3 calls `EncourageDespawn(50)` (`NPC.cs:22281`).
+    #[test]
+    fn b1_the_despawn_state_encourages_50() {
+        let mut w = world();
+        w.day_time = false;
+        let mut player = night_player(&w);
+        player.dead = true;
+        let mut sk = head();
+        let mut rng = UnifiedRandom::new(1);
+        sk.update_skeletron(&w, &player, &mut rng, false);
+        assert_eq!(sk.ai[1], 3.0, "the dead player despawns");
+        assert_eq!(sk.despawn_timer, 50, "EncourageDespawn(50)");
+    }
+
+    fn hand_at(x: f32, y: f32) -> Npc {
+        let mut hand = Npc::new(NpcKind::SkeletronHand, x, y, 1, 0.0);
+        hand.hp = hand.max_hp;
+        hand.ai[0] = -1.0;
+        hand
+    }
+
+    fn head_mirrors(w: &mut tr_core::World) {
+        w.skeletron_head_present = true;
+        w.skeletron_x = 1600.0;
+        w.skeletron_y = 1000.0;
+        w.skeletron_head_state = 0.0;
+    }
+
+    /// H1 — the kill cascade (`NPC.cs:22303-22312`): head gone →
+    /// `ai[2] += 10`, single-player dies immediately.
+    #[test]
+    fn b1_the_hand_dies_when_the_head_dies() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let player = night_player(&w);
+        let mut hand = hand_at(1700.0, 1100.0);
+        w.skeletron_head_present = false;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 10.0, "the +=10 counter");
+        assert_eq!(hand.hp, 0, "the SP arm dies at once");
+    }
+
+    /// H5 — the slam FLIES: state 2 keeps its 18-speed vector until the
+    /// real exit test (`NPC.cs:22548`); the invented x0.95 decay is gone.
+    #[test]
+    fn b1_the_slam_flies_and_holds_its_velocity() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let mut player = night_player(&w);
+        player.x = 1700.0;
+        player.y = 1500.0; // below the hand
+        let mut hand = hand_at(1700.0, 1100.0);
+        hand.ai[2] = 2.0;
+        hand.vx = 0.0;
+        hand.vy = 18.0;
+        for _ in 0..5 {
+            hand.update_skeletron_hand(&w, &player, false);
+            assert_eq!(hand.ai[2], 2.0, "the flight holds");
+            assert_eq!(hand.vx, 0.0, "no invented decay");
+            assert_eq!(hand.vy, 18.0, "the 18-speed vector holds");
+        }
+        // Below the player's TOP: the exit fires.
+        hand.y = 1501.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 3.0, "the below-player exit");
+    }
+
+    /// H5 — the other three exit arms: the dot flip, the 2000-px
+    /// distance and the upswing (`NPC.cs:22548`).
+    #[test]
+    fn b1_the_slam_exits_on_dot_distance_and_upswing() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let mut player = night_player(&w);
+        player.x = 1700.0;
+        player.y = 1500.0;
+        // The dot flip: the player's centre ABOVE the hand's centre
+        // while its top stays below the hand's top (isolates the dot
+        // term from the below-player term).
+        let mut hand = hand_at(1700.0, 1100.0);
+        hand.ai[2] = 2.0;
+        hand.vy = 18.0;
+        player.y = 1101.0; // centre 1122 < hand centre 1126 — dot < 0
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 3.0, "the dot exit");
+        // The upswing: vy < 0.
+        player.y = 1500.0;
+        let mut h2 = hand_at(1700.0, 1100.0);
+        h2.ai[2] = 2.0;
+        h2.vy = -1.0;
+        h2.update_skeletron_hand(&w, &player, false);
+        assert_eq!(h2.ai[2], 3.0, "the upswing exit");
+        // The distance: the centre > 2000 from the player's position.
+        let mut h3 = hand_at(1700.0, 1100.0);
+        h3.ai[2] = 2.0;
+        h3.vy = 18.0;
+        player.x = 4000.0;
+        h3.update_skeletron_hand(&w, &player, false);
+        assert_eq!(h3.ai[2], 3.0, "the 2000-px exit");
+    }
+
+    /// H3 — the rise damps `vx *= 0.95` every tick (`NPC.cs:22509`).
+    #[test]
+    fn b1_the_rise_damps_the_horizontal_drift() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let player = night_player(&w);
+        let mut hand = hand_at(1700.0, 1100.0);
+        hand.ai[2] = 1.0;
+        hand.vx = 4.0;
+        hand.vy = 0.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert!((hand.vx - 3.8).abs() < 1e-4, "the 0.95 damp");
+        assert!((hand.vy - -0.1).abs() < 1e-4, "the -0.1 climb");
+    }
+
+    /// H9 — the dock-return descends: `position.Y < head.Y + 230` ADDS
+    /// 0.04 (`NPC.cs:22459-22470`), damp BEFORE accel.
+    #[test]
+    fn b1_the_dock_return_descends_to_the_slot() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let player = night_player(&w);
+        // Above the dock (head.Y + 230 = 1230): the hand must descend.
+        let mut hand = hand_at(1400.0 - 26.0, 1100.0);
+        hand.update_skeletron_hand(&w, &player, false);
+        assert!(hand.vy > 0.0, "the descent branch ({})", hand.vy);
+        assert!((hand.vy - 0.04).abs() < 1e-5);
+        // Damp-then-accel: vy = 1 falling toward the dock from below.
+        let mut h2 = hand_at(1400.0 - 26.0, 1300.0);
+        h2.vy = 1.0;
+        h2.update_skeletron_hand(&w, &player, false);
+        assert!(
+            (h2.vy - (1.0 * 0.96 - 0.04)).abs() < 1e-5,
+            "the damp runs first ({})",
+            h2.vy
+        );
+    }
+
+    /// H2 — the attack timer runs only while the head HOVERS
+    /// (`NPC.cs:22328`); during the spin the hand steers to the −100
+    /// spin-dock instead.
+    #[test]
+    fn b1_the_attack_timer_gates_on_the_head_state() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let player = night_player(&w);
+        let mut hand = hand_at(1700.0, 1100.0);
+        w.skeletron_head_state = 1.0; // the head spins
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[3], 0.0, "no timer during the spin");
+        assert!(hand.vy < 0.0, "the spin-dock pulls up to head.Y - 100");
+        w.skeletron_head_state = 0.0; // the head hovers
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[3], 1.0, "the timer runs during the hover");
+        // The head's despawn phase discourages (`:22324-22327`).
+        w.skeletron_head_state = 3.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.despawn_timer, 10, "EncourageDespawn(10)");
+    }
+
+    /// The state-3 timer's `ai[2]++` reaches state 4 (`NPC.cs:22392` —
+    /// the audit's "dead code" note corrected): the wind-out accelerates
+    /// away from the head, caps at 8, and the ±500 window fires the
+    /// 17-speed strike into state 5; crossing the player returns to 0.
+    #[test]
+    fn b1_the_horizontal_wind_out_and_strike_run() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let mut player = night_player(&w);
+        player.x = 1700.0;
+        player.y = 1200.0;
+        let mut hand = hand_at(1400.0 - 26.0, 1230.0 - 26.0);
+        hand.ai[2] = 3.0;
+        hand.ai[3] = 299.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 4.0, "3 ++ lands in the wind-out");
+        assert_eq!(hand.ai[3], 0.0);
+        // side = -1: vx += 0.1 * (0 - (-1)) = +0.1 (away, rightward).
+        let vx = hand.vx;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert!((hand.vx - (vx + 0.1)).abs() < 1e-4, "the wind-out accel");
+        // The cap: 8 classic.
+        hand.vx = 8.5;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert!(hand.vx <= 8.6, "the one-sided 8 cap ({})", hand.vx);
+        // Past +500 of the head centre: the 17-speed strike.
+        hand.x = 1600.0 + 501.0;
+        hand.vx = 8.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 5.0, "the strike armed");
+        let sp = (hand.vx * hand.vx + hand.vy * hand.vy).sqrt();
+        assert!((sp - 17.0).abs() < 0.01, "the 17-strike ({sp})");
+        // Crossing the player's centre in the travel direction → 0.
+        hand.vx = 1.0;
+        hand.vy = 0.0;
+        hand.x = 1750.0; // centre 1776 > player centre 1710
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.ai[2], 0.0, "the crossed-player return");
+    }
+
+    /// H8 — the dock aim rotation is written every tick in 0/3 and 1
+    /// (`NPC.cs:22500`/`:22508`).
+    #[test]
+    fn b1_the_dock_aim_rotation_is_written() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        let player = night_player(&w);
+        let mut hand = hand_at(1700.0, 1100.0);
+        let (hw, hh) = hand.size();
+        let dx = 1600.0 - 200.0 * -1.0 - (hand.x + hw * 0.5);
+        let dy = 1000.0 + 230.0 - (hand.y + hh * 0.5);
+        hand.update_skeletron_hand(&w, &player, false);
+        assert!((hand.rotation - (dy.atan2(dx) + 1.57)).abs() < 1e-4);
+        hand.ai[2] = 1.0;
+        hand.rotation = 0.0;
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_ne!(hand.rotation, 0.0, "the rise writes the aim too");
+    }
+
+    /// H11 — `localAI[3]` copies the head's RAW slot (`NPC.cs:22315`),
+    /// not a bool: a value of 2 mirrors as 2 (and does NOT latch).
+    #[test]
+    fn b1_the_local_ai3_mirror_is_the_raw_slot() {
+        let mut w = world();
+        head_mirrors(&mut w);
+        w.skeletron_head_ai3 = 2.0;
+        let player = night_player(&w);
+        let mut hand = hand_at(1700.0, 1100.0);
+        hand.update_skeletron_hand(&w, &player, false);
+        assert_eq!(hand.local_ai[3], 2.0, "the raw copy");
+        assert!(
+            !hand.red_hat_skeletron_adjustments_enabled(),
+            "only == 1 latches"
         );
     }
 }
