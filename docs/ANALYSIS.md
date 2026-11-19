@@ -4117,6 +4117,40 @@ each pinning the C# line it restores; the existing placement suite
 signature-preserving edits (`can_place`/`use_tile_item` keep their signatures;
 `place_item_tile` gains only the kind-19 arm).
 
+Retry-round re-verification (W3-i32b, 2026-11-20, code-only): the five fixes of
+`1941824f` were re-read against the C# windows and confirmed 1:1 — the adjacency
+predicate (`Player.cs:41253`, the `tileSolid || IsBeam || tileRope || type == 314`
+disjunction plus the `wall > 0` arms), the own-wall accept (`:41257-41260`), the
+platform 3×3 fallback (`:41332-41345`, gated on `TileID.Sets.Platforms[createTile]`
+after `!canPlace`), the solid-only `EmptyTile` (`WorldGen.cs:59373`'s
+`forced || EmptyTile(i, j) || !Main.tileSolid[num] || …` — the player AND NPC
+loops `Collision.cs:1366-1379`), the lava OR-chain (`Player.cs:39743`: the
+replaceable/grass/moss overrides bypass the gate) and the case-19 write
+(`WorldGen.cs:60221-60225`, `frameY = 18*style` only, `Main.cs:7654`). The
+`TILE_WATER_DEATH` literal table matches the ten `Main.tileWaterDeath` writes
+(`Main.cs:8061-8067`/`:8309`/`:9504`/`:9508`); `is_replaceable_block` matches
+`Player.cs:39753-39760` verbatim (the `tileCut` 484/711 exemptions, the 373-375
+band, 461/709, else `BreakableWhenPlacing`). The 8 witnesses' fixtures were
+cross-checked against the actual helper signatures (`flow_app`, `slot`,
+`set_tile`, `Npc::new(kind, x, y, facing, hop_timer)`, the D_4/D_19 registry
+defs — torch 4 `water_placement/lava_placement = NotAllowed`, platform 19
+`CustomPlace`-false) and the `TILE_CUT`/`BREAKABLE_WHEN_PLACING` membership
+(3/82 cuttable, 484/711 the exemptions, 186 breakable, 1 not).
+
+The retry census also re-verified the surrounding machinery as FAITHFUL (no
+new WRONGs): the reach gate is the documented circular stand-in (M6-CREATIVE-1c,
+`tile_range_x()` 5/18 vs `Player.cs:2496`/`:18815-18828`; the rectangle helper
+`smart_cursor::reachable_rect` ports `TileReachCheckSettings.cs:45-54` for the
+smart-cursor lane); the registry route (`tileobject::can_place`/`place`) matches
+`TileObject.cs:174-853`/`:29-172` including the 5-tile margin (`:215`), the
+anchor scoring and the `randomCache` stickiness (`:764-824`, S1-F-7b); the
+stack consume is the ITEMS-3 seam (`place_item_and_consume`, one per successful
+`Place`); the placement sound is the S1-E-21 wave B façade
+(`Audio::play_place_sound`, case-0 `Next(3)` + `Next(-10,11)*0.01` on the
+`UpdatePlayers` stream, `WorldGen.cs:60263-60282` switch). The preview
+(`objectPreview`, `onlyCheck`) stays the documented deferral (tileobject.rs
+module doc); walls are i33. RNG order: no new draws introduced by either round.
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
