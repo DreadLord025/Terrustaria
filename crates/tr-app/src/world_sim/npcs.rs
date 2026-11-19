@@ -3054,7 +3054,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // own AI tick; the port pre-computes it once per tick over the pool
     // (the carrier pre-pass precedent). `type_of` resolves the VANILLA
     // type via `cs_id` (S1-D-3-wire-plantera-minions: `to_u16` is the
-    // port's protocol id — 354 for the hook — NOT the C# type 263 the
+    // port's protocol id — 154 for the hook (gate-reassigned) — NOT the C# type 263 the
     // centroid filters on).
     {
         let type_of = |n: &Npc| n.kind.cs_id() as i32;

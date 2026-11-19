@@ -76,7 +76,7 @@
 //! `Npc::plantera_hook_anchor`; `update_plantera` consumes it with the
 //! own-centre fallback. S1-D-3-wire-plantera-minions landed the hook
 //! kind (263) and fixed the pre-pass's `type_of` to read `cs_id` (the
-//! VANILLA type — `to_u16` is the protocol id 354, which never matched
+//! VANILLA type — `to_u16` is the protocol id 154 (gate-reassigned), which never matched
 //! 263): the centroid is live whenever a hook lives.
 
 use crate::npc::Npc;
