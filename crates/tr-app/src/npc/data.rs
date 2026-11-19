@@ -491,6 +491,13 @@ impl NpcKind {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The Queen Bee's volley minions (S1-D-3 W-3): the vanilla
+            // type ids (`NPCID.Bee` 210 / `BeeSmall` 211, `NPCID.cs:11097-11099`).
+            // The vanilla 210/211 protocol slots ride the wave-A Twiggy/
+            // Female zombies (`S1-D-3ff`), so the pair takes the free
+            // 353/354 band above the frost block (the moon kinds' convention).
+            NpcKind::Bee => 353,
+            NpcKind::BeeSmall => 354,
         }
     }
 
@@ -766,6 +773,11 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
+            // The Queen Bee's volley minions (S1-D-3 W-3) — the free
+            // 353/354 band (`to_u16` above; the vanilla 210/211 slots ride
+            // the wave-A Twiggy/Female zombies).
+            353 => NpcKind::Bee,
+            354 => NpcKind::BeeSmall,
             _ => return None,
         })
     }
@@ -1347,6 +1359,8 @@ impl NpcKind {
             NpcKind::EaterOfSouls => "NPC_Hit_1",
             NpcKind::Hornet => "NPC_Hit_1",
             NpcKind::MeteorHead => "NPC_Hit_3",
+            // The volley bees: `SoundID.NPCHit1` (`NPC.cs:11704`/`:11717`).
+            NpcKind::Bee | NpcKind::BeeSmall => "NPC_Hit_1",
             NpcKind::GoblinSorcerer => "NPC_Hit_1",
             NpcKind::Tim => "NPC_Hit_2",
             NpcKind::DarkCaster => "NPC_Hit_2",
@@ -1604,6 +1618,8 @@ impl NpcKind {
             NpcKind::EaterOfSouls => "NPC_Killed_1",
             NpcKind::Hornet => "NPC_Killed_1",
             NpcKind::MeteorHead => "NPC_Killed_3",
+            // The volley bees: `SoundID.NPCDeath1` (`NPC.cs:11707`/`:11720`).
+            NpcKind::Bee | NpcKind::BeeSmall => "NPC_Killed_1",
             NpcKind::GoblinSorcerer => "NPC_Killed_1",
             NpcKind::Tim => "NPC_Killed_2",
             NpcKind::DarkCaster => "NPC_Killed_2",
@@ -1902,6 +1918,9 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead | NpcKind::ServantOfCthulhu => 5,
+            // The Queen Bee's volley bees — `NPC.cs:11700`/`:11713`
+            // (the type-210/211 branch of AI_005, `:50384-50413`).
+            NpcKind::Bee | NpcKind::BeeSmall => 5,
             // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :15010, :15269, :15287, :15305
             NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
@@ -2402,6 +2421,10 @@ impl NpcKind {
             NpcKind::EaterOfSouls => (30.0, 30.0),
             NpcKind::Hornet => (34.0, 32.0),
             NpcKind::MeteorHead => (22.0, 22.0),
+            // The volley bees: `SetDefaults` case 210 is 12x12
+            // (`NPC.cs:11698-11699`), case 211 is 8x8 (`:11711-11712`).
+            NpcKind::Bee => (12.0, 12.0),
+            NpcKind::BeeSmall => (8.0, 8.0),
             // The casters: `SetDefaults` case 29 is 18x38, the cases
             // 45/32/24 18x40 (`NPC.cs:8951`/`:9322`/`:9121`/`:9078`).
             // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/29/111/471).
@@ -2542,6 +2565,10 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 6,
             NpcKind::Hornet => 42,
             NpcKind::MeteorHead => 23, // `NPCID.MeteorHead` (the net id's correction, S1-F-3)
+            // The volley bees' vanilla `NPC.type` (the AI branch reads it):
+            // `NPCID.Bee` 210 / `BeeSmall` 211 (`NPCID.cs:11097-11099`).
+            NpcKind::Bee => 210,
+            NpcKind::BeeSmall => 211,
             NpcKind::FireImp => 24,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
@@ -2780,6 +2807,10 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 40,
             NpcKind::Hornet => 48,
             NpcKind::MeteorHead => 26,
+            // The volley bees: `SetDefaults` case 210 lifeMax 20
+            // (`NPC.cs:11703`), case 211 lifeMax 10 (`:11716`).
+            NpcKind::Bee => 20,
+            NpcKind::BeeSmall => 10,
             // The casters: `SetDefaults` cases 29/45/32/24.
             // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
             // 471 (2000).
@@ -3097,6 +3128,10 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 22,
             NpcKind::Hornet => 26,
             NpcKind::MeteorHead => 40,
+            // The volley bees: `SetDefaults` case 210 damage 20
+            // (`NPC.cs:11701`), case 211 damage 15 (`:11714`).
+            NpcKind::Bee => 20,
+            NpcKind::BeeSmall => 15,
             // The casters: `SetDefaults` damage 20/20/20/30.
             // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
             // 471 (80).

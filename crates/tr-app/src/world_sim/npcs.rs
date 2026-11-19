@@ -3740,6 +3740,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut limbs);
+    // The Queen Bee's state-1 bee volley (S1-D-3 W-3, `NPC.cs:30623-30636`):
+    // the aiStyle-43 axis arm set `wants_bee` on a spawn tick (the
+    // Next(20)/Next(210,212) draws already rode the UpdateNPCs stream in
+    // C# order); this pass resolves the `NPC.NewNPC` — the (int)vector77
+    // truncation is in the payload, `Bottom = (X, Y)` (`NPC.cs:80770`),
+    // the normalized ×5 velocity toward the player and `localAI[0] = 60`
+    // (`:30633`). `CanBeReplacedByOtherNPCs` (`:30632`) has no port field
+    // — dropped (the module's recorded fold).
+    let mut bees = Vec::new();
+    for n in app.npcs.iter_mut() {
+        let Some(req) = n.wants_bee.take() else {
+            continue;
+        };
+        let kind = match req.kind {
+            crate::npc_ai_style43::BEE => NpcKind::Bee,
+            crate::npc_ai_style43::BEE_SMALL => NpcKind::BeeSmall,
+            _ => unreachable!("the volley draws only 210/211"),
+        };
+        let (bw, bh) = kind.size();
+        let mut bee = Npc::new(kind, req.x - bw * 0.5, req.y - bh, 1, 0.0);
+        bee.hp = bee.max_hp;
+        bee.vx = req.vx;
+        bee.vy = req.vy;
+        bee.local_ai[0] = req.local_ai0;
+        bee.net_update = true;
+        bees.push(bee);
+    }
+    app.npcs.append(&mut bees);
     // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
     // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
     // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
@@ -3989,15 +4017,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
-        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3) and Plantera's seeds
+        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball).
+        // ball) and the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
             || kind == crate::projectile::GOLEM_EYE_BEAM
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
+            || kind == crate::projectile::QUEEN_BEE_STINGER
         {
             300
         } else {
@@ -6765,6 +6794,95 @@ mod invasion_tests {
                 ));
             }
         }
+    }
+
+    #[test]
+    fn s1_d_3_w3_the_sim_drains_the_bee_volley_and_the_stinger() {
+        // S1-D-3 W-3: the Queen Bee's aiStyle-43 axis arm writes the spawn
+        // requests; the sim's spawn pass resolves them — the bee at
+        // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) with the payload's
+        // velocity + `localAI[0] = 60`, the stinger as a hostile 719 with
+        // the `timeLeft = 300` override (`:30743`). The UpdateNPCs stream
+        // carries the arm's draws (Next(20) per tick + the type/jitter
+        // draws on a fire tick) — the witness replays them in order.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.seed = 7;
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        // The queen above the player, out of the jungle and above the
+        // surface (worldSurface 120 -> 1920 px): num619 = 2, the volley
+        // period (int)(40 - 18*2) = 4, the stinger period 40 - 10 = 30.
+        let mut qb = Npc::new(NpcKind::QueenBee, 150.0 * TILE_PX, 1000.0, 1, 0.0);
+        qb.hp = qb.max_hp;
+        qb.ai[0] = 1.0;
+        qb.ai[1] = 4.0; // ++ = 5 > 4 -> the volley tick on the first step.
+        app.npcs.push(qb);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The bee spawned: Bottom placement + the payload's state.
+        let bee = app
+            .npcs
+            .iter()
+            .find(|n| matches!(n.kind, NpcKind::Bee | NpcKind::BeeSmall))
+            .expect("the volley drain spawns a bee");
+        assert_eq!(bee.local_ai[0], 60.0, "localAI[0] = 60 (`:30633`)");
+        assert!(bee.net_update, "the spawn sets netUpdate (`:30634`)");
+        let sp = (bee.vx * bee.vx + bee.vy * bee.vy).sqrt();
+        assert!((sp - 5.0).abs() < 1e-3, "the normalized x5 velocity ({sp})");
+        // The request is drained (no stale re-spawn on the next tick).
+        assert!(app.npcs.iter().all(|n| n.wants_bee.is_none()));
+        // Tick-1 RNG parity: the queen alone rode the AI pass (the bee
+        // drains AFTER it; natural spawns ride the separate SpawnNpc
+        // stream), so UpdateNPCs carries exactly Next(20)+Next(210,212).
+        {
+            let mut w1 = UnifiedRandom::new(7);
+            let _o = w1.next_max(20);
+            let _t = w1.next_range(210, 212);
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdateNpcs),
+                w1,
+                "tick 1: the volley's two draws in C# order"
+            );
+        }
+        // The stinger barrage: state 3, ai[1] = 28 -> ++ = 29,
+        // 29 % 30 == 29 -> the fire tick; the queen's bottom is above the
+        // player's top and the CanHit line is open air.
+        app.npcs.retain(|n| n.kind == NpcKind::QueenBee);
+        {
+            let q = app.npcs.iter_mut().find(|n| n.kind == NpcKind::QueenBee).unwrap();
+            q.ai[0] = 3.0;
+            q.ai[1] = 28.0;
+            q.x = 150.0 * TILE_PX;
+            q.y = 1000.0;
+        }
+        update_npcs(&mut app, 1.0 / 60.0);
+        let stinger = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::QUEEN_BEE_STINGER)
+            .expect("the barrage drain spawns a 719 stinger");
+        assert_eq!(stinger.damage, 11, "the stinger damage (`:30742`)");
+        assert_eq!(stinger.time_left, 300, "the timeLeft override (`:30743`)");
+        assert!(!stinger.friendly, "the stinger is hostile");
+        // RNG parity: the UpdateNPCs stream after the two ticks replays
+        // the volley's Next(20)+Next(210,212) then the barrage's
+        // Next(20)+Next(-2,3)+Next(-2,3) (num619 = 2 floors the windows
+        // at 2), X before Y.
+        let mut witness = UnifiedRandom::new(7);
+        let _o1 = witness.next_max(20);
+        let _ty = witness.next_range(210, 212);
+        let _o2 = witness.next_max(20);
+        let _jx = witness.next_range(-2, 3);
+        let _jy = witness.next_range(-2, 3);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the UpdateNPCs stream carries the arm's draws in C# order"
+        );
     }
 }
 
