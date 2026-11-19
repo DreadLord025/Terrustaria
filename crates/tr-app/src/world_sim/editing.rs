@@ -590,10 +590,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 );
                 p.channel = true;
                 p.channel_item = held.kind;
+                // `HeldItem.shoot` (`Projectile.cs:43241`): the aiStyle-9
+                // spells compare the held item's PROJECTILE id against their
+                // own kind — not the item id (S1-P-i20).
+                p.channel_shoot = registry::projectile(held.kind).unwrap_or(0);
                 p.channel_target = target;
             } else if p.channel {
                 p.channel = false;
                 p.channel_item = 0;
+                p.channel_shoot = 0;
                 p.channel_target = Vec2::ZERO;
             }
         }
@@ -1001,6 +1006,41 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
                         }
+                    } else if held.kind == 1121 {
+                        // `Player.cs:48309-48332` — the Bee Gun's multi-bee
+                        // spawn. The count: `Next(1, 4)` base, +1 per
+                        // `Next(6) == 0` (two rolls), +1 more only while
+                        // `strongBees` and a third `Next(3) == 0` (the Hive
+                        // Pack). Each bee: the aim velocity jittered by
+                        // `Next(-35, 36) * 0.02` per axis, the kind/damage/
+                        // knockback off `beeType`/`beeDamage`/`beeKB`
+                        // (`Player.cs:12417-12444`), and `magic = true`.
+                        // The named-argument evaluation order is SpeedX,
+                        // SpeedY, Type, Damage, KnockBack — the two velocity
+                        // draws precede the bee-type coin flip.
+                        let mut count = loot_rng.next_range(1, 4);
+                        if loot_rng.next_range(0, 6) == 0 {
+                            count += 1;
+                        }
+                        if loot_rng.next_range(0, 6) == 0 {
+                            count += 1;
+                        }
+                        if p.strong_bees && loot_rng.next_range(0, 3) == 0 {
+                            count += 1;
+                        }
+                        for _ in 0..count {
+                            let vx = shot.x + loot_rng.next_range(-35, 36) as f32 * 0.02;
+                            let vy = shot.y + loot_rng.next_range(-35, 36) as f32 * 0.02;
+                            let (bee_kind, strong) = crate::hurt_modifiers::bee_type(p, loot_rng);
+                            let bee_dmg = crate::hurt_modifiers::bee_damage(strong, raw as i32, loot_rng);
+                            let bee_kb = crate::hurt_modifiers::bee_kb(strong, fx_kb);
+                            let slot = app.projectiles.spawn_with_data_ai(
+                                bee_kind, spawn.x, spawn.y, vx, vy, bee_dmg, bee_kb, 0.0, 0.0,
+                            );
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                            }
+                        }
                     } else {
                         // The generic `Item.shoot` firing, with the two
                         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -1031,11 +1071,23 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
                             leaf_spawn += off - Vec2::new(vx, vy);
                         }
+                        // `Player.cs:49409-49411` — the Aqua Scepter's spawn
+                        // `ai[2]` seeds the lava-bounce LCG (`Next(0, 20000)`);
+                        // the draw rides the generic tail's ai-payload block,
+                        // after the leaf jitter and before the spawn.
+                        let aqua_seed = if proj == crate::projectile::AQUA_SCEPTER {
+                            Some(loot_rng.next_range(0, 20000) as f32)
+                        } else {
+                            None
+                        };
                         let slot = app.projectiles.spawn_with_data_ai(
                             proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
+                            if let Some(seed) = aqua_seed {
+                                app.projectiles.set_ai2(slot, seed);
+                            }
                             // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
                             // the whip's tag row off the firing item + the
                             // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
@@ -7312,6 +7364,328 @@ mod tests {
             draws_after(seed, 1),
             "the crit's draw only"
         );
+    }
+
+    // ---- S1-P-i20: the early magic staves (ManageShoot census) -------------
+    // Tests-as-code: WRITTEN NOT RUN (the task's code-only mode). Each pins
+    // the C# `ItemCheck_Shoot` arm it ports, with the `Player.cs` citation.
+
+    /// The Vilethorn (item 64) fires its base segment 7 through the generic
+    /// spawn — `shootSpeed 32`, the magic class damage, no special arm
+    /// (`Player.cs:49437`'s generic tail; the aiStyle-4 chain is the
+    /// projectile's own, pinned in `projectile_ai_tests`).
+    #[test]
+    fn s1_p_i20_the_vilethorn_fires_its_base_segment() {
+        let mut app = staff_app(64, "Vilethorn");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one base segment");
+        assert_eq!(bolts[0].kind, crate::projectile::VILE_BASE, "Item.shoot 7");
+        assert!(
+            (bolts[0].vel.length() - 32.0).abs() < 0.05,
+            "shootSpeed 32 (|v|={})",
+            bolts[0].vel.length()
+        );
+        assert_eq!(bolts[0].damage, 10, "the magic damage 10");
+        // The generic tail spends only the crit's draw.
+        let seed = 0x57A2;
+        let mut app = staff_app(64, "Vilethorn");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1), "the crit only");
+    }
+
+    /// The Band of Starpower (item 111) is an ACCESSORY (`Item.cs:2692-2699`:
+    /// `accessory = true`, no shoot/damage/mana) — it is not a weapon, so the
+    /// use path never fires it (`registry::is_weapon` is false: no projectile).
+    #[test]
+    fn s1_p_i20_the_band_of_starpower_is_not_a_weapon() {
+        assert!(!crate::registry::is_weapon(111), "no Item.shoot");
+        assert_eq!(crate::registry::projectile(111), None, "no projectile");
+        let mut app = staff_app(111, "Band of Starpower");
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            0,
+            "an accessory fires nothing"
+        );
+    }
+
+    /// The Aqua Scepter (item 157) fires proj 22 with the lava-bounce LCG seed
+    /// in `ai[2]` (`Player.cs:49409-49411`'s `Next(0, 20000)`), `shootSpeed
+    /// 12.5`, the magic damage 27. The seed draw rides the generic tail after
+    /// the crit.
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_fires_with_the_lava_seed() {
+        let mut app = staff_app(157, "Aqua Scepter");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one stream");
+        assert_eq!(bolts[0].kind, crate::projectile::AQUA_SCEPTER, "Item.shoot 22");
+        assert!(
+            (bolts[0].vel.length() - 12.5).abs() < 0.05,
+            "shootSpeed 12.5 (|v|={})",
+            bolts[0].vel.length()
+        );
+        assert_eq!(bolts[0].damage, 27, "the magic damage 27");
+        assert!(
+            (0.0..20000.0).contains(&bolts[0].ai[2]),
+            "the LCG seed is a Next(0, 20000) draw ({})",
+            bolts[0].ai[2]
+        );
+        // The seed is the stream's second draw (after the crit), and the same
+        // seed twice gives the same ai[2].
+        let seed = 0xA9A5i32;
+        let run = || {
+            let mut app = staff_app(157, "Aqua Scepter");
+            seed_stream(&mut app, seed);
+            fire_once(&mut app);
+            let b = app.projectiles.slots().iter().find(|p| p.active).unwrap();
+            (b.ai[2], stream_of(&mut app))
+        };
+        let (a_seed, a_stream) = run();
+        let (b_seed, b_stream) = run();
+        assert_eq!(a_seed, b_seed, "the seed is seed-stable");
+        assert_eq!(a_stream, draws_after(seed, 2), "crit, then the LCG seed");
+        assert_eq!(a_stream, b_stream, "the stream is seed-stable");
+    }
+
+    /// The Bee Gun (item 1121) fires 1-5 bees (`Player.cs:48309-48332`):
+    /// `Next(1, 4)` base (1-3), +1 per `Next(6) == 0` (two rolls), +1 more only
+    /// while `strongBees` and a third `Next(3) == 0`. Each bee is kind 181 (or
+    /// 566 with the Hive Pack), the aim jittered by `Next(-35, 36) * 0.02`, the
+    /// damage `beeDamage` (base + `Next(2)`), `magic = true`.
+    #[test]
+    fn s1_p_i20_the_bee_gun_fires_a_multi_bee_volley() {
+        // Without the Hive Pack: 1-5 bees, all kind 181.
+        let mut app = staff_app(1121, "Bee Gun");
+        fire_once(&mut app);
+        let bees: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert!(
+            (1..=5).contains(&bees.len()),
+            "Next(1,4) + two Next(6) bonuses, no strongBees ({} bees)",
+            bees.len()
+        );
+        for b in &bees {
+            assert_eq!(b.kind, crate::projectile::BEE, "the plain bee 181");
+            // The damage is the base 9 + Next(2) (0 or 1).
+            assert!(
+                (9..=10).contains(&b.damage),
+                "beeDamage: 9 + Next(2) ({})",
+                b.damage
+            );
+            // The velocity is the aim (shootSpeed 8) jittered by ±0.7.
+            let aim = staff_aim(&app);
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+            let base = dir * 8.0;
+            assert!(
+                (b.vel.x - base.x).abs() <= 0.7 + 1e-3
+                    && (b.vel.y - base.y).abs() <= 0.7 + 1e-3,
+                "the aim jitter is Next(-35,36)*0.02 (v={:?})",
+                b.vel
+            );
+        }
+    }
+
+    /// The Bee Gun's Hive Pack arm (`strongBees`): the third `Next(3) == 0`
+    /// bonus and `beeType`'s `Next(2) == 0` coin flip (`Player.cs:12417-12426`).
+    /// A full RNG replay predicts the count and every bee's kind/damage/
+    /// knockback; the actual spawns must match draw-for-draw. The draw order
+    /// (`Player.cs:48311-48328`): crit, count base `Next(1,4)`, two `Next(6)`
+    /// bonuses, the `strongBees` `Next(3)` bonus, then per bee the two
+    /// `Next(-35,36)` velocity jitters, `beeType`'s `Next(2)`, `beeDamage`'s
+    /// `Next(1,4)` (strong) / `Next(2)` (plain). `beeKB` draws nothing.
+    #[test]
+    fn s1_p_i20_the_bee_gun_hive_pack_rolls_the_giant_bee() {
+        let mut saw_giant = false;
+        let mut saw_third_bonus = false;
+        for seed in 0..60u64 {
+            let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
+            // The replay: predict the count and each bee off the same stream.
+            let mut rng = tr_core::UnifiedRandom::new(s);
+            let _crit = rng.next_range(1, 101);
+            let mut count = rng.next_range(1, 4);
+            if rng.next_range(0, 6) == 0 {
+                count += 1;
+            }
+            if rng.next_range(0, 6) == 0 {
+                count += 1;
+            }
+            if rng.next_range(0, 3) == 0 {
+                count += 1;
+                saw_third_bonus = true;
+            }
+            let mut predicted: Vec<(u16, i32, f32)> = Vec::new();
+            for _ in 0..count {
+                let _vx = rng.next_range(-35, 36);
+                let _vy = rng.next_range(-35, 36);
+                // beeType: strongBees && Next(2) == 0 → giant 566.
+                let strong = rng.next_range(0, 2) == 0;
+                let kind = if strong { crate::projectile::GIANT_BEE } else { crate::projectile::BEE };
+                // beeDamage: strong → 9 + Next(1,4); plain → 9 + Next(2).
+                let dmg = if strong { 9 + rng.next_range(1, 4) } else { 9 + rng.next_range(0, 2) };
+                // beeKB: strong → 0.5 + 0.25*1.1; plain → 0.25.
+                let kb = if strong { 0.5 + 0.25 * 1.1 } else { 0.25 };
+                predicted.push((kind, dmg, kb));
+            }
+            // The actual fire.
+            let mut app = staff_app(1121, "Bee Gun");
+            app.player.as_mut().unwrap().strong_bees = true;
+            seed_stream(&mut app, s);
+            fire_once(&mut app);
+            let bees: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bees.len(), predicted.len(), "seed {seed}: the count matches the replay");
+            for (b, &(kind, dmg, kb)) in bees.iter().zip(predicted.iter()) {
+                assert_eq!(b.kind, kind, "seed {seed}: beeType's coin flip");
+                assert_eq!(b.damage, dmg, "seed {seed}: beeDamage");
+                assert!(
+                    (b.knock_back - kb).abs() < 1e-3,
+                    "seed {seed}: beeKB ({} vs {kb})",
+                    b.knock_back
+                );
+                if kind == crate::projectile::GIANT_BEE {
+                    saw_giant = true;
+                }
+            }
+            // The whole volley's stream matches the replay's draw count.
+            assert_eq!(stream_of(&mut app), rng, "seed {seed}: the stream is draw-exact");
+        }
+        assert!(saw_giant, "the Hive Pack rolls giant bees across seeds");
+        assert!(saw_third_bonus, "the strongBees Next(3) bonus fires across seeds");
+    }
+
+    /// The Bee Gun's volley is seed-deterministic: the same seed twice gives
+    /// byte-equal spawns (the count rolls, the per-bee velocity jitter, the
+    /// beeType coin flip and the beeDamage draw all ride one stream).
+    #[test]
+    fn s1_p_i20_the_bee_gun_volley_is_seed_deterministic() {
+        let run = || {
+            let mut app = staff_app(1121, "Bee Gun");
+            app.player.as_mut().unwrap().strong_bees = true;
+            seed_stream(&mut app, 0xBEE5);
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.damage, p.knock_back))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(run(), run(), "the volley is seed-stable");
+    }
+
+    /// The Magic Missile (item 113) channel holds the aim in the REAL use path:
+    /// `channel_shoot` carries the held item's shoot id (16), so the aiStyle-9
+    /// arm's `HeldItem.shoot == this.type` gate (`Projectile.cs:43241`) passes
+    /// and the spell keeps the clamped cursor. (S1-P-i20: the pre-fix port
+    /// compared the item id 113 against the proj id 16, so the hold failed.)
+    #[test]
+    fn s1_p_i20_the_magic_missile_channel_holds_in_the_use_path() {
+        let mut app = staff_app(113, "Magic Missile");
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the channel item arms the channel");
+        assert_eq!(p.channel_item, 113, "the held item's kind");
+        assert_eq!(p.channel_shoot, 16, "the held item's shoot id (proj 16)");
+        // The fired spell carries the aim in ai[0..1] (the generic spawn's
+        // velocity is the aim; the channel hold keeps it on the cursor).
+        let spell = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::MAGIC_MISSILE)
+            .expect("the Magic Missile fired");
+        assert_eq!(spell.kind, 16, "Item.shoot 16");
+        // The release clears both channel fields.
+        app.mine_down = false;
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.channel, "the release clears the channel");
+        assert_eq!(p.channel_shoot, 0, "no shoot id is being channelled");
+    }
+
+    /// The Flamelash (item 218) channel carries its shoot id 34 the same way.
+    #[test]
+    fn s1_p_i20_the_flamelash_channel_carries_its_shoot_id() {
+        let mut app = staff_app(218, "Flamelash");
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the channel item arms the channel");
+        assert_eq!(p.channel_item, 218, "the held item's kind");
+        assert_eq!(p.channel_shoot, 34, "the held item's shoot id (proj 34)");
+        let spell = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::FLAMELASH)
+            .expect("the Flamelash fired");
+        assert_eq!(spell.kind, 34, "Item.shoot 34");
+    }
+
+    /// The Water Bolt (item 165), Demon Scythe (item 272) and Space Gun
+    /// (item 127) fire their own projectiles through the generic spawn —
+    /// `shootSpeed` 4.5 / 0.2 / 10, the magic damage 19 / 35 / 20.
+    #[test]
+    fn s1_p_i20_the_water_bolt_demon_scythe_space_gun_fire_their_shoot() {
+        for (item, name, proj, speed, damage) in [
+            (165u16, "Water Bolt", crate::projectile::WATER_BOLT, 4.5f32, 19i32),
+            (272, "Demon Scythe", crate::projectile::DEMON_SCYTHE, 0.2, 35),
+            (127, "Space Gun", crate::projectile::GREEN_LASER, 10.0, 20),
+        ] {
+            let mut app = staff_app(item, name);
+            fire_once(&mut app);
+            let bolts: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bolts.len(), 1, "{name}: one shot");
+            assert_eq!(bolts[0].kind, proj, "{name}: Item.shoot {proj}");
+            assert!(
+                (bolts[0].vel.length() - speed).abs() < 0.05,
+                "{name}: shootSpeed {speed} (|v|={})",
+                bolts[0].vel.length()
+            );
+            assert_eq!(bolts[0].damage, damage, "{name}: the magic damage {damage}");
+        }
+    }
+
+    /// The Space Gun's Meteor-set mana skip (`Player.cs:52695-52698`): with
+    /// `spaceGun` armed the shot costs no mana and fires even at zero mana.
+    #[test]
+    fn s1_p_i20_the_space_gun_meteor_set_skips_mana() {
+        let mut app = staff_app(127, "Space Gun");
+        app.player.as_mut().unwrap().space_gun = true;
+        app.player.as_mut().unwrap().mana = 0;
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the Meteor set fires the Space Gun at zero mana"
+        );
+        assert_eq!(app.player.as_ref().unwrap().mana, 0, "no mana paid");
     }
 }
 

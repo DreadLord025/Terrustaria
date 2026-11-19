@@ -12532,6 +12532,97 @@ The batch review's three spell-arm findings (the missing
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
 
+## The early magic staves (S1-P-i20, 2026-11-19, code-only mode)
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`world_sim/editing.rs` (the `s1_p_i20_*` block) and `projectile.rs`
+(`magic_ai_tests`' `s1_p_i20_*` block) are WRITTEN, NOT RUN — each expected
+value was verified by re-reading the cited C# and hand arithmetic. A
+follow-up build must run `cargo test -p tr-app s1_p_i20` before merging.
+
+**Census** — `Player.ItemCheck_Shoot` (`Player.cs:47056+`, the decompile's
+name for the task's "ManageShoot magic arm") vs the port's generic shoot in
+`world_sim/editing.rs`, for the nine listed early staves:
+
+| Item | Shoot | C# arm | Port verdict |
+| --- | --- | --- | --- |
+| Vilethorn 64 | 7 | generic tail `:49437` (aiStyle-4 chain is the proj's own) | OK — rowed + armed |
+| Band of Starpower 111 | — | **accessory** (`Item.cs:2692-2699`, no shoot/damage/mana) | OK — not a weapon, never fires |
+| Magic Missile 113 | 16 | generic tail + channel (`Projectile.cs:43241`) | **WRONG → fixed** (channel id) |
+| Flamelash 218 | 34 | generic tail + channel | **WRONG → fixed** (channel id) |
+| Aqua Scepter 157 | 22 | generic tail + `ai[2] = Next(0,20000)` `:49409-49411` | **MISSING → ported** (row 22, aiStyle 12, the seed) |
+| Water Bolt 165 | 27 | generic tail (aiStyle 8) | OK — rowed + armed |
+| Demon Scythe 272 | 45 | generic tail (aiStyle 18) | OK — rowed + armed |
+| Space Gun 127 | 20 | generic tail (aiStyle-1 rider) + Meteor mana skip `:52695-52698` | OK — rowed + armed + skip |
+| Bee Gun 1121 | 181 | multi-bee arm `:48309-48332` | **MISSING → ported** (volley, rows 181/566, aiStyle 36) |
+
+**The channel-id fix (the WRONG):** the aiStyle-9 owner block holds the aim
+only while `player.channel && player.HeldItem.shoot == this.type`
+(`Projectile.cs:43241`) — the held item's **projectile** id vs the spell's own
+kind. The pre-fix port stored the held **item** id in `channel_item` and
+compared it to the projectile kind (`p.channel_item == self.kind`), so for the
+Magic Missile (item 113, proj 16) and Flamelash (item 218, proj 34) the compare
+was `113 == 16` / `218 == 34` — always false, the channel hold never fired in
+the real use path (the unit fixture masked it by setting `channel_item` to the
+proj id). The fix adds `Player.channel_shoot` (the held item's `shoot`, written
+by the channel block in `update_editing`) and compares THAT in
+`ai_magic_missile`; `channel_item` stays the item id for the Last Prism
+holder's `registry::item(channel_item)` keep-alive (`Projectile.cs:66540`).
+
+**The two missing arms (ported verbatim):**
+- **Aqua Scepter** — the proj-22 row (`Projectile.cs:1040-1056`: 18×18,
+  aiStyle 12, alpha 255, penetrate 5, extraUpdates 2, ignoreWater), the
+  aiStyle-12 arm (`:24501-24635`: the 0.01/tick scale decay, the 0.15 gravity
+  from `ai[0] > 3`, the lava bounce seeding `LCG32Random(ai[2])` —
+  `Utilities/LCG32Random.cs:5-44`, `state = state * -1856014347 + 1`,
+  `NextFloat = state / 2^32` — Y then X), and the spawn `ai[2] =
+  Main.rand.Next(0, 20000)` (`Player.cs:49409-49411`) via the new `set_ai2`
+  seam. The bounced state (`ai[1] == 1`) halves the gravity, stops the scale
+  decay, drops `extraUpdates` to 0 and sets `penetrate = -1` (`:24554-24560`).
+- **Bee Gun** — the multi-bee volley (`Player.cs:48309-48332`): count
+  `Next(1,4)` + two `Next(6) == 0` bonuses + a `strongBees && Next(3) == 0`
+  third; per bee the two `Next(-35,36) * 0.02` velocity jitters precede
+  `beeType`'s `Next(2)` coin flip (the Hive Pack's giant bee 566), then
+  `beeDamage` (`Next(1,4)` strong / `Next(2)` plain) and `beeKB`
+  (`0.5 + KB*1.1` strong). The helpers are the S1-C-7 `hurt_modifiers` ones,
+  now `pub(crate)`. The proj-181/566 rows (`:2673-2685`/`:6172-6184`) and the
+  aiStyle-36 arm (`:27292-27471`: the alpha fade-in → `extraUpdates = 0`, the
+  sprite facing + `velocity.X * 0.1` tilt + 3-frame flap, the 30-tick launch
+  counter, the Manhattan-800 `CanBeChasedBy` + `CanHit` scan with the
+  `!npc.wet || type == 370` exclusion, the per-kind steering 6/0.1 vs
+  6.8/0.14). Both bees carry `UseGroupStaticImmunity(181)`
+  (`:10676-10681`) — the new `immunity_identity` ProjData/slot field folds the
+  id-static table key onto 181 for both kinds (`id_static_key`), so one
+  cooldown covers the pair.
+
+**RNG order** (the `UpdatePlayers` stream, `Main.cs:17754`): the generic tail
+rolls the crit first (`Next(1,101)`), then the per-item arm. The Aqua Scepter's
+LCG seed is the tail's second draw; the Bee Gun's count rolls (base + two
+`Next(6)` + the `strongBees` `Next(3)`) precede the per-bee velocity/type/damage
+draws, in the C#'s named-argument order (SpeedX, SpeedY, Type, Damage,
+KnockBack). The witnesses replay the exact draw sequence.
+
+**Deliberate deviations / skips:**
+- **Dust/gore skipped** in both new arms (no dust layer), but their
+  `Main.rand` gates still draw on the pass's `UpdateProjectiles` stream in the
+  C#'s order (the Aqua Scepter's `Next(3)` gore gate, the `Next(2)`/`Next(8)`
+  dust gates; the bee arm draws nothing — its C# block has no rand).
+- **The remix-world Aqua Scepter immunity arm** (`Projectile.cs:1051-1055`,
+  `usesLocalNPCImmunity` + cooldown 12 under `Main.remixWorld`) is unported —
+  no remix seed flag in the port (the standing ANALYSIS deviation); the stock
+  immunity reset holds.
+- **The bee wet-kill** (`:27294-27297`, `base.wet && !honeyWet && !shimmerWet`)
+  folds to false — the port's slots carry no liquid-wet flags (the standing
+  deviation); the gate is kept for shape.
+- **The Aqua Scepter's `ai[1] != 0 && Next(2) != 0` early-return**
+  (`:24604-24607`) skips the trailing dust, not the movement — the port runs
+  `kill_step` on both paths.
+- **The Band of Starpower is an accessory**, not a staff — the task's list
+  includes it, but `Item.cs:2692-2699` gives it no shoot/damage/mana, so the
+  use path never fires it (`registry::is_weapon` is false). No ManageShoot arm
+  exists to port; the witness pins that it fires nothing.
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
