@@ -464,7 +464,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // them) — the C# else-branch's no-immunity (`NPC.cs:17826-17832`).
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
-        | NpcKind::DungeonSpirit
+        | NpcKind::DungeonSpirit => &[],
     }
 }
 

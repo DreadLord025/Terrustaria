@@ -1184,7 +1184,9 @@ pub struct Npc {
     /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
     pub frame: u32,
     /// `NPC.frameCounter`: the per-kind accumulator `FindFrame` checks.
-    frame_counter: f32,
+    /// `pub` for the transform seams (`npc_ai_frost_mob`'s Nutcracker
+    /// re-roll resets it, `NPC.cs:8529`; the style42 wiring convention).
+    pub frame_counter: f32,
     /// `NPC.rotation`: the aim tilt. The demon eye sets it
     /// (`NPC.cs:74019-74031`: `atan2(velocity.Y, velocity.X)`, `+ π` when
     /// `velocity.X < 0`); the Poltergeist tilts at `velocity.X * 0.15`
@@ -5222,11 +5224,14 @@ impl Npc {
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
-            // The bubble: aiStyle 72's owner-pin machine (`NPC.cs:35081-35101`
-            // — `ai[0]` is the Officer's whoAmI; the bubble rides its centre
-            // and dies with it). The Officer's spawn arm (`NPC.cs:56222-56249`)
-            // and the owner-pin ride a LATER wave — the stand-in holds still.
-            NpcKind::ForceBubble => {}
+            // The bubble: aiStyle 72's owner-pin machine (`NPC.cs:35081-35101`)
+            // is WIRED by S1-D-3-wire-smallkinds (the world-sim host pre-pass
+            // runs `npc_ai_style72::ai_style72`; the axis' 72 arm owns the
+            // gravity + integration tail) — this kind arm is unreachable
+            // through `update_rng` (the stand-in retired).
+            NpcKind::ForceBubble => {
+                unreachable!("aiStyle 72 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
             // The Tesla Turret: aiStyle 73's warp-in machine
             // (`NPC.cs:35102-35216` — the 120-tick teleport-in alpha ramp,
             // then the aim/fire cycle). The Engineer's placement arm
@@ -5431,9 +5436,6 @@ impl Npc {
             }
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
-            }
-            NpcKind::ForceBubble => {
-                unreachable!("aiStyle 72 rides the style axis (S1-D-3-wire-smallkinds)")
             }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
@@ -5863,6 +5865,8 @@ impl Npc {
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
             // only, `:77292`) — `Main.npcFrameCount[384]` = 1
             // (`Main.cs:67122`), the single frame never advances.
+            // (GATE DEDUPE L-B: the smallkinds wave's identical arm below
+            // is the same row-0 pin — one arm kept, the dup removed.)
             NpcKind::ForceBubble => {
                 self.frame = 0;
             }
@@ -6041,12 +6045,6 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 2;
                 }
-            }
-            // The bubble: `FindFrame` carries NO case 384 — the single-frame
-            // strip (`Main.npcFrameCount[384]` = 1, `Main.cs:67082`) rests
-            // row 0.
-            NpcKind::ForceBubble => {
-                self.frame = 0;
             }
             // The Tesla Turret: `case 387` (`NPC.cs:71663-71696`) — the
             // firing machine (`ai[0] > 0`) accelerates the accumulator

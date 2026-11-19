@@ -3952,7 +3952,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // axis' 56 arm then owns only the noTileCollide integration tail.
     // `spawn_ctx` borrows the whole App immutably, so it is computed
     // BEFORE the `&mut app.npcs`/`&mut app.dust` field borrows below.
-    let dust_ctx = app.spawn_ctx();
+    // The DungeonSpirit's dust pre-pass reuses the frame's spawn ctx
+    // captured above (`dust_spawn_ctx`, before the `npcs_rng` mutable
+    // borrow) — a second `app.spawn_ctx()` here would re-borrow `*app`
+    // immutably while `npcs_rng` holds it mutable (E0502).
+    let dust_ctx = dust_spawn_ctx;
     // Limit the scope of borrows to just the tick closure
     {
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
