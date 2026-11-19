@@ -8,6 +8,14 @@
 //! machine activates unchanged when the kind lands. See docs/ANALYSIS.md
 //! "Plantera's Hook machine (aiStyle-52)".
 //!
+//! Wiring LANDED (S1-D-3-wire-plantera-minions, census §5 W-8):
+//! `NpcKind::PlanterasHook` (263) + the sim's pool pass
+//! `world_sim/npcs.rs::update_plantera_minions` drive this machine on
+//! the UpdateNPCs stream (the `type_of` closure reads `cs_id`; the
+//! orphan strike lands as hp = 0, the thorn burst is constants-off with
+//! getGoodWorld). The hook's timeLeft never ticks
+//! (`DoesntDespawnToInactivity`, `NPC.cs:77826`).
+//!
 //! The C# family is ONE type — 263 (`SetDefaults`, `NPC.cs:12396-12409`:
 //! 40×40, noGravity/noTileCollide, dmg 60, def 24, lifeMax 4000,
 //! `dontTakeDamage = true`). The machine is type-parameterised anyway

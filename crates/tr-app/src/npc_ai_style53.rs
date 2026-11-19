@@ -23,6 +23,13 @@
 //! the branch is reachable and testable before the kind lands. The wiring
 //! step adds the kind + the `SetDefaults` row + the style-axis claim.
 //!
+//! Wiring LANDED (S1-D-3-wire-plantera-minions, census §5 W-8):
+//! `NpcKind::PlanterasTentacle` (264) + the sim's pool pass
+//! `world_sim/npcs.rs::update_plantera_minions` resolve the boss/anchor
+//! views and drive `ai_053_step` on the UpdateNPCs stream (classic,
+//! no getGoodWorld — the reflect re-roll stays parked, the orphan strike
+//! + the anchor-lost death land as hp = 0).
+//!
 //! Seam: the module only writes the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`, `localAI[0]`, `spriteDirection` (`Npc::sprite_dir`),
 //! `rotation`, `netUpdate` — plus the orphan death (see the fold below).
@@ -80,7 +87,7 @@
 //! cloned stream and compare state (`PartialEq`), so a drifted order or
 //! a skipped draw fails by construction.
 
-#![allow(dead_code)] // the kind + style-axis wiring is the merge step (S1-D-3)
+#![allow(dead_code)] // the ftw/reflect seams stay parked; the arm is WIRED (S1-D-3-wire-plantera-minions)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

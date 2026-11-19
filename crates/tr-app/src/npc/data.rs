@@ -491,6 +491,14 @@ impl NpcKind {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The Plantera minion family (S1-D-3-wire-plantera-minions,
+            // census §5 W-8): the port-local ids 353-356 (the first free
+            // band above the frost slice B's 352), the C# types 261/263/
+            // 264/265 (`NPCID.cs:11199`/`:11203`/`:11205`/`:11207`).
+            NpcKind::FungiSpore => 353,
+            NpcKind::PlanterasHook => 354,
+            NpcKind::PlanterasTentacle => 355,
+            NpcKind::Spore => 356,
         }
     }
 
@@ -766,6 +774,12 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
+            // The Plantera minion family (S1-D-3-wire-plantera-minions):
+            // the 353-356 band decodes here (the same ids `to_u16` above).
+            353 => NpcKind::FungiSpore,
+            354 => NpcKind::PlanterasHook,
+            355 => NpcKind::PlanterasTentacle,
+            356 => NpcKind::Spore,
             _ => return None,
         })
     }
@@ -1388,6 +1402,9 @@ impl NpcKind {
             NpcKind::Retinazer => "NPC_Hit_1",
             NpcKind::Spazmatism => "NPC_Hit_1",
             NpcKind::Plantera => "NPC_Hit_1",
+            // The Plantera minions: `SoundID.NPCHit1` on all four
+            // (`NPC.cs:12372`/`:12407`/`:12418`/`:12431`).
+            NpcKind::FungiSpore | NpcKind::PlanterasHook | NpcKind::PlanterasTentacle | NpcKind::Spore => "NPC_Hit_1",
             NpcKind::BrainOfCthulhu => "NPC_Hit_9",
             NpcKind::Creeper => "NPC_Hit_9",
             NpcKind::GoblinThief => "NPC_Hit_1",
@@ -1645,6 +1662,9 @@ impl NpcKind {
             NpcKind::Retinazer => "NPC_Killed_14",
             NpcKind::Spazmatism => "NPC_Killed_14",
             NpcKind::Plantera => "NPC_Killed_1",
+            // The Plantera minions: `SoundID.NPCDeath1` on all four
+            // (`NPC.cs:12373`/`:12408`/`:12419`/`:12432`).
+            NpcKind::FungiSpore | NpcKind::PlanterasHook | NpcKind::PlanterasTentacle | NpcKind::Spore => "NPC_Killed_1",
             NpcKind::BrainOfCthulhu => "NPC_Killed_11",
             NpcKind::Creeper => "NPC_Killed_11",
             NpcKind::GoblinThief => "NPC_Killed_1",
@@ -1970,8 +1990,15 @@ impl NpcKind {
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 47,
             // aiStyle 48 - NPC.cs:12212
             NpcKind::GolemHeadFree => 48,
+            // aiStyle 50 - NPC.cs:12368 (261), :12427 (265): the spore
+            // pair (S1-D-3-wire-plantera-minions, census §5 W-8).
+            NpcKind::FungiSpore | NpcKind::Spore => 50,
             // aiStyle 51 - NPC.cs:12384
             NpcKind::Plantera => 51,
+            // aiStyle 52 - NPC.cs:12402 (263, the family's only member).
+            NpcKind::PlanterasHook => 52,
+            // aiStyle 53 - NPC.cs:12414 (264).
+            NpcKind::PlanterasTentacle => 53,
             // aiStyle 54 - NPC.cs:12443
             NpcKind::BrainOfCthulhu => 54,
             // aiStyle 55 - NPC.cs:12460
@@ -2237,6 +2264,14 @@ impl NpcKind {
             NpcKind::Spazmatism => (100.0, 110.0),
             // `SetDefaults` case 262 (`NPC.cs:12381`): 86x86.
             NpcKind::Plantera => (86.0, 86.0),
+            // The Plantera minions (S1-D-3-wire-plantera-minions): the
+            // `SetDefaults` boxes - 261 12x12 (`NPC.cs:12366-12367`),
+            // 263 40x40 (`:12400-12401`), 264 24x24 (`:12412-12413`),
+            // 265 18x18 (`:12425-12426`).
+            NpcKind::FungiSpore => (12.0, 12.0),
+            NpcKind::PlanterasHook => (40.0, 40.0),
+            NpcKind::PlanterasTentacle => (24.0, 24.0),
+            NpcKind::Spore => (18.0, 18.0),
             // `SetDefaults` case 266 (`NPC.cs:12440`): 160x110.
             NpcKind::BrainOfCthulhu => (160.0, 110.0),
             // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
@@ -2548,6 +2583,17 @@ impl NpcKind {
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
+            // The Plantera minion family (S1-D-3-wire-plantera-minions):
+            // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
+            // `PlanterasTentacle` 264 / `Spore` 265 (`ID/NPCID.cs:11199`/
+            // `:11203`/`:11205`/`:11207`). Hand rows: the hook/tentacle/
+            // spore bestiary credits ride their own ids (the populator
+            // `BestiaryDatabaseNPCsPopulator.cs:965`/`:1070`/`:1269`/
+            // `:1396` attaches info to all four), so no fold is needed.
+            NpcKind::FungiSpore => 261,
+            NpcKind::PlanterasHook => 263,
+            NpcKind::PlanterasTentacle => 264,
+            NpcKind::Spore => 265,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -2760,6 +2806,12 @@ impl NpcKind {
             NpcKind::Spazmatism => 23000,
             // `SetDefaults` case 262 (`NPC.cs:12385`): 30000 HP.
             NpcKind::Plantera => 30000,
+            // The Plantera minions (S1-D-3-wire-plantera-minions):
+            // 261 1 HP (`NPC.cs:12371`), 263 4000 (`:12405`),
+            // 264 1000 (`:12417`), 265 1 (`:12430`).
+            NpcKind::FungiSpore | NpcKind::Spore => 1,
+            NpcKind::PlanterasHook => 4000,
+            NpcKind::PlanterasTentacle => 1000,
             // `SetDefaults` cases 266/267.
             NpcKind::BrainOfCthulhu => 1250,
             NpcKind::Creeper => 100,
@@ -3079,6 +3131,12 @@ impl NpcKind {
             NpcKind::Retinazer => 45,
             NpcKind::Spazmatism => 50,
             NpcKind::Plantera => 50,
+            // The Plantera minions (S1-D-3-wire-plantera-minions):
+            // 261 80 (`NPC.cs:12369`), 263 60 (`:12403`),
+            // 264 60 (`:12415`), 265 70 (`:12428`).
+            NpcKind::FungiSpore => 80,
+            NpcKind::PlanterasHook | NpcKind::PlanterasTentacle => 60,
+            NpcKind::Spore => 70,
             NpcKind::BrainOfCthulhu => 30,
             NpcKind::Creeper => 20,
             // The `friendly` pair (`:10246`/`:10272`) — the contact gate

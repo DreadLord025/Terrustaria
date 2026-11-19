@@ -206,6 +206,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Retinazer => &[],
         NpcKind::Spazmatism => &[],
         NpcKind::Plantera => &[],
+        // The Plantera minions (S1-D-3-wire-plantera-minions): no
+        // `NPCID.Sets.SpecificallyImmuneTo` rows exist for 261/263/264/265
+        // (`ID/NPCID.cs` - the four ids have no Sets entries at all).
+        NpcKind::FungiSpore | NpcKind::PlanterasHook | NpcKind::PlanterasTentacle | NpcKind::Spore => &[],
         NpcKind::BrainOfCthulhu => &[],
         NpcKind::Creeper => &[],
         NpcKind::GoblinPeon => &[],

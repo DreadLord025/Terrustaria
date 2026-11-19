@@ -501,6 +501,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
+            .chain(PLANTERA_MINION_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1125,6 +1126,12 @@ pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     329, // the Hellhound
     330, // the Poltergeist
 ];
+
+/// The Plantera minion family's sheets (S1-D-3-wire-plantera-minions):
+/// one `NPC_<id>` sheet per kind (261 the FungiSpore, 263 the hook, 264
+/// the tentacle, 265 the Spore — the vanilla's `TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in [`NpcAssets::npc_sheet`].
+pub(crate) const PLANTERA_MINION_SHEETS: &[u32] = &[261, 263, 264, 265];
 
 /// The Frost Moon wave family's sheets (`S1-F-13c` slice B): one sheet per
 /// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each of the
@@ -2544,6 +2551,18 @@ pub(crate) fn draw_npcs(
                 // box's corner).
                 boss_draw(assets.plantera.as_ref(), 8, n, w, h)
             ),
+            // The Plantera minions (S1-D-3-wire-plantera-minions): each
+            // draws its own `TextureAssets.Npc[type]` sheet at
+            // `Main.npcFrameCount`'s rows (261 one, 263 four, 264 four,
+            // 265 one — `Main.cs:67110`) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin/frost arms' shape.
+            NpcKind::FungiSpore
+            | NpcKind::PlanterasHook
+            | NpcKind::PlanterasTentacle
+            | NpcKind::Spore => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
             // The Brain: the single-frame 160x110 sheet.
             NpcKind::BrainOfCthulhu => (
                 // NPC_266 is 200x1456 — eight 182-px rows

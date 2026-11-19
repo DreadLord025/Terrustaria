@@ -821,12 +821,48 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Spazmatism",
     },
     BestiaryEntryDef {
+        credit_id: "FungiSpore",
+        net_id: 261,
+        kind: NpcKind::FungiSpore,
+        variant: None,
+        quick_unlock: false,
+        name: "Fungi Spore",
+    },
+    BestiaryEntryDef {
         credit_id: "Plantera",
         net_id: 262,
         kind: NpcKind::Plantera,
         variant: None,
         quick_unlock: true,
         name: "Plantera",
+    },
+    // The Plantera minions (S1-D-3-wire-plantera-minions): each rides its
+    // OWN credit (`BestiaryDatabaseNPCsPopulator.cs:965`/`:1070`/`:1269`/
+    // `:1396` attach info to 261/263/264/265) - no fold onto the boss.
+    // None sets `boss` (`NPC.cs:12364-12437`), so quick_unlock is false.
+    BestiaryEntryDef {
+        credit_id: "PlanterasHook",
+        net_id: 263,
+        kind: NpcKind::PlanterasHook,
+        variant: None,
+        quick_unlock: false,
+        name: "Plantera's Hook",
+    },
+    BestiaryEntryDef {
+        credit_id: "PlanterasTentacle",
+        net_id: 264,
+        kind: NpcKind::PlanterasTentacle,
+        variant: None,
+        quick_unlock: false,
+        name: "Plantera's Tentacle",
+    },
+    BestiaryEntryDef {
+        credit_id: "Spore",
+        net_id: 265,
+        kind: NpcKind::Spore,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore",
     },
     BestiaryEntryDef {
         credit_id: "BrainofCthulhu",
