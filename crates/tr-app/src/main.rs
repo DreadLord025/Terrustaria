@@ -66,6 +66,7 @@ mod npc_ai_frost_boss;
 mod npc_ai_frost_mob_b;
 mod npc_ai_frost_mob;
 mod npc_ai_caster;
+mod npc_ai_town;
 mod npc_ai3_speeds;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
