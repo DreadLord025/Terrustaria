@@ -13075,6 +13075,17 @@ impl ProjectilePool {
                                     owner,
                                 )
                             }
+                            // S1-D-5 slice B — the higher-id rowed kinds'
+                            // per-type `AI_001` arms (`Projectile.cs:54002-
+                            // 57794`), gated to `projectile_ai001_b`'s own
+                            // kind list ONLY (9 kinds after the merge-time
+                            // dedupe — A owns 259/270/325/389/436/438, so
+                            // the two gates are kind-disjoint): every other
+                            // kind keeps the generic `ai_arrow` flight
+                            // byte-identical.
+                            kind if crate::projectile_ai001_b::covers(kind) => {
+                                crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
