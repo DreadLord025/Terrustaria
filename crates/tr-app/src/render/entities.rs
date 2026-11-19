@@ -507,6 +507,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(PUMPKIN_SHEETS)
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
+            .chain(HOLIDAY_ZOMBIE_SHEETS)
+            .chain(BLOOD_MOON_SHEETS)
             .chain(SNOW_SHEETS)
             .chain(BEE_SHEETS)
             .chain(PLANTERA_MINION_SHEETS)
@@ -1082,6 +1084,14 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::VortexHeadcrab => 428,
         NpcKind::VortexSoldier => 429,
         NpcKind::SolarSpearman => 518,
+        // The wyvern family (S1-D-3): one sheet per kind, the vanilla
+        // ids (the sheets are deferred — the ~71-px atlas headroom).
+        NpcKind::WyvernHead => 87,
+        NpcKind::WyvernLegs => 88,
+        NpcKind::WyvernBody => 89,
+        NpcKind::WyvernBody2 => 90,
+        NpcKind::WyvernBody3 => 91,
+        NpcKind::WyvernTail => 92,
         NpcKind::MoonLordHead => 396,
         NpcKind::MoonLordHand => 397,
         NpcKind::MoonLordCore => 398,
@@ -1163,6 +1173,18 @@ pub(crate) const FISHRON_SHEETS: &[u32] = &[
     372, // the Sharkron
     373, // the Sharkron2
 ];
+/// S1-D-3z — the five holiday zombies' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The halloween trio
+/// (319-321) and the xmas pair (331-332) each draw their own `NPC_<id>` art.
+pub(crate) const HOLIDAY_ZOMBIE_SHEETS: &[u32] = &[319, 320, 321, 331, 332];
+
+/// S1-D-3z (zombie fighter audit) — the blood-moon pair's own sheets (the
+/// vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `HOLIDAY_ZOMBIE_SHEETS`. 489 draws
+/// its 9-row humanoid strip, 490 its 8-row flap strip
+/// (`Main.npcFrameCount`, `Main.cs:67132`).
+pub(crate) const BLOOD_MOON_SHEETS: &[u32] = &[489, 490];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
@@ -2063,10 +2085,13 @@ fn npc_shows_health_bar(n: &Npc) -> bool {
 /// The boss-scale 1.5 list of `DrawInterface_14_EntityHealthBars`
 /// (`Main.cs:45839-45922`), restricted to the kinds the port ships:
 /// 4/35/36/50/113/114/125-131/222/245-249/262/266/551/564/565/576/577/439.
-/// The unshipped ids (87 the Wyvern, 370 Duke Fishron, 454/510/621 the
-/// late-game worm heads) have no port kind. The Destroyer's 134-136 arm
-/// (`:45930-45975`, the smoothed shared bar) stays with the open worm-bar
-/// work (S1-D-6b, `docs/ANALYSIS.md`).
+/// The unshipped ids (370 Duke Fishron, 454/510/621 the late-game worm
+/// heads) have no port kind. The Wyvern's 87 arm (`Main.cs:45911-45914`)
+/// lands with S1-D-3 wyvern; its dedicated worm health bar
+/// (`DrawInterface_Healthbar_Worm(npc, 92, scale)`, `Main.cs`'s case-87
+/// arm) stays with the open worm-bar work (S1-D-6b). The Destroyer's
+/// 134-136 arm (`:45930-45975`, the smoothed shared bar) stays there too
+/// (`docs/ANALYSIS.md`).
 fn npc_health_bar_scale(kind: NpcKind) -> f32 {
     use NpcKind::*;
     match kind {
@@ -2098,6 +2123,8 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DD2OgreT3
         // S1-D-3 W-9: `type == 439 || type == 370` (`Main.cs:45919`).
         | DukeFishron
+        // `Main.cs:45911-45914` — `if (type == 87) scale = 1.5f`.
+        | WyvernHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -2282,7 +2309,10 @@ pub(crate) fn draw_npcs(
             NpcKind::Hungry => boss_draw(assets.hungry.as_ref(), 3, n, w, h),
                         // NPC_117 is 18x30 — one frame (`Main.npcFrameCount[117]` = 1); the
             // v1 drew a 14x14 box quad.
-            NpcKind::LeechHead | NpcKind::LeechBody => boss_draw(assets.leech.as_ref(), 1, n, w, h),
+            // W-A2-3: the 119 tail rides the same 1-frame family sheet.
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => {
+                boss_draw(assets.leech.as_ref(), 1, n, w, h)
+            }
             // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 let (tex, frames) = match n.kind {
@@ -2888,6 +2918,22 @@ pub(crate) fn draw_npcs(
                     [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
+            // The wyvern family (`S1-D-3` wyvern): single-frame segments
+            // (`Main.npcFrameCount` 87..92 = 1, `Main.cs:67092-67093`),
+            // rotated along the chain like the worms above. **Sheet
+            // deferral**: NPC_87..92 are NOT packed — the best-fit atlas
+            // stands at 8121 px against the 8192 strict-GPU bound
+            // (`tr-render/src/atlas.rs:98-105`), only ~71 px of headroom,
+            // and the six sheets do not fit; `npc_sheet` returns None and
+            // the draw skips (the `let Some(tex)` guard below). The
+            // packing + the bestiary portraits ride the atlas-repack
+            // wave (docs/ANALYSIS.md "The Wyvern family").
+            NpcKind::WyvernHead => generic_anchor(assets.npc_sheet(87), 1, n, w, h),
+            NpcKind::WyvernLegs => generic_anchor(assets.npc_sheet(88), 1, n, w, h),
+            NpcKind::WyvernBody => generic_anchor(assets.npc_sheet(89), 1, n, w, h),
+            NpcKind::WyvernBody2 => generic_anchor(assets.npc_sheet(90), 1, n, w, h),
+            NpcKind::WyvernBody3 => generic_anchor(assets.npc_sheet(91), 1, n, w, h),
+            NpcKind::WyvernTail => generic_anchor(assets.npc_sheet(92), 1, n, w, h),
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 // The hovers: `FindFrame`'s case 6 (`NPC.cs`, the 8-tick
                 // advance over `Main.npcFrameCount` — 6 = 2, 42 = 3, 23 =
@@ -3038,7 +3084,24 @@ pub(crate) fn draw_npcs(
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => {
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies draw their OWN sheet
+            // (`TextureAssets.Npc[type]`, the `HOLIDAY_ZOMBIE_SHEETS` rows)
+            // at the 3-row strip (`Main.npcFrameCount` 3) with the generic
+            // centred anchor — the wave-A walkers' shape. The halloween
+            // trio's `scale` rows ride `n.scale` in the draw below.
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the blood-moon pair draws its OWN sheet
+            // (`TextureAssets.Npc[type]`, the `BLOOD_MOON_SHEETS` rows):
+            // 489 the 9-row humanoid strip, 490 the 8-row flap strip
+            // (`Main.npcFrameCount`, `Main.cs:67132`) with the generic
+            // centred anchor — the holiday zombies' shape.
+            | NpcKind::BloodZombie
+            | NpcKind::Drippler => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
@@ -3185,6 +3248,14 @@ pub(crate) fn draw_npcs(
                     | NpcKind::EaterOfWorldsHead
                     | NpcKind::EaterOfWorldsBody
                     | NpcKind::EaterOfWorldsTail
+                    // The wyvern chain (`AI_006`'s `:51878` follower /
+                    // `:52201` head rotations — the same atan2 tilt).
+                    | NpcKind::WyvernHead
+                    | NpcKind::WyvernLegs
+                    | NpcKind::WyvernBody
+                    | NpcKind::WyvernBody2
+                    | NpcKind::WyvernBody3
+                    | NpcKind::WyvernTail
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,
@@ -3205,6 +3276,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::PrimeSaw
                     | NpcKind::PrimeVice
                     | NpcKind::PrimeLaser
+                    // The Skeletron hand's dock/strike aim (`AI()`'s
+                    // aiStyle-12 rotation writes, `NPC.cs:22500`/
+                    // `:22508`/`:22559` — B-1 H8, the prime-limb v2
+                    // precedent).
+                    | NpcKind::SkeletronHand
                     // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
                     // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
                     // rotates every NPC by `npc.rotation` (`Main.cs:26632`).

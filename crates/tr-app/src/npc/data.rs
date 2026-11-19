@@ -204,6 +204,10 @@ pub struct FrostDefaults {
 }
 
 impl NpcKind {
+    /// `NPCID.Count` (`NPCID.cs:12581`, 697) — the length of the C#'s
+    /// per-type tables (`Player.npcTypeNoAggro`, `Player.cs:2994`).
+    pub const CS_ID_COUNT: usize = 697;
+
     // The protocol id tables below must stay a single live arm per kind/id:
     // the pirate/martian merges of 2026-11 appended duplicates that the
     // compiler only warns about, so 60 dead `to_u16` arms and 28 dead
@@ -374,6 +378,9 @@ impl NpcKind {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            // W-A2-3: the leech tail takes the free 148 hole (the
+            // port-local protocol space, the S1-F-1 pattern).
+            NpcKind::LeechTail => 148,
             NpcKind::TheDestroyer => 50,
             // S1-D-3-wire-destroyer: the body/tail/probe kinds (vanilla
             // types 135/136/139, `NPCID.cs:10947-10949`/`:10955`; the
@@ -496,13 +503,30 @@ impl NpcKind {
             NpcKind::FemaleZombie => 211,
             NpcKind::ZombieRaincoat => 212,
             // S1-D-3 W-9 fishron wiring — the boss + its three hazards take
-            // the free 213..216 band (the port-local space above wave A's
-            // 189..212; the vanilla ids 370-373 stay free for the wire's
-            // `net_id`/bestiary space).
+            // the free 219..222 band (gate-reassigned; 213/214 R10-reserved).
+            // The vanilla ids 370-373 stay free for the wire's
+            // `net_id`/bestiary space.
             NpcKind::DukeFishron => 219,
             NpcKind::DetonatingBubble => 220,
             NpcKind::Sharkron => 221,
             NpcKind::Sharkron2 => 222,
+            // S1-D-3z (zombie fighter audit) — the five holiday zombie
+            // variants + the blood-moon pair. GATE REASSIGN (L-I, re-scan
+            // after the wyvern forward-merge): the branch's 221..227
+            // collide with the landed fishron 219-222 AND wyvern 223-228
+            // bands — next-free ascending after a to_u16 scan of the
+            // merged lane tree: 230..236 (213/214 martian-defaults taken,
+            // 148 LeechTail / 353 wheel reserved). The vanilla types ride
+            // `cs_id`/`net_id` (319-321/331-332/489/490), NOT these
+            // protocol ids — the spawner's holiday arms
+            // (`NPC.cs:4727-4735`) pick by the vanilla type.
+            NpcKind::ZombieDoctor => 230,
+            NpcKind::ZombieSuperman => 231,
+            NpcKind::ZombiePixie => 232,
+            NpcKind::ZombieXmas => 233,
+            NpcKind::ZombieSweater => 234,
+            NpcKind::BloodZombie => 235,
+            NpcKind::Drippler => 236,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344, above the whole port-local space exactly like the
             // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
@@ -546,12 +570,29 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
+            // the vanilla ids 87-92 collide with the port-local
+            // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
+            // branch's 213-218 band TRIPLE-collides with R10 martian
+            // 213/214 (keeps, earliest push) + R50 fishron 219-222 + R55
+            // destroyer 216-218 — the six take the next-free 223-228
+            // (148 reserved R78 LeechTail). Save-compat safe: the branch
+            // had not merged when the ids moved. The vanilla `NPC.type`
+            // rides the bestiary entry (`net_id` 87, the segments fold
+            // onto the head's entry like every other worm family).
+            NpcKind::WyvernHead => 223,
+            NpcKind::WyvernLegs => 224,
+            NpcKind::WyvernBody => 225,
+            NpcKind::WyvernBody2 => 226,
+            NpcKind::WyvernBody3 => 227,
+            NpcKind::WyvernTail => 228,
         }
     }
 
     /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
     /// bijection over the whole kind roster (`S1-F-1`); the unmatched ids
-    /// (the free 62/148 holes + the gaps above 215) decode to `None`. One
+    /// (the free 62 hole + the gaps above the landed bands) decode to
+    /// `None` (148 = LeechTail since W-A2-3). One
     /// live arm per id: a duplicate is a hard error (`to_u16`'s guard above).
     #[deny(unreachable_patterns)]
     pub fn from_u16(v: u16) -> Option<Self> {
@@ -697,6 +738,7 @@ impl NpcKind {
             47 => NpcKind::Hungry,
             48 => NpcKind::LeechHead,
             49 => NpcKind::LeechBody,
+            148 => NpcKind::LeechTail,
             50 => NpcKind::TheDestroyer,
             // S1-D-3-wire-destroyer: the gate-reassigned 216/217/218
             // holes (`to_u16` above; vanilla types 135/136/139).
@@ -825,6 +867,18 @@ impl NpcKind {
             220 => NpcKind::DetonatingBubble,
             221 => NpcKind::Sharkron,
             222 => NpcKind::Sharkron2,
+            // S1-D-3z — the holiday zombie band + blood-moon pair decode
+            // here (the same ids `to_u16` encodes above; GATE REASSIGN
+            // L-I re-scan post-wyvern: 230..236 next-free; fishron
+            // 219-222 + wyvern 223-228 landed). `NPC.cs:13033-13074`
+            // (319-321), `:13204-13229` (331-332), `:14605-14631` (489/490).
+            230 => NpcKind::ZombieDoctor,
+            231 => NpcKind::ZombieSuperman,
+            232 => NpcKind::ZombiePixie,
+            233 => NpcKind::ZombieXmas,
+            234 => NpcKind::ZombieSweater,
+            235 => NpcKind::BloodZombie,
+            236 => NpcKind::Drippler,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344 decode here (the same ids `to_u16` encodes above).
             // `NPC.cs:13281-13368`.
@@ -853,6 +907,15 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
+            // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
+            // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
+            223 => NpcKind::WyvernHead,
+            224 => NpcKind::WyvernLegs,
+            225 => NpcKind::WyvernBody,
+            226 => NpcKind::WyvernBody2,
+            227 => NpcKind::WyvernBody3,
+            228 => NpcKind::WyvernTail,
             _ => return None,
         })
     }
@@ -907,9 +970,16 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
+                // W-A2-3 (T3f): the stardust worm head IS an AI_006 kind
+                // (`NPC.cs:51564-51567`'s `flag3 = true`, the `:51740`
+                // tunables) — a lone minion with no chain (type 402 sits
+                // outside the `:51301` spawn lists, so `is_worm_head`
+                // stays false and the init never grows links).
+                | NpcKind::StardustWormHead
         )
     }
 
@@ -932,12 +1002,24 @@ impl NpcKind {
                 | NpcKind::GiantWormTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::TheDestroyer
                 | NpcKind::TheDestroyerBody
                 | NpcKind::TheDestroyerTail
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
+                // The wyvern chain shares the head's life pool
+                // (`NPC.cs:51158-51159`/`:51182-51183`: `ai[3] = whoAmI`,
+                // `realLife = whoAmI` on the head and every link). Inert
+                // until the wiring sets `worm_id`/`seg_index` (the
+                // carrier resolution keys on them, `npc.rs:3419`).
+                | NpcKind::WyvernHead
+                | NpcKind::WyvernLegs
+                | NpcKind::WyvernBody
+                | NpcKind::WyvernBody2
+                | NpcKind::WyvernBody3
+                | NpcKind::WyvernTail
         )
     }
 
@@ -991,7 +1073,10 @@ impl NpcKind {
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
-            NpcKind::LeechBody => NpcKind::LeechBody,
+            // W-A2-3 (T3e): the budget-exhausted body spawns `type + 1`
+            // = the 119 tail (`NPC.cs:51357`); the tail closes the chain
+            // (it sits outside both spawn lists, `:51301`/`:51350`).
+            NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechTail,
             // The crawltipede chain (`:51375-51381`'s per-index kind):
             // the bodies self-chain and the tail closes it.
             NpcKind::SolarCrawltipedeHead => NpcKind::SolarCrawltipedeBody,
@@ -1015,6 +1100,12 @@ impl NpcKind {
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
+            // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
+            // precedent): the shared pass's budget chain + dig head are
+            // NOT the wyvern's machine — the fixed 14-link chain and the
+            // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
+            NpcKind::WyvernHead => (11.0, 0.25),
             _ => (8.0, 0.07),
         }
     }
@@ -1419,7 +1510,8 @@ impl NpcKind {
             NpcKind::KingSlime => "NPC_Hit_1",
             NpcKind::EyeOfCthulhu => "NPC_Hit_1",
             NpcKind::Hungry => "NPC_Hit_9",
-            NpcKind::LeechHead => "NPC_Hit_9",
+            // 117-119 share NPCHit9 (`NPC.cs:10414`/`:10430`/`:10446`).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => "NPC_Hit_9",
             NpcKind::ServantOfCthulhu => "NPC_Hit_1",
             NpcKind::WanderingEye => "NPC_Hit_1",
             NpcKind::Guide => "NPC_Hit_1",
@@ -1650,7 +1742,18 @@ impl NpcKind {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => "NPC_Hit_1",
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies' `NPCHit1` (`NPC.cs:13041`/
+            // `:13055`/`:13069`/`:13212`/`:13225`).
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => "NPC_Hit_1",
+            // S1-D-3z — the blood-moon pair's `SetDefaults` HitSound rows:
+            // 489 NPCHit18 (`NPC.cs:14613`), 490 NPCHit19 (`:14627`).
+            NpcKind::BloodZombie => "NPC_Hit_18",
+            NpcKind::Drippler => "NPC_Hit_19",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCHit1` (`NPC.cs:13286`/`:13348`), 341's
             // `NPCHit4` (`:13322`), 342 and 344's `NPCHit7`
@@ -1685,6 +1788,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
+            // `:9984`/`:10002`/`:10020`/`:10038`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Hit_7",
             _ => return None,
         })
     }
@@ -1700,7 +1811,8 @@ impl NpcKind {
             NpcKind::KingSlime => "NPC_Killed_1",
             NpcKind::EyeOfCthulhu => "NPC_Killed_1",
             NpcKind::Hungry => "NPC_Killed_11",
-            NpcKind::LeechHead => "NPC_Killed_12",
+            // 117-119 share NPCDeath12 (`NPC.cs:10415`/`:10431`/`:10447`).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => "NPC_Killed_12",
             NpcKind::ServantOfCthulhu => "NPC_Killed_1",
             NpcKind::WanderingEye => "NPC_Killed_1",
             NpcKind::Guide => "NPC_Killed_1",
@@ -1933,7 +2045,19 @@ impl NpcKind {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => "NPC_Killed_2",
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies' `NPCDeath2` (`NPC.cs:13042`/
+            // `:13056`/`:13070`/`:13213`/`:13226`).
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => "NPC_Killed_2",
+            // S1-D-3z — the blood-moon pair's `SetDefaults` DeathSound
+            // rows: 489 NPCDeath21 (`NPC.cs:14614`), 490 NPCDeath22
+            // (`:14629`).
+            NpcKind::BloodZombie => "NPC_Killed_21",
+            NpcKind::Drippler => "NPC_Killed_22",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCDeath1` (`NPC.cs:13287`/`:13349`), 341 and
             // 342's `NPCDeath6` (`:13323`/`:13336`), 344's `NPCDeath5`
@@ -1968,6 +2092,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
+            // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Killed_8",
             _ => return None,
         })
     }
@@ -2031,6 +2163,15 @@ impl NpcKind {
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
             | NpcKind::ZombieRaincoat => 3,
+            // aiStyle 3 — the holiday zombies (S1-D-3z; `NPC.cs:13037`/
+            // `:13051`/`:13065`/`:13208`/`:13221`).
+            NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => 3,
+            // aiStyle 3 — the Blood Zombie (S1-D-3z; `NPC.cs:14609`).
+            NpcKind::BloodZombie => 3,
             // aiStyle 4 - NPC.cs:8707
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
@@ -2038,11 +2179,16 @@ impl NpcKind {
             // The Queen Bee's volley bees — `NPC.cs:11700`/`:11713`
             // (the type-210/211 branch of AI_005, `:50384-50413`).
             NpcKind::Bee | NpcKind::BeeSmall => 5,
-            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :15010, :15269, :15287, :15305
+            // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :10441 (the leech tail, W-A2-3), :15010, :15269, :15287, :15305
             NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
-            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody |
+            NpcKind::LeechTail => 6,
+            // aiStyle 6 — the wyvern family (`NPC.cs:9945`, :9962, :9980,
+            // :9998, :10016, :10034).
+            NpcKind::WyvernHead | NpcKind::WyvernLegs | NpcKind::WyvernBody |
+            NpcKind::WyvernBody2 | NpcKind::WyvernBody3 | NpcKind::WyvernTail => 6,
             // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
             NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
             NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
@@ -2065,6 +2211,8 @@ impl NpcKind {
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
+            // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
+            NpcKind::Drippler => 22,
             // aiStyle 25 - NPC.cs:13318 (the Present Mimic's chest machine,
             // `AI_025`, `:25538-25630`)
             NpcKind::PresentMimic => 25,
@@ -2269,6 +2417,16 @@ impl NpcKind {
             // is 1 for these kinds (the port carries no per-kind scale
             // outside the slime variants — documented deviation).
             NpcKind::DoctorBones | NpcKind::TheGroom | NpcKind::ZombieEskimo => 1.0,
+            // S1-D-3z — the holiday zombies ride the `num107` default 1f
+            // (no per-type override at `:58329-58364`). 319/320/321 are NOT
+            // in the `:58374` scale-factor set; 331/332 are, but their C#
+            // scale is 1f (no `SetDefaults` scale row), so the factor is 1
+            // and the effective cap is 1f for all five.
+            NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => 1.0,
             NpcKind::BaldZombie => 0.95,
             NpcKind::PincushionZombie => 1.1,
             NpcKind::SlimedZombie => 0.9,
@@ -2301,6 +2459,21 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            _ => return None,
+        })
+    }
+
+    /// S1-D-3z — the holiday zombies' `NPC.scale` `SetDefaults` rows
+    /// (`NPC.cs:13045`/`:13059`/`:13073`): 319 0.9f, 320 1.05f, 321 1.1f.
+    /// The xmas pair (331/332) writes no scale row — the `SetDefaults`
+    /// head's 1f default (`NPC.cs:8510-8537`). `None` for every kind
+    /// outside the halloween trio (the other kinds' scale rides
+    /// `pumpkin_moon_defaults`/`frost_moon_defaults` or `size()`).
+    pub fn holiday_zombie_scale(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::ZombieDoctor => 0.9,
+            NpcKind::ZombieSuperman => 1.05,
+            NpcKind::ZombiePixie => 1.1,
             _ => return None,
         })
     }
@@ -2356,7 +2529,20 @@ impl NpcKind {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => (18.0, 40.0),
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies' 18x40 boxes (`NPC.cs:13035-13036`/
+            // `:13049-13050`/`:13063-13064`/`:13206-13207`/`:13219-13220`).
+            // The C# `scale` rows (319 0.9 / 320 1.05 / 321 1.1) ride
+            // `Npc::scale`, not the hitbox — the box stays 18x40.
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the Blood Zombie's 18x40 box (`NPC.cs:14607-14608`).
+            | NpcKind::BloodZombie => (18.0, 40.0),
+            // S1-D-3z — the Drippler's 28x30 box (`NPC.cs:14621-14622`).
+            NpcKind::Drippler => (28.0, 30.0),
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
             NpcKind::Merchant => (18.0, 40.0),
@@ -2617,6 +2803,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
+            // The wyvern family: every kind 32x32 (`NPC.cs:9943-9944`/
+            // `:9960-9961`/`:9978-9979`/`:9996-9997`/`:10014-10015`/
+            // `:10032-10033`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => (32.0, 32.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
             // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
@@ -2624,7 +2819,8 @@ impl NpcKind {
             NpcKind::ServantOfCthulhu => (20.0, 20.0),
             // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
             NpcKind::Hungry => (30.0, 30.0),
-            NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
+            // `NPC.cs:10407`/`:10423`/`:10439`: 14x14 (W-A2-3: the tail).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => (14.0, 14.0),
             // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group and
             // the Splinterling share the C#'s 18x40 (`NPC.cs:12929-12977`
             // /`:13129-13133`); 315 is 74x70 (`:12978`), 325 164x154
@@ -2898,6 +3094,7 @@ impl NpcKind {
                 | NpcKind::Hungry
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::LeechTail
                 | NpcKind::TheDestroyer
                 | NpcKind::TheDestroyerBody
                 | NpcKind::TheDestroyerTail
@@ -2991,9 +3188,10 @@ impl NpcKind {
             NpcKind::SkeletronHead => 4400,
             // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
             NpcKind::WallOfFlesh => 8000,
-            // `NPC.cs`'s 115 (240) / 117-118 (60).
+            // `NPC.cs`'s 115 (240) / 117-119 (60 — the tail `:10445`,
+            // W-A2-3).
             NpcKind::Hungry => 240,
-            NpcKind::LeechHead | NpcKind::LeechBody => 60,
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 60,
             // `SetDefaults` case 134 (`NPC.cs:10667`): 80000 HP — the
             // vanilla's `realLife` pool: every segment of the Destroyer
             // shares the head's life (`NPC.cs:49836-49853`), so the worm
@@ -3221,6 +3419,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 150,
+            // The wyvern family: every kind lifeMax 4000 (`NPC.cs:9949`/
+            // `:9966`/`:9983`/`:10001`/`:10019`/`:10037`) — one shared
+            // pool through `realLife` (`:51158-51183`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 4000,
             NpcKind::KingSlime => 2000,
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
@@ -3271,6 +3478,17 @@ impl NpcKind {
             NpcKind::ZombieEskimo | NpcKind::PincushionZombie | NpcKind::ZombieRaincoat => 50,
             NpcKind::SwampZombie | NpcKind::TwiggyZombie => 45,
             NpcKind::FemaleZombie => 38,
+            // S1-D-3z — the holiday zombies' `SetDefaults` lifeMax rows:
+            // 319 40 (`NPC.cs:13040`), 320 60 (`:13054`), 321 34 (`:13068`),
+            // 331/332 45 (`:13211`/`:13224` — the base Zombie's row).
+            NpcKind::ZombieDoctor => 40,
+            NpcKind::ZombieSuperman => 60,
+            NpcKind::ZombiePixie => 34,
+            NpcKind::ZombieXmas | NpcKind::ZombieSweater => 45,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` lifeMax rows:
+            // 489 75 (`NPC.cs:14612`), 490 50 (`:14626`).
+            NpcKind::BloodZombie => 75,
+            NpcKind::Drippler => 50,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13294`/`:13301`/`:13309` —
             // 600/700/500), 341 900 (`:13321`), 342 750 (`:13334`),
@@ -3346,10 +3564,12 @@ impl NpcKind {
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
-            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22).
+            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22) / 119 (18,
+            // `:10443` — W-A2-3).
             NpcKind::Hungry => 30,
             NpcKind::LeechHead => 26,
             NpcKind::LeechBody => 22,
+            NpcKind::LeechTail => 18,
             NpcKind::TheDestroyer => 70,
             // `NPC.cs`'s 135 (55, `:10686`) / 136 (40, `:10706`) / 139 (50,
             // `:10726`).
@@ -3563,6 +3783,14 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead => 22,
             NpcKind::EaterOfWorldsBody => 13,
             NpcKind::EaterOfWorldsTail => 11,
+            // The wyvern: the head 80, every segment 40 (`NPC.cs:9947`/
+            // `:9964`/`:9981`/`:9999`/`:10017`/`:10035`).
+            NpcKind::WyvernHead => 80,
+            NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 40,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
             // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).
@@ -3615,6 +3843,16 @@ impl NpcKind {
             | NpcKind::ZombieRaincoat => 16,
             NpcKind::SlimedZombie | NpcKind::SwampZombie => 13,
             NpcKind::FemaleZombie => 12,
+            // S1-D-3z — the holiday zombies' `SetDefaults` damage rows:
+            // 319 20 (`NPC.cs:13038`), 320 15 (`:13052`), 321 20 (`:13066`),
+            // 331/332 14 (`:13209`/`:13222` — the base Zombie's row).
+            NpcKind::ZombieDoctor | NpcKind::ZombiePixie => 20,
+            NpcKind::ZombieSuperman => 15,
+            NpcKind::ZombieXmas | NpcKind::ZombieSweater => 14,
+            // S1-D-3z — the blood-moon pair's `SetDefaults` damage rows:
+            // 489 20 (`NPC.cs:14610`), 490 28 (`:14624`).
+            NpcKind::BloodZombie => 20,
+            NpcKind::Drippler => 28,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13292`/`:13299`/`:13307` —
             // 65/52/78), 341 100 (`:13319`), 342 90 (`:13332`), 343 140

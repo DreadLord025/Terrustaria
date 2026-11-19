@@ -545,6 +545,70 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Raincoat Zombie",
     },
+    // S1-D-3z — the five holiday zombies (`BestiaryEntry.Enemy(319-321/
+    // 331-332)`, the automated populator `BestiaryDatabaseNPCsPopulator.cs:
+    // 851-868`); the names ride `Lang.GetNPCName` (en-US NPCs.json — all
+    // five resolve to "Zombie").
+    BestiaryEntryDef {
+        credit_id: "ZombieDoctor",
+        net_id: 319,
+        kind: NpcKind::ZombieDoctor,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieSuperman",
+        net_id: 320,
+        kind: NpcKind::ZombieSuperman,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombiePixie",
+        net_id: 321,
+        kind: NpcKind::ZombiePixie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieXmas",
+        net_id: 331,
+        kind: NpcKind::ZombieXmas,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ZombieSweater",
+        net_id: 332,
+        kind: NpcKind::ZombieSweater,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // S1-D-3z (zombie fighter audit) — the blood-moon pair
+    // (`BestiaryDatabaseNPCsPopulator.cs:1310`/`:1336` tag both with the
+    // BloodMoon spawn condition); the names ride `Lang.GetNPCName`
+    // (en-US NPCs.json — `NPCID.cs:12524-12525`'s name map).
+    BestiaryEntryDef {
+        credit_id: "BloodZombie",
+        net_id: 489,
+        kind: NpcKind::BloodZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "Drippler",
+        net_id: 490,
+        kind: NpcKind::Drippler,
+        variant: None,
+        quick_unlock: false,
+        name: "Drippler",
+    },
     // S1-D-3ff wave A — `BestiaryEntry.Enemy(225)` (the automated
     // populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); the
     // name rides `Lang.GetNPCName` (en-US NPCs.json).
@@ -629,6 +693,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Giant Worm",
+    },
+    // The wyvern family (`S1-D-3` wyvern): ONE entry on the head's id 87
+    // — the segments' bestiary draw modifiers carry `Hide = true`
+    // (`NPCID.cs:1821-1856`) and the kills credit the head (the
+    // Devourer's fold below, `entry_for_npc`). The Sky spawn-condition
+    // tag rides all six ids (`BestiaryDatabaseNPCsPopulator.cs:1713-1718`);
+    // the name is the localization's `"WyvernHead": "Wyvern"` row
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "WyvernHead",
+        net_id: 87,
+        kind: NpcKind::WyvernHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Wyvern",
     },
     // The worm segments fold onto the head's entry (`entry_for_npc`'s
     // mapping): the vanilla credits the whole worm to the head's bestiary
@@ -2191,6 +2270,17 @@ pub fn try_entry_for_npc(
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold like every other worm family (the
+        // vanilla credits the whole leech to 117).
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — the whole serpent is
+        // one bestiary credit, the Devourer precedent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2226,6 +2316,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold onto 117 like every other worm.
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — one credit for the
+        // whole serpent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

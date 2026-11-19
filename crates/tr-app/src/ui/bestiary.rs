@@ -804,7 +804,9 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
         }
-        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) | (NpcKind::LeechTail, _) => {
+            (sheet_i, 14.0, 14.0, 14.0, white)
+        }
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {
@@ -872,6 +874,22 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsHead, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        // The wyvern head's portrait: the 32x32 single-frame box
+        // (`NPC.cs:9943-9944`, `Main.npcFrameCount[87]` = 1). The sheet
+        // itself is deferred (the ~71-px atlas headroom, ANALYSIS "The
+        // Wyvern family") — `entry_sheet` returns None and the portrait
+        // draw skips until the repack; the vanilla's draw modifiers
+        // (`NPCID.cs:1811-1819`: the NPC_87 custom path, Position
+        // (55, 15), the portrait overrides (4, 10)) ride that wave too.
+        // The segments never reach this arm through the catalog (the
+        // head's fold, `NPCID.cs:1821-1856`'s `Hide = true`) — the rows
+        // exist for the match's exhaustiveness, the same 32x32 box.
+        (NpcKind::WyvernHead, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        (NpcKind::WyvernLegs, _)
+        | (NpcKind::WyvernBody, _)
+        | (NpcKind::WyvernBody2, _)
+        | (NpcKind::WyvernBody3, _)
+        | (NpcKind::WyvernTail, _) => (sheet_i, 32.0, 32.0, 32.0, white),
         (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Nurse, _) => (sheet_i, 48.0, 38.0, 48.0, white),
@@ -1565,6 +1583,18 @@ fn portrait_data(
                 .unwrap_or(46.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // S1-D-3z — the holiday zombies' portrait rests the same 18x40
+        // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
+        (NpcKind::ZombieDoctor
+        | NpcKind::ZombieSuperman
+        | NpcKind::ZombiePixie
+        | NpcKind::ZombieXmas
+        | NpcKind::ZombieSweater, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // S1-D-3z — the blood-moon pair's portrait rests the kind's
+        // `SetDefaults` box: 489 the 18x40 humanoid box (`NPC.cs:14607-
+        // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
+        (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }
 

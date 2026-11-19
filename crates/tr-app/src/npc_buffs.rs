@@ -248,11 +248,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsHead
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
+        // The wyvern family: `{ 87..92, SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:6600-6641`) — On Fire! immunity, all six kinds.
+        NpcKind::WyvernHead
+        | NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => &[31],
         NpcKind::KingSlime => &[20, 31],
         // The eye and the servant: no `DebuffImmunitySets` rows.
         NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
-        // The hungry/leeches: no `DebuffImmunitySets` rows.
-        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => &[],
+        // The hungry/leeches: no `DebuffImmunitySets` rows (119 neither).
+        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => &[],
         // The goblins: no `DebuffImmunitySets` rows.
         NpcKind::GoblinThief
         | NpcKind::GoblinWarrior
@@ -451,7 +459,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SwampZombie
         | NpcKind::TwiggyZombie
         | NpcKind::FemaleZombie
-        | NpcKind::ZombieRaincoat => &[],
+        | NpcKind::ZombieRaincoat
+        // S1-D-3z — the holiday zombies' null `DebuffImmunitySets` rows
+        // (`NPCID.cs:7964-7966` for 319-321, `:8024-8025` for 331-332).
+        | NpcKind::ZombieDoctor
+        | NpcKind::ZombieSuperman
+        | NpcKind::ZombiePixie
+        | NpcKind::ZombieXmas
+        | NpcKind::ZombieSweater
+        // S1-D-3z — the blood-moon pair's null `DebuffImmunitySets` rows
+        // (`NPCID.cs:8892-8893`).
+        | NpcKind::BloodZombie
+        | NpcKind::Drippler => &[],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

@@ -313,6 +313,11 @@ pub fn step(
 
     // noTileCollide + noGravity (`SetDefaults :12381`/`:12392`): the raw
     // integration, no collision pass — the stand-in's own tail convention.
+    // W1-5: capture the PRE-move position — the C#'s CanHit (`:31918`)
+    // runs inside AI(), BEFORE NPC.Update's movement integration; the
+    // sight gate below reads this, not the moved box (the aim/muzzle
+    // already use the pre-move `center`).
+    let (x0, y0) = (npc.x, npc.y);
     npc.x += npc.vx;
     npc.y += npc.vy;
 
@@ -327,12 +332,14 @@ pub fn step(
             return;
         }
         // `:31918-31923` — the sight gate (localAI[3]'s expert justHit
-        // override is constants-off).
+        // override is constants-off). W1-5: the C# checks the PRE-move
+        // box (`Collision.CanHit(base.position, …)` inside AI()); the
+        // captured (x0, y0) — not the integrated npc.x/y — feeds it.
         let (w, h) = npc.size();
         let visible = crate::projectile::can_hit(
             world,
-            npc.x,
-            npc.y,
+            x0,
+            y0,
             w,
             h,
             player.x,
@@ -669,6 +676,67 @@ mod tests {
                 assert!(vy > 0.0, "aimed down at the player, no upward lead");
             }
         }
+    }
+
+    /// W1-5 (`NPC.cs:31918`): the sight gate reads the PRE-move box —
+    /// `Collision.CanHit(base.position, …)` runs inside AI(), BEFORE
+    /// NPC.Update's integration. The port integrates mid-step, so the
+    /// gate must use the captured (x0, y0). Witness: a one-tile wall
+    /// column at x 105; the PRE-move centre sits in column 104 (the
+    /// walk's first step onto the solid column rejects — blocked), the
+    /// tick's ~15 px motion carries the POST-move centre INTO column
+    /// 105, from which `can_hit`'s walk exits through air (clear). The
+    /// old post-move read fires the seed; the pre-move read holds it.
+    #[test]
+    fn w1_5_the_sight_gate_reads_the_pre_move_position() {
+        let mut w = world();
+        // The wall column at tile x = 105, rows 140..160 (full solids).
+        for y in 140..160 {
+            let i = w.index(105, y);
+            w.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut pl = Npc::new(NpcKind::Plantera, 0.0, 150.0 * 16.0, 1, 0.0);
+        // The pre-move centre at px 1679 = tile column 104, one px left
+        // of the 104/105 boundary (1680). Plantera's box is 86 wide.
+        pl.x = 1679.0 - 43.0;
+        pl.local_ai[0] = 1.0; // the hook latch already fired
+        pl.local_ai[1] = 80.0; // the >80 cadence fires THIS tick
+        // A carried +15 vx: the approach steps it toward the 2.5 cap by
+        // the 0.025 accel — still ~14.975 px of motion this tick, enough
+        // to cross into column 105 (post-move centre ~1694).
+        pl.vx = 15.0;
+        let mut player = jungle_player(&w);
+        player.x = 120.0 * 16.0;
+        player.y = 150.0 * 16.0;
+        let mut rng = UnifiedRandom::new(0);
+        let center = pl.center();
+        let (x0, y0) = (pl.x, pl.y);
+        step(&mut pl, &w, &player, &mut rng, center);
+        assert!(pl.x + 43.0 >= 1680.0, "the motion crossed into column 105");
+        assert!((pl.y - y0).abs() < 0.1, "the vertical motion is one accel step");
+        assert!(
+            pl.wants_hostile_shot.is_empty(),
+            "the PRE-move box is wall-blocked: no seed (a post-move read fires — the W1-5 bug)"
+        );
+        assert_eq!(pl.local_ai[1], 0.0, "the cadence reset ran before the gate");
+        // The control: the same scene without the wall fires the seed —
+        // proving the block above is the sight gate, not the cadence.
+        for y in 140..160 {
+            let i = w.index(105, y);
+            w.tiles[i] = tr_core::Tile::default();
+        }
+        let mut pl2 = Npc::new(NpcKind::Plantera, x0, y0, 1, 0.0);
+        pl2.local_ai[0] = 1.0;
+        pl2.local_ai[1] = 80.0;
+        pl2.vx = 15.0;
+        let mut rng2 = UnifiedRandom::new(0);
+        let center2 = pl2.center();
+        step(&mut pl2, &w, &player, &mut rng2, center2);
+        assert_eq!(pl2.wants_hostile_shot.len(), 1, "the clear line fires");
     }
 
     /// `NPC.cs:32026-32032` + `Gore.cs:1327-1328` — the gore burst
