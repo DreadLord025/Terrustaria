@@ -3691,9 +3691,10 @@ the C#'s `AnyNPCs`/`invasionSize*` reads are per-ladder).
 Deviations (documented):
 - The kind per arm resolves through the port's bestiary net id, so the
   spawned net id is the C#'s; the port's kind *names* for net
-  26/27/28/111 (the goblin quartet) and net 144/145 (SnowBalla/
-  MysterySnowman) are shifted vs 1.4.5's `NPCID.cs` — the pre-existing
-  roster mapping, the rename is the bestiary pass's concern.
+  26/27/28/111 (the goblin quartet — renamed in S1-D-3d) and net 144/145
+  (SnowBalla/MysterySnowman — the C#'s MisterStabby/SnowBalla) are
+  shifted vs 1.4.5's `NPCID.cs`; the frost rename stays the bestiary
+  pass's concern (the credit ids/names follow the C# since S1-D-3q).
 - The pirate table's Parrot 252 has no `NpcKind`: the roll consumes
   where the C#'s does, the outcome maps to the Corsair.
 - The Dutchman arm's `Collision.SolidTiles` scan and the boss-minion
@@ -4365,8 +4366,10 @@ the start fn over the invasion type (the goblin slice passes 1), the
 warning fn carries the type-2 literals (`Main.InvasionWarning`'s
 `Lang.misc[4..7]` — the en strings stand in), the defeat ride sets the
 new `World.downed_frost` (`SetEventFlagCleared(ref downedFrost, 1)`),
-and the spawn table gets the type-2 arm: the SnowmanGangsta 1/7, the
-SnowBalla 1/3, else the MysterySnowman (`NPC.cs:1450-1459`).
+and the spawn table gets the type-2 arm: net 145 (the port's
+MysterySnowman) 1/7, net 143 (the SnowmanGangsta) 1/3, else net 144
+(the port's SnowBalla) (`NPC.cs:1453-1466`; the sim table's kind
+rotation was fixed in S1-D-3q).
 
 The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
 (`Player.cs:43941-43956`) — the Snow Globe 602 with the
@@ -4375,16 +4378,20 @@ The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
 `invasionDelay = 0; StartInvasion(2)` — the march state rides the World
 (the morning-roll resolve's shape; the size 80+40, the far-side roll).
 
-The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145)
-carry their verbatim `SetDefaults` rows (26×40, 200/240/220 HP, dmg
-50/65/55, def 20/26/22, kb 0.6, value 400) and ride aiStyle 38's
-movement core through the walker (the per-type speeds 3/3.5/4 fold into
-the walker params; the Gangsta's bottle throw, the Balla's kick and the
-Mystery's jump arms land with the projectile work).
+The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145 —
+the port's roster labels; the C#'s names are SnowmanGangsta/MisterStabby/
+SnowBalla, `NPCID.cs:10963-10967`) carry their verbatim `SetDefaults`
+rows (26×40, 200/240/220 HP, dmg 50/65/55, def 20/26/22, kb 0.6, value
+400 — no size variants exist in the C#) and now run aiStyle 38's own
+machine (`update_frost_legion`, R-25-1) with the FindFrame arms, the
+confused resets and the truncating firing box (S1-D-3q).
 
-Deviations: the throw/kick/jump sub-arms are the projectile-work
-follow-ups; the Mystery's jump-dodge `ai[1] >= 3` state rides the
-walker's generic hop.
+Deviations: the throw `ai[0] = 2` write is now carried by the spawn seam
+(`spawn_hostile_timed`'s `ai0` argument — for 109 it keeps tile collision
+on while both `AI_010` gravity arms exclude the kind; the owner-gated
+`AI_010` blocks stay unported, ANALYSIS "The Frost Legion machine"); the
+kind-name rename to the vanilla NPCIDs is deferred to the bestiary pass
+(the credit ids and display names already follow the C#, S1-D-3q).
 
 ## The death-screen coin loss (M4-REVENGE-1)
 
@@ -13251,16 +13258,87 @@ shared NPC movement (the gravity + the axis-separated tile collision,
 per-machine shape (the slime's pattern), and a wall's zeroed vx feeds the
 stuck flip exactly like the vanilla.
 
-Two documented gaps, both unreachable today:
+Two documented gaps at the R-25-1 landing, both resolved by S1-D-3q
+(2026-11-18/19, code-only mode):
 
-- **The `confused` resets** (`:29015-29017`, `:29131-29135`) ride the NPC
-  confusion debuff — not ported (the trio's `npc_buffs` row is empty), so
-  the arms land with the debuff table's task.
-- **The `proj.ai[0] = 2f` writes** (`:29021`, `:29082`) are inert for
-  projectiles 109/110: `AI_010` reads `ai[0]` only for type 31
-  (`Projectile.cs:57828`). The port's hostile-spawn seam carries no ai
-  payload; the throw's `timeLeft = 300` rides the resolution's explicit
-  override (`world_sim/npcs.rs`).
+- **The `confused` resets** (`:29012-29015`, `:29123-29128`) now read the
+  buff engine's Confused (31) directly (`buffs.find_buff_index(31)`) —
+  the same latch shape `npc_target.rs` uses for the C#'s `this.confused`
+  (`NPC.cs:92029-92032`). The original "not ported" note was stale: the
+  NPC buff engine carries the debuff already.
+- **The `proj.ai[0] = 2f` writes** (`:29025`, `:29087`) — the original
+  "inert, no observable effect" claim was WRONG, corrected by the
+  2026-11-19 source re-read. For **109** the value matters in C#
+  single-player: `AI_010`'s `Main.myPlayer == owner && ai[0] == 0f`
+  disarm block (`Projectile.cs:57953-57996`) would set `tileCollide =
+  false` (and latch `ai[0] = 1`) without it; `ai[0] = 2` keeps tile
+  collision on. Both gravity arms exclude 109 anyway (`:58006`/`:58022`),
+  so the ball flies dead straight either way — the observable difference
+  is the tile contact. For **110** the write IS inert: `AI_001`'s
+  `flag3 = false` list holds the counter (`:55962`, gate `:56038-56041`)
+  and the only `ai[0]` reader on that path is the type-88 remap. The
+  write now rides `spawn_hostile_timed`'s `ai0` argument
+  (`world_sim/npcs.rs` passes 2 for both frost kinds, 0 for the laser —
+  its `NewProjectile` default, `NPC.cs:49877`).
+
+## The Frost Legion residuals (S1-D-3q, 2026-11-18 — code-only mode)
+
+The R-25-1 machine's residuals, landed on `task/S1-D-3-frost-legion` in
+**code-only mode** (no cargo/rustc/rustfmt/test runs, no graphify — file
+edits + git only; the tests below are written, not executed):
+
+- **The FindFrame arms** (`NPC.cs:73268-73379`) replace the generic
+  walker stride: `npc.rs::frost_legion_find_frame` — the vy-driven
+  `frameCounter` (++ on fall, -- on rise, clamped 0..17) over three-row
+  bands; the Gangsta's rows 1-3 (row 0 never shows), the Stabby's rows
+  2-4 plus the fully-still idle blink via `localAI[3]` (rows 0/1, reset
+  at ≥ 11), the Balla's rows 4-6 plus the grounded `ai[1] >= 3` windup
+  row `max(0, min(3, (int)(ai[2]/4)))`. The strips are 4/5/7 rows
+  (`Main.npcFrameCount`, `Main.cs:67082`); the port's `frame` is the row
+  index (the C#'s `frame.Y / num`).
+- **The firing-distance box** (`NPC.cs:55835-55841`): the C# truncates
+  BOTH centres via `ToPoint()` (`Utils.CenteredRectangle`,
+  `Utils.cs:947-950`), inflates the 1920×1200 `MaxWorldViewSize`
+  (`Main.cs:66714`) by −50 → the 1820×1100 box, and tests
+  `Rectangle.Contains` — half-open `[left, left+width)`. The port's
+  symmetric `abs() <= 910` test admitted the far edges the C# excludes;
+  it now truncates and tests the half-open box.
+- **The sim's invasion spawn table** (`world_sim/npcs.rs`): the C#
+  (`NPC.cs:1453-1466`) spawns net **145** on `Next(7) == 0`, net **143**
+  on `Next(3) == 0`, else net **144**. The port's sim table had the
+  kinds rotated (143/144/145) — the probabilities rode the wrong stats.
+  The spawner's own table (`spawner.rs`) was already correct. The RNG
+  draw order (`Next(7)` then `Next(3)`, sequential) is unchanged.
+- **The bestiary credit ids**: `ContentSamples.cs:868-870` keys the
+  kill tracker by `NPCID.Search.GetName(netID)` — net 144 is
+  `MisterStabby`, net 145 is `SnowBalla` (`NPCID.cs:10965`/`:10967`).
+  The port's entries now carry those keys/names ("Mister Stabby" /
+  "Snow Balla", the en-US NPC names). **The kind names stay**
+  (`NpcKind::SnowBalla` = net 144, `NpcKind::MysterySnowman` = net 145)
+  — the pre-existing roster labels; a rename would touch ~15 files and
+  the protocol-id space for no behaviour change, so it stays the
+  bestiary pass's concern (the S1-D-3d goblin precedent renamed kinds;
+  here the enum rename is deferred, the data is faithful). Save note:
+  port worlds saved before this change carry the old credit keys
+  ("SnowBalla" for net 144, "MysterySnowman" for net 145); those counts
+  no longer resolve — the same one-time loss any credit-id correction
+  has, and the direction is toward the vanilla keys a retail `.wld`
+  carries.
+- **The task text's stale premises** (recorded for the catalog): the
+  trio is aiStyle **38**, not AI_003 — the full machine already landed
+  via R-25-1 (`84ea016c`), so no `ai3_walk_speed` rows are needed (the
+  trio never reads that table). The "SnowBalla size variants" do not
+  exist in C# `SetDefaults` — all three are 26×40 with no scale
+  overrides (`NPC.cs:10805-10846`).
+- **Tests-as-code** (not run — code-only mode):
+  `s1_d_3b_tests::{frost_legion_per_type_speeds_and_accel_match_the_csharp,
+  frost_gangsta_frame_bands_ride_the_vy_counter,
+  frost_stabby_idle_blinks_and_flies_rows_two_to_four,
+  frost_balla_windup_row_and_air_rows_four_to_six,
+  frost_confused_resets_the_throw_timer_and_the_hop_state,
+  frost_firing_box_truncates_like_the_csharp_rectangle}` +
+  `bestiary::tests::the_frost_trio_credit_ids_follow_the_vanilla_npc_names`;
+  the two spawn-table tests repointed to the net-id mapping.
 
 ## Pause gates (S1-B-3, 2026-11-13)
 

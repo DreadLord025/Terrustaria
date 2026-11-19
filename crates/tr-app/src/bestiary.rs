@@ -765,20 +765,25 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Snowman Gangsta",
     },
     BestiaryEntryDef {
-        credit_id: "SnowBalla",
+        // Net 144 = `NPCID.MisterStabby` (`NPCID.cs:10965`) — the credit
+        // key and name follow the C#; the kind name `SnowBalla` is the
+        // port's pre-existing roster label (S1-D-3 residuals).
+        credit_id: "MisterStabby",
         net_id: 144,
         kind: NpcKind::SnowBalla,
         variant: None,
         quick_unlock: false,
-        name: "Snow Balla",
+        name: "Mister Stabby",
     },
     BestiaryEntryDef {
-        credit_id: "MysterySnowman",
+        // Net 145 = `NPCID.SnowBalla` (`NPCID.cs:10967`); the kind name
+        // `MysterySnowman` is the port's pre-existing roster label.
+        credit_id: "SnowBalla",
         net_id: 145,
         kind: NpcKind::MysterySnowman,
         variant: None,
         quick_unlock: false,
-        name: "Mystery Snowman",
+        name: "Snow Balla",
     },
     BestiaryEntryDef {
         credit_id: "MartianOfficer",
@@ -1750,6 +1755,25 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
+    }
+
+    #[test]
+    fn the_frost_trio_credit_ids_follow_the_vanilla_npc_names() {
+        // `ContentSamples.cs:868-870`: the bestiary credit id is
+        // `NPCID.Search.GetName(netID)` — net 144 is `MisterStabby` and
+        // net 145 is `SnowBalla` (`NPCID.cs:10965`/`:10967`), whatever
+        // the port's kind names call them.
+        let stabby = entry_for_npc(NpcKind::SnowBalla, SlimeVariant::Blue);
+        assert_eq!(stabby.net_id, 144);
+        assert_eq!(stabby.credit_id, "MisterStabby");
+        assert_eq!(stabby.name, "Mister Stabby");
+        let balla = entry_for_npc(NpcKind::MysterySnowman, SlimeVariant::Blue);
+        assert_eq!(balla.net_id, 145);
+        assert_eq!(balla.credit_id, "SnowBalla");
+        assert_eq!(balla.name, "Snow Balla");
+        let gangsta = entry_for_npc(NpcKind::SnowmanGangsta, SlimeVariant::Blue);
+        assert_eq!(gangsta.net_id, 143);
+        assert_eq!(gangsta.credit_id, "SnowmanGangsta");
     }
 
     #[test]

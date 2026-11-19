@@ -1471,9 +1471,10 @@ pub(crate) fn invasion_spawn_pick(
         }
         return Some(NpcKind::GoblinArcher); // 28
     }
-    // `invasionType == 2`, the frost legion (`:1450-1459`): the Mystery
-    // Snowman 1/7 (145), the Snowman Gangsta 1/3 (143), else the Snow
-    // Balla (144) — the port's net-id kinds per arm.
+    // `invasionType == 2`, the frost legion (`:1453-1466`): the Balla
+    // 1/7 (145, the port's `MysterySnowman`), the Snowman Gangsta 1/3
+    // (143), else the Stabby (144, the port's `SnowBalla`) — the port's
+    // net-id kinds per arm.
     if ctx.invasion_type == 2 {
         if rng.next_max(7) == 0 {
             return Some(NpcKind::MysterySnowman); // 145
@@ -3568,14 +3569,15 @@ mod tests {
 
     #[test]
     fn the_frost_spawn_table_picks_the_trio() {
-        // `invasionType == 2` (`NPC.cs:1450-1459`): the Mystery Snowman's
-        // net 145 rides the 1/7 arm, the Gangsta's net 143 the 1/3 arm, the
-        // Snow Balla's net 144 the else — always the frost trio (the port's
-        // kind *names* for net 144/145 ride the pre-existing bestiary ids).
+        // `invasionType == 2` (`NPC.cs:1453-1466`): the Balla's net 145
+        // rides the 1/7 arm, the Gangsta's net 143 the 1/3 arm, the
+        // Stabby's net 144 the else — always the frost trio (the port's
+        // kind *names* for net 144/145 ride the pre-existing roster
+        // labels: SnowBalla = 144, MysterySnowman = 145).
         let w = ground();
         let c = inv_pick_ctx(&w, 2, false);
         let mut rng = UnifiedRandom::new(9);
-        let (mut gangsta, mut balla, mut mystery) = (false, false, false);
+        let (mut gangsta, mut stabby, mut balla) = (false, false, false);
         for _ in 0..120 {
             let kind = invasion_spawn_pick(&c, &mut rng).expect("type 2 picks");
             assert!(matches!(
@@ -3583,10 +3585,10 @@ mod tests {
                 NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
             ));
             gangsta |= kind == NpcKind::SnowmanGangsta;
-            balla |= kind == NpcKind::SnowBalla;
-            mystery |= kind == NpcKind::MysterySnowman;
+            stabby |= kind == NpcKind::SnowBalla;
+            balla |= kind == NpcKind::MysterySnowman;
         }
-        assert!(gangsta && balla && mystery, "the trio's three arms fire");
+        assert!(gangsta && stabby && balla, "the trio's three arms fire");
         // The goblin table stays on type 1.
         let c = inv_pick_ctx(&w, 1, false);
         let mut rng = UnifiedRandom::new(9);
