@@ -1046,19 +1046,69 @@ pub(crate) fn update_worms(app: &mut App) {
     // swap's stream (`Main.cs:17767-17769`).
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     let world = &app.world;
-    let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
-    update_worms_in(world, player, &mut app.npcs, rng, &mut app.next_worm_id);
+    // The head machine's player snapshot: the surface gate reads
+    // `player.position.Y`/`dead` (`NPC.cs:51137-51148`), the corruption
+    // escape the target's `ZoneCorrupt`/`ZoneCrimson` (`:52004-52025`).
+    let ctx = app.player.as_ref().map(|p| WormHeadCtx {
+        pcx: p.center().0,
+        pcy: p.center().1,
+        px: p.x,
+        py: p.y,
+        dead: p.dead,
+        zone_corrupt: app.scene_metrics.zone_corrupt,
+        zone_crimson: app.scene_metrics.zone_crimson,
+    });
+    update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
+}
+
+/// The head machine's player inputs (`AI_006`'s `Main.player[target]`
+/// reads). `pcx/pcy` = the target centre (the aim), `py` =
+/// `position.Y` (the surface gate), the zones feed the corruption
+/// escape. Single-player: the target IS the one player.
+#[derive(Clone, Copy)]
+pub(crate) struct WormHeadCtx {
+    pub pcx: f32,
+    pub pcy: f32,
+    pub px: f32,
+    pub py: f32,
+    pub dead: bool,
+    pub zone_corrupt: bool,
+    pub zone_crimson: bool,
 }
 
 /// The worm pass's core — the pieces the tests drive directly (the world,
-/// the player centre, the Vec, the RNG stream, the id counter).
+/// the player centre, the Vec, the RNG stream, the id counter). The
+/// centre-only seam defaults the gate inputs (`dead = false`, no evil
+/// zones, `position.Y` ≈ centre Y); production rides `update_worms_ctx`
+/// with the full snapshot.
 pub(crate) fn update_worms_in(
     world: &tr_core::World,
     player: Option<(f32, f32)>,
     npcs: &mut Vec<Npc>,
+    rng: &mut UnifiedRandom,
+    next_worm_id: &mut u32,
+) {
+    let ctx = player.map(|(pcx, pcy)| WormHeadCtx {
+        pcx,
+        pcy,
+        px: pcx,
+        py: pcy,
+        dead: false,
+        zone_corrupt: false,
+        zone_crimson: false,
+    });
+    update_worms_ctx(world, ctx, npcs, rng, next_worm_id);
+}
+
+fn update_worms_ctx(
+    world: &tr_core::World,
+    head_ctx: Option<WormHeadCtx>,
+    npcs: &mut Vec<Npc>,
     mut rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
 ) {
+    // The Destroyer laser's aim still reads the plain centre.
+    let player = head_ctx.map(|c| (c.pcx, c.pcy));
     // The init loop: the links spawn their children (the chain assembles
     // front to back — the Vec order visits the head, then each child as it
     // lands).
@@ -1089,19 +1139,37 @@ pub(crate) fn update_worms_in(
         // would refill every child's budget and never terminate).
         let total = if kind.is_worm_head() && npcs[i].seg_index == 0 {
             match kind {
-                // `:51310`'s `Next(8, 13)` / `:51313`'s `Next(4, 7)` — the
-                // inclusive-low exclusive-high C# ranges.
-                NpcKind::DevourerHead => rng.next_range(8, 13) as u32,
-                NpcKind::GiantWormHead => rng.next_range(4, 7) as u32,
-                // The leech head: `Next(3, 6)` (`AI_006`'s type-117 branch).
-                NpcKind::LeechHead => rng.next_range(3, 6) as u32,
-                // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
-                // the difficulty work); the Destroyer's ~80 segments
-                // (`AI_037`'s ai[2] roll).
-                // The crawltipede's 30 segments (`:51375`'s `num34 = 30`).
-                NpcKind::SolarCrawltipedeHead => 29,
+                // The Destroyer rides `AI_037`'s own ai[2] roll, NOT the
+                // `:51303` list (R55's wiring; the port's chain stays
+                // as-is) — no draw, so the routing is unchanged.
                 NpcKind::TheDestroyer => 80,
-                _ => 65,
+                // The crawltipede's fixed 30-link spawn (`:51369-51392`,
+                // `num34 = 30`) draws NOTHING — outside the budget list.
+                NpcKind::SolarCrawltipedeHead => 29,
+                _ => {
+                    // The budget roll (`NPC.cs:51303-51342`): EVERY head
+                    // type in the `:51303` list rolls `ai[2] =
+                    // Next(8, 13)` FIRST (`:51310`), THEN some kinds
+                    // override — the first draw is consumed (discarded)
+                    // either way. Dropping the discarded draw shifts the
+                    // whole `UpdateNpcs` stream for every later consumer
+                    // (audit W-A2-1 / T1c).
+                    let budget = rng.next_range(8, 13) as u32; // `:51310`
+                    match kind {
+                        // Type 10: a SECOND draw overrides (`:51313`).
+                        NpcKind::GiantWormHead => rng.next_range(4, 7) as u32,
+                        // Type 117: a SECOND draw overrides (`:51341`).
+                        NpcKind::LeechHead => rng.next_range(3, 6) as u32,
+                        // Type 13: `GetEaterOfWorldsSegmentsCount()`
+                        // (`:51317`) overrides with NO extra draw — the
+                        // `Next(8, 13)` above was still consumed. 65
+                        // classic; the expert 70 rides the difficulty
+                        // work.
+                        NpcKind::EaterOfWorldsHead => 65,
+                        // Type 7 (Devourer) keeps the first draw.
+                        _ => budget,
+                    }
+                }
             }
         } else {
             npcs[i].worm_left
@@ -1127,13 +1195,18 @@ pub(crate) fn update_worms_in(
             continue;
         };
         let (w, h) = npcs[i].size();
-        let mut child = Npc::new(
-            child_kind,
-            npcs[i].x + w * 0.5 - child_kind.size().0 * 0.5,
-            npcs[i].y + h,
-            1,
-            0.0,
-        );
+        let (cw, ch) = child_kind.size();
+        // The child spawn placement (`NPC.cs:51347` + `NewNPC`'s
+        // `nPC.Bottom = (X, Y)` `:80770`, the setter `Entity.cs:128-131`):
+        // X = `(int)(pos.X + (float)(width / 2))` — the width is an INT,
+        // so `width / 2` is integer division — and the child's BOTTOM
+        // sits at the parent's bottom: `child.y = parent.y + parent.h -
+        // child.h`, both coordinates int-truncated. The old placement
+        // put the child's TOP at the parent's bottom, one child-height
+        // low per link (audit W-A2-1 / T2b).
+        let spawn_x = (npcs[i].x + (w as i32 / 2) as f32) as i32 as f32;
+        let spawn_y = (npcs[i].y + h) as i32 as f32;
+        let mut child = Npc::new(child_kind, spawn_x - cw * 0.5, spawn_y - ch, 1, 0.0);
         child.worm_id = npcs[i].worm_id;
         child.seg_index = npcs[i].seg_index + 1;
         child.worm_left = npcs[i].worm_left.saturating_sub(1);
@@ -1168,11 +1241,53 @@ pub(crate) fn update_worms_in(
         npcs[i].hp = npcs[carrier].hp;
         npcs[i].max_hp = npcs[carrier].max_hp;
     }
+    // The heads FIRST (`AI_006` runs inside each NPC's `Update` in slot
+    // order and `NewNPC`'s `Start = whoAmI` gives every child a HIGHER
+    // slot than its parent, `NPC.cs:51347`/`:80763` — the head moves
+    // first, the followers snap to the leader's SAME-TICK position).
+    // The old followers-before-heads order trailed the head's
+    // previous-tick position — a one-tick lag along the whole chain
+    // (audit W-A2-1 / T2c). The player snapshot carries the surface
+    // gate's inputs (`:51110-51148`) and the corruption escape's zones
+    // (`:52004-52050`).
+    let mut despawn_chains: Vec<(u32, u32)> = Vec::new();
+    for i in 0..npcs.len() {
+        if !npcs[i].kind.is_worm_head() || npcs[i].hp <= 0 {
+            continue;
+        }
+        let Some(ctx) = head_ctx else { continue };
+        if worm_head_step(&mut npcs[i], world, &ctx, rng) {
+            despawn_chains.push((npcs[i].worm_id, npcs[i].seg_index));
+        }
+    }
+    // The corruption escape's chain despawn (`NPC.cs:52028-52047`): the
+    // head deactivates and walks its `ai[0]` chain deactivating every
+    // DOWNSTREAM segment. The port's stable `worm_id`/`seg_index` link
+    // stands in for the index walk — kill the head and every higher
+    // index of its chain (an EoW split fragment ahead of it keeps its
+    // own life, as the C#'s walk never reaches it).
+    for (wid, seg) in despawn_chains {
+        for n in npcs.iter_mut() {
+            if n.worm_id == wid && n.seg_index >= seg {
+                n.hp = 0;
+            }
+        }
+    }
     // The follower trail (`:51867-51922`) + the chain death
-    // (`:51425-51433`).
+    // (`:51425-51433`). Ascending slot order = ascending `seg_index`
+    // within a chain (the spawn pushes head→tail), so each follower
+    // reads its leader's already-updated same-tick position.
     for i in 0..npcs.len() {
         if !npcs[i].kind.is_worm() || npcs[i].hp <= 0 {
             continue;
+        }
+        // The surface gate's dead-target arm runs for EVERY segment
+        // (`:51141-51148` — the `flag` types are heads only, but the
+        // `player.dead` term is family-wide): `EncourageDespawn(300)`.
+        if let Some(ctx) = head_ctx {
+            if ctx.dead {
+                npcs[i].encourage_despawn(300);
+            }
         }
         // The heads don't trail — the split heads keep their seg_index
         // (`Transform(13)` keeps the NPC identity), so the skip keys on
@@ -1297,53 +1412,129 @@ pub(crate) fn update_worms_in(
             npcs[i].hp = 0;
         }
     }
-    // The heads: the dig/air machine (`:51923-52051`).
-    let Some((pcx, pcy)) = player else { return };
-    for i in 0..npcs.len() {
-        if !npcs[i].kind.is_worm_head() || npcs[i].hp <= 0 {
-            continue;
-        }
-        worm_head_step(&mut npcs[i], world, pcx, pcy, rng);
-    }
 }
 
-/// The head's per-tick machine (`AI_006`'s `ai[1] == 0` branch). `flag3`
-/// (the dig mode) = any tile in the body rect is solid or liquid-heavy
-/// (`:51580`'s count rule). In the open air the head stumbles: the gravity
-/// `+0.11` (the cap `num45`), the horizontal steering (`:51940-51972`); in
-/// the ground it flies straight at the tile-snapped player (`:51997-52002`).
+/// The head's per-tick machine (`AI_006`'s `ai[1] == 0` branch). The
+/// surface gate (`:51110-51148`), the `flag3` dig-mode scan
+/// (`:51525-51597`, margins + overlap + solidTop + the per-tile
+/// `Next(100)` crumble draw), the 1000-px no-player dig override
+/// (`:51598-51615`), the corruption escape (`:52004-52050`) and the
+/// head rotation (`:52201`). The air stumble / dig steer stays the
+/// documented stand-in (the three-arm accel steer `:52112-52198` is
+/// audit T1b, wave W-A2-2). Returns `true` when the corruption escape
+/// deactivates the whole chain (`:52028-52047`'s `ai[0]` walk).
 /// `noTileCollide` is family-wide — no collision blocks the head.
 fn worm_head_step(
     npc: &mut Npc,
     world: &tr_core::World,
-    pcx: f32,
-    pcy: f32,
-    _rng: &mut UnifiedRandom,
-) {
+    ctx: &WormHeadCtx,
+    rng: &mut UnifiedRandom,
+) -> bool {
     let (w, h) = npc.size();
-    // `flag3`: the dig-mode scan (`:51575-51597`).
-    let mut flag3 = false;
-    let x0 = (npc.x / TILE_PX) as i32;
-    let x1 = ((npc.x + w) / TILE_PX) as i32 + 1;
-    let y0 = (npc.y / TILE_PX) as i32;
-    let y1 = ((npc.y + h) / TILE_PX) as i32 + 1;
-    for ty in y0..=y1 {
-        for tx in x0..=x1 {
-            if world.tile(tx, ty).is_some_and(|t| {
-                t.active() && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.liquid > 64)
-            }) {
-                flag3 = true;
+    // The surface gate (`NPC.cs:51110-51148`): `flag = true` for types
+    // 10/39/95/117/510 — the ported kinds GiantWorm (10) and Leech (117).
+    // Target dead OR (flag && player above `worldSurface * 16`) →
+    // `EncourageDespawn(300)` and `velocity.Y += 0.2` while gated. The
+    // `TargetClosest()` retarget has no seam in the single-player port
+    // (the target IS the one player) — documented.
+    let surface_flag = matches!(npc.kind, NpcKind::GiantWormHead | NpcKind::LeechHead);
+    if ctx.dead || (surface_flag && (ctx.py as f64) < world.world_surface * 16.0) {
+        npc.encourage_despawn(300);
+        if surface_flag {
+            npc.vy += 0.2; // `num10` (`:51111`; the 513's 0.1 is unported)
+        }
+    }
+    // `flag3`: the dig-mode scan (`:51525-51597`). The always-fly presets
+    // (`:51548-51567`) set flag3 BEFORE the scan and skip it entirely
+    // (the `!flag3 | flag2` gate `:51573` is false) — of the ported kinds
+    // only the crawltipede 412-414 (`:51560-51563`); the wyvern/DD2/621/
+    // 402 presets ride their kind waves, skyblock is unported. The scan
+    // margins are `(int)(x/16) - 1 .. (int)((x+w)/16) + 2` (EXCLUSIVE
+    // high), clamped to the world; a tile counts when active && (solid
+    // || (solidTop && frameY == 0)) OR liquid > 64 (liquid counts on
+    // INACTIVE tiles too), and only when its 16-px box actually OVERLAPS
+    // the NPC rect (`:51586`).
+    let mut flag3 = matches!(
+        npc.kind,
+        NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail
+    );
+    if !flag3 {
+        let x0 = ((npc.x / TILE_PX) as i32 - 1).max(0);
+        let x1 = (((npc.x + w) / TILE_PX) as i32 + 2).min(world.width);
+        let y0 = ((npc.y / TILE_PX) as i32 - 1).max(0);
+        let y1 = (((npc.y + h) / TILE_PX) as i32 + 2).min(world.height);
+        for tx in x0..x1 {
+            for ty in y0..y1 {
+                let Some(t) = world.tile(tx, ty) else { continue };
+                let solid = t.active()
+                    && (tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        || (tr_core::tiledata::TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0));
+                if !solid && t.liquid <= 64 {
+                    continue; // `:51580`
+                }
+                let tlx = (tx * 16) as f32;
+                let tly = (ty * 16) as f32;
+                if npc.x + w > tlx
+                    && npc.x < tlx + 16.0
+                    && npc.y + h > tly
+                    && npc.y < tly + 16.0
+                {
+                    flag3 = true; // `flag4` too (`:51588`) — only flag3 is read below
+                    // The crumble draw (`:51590`): `Main.rand.Next(100)`
+                    // runs for EVERY overlapping tile — BEFORE the
+                    // type-117 / active / solid guards in the C# `&&`
+                    // chain, so a Leech head and liquid-only tiles
+                    // consume it too. On 0 the C# fires `KillTile(fail:
+                    // true, effectOnly: true)` — dust only, the tile
+                    // stays; the dust effect rides the dust seam
+                    // (unwired here), the DRAW cannot be skipped.
+                    let crumble = rng.next_max(100) == 0;
+                    if crumble
+                        && npc.kind != NpcKind::LeechHead
+                        && t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    {
+                        // WorldGen.KillTile(tx, ty, fail: true, effectOnly: true)
+                        // — effect-only: no tile mutation (dust seam).
+                        let _ = (tx, ty);
+                    }
+                }
             }
         }
     }
+    // The 1000-px dig override (`:51598-51615`): a listed head with no
+    // player inside the ±1000-px box around its rect burrows anyway.
+    // The list (7/10/13/39/95/98/117/375/454/510/513/621) covers the
+    // ported Devourer/GiantWorm/EoW/Leech heads; the Destroyer and the
+    // crawltipede are NOT in it. Single-player: one rectangle test
+    // (`Rectangle.Intersects`, strict inequalities).
+    if !flag3
+        && matches!(
+            npc.kind,
+            NpcKind::DevourerHead
+                | NpcKind::GiantWormHead
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::LeechHead
+        )
+    {
+        let (nx, ny) = (npc.x as i32, npc.y as i32);
+        let (nw, nh) = (w as i32, h as i32);
+        let (plx, ply) = (ctx.px as i32 - 1000, ctx.py as i32 - 1000);
+        let player_near = plx < nx + nw && nx < plx + 2000 && ply < ny + nh && ny < ply + 2000;
+        if !player_near {
+            flag3 = true; // `flag5` stayed true (`:51611-51614`)
+        }
+    }
     let (num45, num46) = npc.kind.worm_tunables();
+    let mut despawn_chain = false;
     if !flag3 {
-        // The air stumble (`:51927-51973`).
+        // The air stumble (`:51927-51973`) — the stand-in steer (T1b's
+        // faithful three-arm rewrite is wave W-A2-2).
         npc.vy = (npc.vy + 0.11).min(num45);
         if (npc.vx.abs() + npc.vy.abs()) < num45 * 0.4 {
             npc.vx += npc.facing as f32 * num46 * 1.1;
         } else if npc.vy == num45 {
-            let target_vx = pcx - (npc.x + w * 0.5);
+            let target_vx = ctx.pcx - (npc.x + w * 0.5);
             if npc.vx < target_vx {
                 npc.vx += num46;
             } else if npc.vx > target_vx {
@@ -1352,18 +1543,46 @@ fn worm_head_step(
         } else if npc.vy > 4.0 {
             npc.vx -= npc.vx.signum() * num46 * 0.9;
         }
-        npc.facing = if pcx >= npc.x + w * 0.5 { 1 } else { -1 };
+        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
     } else {
         // The dig (`:51974-52002`): the tile-snapped aim at the max speed.
-        let mut dx = (((pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let mut dy = (((pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
+        let mut dx =
+            (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
+        let mut dy =
+            (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
         let len = (dx * dx + dy * dy).sqrt().max(0.001);
         let num67 = num45 / len;
         dx *= num67;
         dy *= num67;
+        // The corruption escape (`:52004-52050`, INSIDE the dig branch,
+        // after the aim scale): Devourer/EoW (7/13) whose target is
+        // outside Corrupt/Crimson or dead → `flag6`; then if NO living
+        // player is in ZoneCorrupt (`flag7`, `:52019-52025` — Corrupt
+        // only, not Crimson), below `(rockLayer + maxTilesY)/2` the head
+        // deactivates and walks the chain dead (`:52028-52047`), and the
+        // aim overrides to straight down (`:52048-52049`).
+        let flag6 = matches!(npc.kind, NpcKind::DevourerHead | NpcKind::EaterOfWorldsHead)
+            && ((!ctx.zone_corrupt && !ctx.zone_crimson) || ctx.dead);
+        if flag6 {
+            // Single-player `flag7`: the one player alive && ZoneCorrupt
+            // clears it.
+            let no_corrupt_player = ctx.dead || !ctx.zone_corrupt;
+            if no_corrupt_player {
+                if (npc.y / TILE_PX) as f64 > (world.rock_layer + world.height as f64) / 2.0 {
+                    despawn_chain = true;
+                }
+                dx = 0.0;
+                dy = num45;
+            }
+        }
         npc.vx = dx;
         npc.vy = dy;
     }
+    // The head rotation (`NPC.cs:52201`, the no-leader `else`'s tail —
+    // every head, every tick): `Atan2(vy, vx) + Math.PI/2`. The heads use
+    // PI/2, NOT the followers' `1.57f` literal (`:51878`) — keep the two
+    // constants distinct.
+    npc.rotation = npc.vy.atan2(npc.vx) + std::f32::consts::FRAC_PI_2;
     // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
     npc.x += npc.vx;
     npc.y += npc.vy;
@@ -1371,6 +1590,7 @@ fn worm_head_step(
     if npc.y > world.height as f32 * TILE_PX + 200.0 {
         npc.hp = 0;
     }
+    despawn_chain
 }
 
 /// `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:681-763`): the
@@ -10147,6 +10367,342 @@ mod worm_tests {
         n.ai[2] = 599.0;
         n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         assert_eq!(n.ai[2], 0.0, "the counter resets");
+    }
+
+    // ---- W-A2-1 witnesses (audit 55, fix/worm-rng-placement) ----
+    // WRITTEN NOT RUN — code-only mode, no compiler invoked. Each pin
+    // states the C# draw ledger it locks.
+
+    #[test]
+    fn the_budget_roll_draws_then_overrides_per_head_kind() {
+        // `NPC.cs:51303-51342`: EVERY head in the list rolls
+        // `Next(8, 13)` first (`:51310`); type 10 rolls AGAIN `Next(4, 7)`
+        // (`:51313`), type 117 AGAIN `Next(3, 6)` (`:51341`), type 13
+        // overrides with the constant count but CONSUMED the first draw
+        // (`:51317`), type 7 keeps it. The pre-fix port dropped the
+        // discarded draw for GiantWorm/Leech/EoW — a stream shift for
+        // every later `UpdateNpcs` consumer.
+        let world = World::new("t".into(), 64, 800); // air only: no scan draws
+        for (kind, draws, lo, hi) in [
+            (NpcKind::DevourerHead, 1usize, 8u32, 12u32),
+            (NpcKind::GiantWormHead, 2, 4, 6),
+            (NpcKind::LeechHead, 2, 3, 5),
+            (NpcKind::EaterOfWorldsHead, 1, 65, 65),
+        ] {
+            let mut head = Npc::new(kind, 160.0, 160.0, 1, 0.0);
+            head.hp = head.max_hp;
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(11);
+            let mut oracle = UnifiedRandom::new(11);
+            let mut expected = 0u32;
+            for d in 0..draws {
+                let v = if d == 0 {
+                    oracle.next_range(8, 13) as u32
+                } else {
+                    match kind {
+                        NpcKind::GiantWormHead => oracle.next_range(4, 7) as u32,
+                        NpcKind::LeechHead => oracle.next_range(3, 6) as u32,
+                        _ => unreachable!(),
+                    }
+                };
+                expected = v;
+            }
+            let mut next_id = 1u32;
+            // No player: the head machine is skipped, only the chain
+            // init draws — the budget ledger is isolated.
+            update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs[0].worm_left, expected, "{kind:?} budget value");
+            assert!(
+                npcs[0].worm_left >= lo && npcs[0].worm_left <= hi,
+                "{kind:?} budget range"
+            );
+            // Stream-position parity: the NEXT draw after the pass
+            // equals the oracle's next draw after the same ledger.
+            assert_eq!(
+                rng.next(),
+                oracle.next(),
+                "{kind:?} post-spawn stream position"
+            );
+        }
+    }
+
+    #[test]
+    fn the_destroyer_and_crawltipede_spawns_draw_nothing() {
+        // The Destroyer rides `AI_037`'s own roll (outside the `:51303`
+        // list — R55's wiring keeps this routing byte-identical); the
+        // crawltipede's fixed 30-link spawn (`:51369-51392`) draws
+        // nothing either.
+        let world = World::new("t".into(), 64, 800);
+        for (kind, budget) in [(NpcKind::TheDestroyer, 80u32), (NpcKind::SolarCrawltipedeHead, 29)] {
+            let mut head = Npc::new(kind, 160.0, 160.0, 1, 0.0);
+            head.hp = head.max_hp;
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(11);
+            let mut oracle = UnifiedRandom::new(11);
+            let mut next_id = 1u32;
+            update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs[0].worm_left, budget, "{kind:?} budget");
+            assert_eq!(rng.next(), oracle.next(), "{kind:?} no spawn draws");
+        }
+    }
+
+    #[test]
+    fn the_child_spawns_bottom_at_the_parents_bottom() {
+        // `NPC.cs:51347` + `NewNPC`'s `Bottom` setter (`:80770`,
+        // `Entity.cs:128-131`): the child's BOTTOM sits at the parent's
+        // bottom, X/Y int-truncated, X offset by the INT `width / 2`.
+        // The Giant Worm head/body/tail are all 14x14, so the child's
+        // top-left equals the parent's — the pre-fix port placed it one
+        // child-height lower (`y + h`).
+        let world = World::new("t".into(), 64, 800);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.7, 160.9, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(3);
+        let mut next_id = 1u32;
+        update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+        let child = npcs.last().unwrap();
+        assert_eq!(child.kind, NpcKind::GiantWormBody);
+        // X = (int)(160.7 + 14/2) - 14/2 = 167 - 7 = 160
+        assert_eq!(child.x, 160.0, "int-truncated bottom-centre X");
+        // Y = (int)(160.9 + 14) - 14 = 174 - 14 = 160
+        assert_eq!(child.y, 160.0, "child bottom at the parent bottom");
+    }
+
+    #[test]
+    fn the_scan_draws_next100_per_overlapping_tile() {
+        // `NPC.cs:51575-51597`: one `Next(100)` per OVERLAPPING tile in
+        // scan order (X outer, Y inner), even when the crumble guards
+        // fail. A 22x22 Devourer head at (160,160) over a solid floor at
+        // row 11 overlaps tiles (10,10),(10,11),(11,10),(11,11) — four
+        // draws per tick, THEN the head machine's own draws (none).
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 11..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut oracle = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Two ticks: the init pass draws the budget (one `Next(8,13)`),
+        // then each head tick draws 4 crumbles. The oracle replays the
+        // same ledger.
+        update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
+        let _ = oracle.next_range(8, 13); // the budget
+        for _ in 0..4 {
+            let _ = oracle.next_max(100);
+        }
+        assert_eq!(rng.next(), oracle.next(), "tick 1: budget + 4 crumbles");
+        // Kill the chain so tick 2 runs only a fresh head's machine.
+        for n in npcs.iter_mut() {
+            n.hp = 0;
+        }
+        let mut head2 = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head2.hp = head2.max_hp;
+        head2.worm_inited = true;
+        head2.worm_id = 99;
+        npcs.push(head2);
+        update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
+        for _ in 0..4 {
+            let _ = oracle.next_max(100);
+        }
+        assert_eq!(rng.next(), oracle.next(), "tick 2: 4 crumbles, no budget");
+    }
+
+    #[test]
+    fn the_leech_crumble_draw_still_consumes_the_stream() {
+        // `:51590`: `Main.rand.Next(100) == 0 && this.type != 117 && …`
+        // — the draw runs BEFORE the type guard, so a Leech head digging
+        // consumes it too (it just never crumbles).
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 11..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        // 14x14 at (160,160): overlaps (10,10),(10,11),(11,10),(11,11).
+        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut oracle = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
+        for _ in 0..4 {
+            let _ = oracle.next_max(100);
+        }
+        assert_eq!(rng.next(), oracle.next(), "the leech still draws");
+    }
+
+    #[test]
+    fn the_head_rotates_to_its_velocity_plus_pi_over_two() {
+        // `NPC.cs:52201`: every head, every tick,
+        // `rotation = Atan2(vy, vx) + PI/2` — the pre-fix port never
+        // wrote it (heads drew frame-up while digging sideways).
+        let world = World::new("t".into(), 64, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Air, player far right: the stumble kicks vx positive, vy
+        // grows by 0.11 — the rotation tracks the fresh velocity.
+        update_worms_in(&world, Some((2000.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        let n = &npcs[0];
+        let expected = n.vy.atan2(n.vx) + std::f32::consts::FRAC_PI_2;
+        assert_eq!(n.rotation, expected, "the head rotation rides :52201");
+        assert!(n.rotation != 0.0, "the rotation is written");
+    }
+
+    #[test]
+    fn the_surface_gate_sinks_and_encourages_despawn() {
+        // `NPC.cs:51110-51148`: the Giant Worm (type 10, `flag = true`)
+        // chasing a player above `worldSurface * 16` gets
+        // `EncourageDespawn(300)` and `velocity.Y += 0.2`.
+        let mut world = World::new("t".into(), 64, 800);
+        world.world_surface = 120.0; // the gate at y = 1920
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Player centre y = 160 < 1920: gated.
+        update_worms_in(&world, Some((160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs[0].despawn_timer, 300, "EncourageDespawn(300)");
+        // The +0.2 sink lands before the air stumble's +0.11 gravity.
+        assert!(npcs[0].vy >= 0.2, "the gate sinks the head");
+        // Below the surface: no gate.
+        let mut head2 = Npc::new(NpcKind::GiantWormHead, 160.0, 2400.0, 1, 0.0);
+        head2.hp = head2.max_hp;
+        head2.worm_inited = true;
+        head2.worm_id = 98;
+        let mut npcs2 = vec![head2];
+        update_worms_in(&world, Some((160.0, 2400.0)), &mut npcs2, &mut rng, &mut next_id);
+        assert_eq!(npcs2[0].despawn_timer, -1, "no gate below the surface");
+    }
+
+    #[test]
+    fn the_corruption_escape_digs_down_and_despawns_deep() {
+        // `NPC.cs:52004-52050`: the Devourer (7) whose target is outside
+        // Corrupt/Crimson aims straight down (`num48 = 0, num49 =
+        // num45`); below `(rockLayer + maxTilesY)/2` with no living
+        // player in ZoneCorrupt the whole chain deactivates.
+        let mut world = World::new("t".into(), 64, 800);
+        world.rock_layer = 300.0; // the depth gate at tile 550 = y 8800
+        for x in 0..64 {
+            for y in 0..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Shallow: the aim overrides to straight down at num45 = 9.
+        update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs[0].vx, 0.0, "the escape aims straight down");
+        assert_eq!(npcs[0].vy, 9.0, "num49 = num45");
+        assert!(npcs[0].hp > 0, "shallow: no despawn");
+        // Deep (y/16 = 600 > 550): the chain walks dead.
+        let mut deep = Npc::new(NpcKind::DevourerHead, 160.0, 9600.0, 1, 0.0);
+        deep.hp = deep.max_hp;
+        deep.worm_inited = true;
+        deep.worm_id = 98;
+        deep.seg_index = 0;
+        let mut body = Npc::new(NpcKind::DevourerBody, 160.0, 9622.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_inited = true;
+        body.worm_id = 98;
+        body.seg_index = 1;
+        let mut npcs2 = vec![deep, body];
+        update_worms_in(&world, Some((160.0, 9616.0)), &mut npcs2, &mut rng, &mut next_id);
+        assert!(npcs2.iter().all(|n| n.hp <= 0), "the whole chain despawns");
+    }
+
+    #[test]
+    fn the_far_player_forces_the_dig_override() {
+        // `NPC.cs:51598-51615`: a listed head in open air with no player
+        // inside the ±1000-px box burrows anyway (flag3 forced).
+        let world = World::new("t".into(), 200, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Player 3000 px away: outside the box → the dig branch runs
+        // (the aim snaps toward the player at num45, not the air
+        // stumble's 0.11 gravity).
+        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        let speed = (npcs[0].vx * npcs[0].vx + npcs[0].vy * npcs[0].vy).sqrt();
+        assert!(
+            (speed - 9.0).abs() < 0.01,
+            "the override digs at full speed: {speed}"
+        );
+        assert!(npcs[0].vx > 0.0, "toward the far player");
+    }
+
+    #[test]
+    fn the_heads_move_before_the_followers_snap() {
+        // `NewNPC`'s `Start = whoAmI` (`:51347`/`:80763`) gives children
+        // higher slots — the head moves first and the follower snaps to
+        // the leader's SAME-TICK centre (`:51867-51922`). The pre-fix
+        // pass ran followers first: a one-tick lag.
+        let world = World::new("t".into(), 64, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 7;
+        head.seg_index = 0;
+        let mut body = Npc::new(NpcKind::DevourerBody, 160.0, 182.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_inited = true;
+        body.worm_id = 7;
+        body.seg_index = 1;
+        let mut npcs = vec![head, body];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((2000.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // The follower's centre sits exactly one own-width (22) from
+        // the head's POST-MOVE centre — the same-tick snap.
+        let (hw, hh) = npcs[0].size();
+        let (bw, bh) = npcs[1].size();
+        let dx = (npcs[0].x + hw * 0.5) - (npcs[1].x + bw * 0.5);
+        let dy = (npcs[0].y + hh * 0.5) - (npcs[1].y + bh * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!(
+            (dist - bw).abs() < 0.01,
+            "same-tick spacing: {dist} vs {bw}"
+        );
     }
 }
 

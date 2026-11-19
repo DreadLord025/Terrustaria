@@ -5170,6 +5170,11 @@ UNWIRED, the live `update_hungry` keeps running until the wiring round.**
 **The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
 the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
 default tunables, the 14×14/60 HP segments).
+**Correction (W-A2-1): the budget is TWO draws — the discarded
+`Next(8, 13)` (`NPC.cs:51310`) runs first for every listed head, then
+the `Next(3, 6)` override (`:51341`); the crumble `Next(100)` also runs
+for the Leech even though the type-117 guard blocks the effect
+(`:51590`). Both ledgers are pinned in `worm_tests`.**
 
 Deviations: the eye/mouth mirrors (114, the 100×100 8000-HP wall parts)
 are the render-machinery follow-up (the vanilla draws them inside the
@@ -24893,3 +24898,135 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+### The worm sim-pass RNG + placement (W-A2-1, code-only mode)
+
+Audit `docs/research/55-audit-worms.md` (branch `origin/docs/audit-worms`)
+finding W-A2-1 — the shared `AI_006_Worms` mechanics in
+`world_sim/npcs.rs` (`update_worms_in` + `worm_head_step`), fixed in
+place on `fix/worm-rng-placement`. The C# was re-read whole at every
+cited window before each edit.
+
+**The fixes (per audit finding):**
+
+- **T1c budget draws (`NPC.cs:51303-51342`).** Every head in the
+  `:51303` list rolls `ai[2] = Next(8, 13)` FIRST (`:51310`); type 10
+  (GiantWorm) rolls again `Next(4, 7)` (`:51313`), type 117 (Leech)
+  again `Next(3, 6)` (`:51341`), type 13 (EoW) overrides with
+  `GetEaterOfWorldsSegmentsCount()` (`:51317`) but the first draw was
+  still consumed. The pre-fix port drew once per family — a stream
+  shift for every later `UpdateNpcs` consumer on every worm spawn.
+  Now: draw-then-override, the discarded result kept advancing the
+  stream. The Destroyer (`AI_037`'s own roll) and the crawltipede
+  (the fixed 30-link spawn, `:51369-51392`) are OUTSIDE the list and
+  draw nothing — their spawn routing stays byte-identical (R55 boundary).
+- **T1g flag3 scan (`NPC.cs:51525-51597`).** The margins are
+  `(int)(x/16)-1 .. (int)((x+w)/16)+2` exclusive-high, clamped; a tile
+  counts when `nactive && (tileSolid || (tileSolidTop && frameY==0))`
+  OR `liquid > 64` (liquid on INACTIVE tiles too), and only when its
+  16-px box actually overlaps the NPC rect (`:51586`). Each
+  overlapping tile draws `Main.rand.Next(100)` (`:51590`) — the draw
+  sits BEFORE the `type != 117 && nactive && tileSolid` guards in the
+  C# `&&` chain, so Leech heads and liquid-only tiles consume it too;
+  on 0 the effect-only `KillTile(fail:true, effectOnly:true)` fires
+  (dust only — the dust effect rides the unwired dust seam, the DRAW
+  cannot be skipped). The pre-fix scan had no margins, no overlap
+  test, no solidTop arm, liquid gated on active, and no draw at all —
+  a per-digging-tick stream divergence. The always-fly presets
+  (`:51548-51567`) skip the scan entirely (`!flag3 | flag2` is false);
+  of the ported kinds only the crawltipede 412-414 (`:51560-51563`) —
+  ported so its stream stays draw-free.
+- **T1a head rotation (`NPC.cs:52201`).** `rotation = Atan2(vy, vx) +
+  Math.PI/2` at the tail of the no-leader `else` — every head, every
+  tick. The pre-fix `worm_head_step` never wrote rotation (heads drew
+  frame-up while digging sideways). The heads use PI/2
+  (`FRAC_PI_2`), the followers keep the `1.57f` literal (`:51878`) —
+  the two constants stay distinct.
+- **T2b child placement (`NPC.cs:51347` + `NewNPC:80770` +
+  `Entity.cs:128-131`).** `NewNPC` sets `Bottom = (X, Y)`:
+  `child.pos = (X - width/2, Y - height)` with
+  `X = (int)(pos.X + (float)(width/2))` — the width is an INT, so
+  `width/2` is integer division — and `Y = (int)(pos.Y + height)`.
+  The child's BOTTOM sits at the parent's bottom; the pre-fix port
+  put the child's TOP there, one child-height low per link, and did
+  not int-truncate. Fixed.
+- **T2c pass order.** C# runs `AI_006` inside each NPC's `Update` in
+  slot order; `NewNPC`'s `Start = whoAmI` gives every child a higher
+  slot, so the head moves first and each follower snaps to the
+  leader's SAME-TICK centre. The pre-fix pass ran followers before
+  heads — a one-tick lag along the chain. Now heads first, then the
+  follower trail in ascending slot order (= ascending `seg_index`).
+- **T1d surface gate (`NPC.cs:51110-51148`).** `flag = true` for
+  types 10/39/95/117/510 (ported: GiantWorm, Leech); target dead OR
+  (flag && player above `worldSurface*16`) → `EncourageDespawn(300)`
+  (the existing `despawn_timer` seam) + `velocity.Y += 0.2` while
+  gated. The dead-target arm runs for every segment (family-wide).
+  The `TargetClosest()` retarget has no single-player seam (the
+  target IS the one player) — documented. The 513/510/621 rows ride
+  their kind waves.
+- **T1e corruption escape (`NPC.cs:52004-52050`).** INSIDE the dig
+  branch after the aim scale: Devourer/EoW whose target is outside
+  Corrupt/Crimson or dead → flag6; no living player in ZoneCorrupt
+  (flag7 — Corrupt only, NOT Crimson) → below
+  `(rockLayer + maxTilesY)/2` the head deactivates and walks the
+  `ai[0]` chain dead (the port kills the head + every DOWNSTREAM
+  `seg_index` of its `worm_id` — an EoW split fragment ahead keeps
+  its own life, as the C# walk never reaches it), and the aim
+  overrides to straight down (`num48 = 0, num49 = num45`).
+- **T1f 1000-px override (`NPC.cs:51598-51615`).** A listed head
+  (ported: Devourer/GiantWorm/EoW/Leech) with no player inside the
+  ±1000-px box around its rect forces flag3 (one rectangle test,
+  strict inequalities, int-truncated positions).
+
+**The RNG argument (stream-position parity).** `UnifiedRandom` is the
+exact .NET subtractive stream (`next_range`/`next_max` = one
+`Sample()` each). Per head kind, at chain start: Devourer 1 draw
+(`Next(8,13)` kept), GiantWorm 2 (`Next(8,13)` discarded +
+`Next(4,7)`), Leech 2 (discarded + `Next(3,6)`), EoW 1 (discarded,
+constant 65), Destroyer 0, crawltipede 0. Per digging tick: one
+`Next(100)` per overlapping candidate tile in X-outer/Y-inner scan
+order, for every listed head including the Leech; the always-fly
+crawltipede draws none. The witness tests replay each ledger on a
+twin oracle stream and assert the NEXT raw draw after the pass is
+equal — pre/post stream-position parity per head kind, plus the
+two-tick crumble ledger. The tests are WRITTEN, NOT RUN (code-only
+mode, no compiler invoked).
+
+**Deliberate deviations / deferred:**
+- The air stumble / dig steer stays the documented stand-in — the
+  faithful three-arm accel steer (`:52112-52198`) is audit T1b, wave
+  W-A2-2 (it changes no draws, so the RNG parity here is independent).
+- The crumble's effect-only `KillTile` dust is unwired (the dust
+  seam); the draw runs regardless.
+- The surface gate's `TargetClosest()` retarget: single-player, the
+  target is the one player — no seam needed.
+- `WormHeadCtx` carries `px/py` (position) alongside the centre; the
+  centre-only test seam (`update_worms_in`) defaults position ≈
+  centre, dead = false, no evil zones — production
+  (`update_worms`) passes the full snapshot incl.
+  `scene_metrics.zone_corrupt/zone_crimson`.
+- T1h tunables (Digger/Wyvern/BoneSerpent rows, EoW expert tiers,
+  Leech WoF-rage), T3b EoW Transform semantics, T3c orb gate, T3e
+  LeechTail: R78's lane. Destroyer 81-links/tail-laser/Probe 139:
+  R55's lane.
+
+**Boundary note (Destroyer routing).** The port's Destroyer still
+rides this aiStyle-6 pass (the faithful `npc_ai_style37.rs` is
+UNWIRED, ROADMAP S1-D-3 aiStyle-37). Its chain spawn draws nothing
+(unchanged) and its segment lasers keep their exact ledger
+(`Next(4)` + `Next(1400,26000)` + the four jitters, unchanged). Its
+heads now run the shared scan/crumble + rotation + gates like every
+other head in the pass — a behaviour change confined to the shared
+mechanics the audit already scopes to this lane (T4: "shared
+mechanics audited above apply"); the faithful AI_037 tile probe
+(`:49884-49924`) and machine replace the stand-in wholesale when
+R55 wires it.
+
+**Verification.** Code-only: the C# windows re-read whole
+(`:51108-51159`, `:51295-51399`, `:51520-51619`, `:51855-51929`,
+`:51990-52064`, `:52185-52229`, `:80758-80782`, `Entity.cs:122-132`,
+`EncourageDespawn:7249-7256`); every seam checked by read/grep
+(`encourage_despawn`/`tick_despawn`/`despawn_expired`, `TileSet::has`,
+`World.tile`/`width`/`height`/`world_surface`/`rock_layer`,
+`Player.x/y/dead/center`, `scene_metrics.zone_corrupt/zone_crimson`,
+`UnifiedRandom.peek/next`). The 9 new witness tests in `worm_tests`
+are WRITTEN, NOT RUN — **no compiler invoked**.
