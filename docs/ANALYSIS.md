@@ -15954,6 +15954,43 @@ remainder of the original 19 is **26, 67, 120, 123, 130** (aiStyle 2 has its
 Dutchman/shuriken arm at `:11190`; its full-family completion is S1-D-4b-8's
 scope) — exactly the sibling slices S1-D-4b-3 (120/123/130), -7 (67) and
 -8 (26/2). Deferred to them; nothing in this slice's scope remains.
+## Slice E of the S1-D-4b gap list — already armed (S1-D-4b-15, 2026-11-18, code-only mode)
+The final slice of the 19-style gap list was dispatched as styles **157 / 158 /
+189** (`task/S1-D-4b-15-styles-e`), but all three were already armed on main by
+the earlier sub-rows: **157** with S1-D-4b-5 (`ai_sharp_tears`,
+`projectile.rs`, `Projectile.cs:51358-51494`), **158** with S1-D-4b-5c
+(`ai_baby_bird` + `ai_158_home_location` + the pool-side `baby_bird_group`,
+`:48757-48988`), **189** with S1-D-4b-1 (`ai_volcano`, `:42264-42370`). No new
+module was created (`projectile_styles_e.rs` would have duplicated the arms);
+the slice is a documentation + re-verification pass, run in **code-only mode**
+(no cargo/rustc/test runs — verification is a line-by-line C# re-read plus the
+existing tests-as-code: `s1_d_4b_1_the_volcano_flashes_and_dies_in_five_frames`,
+`s1_d_4b_5_the_sharp_tears_spike_fades_and_dies`, the `s1_d_4b_5c_*` set).
+Re-verified faithful (gates before the `ai[0]++` advance, the `Opacity`
+property view `:540-549` over `alpha`, the two-remap alpha flash, the home-spot
+ring/stack arithmetic, the 6-tick walk wrapping at `projFrames - 1`). Two
+observations recorded, neither a behaviour change on the port's kind set:
+* **The kind rows cover the ported types only.** Style 157 has three C# types —
+  756 (`:7793-7806`), 961 (`:9078-9088`), 1041 (`:9834-9847`) — and the port
+  carries only the 961, so `ai_sharp_tears` ports the 961's parameter row
+  (documented at the arm). If 756/1041 are ever added, the arm needs their rows
+  (the 1041's frame machine `:51406-51409`/`:51420-51424` and its
+  `flag = false` dust gate) and the 756's light tail (`:51490-51493`). Style
+  189 likewise: the port carries the 1125 (`:10528-10542`) but not the 978
+  Volcano (`:9253-9269`); `ai_volcano`'s else-branch keeps the 978's scale ramp
+  for completeness.
+* **Stale citation ranges in the 157 comments.** The arm and its dispatch
+  comment cite `:51358-51477`, but the machine runs to `:51494` and the
+  fade-in/fade-out/kill blocks sit at `:51463-51489` (the comments point at
+  dust-block lines). The ported logic itself matches the true lines; the
+  comments were left untouched to keep this slice a zero-code change.
+RNG argument (by construction): the 157 arm draws exactly one `Main.rand`
+value — `Next(maxValue)` for the first-tick frame roll (`:51431`), ported as
+`rng.next_range(0, 5)` on the pool's threaded stream; every other draw in the
+C# arm belongs to the skipped dust blocks. The 158 machine draws **no**
+`Main.rand` at all (target scan, separation and home chain are deterministic).
+The 189 arm's draws all ride the skipped dust/gore blocks (`:42302-42367`), so
+the ported alpha/scale/frame path draws none — the `ai_eye_fire` precedent.
 
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
