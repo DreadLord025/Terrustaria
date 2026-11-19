@@ -15727,6 +15727,78 @@ Three scope notes, none of which change the ported numbers:
   dividing first). Golden vectors pin every arm in
   `shop.rs::tests`.
 
+## The shop buy/sell transactions (S1-P-i44, 2026-11-19)
+
+The shop TRANSACTION layer over the S1-C-11 price chain: the buy/sell click
+dispatch, the cursor deposit, the sell payout + restock, the sellback memo
+and the per-open stock refresh. C# cites inline; the witnesses are written
+(not run — the code-only swarm).
+
+- **The buy lands on the CURSOR, not the inventory.** `ItemSlot.HandleShopSlot`
+  (`UI/ItemSlot.cs:2053-2095`) pushes each bought unit onto `Main.mouseItem`
+  (`:2075-2088`); the old `app/mod.rs::buy_shop_item` deposited through
+  `slot_for_pickup` into the grid — WRONG, now fixed. The charge is
+  `GetItemExpectedPrice`'s `calcForBuying` per unit (`:2059-2060`), the
+  `stackSplit <= 1` gate + the `superFastStack + 1` loop + the
+  `RefreshStackSplitCooldown` (`:2043`/`:2047`/`:2089` → `:1774-1784`) ride
+  `app/clicks.rs::handle_shop_buy`. The bulk-buy (`CanBulkBuy`/
+  `GetBulkBuyAmount`, `:3121-3138`) multiplies the loop by 10 (clamped to a
+  buyOnce row's stack) only under Shift on an isAShopItem/buyOnce row. The
+  C# runs action 3 on a HELD left button too (`LeftClick`'s `if (num != 3 &&
+  !flag) return;`, `:928`); the port keeps the left button on the press edge
+  like the rest of the inventory grid (research/20 §5), so the held-repeat
+  buy rides the RIGHT button (`RightClick`'s ctx-15 arm, `:1648-1651`, which
+  the port drives off the held `place_down`) — the recorded left-edge model.
+- **The sellback memo** (`Main.shopSellbackHelper`,
+  `GameContent/ItemShopSellbackHelper.cs:5-73`): every plain-currency
+  non-buyOnce buy adds its unit (`ItemSlot.cs:2084-2087`); a sell refunds the
+  first `min(memo, stack)` units at their BUY price
+  (`Player.cs:35191-35195`'s `(-num2 + calcForBuying) * min`), and
+  `Chest.AddItemToShop` removes the memo'd units before re-stocking
+  (`Chest.cs:672-676` — a full re-sell of bought goods adds NO row). The memo
+  matches by `Item.IsConsideredSameItemAsType` (`Item.cs:47851-47933`'s
+  variant families) AND prefix. `Main.UpdateOldNPCShop`
+  (`Main.cs:18204-18211`) clears it on every shop-index change; the port's
+  `close_shop` + the open's `same_shop` gate mirror that.
+- **The sell** (`Player.SellItem`, `Player.cs:35168-35329`): the payout is
+  `calcForSelling / 5` (min 1) × the sold stack + the sellback refund
+  (`shop.rs::sell_payout`); the `calcForSelling <= 0` refusal returns 0 and
+  the caller runs the value-0 giveaway arm (`ItemSlot.cs:1232-1238` — the
+  item still enters the shop, sound 7). `Chest.AddItemToShop`
+  (`Chest.cs:670-706`) merges the remainder into the first stackable buyOnce
+  row, then clones it into the first AIR slot (a depleted buyOnce row turns
+  to air in place, `ItemSlot.cs:2090-2093`); both loops scan `i < 39` (the
+  40th slot never takes a sell).
+- **The sell cursor** (`GetSellOrTrash`, `ItemSlot.cs:198-209`): with a shop
+  open the Shift-hover lights cursor 10 (Sell) instead of 6 (Trash); the
+  coin kinds 71-74 answer null (never sellable). The cursor-10 click
+  (`OverrideLeftClick`, `:851-869`) sells the whole slot. The ctx-15 grid
+  (`Main.cs:41788-41818`) draws 10×4 `Inventory_Back6` cells at
+  `(int)(73 + i*56*0.755)`, `(int)(258 + j*56*0.755)`; a non-air cursor over
+  an empty cell sells the held stack (`PickItemMovementAction` action 4 →
+  `LeftClick` case 4, `:1575-1578`/`:1222-1241`, `stackSplit = 9999`).
+- **The per-open refresh** (`Main.OpenShop`, `Main.cs:40459-40467`): the
+  inventory opens, `stackSplit = 9999`, the chat text clears, sound 12, and
+  `SetupShop` re-resolves the stock from the LIVE world state — the port now
+  feeds the live moon phase, `downed_eow`/`downed_skeletron`, the player's
+  `golfer_score`, the Party Girl roster scan and the purse-inclusive coin
+  total (the old open hard-coded `downed_boss2/3 = false`, `golfer_score = 0`,
+  `party_girl_present = false` and read only the grid coins). The shop closes
+  when the inventory closes (`Main.cs:41784-41787`, `update_shop_close`).
+
+Deviations (the recorded coin model, ANALYSIS "the purse"): the C# `BuyItem`
+spends the inventory + bank coin stacks through `TryPurchasing`
+(`Player.cs:35490+`) and `SellItem` spawns the payout as coin stacks through
+the four denomination loops (74/73/72/71, descending slots 53→0, `DoCoins`
+carrying at 100) with a cloned-inventory restore when no room exists
+(`:35321-35328`). The port's aggregate `App.coins` purse cannot fill up, so
+the charge/payout ride it directly and the no-room restore folds out. The
+`shopSpecialCurrency` arm (the defender-medal rows) stays unported
+(S1-C-11). The happiness icon/label at (504, invBottom)
+(`Main.cs:41790-41797`) and the tooltip shop-lines
+(`MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448+`) are the chrome
+follow-up — `display_price_row` stays pinned by its golden vectors.
+
 ## The wet statics rebase (R-03-1, 2026-11-13)
 
 `Player.cs:24380-24437` is ported 1:1 as `player.rs::wet_gravity_and_cap`

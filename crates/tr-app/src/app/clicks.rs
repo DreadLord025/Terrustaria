@@ -30,6 +30,9 @@ const CURSOR_FAVORITE: i32 = 3;
 /// `AlternateClickAction.Trash`'s cursor id (`ItemSlot.cs:213`): the
 /// Shift-click quick-trash (`GetAlternateClickAction`'s tail, `:679-682`).
 const CURSOR_TRASH: i32 = 6;
+/// `AlternateClickAction.Sell`'s cursor id (`ItemSlot.cs:218`): the
+/// Shift-click sell while a shop is open (`GetSellOrTrash`, `:198-209`).
+const CURSOR_SELL: i32 = 10;
 
 /// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
 /// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
@@ -103,6 +106,18 @@ fn row_favorite_index(context: i32, k: usize) -> usize {
 /// (`ItemSlot.PickItemMovementAction` `:1369-1371`).
 fn is_coin_kind(kind: u16) -> bool {
     (71..=74).contains(&kind)
+}
+
+/// The shop row as the `ItemSlot` the movement/stack gates read — the
+/// stock instance's kind/prefix/stack (`ShopEntry`; the fresh
+/// `SetDefaults` rows carry prefix 0, stack 1).
+fn shop_row_slot(entry: &crate::shop::ShopEntry) -> ItemSlot {
+    ItemSlot {
+        kind: entry.item,
+        name: crate::itemdata::ITEMS[entry.item as usize].name,
+        count: entry.stack,
+        prefix: entry.prefix,
+    }
 }
 
 /// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`) over the flags the port carries:
@@ -385,6 +400,20 @@ impl App {
             }
             None
         }
+    }
+
+    /// The shop grid's cell under the cursor — `Main.DrawInventory`'s shop
+    /// block (`Main.cs:41798-41818`): 10×4 cells at `(int)(73 + i*56*0.755)`,
+    /// `(int)(invBottom + j*56*0.755)` with `Main.invBottom = 258`
+    /// (`Main.cs:6608`), the hit rect the `InventoryBack` size × 0.755
+    /// (`:41811`, inclusive on all four edges). `None` while no shop draws
+    /// (`npcShop > 0 && playerInventory`, the `:41784-41788` gate).
+    pub(crate) fn shop_slot_at_mouse(&self) -> Option<usize> {
+        if self.shop_npc.is_none() || !self.inventory_open {
+            return None;
+        }
+        let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+        ui::inventory::shop_slot_at(self.mouse_pos, cell)
     }
 
     /// The coin (ctx 1) or ammo (ctx 2) cell under the cursor —
@@ -1498,6 +1527,19 @@ impl App {
                 return;
             }
         }
+        // The shop grid (`Main.cs:41799-41818`): the cells set
+        // `mouseInterface` and run `ItemSlot.Handle(shop.item, 15, slot)`
+        // for the hovered cell — the press is consumed even when the
+        // stack-split gate transfers nothing this frame (the C#'s
+        // `mouseInterface` suppresses the world use). The block draws
+        // after the reforge inline block and before `ChestUI.Draw`
+        // (`:41831`), so it takes the pointer ahead of the bank/trash/
+        // equipment arms below (its (73, 258) rect overlaps the bank
+        // panel's — the shop wins, exactly like the C#'s draw order).
+        if let Some(slot) = self.shop_slot_at_mouse() {
+            self.shop_slot_click(slot, left, right);
+            return;
+        }
         // The transfer buttons (M3-STORE-2, `ChestUI.cs:282-307`'s click
         // dispatch): LootAll/DepositAll/QuickStack/Restock over the open
         // bank. A hit consumes the press before the slot grid.
@@ -1731,6 +1773,12 @@ impl App {
             self.audio.play("Grab");
             return;
         }
+        if left && self.cursor_override == CURSOR_SELL {
+            // `OverrideLeftClick`'s cursor-10 arm (`ItemSlot.cs:851-869`):
+            // the Shift-click sell into the open shop.
+            self.sell_slot_click(slot);
+            return;
+        }
         let mut held = self.mouse_item;
         let mut target = self.inventory[slot];
         // The `:1707` pickup gate: an air cursor, or the same kind/prefix with
@@ -1811,6 +1859,129 @@ impl App {
         }
     }
 
+    /// `ItemSlot.HandleShopSlot` (`ItemSlot.cs:2035-2096`) — one shop-cell
+    /// press (context 15, `Main.cs:41814`'s `ItemSlot.Handle`): the left
+    /// click buys through `PickItemMovementAction`'s action 3
+    /// (`:1566-1574` — an air cursor over a stocked row, or a same-kind
+    /// cursor with room), the right click buys paced
+    /// (`rightClickIsValid`, `:1648-1651`), and a non-air cursor over an
+    /// EMPTY cell sells the whole held stack (action 4, `:1575-1578` →
+    /// `LeftClick`'s case 4, `:1222-1241`). The chat-share cursor stands
+    /// down (`:2037-2040`, unported).
+    fn shop_slot_click(&mut self, slot: usize, left: bool, right: bool) {
+        // The shop chest carries 40 slots (`Chest.DefaultMaxItems`,
+        // `Chest.cs:64`); the port's dense Vec ends at the last stocked
+        // row, so a cell past the end reads as an AIR row (the sell arm
+        // targets exactly those).
+        let entry = self.shop_stock.get(slot).copied().unwrap_or(crate::shop::ShopEntry {
+            item: 0,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: false,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 0,
+        });
+        if slot >= 40 {
+            return; // past the chest's slot window
+        }
+        let held = self.mouse_item;
+        let action = pick_item_movement_action(15, &held, slot, &shop_row_slot(&entry));
+        if left && action == 3 {
+            self.handle_shop_buy(slot);
+        } else if left && action == 4 {
+            // `LeftClick`'s case 4 (`ItemSlot.cs:1222-1241`): SellItem pays
+            // out, AddItemToShop re-stocks the sold units, the cursor turns
+            // to air; a value-0 item still enters the shop (sound 7). The
+            // `stackSplit = 9999` tail (`:1239`) locks the split repeat.
+            let item = self.mouse_item;
+            let paid = self.sell_item(&item);
+            if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
+                crate::shop::add_item_to_shop(
+                    &mut self.shop_stock,
+                    &mut self.shop_sellback,
+                    &item,
+                );
+                self.mouse_item = EMPTY_SLOT;
+                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway.
+                self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+            }
+            self.stack_split = 9999; // `:1239`
+        } else if right {
+            // `RightClick`'s ctx-15 arm (`:1648-1651`) — the paced buy.
+            self.handle_shop_buy(slot);
+        }
+    }
+
+    /// `ItemSlot.HandleShopSlot`'s buy loop (`ItemSlot.cs:2042-2095`): the
+    /// `stackSplit <= 1` gate, the cursor stackability gate (`:2043` —
+    /// `Item.CanStack` or an air cursor), then `superFastStack + 1` units
+    /// (× the bulk amount on a Shift-held buyOnce/isAShopItem row,
+    /// `:2047-2051`). Each unit re-prices the row, charges `BuyItem`,
+    /// pushes onto the cursor and refreshes the split cooldown
+    /// (`:2089`); the first successful unit plays 18 on a valued row,
+    /// else 7 (`:2064-2073`).
+    fn handle_shop_buy(&mut self, slot: usize) {
+        if self.stack_split > 1 {
+            return; // `:2043`
+        }
+        let Some(entry) = self.shop_stock.get(slot).copied() else {
+            return;
+        };
+        if entry.item == 0 || entry.stack == 0 {
+            return; // `:2043`'s `inv[slot].type <= 0`
+        }
+        let held = self.mouse_item;
+        // `:2043` — `!Item.CanStack(mouseItem, inv[slot]) && mouseItem.type != 0`.
+        if held.count > 0 && !crate::bank::can_stack(&held, &shop_row_slot(&entry)) {
+            return;
+        }
+        let mut num2 = (self.super_fast_stack + 1) as u32; // `:2047`
+        if crate::shop::can_bulk_buy(&entry, shift_in_use(self)) {
+            num2 *= crate::shop::bulk_buy_amount(&entry); // `:2048-2051`
+        }
+        for i in 0..num2 {
+            // `:2055-2058` — a full cursor skips the unit (the C#
+            // `continue`s; the remaining units re-test the same room).
+            if self.mouse_item.count > 0
+                && self.mouse_item.count >= registry::max_stack(self.mouse_item.kind)
+            {
+                continue;
+            }
+            let value = crate::itemdata::ITEMS[entry.item as usize].value;
+            if !self.buy_shop_item(slot) {
+                continue; // `:2060-2063` — the purse gate / the depleted row
+            }
+            if i == 0 {
+                // `:2064-2073` — sound 18 on a valued row, else 7.
+                self.audio.play(if value > 0 { "Coins" } else { "Grab" });
+            }
+            // `RefreshStackSplitCooldown` (`:1774-1784`, `:2089`).
+            self.stack_split = if self.stack_split == 0 {
+                30
+            } else {
+                self.stack_delay
+            };
+        }
+    }
+
+    /// `ItemSlot.OverrideLeftClick`'s cursor-10 arm (`ItemSlot.cs:851-869`)
+    /// — the Shift-click sell from an inventory slot: `SellItem` pays the
+    /// stack out, `Chest.AddItemToShop` re-stocks it, the slot turns to
+    /// air (sound 18); a value-0 item still enters the shop (sound 7).
+    fn sell_slot_click(&mut self, slot: usize) {
+        let item = self.inventory[slot];
+        if item.count == 0 {
+            return;
+        }
+        let paid = self.sell_item(&item);
+        if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
+            crate::shop::add_item_to_shop(&mut self.shop_stock, &mut self.shop_sellback, &item);
+            self.inventory[slot] = EMPTY_SLOT;
+            self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+        }
+    }
+
     /// The chest panel's slot dispatch (M3-CHEST-UI phase 4) — the ctx-3 half
     /// of `ChestUI.DrawSlots`' per-cell `ItemSlot.Handle` calls (`ChestUI.cs:
     /// 382-385`, every drawn frame for the hovered cell), the shift transfer
@@ -1840,6 +2011,29 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The reforge menu's cursor-9 arm (`ItemSlot.cs:821-836`): the
+            // stack splits one item into the empty reforge slot, a single
+            // item swaps (`Utils.Swap`, sound 7).
+            if self.in_reforge_menu {
+                if let Some(slot) = self.slot_at_mouse() {
+                    let item = self.inventory[slot];
+                    if item.count > 1 {
+                        if self.reforge_slot.count == 0 {
+                            self.reforge_slot = ItemSlot {
+                                count: 1,
+                                ..item
+                            };
+                            self.inventory[slot].count -= 1;
+                            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+                        }
+                    } else if item.count == 1 {
+                        std::mem::swap(&mut self.inventory[slot], &mut self.reforge_slot);
+                        self.audio.play("Grab");
+                    }
+                }
+                self.ui_left_press = false;
+                return true;
+            }
             // The ctx-1/ctx-2 rows ride the same cursor (`ItemSlot.cs:680-686`
             // covers 0/1/2), so the source resolves before the grid probe.
             if let Some(src) = self.chest_transfer_source() {
@@ -1861,8 +2055,10 @@ impl App {
         // the world-chest panel's (the ctx-3 grid) — bank values keep the
         // STORE-1 panel and its own handler, so the gate is `>= 0` (the C#'s
         // single `ChestUI.Draw` covers all kinds — the recorded STORE-1
-        // panel-fidelity deviation).
-        if self.open_container() >= 0 && !self.crafting_open {
+        // panel-fidelity deviation). While a shop is open the shop grid owns
+        // the (73, 258) rect (`Main.cs:41799-41818`), so the chest dispatch
+        // stands down — the inventory handler's shop arm takes the pointer.
+        if self.open_container() >= 0 && !self.crafting_open && self.shop_npc.is_none() {
             // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:281-308`) —
             // the C# `DrawButtons` pass runs before `DrawSlots`, so the
             // buttons take the press before the slot grid sees it. IDs 0-3
@@ -1964,10 +2160,27 @@ impl App {
         if !shift_in_use(self) {
             return;
         }
+        // `Main.InReforgeMenu`'s ctx-0 arm (`ItemSlot.cs:666-672`): a
+        // prefixable item lights the transfer-to-reforge cursor (9). The
+        // port's reforge click routes through the same cursor id.
+        if self.in_reforge_menu {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                    && crate::prefix::can_have_prefixes(self.inventory[slot].kind)
+                {
+                    self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
+            return;
+        }
         // The ctx-3 arms are the world-chest panel's (`chest >= 0`) — banks
         // keep the STORE-1 panel and no cursor-8/9 shift route (the recorded
         // panel-fidelity deviation; `TryPlacingInChest` refuses banks too).
-        if chest >= 0 && !self.crafting_open {
+        // While a shop is open the shop grid owns the (73, 258) rect, so the
+        // chest-cell probe stands down (the chest panel does not draw).
+        if chest >= 0 && !self.crafting_open && self.shop_npc.is_none() {
             if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
                 if let Some(s) = chest::chest_slot(&self.world_chests, chest as usize, abs) {
                     if s.kind != 0 && s.count > 0 && chest::inventory_has_room_for(self, s.kind) {
@@ -1991,17 +2204,19 @@ impl App {
         // The tail arm — `GetAlternateClickAction`'s else-chain close
         // (`ItemSlot.cs:679-682`): Shift held and no crafting/reforge/chest
         // arm matched, so a hovered inventory slot with an item lights the
-        // quick-trash cursor (`GetSellOrTrash` → `AlternateClickAction.Trash`
-        // while no shop is open, `:198-209`; the port has no sell cursor, so
-        // the shop case stands down — the recorded gap). The head guard
+        // quick-trash cursor — or the SELL cursor while a shop is open
+        // (`GetSellOrTrash`, `:198-209`: `npcShop <= 0` → Trash, the coin
+        // kinds 71-74 → null, everything else → Sell). The head guard
         // (`:631-634`): air or favorited slots answer null.
-        if self.shop_npc.is_none() {
-            if let Some(slot) = self.slot_at_mouse() {
-                if slot < crate::item::INV
-                    && self.inventory[slot].count > 0
-                    && !self.is_favorite(slot)
-                {
+        if let Some(slot) = self.slot_at_mouse() {
+            if slot < crate::item::INV
+                && self.inventory[slot].count > 0
+                && !self.is_favorite(slot)
+            {
+                if self.shop_npc.is_none() {
                     self.cursor_override = CURSOR_TRASH;
+                } else if !is_coin_kind(self.inventory[slot].kind) {
+                    self.cursor_override = CURSOR_SELL;
                 }
             }
         }
@@ -5029,5 +5244,258 @@ mod housing_query_tests {
         app.mouse_npc_type = 17; // the slot holds a Guide, not a Merchant
         app.refresh_mouse_npc();
         assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, 0));
+    }
+}
+
+/// S1-P-i44 — the shop CLICK witnesses: the ctx-15 grid dispatch
+/// (`Main.cs:41811-41814` → `ItemSlot.HandleShopSlot`), the cursor-10
+/// Shift-sell (`ItemSlot.cs:851-869` + `GetSellOrTrash` `:198-209`) and
+/// the shop grid's geometry (`Main.cs:41807-41811`). Written, not run.
+#[cfg(test)]
+mod s1_p_i44_shop_click_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// Inside the shop grid's cell (0, 0) — the drawn 52·0.755 px cell at
+    /// (73, 258) (`Main.cs:41807-41808`, `ui::inventory::shop_slot_pos`).
+    const SHOP_SLOT_0: Vec2 = Vec2::new(90.0, 270.0);
+    /// Inside the shop grid's cell (1, 0) — x = (int)(73 + 56·0.755) = 115.
+    const SHOP_SLOT_1: Vec2 = Vec2::new(130.0, 270.0);
+
+    fn shop_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.shop_npc = Some(0);
+        app.shop_stock =
+            crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
+        app.shop_mood = 1.0;
+        app.coins = 1_000_000;
+        app
+    }
+
+    #[test]
+    fn the_shop_grid_geometry_matches_the_draw() {
+        // `Main.cs:41807-41808`: `(int)(73 + i*56*0.755)`,
+        // `(int)(258 + j*56*0.755)` — the same truncation the chest panel
+        // uses (`ChestUI.cs:379-380`).
+        assert_eq!(ui::inventory::shop_slot_pos(0, 0), Vec2::new(73.0, 258.0));
+        assert_eq!(ui::inventory::shop_slot_pos(1, 0), Vec2::new(115.0, 258.0));
+        assert_eq!(ui::inventory::shop_slot_pos(0, 1), Vec2::new(73.0, 300.0));
+        // The hit test is inclusive on all four edges (`:41811`).
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(73.0, 258.0), 52.0), Some(0));
+        assert_eq!(ui::inventory::shop_slot_at(SHOP_SLOT_1, 52.0), Some(1));
+        // The last cell (9, 3): x = (int)(73 + 9·42.28) = 453, y = 384.
+        assert_eq!(ui::inventory::shop_slot_pos(9, 3), Vec2::new(453.0, 384.0));
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(460.0, 390.0), 52.0), Some(39));
+        // Off-grid: nothing.
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(60.0, 270.0), 52.0), None);
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(90.0, 440.0), 52.0), None);
+    }
+
+    #[test]
+    fn the_left_click_buys_one_unit_onto_the_cursor() {
+        // `ItemSlot.HandleShopSlot` (`:2053-2095`): one unit per press at
+        // superFastStack 0; the charge is the row's buying value; the
+        // stack-split cooldown arms (`RefreshStackSplitCooldown`, `:2089`).
+        let mut app = shop_app();
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+        assert_eq!(app.stack_split, 30, "the 0 → 30 arm (`:1776-1778`)");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 1);
+        // The cooldown gates the next press (`:2043`'s stackSplit <= 1).
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 1, "the split gate holds the repeat");
+        // Once the cooldown decays the buy repeats.
+        app.stack_split = 0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 2);
+        assert_eq!(app.coins, 1_000_000 - 80000);
+    }
+
+    #[test]
+    fn the_right_click_buys_paced() {
+        // `RightClick`'s ctx-15 arm (`ItemSlot.cs:1648-1651`): the held
+        // right button buys through the same HandleShopSlot gate.
+        let mut app = shop_app();
+        app.mouse_pos = SHOP_SLOT_0;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+    }
+
+    #[test]
+    fn the_full_cursor_refuses_the_buy() {
+        // `:2055-2058`: a cursor at its maxStack skips the unit — the
+        // purse and the memo stay untouched.
+        let mut app = shop_app();
+        app.mouse_item = ItemSlot {
+            kind: 88,
+            name: crate::registry::name(88),
+            count: crate::registry::max_stack(88),
+            prefix: 0,
+        };
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_alien_cursor_refuses_the_buy() {
+        // `:2043`: a non-air cursor that cannot stack with the row refuses
+        // (`Item.CanStack`, `Item.cs:49865-49871`).
+        let mut app = shop_app();
+        app.mouse_item = ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 3,
+            prefix: 0,
+        };
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.kind, 9, "the cursor keeps its own stack");
+        assert_eq!(app.coins, 1_000_000);
+    }
+
+    #[test]
+    fn the_held_stack_sells_into_an_empty_shop_cell() {
+        // `PickItemMovementAction` ctx 15 action 4 (`:1575-1578`) →
+        // `LeftClick`'s case 4 (`:1222-1241`): SellItem pays out,
+        // AddItemToShop re-stocks, the cursor turns to air, stackSplit
+        // locks at 9999 (`:1239`).
+        let mut app = shop_app();
+        // Cell 39 is past the Merchant's stock — an air cell.
+        app.mouse_pos = Vec2::new(460.0, 390.0);
+        app.mouse_item = ItemSlot {
+            kind: 8, // Torch, value 50 → 10 per unit
+            name: crate::registry::name(8),
+            count: 5,
+            prefix: 0,
+        };
+        let stock_len = app.shop_stock.len();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000 + 50);
+        assert_eq!(app.mouse_item.count, 0, "the cursor turns to air");
+        assert_eq!(app.stack_split, 9999);
+        assert_eq!(app.shop_stock.len(), stock_len + 1);
+        let e = app.shop_stock[stock_len];
+        assert!(e.buy_once);
+        assert_eq!((e.item, e.stack), (8, 5));
+    }
+
+    #[test]
+    fn the_value_zero_item_still_enters_the_shop() {
+        // `ItemSlot.cs:1232-1238`: a value-0 item pays nothing but still
+        // re-stocks (sound 7). Wood 9 is value 0.
+        let mut app = shop_app();
+        app.mouse_pos = Vec2::new(460.0, 390.0);
+        app.mouse_item = ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 4,
+            prefix: 0,
+        };
+        let stock_len = app.shop_stock.len();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000, "no payout on a value-0 item");
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.shop_stock.len(), stock_len + 1);
+        assert_eq!(app.shop_stock[stock_len].stack, 4);
+    }
+
+    #[test]
+    fn the_shift_click_sells_from_the_inventory_grid() {
+        // `GetSellOrTrash` (`ItemSlot.cs:198-209`): with a shop open the
+        // Shift-hover lights cursor 10; the click runs the cursor-10 arm
+        // (`:851-869`) — the slot turns to air, the purse grows, the shop
+        // re-stocks the sold units.
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        // Grid slot 0's centre — (20 + 26·0.85, 20 + 26·0.85) ≈ (42, 42).
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        // The hover evaluation runs in the chest handler's head
+        // (`handle_chest_clicks` → `evaluate_cursor_override`); with no
+        // button held it evaluates and stands down.
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[0].count, 0, "the slot turns to air");
+        assert_eq!(app.coins, 1_000_000 + 60);
+        let last = app.shop_stock.last().unwrap();
+        assert!(last.buy_once);
+        assert_eq!((last.item, last.stack), (8, 6));
+    }
+
+    #[test]
+    fn the_coin_kinds_never_light_the_sell_cursor() {
+        // `GetSellOrTrash` (`:204-207`): types 71-74 answer null — the
+        // coin stacks cannot be sold.
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 50,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "no sell cursor on coins");
+        // Without a shop the same hover lights the quick-trash cursor.
+        let mut app = shop_app();
+        app.close_shop();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_TRASH);
+    }
+
+    #[test]
+    fn the_shift_buy_bulks_a_buy_once_row_ten_at_once() {
+        // `HandleShopSlot` (`:2047-2051`): Shift + a buyOnce row buys
+        // `GetBulkBuyAmount` = min(10, stack) units in one press.
+        let mut app = shop_app();
+        // A one-row stock: the buyOnce row sits at cell 0.
+        app.shop_stock = vec![crate::shop::ShopEntry {
+            item: 8,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: true,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 12,
+        }];
+        app.mouse_pos = SHOP_SLOT_0;
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 10, "ten units in one press");
+        assert_eq!(app.shop_stock[0].stack, 2);
+        // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
+        assert_eq!(app.coins, 1_000_000 - 100);
     }
 }

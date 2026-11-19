@@ -728,11 +728,33 @@ impl App {
             #[cfg(feature = "debug")]
             _ if crate::debug_panel::handle_key(self, code) => {}
             KeyCode::Digit1 => {
-                // The shop open: the 1 key buys the first stock slot (the
-                // click-buy lands with the click-routing work).
-                if !self.buy_shop_item(0) {
-                    self.selected = 0;
+                // The shop open: the 1 key buys one unit of the first stock
+                // row onto the cursor (`ItemSlot.HandleShopSlot`'s body —
+                // the click-buy rides `handle_inventory_clicks`' shop grid).
+                // The cursor stackability gate (`ItemSlot.cs:2043` — an air
+                // cursor or the same kind/prefix), the cursor-room gate
+                // (`:2055`) and the first-unit cue (`:2064-2073`) ride here;
+                // a refused buy falls through to the hotbar select.
+                let row0 = self.shop_stock.first().copied();
+                let cursor_ok = match row0 {
+                    Some(e) if e.item > 0 && e.stack > 0 => {
+                        self.mouse_item.count == 0
+                            || (self.mouse_item.kind == e.item
+                                && self.mouse_item.prefix == e.prefix
+                                && self.mouse_item.count
+                                    < crate::registry::max_stack(e.item))
+                    }
+                    _ => false,
+                };
+                if self.shop_npc.is_some() && cursor_ok {
+                    let value = row0.map_or(0, |e| crate::itemdata::ITEMS[e.item as usize].value);
+                    if self.buy_shop_item(0) {
+                        // `SoundEngine.PlaySound(18)` on a valued row, else 7.
+                        self.audio.play(if value > 0 { "Coins" } else { "Grab" });
+                        return;
+                    }
                 }
+                self.selected = 0;
             }
             KeyCode::Digit2 => self.selected = 1,
             KeyCode::Digit3 => self.selected = 2,
