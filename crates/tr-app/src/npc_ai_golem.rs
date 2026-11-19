@@ -276,7 +276,9 @@ pub fn free_head_hover_velocity(
 pub fn free_head_fireball_step(num: f32, body_hp: i32, body_max_hp: i32) -> f32 {
     let step = (num + 4.0) / 5.0;
     let mut total = step;
-    let (life, max) = (body_hp as f32, body_max_hp as f32);
+    // W1-6: the C# compares in DOUBLE (`:31420-31434`,
+    // `(double)life < (double)lifeMax * 0.8` …) — f64 here, not f32.
+    let (life, max) = (body_hp as f64, body_max_hp as f64);
     if life < max * 0.8 {
         total += step;
     }
@@ -304,7 +306,9 @@ pub fn free_head_barrage_step(
     body_line_blocked: bool,
 ) -> f32 {
     let mut total = num;
-    let (life, max) = (body_hp as f32, body_max_hp as f32);
+    // W1-6: the /1.25 and /1.5 tiers compare in DOUBLE (`:31469-31475`);
+    // the /2../6 tiers below stay INTEGER (`:31477-31491`).
+    let (life, max) = (body_hp as f64, body_max_hp as f64);
     if life < max / 1.25 {
         total += num;
     }
@@ -340,7 +344,9 @@ pub fn free_head_barrage_step(
 pub fn free_head_beam_tier(body_hp: i32, body_max_hp: i32, body_line_blocked: bool) -> (i32, f32) {
     let mut dmg = 24;
     let mut speed = 11.0f32;
-    let (life, max) = (body_hp as f32, body_max_hp as f32);
+    // W1-6: the C# tier compares are DOUBLE (`:31524-31547`,
+    // `(double)life < (double)lifeMax * 0.5` …) — f64 here, not f32.
+    let (life, max) = (body_hp as f64, body_max_hp as f64);
     for threshold in [0.5, 0.4, 0.3, 0.2, 0.1] {
         if life < max * threshold {
             dmg += 1;
@@ -348,7 +354,8 @@ pub fn free_head_beam_tier(body_hp: i32, body_max_hp: i32, body_line_blocked: bo
         }
     }
     if body_line_blocked {
-        dmg = (dmg as f32 * 1.5) as i32;
+        // `:31553`: `(int)((double)num728 * 1.5)` — the double multiply.
+        dmg = (dmg as f64 * 1.5) as i32;
         speed *= 2.5;
     }
     (dmg, speed)
@@ -697,5 +704,46 @@ mod tests {
         assert_eq!((lx, ly), (0.0, 0.0));
         let (lx2, _) = free_head_blocked_lead(10.0, 0.0, &mut rng);
         assert!((0.0..500.0).contains(&lx2));
+    }
+
+    #[test]
+    fn w1_6_the_free_head_tiers_compare_in_double() {
+        // W1-6 (`NPC.cs:31420-31434` / `:31524-31547`): the tier compares
+        // are `(double)life < (double)lifeMax * k` — at the family's
+        // lifeMax values (15000/16000/25000) every threshold product is
+        // exactly representable, so the strict `<` boundaries hold in
+        // both widths; these pins catch a regression to a rounded f32
+        // product on a future lifeMax where the widths diverge.
+        // Fireball: exactly at 80 % (12000 of 15000) the tier does NOT
+        // add (strict `<`); one hp below adds it.
+        assert_eq!(free_head_fireball_step(1.0, 12000, 15000), 1.0);
+        assert_eq!(free_head_fireball_step(1.0, 11999, 15000), 2.0);
+        // Exactly at 10 % (1500 of 15000): the 80/60/20 tiers add, the
+        // 10 % tier does not -> 4.
+        assert_eq!(free_head_fireball_step(1.0, 1500, 15000), 4.0);
+        assert_eq!(free_head_fireball_step(1.0, 1499, 15000), 5.0);
+        // Beam tiers: exactly at 50 % (8000 of 16000) stays 24/11; one
+        // below steps to 25/11.25; exactly at 10 % (1600) carries four
+        // tiers (50/40/30/20) -> 28/12; one below adds the fifth.
+        assert_eq!(free_head_beam_tier(8000, 16000, false), (24, 11.0));
+        assert_eq!(free_head_beam_tier(7999, 16000, false), (25, 11.25));
+        assert_eq!(free_head_beam_tier(1600, 16000, false), (28, 12.0));
+        assert_eq!(free_head_beam_tier(1599, 16000, false), (29, 12.25));
+        // The blocked escalation truncates `(int)((double)dmg * 1.5)`
+        // (`:31553`): 25 * 1.5 = 37.5 -> 37 (never rounds up).
+        assert_eq!(free_head_beam_tier(7999, 16000, true), (37, 28.125));
+        // The barrage's DOUBLE /1.25 and /1.5 tiers (`:31469-31475`):
+        // exactly at lifeMax/1.25 (12000 of 15000) neither adds; one
+        // below adds /1.25 only (12000/1.5 = 10000 boundary is lower);
+        // exactly at /1.5 (10000) adds /1.25 only; 9999 adds both. The
+        // INTEGER tiers /2../6 (`:31477-31491`) stay integer: at 5000
+        // of 15000, /2 = 7500, /3 = 5000 — `5000 < 5000` is false.
+        assert_eq!(free_head_barrage_step(1.0, 12000, 15000, false), 1.0);
+        assert_eq!(free_head_barrage_step(1.0, 11999, 15000, false), 2.0);
+        assert_eq!(free_head_barrage_step(1.0, 10000, 15000, false), 2.0);
+        assert_eq!(free_head_barrage_step(1.0, 9999, 15000, false), 3.0);
+        // 5000 of 15000: /1.25, /1.5, /2 add (3); /3 is the exact
+        // integer boundary (no); /4 = 3750, /5 = 3000, /6 = 2500 no.
+        assert_eq!(free_head_barrage_step(1.0, 5000, 15000, false), 4.0);
     }
 }

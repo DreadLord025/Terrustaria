@@ -2341,11 +2341,19 @@ impl Npc {
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); 0 for every other kind
             // (the Frost family writes no alpha row, `NPC.cs:13281-13487`).
-            alpha: kind
-                .pumpkin_moon_defaults()
-                .map(|d| d.alpha)
-                .or_else(|| kind.frost_moon_defaults().map(|d| d.alpha))
-                .unwrap_or(0),
+            // R22 G3 (fix/verifier-w1): the Golem BODY 245 carries
+            // `alpha = 255` (`NPC.cs:12175`) — the 26-tick spawn fade
+            // (`:19535-19543`) starts at the ctor, not at the resolver;
+            // the parts' spawn-resolver override (`world_sim/npcs.rs`)
+            // stays for the directly-constructed head/fists.
+            alpha: match kind {
+                NpcKind::Golem => 255,
+                _ => kind
+                    .pumpkin_moon_defaults()
+                    .map(|d| d.alpha)
+                    .or_else(|| kind.frost_moon_defaults().map(|d| d.alpha))
+                    .unwrap_or(0),
+            },
             head_turn: 0,
             wet: false,
             carrier_timer: -1.0,
@@ -14226,9 +14234,12 @@ impl Npc {
                         self.ai[1] = 0.0;
                         // The 8-speed fireball (`:31192-31204`): the v1
                         // pushed the RAW delta — the normalise was missing.
+                        // W1-6: the invented `.max(0.001)` guard is dropped —
+                        // the C# divides by the RAW sqrt (`:31196`), NaN/inf
+                        // passes through on coincident centres.
                         let (sx, sy) = (cx, cy + 10.0);
                         let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        let d = (dvx * dvx + dvy * dvy).sqrt().max(0.001);
+                        let d = (dvx * dvx + dvy * dvy).sqrt();
                         dvx = dvx / d * 8.0;
                         dvy = dvy / d * 8.0;
                         self.wants_hostile_shot.push((
@@ -14258,7 +14269,8 @@ impl Npc {
                         self.ai[1] = 0.0;
                         let (sx, sy) = (cx + ox, cy + 10.0);
                         let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        let d = (dvx * dvx + dvy * dvy).sqrt().max(0.001);
+                        // W1-6: raw sqrt, no guard (`:31251` — NaN pass-through).
+                        let d = (dvx * dvx + dvy * dvy).sqrt();
                         dvx = dvx / d * 8.0;
                         dvy = dvy / d * 8.0;
                         self.wants_hostile_shot.push((
@@ -14291,7 +14303,8 @@ impl Npc {
                         for (sx, sp) in shots.into_iter().take(count) {
                             let mut vx = pcx - (cx + sx);
                             let mut vy = pcy - (cy - 22.0);
-                            let vd = (vx * vx + vy * vy).sqrt().max(0.001);
+                            // W1-6: raw sqrt, no guard (`:31299`/`:31325`).
+                            let vd = (vx * vx + vy * vy).sqrt();
                             vx = vx / vd * sp;
                             vy = vy / vd * sp;
                             self.wants_hostile_shot.push((
@@ -14362,7 +14375,11 @@ impl Npc {
                             }
                         }
                     } else {
-                        let ratio = num3 / d.max(0.001);
+                        // W1-6: the C# divides by the RAW length (`:19321`
+                        // `num4 = num3 / num4`, no guard — the `d < 12+num3`
+                        // gate above means d == 0 takes the contact arm, so
+                        // the division is never reached at zero anyway).
+                        let ratio = num3 / d;
                         self.vx = dx * ratio;
                         self.vy = dy * ratio;
                         // `:19324-19328`: the DEFAULT is the negated
@@ -14395,7 +14412,8 @@ impl Npc {
                         );
                         let ddx = pcx - anchor_x;
                         let ddy = pcy - anchor_y;
-                        let dd = (ddx * ddx + ddy * ddy).sqrt().max(0.001);
+                        // W1-6: raw sqrt, no guard (`:19382` — NaN pass-through).
+                        let dd = (ddx * ddx + ddy * ddy).sqrt();
                         self.vx = ddx / dd * sp;
                         self.vy = ddy / dd * sp;
                         // `:19385-19389`: the LAUNCH arm mirrors the
@@ -14471,9 +14489,24 @@ impl Npc {
                     self.hp = 0;
                     return;
                 }
-                // flag53 (`:31363-31367`): the head's own blocked line.
+                // The noTileCollide toggle (`:31363-31371`, W1-2 fix): a
+                // blocked line sets noTileCollide AND flag53; a CLEAR
+                // line while the flag rides AND the box overlaps solids
+                // releases it. `SetDefaults` 249 (`:12207-12220`) sets
+                // noGravity but NOT noTileCollide — the free head
+                // normally tile-collides. The flag rides `local_ai[1]`
+                // (249 uses no localAI slot; the body/fist mapping
+                // convention, ANALYSIS). `SolidTiles(position, w, h)`'s
+                // tile scan rides the house `collides_rect` stand-in.
                 let flag53 =
                     !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
+                if flag53 {
+                    self.local_ai[1] = 1.0;
+                } else if self.local_ai[1] != 0.0
+                    && crate::player::collides_rect(world, self.x, self.y, w, h)
+                {
+                    self.local_ai[1] = 0.0;
+                }
                 // The hover approach (`:31378-31417`): the 7-speed aim at
                 // player - (0, 300), the 0.05 converge with the sign-cross
                 // double — the v1 ran an invented spring + clamp.
@@ -14498,7 +14531,8 @@ impl Npc {
                     self.ai[1] = 0.0;
                     let (sx, sy) = (cx, cy - 10.0);
                     let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                    let d = (dvx * dvx + dvy * dvy).sqrt().max(0.001);
+                    // W1-6: raw sqrt, no guard (`:31459` — NaN pass-through).
+                    let d = (dvx * dvx + dvy * dvy).sqrt();
                     dvx = dvx / d * 8.0;
                     dvy = dvy / d * 8.0;
                     self.wants_hostile_shot.push((
@@ -14538,7 +14572,8 @@ impl Npc {
                         }
                         let mut vx = tx - (cx + sx);
                         let mut vy = ty - (cy - 50.0);
-                        let vd = (vx * vx + vy * vy).sqrt().max(0.001);
+                        // W1-6: raw sqrt, no guard (`:31560` — NaN pass-through).
+                        let vd = (vx * vx + vy * vy).sqrt();
                         vx = vx / vd * sp;
                         vy = vy / vd * sp;
                         self.wants_hostile_shot.push((
@@ -14551,10 +14586,37 @@ impl Npc {
                         ));
                     }
                 }
+                // W1-2: the per-tick `TargetClosest()` (`:31377`) — solo
+                // impact is facing only; the tail's vx-sign facing stands
+                // in (documented, ANALYSIS "The Golem family").
                 self.facing = if self.vx >= 0.0 { 1 } else { -1 };
                 self.sprite_dir = self.facing;
-                self.x += self.vx;
-                self.y += self.vy;
+                // W1-2: free integration ONLY while the fly-through flag
+                // rides (`:31363-31371`); otherwise the same axis-separated
+                // tile pass the fists use (the port's `Collision.TileCollision`
+                // stand-in — velocity zeroes on impact, the collide flags
+                // latch for the next tick's reads).
+                if self.local_ai[1] != 0.0 {
+                    self.x += self.vx;
+                    self.y += self.vy;
+                } else {
+                    self.collide_x = false;
+                    self.collide_y = false;
+                    let nx = self.x + self.vx;
+                    if !crate::player::collides_rect(world, nx, self.y, w, h) {
+                        self.x = nx;
+                    } else {
+                        self.vx = 0.0;
+                        self.collide_x = true;
+                    }
+                    let ny = self.y + self.vy;
+                    if !crate::player::collides_rect(world, self.x, ny, w, h) {
+                        self.y = ny;
+                    } else {
+                        self.vy = 0.0;
+                        self.collide_y = true;
+                    }
+                }
             }
             _ => {}
         }
@@ -18811,6 +18873,11 @@ mod tests {
         body.hp = body.max_hp;
         body.caster_counter = 0;
         body.cast_windup = 0;
+        // R22 G3: the ctor now carries `SetDefaults`' alpha = 255
+        // (`NPC.cs:12175`); this witness pins the CHARGE machine, so the
+        // fade is cleared up front (the fade itself has its own witness,
+        // `the_golem_family_spawn_fade`).
+        body.alpha = 0;
         // The init tick spawn-requests the parts in the C# order.
         body.update_golem(&w, &player);
         assert_eq!(body.wants_sphere.len(), 3, "the parts request");
@@ -18954,6 +19021,89 @@ mod tests {
         free.ai[1] = 150.0;
         free.find_frame();
         assert_eq!(free.frame, 0, "the free head's closed row");
+    }
+
+    #[test]
+    fn w1_2_the_free_head_toggles_tile_collide_on_the_blocked_line() {
+        // W1-2 (`NPC.cs:31363-31371`): the free head starts tile-colliding
+        // (`SetDefaults` 249 `:12207-12220` has no noTileCollide); a
+        // BLOCKED line to the player sets the flag (local_ai[1]) AND
+        // flag53 (the ai[1] pin at 20); a CLEAR line while the flag rides
+        // AND a solid overlap releases it. WRITTEN NOT RUN (code-only).
+        // Layout: ground_air's cave is rows 125-134, cols 60-139; the
+        // head hovers INSIDE the cave (air), the player below it in the
+        // same cave; a temporary solid plug rows 129-130 blocks the line.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.zones.jungle = true;
+        player.x = 100.0 * 16.0;
+        player.y = 130.0 * 16.0; // centre tile (100, 131), cave air
+        for x in 95..106 {
+            for y in 129..131 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The head in the cave air above the plug (box rows 126-130).
+        let mut free =
+            Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 126.0 * 16.0, -1, 0.0);
+        free.hp = free.max_hp;
+        assert_eq!(free.local_ai[1], 0.0, "249 starts tile-colliding");
+        free.update_golem(&w, &player);
+        assert_eq!(free.local_ai[1], 1.0, "the blocked line sets the flag");
+        assert_eq!(free.ai[1], 20.0, "flag53 pins the cadence at 20");
+        // Carve the plug away: the line clears, but the head is in AIR —
+        // the `SolidTiles` half fails, the flag keeps riding.
+        for x in 95..106 {
+            for y in 129..131 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        free.update_golem(&w, &player);
+        assert_eq!(free.local_ai[1], 1.0, "clear line + no solids: keeps flying");
+        // Drop the head so its bottom edge overlaps the cave floor (row
+        // 135) while its centre line to the player stays cave air: the
+        // clear line + the solid overlap releases the flag.
+        free.x = 100.0 * 16.0;
+        free.y = 131.0 * 16.0; // box rows 131-135.4, floor at row 135
+        free.vx = 0.0;
+        free.vy = 0.0;
+        free.update_golem(&w, &player);
+        assert_eq!(free.local_ai[1], 0.0, "clear line + solids: released");
+        // With the flag down the tail tile-collides. The hover aim is
+        // UP (the player sits above the head's centre - 300): vy steps
+        // to -0.05, and the box already overlaps the solid floor — the
+        // y-pass zeroes vy and latches collide_y instead of integrating
+        // (the C#'s TileCollision stand-in). The old unconditional raw
+        // tail moved y by -0.05 with collide_y false.
+        free.vx = 0.0;
+        free.vy = 0.0;
+        let y_before = free.y;
+        free.update_golem(&w, &player);
+        assert_eq!(free.vy, 0.0, "the impact zeroed vy");
+        assert!(free.collide_y, "the impact latched collideY");
+        assert_eq!(free.y, y_before, "no integration into the floor");
+    }
+
+    #[test]
+    fn r22_g3_the_golem_body_spawns_at_alpha_255() {
+        // R22 G3 (`NPC.cs:12175`): `SetDefaults` 245 sets `alpha = 255` —
+        // the ctor carries it (the altar summon and the debug spawn both
+        // construct directly), so the body fades in over 26 ticks
+        // (`:19535-19543`) from ANY spawn site, not just the resolver.
+        let body = Npc::new(NpcKind::Golem, 0.0, 0.0, 1, 0.0);
+        assert_eq!(body.alpha, 255, "the body's SetDefaults alpha");
+        // The free head 249 has NO alpha row (`:12207-12220`) — stays 0.
+        let free = Npc::new(NpcKind::GolemHeadFree, 0.0, 0.0, 1, 0.0);
+        assert_eq!(free.alpha, 0, "249 writes no alpha");
     }
     #[test]
     fn the_golem_family_spawn_fade() {
@@ -25373,12 +25523,15 @@ mod s1_f_13c2_tests {
             assert_eq!(n.hp, r.life, "{:?} spawns at lifeMax", r.kind);
         }
         // No drift: the pre-existing kinds keep their hardcoded start state
-        // (the Poltergeist's pumpkin alpha row stays).
-        for kind in [NpcKind::Slime, NpcKind::Zombie, NpcKind::Golem] {
+        // (the Poltergeist's pumpkin alpha row stays). R22 G3: the Golem
+        // body LEFT this list — its `SetDefaults` alpha = 255 row
+        // (`NPC.cs:12175`) now rides the ctor (the r22_g3 witness pins it).
+        for kind in [NpcKind::Slime, NpcKind::Zombie] {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert_eq!(n.scale, 1.0, "{kind:?} scale drifted");
             assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
         }
+        assert_eq!(Npc::new(NpcKind::Golem, 0.0, 0.0, 1, 0.0).alpha, 255);
         assert_eq!(Npc::new(NpcKind::Poltergeist, 0.0, 0.0, 1, 0.0).alpha, 100);
     }
 

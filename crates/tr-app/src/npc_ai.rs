@@ -111,6 +111,13 @@ fn walker_integrate(
 ) {
     let (w, h) = (npc_size_w(npc), npc_size_h(npc));
     npc.vy = (npc.vy + gravity).min(max_fall);
+    // R22 G4 (fix/verifier-w1): the generic `NPC.UpdateNPC` tail's ±0.005
+    // X deadband (`NPC.cs:90473-90476`) — the compares are DOUBLE in the
+    // C# (`(double)velocity.X < 0.005 && > -0.005`), zeroing the tiny
+    // out-of-aggro `vx *= 0.9` decay tail instead of drifting forever.
+    if (npc.vx as f64) < 0.005 && (npc.vx as f64) > -0.005 {
+        npc.vx = 0.0;
+    }
 
     let nx = npc.x + npc.vx;
     if !crate::player::collides_rect(world, nx, npc.y, w, h) {
@@ -781,6 +788,32 @@ mod tests {
         assert!(npc.x < 90.0 * 16.0, "the walker approached the target");
         assert!(jumped, "the walker jumped the obstacles");
         assert!(npc.on_ground, "the walker landed");
+    }
+
+    #[test]
+    fn r22_g4_the_walker_deadband_zeroes_the_decay_tail() {
+        // R22 G4 (`NPC.cs:90473-90476`): the generic UpdateNPC tail
+        // zeroes velocity.X inside the ±0.005 DOUBLE deadband — the
+        // out-of-aggro `vx *= 0.9` tail stops dead instead of drifting
+        // forever. WRITTEN NOT RUN (code-only).
+        let w = ground();
+        let mut npc = Npc::new(NpcKind::Zombie, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        npc.on_ground = true;
+        // The target outside the aggro window: the decay arm runs.
+        let far = (190.0 * 16.0, 119.0 * 16.0);
+        npc.vx = 0.005; // the f32 literal widens just BELOW 0.005 in f64
+        walker_step(&mut npc, &w, far.0, far.1, WalkerParams::ZOMBIE, 0.4, 10.0);
+        // 0.005 * 0.9 = 0.0045 < 0.005 -> zeroed (the C# float->double
+        // widen of 0.005f lands below the literal too — same fold).
+        assert_eq!(npc.vx, 0.0, "the decay tail dies in the deadband");
+        // The negative side mirrors (the compare is `> -0.005`).
+        npc.vx = -0.005;
+        walker_step(&mut npc, &w, far.0, far.1, WalkerParams::ZOMBIE, 0.4, 10.0);
+        assert_eq!(npc.vx, 0.0, "the negative tail dies too");
+        // Above the band the velocity survives (0.02 * 0.9 = 0.018).
+        npc.vx = 0.02;
+        walker_step(&mut npc, &w, far.0, far.1, WalkerParams::ZOMBIE, 0.4, 10.0);
+        assert!(npc.vx > 0.005, "outside the band the decay continues");
     }
 
     #[test]

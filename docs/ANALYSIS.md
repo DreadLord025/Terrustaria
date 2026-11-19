@@ -4422,6 +4422,25 @@ timeLeft-300 list + the request drain), `main.rs` (the mod). Branch
 `task/S1-D-3-plantera-audit`, NOT merged — the minion machines and the
 test run are the follow-ups.
 
+### W1-5 fix (fix/verifier-w1-golem-plantera, 2026-11-19, code-only)
+
+TR-VERIFY-W1 W1-5 (LOW): the phase-1 sight gate read the POST-integration
+position. The C#'s `Collision.CanHit(base.position, …)` (`NPC.cs:31918`)
+runs inside AI(), BEFORE `NPC.Update`'s movement integration — the
+aim/muzzle (`:31926-31965`) already used the captured pre-move centre,
+only the sight gate was off by one tick of motion (≤15 px enraged).
+Fixed with the smaller change the fix spec names: capture `(x0, y0)`
+before the mid-step integration and feed those to `can_hit` (moving the
+integration to the end would force every early `return` to integrate
+too). The same-tick spawn requests (spore/hooks/tentacles) are drained
+by the sim without a position payload today (kinds 263/264/265 unported,
+`world_sim/npcs.rs`'s drain) — when the minion wiring lands it must read
+the PRE-move centre (the C# spawns at `base.Center` inside AI()); noted
+here as the wiring obligation. Witness:
+`npc_ai_plantera.rs::w1_5_the_sight_gate_reads_the_pre_move_position`
+(a wall column the tick's motion crosses: pre-move blocked → no seed,
+the wall-free control fires). **No compiler invoked** — WRITTEN NOT RUN.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a
@@ -24893,3 +24912,86 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+### The verifier W1 fix wave (fix/verifier-w1-golem-plantera, 2026-11-19, code-only)
+
+TR-VERIFY-W1's findings against this family, fixed on the branch
+(code-only mode again — **no compiler invoked**, witnesses WRITTEN NOT
+RUN):
+
+- **W1-2 (MED) — the free head's noTileCollide toggle was dropped.**
+  The C# (`NPC.cs:31363-31371`) toggles `noTileCollide` per tick: a
+  BLOCKED `CanHit` line head→player sets it (and flag53); a CLEAR line
+  while the flag rides AND `SolidTiles(position, width, height)`
+  releases it. `SetDefaults` 249 (`:12207-12220`) sets `noGravity` but
+  NOT `noTileCollide` — the free head normally tile-collides. The port
+  raw-integrated through walls unconditionally. Fixed: the flag rides
+  `local_ai[1]` (249 uses no localAI slot — the body/fist mapping
+  convention); the toggle runs at the arm top (the C#'s position,
+  BEFORE the hover/cadence machine), and the tail free-integrates only
+  while the flag rides, otherwise running the fists' axis-separated
+  collision pass (velocity zeroes on impact, collideX/Y latch).
+  `SolidTiles`' tile scan rides the house `collides_rect` stand-in.
+  Witness: `npc.rs::w1_2_the_free_head_toggles_tile_collide_on_the_blocked_line`
+  (blocked→set+pin, clear+air→keeps, clear+solids→release, impact→
+  zero+latch). The per-tick `TargetClosest()` (`:31377`) stays folded:
+  solo impact is facing only, the tail's vx-sign facing stands in
+  (the documented solo convention — the G2 census claim below).
+- **W1-6 (LOW) — the invented `.max(0.001)` normalize guards dropped.**
+  The C# divides by the RAW `(float)Math.Sqrt` at every one of the six
+  sites (`:31196`, `:31251`, `:31299`/`:31325`, `:19321`, `:19382`,
+  `:31459`, `:31560`) — coincident centres produce NaN/inf velocity in
+  vanilla (NaN pass-through, NOT a SafeNormalize zero-fold: the source
+  is a bare division, no guard). The guards were port inventions;
+  removed for strict fidelity (behaviour differs only in the degenerate
+  coincident case). The fist follow's `num3 / d` division is never
+  reached at d == 0 anyway (the `d < 12 + num3` gate takes the contact
+  arm first). The unwired `npc_ai_style47` reference keeps its guard —
+  it is the audit cross-check, not the live path (its own row records
+  the fold-outs).
+- **W1-6 (LOW) — the free-head cadence/tier compares now DOUBLE.**
+  `free_head_fireball_step` (`:31420-31434`), `free_head_barrage_step`'s
+  /1.25 and /1.5 tiers (`:31469-31475`) and `free_head_beam_tier`
+  (`:31524-31547`) compared `(hp as f32) < (max as f32) * k` where the
+  C# casts both sides to double; now f64 (the sibling
+  `head_fireball_step` already was). The blocked escalation's
+  `(int)((double)dmg * 1.5)` (`:31553`) also rides the double multiply.
+  At the family's lifeMax values (15000/16000/25000) no threshold
+  flips — the change is precision fidelity + future-proofing. Witness:
+  `npc_ai_golem.rs::w1_6_the_free_head_tiers_compare_in_double` (the
+  strict-`<` boundary pins at 80/10 %, 50/10 %, the integer /3
+  boundary, the truncation).
+- **R22 G3 — the body's spawn alpha.** `SetDefaults` 245 sets
+  `alpha = 255` (`NPC.cs:12175`); the ctor now carries it (the altar
+  summon `world_sim/editing/doors.rs` and the debug/TR_BOSS spawns
+  construct directly — the fade previously only rode the parts'
+  spawn-resolver override). The charge witness clears alpha up front
+  (the fade has its own witness); the frost-defaults drift pin moved
+  Golem out of its alpha-0 list. Witness:
+  `npc.rs::r22_g3_the_golem_body_spawns_at_alpha_255`.
+- **R22 G4 — the generic ±0.005 DOUBLE vx deadband.**
+  `NPC.UpdateNPC`'s tail (`NPC.cs:90473-90476`) zeroes velocity.X
+  inside ±0.005 with DOUBLE compares; the walker framework's
+  `walker_integrate` (the aiStyle-3 family's shared integration) never
+  ran it — the out-of-aggro `vx *= 0.9` tail drifted forever. Ported
+  at the C#'s position (after the gravity add, before the collision
+  pass), f64 compares. Witness:
+  `npc_ai.rs::r22_g4_the_walker_deadband_zeroes_the_decay_tail`.
+  Scope note: the deadband lands on the walker/ladder integration
+  (the largest generic family); the other manual-integration machines
+  (hovers, bosses) keep their own tails — a census-wide sweep is its
+  own row.
+- **R22 G2 (TargetClosest folded sites) — documented, not forced.**
+  The golem arms fold every `TargetClosest()` call (`:19307`, `:19639`
+  region, `:31190`/`:31209`/`:31246`, `:31377`/`:31451`) into the
+  passed-player convention: solo play has ONE candidate, so the pick
+  is identity except the facing write — the arms derive facing from
+  the vx sign / the player side instead. Wiring the real
+  `npc_target::target_closest` at each site changes no solo behaviour
+  but touches the hot dispatch; deferred to the target-migration row
+  (the S1-D-3p pattern).
+- **R22 G5 (axis claim) — documented, not forced.** The style axis
+  (`npc.rs::update_rng`) claims 47 for the fists only; 45/46/48 still
+  ride the kind match (`update_golem_rng`). Claiming them on the axis
+  is a dispatch-shape refactor with zero behaviour delta (the family
+  is one-kind-per-style) — deferred; the kind arms stay the live path.
