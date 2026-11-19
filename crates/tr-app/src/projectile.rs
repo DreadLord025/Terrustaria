@@ -10916,6 +10916,15 @@ impl ProjectilePool {
         }
     }
 
+    // The aiStyle dispatch below must stay a single live arm per style:
+    // appended duplicates only warn (`unreachable_patterns`), and six dead
+    // arms (1/3/14/16/115/99) survived that way until S1-D-5 censused and
+    // deleted them — the `npc/data.rs` `to_u16`/`from_u16` precedent. A
+    // duplicate is a hard error here. The deny is function-scoped (a
+    // statement attribute on the inner match is not stable Rust); it also
+    // covers the nested kind/tower/frame matches in this body, each
+    // censused clean (distinct const arms + a `_` tail).
+    #[deny(unreachable_patterns)]
     pub fn update(
         &mut self,
         world: &mut World,
@@ -11329,10 +11338,15 @@ impl ProjectilePool {
                         129 => {
                             self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
                         }
-                        1 => self.slots[i].ai_arrow(world),
-                        3 => self.slots[i].ai_boomerang(world, owner),
-                        14 => self.slots[i].ai_spear(world),
-                        16 => self.slots[i].ai_bomb(world),
+                        // S1-D-5: the duplicate `1 => ai_arrow`, `3 =>
+                        // ai_boomerang`, `14 => ai_spear`, `16 => ai_bomb`
+                        // arms that sat here were unreachable behind the
+                        // live arms above (the kind-gated aiStyle-1 arm,
+                        // :ai_boomerang/:ai_spear/:ai_bomb) — deleted. The
+                        // dead `1` arm was NOT byte-identical to the live
+                        // one (it lacked the rider gates), which is exactly
+                        // why a silent shadow was dangerous; the census is
+                        // in ANALYSIS "The projectile data-row deviations".
                         115 => self.slots[i].ai_yoyo_beam(world),
                         210 => self.slots[i].ai_yoyo_shot(world),
                         82 => {
@@ -12364,7 +12378,9 @@ impl ProjectilePool {
                                 self.slots[i].pos += vel;
                             }
                         }
-                        115 => self.slots[i].ai_yoyo_beam(world),
+                        // S1-D-5: the duplicate `115 => ai_yoyo_beam` arm
+                        // that sat here was unreachable behind the live one
+                        // above — deleted (byte-identical pair).
                         62 => {
                             // `AI_062` (`Projectile.cs:29314-29316`'s
                             // `else if (this.aiStyle == 62) this.AI_062();`):

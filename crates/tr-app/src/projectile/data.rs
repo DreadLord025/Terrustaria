@@ -863,11 +863,19 @@ fn set_defaults_scale(kind: u16) -> f32 {
     }
 }
 
-/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
-/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
-/// families are M4-PROJ follow-ups. The magic (caster) families'
-/// (M4-PROJ-6) rows sit in `ProjectileID` order at the end of the match:
-/// their `aiStyle` values declare the dispatch arm Phases 3-4 add.
+/// The ported families' `SetDefaults` slice. The spear trap's spear (186,
+/// aiStyle 37) keeps a stand-in row (see its arm) and the flame jet (187,
+/// aiStyle 38) stays a passthrough — their AI families are M4-PROJ
+/// follow-ups. The magic (caster) families' (M4-PROJ-6) rows sit in
+/// `ProjectileID` order at the end of the match: their `aiStyle` values
+/// declare the dispatch arm Phases 3-4 add.
+///
+/// One live arm per kind: the pirate/martian/moon-lord merges appended
+/// duplicate arms the compiler only warns about (`unreachable_patterns`),
+/// so a stale 10x10 `MUSKET_BALL` sat behind the real 4x4 row and the
+/// spiky ball 185 rode the dart group's aiStyle 1 (S1-D-5). A duplicate is
+/// a hard error here — the `npc/data.rs` `to_u16`/`from_u16` precedent.
+#[deny(unreachable_patterns)]
 pub fn proj_data(kind: u16) -> Option<ProjData> {
     let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap, state) =
         match kind {
@@ -973,8 +981,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 (false, -2, false, -1, 255, 1.0),
             ),
-            // `Projectile.cs:1602-1610` — the Scrambler's bolt: 10x10,
-            // aiStyle 1, hostile, ignoreWater.
+            // `Projectile.cs:5064-5071` — the Scrambler's bolt (436): 10x10,
+            // aiStyle 1, hostile, ignoreWater. (`SCRAMBLER_SHOT` is the
+            // same-id alias — S1-D-5 deleted its duplicate arm.) The
+            // ignoreWater flag has no row slot yet (the resolver derives it
+            // for summons/Vilethorn only); recorded in ANALYSIS "The
+            // projectile data-row deviations (S1-D-5)".
             BRAIN_SCRAMBLER => (
                 10.0,
                 10.0,
@@ -987,8 +999,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `Projectile.cs:1639-1648` — the Ray Gunner's laser: 8x8,
-            // aiStyle 1, extraUpdates 3.
+            // `Projectile.cs:5081-5090` — the Ray Gunner's laser (438): 8x8,
+            // aiStyle 1, hostile, extraUpdates 3, ignoreWater. The C# also
+            // sets `alpha = 255`; the row keeps the reset 0 (the draw's
+            // generic path does not read alpha yet, and the baseline reset
+            // sweep pins it) — S1-D-5, ANALYSIS "The projectile data-row
+            // deviations". `MARTIAN_RAY` is the same-id alias; its
+            // duplicate arm was deleted.
             RAY_GUNNER => (
                 8.0,
                 8.0,
@@ -1146,9 +1163,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
-            // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
-            // the spiky ball — `penetrate = -1`, `trap = true`.
-            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY_BALL | TRAP_VENOM_DART => (
+            // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
+            // `penetrate = -1`, `trap = true`. (The spiky ball 185 left this
+            // group in S1-D-5: its own arm below carries the C# aiStyle 14.)
+            TRAP_DART | TRAP_SUPERDART | TRAP_VENOM_DART => (
                 10.0,
                 10.0,
                 1,
@@ -1160,6 +1178,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 RESET_STATE,
             ),
+            // `Projectile.cs:2717-2727` — the Spiky Ball Trap's ball (185):
+            // 14x14, aiStyle 14, `penetrate = -1`, `timeLeft = 900`, trap.
+            // The C# sets friendly AND hostile; the row shape carries
+            // neither flag (ANALYSIS "The projectile data-row deviations").
+            // The tile bounce (`HandleMovement` `:19703-19713`: the changed
+            // axis flips to `lastVelocity * -0.9f`, the Y only when
+            // `lastVelocity.Y > 1f`) is unported — `ai_spear` kills on the
+            // tile scan instead (same ANALYSIS section).
+            TRAP_SPIKY_BALL => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
             // `extraUpdates = 5`, the local immunity cooldown −1.
             // `Projectile.cs:2937-2945` — the Leaf Blower petal: 14x14,
@@ -1189,8 +1216,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
-            // `timeLeft = 900`.
+            // `:2728-2740` — the Spear Trap's spear (186) is really 10x14,
+            // aiStyle **37**, tileCollide false, ignoreWater, friendly AND
+            // hostile, penetrate -1, timeLeft 300, trap. aiStyle 37
+            // (`AI()` `:27472`) has no ported dispatch arm, so the row keeps
+            // the 185 stand-in values (the `:2717-2727` spiky-ball arm the
+            // trap family shared before S1-D-5 split 185 out) — correcting
+            // the row to 37 would park the spear in `_ => {}` forever. The
+            // deviation is recorded in ANALYSIS "The projectile data-row
+            // deviations (S1-D-5)" with the aiStyle-37 port as the follow-up.
             TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
@@ -1332,21 +1366,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
             BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
             DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false, RESET_STATE),
-            // The martian family's guns + the Dutchman's cannon — the
-            // `SetDefaults` rows packed into the data shape (the saucer
-            // family's four consts ride the origin/main set).
-            SCRAMBLER_SHOT => (
-                10.0,
-                10.0,
-                1,
-                1,
-                TIME_LEFT_DEFAULT,
-                0,
-                true,
-                false,
-                false,
-                RESET_STATE,
-            ),
+            // S1-D-5: the `SCRAMBLER_SHOT` arm that sat here is deleted —
+            // `SCRAMBLER_SHOT` = 436 = `BRAIN_SCRAMBLER` (the same-id alias,
+            // `ProjectileID.BrainScramblerBolt`), so the arm above already
+            // resolved it and this one was unreachable. The alias const
+            // stays for its callers; one row per id.
             // The pirate trio's shots (`Projectile.cs`'s SetDefaults): the
             // The Moon Lord family (`Projectile.cs`'s SetDefaults
             // rows): the 452/454/455/456 hostile set (timeLeft 600,
@@ -1372,10 +1396,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
             MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
+            // aiStyle 1, hostile, extraUpdates 3, tileCollide false,
+            // ignoreWater. The C# `alpha = 255` stays at the reset 0 here —
+            // S1-D-5, ANALYSIS "The projectile data-row deviations".
             PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, RESET_STATE),
+            // `Projectile.cs:6691-6698` — the death-drama smoke (622): 10x10,
+            // aiStyle 1, extraUpdates 2. The C# `alpha = 255` stays at the
+            // reset 0 here — same S1-D-5 note.
             BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
-            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
-            // and the Corsair's musket ball 82 (10x10, aiStyle 1).
+            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2).
+            // The Corsair's shot is kind **82 FlamingArrow** (`ProjectileID.cs
+            // :718`, `Projectile.cs:1625-1631`: 10x10, aiStyle 1, hostile) —
+            // it has no row yet (S1-D-5 census: the old "musket ball 82"
+            // comment was wrong twice over — the arm below it was
+            // `MUSKET_BALL` = 14, already resolved at the `:950-961` row
+            // above, so it was unreachable; deleted with the MARTIAN_RAY
+            // alias arm, 438 = RAY_GUNNER).
             PIRATE_ARROW => (
                 4.0,
                 4.0,
@@ -1385,30 +1422,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 0,
                 true,
                 true,
-                false,
-                RESET_STATE,
-            ),
-            MUSKET_BALL => (
-                10.0,
-                10.0,
-                1,
-                1,
-                TIME_LEFT_DEFAULT,
-                0,
-                true,
-                false,
-                false,
-                RESET_STATE,
-            ),
-            MARTIAN_RAY => (
-                8.0,
-                8.0,
-                1,
-                1,
-                TIME_LEFT_DEFAULT,
-                3,
-                true,
-                false,
                 false,
                 RESET_STATE,
             ),
@@ -1745,44 +1758,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // The martian family's guns + the Dutchman's cannon — the
-            // `SetDefaults` rows packed into the data shape (the saucer
-            // family's four consts ride the origin/main set).
             // The VortexHunter's dart (`Projectile.cs:6306-6315`): 10x10, aiStyle
             // 1, hostile, penetrate -1 (alpha 255 = no fade).
             VORTEX_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
-            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
-            // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
-            // timeLeft 600, tileCollide false.
-            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
-            // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
-            // ignoreWater, extraUpdates 2.
-            TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
-            // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
-            VORTEX_LIGHTNING | VORTEX_PORTAL => (
-                32.0,
-                32.0,
-                108,
-                -1,
-                TIME_LEFT_DEFAULT,
-                0,
-                false,
-                false,
-                false,
-                RESET_STATE,
-            ),
-            // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
-            // extraUpdates 4, ignoreWater.
-            VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
-            PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false, RESET_STATE),
-            PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
-            PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
-            MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
-            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, RESET_STATE),
-            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
-            // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2)
-            // and the Corsair's musket ball 82 (10x10, aiStyle 1).
+            // S1-D-5: the Moon Lord / tower arms that sat here
+            // (STARDUST_MARK, NEBULA_EYE, TOWER_DAMAGE_BOLT,
+            // VORTEX_LIGHTNING | VORTEX_PORTAL, VORTEX_RITUAL_BOLT,
+            // PHANTASMAL_EYE/SPHERE/DEATHRAY, MOON_LEECH, PHANTASMAL_BOLT,
+            // BLOWUP_SMOKE_MOONLORD) were byte-identical duplicates of the
+            // live arms above — every one unreachable behind its earlier
+            // winner. Deleted; one row per id.
             BLAND_WHIP => (
                 18.0,
                 18.0,
