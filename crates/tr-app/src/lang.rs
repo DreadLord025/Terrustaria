@@ -130,11 +130,16 @@ pub fn set_language(culture: GameCulture) {
 /// Substitutions with no source (e.g. an absent NPC or player) are removed so a
 /// `VariableText` sees them as unset, matching the null producer result.
 pub fn refresh_global_substitutions(app: &crate::app::App) {
-    let mut m = manager().lock().unwrap();
+    // Every producer is materialized BEFORE the manager lock: the name/text
+    // producers (`NPC.TypeName` -> `Lang.GetNPCNameValue`, NPC.cs:6727, and
+    // `Language.GetTextValue`) resolve through the same manager, so holding
+    // the lock across them would deadlock.
+    let mut values: Vec<(&'static str, Substitution)> = Vec::with_capacity(65);
+    let mut unset: Vec<&'static str> = Vec::new();
 
     // NPC first-name substitutions: `NPC.GetFirstNPCNameOrNull(type)`
     // (`Lang.cs:102-123,139-140`).
-    const NPC_NAMES: &[(&str, i32)] = &[
+    const NPC_NAMES: &[(&'static str, i32)] = &[
         ("Nurse", 18),
         ("Merchant", 17),
         ("ArmsDealer", 19),
@@ -162,210 +167,122 @@ pub fn refresh_global_substitutions(app: &crate::app::App) {
     ];
     for &(key, npc_type) in NPC_NAMES {
         if let Some(name) = first_npc_name(app, npc_type) {
-            m.set_substitution(key, Substitution::Text(name));
+            values.push((key, Substitution::Text(name)));
         } else {
-            m.remove_substitution(key);
+            unset.push(key);
         }
     }
 
-    // The input trigger tags (`Lang.cs:150-161`): the tooltip's "Press X to
-    // use" rows read them — the keyboard tags are the keybind names
-    // (`PlayerInput.GenerateRawInputList`, `PlayerInput.cs:1948`).
-    for (name, action) in [
-        ("InputTrigger_Healing", crate::input_map::Action::QuickHeal),
-        ("InputTrigger_ManaHealing", crate::input_map::Action::QuickMana),
-        ("InputTrigger_QuickBuff", crate::input_map::Action::QuickBuff),
-        ("InputTrigger_Mount", crate::input_map::Action::Mount),
-    ] {
-        m.set_substitution(
-            name,
-            Substitution::Text(app.settings.keybinds[action.index()].clone()),
-        );
-    }
-    // `PlayerInput.LocalizeKey` (`PlayerInput.cs:1951-1961`): the mouse
-    // buttons read their localized names.
-    for (name, key) in [
-        ("InputTrigger_InteractWithTile", "Controls.RightClick"),
-        ("InputTrigger_UseOrAttack", "Controls.LeftClick"),
-    ] {
-        // The locked manager reads its own text — the free `text()` would
-        // re-lock the same mutex.
-        let value = m.get_text_value(key);
-        m.set_substitution(name, Substitution::Text(value));
-    }
+    // World / event flags (`Lang.cs:124-135`). The three event-boss downed
+    // flags (`NPC.downedFishron`, `NPC.downedHalloweenKing`,
+    // `NPC.downedChristmasIceQueen`) are written as constants by the world
+    // file glue (`wld/sections/flags.rs:138,142,144`) — no live field exists,
+    // so the producer answers their persisted value, `false`.
+    values.push(("WorldName", Substitution::Text(app.world.name.clone())));
+    values.push(("Day", Substitution::Bool(app.world.day_time)));
+    values.push(("BloodMoon", Substitution::Bool(app.world.blood_moon)));
+    values.push(("Eclipse", Substitution::Bool(app.world.eclipse)));
+    values.push(("MoonLordDefeated", Substitution::Bool(app.world.downed_moon_lord)));
+    values.push(("GolemDefeated", Substitution::Bool(app.world.downed_golem)));
+    values.push(("DukeFishronDefeated", Substitution::Bool(false)));
+    values.push(("FrostLegionDefeated", Substitution::Bool(app.world.downed_frost)));
+    values.push(("MartiansDefeated", Substitution::Bool(app.world.downed_martians)));
+    values.push(("PumpkingDefeated", Substitution::Bool(false)));
+    values.push(("IceQueenDefeated", Substitution::Bool(false)));
+    values.push(("HardMode", Substitution::Bool(app.world.hard_mode)));
 
-    // World / event flags (`Lang.cs:124-135,141`).
-    m.set_substitution("WorldName", Substitution::Text(app.world.name.clone()));
-    m.set_substitution("Day", Substitution::Bool(app.world.day_time));
-    m.set_substitution("BloodMoon", Substitution::Bool(app.world.blood_moon));
-    m.set_substitution("Eclipse", Substitution::Bool(app.world.eclipse));
-    m.set_substitution(
-        "MoonLordDefeated",
-        Substitution::Bool(app.world.downed_moon_lord),
-    );
-    m.set_substitution(
-        "GolemDefeated",
-        Substitution::Bool(app.world.downed_golem),
-    );
-    m.set_substitution(
-        "DukeFishronDefeated",
-        Substitution::Bool(false), // no `NPC.downedFishron` field ported yet
-    );
-    m.set_substitution(
-        "FrostLegionDefeated",
-        Substitution::Bool(app.world.downed_frost),
-    );
-    m.set_substitution(
-        "MartiansDefeated",
-        Substitution::Bool(app.world.downed_martians),
-    );
-    m.set_substitution(
-        "PumpkingDefeated",
-        Substitution::Bool(false), // no `NPC.downedHalloweenKing` field ported yet
-    );
-    m.set_substitution(
-        "IceQueenDefeated",
-        Substitution::Bool(false), // no `NPC.downedChristmasIceQueen` field ported yet
-    );
-    m.set_substitution("HardMode", Substitution::Bool(app.world.hard_mode));
-    m.set_substitution("Rain", Substitution::Bool(app.rain.is_raining()));
-
-    // Player / interaction (`Lang.cs:136,138,142-144`).
-    // `Homeless`: talk NPC is homeless. The port has no `talkNPC` index; keep
-    // unset (null-equivalent) rather than guessing.
-    m.remove_substitution("Homeless");
-    m.set_substitution("PlayerName", Substitution::Text(app.player_name.clone()));
-    m.set_substitution(
-        "Graveyard",
-        Substitution::Bool(app.scene_metrics.zone_graveyard),
-    );
+    // Player / interaction (`Lang.cs:136-144`).
+    // `Homeless`: `Main.LocalPlayer.talkNPC >= 0 && Main.npc[talkNPC].homeless`;
+    // the port models `NPC.homeless` as `home == None` (`npc.rs:16765`).
+    let homeless = app
+        .talk_npc
+        .and_then(|i| app.npcs.get(i))
+        .map(|n| n.home.is_none())
+        .unwrap_or(false);
+    values.push(("Homeless", Substitution::Bool(homeless)));
+    // `Main.cInv` (`Lang.cs:137`) — the live inventory bind.
+    let binds = &app.settings.keybinds;
+    values.push((
+        "InventoryKey",
+        Substitution::Text(binds[crate::input_map::Action::Inventory.index()].clone()),
+    ));
+    values.push(("PlayerName", Substitution::Text(app.player_name.clone())));
+    values.push(("Rain", Substitution::Bool(app.rain.is_raining())));
+    values.push(("Graveyard", Substitution::Bool(app.scene_metrics.zone_graveyard)));
     let (angler_quests, deaths_pve) = if let Some(p) = &app.player {
         (p.angler_quests_finished as i64, p.deaths_pve as i64)
     } else {
         (0, 0)
     };
-    m.set_substitution("AnglerCompletedQuestsCount", Substitution::Int(angler_quests));
-    m.set_substitution("TotalDeathsCount", Substitution::Int(deaths_pve));
+    values.push(("AnglerCompletedQuestsCount", Substitution::Int(angler_quests)));
+    values.push(("TotalDeathsCount", Substitution::Int(deaths_pve)));
 
-    // `WorldEvilStone` (`Lang.cs:145`): localized evil-stone name by world evil.
-    // The port has no world-level crimson flag yet; default to corruption's stone.
-    let evil_key = "Misc.Ebonstone";
-    let evil_name = m.get_text_value(evil_key);
-    m.set_substitution("WorldEvilStone", Substitution::Text(evil_name));
+    // The localized-text producers (`Lang.cs:145,148,166`) resolve their keys
+    // through the free `text()` before the lock. `WorldEvilStone` reads
+    // `WorldGen.crimson`, which the port does not persist at world level
+    // (`world_sim/npcs.rs:954`, `shop.rs`) — the corruption stone stays the
+    // documented default until the world-evil flag lands.
+    let evil_name = text("Misc.Ebonstone");
+    values.push(("WorldEvilStone", Substitution::Text(evil_name)));
+    let armor_key = if app.settings.reversed_armor_bonuses { "Key.UP" } else { "Key.DOWN" };
+    values.push(("ToggleArmorSetBonusKey", Substitution::Text(text(armor_key))));
 
-    // Input / UI keys (`Lang.cs:137,146-166`). `PlayerInput.GenerateInputTag_*`
-    // and `Main.cInv`/favorite-key/gamepad state are not fully ported; provide
-    // stable, descriptive fallbacks so the 65-entry producer is complete and the
-    // tokens never leak raw when a key is set.
-    m.set_substitution("InventoryKey", Substitution::Text("Inventory".to_string()));
-    let using_gamepad = false;
-    let disable_left_shift_trash = false;
-    m.set_substitution(
-        "InputTriggerUI_BuildFromInventory",
-        Substitution::Text(input_tag(false, "QuickMount", using_gamepad)),
-    );
-    m.set_substitution("InputTriggerUI_TrashEnabled", Substitution::Bool(true));
-    let trash_label = if !using_gamepad {
-        m.get_text_value(if disable_left_shift_trash {
-            "Controls.Control"
-        } else {
-            "Controls.Shift"
-        })
-    } else {
-        input_tag(false, "SmartSelect", using_gamepad)
-    };
-    m.set_substitution("InputTriggerUI_Trash", Substitution::Text(trash_label));
-    m.set_substitution(
-        "InputTriggerUI_FavoriteItem",
-        Substitution::Text(if !using_gamepad {
-            "Alt".to_string()
-        } else {
-            input_tag(false, "SmartCursor", using_gamepad)
-        }),
-    );
-    m.set_substitution(
-        "InputTrigger_QuickEquip",
-        Substitution::Text(input_tag(false, "Grapple", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_Grapple",
-        Substitution::Text(input_tag(true, "Grapple", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_LockOn",
-        Substitution::Text(input_tag(true, "LockOn", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_RadialQuickbar",
-        Substitution::Text(input_tag(true, "HotbarMinus", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_RadialHotbar",
-        Substitution::Text(input_tag(true, "HotbarPlus", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_SmartCursor",
-        Substitution::Text(input_tag(true, "SmartCursor", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_UseOrAttack",
-        Substitution::Text(input_tag(true, "MouseLeft", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_Jump",
-        Substitution::Text(input_tag(true, "Jump", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_InteractWithTile",
-        Substitution::Text(input_tag(true, "MouseRight", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_InteractWithTileUI",
-        Substitution::Text(input_tag(false, "MouseRight", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_ToggleOrOpen",
-        Substitution::Text(if !using_gamepad {
-            input_tag(true, "MouseRight", using_gamepad)
-        } else {
-            input_tag(false, "Grapple", using_gamepad)
-        }),
-    );
-    m.set_substitution(
-        "InputTrigger_SmartSelect",
-        Substitution::Text(input_tag(true, "SmartSelect", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_Mount",
-        Substitution::Text(input_tag(true, "QuickMount", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_Healing",
-        Substitution::Text(input_tag(true, "QuickHeal", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_ManaHealing",
-        Substitution::Text(input_tag(true, "QuickMana", using_gamepad)),
-    );
-    m.set_substitution(
-        "InputTrigger_QuickBuff",
-        Substitution::Text(input_tag(true, "QuickBuff", using_gamepad)),
-    );
-    let armor_key = if app.settings.reversed_armor_bonuses {
-        "Key.UP"
-    } else {
-        "Key.DOWN"
-    };
-    let armor_value = m.get_text_value(armor_key);
-    m.set_substitution("ToggleArmorSetBonusKey", Substitution::Text(armor_value));
+    // The input trigger tags (`Lang.cs:146-165`). The port carries no gamepad
+    // profile (`PlayerInput.UsingGamepad` is always false — keyboard-only), so
+    // `GenerateInputTag_ForCurrentGamemode` takes its keyboard arm
+    // (`PlayerInput.cs:1948`): `GenerateRawInputList` over the trigger's
+    // single-key list. The bound rows come from the live config binds
+    // (`PlayerInput.ManageVersion_1_3`, `PlayerInput.cs:819-841`); the unbound
+    // triggers answer "" (`GenerateRawInputList`'s empty-list arm,
+    // `PlayerInput.cs:1980-1983`).
+    let tag = |trigger: &str| Substitution::Text(generate_raw_input_list(&trigger_keys(binds, trigger)));
+    // `ItemSlot.Options.DisableQuickTrash` is the settings' `quick_trash`
+    // (`settings.rs:206-209`).
+    values.push(("InputTriggerUI_BuildFromInventory", tag("QuickMount")));
+    values.push(("InputTriggerUI_TrashEnabled", Substitution::Bool(!app.settings.quick_trash)));
+    let trash_label = text(if app.settings.disable_left_shift_trash { "Controls.Control" } else { "Controls.Shift" });
+    values.push(("InputTriggerUI_Trash", Substitution::Text(trash_label)));
+    // `Main.FavoriteKey.ToString()` (`Lang.cs:149`): `Keys.LeftAlt`
+    // (`Main.cs:67196`, `cFavoriteKey = "LeftAlt"` `Main.cs:67177`).
+    values.push(("InputTriggerUI_FavoriteItem", Substitution::Text("LeftAlt".to_string())));
+    values.push(("InputTrigger_QuickEquip", tag("Grapple")));
+    values.push(("InputTrigger_Grapple", tag("Grapple")));
+    values.push(("InputTrigger_LockOn", tag("LockOn")));
+    values.push(("InputTrigger_RadialQuickbar", tag("HotbarMinus")));
+    values.push(("InputTrigger_RadialHotbar", tag("HotbarPlus")));
+    values.push(("InputTrigger_SmartCursor", tag("SmartCursor")));
+    values.push(("InputTrigger_UseOrAttack", tag("MouseLeft")));
+    values.push(("InputTrigger_Jump", tag("Jump")));
+    values.push(("InputTrigger_InteractWithTile", tag("MouseRight")));
+    values.push(("InputTrigger_InteractWithTileUI", tag("MouseRight")));
+    values.push(("InputTrigger_ToggleOrOpen", tag("MouseRight")));
+    values.push(("InputTrigger_SmartSelect", tag("SmartSelect")));
+    values.push(("InputTrigger_Mount", tag("QuickMount")));
+    values.push(("InputTrigger_Healing", tag("QuickHeal")));
+    values.push(("InputTrigger_ManaHealing", tag("QuickMana")));
+    values.push(("InputTrigger_QuickBuff", tag("QuickBuff")));
+
+    let mut m = manager().lock().unwrap();
+    for (key, value) in values {
+        m.set_substitution(key, value);
+    }
+    for key in unset {
+        m.remove_substitution(key);
+    }
 }
 
-/// `NPC.GetFirstNPCNameOrNull` (`NPC.cs`): the `GivenOrTypeName` of the first
-/// active NPC whose net/type id matches `npc_type`, or `None`.
+/// `NPC.GetFirstNPCNameOrNull` (`NPC.cs:7408-7418`): the `GivenOrTypeName`
+/// (`NPC.cs:6743-6753`) of the first active NPC whose type matches `npc_type`,
+/// or `None`. An unnamed NPC answers its `TypeName` =
+/// `Lang.GetNPCNameValue(netID)` (`NPC.cs:6727`), not an empty string.
 fn first_npc_name(app: &crate::app::App, npc_type: i32) -> Option<String> {
     app.npcs.iter().find_map(|n| {
         if n.hp > 0 && n.kind.net_id() == npc_type {
-            Some(n.given_name.clone())
+            if n.given_name.is_empty() {
+                Some(npc_name(n.kind.net_id()))
+            } else {
+                Some(n.given_name.clone())
+            }
         } else {
             None
         }
@@ -375,6 +292,18 @@ fn first_npc_name(app: &crate::app::App, npc_type: i32) -> Option<String> {
 #[cfg(test)]
 mod s1_l12b_tests {
     use super::*;
+
+    /// A headless App for the producer tests (the flow tests' harness), with
+    /// the shipped English resources loaded so the localized-text producers
+    /// (`Controls.*`, `Key.*`, `Misc.Ebonstone`, `NPCName.*`) answer.
+    fn app() -> crate::app::App {
+        init(GameCulture::English);
+        crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![])
+    }
+
+    fn sub(name: &str) -> Option<Substitution> {
+        manager().lock().unwrap().substitution(name)
+    }
 
     #[test]
     fn global_substitutions_resolve_world_player_and_npc_tokens() {
@@ -394,6 +323,214 @@ mod s1_l12b_tests {
         assert_eq!(m.get_text_value("Game.Day"), "True");
         assert_eq!(m.get_text_value("Game.Rain"), "False");
         assert_eq!(m.get_text_value("Game.Guide"), "Andrew");
+    }
+
+    /// `Lang.cs:102-123,139-140` — the 24 NPC producers answer
+    /// `NPC.GetFirstNPCNameOrNull` (`NPC.cs:7408-7418`): the first active NPC's
+    /// `GivenOrTypeName` (`NPC.cs:6743-6753`), unset when none exists.
+    #[test]
+    fn npc_producers_answer_given_or_type_name() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        refresh_global_substitutions(&a);
+        // No Guide alive: the producer is null-equivalent (unset).
+        assert_eq!(sub("Guide"), None);
+        // An unnamed Guide answers its TypeName (`Lang.GetNPCNameValue(22)`,
+        // `NPC.cs:6727`).
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 200.0, 1, 0.0);
+        guide.given_name = String::new();
+        a.npcs.push(guide);
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Guide"), Some(Substitution::Text("Guide".into())));
+        // A given name wins over the type name.
+        a.npcs[0].given_name = "Andrew".into();
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Guide"), Some(Substitution::Text("Andrew".into())));
+        // A dead NPC (`active == false`) is skipped — the producer goes unset.
+        a.npcs[0].hp = 0;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Guide"), None);
+    }
+
+    /// `Lang.cs:124-135` — the world name and the event flags.
+    #[test]
+    fn world_and_event_flag_producers_read_the_world() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.world.name = "Terra".into();
+        a.world.day_time = true;
+        a.world.blood_moon = true;
+        a.world.eclipse = false;
+        a.world.downed_moon_lord = true;
+        a.world.downed_golem = false;
+        a.world.downed_frost = true;
+        a.world.downed_martians = false;
+        a.world.hard_mode = true;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("WorldName"), Some(Substitution::Text("Terra".into())));
+        assert_eq!(sub("Day"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("BloodMoon"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("Eclipse"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("MoonLordDefeated"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("GolemDefeated"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("FrostLegionDefeated"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("MartiansDefeated"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("HardMode"), Some(Substitution::Bool(true)));
+        // The three event-boss flags persist as constants
+        // (`wld/sections/flags.rs:138,142,144`).
+        assert_eq!(sub("DukeFishronDefeated"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("PumpkingDefeated"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("IceQueenDefeated"), Some(Substitution::Bool(false)));
+    }
+
+    /// `Lang.cs:136` — `Homeless` = `talkNPC >= 0 && npc[talkNPC].homeless`;
+    /// the port models `homeless` as `home == None` (`npc.rs:16765`).
+    #[test]
+    fn homeless_producer_follows_the_talk_npc() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Homeless"), Some(Substitution::Bool(false)));
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 200.0, 1, 0.0);
+        guide.home = Some((10, 20));
+        a.npcs.push(guide);
+        a.talk_npc = Some(0);
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Homeless"), Some(Substitution::Bool(false)));
+        a.npcs[0].home = None;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Homeless"), Some(Substitution::Bool(true)));
+    }
+
+    /// `Lang.cs:137-138` — `InventoryKey` = `Main.cInv` (the live bind) and
+    /// `PlayerName` = the local player's name.
+    #[test]
+    fn inventory_key_and_player_name_producers() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.player_name = "Belsin".into();
+        a.settings.keybinds[crate::input_map::Action::Inventory.index()] = "I".into();
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("InventoryKey"), Some(Substitution::Text("I".into())));
+        assert_eq!(sub("PlayerName"), Some(Substitution::Text("Belsin".into())));
+    }
+
+    /// `Lang.cs:141-144` — `Rain`, `Graveyard`, the angler quest count and the
+    /// PVE death count read the live state.
+    #[test]
+    fn rain_graveyard_and_player_counter_producers() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.scene_metrics.zone_graveyard = true;
+        let w = tr_core::World::new("t".into(), 64, 800);
+        let mut p = crate::player::Player::spawn(&w);
+        p.angler_quests_finished = 7;
+        p.deaths_pve = 3;
+        a.player = Some(p);
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("Rain"), Some(Substitution::Bool(a.rain.is_raining())));
+        assert_eq!(sub("Graveyard"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("AnglerCompletedQuestsCount"), Some(Substitution::Int(7)));
+        assert_eq!(sub("TotalDeathsCount"), Some(Substitution::Int(3)));
+        // No player: both counters answer 0 (`Main.LocalPlayer` absent).
+        a.player = None;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("AnglerCompletedQuestsCount"), Some(Substitution::Int(0)));
+        assert_eq!(sub("TotalDeathsCount"), Some(Substitution::Int(0)));
+    }
+
+    /// `Lang.cs:146-165` — the input trigger tags read the keyboard profile
+    /// (`PlayerInput.cs:1942-1990`): bound rows answer the live bind, the mouse
+    /// triggers localize (`LocalizeKey`, `PlayerInput.cs:1951-1962`), unbound
+    /// triggers answer "" (`GenerateRawInputList`'s empty-list arm).
+    #[test]
+    fn input_trigger_producers_read_the_live_binds() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        a.settings.keybinds[crate::input_map::Action::QuickHeal.index()] = "F".into();
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("InputTrigger_Healing"), Some(Substitution::Text("F".into())));
+        assert_eq!(sub("InputTrigger_ManaHealing"), Some(Substitution::Text("J".into())));
+        assert_eq!(sub("InputTrigger_QuickBuff"), Some(Substitution::Text("B".into())));
+        assert_eq!(sub("InputTrigger_Mount"), Some(Substitution::Text("R".into())));
+        assert_eq!(sub("InputTriggerUI_BuildFromInventory"), Some(Substitution::Text("R".into())));
+        assert_eq!(sub("InputTrigger_Grapple"), Some(Substitution::Text("E".into())));
+        assert_eq!(sub("InputTrigger_QuickEquip"), Some(Substitution::Text("E".into())));
+        assert_eq!(sub("InputTrigger_Jump"), Some(Substitution::Text("Space".into())));
+        assert_eq!(sub("InputTrigger_SmartCursor"), Some(Substitution::Text("LeftControl".into())));
+        assert_eq!(sub("InputTrigger_SmartSelect"), Some(Substitution::Text("LeftShift".into())));
+        // The mouse triggers localize through `Controls.LeftClick/RightClick`.
+        assert_eq!(sub("InputTrigger_UseOrAttack"), Some(Substitution::Text("Left Click".into())));
+        assert_eq!(sub("InputTrigger_InteractWithTile"), Some(Substitution::Text("Right Click".into())));
+        assert_eq!(sub("InputTrigger_InteractWithTileUI"), Some(Substitution::Text("Right Click".into())));
+        assert_eq!(sub("InputTrigger_ToggleOrOpen"), Some(Substitution::Text("Right Click".into())));
+        // Unbound on the keyboard preset (`PlayerInput.cs:2053-2091`).
+        assert_eq!(sub("InputTrigger_LockOn"), Some(Substitution::Text(String::new())));
+        assert_eq!(sub("InputTrigger_RadialQuickbar"), Some(Substitution::Text(String::new())));
+        assert_eq!(sub("InputTrigger_RadialHotbar"), Some(Substitution::Text(String::new())));
+    }
+
+    /// `Lang.cs:147-149` — the trash/favorite UI rows read the live options.
+    #[test]
+    fn trash_and_favorite_ui_producers_read_the_options() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        // Defaults: quick trash enabled (`ItemSlot.cs:37`), left-shift trash
+        // disabled (`ItemSlot.cs:36`) -> the Control label ("Ctrl").
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("InputTriggerUI_TrashEnabled"), Some(Substitution::Bool(true)));
+        assert_eq!(sub("InputTriggerUI_Trash"), Some(Substitution::Text("Ctrl".into())));
+        a.settings.quick_trash = true;
+        a.settings.disable_left_shift_trash = false;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("InputTriggerUI_TrashEnabled"), Some(Substitution::Bool(false)));
+        assert_eq!(sub("InputTriggerUI_Trash"), Some(Substitution::Text("Shift".into())));
+        // `Main.FavoriteKey.ToString()` = "LeftAlt" (`Main.cs:67177,67196`).
+        assert_eq!(sub("InputTriggerUI_FavoriteItem"), Some(Substitution::Text("LeftAlt".into())));
+    }
+
+    /// `Lang.cs:145,166` — `WorldEvilStone` (the port's corruption default) and
+    /// `ToggleArmorSetBonusKey` (the reversed-up/down option).
+    #[test]
+    fn evil_stone_and_armor_key_producers() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = app();
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("WorldEvilStone"), Some(Substitution::Text("Ebonstone".into())));
+        assert_eq!(sub("ToggleArmorSetBonusKey"), Some(Substitution::Text("DOWN".into())));
+        a.settings.reversed_armor_bonuses = true;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("ToggleArmorSetBonusKey"), Some(Substitution::Text("UP".into())));
+    }
+
+    /// The refresh covers all 65 producers (`Lang.cs:102-166`): every non-NPC
+    /// key is set after one pass over an empty world (the NPC keys stay unset
+    /// until their NPC exists — the null-producer equivalent).
+    #[test]
+    fn the_refresh_covers_all_65_producers() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let a = app();
+        refresh_global_substitutions(&a);
+        const NON_NPC: &[&str] = &[
+            "WorldName", "Day", "BloodMoon", "Eclipse", "MoonLordDefeated",
+            "GolemDefeated", "DukeFishronDefeated", "FrostLegionDefeated",
+            "MartiansDefeated", "PumpkingDefeated", "IceQueenDefeated", "HardMode",
+            "Homeless", "InventoryKey", "PlayerName", "Rain", "Graveyard",
+            "AnglerCompletedQuestsCount", "TotalDeathsCount", "WorldEvilStone",
+            "InputTriggerUI_BuildFromInventory", "InputTriggerUI_TrashEnabled",
+            "InputTriggerUI_Trash", "InputTriggerUI_FavoriteItem",
+            "InputTrigger_QuickEquip", "InputTrigger_Grapple", "InputTrigger_LockOn",
+            "InputTrigger_RadialQuickbar", "InputTrigger_RadialHotbar",
+            "InputTrigger_SmartCursor", "InputTrigger_UseOrAttack", "InputTrigger_Jump",
+            "InputTrigger_InteractWithTile", "InputTrigger_InteractWithTileUI",
+            "InputTrigger_ToggleOrOpen", "InputTrigger_SmartSelect", "InputTrigger_Mount",
+            "InputTrigger_Healing", "InputTrigger_ManaHealing", "InputTrigger_QuickBuff",
+            "ToggleArmorSetBonusKey",
+        ];
+        assert_eq!(NON_NPC.len(), 41); // 65 - the 24 NPC-name producers
+        for key in NON_NPC {
+            assert!(sub(key).is_some(), "{key} must be set by the refresh");
+        }
     }
 }
 
@@ -424,61 +561,47 @@ mod s1_l12c_tests {
     }
 }
 
-/// Best-effort NPC key name for a town NPC type id when no instance/given name
-/// exists. Falls back to the numeric id (never panics on unknown).
-fn npc_type_name(npc_type: i32) -> &'static str {
-    match npc_type {
-        17 => "Merchant",
-        18 => "Nurse",
-        19 => "ArmsDealer",
-        20 => "Dryad",
-        22 => "Guide",
-        38 => "Demolitionist",
-        54 => "Clothier",
-        107 => "GoblinTinkerer",
-        108 => "Wizard",
-        124 => "Mechanic",
-        160 => "Truffle",
-        178 => "Steampunker",
-        207 => "DyeTrader",
-        208 => "PartyGirl",
-        209 => "Cyborg",
-        227 => "Painter",
-        228 => "WitchDoctor",
-        229 => "Pirate",
-        353 => "Stylist",
-        368 => "TravelingMerchant",
-        369 => "Angler",
-        441 => "TaxCollector",
-        550 => "DD2Bartender",
-        588 => "Golfer",
-        _ => "TownNPC",
+/// The keyboard profile's key list for one trigger
+/// (`PlayerInput.CurrentProfile.InputModes[InputMode.Keyboard].KeyStatus`).
+/// The port stores the gameplay binds as the single-key config rows; the
+/// trigger mapping is `PlayerInput.ManageVersion_1_3`'s table
+/// (`PlayerInput.cs:819-841`). The mouse triggers carry the preset's
+/// `Mouse1`/`Mouse2` (`PlayerInput.cs:2054-2055`); `LockOn`, `HotbarMinus` and
+/// `HotbarPlus` are unbound on the keyboard preset (`PlayerInput.cs:2053-2091`
+/// never adds them), so their lists stay empty.
+fn trigger_keys(binds: &[String; crate::input_map::BIND_COUNT], trigger: &str) -> Vec<String> {
+    use crate::input_map::Action;
+    let action = match trigger {
+        "MouseLeft" => return vec!["Mouse1".to_string()],
+        "MouseRight" => return vec!["Mouse2".to_string()],
+        "Jump" => Action::Jump,
+        "Grapple" => Action::Hook,
+        "SmartSelect" => Action::Torch,
+        "SmartCursor" => Action::Smart,
+        "QuickMount" => Action::Mount,
+        "QuickHeal" => Action::QuickHeal,
+        "QuickMana" => Action::QuickMana,
+        "QuickBuff" => Action::QuickBuff,
+        "Inventory" => Action::Inventory,
+        _ => return Vec::new(),
+    };
+    vec![binds[action.index()].clone()]
+}
+
+/// `PlayerInput.LocalizeKey` (`PlayerInput.cs:1951-1962`): only the two mouse
+/// keys read localized names; every other key name passes through unchanged.
+fn localize_key(key: &str) -> String {
+    match key {
+        "Mouse1" => text("Controls.LeftClick"),
+        "Mouse2" => text("Controls.RightClick"),
+        _ => key.to_string(),
     }
 }
 
-/// Fallback stand-in for `PlayerInput.GenerateInputTag_ForCurrentGamemode`.
-/// The port has no full trigger-tag renderer yet; return stable labels that
-/// approximate the default keyboard/mouse bindings where known.
-fn input_tag(_gameplay: bool, action: &str, using_gamepad: bool) -> String {
-    if using_gamepad {
-        return format!("[{action}]");
-    }
-    match action {
-        "Jump" => "Space".to_string(),
-        "MouseLeft" => "Left Click".to_string(),
-        "MouseRight" => "Right Click".to_string(),
-        "Grapple" => "E".to_string(),
-        "QuickMount" => "R".to_string(),
-        "SmartCursor" => "Left Ctrl".to_string(),
-        "SmartSelect" => "Left Shift".to_string(),
-        "QuickHeal" => "H".to_string(),
-        "QuickMana" => "J".to_string(),
-        "QuickBuff" => "B".to_string(),
-        "LockOn" => "Lock On".to_string(),
-        "HotbarMinus" => "Hotbar-".to_string(),
-        "HotbarPlus" => "Hotbar+".to_string(),
-        _ => format!("<{action}>"),
-    }
+/// `PlayerInput.GenerateRawInputList` (`PlayerInput.cs:1978-1990`): the
+/// localized keys joined with "/", or "" for an empty list.
+fn generate_raw_input_list(keys: &[String]) -> String {
+    keys.iter().map(|k| localize_key(k)).collect::<Vec<_>>().join("/")
 }
 
 /// `Language.ActiveCulture` (the English default until a load happened).
