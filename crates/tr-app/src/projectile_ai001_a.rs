@@ -118,56 +118,55 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         // `:55950` case 14 — no per-type hook at all: the musket ball is
         // a straight bullet (the generic flight's gravity was the bug).
         MUSKET_BALL => finish(p, world, false, Gravity::Rest, Rot::Default),
-        // `:55346-55350` — the first-tick sound latch (`SoundID.Item5`
-        // SKIPPED, the `ai[1] = 1f` state rides), then the counter runs
-        // (`flag3` true — 81 is not on the skip list) into the 20/0.07
-        // gravity arm.
+        // `:55346-55350` — the first-tick sound latch: the C# plays
+        // `SoundID.Item5` BEFORE setting `ai[1] = 1f` (S1-E-21h: the cue
+        // rides the latch helper below), then the counter runs (`flag3`
+        // true — 81 is not on the skip list) into the 20/0.07 gravity arm.
         WOODEN_ARROW_HOSTILE => {
-            latch_ai1(p); // Projectile.cs:55346-55350
+            latch_ai1(p, 5); // Projectile.cs:55346-55350
             finish(p, world, true, Gravity::HostileArrow, Rot::Default);
         }
-        // `:55229-55233` — `ai[1] = 1f` + `SoundID.Item33` (SKIPPED).
+        // `:55229-55233` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
         EYE_LASER => {
-            latch_ai1(p); // Projectile.cs:55229-55233
+            latch_ai1(p, 33); // Projectile.cs:55229-55233
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55291-55295` — `ai[1] = 1f` + `SoundID.Item12` (SKIPPED); 84 is
+        // `:55291-55295` — `ai[1] = 1f` + `SoundID.Item12` (S1-E-21h); 84 is
         // on the `flag3 = false` skip list (`:55956`) — straight flight.
         PROBE_LASER => {
-            latch_ai1(p); // Projectile.cs:55291-55295
+            latch_ai1(p, 12); // Projectile.cs:55291-55295
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55311-55315` — `ai[1] = 1f` + `SoundID.Item17` (SKIPPED).
+        // `:55311-55315` — `ai[1] = 1f` + `SoundID.Item17` (S1-E-21h).
         TRAP_DART => {
-            latch_ai1(p); // Projectile.cs:55311-55315
+            latch_ai1(p, 17); // Projectile.cs:55311-55315
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55306-55310` — `ai[1] = 1f` + `SoundID.Item33` (SKIPPED).
+        // `:55306-55310` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
         DESTROYER_LASER => {
-            latch_ai1(p); // Projectile.cs:55306-55310
+            latch_ai1(p, 33); // Projectile.cs:55306-55310
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55351-55355` — the sound (`SoundID.Item11`, SKIPPED) plays
-        // BEFORE the latch in the C#; with no sound layer the order is
-        // unobservable, the latch state rides.
+        // `:55351-55355` — the sound (`SoundID.Item11`) plays BEFORE the
+        // latch in the C# (S1-E-21h: the helper keeps that order).
         PIRATE_ARROW => {
-            latch_ai1(p); // Projectile.cs:55351-55355
+            latch_ai1(p, 11); // Projectile.cs:55351-55355
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55321-55325` — `ai[1] = 1f` + `SoundID.Item17` (SKIPPED).
+        // `:55321-55325` — `ai[1] = 1f` + `SoundID.Item17` (S1-E-21h).
         TRAP_SUPERDART => {
-            latch_ai1(p); // Projectile.cs:55321-55325
+            latch_ai1(p, 17); // Projectile.cs:55321-55325
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
-        // `:55356-55360` — the sound-then-latch pair (`SoundID.Item17`
-        // SKIPPED); the spin tail is `:57586-57596`.
+        // `:55356-55360` — the sound-then-latch pair (`SoundID.Item17`,
+        // S1-E-21h); the spin tail is `:57586-57596`.
         FLOWER_POW_PETAL => {
-            latch_ai1(p); // Projectile.cs:55356-55360
+            latch_ai1(p, 17); // Projectile.cs:55356-55360
             finish(p, world, false, Gravity::Rest, Rot::Petal);
         }
         GOLEM_EYE_BEAM => {
-            // `:55239-55243` — `ai[1] = 1f` + `SoundID.Item33` (SKIPPED).
-            latch_ai1(p);
+            // `:55239-55243` — `ai[1] = 1f` + `SoundID.Item33` (S1-E-21h).
+            latch_ai1(p, 33);
             // `:56699-56709` — the alpha fade-in: `alpha -= 10`, clamp 0.
             if p.alpha > 0 {
                 p.alpha -= 10;
@@ -187,19 +186,22 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             if p.alpha < 0 {
                 p.alpha = 0;
             }
-            // `:55191-55195` — `ai[1] = 1f` + `SoundID.Item42` (SKIPPED).
-            latch_ai1(p);
+            // `:55191-55195` — `ai[1] = 1f` + `SoundID.Item42`: the
+            // trackable custom cue has no legacy-Item facade (the D3
+            // trackable pool, wave A) — DEFERRED (S1-E-21h), the latch
+            // state rides alone.
+            latch_ai1_no_cue(p);
             finish(p, world, false, Gravity::Rest, Rot::FlamingWood);
         }
-        // `:55296-55300` — `ai[1] = 1f` + `SoundID.Item12` (SKIPPED).
+        // `:55296-55300` — `ai[1] = 1f` + `SoundID.Item12` (S1-E-21h).
         MINI_RETINA_LASER => {
-            latch_ai1(p); // Projectile.cs:55296-55300
+            latch_ai1(p, 12); // Projectile.cs:55296-55300
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
         BRAIN_SCRAMBLER => {
             // `:54150-54174` — the head block: the latch, the alpha fade,
             // the sprite direction and the 3-tick frame machine.
-            latch_ai1(p); // :54152-54156 (SoundID.Item12 SKIPPED)
+            latch_ai1(p, 12); // :54152-54156 (SoundID.Item12, S1-E-21h)
             p.alpha -= 40; // :54157-54161
             if p.alpha < 0 {
                 p.alpha = 0;
@@ -221,8 +223,8 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         }
         RAY_GUNNER => {
             // `:54829-54832` — the light plot only (SKIPPED).
-            // `:55254-55258` — `ai[1] = 1f` + `SoundID.Item12` (SKIPPED).
-            latch_ai1(p);
+            // `:55254-55258` — `ai[1] = 1f` + `SoundID.Item12` (S1-E-21h).
+            latch_ai1(p, 12);
             // `:55660-55671` — the speed-scaled fade: `num109 =
             // (float)Math.Sqrt(vx*vx + vy*vy)` (a DOUBLE sqrt cast back
             // to float), `alpha -= (byte)((double)num109 * 0.9)` while
@@ -242,9 +244,21 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
 }
 
 /// The `ai[1] == 0f → ai[1] = 1f` first-tick latch every laser/dart arm
-/// in the `:55209-55365` chain shares (the sound cue is SKIPPED pool-wide;
-/// the latch state is what the C# keeps — it gates the cue to one play).
-fn latch_ai1(p: &mut Projectile) {
+/// in the `:55209-55365` chain shares. S1-E-21h: the arm's `SoundID.ItemN`
+/// cue queues with the latch — `base.position`, the legacy id-2 style
+/// play. The C# orders the play before the latch on 81/180/248 and after
+/// it on the rest; the queue payload is identical either way (the drain
+/// runs at the pass tail), so one helper keeps the pair.
+fn latch_ai1(p: &mut Projectile, style: i32) {
+    if p.ai[1] == 0.0 {
+        p.wants_sound = Some((2, style, p.pos.x, p.pos.y, 0.0));
+        p.ai[1] = 1.0;
+    }
+}
+
+/// The cue-less latch — the arms whose C# cue is a deferred family
+/// (the Flaming Wood's `SoundID.Item42` trackable, `:55191-55195`).
+fn latch_ai1_no_cue(p: &mut Projectile) {
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;
     }

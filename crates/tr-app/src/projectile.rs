@@ -666,6 +666,20 @@ pub struct Projectile {
     /// `Projectile.gfxOffY` — the StepUp draw lift, decayed per tick
     /// (`:16740-16764`).
     pub gfx_off_y: f32,
+    /// `Projectile.soundDelay` (`Projectile.cs:348`, reset 0 `:749`): the
+    /// per-slot cue cooldown, decremented once per update ahead of the AI
+    /// when positive (`:16768-16771`) — a `-1` latch stays down (one cue
+    /// per life), a positive re-arm counts back to 0 (the boomerang whoosh).
+    /// S1-E-21h: the sound sites read and re-arm it.
+    pub sound_delay: i32,
+    /// S1-E-21h — one slot's queued cue for the pool's sound drain: the
+    /// `(sound id, style, x, y, pitchOffset)` the C# `SoundEngine.PlaySound`
+    /// overload carries (the int overload passes style 0 / no offset). The
+    /// slot arms cannot see the pool's queue, so they park the request here
+    /// and the dispatch forwards it into `pending_proj_sounds` on the same
+    /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
+    /// that played nothing this sub-step.
+    pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
 }
 
 impl Default for Projectile {
@@ -734,6 +748,8 @@ impl Default for Projectile {
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
+            sound_delay: 0,
+            wants_sound: None,
         }
     }
 }
@@ -3470,6 +3486,15 @@ impl Projectile {
                 }
             }
         }
+        // `:26529-26540` — the shared first-tick cue latch: `ai[1]` 0 → 1,
+        // the Terra Beam 132 plays `SoundID.Item60`, every other kind
+        // `SoundID.Item8` — both at `base.position` (S1-E-21h). The 157
+        // spin arm below follows the cue in the C#'s order.
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+            let style = if self.kind == TERRA_BEAM { 60 } else { 8 };
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+        }
         // `:26536-26544` — the rotation: the 157 spins on its `direction` (and
         // carries it into `spriteDirection`), every other kind faces the
         // flight at `atan2(velocity.Y, velocity.X) + 0.785f`.
@@ -3556,9 +3581,10 @@ impl Projectile {
     ) {
         let _ = owner;
         if self.kind != LOST_SOUL {
-            // `:28420-28437` — the 293's sound latch: `localAI[0] == 0f` plays
-            // Item8 once and increments (the sound SKIPPED, the latch kept).
+            // `:28419-28423` — the 293's sound latch: `localAI[0] == 0f`
+            // plays Item8 once at `base.position` (S1-E-21h) and increments.
             if self.local_ai[0] == 0.0 {
+                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
                 self.local_ai[0] += 1.0;
             }
             // `:28448-28475` — the player hunt: `num362` resets to 200f and the
@@ -4676,6 +4702,17 @@ impl Projectile {
     /// crossing boost, kills past 3000 px from the owner and when the
     /// owner's box intersects (`:39538-39544`).
     fn ai_boomerang(&mut self, world: &World, owner: Option<(f32, f32)>) {
+        // `AI_003_Boomerang`'s whoosh head (`Projectile.cs:38868-38891`,
+        // S1-E-21h): every kind but the Phaseblade family (unported) and
+        // 383 re-arms `soundDelay = 8` (× `extraUpdates + 1`) and plays
+        // `SoundID.Item7` at `base.position`. The 301 Stacked Discs'
+        // −0.33-pitch arm has no ported row — deferred. The cue fires on
+        // both flight legs while the cooldown is at 0, ahead of the state
+        // machine, exactly as the C# orders it.
+        if self.sound_delay == 0 {
+            self.sound_delay = 8 * (self.extra_updates as i32 + 1);
+            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
+        }
         if self.ai[0] == 0.0 {
             // The outbound flight; the 106 Light Disc returns at 45 ticks.
             self.ai[1] += 1.0;
@@ -5475,7 +5512,18 @@ impl Projectile {
         self.damage = 0;
         // The detonation (`:47165-47167`): `timeLeft <= 3` on the local
         // owner.
-        if self.time_left <= 3 {
+        if self.time_left <= 3 && !self.detonated {
+            // `Kill_Bombs_DoUsualKillCode`'s explosion cue
+            // (`Projectile.cs:78331` the bomb family 28/37/516/519,
+            // `:78386` the dynamite 29): `SoundID.Item14` at the slot's
+            // PRE-`PrepareBombToBlow` `base.position` (S1-E-21h). The port
+            // queues it at the detonation latch — one cue per death; the
+            // bomb-fuse instance Stop (`:70675`) has no pool (D4). Gated to
+            // the kinds `explode_bomb` accepts — the same set the C# kill
+            // arms name.
+            if matches!(self.kind, BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE) {
+                self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
+            }
             self.detonated = true;
         }
     }
@@ -5779,11 +5827,12 @@ impl Projectile {
     /// ball of fire, 8 for the ball of frost).
     fn ai_ball_of_fire(&mut self, world: &World) {
         // `:24235-24244`: the one-shot sound gates of the Golem fireball 258
-        // and the hostile cursed flame 96. The SoundEngine call is SKIPPED
-        // (no sound layer in the pool) and `localAI[0]`'s write rides with
-        // it — the flag is read only by this same gate.
+        // and the hostile cursed flame 96 — `localAI[0]` latches 1 and the
+        // `SoundID.Item20` whoosh queues at `base.position` (S1-E-21h: the
+        // intent rides out to the pool's sound drain).
         if matches!(self.kind, GOLEM_FIREBALL | CURSED_FLAME) && self.local_ai[0] == 0.0 {
             self.local_ai[0] = 1.0;
+            self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0));
         }
         // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
         // remap first (read off the *previous* tick's `ai[1]`, as the C#
@@ -6225,9 +6274,12 @@ impl Projectile {
     fn ai_frost_bolt(&mut self, world: &World) {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
-            // The SKIP list of the first tick: the per-kind dust blocks
-            // (`:26572-26609`) and the 967/1026/359 sound cues
-            // (`:26611-26672`) — noted for ANALYSIS.
+            // `:26648-26674` — the first-tick cue: the Houndius Shootius
+            // fireball 967 plays `SoundID.Item60`, the rest `SoundID.Item28`
+            // (`:26661`/`:26673`, S1-E-21h). The per-kind dust blocks
+            // (`:26572-26609`) stay SKIPPED — noted for ANALYSIS.
+            let style = if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL { 60 } else { 28 };
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
         }
         self.kill_step(world);
     }
@@ -6253,6 +6305,9 @@ impl Projectile {
             return;
         }
         if self.local_ai[0] == 0.0 {
+            // `:28361-28365` — the first-tick `SoundID.Item74` blast cue at
+            // `base.position` (S1-E-21h); the latch increments after it.
+            self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0));
             self.local_ai[0] += 1.0;
         }
         self.ai[0] += 1.0;
@@ -6483,9 +6538,18 @@ impl Projectile {
             self.rot = angle_towards(self.rot, 0.0, 0.2 * std::f32::consts::PI);
         }
         // `:43346`: `flag3` (the turn-sharpness detector) is read only by the
-        // 16/34 dust blocks below — both SKIPPED (no RNG, sound or dust layer
-        // in the pool, the same skip the gem arm records). The 16 soundDelay
-        // gate and its `SoundID.Item9` cue go with them.
+        // 16/34 dust blocks below — both SKIPPED (no dust layer in the pool).
+        // `:43361-43367` — the Magic Missile 16's whoosh: while the cooldown
+        // is at 0 AND the speed sum `|vx| + |vy| > 2f`, re-arm 10 and play
+        // `SoundID.Item9` at `base.position` (S1-E-21h). The dust roll that
+        // follows (`Main.rand.Next(9)`) stays SKIPPED — dust-only.
+        if self.kind == MAGIC_MISSILE
+            && self.sound_delay == 0
+            && self.vel.x.abs() + self.vel.y.abs() > 2.0
+        {
+            self.sound_delay = 10;
+            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0));
+        }
         // `:43390+`: the Flamelash's `Utils.GetLerpValue(0f, 10f, localAI[0])`
         // trail tint feeds its dust blocks only — no draw state on the slot.
         // The movement: the family has no bounce arm, so the port's generic
@@ -8801,6 +8865,17 @@ impl Projectile {
     /// `Main.rand` draws) are SKIPPED — the pool has no sound or dust layer
     /// (the `ai_volcano` precedent); with them go their RNG draws.
     fn ai_lights_bane(&mut self, world: &World) {
+        // `:42231-42239` — the one-shot slash cue: `soundDelay` latches −1
+        // and `SoundID.Item60` queues at `base.Center` (S1-E-21h). The C#
+        // scales the returned instance's Volume by `0.15f * ai[0]` AFTER
+        // the play — that post-gate scale is DEFERRED (the queue→drain
+        // batch plays at the style's own volume; ANALYSIS S1-E-21h).
+        if self.sound_delay == 0 {
+            self.sound_delay = -1;
+            let cx = self.pos.x + self.w * 0.5;
+            let cy = self.pos.y + self.h * 0.5;
+            self.wants_sound = Some((2, 60, cx, cy, 0.0));
+        }
         // `:42240` — the scale is the spawn's `ai[0]`.
         self.scale = self.ai[0];
         // `:42241` — the age counter the dust streak's window reads.
@@ -12005,6 +12080,13 @@ pub struct ProjectilePool {
     /// mid-damage-walk; the port defers the draws to the pass tail — the
     /// recorded deviation (ANALYSIS, S1-E-21c).
     pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
+    /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
+    /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
+    /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
+    /// The world-sim pass drains them on the `UpdateProjectiles` stream
+    /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
+    /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
+    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
 }
 
 impl Default for ProjectilePool {
@@ -12283,6 +12365,7 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
+            pending_proj_sounds: Vec::new(),
         }
     }
 
@@ -13147,6 +13230,16 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_npc_hit_sounds)
     }
 
+    /// S1-E-21h — the projectile-family cue intents the AI arms and the
+    /// bomb kill path queued: `(sound id, style, x, y, pitchOffset)` — the
+    /// `SoundEngine.PlaySound` overload payload. The world sim drains and
+    /// plays them through `Audio::play_proj_sound` on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
+    /// first — the wave-C drain convention.
+    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_proj_sounds)
+    }
+
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
     /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
     /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
@@ -13486,6 +13579,13 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
+            // `Projectile.cs:16768-16771` — the per-slot cue cooldown ticks
+            // down once per update, ahead of the AI sub-steps, and only
+            // while positive: a `-1` latch stays down (S1-E-21h — the
+            // Lights Bane / Magic Missile one-cue-per-life arms read it).
+            if self.slots[i].sound_delay > 0 {
+                self.slots[i].sound_delay -= 1;
+            }
             for sub in 0..sub_steps {
                 // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
                 // spawn-delay countdown: while `ai[1] > 0` the WHOLE
@@ -15878,6 +15978,14 @@ impl ProjectilePool {
                         _ => {}
                     }
                     }
+                    // S1-E-21h — forward the arm's queued cue intent into
+                    // the pool's sound queue (`wants_mark_spawn` pattern):
+                    // the C# plays inline mid-walk; the port drains at the
+                    // pass tail on the same `UpdateProjectiles` stream
+                    // (the S1-E-21c batch convention, ANALYSIS).
+                    if let Some(req) = self.slots[i].wants_sound.take() {
+                        self.pending_proj_sounds.push(req);
+                    }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
                     // ported arrow/bomb/shuriken arms keep their pre-existing
@@ -17378,6 +17486,320 @@ impl ProjectilePool {
         player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
+    }
+}
+
+/// S1-E-21h — the projectile sound wave's witnesses (written, NOT run —
+/// code-only mode). The cue payloads, the latch/cooldown order and the
+/// `UpdateProjectiles` stream contract (`Main.cs:17775-17777`): the case-2
+/// draws run at the pass-tail drain ONLY after the attenuation gate.
+#[cfg(test)]
+mod s1_e_21h_sound_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// The first-tick cue latches: one `(2, style, position, 0)` intent per
+    /// arm, fired once (the latch flag holds), at the C#'s `base.position`.
+    #[test]
+    fn s1_e_21h_the_first_tick_latches_queue_their_style_cues() {
+        let w = air();
+        // (kind, arm runner, expected style, latch read) — the aiStyle-8
+        // gate (`:24235-24244`), the aiStyle-27 shared latch
+        // (`:26529-26540`), the aiStyle-28 latch (`:26648-26674`) and the
+        // aiStyle-50 latch (`:28361-28365`).
+        let cases: [(u16, i32); 8] = [
+            (GOLEM_FIREBALL, 20),
+            (CURSED_FLAME, 20),
+            (UNHOLY_TRIDENT, 8),
+            (TERRA_BEAM, 60),
+            (NIGHT_BEAM, 8),
+            (FROST_BOLT, 28),
+            (HOUNDIUS_SHOOTIUS_FIREBALL, 60),
+            (INFERNO_BLAST, 74),
+        ];
+        for (kind, style) in cases {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                // The blast's fade counter must not kill on tick 1.
+                tile_collide: false,
+                ..Default::default()
+            };
+            match proj_data(kind).map(|d| d.ai_style) {
+                Some(8) => p.ai_ball_of_fire(&w),
+                Some(27) => p.ai_unholy_trident(&w),
+                Some(28) => p.ai_frost_bolt(&w),
+                Some(50) => p.ai_inferno_fork(&w),
+                other => panic!("kind {kind}'s arm: {other:?}"),
+            }
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 64.0, 64.0, 0.0)),
+                "kind {kind}'s first-tick cue"
+            );
+            // The latch holds: a second tick queues nothing new.
+            p.wants_sound = None;
+            match proj_data(kind).map(|d| d.ai_style) {
+                Some(8) => p.ai_ball_of_fire(&w),
+                Some(27) => p.ai_unholy_trident(&w),
+                Some(28) => p.ai_frost_bolt(&w),
+                Some(50) => p.ai_inferno_fork(&w),
+                _ => unreachable!(),
+            }
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
+        // The Spectre hostile twin's latch (`:28419-28423`): Item8 at
+        // `base.position`, `localAI[0]` the flag.
+        let mut p = Projectile {
+            active: true,
+            kind: LOST_SOUL_HOSTILE,
+            owner: 255,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_spectre_shot(&w, &[], None, None);
+        assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0)));
+        assert_eq!(p.local_ai[0], 1.0);
+        p.wants_sound = None;
+        p.ai_spectre_shot(&w, &[], None, None);
+        assert_eq!(p.wants_sound, None, "the twin's one cue per life");
+    }
+
+    /// The slice-A `AI_001` latch chain (`:55209-55365`): each kind's
+    /// `SoundID.ItemN` queues with the `ai[1] = 1f` latch, once.
+    #[test]
+    fn s1_e_21h_the_slice_a_latches_carry_their_cues() {
+        let w = air();
+        let cases: [(u16, i32); 11] = [
+            (WOODEN_ARROW_HOSTILE, 5),  // :55348
+            (EYE_LASER, 33),            // :55232
+            (TRAP_DART, 17),            // :55314
+            (DESTROYER_LASER, 33),      // :55309
+            (PIRATE_ARROW, 11),         // :55353
+            (TRAP_SUPERDART, 17),       // :55324
+            (FLOWER_POW_PETAL, 17),     // :55358
+            (GOLEM_EYE_BEAM, 33),       // :55242
+            (MINI_RETINA_LASER, 12),    // :55299
+            (BRAIN_SCRAMBLER, 12),      // :54155
+            (RAY_GUNNER, 12),           // :55257
+        ];
+        for (kind, style) in cases {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(48.0, 48.0),
+                vel: Vec2::new(6.0, 0.0),
+                tile_collide: false,
+                ..Default::default()
+            };
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
+            // The C# plays BEFORE the movement tail — the payload carries
+            // the pre-movement position (48, 48).
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 48.0, 48.0, 0.0)),
+                "kind {kind}'s cue at the play-time position"
+            );
+            p.wants_sound = None;
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
+        // The Flaming Wood's Item42 trackable is DEFERRED — the latch
+        // rides without a cue (the D3 trackable pool).
+        let mut p = Projectile {
+            active: true,
+            kind: FLAMING_WOOD,
+            owner: 0,
+            pos: Vec2::new(48.0, 48.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+        assert_eq!(p.ai[1], 1.0);
+        assert_eq!(p.wants_sound, None, "the Item42 trackable is deferred");
+    }
+
+    /// The cooldown families: the boomerang whoosh re-arms 8 ×
+    /// (`extraUpdates` + 1) (`:38884-38888`), the Magic Missile hum re-arms
+    /// 10 behind the speed-sum gate (`:43363-43366`), the Light's Bane
+    /// slash latches −1 at `base.Center` (`:42231-42238`).
+    #[test]
+    fn s1_e_21h_the_cooldown_cues_rearm_and_latch() {
+        let w = air();
+        // The boomerang: tick 1 queues Item7 and arms 8.
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, None);
+        assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
+        assert_eq!(p.sound_delay, 8);
+        // The pool decrements ahead of the AI (`:16768-16771`); while the
+        // cooldown is positive the arm queues nothing.
+        for _ in 0..7 {
+            p.sound_delay -= 1;
+            p.wants_sound = None;
+            p.ai_boomerang(&w, None);
+            assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
+        }
+        assert_eq!(p.sound_delay, 1, "one tick left on the cooldown");
+        // The extraUpdates multiplier (`:38885-38888`): 2 extra updates
+        // re-arm 24, not 8, once the cooldown reaches 0.
+        p.sound_delay = 0;
+        p.extra_updates = 2;
+        p.ai_boomerang(&w, None);
+        assert_eq!(p.sound_delay, 24, "8 × (extraUpdates + 1)");
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 7)));
+        // The Magic Missile: below the speed sum the gate refuses.
+        let mut m = Projectile {
+            active: true,
+            kind: MAGIC_MISSILE,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            vel: Vec2::new(1.0, 0.5),
+            ai: [-1.0, -1.0, 0.0, 0.0],
+            tile_collide: false,
+            ..Default::default()
+        };
+        m.ai_magic_missile(&w, &[], None, None);
+        // The released fly-out walks the velocity toward (0, 32) at 4f —
+        // after one tick the speed sum is above 2, so the cue fires.
+        assert_eq!(m.wants_sound.map(|r| (r.0, r.1)), Some((2, 9)));
+        assert_eq!(m.sound_delay, 10);
+        // The Light's Bane: −1 latch, the CENTRE position.
+        let mut s = Projectile {
+            active: true,
+            kind: LIGHTS_BANE,
+            owner: 0,
+            pos: Vec2::new(60.0, 60.0),
+            w: 6.0,
+            h: 6.0,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            tile_collide: false,
+            ..Default::default()
+        };
+        s.ai_lights_bane(&w);
+        assert_eq!(s.wants_sound, Some((2, 60, 63.0, 63.0, 0.0)));
+        assert_eq!(s.sound_delay, -1);
+        s.wants_sound = None;
+        s.ai_lights_bane(&w);
+        assert_eq!(s.wants_sound, None, "the −1 latch never re-arms");
+        assert_eq!(s.sound_delay, -1, "the decrement skips non-positives");
+    }
+
+    /// The bomb kill cue (`Kill_Bombs_DoUsualKillCode` `:78331`/`:78386`):
+    /// the detonation latch queues `SoundID.Item14` at the PRE-resize
+    /// position, once, for the kinds `explode_bomb` accepts.
+    #[test]
+    fn s1_e_21h_the_bomb_detonation_queues_the_blast_cue() {
+        let w = air();
+        for kind in [BOMB, STICKY_BOMB, BOUNCY_BOMB, BOMB_FISH, DYNAMITE] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(80.0, 80.0),
+                time_left: 3,
+                tile_collide: false,
+                ..Default::default()
+            };
+            p.ai_bomb(&w);
+            assert!(p.detonated);
+            assert_eq!(
+                p.wants_sound,
+                Some((2, 14, 80.0, 80.0, 0.0)),
+                "kind {kind}'s blast cue at the pre-PrepareBombToBlow position"
+            );
+            // The latch holds: a re-run queues nothing new.
+            p.wants_sound = None;
+            p.ai_bomb(&w);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per death");
+        }
+    }
+
+    /// The pool contract: the dispatch forwards the arm's intent into the
+    /// sound queue on the same tick, the `soundDelay` decrement runs ahead
+    /// of the AI, and the drain empties the queue exactly once.
+    #[test]
+    fn s1_e_21h_the_pool_forwards_and_drains_the_cue_queue() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai_owned(
+            FROST_BOLT,
+            0,
+            100.0,
+            100.0,
+            4.0,
+            0.0,
+            10,
+            4.0,
+            0.0,
+            0.0,
+        );
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued.len(), 1, "the frost bolt's first-tick cue");
+        assert_eq!((queued[0].0, queued[0].1), (2, 28));
+        assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+        // The decrement: a live cooldown ticks down once per update, ahead
+        // of the AI; the −1 latch stays down (`:16768-16771`).
+        let slot = pool
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == FROST_BOLT)
+            .expect("the bolt lives");
+        pool.slots[slot].sound_delay = 5;
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots()[slot].sound_delay, 4);
+        pool.slots[slot].sound_delay = -1;
+        pool.update(
+            &mut w,
+            &mut [],
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
     }
 }
 
@@ -22155,6 +22577,8 @@ mod phasmal_projectile_tests {
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
+            sound_delay: 0,
+            wants_sound: None,
         }
     }
 
@@ -22546,6 +22970,8 @@ mod ritual_projectile_tests {
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
+            sound_delay: 0,
+            wants_sound: None,
         }
     }
 
