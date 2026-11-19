@@ -95,22 +95,51 @@ impl Atlas {
         // Tallest first keeps the shelf count low.
         order.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
 
-        let mut x = PAD;
-        let mut y = PAD;
-        let mut shelf_height = 0;
+        // Best-fit decreasing-height shelves (S1-F-13c slice B): each sheet
+        // lands on the OPEN shelf with the least leftover width that still
+        // fits it, so the short sheets backfill the tall shelves' tail gaps
+        // instead of opening new rows. The plain next-fit shelf walk overflowed
+        // the 8192 strict-GPU bound once the frost wave's sheets landed
+        // (8416 px); best-fit packs the same set in 8121 px. The layout stays
+        // deterministic (the same sort + the same first-fit shelf scan over
+        // the same input), and every consumer reads its UVs through `sheets`.
+        struct Shelf {
+            y: u32,
+            height: u32,
+            x: u32,
+        }
+        let mut shelves: Vec<Shelf> = Vec::new();
         let mut layout = Vec::with_capacity(order.len());
 
         for img in &order {
-            if x + img.width + PAD > max_width {
-                x = PAD;
-                y += shelf_height + PAD;
-                shelf_height = 0;
+            let need = img.width + PAD;
+            let mut best: Option<usize> = None;
+            for (i, s) in shelves.iter().enumerate() {
+                if s.x + need <= max_width {
+                    match best {
+                        Some(b) if shelves[b].x <= s.x => {}
+                        _ => best = Some(i),
+                    }
+                }
             }
-            layout.push((x, y));
-            x += img.width + PAD;
-            shelf_height = shelf_height.max(img.height);
+            match best {
+                Some(i) => {
+                    let s = &mut shelves[i];
+                    layout.push((s.x, s.y));
+                    s.x += need;
+                }
+                None => {
+                    let y = shelves.last().map(|s| s.y + s.height + PAD).unwrap_or(PAD);
+                    layout.push((PAD, y));
+                    shelves.push(Shelf {
+                        y,
+                        height: img.height,
+                        x: PAD + need,
+                    });
+                }
+            }
         }
-        let height = y + shelf_height + PAD;
+        let height = shelves.last().map(|s| s.y + s.height + PAD).unwrap_or(PAD);
         let width = max_width;
 
         let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
