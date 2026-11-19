@@ -17435,6 +17435,10 @@ old inline draw tinted vine cells through the generic tile path (dimmer,
 pre-strip approximation). The bright strips in the new shots are the C#'s
 per-segment lighting; the engine behaviour is the landed, cited correction,
 so the baselines are re-pinned to the merged state (the SHAs above).
+MERGER-L7 re-verified one pair (white surface+cave) after the further sync
+over main 5d1bd25c (E-7a/F-7b/F-9c waves): x2 SHA256-equal runs, byte-equal
+to the committed baselines and the re-pinned SHAs above — no further scene
+shift from those landings.
 
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
