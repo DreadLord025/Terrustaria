@@ -3657,6 +3657,18 @@ impl Npc {
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) -
+            // the Spazmatism (126), the style's only user. S1-D-3
+            // aiStyle-31: the machine lives in `npc_ai_style31.rs`;
+            // the classic solo env (no twin list / Mech Queen / expert
+            // / getGood - the module's stand-in notes).
+            31 => crate::npc_ai_style31::spazmatism_ai(
+                self,
+                world,
+                player,
+                rng,
+                &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+            ),
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists (S1-D-3, the
             // `npc_ai_style47` module).
@@ -3790,12 +3802,18 @@ impl Npc {
             NpcKind::SkeletronPrime => self.update_prime(world, player),
             // The Retinazer (C# type 125) rides its own machine
             // (`update_retinazer`, the S1-D-3i port of the shared aiStyle-57
-            // block shape); the Spazmatism (126) is an aiStyle-31 fighter —
-            // the SetDefaults rows (`NPC.cs:10526`/`:10543`, the S1-D-2
-            // extraction's doc-drift correction). The Pumpkin bosses'
+            // block shape); the Spazmatism (126) is claimed by the aiStyle-31
+            // axis above (S1-D-3 aiStyle-31) - this arm keeps the kind match
+            // exhaustive and routes to the same machine. The Pumpkin bosses'
             // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
-            NpcKind::Spazmatism => self.update_spazmatism(world, player),
+            NpcKind::Spazmatism => crate::npc_ai_style31::spazmatism_ai(
+                self,
+                world,
+                player,
+                rng,
+                &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+            ),
             NpcKind::Plantera => self.update_plantera(world, player, rng),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
@@ -13340,28 +13358,6 @@ impl Npc {
         if self.vy > 10.0 {
             self.vy = 10.0;
         }
-    }
-
-    /// The Spazmatism (326) — the Twins' ground fighter: the C#'s aiStyle-3
-    /// family (`AI_003_Fighters`, `NPC.cs:55856+`) with the cap-2 group's
-    /// walk speed (`:57554-57578`).
-    fn update_spazmatism(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        let speed = NpcKind::Spazmatism.ai3_walk_speed().unwrap_or(2.0);
-        crate::npc_ai::walker_step(
-            self,
-            world,
-            pcx,
-            pcy,
-            crate::npc_ai::WalkerParams {
-                speed,
-                jump: -6.2,
-                aggro_x: 80.0 * TILE_PX,
-                aggro_y: 40.0 * TILE_PX,
-            },
-            GRAVITY,
-            MAX_FALL,
-        );
     }
 
     fn update_twin(&mut self, world: &World, player: &Player) {

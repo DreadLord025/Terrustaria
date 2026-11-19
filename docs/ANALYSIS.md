@@ -24614,3 +24614,57 @@ Deliberate skips / residuals (documented, not silent):
 witness tests in `npc_ai_style9.rs` are WRITTEN, NOT RUN; the compile and
 the `the_sphere_launches_once_and_flies_straight` re-run are the merge
 step's verification.
+## The Spazmatism's aiStyle-31 machine (S1-D-3 aiStyle-31, code-only mode)
+
+`crates/tr-app/src/npc_ai_style31.rs` ports `NPC.AI()`'s aiStyle-31 arm
+(`NPC.cs:27015-27625`) — type 126 (Spazmatism) is the style's only user
+(`SetDefaults` case 126, `:10539-10555`). The axis claim in `npc.rs`
+(`match self.kind.ai_style()`) replaces the S1-D-3i interim that ran the
+Spazmatism on the aiStyle-3 walker; `update_spazmatism` is deleted.
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests were invoked for this
+landing (user directive); the 15 `s1_d_3_a31_*` witness tests are
+WRITTEN NOT RUN, verified by re-reading the C# line by line.
+
+Deliberate stand-ins:
+- `Main.expertMode`/`Main.getGoodWorld` ride `Style31Env` — the port
+  is single-difficulty classic (the `world.rs` MOON_POINT_SCALAR
+  precedent), so the dispatch passes false/false; every expert/getGood
+  branch stays ported and witness-tested behind the flag (the phase-0
+  dash's hp ladder, the shot timer's +0.6/+0.4, the phase-3 distance
+  ladder and the 1.5/tick decay counter).
+- `NPC.IsMechQueenUp` (`:6868-6883`) needs an active type 127 — no
+  Mech Queen kind exists in the port (the S1-D-3j precedent), so the
+  dispatch passes `mech_queen: None`; the orbit anchor
+  (`Utils.RotatedBy`, `Utils.cs:1675-1684`), the 14-speed/1200-tick
+  hovers, the 60:1 blend and the rotation-vector laser stay ported behind
+  `MechQueenAnchor`.
+- The twin-alive discouragement loop (`:27080-27089`) scans the other
+  active 125/126 slots' `timeLeft`; the pure fn takes the list in slot
+  order (`Style31Env::twin_time_lefts`). `Npc::update_rng` cannot see
+  its siblings, so the dispatch passes `&[]` until a sim pass feeds it
+  (wiring deferred, the S1-F-9b precedent). `DiscourageDespawn`
+  (`:7258-7265`) raises `timeLeft`; the port's `despawn_timer` -1
+  sentinel keeps the gate/raise on active timers only.
+- `Main.netMode != 1` folds to constant-true (single-player netMode 0):
+  the shot blocks and the discourage loop always run.
+- The dust/gore visuals and the sounds (3/15/Item34) are skipped — no
+  dust/gore/sound layer — but EVERY `Main.rand` draw they carry is kept
+  in order on the caller's UpdateNPCs stream: the every-tick `Next(5)`
+  gate (`:27074`, before the day gate), the phase-0 shot's X-then-Y
+  `Next(-40,41)*0.05` (`:27231-27232`), the spin transition's 52-draw
+  burst (`:27363-27369`, only when NOT entering ai[0]==3), the per-tick
+  spin pair (`:27374`), and the phase-3 laser's Y-FIRST
+  `Next(-40,41)*0.01` (`:27525-27526` — reversed vs the phase-0 shot).
+- `reflectsProjectiles` (`:27099`/`:27330`): no NPC reflect flag in
+  the port; without the Mech Queen the C# value is constant-false, the
+  port's default — dropped.
+- `HitSound = NPCHit4` (`:27387`): the port's hit cues ride the static
+  per-kind table (`npc/data.rs::hit_sound`, S1-E-21a); the dynamic
+  phase-3 write is skipped.
+- `GetAttackDamage_ForProjectiles(25,22)`/`(30,27)`
+  (`NPC.cs:7052-7055`): the env's expert bool picks the endpoint
+  (classic 25/30, expert 22/27; no master difficulty in the port).
+- Dead C# stores dropped: `num448 = num447` (`:27135`) and the queen
+  tail's first `num462`/`num463` pair (`:27545-27546`, overwritten
+  at `:27547-27548`).
