@@ -6545,7 +6545,8 @@ The scaffold wraps the already-landed passes in the vanilla pipeline shape
   `3510339375` at scaffold time and reads `3615544309` today), so they prove
   reproducibility, **not** C# fidelity — the per-tile field mix is the port's own
   and the number is not comparable to vanilla's `HashWorld` (that proof is
-  S1-A-7). `generation_is_reproducible_for_a_seed` (`worldgen/mod.rs`) is the
+  S1-A-7 — the algorithm-level differential landed 2026-11-18, see "The worldgen
+  parity proof (S1-A-7)"; full-world byte parity stays A1-gated). `generation_is_reproducible_for_a_seed` (`worldgen/mod.rs`) is the
   same-binary replay-pair. The seam test additionally proved the runner
   tile-for-tile equal to the old straight-line body before it was replaced.
 
@@ -17727,6 +17728,61 @@ byte-identical.
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
   writer's own byte parity stays S1-J-5's.
 
+## The worldgen parity proof (S1-A-7)
+
+`ROADMAP` S1-A-7 asks for a comparison against a **C#-generated world**, not the
+self-consistency replay (`generation_is_reproducible_for_a_seed`). The obstacle is
+the deliberate stream divergence (research/35 #5): the port's worldgen draws
+**xorshift64** per-pass streams (`Rng(seed ^ fnv(pass_name))`) where vanilla draws
+one **Knuth subtractive `UnifiedRandom`** (`WorldGen.genRand => Main.rand`,
+`WorldGen.cs:4445`, re-seeded `new UnifiedRandom(worldSeed)` per pass,
+`WorldGenerator.cs:497`). A full generated world is therefore **not** byte-comparable
+with a C# one by design — comparing them would only re-prove the known divergence.
+
+**What is provable is the algorithm.** `tools/WorldGenParityHarness` extracts the
+verbatim C# `WorldGen.TileRunner` (`WorldGen.cs:76770-77142`) + `PlaceWall`
+(`:75125`) + `CanBeClearedDuringGeneration` (`:80168`) with **zero** substitutions
+(`extract.py`), shims only the global statics, and runs them in two modes:
+
+- **DIFF** — `genRand` replays the **port's** xorshift64 stream (state passed in).
+  The verbatim C# walker then draws the same sequence as the port's `tile_runner`,
+  so the two tile arrays are comparable. The Rust test
+  `s1_a_7_the_tile_runner_matches_the_csharp_differential`
+  (`worldgen/tile_runner.rs`) replays the same 6-call scenario on a 200×400
+  all-stone world (ore placement over a protection zoo, a single-step ore disc,
+  kind-59 mud with the stone draw + liquid clear, type -2 liquid fill, type -1
+  carve, and the mud-wall lining) and compares **all 80 000 tiles field-by-field**
+  (kind, wall, liquid, active, slope, half-brick, lava/honey/shimmer) **plus the
+  final stream state** against the C# dump (`assets/test/parity_tiles.bin`). The
+  initial state is pinned to `Xorshift64::from_seed(42).0` and the final state to
+  the harness's `portState`, so a draw-order or algorithm divergence trips the test.
+- **REAL** — `genRand` is the real Knuth `UnifiedRandom(42)`. The `.wld` it writes
+  (`assets/test/parity_real.wld`) is a **genuine C#-generated world**. The test
+  `s1_a_7_the_csharp_generated_world_decodes_and_rewrites_tiles` (`wld/mod.rs`)
+  proves the port decodes every section and re-writes the **tile section
+  byte-identical** (the tile codec is stream-independent — S1-J-3 proved the same
+  for the golden fixture).
+
+**Scope / divergences (documented, not faked):**
+- The scenario uses only branches the port has ported. Excluded (the port's
+  unported arms, `tile_runner.rs` module doc): the 367/368 shell wall placements
+  (`WorldGen.cs:76914-76921`), the `case 53` underground-desert containment
+  (`GenVars.UndergroundDesertLocation`, `:76934`), and the remix `oceanDepths` lava
+  split (`:76899-76905`). The shim's empty `UndergroundDesertLocation` and
+  `oceanDepths => false` match the port's deferral exactly.
+- `SquareWallFrame` (`:80198`) is a **no-op on both sides** — a visual wall-framing
+  pass the port defers (`place_wall` doc); wall frames are runtime-only and never
+  serialized, so the comparison stays on saved fields.
+- The **stream** divergence (xorshift64 vs Knuth) is factored out by the DIFF mode
+  so the algorithm can be proven; the REAL world is the genuine C# output and is
+  **not** claimed byte-equal to the port's generator. Full-world byte parity stays
+  open and is A1-gated (it requires moving the passes onto the single Knuth
+  `genRand` stream — S1-K-1's interleave half).
+
+Regen: `python tools/WorldGenParityHarness/extract.py` then
+`dotnet run --project tools/WorldGenParityHarness -- assets/test diff 13679457532755275413`
+(the DIFF state) and `... real 42` (the REAL world). See the harness README.
+
 ## The tile-place sound wave (S1-E-21 wave B, 2026-11-18)
 
 `tr_core::edit::place_tile_sound` ports `WorldGen.PlaceTile`'s tail sound
@@ -18550,3 +18606,49 @@ velocity-sign facing + 4/2.5 approach (`:22876-22894`, `:22971-23037`),
 (`:22899-22970`, `:23346-23360`), 660's 0.35/0.3/6/5 approach
 (`:23038-23115`), 48's wet arm + HarpyFeather shot (`:23333-23345`,
 `:23416-23436`), 156's UnholyTrident shot (`:23458-23484`).
+## The fish/swimmer family (S1-D-3 aiStyle-16, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style16.rs` ports `NPC.AI`'s whole
+`if (this.aiStyle == 16)` block (`NPC.cs:23492-24021`) as a PURE velocity
+machine — the family is the flopping fish, NOT the spiders: Goldfish 55,
+CorruptGoldfish 57, Piranha 58, Shark 65, AnglerFish 102, Arapaima 157,
+BloodFeeder 241, CrimsonGoldfish 465, GoldGoldfish 592, Pupfish 607,
+Dolphin 615, Pufferfish 688, Orca 692 (the `SetDefaults` rows
+`NPC.cs:9465`/`:9494`/`:9508`/`:9615`/`:10208`/`:10995`/`:12111`/`:14488`/
+`:16684`/`:16800`/`:16897`/`:17658`/`:17714`). The arm carries every branch:
+the head `TargetClosest` on direction 0, the Pufferfish puff latch + the
+water-line hover with its early return, the Dolphin leap/float machine
+(the per-tick `Next(300,1200)` threshold BEFORE `++ai[3]`, the `Next(1,3)`
+pick, the 128-px `CanHitLine` leap gate, the 300-tick dive, the `ai[3]==60`
+sound gate), the shared wet machine (the critter exclusion `flag25`, the
+feet-slope flips, the idle collide bounces, the Arapaima's asymmetric
+7/4 caps and its own 0.02 bob, the Shark group's 0.15/5/3, the generic
+0.1/3/2, the beach-avoid, the ±0.4 damp with the 157 exemption), the dry
+flop (the Shark/Orca 0.94 decay vs the cited rand triple) and the rotation
+tail (the Orca's `SafeNormalize`/`ToRotation`/`WrapAngle` aim with the π
+fold vs the generic ±0.2 tilt).
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
+witness tests in the module are WRITTEN, NOT RUN. The RNG witnesses mirror
+the cited `Next` calls on a cloned `UnifiedRandom` and compare the stream
+state, so a drifted draw order fails by construction once executed.
+
+**Wiring deferred** (the `buff_effects_misc.rs` precedent): the live
+routing keeps `update_swimmer` → `npc_ai::swim_step` untouched this round
+(the approximation with inline integration); the merge step swaps it onto
+`ai_016_step` and drops `swim_step`'s inline integration for the generic
+collision pass. Deliberate folds, all cited in the module:
+- `Main.netMode != 1` → true (single-player port).
+- `NetUpdateIgnoreSpamLimit` (`NPC.cs:90568-90576`) → `net_update = true`
+  (the `netSpam` counter is unported).
+- The Dolphin's `SoundEngine.PlaySound(45, ...)` (`:23680`) is SKIPPED but
+  its gating `Main.rand.Next(2)` draw is KEPT — the stream cannot drift.
+- The AnglerFish's `Lighting.AddLight` (`:23764`) leaves as an
+  `Ai16Effects::light` request (the `entity_lights` feed wires it later).
+- `NPC.justHit` has no port field — `Ai16Ctx::just_hit` carries it; the
+  strike path supplies it at the wiring step.
+- The C#'s null-tile guards (`new Tile()`, `:23934-23945`) read as the
+  default dry/inactive tile (`World::tile`'s `None`).
+- Position integration stays OUT of the arm (the C# AI ends before
+  `UpdateCollision`); `wet`/`collideX`/`collideY` are read a tick late,
+  exactly like the source.
