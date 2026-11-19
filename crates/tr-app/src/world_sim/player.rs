@@ -207,6 +207,7 @@ pub(crate) fn player_input(
             right: false,
             jump: false,
             down: false,
+            up: false,
             hook: false,
         };
     }
@@ -234,6 +235,8 @@ pub(crate) fn player_input(
             || held(crate::input_map::Action::Jump, KeyCode::ArrowUp)
             || any(crate::input_map::Action::Up),
         down: held(crate::input_map::Action::Down, KeyCode::ArrowDown),
+        // `Player.controlUp` on `Main.cUp` (`Main.cs:67163`, default `W`).
+        up: any(crate::input_map::Action::Up),
         // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
         // the port keeps `G` as the extra quick-grapple key.
         hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
@@ -420,12 +423,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         {
             p.try_dismount(&app.world);
         }
-        if hook_edge && !p.dead {
-            // `QuickGrapple` (`Player.cs:6296-6478`): the fire-time gate first
-            // (`:6399` — the in-flight count against `num6 − num5`), then the
-            // oldest-hook recycle (`:6396`, `num7`), then the two kind cycles
-            // (the Lunar 646→…→649 walk `:6425-6456` and the Dual 73→74 swap
-            // `:6420-6424`), and only then the spawn (`:6458-6477`).
+        // `:6298-6301` — `CCed || tongued || dead` refuses the fire.
+        if hook_edge && !p.dead && !p.cced() && !p.tongued {
+            // `QuickGrapple` (`Player.cs:6296-6478`) in the source's order:
+            // the item pick (`:6320`), the fire-time gate (`:6399`), the
+            // blacklist rebuild (`:6407`), the UseSound (`:6408`), the
+            // oldest-hook recycle (`:6416-6419`, `num7` of the ORIGINAL shoot),
+            // THEN the Dual (`:6420-6428`) / Lunar (`:6430-6458`) kind cycles,
+            // and only then the spawn (`:6460-6478`).
             let owner = app.local_id as u8;
             let (flight, attached) = app.projectiles.hook_counts(owner);
             // `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`): the
@@ -439,35 +444,47 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.inventory,
             );
             let mut kind = item_hook.map(|(_, shoot)| shoot).unwrap_or(hook_type as u16);
-            if !crate::grapple::fire_allowed(flight, attached, kind) {
+            // `:6342-6398` — the budgets read the ORIGINAL `item.shoot` (`num`),
+            // before the kind cycles rewrite it.
+            let original_shoot = kind;
+            // `:6399-6402` — the in-flight gate (`num4 >= max(1, num6 - num5)`).
+            if !crate::grapple::fire_allowed(flight, attached, original_shoot) {
                 return;
             }
-            // The Dual Hook's colour swap: a blue head already out means red.
-            let blue_out = app.projectiles.slots().iter().any(|pr| {
-                pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE
-            });
-            if kind == crate::projectile::DUAL_HOOK_BLUE && blue_out {
-                kind = crate::grapple::dual_next_kind(true);
+            // `:6407` — rebuild the owner's refused-tile set before the fire.
+            app.projectiles.rebuild_hook_blacklist(&app.world, owner);
+            // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
+            // `PlaySound(item.UseSound, base.position)` — the hook item's
+            // own use-sound row at the TOP-LEFT, after the fire-time gates
+            // passed (the `:6399` budget return precedes it) and BEFORE the
+            // recycle/spawn. The style façade's `GetRandomPitch` NextFloat
+            // rides the audio-only stream; the case-2 pitch rides
+            // `UpdatePlayers` (the fire runs inside `Player.Update`,
+            // `Main.cs:17754`). No granting item (the `TR_HOOK` pin) means
+            // no `UseSound` — silent, like the C#'s null-item return
+            // (`:6320-6323`). KEPT from wave 2 (S1-E-21f).
+            if let Some((item_kind, _)) = item_hook {
+                if let Some((idx, pitch)) = crate::item::initial_use_sound(item_kind) {
+                    app.audio.play_use_sound(
+                        idx,
+                        p.x,
+                        p.y,
+                        pitch,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
             }
-            // The Lunar cycle: the highest-`timeLeft` in-flight kind steps.
-            if kind == crate::projectile::LUNAR_HOOK_SOLAR {
-                let best = app
-                    .projectiles
-                    .slots()
-                    .iter()
-                    .filter(|pr| {
-                        pr.active
-                            && pr.owner == owner
-                            && (crate::projectile::LUNAR_HOOK_SOLAR
-                                ..=crate::projectile::LUNAR_HOOK_STARDUST)
-                                .contains(&pr.kind)
-                    })
-                    .max_by_key(|pr| pr.time_left)
-                    .map(|pr| pr.kind);
-                kind = crate::grapple::next_lunar_kind(best);
-            }
-            // The recycle: the lowest-`timeLeft` hook of this owner dies.
-            if crate::grapple::recycles_oldest(flight, attached, kind) {
+            // `:6413-6415` — the spawn reads `item.shootSpeed`/`damage`/
+            // `knockBack` (the per-item rows; the `TR_HOOK` pin keeps the
+            // Hook's 11.5 / 0 / 7 stand-in until the granting items land).
+            let (shoot_speed, damage, knock_back) = item_hook
+                .and_then(|(item_kind, _)| crate::itemdata::ITEMS.get(item_kind as usize))
+                .map(|d| (d.shoot_speed, d.damage.max(0), d.knock_back))
+                .unwrap_or((11.5, 0, 7.0));
+            // `:6416-6419` — the recycle: the lowest-`timeLeft` hook of this
+            // owner dies once the total reaches `num7` (the ORIGINAL shoot's
+            // budget, read before the kind cycles).
+            if crate::grapple::recycles_oldest(flight, attached, original_shoot) {
                 if let Some(i) = app
                     .projectiles
                     .slots()
@@ -484,41 +501,50 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.projectiles.kill(i);
                 }
             }
-            // `:6458-6477` — the aim at the mouse world position, the velocity
-            // the unit aim times `item.shootSpeed` (the vanilla 16 for the Hook;
-            // the per-item values ride with M3-EQUIP-3, `TR_HOOK` pins the kind).
+            // `:6420-6428` — the Dual Hook's colour swap: a blue head (73)
+            // already out (any state) means the new shot is the red one (74).
+            if original_shoot == crate::projectile::DUAL_HOOK_BLUE {
+                let blue_out = app.projectiles.slots().iter().any(|pr| {
+                    pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE
+                });
+                if blue_out {
+                    kind = crate::grapple::dual_next_kind(true);
+                }
+            }
+            // `:6430-6458` — the Lunar cycle (item 3572): the highest-`timeLeft`
+            // in-flight kind steps 646→647→648→649→646. The C# scan keeps the
+            // FIRST slot on a `timeLeft` tie (`num9 < timeLeft`, strict), so the
+            // port folds in slot order rather than `max_by_key` (last-wins).
+            if item_hook.is_some_and(|(item_kind, _)| item_kind == 3572) {
+                let mut best_kind: Option<u16> = None;
+                let mut best_time = -1i32;
+                for pr in app.projectiles.slots() {
+                    if pr.active
+                        && pr.owner == owner
+                        && (crate::projectile::LUNAR_HOOK_SOLAR
+                            ..=crate::projectile::LUNAR_HOOK_STARDUST)
+                            .contains(&pr.kind)
+                        && (best_time == -1 || best_time < pr.time_left)
+                    {
+                        best_kind = Some(pr.kind);
+                        best_time = pr.time_left;
+                    }
+                }
+                kind = crate::grapple::next_lunar_kind(best_kind);
+            }
+            // `:6460-6478` — the aim at the mouse world position, the velocity
+            // the unit aim times `item.shootSpeed`, spawned at the player center.
             let center = Vec2::new(
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
-            // `PlaySound(item.UseSound, base.position)` — the hook item's
-            // own use-sound row at the TOP-LEFT, after the fire-time gates
-            // passed (the `:6399` budget return precedes it) and BEFORE the
-            // spawn (`:6458`). The style façade's `GetRandomPitch` NextFloat
-            // rides the audio-only stream; the case-2 pitch rides
-            // `UpdatePlayers` (the fire runs inside `Player.Update`,
-            // `Main.cs:17754`). No granting item (the `TR_HOOK` pin) means
-            // no `UseSound` — silent, like the C#'s null-item return
-            // (`:6320-6323`).
-            if let Some((item_kind, _)) = item_hook {
-                if let Some((idx, pitch)) = crate::item::initial_use_sound(item_kind) {
-                    app.audio.play_use_sound(
-                        idx,
-                        p.x,
-                        p.y,
-                        pitch,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                }
-            }
             let _spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
-                16.0,
-                0,
-                0.0,
+                shoot_speed,
+                damage,
+                knock_back,
                 owner,
                 p.facing,
             );

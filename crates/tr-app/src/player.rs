@@ -143,6 +143,11 @@ pub struct PlayerInput {
     pub right: bool,
     pub jump: bool,
     pub down: bool,
+    /// `Player.controlUp` (`Main.cUp`): the up key. The vanilla folds it into
+    /// `controlJump` (`Player.cs:24905`), but `GrappleMovement`'s jump-off gate
+    /// (`:22717`) and `GetGrapplingForces`' steering (`:22775`/`:22792`) read
+    /// it separately, so the port carries it.
+    pub up: bool,
     /// `Player.controlHook` (the quick-grapple key).
     pub hook: bool,
 }
@@ -909,6 +914,9 @@ pub struct Player {
     /// `Player.controlJump` / `controlDown`: this tick's held jump/down keys.
     pub control_jump: bool,
     pub control_down: bool,
+    /// `Player.controlUp` (`Player.cs:1738`): this tick's held up key. The
+    /// grapple jump-off gate (`:22717`) and steering read it.
+    pub control_up: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
     /// Jump was held on the previous fixed step, for press-edge detection.
@@ -2022,6 +2030,7 @@ impl Player {
             control_right: false,
             control_jump: false,
             control_down: false,
+            control_up: false,
             jump: 0,
             jump_held: false,
             spawn_x: sx,
@@ -4275,14 +4284,16 @@ impl Player {
         self.control_right = input.right;
         self.control_jump = input.jump;
         self.control_down = input.down;
+        self.control_up = input.up;
         // `Player.cs:24996-25004`: Confused (31) swaps the controls AFTER
-        // they land: left↔right, `controlUp = controlRight` (post-swap, i.e.
-        // the old left) and `controlDown = flag3` (the pre-swap up). The port
-        // has no `controlUp` key — with up ≡ false the down half collapses
-        // to `controlDown = false`, and the up half has no field to write.
+        // they land: `flag2 = controlLeft`, `flag3 = controlUp`, then
+        // left↔right, `controlUp = controlRight` (post-swap, i.e. the old
+        // left) and `controlDown = flag3` (the pre-swap up).
         if self.confused {
+            let flag3 = self.control_up;
             std::mem::swap(&mut self.control_left, &mut self.control_right);
-            self.control_down = false;
+            self.control_up = self.control_right;
+            self.control_down = flag3;
         }
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
@@ -4420,6 +4431,9 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:18506` — `ResetEffects` clears `GoingDownWithGrapple` per
+        // tick; `GrappleMovement` (`:22655-22658`) re-sets it only on a down pull.
+        self.going_down_with_grapple = false;
         // `Player.cs:18786`: justJumped clears at the tick head; the auto-jump
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
@@ -7813,54 +7827,76 @@ impl Player {
         input: PlayerInput,
         item_in_use: bool,
     ) {
-        // `GetGrapplingForces` (`Player.cs:22757-22856`): zero registered hooks
-        // carries the current velocity through untouched.
+        // `:22615-22618` — `grappling[0] < 0` returns. The caller hands the
+        // registered (attached) set, so an empty set is the early return.
         if hooks.is_empty() {
             return;
         }
+        // `:22619` — `StopVanityActions` (no vanity system in the port).
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
         // ({54, 57-60}) dismounts while the hooks are out.
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
             self.try_dismount(world);
         }
-        // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
+        // `:22624-22640` — the carpet/wing frame head. `canCarpet`/`rocketFrame`
+        // have no port fields; `carpetFrame = -1` and the wing frame ladder are
+        // the visual seam (the wings-4/30 overrides ride the wing draw).
+        self.carpet_frame = -1;
+        self.wing_frame = 1;
+        // `:22627-22628` — `flag` (nearly stationary) and `flag2` (floating in
+        // ANY liquid with near-zero vy) read the PRE-pull velocity. The C#
+        // `base.wet` is WetCollision (any liquid), so the port uses the union.
+        let flag = Vec2::new(self.vx, self.vy).length() < 2.0;
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let flag2 = any_wet && self.vy > -0.02 && self.vy < 0.02;
+        // `:22629-22632` — the wing frame zeroes when nearly still / floating /
+        // grounded (visual; the port keeps the field current).
+        if (flag2 | flag) || self.vy == 0.0 {
+            self.wing_frame = 0;
+        }
+        // `:22641` — `RefreshMovementAbilities` (`:22858-22867`): the flight
         // budgets refill every tick while grappling.
         self.wing_time = self.wing_time_max as f32;
         self.rocket_time = self.rocket_time_max;
         self.rocket_delay = 0;
         self.refresh_double_jumps();
+        // `:22642-22644` — the rocket flags clear.
+        self.can_rocket = false;
+        self.rocket_release = false;
         // `:22645`: the fall origin refreshes per tick — no fall damage.
         self.fall_start = (self.y / TILE_PX) as i32;
 
-        // `GetGrapplingForces` (`Player.cs:22757-22856`): the steering-adjusted
-        // average of every registered hook's center, clamped to
-        // `grappling[0]`'s type pull speed. The tuple's third element is the
-        // hook's rotation (only the Squirrel Hook reads it).
+        // `:22654` — `GetGrapplingForces` (`Player.cs:22757-22856`): the
+        // steering-adjusted average of every registered hook's center, clamped
+        // to `grappling[0]`'s type pull speed. The steering reads `controlUp`
+        // (`:22775`/`:22792`); the tuple's third element is the hook's rotation
+        // (only the Squirrel Hook reads it).
         let pull = crate::grapple::grapple_pull(
             hooks,
             Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5),
-            // `PlayerInput` has no `up` arm (nothing consumes it in the
-            // port); the C# reads `controlUp` here.
-            crate::grapple::steering_stick(input.left, input.right, false, input.down),
+            crate::grapple::steering_stick(input.left, input.right, input.up, input.down),
         );
         let Some(pull) = pull else {
-            // `:22845-22847`: no registered hook carries the velocity through.
+            // `:22820-22824`: no attached hook carries the velocity through.
             return;
         };
-        // `:22659`: `flag3` = the pull points down while the CURRENT velocity is
-        // zero (a grounded pull) — read before the replacement.
+        // `:22655-22658` — `GoingDownWithGrapple` is SET only when the pull
+        // points down; `ResetEffects` (`:18506`) clears it per tick, so a
+        // non-down pull leaves it false (the reset runs at the tick head).
+        if pull.vel.y > 0.0 {
+            self.going_down_with_grapple = true;
+        }
+        // `:22659`: `flag3` = the pull points down while the PRE-pull velocity
+        // Y is zero (a grounded pull) — read before the replacement.
         let flag3 = pull.vel.y > 0.0 && self.vy == 0.0;
         // `:22660-22661`: the pull replaces the velocity outright.
         self.vx = pull.vel.x;
         self.vy = pull.vel.y;
-        // `:22655-22658`: the pull points downward → the platforms fall
-        // through (`GoingDownWithGrapple`).
-        self.going_down_with_grapple = pull.going_down;
-        // `:22659-22693`: the Track Hook (403) hands the player to the minecart
+        // `:22662-22692`: the Track Hook (403) hands the player to the minecart
         // when its box overlaps the player over a track tile.
         self.track_hook_cart_transfer(world, hooks);
 
-        // `:22670-22676`: the direction follows the pull; an exactly-zero X
+        // `:22693-22707`: the direction follows the pull; an exactly-zero X
         // takes the Squirrel Hook's preferred direction instead. The C# gates
         // the block on `itemAnimation == 0`, which the sim passes in.
         if !item_in_use {
@@ -7871,41 +7907,46 @@ impl Player {
             }
             if self.vx > 0.0 {
                 self.facing = 1;
-            } else if self.vx < 0.0 {
+            }
+            if self.vx < 0.0 {
                 self.facing = -1;
             }
         }
 
-        // `:22705-22739`: the jump-off.
+        // `:22708-22739`: the jump-off.
         if input.jump {
             if self.release_jump {
-                // `flag` (`:22627`): nearly stationary.
-                let flag = Vec2::new(self.vx, self.vy).length() < 2.0;
-                // `flag2` (`:22628`): floating in water with near-zero vy.
-                let flag2 = self.in_water && self.vy.abs() < 0.02;
-                let mut flag4 = flag2 || flag;
+                // `:22712` — `flag4 = flag2 | flag` (the PRE-pull reads above).
+                let mut flag4 = flag2 | flag;
+                // `:22713-22716` — holding DOWN cancels the stationary jump.
                 if input.down {
                     flag4 = false;
                 }
-                if flag3 && !self.control_jump {
+                // `:22717-22720` — a grounded down-pull cancels it unless UP is
+                // held (`!controlUp`, NOT `!controlJump`).
+                if flag3 && !input.up {
                     flag4 = false;
                 }
                 if flag4 {
+                    // `:22723-22724` — the full jump impulse. `oldStyleParkour`
+                    // halves the height; the parkour gate is unported (false).
                     self.vy = -self.jump_speed;
                     self.jump = self.jump_height;
                     self.release_jump = false;
                 } else {
+                    // `:22729` — the nudge path detaches without the jump.
                     self.vy += 0.01;
                     self.release_jump = false;
                 }
+                // `:22732` — `RefreshDoubleJumps`.
                 self.refresh_double_jumps();
-                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`, called
-                // from the jump-off `:22733`): the caller drops the owner's
-                // hooks.
+                // `:22733` — `RemoveAllGrapplingHooks`: the caller drops the
+                // owner's hooks (`Player.cs:33562-33574`).
                 self.release_grappling_hooks = true;
                 self.grappling_active = false;
             }
         } else {
+            // `:22738` — `releaseJump = true`.
             self.release_jump = true;
         }
     }
@@ -11138,6 +11179,62 @@ mod tests {
             &mut tr_core::UnifiedRandom::default(),
         );
         assert!(p.going_down_with_grapple, "the pull points down");
+    }
+
+    /// W3-i39 — `Player.cs:18506` + `:22655-22658`: `GoingDownWithGrapple` is
+    /// cleared per tick by `ResetEffects` and SET only on a down pull. An UP
+    /// pull therefore leaves it false (the old port assigned `pull.going_down`,
+    /// which also cleared it — but never reset it on a non-grapple tick).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_going_down_resets_on_an_up_pull() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Prime the flag true (a down pull).
+        let below = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[(crate::projectile::HOOK, below, 0.0)],
+            false, false, false, None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(p.going_down_with_grapple, "the down pull sets it");
+        // Now an UP pull: the per-tick reset clears it, the up pull does not re-set.
+        let above = Vec2::new(p.x + WIDTH * 0.5, p.y - 120.0);
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[(crate::projectile::HOOK, above, 0.0)],
+            false, false, false, None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(!p.going_down_with_grapple, "the up pull leaves it cleared");
+    }
+
+    /// W3-i39 — `Player.cs:22717`: the grounded down-pull jump-off is cancelled
+    /// unless `controlUp` is held (NOT `controlJump`). With UP held the full
+    /// jump impulse fires even though the pull points down. WRITTEN NOT RUN.
+    #[test]
+    fn i39_the_jump_off_reads_control_up() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // A hook below the player: the pull points down (flag3 when grounded).
+        let below = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, below, 0.0)];
+        // Jump + UP held: flag3 && !up is false → flag4 survives → full jump.
+        p.update_with_grapple(
+            &w,
+            PlayerInput { jump: true, up: true, ..Default::default() },
+            grapple,
+            false, false, false, None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(p.vy < 0.0, "UP held grants the jump impulse: vy={}", p.vy);
+        assert!(p.release_grappling_hooks, "the jump-off detaches");
     }
 
     /// `Player.cs:19963,19993`: the overspeed continuation is gated on

@@ -251,7 +251,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
     for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
-        app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+        if id == 0 {
+            // `AI_007`'s latch dig cue (`Projectile.cs:52757`:
+            // `PlaySound(0, i*16, j*16)`) — the case-0 int overload: the
+            // `Next(3)` variation pick + the `Next(-10,11)*0.01` pitch ride
+            // the SAME `UpdateProjectiles` stream, attenuation gate first
+            // (the `play_place_sound` case-0 path, S1-E-21 wave B).
+            app.audio.play_place_sound((0, 0), x, y, rng);
+        } else {
+            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+        }
     }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).

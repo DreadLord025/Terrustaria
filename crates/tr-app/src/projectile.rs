@@ -12396,6 +12396,14 @@ impl ProjectilePool {
         self.hook_blacklist.insert(owner, list);
     }
 
+    /// `Player.UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`) as
+    /// `QuickGrapple` calls it at fire time (`:6407`), BEFORE the sound and the
+    /// spawn. The pool owns the per-owner refused-tile set; this rebuilds it
+    /// from the owner's currently attached hooks.
+    pub fn rebuild_hook_blacklist(&mut self, world: &World, owner: u8) {
+        self.refresh_hook_blacklist(world, owner);
+    }
+
     /// The wind vector the AI arms' tail applies
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
@@ -12629,10 +12637,12 @@ impl ProjectilePool {
         }
     }
 
-    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6458-6477`):
+    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6460-6478`):
     /// the aim direction normalized by its own length and scaled to
     /// `shootSpeed`, spawned at the player center. The degenerate aim
-    /// (`0,0` or NaN) falls back to the facing, as the source does.
+    /// (`0,0` or both-NaN) falls back to the facing, as the source does.
+    /// `NewProjectile` centres the box (`Projectile.cs:10876-10877`:
+    /// `position = X - width/2`), so the spawn site subtracts the half-box.
     pub fn spawn_hook(
         &mut self,
         kind: u16,
@@ -12645,15 +12655,29 @@ impl ProjectilePool {
         facing: i32,
     ) -> Option<usize> {
         let delta = aim - player_center;
-        // `:6459-6467` — the degenerate aim (both zero, or NaN) falls back to
-        // the facing; otherwise the direction scales to `shootSpeed`.
-        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0) || delta.is_nan() {
+        // `:6468-6477` — the degenerate aim (both zero, or both NaN) falls back
+        // to the facing; otherwise the direction scales to `shootSpeed`.
+        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0)
+            || (delta.x.is_nan() && delta.y.is_nan())
+        {
             (facing as f32 * shoot_speed, 0.0)
         } else {
             let k = shoot_speed / delta.length();
             (delta.x * k, delta.y * k)
         };
-        self.spawn_with_data_ai_owned(kind, owner, player_center.x, player_center.y, vx, vy, damage, knock_back, 0.0, 0.0)
+        let data = proj_data(kind)?;
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            player_center.x - data.w * 0.5,
+            player_center.y - data.h * 0.5,
+            vx,
+            vy,
+            damage,
+            knock_back,
+            0.0,
+            0.0,
+        )
     }
 
 
@@ -13804,10 +13828,18 @@ impl ProjectilePool {
                             self.slots[i].ai_leaf_blower(world, rng);
                         }
                         7 => {
-                            let dead = player.as_ref().is_some_and(|p| p.dead);
+                            // `:52567` — the kill gate is `dead || CCed`.
+                            let dead = player.as_ref().is_some_and(|p| p.dead || p.cced());
                             let local = self.slots[i].owner == local_owner;
-                            let center = owner
-                                .map(|(x, y)| Vec2::new(x, y))
+                            // `:52572` — the hook reads its owner's
+                            // `MountedCenter` (the port folds it to center).
+                            let center = player
+                                .as_ref()
+                                .map(|p| {
+                                    let (x, y) = p.mounted_center();
+                                    Vec2::new(x, y)
+                                })
+                                .or_else(|| owner.map(|(x, y)| Vec2::new(x, y)))
                                 .unwrap_or(self.slots[i].pos);
                             // The crack roll reborrows the pass's threaded
                             // stream (the slot borrow and the `&mut *rng`
@@ -18060,6 +18092,22 @@ mod tests {
         assert!(list.contains(&(9, 29)), "{:?}", list);
         // The solid ground row stays latchable.
         assert!(!list.contains(&(10, 30)), "{:?}", list);
+    }
+
+    /// W3-i39 — `spawn_hook` centres the box (`Projectile.cs:10876-10877`:
+    /// `position = X - width/2`). The spawn site is the player CENTER, so the
+    /// slot's top-left sits half a box up-left of it. WRITTEN NOT RUN.
+    #[test]
+    fn i39_spawn_hook_centres_the_box() {
+        let mut pool = ProjectilePool::new();
+        let center = Vec2::new(40.0 * 16.0, 60.0 * 16.0);
+        let slot = pool
+            .spawn_hook(crate::projectile::HOOK, center, center + Vec2::new(0.0, 100.0), 11.5, 0, 7.0, 0, 1)
+            .expect("the hook row spawns");
+        let p = &pool.slots()[slot];
+        let d = proj_data(crate::projectile::HOOK).unwrap();
+        assert_eq!(p.pos, center - Vec2::new(d.w * 0.5, d.h * 0.5), "top-left = center - half-box");
+        assert_eq!(p.center(), (center.x, center.y), "the center is the spawn point");
     }
 
     /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the
