@@ -18852,7 +18852,71 @@ Deliberate deviations (the wiring remainder):
   witness tests clone the stream and replay the draws in source order, so
   any reordering or extra draw fails the equality. No other stream is
   touched; the head's machine is draw-free.
-## Duke Fishron's machine вЂ” the audit + the pure-core gap-fill (S1-D-3 fishron, 2026-11-18)
+
+### The wiring (S1-D-3-wire-destroyer, census slice W-5, 2026-11-19 — code-only mode)
+
+**Census verdicts** (read at the branch base `c7fe175d`, not doc-trusted):
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| `npc_ai_style37.rs` faithful | **CONFIRMED** | whole-arm re-read of `NPC.cs:49756-50242` vs the module — every branch, constant and draw order matches (the W50 audit stands) |
+| live head rides the worm stand-in | **CONFIRMED** | `npc.rs`'s `TheDestroyer => {}` kind arm + `update_worms_in`'s 80-budget same-kind chain + the approximate laser block (centre-box CanHit, `.max(1.0)` normalise, `dx/8*5` muzzle — three deviations from `:49863-49876`) |
+| body/tail kinds 135/136 absent | **CONFIRMED** | no `NpcKind` rows; the chain was 81 same-kind heads (the C# spawns **82** slots: head + 80 bodies + 1 tail, `j <= count` `:49840`) |
+| the worm sim-pass covers the segments | **NO** — it is a stand-in, not the faithful machine | the generic trail uses `lw` spacing (the C# `(int)(44*scale)`), no fade-in, no daytime escape, no probe launches, no burrow steer |
+| the probe launch lives in AI_037 | **NO** — `HitEffect` | `NPC.cs:89266-89285`: type 135, alive, host, `ai[2] == 0` then `Next(25) == 0` (50 Mech Queen) → `ai[2] = 1` + `NewNPC(139)` at the bottom-centre; called from `StrikeNPC_Inner` `:81488` |
+| the Probe's aiStyle | **5** (not 37) | `SetDefaults` `NPC.cs:10720-10734`; its machine is `AI_005`'s type-139 path (`:50414-50961` — the wobble, the 120-tick laser 84, the sprite-aim rotation, the >600-px chase boost) |
+
+**What landed (WIRED):**
+
+* `NpcKind::TheDestroyerBody`/`TheDestroyerTail`/`Probe` — the full data rows
+  (`npc/data.rs`: protocol ids gate-reassigned 216/217/218 (the branch wrote 148/149/152, colliding with the landed bees 149/152 + R78 LeechTail 148), aiStyles 37/37/5, boxes 48/48/30,
+  dmg 55/40/50, def 30/35/20, HP 80000-pool/200, sounds NPCHit4/NPCDeath14,
+  behindTiles for the segments) + every exhaustive match arm (kind AI,
+  find_frame — the body's 2-row hatch `NPC.cs:73433-73442`, netglue seed,
+  render draw/rotation/nudge/sheets, bestiary folds — 135/136 `Hide=true`
+  `NPCID.cs:2192-2205`, 139→134 `BestiaryDatabaseNPCsPopulator.cs:690`).
+* `Npc::new` stamps the family's `alpha = 255` fade-in start
+  (`NPC.cs:10678`/`:10698`/`:10718`); new fields `sound_delay`
+  (`NPC.cs:90381-90383`) and `wants_probe` (the strike→sim spawn seam).
+* `world_sim/npcs.rs::update_destroyers` — the sim pass after the worm pass:
+  the strike-queued probe spawns, `destroyer_family_step` (the chain spawn +
+  the realLife pool pay/mirror + the per-slot machine over a scratch pool
+  with a dummy slot 0 — the C#'s `CannotSpawnInSlot0` `NPCID.cs:10452` keeps
+  the machine's `ai[1] > 0` gate verbatim), the laser/roar/despawn event
+  resolve, and the Probe's `probe_step`. The dawn family despawn drops the
+  slots outright (the C#'s `active = false` fires no death events).
+* The stand-ins retired: `is_worm()`/`is_worm_head()`/`is_worm_mid()`/
+  `worm_next()` no longer list the family; `update_worms_in`'s 80-budget row
+  and approximate laser block are gone; the two stand-in tests rewritten
+  against the driver (the 82-slot chain, the 44-px spacing).
+* `probe_launch_on_hit` at the three strike sites (`strike_pooled` callers:
+  `projectile.rs` ×2, `world_sim/editing.rs`) — the roll rides the STRIKE's
+  stream (the C# `HitEffect` runs inside `StrikeNPC`), gated `ai[2] == 0`
+  BEFORE the draw (the `&&` short-circuit — a launched body never draws).
+* The Probe's laser: `PROBE_LASER` (84) data row (`Projectile.cs:1646-1659`)
+  + the slice-A arm (`:55291-55295` latch, `flag3 = false` `:55956` —
+  straight flight, no draws).
+
+**RNG argument (by construction):** the family pass draws exactly the
+machine's cadence — 2 per living body per tick (`Next(4)`,
+`Next(1400, 26000)`), +4 jitters on a firing tick — in pool order on the
+`UpdateNPCs` stream; the chain spawn, the pool mirror and the Probe machine
+draw NOTHING (the probe's wobble is a counter; its dust arms exclude 139,
+`NPC.cs:50695`). The probe-launch `Next(25)` rides the strike's stream at
+the strike site, only while `ai[2] == 0`. The generic worm families' draws
+are untouched (the family left `is_worm()`; the pass's other arms are
+byte-identical). Witnesses: the driver test replays 80×2 cadence draws
+against a clone; the gate test replays the gated rolls; both WRITTEN NOT RUN.
+
+**Remaining deviations:** the fade dust 182 and `AddLight(0.3, 0.1, 0.05)`
+stay the documented cosmetic skip (no dust/light seam inside the AI pass);
+the family scale rides 1.0 with the 1.25 folded into the 48-px box (the
+port's size convention — the spacing reads 44, not 55; the C# box is
+`(int)(38*1.25)=47` vs the port's 48, the pre-existing head-row convention);
+Mech Queen/getGoodWorld/zenith constants-off; the probe's `justHit` rides
+the `hurt_cd > 0` stand-in. **No compiler invoked** — all verification is
+file-read evidence + the written witnesses.
+## Duke Fishron's machine — the audit + the pure-core gap-fill (S1-D-3 fishron, 2026-11-18)
 
 **Code-only mode**: this round ran with NO compiler invoked вЂ” no cargo/rustc/
 rustfmt/tests/graphify; file reads/writes + git only. The witness tests below are

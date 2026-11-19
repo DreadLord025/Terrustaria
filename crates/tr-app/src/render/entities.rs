@@ -503,6 +503,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SNOW_SHEETS)
             .chain(BEE_SHEETS)
             .chain(PLANTERA_MINION_SHEETS)
+            .chain(DESTROYER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -839,8 +840,8 @@ fn npc_add_height(n: &Npc) -> f32 {
         // single 55 Goldfish keeps the vanilla 65 row), `:22125` 87-92 (the
         // Goldfish school) 56.
         Goldfish | Piranha => 56.0,
-        // `:22129` 134-136 (the Destroyer's segments).
-        TheDestroyer => 30.0,
+        // `:22133-22136` 134-136 (the Destroyer's segments).
+        TheDestroyer | TheDestroyerBody | TheDestroyerTail => 30.0,
         // `:22133` 169 (the DD2 Kobold Flyer — the port's 572-575).
         DD2KoboldFlyerT2 | DD2KoboldFlyerT3 => 8.0,
         // `:22137` 174 (the DD2 Drakin).
@@ -1072,6 +1073,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::MoonLordCore => 398,
         NpcKind::MoonLordFreeEye => 400,
         NpcKind::MoonLordLeechBlob => 401,
+        // The Destroyer family + the Probe keep their vanilla sheet ids
+        // (the protocol ids are port-local — gate-reassigned 216/217/218).
+        NpcKind::TheDestroyer => 134,
+        NpcKind::TheDestroyerBody => 135,
+        NpcKind::TheDestroyerTail => 136,
+        NpcKind::Probe => 139,
         _ => kind.net_id() as u16,
     }
 }
@@ -1103,6 +1110,11 @@ const PILLAR_SHEETS: &[u32] = &[
     426, 427, 428, 429, // the vortex pillar's mobs
     518, // the solar spear-man
 ];
+
+/// The Destroyer's segments + the Probe (S1-D-3-wire-destroyer): the
+/// vanilla sheets keyed by their net ids (the head's NPC_134 rides the
+/// dedicated `destroyer` field).
+const DESTROYER_SHEETS: &[u32] = &[135, 136, 139];
 
 /// The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one sheet per
 /// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each Scarecrow
@@ -2529,6 +2541,14 @@ pub(crate) fn draw_npcs(
                         // NPC_134 is 50x102 — one frame (`Main.npcFrameCount[134]` = 1, no
             // `FindFrame` case); the v1 drew a 48x48 box quad at `t.h`.
             NpcKind::TheDestroyer => boss_draw(assets.destroyer.as_ref(), 1, n, w, h),
+            // The Destroyer's segments: the body's 2-row strip
+            // (`Main.npcFrameCount[135]` = 2 — the closed/open probe hatch,
+            // `FindFrame` case 135 `NPC.cs:73433-73442`), the tail's single
+            // frame; the Probe's single frame (`Main.npcFrameCount[139]`
+            // = 1). All at the generic anchor (`Main.cs:25505-25512`).
+            NpcKind::TheDestroyerBody => generic_anchor(assets.npc_sheet(135), 2, n, w, h),
+            NpcKind::TheDestroyerTail => generic_anchor(assets.npc_sheet(136), 1, n, w, h),
+            NpcKind::Probe => generic_anchor(assets.npc_sheet(139), 1, n, w, h),
             // The Prime: the head's 6-row strip (NPC_127 is 140x940 —
             // 156-px rows, `Main.npcFrameCount[127]` = 6, `Main.cs:67082`;
             // the v1 read `t.h` and sampled the whole strip as one frame
@@ -3094,6 +3114,13 @@ pub(crate) fn draw_npcs(
                     // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
                     // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
                     | NpcKind::DD2Betsy
+                    // The Destroyer family (`AI_037`'s follower snap +
+                    // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
+                    // Probe's sprite-aim (`AI_005` `:50633-50641`).
+                    | NpcKind::TheDestroyer
+                    | NpcKind::TheDestroyerBody
+                    | NpcKind::TheDestroyerTail
+                    | NpcKind::Probe
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

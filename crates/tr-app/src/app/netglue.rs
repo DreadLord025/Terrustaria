@@ -3114,6 +3114,11 @@ fn npc_seed(
         | crate::npc::NpcKind::SkeletronHead
         | crate::npc::NpcKind::WallOfFlesh
         | crate::npc::NpcKind::TheDestroyer
+        // The Destroyer's segments + the Probe seed like the head (the
+        // hover ctor; the sim's chain spawn places them properly).
+        | crate::npc::NpcKind::TheDestroyerBody
+        | crate::npc::NpcKind::TheDestroyerTail
+        | crate::npc::NpcKind::Probe
         | crate::npc::NpcKind::SkeletronPrime
         | crate::npc::NpcKind::Retinazer
         | crate::npc::NpcKind::Spazmatism
