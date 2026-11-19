@@ -64,6 +64,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
 mod npc_ai_frost_mob_b;
@@ -134,6 +135,7 @@ mod npc_ai_cultist;
 // + the checkDead intercept are the wiring wave; R72 wires the 629
 // shield-chip seams (see the module doc).
 mod npc_ai_pillar;
+mod npc_ai_style71;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
@@ -155,6 +157,8 @@ pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai001_b;
+mod projectile_ai_frostmoon;
+mod projectile_ai_moonlord;
 
 
 mod projectile_ai001_a;
@@ -163,6 +167,7 @@ mod projectile_ai001_c;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
+mod projectile_ai026_c;
 mod projectile_ai_misc;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind

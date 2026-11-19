@@ -184,7 +184,7 @@ pub fn refresh_global_substitutions(app: &crate::app::App) {
     values.push(("Eclipse", Substitution::Bool(app.world.eclipse)));
     values.push(("MoonLordDefeated", Substitution::Bool(app.world.downed_moon_lord)));
     values.push(("GolemDefeated", Substitution::Bool(app.world.downed_golem)));
-    values.push(("DukeFishronDefeated", Substitution::Bool(false)));
+    values.push(("DukeFishronDefeated", Substitution::Bool(app.world.downed_fishron)));
     values.push(("FrostLegionDefeated", Substitution::Bool(app.world.downed_frost)));
     values.push(("MartiansDefeated", Substitution::Bool(app.world.downed_martians)));
     values.push(("PumpkingDefeated", Substitution::Bool(false)));
@@ -376,8 +376,10 @@ mod s1_l12b_tests {
         assert_eq!(sub("FrostLegionDefeated"), Some(Substitution::Bool(true)));
         assert_eq!(sub("MartiansDefeated"), Some(Substitution::Bool(false)));
         assert_eq!(sub("HardMode"), Some(Substitution::Bool(true)));
-        // The three event-boss flags persist as constants
-        // (`wld/sections/flags.rs:138,142,144`).
+        // The two seasonal event-boss flags persist as constants
+        // (`wld/sections/flags.rs`'s downedHalloween*/downedChristmas*
+        // writes); DukeFishronDefeated reads the world flag now (S1-D-3
+        // W-9 — the stock-false world keeps the false here).
         assert_eq!(sub("DukeFishronDefeated"), Some(Substitution::Bool(false)));
         assert_eq!(sub("PumpkingDefeated"), Some(Substitution::Bool(false)));
         assert_eq!(sub("IceQueenDefeated"), Some(Substitution::Bool(false)));

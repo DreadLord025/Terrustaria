@@ -907,6 +907,14 @@ fn portrait_data(
             (sheet_i, 48.0, 48.0, 48.0, white)
         }
         (NpcKind::Probe, _) => (sheet_i, 30.0, 30.0, 30.0, white),
+        // S1-D-3 W-9 fishron: the boss + the Sharkron have their own
+        // bestiary entries; the Hide=true hazards fold onto the boss
+        // (never drawn alone) — the arms keep the match exhaustive at
+        // the SetDefaults boxes (the destroyer-segment precedent).
+        (NpcKind::DukeFishron, _) => (sheet_i, 150.0, 100.0, 150.0, white),
+        (NpcKind::DetonatingBubble, _) => (sheet_i, 36.0, 36.0, 36.0, white),
+        (NpcKind::Sharkron, _) => (sheet_i, 120.0, 24.0, 120.0, white),
+        (NpcKind::Sharkron2, _) => (sheet_i, 100.0, 24.0, 100.0, white),
         (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),

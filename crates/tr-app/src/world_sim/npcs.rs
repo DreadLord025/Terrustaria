@@ -1050,6 +1050,62 @@ pub(crate) fn update_worms(app: &mut App) {
     let world = &app.world;
     let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
     update_worms_in(world, player, &mut app.npcs, rng, &mut app.next_worm_id);
+    // S1-E-21g — the worm pass's queued plays (the leech entry burst,
+    // the dig roars): the same drain as the per-NPC loop, after the
+    // pass's draws on the same UpdateNPCs stream.
+    for n in app.npcs.iter_mut() {
+        for req in n.wants_sound.drain(..) {
+            play_npc_sound_request(&mut app.audio, req, rng);
+        }
+    }
+}
+
+/// S1-E-21g — one drained [`crate::npc::NpcSoundRequest`]: the queue's
+/// cue dispatches to the faithful play method. Every method gates the
+/// attenuation BEFORE any gameplay draw (the E21e precedent —
+/// `LegacySoundPlayer.cs:369-436` precedes the type switch); the case
+/// draws ride the caller's stream (the `UpdateNPCs` swap for every
+/// wave-G site, `Main.cs:17767`). The int overloads
+/// (`SoundEngine.cs:102-108`) draw NO `GetRandomPitch` NextFloat; the
+/// style façades (`:93-99`) consume it on the audio-only stream.
+fn play_npc_sound_request(
+    audio: &mut crate::audio::Audio,
+    req: crate::npc::NpcSoundRequest,
+    rng: &mut UnifiedRandom,
+) {
+    use crate::npc::NpcSoundCue;
+    match req.cue {
+        NpcSoundCue::Roar(style) => {
+            audio.play_roar(style, req.x, req.y);
+        }
+        NpcSoundCue::DashRoar(style) => {
+            audio.play_dash_roar(style, req.x, req.y);
+        }
+        NpcSoundCue::Item8 => {
+            audio.play_npc_item_cue(8, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item14 => {
+            audio.play_npc_item_cue(14, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item34 => {
+            audio.play_npc_item_cue(34, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcHit(style) => {
+            audio.play_npc_hit_int(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath(style) => {
+            audio.play_npc_death_int(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath61 => {
+            audio.play_npc_death_style(61, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath13 => {
+            audio.play_npc_death_style(13, req.x, req.y, rng);
+        }
+        NpcSoundCue::EowDig => {
+            audio.play_eow_dig(req.x, req.y);
+        }
+    }
 }
 
 /// The worm pass's core — the pieces the tests drive directly (the world,
@@ -1080,6 +1136,21 @@ pub(crate) fn update_worms_in(
         }
         npcs[i].worm_inited = true;
         let kind = npcs[i].kind;
+        // S1-E-21g — `NPC.cs:50965-50968`: the leech head's (117)
+        // tunnel-entry burst — `localAI[1]` 0 → 1 latched at the chain
+        // init, `SoundID.NPCDeath13` at base.position (the style façade).
+        // The 20-gore/dust burst behind it draws Main.rand — SKIPPED
+        // (the port's gore/dust deviation, ANALYSIS wave G).
+        if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
+            npcs[i].local_ai[1] = 1.0;
+            // E0502 gate fix: read the position before the mutable push.
+            let (sx, sy) = (npcs[i].x, npcs[i].y);
+            npcs[i].wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::NpcDeath13,
+                x: sx,
+                y: sy,
+            });
+        }
         // The tails (9/12/15) sit outside the chain-spawn lists
         // (`:51393`/`:51436`) — they end the chain.
         if !kind.is_worm_head() && !kind.is_worm_mid() {
@@ -1445,6 +1516,37 @@ fn worm_head_step(
         let mut dx = (((pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
         let mut dy = (((pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
         let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
+        // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
+        // re-arms the delay BEFORE the play (`:51987`), then the EoW
+        // heads (13..15) play the `EOWDiggin` trackable (`:51990`) and
+        // every other head the case-15 roar at the DEFAULT Style 1
+        // (`:51994` — the int overload's `Style = 1`, `SoundEngine.cs:102`).
+        // The type exclusions (621/87/117/454/412) map to the leech and
+        // the crawltipede; the Skyblock `lowTiles` term is constant-false
+        // in the port (no skyblock), so the 13..15 arm always passes.
+        // `num64` is the C#'s `num62` — the pre-scale tile-snapped
+        // distance (`:51866`), NOT the aim length after the `(d-w)/d`
+        // rescale (`:51905` overwrites num62 for the followers only).
+        // The Destroyer's own `AI_037` roar (`:50081-50093`) shares this
+        // shape — the port's worm pass stands for it (ANALYSIS, wave G).
+        let silent_kind = matches!(
+            npc.kind,
+            NpcKind::LeechHead | NpcKind::SolarCrawltipedeHead
+        );
+        if !silent_kind && npc.sound_delay == 0 {
+            npc.sound_delay = (len / 40.0).clamp(10.0, 20.0) as i32;
+            let cue = if npc.kind == NpcKind::EaterOfWorldsHead {
+                crate::npc::NpcSoundCue::EowDig
+            } else {
+                crate::npc::NpcSoundCue::Roar(1)
+            };
+            npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue,
+                x: npc.x,
+                y: npc.y,
+            });
+        }
         let num67 = num45 / len;
         dx *= num67;
         dy *= num67;
@@ -3476,6 +3578,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // S1-D-3 W-9 fishron wiring — `Main.windSpeedCurrent` pre-stamp for
+    // the Detonating Bubble's wind blend (`NPC.cs:34903`): the AI's
+    // `&World` borrow cannot reach `app.wind`, so the sim stamps it
+    // before the update (the plantera_hook_anchor pre-pass convention).
+    {
+        let wind = app.wind.speed_current;
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::DetonatingBubble {
+                n.wind_speed_current = wind;
+            }
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
@@ -3503,6 +3617,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     if n.kind == NpcKind::WallOfFlesh && n.hp > 0 {
                         world.wof_present = true;
                         world.wof_npc_index = i as i32;
+                    }
+                    // S1-E-21g — `NPC.UpdateNPC`'s soundDelay decay
+                    // (`NPC.cs:90381-90384`) runs BEFORE the AI: the
+                    // machine's `soundDelay == 0` test sees the decayed
+                    // value, exactly the C#'s order.
+                    if n.sound_delay > 0 {
+                        n.sound_delay -= 1;
                     }
                     // S1-E-21e — `AI_003_Fighters`' idle counter
                     // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
@@ -3565,6 +3686,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // clears at the update's end — the strike tick only
                     // (S1-D-3 W-1: the Hungry's recoil arm reads it).
                     n.just_hit = false;
+                    // S1-E-21g — the AI machine's queued sound plays
+                    // (the `wants_hostile_shot` shape): drained right
+                    // after the machine's draws, BEFORE the moan/critter
+                    // emitters — the C#'s plays sit inside `AI()` which
+                    // precedes both (`NPC.cs:90323`). Each play gates
+                    // attenuation BEFORE any case draw (the E21e
+                    // precedent); the draws ride the UpdateNPCs stream.
+                    for req in n.wants_sound.drain(..) {
+                        play_npc_sound_request(audio, req, npcs_rng);
+                    }
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
@@ -3957,6 +4088,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
         }
+        // S1-E-21g — `NPC.HitEffect`'s EoC death arm (`NPC.cs:87275-87297`):
+        // the type-4 kill plays the case-15 roar TWICE — the play sits
+        // inside the `num567 < 2` gore loop (`:87289-87298`), after the
+        // fourth gore's two draws per pass. The port's gore/dust layer
+        // is skipped (the standing deviation), so the two plays queue
+        // back to back; the second usually refuses on the case-15
+        // playing guard (`:834`) with a live output device, and both
+        // pass headless (the fresh-slot table, the wave-C convention).
+        // The C# runs HitEffect inside StrikeNPC (the striking stage's
+        // stream); the port's death batching rides UpdateNPCs — the
+        // same recorded deviation as the death cue above. Roars draw
+        // nothing, so the stream choice is unobservable here.
+        if npc.kind == NpcKind::EyeOfCthulhu {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            play_npc_sound_request(
+                &mut app.audio,
+                crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Roar(0),
+                    x: npc.x,
+                    y: npc.y,
+                },
+                rng,
+            );
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            play_npc_sound_request(
+                &mut app.audio,
+                crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Roar(0),
+                    x: npc.x,
+                    y: npc.y,
+                },
+                rng,
+            );
+        }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
     // head's detach at `:84957`): the BODY's death raises
@@ -3966,6 +4131,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         match npc.kind {
             NpcKind::Golem => {
                 app.world.downed_golem = true;
+            }
+            // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
+            // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
+            // downedFishron, 7)`. The progression notification (the
+            // flag-7 net message) rides the flag; the port's
+            // notify_progression_net carries the WoF precedent's shape.
+            NpcKind::DukeFishron => {
+                app.world.downed_fishron = true;
             }
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
@@ -4232,6 +4405,72 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // S1-D-3 W-9 fishron wiring — Duke Fishron's spawn requests
+    // (`AI_069_DukeFishron`): the phase-1 bubble volley
+    // (`NPC.NewNPC(..., (int)p.X, (int)p.Y + 45, 371)`, `NPC.cs:49246`)
+    // and the phase-2 Cthulunado trail (`:49476-49481`). The volley
+    // bubbles spawn with the stock target 255 — their own aiStyle-70
+    // init draws the four RNG values on a later tick (the style70
+    // census); the trail bubbles inherit target/velocity/ai[3] AT THE
+    // SPAWN SITE (the scale was drawn inside the boss's tick, `:49481`)
+    // and short-circuit that init. `NPC.NewNPC`'s Bottom = (X, Y)
+    // (`NPC.cs:80771`).
+    let mut fishron_spawns = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::DukeFishron {
+            continue;
+        }
+        for (sx, sy) in n.wants_fishron_bubbles.drain(..) {
+            let (w, h) = NpcKind::DetonatingBubble.size();
+            let mut bubble = Npc::new(NpcKind::DetonatingBubble, sx - w * 0.5, sy - h, 1, 0.0);
+            bubble.hp = bubble.max_hp;
+            fishron_spawns.push(bubble);
+        }
+        for (sx, sy, svx, svy, target, scale) in n.wants_fishron_trail.drain(..) {
+            let (w, h) = NpcKind::DetonatingBubble.size();
+            let mut bubble = Npc::new(NpcKind::DetonatingBubble, sx - w * 0.5, sy - h, 1, 0.0);
+            bubble.hp = bubble.max_hp;
+            // `:49477-49481` — the preset writes, verbatim.
+            bubble.target = target;
+            bubble.vx = svx;
+            bubble.vy = svy;
+            bubble.net_update = true;
+            bubble.ai[3] = scale;
+            fishron_spawns.push(bubble);
+        }
+    }
+    app.npcs.append(&mut fishron_spawns);
+    // Fishron's sharknado bolts (`Projectile.NewProjectile(..., 385)` —
+    // phase 1's pair `NPC.cs:49279-49280`, phase 2's aimed bolt
+    // `:49505`): the ai0/ai1 payload rides `spawn_hostile_ai` (the
+    // saucer deathray's shape); the enrage flag is the C#'s third
+    // spawn arg (`localAI[0]`, `:49505`'s `flag6 ? 1 : 0`).
+    let mut bolts = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::DukeFishron {
+            continue;
+        }
+        for (x, y, vx, vy, ai0, ai1, enrage) in n.wants_fishron_bolts.drain(..) {
+            bolts.push((x, y, vx, vy, ai0, ai1, enrage));
+        }
+    }
+    for (x, y, vx, vy, ai0, ai1, enrage) in bolts {
+        // The C#'s NewProjectile takes the CENTRE; the port's spawn
+        // takes the top-left (the inferno-blast precedent). The owner
+        // is Main.myPlayer (`NPC.cs:49279`/`:49505`) — the local id.
+        if let Some(slot) = app.projectiles.spawn_hostile_ai_owned(
+            crate::projectile::SHARKNADO_BOLT,
+            app.local_id as u8,
+            Vec2::new(x - 15.0, y - 15.0),
+            Vec2::new(vx, vy),
+            0,
+            0.0,
+            ai0,
+            ai1,
+        ) {
+            app.projectiles.set_local_ai0(slot, enrage);
+        }
+    }
     // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
     // tick sets `wants_limbs` and the sim resolves it here — the four
     // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
@@ -14414,5 +14653,452 @@ mod dw3_tests {
             witness,
             "the moan spends exactly the arm roll + the slot draw"
         );
+    }
+
+    /// S1-E-21g — the wave-G wiring's stream contract: the AI machines
+    /// queue their plays (`wants_sound`) and the sim drains them AFTER
+    /// the machine's draws on the `UpdateNPCs` stream, attenuation
+    /// BEFORE any case draw (the E21e precedent). A Skeletron head at
+    /// the charge's second tick queues exactly one case-15 roar — which
+    /// draws NOTHING (`LegacySoundPlayer.cs:826-842`). The head's own
+    /// classic-charge AI draws nothing either, so the whole pass is
+    /// stream-neutral.
+    #[test]
+    fn s1_e_21g_the_roar_wiring_queues_and_plays_draw_free() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        // Night: the day arm would flip the head into the enraged state
+        // (`NPC.cs:21958-21962`) before the charge tick runs.
+        world.day_time = false;
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // The charge state, one tick before the roar (`ai[2] == 1` → 2).
+        // Inside the headless listener's 2500-px radius (camera at 0),
+        // far from the player (no contact-damage variance roll).
+        let mut head = Npc::new(NpcKind::SkeletronHead, 1400.0, 1000.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.ai[1] = 1.0;
+        head.ai[2] = 1.0;
+        app.npcs.push(head);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the charge's second tick roared once"
+        );
+        assert!(app.npcs[0].wants_sound.is_empty(), "the queue drained");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            UnifiedRandom::new(7),
+            "the classic charge + the roar are draw-free"
+        );
+        // The next tick does NOT re-roar (`ai[2] == 3` now).
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// S1-E-21g — the drain's stream contract in isolation (the machines'
+    /// own AI draws legitimately share the stream): the caster teleport's
+    /// Item8 pair spends exactly TWO case-2 `Next(-6, 7)` pitch draws in
+    /// play order, the int death peer ONE case-4 `Next(-10, 11)`, and the
+    /// roar/EoW-trackable peers NONE — every draw AFTER the attenuation
+    /// gate (a muted listener drains the whole queue draw-free).
+    #[test]
+    fn s1_e_21g_the_sound_drain_spends_the_case_draws_in_order() {
+        use crate::npc::{NpcSoundCue, NpcSoundRequest};
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let req = |cue| NpcSoundRequest { cue, x: 100.0, y: 100.0 };
+        // The caster pair (`NPC.cs:20862`/`:20931`): two case-2 pitches.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
+        // The tower cry (`:39059`, the int overload): one case-4 pitch.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::NpcDeath(22)), &mut rng);
+        // The roar + the EoW trackable: nothing.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Roar(0)), &mut rng);
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::EowDig), &mut rng);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let _ = witness.next_range(-6, 7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(rng, witness, "the queue's draws, in play order");
+        assert_eq!(audio.played_count(), 5, "all five plays landed");
+        // Muted: the same queue is entirely draw-free (the gate precedes
+        // every case switch, `LegacySoundPlayer.cs:369-436`).
+        let mut l = crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        for cue in [
+            NpcSoundCue::Item8,
+            NpcSoundCue::Item34,
+            NpcSoundCue::NpcHit(1),
+            NpcSoundCue::NpcDeath(6),
+            NpcSoundCue::NpcDeath61,
+            NpcSoundCue::NpcDeath13,
+            NpcSoundCue::Roar(4),
+            NpcSoundCue::DashRoar(-1),
+            NpcSoundCue::EowDig,
+        ] {
+            play_npc_sound_request(&mut audio, req(cue), &mut rng);
+        }
+        assert_eq!(rng.peek(), peek, "the muted drain is draw-free");
+    }
+
+    /// S1-E-21g — the soundDelay cadence: the worm head's dig roar
+    /// re-arms the delay (distance/40 clamped 10..20) and the per-tick
+    /// decay runs BEFORE the machine — the roar plays once, then stays
+    /// silent until the delay expires. The roar itself draws nothing
+    /// (the chain budget roll is the pass's only gameplay draw here).
+    #[test]
+    fn s1_e_21g_the_worm_dig_roar_rides_the_sound_delay_cadence() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // The head starts INSIDE the ground (the dig arm, `flag3`) and
+        // inside the headless listener's radius; far from the player.
+        let mut worm = Npc::new(NpcKind::GiantWormHead, 1000.0, 1980.0, 1, 0.0);
+        worm.hp = worm.max_hp;
+        app.npcs.push(worm);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::GiantWormHead)
+            .unwrap();
+        assert!(
+            (9..=20).contains(&head.sound_delay),
+            "the cadence re-armed: {}",
+            head.sound_delay
+        );
+        assert!(
+            app.audio.played_count() - before >= 1,
+            "the dig roar played"
+        );
+        // The next tick: the delay holds — no second roar.
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            0,
+            "the soundDelay cadence gates the next tick"
+        );
+    }
+}
+
+/// S1-D-3 W-9 fishron wiring — the dispatch/spawn/RNG witnesses.
+/// WRITTEN NOT RUN (code-only mode: no cargo/rustc invoked this round).
+#[cfg(test)]
+mod fishron_wiring_tests {
+    use super::*;
+    use tr_core::World;
+
+    fn air() -> World {
+        World::new("t".into(), 400, 240)
+    }
+
+    fn fishron(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::DukeFishron, x, y, 1, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// The roster rows: the four kinds' `SetDefaults` boxes/stats/styles
+    /// (`NPC.cs:13701-13761`), the protocol band 213..216 round-trip and
+    /// the vanilla `cs_id` hand rows (the bestiary fold must not leak
+    /// into the type gates).
+    #[test]
+    fn the_fishron_family_roster_rows() {
+        assert_eq!(NpcKind::DukeFishron.size(), (150.0, 100.0));
+        assert_eq!(NpcKind::DukeFishron.ai_style(), 69);
+        assert_eq!(NpcKind::DukeFishron.max_hp(), 60000);
+        assert_eq!(NpcKind::DukeFishron.contact_damage(), 100);
+        assert_eq!(NpcKind::DukeFishron.cs_id(), 370);
+        assert_eq!(NpcKind::DetonatingBubble.size(), (36.0, 36.0));
+        assert_eq!(NpcKind::DetonatingBubble.ai_style(), 70);
+        assert_eq!(NpcKind::DetonatingBubble.max_hp(), 1);
+        // The folded hazards ride the boss's net id (the gate fix: no
+        // hand row — s1_f_3's cs_id==net_id invariant; the sway gate and
+        // the render sheets read the kind/render_key, not cs_id).
+        assert_eq!(NpcKind::DetonatingBubble.cs_id(), 370);
+        assert_eq!(NpcKind::Sharkron.size(), (120.0, 24.0));
+        assert_eq!(NpcKind::Sharkron.ai_style(), 71);
+        assert_eq!(NpcKind::Sharkron.max_hp(), 100);
+        assert_eq!(NpcKind::Sharkron.contact_damage(), 100);
+        assert_eq!(NpcKind::Sharkron.cs_id(), 372);
+        assert_eq!(NpcKind::Sharkron2.size(), (100.0, 24.0));
+        assert_eq!(NpcKind::Sharkron2.ai_style(), 71);
+        assert_eq!(NpcKind::Sharkron2.contact_damage(), 120);
+        assert_eq!(NpcKind::Sharkron2.cs_id(), 370);
+        for (kind, id) in [
+            (NpcKind::DukeFishron, 219u16),
+            (NpcKind::DetonatingBubble, 220),
+            (NpcKind::Sharkron, 221),
+            (NpcKind::Sharkron2, 222),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+        }
+        // The hazards spawn invisible (`alpha = 255` rows).
+        assert_eq!(Npc::new(NpcKind::DetonatingBubble, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::Sharkron, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::Sharkron2, 0.0, 0.0, 1, 0.0).alpha, 255);
+        // The boss flag (`NPC.cs:13716`).
+        assert!(Npc::new(NpcKind::DukeFishron, 0.0, 0.0, 1, 0.0).boss);
+    }
+
+    /// The axis claims: a Fishron/bubble/shark stepping through
+    /// `update_rng` runs the faithful machine (the ai[0] -1 materialize
+    /// latch, the bubble's alpha 50 pin, the shark's ai[1] counter) —
+    /// not a stand-in.
+    #[test]
+    fn the_axis_claims_the_three_machines() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(7);
+        // Fishron: the first tick latches localAI[0] = 1, ai[0] = -1,
+        // alpha 255 (`NPC.cs:48877-48887`).
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(boss.local_ai[0], 1.0);
+        assert_eq!(boss.ai[0], -1.0);
+        assert_eq!(boss.alpha, 255);
+        // The bubble: the init draws four, the alpha pins 50
+        // (`NPC.cs:34886-34902`).
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(bubble.alpha, 50);
+        assert!(bubble.ai[3] >= 0.8 && bubble.ai[3] <= 1.2, "the scale draw");
+        assert_ne!(bubble.target, 255, "TargetClosest ran");
+        // The shark: phase 0 ticks ai[1], vy rides ai[3] = 0
+        // (`NPC.cs:34970-34975`).
+        let mut shark = Npc::new(NpcKind::Sharkron, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(shark.ai[1], 1.0);
+        assert!(shark.dont_take_damage);
+    }
+
+    /// The RNG census, wired: the bubble's init draws FOUR on the
+    /// caller's stream (Next(80,121), Next(165,265), two Next(-100,101))
+    /// plus the TWO per-tick wind jitters; the shark draws ZERO; the
+    /// boss's own tick draws ZERO (the trail draw is the one exception,
+    /// exercised by the preset witness below).
+    #[test]
+    fn the_wired_rng_census() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // The bubble: 4 init + 2 wind = 6 draws on the first tick.
+        // The fixture sits far from the player: no proximity fuse, no
+        // contact overlap (the contact pass's DamageVar would draw).
+        let mut rng = UnifiedRandom::new(11);
+        let mut twin = UnifiedRandom::new(11);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 80.0 * 16.0, 80.0 * 16.0, 1, 0.0);
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(80, 121);
+        let _ = twin.next_range(165, 265);
+        let _ = twin.next_range(-100, 101);
+        let _ = twin.next_range(-100, 101);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "the init four + the wind two, in order");
+        // The second tick: only the two wind jitters (the init is spent).
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "the steady tick draws two");
+        // The shark: zero across its whole fall window + the dash's first
+        // ticks (the fixture sits far from the player — no contact draw).
+        let mut rng = UnifiedRandom::new(11);
+        let twin = UnifiedRandom::new(11);
+        let mut shark = Npc::new(NpcKind::Sharkron, 60.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        for _ in 0..95 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, twin, "the style71 arm draws nothing");
+        // The boss's materialize tick: zero (no trail yet).
+        let mut rng = UnifiedRandom::new(11);
+        let twin = UnifiedRandom::new(11);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, twin, "AI_069 itself draws nothing");
+    }
+
+    /// The phase-7 preset short-circuit: a trail bubble seeded with
+    /// target/velocity/ai[3] AT THE SPAWN SITE draws only the two wind
+    /// jitters — the four-draw init never runs (`NPC.cs:49477-49481`
+    /// presets; the style70 census).
+    #[test]
+    fn the_trail_preset_short_circuits_the_init() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(3);
+        let mut twin = UnifiedRandom::new(3);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 80.0 * 16.0, 80.0 * 16.0, 1, 0.0);
+        bubble.target = 0;
+        bubble.vx = 6.0;
+        bubble.vy = 0.0;
+        bubble.ai[3] = 1.05;
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "only the wind two");
+        assert_eq!(bubble.ai[3], 1.05, "the preset scale survives");
+        assert_eq!(bubble.scale, 1.05, "scale rides ai[3]");
+    }
+
+    /// The volley drain: the boss's `wants_fishron_bubbles` requests
+    /// become live DetonatingBubbles at the NewNPC bottom-centre point
+    /// (`NPC.cs:49246`, `NPC.cs:80771`), stock target 255; the trail
+    /// request carries its presets through. The requests are seeded on
+    /// a boss whose machine is mid-materialize (local_ai[0] = 1, ai0 =
+    /// -1) so the tick adds no fresh requests — the drain is the subject.
+    #[test]
+    fn the_volley_drains_into_live_bubbles() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.local_ai[0] = 1.0;
+        boss.ai[0] = -1.0;
+        boss.wants_fishron_bubbles.push((1600.0, 1500.0));
+        boss.wants_fishron_trail.push((1700.0, 1500.0, 6.0, 0.0, 0, 1.1));
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let bubbles: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::DetonatingBubble)
+            .collect();
+        assert_eq!(bubbles.len(), 2, "the volley + the trail bubble");
+        // The trail bubble carries the presets (the volley's own init
+        // rolls a scale in [0.8, 1.2], so key on the exact preset).
+        let trail = bubbles.iter().find(|b| b.ai[3] == 1.1).expect("the trail");
+        assert_eq!(trail.target, 0);
+        // Bottom = (X, Y): x - 18, y - 36 (one tick of the homing blend
+        // moved it a few px at most).
+        assert!((trail.x - (1700.0 - 18.0)).abs() < 8.0);
+        assert!((trail.y - (1500.0 - 36.0)).abs() < 8.0);
+        // The volley bubble spawned at its own bottom point too.
+        let volley = bubbles.iter().find(|b| b.ai[3] != 1.1).expect("the volley");
+        assert!((volley.x - (1600.0 - 18.0)).abs() < 16.0);
+        assert!((volley.y - (1500.0 - 36.0)).abs() < 16.0);
+    }
+
+    /// The strike re-arm: a struck bubble does NOT die — checkDead's 371
+    /// arm restores full life and arms the 4-tick detonation
+    /// (`NPC.cs:78046-78051`); four ticks later it detonates (hp 0, the
+    /// death retain drops it).
+    #[test]
+    fn the_struck_bubble_rearms_then_detonates() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(5);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        // Seed the target so the init is spent (the strike path is the
+        // subject, not the init draws).
+        bubble.target = 0;
+        bubble.ai[3] = 1.0;
+        let mut npcs = vec![bubble];
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0)));
+        assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
+        assert_eq!(npcs[0].ai[0], 1.0);
+        assert_eq!(npcs[0].ai[1], 4.0);
+        assert!(npcs[0].dont_take_damage);
+        // Four armed ticks: the countdown ends in the detonation.
+        for _ in 0..4 {
+            npcs[0].update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(npcs[0].hp, 0, "the detonation zeroes life");
+    }
+
+    /// The death flag: a Fishron death raises `downed_fishron`
+    /// (`NPC.cs:79348-79350`'s case 370).
+    #[test]
+    fn the_fishron_death_raises_the_flag() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.hp = 0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_fishron);
+        assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
+    }
+
+    /// The shark spawn seam: the aiStyle-64 cloud's request becomes a
+    /// live shark at the NewNPC bottom point with the cloud's velocity;
+    /// the 386's presets (ai2 = width, ai3 = -1.5) ride AT THE SPAWN
+    /// SITE (`Projectile.cs:29509-29516`) — the style71 sway/rise reads
+    /// them on the first tick.
+    #[test]
+    fn the_cloud_spawns_the_shark_with_the_presets() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        // A Cthulunado cloud at the segment hand-off: ai0 = 2 (drops to
+        // 1 on the second tick), ai1 = 24 (the 2nd-bolt cadence fires).
+        let slot = app
+            .projectiles
+            .spawn_hostile_ai_owned(
+                crate::projectile::CTHULUNADO,
+                app.local_id as u8,
+                Vec2::new(1600.0, 1500.0),
+                Vec2::new(0.0, 8.0),
+                80,
+                4.0,
+                2.0,
+                24.0,
+            )
+            .expect("the cloud spawns");
+        // The init latch needs one tick first (localAI[0] = 1).
+        crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[slot].local_ai[0], 1.0);
+        crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        let sharks: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Sharkron2)
+            .collect();
+        assert_eq!(sharks.len(), 1, "the 24th segment spawns a Sharkron2");
+        let s = sharks[0];
+        assert_eq!(s.ai[3], -1.5, "the rise preset");
+        assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
     }
 }

@@ -463,6 +463,41 @@ pub fn coin_pickup_case38(
     (slot, tweak, pitch)
 }
 
+/// One `LegacySoundPlayer.PlaySound` case-15 (Roar) play's decisions
+/// (`LegacySoundPlayer.cs:826-842`, S1-E-21 wave G): the style-4 remap
+/// (`num == 4` → slot 1 at ×0.25, `:829-833`) and the
+/// `SoundInstanceRoar[num]` null-or-Stopped guard (`:834`): while the
+/// slot's roar is live a new play returns `null` — `None` models that
+/// refusal. The case draws NO `Main.rand` at all (no pitch roll, no
+/// variation pick) — the boss roars are stream-neutral.
+///
+/// Returns `(slot, volume tweak)`; the caller plays `Roar_<slot>` at the
+/// attenuated gain × the tweak and replaces the slot's instance (`:836`,
+/// a fresh `CreateInstance` — the old one is only reached when Stopped).
+pub fn roar_case15(style: i32, slot_playing: bool) -> Option<(usize, f32)> {
+    let (num, tweak) = if style == 4 { (1usize, 0.25f32) } else { (style as usize, 1.0) };
+    // `:834` — the guard refuses BEFORE the instance is created; no draws
+    // exist either way.
+    if slot_playing {
+        return None;
+    }
+    Some((num, tweak))
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-36 (the dash roar) play's
+/// decisions (`LegacySoundPlayer.cs:1309-1325`, S1-E-21 wave G): the
+/// Style IS the `SoundRoar` slot, `-1` maps to slot 0 with `Pitch += 0.6`
+/// (`:1312-1315`/`:1319-1322`). Unlike case 15 there is NO playing guard —
+/// the slot's instance is overwritten outright (`:1316`) — and NO
+/// `Main.rand` draw. Returns `(slot, pitch)`.
+pub fn roar_case36(style: i32) -> (usize, f32) {
+    if style == -1 {
+        (0, 0.6)
+    } else {
+        (style as usize, 0.0)
+    }
+}
+
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
 ///
 /// XNA applies `Pan` inside XAudio2, which the decompilation does not contain, so
@@ -808,6 +843,34 @@ fn s1_e_21i_the_grass_and_door_pitch_windows() {
 /// S1-E-21i — case 28's playing guard (`LegacySoundPlayer.cs:998-1001`)
 /// returns BEFORE the pitch draw (`:1005`); a fresh slot draws exactly one
 /// Next(-10, 11) * 0.01.
+/// S1-E-21g — case 15's style-4 remap + playing guard
+/// (`LegacySoundPlayer.cs:826-842`): the roar cases draw NOTHING from
+/// `Main.rand` — the only decision is the slot/tweak pair and the guard.
+#[test]
+fn s1_e_21g_roar_case15_remaps_style4_and_guards_the_slot() {
+    // Styles 0..2 keep their slot at full volume.
+    for style in 0..=2 {
+        assert_eq!(roar_case15(style, false), Some((style as usize, 1.0)));
+    }
+    // `:829-833` — style 4 → slot 1 at ×0.25 (the Sand Shark's quiet roar).
+    let (slot, tweak) = roar_case15(4, false).unwrap();
+    assert_eq!(slot, 1);
+    assert!((tweak - 0.25).abs() < 1e-6);
+    // `:834` — a live slot refuses the play (no instance, no draws).
+    assert_eq!(roar_case15(0, true), None);
+    assert_eq!(roar_case15(4, true), None);
+}
+
+/// S1-E-21g — case 36's Style-is-slot mapping
+/// (`LegacySoundPlayer.cs:1309-1325`): `-1` → slot 0 with `Pitch += 0.6`,
+/// any other Style keeps its slot at pitch 0; NO guard, NO draws.
+#[test]
+fn s1_e_21g_roar_case36_maps_the_dash_styles() {
+    assert_eq!(roar_case36(-1), (0, 0.6));
+    assert_eq!(roar_case36(0), (0, 0.0));
+    assert_eq!(roar_case36(2), (2, 0.0));
+}
+
 #[test]
 fn s1_e_21i_mech_case28_guards_before_the_pitch_draw() {
     // The live-instance refusal draws nothing.
