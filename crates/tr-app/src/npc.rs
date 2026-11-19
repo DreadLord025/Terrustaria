@@ -18007,7 +18007,14 @@ mod tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
-        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // A player above the dirt so the head moves FIRST (the C#'s
+        // slot order) and the follower snaps to the leader's same-tick
+        // centre — with the faithful Bottom placement the child spawns
+        // overlapping the head, so a stationary head would leave the
+        // trail distance 0 (the C# produces NaN there; the port's
+        // len-guard keeps it finite). W-A2-1 / T2b+T2c.
+        let pc = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + the bodies + the tail; the Giant Worm's
         // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
         assert!(
