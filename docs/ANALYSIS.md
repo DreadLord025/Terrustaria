@@ -22987,3 +22987,68 @@ hand-off, the climb's strict 200 hand-off + the reversal double-add gate,
 the volley period/truncation/exit, the barrage period/bottom-edge gate/
 719-11-300 payload/expert ladder, the per-branch reversal boosts, the
 return steer + 2000 hand-off, the RNG witness, the bee line-of-sight gate.
+## The Golem head's aiStyle-46 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_style46.rs` ports `NPC.AI()`'s aiStyle-46 arm
+(`NPC.cs:31129-31346`) — the attached Golem head (246), the arm's only user
+(`SetDefaults` `:12179-12192`). **Code-only mode: no compiler invoked** (no
+cargo/rustc/rustfmt/tests); the 13 witness tests are written, not run.
+
+**UNWIRED** (the aiStyle-42 / `8ac80b4e` precedent): the live head still rides
+the stand-in inside `update_golem`'s `NpcKind::GolemHead` arm (`npc.rs`). The
+sibling aiStyle-45/47/48 rounds are rewriting that same function and the
+findframe rounds FindFrame case 246, so this round touches neither. The merge
+step: (1) the kind arm calls `golem_head_step` (or the axis claims `46 =>` and
+the kind arm becomes unreachable, the `ef07892e` shape), (2) FindFrame case
+246 reads `local_ai[0]` instead of re-deriving the mouth window, (3)
+GOLEM_EYE_BEAM joins the `timeLeft = 300` list at the shot drain
+(`world_sim/npcs.rs`, `NPC.cs:31307`/`:31333` — the style-48 free head's
+`:31568` beams share the row).
+
+The stand-in's defects the port fixes (all witnessed):
+
+- **Tether**: the stand-in accelerates toward the dock and clamps ±7; the C#
+  writes velocity DIRECTLY — inside 100 the raw delta (a snap, rotation 0),
+  outside normalized to exactly 100 with `rotation = velocity.X * 0.1f`
+  (`:31146-31164`). The dock is body Centre + (-3, -57) * scale — NO
+  `golem_vx` term (that is the fists' aiStyle-47 tether only).
+- **Balance/enrage**: missing entirely. `GetMyBalance()` solo 1f
+  (`:18485-18488`), ftw +3 (`:31134`), ×2 when the target is out of BOTH the
+  temple and the jungle OR above `worldSurface * 16.0` (a DOUBLE compare,
+  `:31136`). The factor scales both fireball window adds and the phase-1
+  `num688 = (balance + 3) / 4` cadence.
+- **Fireballs**: the stand-in pushes the raw delta; the C# normalizes to
+  speed 8 (`:31196-31198`/`:31251-31253`), aims at the player CENTRE from
+  Centre + (0, 10*scale) (phase 1 adds the ±40*scale side muzzle), dmg 18
+  phase 0 / 24 phase 1, `TargetClosest` on every fire tick (and every phase-1
+  tick) — all absent from the stand-in.
+- **Beam gate RNG**: the stand-in folds `60 + Main.rand.Next(600)` (`:31278`)
+  to a flat 300. The port restores the real draw — exactly ONE `Next(600)`
+  per phase-1 tick (the C# evaluates the comparison's right-hand side
+  unconditionally), ZERO in phase 0. Witness:
+  `s1_d_3_s46_the_arm_draws_one_next_600_per_phase1_tick`.
+- **Beam life tiers**: `life < lifeMax / 3` / `/4` / `/5` are INTEGER
+  divisions (`:31262-31272`); the stand-in used f32 `/3.0` for the first
+  tier. The fireball tiers (`:31227-31233`) are DOUBLE `* 0.4` / `* 0.2`
+  compares — the port keeps both kinds distinct. The tail phase gate
+  `life < lifeMax / 2` (`:31338`) is INTEGER too.
+- **Mouth flag**: `localAI[0]` is an AI write on the first/last 20 of the 300
+  cadence (`:31181`/`:31186`, `:31238`/`:31242`); the stand-in folded it into
+  FindFrame. The port writes the flag; the FindFrame read swap is the merge
+  step.
+
+Host-path folds (the module header carries the same list):
+
+- `GetMyBalance` multiplayer scaling is unported (one session player → 1f).
+- `Main.getGoodWorld` / the player zone flags have no runtime fields — the
+  `Style46Flags` struct keeps the gate complete; the wiring passes
+  false/false/false until those systems land.
+- `noTileCollide = true` (`:31140`) folds to the raw `position += velocity`
+  tail integration (`integrate_no_tile_collide` shape) + the port's
+  below-world despawn guard.
+- `StrikeNPCNoInteraction(9999, 0f, 0)` on `golemBoss < 0` (`:31141-31145`)
+  folds to `hp = 0` + return before any write (the sim's body-gone precedent).
+- `Main.netMode != 1` and `GetSpawnSource_ForProjectile()` fold to the
+  standing `wants_hostile_shot` convention (always request, no source).
+- The beams' `timeLeft = 300` rides the sim's timed-spawn list at the merge
+  step (see above).
