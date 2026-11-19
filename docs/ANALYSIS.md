@@ -15814,6 +15814,94 @@ Deliberate deviations and skips (all one-line-cited in the code):
   (`if (npc.boss) ...`) reads `crate::revenge::BOSS_KINDS` instead; the set is
   derived from the C# `npc.boss` assignments, so the predicate is the same.
 
+## Slice C audit (S1-D-4b-13, 2026-11-18) — code-only mode
+
+**Mode.** The worker ran under the user's code-only directive: no
+`cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no graphify (CPU reserved) —
+file reads/writes + git only. Verification therefore happened by re-reading
+the C# arms whole and comparing line-by-line against the landed Rust, plus
+hand-arithmetic on the existing tests-as-code; **no compiler was invoked**.
+
+**Assignment.** ROADMAP S1-D-4b's gap list, slice C: aiStyles **23, 66, 70,
+79, 80** (fallback 133 if any turned out armed). **Finding: all six are
+already armed on `origin/main` (bfe68db8).** The gap list is stale for this
+slice — the arms landed with the earlier sub-tasks and the dispatch match
+carries every one of them:
+
+| style | C# arm (`Projectile.cs`) | Rust arm (`projectile.rs`) | dispatch | landed by | tests |
+| --- | --- | --- | --- | --- | --- |
+| 23 | `:25861-25935` (Eye Fire 101 / Flames Trap 188) | `ai_eye_fire` `:7732` | `23 =>` `:11234` | S1-D-4b-5c | `s1_d_4b_5c_tests` (the trap floor / the plain counter) |
+| 66 | `:29604-30161` (Retanimini/Spazmamini/Deadly Sphere) | `ai_twins_minion` `:1446` + `twins_separation` `:1405` | `66 =>` `:12426` | S1-D-4b-6 | `s1_d_4b_6_tests` (8) |
+| 70 | `:30304-30354` (Flairon Bubble 405) | `ai_flairon_bubble` `:7448` | `70 =>` `:11216` | S1-D-4b-1 | `s1_d_4b_1_the_flairon_bubble_acquires_the_closest_npc_and_homes` |
+| 79 | `:30791-30910` (Saucer Deathray 447) | `ai_saucer_deathray` `:8242` | `79 =>` `:11209` | S1-D-4b-4 | `s1_d_4b_4_tests` (the hang / the owner-phase death) |
+| 80 | `:30911-31000` (Saucer Missile 448) | `ai_saucer_missile` `:8341` | `80 =>` `:11212` | S1-D-4b-4 | `s1_d_4b_4_tests` (the 20-tick arming / the contact death) |
+| 133 | `:36435-36462` (Dark Mage raise marker 673) | `ai_dark_mage_raise` `:7540` | `133 =>` `:11219` | S1-D-4b-1 | `s1_d_4b_1_the_dark_mage_marker_ramps_its_opacity_and_dies` |
+
+**Line-by-line re-verification highlights** (the whole machines were read,
+not just the heads):
+
+* **23** — the trap-only floor (`ai[0] < 8 → 8`, `:25865-25868`), the trap's
+  `localAI[0]++` (`:25869`), the shared 60-tick cap (`:25871-25874`), both
+  branches of the launch ramp end in `ai[0]++` (`:25890` / `:25932`) and the
+  spin `rotation += 0.3f * direction` (`:25934`) — the port folds the
+  dust-scale ladder (0.25/0.5/0.75/1) away because only the counter survives
+  the skipped dust layer. Hand-check: trap tick 1 from `ai[0]=0` → floor 8 →
+  ++ → 9, `localAI[0]=1`, `timeLeft` 18000 → 60, rot 0.3 — the landed test's
+  exact assertions.
+* **66** — the parameter ladders (twins 2000/800/1200/150 `:29613-29616`,
+  sphere 2000/900/1500/450 `:29628-29631`), the dead-owner flag clears and
+  the `timeLeft = 2` pins (`:29617-29624` / `:29632-29639`), the separation
+  loop's manhattan-`width` gate and the ±0.05 per-axis pushes
+  (`:29642-29669`) match `twins_separation`; the pool arm integrates
+  `position += velocity` after the AI (`:12448-12449` — aiStyle 66 is not in
+  `HandleMovement`'s skip list).
+* **70** — the acquire scan keeps the running minimum (`num547` shrinks,
+  `:30308-30318`), `ai[0] = num548 + 1` with the −15 no-target sentinel
+  (`:30320-30323`), the two blends `(v*20+d*w)/21` / `(v*40+d*12)/41`
+  (`:30329` / `:30336`), the fade (−25 alpha floor 50, ×0.95 velocity,
+  `:30340-30346`) and the scale latch (`:30348-30353`). **RNG order**: one
+  `Next(35,75)` (weight), then `Next(-100,101)` **X before Y** (the C#
+  `new Vector2(Next(...), Next(...))` evaluates arguments left-to-right,
+  `:30328`), then `Next(80,121)` (scale) — the port draws exactly this
+  sequence on the pool's threaded `Main.rand` analogue, and only when
+  `ai[0] > 0` after the scan (no target ⇒ zero draws that tick; the scale
+  draw still fires once).
+* **79** — the owner gates (`:30797-30833`: shell→core link via the shell's
+  `ai[0]`, the core's `ai[3] % 120 >= 60 && ai[0] == 2`, the
+  `ai[0] ∉ {1,-1,-2}` refusal), the beam top `Center.Y + 46` (`:30841`), the
+  150-row ground scan with the `num599--` trim (`:30866-30874`), the
+  `(num599+1)*16` height and the `% 16 - 2` last-row trim
+  (`:30878-30883`), the 5-tick/4-frame loop (`:30902-30909`). The dust
+  (`:30886-30900`, incl. its `Next(5)` gate) is the documented skip — the
+  arm body itself draws no `Main.rand` outside the dust.
+* **80** — the arming countdown (`:30913-30916`), the arming tick's
+  `Normalize(velocity) * (speed + 4)` (`:30922-30923`), the flight's
+  `tileCollide = true` + `localAI[1]` counter with the 180-tick kill
+  (`:30936-30944`), the 30-tick homing window turning at
+  `delta * 0.20000000298023224` (the f32 0.2f) with the ±π wrap
+  (`:30946-30959`), the rotation `velocity.ToRotation() + π/2` **outside**
+  the state chain (`:30974`), the 3-tick/3-frame loop (`:30975-30982`) and
+  the 42-px living-player contact kill (`:30991-30998`). Hand-check: spawn
+  `ai=[0,20]`, speed 8 → 20 delay ticks leave `ai=[0,0]`, tick 21 arms with
+  speed 12 — the landed test's assertions. No `Main.rand` in the arm body
+  (the dust loops `:30924-30932` / `:30961-30971` / `:30983-30990` are the
+  skipped layer).
+* **133** — the counter (`:36443`), the three-window opacity ramp
+  (`GetLerpValue(0,20)` / 1 / `GetLerpValue(80,60)`, `:36444-36456`), the
+  kill at ≥80 (`:36457-36460`) and the **post-kill** `Opacity` write
+  (`:36461` — the dying tick lands alpha 255), which the port preserves.
+  The `ai[0]==70` sound cue is the documented skip.
+
+**Disposition.** No new module was created: porting these arms again into a
+`projectile_styles_c.rs` would duplicate live implementations (AGENTS.md
+"avoid duplicating an existing implementation") and re-wire dispatch arms
+that siblings own. The slice's deliverable is this audit — the ROADMAP row
+now records the six styles as verified-armed, and the truly-unarmed
+remainder of the original 19 is **26, 67, 120, 123, 130** (aiStyle 2 has its
+Dutchman/shuriken arm at `:11190`; its full-family completion is S1-D-4b-8's
+scope) — exactly the sibling slices S1-D-4b-3 (120/123/130), -7 (67) and
+-8 (26/2). Deferred to them; nothing in this slice's scope remains.
+
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
 **Census correction (S1-D-3q, 2026-11-18):** the arm ported below is NOT
