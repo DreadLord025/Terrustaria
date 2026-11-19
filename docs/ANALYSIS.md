@@ -17625,3 +17625,75 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Detonating Bubble (S1-D-3 aiStyle-70, code-only)
+
+`crates/tr-app/src/npc_ai_style70.rs` ports `NPC.AI()`'s aiStyle-70 arm
+(`NPC.cs:34884-34957`) as an UNWIRED pure module (the spore precedent,
+commit 613aac92). Code-only round: no cargo/rustc/rustfmt/tests invoked;
+the 13 witness tests are written, not run.
+
+**Family identity.** Exactly one `SetDefaults` row sets `aiStyle = 70`
+in `NPC.cs`: the DetonatingBubble 371 (`NPCID.cs:11419`, row
+`NPC.cs:13719-13733` — 36x36, damage 100, defense 0, lifeMax 1,
+NPCHit3/NPCDeath3, noGravity + noTileCollide, knockBackResist 0,
+alpha 255). The arm has no per-type branch. `Projectile.cs:4861`'s
+aiStyle 70 is the Flairon Bubble projectile (S1-D-4b-1,
+`projectile.rs::ai_flairon_bubble`) — a different system, untouched.
+The bubble spawns only from `AI_069_DukeFishron` phase 3 (`:49246`)
+and phase 7 (`:49477-49481`).
+
+**RNG by construction.** `ai_style70` takes the `Main.rand` analogue:
+- the `target == 255` init gate (`:34886`) draws five, in order:
+  `Next(80,121)` (`:34889`), `Next(165,265)` (`:34890`),
+  `Next(-100,101)` X then Y (`:34891`, ctor argument order) — after the
+  RNG-free `TargetClosest` (`:77652-77781`). The phase-7 spawn presets
+  `target`/`velocity`/`ai[3]` (its own `Next(80,121)` at `:49481`), so
+  those bubbles short-circuit the whole block — zero init draws.
+- every tick, including the detonation tick (the draws precede the
+  fuse's early return): `Next(-10,11)` for the wind X blend (`:34903`)
+  then `Next(-10,11)` for the Y blend (`:34904`).
+- everything else is RNG-free: `EncourageDespawn` (`:7249-7256`), the
+  scan/fuse/grow, `checkDead`/`PrepareForDeathAnimation`
+  (`:78032-78051`; `SetStrikePhaseChange` `:90695-90701` is
+  netMode==1-only), and `UpdateNPC_CastLights` has no 371 arm.
+The stream witness tests replay a twin `UnifiedRandom` by hand across
+the init/steady/death ticks (written, not run).
+
+**Deliberate skips / seams (wiring wave):**
+- The `HitEffect` 371 arm (`:84229-84256`): the tracked sound
+  (`PlaySound(4,x,y,3)`) and the 60-dust type-212 death burst are
+  skipped WHOLESALE (the dust system is unported — the spore
+  precedent), so the arm draws nothing here. `bubble_hit_effect_plan`
+  carries the branch structure only. The wiring wave's draw order per
+  dust: `NextDouble()` + `Next(24,41)` (`:84238` — the `vector18` pair
+  is dead code but the draws HAPPEN), the `Dust.NewDust` internals,
+  `Next(45,91)` for dusts 30..59 only (`:84243-84250`), `NextDouble()`
+  for the hue (`:84251`). The generic prologue is inert for 371 and the
+  final else-chain returns at `:89813-89815` — no generic dust.
+- `Npc` has no `justHit` field (C# `:81274` set / `:90516` clear) — a
+  parameter; `Main.windSpeedCurrent` rides `Wind::speed_current` — a
+  parameter. The detonation returns `Style70Outcome::detonated` with
+  `hp = 0`; the caller owes the HitEffect death arm + slot deactivation
+  (the C# `active = false` + return, NO checkDead on that path).
+- A STRUCK bubble goes through `bubble_check_dead` (the `checkDead`
+  371 arm `:78046-78051` + `PrepareForDeathAnimation` `:78032-78038`):
+  ai[0]=1/ai[1]=4, life restored to lifeMax, dontTakeDamage, netUpdate
+  — the strike starts the 4-tick countdown, it does not kill.
+- The C# `alpha` is an int (`alpha -= 30` can go negative); the port's
+  u8 saturates — moot, the unconditional `alpha = 50` (`:34902`)
+  overwrites both paths every tick (the fade + clamp are dead code,
+  ported dead with citations).
+- `Vector2.Normalize` on a zero vector is NaN in XNA; the port uses
+  `normalize_or_zero` (the established projectile.rs convention).
+  Reachable only when the player centre exactly equals the bubble
+  centre.
+- FindFrame case 371 (`:72138-72142`) pins frame row 1
+  (`npcFrameCount[371] = 2`, `Main.cs:67121`) — consts pin both; the
+  wiring caller sets `frame = 1`.
+- Difficulty: 371 is in `NeedsExpertScaling` AND `ProjectileNPC`
+  (`NPCID.cs:10447-10448`) — `ScaleStats` runs but the lifeMax<6 bump
+  is skipped (`:18160-18163`, the 1-HP life survives); the expert
+  damage factor is 0.75 with lifeMax untouched (`:18417-18424`, the
+  `type != 371` gate). The port is single-difficulty normal; the
+  wiring wave carries the expert rows.
