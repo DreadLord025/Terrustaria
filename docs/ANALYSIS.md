@@ -21244,6 +21244,103 @@ slice's list. Other deviations: the 500's `Lighting.AddLight` (`:49464`) has
 no port layer; `flag10` (petting) folds to false; `base.wet` folds to false;
 the blocked-move chain (`:17904-19854`) has no 500/1018/1056 type arm, so a
 blocked move only stops them.
+
+
+## aiStyle-1 per-type arms, slice B (S1-D-5)
+
+Branch `task/S1-D-5-aistyle1-types-b` (worktree TR-D5a2), **CODE-ONLY mode**:
+no cargo/rustc/rustfmt/tests were invoked on this branch. The witness tests
+in `crates/tr-app/src/projectile_ai001_b.rs` are WRITTEN NOT RUN; they were
+verified by re-reading the cited C# blocks and hand arithmetic. Run
+`cargo test -p tr-app projectile_ai001_b` when a compiler pass is allowed.
+
+**Kind set (9 after the merge-time dedupe):** 449 SaucerLaser,
+462 PhantasmalBolt, 581 VortexDart, 601 CannonExplosive,
+622 BlowupSmokeMoonlord, 680 BallistaShot, 686 BetsyFireball,
+962 DeerclopsIceChunk, 980 TrapVenomDart. **Dedupe (P2 merger):** the
+branch originally claimed 15 kinds; 259/270/325/389/436/438 were ported by
+BOTH slices — slice A (`projectile_ai001_a`, landed first) wins; B's
+`SLICE_B_KINDS`/`covers` now exclude the six (their arms + witness tests
+stay in the module as citation-verified reference, unreachable from the
+dispatch — no double-apply). Re-verified vs Projectile.cs
+(`:54150-54174`/`:55164-55196`/`:55239-55243`/`:55296-55300`/`:56699-56709`
+etc.): A's and B's ports of the six agree. The dispatch
+seam (`projectile.rs`'s aiStyle-1 arm) gates on
+`projectile_ai001_b::covers` ONLY — slice A's low-id arrow family, the
+M4-PROJ-6 riders and every unrowed kind keep the generic `ai_arrow` flight
+byte-identical (the module never runs for them; `finish_flight` replicates
+`ai_style1_flight`'s tail verbatim for the kinds that substitute their own
+gravity arms).
+
+**Escape-clause skips (already faithful on main):** 20 GreenLaser /
+88 PurpleLaser / 355 VenomFang / 660 SkyFracture ride `ai_style1_rider`
+(projectile.rs:5093); 837 BookOfSkulls rides `ai_book_of_skulls` (:5169).
+
+**Deferrals (documented, not ported):**
+- 634/635 Nebula Blaze (`Projectile.cs:54463-54650`): the homing scan +
+  the RNG-dense dust/sound choreography (`Utils.SelectRandom`,
+  `Main.rand.Next(48)`) — needs the RNG-layer decision first.
+- 645 PoisonDart (`:56956-57027`): the placed-cloud state machine
+  (ai[1] == -1 resize/frame machine + the NPC homing tail) — a spawn-site
+  contract (the cloud placement writes ai[1]) the port does not have yet.
+- 687 BetsyBreath: NO `AI_001` per-type branch exists in the C# — the
+  generic flight IS its arm; left on `ai_arrow`.
+- The Harpy-charm tail (`:57769-57793`, `AI_001_Features`) — no charm
+  feature in the port.
+
+**RNG: zero draws, by construction.** The pool's aiStyle-1 arms keep zero
+RNG (the precedent `ai_style1_rider`, projectile.rs:5109-5127). Every
+skipped `Main.rand` call is cited at its point in the module; in C#
+execution order per kind they are:
+- 601: `Utils.RandomVector2(Main.rand, -1, 1)` x4 inside the alpha-1..15
+  dust window (`:54080`), plus the dust-263 spawn at alpha == 0 (`:54113`).
+- 325: `Next(3)` then (if != 0) `Next(10)`; `Next(4)` then (if == 0)
+  `Next(5)` — all inside the alpha == 0 window (`:55175-55187`).
+- 462: the latch's `Next(2)` sound pick + `Next(5, 10)` dust count
+  (`:55272-55281`).
+- 270: the 10x dust-5 spawns at the localAI[0] one-shot (`:56079-56087`)
+  and the 2x dust-5 per tick (`:56678-56685`) — `Dust.NewDust` draws its
+  own position/velocity jitter internally.
+- 622: `Next(3)` dust gate (`:56168`).
+- 581: 2x `Utils.SelectRandom(Main.rand, 229, 161, 161)` (`:56318`).
+- 686: `Next(4)` + `Next(3)` dust gates (`:56519`/`:56525`).
+- 962: the one-shot's 10x dust-16 rolls — per roll
+  `NextVector2Circular(24, 24)` + `NextFloat` (the Lerp) +
+  `NextVector2Circular(0.5, 0.5)` + `NextFloat` (the scale), the second
+  loop adding a `NextVector2Circular(2, 2)` (`:56919-56931`).
+Because the module draws NOTHING, no `UpdateProjectiles` stream position
+shifts for any other consumer — the skip is stream-neutral by
+construction, not by replay. Restoring the draws later must follow the
+cited order above (the dust helpers' internal draws included).
+
+**Deliberate deviations kept from the port's conventions:**
+- The shared tail's Y clamp is +/-16 (projectile.rs:5064) where the C#
+  clamps the upper bound only for non-1006 kinds (`:57760-57767`); the
+  module keeps the port convention so the tail stays byte-identical to
+  the generic path. No slice-B kind sets flag4 (1006-only).
+- The C#'s generic gravity arm pins `ai[0] = 15` (`:57570`); the port's
+  `ai_style1_flight` omits the pin (its own documented shape). The
+  slice-B counting kinds (581/622) get the C#'s pin inside the module;
+  the generic path stays untouched for every other kind.
+- Movement: `AI_001` has no position integration — the port's
+  kill-on-tile `ai_style1_flight` tail is the established `HandleMovement`
+  stand-in; `finish_flight` replicates it verbatim.
+- `base.direction` (velocity.X's sign after each movement step) is
+  stand-in'd by the velocity sign at read time — the
+  `ai_book_of_skulls` convention (projectile.rs:4355).
+- 270's `Player.FindClosest` (`:56059`) resolves to the threaded owner
+  centre (single-player); `None` skips the steering.
+- 962's one-shot rotation pin (`:56918`) is overwritten by the default
+  rotation (`:57750`) in the same C# tick — the port matches (the pin is
+  written then overwritten, kept for order fidelity).
+
+**Observation (not fixed, out of scope):** `projectile.rs`'s aiStyle
+dispatch carries pre-existing unreachable duplicate arms `1 =>
+ai_arrow` / `3 => ai_boomerang` (origin/main :11332-11333, after the
+:11053/:11060 first arms). The first arm wins, so the slice-B gate is
+effective; the duplicates are dead code for a future cleanup task.
+
+
 ## AI_026 slice B (S1-D-4b-11, task/S1-D-4b-11-melee-b, 2026-11-18)
 **Code-only mode** — no compiler invoked this round (no cargo/rustc/
 rustfmt/tests); the witness tests in `projectile_ai026_b.rs` are WRITTEN,
