@@ -27813,7 +27813,10 @@ mod s1_d_3_wire_plantera_minions_tests {
         let w = air();
         let mut player = Player::spawn(&w);
         for kind in [NpcKind::FungiSpore, NpcKind::Spore] {
-            let mut n = Npc::new(kind, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            // Away from the session player's spawn box: the contact pass
+            // (`Player.Update_NPCCollision`'s DamageVar roll) legitimately
+            // draws on overlap — this witness pins the AI ARM's draw-freedom.
+            let mut n = Npc::new(kind, 120.0 * 16.0, 100.0 * 16.0, 1, 0.0);
             let mut rng = UnifiedRandom::new(7);
             let witness = rng.clone();
             n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
