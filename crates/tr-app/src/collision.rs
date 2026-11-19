@@ -1664,14 +1664,16 @@ fn rotate(v: [f32; 2], rad: f32) -> [f32; 2] {
 }
 
 /// `Collision.CheckAABBvLineCollision` (`Collision.cs:273-369`) at the
-/// `0.0001f` width its `…2` wrapper passes.
-fn check_aabb_v_line_collision(
+/// caller's line width (the `…2` wrapper passes `0.0001f`; the Moon Lord
+/// turret laser's `Colliding` arm passes `30f * scale`,
+/// `Projectile.cs:15947-15949`).
+pub(crate) fn check_aabb_v_line_collision(
     aabb_pos: [f32; 2],
     aabb_dim: [f32; 2],
     line_start: [f32; 2],
     line_end: [f32; 2],
+    line_width: f32,
 ) -> bool {
-    let line_width = 0.0001f32;
     let num = line_width * 0.5;
     let mut position = line_start;
     let mut dimensions = [line_end[0] - line_start[0], line_end[1] - line_start[1]];
@@ -1761,7 +1763,7 @@ fn check_aabb_v_line_collision2(
 ) -> bool {
     if !rectangle_line_collision(aabb_pos, [aabb_pos[0] + aabb_dim[0], aabb_pos[1] + aabb_dim[1]], line_start, line_end)
     {
-        return check_aabb_v_line_collision(aabb_pos, aabb_dim, line_start, line_end);
+        return check_aabb_v_line_collision(aabb_pos, aabb_dim, line_start, line_end, 0.0001);
     }
     true
 }
