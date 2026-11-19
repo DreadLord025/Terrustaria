@@ -1146,6 +1146,26 @@ pub struct Npc {
     /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
     /// (`NPC.cs:44394`).
     pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
+    /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
+    /// 263/264/265 have no port arms yet, so the sim records the request
+    /// and the hook-anchor average falls back to Plantera's own centre
+    /// (S1-D-3-plantera, ANALYSIS "The Plantera machine").
+    pub wants_plantera_hooks: u8,
+    /// Plantera's phase-2 tentacle batch (`NPC.cs:31983-31994` — the
+    /// one-shot 8 `NewNPC(..., 264)` calls; getGood +6 and the expert
+    /// per-hook extras are constants-off).
+    pub wants_plantera_tentacles: u8,
+    /// Plantera's spore launch (`NPC.cs:32054-32073` — the 350-tick
+    /// cadence's `NewNPC(..., 265)` with the jittered 8-px velocity).
+    pub wants_plantera_spore: Option<(f32, f32)>,
+    /// Plantera's hook-centroid leash anchor, pre-computed by the sim's
+    /// pre-pass (`npc_ai_plantera_anchor::hook_anchor`, `NPC.cs:31743-31762`
+    /// — the first three live aiStyle-52 hooks' slot-order f32 average).
+    /// `None` = no hook lives: the machine falls back to Plantera's own
+    /// centre (the documented stand-in until kind 263 lands; the C# has
+    /// no zero-hook tick — `NewNPC` activates synchronously).
+    pub plantera_hook_anchor: Option<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -2140,6 +2160,10 @@ impl Npc {
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
+            wants_plantera_hooks: 0,
+            wants_plantera_tentacles: 0,
+            wants_plantera_spore: None,
+            plantera_hook_anchor: None,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -3430,7 +3454,7 @@ impl Npc {
             // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
             NpcKind::Spazmatism => self.update_spazmatism(world, player),
-            NpcKind::Plantera => self.update_plantera(world, player),
+            NpcKind::Plantera => self.update_plantera(world, player, rng),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
@@ -12606,61 +12630,27 @@ impl Npc {
         }
     }
 
-    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
-    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
-    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
-    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
-    /// rage = the follow-ups.
-    fn update_plantera(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        let hover_y = pcy - 250.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.1;
-            if self.vx.abs() > 8.0 {
-                self.vx = 8.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.1;
-            if self.vy.abs() > 8.0 {
-                self.vy = 8.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 7.5;
-            self.vy = dy / d * 7.5;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
-            }
-        }
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.x += self.vx;
-        self.y += self.vy;
+    /// Plantera (262) — the `aiStyle == 51` machine (`NPC.cs:31717-32075`),
+    /// S1-D-3-plantera. The pre-port arm was an EoC-shaped stand-in (the
+    /// 480-tick hover→charge→decel cycle with invented numbers); the real
+    /// machine is the hook-anchor leash movement + the seed volleys + the
+    /// phase-2 tentacle/spore transition, ported in `npc_ai_plantera`.
+    /// The seam is kind-262-specific: the hook average (`:31743-31762`)
+    /// reads the live aiStyle-52 hooks — kinds 263/264/265 have no port
+    /// arms yet, so the anchor falls back to Plantera's own centre (the
+    /// documented seam; the C# would divide by a zero hook count there).
+    /// The C# arm writes neither `direction` nor `spriteDirection` — the
+    /// stand-in's per-tick facing write is dropped (the boss head rolls
+    /// via `rotation`, `GetBossHeadRotation` `:7613-7616`).
+    fn update_plantera(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // The sim's pre-pass writes the hook centroid (`NPC.cs:31743-31762`,
+        // `npc_ai_plantera_anchor::hook_anchor`); no hook live = the own
+        // centre stand-in (the documented seam until kind 263 lands).
+        let anchor = self.plantera_hook_anchor.unwrap_or_else(|| self.center());
+        crate::npc_ai_plantera::step(self, world, player, rng, anchor);
+        // The stand-in's world-bottom despawn tail is kept (the C# arm
+        // has no such kill — the generic despawn pass owns it; recorded
+        // in ANALYSIS "The Plantera machine").
         if self.y > world.height as f32 * TILE_PX + 400.0 {
             self.hp = 0;
         }
@@ -17700,8 +17690,11 @@ mod tests {
 
     #[test]
     fn the_plantera_cycles_and_maps() {
-        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 7.5) → the decel.
+        // S1-D-3-plantera: the aiStyle-51 machine (`NPC.cs:31717-32075`)
+        // replaced the EoC-shaped stand-in — the first tick latches the
+        // hook spawn and the phase-1 stats, and the movement rides the
+        // hook-anchor leash (the full behaviour tests live in
+        // `npc_ai_plantera::tests`).
         let mut w = ground_air();
         w.day_time = false;
         let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -17709,13 +17702,11 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        }
-        assert!(pl.cast_windup == 1, "the charge phase armed");
         pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
-        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        assert_eq!(pl.local_ai[0], 1.0, "the hook init latch");
+        assert_eq!(pl.wants_plantera_hooks, 3);
+        assert!(pl.defense_override.is_some(), "the phase stats write");
+        assert!(pl.damage_override.is_some());
         // The stats round-trip.
         assert_eq!(pl.size(), (86.0, 86.0));
         assert_eq!(pl.max_hp, 30000);
