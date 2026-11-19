@@ -106,6 +106,7 @@ mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;
+mod hurt_modifiers;
 mod player;
 mod player_file;
 mod prefix;
