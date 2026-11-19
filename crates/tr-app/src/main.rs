@@ -90,6 +90,7 @@ mod npc_ai_style42;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
+mod npc_findframe_a;
 mod npc_findframe_b;
 mod persist;
 mod grapple;
@@ -107,6 +108,8 @@ pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai001_b;
 
+
+mod projectile_ai001_a;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
