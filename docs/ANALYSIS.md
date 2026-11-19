@@ -20446,6 +20446,57 @@ compile/test gate remains deferred to the merge step. Merger line-ranges
 for conflict resolution: `edit.rs` seams at 14-22 (re-exports) and
 1334/1357 (`pub(super)` helpers); `kill.rs` is a new file — a sibling
 touching the kill family should merge into it, not re-add to `edit.rs`.
+
+## S1-K-4d actuation/wire family split (2026-11-18, code-only mode)
+
+`crates/tr-app/src/world_sim/editing/wiring.rs` (324 lines) is the
+actuation/wire tool family moved **verbatim** out of `world_sim/editing.rs`
+(9 593 → 9 291 lines): `WIRE_ITEM` (530), the `WiringTool` enum, `wiring_tool`,
+`can_do_wire_stuff_here`, `use_wiring_tool` (`Player.ItemCheck_UseWiringTools`,
+`Player.cs:46749-46920`) and `wire_placed_feedback`, plus the family's 8 tests
+(the Actuation Rod flip/lock pair, the wrench place/consume/no-wire/colour
+rows, the cutter drop, the Actuator item, the temple-wall refusal) with all
+their C#-cite doc comments. Behaviour frozen; the sibling `task/S1-K-4c` owns
+the kill cascade in `edit.rs` and was not touched.
+
+**Seams (K-4 precedent: verbatim extraction + pub(super) seams + re-exports):**
+- `editing.rs` gains `mod wiring;` + `pub(crate) use wiring::use_wiring_tool;`
+  — the only caller (`update_editing`, the `Player.cs:43572` wiring-tools arm)
+  is unchanged; no crate-external user of the family exists.
+- The moved code keeps its original visibility (`pub(crate)` items stay
+  `pub(crate)`; the private `wiring_tool`/`can_do_wire_stuff_here`/
+  `wire_placed_feedback` stay private to `wiring`).
+- Only visibility seams: `pub(super)` on the `object_world`/`slot` test
+  helpers in `editing::tests` (they serve ~90 other tests and stay put); the
+  moved tests import them via `use super::super::tests::{object_world, slot};`.
+- `wiring.rs` imports `tr_core::{TILE_PX, edit}`, `crate::app::App` and
+  `super::super::items::spawn_item_drop` (the same items the family used in
+  `editing.rs`); everything else it reads is fully qualified in the moved
+  bodies and unchanged.
+
+**Byte-equality proof WITHOUT compiling (file ops only).** The source of
+truth is the git blob `origin/main:crates/tr-app/src/world_sim/editing.rs`
+(419 954 bytes, LF, UTF-8 no BOM; the worktree copy is CRLF via
+`core.autocrlf=true`, so all proof work ran on blob bytes). A scripted
+index-based transform with asserted line boundaries produced both files;
+then:
+1. The code block (origin lines 3363-3532, 170 lines, **6 818 chars**) and the
+   test block (origin lines 6427-6559, 133 lines, **5 694 chars**) were
+   re-extracted from the written `wiring.rs` at their doc-comment anchors and
+   compared to the origin slices: `fc /b` reports no differences for both
+   pairs (char counts equal, case-sensitive string equality true).
+2. The origin file was reconstructed from the written `editing.rs` by
+   removing the 3 inserted seam lines, reverting the two `pub(super)` seams
+   and re-inserting both blocks at their original anchors: 419 954 bytes,
+   `fc /b` empty diff, SHA256 of origin and reconstruction identical:
+   `28f07b8788e314e09e6a92702ae3a9fd946d31db9c6b39679bb34c19e545cb11`.
+
+**Gate deferred**: this task ran in code-only mode — no cargo/rustc/rustfmt,
+no tests executed, no graphify update (the moved tests ride the merge-step
+gate: `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
++ `cargo test -p tr-app --test main_anchors`). The anchors row for the moved
+marker was repointed to `editing/wiring.rs` in the same commit (MAIN-RULES §3
+rename rule) and a new S1-K-4d row added. No rustfmt was run on any file.
 ## S1-G-1e special tiles (code-only mode, 2026-11-18)
 
 `crates/tr-app/src/render/special_tiles.rs` ports the S1-G-1 special/chest/
