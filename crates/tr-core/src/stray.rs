@@ -311,9 +311,9 @@ mod tests {
         // is untouched across the whole walk.
         let w = flat_world();
         let mut rng = crate::UnifiedRandom::new(1234);
-        let before = rng.next_u32();
+        let before = rng.next();
         let mut rng = crate::UnifiedRandom::new(1234);
         let _ = check_arena_score(&w, (2408.0, 1920.0));
-        assert_eq!(rng.next_u32(), before, "the walk consumed no draws");
+        assert_eq!(rng.next(), before, "the walk consumed no draws");
     }
 }
