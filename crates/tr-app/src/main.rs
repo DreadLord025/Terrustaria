@@ -147,6 +147,7 @@ mod projectile_ai001_b;
 
 mod projectile_ai001_a;
 mod projectile_frost_shots;
+mod projectile_ai001_c;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;

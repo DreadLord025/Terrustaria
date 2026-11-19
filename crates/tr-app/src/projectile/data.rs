@@ -1697,6 +1697,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:7221-7230` — the Dark Mage's flame (675): the
+            // SetDefaults arm writes `alpha = 255` (the slice-C fade-20
+            // `:56468` fades IN from 255 — the reset 0 lost the fade).
             DARK_MAGE_FLAME => (
                 10.0,
                 10.0,
@@ -1707,7 +1710,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
             // aiStyle-1 breath flight).
