@@ -18119,6 +18119,11 @@ mod tests {
         // `worldSurface = surfaceMax + 25`); the `World::new` default (16)
         // sits above this fixture's row-30 ground — the dawn gate needs it.
         w.world_surface = 40.0;
+        // NIGHT for the walk leg (`World::new` defaults day_time = true;
+        // with the corrected surface line the daylight discouragement
+        // would otherwise fire from tick 1 and the zombie would never
+        // chase). The dawn flip below is the test's subject.
+        w.day_time = false;
         let mut player = Player::spawn(&w);
         for _ in 0..120 {
             player.update(&w, crate::player::PlayerInput::default());
