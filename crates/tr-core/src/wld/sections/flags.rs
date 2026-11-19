@@ -136,9 +136,10 @@ pub fn write(w: &mut Writer, world: &World) {
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
     // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
     // four tower downeds/actives and the apocalypse phase are World-owned;
-    // Fishron and the seasonal bosses stay unowned (no port state).
+    // the seasonal bosses stay unowned (no port state). S1-D-3 W-9:
+    // `downedFishron` is World-owned now (the case-370 death flag).
     w.boolean(world.fast_forward_to_dawn);
-    w.boolean(false); // downedFishron — unowned
+    w.boolean(world.downed_fishron); // downedFishron
     w.boolean(world.downed_martians);
     w.boolean(world.downed_ancient_cultist); // downedAncientCultist
     w.boolean(world.downed_moon_lord); // downedMoonlord
@@ -493,7 +494,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version < 131 {
         return Ok(());
     }
-    r.skip(1)?; // downedFishron — unowned
+    world.downed_fishron = r.bool()?; // downedFishron (S1-D-3 W-9)
     world.downed_martians = r.bool()?;
     world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
     world.downed_moon_lord = r.bool()?; // downedMoonlord

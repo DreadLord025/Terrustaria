@@ -2681,6 +2681,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight), `tileCollide = true`; the stock 3600 life (the
             // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
             QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-D-3 W-9 fishron wiring — `Projectile.cs:4676-4685`: the
+            // Sharknado bolt (385): 30x30, aiStyle 65, penetrate -1,
+            // alpha 255, timeLeft 300 (the stock tileCollide true).
+            SHARKNADO_BOLT => (30.0, 30.0, 65, -1, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4664-4675`: the ForceBubble (384): 150x42,
+            // aiStyle 64, penetrate -1, tileCollide false, ignoreWater,
+            // alpha 255, timeLeft 540.
+            FORCE_BUBBLE => (150.0, 42.0, 64, -1, 540, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4686-4697`: the Cthulunado (386): 150x42,
+            // aiStyle 64, penetrate -1, tileCollide false, ignoreWater,
+            // alpha 255, timeLeft 840.
+            CTHULUNADO => (150.0, 42.0, 64, -1, 840, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // ===== S1-D-4: the Empress of Light's projectiles =====
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
@@ -2890,6 +2902,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == RAINBOW_CRYSTAL_EXPLOSION
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
+            // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
+            // (`Projectile.cs:4672`/`:4694`).
+            || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -2941,6 +2956,20 @@ pub const BOULDER_PET: u16 = 1056;
 
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
+/// `ProjectileID.SharknadoBolt` (385) — Duke Fishron's sharknado bolt
+/// (`Projectile.cs:4676-4685`): 30x30, hostile, penetrate -1, aiStyle 65,
+/// alpha 255, timeLeft 300. S1-D-3 W-9 fishron wiring.
+pub const SHARKNADO_BOLT: u16 = 385;
+/// `ProjectileID.ForceBubble` (384) — the small sharknado cloud the
+/// unaimed bolt's death spawns (`Projectile.cs:4664-4675`): 150x42,
+/// hostile, penetrate -1, aiStyle 64, tileCollide false, ignoreWater,
+/// alpha 255, timeLeft 540. Its arm spawns the Sharkron 372.
+pub const FORCE_BUBBLE: u16 = 384;
+/// `ProjectileID.Cthulunado` (386) — the Greater Sharknado
+/// (`Projectile.cs:4686-4697`): 150x42, hostile, penetrate -1, aiStyle 64,
+/// tileCollide false, ignoreWater, alpha 255, timeLeft 840. Its aiStyle-64
+/// arm spawns the Sharkron2 373 (`:29502-29516`).
+pub const CTHULUNADO: u16 = 386;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
@@ -3158,6 +3187,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
         RAINBOW_CRYSTAL => 8,
+        // S1-D-3 W-9 fishron wiring — the sharknado family's strips
+        // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
+        FORCE_BUBBLE | CTHULUNADO => 6,
+        SHARKNADO_BOLT => 3,
         // The glow-stick's 4-frame sheet (`Main.cs:8664`) — the aiStyle-2
         // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
         // it, back to frame 1.

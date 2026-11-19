@@ -22916,6 +22916,274 @@ are WRITTEN, NOT RUN.
   by hand arithmetic. The per-machine draw-order witnesses stay in the
   modules' own tests (slice C). The full gate must run before this branch
   merges.
+## The Detonating Bubble (S1-D-3 aiStyle-70, code-only)
+
+`crates/tr-app/src/npc_ai_style70.rs` ports `NPC.AI()`'s aiStyle-70 arm
+(`NPC.cs:34884-34957`) as an UNWIRED pure module (the spore precedent,
+commit 613aac92). Code-only round: no cargo/rustc/rustfmt/tests invoked;
+the 13 witness tests are written, not run.
+
+**Family identity.** Exactly one `SetDefaults` row sets `aiStyle = 70`
+in `NPC.cs`: the DetonatingBubble 371 (`NPCID.cs:11419`, row
+`NPC.cs:13719-13733` — 36x36, damage 100, defense 0, lifeMax 1,
+NPCHit3/NPCDeath3, noGravity + noTileCollide, knockBackResist 0,
+alpha 255). The arm has no per-type branch. `Projectile.cs:4861`'s
+aiStyle 70 is the Flairon Bubble projectile (S1-D-4b-1,
+`projectile.rs::ai_flairon_bubble`) — a different system, untouched.
+The bubble spawns only from `AI_069_DukeFishron` phase 3 (`:49246`)
+and phase 7 (`:49477-49481`).
+
+**RNG by construction.** `ai_style70` takes the `Main.rand` analogue:
+- the `target == 255` init gate (`:34886`) draws four, in order:
+  `Next(80,121)` (`:34889`), `Next(165,265)` (`:34890`),
+  `Next(-100,101)` X then Y (`:34891`, ctor argument order) — after the
+  RNG-free `TargetClosest` (`:77652-77781`). The phase-7 spawn presets
+  `target`/`velocity`/`ai[3]` (its own `Next(80,121)` at `:49481`), so
+  those bubbles short-circuit the whole block — zero init draws.
+- every tick, including the detonation tick (the draws precede the
+  fuse's early return): `Next(-10,11)` for the wind X blend (`:34903`)
+  then `Next(-10,11)` for the Y blend (`:34904`).
+- everything else is RNG-free: `EncourageDespawn` (`:7249-7256`), the
+  scan/fuse/grow, `checkDead`/`PrepareForDeathAnimation`
+  (`:78032-78051`; `SetStrikePhaseChange` `:90695-90701` is
+  netMode==1-only), and `UpdateNPC_CastLights` has no 371 arm.
+The stream witness tests replay a twin `UnifiedRandom` by hand across
+the init/steady/death ticks (written, not run).
+
+**Deliberate skips / seams (wiring wave):**
+- The `HitEffect` 371 arm (`:84229-84256`): the tracked sound
+  (`PlaySound(4,x,y,3)`) and the 60-dust type-212 death burst are
+  skipped WHOLESALE (the dust system is unported — the spore
+  precedent), so the arm draws nothing here. `bubble_hit_effect_plan`
+  carries the branch structure only. The wiring wave's draw order per
+  dust: `NextDouble()` + `Next(24,41)` (`:84238` — the `vector18` pair
+  is dead code but the draws HAPPEN), the `Dust.NewDust` internals,
+  `Next(45,91)` for dusts 30..59 only (`:84243-84250`), `NextDouble()`
+  for the hue (`:84251`). The generic prologue is inert for 371 and the
+  final else-chain returns at `:89813-89815` — no generic dust.
+- `Npc` has no `justHit` field (C# `:81274` set / `:90516` clear) — a
+  parameter; `Main.windSpeedCurrent` rides `Wind::speed_current` — a
+  parameter. The detonation returns `Style70Outcome::detonated` with
+  `hp = 0`; the caller owes the HitEffect death arm + slot deactivation
+  (the C# `active = false` + return, NO checkDead on that path).
+- A STRUCK bubble goes through `bubble_check_dead` (the `checkDead`
+  371 arm `:78046-78051` + `PrepareForDeathAnimation` `:78032-78038`):
+  ai[0]=1/ai[1]=4, life restored to lifeMax, dontTakeDamage, netUpdate
+  — the strike starts the 4-tick countdown, it does not kill.
+- The C# `alpha` is an int (`alpha -= 30` can go negative); the port's
+  u8 saturates — moot, the unconditional `alpha = 50` (`:34902`)
+  overwrites both paths every tick (the fade + clamp are dead code,
+  ported dead with citations).
+- `Vector2.Normalize` on a zero vector is NaN in XNA; the port uses
+  `normalize_or_zero` (the established projectile.rs convention).
+  Reachable only when the player centre exactly equals the bubble
+  centre.
+- FindFrame case 371 (`:72138-72142`) pins frame row 1
+  (`npcFrameCount[371] = 2`, `Main.cs:67121`) — consts pin both; the
+  wiring caller sets `frame = 1`.
+- Difficulty: 371 is in `NeedsExpertScaling` AND `ProjectileNPC`
+  (`NPCID.cs:10447-10448`) — `ScaleStats` runs but the lifeMax<6 bump
+  is skipped (`:18160-18163`, the 1-HP life survives); the expert
+  damage factor is 0.75 with lifeMax untouched (`:18417-18424`, the
+  `type != 371` gate). The port is single-difficulty normal; the
+  wiring wave carries the expert rows.
+## The Sharkron pair (S1-D-3 aiStyle-71, code-only, 2026-11-19)
+
+`crates/tr-app/src/npc_ai_style71.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 71)` arm (`NPC.cs:34958-35079`) as a pure
+module — CODE-ONLY MODE: no cargo/rustc/rustfmt/tests invoked; the 13
+witness tests are written, not run. The family is the Sharkron 372 /
+Sharkron2 373 (`ID/NPCID.cs:11421`/`:11423`), Duke Fishron's
+sharknados' sharks; the 371 DetonatingBubble beside them rides
+aiStyle **70** (`NPC.cs:13723`) and is NOT this arm. The *projectile*
+aiStyle 71 (the Razorblade Typhoon, `Projectile.cs:30355-30454`,
+already `ai_typhoon`) is a different system, untouched.
+
+**The machine, verbatim:** `noTileCollide = true` (`:34960`); the
+unset/dead-target re-pick is `TargetClosest(faceTarget: false)` then
+`direction = 1` + netUpdate (`:34962-34967`) — the forced right
+facing AFTER the selection is load-bearing for the sway's sign.
+Phase 0 (`:34968-35025`): `ai[1]++`, noGravity, dontTakeDamage,
+`velocity.Y = ai[3]` EVERY tick — the plain Sharkron's spawner passes
+no ai3 (0 → it hovers), the Sharkron2's passes −1.5 (it rises). The
+373-only sway (`:34976-35003`): the π/30·localAI[1] cosine scaled by
+`ai[2]` (the spawner's projectile width, `Projectile.cs:29514`), the
+undo-then-advance-then-apply double position add across the
+`localAI[1]++`, the |cos−0.5| > 0.25 spriteDirection write (cos−0.5
+>= 0 → −1), the `vy·spriteDirection·0.1` rotation with the two
+sequential ±0.2 clamps and the alpha −6 fade-in. The C# subtracts
+0.5 in DOUBLE before the float cast and compares the DOUBLE in the
+sprite gate — the port casts the f32 product up to f64 for the
+cosine and keeps the double through the comparisons. At
+`ai[1] >= 90` (`:35004-35024`): phase 1, `ai[1] = 0` bumped to 1 iff
+the box is NOT in solid tiles, the roar (sound 4 style 19 — an
+outcome flag), `TargetClosest()` (faceTarget true),
+`spriteDirection = direction`, `velocity = Normalize(playerCenter −
+Center)·16` (the port's house `normalize_or_zero`, the XNA
+reciprocal-multiply form), `rotation = ToRotation()` (+π when
+direction −1), netUpdate. Phase 1 (`:35026-35078`): any other phase
+RETURNS; free air floors `ai[1]` at 1, embedded fades alpha −15 with
+the 150 floor; once armed (`ai[1] >= 1`): alpha −60 floor 0,
+dontTakeDamage = false, `ai[1]++`, and the SECOND solid check kills
+(`life = 0`, HitEffect, `active = false`, return — no `checkDead`,
+the vanilla deactivates directly). `ai[1] >= 60` returns gravity;
+the rotation rides the live velocity every phase-1 tick.
+
+**RNG by construction:** the arm contains no `Next`/`NextFloat`
+(`NPC.cs:34958-35079`), and `TargetClosest`/`TryTrackingTarget`/
+`SetTargetTrackingValues` (`:77652-77781`, the `npc_target.rs` port,
+reused UNMODIFIED) draw nothing — so `ai_style71` takes no RNG
+parameter and the `the_style71_arm_draws_no_rng` witness pins a
+seeded `UnifiedRandom` across a full 200-tick lifecycle of both
+kinds. The `HitEffect` arm (`:84207-84228` — the dmg/lifeMax·100
+type-5 dust loop on hit, the flat 75 + the 583/577/578/579 gore
+burst on death) draws only inside `Dust.NewDust`/`Gore.NewGore`;
+the NPC dust/gore call sites are unported (S1-E-4's remainder), so
+the arm is skipped wholesale (the `npc_lights.rs` precedent — the
+stream stays untouched) and `sharkron_hit_dust_plan` ports the
+branch structure/counts only. The sounds draw no `Main.rand`.
+
+**Wiring deferred** (the `npc_ai_style50.rs` precedent, 613aac92):
+the roster has no Sharkron kinds, so the aiStyle axis
+(the `match self.kind.ai_style()` block in `npc.rs::update_rng`)
+has no style-71 arm to claim; one-line `mod` seam
+only. `Npc` has no `no_tile_collide`/`no_gravity` fields — the
+per-tick writes ride `Style71Outcome` for the wiring caller's
+movement step (`NPC.cs:90490-90498`); the tile kill sets `hp = 0`
+and returns `died_in_tiles` (the caller owes the DeathSound, the
+dust/gore plan and the deactivation). `FindFrame` case 371/372/373
+(`:72138-72142`) pins `frame.Y = num` — the SECOND row forever
+(`SHARKRON_FRAME_ROW = 1`); `npcFrameCount[372] = [373] = 2`
+(`Main.cs:67121`, the 370-379 row of the `:67082` array). The
+expert/master tweaks (`ScaleStats_ByDifficulty_Tweaks`,
+`:18417-18424`: damage ×0.75 for 372/373, knockback ×0.75 for the
+371/372/373 group) ride the difficulty system, not this arm — the
+consts are the normal-mode `SetDefaults` rows. The spawner itself
+(the sharknado projectile aiStyle-64 arm, `Projectile.cs:29419-
+29533`: every 4th bolt — 2nd for the Greater Sharknado 386 — spawns
+a shark with the projectile's velocity, the 386 alone seeding
+`ai[2] = width` / `ai[3] = −1.5`) is the projectile family's wiring
+wave; the module documents the seed contract.
+
+## The Fishron chain wiring (W-9, code-only, 2026-11-19)
+
+`task/S1-D-3-wire-fishron` wires the whole Duke Fishron chain: the boss
+(370, `npc_ai_fishron`, ad41a646), the Detonating Bubble (371,
+`npc_ai_style70`, 456a2366) and the Sharkron pair (372/373,
+`npc_ai_style71`, 80fcb43b). **Base choice (option b)**: the branch
+merges `origin/main` c7fe175d + `origin/task/S1-D-3-aistyle70` 456a2366 +
+`origin/task/S1-D-3-aistyle71` 80fcb43b — the two minion branches were
+unmerged; the octopus merge's only conflicts were keep-both doc appends
+(anchors.txt, ANALYSIS.md), resolved by keeping both sections. The
+merger lands the chain in one merge. **Code-only mode**: no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the 8 wiring witnesses
+(`world_sim/npcs.rs::fishron_wiring_tests`) are WRITTEN NOT RUN.
+
+**The wiring shape.** The four kinds join `NpcKind` (protocol band
+gate-reassigned 219..222 (the branch wrote 213..216; 213/214 R10-reserved, 215/216 taken by Spore/DestroyerBody) — the port-local space above wave A's 189..212; the vanilla
+`cs_id` hand rows 370-373 keep the type gates honest against the
+bestiary fold). The aiStyle axis (`npc.rs::update_rng`) claims 69/70/71
+(`NPC.cs:34880-34883`/`:34884`/`:34958`); the kind match keeps
+exhaustive delegate arms (the Spazmatism precedent). The adapters:
+* `ai_069_fishron` — the `FishronState`/`FishronEnv` round-trip. The
+  `TargetClosest` gate (`:48848-48853`) is resolved AHEAD of the step
+  (the pick + the gate are RNG-free and read nothing the pre-gate stat
+  block writes — behaviour-identical, one step per tick). The
+  noTileCollide integration (`NPC.cs:90490-90498`) is the direct
+  position add. The per-tick damage/defense rewrites ride
+  `damage_override`/`defense_override` (the golem convention). The
+  spawn requests drain in `world_sim/npcs.rs`: the volley bubbles
+  (`:49246`) at the NewNPC bottom-centre (`NPC.cs:80771`) with the
+  stock target 255; the trail bubbles (`:49476-49481`) with
+  target/velocity/ai[3] presets AT THE SPAWN SITE — the scale
+  `Next(80,121)/100f` is drawn INSIDE the boss's tick at request time
+  (the C# draws it at `:49481`, after the NewNPC + preset writes; a
+  post-pass drain would reorder it against the other NPCs' draws).
+  The bolts (`:49279-49280`/`:49505`) spawn through
+  `spawn_hostile_ai_owned` with `Owner: Main.myPlayer` (the C# arg —
+  the stock owner-255 hostile spawn would leave the bolt unsimulated)
+  and the enrage flag on `localAI[0]` (`set_local_ai0`).
+* `ai_070_bubble` — the faithful arm verbatim; `windSpeedCurrent` is
+  pre-stamped by the sim (the `plantera_hook_anchor` pre-pass
+  convention — the AI's `&World` cannot reach `app.wind`), `justHit`
+  rides the `hurt_cd > 0` stand-in. The strike re-arm
+  (`bubble_check_dead`, `NPC.cs:78046-78051`) lands in
+  `strike_pooled`/`hurt`/`hurt_from_projectile` at the C#'s checkDead
+  site (`:81561`). The detonation (`hp = 0`) rides the existing death
+  retain; the death tick's contact damage is zeroed
+  (`damage_override = Some(0)`) — the C# deactivates mid-update
+  (`active = false`, `:34945`), so the tick deals no contact. The
+  detonation's sound 4 style 3 IS the NPCDeath3 cue the death pass
+  plays (the same sound, the S1-E-21c batch-timing deviation).
+* `ai_071_sharkron` — the faithful arm verbatim; the vanilla type for
+  the 373-only sway gate is passed explicitly (the bestiary fold would
+  misreport 373 as 372 through `cs_id`'s fallback — the hand row fixes
+  it). The gravity return (`ai[1] >= 60`, `:35069-35072`) rides the
+  outcome into the adapter's gravity term — the C#'s DEFAULT 0.3 /
+  maxFallSpeed 10 (`UpdateNPC_UpdateGravity`, `NPC.cs:90877-90881`;
+  the pair has no per-type arm, the port's walker 0.4/8 constants are
+  the fighter rows); the tile kill rides the death retain (the
+  NPCDeath1 cue is the same sound the C# plays at `:35059-35062`).
+
+**The projectile chain (the sharks' spawner).** The 372/373 sharks
+spawn ONLY from the aiStyle-64 cloud arm (`Projectile.cs:29419-29533`),
+so the chain needs the proj rows: 384 ForceBubble / 385 SharknadoBolt /
+386 Cthulunado (`Projectile.cs:4664-4697`), the aiStyle-64 arm
+(`ai_sharknado_cloud` — the scale ladder, the alpha ramp, the segment
+re-spawn, the every-4th/2nd shark cadence) and the aiStyle-65 arm
+(`ai_sharknado_bolt` — the aimed chase / free bob, the wet kill), plus
+the 385's Kill death-cloud arm (`sharknado_bolt_kill`,
+`Projectile.cs:73761-73818`: the unaimed bolt spawns the 384, the aimed
+bolt ground-scans the column and spawns the 386). The segment re-spawn
+and the shark spawn ride request fields (`wants_cloud_segment`,
+`wants_shark_spawn`) drained by `world_sim/projectiles.rs` (the
+mark-spawn shape — a slot arm cannot grow the pools mid-iteration).
+The 386's presets `ai[2] = width` / `ai[3] = -1.5` (`:29512-29516`) are
+seeded AT THE SPAWN SITE — the style71 sway/rise reads them on the
+first tick.
+
+**RNG argument (the censuses preserved).** style70: the four init
+draws (`Next(80,121)`, `Next(165,265)`, two `Next(-100,101)`,
+`:34889-34891`) gated `target == 255`, plus two `Next(-10,11)` wind
+jitters EVERY tick including the detonation tick (the draws precede
+the fuse's early return) — all on the caller's UpdateNPCs stream; the
+phase-7 trail presets short-circuit the init (zero init draws).
+style71: ZERO draws (no `Next` in the arm; `TargetClosest` is
+RNG-free). AI_069: ZERO draws itself (the charge dust loops are the
+documented skip); the ONE draw the boss tick makes is the trail
+bubble's scale (`:49481`), drawn at request time. The aiStyle-64/65
+projectile arms draw ZERO (the 385 Kill's 36-dust ring and the bolt's
+six-dust ring are skipped WHOLESALE with their internals — the spore
+precedent; the dust-skip is stream-neutral only because the whole arm
+goes). The `the_wired_rng_census` + `the_trail_preset_short_circuits_the_init`
+witnesses pin the streams against mirrored twins (written, not run).
+
+**Correction landed with the wiring.** The style71 module's
+`SHARKRON_FRAME_COUNT`/`SHARKRON2_FRAME_COUNT` consts claimed
+`Main.npcFrameCount[372] = [373] = 2`; the W-9 re-verification counted
+the `Main.cs:67082` array programmatically: the 370-379 row
+(`:67121`) is `8, 2, 4, 4, 4, 4, 2, 2, 4, 12` — [372] = [373] = **4**.
+The consts + the module's witness are corrected; the FindFrame pin
+(`frame.Y = num`, row 1) is count-independent, so no behaviour changes.
+
+**Persistence.** `World::downed_fishron` (`NPC.cs:6369`, the case-370
+death flag `:79349`) persists in TRWLD **v17** (the v15 queen-slime
+byte's shape; the back-compat tail-length tests updated) and the .wld
+flags block's `downedFishron` byte (`WorldFile.cs:1343` — the
+previously-unowned skip is now read/written; the expected-flags test
+table carries it). `DukeFishronDefeated` reads the flag.
+
+**Documented remainders.** The dust/sound/oldPos visual layers (the
+modules' censuses), the expert/master stat tweaks
+(`ScaleStats_ByDifficulty_Tweaks`, `:18417-18424` — the port is
+single-difficulty normal), the MP branches, the 385-bolt's aimed chase
+at a non-zero player slot (the port's single session player is slot 0
+— the C# reads the inactive slot's zero centre; the port keeps the
+previous velocity), the dash roar (sound 4 style 19 — no NPC sound
+table row), the bestiary draw-offset rows for 370/372 (the portrait
+nudges), and the Tempest Staff's own 408 sharknado (the minion
+projectile family — its Kill arm does NOT spawn sharks; the 372
+spawner is the 384 cloud the boss's unaimed bolt deaths create).
 
 ## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
 

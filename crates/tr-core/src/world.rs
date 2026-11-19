@@ -228,6 +228,10 @@ pub struct World {
     /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
     /// flag 6, `NPC.cs:79346`'s case 245).
     pub downed_golem: bool,
+    /// `NPC.downedFishron` (`NPC.cs:6369`) — Duke Fishron's defeat (the
+    /// event flag 7, `NPC.cs:79349`'s case 370). S1-D-3 W-9 fishron
+    /// wiring.
+    pub downed_fishron: bool,
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
@@ -597,6 +601,7 @@ impl World {
             brain_x: 0.0,
             brain_y: 0.0,
             downed_golem: false,
+            downed_fishron: false,
             downed_deerclops: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
