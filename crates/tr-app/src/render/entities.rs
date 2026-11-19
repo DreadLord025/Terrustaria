@@ -1129,6 +1129,8 @@ pub(crate) const FROST_SHEETS: &[u32] = &[
     350, // the Elf Archer
     351, // Krampus
     352, // Flocko
+];
+
 /// The Frost Moon wave family's sheets (`S1-F-13c` slice A): one sheet per
 /// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the Zombie Elf
 /// trio (338-340), the Present Mimic (341), the Gingerbread Man (342), the
