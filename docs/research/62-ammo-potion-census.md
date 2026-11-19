@@ -14,6 +14,9 @@ mana cooldowns. Each row carries a C# line cite, a port status, and a fix slice.
 Status legend: **DONE** = 1:1 port present · **PARTIAL** = some halves missing ·
 **MISSING** = no port counterpart · **DIVERGENT** = ported but behaviour differs ·
 **PARKED** = deliberately deferred (documented).
+Swarm-vocabulary mapping (S1 census scheme): DONE = **FAITHFUL**,
+DIVERGENT = **WRONG**, MISSING = **MISSING**, PARTIAL = WRONG/MISSING mix per
+sub-row; "bound but no handler" findings (P5) are **UNWIRED**.
 
 > **ID note (load-bearing):** in this decompilation **Potion Sickness = buff 21**
 > (`BuffID.cs:213`) and **Mana Sickness = buff 94** (`BuffID.cs:359`). The commonly
@@ -30,7 +33,7 @@ Status legend: **DONE** = 1:1 port present · **PARTIAL** = some halves missing 
 | P2 | Per-item sickness durations missing (Restoration 2700 / Eggnog 2400 / Mushroom 1800 / Strange Brew random) — all hardcoded 3600 | **MISSING** | HIGH |
 | P3 | Mana potions (110/189/500/2209) have **no use path**; Mana Sickness (94) never applied | **MISSING** | HIGH |
 | P4 | Buff potions (Ironskin/Swiftness/Regen/Archery/…) grant **nothing** on use | **MISSING** | HIGH |
-| P5 | QuickHeal / QuickMana / QuickBuff hotkeys bound but **no handler** | **MISSING** | HIGH |
+| P5 | QuickHeal / QuickMana / QuickBuff hotkeys bound but **no handler** | **UNWIRED** (MISSING) | HIGH |
 | P6 | `DebugOptions.ManaV2 = true` default (slow-magic at 0 mana, ×2.5) unported; port hard-blocks low-mana use | **MISSING** | HIGH |
 | A1 | Nanite bullet (proj 285) ×1.25 applied **twice** to the ammo half | **DIVERGENT** | HIGH |
 | A2 | Ale Throwing Glove (3821) 69% not-consume arm dropped as "DEAD" — but `useAmmo = 353` is live | **DIVERGENT** | HIGH |
@@ -421,6 +424,15 @@ mandate) and updates `docs/PORT_MAP.md` + `docs/ROADMAP.md` on landing.
 
 ## D. Cross-references
 
+- **i01 census** — `docs/research/60-item-use-census.md` on branch
+  `task/S1-P-i01-item-use-census` independently found the same Potion Sickness
+  **bypass** (this report's P1): `editing.rs:540-565` computes `sick` at
+  `:542-546` and never checks it, while the C# gate is
+  `Player.cs:52217-52220` (`sItem.potion && potionDelay > 0` → refuse). The two
+  audits agree; P1's fix slice should land once and close both findings.
+  This report extends it with the missing use-cadence gate (per-tick drain),
+  the per-item delay durations (P2) and the shadowed second arm
+  (`editing.rs:1372-1400`).
 - `docs/research/04-player-combat.md` — item use / hurt / buff baseline.
 - `docs/research/07-item-core.md` — item defaults / `DefaultToHealingPotion`
   (`Item.cs:48570-48582`).
