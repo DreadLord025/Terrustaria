@@ -669,8 +669,11 @@ pub struct Player {
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
-    /// Position at the previous fixed 60 Hz step, used to interpolate rendering
-    /// between simulation ticks on high-refresh displays.
+    /// Position at the previous fixed 60 Hz step — the pressure-plate bridge's
+    /// `PressurePlateHelper.PlayerLastPosition` (`PressurePlateHelper.cs:16`).
+    /// NOT a render interpolation source: the C# draws `player.position` raw
+    /// (`LegacyPlayerRenderer.cs:468-475`) — see `draw_region`'s draw note
+    /// (fix/player-motion-blur).
     pub prev_x: f32,
     pub prev_y: f32,
     /// `Player.ActuationRodLock` / `ActuationRodLockSetting`
@@ -1217,7 +1220,6 @@ pub struct Player {
     /// `Player.gfxOffY`: visual offset that hides the instant lift of `StepUp` /
     /// `StepDown`; eases back to zero so steps and slopes look smooth.
     pub gfx_off_y: f32,
-    prev_gfx_off_y: f32,
     /// `Player.stepSpeed`: how fast `gfxOffY` eases out.
     step_speed: f32,
     /// `Player.stairFall`: slopes may be fallen through this tick.
@@ -2038,7 +2040,6 @@ impl Player {
             liquid_move_speed: 1.0,
             in_lava: false,
             gfx_off_y: 0.0,
-            prev_gfx_off_y: 0.0,
             step_speed: 1.0,
             stair_fall: false,
             cart_mounted: false,
@@ -2562,7 +2563,6 @@ impl Player {
         self.jump = 0;
         self.fall_start = (y / TILE_PX) as i32;
         self.gfx_off_y = 0.0;
-        self.prev_gfx_off_y = 0.0;
     }
 
     pub fn respawn(&mut self) {
@@ -2616,7 +2616,6 @@ impl Player {
         // `Player.UpdateDead` (`Player.cs:16929`): death zeroes the special.
         self.mount_fishron_special_counter = 0.0;
         self.gfx_off_y = 0.0;
-        self.prev_gfx_off_y = 0.0;
         // `Player.KillMe` dismounts the mount (`Player.cs:38907`); the respawn
         // resets the ride state with it (the position is rebuilt from spawn
         // below, so no bottom-center resize is needed here).
@@ -4127,7 +4126,6 @@ impl Player {
         self.remove_expired_buffs();
         self.prev_x = self.x;
         self.prev_y = self.y;
-        self.prev_gfx_off_y = self.gfx_off_y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         // `Player.Update`'s Hallowed-cooldown decay (`Player.cs:25461-25464`,
         // right after `UpdateImmunity`): one tick off the 1800 shadow-dodge
@@ -8414,20 +8412,19 @@ impl Player {
         self.on_ground = self.vy == 0.0;
     }
 
-    /// Position between the previous and current fixed steps, for smooth rendering.
-    /// The visual step offset is interpolated too and baked into `y`.
-    pub fn interpolated(&self, alpha: f32) -> Self {
-        let a = alpha.clamp(0.0, 1.0);
-        let mut out = self.clone();
-        out.x = self.prev_x + (self.x - self.prev_x) * a;
-        out.y = self.prev_y + (self.y - self.prev_y) * a;
-        out.y += self.prev_gfx_off_y + (self.gfx_off_y - self.prev_gfx_off_y) * a;
-        out.prev_x = out.x;
-        out.prev_y = out.y;
-        out.gfx_off_y = 0.0;
-        out.prev_gfx_off_y = 0.0;
-        out
-    }
+    // fix/player-motion-blur: the old `interpolated(alpha)` render blend was
+    // REMOVED — it had no C# counterpart. `Main.DrawPlayers` hands the raw
+    // `player.position` to `LegacyPlayerRenderer` (`Main.cs:22298`,
+    // `LegacyPlayerRenderer.cs:468-475`: `position + netOffset + (0, gfxOffY)`,
+    // no `oldPosition` lerp), the layers truncate the screen position per
+    // component (`(int)(drawinfo.Position.X - Main.screenPosition.X + ...)`,
+    // `PlayerDrawLayers.cs:1907/1939`), and `Main.screenPosition` is itself
+    // `(int)`-truncated (`Main.cs:62646-62647`). Drawing between-tick blends
+    // under nearest sampling re-rasterised the sprite on a shifted pixel grid
+    // every frame — the user-reported "character smears during any movement".
+    // The draw path (`app/frame/draw.rs::draw_region`) now clones the raw
+    // fixed-step state; `prev_x`/`prev_y` remain for the pressure-plate bridge
+    // (`PressurePlateHelper.PlayerLastPosition`, `PressurePlateHelper.cs:16`).
     pub fn ammo_flags(&self) -> crate::ammo::AmmoFlags {
         crate::ammo::AmmoFlags {
             has_molten_quiver: self.has_molten_quiver,
