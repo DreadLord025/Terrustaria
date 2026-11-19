@@ -1,7 +1,10 @@
 //! S1-D-3 (aiStyle-55) — the Creeper family, `NPC.AI`'s
 //! `else if (this.aiStyle == 55)` block (`NPC.cs:32657-32741`), ported 1:1
-//! as a PURE velocity machine (code-only mode: no compiler/tests were run
-//! on this branch; the witness tests below are written, not executed).
+//! as a PURE velocity machine. **WIRED by S1-D-3 W-2**: the aiStyle axis
+//! claims `55 =>` (`npc.rs`'s `ai_055_creeper_family`) and the defective
+//! `update_creeper` stand-in is retired (code-only mode: no compiler/
+//! tests were run on the wiring branch; the witness tests below are
+//! written, not executed).
 //!
 //! Family identity (verified from the C#, not the brief's guess): the ONLY
 //! `this.aiStyle = 55;` row in `SetDefaults` is the **Creeper**, type 267
@@ -21,13 +24,16 @@
 //! field (the sim's `update_brain_state` pass, `world_sim/npcs.rs:1038-1041`,
 //! currently retains the Creepers away when the Brain dies).
 //!
-//! The live routing is UNCHANGED this round (wiring deferred): the kind
-//! match still runs the `update_creeper` stand-in (`npc.rs:13424`), whose
-//! audit defects against this block are recorded in ANALYSIS "The Creeper
-//! family (S1-D-3 aiStyle-55)" — the missing 700-px leash, the missing
-//! `TargetClosest`, the invented `.max(1.0)` distance guard, the
-//! divide-then-multiply lunge order, and the `hurt_cd` cooldown standing in
-//! for the one-tick `justHit` flag.
+//! The live routing (S1-D-3 W-2): the aiStyle axis runs
+//! `ai_055_creeper_family` -> `ai_055_step`; the retired `update_creeper`
+//! stand-in's audit defects against this block are recorded in ANALYSIS
+//! "The Creeper family (S1-D-3 aiStyle-55)" — the missing 700-px leash,
+//! the missing `TargetClosest`, the invented `.max(1.0)` distance guard,
+//! the divide-then-multiply lunge order, and the `hurt_cd` cooldown
+//! standing in for the one-tick `justHit` flag. The wiring feeds
+//! `Ai55Ctx::just_hit` from the port's new `Npc::just_hit` one-tick flag
+//! (armed by the strike paths, `NPC.cs:81274`; cleared once per update,
+//! `:90516`).
 //!
 //! RNG by construction: the arm's ONLY `Main.rand` draws are the lunge
 //! roll at `:32686`,
@@ -47,8 +53,6 @@
 //! All draws ride the caller's `UnifiedRandom` (the `Main.rand` analogue,
 //! `tr_core::unified_random`); the witnesses mirror the cited draws on a
 //! cloned stream and compare the full state (`UnifiedRandom: PartialEq`).
-
-#![allow(dead_code)] // the update_creeper wiring swap is the merge step (S1-D-3)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
