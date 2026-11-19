@@ -22,10 +22,14 @@ use crate::capture::{
     ToolbarAction,
 };
 
-/// The S1-G-13 placeholder renderer: `render_chunk` returns `None` (no GPU
-/// targets yet), so `CaptureCamera.DrawTick` advances the tile counter and
-/// drains the queue but blits nothing. The real wgpu implementation lands
-/// with the render-target family and replaces this stub.
+/// The S1-G-13 placeholder renderer: `render_chunk` returns `None` (the
+/// chunk render through the targets is not wired yet), so
+/// `CaptureCamera.DrawTick` advances the tile counter and drains the queue
+/// but blits nothing. The render-target FAMILY it needs now exists
+/// (`tr_render::RenderTargetFamily`, `App.targets` — `Main.InitTargets`,
+/// `Main.cs:58160-58216`); the remaining half is `Main.DrawCapture`
+/// (`Main.cs:56673-57066`) rendering the world through those layers into
+/// the 2048² framebuffer, which replaces this stub.
 struct PendingCaptureRenderer;
 
 impl CaptureRenderer for PendingCaptureRenderer {

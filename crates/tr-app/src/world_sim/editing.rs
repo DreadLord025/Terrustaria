@@ -1314,10 +1314,15 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81544-81553`) — the kind's own hit cue (the C#'s
-                // `null` guard: the kinds with no row play nothing).
+                // (`NPC.cs:81544-81553`) — the kind's own hit cue through
+                // the faithful case-3 path (S1-E-21 wave C): the volume
+                // arms + the `Main.rand.Next(-10, 11) * 0.01` pitch draw
+                // ride the `UpdatePlayers` stream (`Main.cs:17754`), only
+                // after the attenuation gate passed. The C#'s `null`
+                // guard: the kinds with no row play nothing.
                 if let Some(cue) = hit_cue {
-                    app.audio.play_at(cue, nx, ny, 1.0);
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    app.audio.play_npc_hit_sound(cue, nx, ny, rng);
                 }
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
@@ -1472,6 +1477,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         app.mine_timer = 0.0;
                     }
                     let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
+                    // The crack overlay's damage denominator
+                    // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                    app.mine_hardness = hardness;
                     if app.mine_timer >= hardness {
                         app.mine_timer = 0.0;
                         // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
@@ -1526,6 +1534,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 } else {
                     base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
                 };
+                // The crack overlay's damage denominator
+                // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                app.mine_hardness = hardness;
                 if app.mine_timer >= hardness {
                     break_tile(app, tx, ty);
                     app.mine_target = None;
@@ -1558,6 +1569,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         } else {
             let hardness =
                 (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
+            // The crack overlay's damage denominator
+            // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+            app.mine_hardness = hardness;
             if app.mine_timer >= hardness {
                 break_wall(app, tx, ty);
                 app.mine_target = None;

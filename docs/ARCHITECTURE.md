@@ -34,7 +34,7 @@ an agent needs before touching code.
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
-| NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
+| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (pool + AI arms; the data tables in `projectile/data.rs` — kind consts, `proj_data` rows, yoyo/flail tables, summon consts, `proj_frames`; S1-G-1 split A, re-exported from `projectile`) (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Gores: the pool, `NewGore`, the `Update` walk | `tr-core/src/gore.rs`, `gore_id.rs` (`GoreID.Sets`); the collision seam in `gore_seam.rs` (App); the `gores` fixed-step stage in `app/frame.rs` |
@@ -150,6 +150,13 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
+- `growth.rs` + `growth/trees.rs` — the `WorldGen.UpdateWorld` runtime growth ticks
+  (herbs, grass/spread, vines/moss, shells, pumpkins, dye plants, the dispatchers).
+  S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
+  `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
+  `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
+  `empty_tile_check`, the tree-invalidity kill) — verbatim move, public seams
+  re-exported from `growth`.
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets
@@ -161,14 +168,22 @@ an agent needs before touching code.
   and `KillTile_GetItemDrops` empty-group tables. See `ANALYSIS.md#s1-f-7-wave-a`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
-  (`framing::reframe_area`), so edits do not need a full-world framing pass. Placement
-  routes the registry kinds (`place_item_tile`, incl. the seed `PlaceAlch` branch and the
-  planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
+  (`framing::reframe_area`), so edits do not need a full-world framing pass. The
+  tile-placement family lives in `edit/place.rs` (S1-K-4, extracted verbatim):
+  `place_tile`, `place_item_tile` (incl. the seed `PlaceAlch` branch and the
+  planter box 380), re-exported at `edit::` so every caller seam is unchanged.
+  Breaking runs the per-type KillTile cascade (`check_object`'s arms —
   doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
   `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
   events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
   the app's break sources — the mining tick, `break_tile`, the replicated break and
   explosions.
+- `edit/wall.rs` (S1-K-4 round 2) — the background-wall edit family moved verbatim
+  out of `edit.rs`: `break_wall` (`WorldGen.KillWall`), `place_wall`
+  (`WorldGen.PlaceWall`) and the `after_wall_edit` hook (revision bump + chunk mark
+  + `framing::reframe_area(_, _, 2, true)` — no column-surface recompute). Both fns
+  are re-exported from `edit`, so `edit::break_wall`/`edit::place_wall` callers are
+  unchanged; behaviour frozen (world-hash pins + edit tests green).
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
@@ -284,7 +299,9 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
   wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the
-  animator), `npc.rs`, `spawner.rs`, `projectile.rs`,
+  animator), `npc.rs`, `spawner.rs`, `projectile.rs` (+ `projectile/data.rs`, the
+  verbatim data half: kind consts, `proj_data`, the yoyo/flail tables, the summon
+  constants and `proj_frames` — re-exported through `projectile`),
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,

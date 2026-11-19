@@ -48,6 +48,25 @@ impl App {
         screen: Vec2,
         m_h: f32,
     ) -> Option<(tr_render::sprite::RenderStats, TileDrawStats)> {
+            // S1-G-13: `Main.Draw`'s `EnsureRenderTargetContent` head call
+            // (`Main.cs:61644`, `:58152-58158`) — allocate/refresh the
+            // render-target family (`Main.InitTargets`, `:58160-58216`)
+            // when absent or the backbuffer resized. The port runs HiDef
+            // (the non-XNA default, `Main.cs:67047`) with
+            // `SupportWideScreen = false` (`:67046`). Allocation only: no
+            // draw pass consumes the layers yet — the frame path below is
+            // unchanged (ANALYSIS "The render-target family (S1-G-13)").
+            if let Some(gpu) = self.gpu.as_ref() {
+                tr_render::RenderTargetFamily::ensure(
+                    &mut self.targets,
+                    &gpu.device,
+                    gpu.config.format,
+                    (gpu.config.width, gpu.config.height),
+                    true,
+                    false,
+                    tr_render::RENDER_TARGET_MAX_HIDEF,
+                );
+            }
             // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
             // high-refresh displays.
             let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
@@ -105,6 +124,9 @@ impl App {
             // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
             // `:43298`). The removals drain in the tick.
             let right_release = std::mem::take(&mut self.ui_right_release);
+            // `Main.mouseLeftRelease` — the achievement popup's click edge
+            // (`InGamePopups.cs:124`), consumed per frame like the right one.
+            let left_release = std::mem::take(&mut self.ui_left_release);
             let vampire_seed = self
                 .world
                 .micro_seeds
@@ -127,6 +149,15 @@ impl App {
             let debug_items = self.items.len();
             let debug_projectiles = self.projectiles.active_count();
             let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
+            // S1-G-1 wave D: the void lens's `Update` gate
+            // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
+            // the field destructuring (the pass borrows `entity_lights` mutably).
+            let game_paused_for_specials = self.game_paused;
+            // The achievement popup's click target (`InGamePopups.cs:138`'s
+            // `OpenAchievementsAndGoto`) — parked here because the goto
+            // mutates `self` while the draw destructure holds its fields;
+            // applied after the gpu block (S1-E-26 wave A).
+            let mut popup_goto: Option<&'static str> = None;
 
             {
                 let App {
@@ -152,6 +183,12 @@ impl App {
                     inventory,
                     selected,
                     edit_target,
+                    mine_target,
+                    mine_timer,
+                    mine_hardness,
+                    mine_crack_style,
+                    mine_crack_target,
+                    mine_crack_rng,
                     camera,
                     zoom,
                     debug,
@@ -179,6 +216,7 @@ impl App {
                     grass_wind_counter,
                     sunflower_wind_counter,
                     sunflower_wind_step,
+                    vine_wind_counter,
                     leaves,
                     items,
                     swing,
@@ -591,6 +629,13 @@ impl App {
                             sunflower_wind_counter,
                             wind.speed_current,
                         );
+                        // `_vineWindCounter` advances in the same
+                        // `TileDrawing.Update` (`TileDrawing.cs:375`), so it
+                        // rides the same 60 Hz step (S1-G-1).
+                        tr_core::wind::advance_vine_counter(
+                            vine_wind_counter,
+                            wind.speed_current,
+                        );
                     });
 
                     // `TileDrawing.Update`'s WindGrid chain (`TileDrawing.cs:377-378`,
@@ -672,6 +717,35 @@ impl App {
                                     (grass_wind_counter.to_bits() as u32)
                                         ^ (tree_wind_counter.to_bits() as u32)
                                         ^ (sunflower_wind_counter.to_bits() as u32)
+                                        ^ (vine_wind_counter.to_bits() as u32)
+                                } else {
+                                    0
+                                })
+                                // S1-G-1: the vine strips' `GetWindGridPush`
+                                // (`TileDrawing.cs:9076-9078`) decays on the
+                                // grid clock even in calm air — a player's
+                                // stamp keeps moving pixels for 20 ticks with
+                                // no other key input changing. The clock
+                                // rides the key only when a vine thread is
+                                // in the view rect (the pass's only grid
+                                // consumer), so vine-free worlds keep the
+                                // old cache behaviour bit-for-bit.
+                                ^ (if wind.sway_enabled && {
+                                    let vh = screen * 0.5 / *zoom;
+                                    let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                                    let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                                    let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                                    let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                                    (vy0..=vy1).any(|ty| {
+                                        (vx0..=vx1).any(|tx| {
+                                            world.tile(tx, ty).is_some_and(|t| {
+                                                t.active()
+                                                    && crate::render::vines::is_vine_thread(t.kind)
+                                            })
+                                        })
+                                    })
+                                } {
+                                    wind.wind_grid.key()
                                 } else {
                                     0
                                 })
@@ -854,8 +928,65 @@ impl App {
                             *tree_wind_counter,
                             *sunflower_wind_counter,
                             &mut leaf_spawns,
+                            *vine_wind_counter,
                         );
                         *world_key = Some(key);
+                    }
+
+                    // S1-G-1 wave C: the tile-crack overlay
+                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
+                    // solid-layer sites `TileDrawing.cs:732-733`). It rides
+                    // the per-frame world range right after the cached tile
+                    // pass — the damage timer advances every frame, so the
+                    // crack cannot live inside the G6-cached range (the
+                    // `WorldFrameKey` is untouched). The port's stand-in for
+                    // the solid-layer site; ANALYSIS "The tile-crack
+                    // overlay (S1-G-1 wave C)".
+                    crate::render::tile_cracks::draw_mining_cracks(
+                        renderer,
+                        world,
+                        light,
+                        &style,
+                        draw_cam,
+                        anim_time,
+                        *mine_target,
+                        *mine_timer,
+                        *mine_hardness,
+                        mine_crack_rng,
+                        mine_crack_style,
+                        mine_crack_target,
+                    );
+                    // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
+                    // false)`'s pylon / trophy / void-lens passes
+                    // (`TileDrawing.cs:423-425`). The sprites ride the
+                    // always-rebuilt world-effect range (screen space, like
+                    // the leaf gores), so the G6-cached world range and its
+                    // key stay untouched; the C# draws them between the tile
+                    // layers — the port's fused pass keeps the documented
+                    // z-order approximation (ANALYSIS "The pylon/trophy/
+                    // void-lens passes"). The `tileFrameCounter[597]/[491]`
+                    // stand-ins are the update-count wraps (`Main.cs:19284`,
+                    // `:19227` — the animator is unported).
+                    {
+                        let special_env = crate::render::pylons::SpecialEnv {
+                            global_time: anim_time % 3600.0,
+                            pylon_counter: self.game_update_count % 64,
+                            lens_counter: self.game_update_count % 40,
+                            show_invisible: crate::env::show_invisible(),
+                        };
+                        crate::render::pylons::draw_pylons_trophies_void(
+                            renderer,
+                            world,
+                            light,
+                            &style,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            anim_time,
+                            &special_env,
+                            game_paused_for_specials,
+                            &mut self.entity_lights,
+                        );
                     }
 
                     // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
@@ -1357,6 +1488,12 @@ impl App {
                             // `Player.HasNPCBannerBuff`'s table — the Monster
                             // Banner's hover list (`Main.cs:21360-21388`).
                             &self.scene_metrics.npc_banner_buff,
+                            // `Main.mouseNPCIndex/mouseNPCType` — the carried
+                            // housing head (`Main.cs:45200-45216`).
+                            ui::housing::MouseNpc {
+                                index: self.mouse_npc_index,
+                                ty: self.mouse_npc_type,
+                            },
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
@@ -1421,6 +1558,34 @@ impl App {
                             self.mouse_pos,
                             menu.is_some(),
                         );
+                    }
+                    // `DrawInterface_13_AchievementCompletePopups`
+                    // (`Main.cs:44779-44783`, `:46143-46146`): the unlock
+                    // toasts draw over the interface — after the fancy UI
+                    // (layer 12) and the achievements overlay, before the
+                    // entity health bars (layer 14). The menu twin
+                    // (`Main.cs:48457`) draws them over the legacy menu too;
+                    // the port's popups only ever exist in-world (the drain
+                    // runs on the world branch and `SaveAndQuit` clears the
+                    // tracker, `WorldGen.cs:6714`). S1-E-26 wave A.
+                    if menu.is_none() && front.is_none() && !crate::env::no_hud() {
+                        if let Some(name) = ui::notifications::draw(
+                            renderer,
+                            lookups,
+                            screen,
+                            &mut self.notifications,
+                            self.mouse_pos,
+                            self.mouse_text_color,
+                            left_release,
+                        ) {
+                            // `OnMouseOver` → `IngameFancyUI.
+                            // OpenAchievementsAndGoto` (`InGamePopups.cs:138`,
+                            // `UI/IngameFancyUI.cs`): open the overlay and
+                            // scroll the list to the row (`UIList.Goto`'s
+                            // `ViewPosition = item.Top.Pixels`) — applied
+                            // after the gpu block releases the field borrows.
+                            popup_goto = Some(name);
+                        }
                     }
                     // Task 6b: upload the revealed tiles into the world-sized map texture
                     // and clamp/recentre the fullscreen map. Vanilla centres the recentre
@@ -1752,6 +1917,12 @@ impl App {
                     gpu.queue.present(frame);
                 }
             }
+        // The popup click's `OpenAchievementsAndGoto` (S1-E-26 wave A) —
+        // the field borrows are released, so the overlay open + scroll lands
+        // for the next frame's draw.
+        if let Some(name) = popup_goto {
+            self.open_achievements_and_goto(name);
+        }
         Some((stats, tile_stats))
     }
 }

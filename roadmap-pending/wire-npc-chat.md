@@ -1,1 +1,0 @@
-S1-E-10b | ✅ | ✅ | wiring: world_sim/editing.rs:1558 (the live right-click dispatch, chest→tile→chat→shop per Main.cs:43077's tileInteractionHappened rule); tests: the_talk_action_returns_the_guides_chat_for_a_town_npc, the_talk_action_returns_none_for_a_non_town_npc, the_chat_box_rect_matches_the_csharp_geometry; 182 shop/chest tests stay green after the arm reorder
