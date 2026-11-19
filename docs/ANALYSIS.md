@@ -32870,3 +32870,97 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The prefix stat application census (S1-P-i49, 2026-11-19)
+
+A full census of `Item.Prefix`'s stat application (`Item.cs:504-618`), the
+multiplier switch (`TryGetPrefixStatMultipliersForItem`, `:709-1080`), the
+category resolution (`GetRollablePrefixes`/`IsAPrefixableAccessory`,
+`:1101-1157`) and the player-side consumption (`GrantPrefixBenefits`
+`Player.cs:13953-14047`, the use/damage reads in `world_sim/editing.rs`).
+The 78-case multiplier switch, the four accessory value tiers, the eight
+roll tables, the seven membership sets, the `ReducedNaturalChance` set and
+the `CanGetPrefixes` denial list were machine-diffed against the C# —
+**all identical**. Five defects were found and fixed:
+
+1. **The rare ladder compared f32 literals, not the promoted double**
+   (`Item.cs:587-602` casts `(double)num2` before comparing against the
+   double literals 1.2/1.05/0.8/0.95). `1.05f` is 1.04999995 — below the
+   double 1.05 — so the Quick (45) and the ×1.05 accessory tier
+   (62/69/73/77) shift the rare by **0**, not +1; `0.8f` is 0.80000001 —
+   above the double 0.8 — so the Weak-knockback (56) takes **−1**, not −2.
+   `shift_rare` now promotes to f64 before the ladder. Witness:
+   `rare_ladder_compares_the_promoted_double_not_the_f32_literal`.
+2. **Vanity accessories rolled prefixes.** `rollable_prefixes` omitted the
+   `!vanity` gate of `IsAPrefixableAccessory` (`Item.cs:1150-1157`); the
+   denial list only covers the music boxes/dyes/pet licenses, not the
+   capes/rings/monoliths/tails (~60 ids: Jungle Rose 208, Diamond Ring
+   2276, Winter Cape 2287, Solar Monolith 3539, …). The generated
+   `ItemDef.vanity` row now gates the accessory table — the gate runs
+   before any roll, so a vanity drop consumes **no** stream draws (the
+   pre-fix port drew `Next(4)`/`Next(len)`/`Next(3)` on every vanity
+   accessory drop, desyncing every later roll on that stream). Witness:
+   the `category_resolution_order` vanity block.
+3. **The rejection and `BestPrefixValue` read the raw generated row**, not
+   the `registry::item` corrections seam — the Bejeweled Staff (6171)
+   zero-row (damage −1, kb 0) leaked into the invisible-change rejection
+   and the best-value scan while `prefixed_stats` already read the
+   corrected row. Both now resolve through `registry::item`. Witness:
+   `the_rejection_and_best_value_read_the_corrected_registry_row`.
+4. **The Arcane (66) mana grant compounded every tick.** The port folds
+   `statManaMax2 += 20` (`Player.cs:13971-13974`) into `Player.mana_max`,
+   but the C# rebases `statManaMax2 = statManaMax` in `ResetEffects`
+   (`:18389`) every tick. The port now carries `mana_max_base` (the
+   permanent `statManaMax`) and rebases `mana_max` at the reset seam —
+   the +20 is steady while worn and leaves on unequip; the Magic Power
+   buff's +20 (`:11890`) and the caster sets' rows ride the same rebase.
+   Witness: `s1_p_i49_the_arcane_mana_grant_rebases_every_tick`.
+5. **The summon prefixes' armor penetration never reached the strike.**
+   `PrefixedStats.armor_penetration` existed but no projectile field
+   carried it: `ApplyStatsFromSource` (`Projectile.cs:11128`) copies
+   `item.armorPenetration` onto the shot, `Damage_PVE_Inner`'s `num5`
+   (`:12831`) adds it to the owner's `GetArmorPenetration` sum and
+   `checkArmorPenetration` (`:13632`) lifts the rolled damage before the
+   defense line. The slot now carries `armor_penetration`, the generic
+   shot + the ammo shot copy the prefixed row at spawn, the whip-arm
+   child carries the parent's (`:11138`), and the PVE strike adds
+   `check_armor_penetration(num5, 0, defense)` for every owned shot.
+   Witness: `s1_p_i49_the_prefix_armor_penetration_lifts_the_pve_strike`.
+
+Also fixed test-side: the whip tag-damage witness
+(`the_prefixed_minion_tag_damage_reaches_the_slot`) used prefix 71 — an
+accessory damage row with tagdmg 0 — so its `want` was 0 and the assertion
+passed vacuously; it now uses the Focused (88, tagdmg +3) summon row.
+
+Deviations (deliberate, recorded):
+* The PVE strike's melee flag folds to `is_whip`: the flail/yoyo/boomerang
+  `melee = true` rows have no slot flag yet, so their Sharpened +12
+  (`GetArmorPenetration(melee)`) stays missed on those families (the
+  melee HIT path already reads `get_armor_penetration(true)`).
+* The PVE strike's debuff bonuses (ichor +15 / broken armor +20 / Betsy's
+  curse +40, `NPC.cs:81148`) pass false — the NPC debuff scan has not
+  landed on this seam (the melee hit's convention).
+* The gem-staff ArPenSpread's +4 (`Projectile.cs:22084`) stays unported
+  (the `gem_staves_finalize` note) — the slot field now exists for it.
+* The revolver's `revolverCritChanceBonus` clamp (`Player.cs:42677-42698`,
+  the only other `TryGetPrefixStatMultipliersForItem` consumer) is
+  unported — the Revolver (2269) fires through the generic ammo path with
+  no per-tick crit-bonus accumulator; its prefix crit rides the shot's
+  crit roll like every other gun.
+* `Player.mana_max_base` starts at the fresh-character 20
+  (`Player.cs:56075`); the `.plr` load does not hydrate the live player's
+  mana fields yet (the session stand-in), so a saved 200-mana character
+  still plays at 20 — the pre-existing hydration gap, unchanged here.
+
+**RNG order**: unchanged. The roll engine's draw sequence
+(`Next(4)` gate → `Next(len)` table pick → `Next(3)` reduced-chance,
+`Item.cs:544-558`) is untouched; the vanity gate runs BEFORE any draw
+(the C#'s `CanHavePrefixes` early return, `:515-518`), so the fix removes
+draws the C# never takes. The reforge roll (i45's scope) is untouched.
+
+**Verification.** Code-only: the multiplier switch / value tiers / roll
+tables / membership sets / denial lists were diffed programmatically
+against the decompiled C# (0 mismatches); the f32→f64 ladder boundaries
+were computed with exact f32 rounding (the six diverging prefixes pinned
+in the witness). The 5 new/updated witness tests are WRITTEN, NOT RUN —
+**no compiler invoked**.

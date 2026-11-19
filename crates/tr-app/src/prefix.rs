@@ -161,11 +161,13 @@ pub(crate) fn rollable_prefixes(kind: u16) -> Option<&'static [u16]> {
     if in_set(ITEMS_THAT_CAN_HAVE_LEGENDARY_2, kind) {
         return Some(PREFIXES_FOR_TERRARIAN);
     }
-    // `IsAPrefixableAccessory` (`Item.cs:1165-1171`): `accessory && !vanity
-    // && CanGetPrefixes[type]`. The port does not model the vanity flag yet —
-    // the denial list already covers the vanity-only accessory ids.
+    // `IsAPrefixableAccessory` (`Item.cs:1150-1157`): `accessory && !vanity
+    // && CanGetPrefixes[type]`. The vanity flag is the C#'s own `Item.vanity`
+    // (the generated row) — the capes/rings/monoliths/tails sit in the
+    // accessory family but take no prefix, and the denial list alone does
+    // not cover them (only the music boxes/dyes/pet licenses are on it).
     let def = itemdata::ITEMS.get(kind as usize)?;
-    if def.accessory && !in_set(CAN_GET_PREFIXES_EXCLUDED, kind) {
+    if def.accessory && !def.vanity && !in_set(CAN_GET_PREFIXES_EXCLUDED, kind) {
         return Some(PREFIXES_FOR_ACCESSORIES);
     }
     None
@@ -411,10 +413,15 @@ pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
     })
 }
 
-/// The rarity ladder + clamp (`Item.cs:588-605`): the value multiplier shifts
+/// The rarity ladder + clamp (`Item.cs:587-613`): the value multiplier shifts
 /// `rare` by ±1/±2 and the band clamps to [-1, 11] (a quest-fish −11 stays).
+/// The C# compares `(double)num2` — the f32 multiplier promoted to f64 —
+/// against DOUBLE literals, so the compares run in f64: `1.05f` is
+/// 1.04999995 (< 1.05, no +1 — the Quick 45 and the ×1.05 accessory tier
+/// 62/69/73/77 stay put) and `0.8f` is 0.80000001 (> 0.8, the Weak-knockback
+/// 56 takes −1, not −2). An f32-vs-f32-literal compare flips all six.
 fn shift_rare(rare: i32, prefix: u16, m: &Multipliers) -> i32 {
-    let num2 = Multipliers::value_multiplier(prefix, m);
+    let num2 = Multipliers::value_multiplier(prefix, m) as f64;
     let mut rare = if num2 >= 1.2 {
         rare + 2
     } else if num2 >= 1.05 {
@@ -499,7 +506,7 @@ pub fn roll_prefix<T: PrefixRandom + ?Sized>(
     if prefix_want == 0 || prefix_want == -3 {
         return 0;
     }
-    let def = match itemdata::ITEMS.get(kind as usize) {
+    let def = match crate::registry::item(kind) {
         Some(d) => d,
         None => return 0,
     };
@@ -547,7 +554,7 @@ pub(crate) fn best_prefix_value(kind: u16) -> f32 {
     let Some(rollable) = rollable_prefixes(kind) else {
         return 0.0;
     };
-    let Some(def) = itemdata::ITEMS.get(kind as usize) else {
+    let Some(def) = crate::registry::item(kind) else {
         return 0.0;
     };
     let mut best = 0.0_f32;
@@ -803,6 +810,18 @@ mod tests {
         // an accessory) is on the denial list.
         assert_eq!(rollable_prefixes(950), Some(PREFIXES_FOR_ACCESSORIES));
         assert_eq!(rollable_prefixes(267), None);
+        // The `!vanity` gate (`IsAPrefixableAccessory`, `Item.cs:1150-1157`):
+        // the Jungle Rose (208), the Diamond Ring (2276), the Winter Cape
+        // (2287) and the Solar Monolith (3539) are vanity accessories — the
+        // denial list does NOT carry them, the flag refuses the table (and
+        // with it every draw: `CanHavePrefixes` returns before any roll).
+        for vanity in [208u16, 2276, 2287, 3539, 4822, 5075] {
+            assert_eq!(rollable_prefixes(vanity), None, "vanity {vanity}");
+        }
+        // The functional pair still prefixes: the Aglet (285) and the
+        // Band of Regeneration (49).
+        assert_eq!(rollable_prefixes(285), Some(PREFIXES_FOR_ACCESSORIES));
+        assert_eq!(rollable_prefixes(49), Some(PREFIXES_FOR_ACCESSORIES));
     }
 
     #[test]
@@ -919,13 +938,81 @@ mod tests {
     fn accessory_prefixes_bump_value_only() {
         // 66 (the ×1.15 value tier — 64/71/75/79/66) grants no item stats:
         // the Ice Skates' (950) stats ride unchanged, the value ×1.3225,
-        // and the ladder's ≥1.05 bar shifts the rare +1.
+        // and the ladder's ≥1.05 bar shifts the rare +1 (1.15f = 1.14999998
+        // clears the double 1.05).
         let skates = itemdata::ITEMS[950];
         let s = prefixed_stats(950, 66).unwrap();
         assert_eq!(s.damage, skates.damage);
         assert_eq!(s.crit, skates.crit);
         assert_eq!(s.value, (skates.value as f32 * 1.15 * 1.15) as i32);
         assert_eq!(s.rare, skates.rare + 1);
+    }
+
+    #[test]
+    fn rare_ladder_compares_the_promoted_double_not_the_f32_literal() {
+        // `Item.cs:587-602` compares `(double)num2` against DOUBLE literals.
+        // The ×1.05 tier's f32 product is 1.04999995 — BELOW the double 1.05
+        // — so the Quick (45) and the Hard/Jagged/Brisk/Wild accessories
+        // (62/69/73/77) shift the rare by 0, not +1. An f32-vs-1.05f compare
+        // (1.05f rounds to the same 1.04999995) would say `>=` and bump.
+        for p in [45u16, 62, 69, 73, 77] {
+            let m = Multipliers::stat_switch(p);
+            let vm = Multipliers::value_multiplier(p, &m);
+            assert!(
+                (vm as f64) < 1.05,
+                "prefix {p}: the f32 product {vm} promotes below the double 1.05"
+            );
+            assert_eq!(shift_rare(3, p, &m), 3, "prefix {p}: no rare shift");
+        }
+        // The Weak-knockback (56): kb 0.8f = 0.80000001 — ABOVE the double
+        // 0.8 — so the ≤0.8 −2 arm refuses and the ≤0.95 −1 arm takes it.
+        let m = Multipliers::stat_switch(56);
+        let vm = Multipliers::value_multiplier(56, &m);
+        assert!((vm as f64) > 0.8);
+        assert_eq!(shift_rare(3, 56, &m), 2, "56: −1, not −2");
+        // The Sluggish (48): spd 1.2 → vm = 2 − 1.2f = 0.79999995, BELOW the
+        // double 0.8 — the −2 arm takes it (both compare forms agree here;
+        // the pin keeps the pair honest).
+        let m = Multipliers::stat_switch(48);
+        assert_eq!(shift_rare(3, 48, &m), 1, "48: −2");
+        // The ×1.2 tier (65/68/72/76/80): 1.2f = 1.20000005 clears the
+        // double 1.2 → +2, capped at 11.
+        for p in [65u16, 68, 72, 76, 80] {
+            let m = Multipliers::stat_switch(p);
+            assert_eq!(shift_rare(3, p, &m), 5, "prefix {p}: +2");
+        }
+        // The ×1.15 tier (64/66/71/75/79): 1.15f = 1.14999998 clears the
+        // double 1.05 but not 1.2 → +1.
+        for p in [64u16, 66, 71, 75, 79] {
+            let m = Multipliers::stat_switch(p);
+            assert_eq!(shift_rare(3, p, &m), 4, "prefix {p}: +1");
+        }
+        // The clamp floor and the quest-fish exemption still hold.
+        assert_eq!(shift_rare(0, 39, &Multipliers::stat_switch(39)), -1);
+        assert_eq!(shift_rare(-11, 39, &Multipliers::stat_switch(39)), -11);
+    }
+
+    #[test]
+    fn the_rejection_and_best_value_read_the_corrected_registry_row() {
+        // `roll_prefix`/`best_prefix_value` resolve the base row through
+        // `registry::item` — the M4-PROJ-6 corrections seam. The Bejeweled
+        // Staff (6171) is the band's zero row in the generated table
+        // (damage −1, kb 0); the correction carries damage 27 / kb 6
+        // (`Item.cs:47550-47555`). The raw row would reject EVERY
+        // knockback-only prefix (kb 0) and every damage row rounding back
+        // to −1; the corrected row keeps them.
+        let corrected = crate::registry::item(6171).unwrap();
+        assert_eq!(corrected.damage, 27);
+        // Heavy (38, kb ×1.15) survives on the corrected kb 6 — the raw
+        // row's kb 0 would reject it (`Item.cs:1075-1078`).
+        let mut rng = test_rng(5);
+        assert_eq!(roll_prefix(6171, 38, &mut rng), 38);
+        // The best value scans the corrected rows too: the staff's magic
+        // table top (83, Mythical) beats the identity 0 the raw-row
+        // rejection funnel would leave for the kb-only tiers.
+        let best = best_prefix_value(6171);
+        let m83 = Multipliers::stat_switch(83);
+        assert!(best >= Multipliers::value_multiplier(83, &m83));
     }
 
     #[test]

@@ -1051,6 +1051,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
                             app.projectiles
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
+                            // `:11128`: `armorPenetration += item.armorPenetration`
+                            // — the summon prefixes' arpen row (85/86/87/91/95)
+                            // rides every fired shot, whip included.
+                            let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                            app.projectiles.set_armor_penetration(slot, arpen);
                         }
                     }
                     // `Player.cs:48210` — the sentry spawns run the turret
@@ -1938,6 +1943,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
+                // `ApplyStatsFromSource` (`Projectile.cs:11128`): the
+                // weapon prefix's `armorPenetration` rides the ammo shot.
+                let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                app.projectiles.set_armor_penetration(slot, arpen);
             }
             app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
@@ -5353,11 +5362,15 @@ mod tests {
 
     #[test]
     fn the_prefixed_minion_tag_damage_reaches_the_slot() {
-        // The minion prefixes 69-72 add `Item.bonusTagDamage`
-        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
-        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The summon prefixes 85-97 add `Item.bonusTagDamage`
+        // (`TryGetPrefixStatMultipliersForItem`, `Item.cs:900-950` — the
+        // Ruthless 85 / Mythical-adjacent rows carry tagdmg 3/5); the fire
+        // path copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The prefix must be a SUMMON-table id: 71 (Angry) is an accessory
+        // damage row with tagdmg 0 — the old fixture's `want` was 0 and the
+        // assertion passed vacuously.
         let mut app = whip_app(4678);
-        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        app.inventory[app.selected].prefix = 88; // Focused: dmg ×1.1, tagdmg +3
         mine_frames(&mut app, 1);
         app.mine_down = true;
         mine_frames(&mut app, 1);
@@ -5367,7 +5380,8 @@ mod tests {
             .iter()
             .find(|p| p.active)
             .expect("the SwordWhip");
-        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        let want = crate::prefix::prefixed_stats(4678, 88).unwrap().tag_damage;
+        assert_eq!(want, 3, "the Focused row carries +3 (`Item.cs:916-919`)");
         assert_eq!(p.bonus_tag_damage, want);
     }
 
