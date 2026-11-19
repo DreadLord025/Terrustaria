@@ -795,6 +795,14 @@ pub(crate) struct App {
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
+    /// `Main.tileFrame`/`tileFrameCounter` + `weatherVaneBobframe`
+    /// (`Main.cs:1596-1597`, `:2237`) — the animated-tile animator
+    /// (`Main.AnimateTiles`, `Main.cs:18516-19304`), ticked once per client
+    /// update beside the waterfall animator (`Main.cs:17148-17150`),
+    /// S1-G-1f. `draw_tiles` reads its rows/counters; the G6
+    /// `WorldFrameKey::tile_anim` covers every value it feeds the draw.
+    pub(crate) tile_anim: tr_core::drawdata_anim::TileAnimator,
+    pub(crate) tile_anim_step: FixedStepper,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -1003,6 +1011,13 @@ pub(crate) struct WorldFrameKey {
     pub(crate) brightness: u32,
     /// Waterfall animation frames + visible-list revision (0 when none visible).
     pub(crate) waterfall: u64,
+    /// S1-G-1f: `TileAnimator::anim_key()` — the animated-tile rows/counters
+    /// and the weather-vane bob (`Main.AnimateTiles`, `Main.cs:18516-19304`)
+    /// that `draw_tiles` feeds `draw_data`/`case_draw_data`. Zero unless an
+    /// animated kind is active in the view rect, so animator-free worlds
+    /// keep the pre-wiring cache behaviour bit-for-bit (the waterfall key's
+    /// convention).
+    pub(crate) tile_anim: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
@@ -1039,11 +1054,54 @@ mod frame_key {
             light_generation: 0,
             brightness: brightness.to_bits(),
             waterfall: 0,
+            tile_anim: 0,
             net_key: 0,
             world_revision: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
         assert_eq!(key(1.2), key(1.2), "an unchanged brightness must not");
+    }
+
+    /// S1-G-1f key-coverage witness: the wired tile animator's state rides
+    /// the cached world range (`draw_tiles` feeds `animation_row`/counters
+    /// into `draw_data`/`case_draw_data`), so two frames that differ only
+    /// in animator state must not share a cached range. The key input is
+    /// `TileAnimator::anim_key()` — this pins that a changed animation row,
+    /// counter or bobframe changes it.
+    #[test]
+    fn tile_animator_state_changes_the_frame_key() {
+        let key = |tile_anim: u64| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim,
+            net_key: 0,
+            world_revision: 0,
+        };
+        let mut a = tr_core::drawdata_anim::TileAnimator::new();
+        let k0 = key(a.anim_key());
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        a.animate_tiles(0.5, &mut rng, false);
+        let k1 = key(a.anim_key());
+        assert_ne!(k0, k1, "one animator tick must change the key");
+        assert_eq!(k1, key(a.anim_key()), "an unchanged animator must not");
+        // The bobframe alone (a draw input the rows/counters never show)
+        // must ride the key too.
+        let before = a.anim_key();
+        a.weather_vane_bobframe += 1;
+        assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
     }
 }
 
@@ -1910,6 +1968,11 @@ impl App {
         // world never enters paused. (`GameUpdateCount` resets through the
         // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
         self.game_paused = false;
+        // S1-G-1f: the world-load animator reset (`Main.cs:8393-8394` —
+        // `tileFrame[l] = 0; tileFrameCounter[l] = 0`, and
+        // `weatherVaneBobframe = 0` at `:67242`).
+        self.tile_anim.reset();
+        self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
         // the legacy engine owns the counter in the port (S1-E-19 wave B,
         // `LegacyLighting.cs:345-348`).
@@ -3569,6 +3632,8 @@ impl App {
             liquid_tick: 0,
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
+            tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
+            tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),

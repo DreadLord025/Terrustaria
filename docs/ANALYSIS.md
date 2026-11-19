@@ -3276,9 +3276,87 @@ rand, generating_or_loading)`:
   receives 0 until a follow-up feeds `TileAnimator::animation_row(kind)` in
   (kept out of this wave to stay disjoint from wave A's `drawdata.rs` edits);
   (2) `AnimateTiles_CritterCages` (`:19303`, body `:13511+`) not ported вЂ” it
+  (kept out of this wave to stay disjoint from wave A's `drawdata.rs` edits)
+  — **RESOLVED by S1-G-1f (2026-11-19), see below**;
+  (2) `AnimateTiles_CritterCages` (`:19303`, body `:13511+`) not ported — it
   animates the separate `Main.bunnyCageFrame[]` cage-entity arrays behind the
   `Main.critterCage` proximity gate, part of the still-missing tile-620
   deferred special pass (research/09), not `tileFrame[]`.
+
+### S1-G-1f render wiring — ropes + animator (code-only mode, 2026-11-19)
+
+The wiring wave for the landed-unwired render modules. **Code-only mode: no
+compiler invoked; tests WRITTEN NOT RUN** — the gate phase runs them.
+
+**G-1b ropes — WIRED.** `render/tiles.rs::draw_tiles` calls
+`ropes::wants_back_rope` + `ropes::draw_back_rope` once per cell, at the exact
+C# position: after `DrawSingleTile`'s `!flag` return (`TileDrawing.cs:1014-1017`)
+and `IsVisible` (`:983`) — the port's dark-cell merge / `skip_draw` / unframed /
+echo-hidden `continue`s — and BEFORE the cell's own sprite, because both C#
+dispatch sites draw the rope first: `DrawBasicTile`'s planter/platform gate
+(`:1511-1514`) and `DrawTile_MinecartTrack` (`:3792`, before the track sprites).
+One gated hook covers both sites (`wants_back_rope` = 380 ∪ 314 ∪ Platforms).
+The tint is the RAW `drawData.tileLight` (`:3781`) — the port passes `raw_l`,
+never the actuation-ghosted `l`; sheet/paint come from the TOP rope tile
+(`:3776-3780`). **G6:** the draw reads only world state (tile kinds/paints),
+already covered by `world_revision` — no key change needed. Draw-order
+witness: `back_rope_draws_after_the_gates_before_the_cell_sprite`
+(source-scan, the S1-B-7 pattern).
+
+**F-9b animator — WIRED (CritterCages still deferred).**
+- Tick: `App::animate_tiles_phase` (`app/frame/world.rs`) runs
+  `TileAnimator::animate_tiles` on a 60 Hz `FixedStepper` in the pre-gate
+  Animate cluster, right after the waterfalls phase — the port's slot for
+  `Main.AnimateTiles` (`Main.cs:17150`, after `DoUpdate_AnimateWalls`
+  `:17149`). Like the waterfalls it ticks while paused (the C# cluster is
+  pre-gate). The 453/456 drift draws + the bob roll ride `NamedRngs::global()`
+  (the bare-`Main.rand` stand-in); `generating_or_loading` is false in the
+  frame loop (worldgen completes before it starts). World-load reset in
+  `enter_loaded_world` (`Main.cs:8393-8394`).
+- Draw feed: `draw_tiles` takes `&TileAnimator`; `draw_data` +
+  `apply_world_corrections` receive `animation_row(kind)`
+  (`Main.tileFrame[typeCache]`, `TileDrawing.cs:4533`), slice B's
+  `case_draw_data` receives the row + `tile_frame_counter[kind]`, and
+  `CaseInputs::weather_vane_bobframe` rides `weather_vane_bobframe`.
+  Out-of-range kinds keep the t=0 row (the `TILE_SOLID` bounds convention).
+- **G6 key coverage:** new `WorldFrameKey::tile_anim` =
+  `TileAnimator::anim_key()` — FNV-1a over EVERY `tile_frame` +
+  `tile_frame_counter` entry + the bobframe (all three are draw inputs), so
+  any clock-dependent pixel change invalidates the cached range. Gated on
+  an animated kind being active in the view rect
+  (`TileAnimator::is_animated_kind`, the waterfall/vine-grid convention):
+  animator-free views keep the pre-wiring cache behaviour bit-for-bit.
+  Witnesses: `every_touched_kind_is_in_the_gate_set` (diffs both arrays +
+  bobframe across 700 ticks × 4 winds against the gate set),
+  `anim_key_tracks_state_and_reset`, `tile_animator_state_changes_the_frame_key`.
+- Order pins updated: `WORLD_PHASES` gains `animate_tiles` after
+  `waterfalls`; the paused-frame and stepper-blocked traces include it
+  (pre-gate cluster).
+- **Remaining deviation:** the minecart track's `GetFinalLight` pre-pass
+  (`TileDrawing.cs:3788`) means the TRACK's back-rope tint is the ghosted
+  light, not raw; the port passes `raw_l` for all three kinds (platforms/
+  planters are exact; actuated tracks differ by the ×0.4 ghost). The track's
+  own `Minecart.TrackColors`/`GetSourceRect` draw is still unported (the
+  cell draws through the generic arm), so this rides the track-draw task.
+
+**F-9c furniture + G-1e special_tiles — DOCUMENTED, still unwired.** Both
+need seams this wave does not own: `drawdata_furniture.rs`'s cage rewrites
+need the `Main.*CageFrame` tables (`AnimateTiles_CritterCages`, deferred
+above) and its chest rewrite shares the `CacheSpecialDraws_Part2` site with
+`special_tiles.rs::chest_frame_adjust`, which needs the chest store lookup
+(`chest::find_chest` over the frame's chest list) inside
+`resolve_tile_frame`; the platform side-fills need the behind-tiles layer
+(S1-G-13) and the `invisibleBlock` bit. Intended call sites are recorded in
+each module's header and PORT_MAP; the wiring is the next G-1 merge step.
+
+**Screenshot recipes (gate phase).** Ropes: a world with a rope column
+crossing a platform — `TR_SHOT=ropes.png TR_CAM=<x>,<y> TR_DAY=1
+TR_NOPLAYER=1 TR_DEBUG=0`, camera on the crossing; two identical runs must
+be SHA256-equal; zoom 1.0/1.5/2.0. Animator: `TR_SHOT=anim_f0.png` at frame
+0 vs `TR_SHOT=anim_f60.png` after 60 ticks (a Hellforge 12 / furnace 17 in
+view — rows advance every 6 ticks); with `TR_NOCACHE=1` vs cached the
+pixels must match (the key-coverage A/B); an animator-free view must stay
+cache-hit (`TR_STATS=1` `world_reused`).
 
 ### Status of every switch case (`TileDrawing.cs:4540-6032`)
 
