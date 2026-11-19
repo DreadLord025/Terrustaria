@@ -603,9 +603,15 @@ mod tests {
         let (vx, vy) = free_head_hover_velocity(0.0, 0.0, 1600.0, 1600.0, 1600.0, 1600.0);
         assert_eq!(vx, 0.0);
         assert!((vy - -0.05).abs() < 1e-6);
-        // Moving down (+0.02) while the aim is up: -0.05 twice = -0.08.
+        // Moving down (+0.02) while the aim is up: -0.05 once = -0.03 —
+        // the sign-cross double fires only while vy is STILL positive
+        // after the step (`:31409`), and 0.02 - 0.05 already crossed.
         let (_, vy2) = free_head_hover_velocity(0.0, 0.02, 1600.0, 1600.0, 1600.0, 1600.0);
-        assert!((vy2 - -0.08).abs() < 1e-6);
+        assert!((vy2 - -0.03).abs() < 1e-6);
+        // The true sign-cross double: +0.08 - 0.05 = +0.03 still > 0
+        // while the aim is negative -> the extra -0.05 lands (-0.02).
+        let (_, vy3) = free_head_hover_velocity(0.0, 0.08, 1600.0, 1600.0, 1600.0, 1600.0);
+        assert!((vy3 - -0.02).abs() < 1e-6);
     }
 
     #[test]

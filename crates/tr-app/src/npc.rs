@@ -18021,9 +18021,10 @@ mod tests {
             "the charge cap flips ({})",
             body.cast_windup
         );
-        // The countdown ticks -19..-2 (18 ticks), then the slam launches
-        // on the tick that reaches -1 (`:19682`).
-        for _ in 0..18 {
+        // The slam launches on the tick AFTER the one that reaches -1:
+        // the `ai[1] += num4` runs first (`:19674`), so the `== -1` arm
+        // (`:19681`) fires on the following tick's +1.
+        for _ in 0..19 {
             body.update_golem(&w, &player);
         }
         body.update_golem(&w, &player);
