@@ -145,7 +145,7 @@ fn aim_rotation(npc: &Npc, player: &Player) -> f32 {
     // `:27023-27030` — the ±6.283 wrap (the C#'s truncated 2π).
     if num438 < 0.0 {
         num438 += 6.283;
-    } else if num438 as f64 > 6.283 {
+    } else if (num438 as f64) > 6.283 {
         num438 -= 6.283;
     }
     num438
@@ -171,7 +171,7 @@ fn approach_axis(v: &mut f32, target: f32, accel: f32) {
 /// The ±0.1 dead-band clamp (`:27286-27293`, `:27377-27384`,
 /// `:27595-27602` — the C# compares in double).
 fn clamp_dead_band(v: &mut f32) {
-    if *v as f64 > -0.1 && (*v as f64) < 0.1 {
+    if (*v as f64) > -0.1 && (*v as f64) < 0.1 {
         *v = 0.0;
     }
 }
@@ -229,13 +229,13 @@ fn ai_body(
     }
     // `:27036-27057` — the shortest-path turn (the 3.1415 half-turn).
     if npc.rotation < num438 {
-        if (num438 - npc.rotation) as f64 > 3.1415 {
+        if ((num438 - npc.rotation) as f64) > 3.1415 {
             npc.rotation -= num439;
         } else {
             npc.rotation += num439;
         }
     } else if npc.rotation > num438 {
-        if (npc.rotation - num438) as f64 > 3.1415 {
+        if ((npc.rotation - num438) as f64) > 3.1415 {
             npc.rotation += num439;
         } else {
             npc.rotation -= num439;
@@ -248,7 +248,7 @@ fn ai_body(
     // `:27062-27069` — the rotation wrap.
     if npc.rotation < 0.0 {
         npc.rotation += 6.283;
-    } else if npc.rotation as f64 > 6.283 {
+    } else if (npc.rotation as f64) > 6.283 {
         npc.rotation -= 6.283;
     }
     // `:27070-27073` — the second snap band (after the wrap).
@@ -307,7 +307,7 @@ fn ai_body(
             // `:27118-27122` — the side: the NPC's integer half-width
             // vs the player's FULL width edge.
             let mut num444 = 1;
-            if npc.x + (w as i32 / 2) as f32 < player.x + crate::player::WIDTH {
+            if npc.x + ((w as i32 / 2) as f32) < player.x + crate::player::WIDTH {
                 num444 = -1;
             }
             // `:27123-27125` — the ±400 side-offset hover point.
@@ -472,7 +472,7 @@ fn ai_body(
         // -0.005 down to 0 (phase 2).
         if npc.ai[0] == 1.0 {
             npc.ai[2] += 0.005;
-            if npc.ai[2] as f64 > 0.5 {
+            if (npc.ai[2] as f64) > 0.5 {
                 npc.ai[2] = 0.5;
             }
         } else {
@@ -531,7 +531,7 @@ fn ai_body(
         let mut num459 = 4.0f32;
         let mut num460 = 0.1f32;
         let mut num461 = 1;
-        if npc.x + (w as i32 / 2) as f32 < player.x + crate::player::WIDTH {
+        if npc.x + ((w as i32 / 2) as f32) < player.x + crate::player::WIDTH {
             num461 = -1;
         }
         let (mut cx, mut cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
@@ -786,7 +786,7 @@ mod tests {
         let mut expect = b.atan2(a) + 1.57;
         if expect < 0.0 {
             expect += 6.283;
-        } else if expect as f64 > 6.283 {
+        } else if (expect as f64) > 6.283 {
             expect -= 6.283;
         }
         assert_eq!(aim_rotation(&n, &p), expect);
