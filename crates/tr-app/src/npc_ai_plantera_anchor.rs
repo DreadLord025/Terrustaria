@@ -74,9 +74,10 @@
 //! (`world_sim/npcs.rs`, before the tick closure) computes
 //! `hook_centroid(&app.npcs, type_of)` per live Plantera and writes
 //! `Npc::plantera_hook_anchor`; `update_plantera` consumes it with the
-//! own-centre fallback. No `NpcKind` maps to 263 yet (`to_u16` has no 263
-//! row), so the centroid stays `None` until the hook kind lands with
-//! `npc_ai_style52` — the wiring is live, the data is the stand-in.
+//! own-centre fallback. S1-D-3-wire-plantera-minions landed the hook
+//! kind (263) and fixed the pre-pass's `type_of` to read `cs_id` (the
+//! VANILLA type — `to_u16` is the protocol id 354, which never matched
+//! 263): the centroid is live whenever a hook lives.
 
 use crate::npc::Npc;
 

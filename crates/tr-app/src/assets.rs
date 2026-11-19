@@ -485,6 +485,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_125",
         "NPC_126",
         "NPC_262",
+        // The Plantera minions (S1-D-3-wire-plantera-minions): one sheet
+        // per kind, packed for `PLANTERA_MINION_SHEETS`' npc_sheets rows.
+        "NPC_261",
+        "NPC_263",
+        "NPC_264",
+        "NPC_265",
         "NPC_266",
         "NPC_267",
         "NPC_26",
