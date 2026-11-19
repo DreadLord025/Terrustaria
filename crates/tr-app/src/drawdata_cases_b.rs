@@ -40,9 +40,10 @@
 //! Deliberate deviations (docs/ANALYSIS.md "S1-F-9e slice B"):
 //! - `tile_frame` / `counter` (`Main.tileFrame[kind]` /
 //!   `Main.tileFrameCounter[kind]`) ride in as function parameters and
-//!   `weather_vane_bobframe` as an input; the production caller passes 0
-//!   until the animator (wave B, `drawdata_anim.rs`) is wired — the exact
-//!   vanilla t=0 state, the same convention as `draw_data`'s `tile_frame`.
+//!   `weather_vane_bobframe` as an input; WIRED since S1-G-1f — the
+//!   production caller (`render/tiles.rs::draw_tiles`) feeds the
+//!   `TileAnimator` state (`drawdata_anim.rs`), ticked by
+//!   `App::animate_tiles_phase` (`Main.cs:17150`).
 //! - `Animation.GetTemporaryFrame` reads `Animation._temporaryAnimations`
 //!   (Animation.cs:186-196); the port has no temporary-animation registry
 //!   yet, so [`temporary_frame`] returns `None` — the C# `false` path. The
@@ -66,7 +67,8 @@ use tr_core::world::World;
 /// wiring reference). `Default` is the neutral vanilla t=0 state.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CaseInputs {
-    /// `Main.weatherVaneBobframe` (Main.cs:2237; 0 until the animator).
+    /// `Main.weatherVaneBobframe` (Main.cs:2237; fed from the wired
+    /// `TileAnimator` since S1-G-1f).
     pub weather_vane_bobframe: i32,
     /// `Main.LocalPlayer.Center.X` (`player.x + width/2`); `None` = no
     /// local player (menu frames — the 579 deviation above).
@@ -100,8 +102,8 @@ fn temporary_frame(_x: i32, _y: i32) -> Option<i32> {
 /// applied onto the static table's `base`), `None` for everything else.
 ///
 /// `tile_frame` is `Main.tileFrame[kind]`, `counter` is
-/// `Main.tileFrameCounter[kind]` (both 0 in production until the animator
-/// is wired — the vanilla t=0 state).
+/// `Main.tileFrameCounter[kind]` (fed from the wired `TileAnimator` since
+/// S1-G-1f; zero state = the vanilla t=0 draw).
 pub fn case_draw_data(
     kind: u16,
     x: i32,

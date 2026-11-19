@@ -13,11 +13,13 @@
 //! module is only the rope-specific behind-the-cell draw plus its
 //! `WorldGen.IsRope`/`GetRopeEnds` probes.
 //!
-//! WIRING: the tiles pass does not call this yet (wave A owns `tiles.rs`);
-//! the hook is [`wants_back_rope`] + [`draw_back_rope`], to be invoked from
-//! `DrawBasicTile`'s dispatch site (`TileDrawing.cs:1511-1514`, before the
-//! platform sprite) and `DrawTile_MinecartTrack` (`:3792`). Draw order and
-//! framing are untouched by this module.
+//! WIRED (S1-G-1f, 2026-11-19): `render/tiles.rs::draw_tiles` calls
+//! [`wants_back_rope`] + [`draw_back_rope`] after the visibility gates and
+//! before the cell's own sprite — the `DrawBasicTile` dispatch site
+//! (`TileDrawing.cs:1511-1514`, before the platform sprite) and
+//! `DrawTile_MinecartTrack` (`:3792`) share the one gated hook. Draw order
+//! and framing are untouched by this module; the draw reads only world
+//! state (already covered by the G6 key's `world_revision`).
 use crate::assets;
 use crate::render::entities::flip_uv;
 use tr_core::lighting::LightStyle;
