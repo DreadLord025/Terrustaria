@@ -419,9 +419,32 @@ impl App {
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
                     // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's
                     // center tile while buff 11 is held. No RNG — the feed
-                    // leaves the streams untouched.
+                    // leaves the streams untouched. (Feed order follows
+                    // `Main.Update`'s family order: Players, NPCs,
+                    // Projectiles, Items, Dust — `Main.cs:17754-17783`.)
                     if let Some(p) = player.as_ref() {
                         if let Some((x, y, rgb)) = crate::entity_lights::shine_light(p) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
+                    // `Projectile.ProjLight` (S1-E-5, `Projectile.cs:
+                    // 16153-16661`): `Update` calls it once per movement
+                    // sub-step (`:17031`), after `HandleMovement` and the
+                    // active re-check (`:17027-17030`) — the port collects
+                    // the same sources here after the step, in
+                    // `Main.projectile` slot order, reading each slot's
+                    // current `light` amount (the aiStyle-24 arm rewrites
+                    // its shard's per tick, `:25953`). No ported arm draws
+                    // `Main.rand` (the rand-bearing 867/1000 arms have no
+                    // rows, `proj_lights.rs`), so the placement relative to
+                    // the sim leaves the stream untouched.
+                    let good_world = world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        if let Some((x, y, rgb)) = crate::proj_lights::proj_light(
+                            p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
+                        ) {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
