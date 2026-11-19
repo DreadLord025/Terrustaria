@@ -7413,6 +7413,40 @@ The micro-biome decorators over the finished world:
   shaft down from the surface into the buried 7×5 chamber with the sword
   tile (197 — the C#'s sword sprite tile; the breakable item drop = the
   follow-up).
+- **The living mahogany trees** (`MahoganyTreeBiome`, `:11-92` — S1-K-2
+  wave A, 2026-11-18): the faithful port of the Micro Biomes pass's
+  mahogany block (`WorldGen.cs:21105-21123`) — the `LivingTreeCount`
+  config roll (Min 6 / Max 11 / WorldWidth, the first executed step to
+  consume its config view; the view keys on the vanilla pass name, read
+  in-step — `apply_step`'s display-name keying is load-bearing for
+  `step_dunes` and stays), up to 20000 `RandomWorldPoint(worldSurface+50,
+  50, 500, 50)` attempts, the 6-wide solid floor find (`Down(200)` +
+  `AreaAnd(6,1)`), the ceiling find (`Up(120)` + `AreaOr(6,1)`) with the
+  30..65-tile headroom gates, the 60×90 `CanPlace` box, the mud-dominance
+  scanner gate (the drunk seed's 1-in-50 skip), the sine-swayed 5-tile
+  trunk segments (383 shell / wall-78 hollow / 2×2 joints), the two side
+  + two top `ShapeBranch` walks (`ShapeBranch.cs:25-75`, the rotated
+  twigs), the blotched `Circle(4)` leaf canopies (384,
+  `Modifiers.Blotches(4,2)`'s two-`NextDouble` + 0.3-spread shape), the
+  four `ShapeRoot` walks (`ShapeRoot.cs:17-54`, the two-`NextFloat` angle
+  jitter) and the style-10 jungle chest (`GetNextJungleChestItem` +
+  `AddBuriedChest`'s solid-floor down-scan). The step draws from its own
+  `pass_rng("Micro Biomes")` stream — no other step's ledger shifts. The
+  framing's 383/384 merge arms (`WorldGen.cs:82077-82082` — 383 merges
+  with MUD, the 191/192 pair's shape) landed in `framing.rs`.
+  `DEFAULT_WORLD` re-pinned 3439477718 → 143177146 (the new tiles plus the
+  downstream tile-dependent passes re-rolling around them); `SEED42_512`
+  unchanged (the sub-vanilla guard skips the block — the C#'s
+  `Next(worldSurface+50, maxTilesY-500)` band collapses there).
+  Deviations: the `SetFrames`/`PlaceWall` framing rides the post-pipeline
+  framing seam; the chest keeps the shared `place_chest` +
+  `stock_placed_chest` stand-in (no special-seed loot arms); the
+  `dualDungeons` origin veto is deferred with the seed. ThinIceBiome
+  stays unported: its snow-dominance gate (`dictionary[147] >
+  dictionary[0]+dictionary[1]` over the 50×50 box, `ThinIceBiome.cs:12-23`)
+  cannot pass in the compact terrain — the snow band is a one-row skin
+  over the ice shell (`terrain.rs:320-330`), so the biome would be dead
+  code until the faithful `Generate Ice Biome` pass lands.
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
@@ -18685,3 +18719,68 @@ collision pass. Deliberate folds, all cited in the module:
 - Position integration stays OUT of the arm (the C# AI ends before
   `UpdateCollision`); `wet`/`collideX`/`collideY` are read a tick late,
   exactly like the source.
+## The Blazing Wheel arm (S1-D-3 aiStyle-21, task/S1-D-3-aistyle21, 2026-11-18)
+
+**Code-only mode**: this round ran with file reads/writes + git only — no
+cargo/rustc/rustfmt/tests invoked. The 12 tests in `npc_ai_style21.rs::tests`
+are WRITTEN NOT RUN; the verification wave must run
+`cargo test -p tr-app npc_ai_style21` (plus the workspace catalog command)
+before the wiring lands.
+
+The C#'s `NPC.AI()` aiStyle-21 arm (`NPC.cs:24615-24665`) serves ONE type: the
+Blazing Wheel (72, `ID/NPCID.cs:10821`; `SetDefaults` `NPC.cs:9714-9731`: 0.3
+slots, 34x34, dmg 24, def 100, 100 HP, alpha 100, behindTiles, kb 0, noGravity,
+dontTakeDamage, scale 1.2). The port had no kind and no arm — nothing routed to
+style 21 (the aiStyle axis claims only style 5 so far). The sibling aiStyle-22
+(Poltergeist, `NPC.cs:24666+`) is untouched.
+
+`crates/tr-app/src/npc_ai_style21.rs` ports the arm as pure functions over
+`Npc` + the shared `npc_target.rs` selection:
+
+* `ai_style21` — the init (`TargetClosest()` once, `directionY = 1`,
+  `ai[0] = 1`, `:24617-24622`), the two `ai[1]` axis modes with the
+  collide-latch/flip/swap order exactly as written (mode 0 `:24624-24642`,
+  mode 1 `:24643-24661` — the immediate-contact arms run AFTER the
+  cleared-contact arms in the same tick, so a simultaneous X+Y contact does
+  both writes in source order), the ±`direction * directionY * 0.13` spin
+  (int product, then float scale) and the constant ±6 velocity tail
+  (`:24662-24663`).
+* The light (`:24664`) is RETURNED as `(tileX, tileY, [0.9, g, 0.2])` — the
+  minimal seam for the `EntityLights` feed (the `npc_lights.rs` vocabulary):
+  INTEGER half-extents, int-truncated centre, `/16` per axis, and
+  `g = 0.3 + (270 - Main.mouseTextColor)/400` (the 190..=255 pulse,
+  `Main.cs:18216-18223`).
+* `collision_move_blazing_wheel` — `Collision_MoveBlazingWheel`
+  (`:92775-92783`): the 12x12 box centred with INTEGER halves, through
+  `collision.rs::no_slope_collision` (`Collision.cs:2033-2133`) with
+  `fallThrough: true, fall2: true`; then the `Collision_MoveWhileDry` latch
+  (`:92591-92607`: the up-pin 0.01, collideX/collideY from the oldVelocity
+  diff, oldPosition, integrate). The dry branch is the ONLY reachable one:
+  `Collision_WaterCollision` forces the wheel dry (`:93055-93060`) and
+  `UpdateCollision` skips its slope pass for type 72 (`:92572`);
+  `UpdateCollision`'s pre-pass latch order (oldVelocity copy + flag clear
+  BEFORE the tile pass, `:92538-92540`) is folded in.
+* `blazing_wheel_frame` — FindFrame case 72 (`:74642-74653`): the 3-tick
+  stride over `npcFrameCount[72] = 4` (`Main.cs:67092`). Pure pair-function
+  until the kind's `find_frame` row lands (`Npc::frame_counter` is private to
+  npc.rs).
+
+**RNG argument (by construction, cited)**: no `Next`/`NextFloat` appears in
+`NPC.cs:24615-24665`, `TargetClosest`/`TryTrackingTarget`/
+`SetTargetTrackingValues` (`:77652-77781`), `noSlopeCollision`
+(`Collision.cs:2033-2133`), `Collision_MoveWhileDry` (`:92591-92607`),
+FindFrame case 72 (`:74642-74653`) or the `AddLight` funnel
+(`Lighting.cs:157-163`). The nearest wheel-numbered draw —
+`GetStackForSlimeItemDrop` case 72's `Next(20, 100)` (`:79782-79784`) — is
+keyed on ItemID 72 (SilverCoin, `ID/ItemID.cs:1827`), a loot helper with no
+caller in the decompile. So the functions take no RNG parameter, and the
+witness test `the_style21_arm_draws_no_rng` pins a seeded `UnifiedRandom`'s
+full state across 120 ticks of arm+collision+frame (written, not run).
+
+**Deliberate deviations**: (1) wiring deferred — no `NpcKind::BlazingWheel`
+roster row, no `update_rng` axis arm, no EntityLights feed, no `find_frame`
+case; the module is `#![allow(dead_code)]` until the kind wave (the
+`drawdata_anim.rs`/S1-F-9b precedent). (2) The `GetColor` type-72 arm
+(`:93597-93602`, keeps the light colour) and the dust/gore visuals are
+render-side, out of this AI round. (3) The SetDefaults row is a const struct
+(`BLAZING_WHEEL`) rather than roster fields, for the same reason.
