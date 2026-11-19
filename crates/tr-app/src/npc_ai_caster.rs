@@ -637,7 +637,7 @@ mod tests {
         let ps = [cand(5000.0, 1500.0)];
         let vs = [(0.0, 0.0)];
         let mut rng = UnifiedRandom::new(1);
-        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc.ai[0] = 99.0; // ++ → 100, the trigger tick
         caster_ai(&mut dc, &env(&w, &ps, &vs), &mut rng);
         assert_eq!(dc.ai[1], 0.0, "out of the firing rect: no windup");
@@ -671,7 +671,7 @@ mod tests {
         let vs = [(0.0, 0.0)];
         let mut e = env(&w, &ps, &vs);
         e.skeletron_red_hat = true;
-        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc.ai[0] = 10.0;
         let mut rng = UnifiedRandom::new(1);
         caster_ai(&mut dc, &e, &mut rng);
@@ -680,7 +680,7 @@ mod tests {
         caster_ai(&mut dc, &e, &mut rng);
         assert_eq!(dc.ai[0], 14.0);
         // Without the latch the same two ticks run 10 → 11 → 12.
-        let mut plain = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut plain = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         plain.ai[0] = 10.0;
         caster_ai(&mut plain, &env(&w, &ps, &vs), &mut rng);
         caster_ai(&mut plain, &env(&w, &ps, &vs), &mut rng);
@@ -729,7 +729,7 @@ mod tests {
             caster_ai(&mut n, &env(&w, &ps, &vs), rng);
         });
         assert_eq!(used, 101, "100 burst draws + 1 ambient Next(5)");
-        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc.ai[2] = 130.0;
         dc.ai[3] = 100.0;
         let used = draws_used(5, |rng| {
@@ -764,7 +764,7 @@ mod tests {
         let w = floored();
         let ps = [cand(2000.0, 1500.0)];
         let vs = [(0.0, 0.0)];
-        let mut dj = Npc::new(NpcKind::DesertDjinn, 1900.0, 1560.0);
+        let mut dj = Npc::new(NpcKind::DesertDjinn, 1900.0, 1560.0, 1, 0.0);
         dj.ai[0] = 179.0; // ++ → 180 → the trigger
         let mut rng = UnifiedRandom::new(2);
         caster_ai(&mut dj, &env(&w, &ps, &vs), &mut rng);
@@ -802,7 +802,7 @@ mod tests {
         let w = floored();
         let ps = [cand(2000.0, 1500.0)];
         let vs = [(0.0, 0.0)];
-        let mut imp = Npc::new(NpcKind::FireImp, 1900.7, 1560.9);
+        let mut imp = Npc::new(NpcKind::FireImp, 1900.7, 1560.9, 1, 0.0);
         imp.ai[0] = 10.0; // keep it off the triggers/teleport
         imp.ai[1] = 11.0; // -- → 10 → the spawn
         let mut rng = UnifiedRandom::new(4);
@@ -828,13 +828,13 @@ mod tests {
         let vs = [(0.0, 0.0)];
         let mut e = env(&w, &ps, &vs);
         e.skeletron_red_hat = true;
-        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc.ai[0] = 10.0;
         dc.ai[1] = 26.0; // -- → 25 → the shoot tick
         let mut rng = UnifiedRandom::new(6);
         let shot = caster_ai(&mut dc, &e, &mut rng);
         assert!(matches!(shot, Some(CasterShot::Sphere { npc_type: 33, ai3, .. }) if ai3 == 1.0));
-        let mut plain = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut plain = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         plain.ai[0] = 10.0;
         plain.ai[1] = 26.0;
         let shot = caster_ai(&mut plain, &env(&w, &ps, &vs), &mut rng);
@@ -857,7 +857,7 @@ mod tests {
         let ps = [cand(2000.0, 1500.0)];
         let vs = [(0.0, 0.0)];
         // No wall, no Skeletron: the gate branch rejects every candidate.
-        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc.ai[0] = 649.0;
         let mut rng = UnifiedRandom::new(8);
         caster_ai(&mut dc, &env(&w, &ps, &vs), &mut rng);
@@ -866,7 +866,7 @@ mod tests {
         // lava else-if is SKIPPED, so the lava-covered spot is admitted.
         let mut e = env(&w, &ps, &vs);
         e.any_skeletron = true;
-        let mut dc2 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc2 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc2.ai[0] = 649.0;
         caster_ai(&mut dc2, &e, &mut rng);
         assert!(dc2.ai[2] != 0.0, "AnyNPCs(35) admits the spot; the lava else-if never runs");
@@ -875,7 +875,7 @@ mod tests {
             let i = w.index(x, 99);
             w.tiles[i].wall = 7;
         }
-        let mut dc3 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc3 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc3.ai[0] = 649.0;
         caster_ai(&mut dc3, &env(&w, &ps, &vs), &mut rng);
         assert_eq!((dc3.ai[2], dc3.ai[3]), (0.0, 0.0), "dungeon wall + lava: the else-if rejects");
@@ -885,7 +885,7 @@ mod tests {
             w.tiles[i].liquid = 0;
             w.tiles[i].flags &= !FLAG_LIQUID_LAVA;
         }
-        let mut dc4 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0);
+        let mut dc4 = Npc::new(NpcKind::DarkCaster, 1900.0, 1560.0, 1, 0.0);
         dc4.ai[0] = 649.0;
         caster_ai(&mut dc4, &env(&w, &ps, &vs), &mut rng);
         assert!(dc4.ai[2] != 0.0, "dungeon wall, no lava: admitted");
@@ -904,7 +904,7 @@ mod tests {
             (NpcKind::FireImp, 1),
             (NpcKind::DesertDjinn, 0),
         ] {
-            let mut n = Npc::new(kind, 1900.0, 1560.0);
+            let mut n = Npc::new(kind, 1900.0, 1560.0, 1, 0.0);
             n.ai[0] = 10.0;
             let used = draws_used(11, |rng| {
                 caster_ai(&mut n, &env(&w, &ps, &vs), rng);
