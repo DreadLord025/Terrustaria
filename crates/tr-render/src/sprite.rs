@@ -230,6 +230,31 @@ pub struct SpriteRenderer {
 
 const RING: usize = 3;
 
+/// The atlas sampler: XNA `SamplerState.PointClamp` — nearest min/mag/mip,
+/// clamp on both axes. The C# world draws run under it: `Camera.Sampler` is
+/// `Main.DefaultSamplerState` (`Camera.cs:44`), which is `PointClamp` whenever
+/// the frame renders through the capture targets (`Main.cs:2774-2784`,
+/// `!drawToScreen`); `LegacyPlayerRenderer.DrawPlayerFull` begins the batch
+/// with it (`LegacyPlayerRenderer.cs:264-269`). Nearest filtering is what
+/// keeps fractional world positions pixel-crisp: the entity layers truncate
+/// their screen positions (`PlayerDrawLayers.cs:1907/1939` `(int)`), and the
+/// raw-position draws (NPCs/projectiles, `Main.cs:30136`) still land on whole
+/// texels. A LINEAR sampler here would bilinearly blend neighbouring texels
+/// at sub-pixel offsets — the smear the user reported (fix/player-motion-blur
+/// investigated it; the actual culprit was the invented draw interpolation).
+/// Pure fn so the state is test-pinned without a GPU (`tests` below).
+pub(crate) fn atlas_sampler_descriptor() -> wgpu::SamplerDescriptor<'static> {
+    wgpu::SamplerDescriptor {
+        label: Some("atlas-sampler"),
+        mag_filter: wgpu::FilterMode::Nearest,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        ..Default::default()
+    }
+}
+
 impl SpriteRenderer {
     /// `font` uploads the retail `Fonts/*.xnb` glyph pages as a BC2 texture
     /// array (`font_atlas::FontAtlas`); `None` (or an adapter without the BC
@@ -284,15 +309,7 @@ impl SpriteRenderer {
             }
         };
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("atlas-sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&atlas_sampler_descriptor());
 
         let globals_world = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("globals-world"),
@@ -1555,6 +1572,26 @@ fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// fix/player-motion-blur — the sampler-state pin: the atlas sampler is
+    /// XNA `PointClamp` (`Camera.cs:44` → `Main.DefaultSamplerState`,
+    /// `Main.cs:2774-2784`; the player batch begins with it,
+    /// `LegacyPlayerRenderer.cs:264-269`). Nearest filtering + whole-pixel
+    /// screen positions = pixel-perfect entities; a linear min/mag here would
+    /// smear every sprite at fractional positions.
+    #[test]
+    fn atlas_sampler_is_point_clamp() {
+        let d = atlas_sampler_descriptor();
+        assert_eq!(d.mag_filter, wgpu::FilterMode::Nearest, "PointClamp mag");
+        assert_eq!(d.min_filter, wgpu::FilterMode::Nearest, "PointClamp min");
+        assert_eq!(
+            d.mipmap_filter,
+            wgpu::MipmapFilterMode::Nearest,
+            "PointClamp mip"
+        );
+        assert_eq!(d.address_mode_u, wgpu::AddressMode::ClampToEdge);
+        assert_eq!(d.address_mode_v, wgpu::AddressMode::ClampToEdge);
+    }
 
     // ---- S1-G-4: the tint's colour-space parity (research/41 D-5) ----
 

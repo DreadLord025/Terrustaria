@@ -655,7 +655,6 @@ let spawned = app.projectiles.spawn_hook(
                 grapple_dy: dy,
             };
         }
-        let step = 1.0 / 60.0;
         if cart_pin && !p.cart_mounted {
             p.mount_cart();
         }
@@ -1048,11 +1047,15 @@ let spawned = app.projectiles.spawn_hook(
             }
         }
         if app.follow_player {
-            // Follow the interpolated position so the camera is smooth between
-            // the 60 Hz simulation steps.
-            let alpha = (app.player_step.residual() / step).clamp(0.0, 1.0);
-            let render = p.interpolated(alpha);
-            let (cx, cy) = render.center();
+            // fix/player-motion-blur: the follow target is the RAW fixed-step
+            // position — the C# camera reads `LocalPlayer.Bottom + (0, gfxOffY
+            // - 21)` (`PlayerFocusedScreenPosition`, `Main.cs:62567-62570`),
+            // never a between-tick blend (the old render blend had
+            // no C# counterpart). The draw-time snap/truncate/clamp lives in
+            // `update_camera_at_draw` (`DoDraw_UpdateCameraPosition`,
+            // `Main.cs:62590-62649`); this update-tail ease only shapes the
+            // mid-tick camera reads (aiming, `mouse_world`).
+            let (cx, cy) = p.center();
             app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
         }
     }
