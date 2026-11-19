@@ -2417,6 +2417,221 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
     true
 }
 
+/// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's
+/// migrated scan family): the `AI_075` type-390 rider link, the saucer
+/// mounts' nearest-core lookup + crew counts, and the `AI_093` Dutchman
+/// crew count. The radius scans read the spatial hash
+/// (`crate::npc_spatial::NpcSpatial`) over the per-tick `NpcSnapshot` —
+/// candidates arrive in ascending slot order, the exact order the former
+/// linear `npcs.iter()` scans visited, with the predicates, the strict
+/// `< 1600.0` reach and the first-wins tie-break unchanged. The pass's own
+/// `hp = 0` kills mirror into the snapshot (`snap.kill`) so later scans in
+/// the family see the deaths exactly as the live reads did. The display
+/// inheritance stays a live write pass (it mutates OTHER slots).
+fn carrier_link_pre_pass(
+    npcs: &mut [Npc],
+    snap: &mut crate::world_sim::npc_snapshot::NpcSnapshot,
+) {
+    let spatial = crate::npc_spatial::NpcSpatial::build(snap);
+    for i in 0..npcs.len() {
+        if npcs[i].kind != NpcKind::ScutlixRider
+            && npcs[i].kind != NpcKind::MartianSaucer
+            && npcs[i].kind != NpcKind::MartianSaucerTurret
+            && npcs[i].kind != NpcKind::MartianSaucerCannon
+            && npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && npcs[i].kind != NpcKind::FlyingDutchman
+        {
+            continue;
+        }
+        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
+        // links have no port model — the count within the reach stands
+        // in: the ship's death rides it).
+        if npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = npcs[i].center();
+            let count = spatial.count_living_kind_within(
+                snap,
+                scx,
+                scy,
+                NpcKind::FlyingDutchmanCannon,
+                1600.0,
+            );
+            npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = npcs[i].sprite_dir;
+            let ship_rot = npcs[i].rotation;
+            for m in npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
+            continue;
+        }
+        let link_kind = if npcs[i].kind == NpcKind::ScutlixRider {
+            NpcKind::Scutlix
+        } else if npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
+        } else {
+            NpcKind::MartianSaucerCore
+        };
+        let (rcx, rcy) = npcs[i].center();
+        let best = spatial.nearest_living_kind(snap, rcx, rcy, link_kind, 1600.0);
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = npcs[j].center();
+                npcs[i].carrier_x = mcx;
+                npcs[i].carrier_y = mcy;
+                // The saucer family's extra payload: the core's mirrored
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
+                if link_kind == NpcKind::MartianSaucerCore {
+                    npcs[i].carrier_timer = npcs[j].ai[3];
+                    npcs[i].carrier_phase = npcs[j].ai[0];
+                    npcs[i].carrier_rot = npcs[j].rotation;
+                    npcs[i].carrier_facing = npcs[j].sprite_dir;
+                    let turrets = spatial.count_living_kind_within(
+                        snap,
+                        mcx,
+                        mcy,
+                        NpcKind::MartianSaucerTurret,
+                        1600.0,
+                    );
+                    let cannons = spatial.count_living_kind_within(
+                        snap,
+                        mcx,
+                        mcy,
+                        NpcKind::MartianSaucerCannon,
+                        1600.0,
+                    );
+                    npcs[i].crew_turrets = turrets;
+                    npcs[i].crew_cannons = cannons;
+                }
+            }
+            None => {
+                // The Scutlix rider falls with its carrier; the saucer
+                // mounts (the shell/guns) fall with the core.
+                if npcs[i].carrier_x >= 0.0 {
+                    npcs[i].carrier_x = -1.0;
+                    npcs[i].carrier_y = -1.0;
+                    npcs[i].hp = 0;
+                    // Mirror the kill into the read-only view: a later
+                    // mount's scan / crew count must not see it (the live
+                    // `hp > 0` reads didn't either).
+                    snap.kill(i);
+                } else if npcs[i].kind == NpcKind::ScutlixRider {
+                    // Never linked yet — the machine's init spawns.
+                }
+            }
+        }
+    }
+}
+
+/// The verbatim pre-migration linear scan (S1-D-8b's A/B reference): the
+/// family exactly as it ran over `npcs.iter()` before the spatial hash.
+/// Test-only — the twin-seed equivalence tests run it against the spatial
+/// path over byte-identical pools.
+#[cfg(test)]
+fn carrier_link_pre_pass_linear(npcs: &mut [Npc]) {
+    for i in 0..npcs.len() {
+        if npcs[i].kind != NpcKind::ScutlixRider
+            && npcs[i].kind != NpcKind::MartianSaucer
+            && npcs[i].kind != NpcKind::MartianSaucerTurret
+            && npcs[i].kind != NpcKind::MartianSaucerCannon
+            && npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && npcs[i].kind != NpcKind::FlyingDutchman
+        {
+            continue;
+        }
+        if npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = npcs[i].center();
+            let count = npcs
+                .iter()
+                .filter(|m| {
+                    m.kind == NpcKind::FlyingDutchmanCannon
+                        && m.hp > 0
+                        && {
+                            let (mcx, mcy) = m.center();
+                            (mcx - scx).hypot(mcy - scy) < 1600.0
+                        }
+                })
+                .count() as i32;
+            npcs[i].crew_cannons = count;
+            let ship_facing = npcs[i].sprite_dir;
+            let ship_rot = npcs[i].rotation;
+            for m in npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
+            continue;
+        }
+        let link_kind = if npcs[i].kind == NpcKind::ScutlixRider {
+            NpcKind::Scutlix
+        } else if npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
+        } else {
+            NpcKind::MartianSaucerCore
+        };
+        let (rcx, rcy) = npcs[i].center();
+        let mut best: Option<(usize, f32)> = None;
+        for (j, m) in npcs.iter().enumerate() {
+            if m.kind != link_kind || m.hp <= 0 {
+                continue;
+            }
+            let (mcx, mcy) = m.center();
+            let d = (mcx - rcx).hypot(mcy - rcy);
+            if d < 1600.0 && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((j, d));
+            }
+        }
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = npcs[j].center();
+                npcs[i].carrier_x = mcx;
+                npcs[i].carrier_y = mcy;
+                if link_kind == NpcKind::MartianSaucerCore {
+                    npcs[i].carrier_timer = npcs[j].ai[3];
+                    npcs[i].carrier_phase = npcs[j].ai[0];
+                    npcs[i].carrier_rot = npcs[j].rotation;
+                    npcs[i].carrier_facing = npcs[j].sprite_dir;
+                    let turrets = npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerTurret
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    let cannons = npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerCannon
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    npcs[i].crew_turrets = turrets;
+                    npcs[i].crew_cannons = cannons;
+                }
+            }
+            None => {
+                if npcs[i].carrier_x >= 0.0 {
+                    npcs[i].carrier_x = -1.0;
+                    npcs[i].carrier_y = -1.0;
+                    npcs[i].hp = 0;
+                } else if npcs[i].kind == NpcKind::ScutlixRider {
+                    // Never linked yet — the machine's init spawns.
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -2551,115 +2766,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
     // live in the same pass), and a rider whose carrier died falls with
-    // it (the retire lands before the retain pass below).
-    for i in 0..app.npcs.len() {
-        if app.npcs[i].kind != NpcKind::ScutlixRider
-            && app.npcs[i].kind != NpcKind::MartianSaucer
-            && app.npcs[i].kind != NpcKind::MartianSaucerTurret
-            && app.npcs[i].kind != NpcKind::MartianSaucerCannon
-            && app.npcs[i].kind != NpcKind::FlyingDutchmanCannon
-            && app.npcs[i].kind != NpcKind::FlyingDutchman
-        {
-            continue;
-        }
-        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
-        // links have no port model — the count within the reach stands
-        // in: the ship's death rides it).
-        if app.npcs[i].kind == NpcKind::FlyingDutchman {
-            let (scx, scy) = app.npcs[i].center();
-            let count = app
-                .npcs
-                .iter()
-                .filter(|m| {
-                    m.kind == NpcKind::FlyingDutchmanCannon && m.hp > 0 && {
-                        let (mcx, mcy) = m.center();
-                        (mcx - scx).hypot(mcy - scy) < 1600.0
-                    }
-                })
-                .count() as i32;
-            app.npcs[i].crew_cannons = count;
-            // The display inheritance for the 492 cannons (`AI_093`'s
-            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
-            // cannons with it, and its `spriteDirection` flips them.
-            let ship_facing = app.npcs[i].sprite_dir;
-            let ship_rot = app.npcs[i].rotation;
-            for m in app.npcs.iter_mut() {
-                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
-                    m.carrier_rot = ship_rot;
-                    m.carrier_facing = ship_facing;
-                }
-            }
-            continue;
-        }
-        let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
-            NpcKind::Scutlix
-        } else if app.npcs[i].kind == NpcKind::FlyingDutchmanCannon {
-            NpcKind::FlyingDutchman
-        } else {
-            NpcKind::MartianSaucerCore
-        };
-        let (rcx, rcy) = app.npcs[i].center();
-        let mut best: Option<(usize, f32)> = None;
-        for (j, m) in app.npcs.iter().enumerate() {
-            if m.kind != link_kind || m.hp <= 0 {
-                continue;
-            }
-            let (mcx, mcy) = m.center();
-            let d = (mcx - rcx).hypot(mcy - rcy);
-            if d < 1600.0 && best.is_none_or(|(_, bd)| d < bd) {
-                best = Some((j, d));
-            }
-        }
-        match best {
-            Some((j, _)) => {
-                let (mcx, mcy) = app.npcs[j].center();
-                app.npcs[i].carrier_x = mcx;
-                app.npcs[i].carrier_y = mcy;
-                // The saucer family's extra payload: the core's mirrored
-                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
-                // / `:35669-35676`: every mount copies the carrier's
-                // `rotation` and `spriteDirection`), and the crew counts
-                // within the reach.
-                if link_kind == NpcKind::MartianSaucerCore {
-                    app.npcs[i].carrier_timer = app.npcs[j].ai[3];
-                    app.npcs[i].carrier_phase = app.npcs[j].ai[0];
-                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
-                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
-                    let turrets = app
-                        .npcs
-                        .iter()
-                        .filter(|m| {
-                            m.kind == NpcKind::MartianSaucerTurret
-                                && m.hp > 0
-                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
-                        })
-                        .count() as i32;
-                    let cannons = app
-                        .npcs
-                        .iter()
-                        .filter(|m| {
-                            m.kind == NpcKind::MartianSaucerCannon
-                                && m.hp > 0
-                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
-                        })
-                        .count() as i32;
-                    app.npcs[i].crew_turrets = turrets;
-                    app.npcs[i].crew_cannons = cannons;
-                }
-            }
-            None => {
-                // The Scutlix rider falls with its carrier; the saucer
-                // mounts (the shell/guns) fall with the core.
-                if app.npcs[i].carrier_x >= 0.0 {
-                    app.npcs[i].carrier_x = -1.0;
-                    app.npcs[i].carrier_y = -1.0;
-                    app.npcs[i].hp = 0;
-                } else if app.npcs[i].kind == NpcKind::ScutlixRider {
-                    // Never linked yet — the machine's init spawns.
-                }
-            }
-        }
-    }
+    // it (the retire lands before the retain pass below). S1-D-8b: the
+    // family's radius scans read the spatial hash over the same per-tick
+    // snapshot (ascending slot order = the linear scan's visit order);
+    // the pass mirrors its own `hp = 0` kills via `snap.kill`.
+    carrier_link_pre_pass(&mut app.npcs, &mut snap);
     // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
     // the morning roll's pending flag + the players' life-max gate. The
     // march state (the type/x/warn) rides the World — `invasion_goblins`
@@ -4184,6 +4295,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
+                    // `Player.UpdateBuffs`' Invisibility (10) / Battle (13)
+                    // arms (`Player.cs:9991`/`:10003` → `NPC.GetSpawnRate`'s
+                    // `player.invis`/`player.enemySpawns`, `NPC.cs:702-740`):
+                    // the flags ride the buff scan (S1-E-7 wave A).
+                    invis: player.invis,
+                    enemy_spawns: player.enemy_spawns,
                     // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
@@ -4500,6 +4617,118 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 mod tests {
     use super::*;
     use tr_core::World;
+
+    /// S1-D-8b's A/B equivalence proof: the migrated carrier family
+    /// (spatial hash over the snapshot) against the verbatim pre-migration
+    /// linear scan, over twin pools built from the same seeds. Every
+    /// write-visible field must match bit-for-bit — including the kill
+    /// cascade (a mount whose core is out of reach dies, and later scans
+    /// must not see it) and the display inheritance.
+    #[test]
+    fn the_spatial_carrier_pass_matches_the_linear_scan_over_twin_seeds() {
+        // A tiny deterministic LCG — no game RNG stream is touched.
+        struct Lcg(u64);
+        impl Lcg {
+            fn next(&mut self) -> u64 {
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                self.0 >> 33
+            }
+            fn f32(&mut self, lo: f32, hi: f32) -> f32 {
+                lo + (self.next() % 10_000) as f32 / 10_000.0 * (hi - lo)
+            }
+        }
+        let kinds = [
+            NpcKind::ScutlixRider,
+            NpcKind::Scutlix,
+            NpcKind::MartianSaucer,
+            NpcKind::MartianSaucerTurret,
+            NpcKind::MartianSaucerCannon,
+            NpcKind::MartianSaucerCore,
+            NpcKind::FlyingDutchman,
+            NpcKind::FlyingDutchmanCannon,
+            NpcKind::Slime,
+        ];
+        for seed in [1u64, 42, 512, 20261118] {
+            // Build the twin pools from the SAME seed — byte-identical.
+            let build = || {
+                let mut rng = Lcg(seed);
+                let mut npcs: Vec<Npc> = Vec::new();
+                for i in 0..120 {
+                    let kind = kinds[i % kinds.len()];
+                    // Clusters within reach + far strays + cell edges.
+                    let (x, y) = match i % 4 {
+                        0 => (rng.f32(-400.0, 400.0), rng.f32(-400.0, 400.0)),
+                        1 => (rng.f32(1200.0, 2000.0), rng.f32(-800.0, 800.0)),
+                        2 => (rng.f32(-6400.0, 6400.0), rng.f32(-6400.0, 6400.0)),
+                        _ => (1600.0 * (i % 3) as f32, -1600.0 * (i % 2) as f32),
+                    };
+                    let mut n = Npc::new(kind, x, y, 1, 0.0);
+                    n.uid = (i + 1) as u32;
+                    n.hp = if rng.next() % 4 == 0 { 0 } else { n.max_hp };
+                    // Half the mounts start linked (the fall-with-carrier
+                    // arm), half never linked.
+                    n.carrier_x = if rng.next() % 2 == 0 { 10.0 } else { -1.0 };
+                    n.carrier_y = 20.0;
+                    n.ai[0] = rng.f32(0.0, 4.0);
+                    n.ai[3] = rng.f32(0.0, 60.0);
+                    n.rotation = rng.f32(-3.0, 3.0);
+                    n.sprite_dir = if rng.next() % 2 == 0 { 1 } else { -1 };
+                    npcs.push(n);
+                }
+                npcs
+            };
+            let mut a = build();
+            let mut b = build();
+            // A: the migrated spatial path. B: the verbatim linear scan.
+            let mut snap = crate::world_sim::npc_snapshot::NpcSnapshot::build(&a);
+            carrier_link_pre_pass(&mut a, &mut snap);
+            carrier_link_pre_pass_linear(&mut b);
+            assert_eq!(a.len(), b.len());
+            for (i, (na, nb)) in a.iter().zip(&b).enumerate() {
+                assert_eq!(na.hp, nb.hp, "seed {seed} slot {i} hp");
+                assert_eq!(
+                    na.carrier_x.to_bits(),
+                    nb.carrier_x.to_bits(),
+                    "seed {seed} slot {i} carrier_x"
+                );
+                assert_eq!(
+                    na.carrier_y.to_bits(),
+                    nb.carrier_y.to_bits(),
+                    "seed {seed} slot {i} carrier_y"
+                );
+                assert_eq!(
+                    na.carrier_timer.to_bits(),
+                    nb.carrier_timer.to_bits(),
+                    "seed {seed} slot {i} carrier_timer"
+                );
+                assert_eq!(
+                    na.carrier_phase.to_bits(),
+                    nb.carrier_phase.to_bits(),
+                    "seed {seed} slot {i} carrier_phase"
+                );
+                assert_eq!(
+                    na.carrier_rot.to_bits(),
+                    nb.carrier_rot.to_bits(),
+                    "seed {seed} slot {i} carrier_rot"
+                );
+                assert_eq!(
+                    na.carrier_facing, nb.carrier_facing,
+                    "seed {seed} slot {i} carrier_facing"
+                );
+                assert_eq!(
+                    na.crew_turrets, nb.crew_turrets,
+                    "seed {seed} slot {i} crew_turrets"
+                );
+                assert_eq!(
+                    na.crew_cannons, nb.crew_cannons,
+                    "seed {seed} slot {i} crew_cannons"
+                );
+            }
+        }
+    }
 
     /// `AI_000_TransformBoundNPC`'s 376 → 369 arm (`NPC.cs:19853-19856`): the
     /// talk transforms the Sleeping Angler into the Angler in place and

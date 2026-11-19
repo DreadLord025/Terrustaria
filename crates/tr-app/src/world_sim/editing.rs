@@ -669,6 +669,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let Some(p) = app.player.as_mut() else {
                 unreachable!()
             };
+            // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
+            // Silenced debuff (35) refuses every mana-paying item — the gate
+            // reads the item's BASE mana, before the manaCost scale (S1-E-7
+            // wave A; the buff arm is `UpdateBuffs` `:10043`).
+            if base_mana > 0 && p.silence {
+                return;
+            }
             let mana_cost = (base_mana as f32 * p.mana_cost) as i32;
             if mana_cost > 0 {
                 // `Player.CheckMana`'s pay arm: a failed check blocks the use.
@@ -1470,6 +1477,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         app.mine_timer = 0.0;
                     }
                     let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
+                    // The crack overlay's damage denominator
+                    // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                    app.mine_hardness = hardness;
                     if app.mine_timer >= hardness {
                         app.mine_timer = 0.0;
                         // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
@@ -1524,6 +1534,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 } else {
                     base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
                 };
+                // The crack overlay's damage denominator
+                // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                app.mine_hardness = hardness;
                 if app.mine_timer >= hardness {
                     break_tile(app, tx, ty);
                     app.mine_target = None;
@@ -1556,6 +1569,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         } else {
             let hardness =
                 (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
+            // The crack overlay's damage denominator
+            // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+            app.mine_hardness = hardness;
             if app.mine_timer >= hardness {
                 break_wall(app, tx, ty);
                 app.mine_target = None;
@@ -8130,6 +8146,24 @@ mod tests {
         fire_once(&mut app);
         let fired = app.projectiles.slots().iter().filter(|p| p.active).count();
         assert_eq!(fired, 0, "no mana, no shot");
+    }
+
+    #[test]
+    fn s1_e_7a_the_silenced_debuff_refuses_mana_items() {
+        // `Player.cs:52221-52224`: `sItem.mana > 0 && silence` blocks the use
+        // outright — no bolt, no mana pay (the buff arm is `:10043`).
+        let mut app = staff_app(127, "Space Gun");
+        app.player.as_mut().unwrap().buffs.add_buff(35, 600);
+        app.player.as_mut().unwrap().silence = true;
+        fire_once(&mut app);
+        let fired = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(fired, 0, "silenced, no shot");
+        assert_eq!(app.player.as_ref().unwrap().mana, 20, "no mana paid");
+        // Without the debuff the same staff fires (the base gate passes).
+        let mut ok = staff_app(127, "Space Gun");
+        fire_once(&mut ok);
+        let fired = ok.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(fired, 1);
     }
 
     #[test]
