@@ -26231,3 +26231,113 @@ downed_tower_solar}`, `Npc::{ai,local_ai,alpha,net_update,dont_take_damage,
 size}`, `NpcKind` Debug derive); the C# blocks re-read line-by-line. The
 14 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
 Docs-only round вЂ” **no compiler invoked**.
+WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The swimmer family's aiStyle-44 arm (S1-D-3, 2026-11-19, code-only mode)
+
+**Identity (verified from the C#, not the roadmap).** The census of
+`aiStyle = 44` assignments in `NPC.cs` is exactly four rows:
+FlyingFish **224** (`NPC.cs:11885-11897` — 32x18, dmg 9, def 4, 20 HP,
+kb 0.8, NPCHit1/NPCDeath1, value 300), GiantFlyingAntlion **509**
+(`:14841-14853` — 40x31, dmg 34, def 12, 90 HP, kb 0.3,
+NPCHit32/NPCDeath35, value 195), FlyingAntlion **581**
+(`:14868-14880` — 30x22, dmg 29, def 8, 60 HP, kb 0.5,
+NPCHit32/NPCDeath35, value 90, npcSlots 0.8) and EyeballFlyingFish
+**587** (`:16623-16637` — 32x18, dmg 35, def 18, 300 HP, kb 0,
+NPCHit1/NPCDeath1, value 1000, alpha 255, rarity 1). The ids ride
+`NPCID.cs:11125`/`:11695`/`:11839`/`:11851`. `Projectile.cs`'s
+aiStyle 44 is the projectile axis (a different family); `FindFrame`'s
+`case 44` (`NPC.cs:68555`) is the TYPE switch (UndeadMiner), NOT
+this style — the four kinds animate in their own type cases
+(`:70104-70119` for 509/581, `:74763-74785` for 224/587; the frame
+counts 4/9/9/4 counted entry-by-entry from the `Main.cs:67082` table).
+
+**The port.** `crates/tr-app/src/npc_ai_style44.rs` —
+`style44_step` ports the whole arm (`NPC.cs:30861-31124`) verbatim
+as a pure fn over `Npc` + a `Style44Env` seam (the c7fa4513
+style-56 / d6bc30ed style-14 precedent): the every-tick
+`noGravity = true` (rides `env.wants_no_gravity` — the port's Npc
+has no noGravity field; the four kinds are gravity-free flyers), the
+collideX/collideY bounces that read **oldVelocity**, flip the facing
+AGAINST it and PIN the velocity to ±1 (no damp — the style-14
+half-bounce is a different arm), the 587 materialize block (the
+netOffset round trip, the alpha-255 launch kick −6 + netUpdate, the
+15-dust burst / −15 fade / 2-dust trail / 1-in-3 sparkle with every
+post-write in the C#'s statement order — the dust velocity reads the
+CURRENT velocity, the −6 launch included), the num663/num664 latch
+AFTER the block, the retarget gate
+`target == 255 || (type != 587 && player.wet) || player.dead ||
+CanHit(1x1 centres)` which PINS ai[0] = 90 while the player is
+visible and counts down only on broken sight (`TargetClosest` on
+BOTH paths, via `npc_target::target_closest` unchanged, style 44),
+the netUpdate unchanged-clear, the six-parameter tables
+(224: 0.05/0.01/3/1/30/100; 509: 0.08/0.03/4.5/2/40/150; 581:
+0.06/0.02/4/2/40/150; 587: 0.13/0.09/6.5/3.5/0/250), the INTEGER
+half-width num671 vs the three different num672 anchors (raw player Y
+minus int half-height; the antlions' FLOAT centre Y; 587's raw Y), the
+antlions' pre-separation `rotation = vx * 0.1` tilt + the all-slots
+Manhattan `< width` swarm separation (±0.05, ties push +), the 587
+dawn flee (anchor 0 + facing flip), the lost-sight wander
+(x0.8 cap / x0.7 accel, the `Center.Y + directionY * 1000` anchor,
+the velocity-sign facing snap with the direction==0 fallback), the
+asymmetric X double-add (full accel again only while still past the
+CAP on the wrong side; crossing zero adds accel/2), the far-band
+`num672 -= num670 / 2` lift AFTER the wander override, the Y
+wrong-side double-add + the ±num668 clamps, and the wet tail
+(x0.95 sink damp, −0.5 lift, the −4 cap; 587 exempt).
+`style44_find_frame` ports the two type-case arms: the antlions'
+agree-only sprite flip + 3-tick stride over 9 rows, the fish's
+velocity-sign sprite + ±vy·0.2 tilt (vx == 0 writes neither) + 6-tick
+stride over the literal 4 rows.
+
+**RNG by construction.** The arm body draws NO direct `Main.rand`
+for 224/509/581 — the whole steering machine is deterministic. Type
+587's materialize block is the only stream consumer, in the cited
+per-tick order: 15x(NewDustDirect + NextFloat scale + NextFloat
+fadeIn), then (alpha != 0) 2x(the same triple), then the every-tick
+`Next(3) == 0` gate + (accepted) NewDustDirect + ONE NextFloat.
+Each accepted spawn rolls the S1-E-1 pool's cited order (pressure
+band only above a maxDustToDraw band, Next(width-4), Next(height-4),
+Next(-20,21) x2, Next(3), Next(-20,21)); refusals (cull/menu/pause)
+consume ZERO pool draws but the caller's post-write NextFloats still
+run on the 6000 sentinel. **Dust type 5 IS on the DangerousDust list**
+(`ChildSafety.cs:32` — `CreateBoolSet(true, 5, ...)` flips the
+listed ids to false and `DangerousDust = !SafeDust[id]`, re-read from
+`SetFactory.cs`), but `ChildSafety.Disabled` defaults TRUE
+(`ChildSafety.cs:33`, the port's pool default too), so no gate draws
+at stock settings; when the App arms it, each accepted spawn adds one
+Next(2) (50% sentinel refusal / re-type 16 with NextFloat + Next(3))
+— the wiring round feeds the armed pool. `TargetClosest` is RNG-free.
+The stream witness replays the cited draws on a twin UnifiedRandom
+(WRITTEN NOT RUN). Cited skips OUTSIDE the arm: the 581/509 ambient
+sound rolls (`NPC.cs:90123-90126`/`:90131-90134`, UpdateNPC's sound
+chain), the death gore/dust (`:86056-86069`, `:86545+`), the platform
+fall-through (`Collision_DecideFallThroughPlatforms` `:92936-92939`
+returns true for aiStyle 44 — the port's collision layer owns it),
+the hit/death sounds.
+
+**Witness corrections over the first partial (this round's audit).**
+(a) The gate/anchor player reads clamp to the slice tail — the C#
+reads the always-present EMPTY slot-255 player; the port's short
+slice needs the stand-in (the wiring round feeds a zeroed dead tail
+slot); the partial's `players[target]` at 255 would panic.
+(b) The ChildSafety claim above was INVERTED in the partial's header.
+(c) Six test witnesses re-derived by hand: the noGravity latch read a
+fresh env; the Y double-add witness started at -0.005 which CROSSES
+zero (no double-add — now -0.02, whose first step lands exactly on
+-0.01 by Sterbenz, plus a crossing-zero counter-witness); the
+separation tilt asserted against the post-loop vx; the separation vy
+missed the Y double-add; the wet tail's -4 cap is DEAD (the ±num668
+clamps run first — the fast riser lands on -num668 - 0.5) and its
+anchors missed the far-band lift; the bounce witnesses now sit
+inside the dead band ON the anchor so the later passes cannot mask
+the ±1 pin.
+
+**UNWIRED** (the 901452bd style-21 precedent): no `NpcKind` rows,
+no `44 =>` dispatch arm — `lang_tables.rs` carries only the display
+names (224/509/581/587). The module keys on the vanilla type id with
+the box on `size_override`; the wiring round adds the four kinds +
+their SetDefaults rows + the dispatch claim together. Every other
+file is byte-identical except the one `mod` line in `main.rs` and
+the docs. 15 witness tests WRITTEN, NOT RUN — **no compiler invoked**
+(code-only mode).
