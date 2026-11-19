@@ -1,4 +1,0 @@
-crates/tr-app/src/world_sim/editing.rs|crate::combat_text::spawn(|COMBAT-UI-1 -- NPC.cs:81250-81264: a landed strike spawns the combat text with the post-defence number (NPC.cs:81239) and the crit flag
-crates/tr-app/src/combat_text.rs|pub fn draw(|COMBAT-UI-2 -- Main.cs:62340-62396: the combat-text draw (Combat_Text/Combat_Crit fonts, four 1 px shadow passes, scale*alpha tint)
-crates/tr-app/src/render/entities.rs|pub(crate) fn draw_npc_health_bars(|COMBAT-UI-3 -- Main.cs:21909-21990 + 45835/46018: the ordinary NPC health bar (Hb1/Hb2, width 36*ratio min 3, green->red, light*0.95)
-crates/tr-app/src/combat_text.rs|fn the_damage_shown_is_the_post_defense_value(|COMBAT-UI-4 -- the damage number is the post-defence strike value, crit doubles before the cast (NPC.cs:81239)

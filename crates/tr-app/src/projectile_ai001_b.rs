@@ -8,11 +8,14 @@
 //! aiStyle-1 arm (projectile.rs:11053) gates on [`covers`] ONLY — every other
 //! kind keeps the generic flight BYTE-IDENTICAL.
 //!
-//! Kind set (15): 259 GolemEyeBeam, 270 Skull, 325 FlamingWood,
-//! 389 MiniRetinaLaser, 436 BrainScrambler, 438 RayGunner, 449 SaucerLaser,
+//! Kind set (9 after the merge-time dedupe): 449 SaucerLaser,
 //! 462 PhantasmalBolt, 581 VortexDart, 601 CannonExplosive,
 //! 622 BlowupSmokeMoonlord, 680 BallistaShot, 686 BetsyFireball,
-//! 962 DeerclopsIceChunk, 980 TrapVenomDart.
+//! 962 DeerclopsIceChunk, 980 TrapVenomDart. The six overlap kinds
+//! (259/270/325/389/436/438) are owned by slice A
+//! (`projectile_ai001_a`, landed first); their arms below are kept as
+//! citation-verified reference but [`covers`] never claims them, so the
+//! dispatch never double-applies.
 //!
 //! Structure mirrors `AI_001`'s own order:
 //! 1. the hook group above the counter (`:54066-55671`),
@@ -57,17 +60,15 @@ use crate::projectile::{
     Projectile, RAY_GUNNER, SAUCER_LASER, SKULL, TRAP_VENOM_DART, VORTEX_DART, proj_frames,
 };
 
-/// The slice-B kind set — the higher-id rowed kinds this module owns
-/// (all ≥ 259). The dispatch seam gates on this list ONLY; slice A's
-/// low-id kinds, the M4-PROJ-6 riders (20/88/355/660), the Book of Skulls
-/// (837) and every unrowed kind keep their existing arms untouched.
-pub(crate) const SLICE_B_KINDS: [u16; 15] = [
-    GOLEM_EYE_BEAM,        // 259
-    SKULL,                 // 270
-    FLAMING_WOOD,          // 325
-    MINI_RETINA_LASER,     // 389
-    BRAIN_SCRAMBLER,       // 436
-    RAY_GUNNER,            // 438
+/// The slice-B kind set — the higher-id rowed kinds this module owns.
+/// Merge-time dedupe (P2): 259/270/325/389/436/438 were ported by BOTH
+/// slices; slice A (`projectile_ai001_a::SLICE_A_KINDS`) landed first and
+/// wins — the six are REMOVED here so [`covers`] is disjoint from A's
+/// `handles`. Their per-kind arms below stay as reference (the witness
+/// tests still exercise them directly) but the dispatch never routes
+/// those kinds here. The M4-PROJ-6 riders (20/88/355/660), the Book of
+/// Skulls (837) and every unrowed kind keep their existing arms untouched.
+pub(crate) const SLICE_B_KINDS: [u16; 9] = [
     SAUCER_LASER,          // 449
     PHANTASMAL_BOLT,       // 462
     VORTEX_DART,           // 581
@@ -509,6 +510,13 @@ mod tests {
         assert!(!covers(660));
         assert!(!covers(837)); // the book of skulls keeps its own arm
         assert!(!covers(687)); // Betsy's breath has NO AI_001 branch
+        // The merge-time dedupe: slice A owns the six overlap kinds.
+        assert!(!covers(259));
+        assert!(!covers(270));
+        assert!(!covers(325));
+        assert!(!covers(389));
+        assert!(!covers(436));
+        assert!(!covers(438));
         for k in SLICE_B_KINDS {
             assert!(covers(k));
         }
