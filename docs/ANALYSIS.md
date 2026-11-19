@@ -3014,6 +3014,53 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
+
+The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
+themed group per pass, verbatim move) moved the grass/spread family out of
+`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
+`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
+`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
+consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
+hallow source-set slices, `box_has_source`, `spread_grass_walls`,
+`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
+wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
+2 MossConversion tests). Public seams re-exported from `growth`
+(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
+`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
+(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces the
+compile gate for this pass:
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
+  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
+  3227-3255, 3320-3422 for the tests) and string-compared against the new
+  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
+  verbatim** (per-block sha256 recorded in the move script's output;
+  grass.rs LF sha256 `4326a23c…cf44366`).
+- the only content differences are the declared visibility seams:
+  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
+  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
+  `set_wall` helper in growth.rs (the moved wall-arms test imports
+  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
+  the now-unused `use trees::kill_invalid_tree_above;` import left
+  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
+- a full unified diff of the new growth.rs against the origin blob shows
+  the added lines are exactly the `mod grass;` + re-export block + the two
+  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
+  moved blocks — no other edit.
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
 ### S1-K-3d — the herbs split (2026-11-18, code-only mode)
 
 The herbs S1-K-3 group (`task/S1-K-3d-herbs-split`, the K-3 precedent: one
@@ -3064,45 +3111,6 @@ compile gate for this pass (the K-3b method):
   (11 483 bytes); new growth.rs sha256
   `4675057e388f4ccd3008b68cd9ebf4c58a88fdcfa4b43a6c9c0395d386ce7caf`
   (171 878 bytes). Tests moved unchanged, NOT run.
-### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
-
-The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
-themed group per pass, verbatim move) moved the grass/spread family out of
-`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
-`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
-`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
-consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
-hallow source-set slices, `box_has_source`, `spread_grass_walls`,
-`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
-wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
-2 MossConversion tests). Public seams re-exported from `growth`
-(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
-`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
-(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
-
-**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
-graphify — file reads/writes + git only. The byte-equality proof replaces the
-compile gate for this pass:
-
-- the moved blocks were extracted mechanically from
-  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
-  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
-  3227-3255, 3320-3422 for the tests) and string-compared against the new
-  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
-  verbatim** (per-block sha256 recorded in the move script's output;
-  grass.rs LF sha256 `4326a23c…cf44366`).
-- the only content differences are the declared visibility seams:
-  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
-  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
-  `set_wall` helper in growth.rs (the moved wall-arms test imports
-  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
-  the now-unused `use trees::kill_invalid_tree_above;` import left
-  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
-- a full unified diff of the new growth.rs against the origin blob shows
-  the added lines are exactly the `mod grass;` + re-export block + the two
-  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
-  moved blocks — no other edit.
-
 **Gate deferred:** `cargo test --workspace -- --skip
 migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
 `generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
@@ -3110,6 +3118,84 @@ main_anchors` were NOT run on this branch — they are the merge pass's
 mandatory step (MAIN-RULES §1). No behaviour change is possible from a
 verbatim move of already-`pub` items + re-exports; if the deferred gate
 fails, the branch is fixed or dropped before merging, never merged red.
+
+### S1-K-3e — the pumpkins split (2026-11-18, code-only mode)
+
+The last mapped S1-K-3 group (`task/S1-K-3e-pumpkins-split`, the K-3
+precedent: one themed group per pass, verbatim move; siblings grass/spread
+`task/S1-K-3b-grass-split` — read its byte-proof method — decorations
+`task/S1-K-3c-decorations-split`, herbs `task/S1-K-3d-herbs-split`) moved the
+pumpkin-growth family out of `growth.rs` into `growth/pumpkins.rs`
+(345 lines; `growth.rs` 4 651 → 4 328): `place_pumpkin`
+(`WorldGen.cs:52438-52488`), `grow_pumpkin` (`:52490-52552`) and
+`halloween_pumpkins` (the `GrassPlantsEvilPlantsAndPumpkinsOnSurface`
+holiday arm `:20067-20086`), plus the `pumpkin_world` fixture and the 3
+tests (`place_pumpkin_lays_the_two_by_two_over_the_grass_row`,
+`grow_pumpkin_widens_one_patch_and_caps_at_four`,
+`the_pumpkin_sweep_runs_only_under_the_holiday_flags`). The public seams
+are re-exported from `growth` (`pub use pumpkins::{grow_pumpkin,
+halloween_pumpkins, place_pumpkin};`) — the family has no callers outside
+its own module (the worldgen step hook is deferred, the doc seam at
+`growth.rs`), so every caller is unchanged. No visibility seams were
+needed: `test_fixtures` stays in `growth.rs` (trees.rs keeps using it) and
+nothing outside imports `growth::tests`.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces
+the compile gate for this pass (the S1-K-3b method):
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (blob sha256
+  `b12149972c1da57eb42fc816e1f3eaab10b0370436f065302352e8b2b38ad322`,
+  LF; the checkout is CRLF via `core.autocrlf=true`, content-identical) —
+  block A lines **1556-1746** (the M5-SEED-2 section header + the three
+  functions + the trailing blank; 191 lines, 7 638 bytes, sha256
+  `4a379716325d2d6b594a427dfe36e29e47fbb43160033fa5a8aaef26f063781e`) and
+  block B lines **1771-1908** (the tests-module slice: the
+  `MicroSeedFlags` import, `pumpkin_world`, the 3 tests + the trailing
+  blank; 138 lines, 6 669 bytes, sha256
+  `64100a658a39f23608494b9265960095049ee332b5e7ebbdf11abba37b23fe94`) —
+  and string-compared against the new `growth/pumpkins.rs`: **14 307
+  bytes across 2 blocks, every block found verbatim** (pumpkins.rs LF
+  sha256 `fec8ee710d791b4e46eb4af2c4c04043fd960d1ec4d5e7a720baecbb6108c06d`).
+- pumpkins.rs is exactly the declared seams + the blocks: the 7-line
+  module doc + 3 imports + blank (500 bytes), block A, the 5-line test
+  wrapper (`#[cfg(test)]` / `mod tests {` / `use super::*;` /
+  `use crate::tile::Tile;` — the bare `Tile` the moved fixture needs, the
+  trees.rs `test_fixtures` precedent — and the closing `}`; 72 bytes),
+  block B. Reconstructing seams+blocks byte-for-byte equals the written
+  file (script check `True`); no other content.
+- a full `difflib` opcode diff of the new growth.rs against the origin
+  blob: the added lines are exactly the 6-line seam (`mod pumpkins;` +
+  the re-export block, inserted after line 57 `use
+  trees::kill_invalid_tree_above;`) and all **329 deleted lines are
+  accounted for by the moved blocks** (A+B in order) — no other edit.
+- brace balance: origin growth.rs, new growth.rs and pumpkins.rs each
+  count `{`−`}` = 0, and origin == new + pumpkins.
+- Tests moved unchanged and were **NOT run**. No rustfmt was run (the
+  moved bytes keep their exact original indentation; the new wrapper's
+  blank-line placement mirrors the K-3b grass.rs precedent).
+
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
+**Merge note (4 sibling splits edit growth.rs):** merge sequentially,
+keep-both on the re-export blocks — each sibling adds its own
+`mod <name>;` + `pub use` seam after the trees re-export block; the
+groups' line ranges are disjoint. This branch's ranges vs `origin/main`
+`bfe68db8`: deletions **1556-1746** and **1771-1908**; the seam insert at
+line 58 (after `use trees::kill_invalid_tree_above;`). K-3b's deletions
+(451-654, 1009-1160, 3425-3847 + its test ranges) do not overlap these;
+the herbs/decorations groups sit between/around them. If a conflict
+touches the tests-module header region (the `MicroSeedFlags` import line
+1771 was pumpkin-only; `use super::*;` at 1909 stays), keep both sides'
+imports — never pick a side wholesale (MAIN-RULES §2).
 
 **Merger note (K3b/K3c/K3d/K3e all edit growth.rs):** land sequentially with
 keep-both resolutions. K3d's growth.rs edits against `origin/main`
@@ -3123,10 +3209,6 @@ by symbol (the five herb test names), not by line number. K3d touches no
 `pub(super)` seam, so no seam collision with K3b/K3c is possible; the
 module-header/re-export region (growth.rs lines 43-58) is the one textual
 hotspot — keep all three groups' `mod` + `pub use` blocks.
-mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
-not run. No behaviour change is possible from a verbatim move + visibility
-seams; if the deferred gate fails, the branch is fixed or dropped before
-merging, never merged red.
 
 ## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
 
