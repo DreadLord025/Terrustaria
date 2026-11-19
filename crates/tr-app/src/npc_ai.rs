@@ -233,7 +233,11 @@ pub fn run_ai3_ladder(
         npc.ai[3] = v;
     }
     if let Some(v) = fx.damage {
-        npc.damage = v;
+        // The port's live `NPC.damage` seam is `damage_override` (the
+        // contact path reads it at `npc.rs`'s `damage_override.unwrap_or`
+        // over the kind's `contact_damage()` — the C# `this.damage` write,
+        // `NPC.cs:58266`/`:58308`).
+        npc.damage_override = Some(v);
     }
     // `fx.hop_flag` (the `:57847` flag) feeds the C#'s obstacle-jump scan
     // (`:59831`) — the port's collision jump is that scan's stand-in;
