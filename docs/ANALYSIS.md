@@ -24893,3 +24893,163 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The Lunatic Cultist's machine - the pure-core gap-fill (S1-D-3 cultist, 2026-11-19)
+
+**Code-only mode**: this round ran with NO compiler invoked - no cargo/rustc/
+rustfmt/tests/dotnet/graphify; file reads/writes + git only. The 16 witness tests
+are WRITTEN NOT RUN; verification is the block-by-block re-read of the C# source
+(`NPC.cs:64414-65388` read whole, both halves) plus hand-arithmetic on the
+witness expectations.
+
+### The verdict table (census B-3, distrust-verbatim)
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| Census B-3 "35-line cultist stub vs 976-line machine" | **CONFIRMED** | `npc.rs:7943-7975` `update_lunatic_cultist`: the -1 intro fade (partial: no alpha<0 clamp shape, no localAI[2] poses, no rise arm) + the 5600-px despawn gate; no idle selector, no attacks, no clones, no ritual. The C# `AI_084_LunaticCultist` is `NPC.cs:64414-65388` (976 lines) |
+| The task's "439 + clones/archers" id guess | **CORRECTED** | the style-84 family is exactly {439 CultistBoss, 440 CultistBossClone} (`NPC.cs:14216`/`:14234`); the archers 379/380 are style-3 fighters, 441 is the TaxCollector (style 7), 437/438 are the entrance Tablet/Devote (`ID/NPCID.cs:11435-11691`) |
+| The S1-D-3b routing fix (aiStyle 84, not the pillar 94) | **CONFIRMED still live** | `npc.rs:3941-3944` + the `ancient_cultist_uses_cultist_ai_not_pillar_ai_style_94` test |
+| "dragon spawn at death" in AI_084 | **NOT THERE - relocated** | the 490 CultistRitual projectile's aiStyle-89 arm spawns it: at `ai[0]==300`, 454 if `!NPC.AnyNPCs(454)` else 521 (`Projectile.cs:32346-32356`); self-Kill at 320 (`:32357-32361`). AI_084 only spawns the 490 (`:65132`) |
+| "moon-event trigger" in AI_084 | **NOT THERE - relocated** | `NPCLoot` -> `DoDeathEvents` case 439: `downedAncientCultist` + `WorldGen.TriggerLunarApocalypse()` (`NPC.cs:79393-79396`); the boss bag is item 499 (`:78989-78992`) |
+
+### What landed: `crates/tr-app/src/npc_ai_cultist.rs` (pure core, UNWIRED)
+
+`cultist_ai_step` + `CultistState`/`CultistEnv`/`CultistClone` (the boss's
+ascending-slot 440 view, mutated in place)/`CultistEffects` (projectile/clone/
+ritual requests)/`CultistOut` - the fishron precedent (ad41a646). Ported scope:
+
+* the head RNG gate (`:64416-64419`): `Next(1000)` ONLY when `ai[0] != -1`
+  (&& short-circuit), the zero roll's `Next(88, 92)` consumed as a DISCARDED
+  draw (the sound is skipped, the stream must not drift);
+* the tunables (`:64420-64463`): num 120/90/-30, num2/num3 18,3 / 12,4 / 10,5,
+  the `GetAttackDamage_ForProjectiles(35,25)`/`(30,20)` rolls ride the landed
+  `npc_ai_style37::attack_damage_for_projectiles` (the Remap/GetLerpValue port,
+  `NPC.cs:7052-7055`);
+* the INTEGER-half hp flag + the `(int)(defDefense * 0.65f)` fold (42 -> 27,
+  `:64421`/`:64467-64470`) - both types;
+* the clone mirror/orphan/pop (`:64471-64504`): the orphan arm is the arm's
+  ONLY early return; the pop rides `CultistEffects::boss_interrupt` (the boss's
+  `ai[0]=6, ai[1]=0` write, `:64493-64496`);
+* the boss's ritual-window purge (`:64505-64552`): the num9 budget (10 classic
+  / 3 expert), BOTH foreach arms decrement the same budget, the matching
+  generation first in slot order, the 490's `ai[1] = -1` cancel request;
+* the target gate + despawn (`:64553-64585`): the `TargetClosest` calls are
+  counted on `CultistOut::target_closest_calls` in C# order (the wiring replays
+  them through `npc_target::target_closest`); the despawn arm does NOT return -
+  the state chain still runs (the f1701eb0 draw-before-early-return class); the
+  dead `new List<int>().Add(whoAmI)` (`:64571`) annotated, not ported;
+* the first-tick latch + the -1 spawn-in (`:64587-64637`): alpha INT `-= 5`
+  then the `< 0` clamp, the 420/360/300/120 pose ladder, the -UnitY rise, the
+  0.95 damp; the intro-completion tick runs the idle block the SAME tick (the
+  separate-if structure, not an else-if);
+* state 0 (`:64638-64840`): the 40-tick cadence, the classic 12-step / expert
+  14-step tables verbatim (the `ai[3] = -1` resets on the ritual step and the
+  default arm), the expert doom roll `Next(maxValue)` drawn BEFORE the
+  `num13 != 0/4/5 && CountNPCS(523) < 10` tests (a discarded draw when they
+  reject; maxValue 6/4/3 on INTEGER thirds/quarters), the teleport ring: num14 =
+  `(float)Math.Ceiling(Length / 50f)` with the 0 -> 1 floor, the boss FIRST in
+  the ring list, the INTEGER `(num15 + flag5 + 1) / 2` angle halves, the
+  all-f32 angle chain widened only at RotatedBy, the count==1 zero angle, the
+  `(0,-1).RotatedBy * (300,200)` componentwise scale, the `whoAmI >=` clone
+  back-step (the boss back-steps too);
+* state 1 glide (`:64841-64858`): the `(float)(int)ai[1] % 2f` INT-cast-first
+  odd-tick back-step with the `!= 1` guard;
+* state 2 ice mist (`:64859-64927`): the `(int)(ai[1]-4) % num` cadence, the
+  clones' 468s FIRST (3 draws each, slot order), the boss's 464 draws NOTHING
+  (fixed 4-speed, `ai0=0, ai1=1` trailing args), the `4 + num` end;
+* state 3 fireball volley (`:64928-65004`): the INTEGER `/ num2 == 2` clone
+  join, the per-shot boss facing, the 467's 3-draw shot (speed NextDouble, then
+  RotatedByRandom's TWO NextDoubles, `Utils.cs:1697-1700`), the `4+num2*num3`
+  end; the clone shot's spawn offset uses the BOSS's `base.direction * 30`
+  (`:64894` - NOT the clone's own flip, kept verbatim);
+* state 5 ritual (`:65064-65217`): the fade-out/in INT alpha casts, the tick-30
+  summon: num27 = `6 - count` capped at 2 with NO lower clamp, num28 =
+  count+num27+1, the f32 angle chain, the strict-`>` nearest-slot pick (first
+  wins ties), the antipodal flip with INTEGER `num28 / 2`, the
+  `num32-- > 0` post-decrement spawn/reposition split (the reposition index is
+  `list6[-num32 - 1]` on the POST-decrement value - with >6 clones the first
+  indices are skipped, verbatim), the NewNPC Bottom Y `(int)center6.Y +
+  height / 2` (INTEGER 25, `NPC.cs:80770`), the 490 request + the boss's
+  Center += antipodal jump; the orientation ladder (the exact-zero -UnitY guard
+  BEFORE the unguarded XNA Normalize, the strict `|Y| < 0.77` pose bands, the
+  X-sign facing);
+* state 6 pause (`:65218-65230`) + the tail (`:65382-65387`): the clone's
+  `ai[3]` restore from the num11 save, `dontTakeDamage = flag3`,
+  `chaseable = !flag4`.
+
+### Deferred (exact C# ranges - the wiring round must land them BEFORE the dispatch claim)
+
+* **state 4 lightning orb** (`:65005-65063`): localAI[2] 12/11 by type, the
+  clones' one-468-each at `ai[1] == 20` (3 draws per clone), the 465 orb at
+  `Center - (0, 100)` with `GetAttackDamage_ForProjectiles(45, 30)`
+  (`:64446`), the `(int)(ai[1]-20) % num4` gate INSIDE the `== 20` block
+  (so it fires only at 20 itself), the `20 + num4` end (num4 80/40/-20);
+* **state 7 ancient light** (`:65231-65308`): the num5/num6 20,2 / 30,2
+  cadence, shot #2's 5-468 fan per clone (`RotatedByRandom(1.2566370964050293)`
+  - 3 draws x 5 per clone), the boss's 5-spoke 522 spawn: the 8-speed
+  `(PI*2f/25f * i - (PI*2f/5f - PI*2f/25f)/2f)` rotation (NO RNG on the angle),
+  ONE `NextFloat()` per spawn for `ai1 = (NextFloat()-0.5f)*0.3f*(PI*2f)/60f`
+  (`:65293`), the Y+7 placement, the `4 + num5*num6` end;
+* **state 8 ancient doom** (`:65309-65381`): the `min(count+1, 3)` 523
+  spawns, per spawn up to 100 attempts of the X-then-Y tile pair
+  `Next(px-20, px+21)`/`Next(py-20, py+21)` (`:65352-65353`), the 7-tile
+  player / 3-tile self exclusion boxes + `!nactive()` + the 2-tile
+  `Collision.SolidTiles` probe (`:65354-65357`), the >2000-px zero-draw gate
+  (`:65345-65348`), the `4 + num7*num8` end (20*3);
+* the wiring also owns: the 440 `NpcKind` + the 464/467/468/490 projectile
+  kinds, the ritual-key write-back (`this.ai[2] = key`, `:65133`) + the
+  `TryGetActive(490)` resolution for `CultistEnv::ritual_center`, the
+  `TargetClosest` replay, the HitEffect dust/gore (`:84127-84178` - the death
+  burst's `Next(1,4)` + per-gore `Next(11,14)`), the 490's dragon spawn +
+  the NPCLoot moon trigger (the verdict table above).
+
+The step reports a deferred state on `CultistOut::deferred_state` and leaves
+it untouched (the selector can still pick attacks 4/7/8 - visible, not silent).
+
+### RNG argument (by construction)
+
+Every `Main.rand` draw in the ported scope is consumed in C# stream order:
+(1) the head gate `Next(1000)` iff `ai[0] != -1`, plus the zero-roll
+`Next(88,92)` (discarded - the sound is skipped, the draw is not); (2) the
+expert doom `Next(maxValue)` before the num13 tests (discarded when they
+reject); (3) per clone 468: `NextDouble` (speed) then RotatedByRandom's two
+`NextDouble`s - 3 draws, clones in ascending slot order BEFORE the boss's
+shot; (4) the boss's 467: the same 3-draw shape. The 464 ice mist draws NOTHING.
+The deferred states' draws and the cosmetic HitEffect draws are NOT consumed
+(documented skips). Witnesses: the mirrored-stream replays
+(`the_idle_sound_gate_consumes_the_cited_draws`,
+`the_expert_doom_roll_is_a_discarded_draw_on_teleport_steps`,
+`the_fireball_volley_consumes_three_draws_per_shot`,
+`the_clone_fireball_uses_the_boss_direction_and_three_draws`,
+`the_scripted_run_replays_identically`) - `UnifiedRandom: PartialEq`, the
+style55 precedent.
+
+### Deviations (deliberate, documented)
+
+* sounds skipped (their RNG consumed); `TargetClosest` counted, not run (the
+  fishron precedent - the caller's env rides unchanged); `netMode != 1` is the
+  single-player constant true, `NetMessage.SendData` skipped; HitEffect/
+  `active = false` ride the despawn/kill flags (`life = 0` convention);
+* the HasNaNs dead-store Vector2 constructions (`:64862-64865`,
+  `:64931-64934`, `:65067-65070`) and the `new List<int>().Add` dead store
+  (`:64571`) annotated, not ported (pure, no RNG, result unused in the C#);
+* the f32/double seams kept literal: Length/Distance = f32 sum under the double
+  sqrt cast back; Normalize = the XNA reciprocal-first unguarded shape (the
+  style55 precedent); RotatedBy = float cos/sin of the double angle; the ring
+  angles all-f32 (the `(float)Math.PI * 2f` casts), widened at the call;
+* the clone view is caller-supplied (ascending slot order) - the C# scans
+  `Main.npc[0..maxNPCs]` five times per tick; the port folds the scans into
+  one slice (same order, same membership predicate `active && type == 440 &&
+  ai[3] == whoAmI`); a clone killed mid-step stays in the slice with
+  `active = false` - the purge/despawn arms are the only mid-step kills and
+  both END their loop's work on the killed entries, so no later same-tick scan
+  sees a stale-live clone (checked: the purge is in the head, the despawn kills
+  all, the ritual summon runs at tick 30 where neither fired).
+
+**Verification.** Code-only: the C# arm re-read whole (both halves,
+`:64414-64903` + `:64904-65388`), every ported block carries its citation,
+the witness expectations hand-computed (the 42->27 defense fold, the num14=12
+teleport, the -700/12 ring velocity, the 482 clone-shot X, the antipodal slot-0
+jump). The 16 witness tests are WRITTEN NOT RUN - **no compiler invoked**. The
+live `npc.rs` stub + every other file except the one `mod` line in
+`main.rs` and the docs are byte-identical.

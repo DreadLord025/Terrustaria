@@ -109,6 +109,11 @@ mod npc_ai_style31;
 mod npc_ai_style47;
 mod npc_ai_bat;
 mod npc_ai_golem;
+// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
+// the live npc.rs::update_lunatic_cultist stub stays byte-identical
+// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
+// deferred, see the module doc).
+mod npc_ai_cultist;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
