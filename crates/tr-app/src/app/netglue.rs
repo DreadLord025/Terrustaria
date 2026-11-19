@@ -2636,6 +2636,39 @@ fn npc_seed(
             crate::npc::Npc::spawn_eye(world, tx)?
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
+        // S1-D-3ff wave A — the nine slimes and ten walkers plant their
+        // feet on the column surface (the generic surface ctor, the
+        // pumpkin walkers' precedent — the family machines take over on
+        // the first tick); the five eyes ride the eye-variant ctor a few
+        // tiles above the surface.
+        crate::npc::NpcKind::MotherSlime
+        | crate::npc::NpcKind::LavaSlime
+        | crate::npc::NpcKind::DungeonSlime
+        | crate::npc::NpcKind::CorruptSlime
+        | crate::npc::NpcKind::IlluminantSlime
+        | crate::npc::NpcKind::IceSlime
+        | crate::npc::NpcKind::Crimslime
+        | crate::npc::NpcKind::SpikedIceSlime
+        | crate::npc::NpcKind::UmbrellaSlime
+        | crate::npc::NpcKind::DoctorBones
+        | crate::npc::NpcKind::TheGroom
+        | crate::npc::NpcKind::BaldZombie
+        | crate::npc::NpcKind::ZombieEskimo
+        | crate::npc::NpcKind::PincushionZombie
+        | crate::npc::NpcKind::SlimedZombie
+        | crate::npc::NpcKind::SwampZombie
+        | crate::npc::NpcKind::TwiggyZombie
+        | crate::npc::NpcKind::FemaleZombie
+        | crate::npc::NpcKind::ZombieRaincoat => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::CataractEye
+        | crate::npc::NpcKind::SleepyEye
+        | crate::npc::NpcKind::DialatedEye
+        | crate::npc::NpcKind::GreenEye
+        | crate::npc::NpcKind::PurpleEye => {
+            crate::npc::Npc::spawn_eye_variant(world, tx, kind)?
+        },
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::Merchant
         | crate::npc::NpcKind::Dryad
@@ -2886,6 +2919,22 @@ fn npc_seed(
         crate::npc::NpcKind::MourningWood
         | crate::npc::NpcKind::Pumpking
         | crate::npc::NpcKind::Poltergeist => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The Frost Moon family, slice A (`S1-F-13c`): the same seed shape
+        // as the pumpkin roster — the walkers (the Zombie Elf trio, the
+        // Present Mimic, the Gingerbread Man and the Yeti, whose aiStyle-3/25
+        // stand-ins ride the walker family) plant the feet on the column
+        // surface; the Everscream's aiStyle-57 hover stand-in rides the
+        // hover ctor (`NPC.cs:13281-13368` SetDefaults).
+        crate::npc::NpcKind::ZombieElf
+        | crate::npc::NpcKind::ZombieElfBeard
+        | crate::npc::NpcKind::ZombieElfGirl
+        | crate::npc::NpcKind::PresentMimic
+        | crate::npc::NpcKind::GingerbreadMan
+        | crate::npc::NpcKind::Yeti => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Everscream => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
