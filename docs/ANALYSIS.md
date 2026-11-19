@@ -11357,9 +11357,10 @@ Deviations and notes:
     take their positive branch (no gravity potion in the port); the sleeping/sitting
     offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
     The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
-    but their own AI arms (53/197/130) do not call the reposition yet — 134/137/138 reach
-    it, and since S1-D-4b-3 the 123 pair (the 641/643 sentries) and the 642 beam's
-    carried ride (`:31414-31417`, the aiStyle-84 head anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    but their own AI arms (53/197) do not call the reposition yet — 134/137/138 reach
+    it, 130 joined them with S1-D-4b-9, and since S1-D-4b-3 the 123 pair (the 641/643
+    sentries) and the 642 beam's carried ride (`:31414-31417`, the aiStyle-84 head
+    anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
     C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
     `_type = -1`; the port's `dismount()` likewise resets the kind).
   - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
@@ -11449,6 +11450,74 @@ Deviations and notes:
   - **120/130 deferred**: the Stardust Guardian's aiStyle-120 arm (`:44634-44964`) and the
     Flame Burst Tower's aiStyle-130 arm (`:68107-68361`) stay unported — the next round of
     S1-D-4b-3; their rows keep holding position (the ROADMAP row carries the split).
+
+### The Flame Burst Tower slice (S1-D-4b-9, code-only mode)
+
+**Code-only mode**: this task ran without a compiler — no `cargo`/`rustc`/`rustfmt`,
+no test run, no graphify. The port was verified by re-reading the C# line by line;
+the tests below are written as code, NOT executed. The sibling branch
+`task/S1-D-4b-3` owns aiStyle 123 and the shots 642/644; this slice touches neither.
+
+S1-D-4b-9 ported aiStyle **130** (Flame Burst Tower, `AI_130_FlameBurstTower`,
+`Projectile.cs:68107-68360`) + its target pick (`AI_130_FlameBurstTower_FindTarget`,
+`:68362-68407`) and the aiStyle-**131** shot (`AI_131_FlameBurstShot`, `:68456-68508`,
+the 664/666/668 rows `:7153-7162` — 16x16, alpha 255, local-immunity −1), plus the
+Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
+`:485`/`:489`) and the towers' `proj_frames` 7/9/9 (`Main.cs:8458-8460`).
+
+- **The arm mirrors the 134 Ballista inline precedent** (the per-kind constants, the
+  muzzle captured BEFORE the backpack reposition — Bottom + (direction*6, −40/−44/−46),
+  the 300-wrap `localAI[0]`, the init latch, the backpack branch, the reload/target
+  state, the fire state at `ai[1] == 12` with the frame `1 + ai[1]/4`, the cycle wrap
+  `num6*num7` into the 80/70/60-tick reload, the gravity tail + `dd2_sentry_step`).
+  The Apprentice T2 buffs (`:68275-68280`) tighten the angle cone to 0.1 and multiply
+  the range ×1.5 / the speed ×1.4. The fire-state scan passes
+  `canChangeDirection: false` (rejects targets behind the facing).
+- **The cone differs from the Ballista's**: `|dir.X| < |dir.Y| * angleRatioMax`
+  rejects steep targets BOTH above and below (`:68378`/`:68400` have NO `dir.Y > 0`
+  clause, unlike `AI_134_Ballista_FindTarget`'s dead-bottom cone). The reload-state
+  facing flip reads `Math.Sign(DirectionTo(npc.Center).X)` from the tower's CENTRE
+  (`Entity.cs:205-208`), not the muzzle.
+- **The shot spawn has NO ±16 clamp**: aiStyle 131 ≠ 1, so `NewProjectile`'s
+  aiStyle-1 velocity decay (`:10895-10902`) does not run — the 12/15/18-px shots
+  (16.8/21/25.2 with Apprentice T2) fly at full speed from the centred muzzle
+  (`x − 8, y − 8`).
+- **RNG order preserved by construction** (unlike the 137 skip-and-document
+  precedent, this task draws the gates): per tick the 130 arm draws the type-270
+  dust gate `Next(2)` (`:68138`/`:68190`/`:68242`, only while `ai[2] != 1` — the
+  flag is captured BEFORE the pickup latch, `:68119`); on a 0 the two
+  UNCONDITIONAL `NextFloat`s follow (`fadeIn` `:68141`, `velocity.X` `:68146` —
+  they draw even when `NewDustDirect` returns the culled dummy slot 6000); then
+  the smoke gates `Next(5)` × 1/2/3 per tier (`:68158`/`:68210`/`:68262`). The
+  131 shot draws `Next(2)` × 1/2/3 per tier (`:68495`) and, on a non-zero, the
+  always-0-but-consuming `Next(1)` (`:68500`). The targeting, the fire, the shot
+  spawn and the alpha fade draw nothing. Tests
+  `s1_d_4b_9_the_tower_dust_gates_draw_in_the_csharp_order` /
+  `s1_d_4b_9_the_shot_dust_gates_draw_in_the_csharp_order` replay the exact draw
+  sequence against a reference `FastRandom` stream.
+- **Skipped layers**: the dust BODIES and `Dust.NewDust`'s pool-occupancy-dependent
+  internal draws (`Dust.cs:116-146`/`:170-175` — they cannot be reproduced without
+  a dust pool; the gate/NextFloat draws above ARE kept), the `Lighting.AddLight`
+  casts (`:68124-68125` etc.), the 131's tracked sound latch (`:68465-68475`), the
+  `netUpdate` writes (port-wide convention). The 664/666/668 on-hit `StatusNPC`
+  On Fire rolls (`:11319-11330`) ride the port-wide `StatusNPC` per-type skip
+  (S1-C-8); the 664/666/668 kill-dust burst (`:71821+`) and the draw tint
+  (`:79280-79283`) are decor.
+- **The 131 shot's movement** rides the generic `kill_step` (the aiStyle-28 frost
+  bolt precedent): the shot keeps `tileCollide = true`, integrates `pos += vel`
+  and dies on a tile hit — the generic `HandleMovement` tail, not a per-type arm.
+- **Deferred — aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
+  scope took the tower style first. The Guardian needs unported player machinery
+  (`tankPet`/`tankPetReset` `Player.cs:870-872`/`:24539-24547`,
+  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` — the rest-hover states 1/3
+  depend on them; without the rest target they revert to the idle state) plus its
+  19-frame sheet (`Main.cs:8497`) and the teleport dust bursts. It stays on the
+  S1-D-4b-3 row.
+- Tests (written, not run): `s1_d_4b_9_flame_burst_tests` — the row/frame pins,
+  the dispatch + 300-wrap, the unclamped shot fire + muzzle centring + same-tick
+  shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
+  facing flip, the backpack ride, the shot fade/rotation and the two RNG-order
+  proofs; `player.rs`'s armor-set test gained the Apprentice T2/T3 triples.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
