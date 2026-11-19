@@ -190,6 +190,12 @@ pub fn legacy_family_pitch(family: Family, rng: &mut dyn FnMut(i32, i32) -> i32)
         // Case 6 (`:714`): the grass roll — the wider ±0.30 window
         // (S1-E-21i, the KillWall grass arm).
         Family::Grass => rng(-30, 31) as f32 * 0.01,
+        // Case 7 (`:725`): the grab roll — the pickup chime shares the
+        // ±0.10 window (S1-E-21f, the GetItem `PlaySound(7)` arms).
+        Family::Grab => rng(-10, 11) as f32 * 0.01,
+        // Case 16 (`:851`): the double-jump roll — the same ±0.10 window
+        // (S1-E-21f, the extra-jump chain's `PlaySound(16)` arms).
+        Family::DoubleJump => rng(-10, 11) as f32 * 0.01,
         // Cases 8/9 (`:736`/`:747`): the door open/close rolls share the
         // ±0.20 window (S1-E-21i, WorldGen.OpenDoor/CloseDoor).
         Family::Door => rng(-20, 21) as f32 * 0.01,
@@ -215,6 +221,10 @@ pub enum Family {
     Run,
     /// `type == 6` — the grass case (`:706-716`, the `:714` roll).
     Grass,
+    /// `type == 7` — the grab case (`:717-727`, the `:725` roll).
+    Grab,
+    /// `type == 16` — the double-jump case (`:843-853`, the `:851` roll).
+    DoubleJump,
     /// `type == 8`/`9` — the door open/close cases (`:728-749`, the
     /// `:736`/`:747` rolls — one shared window).
     Door,
@@ -386,6 +396,71 @@ pub fn npc_killed_case4(
     // `:693` — one `Main.rand.Next(-10, 11) * 0.01` pitch draw.
     let pitch = rng(-10, 11) as f32 * 0.01;
     Some((tweak, pitch))
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-1 (player hurt) play's variation
+/// pick (`LegacySoundPlayer.cs:503-515`, S1-E-21f): `Main.rand.Next(3)`
+/// (`:505`) selects the `SoundPlayerHit[0..2]` slot — NO pitch draw (the
+/// case sets Volume/Pan only). The caller's `pitchOffset` rides `:1410`'s
+/// clamp. The C# reaches the switch only after the attenuation walk passed
+/// (`:390-436`), so the caller must gate on audibility BEFORE drawing.
+pub fn player_hit_case1(rng: &mut dyn FnMut(i32, i32) -> i32) -> i32 {
+    rng(0, 3)
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-19 (splash) play's decisions
+/// (`LegacySoundPlayer.cs:871-910`, S1-E-21f): the volume tweak and the
+/// pitch BEFORE the caller's `pitchOffset`. `playing` is the
+/// `SoundInstanceSplash[num].State != Stopped` read (`:872-874`): a live
+/// slot refuses BEFORE any draw — `None` models that refusal.
+///
+/// The style arms: 2/3 (shimmer) cut the volume ×0.75 (`:877-880`) and
+/// roll `Next(-10, 11) * 0.01`; 4/5 (the liquid-merge shimmer) cut ×0.75
+/// AND roll `Next(-20, 1) * 0.01` (`:881-885`); every other style rolls
+/// the plain `Next(-10, 11) * 0.01` (`:888`). The 4/5 cross-slot playback
+/// suppression (`:892-909`) only gates the returned instance — the slot
+/// is still created and the draw consumed — so it is not modelled here
+/// (the port spawns a fresh source; the standing D4 deviation).
+pub fn splash_case19(
+    style: i32,
+    playing: bool,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> Option<(f32, f32)> {
+    // `:872-874` — the playing guard returns before any draw.
+    if playing {
+        return None;
+    }
+    let mut tweak = 1.0f32;
+    // `:877-880` — styles 2/3 play at ×0.75.
+    if style == 2 || style == 3 {
+        tweak *= 0.75;
+    }
+    let pitch = if style == 4 || style == 5 {
+        // `:881-885` — ×0.75 and the narrow -0.20..0.00 window.
+        tweak *= 0.75;
+        rng(-20, 1) as f32 * 0.01
+    } else {
+        // `:888` — the plain ±0.10 window.
+        rng(-10, 11) as f32 * 0.01
+    };
+    Some((tweak, pitch))
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-38 (coin pickup) play's decisions
+/// (`LegacySoundPlayer.cs:1337-1350`, S1-E-21f): `star_game`
+/// (`Main.starGame`, the `star` seed) cuts the volume ×0.15 (`:1339-1342`),
+/// then `Main.rand.Next(5)` (`:1343`) picks the `SoundCoin[0..4]` slot and
+/// `Main.rand.Next(-40, 41) * 0.002` (`:1347`) rolls the pitch — TWO draws,
+/// slot first. The slot is overwritten WITHOUT a Stop (`:1344`). The
+/// caller must gate on audibility BEFORE drawing (`:390-436`).
+pub fn coin_pickup_case38(
+    star_game: bool,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> (i32, f32, f32) {
+    let tweak = if star_game { 0.15 } else { 1.0 };
+    let slot = rng(0, 5);
+    let pitch = rng(-40, 41) as f32 * 0.002;
+    (slot, tweak, pitch)
 }
 
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
@@ -747,4 +822,98 @@ fn s1_e_21i_mech_case28_guards_before_the_pitch_draw() {
         (mech_case28(false, &mut roll).unwrap() - 0.07).abs() < 1e-6,
         "7 * 0.01"
     );
+}
+
+/// S1-E-21f — case 1 (`LegacySoundPlayer.cs:503-515`): ONE `Next(3)` slot
+/// pick, NO pitch draw; cases 7/16 (`:725`/`:851`) roll the ±0.10 window.
+#[test]
+fn s1_e_21f_the_hurt_pick_and_the_grab_jump_windows() {
+    // Case 1: exactly one Next(0, 3) — the slot pick.
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (0, 3), "the hurt slot pick's window");
+        2
+    };
+    assert_eq!(player_hit_case1(&mut roll), 2);
+    // Case 7 (Grab) and case 16 (DoubleJump): one Next(-10, 11) * 0.01 each.
+    for family in [Family::Grab, Family::DoubleJump] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-10, 11), "the ±0.10 window");
+            -10
+        };
+        assert!(
+            (legacy_family_pitch(family, &mut roll) - (-0.1)).abs() < 1e-6,
+            "{family:?}: -10 * 0.01 — the window floor"
+        );
+    }
+}
+
+/// S1-E-21f — case 19 (`LegacySoundPlayer.cs:871-910`): the playing guard
+/// refuses BEFORE any draw; styles 2/3 cut ×0.75 with the ±0.10 roll,
+/// styles 4/5 cut ×0.75 with the narrow Next(-20, 1) roll, the plain
+/// styles keep volume 1 with ±0.10.
+#[test]
+fn s1_e_21f_splash_case19_guards_and_tweaks_per_style() {
+    // The live-slot refusal draws nothing (`:872-874`).
+    let mut roll = |_: i32, _: i32| panic!("the guarded play draws nothing");
+    assert_eq!(splash_case19(0, true, &mut roll), None);
+    // Styles 0/1: volume 1, the ±0.10 window (`:888`).
+    for style in [0, 1] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-10, 11), "the plain splash window");
+            5
+        };
+        let (tweak, pitch) = splash_case19(style, false, &mut roll).unwrap();
+        assert!((tweak - 1.0).abs() < 1e-6, "style {style}: no volume cut");
+        assert!((pitch - 0.05).abs() < 1e-6, "5 * 0.01");
+    }
+    // Styles 2/3 (shimmer): ×0.75, the same ±0.10 window (`:877-880`/:888).
+    for style in [2, 3] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-10, 11));
+            -3
+        };
+        let (tweak, pitch) = splash_case19(style, false, &mut roll).unwrap();
+        assert!((tweak - 0.75).abs() < 1e-6, "style {style}: the shimmer cut");
+        assert!((pitch - (-0.03)).abs() < 1e-6);
+    }
+    // Styles 4/5 (the liquid-merge shimmer): ×0.75 AND Next(-20, 1)
+    // (`:881-885`) — the narrow, negative-only window.
+    for style in [4, 5] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-20, 1), "the merge-shimmer window");
+            -20
+        };
+        let (tweak, pitch) = splash_case19(style, false, &mut roll).unwrap();
+        assert!((tweak - 0.75).abs() < 1e-6);
+        assert!((pitch - (-0.2)).abs() < 1e-6, "the window floor");
+    }
+}
+
+/// S1-E-21f — case 38 (`LegacySoundPlayer.cs:1337-1350`): the starGame
+/// ×0.15 cut, then TWO draws in order — `Next(5)` slot, then
+/// `Next(-40, 41) * 0.002` pitch.
+#[test]
+fn s1_e_21f_coin_case38_draws_slot_then_pitch() {
+    let mut draws: Vec<(i32, i32)> = Vec::new();
+    let mut roll = |lo: i32, hi: i32| {
+        draws.push((lo, hi));
+        match draws.len() {
+            1 => 4,  // the slot pick
+            _ => 40, // the pitch roll
+        }
+    };
+    let (slot, tweak, pitch) = coin_pickup_case38(true, &mut roll);
+    assert_eq!(draws, vec![(0, 5), (-40, 41)], "slot first, pitch second");
+    assert_eq!(slot, 4);
+    assert!((tweak - 0.15).abs() < 1e-6, "the starGame cut");
+    assert!((pitch - 0.08).abs() < 1e-6, "40 * 0.002");
+    // No starGame: volume stays 1, the same two draws.
+    let mut n = 0;
+    let mut roll = |_: i32, _: i32| {
+        n += 1;
+        0
+    };
+    let (_, tweak, _) = coin_pickup_case38(false, &mut roll);
+    assert!((tweak - 1.0).abs() < 1e-6);
+    assert_eq!(n, 2, "the draws are unconditional");
 }

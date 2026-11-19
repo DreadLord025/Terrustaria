@@ -24893,3 +24893,177 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The player-sounds wave (S1-E-21f, 2026-11-19)
+
+Wave F ports the Player.cs sound sites — code-only mode, branch
+`task/S1-E-21f-player-sounds` pushed unmerged for a verification pass.
+**No compiler invoked; the tests are written, NOT run.**
+
+### The census (landed first)
+
+`Player.cs` carries **211** `SoundEngine.PlaySound(` sites (grep, the
+1.4.5.8 decompilation), 0 `PlayTrackedSound`. The family split:
+
+- **int-id plays (117)**: 19×15 (boss spawners), 14×19 splash (8 player
+  entry/exit — THIS wave; 5 buckets `:46374-46493` + 1 shimmer-emergence
+  `:18306` deferred), 12×11 + 9×12 + 5×10 (the menu open/close/tick
+  family — the port's clicks.rs already plays the Menu_* stand-ins),
+  8×16 (the extra-jump chain — THIS wave), 8×7 (pickup chimes — THIS
+  wave's 4 GetItem sites; the 4 PickupItem nebula/heart/star arms
+  deferred), 5×0/5×3/3×4/2×1/2×5/2×20 (the hurt/death voice switch —
+  THIS wave ports variant 1 + the legacy 5), 5×28 (minecart-track
+  place, E21i owns the wiring), 1×23 (drown — THIS wave), the 47..62
+  rocket-boot/wing family (`:46681-46746`, deferred).
+- **SoundID style plays (94)**: the hurt-voice variants (26 sites,
+  deferred — the voice system is unported), Item8×4 (gravity flip,
+  deferred — no controlUp channel), Item4×5/Item2/Item37/Item149/
+  Item179 (the magic-mirror/rod family, deferred), Item13×3 + Item24×2
+  (rocket boots — the rocketSoundDelay cadence is unported, deferred),
+  Item32 (wing flap — THIS wave), Item16×2 (Fart jump — THIS wave; the
+  second is a hurt-voice variant), Item55×2/Item168×2 (run particles'
+  dash arms, deferred), the rest one-offs (deferred).
+
+**This wave lands 21 sites**: hurt `:38704` (variant 1) + death `:38745`
+(the S1-E-21b queues upgraded to the case maths), the extra-jump chain's
+8 (`:20793`/`:20803`/`:20815`/`:20871`/`:20899`/`:20927`/`:20957`/
+`:21004`) + Fart `:20846`, the splash 8 (`:27806`/`:27819`/`:27832`/
+`:27846` entry, `:27900`/`:27913`/`:27926`/`:27940` exit), the GetItem
+chimes 4 (`:39444`/`:39491`/`:39534`/`:39559` — the port's merged fill
+plays one chime per pickup event, the chest transfer per accepted slot),
+the quick-grapple fire `:6408`, the wing flap `:26850`, the drown
+`:23257`, plus the revenge `NPC.moneyPing` (`NPC.cs:90054`, called from
+`WorldItem.cs:1189` — the items-pass coin arm, not an NPC site).
+
+### The plays
+
+- **Hurt/death** (`Audio::play_hurt_sound`/`play_death_sound`): the
+  S1-E-21b queues stay; the drain upgrades the plain `play`/`play_at` to
+  the case maths. Case 1 (`LegacySoundPlayer.cs:503-515`) draws ONE
+  `Main.rand.Next(3)` slot pick (`Player_Hit_0..2`), NO pitch — the
+  caller's `voicePitchOffset` remap is 0 (no voice setting). Case 5
+  (`:696-705`) draws nothing; the death position is `base.position`
+  (`Player.cs:38745`), the TOP-LEFT — the old centre play was wrong.
+  Both gate attenuation BEFORE any draw; the hurt is unpositioned
+  (`:38572-38575`, the `x == -1` flag arm).
+- **Extra jumps** (`play_double_jump_sound`, case 16 `:843-853`): one
+  `Next(-10,11)*0.01` pitch (`:851`), the int overload draws no
+  GetRandomPitch. The chain queues `(x, y)` BEFORE the velocity writes
+  (the C# order). The Fart queues the Item-16 style façade instead
+  (`:20846`) — wave A's `play_use_sound`, the GetRandomPitch NextFloat on
+  the audio-only stream (variance 0, still consumed).
+- **Splash** (`play_splash_sound`, case 19 `:871-910`): the
+  `SoundInstanceSplash[style]` playing guard refuses BEFORE any draw
+  (`:872-874`); styles 2/3 cut ×0.75, styles 4/5 cut ×0.75 AND roll the
+  narrow `Next(-20,1)*0.01` (`:881-885`), the rest roll ±0.10 (`:888`).
+  The port models the six slots (`splash_slots[6]`, E21i's slot 4
+  extended). The `wetCount` cooldown (`Entity.wetCount`): 10 on the
+  entry/exit play (`:27776`/`:27870`), the tail decrement
+  (`:27959-27961`), zeroed on spawn (`:37636`).
+- **Pickup chimes** (`play_pickup_sound`, cases 7/38): case 7
+  (`:717-727`) one ±0.10 pitch (`:725`); case 38 (`:1337-1350`) TWO
+  draws — `Next(5)` slot then `Next(-40,41)*0.002` pitch. Unpositioned
+  (the `PlaySound(7)`/`(38)` no-position overload). The revenge ping
+  (`play_coin_ping`) is the same case 38 at the DROP's top-left
+  (`NPC.cs:90053`), positioned.
+- **Grapple fire**: `QuickGrapple` plays `item.UseSound` at `position`
+  (`Player.cs:6408`) AFTER the fire gates, BEFORE the spawn (`:6458`).
+  `grapple::quick_grapple_item_kind` returns the granting item kind
+  alongside the hook projectile; the vanilla Hook 84's row is
+  `SoundID.Item1` (style index 126). The TR_HOOK pin (no item) stays
+  silent — the C#'s null-item return.
+- **Wing flap**: the `flapSound` latch (`Player.cs:1128`) plays
+  `SoundID.Item32` once on the `wingFrame == 3` edge (`:26848-26852`).
+  The port runs the DEFAULT `WingFrame` arm's machine (`:30466-30479`:
+  counter > 4 wraps 0..3, the airborne rest frame 1, the grounded 0).
+- **Drown** (`play_drown_sound`, case 23 `:947-956`): Volume/Pan only,
+  no draws. The queue is a bare flag fired ONCE on the breath 1→0 edge
+  (`:23255-23258`) — the `<= 0` damage arm keeps firing without it.
+
+### The RNG argument
+
+Every gameplay draw rides the C#'s named stream at the site's own
+position in the update order:
+
+- The player-tick queues (hurt/death/jump/Fart/splash/drown/flap) drain
+  at the `update_player` pass tail on `UpdatePlayers` — `Player.Update`
+  runs under the `Main.cs:17754` swap, and `GrabItems` (`:27428`) runs
+  INSIDE it, so the world-pickup chime's C# stream is `UpdatePlayers`
+  even though the port's pickup lives in the items pass (the drain
+  point differs, the named stream is the source's — the E21h
+  queue→drain precedent).
+- The revenge ping draws on `UpdateItems` (`WorldItem.UpdateItem` under
+  the `Main.cs:17779` swap), right after the share draws in the same
+  arm — the draw ORDER inside the arm is the source's.
+- The chest transfers run from the click handlers OUTSIDE every swap —
+  the bare-`Main.rand` stand-in (`rngs.global()`, the wave-C net-strike
+  precedent), snapshotted across the field borrows.
+- The grapple fire runs in the player pass before `Player.Update` —
+  `UpdatePlayers`, after the gate.
+- The attenuation gate precedes EVERY gameplay draw
+  (`LegacySoundPlayer.cs:369-436` before the switch); a muted or
+  out-of-range play consumes nothing. The style façade's GetRandomPitch
+  NextFloat rides the audio-only `sound_style_random` (never a gameplay
+  stream). The int overload (`SoundEngine.cs:102-108`) draws NO
+  GetRandomPitch — the wave's int-id plays consume only their case
+  draws.
+
+### Deviations
+
+1. **The wing-flap frame machine is the default arm's stand-in.** The
+   hover wings' (22/28/30/...) own frame tables (`:29552-30445`) and the
+   wings-43/48/49 constants are visual seams — their flap arms read
+   frames 4/5 the default machine never produces, so they stay silent
+   (the exclusion list already silences most). The wings-29 dust arm's
+   `Next(5)`/`Next(10)` draws (`:30504-30517`) are NOT consumed — they
+   are dust-visual rolls inside the unported table; when the visual
+   machine lands, its draws must ride `UpdatePlayers` at this point.
+2. **The splash edge is the any-liquid union.** The C#'s `base.wet` is
+   WetCollision (any liquid); the port's mid-tile probe splits the four
+   kinds, so the edge is their union. The entry reads the NEW lava flag
+   (`flag25`, `:27671`), the exit the OLD (`flag24`, `:27662`) — ported
+   verbatim. The `shimmering` (absorbed) suppression is vacuous (S1-E-16
+   unported); the exit jump clamp (`:27864`) is a movement seam.
+3. **The pickup chime collapses to one per fill event** in the world
+   path (the port's slot walk is one merged fill; the C# plays per
+   accepted slot). The chest path keeps the per-slot plays.
+4. **The starGame ×0.15 arm is off** (`Main.starGame`, the star seed
+   unported) — `coin_pickup_case38(false, ..)` at every site.
+5. **The case-19 4/5 cross-slot suppression** (`:892-909`) gates only
+   the returned instance in the C# (the slot is created and the draw
+   consumed either way); the port spawns a fresh source — the standing
+   D4 deviation, same as the Stop/re-create pools.
+6. **The voice variants beyond 1** (the 26 SoundID hurt sites + the
+   stoned Dig arm `:38578`) await the voice system; variant 1 +
+   `voicePitchOffset` 0 stands (the S1-E-21b precedent).
+7. **The `Coin_0`→id-18 bank alias retires**: legacy id 18 plays the
+   `Coins` asset (the tile-place coin-pile cue, wave B); the pickup
+   family is `Coin_0..4` under id 38. `sound_type("Coin_0")` now answers
+   38 — the case-38 attenuation/pitch path.
+8. **The deferred families** (the census above): the menu 10/11/12
+   stand-ins stay (the clicks.rs sites predate the wave), the buckets/
+   shimmer-emergence splashes, the rocket-boot cadence, the gravity
+   flip, the magic-mirror family, the boss-spawner 15s (the item-use
+   wave's seam covers the use-start; the spawn-time plays await the
+   spawner port), the PickupItem nebula/heart/star chimes.
+
+### The witnesses (written, NOT run)
+
+`sound.rs`: `s1_e_21f_the_hurt_pick_and_the_grab_jump_windows`,
+`s1_e_21f_splash_case19_guards_and_tweaks_per_style`,
+`s1_e_21f_coin_case38_draws_slot_then_pitch`. `audio.rs`:
+`s1_e_21f_the_hurt_death_drown_draws_ride_the_passed_stream`,
+`s1_e_21f_the_jump_and_splash_draws_ride_the_passed_stream`,
+`s1_e_21f_the_pickup_chime_draws_ride_the_passed_stream` (the peek-twin
+pattern: exactly the case draws on the passed stream, draw-free when
+muted/out-of-range). `player.rs`:
+`s1_e_21f_the_extra_jump_queues_the_double_jump_play`,
+`s1_e_21f_the_wet_edges_queue_the_splash_styles`,
+`s1_e_21f_the_drown_gasp_fires_once_on_the_zero_edge`,
+`s1_e_21f_the_wing_flap_plays_once_per_frame_three_edge`.
+`world_sim/player.rs`: `s1_e_21f_the_grapple_fire_plays_the_items_use_sound`.
+`chest.rs`: `s1_e_21f_the_chest_transfer_chimes_ride_the_bare_stream`.
+The DW-4.1 touch witness (`world_sim/player.rs`) extends its twin by the
+hurt-tail slot draw — the spike hit now spends DamageVar + bleeding +
+`Next(3)`; the revenge-share witness (`world_sim/items.rs`) extends by
+the ping's case-38 pair.

@@ -426,11 +426,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // when no hook item is held (`:6320-6323`); the port keeps the
             // `TR_HOOK` pin as the stand-in for the granting items (M3-EQUIP-3),
             // so the fire still happens without one.
-            let item_hook = crate::grapple::quick_grapple_item(
+            let item_hook = crate::grapple::quick_grapple_item_kind(
                 &app.equip.misc_equips,
                 &app.inventory,
             );
-            let mut kind = item_hook.unwrap_or(hook_type as u16);
+            let mut kind = item_hook.map(|(_, shoot)| shoot).unwrap_or(hook_type as u16);
             if !crate::grapple::fire_allowed(flight, attached, kind) {
                 return;
             }
@@ -483,7 +483,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-let spawned = app.projectiles.spawn_hook(
+            // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
+            // `PlaySound(item.UseSound, base.position)` — the hook item's
+            // own use-sound row at the TOP-LEFT, after the fire-time gates
+            // passed (the `:6399` budget return precedes it) and BEFORE the
+            // spawn (`:6458`). The style façade's `GetRandomPitch` NextFloat
+            // rides the audio-only stream; the case-2 pitch rides
+            // `UpdatePlayers` (the fire runs inside `Player.Update`,
+            // `Main.cs:17754`). No granting item (the `TR_HOOK` pin) means
+            // no `UseSound` — silent, like the C#'s null-item return
+            // (`:6320-6323`).
+            if let Some((item_kind, _)) = item_hook {
+                if let Some((idx, pitch)) = crate::item::initial_use_sound(item_kind) {
+                    app.audio.play_use_sound(
+                        idx,
+                        p.x,
+                        p.y,
+                        pitch,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+            }
+            let _spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
@@ -929,13 +950,6 @@ let spawned = app.projectiles.spawn_hook(
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
-            // `Player.PlayHurtSound` (`Player.cs:38525`) and
-            // `Player.PlayDeathSound` (`Player.cs:38868`): the player's own
-            // hurt/death cues. The C# plays the local player's hurt sound
-            // non-positionally (`Player.cs:38572`).
-            if let Some(cue) = p.take_hurt_sound() {
-                app.audio.play(cue);
-            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -985,9 +999,28 @@ let spawned = app.projectiles.spawn_hook(
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            if let Some(cue) = p.take_death_sound() {
-                let (px, py) = p.center();
-                app.audio.play_at(cue, px, py, 1.0);
+            // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
+            // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
+            // the retaliate block (`:38401-38517`), so its draw follows
+            // theirs on the stream. The C# plays the local player's hurt
+            // sound non-positionally (`Player.cs:38572`). S1-E-21f upgrades
+            // the plain play to case 1 (`LegacySoundPlayer.cs:503-515`): the
+            // `Main.rand.Next(3)` slot pick rides the `UpdatePlayers` stream
+            // (`Player.Hurt` runs under the `Main.cs:17754` swap), only after
+            // the unpositioned gate. The port has no voice setting — variant
+            // 1, `voicePitchOffset` 0 (`Player.cs:38699-38704`).
+            if p.take_hurt_sound().is_some() {
+                app.audio.play_hurt_sound(
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            if p.take_death_sound().is_some() {
+                // S1-E-21f — `Player.PlayDeathSound`'s default arm plays at
+                // `base.position` (`Player.cs:38745`), the TOP-LEFT — not the
+                // centre. Case 5 (`LegacySoundPlayer.cs:696-705`) draws
+                // nothing; the attenuation gate still applies.
+                app.audio.play_death_sound(p.x, p.y);
             }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
@@ -999,6 +1032,55 @@ let spawned = app.projectiles.spawn_hook(
                     (sound_type, style),
                     sx,
                     sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // S1-E-21f — the extra-jump chain's plays: case 16's one
+            // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
+            // the `UpdatePlayers` stream after the gate; the Fart's Item-16
+            // style play rides wave A's façade (the `GetRandomPitch`
+            // NextFloat on the audio-only stream — variance 0, still drawn).
+            if let Some((sx, sy)) = p.take_double_jump_sound() {
+                app.audio.play_double_jump_sound(
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            if let Some((idx, sx, sy)) = p.take_fart_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // S1-E-21f — the liquid entry/exit splash: case 19's playing
+            // guard refuses BEFORE the one pitch draw
+            // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
+            // the shimmer ×0.75 cut. Same stream, after the gate.
+            if let Some((style, sx, sy)) = p.take_splash_sound() {
+                app.audio.play_splash_sound(
+                    style,
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
+            // Volume/Pan only — no draws, no stream.
+            if p.take_drown_sound() {
+                app.audio.play_drown_sound();
+            }
+            // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
+            // wave A's façade, the same stream contract as the Fart.
+            if let Some((idx, sx, sy)) = p.take_flap_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
@@ -1126,6 +1208,10 @@ mod tests {
         let mut expect = UnifiedRandom::new(0);
         let expected_dmg = tr_core::damage::damage_var(&mut expect, 60.0, 0.0);
         let expected_bleed = expect.next_range(600, 1200);
+        // S1-E-21f — the hurt tail's case-1 slot pick (`LegacySoundPlayer
+        // .cs:505`) rides the same stream AFTER the damage draws (the
+        // `Hurt` tail runs last).
+        let _expected_hit_slot = expect.next_range(0, 3);
         assert_eq!(
             app.player.as_ref().unwrap().hp,
             hp_0 - expected_dmg,
@@ -1146,7 +1232,7 @@ mod tests {
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
             expect,
-            "exactly the DamageVar draw on the UpdatePlayers stream"
+            "the DamageVar + bleeding + hurt-slot draws on UpdatePlayers"
         );
         // The isolation: no other stage stream moved.
         for key in RngKey::ALL {
@@ -1574,6 +1660,43 @@ mod tests {
             .map(|p| p.kind)
             .collect();
         assert_eq!(kinds, vec![32], "the item's `shoot` picks the hook kind");
+    }
+
+    /// S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
+    /// `PlaySound(item.UseSound, base.position)` plays the hook item's own
+    /// use-sound row through the wave-A façade on `UpdatePlayers`, once per
+    /// fire; the TR_HOOK pin (no granting item) stays silent.
+    #[test]
+    fn s1_e_21f_the_grapple_fire_plays_the_items_use_sound() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 84, // the Grappling Hook — UseSound = SoundID.Item1
+            name: "Grappling Hook",
+            count: 1,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::KeyG);
+        let before = app.audio.played_count();
+        let stream_before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count(), before + 1, "the fire chime, once");
+        assert_ne!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            stream_before,
+            "the case-2 draws ride UpdatePlayers"
+        );
+        // The held-key tick does not re-fire (the releaseHook latch).
+        let mid = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count(), mid, "no re-fire while held");
+        // No granting item: the pin fires the hook but plays nothing.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        app.keys.insert(KeyCode::KeyG);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
     }
 
     /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
