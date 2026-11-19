@@ -72,6 +72,7 @@ mod npc_ai_style33;
 mod npc_ai_style37;
 mod npc_ai_style39;
 mod npc_ai_unicorn_b;
+mod npc_ai_style27;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED — the merge union feeds it into
 // npc_ai_plantera.rs's hook_anchor parameter (docs/ANALYSIS.md "The
