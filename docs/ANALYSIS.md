@@ -3238,6 +3238,51 @@ rand, generating_or_loading)`:
 - `541` (`:6004-6006`): `_shouldShowInvisibleBlocks` (invisible blocks are not
   stored by the port at all).
 
+### S1-F-9e slice B — the engine-driven special-tile cases (2026-11-18, code-only mode)
+
+**Written in code-only mode by user directive: no cargo/rustc/rustfmt/test
+runs — the 17 tests in `drawdata_cases_b.rs` are tests-as-code, written NOT
+run; every case body and test expectation was hand-verified against the C#
+instead.** The 21 case ids listed as deviations above — `349`, `428`,
+`441|468`, `453|456`, `455`, `485`, `489`, `490`, `493`, `507|508`, `518`,
+`529`, `530`, `541`, `579`, `593|594`, `719` — are now ported in full as
+`crates/tr-app/src/drawdata_cases_b.rs::case_draw_data(kind, x, y, frame_x,
+frame_y, tile_frame, counter, base, env) -> Option<TileDrawData>`: the
+delegated dispatch arm the tile pass (`render/tiles.rs`) applies right after
+`draw_data` + `apply_world_corrections`, `Some` only for the owned kinds.
+The static table keeps its unconditional arms; the arm re-states idempotent
+absolute assignments once and adds the C# `+=` parts onto the same
+`tileFrame * 38` starting value. Ported probes: `WorldGen.SolidTile`
+(WorldGen.cs:70111-70131), `Tile.blockType` (Tile.cs:202-214),
+`WorldGen.GetBiomeInfluence` (WorldGen.cs:47750-47777 — by `tile.type` alone,
+no `active()` check), `WorldGen.beachDistance = 380` (WorldGen.cs:86914),
+`Wind::in_a_place_with_wind`, `Wiring::plate_is_pressed`
+(PressurePlateHelper.cs:14), `world_events::party_is_up`
+(BirthdayParty.cs:25-32). Case quirks kept verbatim: 493 probes
+`InAPlaceWithWind(x, num6, 1, 1)` with the RAW `x`, not the sheet-relative
+`num7` (TileDrawing.cs:5238); 518's `nactive()` gate is `active() &&
+!inActive()` (Tile.cs:240-247 — the actuated bit); 530's probe row is
+`y - tileFrameY % 36 / 18 + 2` (fy 36 folds `% 36` to 0).
+
+Remaining deliberate deviations:
+
+- `Animation.GetTemporaryFrame` (Animation.cs:186-196) reads the
+  `_temporaryAnimations` registry, which is not ported — `temporary_frame`
+  returns `None`, the C# `false` path. The 349/441/468/593/594 bodies are
+  ported in full around the probe; at any `tile_frame` they reproduce the
+  static arms byte-for-byte (pinned by
+  `temp_animation_cases_match_the_static_fallback`).
+- `tile_frame`/`counter` (`Main.tileFrame[kind]`/`Main.tileFrameCounter[kind]`)
+  and `weather_vane_bobframe` ride in as parameters; production passes 0
+  until the wave-B animator (`drawdata_anim.rs`, landed on main, wiring
+  deferred) is wired — the exact vanilla t=0 state, `draw_data`'s convention.
+- `579` with no local player (`player_center_x = None`, menu frames) takes
+  `flag2 = false`; in-game the caller passes `player.center().0`
+  (`Main.LocalPlayer` always exists in C#).
+- The production wiring passes `crate::env::show_invisible()` for 541 (the
+  same `TR_SHOW_INVISIBLE` pin the light params use) — the EchoMonolith /
+  accessory sight systems remain out.
+
 ### Epilogues and cross-cutting
 
 - Campfires epilogue (`:6033-6044`; `TileID.Sets.Campfires = {215}`,
