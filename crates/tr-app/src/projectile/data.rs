@@ -131,6 +131,10 @@ pub const GIANT_BEE: u16 = 566;
 /// `ProjectileID.BoneJavelin` (598) — the thrown aiStyle-113 sticking javelin
 /// (`Projectile.cs:6470-6480`).
 pub const BONE_JAVELIN: u16 = 598;
+/// `ProjectileID.Javelin` (507) — the Javelin item's (3094) thrown aiStyle-1
+/// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
+/// `:57471-57478`).
+pub const JAVELIN: u16 = 507;
 /// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
 /// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
 pub const SNOWBALL: u16 = 166;
@@ -1235,6 +1239,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
+            // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
+            // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
+            // 507/508/662/680/685 gravity arm (`:57471-57478`, the 60-tick then
+            // X·0.98/Y+0.3 fall), owned by `projectile_ai_thrown::covers_ai001`.
+            JAVELIN => (16.0, 16.0, 1, 3, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:874-884` — the Vilethorn's base (7) and tip (8):
             // 28x28, aiStyle 4, `penetrate = -1`, `tileCollide = false`,
             // `alpha = 255` and `ignoreWater`.

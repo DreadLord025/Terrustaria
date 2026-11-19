@@ -4659,6 +4659,27 @@ impl Projectile {
             self.vel.y += 0.2;
         }
         self.rot += self.vel.x * 0.1;
+        // S1-P-i28 — the greek fires' (400-402) per-kind overlay
+        // (`Projectile.cs:25271-25302`, inside the aiStyle-14 arm, AFTER the
+        // default gravity/rotation above): a wet kill, a friction arm
+        // (`0.15 < velocity.Y < 0.25 → velocity.X *= 0.8`), and the rotation
+        // REPLACED by `(0 - velocity.X) * 0.05`. The dust (`:25282-25296`) and
+        // the 326-328 sound gate (`:25277-25281`, a different kind) are skipped.
+        // The wet probe folds to the port's `is_wet` box-overlap convention
+        // (the molotov/bee wet folds, ANALYSIS); the 1107-1109 twins share the
+        // C# block but have no ported row.
+        if matches!(self.kind, 400 | 401 | 402) {
+            if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
+                self.kill_time_left = self.time_left;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            if self.vel.y < 0.25 && self.vel.y > 0.15 {
+                self.vel.x *= 0.8;
+            }
+            self.rot = (0.0 - self.vel.x) * 0.05;
+        }
         // The tile-kill scan: the box inset to `(x + 4, y + 4)` with the
         // +8 px center probe against solid, non-127 tiles (`:25726-25737`).
         let cx = self.pos.x + 4.0;
@@ -4687,6 +4708,12 @@ impl Projectile {
                     return;
                 }
             }
+        }
+        // `Projectile.cs:25303-25306` — the aiStyle-14 arm's tail clamp:
+        // `if (velocity.Y > 16f) velocity.Y = 16f`. Applies to every style-14
+        // kind (the beenade's fall included); the pre-existing port omitted it.
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
         }
         self.pos += self.vel;
     }

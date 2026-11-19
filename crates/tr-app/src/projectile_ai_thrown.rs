@@ -317,10 +317,12 @@ pub(crate) fn bee_step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
         let cx = p.pos.x + p.w * 0.5;
         let cy = p.pos.y + p.h * 0.5;
         for n in npcs {
-            // `CanBeChasedBy(this) && (!npc.wet || type==370 || this.type==307)`
-            // — the bees are not 307, so a wet NPC is refused (the port's
-            // `Npc.wet` carries the flag).
-            if !chaseable(n) || n.wet {
+            // `CanBeChasedBy(this) && (!npc.wet || npc.type==370 || this.type==307)`
+            // (`:27377`) — the bees are not 307, so a wet NPC is refused
+            // UNLESS it is Duke Fishron (370), which the bees may chase while
+            // wet (the port's `Npc.wet` carries the flag, `NpcKind::DukeFishron`
+            // the type).
+            if !chaseable(n) || (n.wet && n.kind != crate::npc::NpcKind::DukeFishron) {
                 continue;
             }
             let (nw, nh) = n.size();
@@ -659,8 +661,9 @@ mod tests {
         assert!((p.pos.x - 467.0).abs() < 1e-6);
     }
 
-    /// The bone javelin's flying arc falls after 45 ticks
-    /// (`Projectile.cs:40618-40629`).
+    /// The bone javelin's flying arc falls FROM age 45 (`Projectile.cs:40618`
+    /// `if (this.ai[1] >= (float)num4)` with `num4 = 45`): `ai[1]++` runs
+    /// first, so the 45th tick already reaches 45 and applies the gravity.
     #[test]
     fn s1_p_i28_bone_javelin_flying_arc() {
         let w = empty_world();
@@ -668,13 +671,14 @@ mod tests {
         p.pos = Vec2::new(500.0, 500.0);
         p.vel = Vec2::new(10.0, 0.0);
         p.ai[0] = 0.0;
-        for _ in 0..45 {
+        for _ in 0..44 {
             bone_javelin_step(&mut p, &w, &[]);
         }
-        assert_eq!(p.ai[1], 45.0, "the flight-age counter");
+        assert_eq!(p.ai[1], 44.0, "the flight-age counter");
         assert_eq!(p.vel.y, 0.0, "no gravity through age 44");
         bone_javelin_step(&mut p, &w, &[]);
-        assert!((p.vel.y - 0.35).abs() < 1e-6, "age 45 adds 0.35");
+        assert_eq!(p.ai[1], 45.0);
+        assert!((p.vel.y - 0.35).abs() < 1e-6, "age 45 adds 0.35 (>= 45)");
         assert!((p.vel.x - 9.8).abs() < 1e-6, "age 45 decays X by 0.98");
     }
 
@@ -762,25 +766,20 @@ mod tests {
 
     /// The beenade death burst's draw order: 4 gore rows, then Next(15,25),
     /// then per bee the velocity pair + beeType flip + beeDamage
-    /// (`Projectile.cs:76439-76460`).
+    /// (`Projectile.cs:76439-76460`). With `strongBees` OFF the `beeType()`
+    /// coin flip short-circuits (`strongBees && Next(2)==0`, `Player.cs:12419`)
+    /// — it draws NOTHING, so each plain bee is only vx + vy + beeDamage = 3
+    /// draws (the `hurt_modifiers` bee_type order).
     #[test]
     fn s1_p_i28_beenade_death_draw_order() {
         let mut p = proj(BEENADE);
         p.damage = 12;
-        // 4 gore rows (3 draws each) = 12, then count=15 (roll 15), then one
-        // bee: vx roll 0, vy roll 0, beeType roll 1 (no strong), beeDamage
-        // roll 0. Total 12 + 1 + 4 = 17 draws for a 15-bee burst's FIRST bee;
-        // we script only enough for the count + first bee and assert the
-        // prefix. Use count=15 → but that needs 15 bees' draws. Instead pin
-        // the gore prefix + count draw with a minimal count via a separate
-        // check: script 12 gore draws + count roll, then read the count.
+        // 4 gore rows (3 draws each) = 12, then count=15 (roll 15).
         let mut rolls = vec![61, 10, -20, 62, 11, -19, 63, 12, -18, 61, 13, -17];
         rolls.push(15); // Next(15,25) → 15 bees
-        // first bee: vx=0, vy=0, beeType=1 (plain), beeDamage=0.
-        rolls.extend_from_slice(&[0, 0, 1, 0]);
-        // remaining 14 bees: 4 draws each (vx, vy, beeType, beeDamage).
-        for _ in 0..14 {
-            rolls.extend_from_slice(&[0, 0, 1, 0]);
+        // Each plain bee (strongBees off): vx=0, vy=0, NO coin flip, beeDamage=0.
+        for _ in 0..15 {
+            rolls.extend_from_slice(&[0, 0, 0]);
         }
         let mut rng = ScriptRng::with_rolls(&rolls);
         let bees = beenade_death(&p, false, &mut rng);
@@ -795,11 +794,39 @@ mod tests {
         assert_eq!(rng.draws[12], (15, 25), "the bee count draw");
         assert_eq!(rng.draws[13], (-35, 36), "first bee SpeedX");
         assert_eq!(rng.draws[14], (-35, 36), "first bee SpeedY");
-        assert_eq!(rng.draws[15], (0, 2), "first bee beeType flip");
-        assert_eq!(rng.draws[16], (0, 2), "first bee beeDamage (plain)");
+        // strongBees off → the coin flip short-circuits, the next draw is beeDamage.
+        assert_eq!(rng.draws[15], (0, 2), "first bee beeDamage (plain, no flip draw)");
+        assert_eq!(rng.draws.len(), 12 + 1 + 15 * 3, "3 draws per plain bee");
         assert_eq!(bees[0].kind, BEE, "no strong bees → plain bee");
         assert_eq!(bees[0].damage, 12, "12 + Next(0,2)=0");
         assert_eq!(bees[0].knock_back, 0.0, "beeKB(0) plain");
+    }
+
+    /// The strong-bee beenade burst (`strongBees` ON, the Hive Pack): each bee
+    /// now draws the coin flip (`Next(2)`), and a flip of 0 makes a giant bee
+    /// (566) with `beeDamage = damage + Next(1,4)` and `beeKB(0) = 0.5`
+    /// (`Player.cs:12417-12444`). Per bee: vx, vy, flip, beeDamage = 4 draws.
+    #[test]
+    fn s1_p_i28_beenade_death_strong_bee_draw_order() {
+        let mut p = proj(BEENADE);
+        p.damage = 12;
+        let mut rolls = vec![61, 10, -20, 62, 11, -19, 63, 12, -18, 61, 13, -17];
+        rolls.push(15); // count = 15 bees
+        // Each strong bee: vx=0, vy=0, flip=0 (→ giant), beeDamage=2.
+        for _ in 0..15 {
+            rolls.extend_from_slice(&[0, 0, 0, 2]);
+        }
+        let mut rng = ScriptRng::with_rolls(&rolls);
+        let bees = beenade_death(&p, true, &mut rng);
+        assert_eq!(bees.len(), 15);
+        assert_eq!(rng.draws[13], (-35, 36), "first bee SpeedX");
+        assert_eq!(rng.draws[14], (-35, 36), "first bee SpeedY");
+        assert_eq!(rng.draws[15], (0, 2), "first bee beeType flip (strongBees on)");
+        assert_eq!(rng.draws[16], (1, 4), "first bee beeDamage (strong)");
+        assert_eq!(rng.draws.len(), 12 + 1 + 15 * 4, "4 draws per strong bee");
+        assert_eq!(bees[0].kind, GIANT_BEE, "flip 0 → giant bee");
+        assert_eq!(bees[0].damage, 14, "12 + Next(1,4)=2");
+        assert_eq!(bees[0].knock_back, 0.5, "beeKB(0) strong = 0.5");
     }
 
     /// The molotov death burst's per-fire draw order: X pair, Y pair, type
@@ -860,5 +887,13 @@ mod tests {
         assert_eq!(proj_data(BEE).unwrap().extra_updates, 3);
         assert_eq!(proj_data(GIANT_BEE).unwrap().penetrate, 4);
         assert_eq!(proj_data(MOLOTOV_FIRE_1).unwrap().penetrate, 3);
+        // The Javelin (507) row — the Javelin item's (3094) shot. Without it
+        // `spawn_with_data_ai` no-ops and the javelin never spawns; the flight
+        // arm (`covers_ai001`) only runs once the row lands.
+        let jav = proj_data(crate::projectile::JAVELIN).expect("the javelin row");
+        assert_eq!(jav.ai_style, 1);
+        assert_eq!(jav.penetrate, 3);
+        assert_eq!((jav.w, jav.h), (16.0, 16.0));
+        assert!(crate::projectile_ai_thrown::covers_ai001(507));
     }
 }

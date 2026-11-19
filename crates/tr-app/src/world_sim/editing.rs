@@ -4444,7 +4444,7 @@ mod tests {
 
     use crate::app::flow::front_flow_tests::flow_app;
 
-    const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+    pub(super) const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 
     /// A headless mining rig: `world` staged by the caller, the player parked
     /// three tiles right of the target, the camera pinned so the screen-centre
@@ -5187,7 +5187,7 @@ mod tests {
         );
     }
 
-    fn mining_app(world: World, tx: i32, ty: i32) -> App {
+    pub(super) fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
         let mut player = Player::spawn(&app.world);
@@ -8336,6 +8336,12 @@ mod item_mechanics {
     use crate::item::{EMPTY_SLOT, ItemDrop, INV};
     use tr_core::tile::Tile;
     use tr_core::tile::FLAG_ACTIVE;
+    // S1-P-i28 — the thrown-consumable witnesses below reuse the mining rig
+    // from the sibling `tests` mod (the player parked three tiles right of
+    // the target, the camera pinned so the screen-centre cursor points at it).
+    // Both helpers are `pub(super)` there; without these imports the calls do
+    // not resolve (they are private to `tests`, not visible through `super::*`).
+    use super::tests::{MINE_SCREEN, mining_app};
 
     fn slot(kind: u16, count: u32) -> ItemSlot {
         ItemSlot {
@@ -8509,6 +8515,14 @@ mod item_mechanics {
         let (sw, sh) = app.screen_size();
         app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
         app.mine_down = true;
+        // The press edge (`Player.cs:42733`'s `controlUseItem && releaseUseItem`):
+        // the non-autoReuse thrown kinds (the shuriken, the waters, the
+        // grenades, …) only fire on a FRESH press — the previous frame must
+        // read released-and-not-down, or `throw_ready` refuses the first
+        // frame's swing. `mining_app` leaves both latches false (a held
+        // button), so arm the release the vanilla starts from.
+        app.mine_prev_down = false;
+        app.mine_released = true;
         app
     }
 
@@ -8548,13 +8562,17 @@ mod item_mechanics {
             .find(|p| p.active)
             .expect("the bone javelin spawns");
         assert_eq!(shot.kind, 598, "ItemID.BoneJavelin's shoot is 598");
-        // The spawn Y is the upper third (the port's spawn adds dir*10 to the
-        // centre, but the javelin arm overrides Y to position.Y + height/3).
+        // The spawn Y is the upper third (`Player.cs:47227`): the port's
+        // generic spawn point is the centre + dir*10, but the javelin arm
+        // overrides `spawn.y = position.Y + height/3`, and
+        // `spawn_with_data_ai` takes that point as the projectile's TOP-LEFT
+        // (`pos`, not a centre). So `shot.pos.y` is exactly `p.y + height/3`.
         let expected_y = py + (ph as i32 / 3) as f32;
         assert!(
-            (shot.pos.y + shot.h * 0.5 - expected_y).abs() < 12.0,
-            "the javelin throws from the upper third, got {}",
-            shot.pos.y
+            (shot.pos.y - expected_y).abs() < 1e-3,
+            "the javelin throws from the upper third, got {} want {}",
+            shot.pos.y,
+            expected_y
         );
     }
 

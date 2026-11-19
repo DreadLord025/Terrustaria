@@ -33018,3 +33018,55 @@ group, `spawn_with_data_ai_owned`'s 11-arg shape, `Npc::new`'s 5-arg
 shape, the `#[deny(unreachable_patterns)]` dispatch — no duplicate style/kind
 arms).
 
+### Retry verification round (W3-i28b, 2026-11-20, code-only)
+
+An independent re-census of the twelve thrown consumables against
+`Player.ItemCheck_Shoot` (`Player.cs:47056-49468`), the `ItemCheck` consumable
+arm (`:43280-43326`) and the projectile `SetDefaults`/`AI`/`Kill`/`StatusNPC`
+arms CONFIRMED the landed work above (the item rows faithful, the three
+throwing-arm fixes, the 13 rows, the flight arms, the grenade fixes, the
+on-hit/death hooks). It found and fixed SIX defects the first pass left:
+
+1. **Compile error — the throwing-arm witnesses could not resolve their rig.**
+   The new `item_mechanics` tests called `mining_app`/`MINE_SCREEN`, which are
+   private to the sibling `tests` mod (not visible through `use super::*`).
+   Both helpers are now `pub(super)` and imported explicitly
+   (`use super::tests::{MINE_SCREEN, mining_app}`).
+2. **Test failure — the non-autoReuse throws never fired.** `thrown_app` left
+   `mine_prev_down=false`/`mine_released=false` (a held button), so the
+   press-edge gate (`Player.cs:42733` `controlUseItem && releaseUseItem`)
+   refused the first frame for the shuriken/waters/grenades. The rig now arms
+   `mine_prev_down=false`, `mine_released=true` (the vanilla's released start).
+3. **Missing row — the Javelin (507) never spawned.** The first pass added the
+   507 flight arm (`covers_ai001`) but NO `proj_data(507)` row, so
+   `spawn_with_data_ai` no-opped and the Javelin item's (3094) shot vanished.
+   The row landed (`Projectile.cs:5770-5778`: 16×16, aiStyle 1, penetrate 3,
+   stock life/tileCollide) + a row witness.
+4. **Wrong witness — the beenade draw order assumed a coin flip that
+   short-circuits.** `beeType()` is `strongBees && Next(2)==0`
+   (`Player.cs:12419`); with `strongBees` OFF it draws NOTHING, so each plain
+   bee is vx+vy+beeDamage = 3 draws, not 4. The witness now scripts 3 draws per
+   plain bee (and a new strong-bee witness pins the 4-draw flip path).
+5. **Wrong witness — the bone-javelin arc off-by-one.** `ai[1]++` runs before
+   the `>= 45` gravity test (`Projectile.cs:40612`/`:40618`), so the 45th tick
+   already falls; the witness asserted gravity only on tick 46. Corrected to
+   44 straight ticks then the 45th falling.
+6. **Missing flight behaviour — the greek fires + the style-14 tail clamp.**
+   The fires (400-402) ride the generic `ai_spear`, but the C# aiStyle-14 arm
+   carries a per-kind overlay (`Projectile.cs:25271-25302`: a wet kill, the
+   `0.15 < vy < 0.25 → vx *= 0.8` friction, and the rotation REPLACED by
+   `(0 - vx) * 0.05`) plus the arm's tail clamp (`:25303-25306`, `vy > 16 → 16`,
+   which the beenade's fall needs). Both landed in `ai_spear` (the overlay
+   gated to 400-402, the clamp for every style-14 kind; the wet probe folds to
+   the port's `is_wet` box-overlap convention). The bee homing scan also now
+   allows wet Duke Fishron (`npc.type == 370`, `Projectile.cs:27377`) instead
+   of refusing every wet NPC.
+
+The bone-javelin `Colliding` target-rect shrink (`Projectile.cs:15669`) and the
+beenade's tile-kill-vs-bounce movement are part of the port's pre-existing
+documented stand-ins (the `damage_hitbox` S1-C-8 overlay family and the
+test-pinned `ai_spear` tile scan respectively) — left consistent with the
+port's state, not changed here. The javelin spawn-Y witness was tightened to
+the exact top-left (`spawn_with_data_ai` takes the point as `pos`, not a
+centre). All fixes are code-only; the witnesses remain WRITTEN, NOT RUN.
+
