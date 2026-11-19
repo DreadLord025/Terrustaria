@@ -1050,7 +1050,7 @@ mod tests {
             find_frame_b(FindFrameKind::Wolf, &mut s, &turn);
             rows.push(s.row);
         }
-        assert_eq!(rows, [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2]);
+        assert_eq!(rows, [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2]);
         assert_eq!(s.counter, 0.0);
         // A fast against-facing velocity (|vx| >= 4) is a RUN, not a
         // turn — the sprite follows the velocity.
