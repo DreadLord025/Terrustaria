@@ -3652,8 +3652,13 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
+            // S1-D-3: the caster-sphere family (25/30+665/33) rides the
+            // new module's arm; the unported 112/666/516 branches wait
+            // on their kinds (the pure helpers are pinned there).
+            9 => self.ai_009_sphere_family(world, player, rng),
             // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
-            // (`NPC.cs:32761-33043` / `:33044-33197`) — claimed for these
+            // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
             // two kinds only (the aiStyle-26/22 kinds ride another slice).
             57 if self.kind == NpcKind::MourningWood => {
                 crate::npc_ai_pumpkin_boss::mourning_wood_step(self, world, player, rng)
@@ -3682,6 +3687,28 @@ impl Npc {
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
+    }
+
+    /// S1-D-3: the aiStyle-9 family arm — `NPC.AI()`'s
+    /// `if (this.aiStyle == 9)` block (`NPC.cs:21377-21571`). The ported
+    /// sphere kinds (25/30+665/33) ride `npc_ai_style9::sphere_family_step`
+    /// (the one-shot `TargetClosest` launch, the ftw rows, the
+    /// `EncourageDespawn(100)`, the alpha/spin writes); the dust bursts
+    /// are the documented skip (the module header pins the exact rand
+    /// order — the ported arm consumes zero draws).
+    fn ai_009_sphere_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let flags = crate::npc_ai_style9::Style9Flags {
+            // `Main.getGoodWorld` has no runtime flag in the port yet
+            // (the seed only rides worldgen) — the ftw rows stay parked.
+            get_good_world: false,
+            // `NPC.AnyNPCs(35)`/`AnyNPCs(113)` need the sibling scan the
+            // family seam does not carry yet; with getGoodWorld false the
+            // C# never reads them (`:21419`/`:21450` gate first).
+            skeletron_head_alive: false,
+            wall_of_flesh_alive: false,
+            red_hat: self.red_hat_skeletron_adjustments_enabled(),
+        };
+        crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng);
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -4010,8 +4037,11 @@ impl Npc {
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
                 self.update_caster(world, player, rng)
             }
+            // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
+            // style axis (`ai_009_sphere_family`) — this arm is unreachable
+            // through `update_rng` (the axis claims style 9 first).
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
-                self.update_sphere(world, player)
+                unreachable!("aiStyle 9 rides the style axis (S1-D-3)")
             }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
@@ -14823,14 +14853,6 @@ impl Npc {
             MAX_FALL,
             player.dead,
         );
-    }
-
-    /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
-    /// core, `:21404-21429`): the one-shot launch, then the straight fly
-    /// through the tiles (`noGravity`/`noTileCollide`).
-    fn update_sphere(&mut self, world: &World, player: &Player) {
-        let (pcx, pcy) = player.center();
-        crate::npc_ai::sphere_step(self, pcx, pcy, world);
     }
 
     /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16

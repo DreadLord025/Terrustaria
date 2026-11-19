@@ -24527,3 +24527,64 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
   aiStyle-39 only (`:77292`) — single frame,
   `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
   entry).
+## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
+
+`NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
+the style axis (`npc.rs::ai_009_sphere_family`) through the new
+`crates/tr-app/src/npc_ai_style9.rs`. The ported kinds are the three
+caster spheres — Burning Sphere 25 (`SetDefaults` `:9093-9107`), Chaos
+Ball 30 + its Tim clone 665 (`:15699-15713`, `:17403-17417`, folded into
+one kind), Water Sphere 33 (`:9135-9149`). The pre-axis
+`npc_ai.rs::sphere_step` approximation (launch-on-zero-velocity, no
+`TargetClosest`, no despawn/alpha/spin) is gone; the arm is now the C#'s:
+
+- the ONE-SHOT launch under `target == 255` (`:21407-21449`) calls the
+  shared `npc_target::target_closest` (style 9, the S1-D-3p seam), then
+  the normalized delta times `num120` with the C#'s multiply order
+  (`speed / dist` first) and the `dist <= 0 -> 1` guard;
+- the `getGoodWorld` speed/invulnerability rows (`:21419-21437`,
+  `:21450-21464`) are complete in `launch_speed` /
+  `good_world_latches_invulnerability` but PARKED: the port has no
+  `Main.getGoodWorld` runtime flag (the seed only rides worldgen), so the
+  wiring passes all-false;
+- `EncourageDespawn(100)` (`:21496`), the Chaos Ball's dust-loop
+  `alpha = 255` (`:21519-21521` — idempotent across the 2 iterations) and
+  the `rotation += 0.4 * direction` spin (`:21568`) are exact.
+
+Deliberate skips / residuals (documented, not silent):
+
+- **Dust + light emissions** (`:21481-21487`, `:21517-21567`, incl. the
+  else arm's `Lighting.AddLight` `:21561`) — the S1-D-3e/f precedent; the
+  port has no NPC-side dust feed. **RNG consequence (by construction)**:
+  the arm's only `Main.rand` draws for the ported kinds are inside those
+  dust loops (type 33's `Next(5)` at `:21545` included), so the ported
+  arm consumes ZERO draws — the `UpdateNpcs` stream is byte-identical to
+  the pre-axis behaviour. Witness:
+  `s1_d_3_s9_the_sphere_arm_consumes_no_rand_draws` (written, not run —
+  code-only mode).
+- **The unported per-type branches**: Vile Spit 112 / Vile Spit EoW 666
+  (`:21465-21495` — the `ai[0]` counter/clamp/double-move, the
+  `defDamage`/`GetAttackDamage_CappedAtMaster(32f)` rows, the
+  `SolidCollision` self-kill) and Solar Flare 516 (`:21380-21406`,
+  `:21497-21515` — the fade-in, the randomized launch, the homing steer,
+  the collide/near self-kill). Their maths is pinned as pure helpers
+  (`vile_spit_counter_tick`, `solar_flare_launch_velocity`,
+  `solar_flare_steer`) with the exact RNG order: the 516 launch draws
+  `NextDouble`, `NextDouble` (`Utils.RotatedByRandom`, `Utils.cs:1697-
+  1700`), THEN `NextFloat` (`:21400`) — witnessed by
+  `solar_flare_launch_draws_two_doubles_then_a_float`. The kinds
+  themselves wait on their `NpcKind` rows.
+- **The `netOffset` add/subtract pair** (`:21516`/`:21569`) brackets only
+  the dust emissions and nets to zero — dropped with them.
+- **The `EverLastingTicker` stamp** stays 0 (the S1-D-3p precedent — the
+  ticker is not plumbed into `Npc::update`).
+- **Behaviour deltas vs the pre-axis stand-in** (intentional, towards the
+  C#): the launch now fires on the `target == 255` sentinel instead of
+  zero velocity (a knocked-back ball no longer re-launches), the facing
+  comes from `TargetClosest` (not the velocity sign), and the balls now
+  despawn via the 100-tick encouragement and spin.
+
+**Code-only mode**: this round ran no cargo/rustc/rustfmt/tests — the 9
+witness tests in `npc_ai_style9.rs` are WRITTEN, NOT RUN; the compile and
+the `the_sphere_launches_once_and_flies_straight` re-run are the merge
+step's verification.
