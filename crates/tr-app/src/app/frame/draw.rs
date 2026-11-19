@@ -360,12 +360,24 @@ impl App {
                         // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
                         draw_invisible_walls: crate::env::show_invisible(),
                     };
+                    // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
+                    // the C# runs once per draw pass just before `DrawItems`
+                    // (`:62278`), behind `!Main.gamePaused`. The step-time
+                    // flicker arms above read the value the last draw left.
+                    if !self.game_paused {
+                        crate::item_lights::update_ess_scale(
+                            &mut self.ess_scale,
+                            &mut self.ess_dir,
+                        );
+                    }
                     // `WorldItem.Update`'s `UpdateItem_VisualEffects` lights (S1-E-5)
-                    // (`WorldItem.cs:1204-1649`). The C# runs them once per live
+                    // (`WorldItem.cs:1295-1648`). The C# runs them once per live
                     // drop per tick, in `Main.item` slot order, at the end of
                     // `WorldItem.Update` (`:436`); `items` here is that same slot
-                    // order after the step. No arm draws `Main.rand`, so the
-                    // placement relative to the sim leaves the stream untouched.
+                    // order after the step. No arm in THIS feed draws `Main.rand`
+                    // (the rand/essScale head `:1206-1293` feeds from the fixed
+                    // step instead, `item_lights.rs`), so the placement relative
+                    // to the sim leaves the stream untouched.
                     for drop in items.iter() {
                         let Some(def) = crate::registry::get(drop.kind) else {
                             continue;
@@ -478,6 +490,16 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The Dust `UpdateDust` lights (S1-E-5, dust family):
+                    // the RNG-free AddLight arms of the FIRST ladder
+                    // (`Dust.cs:483-1047`, `dust_lights.rs`) run per active
+                    // dust per update in `Main.dust` slot order; the port
+                    // collects the same sources here after the dust pass,
+                    // in the same slot order. No arm draws `Main.rand` and
+                    // none mutates the pool (the witness test in
+                    // `dust_lights.rs` pins the stream), so the placement
+                    // relative to the sim leaves the fixed-step order exact.
+                    crate::dust_lights::feed_dust_lights(dust, &params, &mut self.entity_lights);
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -646,6 +668,26 @@ impl App {
                             blackout: false,
                             headcovered: false,
                             game_paused: self.game_paused,
+                            // `GameViewMatrix.Translation`
+                            // (`SpriteViewMatrix.cs:149-153`): the zoom
+                            // frame's offset — `Round(screen/2 - (screen/2)
+                            // / Round(zoom/(1/128))*(1/128))`, banker's
+                            // rounding (`Utils.Round`, `Utils.cs:112-115`).
+                            // The minimap export reads it (`:375-382`).
+                            view_translation: {
+                                let q = [
+                                    (world_zoom / (1.0 / 128.0)).round_ties_even()
+                                        * (1.0 / 128.0),
+                                    (world_zoom / (1.0 / 128.0)).round_ties_even()
+                                        * (1.0 / 128.0),
+                                ];
+                                [
+                                    (screen.x * 0.5 - screen.x * 0.5 / q[0]).round_ties_even(),
+                                    (screen.y * 0.5 - screen.y * 0.5 / q[1]).round_ties_even(),
+                                ]
+                            },
+                            // `Netplay.Connection.StatusMax > 0` (`:341`).
+                            net_connecting: self.net_status_max > 0,
                         };
                         let engine = legacy_light.get_or_insert_with(|| {
                             tr_core::lighting::legacy::LegacyLighting::new(*light_mode)
@@ -659,6 +701,17 @@ impl App {
                         if engine.mode() != want_mode {
                             engine.set_mode(*light_mode);
                         }
+                        // S1-E-19 wave B: the minimap light export
+                        // (`TryUpdatingMapWithLight`, `LegacyLighting.cs:371-433`)
+                        // rides the engine's `ProcessArea` gate block
+                        // (`:341-358`). The `Main.Map` seam borrows the
+                        // WorldMap's tiles + `mapTime`; `map_enabled` is
+                        // `Main.mapEnabled` (`Main.cs:813`). The changed tiles
+                        // come back through the seam and queue for re-upload
+                        // (`MapRenderer.QueueChange`'s analog).
+                        let mut export = map
+                            .as_mut()
+                            .map(|m| m.legacy_light_export(settings.map_enabled));
                         engine.process_area(
                             world,
                             [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
@@ -666,7 +719,16 @@ impl App {
                             &params,
                             &legacy_inputs,
                             &scratch.all_lights,
+                            export.as_mut(),
                         );
+                        // Consume the seam (ending its tile/counter borrows)
+                        // before re-borrowing the map for the dirty push.
+                        let changed = export.map(|e| e.changed);
+                        if let Some(changed) = changed {
+                            if let Some(m) = map.as_mut() {
+                                m.push_dirty(changed);
+                            }
+                        }
                         engine.present_into(light);
                     }
 
@@ -1564,6 +1626,10 @@ impl App {
                                 index: self.mouse_npc_index,
                                 ty: self.mouse_npc_type,
                             },
+                            // The town-chatter UI (S1-E-10b) — the panel
+                            // draws while the talk latch holds.
+                            self.talk_npc,
+                            &self.npc_chat_text,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

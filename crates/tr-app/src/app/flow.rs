@@ -2186,6 +2186,7 @@ pub(crate) mod front_flow_tests {
             npcs: Vec::new(),
             talk_npc: None,
             npc_chat_text: String::new(),
+            npc_chat_last_hovered: -1,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
@@ -2419,6 +2420,8 @@ pub(crate) mod front_flow_tests {
             leaves: Vec::new(),
             gore: tr_core::gore::GorePool::new(),
             entity_lights: crate::entity_lights::EntityLights::default(),
+            ess_scale: 1.0,
+            ess_dir: -1,
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             rngs: NamedRngs::new(0),
@@ -2509,6 +2512,7 @@ pub(crate) mod front_flow_tests {
                 shoe_color: [160, 105, 60],
                 inventory,
                 inv_favorites: 0,
+                last_saved_binary: 0,
             },
         )
         .unwrap();

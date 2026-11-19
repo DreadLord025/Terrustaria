@@ -723,7 +723,8 @@ tile.active()
 /// `Collision.SolidCollision(position, width, height)` — the Tempest's alpha
 /// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
 /// its centre over active non-top solids. The C#'s exact point cloud is a
-/// margin-level difference — recorded in ANALYSIS.
+/// margin-level difference — recorded in ANALYSIS. `pub(crate)`: the
+/// AI_026 slices' grounded-reset gate (`:60106` etc.) shares it.
 pub(crate) fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
 let pts = [
     (pos.x, pos.y),
@@ -9920,6 +9921,157 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-10 arm (`Projectile.cs:24367-24370`) -> `AI_010`
+    /// (`:57826-58100`) for the dungeon-debris trio 736/737/738 — the shards
+    /// a broken cracked dungeon brick drops (`WorldGen.cs:63839-63850`, the
+    /// spawner is its own task). The other aiStyle-10 kinds stay unported
+    /// here: the sand family rides the pool's falling-tile tail and the
+    /// 109/411-414/1081 arms have no rows (the dispatch gates this arm on
+    /// [`DUNGEON_DEBRIS`]).
+    ///
+    /// The stock `friendly`/`hostile` are both false (`SetDefaults`
+    /// `:788`/`:764` — the `:7748-7755` arm touches neither), so the C#
+    /// debris damages nothing (`Damage_PVE_Inner`'s `!friendly` refusal
+    /// `:12611`, `Damage_EVP`'s `!hostile` refusal `:14775`); the pool's
+    /// slot default is `friendly = true`, so the arm holds the C# state
+    /// explicitly (the `ai_spectre_wrath` precedent) and the dispatch gates
+    /// both damage passes on the trio.
+    ///
+    /// The dust trail (`:57927-57937`) is SKIPPED — no dust layer — but its
+    /// `Next(40)` gate roll stays on the stream (the leaf-blower precedent:
+    /// the gate rolls are state-bearing for the stream census). The
+    /// `netUpdate` writes (`:57994`) are skipped (no MP layer).
+    fn ai_dungeon_debris(
+        &mut self,
+        world: &mut World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        // The stock friendly = false (`:788`), held for the slot's whole
+        // life — the damage passes refuse the trio either way.
+        self.friendly = false;
+        // `:57927-57937` — the 1-in-40 dust gate: the roll stays, the
+        // `Dust.NewDust` (type - 736 + 275) and its velocity blend are
+        // SKIPPED with their internal draws (the dust-skip convention).
+        if rng.next_range(0, 40) == 0 {
+            // The dust spawn and its 0.5/0.5 velocity blend — SKIPPED.
+        }
+        // `:57942-57950` — the first tick: the frame roll picks the sheet
+        // row, the scale roll shrinks it 0-29%, and `localAI[0]` advances
+        // unconditionally (the one-shot latch).
+        if self.local_ai[0] == 0.0 {
+            self.frame = rng.next_range(0, 3);
+            self.scale = 1.0 - rng.next_range(0, 30) as f32 * 0.01;
+        }
+        self.local_ai[0] += 1.0;
+        // `:57951-57952` — the per-tick reset.
+        self.tile_collide = true;
+        self.local_ai[1] = 0.0;
+        // `:57953-57996` — the owner's first tick: tileCollide drops for the
+        // tick (the tile walk below skips it), and the channel branch
+        // (`:57956`) excludes the trio (`type < 736 || type > 738`), so the
+        // else arm always runs: `ai[0] = 1` (the `netUpdate` is skipped).
+        if self.owner == local_owner && self.ai[0] == 0.0 {
+            self.tile_collide = false;
+            self.ai[0] = 1.0;
+        }
+        // `:58006-58021` — the fall: `ai[0] == 1` adds 0.41/tick (the trio
+        // is not in the 42/65/68/354 sand special `:58008`).
+        if self.ai[0] == 1.0 {
+            self.vel.y += 0.41;
+        } else if self.ai[0] == 2.0 {
+            // `:58022-58037` — the settle mode: 0.2/tick gravity and the X
+            // damp toward 0 in 0.04 steps. No ported spawner arms it (the
+            // C# debris never leaves mode 1); ported for the shape.
+            self.vel.y += 0.2;
+            if self.vel.x < -0.04 {
+                self.vel.x += 0.04;
+            } else if self.vel.x > 0.04 {
+                self.vel.x -= 0.04;
+            } else {
+                self.vel.x = 0.0;
+            }
+        }
+        // `:58038-58072` — the owner's tile walk over the box's tiles: the
+        // breakables die, a top slope flattens and lifts the shard 16 px.
+        if self.owner == local_owner && self.tile_collide {
+            let x0 = (self.pos.x / 16.0) as i32;
+            let x1 = ((self.pos.x + self.w) / 16.0) as i32;
+            let y0 = (self.pos.y / 16.0) as i32;
+            let y1 = ((self.pos.y + self.h) / 16.0) as i32;
+            for tx in x0..=x1 {
+                for ty in y0..=y1 {
+                    // `WorldGen.InWorld(i, j)` (`WorldGen.cs:9688`, fluff 0)
+                    // + the null/active guard (`:58044-58052`).
+                    if !world.in_bounds(tx, ty) {
+                        continue;
+                    }
+                    let Some(tile) = world.tile(tx, ty) else {
+                        continue;
+                    };
+                    if !tile.active() {
+                        continue;
+                    }
+                    // `:58053-58060` — the breakable set: the small/large
+                    // piles 185-187, the stalactite 165, the heart 12, the
+                    // life-crystal boulder 665, the mana crystal 639, the
+                    // statues 105, the exposed gems 178 (`TileID.cs:653`/
+                    // `:839`/`:959`/`:985`/`:999-1003`/`:1907`/`:1959`).
+                    let kind = tile.kind;
+                    if (185..=187).contains(&kind)
+                        || kind == 165
+                        || kind == 12
+                        || kind == 665
+                        || kind == 639
+                        || kind == 105
+                        || kind == 178
+                    {
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                    } else if tile.top_slope()
+                        && !tr_core::tiledata::SET_PLATFORMS.has(kind)
+                    {
+                        // `:58061-58068` — `WorldGen.SlopeTile(i, j)`
+                        // (`WorldGen.cs:80768-80803`): clear the half brick
+                        // and the slope (the `slope_tile_flatten` shape,
+                        // `tileobject.rs:1264`), then lift the shard one
+                        // tile. The `CanPoundTile` gate (`:80770`) and the
+                        // fail-dust/sound/net tails are unported — the
+                        // flatten is unconditional (ANALYSIS).
+                        if let Some(t) = world.tile_mut(tx, ty) {
+                            t.flags &= !tr_core::tile::FLAG_HALF_BRICK;
+                            t.set_slope(0);
+                        }
+                        self.pos.y -= 16.0;
+                    }
+                }
+            }
+        }
+        // `:58073-58091` — the per-frame spin and the 10 px/tick fall cap.
+        if self.frame == 0 {
+            self.rot -= 0.1;
+        } else if self.frame == 1 {
+            self.rot += 0.1;
+        } else {
+            self.rot += 0.15;
+        }
+        if self.vel.y > 10.0 {
+            self.vel.y = 10.0;
+        }
+        // `HandleMovement`'s aiStyle-10 arm (`:17592-17597`): the trio takes
+        // the plain `TileCollision(pos, vel, w, h, flag6, flag6)` with
+        // `flag6 = true` (the default `:17478`; the trio is NOT in
+        // `FallingBlockDoesNotFallThroughPlatforms`, `ProjectileID.cs:433`),
+        // so platforms block it too. A blocked move falls through the whole
+        // per-type chain to the default `position += velocity; Kill()`
+        // (`:19849-19853`) — the `kill_step` stand-in (the ai_sharp_tears
+        // precedent). The blocked-move chain's tile-cut prologue
+        // (`:17910-17948`) would roll `Next(3)` for a `CanCutTiles()`-true
+        // shot, but the trio is `friendly = false`/`hostile = false`, so the
+        // gate is false and the whole chain (roll included) is skipped —
+        // the dd2_sentry_step precedent.
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-2 block (`Projectile.cs:23366-23410`) — the Flying
     /// Dutchman's cannon shell (240): the `SoundID.Item14` one-shot latch,
     /// the 16-tick gravity delay (`+0.18f` / `×0.991f`) and the alpha-0
@@ -10348,6 +10500,7 @@ fn is_followup_draw(kind: u16) -> bool {
             | NEBULA_BLAZE_2
     )
 }
+
 
 
 /// `Main.DrawProj_LightsBane`'s eight quads in push order (`Main.cs:27483-27492`),
@@ -10787,7 +10940,7 @@ fn full_solid(t: &tr_core::tile::Tile) -> bool {
 /// *missing* tile as solid (`:70114-70116`, the try/catch of `:69965`), so
 /// out-of-world coordinates come back `true`; the callers that care keep the
 /// C#'s `WorldGen.InWorld` guard in front, exactly as the source does.
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_none_or(full_solid)
 }
 
@@ -10870,7 +11023,7 @@ fn npc_center(n: &Npc) -> Vec2 {
 /// `Math.Sign(float)` — the C#'s float overload, which yields 0 for 0 rather
 /// than Rust's `signum` 1. The minion steering adds `(sign, sign) * k`, so the
 /// zero must stay zero.
-fn csign(v: f32) -> f32 {
+pub(crate) fn csign(v: f32) -> f32 {
     if v > 0.0 {
         1.0
     } else if v < 0.0 {
@@ -11129,7 +11282,7 @@ fn find_target_with_line_of_sight(
 /// the clamped ramp — 0/1 outside the from-range, linear inside. The branches
 /// are the C#'s, since it treats a descending range (`from > to`) as clamped
 /// from the *other* side.
-fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
+pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
     if from < to {
         if t < from {
             return 0.0;
@@ -11166,7 +11319,7 @@ fn is_a_phaseblade(kind: u16) -> bool {
 /// `MathHelper.WrapAngle` (XNA's body: the `IEEERemainder(angle, TwoPi)`
 /// remainder plus the ±2π fix-up). `round_ties_even` is
 /// `IEEERemainder`'s round-to-nearest-integer.
-fn wrap_angle(angle: f32) -> f32 {
+pub(crate) fn wrap_angle(angle: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     if angle > -PI && angle <= PI {
         return angle;
@@ -11200,7 +11353,7 @@ pub(crate) fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
 
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`): the
 /// zero/NaN direction falls back to `defaultValue`.
-fn safe_normalize(v: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         Vec2::ZERO
     } else {
@@ -11214,7 +11367,7 @@ fn safe_normalize(v: Vec2) -> Vec2 {
 /// `MathHelper.WrapAngle` (the `IEEERemainder` form, which keeps +π as +π;
 /// the `npc::angle_lerp` rem_euclid wrap folds it to −π, a boundary difference
 /// the Ballista's facing-−1 init rotation `π` would hit).
-fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
+pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
     use std::f32::consts::TAU;
     let angle = if target < cur {
         let wrapped = target + TAU;
@@ -11925,6 +12078,15 @@ impl ProjectilePool {
     pub fn set_crit(&mut self, slot: usize, crit: bool) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.crit = crit;
+        }
+    }
+
+    /// The spawn-site `ai[1]` payload setter — the star cloak's falling
+    /// stars carry `ai1 = position.Y` (`Player.cs:38478`, S1-C-7 wave B);
+    /// the plain `spawn` has no ai arguments (the `set_crit` convention).
+    pub fn set_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[1] = value;
         }
     }
 
@@ -12889,12 +13051,14 @@ impl ProjectilePool {
                 // `owner` is the slot's owner center (the C# `Main.player
                 // [this.owner]`); `spawn_with_data_ai` hardcodes
                 // `owner: 0` = the local player, so a `None` owner center
-                // means "no player resolved". The single carve-out is
-                // `ai_ice_block` (aiStyle 22), which writes tiles
+                // means "no player resolved". The carve-outs are
+                // `ai_ice_block` (aiStyle 22) and `ai_dungeon_debris`
+                // (aiStyle 10, the 736-738 trio), which write tiles
                 // (`WorldGen.KillTile` `Projectile.cs:25695`,
-                // `WorldGen.PlaceTile` `:25842` through
-                // `tr_core::edit`): it takes `world: &mut World` via a
-                // per-arm mutable reborrow at its dispatch call site.
+                // `WorldGen.PlaceTile` `:25842`, `AI_010`'s tile walk
+                // `:58053-58068` through `tr_core::edit`): they take
+                // `world: &mut World` via a per-arm mutable reborrow at
+                // their dispatch call sites.
                 // The ported arms above keep their exact signatures.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
@@ -12903,11 +13067,33 @@ impl ProjectilePool {
                         // the Laser/VenomFang/SkyFracture hooks wrap the
                         // shared flight instead of taking the plain arrow
                         // arm, so the plain arrows keep the generic flight
-                        // only.
+                        // only. S1-D-5 slice A adds the per-type arms for
+                        // the 14 lowest-id rowed kinds
+                        // (`crate::projectile_ai001_a::SLICE_A_KINDS`,
+                        // `AI_001` `Projectile.cs:54002-57798`); every
+                        // other kind keeps the generic flight untouched.
                         1 => match self.slots[i].kind {
                             BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
+                            }
+                            kind if crate::projectile_ai001_a::handles(kind) => {
+                                crate::projectile_ai001_a::ai001_slice_a(
+                                    &mut self.slots[i],
+                                    world,
+                                    owner,
+                                )
+                            }
+                            // S1-D-5 slice B — the higher-id rowed kinds'
+                            // per-type `AI_001` arms (`Projectile.cs:54002-
+                            // 57794`), gated to `projectile_ai001_b`'s own
+                            // kind list ONLY (9 kinds after the merge-time
+                            // dedupe — A owns 259/270/325/389/436/438, so
+                            // the two gates are kind-disjoint): every other
+                            // kind keeps the generic `ai_arrow` flight
+                            // byte-identical.
+                            kind if crate::projectile_ai001_b::covers(kind) => {
+                                crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
@@ -13014,6 +13200,19 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
+                        // `AI()`'s aiStyle-10 arm (`Projectile.cs:24367-24370`)
+                        // -> `AI_010`. Only the dungeon-debris trio has the
+                        // arm ported: its tile walk kills breakables and
+                        // flattens slopes, so it reborrows `world` mutably at
+                        // its own call site (the ai_ice_block carve-out). The
+                        // other aiStyle-10 kinds keep the pre-existing no-op
+                        // (the sand family rides the falling-tile tail below;
+                        // the 42 row's arm is the documented S1-D-5 gap).
+                        10 => {
+                            if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
+                                self.slots[i].ai_dungeon_debris(world, rng, local_owner);
+                            }
+                        }
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
@@ -13126,6 +13325,25 @@ impl ProjectilePool {
                                 // manual fall-through collision + integrate
                                 // (the arm's early returns still move, the
                                 // twins precedent `:19858`).
+                                if self.slots[i].active {
+                                    self.slots[i].pirate_movement(world);
+                                }
+                            } else if matches!(
+                                self.slots[i].kind,
+                                CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET
+                            ) {
+                                // Slice B (S1-D-4b-12): the three RNG-light
+                                // pets — the 500/1018/1056 (`flag13 = false`,
+                                // `:49556-49560`); the 653/1090 stay deferred
+                                // (their draws steer observable state).
+                                self.slots[i].ai_freaking_pirates_pets(
+                                    world,
+                                    player.as_deref_mut(),
+                                    rng,
+                                );
+                                // The same `HandleMovement` half — the pets'
+                                // effective flag6 rides `should_fall_through`
+                                // (`:17478-17503`, the module doc).
                                 if self.slots[i].active {
                                     self.slots[i].pirate_movement(world);
                                 }
@@ -14856,22 +15074,36 @@ impl ProjectilePool {
                         }
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
-                        // SLICE A ONLY (S1-D-4b-10): the 14 early-return
-                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`).
-                        // Every other aiStyle-26 kind (the 266 slime
-                        // minion today, slice B's ground pets tomorrow —
-                        // task/S1-D-4b-11-melee-b) keeps the pre-existing
-                        // `_ => {}` fall-through, byte-identical: the gate
-                        // returns false and nothing mutates.
+                        // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
+                        // 14 early-return flyer pets
+                        // (`projectile_ai026_a::AI_026_A_KINDS`) gate
+                        // first; on its false return B's two spinning
+                        // boss-head pets 885/889
+                        // (`projectile_ai026_b::AI_026_B_KINDS`, the
+                        // shared arm `:60092-60253`) run. The kind sets
+                        // are disjoint, so either order is
+                        // behaviour-identical (ANALYSIS "AI_026 slice
+                        // B"). Every other aiStyle-26 kind (the 266
+                        // slime minion today) keeps the pre-existing
+                        // `_ => {}` fall-through, byte-identical: both
+                        // gates return false and nothing mutates.
                         26 => {
-                            // The gate's false return is the no-op: the
+                            // The gates' false returns are the no-op: the
                             // non-slice kind keeps the old no-arm state.
-                            let _ = crate::projectile_ai026_a::ai026_a_tick(
+                            let handled = crate::projectile_ai026_a::ai026_a_tick(
                                 &mut self.slots[i],
                                 world,
                                 player.as_deref_mut(),
                                 rng,
                             );
+                            if !handled {
+                                let _ = crate::projectile_ai026_b::ai026_b_tick(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref_mut(),
+                                    rng,
+                                );
+                            }
                         }
                         _ => {}
                     }
@@ -14905,7 +15137,15 @@ impl ProjectilePool {
                 // The hostile shots' player contact (`Damage_PVP`'s
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
-                if self.slots[i].active && !self.slots[i].friendly {
+                // The dungeon-debris trio is exempt: the C# stock
+                // `hostile = false` (`:764`) makes `Damage_EVP` refuse
+                // (`:14775`), and the port's `!friendly` proxy would
+                // otherwise hurt the player (the trio holds
+                // `friendly = false` for the PVE refusal).
+                if self.slots[i].active
+                    && !self.slots[i].friendly
+                    && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
+                {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
@@ -14978,11 +15218,53 @@ impl ProjectilePool {
                 // runs at the same death hook the blast does.
                 let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
+                // called from `Kill()` `:77258-77261`): the trio's death
+                // crack roll on the tile below its centre.
+                self.debris_death_crack(i, world, rng, local_owner);
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
             }
+        }
+    }
+
+    /// `Kill()`'s dungeon-debris arm (`Projectile.cs:77369-77385`, inside
+    /// `Kill_ExplodeTiles` `:77265`, called from `Kill()` `:77258-77261`):
+    /// the trio's death rolls the tile directly below its centre — an
+    /// active cracked brick (`TileID.Sets.CrackedBricks` = 481/482/483,
+    /// `TileID.cs:498`) breaks on a 1-in-2 draw. The `SoundID.Item127` and
+    /// the 3× `Dust.NewDust` (type − 736 + 275) are SKIPPED (no sound/dust
+    /// layer) with their internal draws (the dust-skip convention); the
+    /// crack roll itself is state-bearing and stays. The `!noDropItem`
+    /// outer gate (`:77367`) is stock false (`:746`) and never set for the
+    /// trio — unported. Kind-gated to [`DUNGEON_DEBRIS`] and owner-gated
+    /// (`Kill_ExplodeTiles`'s `owner != Main.myPlayer` refusal `:77267`),
+    /// so it fires at most once per death (a dead slot never returns to
+    /// `active`) — the `spawn_inferno_blast` death-hook precedent.
+    fn debris_death_crack(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        rng: &mut dyn DropRng,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        if !DUNGEON_DEBRIS.contains(&p.kind) || p.owner != local_owner {
+            return;
+        }
+        // `:77376-77377` — the tile below the centre: `(int)(Center.X / 16)`,
+        // `(int)(Center.Y / 16) + 1`.
+        let tx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+        let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32 + 1;
+        // `:77378` — the short-circuit order: active && cracked && the roll.
+        // The roll only draws when the tile is an active cracked brick.
+        let cracked = world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind));
+        if cracked && rng.next_range(0, 2) == 0 {
+            let _ = tr_core::edit::kill_tile(world, tx, ty, false);
         }
     }
 
@@ -15676,6 +15958,14 @@ impl ProjectilePool {
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
+            // `Damage_PVE_Inner`'s `!this.friendly` refusal (`:12611`): the
+            // dungeon-debris trio is stock `friendly = false`/`hostile = false`
+            // (`SetDefaults` `:788`/`:764`), so it damages no NPC — the arm
+            // holds the C# `friendly` state and this gate refuses the hit
+            // (the port's PVE walk otherwise hits regardless of `friendly`).
+            if DUNGEON_DEBRIS.contains(&p.kind) {
+                continue;
+            }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
             if !single_hit && n.immune[owner_idx] != 0 {
@@ -15967,10 +16257,13 @@ impl ProjectilePool {
             return;
         }
         // `Projectile.cs:14862-14870` — `bool dodgeable =
-        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`.
+        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
+        // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
+        // hands the shot's type over for the dismount-on-hit gate
+        // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt(p.damage, cx, rng, p.is_damage_dodgeable());
+        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -30202,6 +30495,271 @@ mod projectile_ai_tests {
             "and flies on, x = {}",
             pool.slots[slot].pos.x
         );
+    }
+}
+
+/// S1-D-5 — the dungeon-debris trio 736/737/738 (`AI_010`,
+/// `Projectile.cs:57826-58100`, the `:7748-7755` rows, the
+/// `Kill_ExplodeTiles` death arm `:77369-77385`). Tests-as-code: written,
+/// not run (the task's code-only mode).
+#[cfg(test)]
+mod s1_d_5_debris_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The scripted stream: records every `(min, max)` draw and replays the
+    /// roll list in order (the `DodgeScript` shape; an exhausted list reads
+    /// `max - 1`).
+    struct DebrisScript {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl DebrisScript {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self {
+                rolls: rolls.to_vec(),
+                draws: Vec::new(),
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for DebrisScript {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return max - 1;
+            }
+            self.rolls.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            0.5
+        }
+    }
+
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put(w: &mut tr_core::World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            flags: FLAG_ACTIVE,
+            ..Tile::default()
+        };
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut tr_core::World,
+        npcs: &mut [Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            player,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// The three rows' `SetDefaults` slice (`Projectile.cs:7748-7755`): the
+    /// 10x10 box, aiStyle 10, `penetrate = -1`, the stock timeLeft/extraUpdates/
+    /// tileCollide, and the 3-frame sheets (`Main.cs:8445-8447`).
+    #[test]
+    fn s1_d_5_the_three_rows_carry_the_csharp_set_defaults() {
+        for kind in DUNGEON_DEBRIS {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
+            assert_eq!(d.ai_style, 10, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+            assert!(!d.arrow && !d.trap, "kind {kind}");
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {kind}");
+            assert_eq!(d.alpha, 0, "kind {kind}");
+            assert_eq!(d.scale, 1.0, "kind {kind}");
+            assert_eq!(proj_frames(kind), 3, "kind {kind}");
+        }
+    }
+
+    /// The first tick (`:57942-57950`): the `Next(40)` dust gate, the
+    /// `Next(3)` frame roll and the `Next(30)` scale roll draw in that order;
+    /// the owner's `ai[0] = 1` latch (`:57993`) drops `tileCollide` for the
+    /// tick (`:57955`) and the 0.41 gravity (`:58019`) lands.
+    #[test]
+    fn s1_d_5_the_first_tick_rolls_the_frame_and_scale() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BLUE_DUNGEON_DEBRIS, 320.0, 100.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        let mut rng = DebrisScript::with_rolls(&[7, 2, 10]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert_eq!(rng.draws, vec![(0, 40), (0, 3), (0, 30)], "the roll order");
+        let p = &pool.slots[slot];
+        assert_eq!(p.frame, 2, "the frame roll");
+        assert!((p.scale - 0.9).abs() < 1e-6, "the scale roll: {}", p.scale);
+        assert_eq!(p.local_ai[0], 1.0, "the one-shot latch");
+        assert_eq!(p.ai[0], 1.0, "the owner's fall latch");
+        assert!(!p.tile_collide, "the first tick's tileCollide drop");
+        assert!(!p.friendly, "the stock friendly = false held");
+        assert!((p.vel.y - 0.41).abs() < 1e-6, "the first gravity step");
+        assert!((p.pos.y - 100.41).abs() < 1e-4, "the free first move");
+    }
+
+    /// The fall (`:58019`): +0.41/tick in mode 1, capped at 10 (`:58087-58090`).
+    #[test]
+    fn s1_d_5_the_fall_gravity_caps_at_ten() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(GREEN_DUNGEON_DEBRIS, 320.0, 100.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut [], None, &mut tr_core::tile_light::FastRandom::new(7));
+        }
+        let p = &pool.slots[slot];
+        assert!(p.active, "the empty world lets it fall");
+        assert_eq!(p.ai[0], 1.0, "still the fall mode");
+        assert!((p.vel.y - 10.0).abs() < 1e-6, "the 10 cap: {}", p.vel.y);
+        assert!(p.pos.y > 100.0, "it fell");
+    }
+
+    /// The per-frame rotation (`:58073-58086`): frame 0 spins −0.1/tick,
+    /// frame 1 +0.1, frame 2 +0.15.
+    #[test]
+    fn s1_d_5_the_rotation_follows_the_frame() {
+        for (frame_roll, step) in [(0, -0.1f32), (1, 0.1), (2, 0.15)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(PINK_DUNGEON_DEBRIS, 320.0, 100.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut w = world();
+            let mut rng = DebrisScript::with_rolls(&[1, frame_roll, 0]);
+            tick(&mut pool, &mut w, &mut [], None, &mut rng);
+            assert_eq!(pool.slots[slot].frame, frame_roll);
+            assert!(
+                (pool.slots[slot].rot - step).abs() < 1e-6,
+                "frame {frame_roll}: rot {}",
+                pool.slots[slot].rot
+            );
+            let mut rng = DebrisScript::with_rolls(&[1]);
+            tick(&mut pool, &mut w, &mut [], None, &mut rng);
+            assert!(
+                (pool.slots[slot].rot - 2.0 * step).abs() < 1e-6,
+                "the spin accumulates"
+            );
+        }
+    }
+
+    /// The trio damages nothing: the C# stock `friendly = false`/`hostile =
+    /// false` refuses `Damage_PVE_Inner` (`:12611`) and `Damage_EVP`
+    /// (`:14775`) — an overlapping NPC and player both keep their HP, and
+    /// the shard does not die on contact (the port's `damage_player` proxy
+    /// is kind-gated).
+    #[test]
+    fn s1_d_5_the_debris_damages_nothing() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BLUE_DUNGEON_DEBRIS, 320.0, 100.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        let mut npcs = vec![Npc::new(NpcKind::Slime, 320.0, 100.0, 1, 0.0)];
+        npcs[0].max_hp = 400;
+        npcs[0].hp = 400;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 320.0;
+        player.y = 100.0;
+        let hp = player.hp;
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut npcs, Some(&mut player), &mut tr_core::tile_light::FastRandom::new(7));
+        }
+        assert_eq!(npcs[0].hp, 400, "the PVE refusal");
+        assert_eq!(player.hp, hp, "the EVP refusal");
+        assert!(pool.slots[slot].active, "no contact kill");
+    }
+
+    /// The owner's tile walk (`:58038-58072`): skipped on the first tick
+    /// (the `tileCollide` drop), then the breakables die and a top slope
+    /// flattens with the 16 px lift.
+    #[test]
+    fn s1_d_5_the_tile_walk_breaks_piles_and_flattens_slopes() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(BLUE_DUNGEON_DEBRIS, 320.0, 300.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        put(&mut w, 20, 19, 185); // a small pile in the box's second tick
+        put(&mut w, 20, 18, 1);
+        let i = w.index(20, 18);
+        w.tiles[i].set_slope(1); // a top slope above it
+        let mut rng = DebrisScript::with_rolls(&[1, 0, 0]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert!(w.tile(20, 19).unwrap().active(), "the first tick skips the walk");
+        let mut rng = DebrisScript::with_rolls(&[1]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert!(!w.tile(20, 19).unwrap().active(), "the pile broke");
+        let t = w.tile(20, 18).unwrap();
+        assert_eq!(t.slope(), 0, "the slope flattened");
+        assert!(!t.half_brick(), "the half brick cleared");
+        assert!(pool.slots[slot].pos.y < 300.0, "the 16 px lift");
+    }
+
+    /// The death crack roll (`:77376-77385`): the tile below the centre, an
+    /// active cracked brick, breaks on `Next(2) == 0`; a 1 keeps it, and a
+    /// non-cracked tile never draws.
+    #[test]
+    fn s1_d_5_the_death_crack_roll_breaks_the_brick_below() {
+        // The shard falls onto the brick at (20, 30): the blocked move kills
+        // it (`:19849-19853`), the death hook rolls the brick below its centre.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai(BLUE_DUNGEON_DEBRIS, 320.0, 470.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        put(&mut w, 20, 30, 481);
+        let mut rng = DebrisScript::with_rolls(&[1, 0, 0, 1, 0]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert!(!w.tile(20, 30).unwrap().active(), "the 0 roll breaks the brick");
+        assert_eq!(
+            rng.draws,
+            vec![(0, 40), (0, 3), (0, 30), (0, 40), (0, 2)],
+            "the crack roll draws last"
+        );
+
+        // The 1 roll keeps the brick.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai(GREEN_DUNGEON_DEBRIS, 320.0, 470.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        put(&mut w, 20, 30, 482);
+        let mut rng = DebrisScript::with_rolls(&[1, 0, 0, 1, 1]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert!(w.tile(20, 30).unwrap().active(), "the 1 roll keeps the brick");
+
+        // A plain stone below: the short-circuit never draws the crack roll.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai(PINK_DUNGEON_DEBRIS, 320.0, 470.0, 0.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut w = world();
+        put(&mut w, 20, 30, 1);
+        let mut rng = DebrisScript::with_rolls(&[1, 0, 0, 1]);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        tick(&mut pool, &mut w, &mut [], None, &mut rng);
+        assert!(w.tile(20, 30).unwrap().active(), "the stone stays");
+        assert_eq!(rng.draws, vec![(0, 40), (0, 3), (0, 30), (0, 40)], "no crack draw");
     }
 }
 

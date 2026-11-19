@@ -791,6 +791,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
+        // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
+        // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
+        // panel's back splices (`TextureAssets.ChatBack`,
+        // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
+        "Chat",
+        "Chat_Back",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1095,6 +1101,33 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_117",
+        // S1-D-3ff wave A — the 24 LOW-id kinds' sheets, one per kind,
+        // keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s WAVE_A_SHEETS).
+        "NPC_16",
+        "NPC_52",
+        "NPC_53",
+        "NPC_59",
+        "NPC_71",
+        "NPC_81",
+        "NPC_132",
+        "NPC_138",
+        "NPC_147",
+        "NPC_161",
+        "NPC_183",
+        "NPC_184",
+        "NPC_186",
+        "NPC_187",
+        "NPC_188",
+        "NPC_189",
+        "NPC_190",
+        "NPC_191",
+        "NPC_192",
+        "NPC_193",
+        "NPC_194",
+        "NPC_200",
+        "NPC_223",
+        "NPC_225",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in
@@ -1127,6 +1160,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_342",
         "NPC_343",
         "NPC_344",
+        // The Frost Moon wave family (`S1-F-13c` slice B — `FROST_SHEETS`).
+        "NPC_345",
+        "NPC_346",
+        "NPC_347",
+        "NPC_348",
+        "NPC_349",
+        "NPC_350",
+        "NPC_351",
+        "NPC_352",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1966,6 +2008,14 @@ pub struct Lookups {
     pub ach_categories: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat` (`TextureAssets.Chat`, `AssetInitializer.cs:563`):
+    /// the town-NPC hover bubble (`Main.DrawNPCChatBubble`,
+    /// `Main.cs:43135-43161`).
+    pub ui_chat_bubble: Option<tr_render::SheetRect>,
+    /// `Images/Chat_Back` (`TextureAssets.ChatBack`,
+    /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
+    /// splices (`NPCChatPanel.cs:71-72`).
+    pub ui_chat_back: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2460,6 +2510,8 @@ impl Lookups {
             ach_inner_bottom_large: atlas.sheet("UI/Achievement_InnerPanelBottom_Large").copied(),
             ach_categories: atlas.sheet("UI/Achievement_Categories").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
+            ui_chat_bubble: atlas.sheet("Chat").copied(),
+            ui_chat_back: atlas.sheet("Chat_Back").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
