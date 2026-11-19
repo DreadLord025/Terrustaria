@@ -32938,3 +32938,146 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The pickaxe mining census (S1-P-i29, code-only mode, 2026-11-19)
+
+`task/S1-P-i29-pickaxe-mining` censuses the pickaxe/drill mining interaction
+against `Player.ItemCheck` and ports the WRONG/missing halves. **Code-only
+mode: no compiler invoked; the witnesses are WRITTEN, NOT RUN.** Scope: the
+pickaxe/drill ONLY — the axe chop (i30) and the hammer slope/pound (i31) keep
+their pre-i29 time-based pacing and are recorded as follow-ups.
+
+### The C# chain (the source of truth)
+
+- `ItemCheck_UseMiningTools` (`Player.cs:45584-45644`): the tool gate
+  (`pick/axe/hammer > 0`, `:45595`), the reach gate
+  (`IsTargetTileInItemRange`, `:45599` → `:46313-46316` →
+  `IsInTileInteractionRange` `:32025` → `TileReachCheckSettings.GetTileRegion`
+  `TileReachCheckSettings.cs:45-54` → `Collision.InTileBounds`
+  `Collision.cs:3776`), the `toolTime == 0 && itemAnimation > 0 &&
+  controlUseItem` action gate (`:45608`/`:45626`).
+- `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`:45646-45782`): the
+  tool/tile match (`:45656` — a pick mines the non-axe/non-hammer tiles, an
+  axe the `tileAxe` tiles, a hammer the `tileHammer` tiles), the pick arm
+  (`:45772-45780` — `PickTile(x, y, sItem.pick)` then
+  `itemTime = (int)(useTime * pickSpeed)`).
+- `PickTile` (`:53757-53826`) + `PickTile_DetermineDamage` (`:53828-53844`):
+  the mystic-snake-rope 504 refusal (`:53760`), the `GetPickaxeDamage` call,
+  the `CanKillTile` zero (`:53832`), the getGoodWorld ×2 (`:53836`), the
+  `DoesPickTargetTransformOnKill` preview-zero (`:53840`), the `HitTile`
+  accumulation to 100 (`:53769`), the `ClearMiningCacheAt` on break
+  (`:53773`), the `KillTile(fail: true)` fail tick (`:53815`).
+- `GetPickaxeDamage` (`:53902-54045`): the noFail 100 head, the multiplier
+  ladder (the nested ternary at `:53909`), the zero-damage tier-gate
+  else-chain (`:53910-53971`), the soft-tile second add (`:53972`), the
+  desert-fossil +5 (`:53976`), the rope/stalactite/crimson-grass instant 100
+  (`:53980`), the mannequin/weapon-rack redirects (`:53984-54043`).
+- The `toolTime` cadence (`:43576-43587`): `!channel → toolTime = itemTime`;
+  `channel → toolTime--`, wrap to `useTime - 1`. `ItemCheck_StartActualUse`
+  arms `toolTime = 1` for the tools (`:51660-51663`).
+- `HitTile` (`HitTile.cs:9-477`): the 500-slot book, the LRU `SortSlots`
+  (`:208-238`), the `AddDamage` zero-on-buffer guard + the `updateAmount:false`
+  preview (`:189-206`), the TTL decay ladder (`:285-333` — `<12` −10, `<24`
+  −7, `<36` −5, `<48` −2 per prune), the gone-tile/wall clear.
+- The drill channel: `StartChanneling(sItem)` (`:52958-52968`) latches
+  `Player.channel`; the drill projectile's aiStyle-20 machine
+  (`Projectile.cs:25481-25584`) aims at the mouse while held, kills itself on
+  the release (`:25549`), and holds the item animation via
+  `SetDummyItemTime(2)` (`:25563` → `Player.cs:4432-4441`).
+
+### What was WRONG / missing in the port (the census verdicts)
+
+1. **WRONG — the mining model was time-per-tile, not damage-per-hit.** The
+   pre-i29 arm accumulated `mine_timer += dt` to a `hardness` threshold
+   (`base * 35/pick * pickSpeed`). The C# accumulates `GetPickaxeDamage`
+   damage into the `HitTile` book until 100. **Fixed**: `tr_core::hit_tile`
+   ports the book; `pick_tile_hit` accumulates the real damage; the break
+   fires at `>= 100`.
+2. **WRONG — `pick_can_mine` was a partial gate table.** It missed the
+   chlorophyte-200, mythril/orichalcum-110, adamantite/titanium-150,
+   lihzahrd-210, hellforge-underworld, trap-row and dungeon-x-band gates, and
+   the whole damage-multiplier ladder. **Fixed**: `tr_core::tool::pickaxe_damage`
+   ports `GetPickaxeDamage` verbatim; `pick_can_mine` is now the
+   `damage > 0` projection (the depth-only dungeon approximation kept for the
+   tile-target gate, the full path carries the x-band).
+3. **WRONG — the reach was a circle.** The pre-i29 gate used
+   `(tile_range_x + 1) * TILE_PX` radius. The C# is a rectangle
+   (`tileRangeX + tileBoost` × `tileRangeY + tileBoost`, clamped 20).
+   **Fixed**: `tile_in_reach_rect` ports `GetTileRegion` + `InTileBounds`;
+   `mining_tile_range` adds the Extendo Grip/Gizmo Pack/Grand Design +3/+2
+   (`:13040-13044`) and the held Toolbox +1/+1 (`:14954-14958`).
+4. **WRONG — the mining cadence ignored `useTime`/`toolTime`.** **Fixed**:
+   the `toolTime` mirror/countdown (`:43576-43587`) + the
+   `itemTime = (int)(useTime * pickSpeed)` re-arm (`:45779`).
+5. **MISSING — the drill channel.** The drills (385/386/388/1189/1196/1203/
+   1231/2774/2779/2784/3464/579/2798) are `channel` items with `pick > 0`;
+   the port treated them as generic throws. **Fixed**: `drill_channel_start`
+   spawns the aiStyle-20 drill projectile once on the press; `ai_drill`
+   (`projectile.rs`) ports the hold/aim/release; the channel block holds the
+   swing at the dummy 2 ticks. The drill `proj_data` rows + the aiStyle-20/75
+   dispatch arms are added.
+6. **MISSING — the grass/moss conversion.** `DoesPickTargetTransformOnKill`
+   (`:54047`) + `KillTile(fail: true)` (`WorldGen.cs:63715-63735`) convert a
+   grass tile to its soil at 100 damage instead of breaking it. **Fixed**:
+   `does_pick_target_transform` + `convert_grass_tile`.
+7. **MISSING — the `pickSpeed` 0.3 floor** (`:25972-25975`) and the Mining
+   buff 104 (`:10136`) / Ancient Chisel (`:13032-13035`) folds. **Fixed**:
+   `Player::pick_speed` clamps at 0.3; the buff/accessory arms add to
+   `pick_speed_bonus`.
+
+### Deliberate deviations (recorded)
+
+- **The axe/hammer arms keep the time-based pacing.** The i30 (axe) and i31
+  (hammer/slope) tasks own the `tileAxe`/`tileHammer` hit-buffer models
+  (`Player.cs:45665-45771`). The demon-altar smash keeps its pre-i29
+  `SmashAltar` wiring; the wall hammer keeps its time-based dig. A pick
+  refuses the axe/hammer tiles (the `:45656` match), so the pick side is
+  faithful even though the chop/slope pacing is not yet the C#'s.
+- **The `HitTile` draw-side fields are render-only.** `crackStyle`'s roll
+  (`HitTile.cs:36-45`, the static `HitTile.rand` + the no-repeat loop) stays
+  in the crack overlay's world-seeded `mine_crack_rng` (the S1-G-1 wave C
+  determinism deviation); the `AddDamage` wobble-direction `Main.rand.
+  NextFloat()` draw (`:66`) and the `DrawFreshAnimations` miner's wobble
+  (`:335-471`) are not drawn. The sim book therefore takes **no RNG** — the
+  mining tick adds no draws to any stream. The C#'s wobble draw rides the
+  `UpdatePlayers` swap; its absence is a render-only deviation (the same
+  class as the crack-style seed).
+- **The drill projectile's per-tick jitter + dust are render-only.** The
+  `velocity.X *= 1 + Next(-3,4)*0.01` wobble (`Projectile.cs:25575`) and the
+  1-in-6 dust (`:25576-25583`) are not ported (the port draws no drill dust);
+  the `ai_drill` hold/aim/release/position-pin are faithful. The Laser Drill
+  (445, aiStyle 75) holds its channel like the drills; its full `AI_075`
+  laser AI (the tile-target snap, the reach clamp, the beam light,
+  `:66244-66358`) is a follow-up.
+- **The `pick_can_mine` dungeon gate stays depth-only** for the tile-target
+  gate (`cursor_cell_is_tile_target`); the full `pickaxe_damage` path carries
+  the 0.35/0.65 x-band. The two agree on every tile the port's worldgen
+  produces at the surface band; the divergence is the deep-dungeon edge.
+- **The `noBuilding` gate is unmodelled** (the port has no `noBuilding`
+  state — the frozen/webbed gate already refuses the use); the DD2
+  `ShouldBlockBuilding` arm (`:25963-25970`) is a follow-up.
+- **The per-tick `KillTile(fail: true)` sound/dust** has no port path (the
+  pre-i29 recorded deviation); the damage still accumulates and the crack
+  overlay projects it.
+
+### RNG order (S1-A-10 contract)
+
+The mining tick itself draws **no RNG** (the `HitTile` book is RNG-free in
+the port — the crack-style/wobble draws are render-side, see above). The
+break's loot draws ride `stream(UpdatePlayers)` exactly as the pre-i29
+`break_tile` (the C# `KillTile` runs in `Player.ItemCheck` under the
+`Main.cs:17754` swap). The drill spawn's crit roll rides
+`stream(UpdatePlayers)` (the use-start seam). The altar smash keeps its
+`stream(UpdatePlayers)` ore draws. **No stream is reordered**; the only new
+draws are the drill spawn's crit (a new use-start, the C# fires it too).
+
+### Verification
+
+Code-only: the chain was re-read line-by-line against `Player.cs:45584-
+45782`/`:53757-54054`/`:43576-43587`, `HitTile.cs`, `TileReachCheckSettings.cs`,
+`Projectile.cs:25481-25584`/`:10732-10742`. The 9 `s1_p_i29_*` witnesses
+(`world_sim/editing.rs`) + the `tr_core::tool`/`tr_core::hit_tile` unit tests
+are WRITTEN, NOT RUN — **no compiler invoked**. The pre-existing mining tests
+(the DW-1.1/DW-1.2/DW-1.5 family, the altar smash, the far-placement reach)
+are preserved by the axe/hammer time-based pacing + the rectangle reach's
+agreement on their fixtures.

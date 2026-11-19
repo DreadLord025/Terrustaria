@@ -3586,6 +3586,20 @@ impl Player {
         }
     }
 
+    /// `Player.pickSpeed` (`Player.cs:2466`, reset to 1f at `:18690`): the
+    /// base 1f minus the positive bonus the buff/equipment grants write
+    /// (WellFed `:11945`, Mining 104 `:10136`, the Ancient Chisel
+    /// `:13032-13035`, the sky-stone bundle `:13000`), clamped at the
+    /// `Player.Update` floor `if (pickSpeed < 0.3) pickSpeed = 0.3f`
+    /// (`Player.cs:25972-25975`). A LOWER pickSpeed mines faster — it
+    /// multiplies `useTime` into the mining `itemTime`
+    /// (`Player.cs:45779`). The Hungry/Starving debuffs ADD to pickSpeed
+    /// (`:11992`/`:12007`); the port's signed `pick_speed_bonus` keeps that
+    /// direction (a negative bonus slows the dig).
+    pub fn pick_speed(&self) -> f32 {
+        (1.0 - self.pick_speed_bonus).max(0.3)
+    }
+
     pub fn center(&self) -> (f32, f32) {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
@@ -3769,6 +3783,15 @@ impl Player {
             return;
         }
         match kind {
+            // S1-P-i29 — the Ancient Chisel (`Player.cs:14396-14398`):
+            // `chiselSpeed = true`, folded by `UpdateEquips` into
+            // `pickSpeed -= 0.25f` (`:13032-13035`). The port keeps the
+            // positive-bonus convention (a lower pickSpeed mines faster),
+            // so the fold lands here directly — the same sum the C#
+            // reaches, one grant path. The Architect's Gizmo Pack (5126)
+            // carries the same `chiselSpeed` (`:15293`) plus the range
+            // flag the reach scan reads (`craft.rs`).
+            4056 | 5126 => self.pick_speed_bonus += 0.25,
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
             857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
@@ -4775,6 +4798,10 @@ impl Player {
                 }
                 // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
                 3 => self.move_speed += 0.25,
+                // S1-P-i29 — `:10134-10137`: Mining (104) `pickSpeed -= 0.25f`
+                // (the port's positive bonus convention: a lower pickSpeed
+                // mines faster).
+                104 => self.pick_speed_bonus += 0.25,
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
