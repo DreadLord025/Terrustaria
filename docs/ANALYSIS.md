@@ -18419,3 +18419,77 @@ functions (`ProjSync`), disjoint from `netglue.rs` (wave A) and
 
 Verification: `cargo test -p tr-app net_proj_sync` вЂ” 10 per-site tests green
 (`test result: ok. 10 passed; 0 failed`).
+## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
+
+`crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
+`if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) — the Cursed Skull
+(34, `SetDefaults :9150-9165`), the Giant Cursed Skull (289,
+`:12753-12768`) and the Water Bolt Mimic (694, `:17737-17751`) — as a
+PURE step (`&mut Npc, &World, &Player, npc_type, just_hit, net_mode,
+&mut UnifiedRandom`) plus a `Style10Out` side-effect record. The whole
+arm is carried in the C#'s order with per-block citations: the flags
+(`:21574-21600`), the closed/wake book states 3/4 (`:21601-21627`), the
+600/650 enrage cycle and the <100 retreat / <250 wobble chain
+(`:21633-21678`), the distance bands (`:21679-21698`), the dead-target
+flee vector (`:21709-21713`), the charge damp/snap (`:21714-21730`),
+the X/Y approach (`:21731-21749`), the aim rotation + the 694 flip
+(`:21750-21766`), the 289 volley machine (`:21767-21823`) and the 694
+charge/dash cycle (`:21828-21917`). The step ends with the
+`noTileCollide` integration (`UpdateCollision :92538-92540` +
+`:92605-92607`); `Collision_DecideFallThroughPlatforms` forces style 10
+through platforms (`:92924-92927`) — moot under noTileCollide.
+
+**RNG by construction**: the arm's ONLY `Main.rand` draw is
+`Main.rand.Next(3)` at `:21851`, inside `flag19 && (!flag20 || ...)` —
+the short-circuit `||` means it runs exactly when both bands hold
+(the 100..300 charge band AND the ≤500 dash band, `ai[2] >= 0`,
+`ai[3] == 0`), once per such host tick. The 34/289 paths draw nothing
+(the 289's tick-20 bolt is deterministic), the client (`netMode == 1`)
+returns before the gate (`:21847-21850`), and the state-1/2/−300
+cooldown ticks draw nothing (flag20/flag19 fail). The witness test
+mirrors the gate on a second `UnifiedRandom` stream and pins the draw
+count over 300 ticks; the draw rides the caller's `UpdateNPCs` stream
+(`Main.rand`) via `next_max(3)` (`UnifiedRandom.cs:134-141`).
+
+Deliberate stand-ins, all recorded at the module header:
+
+- **UNWIRED until the kinds land**: the port has no `NpcKind` for
+  34/289/694 (`npc/data.rs`'s protocol table maps its own ids — 34
+  there is the Merchant), so the machine keys on the vanilla `NPCID`
+  passed as `npc_type` and the `SetDefaults` box rides
+  `Npc::size_override`. No dispatch change exists to make; the wiring
+  lands with the three kinds' identity rows (their `SetDefaults`
+  stats/sounds/value/kb are cited in the module header).
+- **`justHit` is a caller flag** (the port's `Npc` has no `justHit`
+  field; the Poltergeist machine's `hurt_cd > 0` convention is the
+  wiring's mapping — here explicit to keep the module pure).
+- **`knockBackResist` writes ride `Style10Out::knock_back_resist`**
+  (the port's `Npc::knock_back_resist()` is a per-kind table with no
+  runtime override slot): 0 in state 3 (`:21606`), 1 in state 4
+  (`:21619`), 0.2 for the mimic (`:21630`); the skulls never write it.
+- **The dead `dontTakeDamage = ai[3] == 4` write** (`:21631`) is
+  carried verbatim — state 4 already returned at `:21626`, so it is
+  always false here (a witness test pins the clear).
+- **The Item8 cue** (`SoundEngine.PlaySound(SoundID.Item8, ...)`,
+  `:21896`, the legacy (2, 8) style `ID/SoundID.cs:1391`) rides
+  `Style10Out::play_item8_sound`; the audio seam resolves it.
+- **The Water Sphere summon** (`NPC.NewNPC(..., (int)center3.X,
+  (int)center3.Y, 33)`, `:21899`) rides
+  `Style10Out::spawn_water_sphere` with the call-site int truncation;
+  the spawn-source argument (`GetSpawnSourceForProjectileNPC`) is
+  host-only bookkeeping the port's spawn path does not model.
+- **The Shadowflames bolt** (`Projectile.NewProjectile(..., 299, 25,
+  0f, ...)`, `:21810`) rides `Npc::wants_hostile_shot` (kind 299,
+  damage 25, the 6-speed aim from the pre-step centre); the
+  projectile's own `SetDefaults` row lands with its identity slice.
+- **`TargetClosest`** rides `npc_target::target_closest` (style 10,
+  the single session player as slot 0, stock aggro/no-aggro/tank
+  values, ticker 0 — the S1-D-3p convention). Style 10 takes no
+  per-style arm in `SetTargetTrackingValues` (only style 3 does,
+  `:77761`).
+
+**Code-only mode**: per the user directive no cargo/rustc/rustfmt/test
+runs were made — the 15 witness tests are WRITTEN NOT RUN; verification
+is the C# re-read (the whole arm `:21572-21918` re-compared line by
+line) plus hand-traced test arithmetic (the wobble-on-flee-tick
+nudge, the dash-chase drift re-parks, the oracle-gated RNG witness).
