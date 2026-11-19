@@ -6,11 +6,13 @@
 //! `toolTime`/`itemTime` (`Player.cs:43576-43587`, `:45777-45780`), wired in
 //! `world_sim/editing.rs`.
 //!
-//! The axe tiles (`Main.tileAxe`) and the hammer tiles (`Main.tileHammer`)
-//! route to their own arms in `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
-//! (`Player.cs:45656-45771`) — a pick never damages them; the axe/hammer
-//! ports are the i30/i31 tasks. This module keeps the shared tile-set
-//! predicates and the pick side only.
+//! The axe tiles (`Main.tileAxe`) route to their own arm in
+//! `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`Player.cs:45706-45771`,
+//! S1-P-i30's [`axe_damage`] + the `HitTile` accumulation in
+//! `world_sim/editing.rs`); the hammer tiles (`Main.tileHammer`) keep their
+//! pre-i29 pacing until the i31 task. A pick never damages either set
+//! (`Player.cs:45656`). This module keeps the shared tile-set predicates,
+//! the pick side and the axe damage ladder.
 
 use crate::tiledata as td;
 
@@ -29,6 +31,34 @@ pub fn is_axe_tile(kind: u16) -> bool {
 /// altar 26, the shadow orb 31 and the crimson hearts 695/696.
 pub fn is_hammer_tile(kind: u16) -> bool {
     matches!(kind, 26 | 31 | 695 | 696)
+}
+
+/// One axe hit's damage before the `HitTile` accumulation — the axe arm's
+/// damage line (`Player.cs:45708-45712`) verbatim:
+/// `num2 = (tile.type != 80) ? num2 + (int)((float)sItem.axe * 1.2f)
+///                        : num2 + (int)((float)(sItem.axe * 3) * 1.2f)`
+/// then the getGoodWorld `(int)((double)num2 * 1.3)`. `base` is the running
+/// `num2` the caller carries in — the `Main.tileNoFail` 100 head
+/// (`:45661-45664`); NO axe tile is `tileNoFail` (`Main.cs:7189-7203` vs
+/// `:7208-7223`), so the arm always passes 0. The C# multiplies in f32
+/// (`(float)sItem.axe * 1.2f`) and truncates toward zero on the int cast;
+/// the cactus 80 triples the axe power FIRST (`sItem.axe * 3`, integer),
+/// then the same f32 1.2 scale. The `CanKillTile` refusal (`:45717-45720`)
+/// zeroes the result — the caller applies it, like the pick arm's
+/// `PickTile_DetermineDamage`.
+pub fn axe_damage(kind: u16, axe_power: i32, base: i32, get_good: bool) -> i32 {
+    // `:45708` — the cactus triple, then the f32 1.2 scale + truncation.
+    let scaled = if kind != 80 {
+        axe_power as f32 * 1.2
+    } else {
+        (axe_power * 3) as f32 * 1.2
+    };
+    let mut num = base + scaled as i32;
+    // `:45709-45712` — the For-the-Worthy 1.3 (f64 in the C#).
+    if get_good {
+        num = (num as f64 * 1.3) as i32;
+    }
+    num
 }
 
 /// `Main.tileDungeon` (`Main.cs:7992-7997`) — the bricks the dungeon gate
@@ -422,6 +452,34 @@ mod tests {
         for kind in [0u16, 1, 2, 71, 53, 590] {
             assert!(!is_axe_tile(kind), "not tileAxe[{kind}]");
         }
+    }
+
+    /// S1-P-i30 — the axe damage ladder (`Player.cs:45708-45712`): the f32
+    /// 1.2 scale with int truncation, the cactus 80's integer triple FIRST,
+    /// and the getGoodWorld f64 1.3 on the summed value. WRITTEN, NOT RUN.
+    #[test]
+    fn s1_p_i30_the_axe_damage_ladder() {
+        // The Iron Axe (axe 9, `Item.cs:1524`): (int)(9f * 1.2f) = 10.
+        assert_eq!(axe_damage(5, 9, 0, false), 10);
+        // The cactus triple: (int)((9 * 3)f * 1.2f) = (int)32.4 = 32.
+        assert_eq!(axe_damage(80, 9, 0, false), 32);
+        // Lucy the Axe (axe 30, `Item.cs:40832`): (int)36.0 = 36; the
+        // cactus (int)(90f * 1.2f) = (int)108.0 = 108 — one hit breaks it.
+        assert_eq!(axe_damage(5, 30, 0, false), 36);
+        assert_eq!(axe_damage(80, 30, 0, false), 108);
+        // The getGoodWorld 1.3 on the SUM: (int)(10.0 * 1.3) = 13; the
+        // cactus (int)(32.0 * 1.3) = (int)41.6 = 41.
+        assert_eq!(axe_damage(5, 9, 0, true), 13);
+        assert_eq!(axe_damage(80, 9, 0, true), 41);
+        // The base adds BEFORE the scale of the axe term but the 1.3 hits
+        // the whole sum (the C# `num2` carry-in — the noFail head is 0 for
+        // every axe tile, kept for the shape).
+        assert_eq!(axe_damage(5, 9, 100, false), 110);
+        assert_eq!(axe_damage(5, 9, 100, true), 143);
+        // The Cobalt Chainsaw (axe 14, `Item.cs:5840`): (int)16.8 = 16.
+        assert_eq!(axe_damage(5, 14, 0, false), 16);
+        // The Chlorophyte Chainsaw (axe 23, `Item.cs:15241`): (int)27.6 = 27.
+        assert_eq!(axe_damage(5, 23, 0, false), 27);
     }
 
     /// S1-P-i29 — the `GetPickaxeDamage` multiplier ladder

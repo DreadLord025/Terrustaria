@@ -522,30 +522,33 @@ fn convert_grass_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
     app.world_key = None;
 }
 
-/// `Player.ItemCheck_StartActualUse`'s channel start for the drills
-/// (`Player.cs:51677` → `StartChanneling(sItem)` `:52958-52968`): a
-/// `channel` item with `pick > 0` (the drill family) spawns its drill
-/// projectile once on the press edge and latches `Player.channel`. The
-/// drill projectile's aiStyle-20 machine (`Projectile.cs:25481-25584`)
-/// holds the item animation via `SetDummyItemTime(2)` (`:25563`) and kills
-/// itself on the channel release (`:25549`). The port spawns the projectile
-/// here; the hold + release ride `update_editing`'s channel block.
+/// `Player.ItemCheck_StartActualUse`'s channel start for the drills AND
+/// chainsaws (`Player.cs:51677` → `StartChanneling(sItem)` `:52958-52968`):
+/// a `channel` item with `pick > 0` (the drill family) or `axe > 0` (the
+/// chainsaw family — S1-P-i30, `ItemID.Sets.IsChainsaw`, `ItemID.cs:495`)
+/// spawns its aiStyle-20 projectile once on the press edge and latches
+/// `Player.channel` (`DefaultToDrillOrChainsaw`, `Projectile.cs:10732-10742`
+/// — ONE machine for both families). The projectile's aiStyle-20 machine
+/// (`Projectile.cs:25481-25584`) holds the item animation via
+/// `SetDummyItemTime(2)` (`:25563`) and kills itself on the channel release
+/// (`:25549`). The port spawns the projectile here; the hold + release ride
+/// `update_editing`'s channel block.
 ///
-/// Returns whether a drill projectile is live for the local player (the
-/// hold gate). The spawn is idempotent — a live drill of the held kind is
-/// not re-spawned (the C# `ItemCheck_Shoot` fires once per use start, and
+/// Returns whether a drill/chainsaw projectile is live for the local player
+/// (the hold gate). The spawn is idempotent — a live tool of the held kind
+/// is not re-spawned (the C# `ItemCheck_Shoot` fires once per use start, and
 /// the channel holds the animation so no new use starts while held).
 fn drill_channel_start(app: &mut App, held: ItemSlot, world_pos: Vec2) -> bool {
     let Some(def) = registry::get(held.kind) else {
         return false;
     };
-    if !def.channel || def.pick == 0 {
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
         return false;
     }
     let Some(proj) = def.projectile else {
         return false;
     };
-    // A live drill of this kind already holds the channel.
+    // A live drill/chainsaw of this kind already holds the channel.
     let live = app.projectiles.slots().iter().any(|p| {
         p.active && p.kind == proj && p.owner == app.local_id as u8
     });
@@ -618,14 +621,15 @@ fn drill_channel_start(app: &mut App, held: ItemSlot, world_pos: Vec2) -> bool {
     true
 }
 
-/// Whether a drill projectile is live for the local player — the channel
-/// hold gate (`Projectile.cs:25563`'s `SetDummyItemTime(2)` keeps the item
-/// animation alive while the drill lives).
+/// Whether a drill/chainsaw projectile is live for the local player — the
+/// channel hold gate (`Projectile.cs:25563`'s `SetDummyItemTime(2)` keeps
+/// the item animation alive while the tool lives; the chainsaws share the
+/// aiStyle-20 machine, S1-P-i30).
 fn drill_live(app: &App, held: ItemSlot) -> bool {
     let Some(def) = registry::get(held.kind) else {
         return false;
     };
-    if !def.channel || def.pick == 0 {
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
         return false;
     }
     let Some(proj) = def.projectile else {
@@ -773,24 +777,17 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
         }
         return;
     }
-    // The axe arm (`:45706-45771`) and the non-altar hammer tiles (the orb
-    // 31, the hearts 695/696) are the i30/i31 tasks — the port keeps the
-    // pre-i29 time-based axe pacing for the axe tiles so the existing
-    // cactus/tree tests stay green; the hammer tiles beyond the altar are
-    // not mined by this pass yet.
+    // The axe arm (`Player.cs:45706-45771`, S1-P-i30): the chop damage
+    // accumulates in the same `HitTile` book the pick arm uses — the shared
+    // `hitTile` field, one slot per (x, y, 1). The non-altar hammer tiles
+    // (the orb 31, the hearts 695/696) stay with the i31 task.
     if axe_match {
-        app.mine_timer += dt;
-        let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-            0.55
-        } else {
-            0.25
-        };
-        let hardness = base * 7.0 / tool_axe.max(1) as f32;
-        app.mine_hardness = hardness;
-        if app.mine_timer >= hardness {
-            break_tile(app, tx, ty);
+        let broke = axe_tile_hit(app, tx, ty, tile.kind, tool_axe, held);
+        if broke {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            sync_mine_crack_state(app, tx, ty);
         }
         return;
     }
@@ -798,6 +795,118 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
     // this pass (the i31 task).
     app.mine_target = None;
     app.mine_timer = 0.0;
+}
+
+/// The axe arm's one chop — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
+/// (`Player.cs:45706-45771`, S1-P-i30). The damage line (`:45708-45712`)
+/// lives in [`tr_core::tool::axe_damage`] (the f32 1.2 scale, the cactus
+/// triple, the getGoodWorld 1.3); the `Main.tileNoFail` 100 head
+/// (`:45661-45664`) never fires for an axe tile (no `tileAxe` id is
+/// `tileNoFail`, `Main.cs:7189-7203` vs `:7208-7223`), so the base is 0.
+/// The accumulation rides the SAME `hitTile` book the pick arm uses
+/// (`:45660` `HitObject(x, y, 1)` runs before the arm split); at `>= 100`
+/// the cell breaks (`:45725-45755`), otherwise the fail tick
+/// (`KillTile(fail: true)`, `:45758` — the port's per-tick sound/dust is
+/// the recorded i29 deviation, the damage stays in the book). Returns
+/// whether the tile broke.
+fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held: ItemSlot) -> bool {
+    // `:45660` — the buffer slot for the cell (the shared book).
+    let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    // `:45708-45712` — the damage ladder. `Main.getGoodWorld` = the
+    // For-the-Worthy seed (the `pick_world` mapping).
+    let get_good = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let mut damage = tr_core::tool::axe_damage(kind, axe_power, 0, get_good);
+    // `:45717-45720` — a `CanKillTile` refusal zeroes the chop damage.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:45721-45724` — the Don't Starve cactus chop hurts the chopper on
+    // EVERY damaging hit (not only the break): `Main.DamageVar(6f, 0f -
+    // this.luck)`, hitDirection 0 (no knockback), not quiet, no crit, the
+    // TileContactDamage cooldown. The port's single hurt lane folds the
+    // cooldown counters onto `hurt_cd` (the M4-HAZARD-1 admission,
+    // `touch_damage.rs`'s precedent) and `hitDirection 0` maps to the
+    // player's own centre (no directional kick). The damage draw rides the
+    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`), before
+    // the kill's own drop draws — the C# order.
+    if app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+        && damage > 0
+        && kind == 80
+    {
+        let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
+        if let Some(p) = app.player.as_mut() {
+            let (cx, _) = p.center();
+            let _ = p.hurt(dmg, cx, rng, true);
+        }
+    }
+    // `:45725` — the accumulation; `>= 100` breaks.
+    let total = app.hit_tile.add_damage(buffer_index, damage, true);
+    if total >= 100 {
+        // `:45727-45742` — Lucy the Axe's (5095) chopped-tree chat bubble
+        // (`LucyAxeMessage`) has no port chat-bubble system: the recorded
+        // deviation, the chop itself is unchanged (ANALYSIS, S1-P-i30).
+        // `:45743` — `ClearMiningCacheAt(x, y, 1)` clears the hit slot
+        // (`Player.cs:53846-53850`; the port has no replacement book).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45744` — `IsBottomOfTreeTrunkNoRoots(x, y)` read BEFORE the kill
+        // (the Acorn Axe's replant gate).
+        let replant_base =
+            held.kind == 5295 && is_bottom_of_tree_trunk_no_roots(&app.world, tx, ty);
+        // `:45745` — `WorldGen.KillTile(x, y)`: the whole-tree fall rides
+        // the kill cascade (`tr_core::edit::kill_tile` → `CheckTree` /
+        // `CheckPalmTree` / `CheckCactus` / the case-72 support check).
+        break_tile(app, tx, ty);
+        // `:45750-45753` — the Staff of Regrowth's twin, the Acorn Axe
+        // (5295), replants an acorn sapling into the felled base cell.
+        if replant_base {
+            try_replanting_tree(app, tx, ty);
+        }
+        // `:45768` — `ApplyItemTime(sItem)`: `itemTime = useTime` verbatim
+        // (`Player.cs:4416-4419` — NO `pickSpeed` scale; the pick arm's
+        // `:45777-45780` re-arm is gated on `sItem.pick > 0`, which a pure
+        // axe never reaches; the Drax 579 carries both powers and takes
+        // that re-arm below, exactly like the C#).
+        rearm_axe_item_time(app, held);
+        return true;
+    }
+    // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
+    // sound/dust is the recorded deviation; the damage stays in the book.
+    // `:45764-45767` — a non-zero damage prunes the book.
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45768` — the cadence re-arm on the fail tick too.
+    rearm_axe_item_time(app, held);
+    false
+}
+
+/// The axe arm's `ApplyItemTime(sItem)` (`Player.cs:45768` → `:4416-4419`):
+/// `itemTime = useTime` (prefix-aware — `Item.Prefix` scales the INSTANCE's
+/// `useTime`), then the shared `sItem.pick > 0` tail (`:45777-45780`)
+/// overrides it with `(int)(useTime * pickSpeed)` for the dual-power
+/// Drax/hamaxes.
+fn rearm_axe_item_time(app: &mut App, held: ItemSlot) {
+    let use_time = held_use_time_ticks(held);
+    let def = registry::get(held.kind);
+    if def.is_some_and(|d| d.pick > 0) {
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+    } else {
+        app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+    }
 }
 
 /// The held item's `useTime` in ticks, prefix-aware (`Item.Prefix` scales
@@ -1227,15 +1336,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.minion_npc_target_aim(&app.npcs, mouse_world);
             }
         }
-        // S1-P-i29 — the drills (a `channel` item with `pick > 0`) are mining
-        // tools, not throws: their projectile spawns once via the channel
-        // start (`drill_channel_start`, `ItemCheck_StartActualUse` →
+        // S1-P-i29/i30 — the drills and chainsaws (a `channel` item with
+        // `pick > 0` or `axe > 0`) are mining tools, not throws: their
+        // projectile spawns once via the channel start
+        // (`drill_channel_start`, `ItemCheck_StartActualUse` →
         // `StartChanneling`, `Player.cs:51677`/`:52958`) and the aiStyle-20
-        // machine holds it. The generic throw would re-spawn a drill every
+        // machine holds it. The generic throw would re-spawn the tool every
         // swing — gate it out here (the C# `ItemCheck_Shoot` fires once per
         // use start, and the channel holds the animation so no new use
         // starts while held).
-        let drill_tool = registry::get(held.kind).is_some_and(|d| d.channel && d.pick > 0);
+        let drill_tool =
+            registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
