@@ -660,7 +660,7 @@ mod tests {
     /// new arm through the dispatch (resting counter, flat flight) while
     /// the plain wooden arrow keeps the generic flight byte-identical
     /// (15 ticks → vel.y = 0.1, the pre-existing DW-3.2 pin) and a
-    /// slice-B kind (449, the saucer laser) still rides `ai_arrow`.
+    /// slice-B kind (449, the saucer laser) rides slice B's landed arm.
     #[test]
     fn s1_d_5a_the_seam_gates_only_the_slice_a_kinds() {
         // The musket ball: the old generic arm would have gravity after
@@ -687,17 +687,22 @@ mod tests {
             "the generic flight is byte-identical for the plain arrow"
         );
 
-        // A slice-B kind (449 ≥ 449): still the generic arm — its
-        // counter runs (the old behaviour slice B will replace).
+        // A slice-B kind (449 ≥ 449): now rides slice B's arm (landed —
+        // the flag3 list rests its counter and the localAI[0] flight-time
+        // ramp runs +3/tick, `:54794-54795`).
         let mut saucer = ProjectilePool::new();
         saucer.spawn_with_data(SAUCER_LASER, 160.0, 160.0, 2.0, 0.0, 200, 0.0);
         let mut w = world();
         for _ in 0..20 {
             step_pool(&mut saucer, &mut w);
         }
-        assert!(
-            saucer.slots()[0].ai[0] > 0.0,
-            "449 keeps the generic counting flight until slice B"
+        assert_eq!(
+            saucer.slots()[0].ai[0], 0.0,
+            "449 rides slice B's resting counter (flag3, :55997)"
+        );
+        assert_eq!(
+            saucer.slots()[0].local_ai[0], 60.0,
+            "slice B's +3/tick flight-time ramp: 20 ticks = 60 (:54794)"
         );
         assert!(!handles(SAUCER_LASER), "the kind sets are disjoint");
     }
