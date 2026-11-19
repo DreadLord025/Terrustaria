@@ -977,6 +977,44 @@ impl App {
         true
     }
 
+    /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
+    /// `NPCChatPanel.cs:88-162`): the hover edge plays sound 12
+    /// (`:157-160`) and the Close button's press (`:150-154`) runs
+    /// `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
+    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`) — the talk
+    /// latch clears, `npcChatText` empties, sound 11 plays and
+    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). The other
+    /// interaction buttons (shop/happiness/housing/…) are deferred —
+    /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
+    pub(crate) fn handle_npc_chat_clicks(&mut self) {
+        if self.talk_npc.is_none() {
+            // `DrawButtons` only runs while the panel draws — `_lastHovered`
+            // keeps its value across a close (the next open's hover-change
+            // edge, `:157-160`, reads it).
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
+        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // `:157-160` — the hover-change tick (no gamepad in the port, so
+        // the `!UsingGamepad || num2 != -1` gate always passes).
+        if self.npc_chat_last_hovered != hovered {
+            crate::chest::play_menu_sound(self, 12);
+        }
+        self.npc_chat_last_hovered = hovered;
+        if hovered == 0 && self.ui_left_press {
+            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
+            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
+            // 11 + the panel's `Close` reset.
+            self.talk_npc = None;
+            self.npc_chat_text.clear();
+            crate::chest::play_menu_sound(self, 11);
+            self.npc_chat_last_hovered = -1;
+        }
+    }
+
     /// The bestiary screen's clicks: the inventory button that opens it
     /// (`Main.cs:42455-42462` — `SetTalkNPC(-1)`/`npcChatCornerItem = 0` have
     /// no port counterpart), then the grid cards and the Back panel while it

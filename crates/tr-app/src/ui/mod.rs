@@ -23,6 +23,7 @@ pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
 pub mod notifications;
+pub(crate) mod npc_chat;
 pub mod panel;
 pub mod pointer;
 pub mod resources;
@@ -709,6 +710,11 @@ pub fn draw_hud(
     // head riding the cursor (`DrawInterface_38_MouseCarriedObject`,
     // `Main.cs:45200-45216`).
     mouse_npc: housing::MouseNpc,
+    // The town-chatter UI (S1-E-10b): `Player.talkNPC` + `Main.npcChatText`
+    // (`NPCChatPanel.Draw`, `Main.cs:45713-45716` → `GUIChatDraw`). The
+    // bubble's hover pick reads the NPC list + player already passed above.
+    talk_npc: Option<usize>,
+    npc_chat_text: &str,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -771,6 +777,19 @@ pub fn draw_hud(
     // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
     // not a pre-baked screen position.
     emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+
+    // `DrawInterface_1_1_DrawEmoteBubblesInWorld`'s tail
+    // (`Main.cs:46460-46464`): the hovered town NPC's chat bubble rides
+    // the same world→UI transform as the emotes (`DrawNPCChatBubble`,
+    // `Main.cs:43135-43161`).
+    npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+    // `DrawInterface_23_NPCSignsDialog` (`Main.cs:45713-45716`) →
+    // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
+    // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
+    // `:276-283`; the sign half is unported).
+    if talk_npc.is_some() {
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+    }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
     // the open inventory's top row, before the slots.

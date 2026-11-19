@@ -128,7 +128,7 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
 /// `Player.DefaultTileRangeX/Y = 5/3` (`Player.cs:57113-57114`).
 ///
 /// Returns `(LX, LY, HX, HY)` in world pixels.
-fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
+pub(crate) fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
     let lx = ((p.x / 16.0) as i32 - 5) as f32 * 16.0;
     let ly = ((p.y / 16.0) as i32 - 3) as f32 * 16.0;
     let hx = (((p.x + crate::player::WIDTH) / 16.0).ceil() as i32 - 1 + 5) as f32 * 16.0 + 15.0;
