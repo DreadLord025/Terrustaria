@@ -2084,8 +2084,13 @@ mod tests {
         let mut map_time = 0i32;
         let mut e = MapLightExport::new(&mut tiles, &mut map_time, 7, true);
         engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        // Snapshot the export's outputs before reading `tiles` (the export
+        // holds the mutable borrow until its last use).
+        let changed = std::mem::take(&mut e.changed);
+        let update_map = e.update_map;
+        drop(e);
         assert_eq!(map_time, 7, "the re-arm happens first (`:373`)");
-        assert_eq!(e.update_map, Some([90, 52, 21, 16]), "`:432`");
+        assert_eq!(update_map, Some([90, 52, 21, 16]), "`:432`");
         // 0.5 * 1.5 * 255 = 191.25 → 191.
         assert_eq!(tiles[w.index(100, 60)].light, 191);
         // 0.05 * 1.5 * 255 = 19.125 → 19 → the `b > 18` floor lifts to 22.
@@ -2094,14 +2099,14 @@ mod tests {
         assert_eq!(tiles[w.index(97, 60)].light, 18);
         // Dark + revealed (old light 10 > 0) → floor 22, max(10, 22) = 22.
         assert_eq!(tiles[w.index(96, 60)].light, 22);
-        assert!(e.changed.contains(&(96, 60)), "the floor lift is a change");
+        assert!(changed.contains(&(96, 60)), "the floor lift is a change");
         // Dark + unrevealed → `UpdateLighting(0)` refuses (`WorldMap.cs:52-55`).
         assert_eq!(tiles[w.index(95, 60)].light, 0);
-        assert!(!e.changed.contains(&(95, 60)));
+        assert!(!changed.contains(&(95, 60)));
         // The changed list is x-outer, y-inner (`:396-399`).
-        let first = e.changed.iter().position(|&(x, _)| x == 96).unwrap();
-        let last = e.changed.iter().rposition(|&(x, _)| x == 96).unwrap();
-        assert!(e.changed[first..=last].iter().all(|&(x, _)| x == 96));
+        let first = changed.iter().position(|&(x, _)| x == 96).unwrap();
+        let last = changed.iter().rposition(|&(x, _)| x == 96).unwrap();
+        assert!(changed[first..=last].iter().all(|&(x, _)| x == 96));
     }
 
     #[test]
@@ -2140,12 +2145,15 @@ mod tests {
         let mut map_time = 0i32;
         let mut e = MapLightExport::new(&mut tiles, &mut map_time, 0, true);
         engine.try_updating_map_with_light(&w, pos, size, &LegacyInputs::default(), &mut e);
+        let changed = std::mem::take(&mut e.changed);
+        let update_map = e.update_map;
+        drop(e);
         // Dark dry sky air reveals (the arm's 22 > 0); the wet dark cell
         // keeps b = 0 and stays unrevealed (`WorldMap.cs:52-55`).
         assert!(tiles[w.index(94, 60)].light > 0, "sky air reveals at 22+");
-        assert!(e.changed.contains(&(94, 60)));
+        assert!(changed.contains(&(94, 60)));
         assert_eq!(tiles[wet].light, 0, "the wet cell skips the sky-air arm");
-        assert!(!e.changed.contains(&(95, 60)));
-        assert_eq!(e.update_map, Some([90, 52, 21, 16]));
+        assert!(!changed.contains(&(95, 60)));
+        assert_eq!(update_map, Some([90, 52, 21, 16]));
     }
 }
