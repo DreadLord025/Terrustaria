@@ -17547,6 +17547,76 @@ aiStyle-3 bottom-edge arm, the oldTarget inheritance (swing/fresh/boss
 breaks), the confused flip, the tank steal + its LOS wall, the dead/absent
 fallback, the netUpdate collide gate, and the zombie wiring proof.
 
+## The Lost Girl's aiStyle-42 machine (S1-D-3 aiStyle-42, code-only mode, 2026-11-18)
+
+`NPC.AI()`'s `else if (this.aiStyle == 42)` arm (`NPC.cs:30160-30189`) is
+ported as `crates/tr-app/src/npc_ai_style42.rs` — the ONLY style-42 user in
+the C# is the Lost Girl (`NPCID.LostGirl = 195`, `NPCID.cs:11067`;
+`SetDefaults` case 195, `NPC.cs:11492-11505`). The machine: every tick
+`TargetClosest()` (`:30162`, through the S1-D-3p shared helper via the new
+`npc_target::session_candidate` seam); in the calm state (`ai[0] == 0`) a
+picked target within `sqrt(dx² + dy²) < 200f` with a clear
+`Collision.CanHit` full-box sight line flips `ai[0] = 1` (`:30165-30174` —
+`num616` aims at the player's centre X, `num617` at the player's TOP edge
+`position.Y`, the C# asymmetry kept verbatim); the disturbance terms
+`velocity.X != 0 || velocity.Y < 0 || velocity.Y > 2 || life != lifeMax`
+flip it independently (`:30175-30178`, no `else`); otherwise `ai[0]++`
+counts to the `>= 21f` clamp and `Transform(196)` (`:30182-30187`) turns
+her into the Nymph (`NPCID.Nymph = 196`, `NPCID.cs:11069`, aiStyle 3,
+`NPC.cs:11510`).
+
+`transform_to` ports `NPC.Transform` (`NPC.cs:81084-81145`) on the host
+path with the default arguments (`ai0..3 = 0`, `withReposition = true`):
+the pre-defaults life pair (`:81090-81091`), the bottom-edge reposition
+(`Y += height` before / `-= height` after, `:81092-81100` — nets zero for
+the equal 18×40 boxes), the SetDefaults-owned resets (scale 1 `:8536`,
+alpha 0 `:8525`, netUpdate `:8530`, the ai/localAI zero loops
+`:8564-8571`, `ClearTarget` 255 + oldTarget latch `:8539-8540` +
+`:42924-42927`, targetRect default `:8541`), the post-defaults
+`TargetClosest` (`:81101`), and the INTEGER life share
+`life = num * lifeMax / num2` floored at 1 (`:81106-81110` — 125/250 of
+the Girl's life becomes 150/300 of the Nymph's). The `LOST_GIRL`/`NYMPH`
+`KindDefaults` consts carry the cited `SetDefaults` rows (both
+`Item.buyPrice(0, 2)` = 20000 copper, `Item.cs:49417-49420`) for the
+wiring step.
+
+**UNWIRED (code-only mode).** The port has no LostGirl/Nymph `NpcKind`
+variants and `npc/data.rs`'s tables are contested by the in-flight
+S1-D-3 sibling branches, so the slice lands as pure functions (the
+`render/special_tiles.rs` pattern): the kind-table rows, the `42 =>`
+dispatch arm and the `npc.kind` swap are the family's merge step. No
+compiler was invoked; 10 witness tests are written NOT run.
+
+**RNG by construction.** The arm (`:30160-30189`) draws no `Main.rand`;
+`TargetClosest` (`:77652-77781`) is a deterministic scan; the 195→196
+`Transform` path draws nothing — `SetDefaults` case 196 (`:11506-11519`)
+has no rand row, `TransformVisuals` (`:80963-81033`) has NO (195,196) arm
+(its rand-drawing arms are 158↔159 (sound/gore only), 478→479, 406→405,
+428→427, 427→426), and `GiveTownUniqueDataToNPCsThatNeedIt` (`:80839`) is
+town-only (196 is not a town NPC). The functions take no RNG parameter —
+a draw is impossible by signature; the witness test pins two identically
+seeded `UnifiedRandom` streams across 600 machine ticks.
+
+Deliberate folds (host-path stand-ins):
+
+* The `Main.netMode != 1` gate (`:81086`) folds to the host path; the
+  `netMode == 2` SendData 23/54 pair (`:81131-81135`) is unported wire
+  work.
+* `TransformVisuals`' `position += netOffset` / `-= netOffset` pair
+  (`:80965`/`:81032`) is a single-player no-op and there is no (195,196)
+  visual arm — dropped whole.
+* `altTexture = 0` (`:81143`) has no port field — dropped.
+* `frameCounter = 0` (`SetDefaults`, `:8529`) rides the private
+  `Npc::frame_counter`; the wiring step resets it inside `npc.rs` (this
+  module resets the public `frame` row, the `update_stardust_cell`
+  convention).
+* The stat swap (dmg 10→35, def 30→16, kb 0.5→0.4, sounds NPCHit1/
+  NPCDeath1→NPCDeath2, rarity 2, value 2 gold both) rides the kind
+  tables at the wiring step; only `lifeMax` (the life-share input) and
+  the hitbox height (the reposition) are applied here.
+* The value-zero flag (`:81088`, `:81102-81105`) is inert for this pair
+  (both rows carry 20000).
+
 ## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
 
 `Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
