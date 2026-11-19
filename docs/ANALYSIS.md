@@ -14624,7 +14624,58 @@ hideInfo bool**; the remainder is `:54894-54933`. Note: the C# envelope uses
 RijndaelManaged's default PKCS7 padding (`Player.cs:54734-54736`) while the
 port zero-pads to the block boundary — invisible to field readers, but the
 final encrypted block differs from vanilla; full-envelope parity is a separate
-concern.
+concern. *(Resolved by increment 3 below.)*
+
+**Increment 3 (S1-J-5c, 2026-11-18): the full `Serialize` + PKCS7.** The
+writer/reader now run the WHOLE `Serialize` (`Player.cs:54750-54933`) /
+`Deserialize` (`:55134-55764`). The tail (`:54894-54933`), every unmodelled
+field at its fresh-ctor default: `anglerQuestsFinished` 0 (`:1910`),
+`DpadRadial.Bindings[4]` all -1 (the Dpad4 ctor, `:618-621`),
+`builderAccStatus[12]` = `[1,0×11]` (`:814` + `BuilderAccToggleIDs.Count = 12`
+`:47-75`; the ctor's `[0] = 1` `:56092`), `bartenderQuestLog` 0 (`:1914`),
+`dead` false (the respawnTimer is written only when dead, `:54905-54908`),
+the save timestamp, `golferScoreAccumulated` 0 (`:1912`), the creative
+tracker (`CreativeUnlocksTracker.Save:9-12` → `ItemsSacrificedUnlocksTracker
+.Save:157-169`: the literal `false` + count 0), the temp-slot BitsByte 0
+(`SaveTemporaryItemSlotContents:54935-54959` — all four global slots air),
+the per-player creative powers (`CreativePowerManager.SaveToPlayer:183-195`
+over the `Initialize:86-105` registration order: `(true, u16 5, false)`
+Godmode `CreativePowers.cs:705-707`, `(true, u16 11, false)` FarPlacement
+`:744-746`, `(true, u16 14, 0f)` SpawnRate `:1717-1719`, then `false`), the
+super-cart BitsByte **2** (`unlockedSuperCart` false `:2052`,
+`enabledSuperCart` **true** `:2054`), `CurrentLoadoutIndex` 0 (`:3207`),
+three `EquipmentLoadout.Serialize` (`EquipmentLoadout.cs:31-45`: 20 armor +
+10 dye × `Item.Serialize(writeFavorite: true)` = 10 zero bytes each, then
+`Hide[10]` false — 310 bytes per loadout), `voiceVariant` **1** (the ctor
+`:56045`, NOT the field default 0), `voicePitchOffset` 0f (`:1348`),
+`CraftingRequests.SavePossibleRefunds` count 0 (`CraftingRequests.cs:353-362`)
+and `oneTimeDialoguesSeen` count 0 (`:3209`). The reader mirrors
+`Deserialize:55624-55762` with the version gates (the builderAcc 8/10/11/12
+count gates, the dead-conditional respawnTimer, the tracker's >= 282 bool,
+the power loop's unknown-id BREAK `CreativePowerManager.cs:203-206`, the
+loadout favourited >= 322 gate). **The one unowned value** is
+`DateTime.UtcNow.ToBinary()` (`:54909`): it rides
+`PlayerFileWrite::last_saved_binary` (the App stamps 0 = "unknown", the same
+policy as the `.wld` CreationTime); the golden test pins the harness's
+`FixtureClock` value `0x48DF4506E391C000` (2026-11-18T00:00:00Z, kind Utc).
+**PKCS7**: `cbc_encrypt` now appends `n = 16 - len % 16` bytes of value `n`
+(a full block when aligned) — the bare `new RijndaelManaged()` default of
+`InternalSavePlayerFile` (`:54734`) flushed by `FlushFinalBlock` (`:54742`);
+the read path keeps `PaddingMode.None` semantics (`:55074` — whole blocks,
+padding never stripped, `Deserialize` stops at the logical end). The
+**harness had the same bug**: `tools/WldFixtureHarness` zero-padded with
+`PaddingMode.None`; it now uses `PaddingMode.PKCS7` and `golden.plr` was
+regenerated (same 3840 bytes; the final block now decrypts to 3 data bytes +
+13 × 0x0D). **Third shim**: the increment-2 port files end at `hideInfo`, so
+`read_player_bytes` retries 326 truncations at depth 2 (stop at `:55623`)
+after the depth-1 vault retry. **Evidence**:
+`golden_plr_writer_matches_the_csharp_fixture_byte_for_byte` — the port's
+encrypted output for the fixture's player + pinned clock is byte-identical
+to the C#-written `assets/test/golden.plr` (all 3840 bytes, plaintext 3827 +
+PKCS7 13); `golden_layout_through_hide_info` pins every tail field and
+byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs7`
+pins the pad rule incl. the aligned full-block case. No new dependency —
+the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
 ## The world-format contract (S1-J-8)
 
@@ -19770,6 +19821,15 @@ byte-identical.
   (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
   writer's own byte parity stays S1-J-5's.
+- **S1-J-5c envelope fix**: the harness itself zero-padded the `.plr` with
+  `PaddingMode.None` (mirroring the *read* path's `Player.cs:55074`); the
+  vanilla *write* path uses the bare `RijndaelManaged`'s default **PKCS7**
+  (`:54734-54742`). The harness now encrypts with `PaddingMode.PKCS7` and
+  `golden.plr` was regenerated — same 3840 bytes, the last block now
+  decrypts to 3 data bytes + 13 × 0x0D. `golden.wld` is unchanged
+  (byte-identical regen). The port's writer is byte-identical to the
+  regenerated fixture end-to-end (see "The `.plr` legacy-subset shim +
+  default policy", increment 3).
 
 ## The worldgen parity proof (S1-A-7)
 
