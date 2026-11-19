@@ -3043,6 +3043,22 @@ rand, generating_or_loading)`:
   `:5898-5907` jellyfish): top 2 ported; the per-animal `Main.*CageFrame`
   animation tables and the `Main.critterCage` side effect are not ported
   (the jellyfish-cage state machine was already recorded under "Trees").
+  **S1-F-9 wave C (2026-11-18, `drawdata_furniture.rs`)**: the DRAW half is
+  now ported — `cage_draw_data` reproduces all four groups' table pick, row
+  index (`GetBig/Small/WaterAnimalCageFrame`, `:6528-6547`) and stride
+  (54 big / 36 small-water-jellyfish, pufferfish's 108/54 split), with the
+  tables as a lookup parameter; all-zero tables are byte-equal to the
+  static arms (test `zero_tables_reproduce_the_static_cage_arms`). Still
+  out: the animator (`Main.AnimateTiles_CritterCages`, `Main.cs:13511+`,
+  draws on `Main.rand`) and the `Main.critterCage` gate it reads; the
+  dispatch wiring into `draw_data`/`tiles.rs` is deferred to the S1-F-9
+  merge (waves A/B own those files). The chest rewrite
+  (`CacheSpecialDraws_Part2` `:4289-4330`) is ported as
+  `chest_draw_rewrite` (BasicChest 21/467, +38/+76 open rows, bottom-row
+  height 18); the caller supplies `Main.chest[FindChest(anchor)].frame` —
+  the port's `World::chests` carries anchors but no open-frame state yet,
+  so callers pass `None` (closed) today. The 21-cols-48/49 glow rect
+  (TILE-DRAW-2) and the 378 training-dummy half stay unported.
 - `564` (`:5523-5528`): shares the `217|218` arm in C#, but the glow switch
   then unconditionally clears addFrY (`:6105-6113`); the port folds that into
   the arm — top 2, addFrY always 0.
