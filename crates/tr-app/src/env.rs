@@ -759,14 +759,13 @@ pin_flag! {
 }
 
 /// `TR_LIGHT_MODE=<color|white|retro|trippy>`: the lighting mode (the
-/// color/white 9-slice path).
+/// color/white 9-slice path). **Live read** (the `TR_SUNDIAL` precedent):
+/// `apply_settings` re-reads it on every settings apply so the pin survives
+/// the boot `apply_settings()` — and the unit tests can set/remove it.
 pub(crate) fn light_mode() -> Option<LightMode> {
-    static V: OnceLock<Option<LightMode>> = OnceLock::new();
-    *V.get_or_init(|| {
-        std::env::var("TR_LIGHT_MODE")
-            .ok()
-            .and_then(|v| parse_light_mode(&v))
-    })
+    std::env::var("TR_LIGHT_MODE")
+        .ok()
+        .and_then(|v| parse_light_mode(&v))
 }
 
 /// `TR_AMBIENCE=<SkyEntityType>[,seed]`: one forced ambience spawn with a

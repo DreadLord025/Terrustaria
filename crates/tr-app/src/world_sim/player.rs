@@ -742,6 +742,16 @@ let spawned = app.projectiles.spawn_hook(
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // S1-E-7 wave C: the accessory/set-bonus buff arms
+            // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
+            // same `UpdateBuffs` slot chain, in its own module so waves A/B
+            // can edit the `player.rs` effect region without collision.
+            crate::buff_effects_accessory::update_accessory_buff_arms(
+                p,
+                &mut app.projectiles,
+                &app.npcs,
+                rng,
+            );
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -923,6 +933,19 @@ let spawned = app.projectiles.spawn_hook(
             if let Some(cue) = p.take_death_sound() {
                 let (px, py) = p.center();
                 app.audio.play_at(cue, px, py, 1.0);
+            }
+            // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
+            // fast-run footstep at the player's top-left position — the
+            // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
+            // the `UpdatePlayers` stream (the `Main.cs:17754` swap covers
+            // `Player.Update`), only after the attenuation gate passed.
+            if let Some((sound_type, style, sx, sy)) = p.take_step_sound() {
+                app.audio.play_step_sound(
+                    (sound_type, style),
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
