@@ -1881,6 +1881,12 @@ impl App {
         // world never enters paused. (`GameUpdateCount` resets through the
         // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
         self.game_paused = false;
+        // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
+        // the legacy engine owns the counter in the port (S1-E-19 wave B,
+        // `LegacyLighting.cs:345-348`).
+        if let Some(engine) = self.legacy_light.as_mut() {
+            engine.reset_map_delay();
+        }
     }
 
     pub(crate) fn is_client(&self) -> bool {
