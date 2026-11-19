@@ -211,6 +211,15 @@ mod tests {
     // changes — every hash moves. (The `variants` field itself is not hashed;
     // the frame pixels are.) Values measured on the merged tree (BUG-25 +
     // S1-A-3 together).
+    // Re-pinned by S1-K-2 wave A (`worldgen/mini_biomes.rs`
+    // `pass_mahogany_trees`): the Micro Biomes pass's `MahoganyTreeBiome`
+    // block (`WorldGen.cs:21105-21123`) lands — the living mahogany trees
+    // (383/384, wall 78) grow in the jungle's mud caverns on the fresh
+    // `pass_rng("Micro Biomes")` stream. The 512-wide pin is UNCHANGED:
+    // the sub-vanilla guard skips the placement block there (the C#'s
+    // `Next(worldSurface + 50, maxTilesY - 500)` band collapses), and the
+    // framing's 383/384 merge arms (`WorldGen.cs:82077-82082`) only fire
+    // on the new kinds.
     const SEED42_512: u32 = 2673964944;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -218,7 +227,12 @@ mod tests {
     // tiles move downstream of the carve. Measured on this branch. (The
     // 512 world's pin survives: its single small runner lands in the beach
     // zone the `Beaches` pass re-shapes anyway, and the final bytes match.)
-    const DEFAULT_WORLD: u32 = 3439477718;
+    // Re-pinned by S1-K-2 wave A: the mahogany trees (above) — the new
+    // 383/384 tiles and wall-78 interiors move the hash directly, and the
+    // downstream tile-dependent passes (the vines on the mud, the slopes,
+    // the tree/flora placement) legitimately re-roll around them.
+    // Measured on this branch (the synced a23d87e5 base).
+    const DEFAULT_WORLD: u32 = 143177146;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
     // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item
