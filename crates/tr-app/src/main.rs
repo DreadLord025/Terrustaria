@@ -103,6 +103,7 @@ pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
 mod projectile_ai026_a;
+mod projectile_ai026_b;
 mod rain;
 mod regen;
 mod research;

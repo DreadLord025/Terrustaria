@@ -2223,6 +2223,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the other unported styles), 24x16, `penetrate = -1`,
             // `timeLeft *= 5` and the idStatic-12 pair.
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
+            // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
+            // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
+            // block; 889 SkeletronPrimePet): 20x20, aiStyle 26,
+            // friendly, `penetrate = -1`, `timeLeft *= 5` (3600 →
+            // 18000), the stock `tileCollide = true` reset (`:745`) —
+            // the arm sets it false on its first tick (`:60096`), so
+            // `HandleMovement` never collides them. `netImportant`
+            // (`:8488`/`:8523`) rides the overlay below.
+            SKELETRON_PET | SKELETRON_PRIME_PET => {
+                (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE)
+            }
+
             // AI_026 slice A (S1-D-4b-10) — the 14 early-return flyer pets.
             // Every row: aiStyle 26, friendly, `penetrate = -1`,
             // `timeLeft *= 5` (3600 → 18000), the stock `tileCollide = true`
@@ -2565,7 +2578,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry
+        net_important: minion
+            || sentry
+            // AI_026 slice B: the boss-head pets' `netImportant = true`
+            // (`Projectile.cs:8488`/`:8523`).
+            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -2630,6 +2647,15 @@ pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
+/// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the
+/// spinning Skeletron-head pet (`Projectile.cs:60092-60253`'s shared
+/// 885/889 arm; buff 288's pet, `Player.cs:11105`).
+pub const SKELETRON_PET: u16 = 885;
+/// `ProjectileID.SkeletronPrimePet` (889) — AI_026 slice B: the spinning
+/// Skeletron-Prime-head pet with the `localAI[0]` laser-eye accumulator
+/// (buff 292's pet, `Player.cs:11121`).
+pub const SKELETRON_PRIME_PET: u16 = 889;
+
 // AI_026 slice A (S1-D-4b-10): the 14 early-return flyer pets of
 // `AI_026` (`Projectile.cs:59120-60091`) — `ProjectileID.cs:904/948/950/
 // 952/976/1314/2102/2184/2188/2326/2338/2342/2356/2646`. Everything else
@@ -2766,6 +2792,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
+        // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
+        // (`Projectile.cs:60192`) and the walk steps frames 0-5
+        // (`:60240-60247`).
+        SKELETRON_PET => 10,
+        SKELETRON_PRIME_PET => 11,
         // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
         // walk (0-3), bite (4-9) and flight (10-14) machines index it.
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,

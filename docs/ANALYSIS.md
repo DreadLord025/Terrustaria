@@ -20404,6 +20404,74 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## AI_026 slice B (S1-D-4b-11, task/S1-D-4b-11-melee-b, 2026-11-18)
+
+**Code-only mode** — no compiler invoked this round (no cargo/rustc/
+rustfmt/tests); the witness tests in `projectile_ai026_b.rs` are WRITTEN,
+NOT RUN. Verification is by construction against the decompiled source.
+
+`crates/tr-app/src/projectile_ai026_b.rs` ports the two spinning
+boss-head pets of the aiStyle-26 mega-family: **885** (SkeletronPet) and
+**889** (SkeletronPrimePet) — the shared early-return arm
+`Projectile.cs:60092-60253`, the head's keep-alive blocks
+`:58669-58679`/`:58691-58701` and the `flag11` pin `:58944-58947`. The
+`26 =>` dispatch gate routes ONLY the two; every other aiStyle-26 kind
+(the 266 slime minion today) keeps the pre-existing `_ => {}`
+fall-through, byte-identical.
+
+- **The premise correction**: the task named "boomerangs/discs/paladin
+  hammer" as AI_026's higher-id types — the C# dispatch says the
+  boomerangs/discs are aiStyle **3** (`AI_003_Boomerang` `:38866`,
+  dispatched `:23690-23693`, already ported `ai_boomerang`) and the
+  Paladin's Hammer is aiStyle **15** (`DefaultToFlail` `:10753-10762`,
+  already ported `ai_flail`). Every type id in `AI_026`'s body is a
+  pet/minion/Pal summon; the ROADMAP row carries the correction (slice A
+  corrected the flail half the same day).
+- **Slice disjointness**: slice A (`task/S1-D-4b-10-melee-a`) claims the
+  14 early-return flyers 175/197/198/199/211/380/774/815/817/886/892/894/
+  901/1046 (`:59120-60091`); slice B claims 885/889 (`:60092-60253`).
+  Both branches add a gated `26 =>` arm at the same dispatch site — the
+  merge chains the two gates (A's `ai026_a_tick` first, then B's on the
+  false return); the gates are kind-disjoint so either order is
+  behaviour-identical.
+- **RNG by construction**: the only `Main.rand` draws for these types
+  are the >2000 px teleport's 12 dusts (`:60137-60142`), each
+  `Dust.NewDust(SpeedX: 1f - NextFloat()*2f, SpeedY: 1f - NextFloat()*2f,
+  ...)` evaluating its named arguments left-to-right — 24 `NextFloat`
+  draws, SpeedX before SpeedY per dust. The visuals skip with the
+  unported `Main.dust` layer but the 24 explicit draws are CONSUMED on
+  the pass's `UpdateProjectiles` stream (slice A's precedent); the
+  dusts' internal rolls (`Dust.cs:114-190`) skip with the layer. No head
+  rand fires for these types; the near/far/spin paths draw nothing.
+- **The keep-alive is live**: `pet_flags[885]`/`pet_flags[889]` are
+  granted by buffs 288/292 (`buff_effects_accessory.rs:62/66`,
+  `Player.cs:11105`/`:11121`). The C# clears the flag on death BEFORE
+  the pin test (`:58671-58678`), so the death tick does not pin — the
+  port keeps that order (slice A's flyers read the flag before the
+  clear because their C# blocks do; the two orders are per-block
+  verbatim).
+- **Verbatim quirks kept**: the steering's same-sign second boost has
+  NO target-sign guard (`:60150-60181`, unlike the ground machine's
+  `:60584+`); the near rotation ease's `< 0.05` test also zeroes
+  negative rotations (`:60209-60212`); the far-spin test reads the
+  PRE-normalization distance (`num77`, `:60185`); the grounded −6 rise
+  clamp runs BEFORE the <10 px damping (`:60106-60118`).
+- **Documented stand-ins**: `Collision.SolidCollision` → the shared
+  `box_solid` 5-point approximation (M4-PROJ-8 precedent; the fn is now
+  `pub(crate)` — slice A's diff makes the same visibility change, a
+  trivial merge overlap); `netUpdate` → the single-player no-op; the
+  head's `num = 95` override and `flag2`/`flag3` direction band feed
+  only the idle machine these types never reach — not ported; the
+  slot carries no liquid-wet flags so `UpdatePosition` folds to the dry
+  `position += velocity` (the arm sets `tileCollide = false` at
+  `:60096`).
+- **Still open in AI_026**: the ground pets' idle/walk/jump/attack
+  machine (`:60254-65024`), the pygmies/spiders, the Pal summons
+  1094/1113, the 266 slime minion's hop machine — the ROADMAP row's
+  remainder.
+
+
+
 ## The dungeon-debris trio (S1-D-5, 2026-11-19, code-only mode)
 
 The 736/737/738 `BlueDungeonDebris`/`GreenDungeonDebris`/`PinkDungeonDebris`
