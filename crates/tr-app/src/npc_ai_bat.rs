@@ -291,11 +291,20 @@ pub fn ai_style_8_step(
     // `:20844-20854` — the type-172 alpha ramp: deferred (Rune Wizard is
     // not a ported kind).
     // `:20855-20992` — the pending teleport: place the body on the tile,
-    // zero the velocity, clear ai[2]/ai[3]. The two 50-dust bursts and the
-    // Item8 sounds are skipped (the dust system is unported; only the
-    // 29/45 burst's `Next(1, 3)` scale drew Main.rand — `:20867`/`:20936`).
+    // zero the velocity, clear ai[2]/ai[3]. The two 50-dust bursts are
+    // skipped (the dust system is unported; only the 29/45 burst's
+    // `Next(1, 3)` scale drew Main.rand — `:20867`/`:20936`); S1-E-21g
+    // wires BOTH Item8 plays (`:20862` the departure at the OLD position
+    // BEFORE the move, `:20931` the arrival AFTER it) — the queue keeps
+    // the C#'s order around the placement.
     if npc.ai[2] != 0.0 && npc.ai[3] != 0.0 {
         let (w, h) = npc.size();
+        // `:20862` — the departure puff at the pre-teleport position.
+        npc.wants_sound.push(crate::npc::NpcSoundRequest {
+            cue: crate::npc::NpcSoundCue::Item8,
+            x: npc.x,
+            y: npc.y,
+        });
         // `:20924-20925` — `(float)(base.width / 2)` is INTEGER division.
         npc.x = npc.ai[2] * 16.0 - (w as i32 / 2) as f32 + 8.0;
         npc.y = npc.ai[3] * 16.0 - h;
@@ -303,6 +312,12 @@ pub fn ai_style_8_step(
         npc.vy = 0.0;
         npc.ai[2] = 0.0;
         npc.ai[3] = 0.0;
+        // `:20931` — the arrival puff at the placed position.
+        npc.wants_sound.push(crate::npc::NpcSoundRequest {
+            cue: crate::npc::NpcSoundCue::Item8,
+            x: npc.x,
+            y: npc.y,
+        });
     }
     // `:20993` — the counter tick (the 693 localAI block `:20994-21005` is
     // deferred with its kind).
@@ -399,6 +414,13 @@ pub fn ai_style_8_step(
             // ai[1] == 10, at `(int)pos.X + width/2 + direction*8,
             // (int)pos.Y + 20` (the int truncation is the call site's).
             if npc.ai[1] == 10.0 {
+                // S1-E-21g — `NPC.cs:21168`: the imp's own cast puff
+                // (Item8 BEFORE the spawn, the C#'s order).
+                npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Item8,
+                    x: npc.x,
+                    y: npc.y,
+                });
                 let (w, _) = npc.size();
                 shot = Some(CasterShot {
                     kind: NpcKind::BurningSphere,
@@ -411,6 +433,14 @@ pub fn ai_style_8_step(
             // `:21175-21277` — the standard shoot tick. The 281-286
             // projectile arm (`:21177-21227`) and the 693/172 arms are
             // deferred with their kinds.
+            // S1-E-21g — `NPC.cs:21230-21233`: the cast's Item8 puff
+            // (`this.type != 172` — the Rune Wizard is silent; no ported
+            // kind is 172, every caster here plays).
+            npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::Item8,
+                x: npc.x,
+                y: npc.y,
+            });
             let (w, _) = npc.size();
             // `:21238`/`:21242`/`:21246` — `(int)pos.X + width/2,
             // (int)pos.Y - 8` (NPC.NewNPC's Bottom convention, `:80770`).
