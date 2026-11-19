@@ -2572,9 +2572,18 @@ impl MountState {
 
     /// `Mount.CanFly` (`Mount.cs:2860-2879`) — the type-54 selective-fly branch
     /// needs `_mountSpecificData` (M2-MOUNT-4) and cannot fire on this table.
-    pub(crate) fn can_fly(&self) -> bool {
+    /// `Mount.CanFly` (`Mount.cs:2860-2879`): the type-54 Velociraptor flies
+    /// only while wings are equipped (`SelectiveFlyingMountData.allowedToFly`,
+    /// refreshed by `UpdateAfterEquips` `:2989-2996` — the port derives it
+    /// from the live `wings_logic` each call); every other row needs a
+    /// non-zero `flightTimeMax` and is not the book (48).
+    pub(crate) fn can_fly(&self, wings_logic: i32) -> bool {
         if !self.active {
             return false;
+        }
+        // `:2866-2869`: the selective-flying arm bypasses the zero budget.
+        if self.kind == 54 && wings_logic > 0 {
+            return true;
         }
         let Some(row) = self.data() else { return false };
         if row.flight_time_max == 0 {
@@ -2587,8 +2596,8 @@ impl MountState {
     }
 
     /// `Mount.ResetFlightTime` (`Mount.cs:5262-5273`) — the type-0 |v|*20 bonus
-    /// and the type-54 wings borrow need the Player (Phase 2 passes velocity).
-    pub(crate) fn reset_flight_time(&mut self, x_velocity: f32) {
+    /// and the type-54 wings borrow (`_flyTime = mountedPlayer.wingTimeMax`).
+    pub(crate) fn reset_flight_time(&mut self, x_velocity: f32, wing_time_max: i32) {
         self.fly_time = if self.active {
             mount_data(self.kind).map_or(0, |d| d.flight_time_max)
         } else {
@@ -2597,10 +2606,22 @@ impl MountState {
         if self.kind == 0 {
             self.fly_time += (x_velocity.abs() * 20.0) as i32;
         }
+        // `:5269-5272`: the Velociraptor borrows the wing budget.
+        if self.kind == 54 {
+            self.fly_time = wing_time_max;
+        }
     }
 
     pub(crate) fn flight_time_max(&self) -> i32 {
         self.data().map_or(0, |d| d.flight_time_max)
+    }
+
+    /// `Mount.UpdateAfterEquips`' type-54 brooch refill (`Mount.cs:2993-2996`):
+    /// `_flyTime = mountedPlayer.wingTimeMax` every tick while the Soaring
+    /// Insignia is equipped (the `allowedToFly` half is derived live in
+    /// [`Self::can_fly`]).
+    pub(crate) fn refill_wing_flight(&mut self, wing_time_max: i32) {
+        self.fly_time = wing_time_max;
     }
 
     /// `Mount.Flight` (`Mount.cs:2973-2981`): one tick of budget per call.
@@ -2980,17 +3001,17 @@ mod tests {
         let mut m = MountState::default();
         // The Pigron flies (160 partial) and does not hover.
         m.set_mount(2, false);
-        assert!(m.can_fly());
+        assert!(m.can_fly(0));
         assert!(!m.can_hover());
         m.dismount();
         // The Book hovers but never flies.
         m.set_mount(48, false);
-        assert!(!m.can_fly());
+        assert!(!m.can_fly(0));
         assert!(m.can_hover());
         m.dismount();
         // The lava shark hovers only in the swim frame state.
         m.set_mount(49, false);
-        assert!(!m.can_fly(), "flightTimeMax is 0");
+        assert!(!m.can_fly(0), "flightTimeMax is 0");
         m.test_set_frame_state(2);
         assert!(!m.can_hover());
         m.test_set_frame_state(4);
@@ -3021,7 +3042,7 @@ mod tests {
         // The grounded refill restores the budget (`ResetFlightTime`), then
         // the flight seconds burn before the fatigue builds again.
         m.test_set_fatigue(0.0);
-        m.reset_flight_time(0.0);
+        m.reset_flight_time(0.0, 0);
         assert_eq!(m.fly_time(), 320);
         let vy = m.hover_integrate(-4.0, false, true, false, 0.4);
         assert_eq!(m.fly_time(), 319);
@@ -3181,10 +3202,10 @@ mod tests {
         m.frame_state = 2; // in air
         assert_eq!(m.run_speed(), 7.5, "type 50 in-air +2 (:472-475)");
         m.frame_state = 0;
-        assert!(m.can_fly(), "flightTimeMax 80 (:2197)");
+        assert!(m.can_fly(0), "flightTimeMax 80 (:2197)");
         m.dismount();
         m.set_mount(1, false);
-        assert!(!m.can_fly(), "flightTimeMax 0 (:2867-2869)");
+        assert!(!m.can_fly(0), "flightTimeMax 0 (:2870-2873)");
         assert_eq!(m.run_speed(), 4.0);
     }
 

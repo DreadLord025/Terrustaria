@@ -32870,3 +32870,89 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The wings/flight accessory block (S1-P-i40)
+
+Code-only round (no compiler invoked; witness tests WRITTEN NOT RUN). The
+port's `player.rs` flight section (`flight_section`/`wing_movement`/
+`wing_stats`/`wing_constants`/`wing_slot`/`wing_air_logic_tweaks`/
+`hover_dampening`) was audited line-for-line against `Player.cs:26744-27425`
++ `WingMovement` (`:22023-22243`) + `WingAirLogicTweaks` (`:29304-29328`) +
+`WingStatsInitializer.cs:11-61` + the `Item.cs` `wingSlot` cases. WRONGs
+fixed verbatim (C# cites):
+
+- **wing_stats default** (`WingStats.cs:3`, `Player.cs:14335-14338`): the
+  struct default is `flyTime = 100`; `GetWingStats` returns `default` for an
+  out-of-range id, NOT a zero budget. The port's `_ => (0, ..)` gave unknown
+  ids zero flight. The 150/7 chain (`WingStatsInitializer.cs:61`) also covers
+  ids 47/50/51 (Chicken Bones/Kazzymodus/Lunas) — the port dropped them.
+- **Nebula wing slots** (`Item.cs:31096-31105`): items 3468-3471 share
+  `wingSlot = 29 + type - 3468`; the port dropped them, so the 29/32 ascent
+  constants were unreachable via equip.
+- **wings 44 vs 45 ascent rows** (`:22091-22097` vs `:22137-22142`): 44 =
+  (0.125, 0.85, 2.75, 1, 0.15), 45 = (0.1, 0.95, 4.5, 1, 0.15). The port
+  shared 45's row for both. 30/31 take the 0.15 impulse only while NOT
+  hover-down (`:22194-22197`); the port pinned 0.15 unconditionally.
+- **jetpack/hover thrust brakes** (`:22030-22041`/`:22103-22114`/
+  `:22148-22159`): the falling brake is the FULL 1.0 (`velocity.Y--`), the
+  rising assist 0.2 above `-jumpSpeed` (the full per-tick static, not half),
+  the cap 3x. The port ran 0.5/0.1 at a half threshold on the `JUMP_SPEED`
+  const. Wings-44's hover-up/down thrusts were MISSING (the port gated 45
+  only); the hover-down nudge needs jump RELEASED (`:22132`/`:22177`).
+- **Soaring Insignia** (`:14771-14775`): item 4989 arms `empressBrooch` —
+  infinite wing flight (`:22239-22242`, both arms), the per-tick rocket-fuel
+  refill (`:26863-26866`), the +1.8 jump-speed boost (`:19594-19597`, added
+  inside UpdateJumpHeight AFTER the equip grant), and the airborne ×1.75 run
+  acceleration (`:26500-26503`). The port granted only the +7.5% move.
+- **merman ability gate** (`:3990-3999`/`:25577-25589`/`:26496`): a shell
+  (861/3110/497) while wet (not lava, not a slime mount) turns the player
+  merman, gating `CanUseWingAbilities` (the hover dampening) and
+  `WingAirLogicTweaks`. The port had no `merman` field; added with the
+  `accMerman` grants, the per-tick derivation and the `:25598` clear.
+- **wings-37 second damp** (`:27418-27425`): Betsy's wings damp AGAIN at
+  ×0.92 after the shared ×0.9; the port dropped it. The hover dampening runs
+  AFTER the whole flight chain + fall caps on EVERY path (`:27404`), gated
+  on `CanUseWingAbilities` (not `hasWings`).
+- **flight-section order** (`:26786`→`:26818`→`:26820`→`:26825`→`:26835`→
+  `:26859`→`:26867`): flag19 → WingMovement → WingFrame → rocket→wing
+  conversion → flap sound → rocketTime refill → trigger. The port ran the
+  conversion + ground fuel refill BEFORE WingMovement (a +1 wingTime /
+  autoJump-tick fuel divergence).
+- **sliding refills** (`:26777`/`:26859`): the ground wing + rocket refills
+  count `sliding` as resting; the port omitted it.
+- **glide-cap hover-down exclusion** (`:27342`): the wing glide's
+  maxFallSpeed/3 cap SKIPS while hover-down (the dampening owns the float);
+  the port capped unconditionally.
+- **fullRotation level** (`:26782-26785`): holding jump with wings zeroes
+  fullRotation; the port omitted it.
+- **wings-45 dash-cooldown slowdown** (`:29324-29327`): runSlowdown ×6 once
+  `timeSinceLastDashStarted >= 60`; the counter (`:1050`, increment
+  `:24600-24604` cap 300, dash-start reset `:21578`/`:21593`) was unported.
+- **mount-54 wings borrow** (`Mount.cs:2866-2869`/`:2989-2996`/`:5269-5272`,
+  `Player.cs:26986-26991`): the Velociraptor flies only with wings equipped
+  (`allowedToFly` derived live from `wingsLogic`), borrows `wingTimeMax` as
+  its budget (the brooch refills it per tick), and its ascent cap =
+  wing AccRunSpeedOverride/1.5 with thrust ×AccRunAccelerationMult.
+
+**Documented deviations (unchanged this round):**
+- The hover latches model the latch-persist (Toggle-like) behaviour; the
+  vanilla default is `Settings.HoverControl == Hold` (`:407`), which clears
+  them every tick (`:25283-25287`). The port does not yet read the setting,
+  and `TryingToHoverUp` stays latch-only — the port merges W/ArrowUp into
+  `control_jump` (no separate `controlUp` channel; `world_sim/player.rs`).
+  The hover-up thrust arms are ported verbatim and fire via the latch / a
+  future controlUp. Adding the channel/setting is a settings+input task,
+  out of flight-mechanics scope.
+- The per-wing glide dust (`:27040-27338`), `WingAirVisuals` (`:30750-30963`)
+  and the wings-29 rest dust (`:30505-30517`) are visual seams (their
+  `Main.rand` draws would ride the UpdatePlayers stream — the S1-E-21f /
+  dust-skip precedent). The flight PHYSICS path draws NO `Main.rand`.
+- The wings-43/48/32 + hover-wing frame tables and the 43/44/49 flap-frame
+  reads are visual seams (the default WingFrame machine + Item-32 latch
+  landed with S1-E-21f). The rocketSoundDelay Item13/Item24 cue is an audio
+  seam (the S1-E-21 family).
+- `gravDir == -1` mirrors, the Dead-Cells down-dash (`isPerformingJump_DownDash`
+  always false), and the merman swim/`AddBuff(34)`/`wolfAcc` siblings are
+  unported families.
+
+**RNG:** the flight mechanics block draws ZERO `Main.rand` on the physics
+path; every rand site is a skipped dust visual. No RNG-order change.

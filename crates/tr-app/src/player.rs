@@ -1126,6 +1126,24 @@ pub struct Player {
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
     rocket_release: bool,
+    /// `Player.empressBrooch` (`Player.cs:1994`): the Soaring Insignia
+    /// (item 4989, `:14771-14775`) — infinite wing/rocket flight
+    /// (`:22239-22242`, `:26863-26866`), the +1.8 jump-speed add
+    /// (`:19594-19597`) and the airborne ×1.75 run acceleration (`:26500-26503`).
+    pub empress_brooch: bool,
+    /// `Player.merman` (`Player.cs:2368`): the Neptune's-Shell / Moon-Charm /
+    /// Celestial-Shell wet transformation — gates `CanUseWingAbilities`
+    /// (`:3990-3999`) and `WingAirLogicTweaks` (`:26496`). Derived per tick
+    /// (`:25577-25589`) from `acc_merman` + the wet state.
+    pub merman: bool,
+    /// `Player.accMerman` (`Player.cs:2366`): the shell accessory grant
+    /// (861/3110/497, `:15134-15143`/`:15402-15410`/`:15566-15573`), read by
+    /// the merman derivation then cleared (`:25598`).
+    acc_merman: bool,
+    /// `Player.timeSinceLastDashStarted` (`Player.cs:1050`): ticks since the
+    /// last dash start, capped at 300 (`:24600-24604`); the Long Trail
+    /// Rainbow wings' (45) run-slowdown ×6 gates on >= 60 (`:29324-29327`).
+    time_since_last_dash_started: i32,
     /// The cart mount the Track Hook hands the player to
     /// (`Player.cs:22676-22679`): the equipped cart (the misc-equip 2) when
     /// it is a cart row, else the wooden minecart (13). The app refreshes it
@@ -2085,6 +2103,10 @@ impl Player {
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
+            empress_brooch: false,
+            merman: false,
+            acc_merman: false,
+            time_since_last_dash_started: 0,
             cart_mount: 13,
             release_grappling_hooks: false,
             release_jump: false,
@@ -3930,7 +3952,20 @@ impl Player {
             // the damage row lands here (the C# total counts once).
             1864 => self.minion_damage += 0.15,
             1845 => self.minion_damage += 0.1,
-            4989 => self.move_speed += 0.075,
+            4989 => {
+                // `Player.cs:14771-14775`: the Soaring Insignia — the brooch
+                // flag (infinite flight + the jump/acceleration adds) and
+                // the +7.5% move.
+                self.empress_brooch = true;
+                self.move_speed += 0.075;
+            }
+            // The merman shells (`:15134-15143` Moon Charm 861,
+            // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
+            // Shell 497): `accMerman` arms the wet transformation the flight
+            // gates read (`CanUseWingAbilities` `:3994`, `WingAirLogicTweaks`
+            // `:26496`). The `wolfAcc`/`hideMerman` halves are the werewolf /
+            // visibility families (out of flight scope).
+            861 | 3110 | 497 => self.acc_merman = true,
             // The penetration rows: the Shark Tooth Necklace (3212,
             // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
             // add a flat 5 each.
@@ -4231,6 +4266,18 @@ impl Player {
         // `Player.cs:24591`: the tag stack's update right after the buff head —
         // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
         self.tag_effects.update_tick();
+        // `Player.cs:24600-24604`: the dash-age counter ticks and caps at 300
+        // (the wings-45 run-slowdown ×6 reads it at >= 60).
+        self.time_since_last_dash_started += 1;
+        if self.time_since_last_dash_started >= 300 {
+            self.time_since_last_dash_started = 300;
+        }
+        // `Player.cs:24761-24764`: every resting tick recovers 2 hover
+        // fatigue — the read is the PREVIOUS tick's velocity (the head runs
+        // before this tick's movement).
+        if self.vy == 0.0 {
+            self.mount.fatigue_recovery();
+        }
         // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
         // tick and holds `buffTime = 10` — the buff is the source of truth.
         // (The vanilla re-calls `SetMount` with the live type, which is the
@@ -4995,14 +5042,28 @@ impl Player {
         self.has_jump_options = [false; 9];
         // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
         // — the granting wing re-sets all three below, so taking the wings off
-        // ends the flight (and its budget) on the next tick.
+        // ends the flight (and its budget) on the next tick. `:18455`:
+        // `empressBrooch = false` clears with the rest of ResetEffects.
         self.wings_logic = 0;
         self.has_wings = false;
         self.wing_time_max = 0;
+        self.empress_brooch = false;
+        // `:25598`: `accMerman = false` clears after the derivation read it;
+        // the shell grants below re-arm it. `merman` itself is re-derived
+        // per tick (`:25577-25589`), not reset here.
+        self.acc_merman = false;
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `Mount.UpdateAfterEquips` (`Player.cs:13099` → `Mount.cs:2989-2996`):
+        // the Velociraptor (54) flies only with wings equipped, and the
+        // Soaring Insignia refills its borrowed budget every tick.
+        if self.mount.is_active() && self.mount.kind() == 54 {
+            if self.wings_logic > 0 && self.empress_brooch {
+                self.mount.refill_wing_flight(self.wing_time_max);
+            }
+        }
         // S1-C-12 wave C — the defense/immunity accessory rows kept in
         // their own module (the Obsidian/Paladin-family shields' knockback
         // + fire-walk grants, `Player.cs:14605-14631`/`:15209-15213`/
@@ -5024,7 +5085,25 @@ impl Player {
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
+        // `:19594-19597`: the Soaring Insignia's +1.8 joins the boost here —
+        // the C# adds it inside UpdateJumpHeight, which runs AFTER
+        // UpdateEquips granted the brooch this tick.
+        if self.empress_brooch {
+            self.jump_speed_boost += 1.8;
+        }
         self.jump_speed += self.jump_speed_boost;
+        // `Player.cs:25577-25589`: the merman transformation — a shell
+        // (`accMerman`) while wet (not lava, not a slime mount) turns the
+        // player merman; the flight gates read it (`CanUseWingAbilities`
+        // `:3994`, `WingAirLogicTweaks` `:26496`). The port folds the C#'s
+        // `base.wet` (WetCollision, any liquid) + `!lavaWet` into the
+        // water/honey/shimmer union. The `releaseJump`/`wings = 0`/`accFlipper`
+        // /`AddBuff(34)` siblings are the swim/visual families (out of flight
+        // scope); `accMerman` clears at the reset above (`:25598`).
+        let merman_wet = (self.wet || self.honey_wet || self.shimmer_wet)
+            && !self.lava_wet
+            && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
+        self.merman = self.acc_merman && merman_wet;
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -5169,8 +5248,13 @@ impl Player {
         }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
-        // both. `Settings.HoverControl == Hold` clears them every tick; the
-        // vanilla default is the Toggle mode.
+        // both. The vanilla default is `Settings.HoverControl == Hold`
+        // (`:407`), which clears the latches EVERY tick (`:25283-25287`) so
+        // hover needs the key held; the port models the latch-persist
+        // (Toggle-like) behaviour and does not yet read the setting — a
+        // documented deviation (ANALYSIS "The wings/flight accessory block").
+        // The up-edge arm (`:25267-25277`) needs `controlUp`, which the port
+        // merges into `control_jump` (no separate channel).
         if input.down && !self.down_prev {
             if self.try_keeping_hovering_up {
                 self.try_keeping_hovering_up = false;
@@ -5243,10 +5327,20 @@ impl Player {
         }
         if !grappling {
             // `:26496-26499`: the wing run-speed tweaks run before the
-            // movement — vanilla gates them on `mount.CanUseWings` too (and
-            // on `!merman`, which has no port counterpart).
-            if self.wings_logic > 0 && self.vy != 0.0 && self.mount.can_use_wings() {
+            // movement — vanilla gates them on `!merman` and
+            // `mount.CanUseWings` too.
+            if self.wings_logic > 0
+                && self.vy != 0.0
+                && !self.merman
+                && self.mount.can_use_wings()
+            {
                 self.wing_air_logic_tweaks();
+            }
+            // `:26500-26503`: the Soaring Insignia's ×1.75 run acceleration
+            // (a sibling of the tweaks, same pre-movement slot — the C# does
+            // NOT gate it on airborne).
+            if self.empress_brooch {
+                self.run_acceleration *= 1.75;
             }
             // `Player.cs:26623-26688`: the per-tick mount block (with the
             // `UpdateEffects` head and the `UpdateJumpHeight` merge — vanilla
@@ -5302,8 +5396,11 @@ impl Player {
                 }
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
                 // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
-                // sets `justJumped` on the grounded trigger.
+                // sets `justJumped` on the grounded trigger. `:20749-20750`:
+                // the trigger disarms the rocket (it re-arms midair).
                 self.just_jumped = true;
+                self.can_rocket = false;
+                self.rocket_release = false;
                 self.vy = -self.jump_speed;
                 self.jump = self.jump_height;
                 self.on_ground = false;
@@ -5338,6 +5435,9 @@ impl Player {
                     if self.vy == 0.0 {
                         self.just_jumped = true;
                     }
+                    // `:20749-20750`: the trigger disarms the rocket.
+                    self.can_rocket = false;
+                    self.rocket_release = false;
                     // S1-E-21f — the chain's sound plays (S1-E-21f): every
                     // arm but the Fart plays `PlaySound(16, (int)position.X,
                     // (int)position.Y)` (`:20793` Sandstorm, `:20803`
@@ -5415,7 +5515,7 @@ impl Player {
         // skip the flight (the vanilla water physics dominate; the swim cap
         // stays).
         let flew = if !in_liquid && !self.webbed && !grappling {
-            self.flight_section(world, input, gravity, fall_cap)
+            self.flight_section(gravity, fall_cap)
         } else {
             false
         };
@@ -5432,19 +5532,33 @@ impl Player {
                 self.cart_ramp_time -= 1;
             }
         }
-        // `Player.cs:27361-27376`: the fall-cap block runs AFTER the whole
-        // else-if chain (the flight arms included) — Featherfall caps the
-        // fall at maxFallSpeed/3 (no hover-down), and the hover-up latch
-        // tightens it to /10 once past /5. The gate is `!mount.Active ||
-        // mount.Type != 5`; the gravDir == -1 mirror (`:27384-27391`) has no
-        // ported gravity flip.
+        // `Player.cs:27361-27393`: the fall-cap block runs AFTER the whole
+        // else-if chain (the flight arms included) — the plain maxFallSpeed
+        // clamp first (`:27365-27368`), then Featherfall caps the fall at
+        // maxFallSpeed/3 (no hover-down), and the hover-up latch tightens it
+        // to /10 once past /5. The gate is `!mount.Active || mount.Type != 5`;
+        // the gravDir == -1 mirror (`:27380-27391`) has no ported gravity flip.
         if !self.mount.is_active() || self.mount.kind() != 5 {
+            if self.vy > fall_cap {
+                self.vy = fall_cap;
+            }
             if self.slow_fall && self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                 self.vy = fall_cap / 3.0;
             }
             if self.slow_fall && self.vy > fall_cap / 5.0 && self.trying_to_hover_up() {
                 self.vy = fall_cap / 10.0;
             }
+        }
+        // `Player.cs:27400-27403`: a mount that cannot use wings zeroes the
+        // flap frame (the draw pose).
+        if !self.mount.can_use_wings() {
+            self.wing_frame = 0;
+        }
+        // `Player.cs:27404-27425`: the hover dampening runs AFTER the whole
+        // chain AND the fall-cap block — every path reaches it (the flying
+        // tick, the glide, the plain fall), gated on CanUseWingAbilities.
+        if !grappling {
+            self.hover_dampening();
         }
         self.vy = self.vy.max(if in_liquid {
             -(MAX_FALL / 3.0)
@@ -5460,7 +5574,8 @@ impl Player {
         let mut hit_switch_flag = false; // `flag33`
         if self.cart_mounted {
             // `:28099-28106`: the water scale wraps only this call
-            // (`ignoreWater`/`merman` have no port fields yet — treated false).
+            // (`ignoreWater` has no port field; `merman` now exists but the
+            // cart water-scale arm is a minecart seam — both treated false).
             let scale = if self.shimmer_wet {
                 0.25
             } else if self.honey_wet {
@@ -5614,7 +5729,7 @@ impl Player {
             let mut fell = (self.y / TILE_PX) as i32 - self.fall_start;
             // `:25307-25318`: the zeroing — a flying mount and the bunny
             // (type 1) nullify.
-            if self.mount.can_fly() || self.mount.kind() == 1 {
+            if self.mount.can_fly(self.wings_logic) || self.mount.kind() == 1 {
                 fell = 0;
             }
             // `Player.cs:25311-25314`: a track rider resting on rails takes no
@@ -6892,11 +7007,15 @@ impl Player {
         let left_edge = input.left && !self.left_prev;
         if right_edge {
             if self.dash_time > 0 {
+                // `:21578`: the dash start zeroes the dash-age counter.
+                self.time_since_last_dash_started = 0;
                 return Some((1, true));
             }
             self.dash_time = 15;
         } else if left_edge {
             if self.dash_time < 0 {
+                // `:21593`: the dash start zeroes the dash-age counter.
+                self.time_since_last_dash_started = 0;
                 return Some((-1, true));
             }
             self.dash_time = -15;
@@ -6954,6 +7073,12 @@ impl Player {
             2609 => 26,
             2770 => 27,
             3228 => 28,
+            // `Item.cs:31096-31105`: the four Nebula wing cases share
+            // `wingSlot = 29 + type - 3468` (S1-P-i40).
+            3468 => 29,
+            3469 => 30,
+            3470 => 31,
+            3471 => 32,
             3580 => 33,
             3582 => 34,
             3588 => 35,
@@ -6997,8 +7122,14 @@ impl Player {
             45 => (180, 8.0, 4.5, true, 16.0, 16.0),
             29 | 32 => (180, 9.0, 2.5, false, -1.0, 1.0),
             30 | 31 => (180, 6.5, 1.5, true, 12.0, 12.0),
-            3 | 16..=19 | 28 | 33..=43 | 48 | 49 => (150, 7.0, 1.0, false, -1.0, 1.0),
-            _ => (0, -1.0, 1.0, false, -1.0, 1.0),
+            // `WingStatsInitializer.cs:61`: the 150/7 chain covers
+            // 3, 16-19, 28, 33-43 AND 47/50/51 (Chicken Bones/Kazzymodus/
+            // Lunas) plus 48/49 (`:59-60`).
+            3 | 16..=19 | 28 | 33..=43 | 47..=51 => (150, 7.0, 1.0, false, -1.0, 1.0),
+            // `WingStats.cs:3`: the struct default is `flyTime = 100` —
+            // `GetWingStats` (`Player.cs:14335-14338`) returns `default` for
+            // an out-of-range id, NOT a zero budget (S1-P-i40).
+            _ => (100, -1.0, 1.0, false, -1.0, 1.0),
         }
     }
 
@@ -7007,13 +7138,22 @@ impl Player {
     /// brake, the upward cap multiplier, the rising brake threshold, the
     /// rising impulse.
     fn wing_constants(id: i32) -> (f32, f32, f32, f32, f32) {
+        // The C# assigns the tier ifs in order (`:22062-22198`): the base
+        // 0.1/0.5/1.5/0.5/0.1, then 26 (`:22067-22074`), the 1.66 cap group
+        // (`:22075-22078`), the 1.805 cap group (`:22079-22082`), 37
+        // (`:22083-22090`), 44 (`:22091-22097` — its OWN row: 0.125 impulse,
+        // 0.85 brake, 2.75 cap, NOT the 45 numbers), 45 (`:22137-22142` —
+        // keeps the 0.1 impulse), 29/32 (`:22182-22189`), 30/31
+        // (`:22190-22198` — only num4/num3 here; the 0.15 impulse is
+        // hover-down-gated at the call site, `:22194-22197`).
         match id {
             26 | 37 => (0.125, 0.75, 2.5, 1.0, 0.15),
             8 | 11 | 22 | 24 | 27 => (0.1, 0.5, 1.66, 0.5, 0.1),
             12 | 20 | 21 | 23 => (0.1, 0.5, 1.805, 0.5, 0.1),
             29 | 32 => (0.135, 0.85, 3.0, 1.0, 0.15),
-            30 | 31 => (0.15, 0.5, 2.45, 1.0, 0.1),
-            44 | 45 => (0.1, 0.95, 4.5, 1.0, 0.15),
+            30 | 31 => (0.1, 0.5, 2.45, 1.0, 0.1),
+            44 => (0.125, 0.85, 2.75, 1.0, 0.15),
+            45 => (0.1, 0.95, 4.5, 1.0, 0.15),
             _ => (0.1, 0.5, 1.5, 0.5, 0.1),
         }
     }
@@ -7023,9 +7163,11 @@ impl Player {
         matches!(id, 22 | 28 | 30 | 31 | 33 | 35 | 37 | 45)
     }
 
-    /// `Player.WingAirLogicTweaks` (`Player.cs:29304-29323`): the wing's run
+    /// `Player.WingAirLogicTweaks` (`Player.cs:29304-29328`): the wing's run
     /// speed override and acceleration multiplier, the hover variants while
-    /// hold-down-hovering. Runs before `HorizontalMovement`.
+    /// hold-down-hovering, and the Long Trail Rainbow wings' (45) ×6
+    /// run-slowdown once 60 ticks passed since the last dash. Runs before
+    /// `HorizontalMovement`.
     fn wing_air_logic_tweaks(&mut self) {
         let (_fly, acc_override, accel_mult, has_hover, hover_speed, hover_accel) =
             Self::wing_stats(self.wings_logic);
@@ -7043,6 +7185,10 @@ impl Player {
                 self.acc_run_speed = acc_override;
             }
             self.run_acceleration *= accel_mult;
+        }
+        // `:29324-29327`: the wings-45 dash-cooldown slowdown.
+        if self.wings_logic == 45 && self.time_since_last_dash_started >= 60 {
+            self.run_slowdown *= 6.0;
         }
     }
 
@@ -7393,17 +7539,16 @@ impl Player {
         self.mount.ability_recovery();
     }
 
-    /// The flight section (`Player.cs:26772-27425`): `canRocket`, the ground
-    /// refills, `flag19`, `WingMovement`, the rocket trigger + thrust, the
-    /// glide. Returns true when it integrated vy itself (the plain gravity
-    /// is skipped this tick, like the original's else-if chain).
-    fn flight_section(
-        &mut self,
-        world: &World,
-        input: PlayerInput,
-        gravity: f32,
-        fall_cap: f32,
-    ) -> bool {
+    /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
+    /// `canRocket`, the ground refills, `flag19`, the CCed arm, `WingMovement`,
+    /// `WingFrame`, the rocket→wing conversion, the flap edge, the rocket
+    /// trigger + thrust, and the !flag19 else-if chain (hover mount, flying
+    /// mount, Featherfall, wing glide). Returns true when it integrated vy
+    /// itself (the plain gravity is skipped this tick, like the original's
+    /// else-if chain). The post-chain fall-cap block, the `wingFrame = 0`
+    /// mount gate and the hover dampening (`:27361-27425`) run in the caller
+    /// AFTER the plain-gravity fallback, in the C# order.
+    fn flight_section(&mut self, gravity: f32, fall_cap: f32) -> bool {
         // `:26745-26752`: an unequipped tier zeroes its budget.
         if self.wings_logic == 0 {
             self.wing_time = 0.0;
@@ -7411,28 +7556,31 @@ impl Player {
         if self.rocket_boots == 0 {
             self.rocket_time = 0;
         }
+        // `:26768-26771`: wings or a mount cancel the sandstorm hover.
+        if self.wings_logic > 0 || self.mount.is_active() {
+            self.sand_storm = false;
+        }
         // `:26772-26775`: airborne outside the initial jump burst.
         if self.vy > -self.jump_speed && self.vy != 0.0 {
             self.can_rocket = true;
         }
         // `:26776-26781`: the wing refill on the ground needs a jump release —
         // or an auto-jump (constant-jump) mount re-jumping this tick; the
+        // SLIDING state counts as resting too (`this.sliding`, `:26777`); the
         // mount flight budget refills with it (`mount.ResetFlightTime`).
-        if (self.vy == 0.0 && self.release_jump) || (self.auto_jump && self.just_jumped) {
+        if ((self.vy == 0.0 || self.sliding) && self.release_jump)
+            || (self.auto_jump && self.just_jumped)
+        {
             self.wing_time = self.wing_time_max as f32;
-            self.mount.reset_flight_time(self.vx);
+            self.mount.reset_flight_time(self.vx, self.wing_time_max);
         }
-        // `Player.cs:24761`: every resting tick recovers 2 hover fatigue.
-        if self.vy == 0.0 {
-            self.mount.fatigue_recovery();
+        // `:26782-26785`: holding jump with wings levels the tilt.
+        if self.wings_logic > 0 && self.control_jump {
+            self.full_rotation = 0.0;
         }
-        // `:26859-26862`: the rocket fuel refills on any rest tick (or an
-        // auto-jump mount's re-jump).
-        if self.vy == 0.0 || (self.auto_jump && self.just_jumped) {
-            self.rocket_time = self.rocket_time_max;
-        }
-        // `:26786-26798`: flag19 — actively flying this tick. The second
-        // condition is the hold-down-hover extension for the hover wings.
+        // `:26786-26793`: flag19 — actively flying this tick. The second
+        // condition is the hold-down-hover extension for the hover wings
+        // (the set includes 29/32 but NOT 31 — the C#'s own list).
         let mut flag19 = self.wings_logic > 0
             && self.control_jump
             && self.wing_time > 0.0
@@ -7446,31 +7594,41 @@ impl Player {
         {
             flag19 = true;
         }
-        // `:26825-26834`: with both equipped the rocket fuel converts into
-        // wing time (capped past the max).
-        if self.wings_logic > 0 && self.rocket_boots != 0 && self.vy != 0.0 && self.rocket_time != 0
-        {
-            let add = self.rocket_time * 6;
-            self.wing_time =
-                (self.wing_time + add as f32).min(self.wing_time_max as f32 + add as f32);
-            self.rocket_time = 0;
+        // `:26794-26798`: flag20 (the Dead-Cells down-dash) cancels flag19 —
+        // `is_performing_down_dash` is always false in the port (the dash is
+        // unported), so the cancel never fires.
+        if self.is_performing_down_dash() {
+            flag19 = false;
         }
+        // `:26799-26812`: the CCed arm — the mount dismounts (the caller's
+        // :26801-26804 site), plain gravity + the fall cap, no flight at all
+        // (the rocket thrust included). The visual-effect cancels are seams.
+        if self.cced() {
+            self.sand_storm = false;
+            self.vy += gravity;
+            if self.vy > fall_cap {
+                self.vy = fall_cap;
+            }
+            return true;
+        }
+        // `:26815-26818`: the flying tick — `WingAirVisuals` (the per-wing
+        // dust rolls, `:30750-30963`) is a visual seam the port defers (its
+        // `Main.rand` draws would ride the UpdatePlayers stream; see
+        // docs/ANALYSIS.md "The wings/flight accessory block").
         if flag19 {
-            self.wing_movement(input);
+            self.wing_movement();
         }
-        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`) + the flap-sound
-        // edge (`:26835-26858`). The port runs the DEFAULT arm's frame machine
-        // (`Player.cs:30447-30526`: num35 = 4, num36 = 4, num37 = 0, num38 = 0,
-        // num39 = 1 — the wings-43/48/32 constants and the hover wings' own
-        // tables are visual seams): counter > 4 wraps the frame 0..3, the
-        // airborne rest frame 1, the grounded 0. Both the machine and the
-        // sound sit behind the C#'s exclusion gate (`:26835`: wings
-        // 4/22/0/24/28/30/33/45 — the early-return arms own their frames);
-        // wings 43/44 read frame 4 and 49 reads frame 5 — their frame tables
-        // are unported, so their flap arms stay silent (the documented
-        // deviation). The `wingFrame == 3` edge plays `SoundID.Item32` once
-        // through the `flapSound` latch (`:26848-26856`); the façade draw
-        // rides the drain.
+        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
+        // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
+        // wings-43/48/32 constants and the hover wings' own tables are visual
+        // seams): counter > 4 wraps the frame 0..3, the airborne rest frame 1,
+        // the grounded 0. The machine sits behind the C#'s exclusion gate
+        // (`:26835`: wings 4/22/0/24/28/30/33/45 — the early-return arms own
+        // their frames). The `wingFrame == 3` flap edge (`:26835-26858`) runs
+        // AFTER the rocket→wing conversion below, in the C# order; wings
+        // 43/44 read frame 4 and 49 reads frame 5 — their frame tables are
+        // unported, so their flap arms stay silent (the documented deviation).
         if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
             if flag19 || self.jump > 0 {
                 self.wing_frame_counter += 1;
@@ -7482,53 +7640,85 @@ impl Player {
                     }
                 }
             } else if self.vy != 0.0 {
-                // `:30480-30481` — the airborne rest frame (num39 = 1).
+                // `:30482-30484` — the airborne rest frame (num39 = 1).
                 self.wing_frame = 1;
             } else {
-                // `:30522-30525` — the grounded rest frame (num38 = 0).
+                // `:30523-30526` — the grounded rest frame (num38 = 0).
                 self.wing_frame = 0;
             }
-            if flag19 {
-                // `:26837` — the plain wings read `wingFrame == 3`.
-                if self.wing_frame == 3 {
-                    if !self.flap_sound {
-                        if let Some(idx) = crate::soundid::SOUND_STYLES
-                            .iter()
-                            .position(|s| s.name == "Item32")
-                        {
-                            self.pending_flap_sound = Some((idx as u16, self.x, self.y));
-                        }
+        }
+        // `:26825-26834`: with both equipped the rocket fuel converts into
+        // wing time (capped past the max) — AFTER WingMovement drained this
+        // tick's point, in the C# order.
+        if self.wings_logic > 0 && self.rocket_boots != 0 && self.vy != 0.0 && self.rocket_time != 0
+        {
+            let add = self.rocket_time * 6;
+            self.wing_time += add as f32;
+            if self.wing_time > (self.wing_time_max + add) as f32 {
+                self.wing_time = (self.wing_time_max + add) as f32;
+            }
+            self.rocket_time = 0;
+        }
+        // `:26835-26858`: the flap-sound edge — `wingFrame == 3` plays
+        // `SoundID.Item32` once through the `flapSound` latch; the façade
+        // draw rides the drain.
+        if flag19 && !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
+            if self.wing_frame == 3 {
+                if !self.flap_sound {
+                    if let Some(idx) = crate::soundid::SOUND_STYLES
+                        .iter()
+                        .position(|s| s.name == "Item32")
+                    {
+                        self.pending_flap_sound = Some((idx as u16, self.x, self.y));
                     }
-                    self.flap_sound = true;
-                } else {
-                    self.flap_sound = false;
                 }
+                self.flap_sound = true;
+            } else {
+                self.flap_sound = false;
             }
         }
+        // `:26859-26862`: the rocket fuel refills on any rest tick (sliding
+        // counts) or an auto-jump mount's re-jump.
+        if self.vy == 0.0 || self.sliding || (self.auto_jump && self.just_jumped) {
+            self.rocket_time = self.rocket_time_max;
+        }
+        // `:26863-26866`: the Soaring Insignia refills the fuel every tick.
+        if self.empress_brooch {
+            self.rocket_time = self.rocket_time_max;
+        }
         // `:26867-26902`: the rocket trigger — only once the wing budget is
-        // spent (or absent); the arming needs a midair jump release.
+        // spent (or absent); the arming needs a midair jump release and
+        // `CanUseBootFlyingAbilities` (`:3988`: !down-dash, always true here).
         if (self.wing_time == 0.0 || self.wings_logic == 0)
             && self.rocket_boots != 0
             && self.control_jump
             && self.rocket_delay == 0
             && self.can_rocket
             && self.rocket_release
+            && !self.is_performing_down_dash()
         {
             if self.rocket_time > 0 {
                 self.rocket_time -= 1;
                 self.rocket_delay = 10;
                 if self.rocket_delay2 <= 0 {
+                    // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
+                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
+                // vanity tier) is an audio seam — the port's rocket sound
+                // rides the S1-E-21 family, not this block.
             } else {
                 self.can_rocket = false;
             }
         }
-        // `:26903-26914`: the flame cadence delay (the sound delay is audio).
+        // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
             self.rocket_delay2 -= 1;
         }
-        // `:26915-26955`: the rocket thrust — 10 ticks per fuel tick.
+        // `:26915-26955`: the rocket thrust — 10 ticks per fuel tick. The
+        // fall origin refreshes via the caller's `:25379-25382` block (the
+        // `rocketDelay > 0` term) — the port keeps its own refresh here so
+        // the last thrust tick (delay decremented to 0) still resets it.
         if self.rocket_delay > 0 {
             self.rocket_delay -= 1;
             self.vy -= 0.1;
@@ -7540,12 +7730,11 @@ impl Player {
             if self.vy < -self.jump_speed * 1.5 {
                 self.vy = -self.jump_speed * 1.5;
             }
-            // `Player.cs:25379-25382`: the thrusting fall origin refreshes.
             self.fall_start = (self.y / TILE_PX) as i32;
             return true;
         }
         if !flag19 {
-            // `:26962-26964`: the hover mounts (`Mount.Hover`, `Mount.cs:3340`)
+            // `:26958-26961`: the hover mounts (`Mount.Hover`, `Mount.cs:3340`)
             // — the branch carries the vertical move itself, so it is
             // consumed like the vanilla `else if` chain.
             if self.mount.can_hover() {
@@ -7556,35 +7745,40 @@ impl Player {
                     self.control_down,
                     gravity,
                 );
-                // `:3459`: the fall origin refreshes every hover tick (no
-                // fall damage accrues while hovering).
+                // `Mount.cs:3479`: the fall origin refreshes every hover tick
+                // (no fall damage accrues while hovering).
                 self.fall_start = (self.y / TILE_PX) as i32;
                 return true;
             }
-            // `:26965-27015`: the mount flight thrust — the flying mounts'
+            // `:26962-27020`: the mount flight thrust — the flying mounts'
             // replacement for the wing ascent while the budget lasts.
-            if self.mount.can_fly() && self.control_jump && self.jump == 0 {
+            if self.mount.can_fly(self.wings_logic) && self.control_jump && self.jump == 0 {
                 if self.mount.flight() {
                     if self.trying_to_hover_down() {
-                        // `:26968-26974`: the hover-down dampening.
+                        // `:26966-26973`: the hover-down dampening.
                         self.vy *= 0.9;
                         if self.vy > -1.0 && self.vy < 0.5 {
                             self.vy = 1e-5;
                         }
                     } else {
-                        // `:26975-27000`: the rise thrust — the falling
-                        // brake, the rising assist, the upward cap. The
-                        // type-50 half cap references the full table; only
-                        // Queen Slime (50) exists here (56/61 are M2-MOUNT-2).
-                        let num40 = 0.1;
+                        // `:26975-27003`: the rise thrust — the falling
+                        // brake, the rising assist, the upward cap.
+                        let mut num40 = 0.1;
                         let mut num41 = self.jump_speed;
                         if self.mount.kind() == 50 {
                             num41 *= 0.5;
                         }
-                        // `:26981`: the Bat/Pixie rise cap is 2/3 of the
-                        // others.
+                        // `:26982-26985`: the Bat/Pixie rise cap is 2/3.
                         if matches!(self.mount.kind(), 56 | 61) {
                             num41 /= 1.5;
+                        }
+                        // `:26986-26991`: the Velociraptor (54) borrows the
+                        // equipped wing's run-speed override / 1.5 as its cap
+                        // and scales the thrust by the wing's accel mult.
+                        if self.mount.kind() == 54 && self.wings_logic > 0 {
+                            let stats = Self::wing_stats(self.wings_logic);
+                            num41 = stats.1 / 1.5;
+                            num40 *= stats.2;
                         }
                         if self.vy > 0.0 {
                             self.vy -= num40 * 5.0;
@@ -7597,8 +7791,9 @@ impl Player {
                     }
                     return true;
                 }
-                // `:27001-27014`: the budget spent — gravity / 3 with the
-                // fall cap / 3 (the upward half needs gravDir, not ported).
+                // `:27006-27019`: the budget spent — gravity / 3 with the
+                // fall cap / 3 unless hover-down (the gravDir -1 mirror is
+                // unported).
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -7607,8 +7802,7 @@ impl Player {
             }
             // `:27022-27033`: Featherfall's airborne arm — gravity /3 (or
             // /10 with the hover-up latch), applied BEFORE the wing glide
-            // in the C# else-if chain. `flag20` (the down-dash) has no port
-            // counterpart (`is_performing_down_dash` is always false).
+            // in the C# else-if chain.
             if self.slow_fall
                 && !self.trying_to_hover_down()
                 && !self.is_performing_down_dash()
@@ -7621,65 +7815,94 @@ impl Player {
                 self.vy += g;
                 return true;
             }
-            // `:27034-27037 + 27339-27350`: the wing glide — jump held while
-            // falling: gravity / 3, the fall cap / 3, the fall origin
-            // refreshed per tick (no fall damage accrues).
-            if self.wings_logic > 0 && self.control_jump && self.vy > 0.0 {
+            // `:27034-27350`: the wing glide — jump held while falling: the
+            // fall origin refreshes per tick (`:27037`, no fall damage
+            // accrues), the per-wing glide dust rolls (`:27040-27337`) are
+            // visual seams, then gravity / 3 and the fall cap / 3 — the cap
+            // SKIPS while hover-down (`:27342`, the dampening owns the float).
+            if self.wings_logic > 0
+                && self.control_jump
+                && self.vy > 0.0
+                && !self.is_performing_down_dash()
+            {
+                self.fall_start = (self.y / TILE_PX) as i32;
                 self.vy += gravity / 3.0;
-                if self.vy > fall_cap / 3.0 {
+                if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
                 }
-                self.fall_start = (self.y / TILE_PX) as i32;
-                self.hover_dampening(input);
                 return true;
             }
             return false;
         }
-        self.hover_dampening(input);
         true
     }
 
     /// `Player.WingMovement` (`Player.cs:22023-22243`): the ascent physics —
     /// the impulse, the falling brake, the rising brake, the upward cap, the
     /// budget countdown (half while hover-down with no horizontal input, 2x
-    /// for the jetpack), and the wings-44/45 hover thrusts.
-    fn wing_movement(&mut self, input: PlayerInput) {
-        let (num, mut num2, mut num3, mut num4, mut num5) = Self::wing_constants(self.wings_logic);
-        let hover_down = self.trying_to_hover_down() && !input.left && !input.right;
-        if self.wings_logic == 4 {
-            // `:22025-22058`: the jetpack hover-up burns 2 ticks per tick.
-            if self.trying_to_hover_up() {
+    /// for the jetpack hover-up), the wings-44/45 hover thrusts and the
+    /// Empress Brooch's infinite flight (`:22239-22242`).
+    fn wing_movement(&mut self) {
+        let (mut num, num2, num3, num4, num5) = Self::wing_constants(self.wings_logic);
+        // `:22230`: the half-drain reads the CONTROL fields (post-Confused
+        // swap), not the raw input.
+        let hover_down =
+            self.trying_to_hover_down() && !self.control_left && !self.control_right;
+        if self.wings_logic == 4 && self.trying_to_hover_up() {
+            // `:22025-22058`: the jetpack hover-up — the 0.2 impulse, the
+            // FULL 1.0 falling brake (`:22032` `velocity.Y--`), the 0.2
+            // rising assist above `-jumpSpeed` (`:22034`, the full static,
+            // not half), the 3x cap — burns 2 ticks per tick. The arm
+            // RETURNS out of the shared ascent (the C# else at `:22060`).
+            self.vy -= 0.2;
+            if self.vy > 0.0 {
+                self.vy -= 1.0;
+            } else if self.vy > -self.jump_speed {
                 self.vy -= 0.2;
-                if self.vy > 0.0 {
-                    self.vy -= 0.5;
-                } else if self.vy > -JUMP_SPEED * 0.5 {
-                    self.vy -= 0.1;
-                }
-                if self.vy < -JUMP_SPEED * 3.0 {
-                    self.vy = -JUMP_SPEED * 3.0;
-                }
-                self.wing_time -= 2.0;
-                return;
             }
+            if self.vy < -self.jump_speed * 3.0 {
+                self.vy = -self.jump_speed * 3.0;
+            }
+            self.wing_time -= 2.0;
+            // `:22239-22242`: the brooch refill runs for the jetpack arm too.
+            if self.empress_brooch && self.wing_time != 0.0 {
+                self.wing_time = self.wing_time_max as f32;
+            }
+            return;
         }
-        if self.wings_logic == 45 {
-            // `:22137-22180`: the hover thrusts (44 shares the numbers).
+        // `:22098-22135` (44) / `:22143-22180` (45): the hover thrusts run
+        // INSIDE the tier arms, BEFORE the shared ascent (which still
+        // applies after them). The falling brake is the FULL 1.0
+        // (`:22105`/`:22150` `velocity.Y--`), the rising assist 0.2 above
+        // `-jumpSpeed`, the cap 3x — all on the per-tick rebased
+        // `Player.jumpSpeed` static (`UpdateJumpHeight`, `:19618-19641`).
+        if matches!(self.wings_logic, 44 | 45) {
             if self.trying_to_hover_up() {
                 self.vy -= 0.4;
                 if self.vy > 0.0 {
-                    self.vy -= 0.5;
-                } else if self.vy > -JUMP_SPEED * 0.5 {
+                    self.vy -= 1.0;
+                } else if self.vy > -self.jump_speed {
                     self.vy -= 0.2;
                 }
-                if self.vy < -JUMP_SPEED * 3.0 {
-                    self.vy = -JUMP_SPEED * 3.0;
+                if self.vy < -self.jump_speed * 3.0 {
+                    self.vy = -self.jump_speed * 3.0;
                 }
             }
-            if self.trying_to_hover_down() && !input.jump && self.vy != 0.0 {
+            // `:22132`/`:22177`: the hover-down nudge needs jump RELEASED.
+            if self.trying_to_hover_down() && !self.control_jump && self.vy != 0.0 {
                 self.vy += 0.4;
             }
         }
-        let _ = num2;
+        // `:22194-22197`: the 30/31 boosters only take the 0.15 impulse
+        // while NOT hover-down (the base 0.1 otherwise).
+        if matches!(self.wings_logic, 30 | 31) && !self.trying_to_hover_down() {
+            num = 0.15;
+        }
+        // `:22199-22213`: the shared ascent — impulse, falling brake,
+        // rising assist above `-jumpSpeed * num4`, the `-jumpSpeed * num3`
+        // cap. The C# reads the `Player.jumpSpeed` STATIC, which
+        // `UpdateJumpHeight` (`:19618-19641`) has already rebased this tick
+        // (boosts/mount/sticky/dazed) — the port's per-tick `jump_speed`.
         self.vy -= num;
         if self.vy > 0.0 {
             self.vy -= num2;
@@ -7689,26 +7912,43 @@ impl Player {
         if self.vy < -self.jump_speed * num3 {
             self.vy = -self.jump_speed * num3;
         }
-        // `:22230-22237`: the budget countdown.
+        // `:22230-22237`: the budget countdown — half for the hover set
+        // while hover-down with no horizontal input, else 1.
         if hover_down && matches!(self.wings_logic, 22 | 28 | 30 | 31 | 37 | 45) {
             self.wing_time -= 0.5;
         } else {
             self.wing_time -= 1.0;
         }
+        // `:22239-22242`: the Empress Brooch refills the budget to max on
+        // every flying tick it stays non-zero (infinite flight; at exactly
+        // 0 the refill does NOT fire — the tick that spends the last point
+        // ends the flight).
+        if self.empress_brooch && self.wing_time != 0.0 {
+            self.wing_time = self.wing_time_max as f32;
+        }
     }
 
     /// `Player.cs:27404-27425`: the post-block hover dampening — the hover
-    /// wings holding down multiply vy toward the float.
-    fn hover_dampening(&mut self, input: PlayerInput) {
-        let can_use = self.has_wings && !self.is_performing_down_dash();
-        if Self::hover_dampening_wing(self.wings_logic)
-            && self.trying_to_hover_down()
-            && self.control_jump
-            && self.wing_time > 0.0
-            && can_use
-        {
+    /// wings holding down multiply vy toward the float. Runs AFTER the whole
+    /// flight else-if chain (both the flying and the glide paths reach it),
+    /// gated on `CanUseWingAbilities` (`:3990-4000`: `!merman &&
+    /// !isPerformingJump_DownDash`). The wings-37 arm (`:27418-27425`)
+    /// applies a SECOND ×0.92 pass after the shared ×0.9.
+    fn hover_dampening(&mut self) {
+        let can_use = !self.merman && !self.is_performing_down_dash();
+        if !can_use || !self.trying_to_hover_down() || !self.control_jump || self.wing_time <= 0.0 {
+            return;
+        }
+        if Self::hover_dampening_wing(self.wings_logic) {
             let num67 = if self.wings_logic == 45 { 0.8 } else { 0.9 };
             self.vy *= num67;
+            if self.vy > -2.0 && self.vy < 1.0 {
+                self.vy = 1e-5;
+            }
+        }
+        // `:27418-27425`: Betsy's wings (37) damp AGAIN at 0.92.
+        if self.wings_logic == 37 {
+            self.vy *= 0.92;
             if self.vy > -2.0 && self.vy < 1.0 {
                 self.vy = 1e-5;
             }
@@ -7824,10 +8064,13 @@ impl Player {
             self.try_dismount(world);
         }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
-        // budgets refill every tick while grappling.
+        // budgets refill every tick while grappling; `:22642-22644` clears
+        // the rocket state with them.
         self.wing_time = self.wing_time_max as f32;
         self.rocket_time = self.rocket_time_max;
         self.rocket_delay = 0;
+        self.can_rocket = false;
+        self.rocket_release = false;
         self.refresh_double_jumps();
         // `:22645`: the fall origin refreshes per tick — no fall damage.
         self.fall_start = (self.y / TILE_PX) as i32;
@@ -9845,7 +10088,7 @@ mod tests {
 
     /// A pool world of the given liquid from row 40 down to the ground (the
     /// `drowning_drains_breath_and_damages` shape).
-    fn liquid_pool_world(kind: tr_core::tile::LiquidKind) -> World {
+    pub(super) fn liquid_pool_world(kind: tr_core::tile::LiquidKind) -> World {
         let mut w = ground_world();
         for x in 0..64 {
             for y in 40..60 {
@@ -15987,7 +16230,7 @@ mod s1_player_composite_tests {
     // S1-E-21f gate fix: the sound-trigger tests below reuse the movement
     // fixtures from the sibling `tests` module (private there — the
     // code-only branch could not compile the cross-module reference).
-    use super::tests::{ground_world, settled_with_jumps};
+    use super::tests::{ground_world, liquid_pool_world, settled_with_jumps};
 
     /// A frame-inputs builder with the raw counters the composite styles read.
     fn inputs(style: u8, remaining: f32, anim: f32, max: f32) -> FrameInputs {
@@ -16519,5 +16762,137 @@ mod s1_player_composite_tests {
             q.update(&w, held);
             assert!(q.take_flap_sound().is_none(), "wings 22 never flap-play");
         }
+    }
+
+    // -- S1-P-i40: the wings/flight accessory interaction fixes -------------
+    // Witnesses WRITTEN NOT RUN (code-only mode). Each pins a C#-verified
+    // correction against `Player.cs` / `WingStatsInitializer.cs` / `Item.cs`.
+
+    /// `WingStats.cs:3` + `Player.cs:14335-14338`: `GetWingStats` returns the
+    /// struct `default` (FlyTime 100) for an out-of-range id, NOT a zero
+    /// budget. The port's `_ => (0, ..)` gave wings 5586/5686/6140 (ids
+    /// 47/50/51, now in the 150/7 chain) and any unknown id zero flight.
+    #[test]
+    fn s1_p_i40_wing_stats_default_is_the_struct_fly_time() {
+        // Out-of-range ids take the WingStats default FlyTime = 100.
+        assert_eq!(Player::wing_stats(0).0, 100, "id 0 -> default 100");
+        assert_eq!(Player::wing_stats(52).0, 100, "id 52 (Count) -> default");
+        assert_eq!(Player::wing_stats(99).0, 100, "unknown id -> default");
+        // The 150/7 chain covers 47/50/51 (WingStatsInitializer.cs:61).
+        for id in [47, 50, 51] {
+            assert_eq!(Player::wing_stats(id).0, 150, "id {id} fly time");
+            assert_eq!(Player::wing_stats(id).1, 7.0, "id {id} run override");
+        }
+    }
+
+    /// `Item.cs:31096-31105`: the four Nebula wing cases share
+    /// `wingSlot = 29 + type - 3468`. The port dropped them, so the 29/32
+    /// ascent constants were unreachable via equip.
+    #[test]
+    fn s1_p_i40_the_nebula_wings_map_to_slots_29_to_32() {
+        assert_eq!(Player::wing_slot(3468), 29);
+        assert_eq!(Player::wing_slot(3469), 30);
+        assert_eq!(Player::wing_slot(3470), 31);
+        assert_eq!(Player::wing_slot(3471), 32);
+        // The grant reads the slot's budget (29/32 = 180, 30/31 = 180).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3468;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 29);
+        assert_eq!(p.wing_time_max, 180);
+    }
+
+    /// `Player.cs:22091-22097` (44) vs `:22137-22142` (45): the two hover
+    /// wings have DISTINCT ascent rows — 44 = (0.125, 0.85, 2.75, 1, 0.15),
+    /// 45 = (0.1, 0.95, 4.5, 1, 0.15). The port shared 45's row for both.
+    #[test]
+    fn s1_p_i40_wings_44_and_45_have_distinct_ascent_rows() {
+        assert_eq!(Player::wing_constants(44), (0.125, 0.85, 2.75, 1.0, 0.15));
+        assert_eq!(Player::wing_constants(45), (0.1, 0.95, 4.5, 1.0, 0.15));
+        // 30/31 keep the base 0.1 impulse here; the 0.15 boost is
+        // hover-down-gated at the call site (`:22194-22197`).
+        assert_eq!(Player::wing_constants(30).0, 0.1);
+        assert_eq!(Player::wing_constants(31).0, 0.1);
+    }
+
+    /// `Player.cs:14771-14775` + `:22239-22242`: the Soaring Insignia (4989)
+    /// arms `empressBrooch`, which refills the wing budget to max on every
+    /// flying tick it stays non-zero (infinite flight).
+    #[test]
+    fn s1_p_i40_the_soaring_insignia_grants_infinite_flight() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[3] = 492; // Demon Wings (slot 1, 100 ticks)
+        p.equipped[4] = 4989; // Soaring Insignia
+        p.update(&w, PlayerInput::default());
+        assert!(p.empress_brooch, "the brooch flag arms");
+        // Fly: the budget drains to max each tick, never below max-1.
+        let held = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, held); // the ground jump
+        for _ in 0..200 {
+            p.update(&w, held);
+            assert!(
+                p.wing_time >= p.wing_time_max as f32 - 1.0,
+                "the brooch refills: wing_time={} max={}",
+                p.wing_time,
+                p.wing_time_max
+            );
+        }
+    }
+
+    /// `Player.cs:25577-25589` + `:3990-3999`: a shell (861/3110/497) while
+    /// wet turns the player merman, which gates `CanUseWingAbilities` (the
+    /// hover dampening) and `WingAirLogicTweaks`.
+    #[test]
+    fn s1_p_i40_the_merman_shell_gates_the_wing_abilities() {
+        // Dry: the shell arms accMerman but the player is not merman.
+        let dry = ground_world();
+        let mut p = Player::spawn(&dry);
+        p.equipped[3] = 497; // Neptune's Shell
+        p.update(&dry, PlayerInput::default());
+        assert!(p.acc_merman, "the shell arms accMerman");
+        assert!(!p.merman, "dry: not merman");
+        // Wet (a water pool): the shell turns the player merman.
+        let wet = liquid_pool_world(tr_core::tile::LiquidKind::Water);
+        let mut q = Player::spawn(&wet);
+        q.equipped[3] = 497;
+        for _ in 0..30 {
+            q.update(&wet, PlayerInput::default());
+        }
+        assert!(q.wet, "the player settles in the water");
+        assert!(q.merman, "wet + shell: merman");
+        // The hover dampening refuses while merman: a hover wing's descent
+        // is NOT dampened (CanUseWingAbilities false, `:3994`).
+        q.equipped[3] = 1866; // Bee Wings (slot 22, hover)
+        q.equipped[4] = 497;
+        q.update(&wet, PlayerInput::default());
+        q.wing_time = 170.0;
+        q.vy = 3.0;
+        let held = PlayerInput { jump: true, down: true, ..Default::default() };
+        q.update(&wet, held);
+        assert!(q.merman, "still merman");
+        // Without the dampening the vy stays above the dampened float band.
+        assert!(q.vy > 1.0, "merman blocks the hover damp: vy={}", q.vy);
+    }
+
+    /// `Player.cs:27418-27425`: Betsy's wings (37) apply a SECOND ×0.92 damp
+    /// after the shared ×0.9 — the port dropped it.
+    #[test]
+    fn s1_p_i40_betsy_wings_damp_twice() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3883; // Betsy's Wings (slot 37)
+        p.update(&w, PlayerInput::default()); // the grant runs
+        assert_eq!(p.wings_logic, 37);
+        p.wing_time = 150.0;
+        p.vy = 3.0;
+        let held = PlayerInput { jump: true, down: true, ..Default::default() };
+        p.update(&w, held);
+        // 3.0 * 0.9 * 0.92 = 2.484 (both passes), vs 2.7 with only the first.
+        assert!(p.vy < 2.6, "the second damp fires: vy={}", p.vy);
     }
 }
