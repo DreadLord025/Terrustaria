@@ -2300,9 +2300,10 @@ impl App {
     /// `PickupItemIntoMouse` transfers, sound 12 (`:1710`) and
     /// `RefreshStackSplitCooldown` (`:1774-1784`) after each. Returns the
     /// (possibly drained) slot so the caller can write it back to its
-    /// container. The ctx-0/3 `SwapEquip` arm (`:1685-1697`) and the
-    /// OpenableBag/HasItemSwap arms (`:1660-1675`) have no equip/swap state in
-    /// the port.
+    /// container. The ctx-0/3 `SwapEquip` ladder (`:1685-1697`) and the
+    /// `HasItemSwap` cycle (`:1668-1675`) run in the callers BEFORE this split
+    /// (S1-P-i48); the OpenableBag arm (`:1660-1667`) has no container-opening
+    /// state in the port.
     fn right_click_split(&mut self, mut slot: ItemSlot) -> ItemSlot {
         if self.stack_split > 1 || slot.kind == 0 || slot.count == 0 {
             return slot; // `:1700`
@@ -4843,6 +4844,36 @@ mod tests {
         app.handle_inventory_clicks();
         assert_eq!(app.equip.armor[8], slot(285, 1), "row 8 joined the scan");
         assert_eq!(app.inventory[0].count, 0);
+    }
+
+    /// S1-P-i48 — the ctx-3 chest `RightClick` ladder (`ItemSlot.cs:1685-1697`
+    /// with `canItemSwapAt[3]` `:454`): a single wearable in a chest cell
+    /// right-clicks into its equipment row on the press edge (the `SwapEquip`
+    /// arm, `:3348-3358` -> `ArmorSwap`), NOT onto the cursor.
+    #[test]
+    fn s1_p_i48_the_chest_cell_right_click_equips_a_wearable() {
+        let mut app = chest_app(vec![slot(15, 1)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.equip.armor[3], slot(15, 1), "the ladder equipped it");
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        assert_eq!(app.mouse_item.count, 0, "not a pickup");
+        // The `HasItemSwap` cycle comes FIRST (`:1668-1675`): a chest cycler
+        // changes mode in place instead of equipping.
+        let mut app = chest_app(vec![slot(6168, 1)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(6169, 1)),
+            "cycled, not equipped"
+        );
+        assert_eq!(app.equip.armor[3].count, 0);
+        assert_eq!(app.stack_split, 30, "`AfterItemSwap` `:2007`");
     }
 }
 

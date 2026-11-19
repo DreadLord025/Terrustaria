@@ -32962,8 +32962,20 @@ too, but the bank panel is the STORE-1 deviation's surface.
 
 Tests: `equip_swap::tests` gains 6 witnesses (the wings arm, the Demon
 Heart unlock, the full `CanEquipInArmorSlot` gate, the vanity-swap wings
-collision, the `TryItemSwap` cycles, the cue split); `clicks.rs` gains 8
+collision, the `TryItemSwap` cycles, the cue split); `clicks.rs` gains 9
 (`s1_p_i48_*`: duplicate refusal, vanity-column refusal, wings swap +
 left-click refusal, the cycler cycle grid + worn, the busy gates, the
-Demon Heart ladder). WRITTEN, NOT RUN - no compiler invoked (code-only
-mode).
+Demon Heart ladder, the ctx-3 chest ladder + cycler-first order). WRITTEN,
+NOT RUN - no compiler invoked (code-only mode).
+
+Retry-round fix (W3-i48b): the first landing hand-edited the GENERATED
+`crates/tr-app/src/sortdata.rs` (`@generated ... Do not edit by hand`) -
+`python tools/GenSortData/gen.py --check` failed on the two new sets. The
+generator now emits them itself (`parse_bool_set` over `ItemID.cs:336`
+`DualEquipArmor` / `:1385` `HasItemSwap`, in `PROJ_HOOK` ->
+`TILE_FRAME_IMPORTANT` order), the file is regenerated (the id lists are
+unchanged - the hand-written rows were verbatim), and the generated
+`counts_match_the_source_tables` test pins both lengths (3 / 28).
+`--check` passes; `GenItemData --check` and `gen_recipes --check` stay
+green. The stale `right_click_split` doc (claiming the swap arms have no
+port state) is corrected - they run in the callers before the split.
