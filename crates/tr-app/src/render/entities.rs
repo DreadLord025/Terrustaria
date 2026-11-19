@@ -501,6 +501,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
+            .chain(BEE_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1154,6 +1155,10 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
     343, // the Yeti
     344, // the Everscream
 ];
+
+/// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
+pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -2805,6 +2810,14 @@ pub(crate) fn draw_npcs(
                     [fw, fh],
                     [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
+            }
+            // The volley bees (S1-D-3 W-3): the case-49 group's draw —
+            // `Main.npcFrameCount[210/211] = 4` (`Main.cs:67082`); the
+            // generic anchor centres each frame on the box's centre-X
+            // with its centre 4 px below the bottom (`Main.cs:25511-25516`).
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                let ty = texture_net_id(n.kind);
+                generic_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // The bats: `Main.npcFrameCount` 49/51/60/66 = 5

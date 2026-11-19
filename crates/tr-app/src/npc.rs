@@ -595,6 +595,16 @@ pub enum NpcKind {
     /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
     /// and opens the Witch Doctor's arrival).
     QueenBee,
+    /// `NPCID.Bee` (210) — the Queen Bee's state-1 volley minion
+    /// (`NPC.cs:11696-11708`: 12x12, aiStyle 5, dmg 20, def 5, 20 HP,
+    /// kb 0.5, noGravity; no `value` row — the SetDefaults default 0).
+    /// The type-210/211 branch of `AI_005_EaterOfSouls`
+    /// (`NPC.cs:50384-50413`) rides the shared hover core.
+    Bee,
+    /// `NPCID.BeeSmall` (211) — the small volley minion
+    /// (`NPC.cs:11709-11721`: 8x8, aiStyle 5, dmg 15, def 2, 10 HP,
+    /// kb 0.5, noGravity; value 0). Shares the Bee's AI branch.
+    BeeSmall,
     /// `NPCID.SkeletronHead` (35) — the dungeon gatekeeper
     /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
     /// sets `downed_skeletron` and opens the Clothier's arrival).
@@ -1204,6 +1214,11 @@ pub struct Npc {
     /// world sim after the update pass (the `wants_sphere` shape; the payload
     /// is the (x, y, vx, vy) spawn state).
     pub wants_servant: Option<(f32, f32, f32, f32)>,
+    /// The Queen Bee's state-1 bee spawn request (`NPC.cs:30628-30634`'s
+    /// `NPC.NewNPC(Next(210, 212), (int)vector77)` + the normalized ×5
+    /// velocity + `localAI[0] = 60`) — the aiStyle-43 axis arm sets it,
+    /// the sim's spawn pass drains it (the `wants_sphere` shape).
+    pub wants_bee: Option<crate::npc_ai_style43::BeeSpawn>,
     /// `this.defense = 0` — the AI's per-frame stat override (the EoC's
     /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
     /// makes it negative).
@@ -2300,6 +2315,7 @@ impl Npc {
             wet_x: 0.0,
             ai: [0.0; 4],
             wants_servant: None,
+            wants_bee: None,
             defense_override: None,
             dont_take_damage: false,
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
@@ -2623,6 +2639,8 @@ impl Npc {
             NpcKind::TravellingMerchant => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
+            // The volley bees: kb 0.5 (`NPC.cs:11705`/`:11718`).
+            NpcKind::Bee | NpcKind::BeeSmall => 0.5,
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
             NpcKind::TheDestroyer => 0.0,
@@ -2948,6 +2966,12 @@ impl Npc {
             NpcKind::TravellingMerchant => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
+            // The volley bees' SetDefaults defense (`NPC.cs:11702`/`:11715`).
+            // The classic difficulty keeps them verbatim (the
+            // `ScaleStats_ByDifficulty_Tweaks` ×0.8 remap, `:18222`, is
+            // expert-only — the port's single-difficulty fold).
+            NpcKind::Bee => 5,
+            NpcKind::BeeSmall => 2,
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
             NpcKind::TheDestroyer => 0,
@@ -3282,6 +3306,9 @@ impl Npc {
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
+            // The volley bees write no `value` row (`NPC.cs:11696-11721`)
+            // — the SetDefaults default 0 (`NPC.cs:8527`).
+            NpcKind::Bee | NpcKind::BeeSmall => 0.0,
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
             NpcKind::TheDestroyer => 120000.0,
@@ -3669,6 +3696,44 @@ impl Npc {
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
+            // `else if (this.aiStyle == 43)` (`NPC.cs:30190-30860`) —
+            // the Queen Bee (222), the style's only user. S1-D-3 W-3:
+            // the faithful `npc_ai_style43::queen_bee_ai` machine claims
+            // the axis (the W86 re-port, a616788f); the v1 EoC-shaped
+            // stand-in is retired. `zone_jungle` rides the player's live
+            // zone scan (the Golem's `player.zones.jungle` precedent);
+            // `expert = false` is the module's single-difficulty fold.
+            // The bee/stinger requests drain in the sim's spawn pass;
+            // the arm ends with the noTileCollide integration the C#'s
+            // `UpdateNPC` runs (`NPC.cs:90495-90498`) — the module
+            // writes velocity only.
+            43 => {
+                let out = crate::npc_ai_style43::queen_bee_ai(
+                    self,
+                    world,
+                    player,
+                    player.zones.jungle,
+                    false,
+                    rng,
+                );
+                if let Some(bee) = out.bee {
+                    self.wants_bee = Some(bee);
+                }
+                if let Some(s) = out.stinger {
+                    // `Projectile.NewProjectile(..., 719, 11, 0f)`
+                    // (`NPC.cs:30742`); the `timeLeft = 300` override
+                    // (`:30743`) rides the sim drain's timed list.
+                    self.wants_hostile_shot.push((
+                        crate::projectile::QUEEN_BEE_STINGER,
+                        s.x,
+                        s.y,
+                        s.vx,
+                        s.vy,
+                        s.damage,
+                    ));
+                }
+                self.integrate_no_tile_collide();
+            }
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
@@ -3704,6 +3769,10 @@ impl Npc {
             NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            // The Queen Bee's volley bees — `AI_005_EaterOfSouls`'s
+            // type-210/211 branch (`NPC.cs:50384-50413`): num 5, num2
+            // 0.1·num3 with the (ai[1]-60)/60 ramp and the ±6 clamps.
+            NpcKind::Bee | NpcKind::BeeSmall => self.update_bee_hover(world, player),
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -3791,7 +3860,14 @@ impl Npc {
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
-            NpcKind::QueenBee => self.update_queen_bee(world, player),
+            NpcKind::QueenBee => {
+                unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
+            }
+            // The volley bees ride the aiStyle-5 family axis above
+            // (`ai_005_hover_family`'s type-210/211 branch).
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
+            }
             NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
             NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
@@ -5804,6 +5880,30 @@ impl Npc {
                     2 => 2,
                     _ => 1,
                 };
+            }
+            // The volley bees' case 210/211 (`NPC.cs:74831-74884`, the
+            // case-49 group): the spriteDirection rides the velocity's
+            // sign, the tilt is the bee override `velocity.X * 0.2`
+            // (`:74859-74863` — the counter ALSO ticks twice: the group
+            // increment plus the bee's own), the row advances every 6
+            // ticks over the strip's 4 rows (`Main.npcFrameCount[210/211]
+            // = 4`, `Main.cs:67082`; no `num292--` for the bees).
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.2;
+                self.frame_counter += 2.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // `FindFrame`'s case 49 group (`NPC.cs:74824-74881`): the
@@ -8010,76 +8110,78 @@ impl Npc {
         }
     }
 
-    /// `AI_043`'s Queen Bee v1 (`NPC.cs:30190+`) — the EoC's cycle shape
-    /// with the bee's numbers: the hover (the ±0.07 accels, the 8 cap),
-    /// the charge (the 480-tick cycle, the direct velocity x 7), the decel
-    /// (the 40 ticks, x0.98), the flee (`ai[0]==5`'s world-edge drift —
-    /// the v1 rises away). The Servant bees and the enraged-outside-the-
-    /// jungle state = the follow-ups.
-    fn update_queen_bee(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        // The flee: rise away (the vanilla's `ai[0]==5` drift — the v1
-        // rises, the off-world guard despawns).
-        if self.cast_windup == 3 {
-            self.vy -= 0.04;
-            self.x += self.vx;
-            self.y += self.vy;
-            if self.y < -500.0 {
-                self.hp = 0;
-            }
-            return;
-        }
-        let hover_y = pcy - 260.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.07;
-            if self.vx.abs() > 7.0 {
-                self.vx = 7.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.07;
-            if self.vy.abs() > 7.0 {
-                self.vy = 7.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 7.0;
-            self.vy = dy / d * 7.0;
-            self.cast_windup = 2;
+    // `AI_043`'s Queen Bee v1 — RETIRED (S1-D-3 W-3). The faithful
+    // aiStyle-43 machine (`npc_ai_style43::queen_bee_ai`, the W86 re-port
+    // of `NPC.cs:30190-30860`) claims the style axis in `update_rng`;
+    // the kind arm in `update_kind_ai` is an `unreachable!` guard (the
+    // MourningWood precedent). The v1 body was an EoC-shaped stand-in
+    // (the invented 480-tick cycle, the ±0.07/7-cap hover, the ×0.98
+    // decel) — no enrage term, no state machine, no bees/stingers.
+
+    /// `AI_005_EaterOfSouls`'s type-210/211 branch — the Queen Bee's
+    /// volley bees (`NPC.cs:50384-50413`): `ai[1]++`, num3 =
+    /// `(ai[1] - 60) / 60` clamped at 1; while num3 <= 1 the velocity
+    /// clamps ±6 on both axes; num = 5, num2 = `0.1 * num3`. The shared
+    /// fly core (`:50418-50579`) runs with `flag5 = true` (210/211 are
+    /// outside the exclusion list, `:50447`) and `flag4 = true` (the
+    /// ±0.023 ai[0] drift, `:50446-50471`); the rotation is the generic
+    /// `atan2(vy, vx) - 1.57` arm (`:50652-50655`); the tile bounce is
+    /// the family's ×0.7 (`:50656-50688` — the bees set noGravity only,
+    /// `SetDefaults` `:11696-11721`). The `TargetClosestNonBees` call
+    /// (`:50246-50249`) folds to the single session player (the port
+    /// has no NPC targets — the `npc_target` convention).
+    fn update_bee_hover(&mut self, world: &World, player: &Player) {
+        // `:50386-50412` — the branch's own num/num2 + the ramp clamps.
+        self.ai[1] += 1.0;
+        let mut num3 = (self.ai[1] - 60.0) / 60.0;
+        if num3 > 1.0 {
+            num3 = 1.0;
         } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
+            if self.vx > 6.0 {
+                self.vx = 6.0;
+            }
+            if self.vx < -6.0 {
+                self.vx = -6.0;
+            }
+            if self.vy > 6.0 {
+                self.vy = 6.0;
+            }
+            if self.vy < -6.0 {
+                self.vy = -6.0;
             }
         }
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.x += self.vx;
-        self.y += self.vy;
-        if self.y > world.height as f32 * TILE_PX + 400.0 {
-            self.hp = 0;
+        let params = HoverParams {
+            max_speed: 5.0,
+            accel: 0.1 * num3,
+            surface_damped: false,
+            double_add: true,
+            no_tile_collide: false,
+            bounce: 0.7,
+            rotation: HoverRotation::Velocity,
+        };
+        // `:50446-50471` — flag4's drift runs BEFORE the velocity
+        // approach (`:50540-50578`): ai[0]++ every tick (the bees are in
+        // the flag4 set unconditionally); ±0.023 on Y by the ai[0] sign,
+        // ±0.023 on X by the ±100 band, the 200 wrap. (The C#'s aim
+        // normalize at `:50427-50444` precedes the drift; its only
+        // velocity read is the degenerate num6 == 0 fallback — the
+        // port's hover_step computes the aim after the drift, a
+        // zero-distance-only deviation, recorded in ANALYSIS.)
+        self.ai[0] += 1.0;
+        if self.ai[0] > 0.0 {
+            self.vy += 0.023;
+        } else {
+            self.vy -= 0.023;
         }
+        if self.ai[0] < -100.0 || self.ai[0] > 100.0 {
+            self.vx += 0.023;
+        } else {
+            self.vx -= 0.023;
+        }
+        if self.ai[0] > 200.0 {
+            self.ai[0] = -200.0;
+        }
+        self.update_hover(world, player, params);
     }
 
     /// `AI_011`'s Skeletron head v1 (`NPC.cs`'s aiStyle 11 machine) — the
@@ -15438,6 +15540,11 @@ impl Npc {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The Queen Bee's volley minions (S1-D-3 W-3): the vanilla
+            // type ids — unused by every arm above, so the G6 key stays
+            // injective (the protocol ids ride the free 353/354 band).
+            NpcKind::Bee => 210,
+            NpcKind::BeeSmall => 211,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -18064,23 +18171,160 @@ mod tests {
     }
 
     #[test]
-    fn the_queen_bee_cycles_and_flees() {
-        // `AI_043`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 7) → the decel; the flee phase rises away.
+    fn s1_d_3_w3_the_axis_routes_the_queen_bee_and_keeps_the_stream() {
+        // S1-D-3 W-3: the `43 =>` axis arm runs `npc_ai_style43::queen_bee_ai`
+        // (the v1 `update_queen_bee` stand-in is retired). The state -1
+        // re-pick (`NPC.cs:30279-30292`) draws `Next(3)` mapped 1->2 / 2->3
+        // until it differs from `ai[1]`; the UpdateNPCs stream must match a
+        // direct replay draw-for-draw (the MourningWood axis precedent).
         let mut w = ground_air();
         w.day_time = false;
         let mut qb = Npc::new(NpcKind::QueenBee, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         qb.hp = qb.max_hp;
+        qb.ai[0] = -1.0;
+        qb.ai[1] = 0.0;
         let mut player = surface_player(&w);
-        player.x = 100.0 * TILE_PX;
-        player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        }
-        assert!(qb.cast_windup == 1, "the charge phase armed");
-        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        let speed = (qb.vx * qb.vx + qb.vy * qb.vy).sqrt();
-        assert!((speed - 7.0).abs() < 0.1, "the charge speed ({speed})");
+        let mut rng = UnifiedRandom::new(11);
+        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        // The witness replay of the do-while re-pick.
+        let mut witness = UnifiedRandom::new(11);
+        let pick = loop {
+            let mut p = witness.next_max(3);
+            match p {
+                1 => p = 2,
+                2 => p = 3,
+                _ => {}
+            }
+            if p as f32 != 0.0 {
+                break p;
+            }
+        };
+        assert_eq!(qb.ai[0], pick as f32, "the axis runs the named machine");
+        assert_eq!(rng, witness, "the UpdateNPCs stream order holds");
+        // The v1's stand-in counters are never touched by the machine.
+        assert_eq!(qb.cast_windup, 0, "the v1 cycle is retired");
+        assert_eq!(qb.caster_counter, 0);
+    }
+
+    #[test]
+    fn s1_d_3_w3_the_volley_and_barrage_requests_fire() {
+        // The state-1 bee volley (`NPC.cs:30623-30636`) and the state-3
+        // stinger barrage (`:30714-30743`) write their spawn requests; the
+        // RNG draws ride the caller's stream in C# order (Next(20) every
+        // tick, then the type / jitter draws only on a fire tick).
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        // Bee at (1280, 320), player at (1600, 1856): above the surface
+        // (worldSurface 50 -> 800 px) and out of the jungle -> num619 = 2,
+        // so the volley period is (int)(40 - 18*2) = 4 and the stinger
+        // period 40 - (int)(5*2) = 30.
+        let mut qb = Npc::new(NpcKind::QueenBee, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        qb.hp = qb.max_hp;
+        // State 1: ai[1] = 4 -> ++ = 5 > 4 -> the volley tick.
+        qb.ai[0] = 1.0;
+        qb.ai[1] = 4.0;
+        let mut rng = UnifiedRandom::new(5);
+        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let bee = qb.wants_bee.expect("the volley fires a bee request");
+        assert!(
+            bee.kind == crate::npc_ai_style43::BEE
+                || bee.kind == crate::npc_ai_style43::BEE_SMALL,
+            "the type draw is 210/211, got {}",
+            bee.kind
+        );
+        assert_eq!(bee.local_ai0, 60.0, "localAI[0] = 60 (`:30633`)");
+        let sp = (bee.vx * bee.vx + bee.vy * bee.vy).sqrt();
+        assert!((sp - 5.0).abs() < 1e-3, "the normalized x5 velocity ({sp})");
+        // The (int)vector77 truncation: x = npc.x + width/2 + Next(20)*dir.
+        assert_eq!(bee.x, bee.x.trunc(), "the X spawn is truncated");
+        assert_eq!(bee.y, bee.y.trunc(), "the Y spawn is truncated");
+        // RNG parity: Next(20) then Next(210, 212).
+        let mut witness = UnifiedRandom::new(5);
+        let _off = witness.next_max(20);
+        let ty = witness.next_range(210, 212);
+        assert_eq!(bee.kind, ty, "the type draw replays");
+        assert_eq!(rng, witness, "the volley stream order holds");
+        // State 3: ai[1] = 28 -> ++ = 29, 29 % 30 == 29 -> the fire tick.
+        let mut qb2 = Npc::new(NpcKind::QueenBee, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        qb2.hp = qb2.max_hp;
+        qb2.ai[0] = 3.0;
+        qb2.ai[1] = 28.0;
+        let mut rng2 = UnifiedRandom::new(9);
+        qb2.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(qb2.wants_bee.is_none(), "the barrage spawns no bee");
+        let shot = qb2
+            .wants_hostile_shot
+            .iter()
+            .find(|s| s.0 == crate::projectile::QUEEN_BEE_STINGER)
+            .copied()
+            .expect("the barrage fires a 719 stinger");
+        assert_eq!(shot.5, 11, "the stinger damage is 11 (`:30742`)");
+        // num652 = 8 + 7*num619 = 22; the jitter windows floor at
+        // (int)(80-39*2)=2 / (int)(40-19*2)=2.
+        let sp2 = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
+        assert!((sp2 - 22.0).abs() < 1e-2, "the 22-speed aim ({sp2})");
+        let mut w2 = UnifiedRandom::new(9);
+        let _o = w2.next_max(20);
+        let _jx = w2.next_range(-2, 3);
+        let _jy = w2.next_range(-2, 3);
+        assert_eq!(rng2, w2, "the barrage stream order holds (X before Y)");
+    }
+
+    #[test]
+    fn s1_d_3_w3_the_bee_kinds_carry_their_set_defaults_rows() {
+        // `NPC.cs:11696-11721` — the volley bees' SetDefaults rows.
+        let b = Npc::new(NpcKind::Bee, 0.0, 0.0, 1, 0.0);
+        assert_eq!(b.size(), (12.0, 12.0));
+        assert_eq!(b.max_hp, 20);
+        assert_eq!(b.defense(), 5);
+        assert_eq!(b.kind.contact_damage(), 20);
+        assert_eq!(b.knock_back_resist(), 0.5);
+        assert_eq!(b.value(), 0.0);
+        assert_eq!(NpcKind::Bee.ai_style(), 5);
+        let s = Npc::new(NpcKind::BeeSmall, 0.0, 0.0, 1, 0.0);
+        assert_eq!(s.size(), (8.0, 8.0));
+        assert_eq!(s.max_hp, 10);
+        assert_eq!(s.defense(), 2);
+        assert_eq!(s.kind.contact_damage(), 15);
+        assert_eq!(NpcKind::BeeSmall.ai_style(), 5);
+        // The protocol ids round-trip on the free 353/354 band.
+        assert_eq!(NpcKind::from_u16(NpcKind::Bee.to_u16()), Some(NpcKind::Bee));
+        assert_eq!(
+            NpcKind::from_u16(NpcKind::BeeSmall.to_u16()),
+            Some(NpcKind::BeeSmall)
+        );
+        // The bestiary entries resolve (the automated Enemy(210/211) rows).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Bee, SlimeVariant::Blue).net_id, 210);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::BeeSmall, SlimeVariant::Blue).net_id,
+            211
+        );
+    }
+
+    #[test]
+    fn s1_d_3_w3_the_bee_hover_ticks_its_ramp_and_drift() {
+        // `AI_005`'s type-210/211 branch (`NPC.cs:50384-50413`): ai[1]++
+        // and num3 = (ai[1]-60)/60 (clamped at 1); the flag4 drift
+        // (`:50446-50471`) ticks ai[0] every tick. The bee rides the
+        // aiStyle-5 axis. (The ±6 clamps run BEFORE the approach, so a
+        // post-tick velocity may exceed them — only the counters are
+        // pinned here.)
+        let w = ground_air();
+        let mut player = surface_player(&w);
+        let mut b = Npc::new(NpcKind::Bee, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        b.hp = b.max_hp;
+        b.ai[1] = 0.0;
+        b.ai[0] = 0.0;
+        b.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
+        assert_eq!(b.ai[1], 1.0, "ai[1] ticks (`:50386`)");
+        assert_eq!(b.ai[0], 1.0, "the flag4 ai[0] drift counter (`:50449`)");
+        // The ai[0] wrap at 200 -> -200 (`:50467-50470`).
+        let mut c = Npc::new(NpcKind::BeeSmall, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        c.hp = c.max_hp;
+        c.ai[0] = 200.0;
+        c.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
+        assert_eq!(c.ai[0], -200.0, "the 200 wrap (`:50467`)");
     }
 
     #[test]
@@ -19116,7 +19360,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 240] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19273,6 +19517,8 @@ mod tests {
         NpcKind::BoundMechanic,
         NpcKind::EyeOfCthulhu,
         NpcKind::QueenBee,
+        NpcKind::Bee,
+        NpcKind::BeeSmall,
         NpcKind::SkeletronHead,
         NpcKind::ServantOfCthulhu,
         NpcKind::WallOfFlesh,
@@ -26124,6 +26370,8 @@ mod s1_d_2_tests {
         (NpcKind::BrainOfCthulhu, 54),
         (NpcKind::Creeper, 55),
         (NpcKind::QueenBee, 43),
+        (NpcKind::Bee, 5),
+        (NpcKind::BeeSmall, 5),
         (NpcKind::SkeletronHead, 11),
         (NpcKind::SkeletronHand, 12),
         (NpcKind::SkeletronPrime, 32),
@@ -26196,8 +26444,9 @@ mod s1_d_2_tests {
         for &(kind, style) in CS_STYLES {
             assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
         }
-        // The style-5 family is exactly the four ported kinds (the C#'s 18
-        // style-5 types minus the 14 unported ones).
+        // The style-5 family is exactly the six ported kinds (the C#'s 18
+        // style-5 types minus the 12 unported ones; the volley bees joined
+        // with S1-D-3 W-3).
         let five: Vec<_> = CS_STYLES
             .iter()
             .filter(|&&(_, s)| s == 5)
@@ -26209,7 +26458,9 @@ mod s1_d_2_tests {
                 NpcKind::EaterOfSouls,
                 NpcKind::Hornet,
                 NpcKind::MeteorHead,
-                NpcKind::ServantOfCthulhu
+                NpcKind::ServantOfCthulhu,
+                NpcKind::Bee,
+                NpcKind::BeeSmall
             ]
         );
     }
