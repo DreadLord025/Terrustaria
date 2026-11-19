@@ -377,6 +377,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::MourningWood => &[20, 31],
         NpcKind::Pumpking => &[20, 24, 31, 323],
         NpcKind::Hellhound => &[20, 24, 323],
+        // The Frost Moon family, slice A (`S1-F-13c` —
+        // `Sets.DebuffImmunitySets`, `NPCID.cs:8062-8102`): the 338-340 trio
+        // and the Yeti the ({44, 324}) row (Frostburn + Frozen), 341 the
+        // ({20, 24, 31, 323}) row, 344 the ({20, 31, 44, 324}) row; 342's
+        // row is `null` (`:8089`).
+        NpcKind::ZombieElf
+        | NpcKind::ZombieElfBeard
+        | NpcKind::ZombieElfGirl
+        | NpcKind::Yeti => &[44, 324],
+        NpcKind::PresentMimic => &[20, 24, 31, 323],
+        NpcKind::GingerbreadMan => &[],
+        NpcKind::Everscream => &[20, 31, 44, 324],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }
