@@ -1592,6 +1592,23 @@ pub struct Npc {
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
+    /// The aiStyle-75 rider's first-tick carrier spawn request
+    /// (`NPC.cs:35508-35514` / `:35525-35531`): `(type, x, y)` — the 391
+    /// Scutlix / 415 Drakomire at the truncated centre, Bottom-placed
+    /// (`NPC.cs:80770`). The sim resolves it after the tick (the module's
+    /// documented one-tick fold); the carrier-link pre-pass re-derives the
+    /// slot-aligned `ai[0]` host link on the next tick.
+    pub wants_mount_carrier: Option<(i32, f32, f32)>,
+    /// The aiStyle-75 carrier-gone `Transform(newType)` request
+    /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
+    /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
+    pub wants_transform: Option<i32>,
+    /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
+    /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
+    /// (no audio seam there); the sim's pooled path drains them immediately
+    /// on the `UpdateNPCs` stream at the C# call position, and this queue
+    /// is the fallback drain (the `wants_hostile_shot` pattern).
+    pub wants_item_sounds: Vec<(i32, f32, f32)>,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -2621,6 +2638,9 @@ impl Npc {
             uid: 0,
             carrier_uid: 0,
             wants_saucer_crew: false,
+            wants_mount_carrier: None,
+            wants_transform: None,
+            wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -4054,21 +4074,10 @@ impl Npc {
         dust: &mut tr_core::particles::DustPool,
         dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
-            // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
-            // position integration) — the switch-tile bridge reads it.
-            self.old_x = self.x;
-            self.old_y = self.y;
-
-        // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
-        // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
-        // the frame's movement, exactly like the original.
-        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
-        self.hurt_cd = (self.hurt_cd - dt).max(0.0);
-        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
-        for v in self.immune.iter_mut() {
-            *v = v.saturating_sub(1);
-        }
-        self.anim += dt;
+        // The shared `NPC.Update` preamble (the aiStyle-75 pooled wrapper
+        // runs the same block — the family machine is a POOL step, so the
+        // sim calls it directly over `App::npcs`).
+        self.update_preamble(dt);
         // `NPC.UpdateNPC`'s gfxOffY decay (`NPC.cs:90396-90420`), AFTER
         // the old-target/direction latches and BEFORE `AI()` — S1-D-4
         // W-10 wires slice B's pure fn. Reads the PRE-AI velocity.X;
@@ -4240,6 +4249,15 @@ impl Npc {
             // the Sharkron pair 372/373. The faithful
             // `npc_ai_style71::ai_style71` arm (80fcb43b).
             71 => self.ai_071_sharkron(world, player),
+            // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
+            // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
+            // the SOLO path (a test's bare `update_rng`) runs the faithful
+            // `style75_step` over a one-slot pool; the SIM's pooled path
+            // (the aiStyle-75 arm in `world_sim/npcs.rs`'s tick closure) runs
+            // it over the whole `App::npcs` so the host/crew slot links
+            // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
+            // `update_solar_drakomire_rider` stand-ins are gone.
+            75 => self.update_rng_style75_solo(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -4251,6 +4269,150 @@ impl Npc {
         self.just_hit = false;
         self.find_frame();
         self.contact(player, rng);
+    }
+
+    /// The shared `NPC.Update` preamble every AI path runs first
+    /// (`NPC.cs:90373-90459` + `:92605`): the oldPosition stamp, the buff
+    /// DoT block, the hurt-cooldown decay, the per-owner i-frame decay and
+    /// the anim clock. Extracted so the aiStyle-75 pooled family arm
+    /// (`world_sim/npcs.rs`'s tick closure) runs the identical block
+    /// ahead of `style75_step` — the family machine is a POOL step.
+    pub fn update_preamble(&mut self, dt: f32) {
+        // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
+        // position integration) — the switch-tile bridge reads it.
+        self.old_x = self.x;
+        self.old_y = self.y;
+        // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
+        // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
+        // the frame's movement, exactly like the original.
+        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
+        self.hurt_cd = (self.hurt_cd - dt).max(0.0);
+        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
+        for v in self.immune.iter_mut() {
+            *v = v.saturating_sub(1);
+        }
+        self.anim += dt;
+    }
+
+    /// The SOLO aiStyle-75 step (`NPC.cs:35501-36070`) for a bare
+    /// `update_rng` caller (the unit tests): the faithful `style75_step`
+    /// over a ONE-slot pool (no siblings — the host link reads absent, so
+    /// the rider spawns its carrier / the orphan arms run exactly as the
+    /// module's solo witnesses). The SIM's pooled path (the aiStyle-75 arm
+    /// in `world_sim/npcs.rs`'s tick closure) is the live route; this
+    /// wrapper keeps the solo `update_rng` tests faithful and queues the
+    /// out-requests (`wants_mount_carrier`/`wants_transform`/
+    /// `wants_item_sounds`/`wants_hostile_shot*`) for the caller to drain.
+    fn update_rng_style75_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let ctx = crate::npc_ai_style75::Style75Ctx {
+            difficulty: 1.0, // the port is single-difficulty classic
+            expert: false,
+            just_hit: self.hurt_cd > 0.0,
+            ticker: 0,
+        };
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut pool = [self.clone()];
+        let out = crate::npc_ai_style75::style75_step(
+            &mut pool, 0, world, &[cand], &ctx, &mut dust, &dust_ctx, rng,
+        );
+        *self = pool[0].clone();
+        self.drain_style75_out(out);
+    }
+
+    /// Land a `Style75Out` on this NPC: the shots ride the established
+    /// `wants_hostile_shot`/`wants_hostile_shot_ai` seams, the carrier
+    /// spawn / Transform / sound cues queue on the request fields. The
+    /// pooled sim path drains the same requests with the full pool/audio
+    /// seams; this is the solo queue (the `wants_hostile_shot` pattern).
+    fn drain_style75_out(&mut self, out: crate::npc_ai_style75::Style75Out) {
+        for s in out.shots {
+            if s.ai0 == 0.0 && s.ai1 == 0.0 {
+                self.wants_hostile_shot
+                    .push((s.kind, s.x, s.y, s.vx, s.vy, s.damage));
+            } else {
+                self.wants_hostile_shot_ai.push(s);
+            }
+        }
+        if let Some((ty, x, y)) = out.spawn_carrier {
+            self.wants_mount_carrier = Some((ty, x, y));
+        }
+        if let Some(ty) = out.transform {
+            self.wants_transform = Some(ty);
+        }
+        self.wants_item_sounds.extend(out.sounds);
+        // `out.died`: the module already set hp = 0; the death pass owns
+        // the HitEffect + deactivation pair (the style72 pop precedent).
+    }
+
+    /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
+    /// default arguments the aiStyle-75 fallbacks pass (`Transform(382)` /
+    /// `Transform(518)`: ai0..3 = 0, `withReposition = true`), on the host
+    /// path (`Main.netMode != 1`, `:81086`). The bottom-anchored
+    /// reposition, the `SetDefaults` observable subset, the `TargetClosest`
+    /// and the integer life rescale floored at 1 — the `npc_ai_style42::
+    /// transform_to` / `npc_ai_style24::transform_core` precedent, keyed to
+    /// the port's kind table. The value/knockback/visual halves are the
+    /// wiring's full-Transform job (ANALYSIS).
+    pub fn transform_to_kind(&mut self, world: &World, player: &Player, new_kind: NpcKind) {
+        // `:81090-81091` — the PRE-defaults life pair.
+        let num = self.hp;
+        let num2 = self.max_hp;
+        // `:81092-81095` — `withReposition`: the bottom edge held across
+        // the defaults swap (`position.Y += height` BEFORE, `-= height`
+        // AFTER, `:81097-81100`).
+        let (_, old_h) = self.size();
+        self.y += old_h;
+        // `:81096` SetDefaults(newType) — the observable subset: the kind
+        // swap, the hitbox, lifeMax, scale 1 / alpha 0 / netUpdate true,
+        // the ai/localAI zero loops, ClearTarget's 255 + oldTarget latch
+        // and the frame reset.
+        self.kind = new_kind;
+        self.size_override = None; // the kind's own box
+        self.max_hp = new_kind.max_hp();
+        self.scale = 1.0;
+        self.alpha = 0;
+        self.net_update = true;
+        self.ai = [0.0; 4];
+        self.local_ai = [0.0; 4];
+        self.target = 255;
+        self.old_target = 255;
+        self.target_rect = (0, 0, 0, 0);
+        self.frame = 0;
+        self.frame_counter = 0.0;
+        self.collide_x = false;
+        self.collide_y = false;
+        let (_, new_h) = self.size();
+        self.y -= new_h;
+        // `:81101` — Transform re-picks the target after the defaults.
+        let cand = crate::npc_target::session_candidate(player);
+        crate::npc_target::target_closest(self, world, &[cand], true, new_kind.ai_style() as i32, 0);
+        // `:81106-81110` — the INTEGER life share, floored at 1.
+        self.hp = num * self.max_hp / num2;
+        if self.hp <= 0 {
+            self.hp = 1;
+        }
+        // `:81111-81114` — the ai0..3 arguments (all 0; the SetDefaults
+        // zero loop already wrote them — kept explicit).
+        self.ai = [0.0; 4];
+        // The carrier link clears: the transformed NPC is no longer a
+        // mount (the pre-pass re-derives links only for the rider kinds).
+        self.carrier_x = -1.0;
+        self.carrier_y = -1.0;
+        self.wants_transform = None;
     }
 
     /// S1-D-2: the aiStyle-5 family arm — `AI_005_EaterOfSouls`
@@ -5001,22 +5163,30 @@ impl Npc {
             NpcKind::BrainScrambler | NpcKind::RayGunner => {
                 self.update_martian_shooter(world, player, rng)
             }
-            // The rider: aiStyle 75's mount machine (the carrier spawn +
-            // the ride + the 438 ray, `NPC.cs:35506-35745`).
-            NpcKind::ScutlixRider => self.update_scutlix_rider(world, player, rng),
+            // The rider: aiStyle 75 rides the style axis
+            // (`update_rng_style75_solo` / the sim's `style75_family_pass`)
+            // — this arm is unreachable (S1-D-3-wire-saucer).
+            NpcKind::ScutlixRider => {
+                unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
+            }
             // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
             // `NPC.cs:58203-58240`).
             NpcKind::Scutlix => self.update_scutlix(world, player, dt),
-            // The saucer family: the core's aiStyle-76 machine and the
-            // mounts' aiStyle-75 rides (`NPC.cs:35530-36610`).
+            // The saucer core: aiStyle 76's machine (`NPC.cs:36071-36520`)
+            // — R35's branch owns it; the mounts (392/393/394) ride the
+            // aiStyle-75 axis above.
             NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
-            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
-            // The pirate ship: aiStyle 93's crew-carrier machine + its
-            // cannons' aiStyle-75 ride.
+            | NpcKind::MartianSaucerCannon => {
+                unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
+            }
+            // The pirate ship: aiStyle 93's crew-carrier machine; its
+            // cannons' aiStyle-75 ride claims the style axis.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
-            NpcKind::FlyingDutchmanCannon => self.update_saucer_mount(world, player, rng),
+            NpcKind::FlyingDutchmanCannon => {
+                unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
+            }
             // The DD2 goblins: aiStyle 107's improved walker.
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
                 self.update_dd2_goblin(world, player, dt)
@@ -5105,7 +5275,11 @@ impl Npc {
             NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
             NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
-            NpcKind::SolarDrakomireRider => self.update_solar_drakomire_rider(world, player),
+            // The drakomire's rider: aiStyle 75 rides the style axis
+            // (S1-D-3-wire-saucer) — this arm is unreachable.
+            NpcKind::SolarDrakomireRider => {
+                unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
+            }
             NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
             NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
@@ -5156,6 +5330,7 @@ impl Npc {
             NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
             // The etherian crystal: aiStyle 105's machine.
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
+
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -5583,7 +5758,7 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
-    fn find_frame(&mut self) {
+    pub(crate) fn find_frame(&mut self) {
         let num2 = if self.vy < 0.0 {
             2
         } else if self.vy > 0.0 {
@@ -10213,92 +10388,10 @@ impl Npc {
         }
     }
 
-    /// `AI_075`'s type-390 arm (`NPC.cs:35506-35745`) — the ray gunner
-    /// mounted on a Scutlix. The init spawns the 391 carrier through
-    /// `wants_scutlix` (the sim resolves); while the carrier lives the
-    /// rider rides 14 px above its centre and mirrors its velocity and
-    /// direction; the `ai[1]` cycle (60, hurt → -30) fires the 438 ray
-    /// (30 damage, 7 speed) from the centre - 4, the aim at the player
-    /// ±50 ×(0.8..1.2), under 700 px with the carrier-direction match.
-    ///
-    /// Deviations: the carrier link is the sim's write-through (the
-    /// port has no NPC indices — the nearest living 91 within 800 px
-    /// stands in); the idle aim octant rides the vanilla's table.
-    fn update_scutlix_rider(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // The init (`NPC.cs:35506-35519`): `localAI[0]`'s one-time latch —
-        // `ai[0]` stands in (the mount block's own state rides `ai[1]`).
-        if self.ai[0] == 0.0 {
-            self.wants_scutlix = true;
-            self.ai[0] = 1.0;
-        }
-        if self.carrier_x < 0.0 {
-            // No carrier (yet / dead): the vanilla's mount block skips —
-            // the rider stands where it is.
-            return;
-        }
-        let (w, h) = self.size();
-        let (ccx, ccy) = (self.carrier_x, self.carrier_y);
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        // The ride (`:35657-35681`): the position centres on the carrier
-        // + UnitY * -14.
-        self.x = ccx - w * 0.5;
-        self.y = ccy - h * 0.5 - 14.0;
-        // The cycle (`:35682-35688`): ai[1] to 60, hurt → -30.
-        if self.ai[1] < 60.0 {
-            self.ai[1] += 1.0;
-        }
-        if self.hurt_cd > 0.0 {
-            self.ai[1] = -30.0;
-        }
-        if crate::projectile::can_hit(
-            world,
-            self.x,
-            self.y,
-            w,
-            h,
-            player.x,
-            player.y,
-            crate::player::WIDTH,
-            player.height,
-        ) {
-            let (px, py) = (pcx - cx, pcy - cy);
-            if (px * px + py * py).sqrt() < 700.0 {
-                if self.ai[1] == 60.0 && (px > 0.0) == (self.facing == 1) {
-                    // The fire (`:35700-35724`): the 438 ray, 30 damage,
-                    // 7 speed, from the centre - UnitY * 4, the aim
-                    // ±50 ×(0.8..1.2).
-                    self.ai[1] = -60.0;
-                    let mut ax = px;
-                    let mut ay = py;
-                    // `Next(-50, 51)` on the aim, then `Next(80, 121) * 0.01f`
-                    // on each axis (`NPC.cs:35704-35709`).
-                    ax += rng.next_range(-50, 51) as f32;
-                    ay += rng.next_range(-50, 51) as f32;
-                    ax *= rng.next_range(80, 121) as f32 * 0.01;
-                    ay *= rng.next_range(80, 121) as f32 * 0.01;
-                    let len = (ax * ax + ay * ay).sqrt().max(0.001);
-                    let inv = 7.0 / len;
-                    self.wants_hostile_shot
-                        .push((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
-                } else {
-                    // The idle aim (`:35727-35749`): the octant + the X
-                    // damp.
-                    self.vx *= 0.5;
-                    let octant = if py.abs() > px.abs() * 2.0 {
-                        if py > 0.0 { 1.0 } else { 5.0 }
-                    } else if px.abs() > py.abs() * 2.0 {
-                        3.0
-                    } else if py > 0.0 {
-                        2.0
-                    } else {
-                        4.0
-                    };
-                    self.ai[2] = octant;
-                }
-            }
-        }
-    }
+    // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
+    // the faithful `npc_ai_style75::style75_step` now (the carrier-spawn
+    // latch + the ride + the four-draw fire jitter + the idle octant +
+    // the Transform(382) fallback), routed through the aiStyle-75 axis.
 
     /// `AI_003_Fighters`'s 391-carrier arm (`NPC.cs:58203-58240`): the
     /// walker with the params 5/0.25/0.7 (the per-type fold of the other
@@ -10341,248 +10434,11 @@ impl Npc {
         // 6-row strip from here, racing the FindFrame arm).
     }
 
-    /// `AI`'s aiStyle-75 arms for the saucer family (`NPC.cs:35616-36060`)
-    /// — the mounts ride the core (the seat offsets) and run their
-    /// batteries off the core's mirrored `ai[3]` timer and `ai[0]` phase
-    /// (the pre-pass write-through): the 393 TURRET's 8-way aim + the 449
-    /// rays (35 dmg, 16 speed, the ±0.785/3 jitter, every 6 ticks in the
-    /// 280-420 window), the 394 CANNON's 448 shells (50 dmg, 8 speed, the
-    /// ±0.785 aim, the side·36 + 8 spawn, every 20 ticks in the 440-580
-    /// window), and the 392 SHELL's 447 core-shot (50 dmg at the phase-0
-    /// window's entry) + the 450 missile battery (30 dmg, 3 speed, four
-    /// emitters gated by the crew's aliveness) + the phase bridge (the
-    /// crew dead + the core open → the core's `ai[0]` = 3, the classic
-    /// arm).
-    ///
-    /// Deviations: `GetAttackDamage_ForProjectiles` runs as the classic
-    /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
-    /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
-    /// expert-mode bridge arm is constants-off (no difficulty flags).
-        fn update_saucer_mount(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        if self.carrier_x < 0.0 {
-            return;
-        }
-        let (w, h) = self.size();
-        let side = if self.ai[1] == 1.0 { 1.0 } else { -1.0 };
-        let (ox, oy) = match self.kind {
-            NpcKind::MartianSaucer => (0.0, 2.0),
-            NpcKind::MartianSaucerTurret => (side * 60.0, 29.0),
-            _ => (side * 49.0, -13.0),
-        };
-        self.x = self.carrier_x - w * 0.5 + ox;
-        self.y = self.carrier_y - h * 0.5 + oy;
-        // The mounted timers mirror the core's. A mount created by the
-        // core's own crew init starts with `carrier_timer = -1`; the
-        // pre-pass overwrites it on the first tick — seed it from the
-        // mount's own mirrored `ai[3]` so the very first tick is in step.
-        if self.carrier_timer < 0.0 {
-            self.carrier_timer = self.ai[3];
-        }
-        // The Flying Dutchman's cannon owns its `ai[3]` (the C#'s 492 block
-        // counts its own reload, `:35760-35762`), so the core's timer does
-        // not mirror into it.
-        if self.kind != NpcKind::FlyingDutchmanCannon {
-            self.ai[3] = self.carrier_timer;
-        }
-        // The display inheritance (`NPC.cs:35625-35651`): every mount
-        // copies the core's `rotation` so the family tilts as one body,
-        // and (`NPC.cs:35669-35676`) its `spriteDirection` — the cannon
-        // takes its seat's side instead (`num1056`).
-        self.rotation = self.carrier_rot;
-        if self.kind == NpcKind::MartianSaucerCannon {
-            self.sprite_dir = if self.ai[1] == 1.0 { 1 } else { -1 };
-        } else {
-            self.sprite_dir = self.carrier_facing;
-        }
-        let core_open = self.carrier_phase != 1.0 && self.carrier_phase >= 0.0;
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        match self.kind {
-            NpcKind::MartianSaucerTurret => {
-                // The 280-420 window (`NPC.cs:35750-35894`).
-                let t = self.ai[3];
-                let in_window = t >= 280.0 && t < 420.0;
-                if !in_window {
-                    // The aim (`NPC.cs:35873-35880`): outside the burst
-                    // the vanilla re-derives `ai[2]` from the player
-                    // vector's rotation, Y-clamped at 0 (the turret never
-                    // aims upward) — `FindFrame` case 393's 9 aim rows
-                    // read it back.
-                    let (pcx, pcy) = player.center();
-                    let (ax, ay) = (pcx - cx, pcy - cy);
-                    let vy = ay.max(0.0);
-                    let len = (ax * ax + vy * vy).sqrt();
-                    let (nx, ny) = if len > 0.0 {
-                        (ax / len, vy / len)
-                    } else {
-                        (0.0, 1.0)
-                    };
-                    self.ai[2] = ny.atan2(nx);
-                }
-                if in_window {
-                    if core_open && (t - 280.0) % 6.0 == 0.0 {
-                        // The 449 ray at the aim (ai[2] = the rotation).
-                        let ang =
-                            self.ai[2] + ((rng.next_double() - 0.5) * 0.7853981852531433 / 3.0) as f32;
-                        let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
-                        self.wants_hostile_shot
-                            .push((449u16, cx + vx, cy + vy, vx, vy, 35));
-                    }
-                }
-            }
-            NpcKind::FlyingDutchmanCannon => {
-                // `:35753-35823` — the Dutchman's cannon: the 240-tick
-                // reload, the line-of-sight gate, the shot and the eight-ray
-                // aim.
-                if self.ai[3] < 240.0 {
-                    self.ai[3] += 1.0;
-                }
-                let (pcx, pcy) = player.center();
-                if crate::projectile::can_hit(
-                    world,
-                    self.x,
-                    self.y,
-                    w,
-                    h,
-                    player.x,
-                    player.y,
-                    crate::player::WIDTH,
-                    player.height,
-                ) {
-                    if self.ai[3] >= 240.0 {
-                        // The shot (`:35773-35782`): the normalized
-                        // direction to the player × 14, minus 5 on the Y.
-                        self.ai[3] = 0.0;
-                        let dx = pcx - cx;
-                        let dy = pcy - cy;
-                        let d = (dx * dx + dy * dy).sqrt();
-                        let (mut vx, mut vy) = if d > 0.0 {
-                            (dx / d, dy / d)
-                        } else {
-                            (0.0, 1.0)
-                        };
-                        vx *= 14.0;
-                        vy *= 14.0;
-                        vy -= 5.0;
-                        self.wants_hostile_shot.push((240u16, cx, cy, vx, vy, 30));
-                    } else {
-                        // The aim scan (`:35789-35812`): the closest of the
-                        // eight rays around the cannon sets `ai[2]`.
-                        let mut best = 0usize;
-                        let mut best_d = f32::INFINITY;
-                        for k in 0..8 {
-                            let quarter = k as f32 * std::f32::consts::FRAC_PI_4;
-                            let ray = Vec2::new(quarter.sin(), quarter.cos());
-                            let probe = Vec2::new(cx, cy) + ray * 50.0;
-                            let d = (probe - Vec2::new(pcx, pcy)).length();
-                            if d < best_d {
-                                best_d = d;
-                                best = k;
-                            }
-                        }
-                        self.ai[2] = (best + 1) as f32;
-                        if self.sprite_dir == 1 {
-                            self.ai[2] = 9.0 - self.ai[2];
-                        }
-                    }
-                } else if self.ai[2] != 0.0 {
-                    self.ai[2] = 0.0;
-                }
-            }
-            NpcKind::MartianSaucerCannon => {
-                // The 440-580 window (`NPC.cs:35820-35858`).
-                let t = self.ai[3];
-                let in_window = t >= 440.0 && t < 580.0;
-                if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
-                    // `(Main.rand.NextDouble() - 0.5) * 0.7853981852531433`
-                    // (`NPC.cs:35845`).
-                    let ang = ((rng.next_double() - 0.5) * 0.7853981852531433) as f32;
-                    let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
-                    // The missile (`:35845`): the C# passes `ai1 = 20f` —
-                    // the arm's 20-tick arming delay.
-                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                        kind: 448u16,
-                        x: cx + side * 36.0,
-                        y: cy + 8.0,
-                        vx,
-                        vy,
-                        damage: 50,
-                        ai0: 0.0,
-                        ai1: 20.0,
-                        scale: None,
-                    });
-                }
-            }
-            _ => {
-                // The shell (`NPC.cs:35895-36060`): the phase-0 window's
-                // 447 entry shot + the 450 missile battery.
-                let t = self.ai[3];
-                let core_phase0 = self.carrier_phase == 0.0;
-                if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
-                    // The deathray (`:35917`): the C# passes `ai0 =
-                    // base.whoAmI + 1` — the spawner's own slot index — and
-                    // the arm reads it to find its owner.
-                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                        kind: 447u16,
-                        x: cx,
-                        y: cy,
-                        vx: 0.0,
-                        vy: 0.0,
-                        damage: 50,
-                        ai0: self.slot as f32 + 1.0,
-                        ai1: 0.0,
-                        scale: None,
-                    });
-                }
-                // The windows: the core's gun phase (2) opens them always;
-                // else the 280-400 and 440-580 bands.
-                let (fire_window, wide, narrow) = if self.carrier_phase == 2.0 {
-                    (true, 120.0, 120.0)
-                } else if t >= 280.0 && t < 400.0 {
-                    (true, 60.0, 90.0)
-                } else if t >= 440.0 && t < 580.0 {
-                    (true, 90.0, 60.0)
-                } else {
-                    (false, 1000.0, 1000.0)
-                };
-                if fire_window && core_open {
-                    let dmg = 30;
-                    // The grouped-emitter stand-in: one roll for the
-                    // emitter pair (the C# draws `Next(maxValue4/5)` per
-                    // slot, `NPC.cs:35981-36005` — the grouping is the
-                    // port's, recorded in the phase notes).
-                    let roll = rng.next_float();
-                    // The turret emitters (the wide arcs).
-                    if self.crew_turrets > 0 && roll < 1.0 / wide {
-                        let ang =
-                            ((rng.next_double() - 0.5) * 0.7853981852531433 / 3.0) as f32;
-                        let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
-                        self.wants_hostile_shot.push((
-                            450u16,
-                            cx - side * 55.0,
-                            cy + 35.0,
-                            vx,
-                            vy,
-                            dmg,
-                        ));
-                    } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
-                        let ang = ((rng.next_double() - 0.5) * 0.7853981852531433) as f32;
-                        let (vx, vy) = (
-                            -(roll * 2.0) * ang.cos() * 3.0 - 1.0,
-                            -ang.sin() * 3.0 - 3.0,
-                        );
-                        self.wants_hostile_shot.push((
-                            450u16,
-                            cx - side * 45.0,
-                            cy - 20.0,
-                            vx,
-                            vy,
-                            dmg,
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    // `update_saucer_mount` RETIRED (S1-D-3-wire-saucer): the 392/393/394/
+    // 492 arms are the faithful `npc_ai_style75::style75_step` now — the
+    // scale/RotatedBy seat offsets (M1), the per-slot battery gates + hit
+    // chains (M2), the phase bridge (M3), the difficulty ladders, the
+    // mirrors + the orphan death — routed through the aiStyle-75 axis.
 
     /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36520`) — the Martian
     /// Saucer Core's machine. The init spawns the four guns (2 turrets
@@ -12765,26 +12621,11 @@ impl Npc {
         // link), so the mount stays visible.
     }
 
-    /// `AI()`'s aiStyle-75 block's SolarDrakomireRider arm (`NPC.cs`:
-    /// 35523-35537`'s mount spawn + `:35662-35679`'s attach anchor +
-    /// `:36060-36061`'s `Transform(518)`) — the rider rides its 415 mount
-    /// at the `(-spriteDirection * 10, -30)` offset and becomes the
-    /// SolarSrawler (518) when the mount dies.
-    fn update_solar_drakomire_rider(&mut self, _world: &World, _player: &Player) {
-        if self.carrier_timer <= 0.0 {
-            // `:36060-36061`'s metamorph: the port's in-place kind swap
-            // (518 stays out of this slice — the vanilla's
-            // `SolarSrawler` row is `NPC.cs:15344-15354`).
-            self.hp = 0;
-            return;
-        }
-        // `:35663-35679`'s anchor ride.
-        self.x = self.carrier_x - self.size().0 * 0.5 + self.sprite_dir as f32 * -10.0;
-        self.y = self.carrier_y - self.size().1 * 0.5 - 30.0;
-        self.sprite_dir = self.carrier_phase as i32;
-        self.vx = 0.0;
-        self.vy = 0.0;
-    }
+    // `update_solar_drakomire_rider` RETIRED (S1-D-3-wire-saucer): the 416
+    // arm is the faithful `npc_ai_style75::style75_step` now — the 415
+    // carrier-spawn latch, the (−spriteDirection·10, −30) ride and the
+    // Transform(518) fallback (`NPC.cs:35523-35537`/`:36060-36062`),
+    // routed through the aiStyle-75 axis.
 
     /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29145-29665`)
     /// — S1-D-4 W-10 WIRES the faithful `npc_ai_style39::style39_step`
@@ -16215,7 +16056,7 @@ impl Npc {
         self.integrate_flyer_collision(world);
     }
 
-    fn contact(&mut self, player: &mut Player, rng: &mut UnifiedRandom) {
+    pub(crate) fn contact(&mut self, player: &mut Player, rng: &mut UnifiedRandom) {
         // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
         // journey godmode power returns before the whole collision pass — no
         // NPC contact damage and none of the EoC shield-dash arm below.
@@ -25529,6 +25370,9 @@ mod s1_d_4b_5d_tests {
 
     /// S1-D-4b-5e — the Flying Dutchman's cannon (`NPC.cs:35753-35823`): the
     /// 240-tick reload, the line-of-sight gate and the shell's shot.
+    /// S1-D-3-wire-saucer: the retired `update_saucer_mount` stand-in is
+    /// replaced by the faithful `npc_ai_style75::style75_step` over a
+    /// slot-aligned pool (the cannon at 0, its 491 ship host at 1).
     #[test]
     fn s1_d_4b_5e_the_dutchman_cannon_fires_its_shell() {
         let mut w = World::new("t".into(), 64, 64);
@@ -25556,26 +25400,48 @@ mod s1_d_4b_5d_tests {
             0.0,
         );
         cannon.hp = cannon.max_hp;
-        // The mount's anchor (the carrier write-through).
-        cannon.carrier_x = 30.0 * TILE_PX + 15.0;
-        cannon.carrier_y = 29.0 * TILE_PX + 15.0;
-        cannon.carrier_timer = 0.0;
+        cannon.ai[0] = 1.0; // the host slot (the 491 ship below)
+        cannon.ai[1] = 0.0; // seat 0
+        // The ship host: its centre sits so the seat-0 cannon (offset
+        // −122 X) rides to the LEFT of the player with line of sight.
+        let mut ship = Npc::new(NpcKind::FlyingDutchman, 35.0 * TILE_PX - 175.0, 25.0 * TILE_PX - 60.0, 1, 0.0);
+        ship.hp = ship.max_hp;
+        ship.sprite_dir = -1; // the facing flip → +1 (offset −122 stands)
+        let mut pool = vec![cannon, ship];
+        let cand = crate::npc_target::session_candidate(&player);
+        let ctx = crate::npc_ai_style75::Style75Ctx {
+            difficulty: 1.0,
+            expert: false,
+            just_hit: false,
+            ticker: 0,
+        };
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut dust = tr_core::particles::DustPool::new();
         let mut rng = UnifiedRandom::new(12345);
         // The reload: the shot lands on the 240th tick.
+        let mut shells = Vec::new();
         for _ in 0..240 {
-            cannon.update_saucer_mount(&w, &player, &mut rng);
+            let out = crate::npc_ai_style75::style75_step(
+                &mut pool, 0, &w, &[cand], &ctx, &mut dust, &dust_ctx, &mut rng,
+            );
+            for s in out.shots {
+                if s.kind == 240 {
+                    shells.push(s);
+                }
+            }
         }
-        let shells: Vec<_> = cannon
-            .wants_hostile_shot
-            .iter()
-            .filter(|s| s.0 == 240u16)
-            .copied()
-            .collect();
         assert_eq!(shells.len(), 1, "the cannon fires its shell");
-        assert_eq!(shells[0].5, 30, "the shell's damage");
+        assert_eq!(shells[0].damage, 30, "the shell's damage");
         // The shot points at the player (the direction × 14, minus 5 on Y).
         assert!(
-            shells[0].3 > 0.0,
+            shells[0].vx > 0.0,
             "the shell flies at the player ({:?})",
             shells[0]
         );
