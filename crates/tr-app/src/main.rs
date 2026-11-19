@@ -4,6 +4,7 @@
 mod accessory_defense;
 mod ammo;
 mod angler;
+mod armor_sets;
 mod app;
 mod assets;
 mod achievements;

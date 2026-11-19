@@ -28183,3 +28183,92 @@ No new streams, no draw-order changes outside the cited additions
 always made — the port previously skipped them with the dust layer;
 this slice restores them, so the UpdateNPCs stream now matches the C#
 where it previously diverged by omission).
+WRITTEN, NOT RUN — **no compiler invoked**.
+
+## S1-C-12 wave D - the LOW-tier armor set bonuses (2026-11-18, code-only mode)
+
+`crates/tr-app/src/armor_sets.rs` ports `Player.UpdateArmorSets`
+(`Player.cs:16304-16306` - `ArmorSetBonuses.GetCompleteSet(...)?.Effect(this)`,
+called at `:25685` after `UpdateEquips` `:25633`): the registration/query/
+tooltip machinery of `DataStructures/ArmorSetBonus.cs` (the array-overload
+cartesian product `:98-126`, the wildcard `QueryCount`/`TryCounting`
+`:174-193`, `GetTooltipForSinglePiece`/`GetTooltipForWornArmor` `:195-221`,
+the `Main.cs:21280-21306` worn-row pick) over a wave-D `SETS` table, plus
+the flag halves of `ArmorSetBonuses.Benefits` the port lacked. The hook
+`apply_armor_set_bonuses` runs in `player.rs` right after
+`accessory_defense::apply_defense_accessories` - i.e. after the
+`ResetEffects` clears, matching the C# call order (`ResetEffects`
+`:25491` precedes `UpdateArmorSets` `:25685`).
+
+Boundary (three disjoint owners, no double-apply):
+- STAT halves stay in `tr-core/src/armor_sets.rs` (`set_stats`,
+  `set_bonus_defense`, `set_buff_immunity`'s Snow rows) - the wave-D rows
+  never re-apply them; the Jungle/Snow/Mining cartesian products were
+  added THERE (8/8/12 triples) and the app-side rows carry empty flag
+  lists for them.
+- BUFF-slot arms (pets/imbues/tongued/...) stay E-7c's
+  `buff_effects_accessory.rs`; this seam only READS `p.tongued` for the
+  `:26494` movement gate.
+- FLAG halves are this seam's: shadow/crimson/meteor/gladiator/frost/
+  ash-wood/molten + the ammo sets.
+
+Per-set port notes (C# cites verified line-by-line against the
+decompiled sources):
+- AshWood 5279/5280/5281 (`ArmorSetBonuses.cs:402`, `:380-383`):
+  `ashWoodBonus` halves the lava hit (`Player.cs:27694-27702` -
+  `num79 /= 2` = 40, `num80 -= 210` = 210). The set's own 7 defense
+  (2+3+2) floors the reduction: floor(40-3.5)=36.
+- Gladiator 3187/3188/3189 (`:414`, `:327-330`): `noKnockback` - the
+  Hurt gate (`Player.cs:38519`) already reads it.
+- ShadowScale (`:437`, `:312-315`): {102,956}x{101,957}x{100,958} = 8
+  triples; the boost (`Player.cs:26511-26517` - accel x1.75, max/acc run
+  x1.15, slowdown x1.75) rides the movement block under the port's
+  `!grappling_active && !tongued` gate (`:26494`).
+- Crimson 792/793/794 (`:438`, `:248-251`): `crimsonRegen` feeds
+  `RegenInputs.extra_time` (+1, `Player.cs:19117-19120`) and
+  `extra_ramp_scale` (x1.5, `:19242-19245`) - the engine's own slots,
+  applied after the movement multiply, before the campfire.
+- Meteor 123/124/125 (`:441`, `:264-267`): `spaceGun` skips the mana pay
+  (`ItemCheck_PayMana_ShouldSkipManaUse`, `Player.cs:52695-52698`) AND
+  the regen delay (`ItemCheck_ApplyManaRegenDelay`, `:50587-50593`) for
+  127/4347/4348/514 - the port folds both into the pay path's skip in
+  `world_sim/editing.rs` (no pay, no delay).
+- Frost 684/685/686 (`:442`, `:269-274`): `frostBurn` flag only; the
+  +10% melee/ranged halves were already tr-core `SET_STATS`.
+- Molten 231/232/233 (`:444`, `:281-289`): `fireWalk` + the GATED
+  `buffImmune[24]`. The gate is `!vampireBurningInSunlight` (`:285-288`)
+  - it needs the player flag, so the row MOVED from tr-core's ungated
+  `set_buff_immunity` to this seam (`SetFlag::MoltenFireImmune`). The
+  flag's granter (`VampireSeedSunlightExposure`, `Player.cs:28672-28719`)
+  is unported, so the gate always passes today; it stands ready.
+- Fossil/CobaltRanged/MythrilRanged/AdamantiteRanged (`:416`/`:456`/
+  `:459`/`:462`): `ammoCost80`/`ammoCost75` are granted in
+  `world_sim/player.rs::grant_ammo_mastery` (call site `:796`), NOT in
+  the main seam - that pass clears and re-derives the ammo flags AFTER
+  `update_equips` runs, so a grant in the main seam would be wiped the
+  same tick. Deviation from the C# position (inside `UpdateArmorSets`),
+  same-tick behaviour identical.
+
+Deliberate deferrals (no port fields/seams yet):
+- the `frostBurn` on-hit consumers (`Player.cs:6548-6551` StatusToNPC,
+  `Projectile.cs:11518-11521`/`:11851-11854`/`:17323` - no melee
+  StatusToNPC / projectile enchant seam exists; `magmaStone` equally
+  unported);
+- the `lavaRose` halves (`Player.cs:27703-27707`) and the remix-world
+  lava variants (`:27689-27693`, `:27696-27699`);
+- the empressBrooch/Magiluminescence movement arms (`:26500-26510`);
+- the crimson heal-chunk dust (`:19292-19305`, visual);
+- the `BuildLookup` group-by overwrite quirk (`ArmorSetBonuses.cs:495-519`)
+  - the wave-D piece ids are disjoint across sets, so the Head-then-Body
+  scan of `GetCompleteSet` (`:521-540`) collapses to a plain
+  complete-row scan with identical results;
+- the tooltip fns (`tooltip_for_single_piece`/`tooltip_for_worn_armor`/
+  `best_worn_set`) are WRITTEN + tested but NOT wired into
+  `ui/tooltip.rs` yet - the port's tooltip has no set-bonus row block;
+  the wiring rides the tooltip wave. `lang.rs::text_format_with` ports
+  `LocalizedText.FormatWith` with named substitutes for them.
+
+The 16 per-set tests + the tr-core product tests are WRITTEN, NOT RUN -
+**no compiler invoked** (code-only round). Verified by re-reading the
+C# line-by-line and hand-arithmetic (the lava 36/76 reductions, the
+crimson ramp 0.453125 -> 0 vs 0.6796875 -> 1 banker's rounds).
