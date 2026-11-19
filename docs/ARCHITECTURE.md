@@ -150,13 +150,18 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
-- `growth.rs` + `growth/trees.rs` — the `WorldGen.UpdateWorld` runtime growth ticks
-  (herbs, grass/spread, vines/moss, shells, pumpkins, dye plants, the dispatchers).
+- `growth.rs` + `growth/trees.rs` + `growth/grass.rs` — the `WorldGen.UpdateWorld` runtime
+  growth ticks (herbs, vines, shells, pumpkins, dye plants, the dispatchers).
   S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
   `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
   `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
   `empty_tile_check`, the tree-invalidity kill) — verbatim move, public seams
-  re-exported from `growth`.
+  re-exported from `growth`. S1-K-3b split out the grass/spread family into
+  `growth/grass.rs` (`update_world_grass_growth`, `spread_grass`,
+  `moss_conversion`/`grow_moss_arm`, the M5-SPREAD-1 wall block —
+  `convert_wall_by_case`, `spread_grass_walls`, `spread_desert_walls`) —
+  verbatim move, public seams re-exported from `growth` (code-only mode,
+  byte-proof, cargo gate deferred — ANALYSIS "S1-K-3b").
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets

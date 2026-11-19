@@ -25,6 +25,7 @@ mod combat_text;
 #[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
+mod drawdata_cases_a;
 mod dye;
 mod emotes;
 mod env;
@@ -55,6 +56,7 @@ mod npc_chat;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
+mod npc_ai_pumpkin_boss;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;

@@ -641,6 +641,27 @@ pub(crate) fn draw_tiles(
                         tile.frame_y,
                         0,
                     );
+                    // S1-F-9d slice A: the delegated static-case pass —
+                    // LilyPad's liquid float (518), the oasis/sea-oats
+                    // biome rows (530/529) and the SECOND GetTileDrawData
+                    // switch's frame/top maths + glow pick
+                    // (TileDrawing.cs:6049-6507), applied after the main
+                    // switch like the C#. The glow record rides unused
+                    // until the glow pass binds it (TILE-DRAW-2); the
+                    // cell light converts to XNA bytes (alpha 255, the
+                    // `Lighting.GetColor` colour has no alpha), the UI
+                    // text pulse is steady 255 and martianLight 0 outside
+                    // the (unported) event — documented deviations.
+                    let cell = raw_l;
+                    let cell_bytes = [
+                        (cell[0] * 255.0).min(255.0) as u8,
+                        (cell[1] * 255.0).min(255.0) as u8,
+                        (cell[2] * 255.0).min(255.0) as u8,
+                        255,
+                    ];
+                    let _glow = crate::drawdata_cases_a::apply_cases_a(
+                        &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
+                    );
                     dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
