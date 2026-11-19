@@ -24893,3 +24893,89 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The mount machine (S1-D-3 aiStyle-75, code-only)
+
+`crates/tr-app/src/npc_ai_style75.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 75)` arm (`NPC.cs:35501-36070`) — the
+mount/rider family. CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the
+16 witness tests are written, not run. Wiring deferred (the style72 /
+BlazingWheel precedent): the live `npc.rs::update_scutlix_rider` /
+`update_saucer_mount` keep running byte-identical; only the one-line
+`mod npc_ai_style75;` seam landed.
+
+- **Census (identity verified from the C#)**: `this.aiStyle = 75;`
+  across `NPC.cs` returns exactly SIX hits — ScutlixRider 390
+  (`:13973`), MartianSaucer 392 (`:14000`), MartianSaucerTurret 393
+  (`:14018`), MartianSaucerCannon 394 (`:14035`), FlyingDutchmanCannon
+  492 (`:14655`), DrakomireRider 416 (`:15338`). The saucer CORE 395
+  rides aiStyle 76 (`:36071`, out of scope); the `Projectile.cs`
+  aiStyle-75 rows are the projectile space (S1-D-4). The port's
+  `npc/data.rs:1994-1995` already claims style 75 for exactly these six
+  kinds. The brief's "ScutlixRider/MartianSaucer family" is confirmed
+  and extended with the Dutchman cannon + the Drakomire rider.
+- **The live arms are approximations, not the C# machine.** The audit
+  found, against `NPC.cs:35501-36070`: (a) the 392 shell's missile
+  battery runs a GROUPED-EMITTER stand-in — ONE `next_float` roll for
+  the emitter pair (`npc.rs:9373-9405`, self-documented) where the C#
+  draws `Next(maxValue4)` per turret slot and `Next(maxValue5)` per
+  cannon slot, each hit drawing its own NextDouble/NextDouble/
+  Next(50,70)/Next(30,45) chain (`:35978-36025`) — a stream divergence
+  on every battery tick; (b) the four dead-crew DUST emitters
+  (`:36027-36054`, the `Next(8)` gates + the 31/228 picks + the
+  NewDust internals + the velocity NextDouble pairs) are absent —
+  more missing draws; (c) the PHASE BRIDGE (`:35552-35613`: crew all
+  dead + the core in [0,1) → ai[0] = 3 classic / 1 expert, the %200
+  crew netUpdate marks) is absent from the live shell arm; (d) no
+  `DiscourageDespawn(60)` / `timeLeft` mirrors / `gfxOffY` /
+  `direction` mirrors anywhere; (e) the carrier-gone `Transform(382)`
+  / `Transform(518)` fallbacks (`:36056-36063`) and the orphan death
+  (`:36064-36069`) are absent (the live rider just returns); (f) the
+  393 turret's difficulty ladder (`GetAttackDamage_ForProjectiles
+  (35, 30)`) and the 394's (50, 37) run as flat classic constants;
+  (g) the 492's `ai[3] == 2` one-shot `TargetClosest(false)` and the
+  393's per-tick out-of-window retarget are missing; (h) the ride
+  offsets skip the host `scale` multiply + `RotatedBy` (identity at
+  scale 1 / rotation 0, but the saucer core DOES rotate in its
+  vulnerable wobble). The faithful module ports all of it.
+- **RNG by construction**: every arm-level `Main.rand` draw is
+  consumed in C# textual order on the caller's stream — the 390 fire's
+  four jitters (`:35705-35708`), the 394/393 shot NextDoubles
+  (`:35842`/`:35886`), the battery's per-slot `Next(maxValue4/5)`
+  gates + hit chains (`:35978-36025`), and the dust gates' full chains
+  (`:36027-36054`) INCLUDING the real `DustPool::new_dust` internals
+  (`Dust.cs:75-256`, the type-228 `Next(-10,6)` tweak) and the
+  sentinel-slot velocity writes. The Item12/Item39 cues ride
+  `Style75Out::sounds` (the style10 `play_item8_sound` precedent — the
+  audio seam owns the one `Next(-6,7)` pitch draw per audible play,
+  `LegacySoundPlayer.cs:632`). The witness tests replay the streams
+  against mirrored `UnifiedRandom` oracles.
+- **Seams**: the slot-aligned pool (`npcs[me]` = `Main.npc[whoAmI]`,
+  the style37 convention; `active` ≈ `hp > 0`); `netMode` = 0
+  (single-player); the 390/416 first-tick carrier spawn rides
+  `spawn_carrier` with a documented ONE-TICK fold (the C# rides the
+  same tick via the synchronous `NewNPC` slot write; the port's
+  caller allocates after the tick — the spawn tick returns early, no
+  Transform); `Transform` rides the request seam (the caller runs
+  `NPC.Transform`, `NPC.cs:81084-81114`); `DiscourageDespawn(60)` maps
+  to `despawn_timer < 60 → 60` (the `despawnEncouraged` half has no
+  port field); the orphan death sets `hp = 0` + `died` (the caller
+  owes HitEffect + deactivation, the style72 pop precedent).
+- **Float fidelity**: XNA `Normalize`'s reciprocal-first order, the
+  double-precision `Length`/`Distance`, `RotatedBy`'s double cos/sin
+  cast to f32 (`Utils.cs:1675-1684`), `ToRotation(Vector2)`'s double
+  atan2 (`:1655-1658`), the INTEGER `Entity.Center` halves, the
+  `Math.Sign` zero case, the `(int)` Remap truncation
+  (`NPC.cs:7052-7055`).
+
+**Verification.** Code-only: every seam call site was checked against
+the actual signatures by read/grep (`can_hit`'s 9-arg shape,
+`DustPool::new_dust`'s 12-arg shape + the `DustRng for UnifiedRandom`
+impl, `target_closest`'s 6-arg shape, the `Npc` fields
+`local_ai`/`despawn_timer`/`gfx_off_y`/`net_update`/`sprite_dir`,
+`HostileShotAi`'s 8 fields); the C# arm was re-read line-by-line
+(`NPC.cs:35501-36070` in full, plus `Transform` `:81084-81114`,
+`DiscourageDespawn` `:7258-7265`, `GetAttackDamage_ForProjectiles`
+`:7052-7055`, `Dust.NewDust` `:75-256`, `Utils.RotatedBy/ToRotation*`,
+`LegacySoundPlayer.cs:610-634`). The 16 witness tests are WRITTEN, NOT
+RUN — **no compiler invoked**.
