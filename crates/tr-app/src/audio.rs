@@ -130,6 +130,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Menu_Open", 10),
     ("Menu_Close", 11),
     ("Menu_Tick", 12),
+    // `SoundEngine.PlaySound(24)` — the town-NPC talk open
+    // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
+    // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
+    ("Chat", 24),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
