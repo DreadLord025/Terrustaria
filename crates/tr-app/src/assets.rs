@@ -1121,6 +1121,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_327",
         "NPC_329",
         "NPC_330",
+        // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per
+        // kind — the Zombie Elf trio (338-340), the Present Mimic (341),
+        // the Gingerbread Man (342), the Yeti (343) and the Everscream
+        // (344) — keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SNOW_SHEETS).
+        "NPC_338",
+        "NPC_339",
+        "NPC_340",
+        "NPC_341",
+        "NPC_342",
+        "NPC_343",
+        "NPC_344",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
