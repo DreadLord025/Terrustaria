@@ -17375,6 +17375,71 @@ determinism, mode-switch no-leak (`set_mode` + `clear`), the modern-recompute
 byte-equality, the AddLight cap/mean-collapse, the actuated-block mask gate,
 lava/water decay.
 
+### Wave B: the per-mode screenshots (S1-E-19 wave B, 2026-11-18)
+
+Eight baselines in `docs/screenshots/`, two runs SHA256-equal each (a pristine
+`Terrustaria.trwld` copy per run — the autosave caveat above; the shot exits
+via `std::process::exit(0)` before any save). Harness: `TR_SHOT`,
+`TR_SHOT_FRAME=120`, `TR_DAY=0.5`, `TR_NO_BG=1`, `TR_NOHUD=1`, `TR_DEBUG=0`,
+zoom 1.0 (the 1600x900 headless default), `TR_LIGHT_MODE=<mode>`; the surface
+scene is `TR_CAM=400,390` (the seed-1 stand-in's surface line ~400 at x=400),
+the cave scene `TR_CAM=400,440` + the `TR_TILES` fixture
+`380,428,40,24;385,448,4,0,0;400,448,4,0,0;415,448,4,0,0` (a 40x24 air box
+with three torches on its floor).
+
+| mode | surface SHA256 | cave SHA256 |
+| --- | --- | --- |
+| color | `0E532C5BE2BD341C3BBAB0EA425184AA23E8F7458A11B2AD43F9C4166164C2F3` | `1E3DA95E94C45A8C8DCA3CB62979FD7EE669C9AB6C94A7C52987E32A85758179` |
+| white | `91563F56738BAB7614E3F5EE4C773534615C2AC8710C1FB86A61CC23DD143447` | `CD20AEE77E0B57A690190EFF907F2FB7B25F8AEE5920EC0688E3096C770DF016` |
+| retro | `E50314437A8C7D115457CF6733C21D61F8CC47538A4721A7D115D94236FD3226` | `AC140390249396157D3AC76FF72E4D5E9C5419C5F2E07A65ED8F8F6921D97BEE` |
+| trippy | `3146F9A2DA8C582ECEE52BDAD63FE065B3B3A6FC8BA0FE1B638556BA94567909` | `76F00760E84B4CE4A8F389E470F1D89377E04FB64C040BDFDCCA28893F7FEF23` |
+
+Observations (cave scene, the torch ring right of the centre torch, screen
+row at torch height; mean-of-RGB per tile step): Retro's subtractive carry
+(−0.04/air) out-reaches White's ×0.9 at distance — 5..8 tiles out Retro reads
+130/101/54/43 vs White 87/47/19/15 and Color 113/56/24/18; Trippy's
+per-channel subtraction kills B first (8 tiles out: (36,19,0) — the RGB
+fringe), matching `doColors_Mode3_Swipe`'s independent `<= 0` gates
+(`:1331-1435`). White's LIGHT field is grey (the `white_engine_golden`'s
+every-cell-grey assertion); the warm cast on lit dirt is the texture's own
+colour under grey light — the no-bleed property is the light, not the tint.
+The surface scene shows the engines' different reach: Color leaves the
+sealed caves below the surface black, while the legacy engines light cave
+pockets through the shafts — their `OffScreenTiles = 35` working area
+(`Lighting.cs:45-56`) vs the modern engine's 28/18 padding carries sunlight
+further down; both shapes are the C#'s. No engine defect found — the modes
+render distinctly and match the C# expectations.
+
+**The wave-B harness defect (fixed, not an engine change).** The first shot
+matrix came out Color-identical for all four modes: `App::new` seeds
+`light_mode` from `TR_LIGHT_MODE` (`mod.rs:3361`), but the boot
+`apply_settings()` (`main.rs:199`) then re-read `settings.light_mode`
+(the config's Color) and clobbered the pin. Fix: `apply_settings` re-reads
+`env::light_mode()` first (the `TR_ZOOM`/`zoom_pinned` precedent), and
+`env::light_mode` became a live read (the `TR_SUNDIAL` precedent) so the
+settings-screen close path cannot drop a live pin either. Test
+`s1_e_19b_light_mode_pin_survives_apply_settings` (settings_ui.rs) pins the
+boot order, the repeat-apply and the no-pin config fallback.
+
+**Post-merge re-pin (MERGER-L6, 2026-11-19).** After the sync over main's
+S1-G-1 waves (vines/ropes/cracks/pylons), one shot pair per mode was re-taken
+on the merged state (×2 SHA256-equal each; the recipe above, pristine
+`Terrustaria.trwld` copy per run via `TR_WORLD`). The color-surface baseline
+stayed byte-equal; the other seven shifted (2.7k-21.7k px). Investigated, not
+silent: an A/B build at the pre-vine base `8ab0ede3` reproduces every old
+baseline byte-exactly, and the shift bisects to the vine-strip pass
+(`934e8242`, S1-G-1 wave A): `draw_tiles` now routes `VineThreads` cells to
+the deferred `DrawVines` strip pass (`TileDrawing.cs:429`, `:536-545`), which
+lights every segment with its OWN `Lighting.GetColor(x, i)` (`:9081`) - the
+old inline draw tinted vine cells through the generic tile path (dimmer,
+pre-strip approximation). The bright strips in the new shots are the C#'s
+per-segment lighting; the engine behaviour is the landed, cited correction,
+so the baselines are re-pinned to the merged state (the SHAs above).
+MERGER-L7 re-verified one pair (white surface+cave) after the further sync
+over main 5d1bd25c (E-7a/F-7b/F-9c waves): x2 SHA256-equal runs, byte-equal
+to the committed baselines and the re-pinned SHAs above — no further scene
+shift from those landings.
+
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
 Two bugs: no mouse cursor over the bestiary, and the entity icon showed the
