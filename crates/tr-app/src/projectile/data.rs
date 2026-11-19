@@ -1031,7 +1031,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 1, hostile, `penetrate = -1`, `alpha = 255`,
             // `scale = 1.2f`, `timeLeft = 600`, `extraUpdates = 1` (the
             // Gangsta's throw overrides the life to 300, `NPC.cs:29026`).
-            // `light = 0.5f` has no port field (ANALYSIS S1-D-3q).
+            // `light = 0.5f` (`:1985`) rides S1-E-5's `set_defaults_light`
+            // row for this kind (the data-carrying spawn copies it).
             BULLET_SNOWMAN => (
                 4.0,
                 4.0,
