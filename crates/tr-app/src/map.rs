@@ -604,6 +604,36 @@ impl WorldMap {
         self.map_time
     }
 
+    /// `Main.cs:61818-61821`: the per-frame `mapTime` countdown. The legacy
+    /// engine's export (`LegacyLighting.cs:349-373`) reads the counter and
+    /// re-arms it from `mapTimeMax`; the modern `ExportToMiniMap` path keeps
+    /// its own countdown inside [`Self::update`]. The frame calls this once
+    /// per update while a legacy mode is active (S1-E-19 wave B).
+    pub fn tick_map_time(&mut self) {
+        if self.map_time > 0 {
+            self.map_time -= 1;
+        }
+    }
+
+    /// The `Main.Map` seam for the legacy engine's minimap light export
+    /// (`TryUpdatingMapWithLight`, `LegacyLighting.cs:371-433`, S1-E-19 wave
+    /// B): borrows the tile array and the `mapTime` counter so the engine can
+    /// run `WorldMap.UpdateLighting` (`WorldMap.cs:49-63`) and re-arm the
+    /// countdown. `map_enabled` is `Main.mapEnabled` (`Main.cs:813`), the
+    /// export gate (`:349`). The changed tiles come back through the seam's
+    /// `changed` list — the driver pushes them into the texture's dirty list.
+    pub fn legacy_light_export(
+        &mut self,
+        map_enabled: bool,
+    ) -> tr_core::lighting::legacy::MapLightExport<'_> {
+        tr_core::lighting::legacy::MapLightExport::new(
+            &mut self.tiles,
+            &mut self.map_time,
+            self.map_time_max,
+            map_enabled,
+        )
+    }
+
     /// `WorldMap.IsRevealed` (`WorldMap.cs:44-47`): the tile has been
     /// explored. The C# reads `_tiles[x, y].Light > 0`; the port's guard is on
     /// the bounds because its array is flat.
@@ -1193,6 +1223,44 @@ mod tests {
             3,
             "the export re-arms `mapTime` from `mapTimeMax` (`LegacyLighting.cs:373`)"
         );
+    }
+
+    /// S1-E-19 wave B (tests-as-code, code-only mode — written, not run):
+    /// the `Main.Map` seam the legacy engine's minimap export borrows
+    /// (`LegacyLighting.cs:341-358`/`:371-433`). The seam hands out the tile
+    /// array + the `mapTime` counter; the engine re-arms the counter from
+    /// `mapTimeMax` (`:373`) and reports the changed tiles back.
+    #[test]
+    fn s1_e_19b_the_legacy_light_export_seam_borrows_tiles_and_counter() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.map_time_max = 5;
+        // Arm the countdown through the seam (`Main.mapTime`, `Main.cs:803`),
+        // then tick it per frame (`Main.cs:61818-61821`) — it floors at 0.
+        {
+            let mut e = m.legacy_light_export(true);
+            *e.map_time = 2;
+        }
+        m.tick_map_time();
+        m.tick_map_time();
+        m.tick_map_time();
+        assert_eq!(m.map_time(), 0, "the countdown floors at 0");
+        {
+            let mut e = m.legacy_light_export(true);
+            assert!(e.map_enabled, "the `Main.mapEnabled` gate rides the seam");
+            assert_eq!(e.map_time_max, 5);
+            // The engine's re-arm (`:373`) writes through the borrow.
+            *e.map_time = e.map_time_max;
+            // A reveal through the seam's tile array is a real map write
+            // (`WorldMap.UpdateLighting`, `WorldMap.cs:49-63`).
+            assert!(crate::map::update_map_lighting(&world, e.tiles, 100, 70, 200));
+            e.changed.push((100, 70));
+        }
+        assert_eq!(m.map_time(), 5, "the re-arm persists on the map");
+        assert_eq!(m.tiles[world.index(100, 70)].light, 200, "the tile write persists");
+        // The disabled seam carries the gate the engine checks (`:349`).
+        let e = m.legacy_light_export(false);
+        assert!(!e.map_enabled);
     }
 
     #[test]

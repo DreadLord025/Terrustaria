@@ -95,6 +95,21 @@ pub fn walker_step(
     } else {
         npc.vx *= 0.9;
     }
+    walker_integrate(npc, world, params, gravity, max_fall);
+}
+
+/// The gravity + tile-collision integration shared by [`walker_step`] and
+/// [`walker_step_ladder`] — verbatim the second half of the walk step
+/// (`NPC.cs:10586+`'s position pass). Extracted so the ladder variant
+/// swaps only the velocity write, never the choreography.
+fn walker_integrate(
+    npc: &mut Npc,
+    world: &World,
+    params: WalkerParams,
+    gravity: f32,
+    max_fall: f32,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
     npc.vy = (npc.vy + gravity).min(max_fall);
 
     let nx = npc.x + npc.vx;
@@ -121,6 +136,113 @@ pub fn walker_step(
         npc.y = (ty + 1) as f32 * TILE_PX;
         npc.vy = 0.0;
     }
+}
+
+/// S1-D-3 (speed table) — [`walker_step`] with the `AI_003_Fighters`
+/// per-type velocity ladder (`npc_ai3_speeds.rs`, `NPC.cs:57403-58401`)
+/// replacing the direct `vx = facing * speed` write for the aiStyle-3
+/// kinds. The facing/sprite writes, the aggro window, the gravity and the
+/// integration stay byte-identical to [`walker_step`]; a kind the ladder
+/// declines (sibling-owned frost ids, the shooter-block exclusions) or a
+/// non-aiStyle-3 kind falls back to the direct write, so every existing
+/// caller's behaviour is preserved unless the C# ladder names its type.
+pub fn walker_step_ladder(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    params: WalkerParams,
+    gravity: f32,
+    max_fall: f32,
+    target_dead: bool,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+    let dx = target_x - cx;
+    let dy = target_y - cy;
+    let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
+    if aggro {
+        npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // BUG-07's lockstep write, as `walker_step` (`NPC.cs:19867`).
+        npc.sprite_dir = npc.facing;
+        if !run_ai3_ladder(npc, world, target_x, target_y, gravity, target_dead) {
+            npc.vx = npc.facing as f32 * params.speed;
+        }
+    } else {
+        npc.vx *= 0.9;
+    }
+    walker_integrate(npc, world, params, gravity, max_fall);
+}
+
+/// Build the [`crate::npc_ai3_speeds::LadderCtx`] from the NPC + world +
+/// target, run the ladder and write its results back. Returns false when
+/// the kind is not aiStyle 3 or the ladder declines the type (the caller
+/// keeps its current walk). The zombie's own machine (`npc.rs`'s
+/// `update_zombie`) calls this at the C#'s ladder position too.
+pub fn run_ai3_ladder(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    gravity: f32,
+    target_dead: bool,
+) -> bool {
+    if npc.kind.ai_style() != 3 {
+        return false;
+    }
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+    let mut ctx = crate::npc_ai3_speeds::LadderCtx {
+        npc_type: npc.kind.cs_id(),
+        vx: npc.vx,
+        vy: npc.vy,
+        direction: npc.facing,
+        sprite_direction: npc.sprite_dir,
+        scale: npc.scale,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        ai2: npc.ai[2],
+        ai3: npc.ai[3],
+        center_x: cx,
+        center_y: cy,
+        // The port's effective per-tick gravity stands in for the C#'s
+        // `NPC.gravity` static (`NPC.cs:90881`'s 0.3f default).
+        gravity,
+        target_center_x: target_x,
+        target_center_y: target_y,
+        target_dead,
+        day_time: world.day_time,
+        below_surface: (npc.y as f64) > world.world_surface * 16.0,
+        // `Collision.CanHit(Center, 1, 1, …)` (`:58299`) — the port's
+        // line-ray seam (`projectile::can_hit_line`, the `CanHitLine`
+        // port) at the same 1×1 centres.
+        can_hit_target: crate::projectile::can_hit_line(
+            world, cx, cy, 1.0, 1.0, target_x, target_y, 1.0, 1.0,
+        ),
+        def_damage: npc.kind.contact_damage(),
+    };
+    let Some(((vx, vy), fx)) = crate::npc_ai3_speeds::apply_ladder(&mut ctx) else {
+        return false;
+    };
+    npc.vx = vx;
+    npc.vy = vy;
+    if let Some(v) = fx.ai2 {
+        npc.ai[2] = v;
+    }
+    if let Some(v) = fx.ai3 {
+        npc.ai[3] = v;
+    }
+    if let Some(v) = fx.damage {
+        // The port's live `NPC.damage` seam is `damage_override` (the
+        // contact path reads it at `npc.rs`'s `damage_override.unwrap_or`
+        // over the kind's `contact_damage()` — the C# `this.damage` write,
+        // `NPC.cs:58266`/`:58308`).
+        npc.damage_override = Some(v);
+    }
+    // `fx.hop_flag` (the `:57847` flag) feeds the C#'s obstacle-jump scan
+    // (`:59831`) — the port's collision jump is that scan's stand-in;
+    // ANALYSIS deferral.
+    true
 }
 
 /// `AI_002_FloatingEye`'s fly-and-bob step (`NPC.cs:52274+`, the eye
@@ -702,35 +824,6 @@ pub fn caster_cycle(
     false
 }
 
-/// `AI_009`'s sphere core (`NPC.cs:21404-21429`): the velocity points at
-/// the player ONCE (`target == 255`'s launch arm — `TargetClosest` + the
-/// normalized delta × `num120`), then the ball flies straight
-/// (`noGravity` + `noTileCollide`: the generic `position += velocity`
-/// integration, `:90495-90498`). The port launches while the velocity is
-/// still zero. `num120` is 6, the Burning Sphere 5 (`:21395-21399`).
-pub fn sphere_step(npc: &mut Npc, target_x: f32, target_y: f32, world: &World) {
-    let (w, h) = npc.size();
-    if npc.vx == 0.0 && npc.vy == 0.0 {
-        let dx = target_x - (npc.x + w * 0.5);
-        let dy = target_y - (npc.y + h * 0.5);
-        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-        let speed = match npc.kind {
-            NpcKind::BurningSphere => 5.0,
-            _ => 6.0,
-        };
-        npc.vx = dx / d * speed;
-        npc.vy = dy / d * speed;
-    }
-    npc.x += npc.vx;
-    npc.y += npc.vy;
-    npc.facing = if npc.vx >= 0.0 { 1 } else { -1 };
-    // The off-world guard (the flyer_step shape): the balls fly through
-    // everything, so the only stop is the world edge.
-    if npc.y > world.height as f32 * TILE_PX + 200.0 {
-        npc.hp = 0;
-    }
-}
-
 /// The swim tunables — `AI_016`'s per-kind constants (`NPC.cs`'s aiStyle 16
 /// block: the chase accel/caps and the aggro gate).
 #[derive(Clone, Copy, Debug)]
@@ -955,6 +1048,65 @@ mod tests {
         assert!(npc.x < 90.0 * 16.0, "the walker approached the target");
         assert!(jumped, "the walker jumped the obstacles");
         assert!(npc.on_ground, "the walker landed");
+    }
+
+    #[test]
+    fn s1_d_3_the_ladder_walker_accelerates_at_the_csharp_rate() {
+        // S1-D-3 (speed table): the zombie (type 3) rides the num107
+        // default arm (`NPC.cs:58322-58401`) — the 0.07 accel, not the
+        // old direct `vx = facing * speed` write. Flat ground, no
+        // obstacles: the velocity curve is the C#'s own.
+        let w = ground();
+        let mut npc = Npc::new(NpcKind::Zombie, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        npc.on_ground = true;
+        let target = (60.0 * 16.0, 119.0 * 16.0);
+        walker_step_ladder(
+            &mut npc,
+            &w,
+            target.0,
+            target.1,
+            WalkerParams::ZOMBIE,
+            0.4,
+            10.0,
+            false,
+        );
+        // Tick 1: vx 0 → -0.07 (the target is left), NOT -1.0.
+        assert!((npc.vx - (-0.07)).abs() < 1e-6, "vx {}", npc.vx);
+        for _ in 0..14 {
+            walker_step_ladder(
+                &mut npc,
+                &w,
+                target.0,
+                target.1,
+                WalkerParams::ZOMBIE,
+                0.4,
+                10.0,
+                false,
+            );
+        }
+        // Tick 15: the cap 1 (`:58324`) — 15 × 0.07 = 1.05 clamps at 1.
+        assert!((npc.vx - (-1.0)).abs() < 1e-5, "vx {}", npc.vx);
+        assert!(npc.x < 90.0 * 16.0, "the ladder walker still chases");
+    }
+
+    #[test]
+    fn s1_d_3_the_ladder_walker_keeps_the_direct_write_for_declined_kinds() {
+        // A non-aiStyle-3 kind (the DemonEye, style 2) keeps the old
+        // direct write byte-for-byte — the ladder only claims style 3.
+        let w = ground();
+        let mut npc = Npc::new(NpcKind::DemonEye, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        npc.on_ground = true;
+        let params = WalkerParams {
+            speed: 2.0,
+            jump: -6.2,
+            aggro_x: 80.0 * 16.0,
+            aggro_y: 40.0 * 16.0,
+        };
+        walker_step_ladder(&mut npc, &w, 60.0 * 16.0, 119.0 * 16.0, params, 0.4, 10.0, false);
+        assert_eq!(npc.vx, -2.0, "the declined kind keeps the direct write");
+        // The aggro window's outside decay is unchanged too.
+        walker_step_ladder(&mut npc, &w, 5000.0, 119.0 * 16.0, params, 0.4, 10.0, false);
+        assert_eq!(npc.vx, -2.0 * 0.9);
     }
 
     #[test]
