@@ -1483,9 +1483,12 @@ zero at `(1 + |vx| / 3) * stepSpeed` px per tick, and the sprite is drawn at
 `position + gfxOffY` (`Player.VisualPosition`). Jumps gate on `velocity.Y == 0` after
 collision, exactly like `Player.cs`. Water buoyancy, half bricks (bottom 8 px solid) and
 ceiling slopes 3/4 (solid above the diagonal) follow the same code paths.
-The player steps at a fixed 60 Hz and `Player::interpolated(alpha)` blends the previous and
-current positions for rendering and camera follow, so a jump is not a 60 Hz staircase on a
-high-refresh display. NPCs use their own fixed 60 Hz accumulator (`NPC.cs` update rate);
+The player steps at a fixed 60 Hz and the draw reads the RAW fixed-step position
+(`draw_region` clones `self.player`; `Main.DrawPlayers` hands `player.position` to
+`LegacyPlayerRenderer`, `Main.cs:22298` → `LegacyPlayerRenderer.cs:468-475` — no
+between-tick blend exists in the C#; see "The player motion smear
+(fix/player-motion-blur)" below for the removed invented interpolation). NPCs use
+their own fixed 60 Hz accumulator (`NPC.cs` update rate);
 before that they advanced once per rendered frame and were far too fast at 500+ FPS.
 Respawn returns to `spawn_x/spawn_y` from the world header.
 
@@ -19925,6 +19928,67 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 (`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
+
+## The player motion smear (fix/player-motion-blur)
+
+User report: "персонаж мылится при любом движении" — the character smears/blurs
+during ANY movement. Diagnosis (the whole C# draw path vs the port):
+
+- **Sampler parity — already correct.** The C# world batch runs under
+  `Camera.Sampler` = `Main.DefaultSamplerState` (`Camera.cs:44`), which is
+  `SamplerState.PointClamp` whenever the frame renders through the capture
+  targets (`Main.cs:2774-2784`, `!drawToScreen`); `LegacyPlayerRenderer.
+  DrawPlayerFull` begins with it (`LegacyPlayerRenderer.cs:264-269`). The
+  port's atlas sampler is nearest/clamp on both axes — now extracted as
+  `tr_render::sprite::atlas_sampler_descriptor()` and test-pinned
+  (`atlas_sampler_is_point_clamp`). Not the culprit.
+- **Camera parity — already correct.** `DoDraw_UpdateCameraPosition` snaps to
+  `PlayerFocusedScreenPosition` and `(int)`-truncates `Main.screenPosition`
+  (`Main.cs:62633-62647`); the port's `update_camera_at_draw` does the same
+  (S1-B-4), and `draw_region` additionally snaps `cam * zoom` to whole screen
+  pixels (the documented tile-crawl fix). Not the culprit.
+- **The culprit — invented render interpolation.** `draw_region` used to draw
+  `p.interpolated(residual / step)`: a lerp between `prev_x/prev_y` and
+  `x/y` (plus a baked `gfxOffY` blend), and the camera follow targeted the
+  same blend. The C# has NO such blend: `Main.DrawPlayers` →
+  `LegacyPlayerRenderer.DrawPlayerFull` draws `position + netOffset +
+  (0, gfxOffY)` (`LegacyPlayerRenderer.cs:468-475`, the raw `player.position`
+  call sites `Main.cs:22298/38276`), the layer builders truncate the screen
+  position per component — `(int)(drawinfo.Position.X -
+  Main.screenPosition.X + …)` (`PlayerDrawLayers.cs:1907/1939` and the whole
+  family; wings/backpacks use `.Floor()`), and `PlayerDrawSet.BoringSetup`
+  stores the position unrounded (`PlayerDrawSet.cs:341`). Vanilla motion is a
+  60 Hz whole-pixel step under PointClamp. The port's blend moved the sprite
+  to sub-pixel offsets BETWEEN the integer camera steps on every rendered
+  frame (any refresh rate ≠ a multiple of 60, and the eased follow camera
+  made it worse), so the nearest-sampled art re-rasterised on a shifted grid
+  each frame — visible as smearing/crawling pixels during any movement.
+
+The fix (faithful, removes the invention):
+
+- `draw_region` clones the raw fixed-step player (`self.player`, dead-filter
+  unchanged); `gfxOffY` rides the draw as its own offset
+  (`PlayerCompositeState.gfx_off_y`), exactly like `LegacyPlayerRenderer.cs:468`.
+- `Player::interpolated` and the `prev_gfx_off_y` field are REMOVED;
+  `prev_x/prev_y` stay — they are the pressure-plate bridge's
+  `PressurePlateHelper.PlayerLastPosition` (`PressurePlateHelper.cs:16`),
+  not a render input.
+- The update-tail camera follow targets the raw position too
+  (`world_sim/player.rs`); the draw-time camera path was already faithful.
+- Tests-as-code (written, not run — code-only wave): the whole-pixel snap at
+  zooms 1/1.5/2 with fractional cameras (`entity_sprites_snap_to_whole_screen_pixels`),
+  the no-interpolation source pins (`the_player_draw_has_no_between_tick_interpolation`),
+  and the PointClamp sampler pin (`atlas_sampler_is_point_clamp`).
+- Verification deferred to the gate phase: `TR_SHOT` with `TR_HOLD=right`
+  (moving player) at zoom 1.0/1.5/2.0, compare sharpness against the
+  pre-fix binary — the sprite must sit on whole pixels with no sub-pixel
+  crawl between sim ticks; twin-run SHA256 equality per the harness rules.
+
+Known residual deviations (unchanged, documented elsewhere): the port's
+`snap_to_screen` rounds (`.round()`) where the C# player layers truncate
+(`(int)`) — identical for the integer cameras the follow path produces;
+the update-tail exponential camera ease is the port's stand-in for the
+mid-tick camera reads (the draw camera itself is the faithful snap).
 
 ## The loading screen + capture mode (S1-E-17)
 

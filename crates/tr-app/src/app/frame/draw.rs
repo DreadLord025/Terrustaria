@@ -67,16 +67,28 @@ impl App {
                     tr_render::RENDER_TARGET_MAX_HIDEF,
                 );
             }
-            // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
-            // high-refresh displays.
-            let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
+            // fix/player-motion-blur: the draw reads the RAW fixed-step
+            // position, exactly like the C#. `Main.DrawPlayers` hands
+            // `player.position` to the renderer (`Main.cs:22298` →
+            // `LegacyPlayerRenderer.DrawPlayerFull`, the final draw at
+            // `LegacyPlayerRenderer.cs:468-475` is `position + netOffset +
+            // (0, gfxOffY)` — no blend with `oldPosition`), and the layers
+            // truncate the screen position to whole pixels per component
+            // (`(int)(drawinfo.Position.X - Main.screenPosition.X + ...)` —
+            // `PlayerDrawLayers.cs:1907/1939`). `Main.screenPosition` is
+            // itself `(int)`-truncated at draw time
+            // (`DoDraw_UpdateCameraPosition`, `Main.cs:62646-62647`, ported in
+            // `world_sim::camera::update_camera_at_draw`). The port's old
+            // `Player::interpolated(residual)` blend was invented: it moved
+            // the sprite to sub-pixel positions BETWEEN the snapped integer
+            // camera steps, so every rendered frame re-rasterised the
+            // nearest-sampled art on a shifted grid — the "character smears
+            // during any movement" bug. C# motion is a 60 Hz whole-pixel
+            // step; the render is now the same. `gfxOffY` stays a separate
+            // draw offset (`draw_player`'s `gfx_off_y`), not baked into `y`.
             // The dead player renders nothing until the respawn (vanilla draws
             // no corpse; the ghost is master-mode only).
-            let mut render_player = self
-                .player
-                .as_ref()
-                .filter(|p| !p.dead)
-                .map(|p| p.interpolated(player_alpha));
+            let render_player = self.player.as_ref().filter(|p| !p.dead).cloned();
             // The body rows — the item-use rows included — are all computed by
             // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
             let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
