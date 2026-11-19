@@ -1,6 +1,10 @@
-//! The armor set bonuses — `ArmorSetBonuses.Initialize`'s early-metal rows
-//! (`ArmorSetBonuses.cs:422-413` region) and the defense consumer
-//! (`Player.Hurt`'s `statDefense * 0.5` reduction).
+//! The armor set bonuses — `ArmorSetBonuses.Benefits` +
+//! `ArmorSetBonuses.Initialize` (`DataStructures/ArmorSetBonuses.cs:10-493`)
+//! and the defense consumer (`Player.Hurt`'s `statDefense * 0.5` reduction).
+//! The scalar stat rows live in [`SET_STATS`]; the flag-only benefits
+//! (Shadow/Crimson/Meteor/Frost's frostBurn/Molten's fireWalk + gated
+//! buffImmune[24]/AshWood/Gladiator/Fossil/the ammo sets) ride the app-side
+//! `armor_sets.rs` seam (S1-C-12 wave D).
 
 /// `ArmorSetBonuses.Benefits.MetalTier1` (+2): the copper (89/80/76), the
 /// ancient-copper (687/688/689), the iron (90/81/77) and the
@@ -35,7 +39,7 @@ pub const WOOD: [(i32, i32, i32); 7] = [
 ];
 
 /// The set-bonus defense for an equipped `(head, body, legs)` triple — the
-/// `statDefense +=` the benefit fns carry (`ArmorSetBonuses.cs:355-371`).
+/// `statDefense +=` the benefit fns carry (`ArmorSetBonuses.cs:355-378`).
 pub fn set_bonus_defense(head: i32, body: i32, legs: i32) -> i32 {
     if head <= 0 || body <= 0 || legs <= 0 {
         return 0;
@@ -87,6 +91,76 @@ mod tests {
         assert_eq!(reduce_damage(20, 44), 1);
         assert_eq!(reduce_damage(1, 40), 1);
     }
+
+    // -----------------------------------------------------------------------
+    // S1-C-12 wave D — the cartesian-product registrations
+    // (`ArmorSetBonus.Builder.Set(int[], int[], int[])`,
+    // `ArmorSetBonus.cs:98-126`): the ancient pieces mix freely with the
+    // regular ones. The pre-wave-D tables carried only the same-vintage
+    // triples; these pin the full expansions.
+    // -----------------------------------------------------------------------
+
+    /// `ArmorSetBonuses.cs:443` — the Jungle set's 2×2×2 product: every mix
+    /// of the regular (228/229/230) and ancient (960/961/962) pieces grants
+    /// `manaCost -= 0.16f` (`Benefits.Jungle`, `:276-279`).
+    #[test]
+    fn s1_c_12d_the_jungle_set_mixes_regular_and_ancient_pieces() {
+        for head in [228, 960] {
+            for body in [229, 961] {
+                for legs in [230, 962] {
+                    let (name, stats) =
+                        set_stats(head, body, legs).expect("the mixed jungle triple");
+                    assert_eq!(name, "Jungle");
+                    assert_eq!(stats.mana_cost, -0.16);
+                }
+            }
+        }
+        // A foreign piece breaks the set.
+        assert!(set_stats(228, 229, 233).is_none());
+    }
+
+    /// `ArmorSetBonuses.cs:446` — the Mining set's 3×2×2 product: the three
+    /// helmets (88 Mining, 5588 UpgradedMining/Prospector, 4008 Ultrabright
+    /// — `ItemID.cs`) against the two bodies (410/5589) and legs (411/5590)
+    /// — `pickSpeed -= 0.1f` (`Benefits.Mining`, `:297-300`).
+    #[test]
+    fn s1_c_12d_the_mining_set_expands_all_twelve_triples() {
+        for head in [88, 5588, 4008] {
+            for body in [410, 5589] {
+                for legs in [411, 5590] {
+                    let (name, stats) =
+                        set_stats(head, body, legs).expect("the mixed mining triple");
+                    assert_eq!(name, "Mining");
+                    assert_eq!(stats.pick_speed, 0.1);
+                }
+            }
+        }
+        assert!(set_stats(88, 410, 233).is_none());
+    }
+
+    /// `ArmorSetBonuses.cs:445` — the Snow set's 2×2×2 product: every mix of
+    /// the regular (803/804/805) and ancient (978/979/980) pieces grants the
+    /// Chilled 46 + Frozen 47 immunity (`Benefits.Snow`, `:291-295`).
+    #[test]
+    fn s1_c_12d_the_snow_set_mixes_regular_and_ancient_pieces() {
+        for head in [803, 978] {
+            for body in [804, 979] {
+                for legs in [805, 980] {
+                    assert_eq!(
+                        set_buff_immunity(head, body, legs),
+                        &[46, 47],
+                        "the mixed snow triple ({head}, {body}, {legs})"
+                    );
+                }
+            }
+        }
+        assert!(set_buff_immunity(803, 804, 233).is_empty());
+        // The Molten `buffImmune[24]` row is gated on
+        // `!vampireBurningInSunlight` (`:285-288`) and rides the app-side
+        // seam — this ungated table must NOT carry it (no double-apply).
+        assert!(set_buff_immunity(231, 232, 233).is_empty());
+        assert!(set_buff_immunity(231, 232, 980).is_empty());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -94,10 +168,11 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 /// The `Player`-scalar effects of a completed set — only the rows of
-/// `ArmorSetBonuses.Benefits` (`DataStructures/ArmorSetBonuses.cs:8-383`) whose
-/// targets the port models. Flag rows (`shadowArmor`, `fireWalk`, `buffImmune`,
-/// `ammoCost80`, `spaceGun`, `onHitDodge`, the Beetle/Solar/Vortex machinery)
-/// belong to their own systems and are not represented here.
+/// `ArmorSetBonuses.Benefits` (`DataStructures/ArmorSetBonuses.cs:10-384`)
+/// whose targets the port models. Flag rows (`shadowArmor`, `fireWalk`,
+/// `buffImmune`, `ammoCost80`, `spaceGun`, `onHitDodge`, the Beetle/Solar/
+/// Vortex machinery) belong to their own systems and are not represented
+/// here — the wave-D flag benefits ride the app-side `armor_sets.rs` seam.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SetStats {
     pub melee_damage: f32,
@@ -150,7 +225,7 @@ const fn stats() -> SetStats {
 }
 
 /// `(name, (head, body, legs), stats)` — the registration triples of
-/// `ArmorSetBonuses.Initialize` (`:396-500`) for the sets whose benefit is a
+/// `ArmorSetBonuses.Initialize` (`:390-493`) for the sets whose benefit is a
 /// scalar stat. The `PartType.Head` rows keep their concrete triples (the
 /// Wizard Hat/Magic Hat pairs carry `0` for the unneeded pieces, which is what
 /// the port's empty armor slots hold).
@@ -184,7 +259,7 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (256, 257, 258),
         SetStats { move_speed: 0.2, ..stats() },
     ),
-    // `:421-431` Benefits.Wizard (head-only rows).
+    // `:421-428` Benefits.Wizard (head-only rows).
     (
         "Wizard",
         (238, 1282, 0),
@@ -225,7 +300,7 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (238, 4256, 0),
         SetStats { magic_crit: 10, ..stats() },
     ),
-    // `:437-447` Benefits.MagicHat — `statManaMax2 += 60`.
+    // `:429-436` Benefits.MagicHat — `statManaMax2 += 60`.
     (
         "MagicHat",
         (2275, 1282, 0),
@@ -266,24 +341,59 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (2275, 4256, 0),
         SetStats { mana_max: 60, ..stats() },
     ),
-    // `:451` Benefits.Molten — `meleeDamage += 0.1f` (the `fireWalk` and
-    // `buffImmune[24]` rows ride their own systems).
+    // `:444` Benefits.Molten — `meleeDamage += 0.1f` (`:281-289`; the
+    // `fireWalk` and the GATED `buffImmune[24]` halves ride the app-side
+    // `armor_sets.rs` seam — the gate needs the player flag).
     (
         "Molten",
         (231, 232, 233),
         SetStats { melee_damage: 0.1, ..stats() },
     ),
-    // `:454` Benefits.Frost — `meleeDamage += 0.1f; rangedDamage += 0.1f`.
+    // `:442` Benefits.Frost — `meleeDamage += 0.1f; rangedDamage += 0.1f`
+    // (`:269-274`; the `frostBurn` flag half rides the app-side seam — its
+    // on-hit consumers are unported, ANALYSIS "S1-C-12 wave D").
     (
         "Frost",
         (684, 685, 686),
         SetStats { melee_damage: 0.1, ranged_damage: 0.1, ..stats() },
     ),
-    // `:459` Benefits.Mining — `pickSpeed -= 0.1f` (the port's bonus is the
-    // negation).
+    // `:446` Benefits.Mining — `pickSpeed -= 0.1f` (the port's bonus is the
+    // negation). The registration is `Set(new int[3]{88,5588,4008},
+    // new int[2]{410,5589}, new int[2]{411,5590})` — the array overload's
+    // cartesian product (`ArmorSetBonus.cs:98-126`): 12 triples.
     (
         "Mining",
         (88, 410, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (88, 410, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (88, 5589, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (88, 5589, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (5588, 410, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (5588, 410, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (5588, 5589, 411),
         SetStats { pick_speed: 0.1, ..stats() },
     ),
     (
@@ -296,19 +406,34 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (4008, 410, 411),
         SetStats { pick_speed: 0.1, ..stats() },
     ),
-    // `:470` Benefits.CobaltMelee — `meleeSpeed += 0.15f`.
+    (
+        "Mining",
+        (4008, 410, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (4008, 5589, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (4008, 5589, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    // `:455` Benefits.CobaltMelee — `meleeSpeed += 0.15f`.
     (
         "CobaltMelee",
         (372, 374, 375),
         SetStats { melee_speed: 0.15, ..stats() },
     ),
-    // `:477` Benefits.MythrilMelee — `meleeCrit += 10`.
+    // `:458` Benefits.MythrilMelee — `meleeCrit += 10`.
     (
         "MythrilMelee",
         (377, 379, 380),
         SetStats { melee_crit: 10, ..stats() },
     ),
-    // `:483` Benefits.AdamantiteMelee — `meleeSpeed += 0.2f; moveSpeed += 0.2f`.
+    // `:461` Benefits.AdamantiteMelee — `meleeSpeed += 0.2f; moveSpeed += 0.2f`.
     (
         "AdamantiteMelee",
         (401, 403, 404),
@@ -368,7 +493,11 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (894, 895, 896),
         SetStats { cactus_thorns: true, ..stats() },
     ),
-    // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
+    // `:443` Benefits.Jungle — `manaCost -= 0.16f` (`:276-279`). The
+    // registration is `Set(new int[2]{228,960}, new int[2]{229,961},
+    // new int[2]{230,962})` — `Builder.Set`'s array overload expands the
+    // cartesian product (`ArmorSetBonus.cs:98-126`), so the ancient-jungle
+    // pieces (960/961/962) mix freely with the regular ones: 8 triples.
     (
         "Jungle",
         (228, 229, 230),
@@ -376,22 +505,52 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
     ),
     (
         "Jungle",
+        (228, 229, 962),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (228, 961, 230),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (228, 961, 962),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (960, 229, 230),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (960, 229, 962),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (960, 961, 230),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
         (960, 961, 962),
         SetStats { mana_cost: -0.16, ..stats() },
     ),
-    // `:466` Benefits.CobaltCaster — `manaCost -= 0.14f`.
+    // `:454` Benefits.CobaltCaster — `manaCost -= 0.14f`.
     (
         "CobaltCaster",
         (371, 374, 375),
         SetStats { mana_cost: -0.14, ..stats() },
     ),
-    // `:474` Benefits.MythrilCaster — `manaCost -= 0.17f`.
+    // `:457` Benefits.MythrilCaster — `manaCost -= 0.17f`.
     (
         "MythrilCaster",
         (376, 379, 380),
         SetStats { mana_cost: -0.17, ..stats() },
     ),
-    // `:480` Benefits.AdamantiteCaster — `manaCost -= 0.19f`.
+    // `:460` Benefits.AdamantiteCaster — `manaCost -= 0.19f`.
     (
         "AdamantiteCaster",
         (400, 403, 404),
@@ -405,26 +564,42 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
     ),
 ];
 
-/// `ArmorSetBonuses.Benefits`' immunity rows: the Snow set's `buffImmune[46]`
-/// and `buffImmune[47]` (`ArmorSetBonuses.cs:298-302`) and the Molten set's
-/// `buffImmune[24]` (`:288-295`). Returns the debuff ids the completed set
-/// makes the player immune to.
+/// `ArmorSetBonuses.Benefits`' UNGATED immunity rows: the Snow set's
+/// `buffImmune[46]` and `buffImmune[47]` (`ArmorSetBonuses.cs:291-295`).
+/// Returns the debuff ids the completed set makes the player immune to.
+///
+/// The Snow registration (`:445`) is `Set(new int[2]{803,978},
+/// new int[2]{804,979}, new int[2]{805,980})` — the array overload's cartesian
+/// product (`ArmorSetBonus.cs:98-126`): the ancient pieces (978/979/980) mix
+/// freely with the regular ones, 8 triples.
+///
+/// The Molten `buffImmune[24]` row (`:285-288`) is GATED on
+/// `!vampireBurningInSunlight` and therefore does NOT live here — the gate
+/// needs the player flag, so the row rides the app-side `armor_sets.rs`
+/// seam (`SetFlag::MoltenFireImmune`, S1-C-12 wave D). The flag's granter
+/// (`VampireSeedSunlightExposure`, `Player.cs:28672-28719`) is unported and
+/// never set, so the gate always passes today (ANALYSIS "S1-C-12 wave D").
 pub fn set_buff_immunity(head: i32, body: i32, legs: i32) -> &'static [i32] {
-    const SNOW: [(i32, i32, i32); 2] = [(803, 804, 805), (978, 979, 980)];
-    const MOLTEN: (i32, i32, i32) = (231, 232, 233);
-    let triple = (head, body, legs);
-    if SNOW.contains(&triple) {
+    const SNOW: [(i32, i32, i32); 8] = [
+        (803, 804, 805),
+        (803, 804, 980),
+        (803, 979, 805),
+        (803, 979, 980),
+        (978, 804, 805),
+        (978, 804, 980),
+        (978, 979, 805),
+        (978, 979, 980),
+    ];
+    if SNOW.contains(&(head, body, legs)) {
         &[46, 47]
-    } else if triple == MOLTEN {
-        &[24]
     } else {
         &[]
     }
 }
 
-/// `ArmorSetBonuses.GetCompleteSet` (`:14-20`) over [`SET_STATS`]: the benefit
-/// of the worn triple, if the port models one. `head`/`body`/`legs` are the
-/// raw item ids (0 = empty slot).
+/// `ArmorSetBonuses.GetCompleteSet` (`:521-540`) over [`SET_STATS`]: the
+/// benefit of the worn triple, if the port models one. `head`/`body`/`legs`
+/// are the raw item ids (0 = empty slot).
 pub fn set_stats(head: i32, body: i32, legs: i32) -> Option<(&'static str, SetStats)> {
     SET_STATS
         .iter()
