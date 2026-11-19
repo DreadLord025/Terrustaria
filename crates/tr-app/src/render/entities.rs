@@ -269,6 +269,13 @@ pub(crate) struct NpcAssets {
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
     pub(crate) martian_drone: Option<BgTex>,
+    /// `NPC_384` — the Force Bubble (1 frame of 18x40,
+    /// `Main.npcFrameCount[384]` = 1); the C# never draws it on its own
+    /// path (`Main.cs:25041-25044`'s `break`) — the Officer's arm draws it
+    /// as an overlay (`Main.cs:25773-25777`). `NPC_387` — the Tesla
+    /// Turret (2 frames of 20x50, `Main.npcFrameCount[387]` = 2).
+    pub(crate) force_bubble: Option<BgTex>,
+    pub(crate) martian_turret: Option<BgTex>,
     /// `NPC_381` the Brain Scrambler / `NPC_382` the Ray Gunner (9 rows of
     /// 48 / 46) — the two shooters ride the same FindFrame case as the
     /// walkers but each keeps its own sheet.
@@ -532,6 +539,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_walker_big: npc_tex(atlas, "NPC_520"),
         martian_probe: npc_tex(atlas, "NPC_399"),
         martian_drone: npc_tex(atlas, "NPC_388"),
+        force_bubble: npc_tex(atlas, "NPC_384"),
+        martian_turret: npc_tex(atlas, "NPC_387"),
         brain_scrambler: npc_tex(atlas, "NPC_381"),
         ray_gunner: npc_tex(atlas, "NPC_382"),
         scutlix_rider: npc_tex(atlas, "NPC_390"),
@@ -1088,6 +1097,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // S1-F-13d: the Force Bubble's bestiary credit folds onto the
+        // Officer (Hide=true), but its DRAW sheet is its own NPC_384
+        // (the officer's shield overlay, `Main.cs:25773-25777`) — the
+        // fishron-hazard precedent. The turret has its own entry (387).
+        NpcKind::ForceBubble => 384,
         _ => kind.net_id() as u16,
     }
 }
@@ -2289,6 +2303,19 @@ pub(crate) fn draw_npcs(
             NpcKind::MartianProbe => martian_draw(assets.martian_probe.as_ref(), 8, n, w, h),
             // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
             NpcKind::MartianDrone => martian_draw(assets.martian_drone.as_ref(), 2, n, w, h),
+            // The bubble: `Main.DrawNPCDirect`'s `if (type == 384) break`
+            // (`Main.cs:25041-25044`) — the bubble NEVER draws on its own
+            // path; the Officer's arm draws NPC_384 as its shield overlay
+            // (`Main.cs:25773-25777`, gated on the Officer's ai[2] owner
+            // slot). The overlay rides the Officer's AI/draw wave — until
+            // then the bubble draws nothing, exactly like the C#'s own
+            // pass.
+            NpcKind::ForceBubble => (None, 40.0, [18.0, 40.0], [n.x, n.y]),
+            // The Tesla Turret: the 2-frame NPC_387 strip over the 20x50
+            // frames (`Main.npcFrameCount[387]` = 2). The C#'s
+            // GlowMask[32] overlay (`Main.cs:25961-25972`) is unmodelled
+            // like every other glow mask in the port.
+            NpcKind::MartianTurret => martian_draw(assets.martian_turret.as_ref(), 2, n, w, h),
             // The shooters: `NPC_381`'s 9 rows of 48 / `NPC_382`'s 9 of 46.
             NpcKind::BrainScrambler => {
                 martian_draw(assets.brain_scrambler.as_ref(), 9, n, w, h)

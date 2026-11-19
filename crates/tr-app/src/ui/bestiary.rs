@@ -986,6 +986,19 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
         }
+        // The Tesla Turret (S1-F-13d): the 2-frame NPC_387 strip over the
+        // 20x50 frames.
+        (NpcKind::MartianTurret, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(50.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        // The bubble: hidden in the bestiary (`NPCID.cs:3766-3770`'s
+        // `Hide = true`) — it folds onto the Officer's entry, so this arm
+        // never renders; the SetDefaults box (18x40, `NPC.cs:13885`/
+        // `:13887`) stands as the shape.
+        (NpcKind::ForceBubble, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         // The shooters: the 9-frame NPC_381/382 strips over the 18x40
         // frames.
         (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {

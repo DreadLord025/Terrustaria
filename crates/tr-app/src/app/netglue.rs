@@ -3347,6 +3347,19 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The bubble (`S1-F-13d`): `noTileCollide` + the AI_072 owner-pin
+        // (`NPC.cs:35081-35101`) — the hover ctor's shape; the Officer's
+        // spawn arm sets the position to its centre in the AI wave.
+        crate::npc::NpcKind::ForceBubble => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The Tesla Turret (`S1-F-13d`): the Engineer places it ON the
+        // ground (`NPC.cs:59029-59030`'s `NewNPC(..., num158 * 16, 387)` +
+        // the `position.Y = num158 * 16 - height` feet plant at the
+        // column's tile row) — the walker ctor plants the feet; the
+        // AI_073 warp-in machine lands with the AI wave.
+        crate::npc::NpcKind::MartianTurret => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The Frost Moon wave family (`S1-F-13c` slice B): the four
         // aiStyle-3 walkers plant their feet on the surface like the
         // scarecrow band; the flyers ride the hover ctor like the Mourning
