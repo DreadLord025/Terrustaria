@@ -14874,6 +14874,25 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // `AI()`'s `else if (this.aiStyle == 26)`
+                        // (`Projectile.cs:26416-26419`) → `AI_026` —
+                        // SLICE A ONLY (S1-D-4b-10): the 14 early-return
+                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`).
+                        // Every other aiStyle-26 kind (the 266 slime
+                        // minion today, slice B's ground pets tomorrow —
+                        // task/S1-D-4b-11-melee-b) keeps the pre-existing
+                        // `_ => {}` fall-through, byte-identical: the gate
+                        // returns false and nothing mutates.
+                        26 => {
+                            // The gate's false return is the no-op: the
+                            // non-slice kind keeps the old no-arm state.
+                            let _ = crate::projectile_ai026_a::ai026_a_tick(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
