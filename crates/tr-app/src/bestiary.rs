@@ -2095,8 +2095,9 @@ mod tests {
             unlock_state(pinky, &kills),
             UnlockState::CanShowDropsWithDropRates
         );
-        // The boss quick-unlocks on the first kill.
-        let king = &ENTRIES[10];
+        // The boss quick-unlocks on the first kill. (Index 11 since the
+        // S1-D-3ff roster inserted MotherSlime at its vanilla-net-id slot.)
+        let king = &ENTRIES[11];
         assert_eq!(king.quick_unlock, true);
         kills.register_kill("KingSlime");
         assert_eq!(
