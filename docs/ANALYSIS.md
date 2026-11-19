@@ -832,6 +832,102 @@ diff exactly inside the rectangle against the unpainted frame (3756 px each);
 the unpainted branch is pixel-identical to main; the extras round-trip test
 covers the sparse save.
 
+### The blend batches (S1-G-3, 2026-11-18)
+
+The vanilla frame runs three `SpriteBatch.Begin` blend configurations the port
+now expresses (`Main.cs:27457-27494`, research/41 D-2): the alpha-blend default
+(`Main.cs:22193`), `BlendState.Additive` (`:27490`) and the custom
+`Main._multiplyBlendState` (`:27462-27470` — `ReverseSubtract` with
+`SourceAlpha`/`One` on both the color and the alpha channels, i.e.
+`dst − src·srcAlpha` clamped at 0). `sprite.rs::BlendMode` builds one pipeline
+per mode over the same shader — exactly like XNA, where only the device blend
+state changes between `Begin` calls. The per-instance `blend` tag rides the
+instance buffer and `draw_blend_runs` splits each range into contiguous
+same-mode runs: a run boundary is the C#'s `End()`/`Begin(blendState)` batch
+boundary, so push order (and therefore composite order) is preserved; an
+all-alpha range stays a single draw, leaving the default path byte-identical.
+
+The only vanilla consumer of the two extra states is `DrawProj_LightsBane`
+(`Main.cs:27455-27495`), ported as `projectile.rs::draw_lights_bane`: the
+13-row frame slice (the drawer's own `Frame(1, 13, …)`, NOT
+`Main.projFrames[974]` = 1), the `(0.7, 0.7)·scale` quads, two
+`White·0.3·num` stretched ghosts of row 12 (`(1, 6)` and `(2, 2)` stretches)
+plus four `Color.White` copies in the multiply batch, then two `Color.Magenta`
+copies in the additive batch. `num = Remap(frame, 0, 3, 0, 1) · Remap(frame,
+4, 12, 1, 0)` (`:27480`). No light tint — the C# draws raw White/Magenta here.
+The aiStyle-188 frame machine (`Projectile.cs:42229-42262`) and the SetDefaults
+row (`:9237-9252`) landed with it; the sound cue and the dust streak (with
+their `Main.rand` draws) are skipped like `ai_volcano`'s (no sound/dust layer
+in the pool). The pool's `timeLeft = 30` kills the slash before the frame
+machine's own frame-12 kill at tick 36 — both gates are ported and tested.
+
+Deviations kept: the alpha-blend default's *premultiplied* convention stays
+asserted (XNA's `BlendState.AlphaBlend` definition is not in the decompile —
+research/41 D-2's original note); the additive/multiply equations themselves
+are pinned by `blend_equations_land_on_the_csharp_batches` on both an sRGB
+target (the port's swapchain) and a plain UNORM target (the vanilla's non-sRGB
+backbuffer, where the blend maths runs on the stored bytes directly).
+
+Verification: `blend_states_match_the_csharp_fields`,
+`blend_runs_split_only_at_batch_boundaries`, the headless GPU equation test,
+and `lights_bane_tests` (4). Screenshots
+`docs/screenshots/s1-g-3-lights-bane-{base,blend}.png` (golden.wld, TR_DAY=1,
+TR_THROW=974, frame 20): two identical runs SHA256-equal (`61c19b9b…`), the
+blend frame differs from the base only in the slash's bbox (32 826 px,
+`tools/pixel_diff.py`).
+
+#### The verifier fixes (2026-11-18, code-only pass)
+
+The verifier FAILed the first landing on two placement/tint defects; both are
+fixed in code, tests written but NOT run (user directive: no cargo/rustc/
+rustfmt/test/screenshot runs in this pass — the compile window owns them):
+
+* **D1 — the anchor/origin convention.** `draw_lights_bane` passed the C#'s
+  `position` (the centre anchor, `Main.cs:27474`) as `pos` to
+  `push_ui_sprite_blend`, but the helper wants the UNROTATED TOP-LEFT
+  (`pos = anchor − origin`) and shifts it by `origin − R·origin` itself —
+  every quad landed a full origin away from the anchor, and the two ghosts
+  further off still: XNA's `SpriteBatch.Draw(…, origin, scale, …)` multiplies
+  the texture-space origin by the scale vector, so the `(1, 6)`/`(2, 2)`
+  stretched ghosts (`:27483-27484`) pivot at `half · s · stretch`, not
+  `half · s`. The placement now lives in the pure `lights_bane_quads`
+  (`Main.cs:27477-27492`): per quad `origin = half · s · stretch`,
+  `pos = anchor − origin`, `size = base · stretch` — the
+  `push_sprite_origin_rot` convention (`foliage.rs::palm_placement`
+  precedent: pos = anchor − origin; `frame_quad`'s tl = anchor − R·origin).
+  The blend core (`BlendMode` factors, `draw_blend_runs`, the WGSL) was
+  verified CORRECT and is untouched.
+* **D2 — the ghost tint.** `Color.White * 0.3f * num` (`:27483-27484`) is
+  XNA's TWO byte-truncating multiplies — `(byte)(255f · 0.3f) = 76` per
+  channel (alpha included), then `(byte)(76f · num)` — not one fused
+  `0.3 · num` float (frame 6: 57/255, not 0.225). The port now chains the
+  house helper `ui::color::mul` twice + `tint` (the `bars.rs` precedent).
+* **D3 — the pins.** `lights_bane_tests` grows to 6:
+  `the_batch_layout_matches_the_csharp_draw_order` re-pinned to the
+  two-truncation bytes (57/255 at frame 6, 76/255 at the peak),
+  `the_ghost_tint_truncates_twice_like_xna` pins the byte ladder over the
+  ghost window (frames 0/2/3/4/6/8/10/12 → 0/50/76/76/57/38/19/0), and
+  `the_quads_place_the_origin_texel_on_the_anchor` pins the per-quad
+  pos/origin/size/uv on a synthetic 20×260 sheet at (scale 1, zoom 1) and
+  (scale 2, zoom 1.5), including the `pos + origin = anchor` invariant.
+  WRITTEN NOT RUN — they must go green in the compile window.
+
+**Screenshot re-take DONE in the compile window (M8, 2026-11-19).** The
+committed `s1-g-3-lights-bane-{base,blend}.png` predated D1/D2; re-taken on
+the synced branch (golden.wld, `TR_DAY=1 TR_SHOT_FRAME=20 TR_DEBUG=0`,
+base = no `TR_THROW`, blend = `TR_THROW=974`; note `TR_NOPLAYER=1` from the
+original recipe note is incompatible with the throw fixture — it removes
+`app.player`, the fixture's spawn anchor — the original d7fbab4f shots ran
+with the player present, same here). Twin runs SHA256-equal: base
+`9AE3526A…`, blend `D72601B9…`. `tools/pixel_diff.py` vs the old committed
+shots: 8 px, max delta 7, bbox (786,152)-(847,178) — the ghost-tint ≤1-LSB
+band, confined; base-vs-blend still 32 826 px in the slash bbox
+(952,276)-(1121,635). Full gate green on the synced tree (3367+1581+55+…,
+0 failed, `m8-g3-gate.log`); `main_anchors` included. rustfmt: sprite.rs
+clean; projectile.rs carries 395 pre-existing fmt deviations on main
+itself — left untouched (no repo-wide fmt noise; the G-3 additions match
+the file's hand style).
+
 ## Living trees (M5-LIVING-trees)
 
 `crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
