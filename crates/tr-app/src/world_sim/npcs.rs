@@ -128,7 +128,7 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
 /// `Player.DefaultTileRangeX/Y = 5/3` (`Player.cs:57113-57114`).
 ///
 /// Returns `(LX, LY, HX, HY)` in world pixels.
-fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
+pub(crate) fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
     let lx = ((p.x / 16.0) as i32 - 5) as f32 * 16.0;
     let ly = ((p.y / 16.0) as i32 - 3) as f32 * 16.0;
     let hx = (((p.x + crate::player::WIDTH) / 16.0).ceil() as i32 - 1 + 5) as f32 * 16.0 + 15.0;
@@ -2952,6 +2952,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
+        let audio = &mut app.audio;
         for n in app.npcs.iter() {
             let (w, h) = n.size();
             let switch = crate::collision::switch_tiles(
@@ -2975,11 +2976,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
             // send sits on every fired switch.
             switch_sends.extend(switch.switches.iter().copied());
+            // S1-E-21i — the NPC-tripped switches' Mech-28 clicks: the
+            // pitch draws ride the `UpdateNPCs` stream (`NPC.UpdateNPC`
+            // runs under the `Main.cs:17767-17769` swap), drained per NPC
+            // so the play order matches the slot order.
+            for (px, py) in wiring.take_switch_clicks() {
+                audio.play_switch_click(px as f32, py as f32, npcs_rng);
+            }
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
+    // `:38396-38517`): the accepted contact hit queued its retaliate request
+    // (`hurt_inner`'s tail) and possibly a dismount-on-hit; the C# rolls the
+    // block inline under the `UpdateNPCs` swap (`Main.cs:17767`), the port
+    // drains at the pass tail on the same stream (the S1-E-21c batch
+    // convention, ANALYSIS "The hurt modifiers"). The drain sits after the
+    // switch-tile scan — that scan still draws the scoped `npcs_rng`
+    // binding, so the retaliate rolls re-borrow the stream last.
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_dismount(p, &app.world);
+    }
+    if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
+        let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::hurt_modifiers::drain_retaliate(
+            app.player.as_mut().unwrap(),
+            &mut app.projectiles,
+            &mut app.npcs,
+            req,
+            app.local_id as u8,
+            expert,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
     }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
     // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4

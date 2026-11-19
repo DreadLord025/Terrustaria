@@ -609,6 +609,12 @@ pub fn active_culture() -> GameCulture {
     manager().lock().unwrap().active_culture()
 }
 
+/// `Language.Exists(key)` (`Language.cs`): does the active culture carry the
+/// key? The bestiary's flavor-text gate reads it (`BestiaryEntry.cs:47`).
+pub fn exists(key: &str) -> bool {
+    manager().lock().unwrap().exists(key)
+}
+
 /// `Language.GetTextValue(key)`: the value with `{Name}` substitutions
 /// applied, or the key itself when missing.
 pub fn text(key: &str) -> String {
