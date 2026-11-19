@@ -1883,15 +1883,15 @@ fn invasion_warning(app: &mut App) {
     crate::chat::broadcast_death_text(&mut app.chat, text, crate::chat::COLOR_COMMAND);
 }
 
-/// `Main.UpdateInvasion` (`Main.cs:64328-64386`): the defeat flag ride at
-/// `size <= 0` (`SetEventFlagCleared(ref downedGoblins, 0)` + the
-/// progression event 10), the march toward `spawnTileX` by
-/// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
-/// `NPC.cs`'s lunar-tower shield state (`ShieldStrengthTower*`) — the
-/// `WorldGen.cs:86688` raise, `NPC.cs:95247`'s reset and
-/// `ShieldStrengthTowerMax`'s post-Moon-Lord half. The spend side rides
-/// the towers' damage path (the pillar 493/507/517's own machines) — this
-/// driver owns the set/reset lifecycle and the `TowerActive*` liveness.
+/// The lunar-tower shield lifecycle (`NPC.cs`'s `ShieldStrengthTower*`):
+/// the all-dead reset (`NPC.cs:95247-95251`) — once every `TowerActive*`
+/// flag is false the four strengths zero and `LunarShieldPowerNormal`
+/// returns to 100. The raise is `WorldGen.cs:86688`
+/// ([`raise_tower_shield`], wired into `trigger_lunar_apocalypse`), the
+/// spend is ONE per 629 bolt contact ([`tower_shield_absorb`],
+/// `Projectile.cs:72944-72979` — R71's arm calls it), and the live gate
+/// is [`apply_tower_shield_gates`] (`NPC.cs:39101-39115`). B-6b wired
+/// this driver into `update_npcs`' death-path tail (it was test-only).
 pub(crate) fn update_tower_shields(app: &mut App) {
     let w = &mut app.world;
     // The reset: all four dead (`NPC.cs:95247-95251`).
@@ -1932,48 +1932,162 @@ pub(crate) fn tower_shield_max(world: &tr_core::World) -> i32 {
     }
 }
 
-/// The shield's spend: a hit on a shielded tower drains
-/// `ShieldStrengthTower<Kind>` and the `629` damage-pulse fires
-/// (`NPC.cs:79288-79324`). Returns the drained tower's kind index
-/// (0 solar / 1 vortex / 2 nebula / 3 stardust) when the shield absorbed
-/// the hit, or `None` when the tower fights bare.
-pub(crate) fn tower_shield_absorb(
-    world: &mut tr_core::World,
-    tower: usize,
-    dmg: i32,
-) -> Option<i32> {
+/// The shield's spend: ONE 629 TowerDamageBolt contact chips the matching
+/// `ShieldStrengthTower<Kind>` by 1, clamped `0..ShieldStrengthTowerMax`
+/// (`Projectile.cs:72944-72979`'s Kill arm — `MathHelper.Clamp(Shield - 1,
+/// 0, Max)` at `:72953`/`:72960`/`:72967`/`:72974`, regardless of the
+/// bolt's damage: the 629 spawns with damage 0, `NPC.cs:79290`). Returns
+/// whether the shield STOOD before the spend — the C#'s `!= 0` gate on
+/// the host's `ai[3] = 1` flash trigger (`:72951` etc.).
+///
+/// B-6b reshape (audit research/53 §2.2): the old model drained `dmg` per
+/// hit and flipped `downed_tower_*`/`tower_active_*` at zero — both wrong.
+/// The C# never drains shields through NPC damage (the shield refuses the
+/// hit outright via `dontTakeDamage`, `NPC.cs:39101-39115` — see
+/// [`apply_tower_shield_gates`]), and the downed/active flags ride the
+/// tower's DEATH (`NPC.cs:79321-79345`, the death arms in `update_npcs`),
+/// never shield exhaustion. `tower` is the pillar ordinal (0 solar /
+/// 1 vortex / 2 nebula / 3 stardust); the live 629 spend arm must select
+/// it by the HOST NPC's kind (`Main.npc[ai[0]].type`, `:72946`), not by
+/// the raw `ai[0]` index — that reconciliation is R71
+/// (`fix/lunar-dd2-small-wrongs`), which calls this fn.
+pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize) -> bool {
+    let max = tower_shield_max(world);
     let strength = match tower {
         0 => &mut world.tower_shield_solar,
         1 => &mut world.tower_shield_vortex,
         2 => &mut world.tower_shield_nebula,
         _ => &mut world.tower_shield_stardust,
     };
-    if *strength <= 0 {
-        return None;
+    let stood = *strength != 0;
+    *strength = (*strength - 1).clamp(0, max);
+    stood
+}
+
+/// The pillar's per-tick shield gate (`NPC.cs:39101-39115`, inside the
+/// aiStyle-94 machine): `dontTakeDamage = ShieldStrengthTower<Kind> != 0`
+/// per type — while the shield stands the tower refuses EVERY hit (the
+/// melee `Npc::hurt` gate, the strike gate and the projectile PVE walk's
+/// `!nPC.dontTakeDamage`, `Projectile.cs:12583`); the only shield drain is
+/// the 629 bolt contact ([`tower_shield_absorb`]). When the last bolt
+/// zeroes the shield, the next tick's gate opens the tower to damage.
+///
+/// B-6b wiring: the C# runs this inside the pillar machine; the port's
+/// stand-in (`update_ancient_cultist`) is B-6a's re-port territory, so the
+/// gate rides the sim pass instead — once per `update_npcs`, right after
+/// the death path (so towers spawned by this tick's cultist death are
+/// gated the same tick). B-6a folds it into the re-ported machine at the
+/// C# position; the ai[3] shield-break flash cycle (`NPC.cs:39069-39100`,
+/// NPCDeath58 on the flip / NPCDeath3 at ai[3]==1 / the 120-wrap) rides
+/// that re-port too — it reads the `ai[3] = 1` trigger R71's spend writes.
+pub(crate) fn apply_tower_shield_gates(app: &mut App) {
+    for n in app.npcs.iter_mut() {
+        let shield = match n.kind {
+            NpcKind::SolarTower => app.world.tower_shield_solar,
+            NpcKind::VortexTower => app.world.tower_shield_vortex,
+            NpcKind::NebulaTower => app.world.tower_shield_nebula,
+            NpcKind::StardustTower => app.world.tower_shield_stardust,
+            _ => continue,
+        };
+        n.dont_take_damage = shield != 0;
     }
-    *strength -= dmg;
-    if *strength <= 0 {
-        *strength = 0;
-        match tower {
-            0 => {
-                world.tower_active_solar = false;
-                world.downed_tower_solar = true;
-            }
-            1 => {
-                world.tower_active_vortex = false;
-                world.downed_tower_vortex = true;
-            }
-            2 => {
-                world.tower_active_nebula = false;
-                world.downed_tower_nebula = true;
-            }
-            _ => {
-                world.tower_active_stardust = false;
-                world.downed_tower_stardust = true;
-            }
+}
+
+/// The mob-kill → shield-chip loop (`NPC.cs:79279-79320`, `checkDead`'s
+/// pre-death type switch): each celestial mob killed while its pillar's
+/// shield stands spawns ONE 629 TowerDamageBolt at the mob's centre,
+/// velocity 0, damage 0, knockback 0, `ai0 = NPC.FindFirstNPC(<host>)`
+/// (`NPC.cs:89885-89895` — the first active slot of the host type, -1
+/// when none; the bolt's aiStyle-122 arm kills itself on a dead/missing
+/// host, `Projectile.cs:34900-34910`). The per-pillar id sets and gates:
+/// solar 412-419+518 while `ShieldStrengthTowerSolar > 0` (host 517),
+/// vortex 425/426/427/429 (host 422), nebula 420/421/423/424 (host 507),
+/// stardust 402/405/407/409/411 (host 493). NOT in the sets: 428
+/// (VortexHeadcrab), 406 (StardustCellSmall), 410 (StardustSpiderSmall).
+///
+/// B-6b wiring: called from `update_npcs`' death path BEFORE the tower
+/// death arms (the C# switch's mob cases precede the 517/422/507/493
+/// cases; each dead NPC matches exactly one case, so the per-NPC order
+/// is kept). The `checkDead` carrier guard (`NPC.cs:78042`: a linked
+/// `realLife` segment never runs the death events) skips the crawltipede
+/// bodies/tails — the carrier's death carries the events.
+///
+/// RNG: ZERO draws by construction — the C# cases draw nothing, and
+/// `NewProjectile` for type 629 draws nothing either (aiStyle 122 is not
+/// the aiStyle-1 velocity damp; 629 is absent from the `Main.rand` spawn
+/// arms `Projectile.cs:10907-10919`, the golf/CD-copy sets and
+/// `FinalizeProjectile`'s 93/113/gem arms `:22043-22061`). The witness
+/// census pins it (`the_spawn_loop_draws_nothing`).
+///
+/// Position convention: the port's hostile-shot seam carries the CENTRE
+/// (the C# `NewProjectile` subtracts half the extent at `:10876-10877`;
+/// the port's `ai_tower_damage_bolt` reads `pos` as the centre — the
+/// recorded arm deviation, audit research/53 §3.1). Owner: the port's
+/// hostile seam folds `Main.myPlayer` to 255 (the established fold); the
+/// spend gates on `netMode != 1`, not the owner (`Projectile.cs:72944`).
+pub(crate) fn spawn_tower_damage_bolts(app: &mut App, dead: &[Npc]) {
+    for npc in dead {
+        // `NPC.cs:78042`'s carrier guard — the segment's death events
+        // belong to the carrier.
+        if npc.has_carrier() {
+            continue;
         }
+        let (host_kind, shield) = match npc.kind {
+            // `NPC.cs:79279-79292`: the solar set.
+            NpcKind::SolarCrawltipedeHead
+            | NpcKind::SolarCrawltipedeBody
+            | NpcKind::SolarCrawltipedeTail
+            | NpcKind::SolarDrakomire
+            | NpcKind::SolarDrakomireRider
+            | NpcKind::SolarSroller
+            | NpcKind::SolarCorite
+            | NpcKind::SolarSelenian
+            | NpcKind::SolarSpearman => (NpcKind::SolarTower, app.world.tower_shield_solar),
+            // `NPC.cs:79293-79301`: the vortex set.
+            NpcKind::VortexRifleman
+            | NpcKind::VortexHunter
+            | NpcKind::VortexAlien
+            | NpcKind::VortexSoldier => (NpcKind::VortexTower, app.world.tower_shield_vortex),
+            // `NPC.cs:79302-79310`: the nebula set.
+            NpcKind::NebulaFloater
+            | NpcKind::BrainSuckler
+            | NpcKind::NebulaBeast
+            | NpcKind::Predictor => (NpcKind::NebulaTower, app.world.tower_shield_nebula),
+            // `NPC.cs:79311-79320`: the stardust set.
+            NpcKind::StardustWormHead
+            | NpcKind::StardustCellBig
+            | NpcKind::StardustJellyfishBig
+            | NpcKind::StardustSpiderBig
+            | NpcKind::StardustSoldier => (NpcKind::StardustTower, app.world.tower_shield_stardust),
+            _ => continue,
+        };
+        if shield <= 0 {
+            continue;
+        }
+        // `NPC.FindFirstNPC` (`NPC.cs:89885-89895`): the first active slot
+        // of the host type, -1 when none. The death retain already ran,
+        // so every remaining slot is alive; the port's compacted vec
+        // index is the sim's current `whoAmI` (the same seam the saucer
+        // deathray's owner index rides).
+        let ai0 = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == host_kind && n.hp > 0)
+            .map(|i| i as f32)
+            .unwrap_or(-1.0);
+        let (cx, cy) = npc.center();
+        // `Projectile.NewProjectile(source, Center.X, Center.Y, 0f, 0f,
+        // 629, 0, 0f, Main.myPlayer, FindFirstNPC(host))`.
+        app.projectiles.spawn_hostile_ai(
+            crate::projectile::TOWER_DAMAGE_BOLT,
+            Vec2::new(cx, cy),
+            Vec2::ZERO,
+            0,
+            0.0,
+            ai0,
+            0.0,
+        );
     }
-    Some(tower as i32)
 }
 
 pub(crate) fn update_invasion_state(app: &mut App) {
@@ -4125,6 +4239,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             );
         }
     }
+    // B-6b — the mob-kill → shield-chip loop (`NPC.cs:79279-79320`):
+    // BEFORE the tower death arms, like the C# switch's case order (the
+    // mob cases 412-429 precede the pillar cases 517/422/507/493). Each
+    // dead celestial mob whose pillar's shield stands sends one 629 bolt
+    // at the host pillar; zero RNG draws by construction.
+    spawn_tower_damage_bolts(app, &dead);
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
     // head's detach at `:84957`): the BODY's death raises
     // `downedGolemBoss`; the attached head's death spawns the free head
@@ -4375,6 +4495,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
     }
+    // B-6b — the shield lifecycle's live consumers, at the death path's
+    // tail (the C# owns the reset in the static state, `NPC.cs:95247-
+    // 95251`, and the gate inside the pillar machine, `:39101-39115`;
+    // the port's death-batched pass runs both here — the recorded
+    // position fold, ANALYSIS "The pillar shield loop (B-6b)").
+    // The all-dead reset zeroes the shields once every tower fell (the
+    // death arms above cleared the `tower_active_*` flags).
+    update_tower_shields(app);
+    // The per-tick `dontTakeDamage = ShieldStrengthTower<Kind> != 0`
+    // gate: shielded pillars refuse every hit; the last 629 bolt's spend
+    // opens them on the next tick. Runs AFTER the death arms so towers
+    // spawned by this tick's cultist death are gated the same tick.
+    apply_tower_shield_gates(app);
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
     // The casters' sphere spawn requests (`AI_008`'s `NPC.NewNPC` at the
     // shoot tick, `NPC.cs:21238`+): the update pass set `wants_sphere`,
@@ -11498,17 +11631,32 @@ mod tower_shield_tests {
     }
 
     #[test]
-    fn the_absorb_drains_and_flags_the_down() {
-        // `NPC.cs:79288-79324`'s spend: the hit drains the shield; a
-        // drained tower goes inactive + `downedTower*`.
+    fn the_absorb_chips_one_per_bolt_and_never_downs() {
+        // B-6b reshape (`Projectile.cs:72944-72979`): ONE 629 contact
+        // chips the shield by 1 (clamped 0..max), regardless of damage;
+        // the return is the pre-spend `!= 0` (the ai[3] flash gate). The
+        // downed/active flags are NOT written here — they ride the
+        // tower's death (`NPC.cs:79321-79345`).
         let mut w = world_with_shields();
-        assert_eq!(tower_shield_absorb(&mut w, 0, 30), Some(0));
-        assert_eq!(w.tower_shield_solar, 70);
-        assert!(w.tower_active_solar, "the tower still fights");
-        assert_eq!(tower_shield_absorb(&mut w, 0, 70), Some(0));
-        assert!(!w.tower_active_solar, "the tower falls");
-        assert!(w.downed_tower_solar);
-        assert_eq!(tower_shield_absorb(&mut w, 0, 10), None, "the spent shield");
+        assert!(tower_shield_absorb(&mut w, 0), "the shield stood");
+        assert_eq!(w.tower_shield_solar, 99);
+        assert!(w.tower_active_solar, "no death write");
+        assert!(!w.downed_tower_solar, "no death write");
+        for _ in 0..99 {
+            tower_shield_absorb(&mut w, 0);
+        }
+        assert_eq!(w.tower_shield_solar, 0, "100 bolts drop the shield");
+        assert!(w.tower_active_solar, "the tower still fights bare");
+        assert!(!w.downed_tower_solar, "the downed flag rides the death");
+        assert!(
+            !tower_shield_absorb(&mut w, 0),
+            "the spent shield: the flash gate is off"
+        );
+        assert_eq!(w.tower_shield_solar, 0, "the clamp floor");
+        // The other three shields are untouched.
+        assert_eq!(w.tower_shield_vortex, 100);
+        assert_eq!(w.tower_shield_nebula, 100);
+        assert_eq!(w.tower_shield_stardust, 100);
     }
 
     #[test]
@@ -11534,6 +11682,237 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+}
+
+/// B-6b (`task/S1-D-3-pillar-shield-loop`, code-only mode — witnesses
+/// WRITTEN NOT RUN): the mob-kill → 629 spawn loop, the shield damage
+/// gate and the lifecycle wiring. C# anchors: `NPC.cs:79279-79320` (the
+/// spawn cases), `:89885-89895` (FindFirstNPC), `:39101-39115` (the
+/// dontTakeDamage gate), `Projectile.cs:72944-72979` (the −1 spend,
+/// R71's arm — called here only through the reshaped `tower_shield_absorb`
+/// seam the merger reconciles).
+#[cfg(test)]
+mod pillar_shield_loop_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::player::Player;
+
+    fn shielded_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        raise_tower_shield(&mut app.world);
+        app.player = Some(Player::spawn(&app.world));
+        app
+    }
+
+    fn live_tower(app: &mut App, kind: NpcKind) -> usize {
+        let mut t = Npc::new(kind, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        t.hp = t.max_hp;
+        app.npcs.push(t);
+        app.npcs.len() - 1
+    }
+
+    fn dead_mob(app: &mut App, kind: NpcKind) {
+        let mut m = Npc::new(kind, 160.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        m.hp = 0;
+        app.npcs.push(m);
+    }
+
+    fn bolts(app: &App) -> Vec<&crate::projectile::Projectile> {
+        app.projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::TOWER_DAMAGE_BOLT)
+            .collect()
+    }
+
+    #[test]
+    fn the_solar_kill_spawns_one_bolt_at_the_mob_centre() {
+        // `NPC.cs:79279-79292`: a solar mob dies while the solar shield
+        // stands → one 629 at `base.Center`, velocity 0, damage 0,
+        // knockback 0, `ai0 = FindFirstNPC(517)` — the host's current
+        // vec index, NOT a tower ordinal.
+        let mut app = shielded_app();
+        let host = live_tower(&mut app, NpcKind::SolarTower);
+        dead_mob(&mut app, NpcKind::SolarCorite);
+        let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+        spawn_tower_damage_bolts(&mut app, &dead);
+        let bs = bolts(&app);
+        assert_eq!(bs.len(), 1, "exactly one bolt per kill");
+        let b = bs[0];
+        assert_eq!(b.damage, 0, "`NPC.cs:79290`'s damage 0");
+        assert_eq!(b.vel, Vec2::ZERO, "the 0f, 0f velocity");
+        assert_eq!(b.ai[0], host as f32, "ai0 is the host NPC index");
+        assert_eq!(b.ai[1], 0.0);
+        // The centre convention: the mob's centre (the port's seam
+        // carries centres; the C# subtracts half the extent inside
+        // NewProjectile, `Projectile.cs:10876-10877`).
+        let mob = app.npcs.iter().find(|n| n.kind == NpcKind::SolarCorite).unwrap();
+        let (cx, cy) = mob.center();
+        assert_eq!(b.pos, Vec2::new(cx, cy));
+    }
+
+    #[test]
+    fn the_four_id_sets_map_to_their_hosts() {
+        // `NPC.cs:79279-79320`: solar 412-419+518 → 517, vortex
+        // 425/426/427/429 → 422, nebula 420/421/423/424 → 507, stardust
+        // 402/405/407/409/411 → 493. One representative per family plus
+        // the boundary kinds NOT in the sets (428/406/410).
+        for (mob, tower) in [
+            (NpcKind::SolarSpearman, NpcKind::SolarTower),
+            (NpcKind::VortexRifleman, NpcKind::VortexTower),
+            (NpcKind::BrainSuckler, NpcKind::NebulaTower),
+            (NpcKind::StardustSoldier, NpcKind::StardustTower),
+        ] {
+            let mut app = shielded_app();
+            let host = live_tower(&mut app, tower);
+            dead_mob(&mut app, mob);
+            let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+            spawn_tower_damage_bolts(&mut app, &dead);
+            let bs = bolts(&app);
+            assert_eq!(bs.len(), 1, "{:?} spawns a bolt", mob);
+            assert_eq!(bs[0].ai[0], host as f32, "{:?} targets its host", mob);
+        }
+        for out_of_set in [
+            NpcKind::VortexHeadcrab,   // 428 — not in the vortex case list
+            NpcKind::StardustCellSmall, // 406 — not in the stardust list
+            NpcKind::StardustSpiderSmall, // 410 — not in the list
+            NpcKind::Zombie,
+        ] {
+            let mut app = shielded_app();
+            live_tower(&mut app, NpcKind::SolarTower);
+            dead_mob(&mut app, out_of_set);
+            let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+            spawn_tower_damage_bolts(&mut app, &dead);
+            assert!(bolts(&app).is_empty(), "{:?} spawns nothing", out_of_set);
+        }
+    }
+
+    #[test]
+    fn the_zero_shield_and_missing_host_gates() {
+        // `ShieldStrengthTowerSolar > 0` gates the spawn; a missing host
+        // still spawns with `ai0 = -1` (FindFirstNPC's miss sentinel —
+        // the bolt's arm kills itself, `Projectile.cs:34900-34910`).
+        let mut app = shielded_app();
+        app.world.tower_shield_solar = 0;
+        dead_mob(&mut app, NpcKind::SolarCorite);
+        let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+        spawn_tower_damage_bolts(&mut app, &dead);
+        assert!(bolts(&app).is_empty(), "the spent shield spawns nothing");
+        // Re-raise, no host: the bolt carries -1.
+        raise_tower_shield(&mut app.world);
+        spawn_tower_damage_bolts(&mut app, &dead);
+        let bs = bolts(&app);
+        assert_eq!(bs.len(), 1);
+        assert_eq!(bs[0].ai[0], -1.0, "FindFirstNPC's miss sentinel");
+    }
+
+    #[test]
+    fn the_carrier_segments_spawn_nothing() {
+        // `NPC.cs:78042`'s checkDead guard: a linked realLife segment
+        // never runs the death events — the crawltipede bodies/tails
+        // ride the carrier's death.
+        let mut app = shielded_app();
+        live_tower(&mut app, NpcKind::SolarTower);
+        let mut seg = Npc::new(NpcKind::SolarCrawltipedeBody, 100.0, 100.0, 1, 0.0);
+        seg.hp = 0;
+        seg.worm_id = 7;
+        seg.seg_index = 3;
+        app.npcs.push(seg);
+        let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+        spawn_tower_damage_bolts(&mut app, &dead);
+        assert!(bolts(&app).is_empty(), "the segment's death is the carrier's");
+    }
+
+    #[test]
+    fn the_spawn_loop_draws_nothing() {
+        // RNG census by construction: the C# spawn cases draw nothing and
+        // NewProjectile for 629 draws nothing (aiStyle 122 skips the
+        // aiStyle-1 damp; 629 is absent from the rand spawn arms
+        // `Projectile.cs:10907-10919` and FinalizeProjectile's arms).
+        // Every named stream must be byte-identical across the loop.
+        let mut app = shielded_app();
+        live_tower(&mut app, NpcKind::SolarTower);
+        dead_mob(&mut app, NpcKind::SolarCorite);
+        dead_mob(&mut app, NpcKind::SolarSpearman);
+        let pre: Vec<_> = RngKey::ALL
+            .iter()
+            .map(|&k| (k, app.rngs.stream(k).clone()))
+            .collect();
+        let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
+        spawn_tower_damage_bolts(&mut app, &dead);
+        assert_eq!(bolts(&app).len(), 2, "both kills spawned");
+        for (k, before) in &pre {
+            assert_eq!(
+                app.rngs.stream(*k),
+                before,
+                "{} untouched by the spawn loop",
+                k.name()
+            );
+        }
+    }
+
+    #[test]
+    fn the_gate_shields_the_pillar_until_the_shield_falls() {
+        // `NPC.cs:39101-39115`: dontTakeDamage = shield != 0 per type.
+        // While shielded the melee hurt refuses; the last bolt's −1
+        // spend (the reshaped absorb seam R71 calls) + the next gate
+        // pass opens the tower.
+        let mut app = shielded_app();
+        let ti = live_tower(&mut app, NpcKind::SolarTower);
+        apply_tower_shield_gates(&mut app);
+        assert!(app.npcs[ti].dont_take_damage, "the shield stands");
+        let hp = app.npcs[ti].hp;
+        assert!(
+            !app.npcs[ti].hurt(500, 0.0, 0.0, false),
+            "the shielded pillar refuses the hit"
+        );
+        assert_eq!(app.npcs[ti].hp, hp);
+        // 100 bolts chip the shield to zero (−1 each, the C# spend).
+        for _ in 0..100 {
+            tower_shield_absorb(&mut app.world, 0);
+        }
+        assert_eq!(app.world.tower_shield_solar, 0);
+        apply_tower_shield_gates(&mut app);
+        assert!(!app.npcs[ti].dont_take_damage, "the broken shield opens");
+        assert!(app.npcs[ti].hurt(500, 0.0, 0.0, false), "the bare pillar takes the hit");
+        assert_eq!(app.npcs[ti].hp, hp - 500);
+        // The other pillars stay gated on their own shields.
+        let ni = live_tower(&mut app, NpcKind::NebulaTower);
+        apply_tower_shield_gates(&mut app);
+        assert!(app.npcs[ni].dont_take_damage);
+    }
+
+    #[test]
+    fn the_death_path_wires_the_loop_and_the_gates() {
+        // The live wiring: update_npcs' death path spawns the bolt for a
+        // dead celestial mob and gates the living pillar in the same
+        // pass; the all-dead reset rides the tail.
+        let mut app = shielded_app();
+        let ti = live_tower(&mut app, NpcKind::VortexTower);
+        dead_mob(&mut app, NpcKind::VortexAlien);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let bs = bolts(&app);
+        assert_eq!(bs.len(), 1, "the death path spawned the bolt");
+        assert_eq!(bs[0].ai[0], ti as f32, "the host index after the retain");
+        assert!(app.npcs[ti].dont_take_damage, "the gate ran in the pass");
+        // All four towers die → the reset zeroes the shields.
+        for kind in [
+            NpcKind::SolarTower,
+            NpcKind::VortexTower,
+            NpcKind::NebulaTower,
+            NpcKind::StardustTower,
+        ] {
+            let mut t = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            t.hp = 0;
+            app.npcs.push(t);
+        }
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.tower_shield_solar, 0, "the reset");
+        assert_eq!(app.world.tower_shield_vortex, 0);
+        assert_eq!(app.world.tower_shield_nebula, 0);
+        assert_eq!(app.world.tower_shield_stardust, 0);
     }
 }
 

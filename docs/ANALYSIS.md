@@ -30023,3 +30023,142 @@ Verification: C# re-reads (`WorldGen.cs:86693-86748`,
 fade-window arithmetic hand-computed at 500/525/550. 15 new/reworked
 witness tests WRITTEN NOT RUN — **no compiler invoked**.
 
+## The pillar shield loop (B-6b, 2026-11-19, code-only mode)
+
+Audit research/53 (`docs/audit-pillars-dd2lanes`, rows 1c/2b) found the
+pillar shield STATE faithful but unwired: `tower_shield_absorb` /
+`update_tower_shields` had test-only callers, the towers never read
+`tower_shield_*`, and no live code spawned the 629 TowerDamageBolt —
+pillars were killable by direct damage from tick 1 and no mob kill ever
+chipped a shield. This round wires the loop
+(`task/S1-D-3-pillar-shield-loop`).
+
+**The C# machine (read whole).**
+
+- **Spawn sites** — `NPC.cs:79279-79320`, inside `checkDead`'s
+  pre-death type switch: solar mobs 412-419+518 spawn a 629 while
+  `ShieldStrengthTowerSolar > 0` with `ai0 = FindFirstNPC(517)`;
+  vortex 425/426/427/429 → host 422; nebula 420/421/423/424 → host 507;
+  stardust 402/405/407/409/411 → host 493. Each call is
+  `NewProjectile(source, Center.X, Center.Y, 0f, 0f, 629, 0, 0f,
+  Main.myPlayer, FindFirstNPC(host))` — damage 0, velocity 0, knockback
+  0. `FindFirstNPC` (`NPC.cs:89885-89895`) returns the first active
+  slot of the type, **-1** on miss. NOT in the sets: 428
+  (VortexHeadcrab), 406 (StardustCellSmall), 410 (StardustSpiderSmall).
+  The `checkDead` carrier guard (`NPC.cs:78042`: `realLife >= 0 &&
+  realLife != whoAmI`) skips linked segments — the crawltipede
+  bodies/tails ride the carrier's death events.
+- **The spend** — `Projectile.cs:72944-72979` (the 629's `Kill` arm,
+  `netMode != 1`): switch on `Main.npc[(int)ai[0]].type` (the HOST
+  NPC's type — `ai[0]` is an NPC index, not a tower ordinal); if the
+  matching shield `!= 0` set the host's `ai[3] = 1` (the flash
+  trigger), then `Shield = (int)MathHelper.Clamp(Shield - 1, 0,
+  ShieldStrengthTowerMax)` — **−1 per bolt regardless of damage**.
+- **The gate** — `NPC.cs:39101-39115` (aiStyle 94, every tick):
+  `dontTakeDamage = ShieldStrengthTower<Kind> != 0` per type. While
+  the shield stands the tower refuses every hit; the shield falls ONLY
+  through 629 contacts. `downedTower*`/`TowerActive*` are written by
+  the tower's DEATH (`NPC.cs:79321-79345`), never by shield
+  exhaustion. The ai[3] flash cycle (`:39069-39100`: NPCDeath58 on
+  the shield-state flip, NPCDeath3 at ai[3]==1, the 120-wrap) reads the
+  trigger the spend writes.
+
+**The wiring (Rust).**
+
+| C# | Rust | position |
+| --- | --- | --- |
+| `NPC.cs:79279-79320` spawn cases | `world_sim/npcs.rs::spawn_tower_damage_bolts` | `update_npcs` death path, BEFORE the tower death arms (the C# switch's mob cases precede the pillar cases) |
+| `NPC.cs:89885-89895` FindFirstNPC | the `app.npcs.iter().position(kind && hp>0)` scan, -1.0 on miss | inside the spawn loop; the port's compacted vec index is the sim's current whoAmI (the saucer-deathray seam precedent) |
+| `NPC.cs:39101-39115` dontTakeDamage gate | `world_sim/npcs.rs::apply_tower_shield_gates` | `update_npcs` death-path tail (after the death arms, so cultist-spawned towers are gated the same tick) |
+| `Projectile.cs:72953` etc. −1 spend | `world_sim/npcs.rs::tower_shield_absorb` (RESHAPED: −1 clamp 0..max, returns the pre-spend `!= 0`) | the fn seam; the live 629 arm call site is R71's |
+| `NPC.cs:95247-95251` all-dead reset | `world_sim/npcs.rs::update_tower_shields` (was test-only) | `update_npcs` death-path tail |
+| the hurt/strike/PVE refusals | pre-existing gates: `npc.rs` hurt's `dont_take_damage` check, the strike gate, `projectile.rs` PVE walk's `!nPC.dontTakeDamage` (`Projectile.cs:12583`) | unchanged — the gate pass now feeds them live |
+
+The spawn rides `spawn_hostile_ai` (the `HostileShotAi` seam): kind
+629, the mob's CENTRE (the port's seam carries centres; the C#
+`NewProjectile` subtracts half the extent at `Projectile.cs:10876-
+10877` and the port's `ai_tower_damage_bolt` reads `pos` as the
+centre — the recorded arm deviation, research/53 §3.1), velocity 0,
+damage 0, knockback 0, `ai0` = host index, `ai1` = 0. The row's
+`SetDefaults` (`Projectile.cs:6754-6766`: 8×8, aiStyle 122, hostile,
+timeLeft 3600, penetrate −1, extraUpdates 2) already rides
+`projectile/data.rs`'s 629 row.
+
+**The absorb reshape (audit §2.2's fix spec).** The old
+`tower_shield_absorb(world, tower, dmg)` drained `dmg` per hit and
+flipped `downed_tower_*`/`tower_active_*` at zero — both wrong
+models. The new `tower_shield_absorb(world, tower) -> bool` chips −1
+(clamped `0..tower_shield_max`) and returns whether the shield stood
+(the C#'s `!= 0` gate on the ai[3] flash). The downed/active writes
+are RETIRED from the fn — the death arms (`npcs.rs`'s
+`NpcKind::SolarTower` etc.) already own them. The old test
+(`the_absorb_drains_and_flags_the_down`) is repointed to the faithful
+model (`the_absorb_chips_one_per_bolt_and_never_downs`).
+
+**RNG argument (by construction).** The spawn loop draws NOTHING: the
+C# cases contain no `Main.rand` call, and `NewProjectile` for type
+629 draws nothing either — aiStyle 122 is not the aiStyle-1 velocity
+damp (`Projectile.cs:10895-10902`), 629 is absent from the owner-rand
+spawn arms (`:10907-10919`: 206/335/358/406), the golf-ball and
+CD-copy sets (`ProjectileID.cs:191`), the timeLeft overrides and
+`FinalizeProjectile`'s 93/113/gem arms (`:22043-22061`). The gate
+pass and the reset are pure state writes. The all-streams census
+witness (`the_spawn_loop_draws_nothing`) pins every named stream
+byte-identical across a two-kill loop.
+
+**Boundaries / deliberate folds.**
+
+- **The 629 arm's spend call site** (`projectile.rs:13502-13521`:
+  drains `slot.damage`, selects by `ai[0] as usize` ordinal, never
+  sets ai[3]) is **R71** (`fix/lunar-dd2-small-wrongs`) — this branch
+  wires the SPAWN loop only and hands R71 the reshaped spend fn; the
+  merger reconciles (host-kind selection `Main.npc[ai[0]].type` +
+  the ai[3]=1 write + the −1 call).
+- **The pillar AI machine re-port is B-6a (queued)** — the stand-in
+  `update_ancient_cultist`'s 180-tick self-kill (ai[2] misused as a
+  timer; the C# ai[2] is the dissolve FLAG set by `checkDead`
+  `:78080-78086`) STAYS until B-6a. Consequence documented: a pillar
+  still self-destructs at tick 180 today, so the shield gate protects
+  it only within that window; the gate pass is positioned to fold into
+  B-6a's re-ported machine at the C# position (`:39101-39115`) with
+  no behaviour change. The ai[3] flash cycle (`:39069-39100`) and its
+  NPCDeath58/NPCDeath3 cues ride B-6a too (they read R71's ai[3]
+  trigger).
+- **Gate/reset position fold**: the C# runs the gate inside the pillar
+  machine every tick and owns the reset in the static state; the port's
+  death-batched pass runs both at the `update_npcs` death-path tail
+  (once per NPC pass). Same-tick semantics for the shielded→bare
+  transition: the last bolt's spend lands in the projectile pass
+  (AFTER the NPC pass), so the gate opens on the NEXT tick's pass —
+  the C#'s per-tick machine order within one `UpdateWorld` frame.
+- **`lunar.rs:136`** (the duplicate NebulaTower slot arm) is R71's
+  one-liner — untouched. **Portals** (the crystal's 549 spawns) are
+  R73 — untouched.
+- **Owner fold**: the C# passes `Main.myPlayer`; the port's hostile
+  seam folds it to 255 (the established `spawn_hostile` fold). The
+  spend gates on `netMode != 1`, not the owner, so the chip is
+  unaffected; the port is single-player (netMode 0).
+- **R71 handoff resolutions** (LEAD-R71-HANDOFF, consumed): (1) the
+  580 bolt's `ai1 = Next(80)` (`Projectile.cs:33841`) spawns from the
+  578 ritual marker's OWN aiStyle-108 arm (`:33838-33842`,
+  `ai[0] == 90`), NOT from a mob-kill site — B-6b's spawn loop covers
+  only the 629 mob-kill cases, so the draw is NOT consumed here; it
+  rides the ritual-arm re-port (B-6a's vortex attack arms / the
+  578/579 family). (2) R71's spend landed INLINE in `projectile.rs`'s
+  629 Kill-tail block (host-kind switch + −1 clamp + ai[3] flash),
+  semantically identical to this branch's reshaped
+  `tower_shield_absorb`; R71 did not edit the npcs.rs fn, so the two
+  are conflict-free — the merger may point R71's arm at the fn or
+  keep the inline form (identical behaviour). (3) R71's 579 payload
+  fix (Option→Vec `wants_mark_spawn` + `Next(4,9)`) sits in the
+  mark-drain/test regions of npcs.rs, disjoint from this branch's
+  shield-loop hunks — keep-both at merge.
+
+**Verification.** Code-only: the C# blocks re-read whole (the spawn
+switch, FindFirstNPC, the Kill spend, the aiStyle-94 gate, the
+NewProjectile body for the RNG census); every Rust call site checked
+against the actual signatures by read/grep (`spawn_hostile_ai`,
+`Npc::center`/`has_carrier`, the `Projectile` pub fields, the
+`RngKey::ALL` census shape). 7 new witnesses
+(`pillar_shield_loop_tests`) + the reshaped absorb test WRITTEN, NOT
+RUN — **no compiler invoked**.
