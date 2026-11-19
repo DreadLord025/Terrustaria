@@ -163,6 +163,10 @@ pub(crate) struct App {
     pub(crate) talk_npc: Option<usize>,
     /// `Main.npcChatText` (`Main.cs:1755`) — the chat dialog's line.
     pub(crate) npc_chat_text: String,
+    /// `NPCChatPanel._lastHovered` (`NPCChatPanel.cs:32`) — the hovered
+    /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
+    /// and `Close` resets it to −1 (`:267`).
+    pub(crate) npc_chat_last_hovered: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -3101,6 +3105,7 @@ impl App {
             window: None,
             talk_npc: None,
             npc_chat_text: String::new(),
+            npc_chat_last_hovered: -1,
             gpu: None,
             renderer: None,
             post: None,

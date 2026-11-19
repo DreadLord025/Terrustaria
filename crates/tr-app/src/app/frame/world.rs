@@ -27,6 +27,10 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The town-chatter panel's Close button + hover tick
+    // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
+    // is consumed before the chest/crafting/inventory handlers see it.
+    self.handle_npc_chat_clicks();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
