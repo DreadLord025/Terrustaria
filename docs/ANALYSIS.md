@@ -13130,8 +13130,12 @@ Deviations and notes:
   budgets, the order that keeps them.
 - **The Stardust Dragon chain (625-628) is excluded** вЂ” the relink arms in the kill-oldest
   and the free-up are stubbed; the kinds carry rows only where the summon slice needs them.
-- **DD2 persistence stubbed**: `tr_core::dd2::event_ongoing()` reports false until
-  M4-EVENT-5, so the O'A towers (663-693) are wipable like the vanilla sentries.
+- **DD2 persistence** (S1-P-i26 update): the sentry-summon path now reads the world's
+  live `World::dd2_event_ongoing` flag (not the `tr_core::dd2::event_ongoing()` stub,
+  which still reports false for the wave machinery until M4-EVENT-5). The O'A towers
+  (663-693) genuinely persist through `UpdateMaxTurrets` and hold their `timeLeft`
+  (`Projectile.cs:17197-17200`) while the event runs, and are wipable like the vanilla
+  sentries once it ends. See "The sentry-summon use machinery (S1-P-i26)" below.
 - **Dust, sound, light and frame machines unported**: `AI_062`'s dust spawns and their
   `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
   `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) вЂ”
@@ -13349,6 +13353,91 @@ Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
   shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
   facing flip, the backpack ride, the shot fade/rotation and the two RNG-order
   proofs; `player.rs`'s armor-set test gained the Apprentice T2/T3 triples.
+
+### The sentry-summon use machinery (S1-P-i26, code-only mode)
+
+**Code-only mode**: no `cargo`/`rustc`/`rustfmt`, no test run, no graphify. The port
+was verified by re-reading the C# line by line; the witnesses below are written as
+code, NOT executed.
+
+The census found the sentry **AI bodies** already ported (S1-D-4b-2/-3/-9: aiStyle
+53/123/130/134/137/138/139/197, the `proj_data` rows, the cap sweep
+`update_max_turrets`, the targeting) but the **use path** — the two `ItemCheck_Shoot`
+sentry arms and their placement/gate helpers — was MISSING: a sentry staff fell
+through to the generic `Item.shoot` firing (spawn at the player centre + 10 px
+toward the cursor, aim-normalized velocity, a throw-time crit draw), not the C#'s
+cursor/tile placement. S1-P-i26 ports the use machinery verbatim.
+
+- **Arm A — the placeable staff sentries** (`Player.cs:48189-48212`): items 1572
+  (Frost Hydra → 308), 2366 (Queen Spider → 377), 3571 (Rainbow Crystal → 643),
+  3569 (Moon Lord Turret → 641), 5119 (Houndius Shootius → 966), 5463 (Dead Cells
+  Barnacle → 1025). `PickSentryLandingSpot` (`:49525-49543`) picks the spot: the
+  hover kinds (3571/3569/5463) skip the ground scan, the rest scan the cursor column
+  + its two neighbours down to the first `SolidTile2` row then step one row up;
+  `spawnX` is the RAW cursor X, `spawnY = row*16 − 24`. The spawn drops at `(0, 15)`
+  (the barnacle at `(0, 0)` on the raw cursor Y), `ai0` = 60/90 for the 1572/5119,
+  `originalDamage = sItem.damage` (the UNSCALED prefixed item damage, `:47060` /
+  `:48209` — NOT the class-multiplied `weaponDamage`), then `UpdateMaxTurrets`.
+- **Arm B — the DD2 tower poppers** (`:49057-49094`): items 3818-3820 (Flameburst →
+  663/665/667), 3824-3826 (Ballista → 677/678/679), 3829-3831 (Lightning Aura →
+  688/689/690), 3832-3834 (Explosive Trap → 691/692/693). `PayDD2CrystalsBeforeUse`
+  (`:42367-42374`) consumes 10 Eternia crystals (3822) in reverse slot order
+  (`ConsumeItem` `:9269-9308`, ammo → coins → grid; a drained cell turns to air),
+  `FindSentryRestingSpot` (`:53015-53059`) picks the ground spot (the cursor pulled
+  into the reachable area, `worldX = col*16 + 8` with the per-kind facing/X offsets,
+  `pushYUp = 41` + the per-kind offsets − 14, `worldY = firstSolidRow*16`), the
+  per-tier payload rides the spawn (`ai0/ai1` = 1/80, 1/70, 1/60 for the Flameburst
+  T1/T2/T3; `ai1 = GetBallistraShotDelay` for the Ballista; `localAI[0] =
+  GetExplosiveTrapCooldown` for the Trap), `originalDamage = sItem.damage`, then
+  `UpdateMaxTurrets`.
+- **The use gates** (`ItemCheck_CheckCanUse_Inner`, `:52079-52111`) run BEFORE the
+  use starts: the crystal-payment lock (`CheckDD2CrystalPaymentLock` `:42376-42384`
+  — free outside the event, the full 10 required during it), the
+  `downedDD2EventAnyDifficulty || Ongoing` gate (`:52083-52086` — the port reads the
+  world's three monotonic tier flags, the C# player field is their per-tick latch
+  `:24450-24453` / `DD2Event.cs:89-99`), the `WouldSpotOverlapWithSentry` overlap
+  refusal (`:52983-53013` — the three probe points against every active sentry's
+  hitbox, the aura kinds inflate ±8, the rest recentre to a 30-px width) and the
+  solid-tile refusal (`:52095-52111` — the aura kinds test a 3-tall `SolidTiles`
+  column, the rest a single `SolidTile`).
+- **The DD2 lifetime hold** (`Projectile.cs:17197-17200`): while `DD2Event.Ongoing`
+  holds, an `IsADD2Turret` sentry's `timeLeft++` cancels the per-tick decrement, so
+  its lifetime never drains during the event. The port's lifetime block gained this
+  arm; the `Ongoing` read is the world's live `dd2_event_ongoing` flag, not the
+  `event_ongoing()` stub (which still reports false for the wave machinery). The two
+  `update_max_turrets` call sites (the spawn sweep `editing.rs` + the cap-change
+  sweep `world_sim/player.rs`) likewise read the world flag, so the O'A towers
+  genuinely persist through the sweep during the event (`TurretShouldPersist`
+  `Projectile.cs:670-690`).
+- **RNG order preserved by construction**: NONE of the placement/gate/payment
+  helpers draws `Main.rand` — the scans, the overlap test, the crystal consume and
+  the spawn payload are pure arithmetic. The C# `ItemCheck_Shoot` makes NO crit draw
+  for the sentry arms (`Projectile.Damage`'s crit block `Projectile.cs:12890-12901`
+  gates on the melee/ranged/magic flags, which no sentry row sets — the summon class
+  has no crit), so the port's sentry arms SKIP the generic throw-time crit roll,
+  keeping the `UpdatePlayers` stream's draw count 1:1. The witness
+  (`sentry_use_tests::the_sentry_use_draws_no_crit_on_the_updateplayers_stream`)
+  isolates the crit by mirroring the stream: one `next_range(1, 101)` on a clone of
+  the sentry's post-use stream lands on the non-sentry summon's, proving the only
+  delta is the single crit draw the sentry skips. The knockback takes
+  `GetWeaponKnockback`'s summon arm (`:53348-53351` `+= minionKB`, then `kbBuff`
+  ×1.5 `:53356-53359`).
+- **Skips / deviations**: the aiStyle-53 sentry-backpack branch
+  (`AI_053_FrostHydra`'s `CanGetPickedUpBySentryBackpack` pickup `:37314-37335`)
+  stays the documented S1-D-4b-2 skip (the 134/137/138/130/123 arms carry it; the 53
+  arm does not call the reposition yet). The `gravDir == -1` row re-fold in
+  `PickSentryLandingSpot`/`Main.MouseWorld` is inert (the port keeps `gravDir = 1`,
+  no gravity potion). The C# `NewProjectile` centres the box (`:10876-10877`); the
+  port's spawn seam takes the top-left, so the arms subtract half the row's size
+  (the ballista-shot precedent). The `UpdateMaxTurrets` sweep runs after EVERY
+  sentry spawn (the port's pre-existing convention at `editing.rs`), matching the
+  C#'s two sentry call sites (`:48210`/`:49092`).
+- Tests (written, not run): `world_sim/editing/sentry.rs`'s 8 unit witnesses (the
+  landing/resting spots, the overlap recentre/inflate, the crystal cost/reverse
+  payment/lock, the reload ladders, the downed gate); `sentry_use_tests`'s 5
+  integration/RNG witnesses (the Frost Hydra/Houndius/barnacle spawn payloads, the
+  Flameburst/Trap popper payment + reload, the crit-draw delta);
+  `sentry_tests::the_dd2_tower_lifetime_holds_while_the_event_runs`.
 
 ### The Twins' minion arm (S1-D-4b-6)
 

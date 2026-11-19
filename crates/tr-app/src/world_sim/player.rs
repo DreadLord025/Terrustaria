@@ -820,11 +820,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.cs:25709-25712` — a `maxTurrets` change drives the
             // `UpdateMaxTurrets` sweep (the lowest-`timeLeft` wipable sentry
             // dies while the budget holds); Phase 5's pool method runs it.
+            // S1-P-i26: the `DD2Event.Ongoing` read is the world's live flag,
+            // not the `event_ongoing()` stub (the O'A towers persist through
+            // the sweep while the event runs).
             if p.max_turrets_old != p.max_turrets {
                 app.projectiles.update_max_turrets(
                     p.max_turrets,
                     app.local_id as u8,
-                    tr_core::dd2::event_ongoing(),
+                    app.world.dd2_event_ongoing,
                 );
                 p.max_turrets_old = p.max_turrets;
             }

@@ -2017,8 +2017,10 @@ impl Projectile {
 
     /// `Projectile.TurretShouldPersist` (`Projectile.cs:670-690`): the O'A tower
     /// families (663/665/667, 677-679, 688-690, 691-693) persist only while
-    /// `DD2Event.Ongoing` holds — the port's stub reports false until
-    /// M4-EVENT-5, so they are wipable like the vanilla sentries (ANALYSIS).
+    /// `DD2Event.Ongoing` holds. S1-P-i26: the callers now pass the world's
+    /// live `dd2_event_ongoing` flag (not the `event_ongoing()` stub), so the
+    /// towers genuinely persist through `UpdateMaxTurrets` during the event
+    /// and are wipable like the vanilla sentries once it ends.
     fn sentry_should_persist(&self, dd2_ongoing: bool) -> bool {
         dd2_ongoing
             && matches!(
@@ -16039,14 +16041,21 @@ impl ProjectilePool {
                 // while, so an `extraUpdates = n` projectile spends
                 // `1 + n` timeLeft per frame and dies `ceil(timeLeft / (1+n))`
                 // frames after spawn — the old once-per-update block let
-                // extra-update shots live ~2× too long. The DD2 turret's
-                // `timeLeft++` arm right above it (`IsADD2Turret`,
-                // `:17198-17199`) is unported (the DD2 event stub, ANALYSIS).
+                // extra-update shots live ~2× too long. S1-P-i26: the DD2
+                // turret's `timeLeft++` arm right above the decrement
+                // (`IsADD2Turret && DD2Event.Ongoing`, `:17197-17200`) is now
+                // ported — during the event the O'A towers' lifetime holds
+                // (the ++ cancels the --), so they persist until the event
+                // ends or `UpdateMaxTurrets` evicts them; the `Ongoing` read
+                // is the world's live flag, not the `event_ongoing()` stub.
                 // The two kills ride `Kill()`'s `!active` head
                 // (`:70644-70648`), so only the first death transitions the
                 // slot; `Kill()` zeroes `timeLeft` (`:70646-70648`).
                 if self.slots[i].active {
                     let p = &mut self.slots[i];
+                    if tr_core::dd2::is_dd2_turret(p.kind) && world.dd2_event_ongoing {
+                        p.time_left += 1;
+                    }
                     p.time_left -= 1;
                     if p.time_left <= 0 || p.penetrate == 0 {
                         p.kill_time_left = p.time_left;
@@ -29366,6 +29375,70 @@ mod sentry_tests {
             !pool.slots[hydra].active,
             "the lowest timeLeft wipable dies"
         );
+    }
+
+    /// S1-P-i26 — the DD2 lifetime hold (`Projectile.cs:17197-17200`): while
+    /// `DD2Event.Ongoing` holds, an `IsADD2Turret` sentry's `timeLeft++` cancels
+    /// the per-tick decrement, so its lifetime never drains; once the event
+    /// ends the decrement resumes and it dies at the seeded life. A vanilla
+    /// sentry (the Frost Hydra) drains regardless of the event.
+    #[test]
+    fn the_dd2_tower_lifetime_holds_while_the_event_runs() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        // A floor so the out-of-world guard does not kill the free-falling
+        // tower before the lifetime test (the DW-5.3 precedent).
+        for x in 0..64 {
+            let i = w.index(x, 25);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = player(&w);
+        // Seed a short life so the post-event death is quick to reach.
+        let tower = spawn_sentry(&mut pool, BALLISTRA_TOWER_1, 300.0, 300.0, 5);
+        let mut npcs: Vec<Npc> = Vec::new();
+        // Event ongoing: the lifetime holds across many ticks.
+        w.dd2_event_ongoing = true;
+        for _ in 0..20 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        assert!(pool.slots[tower].active, "the tower persists during the event");
+        assert_eq!(pool.slots[tower].time_left, 5, "the ++ cancels the --");
+        // Event over: the decrement resumes; the 5-tick life drains.
+        w.dd2_event_ongoing = false;
+        for _ in 0..5 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+        }
+        assert!(!pool.slots[tower].active, "dead once the 5-tick life drains");
     }
 }
 

@@ -22,6 +22,7 @@ pub(crate) use wiring::use_wiring_tool;
 mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
+mod sentry;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -664,6 +665,45 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
+            // S1-P-i26 — the DD2 sentry use gates (`ItemCheck_CheckCanUse_Inner`,
+            // `Player.cs:52079-52111`): the crystal-payment lock, the
+            // downed-tier/event gate, the sentry-overlap refusal and the
+            // solid-tile refusal. The C# runs them in `CheckCanUse` BEFORE the
+            // use starts, so a refusal here skips the whole fire block (no
+            // swing, no spawn). `downedDD2EventAnyDifficulty` (`:1916`) is the
+            // per-tick latch of `DD2Event.DownedInvasionAnyDifficulty`
+            // (`:24450-24453`, `DD2Event.cs:89-99`) — the port reads the
+            // world's three tier flags directly (both monotonic).
+            if let Some(proj) = registry::projectile(held.kind) {
+                if tr_core::dd2::is_dd2_turret(proj) {
+                    let (cx, cy, facing) = app
+                        .player
+                        .as_ref()
+                        .map(|p| {
+                            let (x, y) = p.center();
+                            (x, y, p.facing)
+                        })
+                        .unwrap_or((app.camera.x, app.camera.y, 1));
+                    let downed_any = app.world.dd2_downed_t1
+                        || app.world.dd2_downed_t2
+                        || app.world.dd2_downed_t3;
+                    if !sentry::dd2_sentry_can_use(
+                        &app.world,
+                        &app.projectiles,
+                        &app.inventory,
+                        &app.equip,
+                        held.kind,
+                        proj,
+                        world_pos,
+                        Vec2::new(cx, cy),
+                        facing,
+                        app.world.dd2_event_ongoing,
+                        downed_any,
+                    ) {
+                        return;
+                    }
+                }
+            }
             // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
             // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
             // the accessories, the casters' sets and Magic Power lower (M3-
@@ -753,14 +793,41 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         Vec2::new(pcx, pcy) + dir * 10.0
                     };
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+                    // S1-P-i26 — the sentry-summon arms (the placeable staff
+                    // sentries `Player.cs:48189-48212` + the DD2 tower poppers
+                    // `:49057-49094`). The C# `ItemCheck_Shoot` makes NO crit
+                    // draw for them (`Projectile.Damage`'s crit block
+                    // `Projectile.cs:12890-12901` gates on the melee/ranged/
+                    // magic flags, which no sentry row sets), so the port
+                    // skips the throw-time crit roll — keeping the
+                    // `UpdatePlayers` stream's draw count 1:1 with the C#.
+                    let sentry_use = matches!(held.kind, 1572 | 2366 | 3571 | 3569 | 5119 | 5463)
+                        || tr_core::dd2::is_dd2_turret(proj);
+                    // `Player.GetWeaponKnockback` (`Player.cs:47151`,
+                    // `:53346-53369`) for the summon-class sentry staves:
+                    // `KnockBack += minionKB` (`:53348-53351`), then the
+                    // `kbBuff` ×1.5 (`:53356-53359`). The melee/ranged arms
+                    // (kbGlove/shroomite/vortex) never fire for a summon item.
+                    let sentry_kb = if sentry_use {
+                        let mut kb = fx_kb + p.minion_kb;
+                        if p.kb_buff {
+                            kb *= 1.5;
+                        }
+                        kb
+                    } else {
+                        fx_kb
+                    };
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the throw runs in `Player.ItemCheck` under the
                     // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
                     // rides `stream(UpdatePlayers)`.
                     let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    let crit =
-                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
+                    let crit = if sentry_use {
+                        false
+                    } else {
+                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit)
+                    };
                     // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
                     // 20% roll upgrades the bolt (634→635) at triple damage —
                     // `Damage *= 3` on the weapon-damage int (`:42653`'s
@@ -784,7 +851,119 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
                     let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
-                    if GEM_STAFF_BOLTS.contains(&proj) {
+                    if matches!(held.kind, 1572 | 2366 | 3571 | 3569 | 5119 | 5463) {
+                        // S1-P-i26 — `Player.cs:48189-48212`: the placeable
+                        // staff sentries (Frost Hydra 1572→308, Queen Spider
+                        // 2366→377, Rainbow Crystal 3571→643, Moon Lord Turret
+                        // 3569→641, Houndius Shootius 5119→966, Dead Cells
+                        // Barnacle 5463→1025). `PickSentryLandingSpot` picks
+                        // the cursor/tile spot, the spawn drops at `(0, 15)`
+                        // (the barnacle at `(0, 0)` on the raw cursor Y), the
+                        // per-item `ai0` (60/90 for the 1572/5119), then
+                        // `originalDamage = sItem.damage` (the UNSCALED item
+                        // damage, `:47060`/`:48209`) and `UpdateMaxTurrets`.
+                        // No `Main.rand` draw in this arm.
+                        let (mut spawn_x, mut spawn_y) =
+                            sentry::pick_sentry_landing_spot(&app.world, held.kind, world_pos);
+                        let mut speed_y = 15.0f32;
+                        let ai0 = match held.kind {
+                            1572 => 60.0,
+                            5119 => 90.0,
+                            5463 => {
+                                spawn_y = world_pos.y;
+                                speed_y = 0.0;
+                                0.0
+                            }
+                            _ => 0.0,
+                        };
+                        // `NewProjectile` centres the box (`Projectile.cs:
+                        // 10876-10877`); the port's spawn seam takes the
+                        // top-left, so subtract half the row's size.
+                        let data = crate::projectile::proj_data(proj).unwrap();
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj,
+                            spawn_x - data.w * 0.5,
+                            spawn_y - data.h * 0.5,
+                            0.0,
+                            speed_y,
+                            raw as i32,
+                            sentry_kb,
+                            ai0,
+                            0.0,
+                        );
+                        if let Some(slot) = slot {
+                            // `:48209` — `originalDamage = damage` where
+                            // `damage = sItem.damage` (`:47060`), the prefixed
+                            // item damage BEFORE the class multiplier.
+                            app.projectiles.set_original_damage(slot, fx_dmg);
+                        }
+                    } else if tr_core::dd2::is_dd2_turret(proj) {
+                        // S1-P-i26 — `Player.cs:49057-49094`: the DD2 tower
+                        // poppers. `PayDD2CrystalsBeforeUse` consumes the 10
+                        // crystals (the use gates already ran at the block
+                        // head), `FindSentryRestingSpot` picks the ground spot,
+                        // the per-tier `ai0/ai1/localAI[0]` payload rides the
+                        // spawn, `originalDamage = sItem.damage`, then
+                        // `UpdateMaxTurrets`. No `Main.rand` draw in this arm.
+                        sentry::pay_dd2_crystals(
+                            &mut app.inventory,
+                            &mut app.equip,
+                            held.kind,
+                        );
+                        let (cx, cy) = p.center();
+                        let (wx, wy, push) = sentry::find_sentry_resting_spot(
+                            &app.world,
+                            proj,
+                            world_pos,
+                            Vec2::new(cx, cy),
+                            p.facing,
+                        );
+                        let mut ai0 = 0.0f32;
+                        let mut ai1 = 0.0f32;
+                        let mut local0 = 0.0f32;
+                        match held.kind {
+                            3824 | 3825 | 3826 => {
+                                ai1 = sentry::ballistra_shot_delay(p.set_squire_t3, p.ballista_panic)
+                                    as f32;
+                            }
+                            3832 | 3833 | 3834 => {
+                                local0 =
+                                    sentry::explosive_trap_cooldown(p.set_huntress_t2, p.set_huntress_t3)
+                                        as f32;
+                            }
+                            3818 => {
+                                ai0 = 1.0;
+                                ai1 = 80.0;
+                            }
+                            3819 => {
+                                ai0 = 1.0;
+                                ai1 = 70.0;
+                            }
+                            3820 => {
+                                ai0 = 1.0;
+                                ai1 = 60.0;
+                            }
+                            _ => {}
+                        }
+                        let data = crate::projectile::proj_data(proj).unwrap();
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj,
+                            wx as f32 - data.w * 0.5,
+                            (wy - push) as f32 - data.h * 0.5,
+                            0.0,
+                            0.0,
+                            raw as i32,
+                            sentry_kb,
+                            ai0,
+                            ai1,
+                        );
+                        if let Some(slot) = slot {
+                            // `:49090-49091` — the unscaled item damage and
+                            // the trap's `localAI[0]` cooldown.
+                            app.projectiles.set_original_damage(slot, fx_dmg);
+                            app.projectiles.set_local_ai0(slot, local0);
+                        }
+                    } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
                         // from the bolt kind and the matching body robe
@@ -1053,15 +1232,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                         }
                     }
-                    // `Player.cs:48210` — the sentry spawns run the turret
-                    // sweep right after (the base cap of 1 would otherwise
-                    // accumulate unbounded sentries; the budget-change sweep
-                    // in the player tick only catches cap drops).
+                    // `Player.cs:48210`/`:49092` — the sentry spawns run the
+                    // turret sweep right after (the base cap of 1 would
+                    // otherwise accumulate unbounded sentries; the
+                    // budget-change sweep in the player tick only catches cap
+                    // drops). S1-P-i26: the `DD2Event.Ongoing` read is the
+                    // world's live flag (`TurretShouldPersist` gates on it,
+                    // `Projectile.cs:670-690`), not the `event_ongoing()` stub
+                    // — during the event the O'A towers persist through the
+                    // sweep instead of being evicted.
                     if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
                         app.projectiles.update_max_turrets(
                             p.max_turrets,
                             app.local_id as u8,
-                            tr_core::dd2::event_ongoing(),
+                            app.world.dd2_event_ongoing,
                         );
                     }
                     if def.consumable {
@@ -8158,6 +8342,213 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+}
+
+/// S1-P-i26 — the sentry-summon USE path's integration witnesses: the two
+/// `ItemCheck_Shoot` sentry arms (`Player.cs:48189-48212` / `:49057-49094`)
+/// fire through `update_editing` at the cursor/tile spot with the C# payload,
+/// and the `UpdatePlayers` stream's draw count stays 1:1 (the sentry arms
+/// make no crit draw). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod sentry_use_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// A 64×800 world with a stone floor at row 300, the player standing just
+    /// above it at column 30, the cursor on the player (inside the reach).
+    /// The listener is muted so the use-sound's pitch draw never fires — the
+    /// `UpdatePlayers` stream then carries only the crit roll for a non-sentry
+    /// summon and nothing for a sentry (the RNG witness's mirrored-stream
+    /// baseline; the use-start sound draws the same on both either way).
+    fn sentry_app(kind: u16) -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.local_id = 0;
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 30.0 * TILE_PX;
+        p.y = 300.0 * TILE_PX - crate::player::HEIGHT;
+        p.facing = 1;
+        p.max_turrets = 5;
+        app.player = Some(p);
+        app.camera = Vec2::new(30.0 * TILE_PX + 8.0, 300.0 * TILE_PX);
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5, sh * 0.5);
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        // Mute the listener: `play_sound` returns None before the pitch draw
+        // (`sound.rs:82-84`), so the use start draws nothing on UpdatePlayers.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    fn fire(app: &mut App) {
+        let (sw, sh) = app.screen_size();
+        update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    /// The Frost Hydra staff (1572 → 308) drops the sentry at the landing spot
+    /// (`PickSentryLandingSpot`: one row above the floor, `spawnY = 4760`),
+    /// velocity `(0, 15)`, `ai0 = 60`, and the UNSCALED item damage rides
+    /// `originalDamage` (`:48209`).
+    #[test]
+    fn the_frost_hydra_staff_drops_the_sentry_at_the_landing_spot() {
+        let mut app = sentry_app(1572);
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 308)
+            .expect("the Frost Hydra spawned");
+        // Centre at (cursor X, 4760); the box is 80×74 → top-left (448, 4723).
+        assert!((s.pos.x + s.w * 0.5 - 488.0).abs() < 1e-3, "the cursor X centre");
+        assert!((s.pos.y + s.h * 0.5 - 4760.0).abs() < 1e-3, "one row above the floor");
+        assert_eq!(s.vel, Vec2::new(0.0, 15.0), "the (0, 15) drop");
+        assert_eq!(s.ai[0], 60.0, "the 1572 ai0");
+        assert_eq!(s.original_damage, 100, "the unscaled item damage");
+        assert!(s.sentry, "the sentry flag");
+    }
+
+    /// The Houndius Shootius (5119 → 966) carries `ai0 = 90`; the Dead Cells
+    /// Barnacle (5463 → 1025) spawns at the raw cursor Y with zero velocity.
+    #[test]
+    fn the_houndius_and_barnacle_carry_their_spawn_payloads() {
+        let mut app = sentry_app(5119);
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 966)
+            .expect("the Houndius spawned");
+        assert_eq!(s.ai[0], 90.0, "the 5119 ai0");
+        assert_eq!(s.vel, Vec2::new(0.0, 15.0));
+
+        let mut app = sentry_app(5463);
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 1025)
+            .expect("the barnacle spawned");
+        assert_eq!(s.vel, Vec2::ZERO, "the barnacle's (0, 0)");
+        // The barnacle's spawnY is the raw cursor Y (the camera Y = 4800).
+        assert!((s.pos.y + s.h * 0.5 - 4800.0).abs() < 1e-3, "the raw cursor Y");
+    }
+
+    /// The DD2 Flameburst T1 popper (3818 → 663) pays 10 crystals, spawns at
+    /// the resting spot with `ai0 = 1, ai1 = 80`, and the unscaled damage.
+    #[test]
+    fn the_flameburst_popper_pays_and_seeds_the_reload() {
+        let mut app = sentry_app(3818);
+        app.world.dd2_downed_t1 = true;
+        app.inventory[1] = ItemSlot {
+            kind: 3822,
+            name: "DD2 Energy Crystal",
+            count: 10,
+            prefix: 0,
+        };
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 663)
+            .expect("the Flameburst tower spawned");
+        assert_eq!(s.ai[0], 1.0, "the 3818 ai0");
+        assert_eq!(s.ai[1], 80.0, "the 3818 ai1 reload");
+        assert_eq!(s.original_damage, 17, "the unscaled item damage");
+        assert_eq!(app.inventory[1].count, 0, "the 10 crystals paid");
+        assert_eq!(app.inventory[1].kind, 0, "the drained cell turns to air");
+    }
+
+    /// The DD2 Explosive Trap T1 popper (3832 → 691) seeds `localAI[0]` with
+    /// the stock 90-tick cooldown (`GetExplosiveTrapCooldown`).
+    #[test]
+    fn the_explosive_trap_popper_seeds_the_scan_cooldown() {
+        let mut app = sentry_app(3832);
+        app.world.dd2_downed_t1 = true;
+        app.inventory[1] = ItemSlot {
+            kind: 3822,
+            name: "DD2 Energy Crystal",
+            count: 10,
+            prefix: 0,
+        };
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 691)
+            .expect("the trap spawned");
+        assert_eq!(s.local_ai[0], 90.0, "the stock cooldown");
+        assert_eq!(s.original_damage, 24);
+    }
+
+    /// The RNG witness: the sentry use draws NO crit on the `UpdatePlayers`
+    /// stream — the C# `ItemCheck_Shoot` sentry arms make no crit draw
+    /// (`Projectile.Damage`'s crit block `Projectile.cs:12890-12901` gates on
+    /// the melee/ranged/magic flags no sentry row sets). The use-start sound's
+    /// pitch draw is shared by every staff, so the witness isolates the crit
+    /// by mirroring the stream: one `next_range(1, 101)` (the `crit_roll`
+    /// shape, `damage.rs:186-188`) on a clone of the SENTRY's post-use stream
+    /// must land on the CONTROL's, proving the ONLY difference is the single
+    /// crit draw the non-sentry summon rolls and the sentry skips.
+    #[test]
+    fn the_sentry_use_draws_no_crit_on_the_updateplayers_stream() {
+        use tr_core::loot::DropRng;
+        // The control: the Slime Staff (a non-sentry summon) rolls one crit.
+        let mut control = sentry_app(1309);
+        fire(&mut control);
+        let control_after = control
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        // The sentry: the Frost Hydra staff rolls zero crits.
+        let mut sentry = sentry_app(1572);
+        fire(&mut sentry);
+        let sentry_after = sentry
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        // The two streams differ (the control rolled the crit, the sentry did
+        // not) — the use-start sound draws the same on both.
+        assert_ne!(control_after, sentry_after, "the crit draw separates them");
+        // Advancing the sentry's stream by exactly one crit-shaped draw lands
+        // on the control's stream: the sentry skipped precisely that draw.
+        let mut mirrored = sentry_after.clone();
+        let _ = mirrored.next_range(1, 101);
+        assert_eq!(
+            mirrored, control_after,
+            "the only delta is the one crit draw the sentry skips"
+        );
     }
 }
 
