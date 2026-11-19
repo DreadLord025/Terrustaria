@@ -2901,6 +2901,9 @@ fn npc_seed(
         | crate::npc::NpcKind::SantaNK1
         | crate::npc::NpcKind::ElfCopter
         | crate::npc::NpcKind::Flocko => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         // The Frost Moon family, slice A (`S1-F-13c`): the same seed shape
         // as the pumpkin roster — the walkers (the Zombie Elf trio, the
         // Present Mimic, the Gingerbread Man and the Yeti, whose aiStyle-3/25

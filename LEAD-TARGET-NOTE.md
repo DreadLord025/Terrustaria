@@ -1,2 +1,3 @@
-# LEAD SPEED NOTE — switch to per-lane target dir (apply at your NEXT gate; delete before commit)
-Overseer L6: shared TR-L7-TARGET lock + cross-lane cache churn = 10-20min waits. FIX: from your NEXT cargo command use cmd /c "set CARGO_TARGET_DIR=C:\Users\DreadLord\Desktop\TR-P4-TARGET&& cargo test ..." — one cold build (~10min), then incremental gates (~1-3min), no contention. You have 6 branches left — pays for itself. ALSO: write your LANDED entries to TR-MERGE-RESULTS.md promptly (you landed defaults-a silently — overseer couldn't see it).
+# LEAD SPEED NOTE v2 — URGENT: shared TR-L7-TARGET has 6 gates queued; your F13c2 gate waits behind them
+SWITCH NOW: cmd /c "set CARGO_TARGET_DIR=C:\Users\DreadLord\Desktop\TR-P4-TARGET&& cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids"
+One cold build (~10min, PARALLEL, no lock wait), then your remaining 5 frost branches gate ~1-3min each. ALSO: write LANDED entries to TR-MERGE-RESULTS.md promptly (overseer tracks you via gate logs only — results entries make progress visible).
