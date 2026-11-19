@@ -1498,9 +1498,7 @@ mod tests {
         // `FinishCreatingWorld` (`:845-863`) through the port's pipeline:
         // the header the world list reads carries the draft's name and the
         // size row's width.
-        let dir = std::env::temp_dir().join("tr-worldcreate");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_world_helpers::test_scratch("worldcreate");
         let mut draft = NewWorldDraft::new(0, 0);
         draft.name = "Port Test".into();
         draft.size = 0; // Small -> 4200x1200 (`Main.cs:50990-50991`)
@@ -1529,9 +1527,7 @@ mod tests {
         // "A" and "B" differ in their tile digests, and reloading each world
         // reproduces the same seed — the entered text is what the generator
         // and the header carry.
-        let dir = std::env::temp_dir().join("tr-worldcreate-seeds");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_world_helpers::test_scratch("worldcreate-seeds");
         let digest = |seed_text: &str| -> (u64, u64) {
             let mut draft = NewWorldDraft::new(0, 0);
             draft.name = format!("W{seed_text}");
