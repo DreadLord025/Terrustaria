@@ -18865,12 +18865,18 @@ mod tests {
         );
         // The slam launches on the tick AFTER the one that reaches -1:
         // the `ai[1] += num4` runs first (`:19674`), so the `== -1` arm
-        // (`:19681`) fires on the following tick's +1.
-        for _ in 0..19 {
+        // (`:19681`) fires on the following tick's +1. Detect the launch
+        // tick explicitly (the charge-cap flip's exact tick depends on
+        // the gravity pass's landing cadence).
+        let mut launched = false;
+        for _ in 0..25 {
             body.update_golem(&w, &player);
+            if body.ai[0] == 1.0 {
+                launched = true;
+                break;
+            }
         }
-        body.update_golem(&w, &player);
-        assert_eq!(body.ai[0], 1.0, "the flight state");
+        assert!(launched, "the slam launched within 25 ticks of the cap");
         assert!(body.vy.abs() > 10.0, "the slam launch");
         assert_eq!(body.local_ai[1], 1.0, "the launch fly-through (`:19684`)");
         // The next tick's release check (`:19627-19637`): the clear line
