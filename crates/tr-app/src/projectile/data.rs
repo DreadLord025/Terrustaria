@@ -511,6 +511,21 @@ pub const GEM_BOLTS: [u16; 7] = [
     GEM_BOLT_DIAMOND,
     GEM_BOLT_AMBER,
 ];
+/// `ProjectileID.BlueDungeonDebris` (736, `ProjectileID.cs:2026`) — the
+/// cracked blue dungeon brick's fall shard: aiStyle 10, 10x10
+/// (`Projectile.cs:7748-7755`).
+pub const BLUE_DUNGEON_DEBRIS: u16 = 736;
+/// `ProjectileID.GreenDungeonDebris` (737, `ProjectileID.cs:2028`) — the
+/// green twin of the 736.
+pub const GREEN_DUNGEON_DEBRIS: u16 = 737;
+/// `ProjectileID.PinkDungeonDebris` (738, `ProjectileID.cs:2030`) — the
+/// pink twin of the 736.
+pub const PINK_DUNGEON_DEBRIS: u16 = 738;
+/// The dungeon-debris trio the `AI_010` arm and the kill hook gate on — the
+/// C# spells the set as `type >= 736 && type <= 738` (`Projectile.cs:57927`,
+/// `:57942`, `:58073`, `:77369`).
+pub const DUNGEON_DEBRIS: [u16; 3] =
+    [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -2355,6 +2370,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
+            // aiStyle 10, `penetrate = -1`; everything else keeps the reset
+            // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
+            // `extraUpdates` 0 `:771`). The stock `friendly`/`hostile` are
+            // both false (`:788`/`:764` — the arm touches neither), so the
+            // trio damages nothing; the pool's slot default is
+            // `friendly = true`, so `ai_dungeon_debris` holds the C# state
+            // explicitly. The per-type `knockBack = 6f` is dropped — the
+            // spawner's input wins (the sand-row precedent above; the debris
+            // spawner passes 0, `WorldGen.cs:63844`).
+            BLUE_DUNGEON_DEBRIS | GREEN_DUNGEON_DEBRIS | PINK_DUNGEON_DEBRIS => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:9511-9522` — the Horseman's pumpkin lob
             // (1001, S1-F-13b2 slice B): 26×26, aiStyle 194, hostile,
             // `tileCollide = false`, `ignoreWater`, `timeLeft = 360`,
@@ -2724,6 +2752,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // The dungeon-debris trio's 3-frame sheets (`Main.cs:8445-8447`) —
+        // `AI_010`'s first-tick frame roll (`Projectile.cs:57946`) picks the
+        // row and the per-frame rotation (`:58073-58086`) spins it.
+        BLUE_DUNGEON_DEBRIS | GREEN_DUNGEON_DEBRIS | PINK_DUNGEON_DEBRIS => 3,
         // AI_026 slice A (S1-D-4b-10) — the flyer pets' sheets
         // (`Main.cs:8585/8593/8594/8600/8623/8637/8639/8641/8674/8680/
         // 8682/8689/8718`). The 197 has no override anywhere in the table —
