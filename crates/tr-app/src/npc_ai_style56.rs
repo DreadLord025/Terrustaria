@@ -427,7 +427,7 @@ mod tests {
         let vy = r.next_range(-20, 21); // :173
         let fy = r.next_max(3); // :175
         let _scale_roll = r.next_range(-20, 21); // :190 — consumed, then overwritten
-        assert_eq!(*rng, r, "the arm consumed exactly the six cited draws");
+        assert_eq!(rng, r, "the arm consumed exactly the six cited draws");
         let d = pool.slot(0);
         assert!(d.active);
         assert_eq!(d.dust_type, 180);
@@ -494,7 +494,7 @@ mod tests {
             rng: &mut rng,
         };
         style56_step(&mut n, &mut env);
-        assert_eq!(*rng, peek, "the menu guard refuses before any draw");
+        assert_eq!(rng, peek, "the menu guard refuses before any draw");
         let d = pool.slot(DUST_SENTINEL);
         assert_eq!(d.scale, 1.3, "the post-writes land on the sentinel too");
         assert!(d.no_gravity);
@@ -524,7 +524,7 @@ mod tests {
             rng: &mut rng,
         };
         style56_step(&mut n, &mut env);
-        assert_eq!(*rng, peek, "the cull precedes the pressure bands");
+        assert_eq!(rng, peek, "the cull precedes the pressure bands");
         assert_eq!(pool.slot(DUST_SENTINEL).scale, 1.3);
     }
 
@@ -556,7 +556,7 @@ mod tests {
         };
         style56_step(&mut n, &mut env);
         if gate != 0 {
-            assert_eq!(*rng, peek, "refusal consumed exactly the gate draw");
+            assert_eq!(rng, peek, "refusal consumed exactly the gate draw");
             assert!(!pool.slot(1).active);
             assert_eq!(pool.slot(DUST_SENTINEL).scale, 1.3);
         } else {
@@ -567,7 +567,7 @@ mod tests {
             let _ = peek.next_range(-20, 21);
             let _ = peek.next_max(3);
             let _ = peek.next_range(-20, 21);
-            assert_eq!(*rng, peek, "gate + the six spawn draws");
+            assert_eq!(rng, peek, "gate + the six spawn draws");
             assert!(pool.slot(1).active);
             assert_eq!(pool.slot(1).scale, 1.3);
         }
