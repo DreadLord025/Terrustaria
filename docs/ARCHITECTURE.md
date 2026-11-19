@@ -34,7 +34,7 @@ an agent needs before touching code.
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
-| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
+| NPCs, spawning, projectiles | `npc.rs` (+ `npc/data.rs` — the static data tables: `SlimeVariant`/`SlimeStats`, `PumpkinDefaults`, the `NpcKind` lookup impl (protocol ids, sounds, sizes, frames, stats), the net-id resolvers; S1-G-1 data split, re-exported from `npc`), `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (pool + AI arms; the data tables in `projectile/data.rs` — kind consts, `proj_data` rows, yoyo/flail tables, summon consts, `proj_frames`; S1-G-1 split A, re-exported from `projectile`) (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Gores: the pool, `NewGore`, the `Update` walk | `tr-core/src/gore.rs`, `gore_id.rs` (`GoreID.Sets`); the collision seam in `gore_seam.rs` (App); the `gores` fixed-step stage in `app/frame.rs` |
@@ -224,17 +224,23 @@ an agent needs before touching code.
 
   ```
   SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4,
-                   rot: f32, paint: f32, dye: u32, layer: u32, clip: vec4 }  // 80 B
+                   rot: f32, paint: f32, dye: u32, layer: u32, clip: vec4,
+                   blend: u32 }  // 84 B
   ```
 
   `clip` is the per-instance scissor rect (`clip.rs::NO_CLIP` when unclipped;
   `push_clip`/`pop_clip` intersect nested rects) — the UI batch is one draw call,
   so `OverflowHidden` (`UIElement.cs:199-238`) is a fragment `discard` rather than
   device scissor state (ANALYSIS "UI list clipping and the ∞-height parent").
+  `blend` is the blend-batch tag (`sprite.rs::BlendMode`, S1-G-3): 0 = the
+  alpha-blend default, 1 = `BlendState.Additive`, 2 = the custom
+  ReverseSubtract "multiply" state (`Main.cs:27462-27470`) — the C#'s
+  `End()`/`Begin(blendState)` pairs around `DrawProj_LightsBane`
+  (`Main.cs:27457-27494`) become contiguous blend runs inside a range.
 
   Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
   space), written as two `write_buffer` calls and drawn as 2 instanced calls of 6 vertices —
-  the scene renders through at most 6 draw calls (the background, world, world-fx, map-back, map and UI instance buffers — 3 + 3 under the split post path, with 1..4 filter passes on top; `sprite.rs::PASS_BUFFERS`). The ring has three buffers so a frame never rewrites
+  the scene renders through up to 6 draw calls (the background, world, world-fx, map-back, map and UI instance buffers — 3 + 3 under the split post path, with 1..4 filter passes on top; `sprite.rs::PASS_BUFFERS`). S1-G-3 splits a range into one draw per contiguous blend run, so a frame carrying the Lightsbane multiply/additive batches costs up to 8 (the world-fx or UI range holds three runs); an all-alpha frame keeps the 6. The ring has three buffers so a frame never rewrites
   memory the GPU may still be reading. An 8×8 bitmap font (`font8x8`) is baked into the
   atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
 - `sprite.wgsl` — `world = pos + rot(corner*size)`, then `(world - cam) * zoom + screen/2`
@@ -299,7 +305,9 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
   wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the
-  animator), `npc.rs`, `spawner.rs`, `projectile.rs`,
+  animator), `npc.rs`, `spawner.rs`, `projectile.rs` (+ `projectile/data.rs`, the
+  verbatim data half: kind consts, `proj_data`, the yoyo/flail tables, the summon
+  constants and `proj_frames` — re-exported through `projectile`),
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
@@ -339,7 +347,7 @@ The three interfaces the refactor introduced, each mirroring a C# abstraction:
 
 | Decision | Why |
 | --- | --- |
-| One atlas + instancing | up to 6 draw calls regardless of scene complexity (one per instance buffer — `sprite.rs::PASS_BUFFERS`); no per-tile state changes |
+| One atlas + instancing | up to 6 draw calls regardless of scene complexity (one per instance buffer — `sprite.rs::PASS_BUFFERS`; S1-G-3's blend runs split a range only where the C# re-begins the batch with another BlendState — up to 8 with the Lightsbane batches live); no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
 | Screen-pixel snapping for entities | Player/NPC sprites are drawn at interpolated sub-pixel world positions; nearest sampling then changes the source texel phase every frame (visible as a face row appearing/disappearing). Rounding the sprite's top-left to an integer screen pixel keeps the texel grid fixed while the camera still moves smoothly |
 | Vanilla HUD textures and layout | The hotbar, hearts, breath and boss bar use the original `Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` sheets with the constants from `GUIHotbarDrawInner`, `ClassicPlayerResourcesDisplaySet` and `BigProgressBarHelper`, instead of custom panels |

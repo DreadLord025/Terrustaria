@@ -2185,6 +2185,12 @@ mod tests {
     /// geometry the draw and the click share.
     #[test]
     fn refresh_button_latches_the_hover_and_the_layout() {
+        // `measure_button` reads `Lang.inter[62]` — hold the lang test lock
+        // (once) and pin English so a sibling's culture flip cannot race it.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let lookups = Lookups::default();
         let mut st = IngameOptions::new();
         let screen = Vec2::new(1600.0, 900.0);
@@ -2229,7 +2235,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let l = left_anchor(screen);
         assert_eq!(l[1] - 300.0, 50.0, "the left column's y is num3 * 5 / 2");
@@ -2315,6 +2321,12 @@ mod tests {
     /// The old arm only closed the window — the button did nothing.
     #[test]
     fn save_and_exit_click_saves_the_world_and_returns_to_the_menu() {
+        // `left_row_rect` measures the localized label and rides the culture's
+        // anchor shift — hold the lang test lock (once) and pin English.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let dir = std::env::temp_dir()
             .join(format!("tr-save-and-exit-{}", std::process::id()));
@@ -2368,7 +2380,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let (lmin, lmax, lspeed) = left_scale_band();
         assert!((lmin - 0.7).abs() < 1e-6);
         assert!((lmax - 0.8).abs() < 1e-6);
@@ -2405,7 +2417,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let lookups = Lookups::default();
         let settings = Settings::default();
@@ -2440,7 +2452,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let lookups = Lookups::default();
         let settings = Settings::default();
@@ -2582,7 +2594,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let mut s = Settings::default();
         for mode in 0..3u8 {
             s.frame_skip = mode;
@@ -2683,7 +2695,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let o = panel_origin(screen);
         let (top, bottom) = (o[1], o[1] + PANEL_H);
@@ -2887,6 +2899,13 @@ mod tests {
     /// the int truncations.
     #[test]
     fn the_value_bar_geometry_is_the_c_sharp_scaled_track() {
+        // `color_bar_right_x` shifts 60 px in English but 126 in the long
+        // cultures (`:1071`) — the 1045-vs-979 flake. Hold the lang test lock
+        // (once) and pin English so a sibling's culture flip cannot race it.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let screen = Vec2::new(1600.0, 900.0);
         // 465 + 670 - 10 - 20 = 1105.
         assert_eq!(bar_right_x(screen), 1105.0);
@@ -3044,6 +3063,12 @@ mod tests {
     /// page comes up flagged in-game, so its Back returns to gameplay.
     #[test]
     fn the_keybinds_row_opens_the_in_game_keybinding_screen() {
+        // `left_row_rect` measures the localized label — hold the lang test
+        // lock (once) and pin English.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.ingame_options.open = true;
         let screen = Vec2::new(1600.0, 900.0);
@@ -3061,6 +3086,12 @@ mod tests {
     /// options window must run `apply_settings` like the menu's close does.
     #[test]
     fn a_toggle_click_applies_the_setting_to_the_app() {
+        // `right_row_rect` measures the localized label — hold the lang test
+        // lock (once) and pin English.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.ingame_options.open = true;
         app.ingame_options.category = 2; // Video

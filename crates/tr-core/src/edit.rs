@@ -5033,7 +5033,18 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         let def = crate::tileobject::def_for_tile(219).unwrap();
-        let inst = crate::tileobject::can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        let inst = crate::tileobject::can_place(
+            &w,
+            10,
+            19,
+            def,
+            0,
+            1,
+            None,
+            &mut crate::unified_random::UnifiedRandom::new(0),
+            None,
+        )
+        .unwrap();
         assert!(crate::tileobject::place(&mut w, &inst));
         // Clear the floor cells the object now covers is NOT done by Place; the
         // object's own cells are what the dispatch reads.
