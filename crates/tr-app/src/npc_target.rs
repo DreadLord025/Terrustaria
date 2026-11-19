@@ -63,8 +63,8 @@ pub struct TargetCandidate {
 /// `TargetClosest` (the zombie's inline candidate, `npc.rs`, and the
 /// aiStyle-42 arm, `npc_ai_style42.rs`): stock aggro 0 / no-aggro false /
 /// no tank pet until those systems land, `itemAnimation` from the raw
-/// swing counter.
-#[allow(dead_code)] // UNWIRED until the S1-D-3 merge step wires the aiStyle machines.
+/// swing counter. WIRED by S1-D-3 W-2 (the Creeper's aiStyle-55 seam,
+/// `npc.rs::ai_055_creeper_family`).
 pub fn session_candidate(player: &crate::player::Player) -> TargetCandidate {
     TargetCandidate {
         active: true,
