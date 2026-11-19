@@ -170,7 +170,7 @@ mod tests {
         let h = hook(100.0, 200.0);
         let b = boss(0.0, 0.0);
         assert_eq!(hook_centroid(&[h.clone()], type_of), Some(h.center()));
-        assert_eq!(hook_anchor(&[h], type_of, &b), h.center());
+        assert_eq!(hook_anchor(&[h.clone()], type_of, &b), h.center());
     }
 
     /// `NPC.cs:31747-31762` — three hooks: the slot-order f32 average;
