@@ -94,6 +94,7 @@ mod npc_ai_style43;
 // style-axis claim are the golem family's merge step (see the module doc).
 mod npc_ai_style46;
 mod npc_ai_style49;
+mod npc_ai_style50;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
