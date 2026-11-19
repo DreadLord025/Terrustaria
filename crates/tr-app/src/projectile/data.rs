@@ -452,6 +452,13 @@ pub const ENCHANTED_BOOMERANG: u16 = 6;
 pub const WOODEN_BOOMERANG: u16 = 52;
 /// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
 pub const ICE_BOOMERANG: u16 = 113;
+/// `ProjectileID.LightDisc` (106, `Projectile.cs:1936-1945`) — the Light Disc
+/// (S1-P-i08): the stack-limit boomerang variant, up to 6 in flight
+/// (`Player.cs:52172-52186`), the 45-tick outbound window
+/// (`Projectile.cs:39035-39040`), the 16/1.2 return seek (`:39432-39436`),
+/// the per-axis wall bounce that does NOT arm the return (`:19550-19560`)
+/// and the 0.3 spin (`:39556-39559`).
+pub const LIGHT_DISC: u16 = 106;
 /// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
 /// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
 /// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
@@ -1044,6 +1051,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         CURSED_FLAME => 0.8,                   // `:1809`
         DESTROYER_LASER => 0.75,               // `:1878`
         ICE_BOOMERANG => 0.4,                  // `:2020`
+        LIGHT_DISC => 0.4,                     // `:1944` (S1-P-i08)
         UNHOLY_TRIDENT => 0.5,                 // `:2029`
         UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
         SWORD_BEAM => 0.5,                     // `:2054`
@@ -1546,6 +1554,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => (
                 22.0,
                 22.0,
+                3,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // `:1936-1945`: the Light Disc (S1-P-i08) — 32×32, aiStyle 3,
+            // `penetrate = -1`, melee; the stock 3600 life / tileCollide.
+            LIGHT_DISC => (
+                32.0,
+                32.0,
                 3,
                 -1,
                 TIME_LEFT_DEFAULT,

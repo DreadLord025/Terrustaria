@@ -4691,17 +4691,38 @@ impl Projectile {
         self.pos += self.vel;
     }
 
-    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39331` the
-    /// outbound, `:39468-39545` the return). The OUT state flies straight
-    /// (`ai[1]++`; at `>= 30f` — the Light Disc 106 at `>= 45f` — the return
-    /// state sets) and bounces off a tile or an NPC hit by reversing the
-    /// velocity and setting `ai[0] = 1` (`:14594-14602`, `:13068-13080`).
+    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39341` the
+    /// outbound, `:39365-39555` the return, `:39556-39638` the rotation tail)
+    /// for the ported kinds 6/52/113 + the Light Disc 106 (S1-P-i08). The OUT
+    /// state flies straight (`ai[1]++`; at `>= 30f` — the Light Disc 106 at
+    /// `>= 45f` — the return state sets); there is NO outbound decel for
+    /// these kinds (the gravity/friction arms `:39041-39129` belong to the
+    /// unported phaseblades/320/383). The tile/bounds bounce lives in
+    /// `HandleMovement`'s aiStyle-3 arm (`:19512-19571`, the world-edge flag
+    /// `:17900-17903`): the generic kinds reverse BOTH axes from
+    /// `lastVelocity` and set `ai[0] = 1` unconditionally (`:19563-19568`);
+    /// the 33/106/866 trio reverses per changed axis and does NOT arm the
+    /// return (`:19550-19560`); both play the Dig thud (`PlaySound(0, …)`
+    /// `:19571`). The NPC-hit reverse (`:13068-13080`) rides `damage_pve`.
     /// The RETURN state disables tile collision, seeks the owner at the
-    /// speed 9 / accel 0.4 (the per-type overrides are the special
-    /// boomerangs; the plain 6/52/113 use the defaults) with the ±2×
-    /// crossing boost, kills past 3000 px from the owner and when the
-    /// owner's box intersects (`:39538-39544`).
-    fn ai_boomerang(&mut self, world: &World, owner: Option<(f32, f32)>) {
+    /// speed 9 / accel 0.4 (the 106 at 16 / 1.2, `:39432-39436`) scaled by
+    /// the `meleeSpeed` remap (`:39462-39475`: `Remap(1.5, 0, 1, 1,
+    /// 1/meleeSpeed, clamped: false)` clamped to [1, 10]), kills past
+    /// 3000 px (`:39499-39502`) and on the owner-box catch
+    /// (`:39551-39554`, the PRE-movement truncated rects). The rotation
+    /// tail: the 106 spins 0.3 (`:39556-39559`), every other non-phaseblade
+    /// 0.4 (`:39635-39638`), both × `direction` — which tracks
+    /// `velocity.X`'s sign after each sub-step's movement while outbound
+    /// and freezes on the return (`AutomaticallyChangesDirection`
+    /// `:17281-17288` excludes aiStyle 3 at `ai[0] == 1`, the flip
+    /// `:17016-17026`).
+    fn ai_boomerang(
+        &mut self,
+        world: &World,
+        owner: Option<(f32, f32)>,
+        melee_speed: f32,
+        catch_allowed: bool,
+    ) {
         // `AI_003_Boomerang`'s whoosh head (`Projectile.cs:38868-38891`,
         // S1-E-21h): every kind but the Phaseblade family (unported) and
         // 383 re-arms `soundDelay = 8` (× `extraUpdates + 1`) and plays
@@ -4714,56 +4735,58 @@ impl Projectile {
             self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
         }
         if self.ai[0] == 0.0 {
-            // The outbound flight; the 106 Light Disc returns at 45 ticks.
+            // The outbound flight (`:39024-39034` + the generic tail
+            // `:39335-39340`); the 106 Light Disc returns at 45 ticks
+            // (`:39035-39040`).
             self.ai[1] += 1.0;
-            let limit = if self.kind == 106 { 45.0 } else { 30.0 };
+            let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
             if self.ai[1] >= limit {
                 self.ai[0] = 1.0;
                 self.ai[1] = 0.0;
             }
-            if self.tile_collide {
-                let nx = self.pos.x + self.vel.x;
-                let ny = self.pos.y + self.vel.y;
-                let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-                let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
-                if hit_x || hit_y {
-                    // `:14594-14602`: the outbound tile hit reverses into the
-                    // return state instead of killing.
-                    if self.ai[0] == 0.0 {
-                        self.vel = -self.vel;
-                    }
-                    self.ai[0] = 1.0;
-                    return;
-                }
-                self.pos.x = nx;
-                self.pos.y = ny;
-            } else {
-                self.pos += self.vel;
-            }
         } else {
-            // The return (`:39468-39545`): `tileCollide = false`, the owner
-            // seek at the speed 9 / accel 0.4, the ±2× crossing boost.
+            // The return (`:39365-39555`): `tileCollide = false`, the owner
+            // seek with the ±2× crossing boost.
             self.tile_collide = false;
             let Some((ox, oy)) = owner else {
                 return;
             };
+            // The per-type speed/accel table (`:39399-39461`): the ported
+            // kinds ride the defaults 9/0.4; the 106 overrides 16/1.2
+            // (`:39432-39436`). The other rows are the unported specials.
+            let (mut speed, mut accel) = if self.kind == LIGHT_DISC {
+                (16.0f32, 1.2f32)
+            } else {
+                (9.0f32, 0.4f32)
+            };
+            // `:39462-39475`: `OwnedBySomeone & flag3` (the ported kinds are
+            // friendly non-trap non-phaseblade — both true) scales BOTH by
+            // `Remap(1.5f, 0f, 1f, 1f, 1f/meleeSpeed, clamped: false)` =
+            // `Lerp(1, 1/meleeSpeed, 1.5)` (`Utils.cs:345-348`), clamped to
+            // [1, 10].
+            let mut scale = 1.0 + (1.0 / melee_speed - 1.0) * 1.5;
+            if scale > 10.0 {
+                scale = 10.0;
+            }
+            if scale < 1.0 {
+                scale = 1.0;
+            }
+            speed *= scale;
+            accel *= scale;
             let cx = self.pos.x + self.w * 0.5;
             let cy = self.pos.y + self.h * 0.5;
             let mut dx = ox - cx;
             let mut dy = oy - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            // `:39500-39505`: the 3000 px cut-off kills the stray.
+            // `:39499-39502`: the 3000 px cut-off kills the stray.
             if dist > 3000.0 {
-                self.active = false;
-                self.time_left = 0;
+                self.kill();
                 return;
             }
-            // The `meleeSpeed` remap (`:39487-39497`) is ×1 at the port's
-            // default melee speed.
-            let (speed, accel) = (9.0f32, 0.4f32);
-            let inv = speed / dist.max(f32::EPSILON);
+            let inv = speed / dist;
             dx *= inv;
             dy *= inv;
+            // `:39518-39549`: the per-axis steer with the crossing boost.
             if self.vel.x < dx {
                 self.vel.x += accel;
                 if self.vel.x < 0.0 && dx > 0.0 {
@@ -4786,18 +4809,102 @@ impl Projectile {
                     self.vel.y -= accel;
                 }
             }
-            self.pos += self.vel;
-            // `:39538-39544`: the owner's box catches the boomerang.
-            // The 20x42 hitbox (/).
-            let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
-            let hit = self.pos.x + self.w > ox - pw * 0.5
-                && self.pos.x < ox + pw * 0.5
-                && self.pos.y + self.h > oy - ph * 0.5
-                && self.pos.y < oy + ph * 0.5;
-            if hit {
-                self.active = false;
-                self.time_left = 0;
+            // `:39551-39554`: the owner's box catches the boomerang — the
+            // PRE-movement position (the C# integrates in `UpdatePosition`
+            // AFTER the AI), the `(int)`-truncated rects and XNA's strict
+            // `Rectangle.Intersects`. The owner rect stands in from the
+            // center tuple at the stock 20×42 box (the port's player-box
+            // convention). The `Main.myPlayer == owner` gate rides
+            // `catch_allowed`.
+            if catch_allowed {
+                let proj_rect = tr_core::whip::Rect::new(
+                    self.pos.x as i32,
+                    self.pos.y as i32,
+                    self.w as i32,
+                    self.h as i32,
+                );
+                let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
+                let owner_rect = tr_core::whip::Rect::new(
+                    (ox - pw * 0.5) as i32,
+                    (oy - ph * 0.5) as i32,
+                    pw as i32,
+                    ph as i32,
+                );
+                if proj_rect.intersects(owner_rect) {
+                    self.kill();
+                    return;
+                }
             }
+        }
+        // The rotation tail (`:39556-39638`): the 106 spins 0.3, every other
+        // non-phaseblade kind 0.4, both × `direction` (the direction the
+        // PREVIOUS sub-step's movement settled — the C# flips it after
+        // `HandleMovement`, below).
+        if self.kind == LIGHT_DISC {
+            self.rot += 0.3 * self.direction as f32;
+        } else if !is_a_phaseblade(self.kind) {
+            self.rot += 0.4 * self.direction as f32;
+        }
+        // The movement + the aiStyle-3 tile response (`HandleMovement`
+        // `:19512-19571`; the port's `collides_rect` stand-in for
+        // `Collision.TileCollision`, the recorded M4-PROJ-3 deviation).
+        // `tileCollide` stays true on the 30/45-tick flip tick (the RETURN
+        // arm clears it the NEXT tick), so the flip tick still bounces.
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let mut hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let mut hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            // `:17900-17903`: the world-edge flag feeds the same response
+            // (the bounds are `WorldGen.cs:6553-6554`, the out-of-world
+            // guard's own reading). The edge rides the matching axis of the
+            // probe (the port's stand-in — the C# flag is axis-less but the
+            // per-axis reversal below reads the collision axes).
+            hit_x |= self.pos.x <= 0.0 || self.pos.x + self.w >= world.width as f32 * 16.0;
+            hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
+            if hit_x || hit_y {
+                if matches!(self.kind, 33 | LIGHT_DISC | 866) {
+                    // `:19550-19560`: the 33/106/866 trio reverses only the
+                    // changed axis and does NOT arm the return — the Light
+                    // Disc keeps bouncing outbound until its 45-tick timer.
+                    if hit_x {
+                        self.vel.x = -self.vel.x;
+                    }
+                    if hit_y {
+                        self.vel.y = -self.vel.y;
+                    }
+                } else {
+                    // `:19563-19568`: the generic arm reverses BOTH axes
+                    // from `lastVelocity` and sets the return state
+                    // unconditionally (no `ai[0] == 0` gate here — that gate
+                    // is the NPC arm's, `:13070`).
+                    self.vel = -self.vel;
+                    self.ai[0] = 1.0;
+                }
+                // `UpdatePosition` (`:19858` → `:20445`) integrates the
+                // POST-bounce velocity on the bounce tick — the boomerang
+                // steps away from the wall the same tick it reverses.
+                self.pos += self.vel;
+                // `:19571`: `SoundEngine.PlaySound(0, (int)X, (int)Y)` — the
+                // int-id Dig thud (case 0's `Next(3)` + pitch rolls ride the
+                // drain's stream). The single intent slot keeps the whoosh
+                // when both land on one sub-step (the recorded deviation).
+                if self.wants_sound.is_none() {
+                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+                }
+            } else {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+        // `:17016-17026` + `AutomaticallyChangesDirection` (`:17281-17288`):
+        // the direction tracks `velocity.X`'s sign after the movement while
+        // outbound (`ai[0] != 1`); the return freezes it. Zero maps to +1
+        // (the C# `else` arm).
+        if self.ai[0] != 1.0 {
+            self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         }
     }
 
@@ -13772,7 +13879,20 @@ impl ProjectilePool {
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
-                        3 => self.slots[i].ai_boomerang(world, owner),
+                        3 => {
+                            // `AI_003_Boomerang` (S1-P-i08): the meleeSpeed
+                            // remap reads the owner's stat (`Projectile.cs:
+                            // 39464`; the flail inputs already carry it);
+                            // the catch's `Main.myPlayer == owner` gate
+                            // (`:39551`) rides the local-owner comparison.
+                            let catch_allowed = self.slots[i].owner == local_owner;
+                            self.slots[i].ai_boomerang(
+                                world,
+                                owner,
+                                flail_inputs.melee_speed,
+                                catch_allowed,
+                            );
+                        }
                         // `AI()`'s `else if (this.aiStyle == 10)`
                         // (`Projectile.cs:24367-24370`) -> `AI_010`. The
                         // SnowBallHostile 109 (S1-D-3q) is the first kind
@@ -17253,6 +17373,24 @@ impl ProjectilePool {
                     dmg = ((dmg as f32) * 2.0) as i32;
                 }
             }
+            // `Damage_PVE_Inner`'s aiStyle-3 boomerang arm (`Projectile.cs:
+            // 13068-13080`, S1-P-i08): the outbound hit reverses BOTH axes
+            // and arms the return; a returning boomerang's hit only re-arms
+            // `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse alone).
+            // The 301/866/902 + phaseblade exclusions are the C#'s; the 106's
+            // `LightDisc_Bounce` dust (`:13072-13075`, `:20317-20329`) is the
+            // skipped cosmetic layer — its rolls go with it (the volcano/
+            // yoyo precedent). Runs BEFORE the strike, as the C# orders it.
+            if proj_data(self.slots[slot].kind).is_some_and(|d| d.ai_style == 3)
+                && !matches!(self.slots[slot].kind, 301 | 866 | 902)
+                && !is_a_phaseblade(self.slots[slot].kind)
+            {
+                let p = &mut self.slots[slot];
+                if p.ai[0] == 0.0 {
+                    p.vel = -p.vel;
+                }
+                p.ai[0] = 1.0;
+            }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
@@ -17644,7 +17782,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        p.ai_boomerang(&w, None);
+        p.ai_boomerang(&w, None, 1.0, true);
         assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
         assert_eq!(p.sound_delay, 8);
         // The pool decrements ahead of the AI (`:16768-16771`); while the
@@ -17652,7 +17790,7 @@ mod s1_e_21h_sound_tests {
         for _ in 0..7 {
             p.sound_delay -= 1;
             p.wants_sound = None;
-            p.ai_boomerang(&w, None);
+            p.ai_boomerang(&w, None, 1.0, true);
             assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
         }
         assert_eq!(p.sound_delay, 1, "one tick left on the cooldown");
@@ -17660,7 +17798,7 @@ mod s1_e_21h_sound_tests {
         // re-arm 24, not 8, once the cooldown reaches 0.
         p.sound_delay = 0;
         p.extra_updates = 2;
-        p.ai_boomerang(&w, None);
+        p.ai_boomerang(&w, None, 1.0, true);
         assert_eq!(p.sound_delay, 24, "8 × (extraUpdates + 1)");
         assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 7)));
         // The Magic Missile: below the speed sum the gate refuses.
@@ -19637,8 +19775,9 @@ mod boomerang_tests {
 
     #[test]
     fn the_outbound_boomerang_bounces_off_a_wall() {
-        // `:14594-14602`: the outbound tile hit reverses the velocity and
-        // sets the return state instead of killing.
+        // `HandleMovement`'s aiStyle-3 arm (`:19563-19568`, S1-P-i08): the
+        // outbound tile hit reverses both axes from `lastVelocity` and sets
+        // the return state instead of killing.
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(
             WOODEN_BOOMERANG,
@@ -19728,39 +19867,508 @@ mod boomerang_tests {
 
     #[test]
     fn the_stray_boomerang_dies_past_3000_px() {
-        // `:39500-39505`: the 3000 px cut-off.
+        // `:39499-39502`: the 3000 px cut-off. The slot starts ALREADY past
+        // the cut-off (3100 px from the owner) so the first return tick kills
+        // it — the seek cannot reel a 3100-px stray back inside the window
+        // (S1-P-i08: the old fixture started 100 px out and relied on the
+        // catch near the loop boundary, which the pre-movement catch rects
+        // shift by a tick).
         let mut pool = ProjectilePool::new();
         pool.slots[0] = Projectile {
             active: true,
             kind: WOODEN_BOOMERANG,
             owner: 0,
-            pos: Vec2::new(200.0, 200.0),
+            pos: Vec2::new(3200.0, 200.0),
             vel: Vec2::new(30.0, 0.0),
             damage: 10,
             ..Default::default()
         };
         pool.slots[0].ai = [1.0, 0.0, 0.0, 0.0];
         let mut w = world();
-        let mut died = false;
-        for _ in 0..120 {
-            pool.update(
-                &mut w,
-                &mut [],
-                Some((100.0, 200.0)),
-                None,
-                None,
-                YoyoInputs::default(),
-                FlailInputs::default(),
-                &mut tr_core::tile_light::FastRandom::new(7),
-                0,
-                true,
-            );
-            if !pool.slots[0].active {
-                died = true;
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((100.0, 200.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool.slots[0].active, "the stray kills past the cut-off");
+        assert_eq!(pool.slots[0].time_left, 0);
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i08_boomerang_tests {
+    //! S1-P-i08 (`task/S1-P-i08-boomerang`, code-only mode — tests WRITTEN
+    //! NOT RUN): the useStyle-1 aiStyle-3 boomerang variant's census fixes.
+    //! (1) the tile bounce lives in `HandleMovement`'s aiStyle-3 arm
+    //! (`Projectile.cs:19512-19571`), not `Kill()`'s PVP path — the generic
+    //! kinds reverse both axes from `lastVelocity` and arm the return
+    //! unconditionally, the 33/106/866 trio reverses per changed axis and
+    //! does NOT arm the return; (2) the NPC-hit reverse (`:13068-13080`)
+    //! runs pre-strike in `damage_pve`; (3) the return's `meleeSpeed` remap
+    //! (`:39462-39475`), the pre-movement truncated catch rects
+    //! (`:39551-39554`), the rotation tail (`:39556-39638`) and the
+    //! direction latch (`:17016-17026` + `:17281-17288`); (4) the Light Disc
+    //! 106's row, 45-tick window and 16/1.2 return seek. The throw-side
+    //! witnesses (the stack limits, the exact-center spawn, the facing
+    //! flip) live in `world_sim/editing.rs`'s `s1_p_i08_*` tests.
+
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut tr_core::World,
+        owner: Option<(f32, f32)>,
+        melee_speed: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(
+            w,
+            &mut [],
+            owner,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs {
+                melee_speed,
+                ..FlailInputs::default()
+            },
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// A counting stream — the RNG census reads how many draws the machine
+    /// consumes (zero: every roll in `AI_003`'s ported kinds rides the
+    /// skipped dust arms).
+    struct CountingRng {
+        inner: tr_core::tile_light::FastRandom,
+        draws: usize,
+    }
+    impl CountingRng {
+        fn new() -> Self {
+            Self {
+                inner: tr_core::tile_light::FastRandom::new(7),
+                draws: 0,
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for CountingRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws += 1;
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws += 1;
+            self.inner.next_float()
+        }
+    }
+
+    #[test]
+    fn s1_p_i08_the_light_disc_row_is_verbatim() {
+        // `Projectile.cs:1936-1945`: 32×32, aiStyle 3, penetrate −1, melee,
+        // light 0.4; the stock 3600 life / tileCollide / extraUpdates 0.
+        let d = proj_data(LIGHT_DISC).expect("the 106 row");
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert_eq!(d.ai_style, 3);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(!d.arrow && !d.trap);
+        assert_eq!(set_defaults_light(LIGHT_DISC), 0.4, "`:1944`");
+        assert!(spawnable_kinds().contains(&LIGHT_DISC), "the sheet packs");
+        // The item side (`itemdata.rs` id 561): useStyle 1, shoot 106,
+        // shootSpeed 16, autoReuse, not consumable.
+        let def = crate::registry::get(561).unwrap();
+        assert_eq!(def.projectile, Some(LIGHT_DISC));
+        assert_eq!(def.use_style, 1);
+        assert_eq!(def.shoot_speed, 16.0);
+        assert!(def.auto_reuse);
+        assert!(!def.consumable);
+    }
+
+    #[test]
+    fn s1_p_i08_the_light_disc_flips_at_45_ticks_not_30() {
+        // `:39035-39040`: the 106's outbound window is 45 ticks; the generic
+        // kinds flip at 30 (`:39335-39340`). The owner sits far away so the
+        // return seek cannot catch it mid-test.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 200.0, 200.0, 4.0, 0.0, 60, 8.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..44 {
+            tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+        }
+        assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 44");
+        assert_eq!(pool.slots[0].ai[1], 44.0);
+        tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return at tick 45");
+        assert_eq!(pool.slots[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn s1_p_i08_the_disc_wall_bounce_keeps_the_outbound_state() {
+        // `HandleMovement` `:19550-19560`: the 33/106/866 trio reverses the
+        // changed axis ONLY and does NOT set `ai[0] = 1` — the disc keeps
+        // flying outbound (the old port armed the return on every wall).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 128.0, 256.0, 10.0, 0.0, 60, 8.0);
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, Some((100.0, 260.0)), 1.0, &mut rng);
+            if pool.slots[0].vel.x < 0.0 {
+                bounced = true;
                 break;
             }
         }
-        assert!(died, "the stray kills past the cut-off");
+        assert!(bounced, "the wall reversed the X axis");
+        assert_eq!(pool.slots[0].ai[0], 0.0, "NOT the return state");
+        assert_eq!(pool.slots[0].vel.y, 0.0, "the unchanged axis holds");
+        assert!(pool.slots[0].active, "the disc lives on");
+    }
+
+    #[test]
+    fn s1_p_i08_the_generic_wall_bounce_arms_the_return_and_steps_away() {
+        // `:19563-19568` + `UpdatePosition` `:20445`: the generic arm
+        // reverses BOTH axes from `lastVelocity`, sets `ai[0] = 1`
+        // unconditionally, and the bounce tick integrates the POST-bounce
+        // velocity (the old port froze the position on the bounce tick).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 128.0, 256.0, 10.0, 2.0, 10, 5.0);
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..20 {
+            let before = pool.slots[0].pos;
+            tick(&mut pool, &mut w, Some((100.0, 900.0)), 1.0, &mut rng);
+            if pool.slots[0].ai[0] == 1.0 {
+                bounced = true;
+                assert_eq!(pool.slots[0].vel, Vec2::new(-10.0, -2.0), "both axes");
+                assert_eq!(
+                    pool.slots[0].pos,
+                    before + Vec2::new(-10.0, -2.0),
+                    "the post-bounce step"
+                );
+                break;
+            }
+        }
+        assert!(bounced, "the wall armed the return");
+    }
+
+    #[test]
+    fn s1_p_i08_the_wall_thud_queues_the_dig_cue() {
+        // `:19571`: `PlaySound(0, (int)X, (int)Y)` — the int-id Dig thud
+        // rides the intent out (the whoosh keeps the single slot when both
+        // land on one sub-step — the recorded deviation).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 128.0, 256.0, 10.0, 0.0, 10, 5.0);
+        // Silence the whoosh head so the bounce tick's cue is observable.
+        pool.slots_mut()[0].sound_delay = 100;
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut thud = None;
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, Some((100.0, 900.0)), 1.0, &mut rng);
+            if let Some(cue) = pool.drain_proj_sounds().into_iter().next() {
+                thud = Some(cue);
+                break;
+            }
+        }
+        let cue = thud.expect("the bounce queued a cue");
+        assert_eq!((cue.0, cue.1), (0, 0), "the int-id Dig play");
+    }
+
+    #[test]
+    fn s1_p_i08_the_world_edge_bounces_the_boomerang() {
+        // `:17900-17903`: the world-edge flag feeds the same aiStyle-3
+        // response (the out-of-world guard skips aiStyle 3, `:16684`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 990.0, 256.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..10 {
+            tick(&mut pool, &mut w, Some((500.0, 900.0)), 1.0, &mut rng);
+            if pool.slots[0].vel.x < 0.0 {
+                bounced = true;
+                break;
+            }
+        }
+        assert!(bounced, "the right edge reversed the flight");
+        assert!(pool.slots[0].active, "no out-of-world kill");
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the generic edge arm returns");
+    }
+
+    #[test]
+    fn s1_p_i08_the_npc_hit_reverses_pre_strike() {
+        // `Damage_PVE_Inner` `:13068-13080`: the outbound hit reverses both
+        // axes and arms the return BEFORE the strike; the returning hit
+        // only re-arms `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse).
+        let mut w = world();
+        let mut npc = Npc::new(NpcKind::Slime, 300.0, 300.0, 1, 0.0);
+        npc.max_hp = 400;
+        npc.hp = 400;
+        let (nw, nh) = npc.size();
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai(
+            WOODEN_BOOMERANG,
+            ncx,
+            ncy,
+            8.0,
+            0.0,
+            20,
+            4.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 800.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w,
+            std::slice::from_mut(&mut npc),
+            Some((100.0, 900.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[0].vel.x, -8.0, "the outbound hit reversed");
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return armed");
+        assert!(npc.hp < npc.max_hp, "the strike still landed");
+        // A second contact while returning: no double reverse. The return
+        // seek steers toward the far owner (down-left), so vel.x never
+        // snaps back to the pre-hit +8.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w,
+            std::slice::from_mut(&mut npc),
+            Some((100.0, 900.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_ne!(pool.slots[0].vel.x, 8.0, "no second reverse");
+    }
+
+    #[test]
+    fn s1_p_i08_the_return_seek_scales_with_melee_speed() {
+        // `:39462-39475`: `Remap(1.5, 0, 1, 1, 1/meleeSpeed, clamped: false)`
+        // = `Lerp(1, 1/ms, 1.5)` clamped to [1, 10]. At meleeSpeed 2 the
+        // factor is 1 (the floor); at 0.5 it is 2.5 — the accel 0.4 → 1.0.
+        let mut w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 2.0, true);
+        assert_eq!(p.vel.x, -0.4, "meleeSpeed 2 floors the factor at 1");
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 0.5, true);
+        assert_eq!(p.vel.x, -1.0, "meleeSpeed 0.5 → ×2.5: accel 0.4 → 1.0");
+        // The 106's own table: 16/1.2 (`:39432-39436`) × the same factor.
+        let mut d = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        d.ai_boomerang(&w, Some((200.0, 316.0)), 1.0, true);
+        assert_eq!(d.vel.x, -1.2, "the disc's accel 1.2 at ×1");
+    }
+
+    #[test]
+    fn s1_p_i08_the_catch_reads_the_pre_movement_truncated_rects() {
+        // `:39551-39554`: the catch tests the PRE-movement `(int)` rects with
+        // XNA's strict `Intersects` — a box whose post-move position would
+        // overlap does NOT catch on this tick, and a foreign owner never
+        // catches (`Main.myPlayer == owner`).
+        let w = world();
+        // The owner center (300, 300) → rect (290, 279, 20, 42). The disc
+        // box at (322, 290) is 32 wide: left 322 ≥ owner right 310 — no
+        // overlap pre-move; the −16 step would land it at 306 (overlap).
+        let mut p = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(322.0, 290.0),
+            vel: Vec2::new(-16.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        assert!(p.active, "the pre-move rects do not intersect");
+        assert!(p.pos.x < 322.0, "the step still integrates");
+        // The POST-move box (≈307..339) DOES overlap the owner rect
+        // (290..310) — the old post-move catch would have killed here.
+        // One tick later the pre-move box overlaps → the catch kills.
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        assert!(!p.active, "the next tick catches");
+        // The foreign-owner gate: the same overlap, catch_allowed false.
+        let mut q = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 1,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(300.0, 290.0),
+            vel: Vec2::new(-16.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, false);
+        assert!(q.active, "a non-local owner never catches here");
+    }
+
+    #[test]
+    fn s1_p_i08_the_rotation_tail_and_direction_latch() {
+        // `:39556-39559` / `:39635-39638`: the 106 spins 0.3, the generic
+        // kinds 0.4, × direction. `:17016-17026` + `:17281-17288`: the
+        // direction tracks velocity.X's sign while outbound and FREEZES on
+        // the return (the old port never spun or flipped at all).
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::new(-6.0, 0.0),
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, None, 1.0, true);
+        assert_eq!(p.direction, -1, "the outbound sign latch (post-move)");
+        // The rotation read the PRE-move direction (+1, the spawn default)
+        // — the C# spins inside AI() ahead of HandleMovement's flip.
+        assert!((p.rot - 0.4).abs() < 1e-6, "0.4 × the pre-move +1");
+        // The return: the direction freezes at its settled value while the
+        // velocity swings positive toward the owner on the right.
+        let mut q = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(200.0, 300.0),
+            vel: Vec2::new(-8.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            direction: -1,
+            sound_delay: 100,
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, Some((600.0, 316.0)), 1.0, true);
+        assert!(q.vel.x > -8.0, "the seek steers right");
+        assert_eq!(q.direction, -1, "the return freezes the direction");
+        assert!((q.rot - (-0.3)).abs() < 1e-6, "the disc spins 0.3 × −1");
+    }
+
+    #[test]
+    fn s1_p_i08_the_machine_draws_no_rng() {
+        // RNG census: every `Main.rand` roll in `AI_003`'s ported kinds
+        // (6/52/113/106) rides the dust arms (`:38892-38984`) — the skipped
+        // cosmetic layer takes its rolls with it (the volcano/yoyo
+        // precedent). Outbound + return + the bounce tick: zero draws.
+        let mut w = world();
+        for y in 12..24 {
+            for x in 40..46 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 256.0, 10.0, 0.0, 10, 5.0);
+        let mut census = CountingRng::new();
+        for _ in 0..40 {
+            tick(&mut pool, &mut w, Some((300.0, 900.0)), 1.0, &mut census);
+        }
+        assert_eq!(census.draws, 0, "the boomerang machine draws nothing");
+        // The disc's whole life too (its 45-tick window + the return).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 320.0, 256.0, 10.0, 0.0, 60, 8.0);
+        let mut census = CountingRng::new();
+        for _ in 0..60 {
+            tick(&mut pool, &mut w, Some((300.0, 900.0)), 1.0, &mut census);
+        }
+        assert_eq!(census.draws, 0, "the disc machine draws nothing either");
     }
 }
 

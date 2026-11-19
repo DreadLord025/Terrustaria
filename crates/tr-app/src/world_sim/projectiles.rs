@@ -251,7 +251,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
     for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
-        app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+        // S1-P-i08 — the aiStyle-3 wall thud (`Projectile.cs:19571`'s
+        // `PlaySound(0, (int)X, (int)Y)`) is the int-id Dig play: case 0's
+        // `Next(3)` variation + `Next(-10, 11)` pitch ride the same stream
+        // (the `play_place_sound` façade's id-0 arm, `LegacySoundPlayer.cs:
+        // 440-452`); the id-2 styles keep the wave-A façade.
+        if id == 0 {
+            app.audio.play_place_sound((0, 0), x, y, rng);
+        } else {
+            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+        }
     }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).

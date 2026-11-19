@@ -7617,44 +7617,128 @@ style 14) and the spear traps' 186 keeps the legacy ride.
 
 ## Boomerangs (M4-PROJ-3, the boomerang half)
 
-`AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
-`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden) and 113
-(Ice) all ride the generic arms вЂ” the per-type parameter table only
-starts at the special boomerangs (the Light Disc 106's 45-tick window is
-the one verbatim override kept).
+`AI_003_Boomerang` (`Projectile.cs:38866-39640`) is a two-state machine on
+`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden), 113 (Ice) and
+106 (Light Disc, S1-P-i08) ride the generic arms — the per-type parameter
+table only starts at the special boomerangs (the Light Disc 106's 45-tick
+window and 16/1.2 return seek are the verbatim overrides kept).
 
-- **The OUT state** (`ai[0] == 0`, `:39024-39331`): `ai[1]++` per tick;
-  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`).
-  The straight flight keeps `tileCollide`; **the outbound tile hit does
-  not kill** вЂ” it reverses the velocity and switches to the return
-  (`:14594-14602` in `Kill()`'s collision path, mirrored at
-  `:13068-13080` for the NPC hits).
-- **The RETURN state** (`ai[0] == 1`, `:39468-39545`): `tileCollide =
-  false` вЂ” the boomerang flies home through terrain. The seek builds the
-  owner-center vector, kills past 3000 px (`:39500-39505`), scales it to
-  the speed 9 (`num26`; the per-type overrides 12-20 are the special
-  kinds) and steers per-axis at the accel 0.4 (`num27`) with the В±2Г—
-  boost when crossing the target velocity (`:39515-39537`). The
-  `meleeSpeed` remap (`:39487-39497`, Г—1-10) is Г—1 at the port's default
-  melee speed (M3-EQUIP brings the stat). The owner's 20Г—42 box catching
-  the boomerang kills it (`:39538-39544`).
-- **The generic `Item.shoot` firing**: the throw path was the M4-PROJ-1
-  shuriken hardcode; it is now `Player.ItemCheck_Shoot` (`:47056+`) вЂ”
-  the aim vector normalized to the item's `shootSpeed`
-  (`:47274-47292`; the melee `speed /= meleeSpeed` is Г—1), the spawn at
-  the player center + 10 px toward the cursor, `weaponDamage` (the item
-  damage Г— the class multiplier), the item's knockback, the crit roll
+- **The OUT state** (`ai[0] == 0`, `:39024-39341`): `ai[1]++` per tick;
+  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`); the
+  106 flips at `>= 45f` (`:39035-39040`). There is **no outbound decel**
+  for these kinds — the gravity/friction arms (`:39041-39129`) belong to
+  the unported phaseblades/320/383. The straight flight keeps `tileCollide`.
+- **The tile/bounds bounce** lives in `HandleMovement`'s aiStyle-3 arm
+  (`:19512-19571`), NOT `Kill()`'s PVP path (`:14594-14602` is the
+  player-hit reverse, a different site): the generic kinds reverse BOTH
+  axes from `lastVelocity` and set `ai[0] = 1` unconditionally
+  (`:19563-19568`); the 33/106/866 trio reverses per changed axis and does
+  NOT arm the return (`:19550-19560`) — the Light Disc keeps bouncing
+  outbound until its 45-tick timer. The world-edge flag (`:17900-17903`)
+  feeds the same response (the out-of-world guard skips aiStyle 3,
+  `:16684`). Both play the Dig thud (`PlaySound(0, …)` `:19571`).
+  `UpdatePosition` (`:20445`) integrates the POST-bounce velocity on the
+  bounce tick. The **NPC-hit reverse** (`:13068-13080`) runs pre-strike in
+  `damage_pve`: the outbound hit reverses both axes, the returning hit only
+  re-arms `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse alone).
+- **The RETURN state** (`ai[0] == 1`, `:39365-39555`): `tileCollide =
+  false` — the boomerang flies home through terrain. The seek builds the
+  owner-center vector, kills past 3000 px (`:39499-39502`), scales it to
+  the speed 9 (`num26`; the 106 at 16) and steers per-axis at the accel 0.4
+  (`num27`; the 106 at 1.2) with the ±2× boost when crossing the target
+  velocity (`:39518-39549`). The `meleeSpeed` remap (`:39462-39475`) scales
+  BOTH by `Remap(1.5, 0, 1, 1, 1/meleeSpeed, clamped: false)` clamped to
+  [1, 10] — ×1 at the default melee speed. The owner-box catch
+  (`:39551-39554`) reads the PRE-movement `(int)`-truncated rects with
+  XNA's strict `Intersects`, gated on `Main.myPlayer == owner`.
+- **The rotation tail** (`:39556-39638`): the 106 spins 0.3, every other
+  non-phaseblade 0.4, both × `direction`. The direction tracks
+  `velocity.X`'s sign after each sub-step's movement while outbound and
+  freezes on the return (`AutomaticallyChangesDirection` `:17281-17288`
+  excludes aiStyle 3 at `ai[0] == 1`, the flip `:17016-17026`).
+- **The generic `Item.shoot` firing**: the throw path is
+  `Player.ItemCheck_Shoot` (`:47056+`) — the aim vector normalized to the
+  item's `shootSpeed` (`:47274-47307`; the melee `speed /= meleeSpeed`),
+  the spawn at `RotatedRelativePoint(MountedCenter)` (`:47196`),
+  `weaponDamage` (the item damage × the class multiplier), the item's
+  knockback through `GetWeaponKnockback` (`:53346-53369`), the crit roll
   from the item's damage class and the `consumable` decrement (the
   boomerangs stay in the inventory; the shuriken is consumed).
-- The pool's `update` carries `owner: Option<(f32, f32)>` вЂ” the seek
+- The pool's `update` carries `owner: Option<(f32, f32)>` — the seek
   input (`Main.player[owner]` reads); `None` keeps the boomerangs
   outbound until the timer flips them.
 
-Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` вЂ” the
+Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
 877-line per-type parameter table + the chain state machine + the
 channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
-sounds/dust are render-side; the homing variants (182/866) and the
-phaseblade subset are out of the ported kinds.
+dust is render-side (its `Main.rand` rolls skip with the layer — the
+volcano/yoyo precedent); the homing variants (182/866) and the
+phaseblade subset are out of the ported kinds. The tile-collision probe
+is the port's `collides_rect` stand-in for `Collision.TileCollision`
+(the recorded M4-PROJ-3 deviation); the world-edge flag rides the
+matching probe axis (the C# flag is axis-less). The single `wants_sound`
+intent slot keeps the whoosh when it and the wall thud land on one
+sub-step.
+
+## The useStyle-1 boomerang variant (S1-P-i08)
+
+The census (`task/S1-P-i08-boomerang`, code-only mode — tests WRITTEN NOT
+RUN) re-read `AI_003_Boomerang` and the `Player.ItemCheck` throw path
+against the port and fixed the WRONGs + ported the missing pieces:
+
+- **WRONG — the bounce cite/site.** The old arm cited `:14594-14602`
+  (`Kill()`'s PVP player-hit reverse) for the tile bounce and froze the
+  position on the bounce tick. The tile bounce is `HandleMovement`'s
+  aiStyle-3 arm (`:19512-19571`); the generic kinds reverse both axes from
+  `lastVelocity` and arm the return unconditionally, the 33/106/866 trio
+  reverses per changed axis and keeps the outbound state, and
+  `UpdatePosition` integrates the post-bounce velocity. Fixed.
+- **WRONG — the catch rects.** The old catch tested the POST-movement
+  float box. The C# tests the PRE-movement `(int)` rects with strict
+  `Intersects` (`:39551-39554`), gated on `Main.myPlayer == owner`. Fixed.
+- **WRONG — the meleeSpeed remap.** The old arm hardcoded ×1. The C#
+  scales the return speed AND accel by the clamped `Remap` (`:39462-
+  39475`). Ported (the flail inputs already carry `melee_speed`).
+- **MISSING — the rotation tail + direction latch.** The old arm never
+  spun or flipped. Ported (`:39556-39638`, `:17016-17026`, `:17281-17288`).
+- **MISSING — the NPC-hit reverse.** Ported pre-strike in `damage_pve`
+  (`:13068-13080`), with the 301/866/902 + phaseblade exclusions.
+- **MISSING — the wall thud.** The Dig cue (`PlaySound(0, …)` `:19571`)
+  rides the `wants_sound` intent; the drain routes id-0 through
+  `play_place_sound`'s case-0 arm (the `Next(3)` variation + pitch on the
+  `UpdateProjectiles` stream).
+- **MISSING — the Light Disc 106.** The row (`:1936-1945`, 32×32), the
+  45-tick window, the 16/1.2 return seek, the per-axis wall bounce and the
+  0.3 spin. The item 561 already carried `useStyle 1`/`shoot 106`.
+- **MISSING — the stack limits.** `ItemCheck_CheckCanUse_Inner`
+  (`:52162-52186`): one in flight for 6/52/113, six for the 106. The gate
+  runs at the use start, ahead of the mana pay.
+- **MISSING — the throw's boomerang-visible pieces.** The `ChangeDir` aim
+  flip (`:47202-47224`), the zero-aim facing fallback (`:47291-47296` —
+  the old `dir != ZERO` gate skipped the throw entirely), the exact-center
+  spawn (`NewProjectile` centers the box, `:10876-10877`; the generic
+  arm's `+ dir * 10` is the port's own M4-PROJ-3 deviation, dropped for the
+  variant) and `GetWeaponKnockback`'s melee kbGlove ×2 / kbBuff ×1.5
+  (`:53352-53359`).
+
+RNG: the machine draws **nothing** — every `Main.rand` roll in `AI_003`'s
+ported kinds rides the skipped dust arms (`:38892-38984`); the throw's only
+gameplay draw is the throw-time crit roll (`Next(1, 101)`, the shared
+`UpdatePlayers` stream). The wall thud's case-0 rolls ride the drain's
+`UpdateProjectiles` stream. Witnesses: `s1_p_i08_boomerang_tests` (pool) +
+`s1_p_i08_throw_tests` (editing), written not run.
+
+The Light Disc 106's `LightDisc_Bounce` dust (`:13072-13075` NPC-hit,
+`:19514-19518` wall-hit → `:20317-20329`) draws 12 explicit `Main.rand`
+floats per bounce in the C# (4 iterations × [`NextFloatDirection` +
+`NextFloat` + `NextFloat`], `:20322-20323`). The port skips it under the
+volcano/yoyo "skipped cosmetic takes its rolls" precedent (the
+`the_machine_draws_no_rng` witness pins 0 draws) — a recorded deviation,
+NOT strict stream parity on a disc bounce. The generic kinds 6/52/113 draw
+nothing on any path (their dust arms are the only rolls, skipped) — that
+part is unambiguous. If strict C# stream parity on a disc bounce is wanted
+later, consume the 12 `next_float` draws at both bounce sites and update
+the witness.
 
 ## Bombs (M4-PROJ-9)
 
