@@ -1054,8 +1054,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[16, 0, 0, 0],
-            "the writer emits the current v16"
+            &[17, 0, 0, 0],
+            "the writer emits the current v17"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1602,8 +1602,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[16, 0, 0, 0],
-            "the writer emits the current v16"
+            &[17, 0, 0, 0],
+            "the writer emits the current v17"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
