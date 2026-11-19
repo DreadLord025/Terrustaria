@@ -4347,6 +4347,80 @@ npcFrameCount entries the port's comments quoted were wrong ([262] = [266]
 Screenshots: `plantera_flower.png` (the flower at its 116x154 frame) and
 `brain_creepers.png` (the 200x182 brain), both SHA256-stable across runs.
 
+## The Plantera machine (S1-D-3-plantera audit, 2026-11-18, code-only mode)
+
+**Code-only mode**: this task ran with NO compiler invoked — no cargo, no
+rustc, no rustfmt, no tests run, no graphify refresh. The witness tests are
+WRITTEN NOT RUN (`npc_ai_plantera::tests`, 11 tests + the repointed
+`npc.rs::the_plantera_cycles_and_maps`); every claim below is verified by
+reading the C# and the Rust side by side, not by execution.
+
+**The task-brief premise was wrong, corrected by the census**: Plantera
+(262) uses **aiStyle 51**, not 54 (`NPC.cs:12384`'s `SetDefaults`), and
+there is NO `AI_054_Plantera` function in this decompile — the whole
+machine is the inline `else if (this.aiStyle == 51)` block at
+`NPC.cs:31717-32075`. aiStyle 54 is the **Brain of Cthulhu** (266,
+`NPC.cs:12443`, block `:32370-32656`, already ported by S1-D-3e — sibling
+W66's census territory, untouched here). The port's data table already had
+the right style (`npc/data.rs`'s `ai_style` Plantera => 51).
+
+**Verdict table** (the audit's findings against the pre-port arm):
+
+| C# behaviour (`NPC.cs`) | pre-port stand-in | verdict → after this task |
+| --- | --- | --- |
+| hook spawn init, 3× NPC 263 (`:31736-31742`) | absent | request seam (`wants_plantera_hooks`), spawns deferred |
+| hook-centroid anchor, mean of ≤3 aiStyle-52 centres (`:31743-31762`) | absent — hovered at `player.y − 250` | ported shape; anchor falls back to Plantera's own centre until kind 263 lands |
+| speed/accel ladder 2.5/0.025 → 5/0.05 (<½) → 7 (<¼) (`:31763-31773`) | ±0.1 accel, cap 8 (invented) | ported (`tuning`) |
+| enrage flag55: +8 speed, 0.15 accel, leash +350 (`:31774-31779`, `:31801-31804`) | absent | ported (`enraged` + `tuning`) |
+| dead-target flee flip +8 (`:31793-31798`) | absent | ported (`desired_velocity`) |
+| 500-px leash clamp + in-band hover quirk (`:31800-31831`) | absent | ported (`desired_velocity`) |
+| accel approach with reversal ×2 boost (`:31832-31863`) | absent | ported (`approach_velocity`) |
+| rotation `Atan2(x: dx, y: dy) + 1.57` (`:31864-31865`) | absent — wrote facing/sprite_dir instead | ported (`rotation`); `Math.Atan2(y, x)`'s signature means the NAMED args bind y=dy, x=dx — the STANDARD atan2(dy, dx) (LEAD-REVIEW G1 corrected the original swapped reading + its witness); the stand-in's facing writes dropped (the C# arm writes neither) |
+| phase-1 defense 36 / damage 50, ×2 enraged (`:31866-31875`) | absent (data-row 14/50 rode forever) | ported (`phase1_stats`) |
+| seed cadence localAI[1] >80 with 0.9/0.8/0.7/0.6 bumps + enrage +3 (`:31880-31917`) | 480-tick charge cycle (invented) | ported (`phase1_cadence`) |
+| `CanHit` gate + 15-px seed volley 275/22, poison 276/27 (`Next(4)`), thorn 277/31 (`Next(8)`), ×2 enraged, muzzle ×3, timeLeft 300 unless 277 (`:31918-31969`) | absent — no shots at all | ported (volley + `wants_hostile_shot`; the 275/276/277 `SetDefaults` rows added, `Projectile.cs:3614-3637`; the sim's timeLeft-300 list extended) |
+| phase-2 defense 10 / damage 70, def ×4 dmg ×2 enraged (`:31973-31980`) | absent | ported (`phase2_stats`) |
+| one-shot 8× NPC 264 tentacle batch (`:31983-31994`) | absent | request seam (`wants_plantera_tentacles`), spawns deferred |
+| gore trio 378/379/380 (`:32026-32032`) | absent | RNG order preserved (FOUR draws per gore: the position pair + NewGore's `Next(10,31)`/`Next(-20,21)` kicks, `Gore.cs:1327-1328` — LEAD-REVIEW G3 added the kick draws), emit skipped (Brain precedent) |
+| spore cadence ≥350 with 0.4/0.3/0.2/0.1 bumps, NPC 265 at 8 px, ±10 jitter X-first, lift `|dx*0.2|` ZEROED when the target is below (`:32037-32074`, `:32061-32064`) | absent | ported (`phase2_cadence` + the launch; `wants_plantera_spore` seam; LEAD-REVIEW G2 corrected the inverted gate — the lift applies only when the target is at/above the boss) |
+| `timeLeft` refresh 4800/activeTime (`:31727-31734`), `NPC.plantBoss` (`:31735`) | absent | skipped — no port fields (recorded here) |
+| expert/getGoodWorld arms (`:31780-31789`, `:31805-31808`, `:31901-31912`, `:31928-31931`, `:31941-31945`, `:31987-31990`, `:31995-32024`) | n/a | constants-off — the port is single-difficulty classic (`World::MOON_POINT_SCALAR` precedent); `justHit` (`:31905`) has no port field, folds out with expert |
+| `TargetClosest` (`:31721`) | stand-in used the passed player | kept the passed-player convention — the S1-D-3p helper migration is its own catalog row |
+
+**Deliberate deviations / seams**:
+
+- **Kinds 263 (hook, aiStyle 52), 264 (tentacle, aiStyle 53), 265 (spore,
+  aiStyle 50) have no port kinds/arms.** The machine writes the three
+  request fields (`Npc::wants_plantera_hooks` / `_tentacles` / `_spore`)
+  and `world_sim/npcs.rs` drains them (never stale) but spawns nothing
+  yet. Consequence: the hook-centroid anchor reads Plantera's own centre,
+  so the boss orbits the player directly instead of the hook triangle —
+  the movement SHAPE is faithful, the anchor is the documented stand-in
+  until the three minion machines land. (G4 correction: the C# has NO
+  first-tick NaN — `NewNPC` activates the hooks synchronously,
+  `NPC.cs:80767-80771`, before the centroid scan; the fallback stands in
+  for the unported kinds, not for a C# edge case.)
+- **G5 (LEAD-REVIEW)**: every `Math.Sqrt`/`Math.Atan2` site rides the
+  `(float)` double seam — the f32 product widens to f64, sqrt/atan2 in
+  f64, cast back (`:31799`/`:31820`/`:31934`/`:32066`, rotation `:31865`).
+- The stand-in's world-bottom despawn tail (`y > height*16 + 400 → hp 0`)
+  is kept in the kind-262 seam; the C# arm has no such kill (the generic
+  despawn owns it) — kept as the port's safety convention, recorded here.
+- The volley's `GetAttackDamage_ForProjectiles(num758, num758*0.9)`
+  (`:31962`, `NPC.cs:7052-7055`) at classic difficulty remaps to the
+  normal value — the port passes the base damage directly.
+- `Npc::update_plantera` now takes the caller's rng (`update_rng`'s
+  stream) — the volley rolls (`Next(4)` then `Next(8)`, both gated below
+  0.8 life), the gore draws and the spore jitters consume it in C# order.
+
+**Files**: `crates/tr-app/src/npc_ai_plantera.rs` (new, the pure-fn
+machine + 11 witness tests), `npc.rs` (the kind-262 seam replacing the
+stand-in body, three request fields, the repointed cycle test),
+`projectile/data.rs` (the 275/276/277 rows), `world_sim/npcs.rs` (the
+timeLeft-300 list + the request drain), `main.rs` (the mod). Branch
+`task/S1-D-3-plantera-audit`, NOT merged — the minion machines and the
+test run are the follow-ups.
+
 ## The Lunar pillars' display (M4-NPC-3l)
 
 The four celestial pillars had the third instance of the atlas bug and a

@@ -272,6 +272,15 @@ pub const GREEK_FIRE_3: u16 = 328;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
+/// `ProjectileID.SeedPlantera` (275, `Projectile.cs:3614-3621`) —
+/// Plantera's phase-1 seed (the aiStyle-1 flight, hostile, alpha 255).
+pub const SEED_PLANTERA: u16 = 275;
+/// `ProjectileID.PoisonSeedPlantera` (276, `Projectile.cs:3622-3629`) —
+/// the poison seed (the same 14x14 aiStyle-1 row).
+pub const POISON_SEED_PLANTERA: u16 = 276;
+/// `ProjectileID.ThornBall` (277, `Projectile.cs:3630-3637`) — the thorn
+/// ball (38x38, the aiStyle-14 flight, hostile, alpha 255).
+pub const THORN_BALL: u16 = 277;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
@@ -1113,6 +1122,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 26.0,
                 1,
                 3,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3614-3629` — Plantera's seeds: 14x14, aiStyle
+            // 1, hostile, `alpha = 255`; the stock penetrate 1 / tileCollide
+            // / timeLeft 3600 (`:774-787`) — the AI's call site overrides
+            // the seeds' timeLeft to 300 (`NPC.cs:31966-31969`).
+            SEED_PLANTERA | POISON_SEED_PLANTERA => (
+                14.0,
+                14.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3630-3637` — the thorn ball: 38x38, aiStyle
+            // 14, hostile, `alpha = 255`; the stock life (no override).
+            THORN_BALL => (
+                38.0,
+                38.0,
+                14,
+                1,
                 TIME_LEFT_DEFAULT,
                 0,
                 true,
