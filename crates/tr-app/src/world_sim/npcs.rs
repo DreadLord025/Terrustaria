@@ -1307,6 +1307,138 @@ pub(crate) fn update_worms_in(
     }
 }
 
+/// The Plantera minion pool pass (S1-D-3-wire-plantera-minions) — the
+/// aiStyle-52 hook (`NPC.cs:32076-32240`, `npc_ai_style52.rs`) and the
+/// aiStyle-53 tentacle (`:32241-32369`, `npc_ai_style53.rs`). Both arms
+/// read the WHOLE pool: the hook's orphan gate + sibling re-arm scan
+/// (`:32080`/`:32129`) and the tentacle's `NPC.plantBoss` + `ai[3]-1`
+/// anchor slot (`:32254`/`:32260-32264`), so they run here after the
+/// per-NPC step (the worm pass's precedent — the C# interleaves them in
+/// slot order; the port's pass reads the same spawn order).
+///
+/// `NPC.plantBoss` is the C# static the boss's own arm sets every tick
+/// (`NPC.cs:31735`) and `checkDead` clears (`:8391-8394`); the port
+/// resolves it per tick as the first live Plantera's pool index (-1 =
+/// none — the orphan strike). Both machines run on the `UpdateNPCs`
+/// stream (`Main.cs:17767-17769`), in pool order — the hook's draws
+/// (`Next(60,300)` per moving sibling, `Next(300,600)`, the jitter pair,
+/// the below-half `Next(6)`) and the tentacle's rearm triple
+/// (`Next(120,480)`, `Next(-100,101)` x2) keep their census order; the
+/// ftw reflect `Next(10)` is constants-off (no runtime getGoodWorld).
+///
+/// The integration is `UpdateNPC`'s noGravity/noTileCollide tail
+/// (`NPC.cs:90490-90498`): raw `position += velocity`. The orphan
+/// strikes land as `hp = 0` (the port's `active = false` convention —
+/// the machines write it themselves; the death retain + the death-sound
+/// pass own the rest, the 262/263/264 HitEffect dust is the documented
+/// skip). The ftw thorn burst (`HookEvents::spawn_thorns`) is
+/// constants-off with getGoodWorld.
+pub(crate) fn update_plantera_minions(app: &mut App) {
+    if !app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && matches!(n.kind, NpcKind::PlanterasHook | NpcKind::PlanterasTentacle))
+    {
+        return;
+    }
+    let plant_boss = app
+        .npcs
+        .iter()
+        .position(|n| n.kind == NpcKind::Plantera && n.hp > 0)
+        .map(|i| i as i32)
+        .unwrap_or(-1);
+    let players_vec: Vec<crate::npc_target::TargetCandidate> = app
+        .player
+        .as_ref()
+        .map(|p| vec![crate::npc_target::session_candidate(p)])
+        .unwrap_or_default();
+    let players = players_vec.as_slice();
+    // `Main.player[boss.target].ZoneJungle` (`NPC.cs:32090`): the port's
+    // scene metrics carry the render-side zone flag (the HookCtx seam).
+    let zone_jungle = app.scene_metrics.zone_jungle;
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    let world = &app.world;
+    let npcs = &mut app.npcs;
+    let type_of = |n: &Npc| n.kind.cs_id() as i32;
+    for i in 0..npcs.len() {
+        if npcs[i].hp <= 0 {
+            continue;
+        }
+        match npcs[i].kind {
+            NpcKind::PlanterasHook => {
+                let mut ctx = crate::npc_ai_style52::HookCtx::stock(i as i32, plant_boss);
+                ctx.boss_target_zone_jungle = zone_jungle;
+                let ev = crate::npc_ai_style52::planteras_hook_step(
+                    npcs, i, &ctx, world, players, rng, 0, type_of,
+                );
+                if ev.orphan_strike {
+                    // `StrikeNPCNoInteraction(9999, 0, 0)` (`:32082`):
+                    // the instant-kill branch (`NPC.cs:81237`'s
+                    // `Damage >= 9999 && owner == 255`) — hp = 0, the
+                    // death retain owns the removal.
+                    npcs[i].hp = 0;
+                    continue;
+                }
+                // `spawn_thorns` is constants-off (getGoodWorld false).
+                npcs[i].integrate_no_tile_collide();
+            }
+            NpcKind::PlanterasTentacle => {
+                // The anchor slot (`:32260-32264`): the boss, or the
+                // expert hook link `ai[3]-1` (the classic batch never
+                // writes ai[3], so the boss always anchors today).
+                let anchor_slot = if npcs[i].ai[3] > 0.0 {
+                    (npcs[i].ai[3] as usize).saturating_sub(1)
+                } else {
+                    plant_boss.max(0) as usize
+                };
+                let view = |n: &Npc| crate::npc_ai_style53::Ai53NpcView {
+                    active: n.hp > 0,
+                    x: n.x,
+                    y: n.y,
+                    width: n.size().0 as i32,
+                    height: n.size().1 as i32,
+                    life: n.hp,
+                    life_max: n.max_hp,
+                };
+                let boss_view = usize::try_from(plant_boss)
+                    .ok()
+                    .and_then(|b| npcs.get(b))
+                    .map(view);
+                // The C# array always has 200 slots: an out-of-range
+                // ai[3] reads an INACTIVE stock NPC (the module's seam).
+                let anchor_view = npcs.get(anchor_slot).map(view).unwrap_or(
+                    crate::npc_ai_style53::Ai53NpcView {
+                        active: false,
+                        x: 0.0,
+                        y: 0.0,
+                        width: 0,
+                        height: 0,
+                        life: 0,
+                        life_max: 0,
+                    },
+                );
+                let ctx = crate::npc_ai_style53::Ai53Ctx {
+                    players,
+                    plant_boss,
+                    boss: boss_view,
+                    anchor: Some(anchor_view),
+                    expert_mode: false,
+                    get_good_world: false,
+                    ticker: 0,
+                };
+                let _fx = crate::npc_ai_style53::ai_053_step(&mut npcs[i], world, &ctx, rng);
+                // The orphan strike + the anchor-lost death already set
+                // hp = 0 inside the arm; the reflects_projectiles write
+                // is None (getGoodWorld off).
+                if npcs[i].hp > 0 {
+                    npcs[i].integrate_no_tile_collide();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The head's per-tick machine (`AI_006`'s `ai[1] == 0` branch). `flag3`
 /// (the dig mode) = any tile in the body rect is solid or liquid-heavy
 /// (`:51580`'s count rule). In the open air the head stumbles: the gravity
@@ -2921,12 +3053,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // Plantera's hook-centroid anchor pre-pass (S1-D-3-plantera-minions,
     // `NPC.cs:31743-31762`): the C# scans the NPC slots INSIDE the boss's
     // own AI tick; the port pre-computes it once per tick over the pool
-    // (the carrier pre-pass precedent). `type_of` resolves the vanilla
-    // type — no NpcKind maps to 263 yet, so every kind reads its own
-    // protocol id and the centroid stays None (the boss-centre stand-in)
-    // until the hook kind lands with `npc_ai_style52`.
+    // (the carrier pre-pass precedent). `type_of` resolves the VANILLA
+    // type via `cs_id` (S1-D-3-wire-plantera-minions: `to_u16` is the
+    // port's protocol id — 154 for the hook (gate-reassigned) — NOT the C# type 263 the
+    // centroid filters on).
     {
-        let type_of = |n: &Npc| n.kind.to_u16() as i32;
+        let type_of = |n: &Npc| n.kind.cs_id() as i32;
         for i in 0..app.npcs.len() {
             if app.npcs[i].kind != NpcKind::Plantera || app.npcs[i].hp <= 0 {
                 continue;
@@ -3219,6 +3351,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (the vanilla interleaves it in the slot order; the port's pass reads
     // the same spawn order).
     update_worms(app);
+    // The Plantera minion pool pass (S1-D-3-wire-plantera-minions): the
+    // aiStyle-52 hook + aiStyle-53 tentacle machines read the WHOLE pool
+    // (`NPC.plantBoss` + the sibling/anchor slots, `NPC.cs:32080`/`:32129`/
+    // `:32260`), so they run here after the per-NPC step — the worm pass's
+    // precedent (the C# interleaves them in slot order; the port's pass
+    // reads the same spawn order, one tick of AI/integration lag for
+    // freshly spawned minions — the documented pool-pass deviation).
+    update_plantera_minions(app);
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
@@ -3770,21 +3910,50 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut bees);
     // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
-    // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
-    // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
-    // port kinds/arms yet — the machine's core writes the requests and
-    // this pass drains them so they never go stale; the actual spawns
-    // land with the three minion machines (ANALYSIS "The Plantera
-    // machine", the documented follow-up). The hook-anchor average
-    // therefore reads Plantera's own centre until then.
+    // `:31983-31994` / `:32054-32073`): S1-D-3-wire-plantera-minions
+    // replaces the drain-only stand-in with the real `NewNPC` spawns —
+    // the hooks (263, aiStyle 52), the tentacles (264, aiStyle 53) and
+    // the spore (265, aiStyle 50). `NewNPC` places the NPC by its BOTTOM
+    // at the boss centre (`NPC.cs:80769`, `Entity.Bottom` setter
+    // `Entity.cs:128-131`: `position = (X - width/2, Y - height)`), sets
+    // `timeLeft = (int)(activeTime * 1.25)` = 937 (`:80771`,
+    // `activeTime = 750` `:95186`) and `target = 255` (the default
+    // `Target` arg; the spore's velocity comes from the request).
+    // getGood +6 tentacles / the expert hook-linked batch are
+    // constants-off (the boss module's documented classic seam).
+    let mut plantera_spawns: Vec<Npc> = Vec::new();
     for n in app.npcs.iter_mut() {
         if n.kind != NpcKind::Plantera {
             continue;
         }
-        n.wants_plantera_hooks = 0;
-        n.wants_plantera_tentacles = 0;
-        n.wants_plantera_spore = None;
+        let (cx, cy) = n.center();
+        let hooks = std::mem::take(&mut n.wants_plantera_hooks);
+        for _ in 0..hooks {
+            let (w, h) = NpcKind::PlanterasHook.size();
+            let mut hook = Npc::new(NpcKind::PlanterasHook, cx - w * 0.5, cy - h, 1, 0.0);
+            hook.despawn_timer = 937;
+            plantera_spawns.push(hook);
+        }
+        let tentacles = std::mem::take(&mut n.wants_plantera_tentacles);
+        for _ in 0..tentacles {
+            let (w, h) = NpcKind::PlanterasTentacle.size();
+            let mut tentacle =
+                Npc::new(NpcKind::PlanterasTentacle, cx - w * 0.5, cy - h, 1, 0.0);
+            tentacle.despawn_timer = 937;
+            plantera_spawns.push(tentacle);
+        }
+        if let Some((vx, vy)) = n.wants_plantera_spore.take() {
+            let (w, h) = NpcKind::Spore.size();
+            let mut spore = Npc::new(NpcKind::Spore, cx - w * 0.5, cy - h, 1, 0.0);
+            spore.despawn_timer = 937;
+            // `:32069-32071` — the jittered 8-px launch velocity.
+            spore.vx = vx;
+            spore.vy = vy;
+            spore.net_update = true;
+            plantera_spawns.push(spore);
+        }
     }
+    app.npcs.append(&mut plantera_spawns);
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {

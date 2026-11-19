@@ -53,6 +53,14 @@
 //!    the wiring wave must draw the `Next(3)` selectors and the
 //!    `Dust.NewDust` internals in C# order when the dust pass lands.
 //!
+//! Wiring LANDED (S1-D-3-wire-plantera-minions, census §5 W-8): the
+//! kinds `NpcKind::FungiSpore`/`Spore` claim the aiStyle-50 axis
+//! (`npc.rs::ai_050_spore_family` — the session-candidate seam, classic
+//! difficulty, the outcome's noTileCollide split + the contact-death
+//! early return). The FungiSpore light + the dust arms stay the
+//! documented visual skips (the stream untouched). The original
+//! deferral note follows.
+//!
 //! Wiring deferred (the BlazingWheel / `npc_ai_style21.rs` precedent,
 //! commit 901452bd): the roster has no `NpcKind::FungiSpore`/`Spore`
 //! yet, so `update_rng`'s aiStyle axis (`npc.rs:3255`) has no style-50
@@ -78,7 +86,7 @@
 //!   field, the established port seam.
 //!
 //! See docs/ANALYSIS.md "The spore pair (S1-D-3 aiStyle-50, code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+#![allow(dead_code)] // the light/dust helpers await the visual passes; the AI arm is WIRED (S1-D-3-wire-plantera-minions)
 
 use glam::Vec2;
 
