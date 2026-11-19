@@ -15,9 +15,11 @@
 //! `Main.rand` stream untouched, so the fixed-step order stays exact.
 //!
 //! The NPC family (`npc_lights.rs::npc_light`, `NPC.AI`'s aiStyle-8 light
-//! tail) feeds the **same** [`EntityLights`] pair — there is one list pair
-//! per engine in the C#, not one per source family. Both feeds run in the
-//! frame pass (`app/frame/draw.rs`) and share the tile-anchor helpers below.
+//! tail) and the Player family (`player_lights.rs::player_lights`, the
+//! buff/accessory/held-item arms) feed the **same** [`EntityLights`] pair —
+//! there is one list pair per engine in the C#, not one per source family.
+//! All feeds run in the frame pass (`app/frame/draw.rs`) and share the
+//! tile-anchor helpers below.
 
 use glam::Vec2;
 use tr_core::lighting::{DynamicLight, LightParams};
