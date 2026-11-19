@@ -25004,17 +25004,56 @@ the mage spawns first, the chain body second — the C#'s statement order.
 Witnesses: mage+wyvern, mage+javeliner, mage+goblin, the right-lane
 `Next(2)` miss (chain alone), and the live-mage `AnyNPCs(564)` gate.
 
-### New finding handed to the Lead (NOT fixed — outside B-6d)
+### B-6e — the DD2 wave-6 spawn drop (FIXED, branch fix/dd2-wave6-spawn-drop)
 
-`lane_spawn_roll_d3` wave 6 (`dd2.rs:712-743`) repeats the same
-spawn-drop shape: `second.first.or(first)` collapses the two independent
-chains of `DD2Event.cs:1691-1727` (first chain `:1692-1707`, second
-`:1708-1727`), and the squire arm's always-spawned `num9` 554 (`:1726`,
-beside the `Next(3)` 557 roll) is folded into `roll_second` as an
-optional second body. Both chains' bodies spawn in C#; the port spawns
-one. Needs its own row (suggested B-6d-6/B-6e) — the fix is the same
-pair-seam shape but the draw-order/cap interactions deserve their own
-witness set.
+The new finding handed to the Lead by B-6d, resolved on
+`fix/dd2-wave6-spawn-drop` (based on `fix/lunar-dd2-small-wrongs`
+6e3d201e — the chain lands both). Code-only wave: no compiler invoked,
+witnesses WRITTEN NOT RUN; verification = whole-block C# re-reads +
+hand-traced draw sequences.
+
+C# `DD2Event.Difficulty_3_SpawnMonsterFromGate` case 6
+(`DD2Event.cs:1691-1728`, read whole): TWO independent `if` chains.
+The first (`:1692-1707`) rolls `Next(20)`/`Next(20)`/`Next(12)`/`Next(25)`
+for the balista 577 / sapper 565 / mystic 571 / drake 569 and runs its
+`NewNPC`. The second (`:1708-1727`) is a SEPARATE statement — its
+`Next(7)` glider 578, `Next(7)`+`Next(3)` mystic/frost-mage, `Next(5)`
+javeliner 563, or the squire arm: `Next(3)` spawns the 557 into `num8`
+(`:1724`) and the 554 ALWAYS spawns into `num9` (`:1726`). `num8`/`num9`
+are only net-sync handles (`:1755-1762`); re-assigning `num8` does not
+un-spawn the first chain's body. Up to THREE bodies per pass.
+
+The port returned `second.first.or(first)` — the first chain's body was
+dropped whenever the second fired, and the squire's unconditional 554
+rode the optional `second` slot. Fixed: `LaneSpawn` gains a `third`
+field (only this arm fills it — the always-spawned 554), the wave-6 pick
+is `{ first, second: second.first, third: second.third }`, and the
+resolver (`spawn_dd2_from_gate`) iterates `[first, second, third]` in
+the C#'s spawn order (first chain, then 557-on-roll, then 554). RNG is
+unchanged BY CONSTRUCTION: every roll and its order is untouched — the
+bug was purely the post-roll body selection.
+
+**Census of every wave row** (all three switches read whole):
+
+| Row | C# block | Shape | Verdict |
+| --- | --- | --- | --- |
+| D1 w1-4 | `:1039-1074` | single else-if chain, max 1 body | ✅ faithful |
+| D1 w5 | `:1075-1095` | mage `if` + independent chain, 2 bodies | ✅ fixed by B-6d-5 (R71) |
+| D2 w1-7 | `:1270-1425` | single else-if chains; squire-pair arms (`:1309-1313`, `:1353-1357`, `:1383-1387`, `:1415-1419`) spawn 2 via `pair()` | ✅ faithful, no `.or()` collapse |
+| D3 w1-5, 7 | `:1581-1690`, `:1729-1750` | single else-if chains + squire pairs, max 2 | ✅ faithful |
+| D3 w6 | `:1691-1728` | two independent chains + always-554, max 3 | ❌→✅ FIXED here (B-6e) |
+
+Witnesses (WRITTEN NOT RUN): `b6e_wave_six_spawns_all_three_bodies_in_c_order`
+(577+557+554 in order; the pair alone when the first chain misses; the
+554 alone when its `Next(3)` misses; the two-body glider arm),
+`b6e_per_wave_spawn_count_pins` (the census as per-wave max-count
+assertions, `third` None outside D3 w6), and the repointed
+`the_tier_three_wave_six_chains_run_side_by_side` (spawn-both, not
+outrank). Pre-existing note (unchanged, outside B-6e's scope): the
+other waves' squire pairs use `pair()`, which keeps the squire in
+`first` and the rolled companion in `second`, while the C# spawns the
+companion first — both bodies spawn either way; only the intra-pass
+order differs. The wave-6 arm uses the strict C# order.
 
 ### Deliberate deviations kept (unchanged this wave)
 

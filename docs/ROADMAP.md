@@ -1026,13 +1026,13 @@ WRITTEN NOT RUN; verification = whole-block C# re-reads + hand arithmetic.
 - **B-6a** pillar machine re-port (audit §2.5) — queued, not this wave.
 - **B-6b** 629 spawn-loop + shield wiring (`NPC.cs:79279-79320`) — R72 owns.
 - **B-6c** DD2 portal creation + arena walker (audit §4.2) — R73 owns.
-- **NEW FINDING (for the Lead):** `lane_spawn_roll_d3` wave 6
-  (`dd2.rs:712-743`) has the SAME spawn-drop shape as B-6d-5:
-  `second.first.or(first)` collapses two independent chains, and the
-  squire arm's always-spawned `num9` (`DD2Event.cs:1691-1727`: the first
-  chain `:1692-1707`, the second `:1708-1727`, the 554 squire spawns
-  beside the 557 roll) is folded into `roll_second`. Not fixed here —
-  outside the B-6d list; needs its own row (suggested B-6d-6 / B-6e).
+- ~~**NEW FINDING (for the Lead):** `lane_spawn_roll_d3` wave 6 spawn-drop~~
+  — RESOLVED as B-6e below (branch `fix/dd2-wave6-spawn-drop`, based on
+  `fix/lunar-dd2-small-wrongs` 6e3d201e so the chain lands both).
+
+| Status | Task | Description | Size | Sev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 🟡 B-6e | DD2 wave-6 spawn drop + census | `dd2.rs` `lane_spawn_roll_d3` wave 6 returned `second.first.or(first)` — the same collapse as B-6d-5. C# `DD2Event.cs:1691-1727` (read whole) runs TWO independent `if` chains: the first (`:1692-1707`, balista/sapper/mystic/drake) spawns its body, then the second (`:1708-1727`) spawns its OWN; the squire arm rolls the 557 (`:1722-1724`) and ALWAYS spawns the 554 (`:1726`, `num9`) — up to THREE bodies per pass. Fixed: `LaneSpawn` gains a `third` slot (only this arm fills it), the pick is `{ first, second: second.first, third: second.third }`, and the resolver (`npcs.rs spawn_dd2_from_gate`) iterates `[first, second, third]` in the C#'s spawn order. RNG unchanged by construction — the drop was post-roll. Census of ALL wave rows: D1 w1-4 single chains, w5 already fixed (B-6d-5, `:1075-1095`); D2 w1-7 single else-if chains with squire-pair arms (`:1270-1425`) — no `.or()` collapse anywhere; D3 w1-5/7 single chains (`:1581-1690`, `:1729-1750`) — wave 6 was the ONLY remaining collapse | S | B | research/53 §4.3 (escalation) | B-6d-5 (base 6e3d201e) | witnesses (`npcs.rs …::b6e_wave_six_spawns_all_three_bodies_in_c_order`: 577+557+554 all three, pair-alone, squire-on-missed-roll, two-body arm; `…::b6e_per_wave_spawn_count_pins`: per-wave max-count census; `…::the_tier_three_wave_six_chains_run_side_by_side` repointed to spawn-both) — WRITTEN NOT RUN (code-only wave) |
 - Audit 53 §3.2's flagged 580-bolt `ai1 = Next(80)` (`Projectile.cs:33841`)
   draw: still not drawn by `wants_ritual_bolt` (the resolver defaults
   ai1=0) — flagged by the audit as "not fully traced", left for B-6b's
