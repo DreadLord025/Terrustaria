@@ -109,6 +109,10 @@ mod npc_ai_style31;
 mod npc_ai_style47;
 mod npc_ai_bat;
 mod npc_ai_golem;
+// S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
+// + the checkDead intercept are the wiring wave; R72 wires the 629
+// shield-chip seams (see the module doc).
+mod npc_ai_pillar;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
