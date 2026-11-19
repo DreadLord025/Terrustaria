@@ -23197,6 +23197,111 @@ ai_arrow` / `3 => ai_boomerang` (origin/main :11332-11333, after the
 :11053/:11060 first arms). The first arm wins, so the slice-B gate is
 effective; the duplicates are dead code for a future cleanup task.
 
+## aiStyle-1 per-type arms, slice C (S1-D-5, 2026-11-19, code-only mode)
+
+Branch `task/S1-D-5-aistyle1-types-c` (worktree TR-D5a3). CODE-ONLY: no
+cargo/rustc/rustfmt/tests invoked — the witness tests in
+`crates/tr-app/src/projectile_ai001_c.rs::tests` (11) are WRITTEN NOT RUN;
+each expected value is hand-derived from the cited C# lines. Run
+`cargo test -p tr-app projectile_ai001_c` when a compiler pass is allowed.
+
+**Census (against MAIN's `projectile/data.rs` rows):** the rowed aiStyle-1
+kind set is 1/2/14/20/81/83/88/98/100/110/178/180/184/185/248/259/270/275/
+276/325/355/389/436/438/449/462/581/601/622/634/635/645/660/662/675/680/
+685/686/687/837/962/980. Slice A owns 14/81/83/98/100/180/184/248/259/270/
+325/389/436/438; slice B owns 449/462/581/601/622/680/686/962/980.
+**Slice C takes the remaining MID-range kinds with real per-type `AI_001`
+branches — exactly 9:**
+
+- **110 BulletSnowman** — the ai[1] latch (`Projectile.cs:55244-55248`,
+  Item11 skipped), the alpha-switch fade 15 (`:55613` + `:55626-55633`),
+  `flag3 = false` (`:55962`): a straight bullet like the musket ball.
+- **275/276 (Poison)SeedPlantera** — the 2-frame flutter (`:55012-55024`,
+  `Main.projFrames[275/276] = 2`, `Main.cs:8574-8575`), the Item17 latch
+  (`:55336-55345`), the fade 30 + `ai[0] >= 35` pin + `velocity.Y +=
+  0.025f` gravity (`:57197-57211`). The expert homing (`:57212-57231`) is
+  unreachable: the port is single-difficulty NORMAL
+  (`tr-core/src/world.rs:772`), `Main.expertMode` const false.
+- **634/635 NebulaBlaze1/2** — slice B's "RNG-heavy" deferral lands here:
+  the full `:54463-54650` machine (retry cap 5, reach 250/500, steer speed
+  6, frame cadence `4/3 * MaxUpdates`, the first-wins acquisition quirk
+  `num33 == -1` at `:54500`, the 20 px detonation, the weight-30 steer,
+  the 4-tick retry window, the fade 40, the `localAI[0]++`/48-wrap phase
+  counter). Every `Main.rand` draw in the block feeds dust/sound ONLY:
+  the `SelectRandom` dust-type picks (`:54472`/`:54482`), `localAI[0] =
+  -Next(48)` (`:54487` — its only reader is the dust orbit `:54583`), the
+  dust gates `:54591`/`:54602`/`:54616`/`:54631`/`:54640`. All skipped
+  with the dust; the phase machine rides seeded at 0.
+- **645 PoisonDart** — slice B's "placed-cloud state machine" deferral
+  lands here: the full `:56956-57027` block (the launch-height tileCollide
+  regain, the HasNaNs kill, the flying alpha 255, the `numUpdates == 0`
+  nearest-NPC scan within 60 px, the cloud placement `ai[0] = 0 / ai[1] =
+  -1`, the cloud's double counter increment, the 140×140 re-centering,
+  the fade 10, the `MaxUpdates * 3` frame cadence with NO wrap, the
+  `projFrames[645] * MaxUpdates * 3 = 126` life cap). The per-tick dust
+  229 spawn (`:56968`) and its `flag6` solid-tile read (`:56967`, feeds
+  only `dust.noLight`) are skipped. `flag3` counts (`:56038-56041` runs
+  BEFORE the block — the increment rides even on the NaN-kill tick). The
+  seam threads `sub_steps - 2 - sub` as the C# `numUpdates`: the decrement
+  (`:16678`) runs before `AI()` (`:16775`), so `numUpdates == 0` is the
+  second-to-last sub-step.
+- **662/685 Dd2Spear(T3)** — no hook group; the shared 507/508/662/680/685
+  gravity arm (`:57471-57478`: from `ai[0] > 60`, `velocity.X *= 0.98f`,
+  `velocity.Y += 0.3f`, no pin) + the `ToRotation() - π - π/4` tail
+  (`:57654-57657`). The counter runs.
+- **675 DarkMageFlame** — the localAI[0] one-shot (`:56461-56467`,
+  `DD2_DarkMageAttack` tracked sound skipped), the fade 20 (`:56468-
+  56472`), the counter runs but the `:57520` chain guard (`type != 675`)
+  excludes the generic gravity — the flame never falls; the rotation
+  ACCUMULATES `velocity.X * 0.03f` (`:57628-57631`).
+
+**Escape clause (already faithful on main, NOT claimed):** 1/2 — the
+generic `ai_arrow` flight IS their C# arm (`:57568-57579` gravity +
+`:57750` rotation; the omitted ai[0] pin is the documented generic-path
+convention); 20/88/355/660 — `ai_style1_rider` (M4-PROJ-6, already
+per-type); 837 — `ai_book_of_skulls`; **178 CannonBomb** — `AI_001` has
+ZERO `type == 178` references (verified by a full-region scan of
+`:54002-57798`), and with `timeLeft = 2` (`SetDefaults` `:2641-2649`) the
+generic 15-tick gravity is unreachable: the generic flight is
+byte-faithful for its whole 2-tick life.
+
+**Data deviations (NOT slice C's scope, documented for the data-fix
+task):** 185 TrapSpikyBall is aiStyle **14** in C# (`:2717-2727`) — R20's
+branch `task/S1-D-5-projdata-deviations` (6c221ac4) already removes the
+dup rows and fixes 185; when that lands, 185 leaves the style-1 census
+and nothing in slice C changes (C never claimed it). **687 BetsyBreath**
+is aiStyle **136** (`:7315-7324`) — still rowed 1 on main; slice B
+already recorded "no AI_001 branch"; it stays on the generic arm until
+the data fix.
+
+**Deliberate skips (the port's standing conventions):** dust, light
+(`Lighting.AddLight` `:54571`), sound (Item34 `:54488`, Item11 `:55247`,
+Item17 `:55339`/`:55344`, DD2_DarkMageAttack `:56466`) and `netUpdate` —
+no such layers. The 634/635 `owner == Main.myPlayer` scan gate (`:54490`)
+folds into the pool's locally-simulated dispatch (`simulated` gate) —
+both kinds are friendly, so the gate is always true at the seam. The
+clamp is the C#'s `flag8` tail EXACTLY (`:57753-57768`, slice A's
+convention): only the +16 bound; the −16 bound is `flag4`'s (1006-only).
+Movement is the port's kill-on-tile stand-in, replicated verbatim from
+`ai_style1_flight`'s tail (projectile.rs:5252-5266) as slices A/B do —
+the 645 early-return paths ride it directly (the C# `return`s skip the
+rotation tail and clamp but NOT `HandleMovement`).
+
+**RNG by construction:** `projectile_ai001_c::step` takes NO rng
+parameter, so the `UpdateProjectiles` stream (`Main.cs:17775-17777`) is
+untouched. Every `Main.rand` draw in the nine kinds' C# blocks feeds
+dust/sound only (enumerated above); 110/275/276/662/675/685 have no
+`Main.rand` at all. The blaze's `localAI[0] = -Next(48)` seed is skipped
+with its dust-only reader; the phase counter rides from 0 (a visual-only
+phase offset).
+
+**Seam:** `covers(kind)` chained AFTER slice A's `handles` and slice B's
+`covers` inside the aiStyle-1 dispatch arm; the three kind lists are
+disjoint (witness `s1_d_5c_the_gate_is_disjoint_from_a_and_b`), every
+other kind keeps `ai_arrow` byte-identical. `chaseable` gains
+`pub(crate)` visibility (the same one-line change the blaze/dart scans
+need; slice A/B precedent).
+
 
 ## AI_026 slice B (S1-D-4b-11, task/S1-D-4b-11-melee-b, 2026-11-18)
 **Code-only mode** вЂ” no compiler invoked this round (no cargo/rustc/
