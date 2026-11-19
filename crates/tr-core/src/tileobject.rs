@@ -62,16 +62,23 @@
 //!   The M3-CHEST-UI seam is unchanged: the chest is a pure tile object here.
 //! - **`GetStyleOverride` resolution** (the frameY-based `GetTileData(Tile)`
 //!   overload :5196-5261): the tag is generated data; the tile-based resolution
-//!   is a framing/cascade consumer (wave B).
-//! - **Random styles** (`Main.rand` path TileObject.cs:787-793, the
-//!   `randomCache` stickiness :764-781 and `SpecificRandomStyles` :794-825):
-//!   the `forced_random` path is ported; the `Main.rand` path needs app-side
-//!   RNG (Phase 2 wiring). The `RandomStyleRange`/`SpecificRandomStyles` DATA
-//!   is generated for every def.
+//!   is a framing/cascade consumer (wave B remaining).
 //! - **`onlyCheck`/preview** (`TileObjectPreviewData.placementCache`,
 //!   `objectPreview`, the anchor `Rectangle` bookkeeping TileObject.cs:219-321):
 //!   dead code when `onlyCheck=false` (verified by reading; the rectangle and
 //!   `num10`/`num11` are not read after :332). Smart-cursor/preview is app work.
+//!   **Wave B (S1-F-7b) landed the random-style half**: the `Main.rand` path
+//!   (`Main.rand.Next` TileObject.cs:787/:819) draws on the caller's
+//!   `UnifiedRandom`, and [`RandomCache`] ports the `randomCache` stickiness
+//!   (:764-792/:796-824). The preview's cache writeback (:826-837) stays out
+//!   with the preview: `randomCache` is written ONLY inside `onlyCheck`
+//!   (verified: no other writer in the tree), so a port without the preview
+//!   never sticks — the cache starts `None` and every `CanPlace` draws fresh.
+//!   `SpecificRandomStyles` is never assigned by `Initialize` (null in every
+//!   def; the branch is ported and tested with a synthetic def). The app's
+//!   placement stream (`World::place_rng`) is a dedicated `Main.rand`
+//!   stand-in for this family, seeded beside `frame_rng` — the house
+//!   per-consumer-stream pattern (`craft_rng`, S1-A-11).
 //!
 //! Hand-extracted tile tables (the `GenTileData` generator cannot emit
 //! `Main.`-prefixed assignments — see `torch.rs`'s module doc for the same
@@ -344,6 +351,28 @@ pub struct TileObjectInstance {
     pub kind: u16,
     pub style: i32,
     pub alternate: i32,
+    pub random: i32,
+}
+
+/// The read side of `TileObjectPreviewData.randomCache`
+/// (`TileObjectPreviewData.cs:29-31`, the fields `CanPlace` reads at
+/// `TileObject.cs:769-774`/:801-806: `Type`, `Coordinates`, `ObjectStart`,
+/// `Random`). The C# static lives on [`World::tile_object_random_cache`];
+/// a fresh `new TileObjectPreviewData()` zero-initialises every field
+/// (`Random = 0`, NOT `Reset()`'s -1 — `Reset` :177-192 is never called on
+/// the random cache). The writeback (`TileObject.cs:826-837`) happens only
+/// under `onlyCheck`, which the port does not run (module doc), so the
+/// production cache stays `None` and every `CanPlace` draws fresh; tests
+/// inject a cache to exercise the stickiness branch 1:1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct RandomCache {
+    /// `TileObjectPreviewData.Type` (ushort).
+    pub kind: u16,
+    /// `TileObjectPreviewData.Coordinates`.
+    pub coordinates: Point16,
+    /// `TileObjectPreviewData.ObjectStart`.
+    pub object_start: Point16,
+    /// `TileObjectPreviewData.Random`.
     pub random: i32,
 }
 
@@ -732,7 +761,9 @@ fn is_tree_trunk(kind: u16) -> bool {
 /// preview machinery (see the module doc). Returns the resolved placement the
 /// C# version writes into `objectData`, or `None` when the object cannot be
 /// placed. `dir` is the player direction (`Player.direction`: -1 left,
-/// 1 right).
+/// 1 right). `rand` is `Main.rand` (`UnifiedRandom`, the app's
+/// [`World::place_rng`] stream) and `random_cache` is
+/// `TileObjectPreviewData.randomCache` ([`World::tile_object_random_cache`]).
 pub fn can_place(
     world: &World,
     x: i32,
@@ -741,6 +772,8 @@ pub fn can_place(
     style: i32,
     dir: i32,
     forced_random: Option<i32>,
+    rand: &mut crate::unified_random::UnifiedRandom,
+    random_cache: Option<RandomCache>,
 ) -> Option<TileObjectInstance> {
     // :176-181 — the style-resolved base def.
     let base = get_tile_data(def, style, 0)?;
@@ -1210,30 +1243,72 @@ pub fn can_place(
         }
     }
 
-    // :761-793 — random styles. The `Main.rand`/`randomCache` path needs app
-    // wiring (module doc); `forced_random` ports the deterministic branch.
+    // :761-793 — random styles (wave B: the Main.rand path + the randomCache
+    // stickiness). The C# null-creates a zero-initialised cache (:764-767);
+    // `None` models that fresh `new TileObjectPreviewData()`.
+    let cache = random_cache.unwrap_or_default();
     let mut num37 = -1i32;
     if has_random_styles {
-        num37 = match forced_random {
-            // :788-791
-            Some(forced) => forced.rem_euclid(base.random_style_range),
-            // :787 — Main.rand.Next(range): follow-up.
-            None => -1,
-        };
-    }
-    // :794-825 — SpecificRandomStyles (same follow-up for the rand path).
-    if !base.specific_random_styles.is_empty() {
-        num37 = match forced_random {
-            Some(forced) => {
-                // :820-823
-                let count = base.specific_random_styles.len() as i32;
-                let idx = forced.rem_euclid(count);
-                // :824
-                base.specific_random_styles[idx as usize] - style
+        // :768-785 — flag10: the cache is stale when the type differs or the
+        // cached object start moved. `tileData` here is the style-resolved
+        // base def (:176).
+        let mut flag10 = false;
+        if cache.kind as i32 == def.kind as i32 {
+            let num38 = cache.coordinates.x + cache.object_start.x;
+            let num39 = cache.coordinates.y + cache.object_start.y;
+            let num40 = x - base.origin.x;
+            let num41 = y - base.origin.y;
+            if num38 != num40 || num39 != num41 {
+                flag10 = true;
             }
-            None => -1,
+        } else {
+            flag10 = true;
+        }
+        // :786-791 — the draw is spent even when forcedRandom overwrites it
+        // (the C# evaluates `Main.rand.Next` first).
+        let random_style_range = base.random_style_range;
+        let mut num42 = rand.next_max(random_style_range);
+        if let Some(forced) = forced_random {
+            num42 = forced.rem_euclid(random_style_range);
+        }
+        // :792
+        num37 = if !flag10 && forced_random.is_none() {
+            cache.random
+        } else {
+            num42
         };
     }
+    // :794-825 — SpecificRandomStyles (null in every generated def — the
+    // branch stays ported for synthetic defs).
+    if !base.specific_random_styles.is_empty() {
+        // :800-817 — flag11, the same cache check.
+        let mut flag11 = false;
+        if cache.kind as i32 == def.kind as i32 {
+            let num43 = cache.coordinates.x + cache.object_start.x;
+            let num44 = cache.coordinates.y + cache.object_start.y;
+            let num45 = x - base.origin.x;
+            let num46 = y - base.origin.y;
+            if num43 != num45 || num44 != num46 {
+                flag11 = true;
+            }
+        } else {
+            flag11 = true;
+        }
+        // :818-823 — second draw, spent even under forcedRandom.
+        let num47 = base.specific_random_styles.len() as i32;
+        let mut num48 = rand.next_max(num47);
+        if let Some(forced) = forced_random {
+            num48 = forced.rem_euclid(num47);
+        }
+        // :824
+        num37 = if !flag11 && forced_random.is_none() {
+            cache.random
+        } else {
+            base.specific_random_styles[num48 as usize] - style
+        };
+    }
+    // :826-837 — the onlyCheck preview writeback (module doc): randomCache is
+    // written only there, so the production cache stays as passed in.
 
     // :839-852 — resolve the instance and decide.
     let winning = winning?; // every alternate filtered out — neutral refusal
@@ -1576,8 +1651,43 @@ mod tests {
         def: &'static TileObjectDef,
         dir: i32,
     ) -> TileObjectInstance {
-        can_place(w, x, y, def, 0, dir, None)
-            .unwrap_or_else(|| panic!("expected placement at ({x}, {y})"))
+        can_place(
+            w,
+            x,
+            y,
+            def,
+            0,
+            dir,
+            None,
+            &mut crate::unified_random::UnifiedRandom::new(0),
+            None,
+        )
+        .unwrap_or_else(|| panic!("expected placement at ({x}, {y})"))
+    }
+
+    /// Test shorthand for `can_place` on a fresh seed-0 stream with no
+    /// random cache — the pre-wave-B behaviour of the non-random defs
+    /// (their draws never fire).
+    fn cp(
+        w: &World,
+        x: i32,
+        y: i32,
+        def: &'static TileObjectDef,
+        style: i32,
+        dir: i32,
+        forced: Option<i32>,
+    ) -> Option<TileObjectInstance> {
+        can_place(
+            w,
+            x,
+            y,
+            def,
+            style,
+            dir,
+            forced,
+            &mut crate::unified_random::UnifiedRandom::new(0),
+            None,
+        )
     }
 
     // ---- DW-1.1: data model + wooden set ----------------------------------
@@ -1736,8 +1846,8 @@ mod tests {
         // Occupied cells (any of the two) reject.
         let mut w2 = world();
         set_active(&mut w2, 11, 19, 1);
-        assert!(can_place(&w2, 10, 19, bench, 0, 1, None).is_none());
-        assert!(can_place(&w2, 11, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w2, 10, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w2, 11, 19, bench, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1745,13 +1855,13 @@ mod tests {
         let w = world();
         let bench = def_for_tile(18).unwrap();
         // :182-187 — the object must fit inside the world.
-        assert!(can_place(&w, 39, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w, 39, 19, bench, 0, 1, None).is_none());
         // :213-218 — every alternate must clear the 5-tile border
         // (`return false`): x = 34 fails (34 + 2 > 35), x = 33 passes.
-        assert!(can_place(&w, 34, 19, bench, 0, 1, None).is_none());
-        assert!(can_place(&w, 4, 19, bench, 0, 1, None).is_none());
-        assert!(can_place(&w, 33, 19, bench, 0, 1, None).is_some());
-        assert!(can_place(&w, 5, 19, bench, 0, 1, None).is_some());
+        assert!(cp(&w, 34, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w, 4, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w, 33, 19, bench, 0, 1, None).is_some());
+        assert!(cp(&w, 5, 19, bench, 0, 1, None).is_some());
     }
 
     #[test]
@@ -1759,18 +1869,18 @@ mod tests {
         let w = world();
         let bench = def_for_tile(18).unwrap();
         // Floating: no AnchorBottom support.
-        assert!(can_place(&w, 10, 10, bench, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 10, bench, 0, 1, None).is_none());
         // Partial support: the 2-wide bottom anchor needs both tiles solid.
         let mut w2 = world();
         let idx_11_20 = w2.index(11, 20);
         w2.tiles[idx_11_20] = Tile::default(); // hole under the right half
-        assert!(can_place(&w2, 10, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w2, 10, 19, bench, 0, 1, None).is_none());
         // A table (3 wide) over a 2-wide ledge fails.
         let table = def_for_tile(14).unwrap();
         let mut w3 = world();
         let idx_12_20 = w3.index(12, 20);
         w3.tiles[idx_12_20] = Tile::default();
-        assert!(can_place(&w3, 11, 19, table, 0, 1, None).is_none());
+        assert!(cp(&w3, 11, 19, table, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1804,12 +1914,12 @@ mod tests {
         let mut w = world();
         set_liquid(&mut w, 10, 19, 200, false);
         set_liquid(&mut w, 11, 19, 200, false);
-        assert!(can_place(&w, 10, 19, bench, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, bench, 0, 1, None).is_some());
         // Lava is not (`LavaPlacement.NotAllowed` — `LiquidPlace` :1862-1871).
         let mut w2 = world();
         set_liquid(&mut w2, 10, 19, 200, true);
         set_liquid(&mut w2, 11, 19, 200, true);
-        assert!(can_place(&w2, 10, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w2, 10, 19, bench, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1826,18 +1936,18 @@ mod tests {
         for (x, y) in [(10, 18), (11, 18), (10, 19), (11, 19)] {
             set_liquid(&mut w, x, y, 200, false);
         }
-        assert!(can_place(&w, 10, 19, chest, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, chest, 0, 1, None).is_some());
         // Lava in any footprint cell is refused (2x2, origin (0,1)).
         let mut w2 = world();
         for (x, y) in [(10, 18), (11, 18), (10, 19), (11, 19)] {
             set_liquid(&mut w2, x, y, 200, true);
         }
-        assert!(can_place(&w2, 10, 19, chest, 0, 1, None).is_none());
+        assert!(cp(&w2, 10, 19, chest, 0, 1, None).is_none());
         // A single lava cell in the footprint blocks the whole object —
         // `flag5 | flag3 | flag4` marks that cell occupied (TileObject.cs:360).
         let mut w3 = world();
         set_liquid(&mut w3, 11, 19, 200, true);
-        assert!(can_place(&w3, 10, 19, chest, 0, 1, None).is_none());
+        assert!(cp(&w3, 10, 19, chest, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1848,11 +1958,11 @@ mod tests {
         let mut w = world();
         set_active(&mut w, 10, 19, 82);
         set_active(&mut w, 11, 19, 82);
-        assert!(can_place(&w, 10, 19, bench, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, bench, 0, 1, None).is_some());
         // Plain blocks still block.
         let mut w2 = world();
         set_active(&mut w2, 10, 19, 1);
-        assert!(can_place(&w2, 10, 19, bench, 0, 1, None).is_none());
+        assert!(cp(&w2, 10, 19, bench, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1865,11 +1975,11 @@ mod tests {
         };
         let mut w = world();
         set_liquid(&mut w, 10, 19, 100, false);
-        assert!(can_place(&w, 10, 19, &TEST_FULL_LIQUID, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 19, &TEST_FULL_LIQUID, 0, 1, None).is_none());
         set_liquid(&mut w, 10, 19, 255, false);
-        assert!(can_place(&w, 10, 19, &TEST_FULL_LIQUID, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, &TEST_FULL_LIQUID, 0, 1, None).is_some());
         // An empty cell fails OnlyInLiquid/OnlyInFullLiquid (:1889-1905).
-        assert!(can_place(&w, 11, 19, &TEST_FULL_LIQUID, 0, 1, None).is_none());
+        assert!(cp(&w, 11, 19, &TEST_FULL_LIQUID, 0, 1, None).is_none());
     }
 
     #[test]
@@ -1919,40 +2029,40 @@ mod tests {
         };
         let mut w = world();
         // EmptyTile: free above -> the else-if branch accepts (:513-517).
-        assert!(can_place(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_some());
         // A plain solid tile above satisfies ANY top-anchor type: the first
         // top branch (:453-460) has no `anchor.ty` gate — vanilla behavior.
         set_active(&mut w, 10, 18, 1);
-        assert!(can_place(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_some());
         // A solid-top tile (platform, kind 19) is not "solid", so the first
         // branch skips and the EmptyTile type rejects the active cell.
         set_active(&mut w, 10, 18, 19);
-        assert!(can_place(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 19, &EMPTY_TOP, 0, 1, None).is_none());
         let idx_10_18 = w.index(10, 18);
         w.tiles[idx_10_18] = Tile::default();
         // SolidSide: anchor against a solid tile to the left (:646-653).
         set_active(&mut w, 9, 19, 1);
-        assert!(can_place(&w, 10, 19, &SOLID_SIDE, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, &SOLID_SIDE, 0, 1, None).is_some());
         let idx_9_19 = w.index(9, 19);
         w.tiles[idx_9_19] = Tile::default();
         // Table anchor over a table tile (:407-410).
         set_active(&mut w, 10, 19, 14);
-        assert!(can_place(&w, 10, 18, &ON_TABLE, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 18, &ON_TABLE, 0, 1, None).is_some());
         let idx_10_19 = w.index(10, 19);
         w.tiles[idx_10_19] = Tile::default();
         // Platform top frame (:394-401): tile 19 with a proper top frame.
         set_active(&mut w, 10, 19, 19);
         let idx_10_19 = w.index(10, 19);
         w.tiles[idx_10_19].frame_x = 0;
-        assert!(can_place(&w, 10, 18, &ON_PLATFORM, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 18, &ON_PLATFORM, 0, 1, None).is_some());
         let idx_10_19 = w.index(10, 19);
         w.tiles[idx_10_19] = Tile::default();
         // AnchorInvalidTiles (`isValidTileAnchor` :1924-1933).
         set_active(&mut w, 10, 19, 1);
-        assert!(can_place(&w, 10, 18, &INVALID_LIST, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 18, &INVALID_LIST, 0, 1, None).is_none());
         // ...and an unlisted tile passes.
         set_active(&mut w, 10, 19, 2);
-        assert!(can_place(&w, 10, 18, &INVALID_LIST, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 18, &INVALID_LIST, 0, 1, None).is_some());
         let idx_10_19b = w.index(10, 19);
         w.tiles[idx_10_19b] = Tile::default();
         // Tree trunk anchor (:654-691): the trunk must continue above and
@@ -1961,11 +2071,11 @@ mod tests {
         set_active(&mut w, 9, 18, 5);
         set_active(&mut w, 9, 19, 5);
         set_active(&mut w, 9, 20, 5);
-        assert!(can_place(&w, 10, 19, &ON_TREE, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, &ON_TREE, 0, 1, None).is_some());
         // A lone trunk (no continuation below) fails the ratio.
         let idx_9_20 = w.index(9, 20);
         w.tiles[idx_9_20] = Tile::default();
-        assert!(can_place(&w, 10, 19, &ON_TREE, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 19, &ON_TREE, 0, 1, None).is_none());
     }
 
     // ---- DW-1.3: Place -----------------------------------------------------
@@ -2000,7 +2110,7 @@ mod tests {
 
         // Work bench, style 3: horizontal, wrap 0 -> frameX = CFW*3 = 108.
         let bench = def_for_tile(18).unwrap();
-        let obj = can_place(&w, 8, 19, bench, 3, 1, None).unwrap();
+        let obj = cp(&w, 8, 19, bench, 3, 1, None).unwrap();
         assert!(place(&mut w, &obj));
         assert_eq!(
             (
@@ -2019,7 +2129,7 @@ mod tests {
 
         // Table, style 2: frameX = 54*2 = 108, second row frameY = 18.
         let table = def_for_tile(14).unwrap();
-        let obj = can_place(&w, 12, 19, table, 2, 1, None).unwrap();
+        let obj = cp(&w, 12, 19, table, 2, 1, None).unwrap();
         assert!(place(&mut w, &obj));
         assert_eq!(w.tile(11, 18).unwrap().frame_x, 108);
         assert_eq!(w.tile(11, 18).unwrap().frame_y, 0);
@@ -2029,7 +2139,7 @@ mod tests {
         // Closed door, style 1: not horizontal -> frameX = 18*0, frameY = 54*1.
         let door = def_for_tile(10).unwrap();
         set_active(&mut w, 20, 16, 1); // door top anchor
-        let obj = can_place(&w, 20, 17, door, 1, 1, None).unwrap();
+        let obj = cp(&w, 20, 17, door, 1, 1, None).unwrap();
         assert!(place(&mut w, &obj));
         assert_eq!(
             (
@@ -2050,7 +2160,7 @@ mod tests {
         // frameY = 0 (the layout `OpenDoor` decodes at WorldGen.cs:37671).
         let mut w3 = world();
         set_active(&mut w3, 20, 16, 1);
-        let obj = can_place(&w3, 20, 17, door, 36, 1, None).unwrap();
+        let obj = cp(&w3, 20, 17, door, 36, 1, None).unwrap();
         assert!(place(&mut w3, &obj));
         assert_eq!(
             (
@@ -2062,7 +2172,7 @@ mod tests {
 
         // Chest, style 1: frameX = 36*1, rows 0/18.
         let chest = def_for_tile(21).unwrap();
-        let obj = can_place(&w, 24, 19, chest, 1, 1, None).unwrap();
+        let obj = cp(&w, 24, 19, chest, 1, 1, None).unwrap();
         assert!(place(&mut w, &obj));
         assert_eq!(
             (
@@ -2082,7 +2192,7 @@ mod tests {
         // Chair, style 2 right-facing: multiplier 2 -> placement style 5;
         // wrap 2 -> column 1, row 2 -> frameX = 18, frameY = 40*2 = 80.
         let chair = def_for_tile(15).unwrap();
-        let obj = can_place(&w, 30, 19, chair, 2, 1, None).unwrap();
+        let obj = cp(&w, 30, 19, chair, 2, 1, None).unwrap();
         assert!(place(&mut w, &obj));
         assert_eq!(
             (
@@ -2104,7 +2214,7 @@ mod tests {
         let open = def_for_tile(11).unwrap();
         let mut w2 = world();
         set_active(&mut w2, 20, 16, 1);
-        let obj = can_place(&w2, 20, 17, open, 0, 1, None).unwrap();
+        let obj = cp(&w2, 20, 17, open, 0, 1, None).unwrap();
         assert!(place(&mut w2, &obj));
         assert_eq!(
             (
@@ -2129,7 +2239,7 @@ mod tests {
         // discrepancy is a vanilla quirk, recorded for `docs/ANALYSIS.md`.
         let mut w4 = world();
         set_active(&mut w4, 20, 16, 1);
-        let obj = can_place(&w4, 20, 17, open, 0, -1, None).unwrap();
+        let obj = cp(&w4, 20, 17, open, 0, -1, None).unwrap();
         assert!(place(&mut w4, &obj));
         assert_eq!(
             (
@@ -2211,7 +2321,7 @@ mod tests {
         assert_eq!((bot.x_coord, bot.y_coord), (20, 17));
         assert_eq!((top.alternate, mid.alternate, bot.alternate), (0, 1, 2));
         // A cell next to the gap is not a click point for this door.
-        assert!(can_place(&w, 21, 17, door, 0, 1, None).is_none());
+        assert!(cp(&w, 21, 17, door, 0, 1, None).is_none());
     }
 
     #[test]
@@ -2226,11 +2336,11 @@ mod tests {
         set_active(&mut w, 21, 18, 1);
         set_active(&mut w, 21, 19, 1);
         assert!(
-            can_place(&w, 20, 17, open, 0, 1, None).is_none(),
+            cp(&w, 20, 17, open, 0, 1, None).is_none(),
             "right leaf blocked"
         );
         assert!(
-            can_place(&w, 20, 17, open, 0, -1, None).is_some(),
+            cp(&w, 20, 17, open, 0, -1, None).is_some(),
             "left leaf free"
         );
         // Facing left with the left column blocked instead.
@@ -2241,11 +2351,11 @@ mod tests {
         set_active(&mut w2, 19, 18, 1);
         set_active(&mut w2, 19, 19, 1);
         assert!(
-            can_place(&w2, 20, 17, open, 0, 1, None).is_some(),
+            cp(&w2, 20, 17, open, 0, 1, None).is_some(),
             "right leaf free"
         );
         assert!(
-            can_place(&w2, 20, 17, open, 0, -1, None).is_none(),
+            cp(&w2, 20, 17, open, 0, -1, None).is_none(),
             "left leaf blocked"
         );
         // Open-door click points: any of the three rows of the hinge column.
@@ -2268,7 +2378,7 @@ mod tests {
         // `can_place` never writes (the world is unchanged).
         let mut w2 = world();
         set_active(&mut w2, 13, 18, 1);
-        assert!(can_place(&w2, 12, 19, table, 0, 1, None).is_none());
+        assert!(cp(&w2, 12, 19, table, 0, 1, None).is_none());
         assert!(
             !w2.tile(11, 18).unwrap().active(),
             "no partial writes from can_place"
@@ -2281,12 +2391,12 @@ mod tests {
         set_active(&mut w3, 10, 20, 14); // table
         set_active(&mut w3, 11, 20, 14); // table
         assert!(
-            can_place(&w3, 10, 19, chest, 0, 1, None).is_none(),
+            cp(&w3, 10, 19, chest, 0, 1, None).is_none(),
             "no Table anchor"
         );
         set_active(&mut w3, 10, 20, 1);
         set_active(&mut w3, 11, 20, 1);
-        assert!(can_place(&w3, 10, 19, chest, 0, 1, None).is_some());
+        assert!(cp(&w3, 10, 19, chest, 0, 1, None).is_some());
     }
 
     // ---- DW-1.5: module doc -------------------------------------------------
@@ -2463,7 +2573,7 @@ mod tests {
         // Everything free, but the hook returns badReturn with badResponse 0 ->
         // the scores zero out and the def is refused (:716-729).
         let w = world();
-        assert!(can_place(&w, 10, 19, &HOOKED, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 19, &HOOKED, 0, 1, None).is_none());
     }
 
     #[test]
@@ -2608,7 +2718,8 @@ mod tests {
     #[test]
     fn test_can_place_forced_random() {
         // No wooden def uses random styles, so `random` resolves to -1
-        // (`TileObject.cs:761-793`; the Main.rand path is a follow-up).
+        // (`TileObject.cs:761-793`; the Main.rand path draws only for
+        // random-style defs — wave B).
         let w = world();
         let bench = def_for_tile(18).unwrap();
         let obj = must_place(&w, 10, 19, bench, 1);
@@ -2621,9 +2732,9 @@ mod tests {
             ..base_def()
         };
         // forcedRandom folds into the range (:788-791).
-        let obj = can_place(&w, 10, 19, &RANDOM, 0, 1, Some(7)).unwrap();
+        let obj = cp(&w, 10, 19, &RANDOM, 0, 1, Some(7)).unwrap();
         assert_eq!(obj.random, 3);
-        let obj = can_place(&w, 10, 19, &RANDOM, 0, 1, Some(-1)).unwrap();
+        let obj = cp(&w, 10, 19, &RANDOM, 0, 1, Some(-1)).unwrap();
         assert_eq!(obj.random, 3);
         static SPECIFIC: TileObjectDef = TileObjectDef {
             width: 1,
@@ -2634,8 +2745,184 @@ mod tests {
         };
         // SpecificRandomStyles picks from the list and subtracts the style
         // (:818-824).
-        let obj = can_place(&w, 10, 19, &SPECIFIC, 2, 1, Some(1)).unwrap();
+        let obj = cp(&w, 10, 19, &SPECIFIC, 2, 1, Some(1)).unwrap();
         assert_eq!(obj.random, 7); // 9 - 2
+    }
+
+    // ---- S1-F-7 wave B: the RandomStyleRange Main.rand runtime hook --------
+
+    /// The sunflower fixture: grass floor (tile 2), the def's first
+    /// `AnchorValidTiles` entry (`TileObjectData.cs:4859`).
+    fn sunflower_world() -> World {
+        let mut w = world();
+        floor_of(&mut w, 2);
+        w
+    }
+
+    #[test]
+    fn s1_f_7b_random_style_range_rng_order() {
+        // `Main.rand.Next(tileData.RandomStyleRange)` (TileObject.cs:787) is
+        // ONE draw per CanPlace, spent in call order on the caller's stream.
+        // Proof: a witness `UnifiedRandom` replays `next_max(3)` per call and
+        // the FULL stream state (seed array + cursor, PartialEq) must match
+        // after every placement — no extra, missing or reordered draws.
+        let sunflower = def_for_tile(27).unwrap();
+        assert_eq!(sunflower.random_style_range, 3); // :4861
+        for seed in [0i32, 1, 7, 42, 12345, -99] {
+            let mut w = sunflower_world();
+            let mut rand = crate::unified_random::UnifiedRandom::new(seed);
+            let mut witness = crate::unified_random::UnifiedRandom::new(seed);
+            for x in [10, 14, 18, 22, 26] {
+                let expected = witness.next_max(3); // :787
+                let obj = can_place(&w, x, 19, sunflower, 0, 1, None, &mut rand, None)
+                    .unwrap_or_else(|| panic!("seed {seed} x {x}"));
+                assert_eq!(obj.random, expected, "seed {seed} x {x}");
+                assert!((0..3).contains(&obj.random));
+                assert_eq!(rand, witness, "stream state after seed {seed} x {x}");
+                // The pick rides `CalculatePlacementStyle` (:60, :1990-1998):
+                // frameX = CFW(36) * (0*1 + 0 + random) + column*18.
+                assert!(place(&mut w, &obj));
+                assert_eq!(
+                    w.tile(x, 19).unwrap().frame_x,
+                    (36 * expected) as i16,
+                    "seed {seed} x {x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn s1_f_7b_random_cache_stickiness_still_draws() {
+        // :764-792 — a matching cache (same type, same object start) sticks:
+        // `num37 = randomCache.Random` — but `Main.rand.Next` at :787 is
+        // evaluated FIRST, so the draw is spent even on a cache hit.
+        let sunflower = def_for_tile(27).unwrap();
+        let w = sunflower_world();
+        let mut rand = crate::unified_random::UnifiedRandom::new(7);
+        let mut witness = crate::unified_random::UnifiedRandom::new(7);
+        // The object start of (10, 19) is (10 - 0, 19 - 3) = (10, 16)
+        // (:775-776, Origin (0,3) :4853).
+        let cache = RandomCache {
+            kind: 27,
+            coordinates: Point16::new(10, 16),
+            object_start: Point16::ZERO,
+            random: 1,
+        };
+        let _ = witness.next_max(3); // spent even though the cache wins (:787)
+        let obj = can_place(&w, 10, 19, sunflower, 0, 1, None, &mut rand, Some(cache)).unwrap();
+        assert_eq!(obj.random, 1, "the cached pick sticks (:792)");
+        assert_eq!(rand, witness, "the :787 draw is spent on a cache hit");
+        // A moved object start unsticks (:777-780): the fresh draw wins.
+        let expected = witness.next_max(3);
+        let obj = can_place(&w, 14, 19, sunflower, 0, 1, None, &mut rand, Some(cache)).unwrap();
+        assert_eq!(obj.random, expected);
+        assert_eq!(rand, witness);
+        // A different type unsticks (:782-785).
+        let other_type = RandomCache { kind: 20, ..cache };
+        let expected = witness.next_max(3);
+        let obj =
+            can_place(&w, 10, 19, sunflower, 0, 1, None, &mut rand, Some(other_type)).unwrap();
+        assert_eq!(obj.random, expected);
+        assert_eq!(rand, witness);
+        // forcedRandom beats the cache (:792 `!forcedRandom.HasValue`) and
+        // still spends the draw (:787 before the :788-791 overwrite).
+        let expected_state = {
+            let mut w2 = witness.clone();
+            w2.next_max(3);
+            w2
+        };
+        let obj =
+            can_place(&w, 10, 19, sunflower, 0, 1, Some(5), &mut rand, Some(cache)).unwrap();
+        assert_eq!(obj.random, 2, "5 % 3 (:790)");
+        assert_eq!(rand, expected_state, "forcedRandom spends the :787 draw");
+    }
+
+    #[test]
+    fn s1_f_7b_specific_random_styles_rand_path_and_draw_order() {
+        // :794-825 — the SpecificRandomStyles rand path (null in every
+        // generated def; synthetic here). With BOTH fields set the C# draws
+        // twice, range first (:787) then list index (:819), and the list
+        // result overwrites num37 (:824).
+        static BOTH: TileObjectDef = TileObjectDef {
+            width: 1,
+            height: 1,
+            anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
+            random_style_range: 4,
+            specific_random_styles: &[2, 9],
+            ..base_def()
+        };
+        let w = world();
+        let mut rand = crate::unified_random::UnifiedRandom::new(11);
+        let mut witness = crate::unified_random::UnifiedRandom::new(11);
+        let _range_draw = witness.next_max(4); // :787 — spent, then overwritten
+        let idx = witness.next_max(2); // :819
+        let obj = can_place(&w, 10, 19, &BOTH, 2, 1, None, &mut rand, None).unwrap();
+        assert_eq!(obj.random, [2, 9][idx as usize] - 2, ":824");
+        assert_eq!(rand, witness, "two draws, range before list");
+        // The list-only def draws once (:819), no range draw.
+        static SPECIFIC: TileObjectDef = TileObjectDef {
+            width: 1,
+            height: 1,
+            anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 1, 0),
+            specific_random_styles: &[2, 9],
+            ..base_def()
+        };
+        let idx = witness.next_max(2);
+        let obj = can_place(&w, 10, 19, &SPECIFIC, 2, 1, None, &mut rand, None).unwrap();
+        assert_eq!(obj.random, [2, 9][idx as usize] - 2);
+        assert_eq!(rand, witness);
+        // A matching cache sticks for the list branch too (:824), both draws
+        // still spent (:787 + :819).
+        let cache = RandomCache {
+            kind: 0,
+            coordinates: Point16::new(10, 19),
+            object_start: Point16::ZERO,
+            random: 5,
+        };
+        let mut after = witness.clone();
+        after.next_max(4);
+        after.next_max(2);
+        let obj = can_place(&w, 10, 19, &BOTH, 2, 1, None, &mut rand, Some(cache)).unwrap();
+        assert_eq!(obj.random, 5);
+        assert_eq!(rand, after);
+    }
+
+    #[test]
+    fn s1_f_7b_place_item_tile_rides_the_world_place_rng() {
+        // The registry consumer (`edit::place_item_tile`, Player.cs:39773)
+        // passes `World::place_rng` as Main.rand: one `next_max(3)` per
+        // sunflower placement, deterministic per world seed, and the
+        // non-random defs draw nothing.
+        let sunflower_kind = 27u16;
+        let mut a = sunflower_world();
+        a.seed = 777;
+        a.seed_frame_rng();
+        let mut b = sunflower_world();
+        b.seed = 777;
+        b.seed_frame_rng();
+        let mut witness = crate::unified_random::UnifiedRandom::new(777);
+        for x in [10, 14, 18] {
+            let expected = witness.next_max(3);
+            assert!(crate::edit::place_item_tile(&mut a, x, 19, sunflower_kind, 0, 1));
+            assert!(crate::edit::place_item_tile(&mut b, x, 19, sunflower_kind, 0, 1));
+            assert_eq!(a.tile(x, 19).unwrap().frame_x, (36 * expected) as i16);
+            assert_eq!(a.tiles, b.tiles, "same seed, same placements");
+            assert_eq!(a.place_rng, witness, "one draw per placement, in order");
+        }
+        // The production randomCache stays None (the onlyCheck writeback is
+        // not ported — TileObject.cs:826-837), so every placement draws fresh.
+        assert_eq!(a.tile_object_random_cache, None);
+        // A non-random def (bench 18) spends no draw.
+        let before = a.place_rng.clone();
+        assert!(crate::edit::place_item_tile(&mut a, 24, 19, 18, 0, 1));
+        assert_eq!(a.place_rng, before, "no RandomStyleRange, no draw");
+        // The framing stream is untouched by placement draws.
+        let mut c = sunflower_world();
+        c.seed = 777;
+        c.seed_frame_rng();
+        let frame_before = c.frame_rng.clone();
+        assert!(crate::edit::place_item_tile(&mut c, 10, 19, sunflower_kind, 0, 1));
+        assert_eq!(c.frame_rng, frame_before, "place_rng is a separate stream");
     }
 
     // ---- M1.4-TO-4 phase 1 (DW-1.2): the herb/pot/pile registry slice ------
@@ -2817,8 +3104,11 @@ mod tests {
         floor_of(&mut w, 2); // grass — in the valid set (:4859)
         let sunflower = def_for_tile(27).unwrap();
         // Clicking the bottom row (y = 19, origin (0,3) → origin row 16).
-        let obj = must_place(&w, 10, 19, sunflower, 1);
+        // forcedRandom = 0 pins the random style slot to 0 (wave B: the
+        // Main.rand path now draws; :788-791 folds the forced value).
+        let obj = cp(&w, 10, 19, sunflower, 0, 1, Some(0)).unwrap();
         assert_eq!((obj.x_coord, obj.y_coord), (10, 16));
+        assert_eq!(obj.random, 0);
         assert!(place(&mut w, &obj));
         // The 8 cells: columns frameX 0/18, rows frameY 0/18/36/54 — the
         // legacy PlaceSunflower layout (`WorldGen.cs:53658-53668`) through the
@@ -2841,14 +3131,14 @@ mod tests {
             let mut w = world();
             floor_of(&mut w, soil);
             assert!(
-                can_place(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_some(),
+                cp(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_some(),
                 "soil {soil} must support the sunflower"
             );
         }
         // A stone floor is solid but unlisted — refused.
         let w = world();
         assert!(
-            can_place(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_none(),
+            cp(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_none(),
             "stone is not in the sunflower's anchor set"
         );
         // RandomStyleRange resolves through the random slot
@@ -2856,7 +3146,7 @@ mod tests {
         let mut w2 = world();
         floor_of(&mut w2, 2);
         let sunflower = def_for_tile(27).unwrap();
-        let obj = can_place(&w2, 10, 19, sunflower, 0, 1, Some(2)).unwrap();
+        let obj = cp(&w2, 10, 19, sunflower, 0, 1, Some(2)).unwrap();
         assert_eq!(obj.random, 2);
         assert!(place(&mut w2, &obj));
         // frameX = CFW(36) * placement(2) + column(18) = 90 on the right cell.
@@ -2864,7 +3154,7 @@ mod tests {
         assert_eq!(w2.tile(11, 19).unwrap().frame_x, 90);
         // forced_random folds into the range (:788-791); a clear spot for the
         // next resolution.
-        let obj = can_place(&w2, 20, 19, sunflower, 0, 1, Some(5)).unwrap();
+        let obj = cp(&w2, 20, 19, sunflower, 0, 1, Some(5)).unwrap();
         assert_eq!(obj.random, 2);
     }
 
@@ -2874,7 +3164,7 @@ mod tests {
         // drops the Style2x2 preset's Table.
         let pots = def_for_tile(28).unwrap();
         let mut w = world(); // stone floor: solid, flat
-        assert!(can_place(&w, 10, 19, pots, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, pots, 0, 1, None).is_some());
         let obj = must_place(&w, 10, 19, pots, 1);
         assert!(place(&mut w, &obj));
         // Cells (10..11, 18..19), frames 0/18 × 0/18 (heights 16/16).
@@ -2888,7 +3178,7 @@ mod tests {
         // anchor (:3556), so every branch of the check fails.
         let mut wt = world();
         floor_of(&mut wt, 14);
-        assert!(can_place(&wt, 10, 19, pots, 0, 1, None).is_none());
+        assert!(cp(&wt, 10, 19, pots, 0, 1, None).is_none());
         assert!(w.frame_important[28]);
     }
 
@@ -2898,19 +3188,19 @@ mod tests {
         // On a table (:2385 keeps AnchorType.Table)…
         let mut w = world();
         set_active(&mut w, 10, 19, 14);
-        assert!(can_place(&w, 10, 18, pot, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 18, pot, 0, 1, None).is_some());
         // …on plain solid ground…
         let w2 = world();
-        assert!(can_place(&w2, 10, 19, pot, 0, 1, None).is_some());
+        assert!(cp(&w2, 10, 19, pot, 0, 1, None).is_some());
         // …and in lava it is refused (LavaDeath=false never re-allows lava —
         // the baked NotAllowed, same chain as the chest).
         let mut wl = world();
         set_liquid(&mut wl, 10, 19, 200, true);
-        assert!(can_place(&wl, 10, 19, pot, 0, 1, None).is_none());
+        assert!(cp(&wl, 10, 19, pot, 0, 1, None).is_none());
         // Water is fine (base WaterPlacement.Allowed).
         let mut ww = world();
         set_liquid(&mut ww, 10, 19, 200, false);
-        assert!(can_place(&ww, 10, 19, pot, 0, 1, None).is_some());
+        assert!(cp(&ww, 10, 19, pot, 0, 1, None).is_some());
     }
 
     #[test]
@@ -2919,25 +3209,25 @@ mod tests {
         let large = def_for_tile(186).unwrap();
         let mut snow = world();
         floor_of(&mut snow, 147);
-        assert!(can_place(&snow, 10, 19, large, 26, 1, None).is_some());
+        assert!(cp(&snow, 10, 19, large, 26, 1, None).is_some());
         let stone = world();
-        assert!(can_place(&stone, 10, 19, large, 26, 1, None).is_none());
+        assert!(cp(&stone, 10, 19, large, 26, 1, None).is_none());
         // …while the base styles (0-25, no valid-tile list) take any solid
         // floor.
-        assert!(can_place(&stone, 10, 19, large, 0, 1, None).is_some());
+        assert!(cp(&stone, 10, 19, large, 0, 1, None).is_some());
         // 187 sand style 29 on sand (:3310-3311), refuses stone; style 0 is
         // the jungle sub-tile (SubTiles[0] non-null) — refuses stone too.
         let large2 = def_for_tile(187).unwrap();
         let mut sand = world();
         floor_of(&mut sand, 53);
-        assert!(can_place(&sand, 10, 19, large2, 29, 1, None).is_some());
-        assert!(can_place(&sand, 10, 19, large2, 0, 1, None).is_none());
-        assert!(can_place(&stone, 10, 19, large2, 29, 1, None).is_none());
+        assert!(cp(&sand, 10, 19, large2, 29, 1, None).is_some());
+        assert!(cp(&sand, 10, 19, large2, 0, 1, None).is_none());
+        assert!(cp(&stone, 10, 19, large2, 29, 1, None).is_none());
         // Place a 3x2: origin (1,1), click (11, 19) → origin (10, 18). The
         // generic Place math puts style 29 on sheet row 29: wrap 35 keeps the
         // column (`num4 = 29 % 35`), so frameX = CFW(54) * 29 + dx*18,
         // frameY = dy*18 (`TileObject.cs:56-110`).
-        let obj = can_place(&sand, 11, 19, large2, 29, 1, None).unwrap();
+        let obj = cp(&sand, 11, 19, large2, 29, 1, None).unwrap();
         assert_eq!((obj.x_coord, obj.y_coord), (10, 18));
         assert!(place(&mut sand, &obj));
         for dx in 0..3i32 {
@@ -2959,7 +3249,7 @@ mod tests {
         // style 0 → the 2x1 sub-tile over a 2-wide support.
         let piles = def_for_tile(185).unwrap();
         let w = world();
-        assert!(can_place(&w, 10, 19, piles, 0, 1, None).is_some());
+        assert!(cp(&w, 10, 19, piles, 0, 1, None).is_some());
     }
 
     #[test]
@@ -3018,7 +3308,7 @@ mod tests {
         let def = def_for_tile(219).unwrap();
         // Clicking x=10 with origin (1, 2) → the object spans x 9..11, y 17..19
         // (the click is the bottom-centre cell, as in vanilla).
-        let inst = can_place(&w, 10, 19, def, 0, 1, None).expect("3x3 headroom");
+        let inst = cp(&w, 10, 19, def, 0, 1, None).expect("3x3 headroom");
         assert_eq!((inst.x_coord, inst.y_coord), (9, 17));
         assert!(place(&mut w, &inst));
         for sub_y in 0..3 {
@@ -3039,10 +3329,10 @@ mod tests {
         let mut w = world();
         let def = def_for_tile(642).unwrap();
         // A floating click (no solid floor under the object) is refused.
-        assert!(can_place(&w, 10, 5, def, 0, 1, None).is_none());
+        assert!(cp(&w, 10, 5, def, 0, 1, None).is_none());
         // Placed on the floor, the kill cascade removes all nine cells
         // (`KillTile`'s registry cascade, `edit::kill_tile`).
-        let inst = can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        let inst = cp(&w, 10, 19, def, 0, 1, None).unwrap();
         assert!(place(&mut w, &inst));
         assert!(crate::edit::kill_tile(&mut w, 11, 18, false).is_some());
         for sub_y in 0..3 {
