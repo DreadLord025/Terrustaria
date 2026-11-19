@@ -132,7 +132,11 @@ pub fn update_lunar_apocalypse(app: &mut App) {
         }
         let slot = match n.kind {
             NpcKind::SolarTower => 1,
-            NpcKind::NebulaTower => 2,
+            // S1-D-3: the slot-2 arm was a second `NebulaTower` (an
+            // unreachable pattern) — the Vortex tower never registered,
+            // so `tower_active_vortex` cleared while it still stood
+            // (`WorldGen.cs:86728-86743`'s four-flag scan).
+            NpcKind::VortexTower => 2,
             NpcKind::NebulaTower => 3,
             NpcKind::StardustTower => 4,
             NpcKind::MoonLordCore
@@ -209,6 +213,11 @@ pub fn update_moon_lord_countdown(app: &mut App) {
     let mut core = Npc::new(NpcKind::MoonLordCore, px, py - 150.0, 1, 0.0);
     core.hp = core.max_hp;
     core.ai[0] = -1.0; // `AI_077`'s spawn-in phase.
+    // S1-D-3: the spawn-in is already armed — the C#'s `localAI[3]` latch
+    // (`NPC.cs:41163-41168`) only fires for a core that starts at `ai[0] ==
+    // 0`. Without the latch the first `ai[0] == 0` tick after the windup
+    // re-armed `-1` and spawned a SECOND hands+head set 60 ticks later.
+    core.moon_spawn_latch = true;
     app.npcs.push(core);
 }
 

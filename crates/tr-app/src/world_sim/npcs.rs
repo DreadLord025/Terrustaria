@@ -2409,9 +2409,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The C#'s flag (`:41251-41269`): a slot that points at no living
         // part takes the core down with it.
         let mut lost = false;
-        // The C#'s flag2 (`:41270-41285`): all three parts in their death
-        // state hand the core its vulnerable phase. A slot that never
-        // got a part is not a dead part.
+        // The C#'s flag2 (`:41273-41291`): all three parts in their `-2`
+        // DEATH STATE hand the core its vulnerable phase — a living part
+        // still attacking blocks it (S1-D-3: the port treated any living
+        // part as "not dead", so the core never opened while the parts
+        // idled in their death hover).
         let mut dead = true;
         for uid in app.npcs[i].moon_parts {
             if uid <= 0 {
@@ -2419,11 +2421,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dead = false;
                 continue;
             }
-            let alive = snap.any_living_uid(uid);
-            if !alive {
-                lost = true;
-            } else {
-                dead = false;
+            let part = app.npcs.iter().find(|n| n.uid as i32 == uid && n.hp > 0);
+            match part {
+                None => lost = true,
+                Some(p) => {
+                    if p.ai[0] != -2.0 {
+                        dead = false;
+                    }
+                }
             }
         }
         app.npcs[i].moon_parts_lost = lost;
