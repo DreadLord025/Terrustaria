@@ -23,13 +23,16 @@
 //!   spawns ride the request lists (`wants_plantera_hooks` /
 //!   `wants_plantera_tentacles` / `wants_plantera_spore`) for the sim; the
 //!   hook-average anchor therefore falls back to Plantera's own centre
-//!   while no hook exists (the C# would divide by a zero count there).
+//!   while no hook exists. (The C# has no first-tick NaN: `NewNPC`
+//!   activates the hooks synchronously, `NPC.cs:80767-80771`, before the
+//!   centroid scan runs — LEAD-REVIEW G4.)
 //! - expert/getGoodWorld branches are constants-off (the port is
 //!   single-difficulty classic, `World::MOON_POINT_SCALAR` precedent).
 //! - `justHit` (`:31905`, expert-only) has no port field — off with expert.
-//! - the gore trio 378/379/380 (`:32028-32030`) consumes its two
-//!   `Main.rand.Next` per gore in order but emits nothing (gore draw is a
-//!   documented skip, same as the Brain machine S1-D-3e).
+//! - the gore trio 378/379/380 (`:32028-32030`) consumes its FOUR
+//!   `Main.rand.Next` per gore in order (position pair + the NewGore
+//!   velocity kicks, `Gore.cs:1327-1328`) but emits nothing (gore draw is
+//!   a documented skip, same as the Brain machine S1-D-3e; LEAD-REVIEW G3).
 //! - `timeLeft` refresh (`:31727-31734`) and `NPC.plantBoss` (`:31735`)
 //!   have no port fields — skipped, recorded in ANALYSIS.
 
@@ -110,7 +113,9 @@ pub fn desired_velocity(
         dy *= -1.0;
         dx *= -1.0;
     }
-    let mut len = (dx * dx + dy * dy).sqrt(); // num751 (`:31799`)
+    // num751 (`:31799`) — `(float)Math.Sqrt` on the f32 product: the
+    // double seam (G5).
+    let mut len = ((dx * dx + dy * dy) as f64).sqrt() as f32;
     if len >= t.leash {
         // `:31809-31814`
         len = t.leash / len;
@@ -120,7 +125,7 @@ pub fn desired_velocity(
     let goal = (anchor.0 + dx, anchor.1 + dy); // `:31815-31816`
     dx = goal.0 - center.0; // `:31817-31819`
     dy = goal.1 - center.1;
-    len = (dx * dx + dy * dy).sqrt(); // `:31820`
+    len = ((dx * dx + dy * dy) as f64).sqrt() as f32; // `:31820`, the f64 seam (G5)
     if len < t.speed {
         // `:31821-31825` — inside the band the desired velocity IS the
         // current one (the approach below then holds still).
@@ -164,11 +169,16 @@ pub fn approach_velocity(vel: (f32, f32), desired: (f32, f32), accel: f32) -> (f
 }
 
 /// `NPC.cs:31864-31865` — the boss-head rotation:
-/// `Atan2(x: player.X - center.X, y: player.Y - center.Y) + 1.57f`. The C#
-/// passes the X delta as `x:` and the Y delta as `y:` — the arguments are
-/// SWAPPED vs the usual atan2(dy, dx); ported verbatim.
+/// `Atan2(x: player.X - center.X, y: player.Y - center.Y) + 1.57f`.
+/// `Math.Atan2(y, x)`'s signature means the NAMED arguments bind y = the
+/// Y delta and x = the X delta — the result is the STANDARD atan2(dy, dx)
+/// (LEAD-REVIEW G1: the original port read the named args positionally and
+/// swapped them; settled from the signature). The `(float)` cast rides
+/// the f64 atan2 seam (G5).
 pub fn rotation(center: (f32, f32), player_center: (f32, f32)) -> f32 {
-    (player_center.0 - center.0).atan2(player_center.1 - center.1) + 1.57
+    let dx = (player_center.0 - center.0) as f64;
+    let dy = (player_center.1 - center.1) as f64;
+    dy.atan2(dx) as f32 + 1.57
 }
 
 /// `NPC.cs:31866-31875` — phase 1 (life > lifeMax/2): defense 36, contact
@@ -297,7 +307,8 @@ pub fn step(
     npc.vx = vx;
     npc.vy = vy;
 
-    // `:31864-31865` — the rotation (the swapped-argument atan2).
+    // `:31864-31865` - the rotation (named args bind the standard
+    // atan2(dy, dx); see `rotation`, LEAD-REVIEW G1).
     npc.rotation = rotation(center, player_center);
 
     // noTileCollide + noGravity (`SetDefaults :12381`/`:12392`): the raw
@@ -336,7 +347,8 @@ pub fn step(
         let speed = 15.0f32;
         let mut dx = player_center.0 - center.0;
         let mut dy = player_center.1 - center.1;
-        let k = speed / (dx * dx + dy * dy).sqrt();
+        // num757 (`:31934`): `(float)Math.Sqrt` — the f64 seam (G5).
+        let k = speed / ((dx * dx + dy * dy) as f64).sqrt() as f32;
         dx *= k;
         dy *= k;
         // `:31937-31957` — the volley pick. RNG order (cited): the
@@ -389,13 +401,19 @@ pub fn step(
     }
 
     // `:32026-32032` — the gore trio 378/379/380: each gore draws
-    // `Next(width)` then `Next(height)` (`Main.rand` order preserved);
-    // the emit is a documented skip.
+    // `Next(width)` then `Next(height)` for the position (`Main.rand`
+    // order preserved), then `Gore.NewGore` itself draws the velocity
+    // kicks `Next(10, 31)` (Y lift) and `Next(-20, 21)` (X kick)
+    // (`Gore.cs:1327-1328`) — FOUR draws per gore. The emit is a
+    // documented skip but the draws are consumed (stream-neutral rule,
+    // LEAD-REVIEW G3: the original port drew only the 6 position values).
     if npc.local_ai[2] == 0.0 {
         let (w, h) = npc.size();
         for _ in 0..3 {
             let _gx = rng.next_max(w as i32);
             let _gy = rng.next_max(h as i32);
+            let _kick_y = rng.next_range(10, 31);
+            let _kick_x = rng.next_range(-20, 21);
         }
         npc.local_ai[2] = 1.0;
     }
@@ -408,17 +426,20 @@ pub fn step(
     }
     // `:32056-32071` — the spore (265) launch: 8 px/tick toward the player
     // with a ±10 jitter per axis (`Next(-10, 11)`, X first); the vertical
-    // lift `|dx * 0.2|` (num773) is subtracted UNLESS the player is below
-    // (`num774 > 0` zeroes it, `:32061-32064`) — an upward lead when the
-    // target is at or above the boss.
+    // lift `|dx * 0.2|` (num773) is ZEROED when the player is below
+    // (`num774 > 0`, `:32061-32064`) and subtracted otherwise — an upward
+    // lead only when the target is at or above the boss (LEAD-REVIEW G2:
+    // the original port inverted the gate and subtracted when dy > 0).
     let speed = 8.0f32;
     let mut dx = player_center.0 - center.0 + rng.next_range(-10, 11) as f32;
-    let lead = (dx * 0.2).abs();
+    let mut lead = (dx * 0.2).abs();
     let mut dy = player_center.1 - center.1 + rng.next_range(-10, 11) as f32;
     if dy > 0.0 {
-        dy -= lead;
+        lead = 0.0;
     }
-    let k = speed / (dx * dx + dy * dy).sqrt();
+    dy -= lead;
+    // `(float)Math.Sqrt` on the f32 product (`:32066`) — the double seam (G5).
+    let k = speed / ((dx * dx + dy * dy) as f64).sqrt() as f32;
     dx *= k;
     dy *= k;
     npc.wants_plantera_spore = Some((dx, dy));
@@ -524,16 +545,18 @@ mod tests {
         assert!((vx + 0.025).abs() < 1e-6);
     }
 
-    /// `NPC.cs:31865` — the rotation is atan2(dx, dy) + 1.57 (the C#'s
-    /// named arguments swap the usual order).
+    /// `NPC.cs:31865` — `Atan2(x: dx, y: dy)` binds y=dy, x=dx
+    /// (`Math.Atan2(y, x)`), so the rotation is the STANDARD
+    /// atan2(dy, dx) + 1.57f (LEAD-REVIEW G1: the witness originally
+    /// pinned the swapped reading).
     #[test]
-    fn s1_d_3_plantera_the_rotation_uses_the_swapped_atan2() {
-        // Player directly right: atan2(100, 0) = π/2 → π/2 + 1.57.
+    fn s1_d_3_plantera_the_rotation_is_the_standard_atan2_plus_1_57() {
+        // Player directly right: atan2(dy=0, dx=100) = 0 → 1.57.
         let r = rotation((0.0, 0.0), (100.0, 0.0));
-        assert!((r - (std::f32::consts::FRAC_PI_2 + 1.57)).abs() < 1e-4);
-        // Player directly below: atan2(0, 100) = 0 → 1.57.
-        let r = rotation((0.0, 0.0), (0.0, 100.0));
         assert!((r - 1.57).abs() < 1e-4);
+        // Player directly below: atan2(100, 0) = π/2 → π/2 + 1.57.
+        let r = rotation((0.0, 0.0), (0.0, 100.0));
+        assert!((r - (std::f32::consts::FRAC_PI_2 + 1.57)).abs() < 1e-4);
     }
 
     /// `NPC.cs:31880-31917` — the phase-1 cadence: 80 ticks at full life,
@@ -600,5 +623,90 @@ mod tests {
         assert_eq!(pl.wants_plantera_tentacles, 0, "no second batch");
         assert_eq!(pl.defense_override, Some(10));
         assert_eq!(pl.damage_override, Some(70));
+    }
+
+    /// `NPC.cs:32061-32064` — the spore's lead is ZEROED when the player
+    /// is below (dy > 0) and subtracted otherwise (LEAD-REVIEW G2). The
+    /// jitter draws make the exact vectors rng-dependent, so the witness
+    /// mirrors the C# arithmetic on the SAME stream and pins equality
+    /// plus the gate's direction.
+    #[test]
+    fn s1_d_3_plantera_the_spore_lead_zeroes_when_the_player_is_below() {
+        for (px, py) in [(120.0f32, 170.0f32), (120.0, 130.0), (100.0, 150.0)] {
+            let w = world();
+            let mut pl = Npc::new(NpcKind::Plantera, 100.0 * 16.0, 150.0 * 16.0, 1, 0.0);
+            pl.local_ai[0] = 2.0;
+            pl.local_ai[2] = 1.0; // gore latch already fired: no gore draws
+            pl.hp = pl.max_hp / 2;
+            pl.local_ai[1] = 349.0; // the cadence fires this tick
+            let mut player = jungle_player(&w);
+            player.x = px * 16.0;
+            player.y = py * 16.0;
+            let mut rng = UnifiedRandom::new(0);
+            let center = pl.center();
+            step(&mut pl, &w, &player, &mut rng, center);
+            let (vx, vy) = pl.wants_plantera_spore.expect("the spore fired");
+            // The mirrored C# arithmetic on a twin stream.
+            let mut twin = UnifiedRandom::new(0);
+            let pcx = player.x + crate::player::WIDTH * 0.5;
+            let pcy = player.y + player.height * 0.5;
+            let mut dx = pcx - center.0 + twin.next_range(-10, 11) as f32;
+            let mut lead = (dx * 0.2).abs();
+            let mut dy = pcy - center.1 + twin.next_range(-10, 11) as f32;
+            let below = dy > 0.0;
+            if below {
+                lead = 0.0;
+            }
+            dy -= lead;
+            let k = 8.0 / ((dx * dx + dy * dy) as f64).sqrt() as f32;
+            dx *= k;
+            dy *= k;
+            assert_eq!((vx, vy), (dx, dy), "the launch mirrors the C#");
+            if below {
+                // No lead: the direction is the raw jittered delta.
+                let raw_dy = pcy - center.1;
+                assert!(raw_dy > 10.0, "the witness player is well below");
+                assert!(vy > 0.0, "aimed down at the player, no upward lead");
+            }
+        }
+    }
+
+    /// `NPC.cs:32026-32032` + `Gore.cs:1327-1328` — the gore burst
+    /// consumes TWELVE Main.rand values (4 per gore: the position pair
+    /// then the NewGore velocity kicks), not 6 (LEAD-REVIEW G3).
+    #[test]
+    fn s1_d_3_plantera_the_gore_burst_consumes_twelve_draws() {
+        let w = world();
+        let mut pl = Npc::new(NpcKind::Plantera, 100.0 * 16.0, 150.0 * 16.0, 1, 0.0);
+        pl.local_ai[0] = 2.0;
+        pl.hp = pl.max_hp / 2;
+        pl.local_ai[1] = 349.0; // the spore fires after the burst
+        let player = jungle_player(&w);
+        let mut rng = UnifiedRandom::new(0);
+        let center = pl.center();
+        step(&mut pl, &w, &player, &mut rng, center);
+        // Mirror: 3 x (Next(w), Next(h), Next(10,31), Next(-20,21)) then
+        // the spore's X/Y jitter — the spore vector pins the stream state.
+        let mut twin = UnifiedRandom::new(0);
+        let (gw, gh) = pl.size();
+        for _ in 0..3 {
+            let _ = twin.next_max(gw as i32);
+            let _ = twin.next_max(gh as i32);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        let pcx = player.x + crate::player::WIDTH * 0.5;
+        let pcy = player.y + player.height * 0.5;
+        let mut dx = pcx - center.0 + twin.next_range(-10, 11) as f32;
+        let mut lead = (dx * 0.2).abs();
+        let mut dy = pcy - center.1 + twin.next_range(-10, 11) as f32;
+        if dy > 0.0 {
+            lead = 0.0;
+        }
+        dy -= lead;
+        let k = 8.0 / ((dx * dx + dy * dy) as f64).sqrt() as f32;
+        dx *= k;
+        dy *= k;
+        assert_eq!(pl.wants_plantera_spore, Some((dx, dy)), "stream advanced by 12+2");
     }
 }
