@@ -1940,6 +1940,31 @@ A test loads the seven shipped `en-US` files and checks `ItemName.DirtBlock`,
 `CommonItemTooltip.UsesMana` and the `ItemName` category size (>1000). Wiring the strings
 into the HUD, item names and menus is still to do.
 
+### Global substitutions (S1-L-12b)
+
+`lang::refresh_global_substitutions` (`Lang.InitGlobalSubstitutions`, `Lang.cs:100-167`)
+materializes all 65 global `{Name}` producers from live app state each frame
+(`app/frame.rs:101-103`). The C# registers lazy `Func<object>` producers; the port
+computes every value **before** taking the manager lock (the name/text producers —
+`NPC.TypeName` → `Lang.GetNPCNameValue`, `NPC.cs:6727`, and `Language.GetTextValue` —
+resolve through the same manager) and commits the table in one pass. A null producer
+result (an absent NPC) removes the key, so `VariableText` sees it unset. Deliberate
+deviations, all pinned by `lang::s1_l12b_tests`:
+
+- `WorldEvilStone` (`Lang.cs:145`) always answers `Misc.Ebonstone`: the port persists
+  no world-level `WorldGen.crimson` (`world_sim/npcs.rs:954`, `shop.rs`).
+- `DukeFishronDefeated`/`PumpkingDefeated`/`IceQueenDefeated` (`Lang.cs:130,133,134`)
+  answer `false` — the world-file glue writes those flags as constants
+  (`wld/sections/flags.rs:138,142,144`); no live field exists.
+- The input trigger tags (`Lang.cs:146-165`) take the keyboard arm of
+  `GenerateInputTag_ForCurrentGamemode` (`PlayerInput.cs:1942-1949`) — the port is
+  keyboard-only (`UsingGamepad` never true). Bound triggers read the live config binds
+  (`ManageVersion_1_3`'s mapping, `PlayerInput.cs:819-841`); `LockOn`/`HotbarMinus`/
+  `HotbarPlus` are unbound on the keyboard preset (`PlayerInput.cs:2053-2091`) and answer
+  "" (`GenerateRawInputList`'s empty-list arm, `:1980-1983`).
+- `InputTriggerUI_FavoriteItem` (`Lang.cs:149`) answers `"LeftAlt"` —
+  `Main.FavoriteKey.ToString()` (`Main.cs:67177,67196`), a fixed key in vanilla.
+
 ## Audio (M6)
 
 ### XACT banks (`tr-content/xact.rs`)
@@ -4814,6 +4839,52 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Buff effect table, wave A (S1-E-7a, 2026-11-18)
+
+The potion-buff block of `Player.UpdateBuffs` (`Player.cs:9875-9880` +
+`:9948-10048`) — 18 arms, 18 new ids — landed in the inline effect scan
+(`player.rs`, the `ResetEffects`-cleared flags re-derived per tick from the
+buff slots). Consumers wired: ObsidianSkin 1 → the lava gate (`:27676`) +
+`touch_damage`'s `fire_walk` read + `buffImmune[24]`; Gills 4 →
+`check_drowning`'s probe flip (`:23226-23229`, the For-the-Worthy inversion
+included); ManaRegeneration 6 → `RegenInputs::mana_regen_buff`; Featherfall 8
+→ the `:27369-27376` fall caps (after the whole flight else-if chain, the
+`mount.Type != 5` gate included), the `:27022-27033` gravity/3(/10) arm placed
+BEFORE the wing glide, and the `:25379` slow-fall fall-origin term;
+Invisibility 10 / Battle 13 → the spawner's `SpawnFlags` (`NPC.cs:702-740`);
+Shine 11 → `entity_lights::shine_light` (the truncating `(int)center / 16`
+anchor); NightOwl 12 → the legacy light pass's `night_vision` input; Confused
+31 → the `:24996-25004` control swap; Silenced 35 → the `:52221-52224`
+mana-item refusal (base `Item.mana`, before the manaCost scale); Dazed 160 →
+the `:19637-19641` jump-static clamp (after the sticky one).
+
+Deliberate deviations (all flag-only or collapsed branches):
+
+- **Flag-only arms** — Spelunker 9 (`findTreasure`), BiomeSight 343
+  (`biomeSight`), Hunter 17 (`detectCreature`): the highlight draw passes are
+  unported; WaterWalking 15 (`waterWalk`): the `Collision.WaterCollision`
+  surface-walk half is unported (the lava-probe height trim `:27664-27667`
+  rides it); Gravitation 18 (`gravControl`): the gravity-flip key
+  (`:26694`) is unported (`gravDir` is fixed −1). Each flag is set/cleared
+  1:1 so the consumers land against a live source.
+- **Confused's up/down half collapses** — the C# swaps four controls
+  (`:24998-25003`); the port has no `controlUp` key, so with up ≡ false the
+  down half becomes `controlDown = false` and the up half has no field.
+- **Shine's light rides the frame feed, not the sim tick** — the S1-E-5
+  pattern (`app/frame/draw.rs` after the NPC lights): the C# adds it inside
+  `UpdateBuffs`; the port's one-frame-delayed `EntityLights` pair makes the
+  placement observable-equivalent, and no RNG is drawn either way.
+- **The `slowFall` wet term** — `:25379`'s `base.wet` covers honey; the port
+  keeps its water-only `in_water` stand-in (the Phase-4 deviation), with the
+  `slow_fall` term added beside it.
+- **The `DebugOptions.ManaV2` branch (7)** assigns the same 0.2 both ways —
+  folded to the constant. The carpet's `slowFall = false` (`:21888`) and the
+  spiked-boot gravity arms (`:21644`/`:21782`) are unported systems; the
+  flag stays as the buff set it.
+
+Tests: 12 `s1_e_7a_*` (player.rs ×9, spawner.rs ×1, entity_lights.rs ×1,
+world_sim/editing.rs ×1), each naming its C# lines.
+
 ## Town chatter (S1-E-10a, 2026-11-14)
 
 `crates/tr-app/src/npc_chat.rs` ports `NPC.GetChat` (`NPC.cs:93766-94800`):
@@ -4930,9 +5001,9 @@ turns on with the pets rather than needing a second pass. The remaining
 set by `check_tile` from the active tiles 630/631
 (`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
 keeps running and only the flags are written; `check_room` clears both per
-scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
-pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
-the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+scan (`StartRoomCheck:6047-6048`). The consumers landed with the relocation
+round below (`MoveTownNPC`'s pet-exempt rejection `:4777-4799`); the arrival
+gate (`:5431`) still rides the arrival path. No RNG draws in any
 ported block (`Main.rand` untouched; the flags are pure tile reads).
 
 ## Town housing (S1-E-11d, 2026-11-18)
@@ -17173,17 +17244,58 @@ candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
   `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
   orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
 
-### Wave B (remaining, documented callbacks)
+### Wave B (S1-F-7b, 2026-11-18): the RandomStyleRange runtime hook
 
-The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
-`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
-(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
-(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
-tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
-`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
-defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
-the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
-test lands with that wiring.
+The `Main.rand` random-style path (`TileObject.cs:761-825`) is now ported and
+wired; the rest of wave B stays documented callbacks.
+
+* `tileobject::can_place` takes `rand: &mut UnifiedRandom` (the `Main.rand`
+  stand-in) and `random_cache: Option<RandomCache>`. The draws are verbatim:
+  `Main.rand.Next(RandomStyleRange)` (:787) is spent EVEN when `forcedRandom`
+  overwrites it (:788-791) or the cache sticks (:792); `SpecificRandomStyles`
+  draws a second `Next(len)` (:819) with the same overwrite/stickiness rules
+  (:820-824) and its result replaces `num37`. Draw order: range first, list
+  second — pinned by `s1_f_7b_specific_random_styles_rand_path_and_draw_order`.
+* `RandomCache` ports the read side of `TileObjectPreviewData.randomCache`
+  (`Type`/`Coordinates`/`ObjectStart`/`Random`, TileObject.cs:769-774/:801-806);
+  the staleness compare is `Coordinates + ObjectStart` vs `click - Origin`
+  (:773-780). A fresh cache is ZERO-initialised (`Random = 0`), not `Reset()`'s
+  -1 — `Reset` is never called on the random cache.
+* **Deliberate deviation (documented)**: the `randomCache` WRITEBACK happens
+  only inside `onlyCheck` (`TileObject.cs:826-837`, verified: no other writer
+  in the tree), and the port does not run the preview — so
+  `World::tile_object_random_cache` stays `None` in production and every
+  `CanPlace` draws fresh. The stickiness branch is ported and tested with an
+  injected cache (`s1_f_7b_random_cache_stickiness_still_draws`); it goes live
+  with the smart-cursor preview task.
+* **Stream choice (documented)**: vanilla shares one `Main.rand`; the port
+  keeps per-consumer streams (the house pattern — `craft_rng`, `frame_rng`,
+  S1-A-11). `World::place_rng` is the placement family's dedicated
+  `UnifiedRandom`, seeded from the world seed beside `frame_rng` in
+  `seed_frame_rng`. Its draws never interleave with the framing rolls; the
+  worldgen contract streams are untouched (`place_buried_chest`'s chest 21
+  has `RandomStyleRange = 0`, so the temple pass draws nothing — pinned by
+  the frozen world-hash tests staying green).
+* `SpecificRandomStyles` is null in every generated def (`Initialize` never
+  assigns it); the branch is ported for synthetic defs and future data.
+* Consumers wired: `edit::place_item_tile` (the `Player.cs:39773` route) and
+  `worldgen::temple::place_buried_chest` (`WorldGen.cs:57820`) pass
+  `world.place_rng` + `world.tile_object_random_cache`.
+* RNG-order proof: `s1_f_7b_random_style_range_rng_order` replays a witness
+  `UnifiedRandom` (`next_max(3)` per sunflower placement, 6 seeds x 5 spots)
+  and asserts FULL stream-state equality (seed array + cursor) after every
+  call, plus the placed `frameX = 36 * draw`;
+  `s1_f_7b_place_item_tile_rides_the_world_place_rng` pins the consumer wiring
+  (one draw per placement, twin worlds byte-equal, non-random defs draw
+  nothing, `frame_rng` untouched).
+
+Still wave B (documented callbacks): the tile-based `GetTileData(Tile)` frameY
+resolution (`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/
+`Stalactite` tags :5294-5327) and the runtime hook bodies
+(`Chest.FindEmptyChest`, `WorldGen.PlantCheck_CanPlaceHook`, the `TE*`
+tile-entity hooks). The generated defs carry the C# method NAME in
+`PlacementHook::callback` with `hook: None`; the `GetStyleOverride` tag is
+generated data.
 
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 

@@ -603,6 +603,43 @@ pub struct Player {
     pub frozen: bool,
     pub webbed: bool,
     pub blind: bool,
+    /// The S1-E-7 wave-A potion-buff flags (`Player.UpdateBuffs`,
+    /// `Player.cs:9875-10048`; `ResetEffects` clears `:18355`, `:18367-18381`,
+    /// `:18650`, `:18695`, `:18705`; `manaRegenBuff` `:18394`). Each arm
+    /// re-derives its flag per tick from the buff slots.
+    /// Buff 1 (ObsidianSkin): lava immunity + hot-tile walking + OnFire(24)
+    /// immunity (`:9875-9880`).
+    pub lava_immune: bool,
+    /// Buff 4 (Gills): `CheckDrowning`'s probe inverts (`:9958`, `:23226`).
+    pub gills: bool,
+    /// Buff 6 (ManaRegeneration): `RegenInputs::mana_regen_buff` (`:9966`).
+    pub mana_regen_buff: bool,
+    /// Buff 8 (Featherfall): the fall caps + the gravity/3 arm (`:9979`).
+    pub slow_fall: bool,
+    /// Buff 9 (Spelunker): treasure highlighting — draw-side, flag only.
+    pub find_treasure: bool,
+    /// Buff 343 (BiomeSight): ore highlighting — draw-side, flag only.
+    pub biome_sight: bool,
+    /// Buff 10 (Invisibility): the spawner's ×1.2 rate / ×0.8 cap (`:9991`).
+    pub invis: bool,
+    /// Buff 12 (NightOwl): the legacy light pass's brightness lift (`:9999`).
+    pub night_vision: bool,
+    /// Buff 13 (Battle): the spawner's ×0.5 rate / ×2 cap (`:10003`).
+    pub enemy_spawns: bool,
+    /// Buff 15 (WaterWalking): the liquid-surface walk — collision half
+    /// unported, flag only (`:10014`).
+    pub water_walk: bool,
+    /// Buff 17 (Hunter): enemy highlighting — draw-side, flag only (`:10023`).
+    pub detect_creature: bool,
+    /// Buff 18 (Gravitation): the gravity-flip key — unported, flag only
+    /// (`:10027`).
+    pub grav_control: bool,
+    /// Buff 31 (Confused): the control swap (`:10035`, `:24996-25004`).
+    pub confused: bool,
+    /// Buff 35 (Silenced): mana items refuse (`:10043`, `:52221`).
+    pub silence: bool,
+    /// Buff 160 (Dazed): the jump statics /5 and /2 (`:10047`, `:19637-19641`).
+    pub dazed: bool,
     /// The per-slot Weak count — `meleeDamage -= 0.051f` and
     /// `moveSpeed -= 0.1f` per slot (`Player.cs:11873-11878`); the
     /// `statDefense -= 4` half has no player-defense consumer yet
@@ -738,10 +775,11 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
-    /// `Player.fireWalk` (`Player.cs:1878`, reset `:18355`): the Obsidian
-    /// Skull family's grant — `Collision.CanTileHurt`'s hot arm skips the
-    /// burning tiles (`Collision.cs:3220`). The granters ride
-    /// `accessory_defense.rs` (S1-C-12 wave C).
+    /// `Player.fireWalk` (`Player.cs:1878`, reset `:18355`): the ObsidianSkin
+    /// buff (1) arms it per tick (`UpdateBuffs` `:9878`, S1-E-7 wave A) and
+    /// the Obsidian Skull family grants it (`accessory_defense.rs`, S1-C-12
+    /// wave C) — `Collision.CanTileHurt`'s hot arm skips the burning tiles
+    /// (`Collision.cs:3220`).
     pub fire_walk: bool,
     /// `Player.hasPaladinShield` (`Player.cs:1408`, reset `:18777`): the
     /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
@@ -1973,6 +2011,21 @@ impl Player {
             ammo_cost80: false,
             ammo_cost75: false,
             archery: false,
+            lava_immune: false,
+            gills: false,
+            mana_regen_buff: false,
+            slow_fall: false,
+            find_treasure: false,
+            biome_sight: false,
+            invis: false,
+            night_vision: false,
+            enemy_spawns: false,
+            water_walk: false,
+            detect_creature: false,
+            grav_control: false,
+            confused: false,
+            silence: false,
+            dazed: false,
             ammo_cycling: crate::ammo::AmmoCycling::default(),
             yoyo_hit_counter: -1,
         }
@@ -3828,6 +3881,15 @@ impl Player {
         self.control_right = input.right;
         self.control_jump = input.jump;
         self.control_down = input.down;
+        // `Player.cs:24996-25004`: Confused (31) swaps the controls AFTER
+        // they land: left↔right, `controlUp = controlRight` (post-swap, i.e.
+        // the old left) and `controlDown = flag3` (the pre-swap up). The port
+        // has no `controlUp` key — with up ≡ false the down half collapses
+        // to `controlDown = false`, and the up half has no field to write.
+        if self.confused {
+            std::mem::swap(&mut self.control_left, &mut self.control_right);
+            self.control_down = false;
+        }
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -3933,6 +3995,28 @@ impl Player {
             self.try_dismount(world);
         }
         self.blind = false;
+        // The S1-E-7 wave-A potion flags' `ResetEffects` clears
+        // (`Player.cs:18355` fireWalk, `:18367-18374` lavaImmune/gills/
+        // slowFall/findTreasure/biomeSight/invis/nightVision/enemySpawns,
+        // `:18378` waterWalk, `:18380-18381` detectCreature/gravControl,
+        // `:18394` manaRegenBuff, `:18650` dazed, `:18695` confused,
+        // `:18705` silence) — the buff arms below re-set them per tick.
+        self.lava_immune = false;
+        self.fire_walk = false;
+        self.gills = false;
+        self.mana_regen_buff = false;
+        self.slow_fall = false;
+        self.find_treasure = false;
+        self.biome_sight = false;
+        self.invis = false;
+        self.night_vision = false;
+        self.enemy_spawns = false;
+        self.water_walk = false;
+        self.detect_creature = false;
+        self.grav_control = false;
+        self.confused = false;
+        self.silence = false;
+        self.dazed = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
         self.ranged_damage = 1.0;
@@ -4190,6 +4274,53 @@ impl Player {
         }
         for bt in self.buffs.active_types() {
             match bt {
+                // S1-E-7 wave A — the potion-buff block, in the C# chain's
+                // order (`Player.cs:9875-10048`).
+                // `:9875-9880` — ObsidianSkin (1): lava immunity, hot-tile
+                // walking and OnFire(24) immunity.
+                1 => {
+                    self.lava_immune = true;
+                    self.fire_walk = true;
+                    self.buffs.buff_immune[24] = true;
+                }
+                // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
+                3 => self.move_speed += 0.25,
+                // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
+                4 => self.gills = true,
+                // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
+                6 => self.mana_regen_buff = true,
+                // `:9968-9976` — MagicPower (7): `magicDamage += 0.2f` (the
+                // `DebugOptions.ManaV2` branch assigns the same 0.2).
+                7 => self.magic_damage += 0.2,
+                // `:9977-9980` — Featherfall (8): the fall caps/gravity arm.
+                8 => self.slow_fall = true,
+                // `:9981-9984` — Spelunker (9): treasure highlighting (draw).
+                9 => self.find_treasure = true,
+                // `:9985-9988` — BiomeSight (343): ore highlighting (draw).
+                343 => self.biome_sight = true,
+                // `:9989-9992` — Invisibility (10): the spawner rate modifier.
+                10 => self.invis = true,
+                // `:9993-9996` — Shine (11): the AddLight half rides the
+                // frame's entity-light feed (`entity_lights::shine_light`);
+                // no flag exists in the C# either.
+                // `:9997-10000` — NightOwl (12): the legacy brightness lift.
+                12 => self.night_vision = true,
+                // `:10001-10004` — Battle (13): the spawner rate modifier.
+                13 => self.enemy_spawns = true,
+                // `:10012-10015` — WaterWalking (15): the surface walk
+                // (collision half unported — flag only).
+                15 => self.water_walk = true,
+                // `:10021-10024` — Hunter (17): enemy highlighting (draw).
+                17 => self.detect_creature = true,
+                // `:10025-10028` — Gravitation (18): the gravity-flip key
+                // (unported — flag only).
+                18 => self.grav_control = true,
+                // `:10033-10036` — Confused (31): the control swap below.
+                31 => self.confused = true,
+                // `:10041-10044` — Silenced (35): mana items refuse.
+                35 => self.silence = true,
+                // `:10045-10048` — Dazed (160): the jump-static clamp.
+                160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
                 // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10075-
@@ -4364,9 +4495,12 @@ impl Player {
         self.desert_boots = false;
         self.rocket_boots = 0;
         self.no_knockback = false;
-        // `:18355`/`:18777`: `fireWalk = false` / `hasPaladinShield = false`
-        // — the wave-C pass (`accessory_defense.rs`) re-grants per tick.
-        self.fire_walk = false;
+        // `:18777`: `hasPaladinShield = false` — the wave-C pass
+        // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
+        // clear lives in the ResetEffects block above (before the buff
+        // arms), matching the C#'s ResetEffects -> UpdateBuffs ->
+        // UpdateEquips order: clearing it here would wipe the ObsidianSkin
+        // buff's grant (S1-E-7 wave A).
         self.has_paladin_shield = false;
         self.has_jump_options = [false; 9];
         // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
@@ -4609,6 +4743,13 @@ impl Player {
             self.update_mount(world, raining, wind);
             self.horizontal_movement();
         }
+        // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
+        // divides the jump statics — height /5, speed /2 — after the sticky
+        // clamp (the mount block above carries that one).
+        if self.dazed {
+            self.jump_height /= 5;
+            self.jump_speed /= 2.0;
+        }
 
         let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
         // `Player.cs:27352-27359`: the plain arm integrates the rebased
@@ -4755,6 +4896,20 @@ impl Player {
                 self.vy = (self.vy + gravity).min(fall_cap);
             } else {
                 self.cart_ramp_time -= 1;
+            }
+        }
+        // `Player.cs:27361-27376`: the fall-cap block runs AFTER the whole
+        // else-if chain (the flight arms included) — Featherfall caps the
+        // fall at maxFallSpeed/3 (no hover-down), and the hover-up latch
+        // tightens it to /10 once past /5. The gate is `!mount.Active ||
+        // mount.Type != 5`; the gravDir == -1 mirror (`:27384-27391`) has no
+        // ported gravity flip.
+        if !self.mount.is_active() || self.mount.kind() != 5 {
+            if self.slow_fall && self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
+                self.vy = fall_cap / 3.0;
+            }
+            if self.slow_fall && self.vy > fall_cap / 5.0 && self.trying_to_hover_up() {
+                self.vy = fall_cap / 10.0;
             }
         }
         self.vy = self.vy.max(if in_liquid {
@@ -4988,12 +5143,12 @@ impl Player {
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }
-        // `Player.cs:25379-25382`: the continuous reset — jumping, liquid, the
-        // slow-fall/rocket/sky-gravity/tongued terms (the four systems are not
-        // ported yet) keep the fall origin at the current row.
-        // `Player.cs:25379-25382`: the rocket thrust refreshes the fall
-        // origin (the plain wing ascent relies on `hasWings` instead).
-        if self.jump > 0 || self.rocket_delay > 0 || self.in_water {
+        // `Player.cs:25379-25382`: the continuous reset — jumping, liquid,
+        // slowFall keep the fall origin at the current row (the C#'s
+        // `base.wet` covers honey too — the port's water-only `in_water`
+        // stand-in stays, docs/ANALYSIS.md Phase 4; the sky-gravity/tongued
+        // terms are unported).
+        if self.jump > 0 || self.rocket_delay > 0 || self.in_water || self.slow_fall {
             self.fall_start = (self.y / TILE_PX) as i32;
         }
 
@@ -6869,6 +7024,22 @@ impl Player {
                 }
                 return true;
             }
+            // `:27022-27033`: Featherfall's airborne arm — gravity /3 (or
+            // /10 with the hover-up latch), applied BEFORE the wing glide
+            // in the C# else-if chain. `flag20` (the down-dash) has no port
+            // counterpart (`is_performing_down_dash` is always false).
+            if self.slow_fall
+                && !self.trying_to_hover_down()
+                && !self.is_performing_down_dash()
+            {
+                let g = if self.trying_to_hover_up() {
+                    gravity / 10.0
+                } else {
+                    gravity / 3.0
+                };
+                self.vy += g;
+                return true;
+            }
             // `:27034-27037 + 27339-27350`: the wing glide — jump held while
             // falling: gravity / 3, the fall cap / 3, the fall origin
             // refreshed per tick (no fall damage accrues).
@@ -7537,13 +7708,14 @@ impl Player {
     /// a tick is taken, and the refill is 3 ticks per tick out of the water.
     ///
     /// The C#'s accessory arms (the Merman armour 250/4275, the breathing
-    /// reed, the gills, the shimmering and the mount 4) have no ported
-    /// counterparts yet — the port has no accessory system for them, so the
-    /// probe's own flag decides.
+    /// reed, the shimmering and the mount 4) have no ported counterparts
+    /// yet; the Gills buff (4) arm IS ported (`Player.cs:23226-23229`,
+    /// S1-E-7 wave A): `flag = Main.getGoodWorld && !flag` — on the For the
+    /// Worthy seed the gills invert the probe (air drowns, water breathes).
     fn check_drowning(&mut self, world: &World) {
         // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
         // head; the NPCs' call passes 1 (the feet).
-        let drowning = crate::collision::drown_collision(
+        let mut drowning = crate::collision::drown_collision(
             world,
             self.x,
             self.y,
@@ -7552,6 +7724,14 @@ impl Player {
             -1.0,
             false,
         );
+        // `Player.cs:23226-23229`: the Gills buff flips the probe — only the
+        // For-the-Worthy seed keeps a drain (in the dry).
+        if self.gills {
+            let good_world = world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+            drowning = good_world && !drowning;
+        }
         if drowning {
             self.breath_cd += 1;
             if self.breath_cd >= BREATH_CD {
@@ -7739,6 +7919,7 @@ impl Player {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
+                mana_regen_buff: self.mana_regen_buff,
                 well_fed: self.well_fed,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
@@ -7766,7 +7947,10 @@ impl Player {
         // tick of the immunity budget per frame; only when it is empty does the
         // 80-damage hit land (and grant On Fire for 420). Out of the lava the
         // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
-        if self.in_lava {
+        // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
+        // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
+        // stays true (the budget refills while standing in lava).
+        if self.in_lava && !self.lava_immune {
             if self.lava_time > 0 {
                 self.lava_time -= 1;
             } else if self.hurt_cd <= 0.0 {
@@ -8909,6 +9093,214 @@ mod tests {
         p.buffs.add_buff(158, 60);
         p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
         assert_eq!(p.mana_regen_bonus, 10);
+    }
+
+    // ---- S1-E-7 wave A: the potion-buff block (`Player.cs:9875-10048`) ----
+
+    /// A pool world of the given liquid from row 40 down to the ground (the
+    /// `drowning_drains_breath_and_damages` shape).
+    fn liquid_pool_world(kind: tr_core::tile::LiquidKind) -> World {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(kind);
+            }
+        }
+        w.spawn_y = 44;
+        w
+    }
+
+    #[test]
+    fn s1_e_7a_obsidian_skin_arms_lava_fire_and_onfire_immunity() {
+        // `Player.cs:9875-9880`: lavaImmune + fireWalk + buffImmune[24].
+        let w = liquid_pool_world(tr_core::tile::LiquidKind::Lava);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(1, 36000);
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.in_lava, "the player settles in the lava");
+        assert!(p.lava_immune && p.fire_walk);
+        assert!(p.buffs.buff_immune[24], "OnFire immunity re-armed per tick");
+        assert_eq!(p.hp, 100, "the lava hit is skipped (`:27676`)");
+        assert!(p.buffs.find_buff_index(24).is_none());
+        p.buffs.add_buff(24, 420);
+        assert!(p.buffs.find_buff_index(24).is_none(), "the immune guard rejects OnFire");
+        // Without the buff the same pool hurts (the pre-existing lava arm).
+        let mut q = Player::spawn(&w);
+        for _ in 0..300 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(q.hp < 100, "no ObsidianSkin, the lava burns");
+    }
+
+    #[test]
+    fn s1_e_7a_swiftness_adds_a_quarter_move_speed() {
+        // `Player.cs:9952-9955`: `moveSpeed += 0.25f`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(3, 600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.25).abs() < 1e-4);
+        assert!((p.max_run_speed - 3.0 * 1.25).abs() < 1e-3);
+    }
+
+    #[test]
+    fn s1_e_7a_gills_breathe_underwater_and_invert_on_the_good_world() {
+        // `Player.cs:9958` + `:23226-23229`: the probe flips — underwater the
+        // breath stays full; on For the Worthy the DRY air drowns instead.
+        let w = liquid_pool_world(tr_core::tile::LiquidKind::Water);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(4, 36000);
+        for _ in 0..1500 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.in_water);
+        assert_eq!(p.breath, BREATH_MAX, "the gills breathe water");
+        assert_eq!(p.hp, 100);
+        // The good-world inversion: dry ground, the gills drain the breath.
+        let mut gw = ground_world();
+        gw.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut q = Player::spawn(&gw);
+        q.buffs.add_buff(4, 36000);
+        for _ in 0..1500 {
+            q.update(&gw, PlayerInput::default());
+        }
+        assert!(!q.in_water);
+        assert_eq!(q.breath, 0, "getGoodWorld && !flag — the air drowns");
+        assert!(q.hp < 100);
+    }
+
+    #[test]
+    fn s1_e_7a_mana_regeneration_buff_feeds_the_regen_engine() {
+        // `Player.cs:9964-9967` → `UpdateManaRegen` (`:19418-19562`): the buff
+        // doubles the base regen and pins the mana-fraction scaler at 1.0.
+        // Moving (vx != 0) so `standing_still` cannot double it on its own:
+        // num5 = 20/3 + 0 + 1 = 7; with the buff 14 × 1.0 = 14, without
+        // 7 × (0.5 + 0.5·0.5) = 5.25 → 5.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(6, 600);
+        p.mana = 10;
+        p.vx = 3.0;
+        p.regen.mana_regen_delay = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert!(p.mana_regen_buff);
+        assert_eq!(p.regen.mana_regen, 14);
+        let mut q = Player::spawn(&w);
+        q.mana = 10;
+        q.vx = 3.0;
+        q.regen.mana_regen_delay = 0.0;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.regen.mana_regen, 5);
+    }
+
+    #[test]
+    fn s1_e_7a_magic_power_adds_two_tenths_magic_damage() {
+        // `Player.cs:9968-9976`: `magicDamage += 0.2f`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(7, 600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.magic_damage - 1.2).abs() < 1e-4);
+    }
+
+    #[test]
+    fn s1_e_7a_featherfall_caps_the_fall_and_refreshes_the_fall_origin() {
+        // `Player.cs:9979` + `:27369-27376`: the /3 cap, the hover-up /10
+        // tighten; `:25379`: slowFall keeps the fall origin at the row.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(8, 600);
+        for _ in 0..40 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.slow_fall && !p.on_ground, "still falling after 40 ticks");
+        let cap = MAX_FALL + 0.01; // the `:24437` rebase tail
+        assert!((p.vy - cap / 3.0).abs() < 1e-4, "vy {}", p.vy);
+        assert_eq!(p.fall_start, (p.y / TILE_PX) as i32, "no fall accrues");
+        // The hover-up latch: one tick past the /5 gate snaps to /10.
+        p.try_keeping_hovering_up = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vy - cap / 10.0).abs() < 1e-4, "vy {}", p.vy);
+        // Let it land — the refreshed origin means no fall damage.
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        assert_eq!(p.hp, 100);
+    }
+
+    #[test]
+    fn s1_e_7a_the_flag_buffs_ride_their_slots_and_clear_on_expiry() {
+        // `Player.cs:9981-10028`: Spelunker 9, BiomeSight 343, Invisibility
+        // 10, NightOwl 12, Battle 13, WaterWalking 15, Hunter 17,
+        // Gravitation 18 — one flag per arm, re-derived per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for id in [9, 343, 10, 12, 13, 15, 17, 18] {
+            p.buffs.add_buff(id, 600);
+        }
+        p.update(&w, PlayerInput::default());
+        assert!(p.find_treasure, "9");
+        assert!(p.biome_sight, "343");
+        assert!(p.invis, "10");
+        assert!(p.night_vision, "12");
+        assert!(p.enemy_spawns, "13");
+        assert!(p.water_walk, "15");
+        assert!(p.detect_creature, "17");
+        assert!(p.grav_control, "18");
+        // The three flag debuffs of the same block derive the same way
+        // (`:10035`/`:10043`/`:10047`; their consumers have dedicated tests).
+        for id in [31, 35, 160] {
+            p.buffs.add_buff(id, 600);
+        }
+        p.update(&w, PlayerInput::default());
+        assert!(p.confused && p.silence && p.dazed);
+        // Expire them all — the ResetEffects clears leave every flag down.
+        let mut q = Player::spawn(&w);
+        for id in [9, 343, 10, 12, 13, 15, 17, 18] {
+            q.buffs.add_buff(id, 2);
+        }
+        for _ in 0..4 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(
+            !q.find_treasure && !q.biome_sight && !q.invis && !q.night_vision
+                && !q.enemy_spawns && !q.water_walk && !q.detect_creature
+                && !q.grav_control
+        );
+    }
+
+    #[test]
+    fn s1_e_7a_confused_swaps_the_run_keys() {
+        // `Player.cs:10035` + `:24996-25004`: left↔right after the controls
+        // land — a right press runs the player LEFT.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(31, 600);
+        let input = PlayerInput { right: true, ..PlayerInput::default() };
+        for _ in 0..30 {
+            p.update(&w, input);
+        }
+        assert!(p.confused);
+        assert!(p.control_left && !p.control_right, "the swap");
+        assert!(!p.control_down, "the pre-swap up (unported) is false");
+        assert!(p.vx < 0.0, "runs left, vx {}", p.vx);
+    }
+
+    #[test]
+    fn s1_e_7a_dazed_divides_the_jump_statics() {
+        // `Player.cs:10047` + `:19637-19641`: jumpHeight /5, jumpSpeed /2.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(160, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.dazed);
+        assert_eq!(p.jump_height, 15 / 5);
+        assert!((p.jump_speed - 5.01 / 2.0).abs() < 1e-4);
     }
 
     #[test]

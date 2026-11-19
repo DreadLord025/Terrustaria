@@ -4199,6 +4199,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
+                    // `Player.UpdateBuffs`' Invisibility (10) / Battle (13)
+                    // arms (`Player.cs:9991`/`:10003` → `NPC.GetSpawnRate`'s
+                    // `player.invis`/`player.enemySpawns`, `NPC.cs:702-740`):
+                    // the flags ride the buff scan (S1-E-7 wave A).
+                    invis: player.invis,
+                    enemy_spawns: player.enemy_spawns,
                     // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
