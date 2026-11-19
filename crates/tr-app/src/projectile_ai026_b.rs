@@ -358,20 +358,21 @@ mod tests {
 
     fn pet(kind: u16, x: f32, y: f32) -> Projectile {
         let data = proj_data(kind).expect("slice-B row");
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            pos: Vec2::new(x, y),
-            w: data.w,
-            h: data.h,
-            friendly: true,
-            time_left: data.time_left,
-            penetrate: data.penetrate,
-            max_penetrate: data.penetrate,
-            tile_collide: data.tile_collide,
-            ..Default::default()
-        }
+        // Field-by-field on `Default` — the struct has private bookkeeping
+        // fields (E0451 outside projectile.rs).
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = data.w;
+        p.h = data.h;
+        p.friendly = true;
+        p.time_left = data.time_left;
+        p.penetrate = data.penetrate;
+        p.max_penetrate = data.penetrate;
+        p.tile_collide = data.tile_collide;
+        p
     }
 
     /// The hover point the arm chases: `playerCenter + (-30 * direction,
