@@ -243,6 +243,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
         app.audio.play_npc_hit_sound(cue, x, y, rng);
     }
+    // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
+    // latches, the boomerang whoosh, the missile hum, the bomb blast): the
+    // style play's case-2 draws ride the SAME `UpdateProjectiles` stream
+    // (`Main.cs:17775-17777`), only after each play's attenuation gate
+    // passed. The C# plays inline mid-walk; the port drains at the pass
+    // tail (the wave-C batch convention, ANALYSIS "The projectile sound
+    // wave").
+    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+        app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {
@@ -268,6 +278,99 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             kb,
             ai0,
             0.0,
+        );
+    }
+}
+
+/// S1-E-21h — the pass-tail sound drain's stream contract (written, NOT
+/// run — code-only mode): the projectile cue plays consume the
+/// `UpdateProjectiles` stream ONLY when the attenuation gate passed, and
+/// every other stage stream stays pristine (the E21e witness pattern).
+#[cfg(test)]
+mod s1_e_21h_sound_stream_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::FROST_BOLT;
+    use tr_core::UnifiedRandom;
+
+    fn frost_bolt_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Inside the 8x8-tile fixture world, at rest — the arm's first
+        // tick queues its `SoundID.Item28` latch cue and nothing else.
+        app.projectiles.spawn_with_data_ai_owned(
+            FROST_BOLT,
+            0,
+            32.0,
+            32.0,
+            0.0,
+            0.0,
+            10,
+            4.0,
+            0.0,
+            0.0,
+        );
+        app
+    }
+
+    fn listener(sound_volume: f32) -> crate::sound::Listener {
+        crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        }
+    }
+
+    #[test]
+    fn s1_e_21h_the_proj_cue_draws_ride_update_projectiles_only_when_audible() {
+        // Muted: the drain plays nothing and the whole pass draws nothing
+        // (the frost bolt's arm is RNG-free) — the gate precedes the
+        // case-2 switch (`LegacySoundPlayer.cs:369-436` before `:516`).
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted gate",
+                key.name()
+            );
+        }
+        // Audible: exactly ONE case-2 default pitch draw (`Next(-6, 7)`,
+        // `:632`) on the `UpdateProjectiles` stream; the GetRandomPitch
+        // NextFloat rides the audio-only stream, never a stage stream.
+        let mut app = frost_bolt_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw on UpdateProjectiles"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The latch holds: the second tick queues nothing, draws nothing.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the one-cue-per-life latch draws nothing on tick 2"
         );
     }
 }
