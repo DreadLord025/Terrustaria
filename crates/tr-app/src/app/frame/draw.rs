@@ -1577,6 +1577,7 @@ impl App {
                             // recipes whose product passes the filterer.
                             self.craft_filters.shown(craft::available_with_gates(
                                 inventory,
+                                &self.equip,
                                 &self.world_chests,
                                 &in_range,
                                 &adj,
