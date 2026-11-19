@@ -88,6 +88,7 @@ mod npc_ai_style29;
 mod npc_ai_style33;
 mod npc_ai_style37;
 mod npc_ai_style39;
+mod npc_ai_style68;
 mod npc_ai_unicorn_b;
 mod npc_ai_style27;
 mod npc_ai_fishron;

@@ -32756,3 +32756,117 @@ will call once `NpcKind::EmpressOfLight` lands. The remainder: the roster row
 `update_kind_ai` wiring + the five projectile AIs + the `IsDamageDodgeable`
 636 arm (`npc.rs:3402-3403` notes it) + the `OurFavoriteColor` enrage tint
 (render-side). 28 witness tests WRITTEN NOT RUN — **no compiler invoked**.
+## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
+
+`crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 68)` block (`NPC.cs:34623-34879`) as a pure
+`ai_style_68(npc, ty, world, ctx, rng)` over the `Style68Ctx`/
+`Style68Outcome` seam. **Code-only mode: no compiler invoked; the 16
+witness tests are written, not run.** The module is UNWIRED — no
+`NpcKind` for the four types, no style-68 row in `npc/data.rs::ai_style`,
+no `update_rng` arm; the wiring is the family's merge step (the
+`npc_ai_style24.rs` precedent).
+
+**The census.** `Select-String "aiStyle = 68;"` over `NPC.cs` returns
+exactly FOUR rows: Duck2 363 (`:13629`), DuckWhite2 365 (`:13653`),
+Seagull2 603 (`:16755`), Grebe2 609 (`:16825`) — the swimming "2" forms
+of the aiStyle-7 walkers Duck 362 / DuckWhite 364 / Seagull 602 / Grebe
+608 (`ID/NPCID.cs:11401-11407`, `:11881-11895`). No dynamic reassignment
+rides the style. All four rows: 28×22, damage 0, defense 0, lifeMax 5,
+NPCHit1/NPCDeath1, catchItems 2122/2123/4359/4374. All four are in
+`NPCID.Sets.BirdThatCanPoop` (`NPCID.cs:10435`) — the walkers are NOT.
+The landing arm transforms back via `Transform(this.type - 1, 0f, 200 +
+Main.rand.Next(200))` (`:34760`); the walkers' own re-entry into the
+water (`:53180`, the `vy > 4 || vy < -4 || wet` gate in `UpdateNPC`) is
+the wiring round's companion.
+
+**Shared helpers reused UNMODIFIED** from `npc_ai_style24.rs`: the poop
+gate is byte-for-byte the style-24 gate (`bird_that_can_poop`,
+`find_closest_player` = `Player.FindClosest` `Player.cs:4942-4967`,
+`roll_only_bad_luck_extreme` = `Luck.cs:53-60`, `is_this_cenx` =
+`Player.cs:18179-18186`, the `Style24Player` seam). The one
+`TargetClosest()` (`:34641`) rides `npc_target::target_closest` with
+aiStyle 68 (not the fighter 3, so the centre rule applies).
+
+**Faithful pieces** (each cited at its site in the module):
+- The perch's old-facing keep (`:34639-34645`): `num1000` is the OLD
+  target, so a bird that already had a target keeps its direction even
+  though `TargetClosest` re-faces.
+- The wet swim gate (`:34646`): the probe column is the INTEGER division
+  of the TRUNCATED probe X — `(int)(Center.X + (width/2 + 8) * direction)
+  / 16`, cast FIRST then int `/16` (not `(int)(... / 16f)`); InWorld
+  fluff 5. The obstacle flip (`:34661`) keeps the STRICT
+  `> Main.maxTilesX - 5` (unlike InWorld's `>=`), the three
+  `WorldGen.SolidTile` probes (`WorldGen.cs:70111-70132` — null tile =
+  true, solidTop/halfBrick/slope/inActive exclusions) and the dry-feet
+  `liquid == 0` term; `spriteDirection = direction` (`:34665`) rides
+  `Npc::sprite_dir`.
+- The water line (`:34671-34698`) is the arm's OWN inline form — NOT
+  `Collision.GetWaterLine`: no `y-2` dry gate, no InWorld guard, the
+  centre column/row, the default line = the feet, the first
+  liquid-bearing row of (row-1, row, row+1) sets the surface at that
+  row's bottom minus the INTEGER `liquid / 16`, then -6. The hover
+  (`:34699-34714`): below the line -0.1 (cap -8) with the one-step-ahead
+  snap; at/above it pin `vy = line - Center.Y`.
+- The client return (`:34716-34719`) sits AFTER the swim, BEFORE the
+  takeoff/flutter; the dry takeoff (`:34720-34726`) has NO vy impulse
+  (unlike the flutter's -6, `:34731`); the flutter rect is the C#'s
+  int-truncated grown-100 XNA `Rectangle.Intersects` (strict edges) OR
+  `life < lifeMax`.
+- The flight: the dead-target freeze (`:34738-34741`) returns BEFORE the
+  timer increment; the 300-tick landing (`:34743-34775`) zeroes
+  vx/vy/ai[0]/ai[1] on `vy == 0 || collideY || wet`, transforms ONLY when
+  dry + netMode != 1, and the airborne else damps x0.98 / +0.1 / cap 2;
+  the bounces (`:34776-34800`) use oldVelocity x -0.5 with the ±2 X and
+  ±1 Y floors; the steering (`:34801-34832`) keeps the C#'s dead inner
+  `> 3` / `< -3` tests verbatim; the ground probe (`:34833-34857`) is the
+  15-row fluff-2 column with the raw `nactive() && tileSolid` OR liquid
+  test (no solidTop/slope terms); the hover (`:34858-34877`) sinks +0.1
+  in open air and caps +3/-4 — NOT the style-24 bird's +0.05/+2.
+- `transform_core` (`NPC.cs:81084-81114`): the ±height reposition nets
+  -4 (22 down, 26 up — the walker rows are 22×26), the ai/localAI
+  zeroing, ClearTarget 255, netUpdate, the collide reset, the
+  TargetClosest on the NEW type (aiStyle 7 — same centre rule), the
+  integer life rescale floored at 1 (both rows lifeMax 5, so the life
+  passes through), and THEN ai[0] = 0 / ai[1] = the drawn 200..399
+  (`:81111-81114`, AFTER the reset — the order is load-bearing).
+
+**RNG by construction.** The arm has exactly TWO draw sites: the poop
+gate's `RollOnlyBadLuckExtreme(50)` (`:34629` — the conditional
+`NextFloat()` + `Next(5)` pair, `Luck.cs:53-60`; a non-negative-luck
+player draws NOTHING) and the landing's `Main.rand.Next(200)`
+(`:34760` — ONE draw, only on a dry grounded landing tick of one of the
+four types with netMode != 1). Every other path — the swim, the flight,
+the bounces, the probe, the dead-target return, the wet landing, the
+client — draws nothing. The witnesses pin this by mirrored
+`UnifiedRandom` streams compared by full state: the 64-seed poop replay,
+the 32-seed landing replay, the zero-draw wet/client/descent pins and a
+ten-tick full-cycle replay (flight under the player → dry landing).
+
+**Folds / documented skips (the wiring round's job).**
+- The four `NpcKind` variants + the `SetDefaults` stats + the
+  `update_rng` `68 =>` dispatch claim; the machine keys on the vanilla
+  `npc_type` with the box on `size_override` until then.
+- The 1080 BirdDroppings projectile (`ProjectileID.cs:2714`) rides
+  `Style68Outcome::poop_shot` (the style-24 seam shape).
+- The full `NPC.Transform` (the walker `SetDefaults` sounds/value,
+  `TransformVisuals`, `GiveTownUniqueDataToNPCsThatNeedIt`, the netMode-2
+  SendData pair `:81131-81135`) — `transform_core` applies the observable
+  subset; the type flip itself rides `Style68Outcome::transform`.
+- `noGravity` rides `Style68Outcome::no_gravity` (the `Npc` slot has no
+  field yet); the generic integration tail (gravity/maxFall/oldVelocity
+  latches, `NPC.cs:90465-90503`/`:92538`) stays with the sim.
+- The walkers' water re-entry gate (`NPC.cs:53180`) and the
+  `FindFrame`/gore arms (`:86258-86305`) are the companion wiring rows.
+- The local `solid_tile` copy (the `drawdata_cases_a.rs`/`grapple.rs`
+  shape) — the shared-helper extraction is the wiring step's, the
+  `npc_ai_style16.rs` precedent.
+
+**Verification.** Code-only: the whole arm was re-read line-by-line
+against `NPC.cs:34623-34879` (the gate casts, the flip margin, the water
+line's integer division, the landing order, the probe's fluff, the caps);
+every seam call site was checked against the actual signatures by
+read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
+`World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
+writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
+16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
