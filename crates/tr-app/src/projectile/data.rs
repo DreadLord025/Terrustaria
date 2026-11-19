@@ -1088,12 +1088,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 RESET_STATE,
             ),
             // `Projectile.cs:5081-5090` — the Ray Gunner's laser (438): 8x8,
-            // aiStyle 1, hostile, extraUpdates 3, ignoreWater. The C# also
-            // sets `alpha = 255`; the row keeps the reset 0 (the draw's
-            // generic path does not read alpha yet, and the baseline reset
-            // sweep pins it) — S1-D-5, ANALYSIS "The projectile data-row
-            // deviations". `MARTIAN_RAY` is the same-id alias; its
-            // duplicate arm was deleted.
+            // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, ignoreWater.
+            // S1-D-5 carries the C# alpha: the slice-A fade (`:55660-55671`)
+            // fades IN from 255 — the reset 0 made the laser visible from
+            // tick 1. The generic draw path does not read alpha yet
+            // (ANALYSIS "The projectile data-row deviations (S1-D-5)").
+            // `MARTIAN_RAY` is the same-id alias; its duplicate arm was
+            // deleted.
             RAY_GUNNER => (
                 8.0,
                 8.0,
@@ -1104,7 +1105,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:5188-5197` — the deathray: 30x30, aiStyle 79,
             // penetrate -1, tileCollide false, ignoreWater, timeLeft 240
@@ -1515,14 +1516,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
             MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
-            // aiStyle 1, hostile, extraUpdates 3, tileCollide false,
-            // ignoreWater. The C# `alpha = 255` stays at the reset 0 here —
-            // S1-D-5, ANALYSIS "The projectile data-row deviations".
-            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, RESET_STATE),
+            // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
+            // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
+            // fade `:55660-55671` fades IN from 255). 462/622 are DISTINCT
+            // C# ids (`ProjectileID.cs:1478`/`:1798`) — separate rows, not
+            // aliases; the duplicate arms the moon-lord merge appended were
+            // unreachable copies, deleted.
+            PHANTASMAL_BOLT => (8.0, 8.0, 1, 1, 3600, 3, false, false, true, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:6691-6698` — the death-drama smoke (622): 10x10,
-            // aiStyle 1, extraUpdates 2. The C# `alpha = 255` stays at the
-            // reset 0 here — same S1-D-5 note.
-            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
+            // aiStyle 1, `alpha = 255`, extraUpdates 2. S1-D-5 carries the
+            // C# alpha — the smoke is INVISIBLE for its whole 69-tick life
+            // (`AI_001` `:56165-56183` never fades it; the visible effect is
+            // the dust 229, a documented skip).
+            BLOWUP_SMOKE_MOONLORD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // Deadeye's arrow 180 (4x4, aiStyle 1, penetrate -1, scale 1.2).
             // The Corsair's shot is kind **82 FlamingArrow** (`ProjectileID.cs
             // :718`, `Projectile.cs:1625-1631`: 10x10, aiStyle 1, hostile) —
@@ -1782,9 +1788,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:2591-2600` EnchantedBeam — 16x16, melee, `penetrate = 1`,
             // light 0.2, alpha 255.
             ENCHANTED_BEAM => (16.0, 16.0, 27, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
-            // `:2937-2945` Leaf — 14x14, aiStyle 40, `penetrate = 1`, alpha
-            // 255, `timeLeft = 360`.
-            LEAF => (14.0, 14.0, 40, 1, 360, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // S1-D-5: the `LEAF` arm that sat here is deleted — `LEAF` =
+            // 206 = `LEAF_BLOWER` (the same-id alias), and its tuple was
+            // value-identical to the live `:2937-2945` row above (only the
+            // formatting differed). Unreachable behind that winner; one row
+            // per id. The alias const stays for its callers.
             // `:3826-3837` LostSoulHostile — 12x12, aiStyle 51, alpha 255,
             // `tileCollide = false`, `penetrate = -1`, `extraUpdates = 1`
             // (the `293` arm's hunt lands in Phase 3).
