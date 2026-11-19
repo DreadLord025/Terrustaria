@@ -223,7 +223,11 @@ pub fn sphere_family_step(
     flags: Style9Flags,
     _rng: &mut UnifiedRandom,
 ) {
-    let npc_type = npc.kind.to_u16() as i32;
+    // The C# arm keys on the VANILLA type (`this.type`, NPCID: BurningSphere
+    // 25 / ChaosBall 30 / WaterSphere 33) - `net_id()` carries it; `to_u16`
+    // is the port's INTERNAL protocol space (data.rs:1006-1009) and would
+    // mis-route the speed ladder (MERGER-L7 first-run fix).
+    let npc_type = npc.kind.net_id();
     // `:21407-21449` — the ONE-SHOT launch: only while `target == 255`
     // (the SetDefaults sentinel). `TargetClosest()` (`:21409`,
     // `NPC.cs:77652-77666`) picks and faces the player first.
