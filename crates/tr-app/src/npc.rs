@@ -22865,7 +22865,10 @@ mod s1_f_13b_tests {
         // seam check only proves the dispatch. Outside the Pumpkin Moon the
         // machine's flee row arms the 10-tick despawn encouragement
         // (`NPC.cs:25158`) and zeroes the SetDefaults alpha 100 every tick
-        // (`:25150`) — neither happens on the old caster stand.
+        // (`:25150`) — neither happens on the old caster stand. The walkers
+        // above ran on-moon (slice A's retarget gate); flip off for the flee
+        // witness.
+        w.pumpkin_moon = false;
         let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         ghost.hp = ghost.max_hp;
         ghost.vx = 2.0;
