@@ -1,8 +1,10 @@
 //! The micro-biomes — the shape-level ports of the `GameContent/Biomes`
 //! micro classes: `CaveHouseBiome` (the underground cabins), `CampsiteBiome`
 //! (the desert campsites), `SpikePitBiome` (the jungle spike pits),
-//! `EnchantedSwordBiome` (the sword shrines) and `MahoganyTreeBiome` (the
-//! jungle's living mahogany trees — S1-K-2 wave A, the faithful port).
+//! `EnchantedSwordBiome` (the sword shrines), `MahoganyTreeBiome` (the
+//! jungle's living mahogany trees — S1-K-2 wave A, the faithful port) and
+//! `MiningExplosivesBiome` (the wired ore-vein traps — S1-K-2 wave B, the
+//! faithful port).
 //!
 //! Source map (line numbers into `decompiled/Terraria/GameContent/Biomes/`):
 //! - `CaveHouseBiome.Place` (`:34-92`): the 25-tile wire/chest exclusion,
@@ -26,6 +28,23 @@
 //!   sine-swayed trunk, the `ShapeBranch`/`ShapeRoot` walks, the blotched
 //!   leaf canopies and the style-10 jungle chest; the pass block is
 //!   `WorldGen.cs:21105-21123` (the `LivingTreeCount` config roll)
+//! - `MiningExplosivesBiome.Place` (`:10-83`, S1-K-2 wave B): the faithful
+//!   port — the solid/spider-wall vetoes, the `SelectRandom` tier-ore pick,
+//!   the direction double + side/down finds, the `ShapeRunner(10, 20)`
+//!   blotched scan with the half-solid gate, the 30×20 `CanPlace` box, the
+//!   ore fill + the `Circle(5)` hollow, the 141 explosives / 411 detonator
+//!   pair and the `WireLine` red run; the pass block is
+//!   `WorldGen.cs:21061-21101` (the `ExplosiveTrapCount` config roll)
+//! - `ThinIceBiome.Place` (`:9-34`, S1-K-2 wave C): the faithful port —
+//!   the 50×50 tile-scan gate (snow 147 must outnumber mud 59 and
+//!   dirt+stone {0,1} — active cells only — hive 225 vetoes), the
+//!   shrinking blotched 162
+//!   (`BreakableIce`) circles stepping down, the liquid-pocket clear;
+//!   the pass block is `WorldGen.cs:20941-20973` (the `ThinIcePatchCount`
+//!   config roll, the 1000-failure give-up). The snow-dominance gate is
+//!   dead in the port's compact terrain (the snow band is one 147 row +
+//!   the 161 ice shell — ANALYSIS), so the pass places nothing on a
+//!   generated world until the faithful `Generate Ice Biome` pass lands.
 //!
 //! Deviations (ANALYSIS "Micro-biomes (M1.4-WGEN-8)"): the C#'s
 //! `HouseBuilder` room variants (the granite/marble/mushroom/ice/jungle
@@ -1185,6 +1204,208 @@ pub(crate) fn pass_mahogany_trees(
     placed
 }
 
+/// `Shapes.Circle(r).Perform` (`Shapes.cs:33-49`), the square-radius
+/// specialisation (`hr == vr`): **y-major** — rows `oy-r..=oy+r`, each row
+/// spanning `ox ± min(r, (int)sqrt((r+1)² - dy²))`. The row-major cell
+/// order is load-bearing for the per-cell `Blotches` draws.
+fn circle_gen(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    r: i32,
+    mut apply: impl FnMut(&mut World, i32, i32),
+) {
+    let sq = (r + 1) * (r + 1);
+    for y in oy - r..=oy + r {
+        let dy = y - oy;
+        let half = r.min(((sq - dy * dy) as f64).sqrt() as i32);
+        for x in ox - half..=ox + half {
+            apply(world, x, y);
+        }
+    }
+}
+
+/// `Modifiers.Blotches(scale)` (`Modifiers.cs:99-106,126-146`) at the
+/// default 0.3 chance: two `NextDouble` draws per cell (the first
+/// discarded), then the chain either spreads over a
+/// `Next(1-scale, 1)..Next(0, scale)` × `Next(1-scale, 1)..Next(0, scale)`
+/// box or applies to the plain cell. `apply` is the remaining chain.
+fn blotched_gen(
+    world: &mut World,
+    rng: &mut super::Rng,
+    cx: i32,
+    cy: i32,
+    scale: i32,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    let _ = rng.next_f64();
+    let (x0, x1, y0, y1) = if rng.next_f64() < 0.3 {
+        (
+            cx + rng.range(1 - scale, 1),
+            cx + rng.range(0, scale),
+            cy + rng.range(1 - scale, 1),
+            cy + rng.range(0, scale),
+        )
+    } else {
+        (cx, cx, cy, cy)
+    };
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            apply(world, x, y);
+        }
+    }
+}
+
+/// `Modifiers.OnlyTiles` (`Modifiers.cs:233-257`): the cell must be
+/// active AND of a listed kind (unlike `SkipTiles`, inactive cells FAIL).
+fn only_tiles(world: &World, x: i32, y: i32, kinds: &[u16]) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && kinds.contains(&t.kind))
+}
+
+/// `ThinIceBiome.Place` (`ThinIceBiome.cs:9-34`, S1-K-2 wave C): the thin
+/// ice sheet over the snow biome's underground pockets — the 50×50
+/// `TileScanner(0, 59, 147, 1, 225)` gate (`:12-23`: hive 225 vetoes; the
+/// snow 147 must strictly outnumber the mud 59 AND the dirt+stone {0,1}
+/// — active cells only, air never counts),
+/// then the shrinking blotched circles (`:24-31`): the radius rolls
+/// `Next(10, 15)` once and steps down while > 5, each circle's x-offset
+/// rolls `Next(-5, 5)`, the centre walks down by `radius - 2`; the first
+/// chain (`Blotches(4)` + `OnlyTiles(147, 161, 224, 0, 1)` +
+/// `SetTile(162, setSelfFrames: true)`) freezes the snow/ice/slush/air/
+/// dirt into `BreakableIce` 162, the second (`Blotches(4)` + `HasLiquid()`
+/// + `SkipTiles(21, 467, 226, 237)` + `SetTile(162)` + `SetLiquid(0, 0)`)
+/// freezes and drains the liquid cells. `:32`: `AddStructure` of the
+/// 50×50 box inflated by 8 — the *non-protected* list, which no vanilla
+/// `CanPlace` reads (`StructureMap.cs:19-52,68-85`), so the port does not
+/// register it (the mahogany/honey passes register PROTECTED rects).
+///
+/// Deviations (ANALYSIS "Micro-biomes"): the `setSelfFrames` framing rides
+/// the post-pipeline `frame_world` seam (the 162 `IcesSnow` merge arm,
+/// `WorldGen.cs:82040-82042`); the `dualDungeons` origin veto is deferred
+/// with the seed; the snow-dominance gate is dead in the compact terrain
+/// (one 147 row over the 161 shell — `terrain.rs:320-330`), so the pass
+/// places nothing on a generated world until the faithful `Generate Ice
+/// Biome` pass lands — the port still runs the exact searches/gates.
+pub(crate) fn place_thin_ice(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    rng: &mut super::Rng,
+) -> bool {
+    // `:11-15`: the TileScanner over the 50×50 box at (ox-25, oy-25) —
+    // `Actions.TileScanner` (`Actions.cs:60-97`) counts active cells of
+    // the listed kinds only; `Shapes.Rectangle` (`Shapes.cs:165-178`)
+    // walks x-major, which the RNG-free scan does not observe.
+    let mut counts = [0i32; 5];
+    const KINDS: [u16; 5] = [0, 59, 147, 1, 225];
+    for x in ox - 25..ox + 25 {
+        for y in oy - 25..oy + 25 {
+            if let Some(t) = world.tile(x, y) {
+                if t.active() {
+                    if let Some(idx) = KINDS.iter().position(|&k| k == t.kind) {
+                        counts[idx] += 1;
+                    }
+                }
+            }
+        }
+    }
+    let dirt_stone = counts[0] + counts[3];
+    let mud = counts[1];
+    let snow = counts[2];
+    // `:16-19`: any hive tile vetoes the spot.
+    if counts[4] > 0 {
+        return false;
+    }
+    // `:20-23`: snow must dominate BOTH the mud and the dirt+stone
+    // (`dictionary[0] + dictionary[1]` — the ACTIVE dirt 0 and stone 1;
+    // air is inactive and never counted).
+    if snow <= mud || snow <= dirt_stone {
+        return false;
+    }
+    // `:24-31`: the shrinking circles, stepping down.
+    let mut y_off = 0i32;
+    let mut r = rng.range(10, 15);
+    while r > 5 {
+        let x_off = rng.range(-5, 5);
+        let (cx, cy) = (ox + x_off, oy + y_off);
+        // `:28`: Blotches(4) + OnlyTiles(147, 161, 224, 0, 1) + SetTile(162).
+        circle_gen(world, cx, cy, r, |w, x, y| {
+            blotched_gen(w, rng, x, y, 4, &mut |w, bx, by| {
+                if only_tiles(w, bx, by, &[147, 161, 224, 0, 1]) {
+                    set_tile_clear(w, bx, by, 162);
+                }
+            });
+        });
+        // `:29`: Blotches(4) + HasLiquid() + SkipTiles(21, 467, 226, 237)
+        // + SetTile(162) + SetLiquid(0, 0). `Modifiers.HasLiquid()`
+        // (`Modifiers.cs:434-448`): any nonzero liquid, any type.
+        circle_gen(world, cx, cy, r, |w, x, y| {
+            blotched_gen(w, rng, x, y, 4, &mut |w, bx, by| {
+                let Some(t) = w.tile(bx, by) else { return };
+                if t.liquid == 0 || !skip_tiles(w, bx, by, &[21, 467, 226, 237]) {
+                    return;
+                }
+                set_tile_clear(w, bx, by, 162);
+                // Actions.SetLiquid(0, 0) (`Actions.cs:563-568`): water
+                // type, level 0.
+                if let Some(t) = w.tile_mut(bx, by) {
+                    t.liquid = 0;
+                    t.clear_liquid_kind();
+                }
+            });
+        });
+        y_off += r - 2;
+        r -= 1;
+    }
+    // `:32-33`: AddStructure(50×50, padding 8) — the non-protected list
+    // no CanPlace reads; return true.
+    true
+}
+
+/// The Micro Biomes pass's thin-ice block (`WorldGen.cs:20941-20973`,
+/// S1-K-2 wave C): the `ThinIcePatchCount` config roll (Min 3, Max 5,
+/// WorldWidth — `worldgen_configuration.json:205-209`), then
+/// `RandomWorldPoint(worldSurface + 20, 50, 200, 50)`
+/// (`WorldGen.cs:27111-27114`: x = Next(50, maxX-50), y = Next(top,
+/// maxY-200)) attempts until the count is met — a failure streak over
+/// 1000 burns one wanted patch (`:20963-20970`, the vanilla give-up).
+pub(crate) fn pass_thin_ice(
+    world: &mut World,
+    world_surface: f64,
+    count: i32,
+    rng: &mut super::Rng,
+) -> u32 {
+    let y_lo = world_surface as i32 + 20;
+    let y_hi = world.height - 200;
+    // The sub-vanilla guard: the C#'s Next(top, maxY-200) throws on a
+    // collapsed band; the port's small test worlds skip the block (the
+    // same idiom the mahogany pass carries).
+    if y_hi <= y_lo || world.width <= 100 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    let mut done = 0i32;
+    let mut fails = 0i32;
+    while done < count {
+        let x = rng.range(50, world.width - 50);
+        let y = rng.range(y_lo, y_hi);
+        if place_thin_ice(world, x, y, rng) {
+            done += 1;
+            placed += 1;
+            fails = 0;
+        } else {
+            fails += 1;
+            if fails > 1000 {
+                done += 1;
+                fails = 0;
+            }
+        }
+    }
+    placed
+}
+
 /// The hive pass's honey patches (`WorldGen.cs:15946-15968`): each placed
 /// hive rolls `Next(5)` patches on the angle/radius ring around its centre
 /// (the 30-90 px ring, the bounds gate, the `extraLiquid` seed's zero).
@@ -1223,6 +1444,503 @@ pub(crate) fn place_honey_patches_around(
     placed
 }
 
+
+// --- the mining explosives (S1-K-2 wave B) ----------------------------------
+//
+// `MiningExplosivesBiome` (`MiningExplosivesBiome.cs:10-83`) + the Micro
+// Biomes pass's explosives block (`WorldGen.cs:21061-21101`). Wave-B choice
+// (documented in ROADMAP/ANALYSIS): the alphabetically earlier unported
+// classes are either big (`DeadMansChestBiome.cs` 16 KB, `HiveBiome.cs`
+// 10 KB + the faithful `Beehives` rewrite and `GenVars.larvaX/Y`), the
+// dual-dungeons-seed `DitherSnake*` set, or dead code (`CorruptionPitBiome`
+// — no `CreateBiome<>` call site exists); `MiningExplosivesBiome.cs`
+// (3.6 KB) is the first small unported one. Wave C took `ThinIceBiome`.
+
+/// `WorldGen.InWorld(x, y, fluff)` — the padded bounds check.
+fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && y >= fluff && x < world.width - fluff && y < world.height - fluff
+}
+
+/// `Conditions.IsSolid` (`Conditions.cs:84-97`): `InWorld(x, y, 10)` and an
+/// active tile whose kind is in `Main.tileSolid` — the RAW solidity table
+/// (solid-top and sloped tiles pass; unlike `WorldGen.SolidTile`).
+fn is_solid_condition(world: &World, x: i32, y: i32) -> bool {
+    in_world_fluff(world, x, y, 10)
+        && world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && crate::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `WorldGen.SolidOrSlopedTile(Tile, includePlatforms: false)`
+/// (`WorldGen.cs:69985-70009`): active, `tileSolid`, not `tileSolidTop`,
+/// not wired-inactive — slopes and half-bricks pass.
+fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && crate::tiledata::TILE_SOLID.has(t.kind)
+            && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+    })
+}
+
+/// `WorldGen.SolidTile2` (`WorldGen.cs:70492-70509`): active, `tileSolid`,
+/// slope 0, no half-brick, not inactive; out-of-bounds reads as solid.
+/// (The C#'s platform half-brick/top-slope alternative is moot — the
+/// half-brick veto below it always fires. The `tileSolid[162/232/229]`
+/// toggles the Larva/MicroBiomes pass heads flip (`WorldGen.cs:20897-20909`)
+/// are not modelled — the port's boot table stands, the same deferral the
+/// temple's `solid_tile2_p2` documents.)
+fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+        && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+}
+
+/// `Searches.Down(max)` + `Conditions.IsSolid` (`Searches.cs:51-71`): the
+/// first solid cell at `(x, y + i)`, `i` from 0 (the origin itself counts).
+fn find_down_solid(world: &World, x: i32, y: i32, max: i32) -> Option<i32> {
+    for i in 0..max {
+        if y + i >= world.height {
+            break;
+        }
+        if is_solid_condition(world, x, y + i) {
+            return Some(y + i);
+        }
+    }
+    None
+}
+
+/// `Searches.Left/Right(max)` + `Conditions.IsSolid` (`Searches.cs:7-49`):
+/// the origin itself is checked at `i == 0`; `dir` is -1 (Left) or +1
+/// (Right).
+fn find_side_solid(world: &World, x: i32, y: i32, max: i32, dir: i32) -> Option<i32> {
+    for i in 0..max {
+        let px = x + dir * i;
+        if is_solid_condition(world, px, y) {
+            return Some(px);
+        }
+    }
+    None
+}
+
+/// `Utils.RandomVector2D(random, min, max)` (`Utils.cs:2436-2439`): X then
+/// Y, one `NextDouble` each.
+fn random_vector2d(rng: &mut super::Rng, min: f64, max: f64) -> (f64, f64) {
+    let x = (max - min) * rng.next_f64() + min;
+    let y = (max - min) * rng.next_f64() + min;
+    (x, y)
+}
+
+/// `ShapeRunner(strength, steps, velocity).Perform`
+/// (`GameContent/Generation/ShapeRunner.cs:23-58`): the Manhattan-disc
+/// walker. The non-zero start velocity skips the initial `RandomVector2D`;
+/// each iteration re-derives `num3 = strength * (num / steps)`, decrements
+/// `num` twice (once at the top, once by `num8 = (int)(num3/50) + 1`), walks
+/// the clamped box `[max(1, pos - num3/2), min(worldSize, pos + num3/2))`
+/// with one `Next(-10, 11)` threshold draw per cell, then advances the
+/// position by the velocity `1 + num8` times with a `RandomVector2D(-0.5,
+/// 0.5)` jitter after each of the `num8` extra advances and one more
+/// clamped jitter at the tail. `output` collects every visited cell
+/// (relative to the origin, deduped, insertion order — the `ShapeData`
+/// `HashSet<Point16>` the C# `ModShapes.All` iterates).
+fn shape_runner(
+    world: &mut World,
+    origin: (i32, i32),
+    strength: f64,
+    steps: i32,
+    velocity: (f64, f64),
+    rng: &mut super::Rng,
+    output: &mut Vec<(i32, i32)>,
+    mut chain: impl FnMut(&mut World, &mut super::Rng, i32, i32),
+) {
+    let mut num = steps as f64;
+    let num2 = steps as f64;
+    let mut num3 = strength;
+    let mut pos = (origin.0 as f64, origin.1 as f64);
+    let mut vel = velocity;
+    while num > 0.0 && num3 > 0.0 {
+        num3 = strength * (num / num2);
+        num -= 1.0;
+        let x0 = ((pos.0 - num3 * 0.5) as i32).max(1);
+        let y0 = ((pos.1 - num3 * 0.5) as i32).max(1);
+        let x1 = ((pos.0 + num3 * 0.5) as i32).min(world.width);
+        let y1 = ((pos.1 + num3 * 0.5) as i32).min(world.height);
+        for i in x0..x1 {
+            for j in y0..y1 {
+                let threshold = num3 * 0.5 * (1.0 + rng.range(-10, 11) as f64 * 0.015);
+                if (i as f64 - pos.0).abs() + (j as f64 - pos.1).abs() >= threshold {
+                    continue;
+                }
+                // `GenShape.UnitApply` (`GenShape.cs:13-20`): the Output
+                // shape records the cell BEFORE the action chain runs.
+                let rel = (i - origin.0, j - origin.1);
+                if !output.contains(&rel) {
+                    output.push(rel);
+                }
+                chain(world, rng, i, j);
+            }
+        }
+        let num8 = (num3 / 50.0) as i32 + 1;
+        num -= num8 as f64;
+        pos = (pos.0 + vel.0, pos.1 + vel.1);
+        for _ in 0..num8 {
+            pos = (pos.0 + vel.0, pos.1 + vel.1);
+            let j = random_vector2d(rng, -0.5, 0.5);
+            vel = (vel.0 + j.0, vel.1 + j.1);
+        }
+        let j = random_vector2d(rng, -0.5, 0.5);
+        vel = (
+            (vel.0 + j.0).clamp(-1.0, 1.0),
+            (vel.1 + j.1).clamp(-1.0, 1.0),
+        );
+    }
+}
+
+/// `TileID.Sets.GeneralPlacementTiles` (`TileID.cs:568`):
+/// `CreateBoolSet(true, …)` — every kind is valid EXCEPT the listed ones
+/// (`SetFactory.cs:97-109` flips the default).
+fn general_placement_tile(kind: u16) -> bool {
+    !matches!(
+        kind,
+        225 | 41 | 481 | 43 | 482 | 44 | 483 | 226 | 203 | 112 | 25 | 70 | 151 | 21 | 31
+            | 696 | 467 | 12 | 665 | 639 | 138 | 664 | 711 | 712 | 713 | 714 | 715 | 716
+    )
+}
+
+/// `StructureMap.CanPlace(area)` (`StructureMap.cs:19-49`, padding 0): the
+/// bounds gate, the protected-rect intersection, then the active-tile
+/// scan against `GeneralPlacementTiles`. The port's `protected` rect list
+/// is the structure-map stand-in (the same idiom the other micro passes
+/// carry).
+fn can_place_general(
+    world: &World,
+    area: (i32, i32, i32, i32),
+    protected: &[(i32, i32, i32, i32)],
+) -> bool {
+    let (ax, ay, aw, ah) = area;
+    if ax < 0 || ay < 0 || ax + aw > world.width - 1 || ay + ah > world.height - 1 {
+        return false;
+    }
+    for &(rx, ry, rw, rh) in protected {
+        if ax < rx + rw && ax + aw > rx && ay < ry + rh && ay + ah > ry {
+            return false;
+        }
+    }
+    for x in ax..ax + aw {
+        for y in ay..ay + ah {
+            if world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && !general_placement_tile(t.kind))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.Place1x1(x, y, 141, style 0)` (`WorldGen.cs:45188-45235`): the
+/// explosives write — `InWorld(x, y, 2)`, a `SolidTile2` floor and an empty
+/// cell, then active + kind 141 + `frameY = 0` (the default style branch;
+/// `frameX` keeps its stored value). The 141 `PlaceTile` arm
+/// (`WorldGen.cs:60129-60140`) dispatches here; `forced: true` only bypasses
+/// the outer `PlaceTile` gate (`:59373`), not this one.
+fn place_explosives_tile(world: &mut World, x: i32, y: i32) {
+    if !in_world_fluff(world, x, y, 2) {
+        return;
+    }
+    if !solid_tile2(world, x, y + 1) || active_at(world, x, y) {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = 141;
+    t.frame_y = 0;
+}
+
+/// `WorldGen.Place2x2(x, y, 411, style 0)` (`WorldGen.cs:51330-51423`): the
+/// detonator write — the 5-tile bounds gate, the 2×2 body
+/// `(x-1..=x, y-1..=y)` empty, both floor columns `(x-1, y+1)`/`(x, y+1)`
+/// active and `SolidTile2` (the `tileTable` alternative never fires — the
+/// caller reset the floor to stone), then the 2×2 at `(x-1, y-1)` with
+/// `frameX = k*18`, `frameY = l*18`.
+fn place_detonator_tile(world: &mut World, x: i32, y: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    for i in x - 1..x + 1 {
+        for j in y - 1..y + 1 {
+            if active_at(world, i, j) {
+                return;
+            }
+        }
+        let floor = world.tile(i, y + 1);
+        if !floor.is_some_and(|t| t.active()) || !solid_tile2(world, i, y + 1) {
+            return;
+        }
+    }
+    for k in 0..2 {
+        for l in 0..2 {
+            let i = world.index(x - 1 + k, y - 1 + l);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = 411;
+            t.frame_x = (k * 18) as i16;
+            t.frame_y = (l * 18) as i16;
+        }
+    }
+}
+
+/// `WorldUtils.WireLine(start, end)` (`WorldUtils.cs:109-129`): the two
+/// endpoint captures happen BEFORE the component swaps — the horizontal
+/// run rides the ORIGINAL `start.Y` and the vertical run the ORIGINAL
+/// `end.X` (the C# quirk, ported verbatim). `WorldGen.PlaceWire`
+/// (`WorldGen.cs:58111-58120`) sets the red wire bit.
+fn wire_line(world: &mut World, start: (i32, i32), end: (i32, i32)) {
+    let point = start;
+    let point2 = end;
+    let (mut sx, mut sy) = start;
+    let (mut ex, mut ey) = end;
+    if ex < sx {
+        std::mem::swap(&mut ex, &mut sx);
+    }
+    if ey < sy {
+        std::mem::swap(&mut ey, &mut sy);
+    }
+    for i in sx..=ex {
+        world.wires.set(i, point.1, crate::wiring::WireColor::Red, true);
+    }
+    for j in sy..=ey {
+        world.wires.set(point2.0, j, crate::wiring::WireColor::Red, true);
+    }
+}
+
+/// `MiningExplosivesBiome.Place` (`MiningExplosivesBiome.cs:10-83`): the
+/// wired ore-vein trap — the solid-origin and spider/lichzahrd wall vetoes,
+/// the `SelectRandom` ore pick over the world's four tier kinds (gold,
+/// silver, iron, copper order — `Utils.cs:2459-2462`, one `Next(4)`), the
+/// `NextDouble*2-1` direction, the side-40 + down-80 solid finds, the
+/// `ShapeRunner(10, 20, (num, 1))` blotched scan with the half-solid gate,
+/// the 30×20 `CanPlace` box, the ore fill, the offset `Circle(5)` blotched
+/// clear, the two down-10 finds (the `Next(4) == 0` width pick), the 3×5
+/// detonator alcove with the stone floor reset, the explosives 141 +
+/// detonator 411 and the red wire run.
+///
+/// The `setSelfFrames`/`TileFrame`/`SquareTileFrame` calls ride the
+/// deferred post-pipeline framing seam (the ore kinds merge through
+/// `SET_ORE`; 141/411 are frame-important — `Main.cs:7750`/`:8314` — so
+/// the framer keeps their stored frames; the boot statics carry the bits).
+pub(crate) fn place_mining_explosives(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    protected: &mut Vec<(i32, i32, i32, i32)>,
+    rng: &mut super::Rng,
+) -> bool {
+    // `:12-19`: the origin must not be solid; the spider wall 216 and the
+    // lizhahrd wall 187 veto.
+    if solid_tile(world, ox, oy) {
+        return false;
+    }
+    if world.tile(ox, oy).is_some_and(|t| t.wall == 216 || t.wall == 187) {
+        return false;
+    }
+    // `:20`: `Utils.SelectRandom(GenBase._random, gold, silver, iron,
+    // copper)` — the bar-id conditions map onto the port's rolled ore
+    // tiers (`GenVars.goldBar == 19` ⇔ the gold ore is 8, not platinum
+    // 169; the same pairing for the other three).
+    let tiers = &world.ore_tiers;
+    let choices = [
+        if tiers.gold == 8 { 8u16 } else { 169 },
+        if tiers.silver == 9 { 9 } else { 168 },
+        if tiers.iron == 6 { 6 } else { 167 },
+        if tiers.copper == 7 { 7 } else { 166 },
+    ];
+    let kind = choices[rng.range(0, 4) as usize];
+    // `:21-29`: the direction double, then the side-40 find (Right when
+    // positive, Left otherwise) and the down-80 find.
+    let num = rng.next_f64() * 2.0 - 1.0;
+    let dir = if num > 0.0 { 1 } else { -1 };
+    let Some(px) = find_side_solid(world, ox, oy, 40, dir) else {
+        return false;
+    };
+    let Some(py) = find_down_solid(world, px, oy, 80) else {
+        return false;
+    };
+    let origin = (px, py);
+    // `:30-37`: the ShapeRunner scan — `Blotches()` (scale 2) → Scanner →
+    // `Modifiers.IsSolid` (`Modifiers.cs:561-571`: active +
+    // SolidOrSlopedTile) → Scanner. The shape Output records every visited
+    // cell; the gate is `solid < total / 2` (integer division).
+    let mut shape: Vec<(i32, i32)> = Vec::new();
+    let mut total = 0i32;
+    let mut solid = 0i32;
+    shape_runner(world, origin, 10.0, 20, (num, 1.0), rng, &mut shape, |w, rng, x, y| {
+        blotched_gen(w, rng, x, y, 2, &mut |w, bx, by| {
+            total += 1;
+            if solid_or_sloped(w, bx, by) {
+                solid += 1;
+            }
+        });
+    });
+    if solid < total / 2 {
+        return false;
+    }
+    // `:38-42`: the 30×20 structure box.
+    let area = (origin.0 - 15, origin.1 - 10, 30, 20);
+    if !can_place_general(world, area, protected) {
+        return false;
+    }
+    // `:43`: the ore fill over the recorded shape (`ModShapes.All` —
+    // insertion order, `Actions.SetTile(kind, setSelfFrames: true)`).
+    for &(dx, dy) in &shape {
+        set_tile_clear(world, origin.0 + dx, origin.1 + dy, kind);
+    }
+    // `:44`: the access hollow — `Circle(5)` + `Blotches()` +
+    // `ClearTile(frameNeighbors: true)` at `(origin.X - (int)(num * -5),
+    // origin.Y - 5)`. The shared `circle_gen` (`Shapes.cs:33-49`'s y-major
+    // row spans) + `blotched_gen` (the wave-C helpers, same C# source).
+    let hx = origin.0 - (num * -5.0) as i32;
+    let hy = origin.1 - 5;
+    circle_gen(world, hx, hy, 5, |w, x, y| {
+        blotched_gen(w, rng, x, y, 2, &mut |w, bx, by| {
+            clear_tile_keep(w, bx, by);
+        });
+    });
+    // `:45-50`: the explosives floor find (3 tiles against the drift
+    // direction), the `Next(4) == 0` width pick (3 or 7) and the detonator
+    // floor find on the other side. The C# `&` is non-short-circuiting —
+    // the second find always runs (it draws nothing).
+    let ex = origin.0 - if num > 0.0 { 3 } else { -3 };
+    let found1 = find_down_solid(world, ex, origin.1 - 3, 10);
+    let num3 = if rng.range(0, 4) == 0 { 3 } else { 7 };
+    let dx2 = origin.0 - if num > 0.0 { -num3 } else { num3 };
+    let found2 = find_down_solid(world, dx2, origin.1 - 3, 10);
+    let (Some(r1y), Some(r2y)) = (found1, found2) else {
+        return false;
+    };
+    // `:51-52`: both results step one up (the object cell above the floor).
+    let result = (ex, r1y - 1);
+    let result2 = (dx2, r2y - 1);
+    // `:53-55`: the explosives floor loses its slope/half-brick.
+    if let Some(t) = world.tile_mut(result.0, result.1 + 1) {
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    }
+    // `:56-72`: the detonator alcove — the 3-wide 5-tall clear, the floor
+    // reset to stone when not solid-or-sloped (`Tile.ResetToType(1)`,
+    // `Tile.cs:249-259`: liquid/frames/headers zeroed, the wall survives),
+    // then slope/half-brick cleared and the neighbour reframe (deferred).
+    for i in -1..=1 {
+        for dy in 0..5 {
+            clear_tile_keep(world, result2.0 + i, result2.1 - dy);
+        }
+        let fx = result2.0 + i;
+        let fy = result2.1 + 1;
+        if !solid_or_sloped(world, fx, fy) {
+            if let Some(t) = world.tile_mut(fx, fy) {
+                let wall = t.wall;
+                *t = Tile::default();
+                t.kind = 1;
+                t.wall = wall;
+                t.flags |= FLAG_ACTIVE;
+            }
+        }
+        if let Some(t) = world.tile_mut(fx, fy) {
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        }
+    }
+    // `:73-77`: an unbreakable object cell refuses (the writes above stay —
+    // the C# bails after them too).
+    if active_at(world, result.0, result.1)
+        && !crate::edit::can_kill_tile(world, result.0, result.1, |_, _| false)
+    {
+        return false;
+    }
+    // `:78-80`: the explosives, the detonator and the wire run.
+    place_explosives_tile(world, result.0, result.1);
+    place_detonator_tile(world, result2.0, result2.1);
+    wire_line(world, result, result2);
+    // `:81`: `AddProtectedStructure(area, 5)` — the box inflated by 5.
+    protected.push((area.0 - 5, area.1 - 5, area.2 + 10, area.3 + 10));
+    true
+}
+
+/// `WorldGen.cs:21068-21071`: the trap-world count multiplier —
+/// `(getGoodWorldGen || noTrapsWorldGen) && !notTheBees` scales the
+/// `ExplosiveTrapCount` roll by 1.5 (int truncation).
+fn explosive_trap_count(count: i32, flags: crate::seeds::SeedFlags) -> i32 {
+    if (flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+        || flags.contains(crate::seeds::SeedFlags::NO_TRAPS))
+        && !flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+    {
+        (count as f64 * 1.5) as i32
+    } else {
+        count
+    }
+}
+
+/// The Micro Biomes pass's explosives block (`WorldGen.cs:21061-21101`):
+/// the `actuallyNoTrapsForRealIMeanIt` and `!notTheBees || remix` gates ride
+/// the step adapter; here the `ExplosiveTrapCount` count (rolled by the
+/// caller — Min 14 / Max 29 / WorldArea, `worldgen_configuration.json:
+/// 217-221`), the `(getGoodWorld || noTraps) && !notTheBees` ×1.5 multiplier,
+/// the 3000-attempt budget and the `RandomWorldPoint(rockLayer,
+/// beachDistance, 200, beachDistance)` draws (x first — `WorldGen.cs:
+/// 27111-27114`; the remix band swaps to `worldSurface`/`rockLayer`).
+///
+/// The sub-vanilla guard: the C#'s `Next(380, maxTilesX - 380)` throws on a
+/// world ≤ 760 wide (the beach band collapses) — the port's 512-wide test
+/// worlds skip the block (the same idiom `pass_mahogany_trees` carries), so
+/// `SEED42_512` is unchanged. The `DualDungeons` +
+/// `InAnyPotentialDungeonBounds` veto is inactive in the port (no
+/// dual-dungeon bounds model — the `ocean.rs:620` precedent).
+pub(crate) fn pass_mining_explosives(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    count: i32,
+    flags: crate::seeds::SeedFlags,
+    rng: &mut super::Rng,
+) -> u32 {
+    let remix = flags.contains(crate::seeds::SeedFlags::REMIX);
+    let count = explosive_trap_count(count, flags);
+    // `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`).
+    let x_lo = 380;
+    let x_hi = world.width - 380;
+    if x_hi <= x_lo {
+        return 0;
+    }
+    // `:21082-21088`: the classic band is rockLayer..maxY-200; remix swaps
+    // to worldSurface..maxY-rockLayer.
+    let y_lo = if remix { world_surface as i32 } else { rock_layer as i32 };
+    let y_hi = world.height - if remix { rock_layer as i32 } else { 200 };
+    if y_hi <= y_lo {
+        return 0;
+    }
+    let mut protected: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let mut placed = 0u32;
+    let mut budget = 3000;
+    while (placed as i32) < count {
+        budget -= 1;
+        if budget <= 0 {
+            break;
+        }
+        let x = rng.range(x_lo, x_hi);
+        let y = rng.range(y_lo, y_hi);
+        if place_mining_explosives(world, x, y, &mut protected, rng) {
+            placed += 1;
+        }
+    }
+    placed
+}
 
 #[cfg(test)]
 mod tests {
@@ -1528,6 +2246,338 @@ mod tests {
             super::super::world_hash::world_hash(&w)
         };
         assert_eq!(run(), run());
+    }
+
+    // --- the mining explosives (S1-K-2 wave B) ------------------------------
+
+    /// A solid stone world with an air pocket centred at `(cx, cy)` — the
+    /// shape the trap's origin gate wants. The pocket is 17 wide × 9 tall
+    /// (`cx-8..=cx+8`, `cy-6..=cy+2`): the side find lands on its wall, the
+    /// down find on its floor row, and the `origin.Y-3` floor scans start
+    /// inside the air (the geometry the C# cave origins have).
+    fn trap_world(width: i32, height: i32, cx: i32, cy: i32) -> World {
+        let mut w = World::new("me".into(), width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for dx in -8..=8 {
+            for dy in -6..=2 {
+                let i = w.index(cx + dx, cy + dy);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w
+    }
+
+    // --- the thin ice (S1-K-2 wave C) ----------------------------------------
+
+    /// A snow-dominant world for the placed tests: solid 147 everywhere
+    /// below y=40, with a small 10×8 air pocket at (195..205, 166..174)
+    /// — inside the 50×50 scan box at origin (200, 170). The pocket is
+    /// inactive air, which the TileScanner never counts, so snow (~2500
+    /// active cells) trivially dominates dirt+stone (0) and mud (0).
+    fn snow_pocket_world() -> World {
+        let mut w = World::new("ti".into(), 400, 600);
+        for x in 0..400 {
+            for y in 40..600 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 147;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 195..205 {
+            for y in 166..174 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.world_surface = 100.0;
+        w.rock_layer = 300.0;
+        w
+    }
+
+    #[test]
+    fn the_mining_trap_vetoes_the_solid_origin_and_the_spider_wall() {
+        // `MiningExplosivesBiome.cs:12-19`: a solid origin refuses; the
+        // spider wall 216 / lizhahrd wall 187 veto even on air.
+        let mut w = trap_world(900, 800, 450, 500);
+        let mut protected = Vec::new();
+        let mut rng = Rng::from_seed(7);
+        // The origin below the pocket is solid stone.
+        assert!(!place_mining_explosives(&mut w, 450, 503, &mut protected, &mut rng));
+        for wall in [216u16, 187] {
+            let mut w2 = trap_world(900, 800, 450, 500);
+            let i = w2.index(450, 500);
+            w2.tiles[i].wall = wall;
+            let mut rng2 = Rng::from_seed(7);
+            assert!(!place_mining_explosives(&mut w2, 450, 500, &mut protected, &mut rng2));
+        }
+        assert!(protected.is_empty());
+    }
+
+    #[test]
+    fn the_mining_trap_places_the_ore_the_explosives_and_the_wire() {
+        // The full body: the pocket origin finds the side wall, drops to
+        // the pocket floor, the ShapeRunner scan is majority-solid (the
+        // 17x9 pocket in a stone world), the ore fill + the hollow + the
+        // two floor finds succeed, and the 141/411 pair wires up. The
+        // hollow's blotched clear rides the direction double and can
+        // disturb the floor columns on some seeds (the C# `Place1x1`/
+        // `Place2x2` silently refuse there too) — the presence sweep finds
+        // seeds with the full pair; the per-run invariants hold on every
+        // placement.
+        let tiers = crate::ores::SavedOreTiers::new();
+        let ore_kinds = [
+            if tiers.gold == 8 { 8u16 } else { 169 },
+            if tiers.silver == 9 { 9 } else { 168 },
+            if tiers.iron == 6 { 6 } else { 167 },
+            if tiers.copper == 7 { 7 } else { 166 },
+        ];
+        let mut full = 0;
+        let mut placed_any = 0;
+        for seed in 1..=32u32 {
+            let mut w = trap_world(900, 800, 450, 500);
+            let mut protected = Vec::new();
+            let mut rng = Rng::from_seed(seed);
+            if !place_mining_explosives(&mut w, 450, 500, &mut protected, &mut rng) {
+                continue;
+            }
+            placed_any += 1;
+            assert!(
+                w.tiles.iter().any(|t| t.active() && ore_kinds.contains(&t.kind)),
+                "the vein carries the SelectRandom ore kind (seed {seed})"
+            );
+            // The red wire run exists between the pair.
+            assert!(
+                (0..w.width)
+                    .any(|x| (0..w.height).any(|y| w.wires.get(x, y, crate::wiring::WireColor::Red))),
+                "the WireLine ran (seed {seed})"
+            );
+            // `:81`: the protected box is the 30x20 area inflated by 5.
+            assert_eq!(protected.len(), 1);
+            assert_eq!((protected[0].2, protected[0].3), (40, 30));
+            let has141 = w.tiles.iter().any(|t| t.active() && t.kind == 141);
+            let n411 = w.tiles.iter().filter(|t| t.active() && t.kind == 411).count();
+            assert!(n411 == 0 || n411 == 4, "the detonator is all-or-nothing");
+            if has141 && n411 == 4 {
+                full += 1;
+            }
+        }
+        assert!(placed_any > 0, "the trap places in the stone pocket");
+        assert!(full > 0, "a seed places the full 141 + 2x2 411 pair");
+    }
+
+    #[test]
+    fn the_mining_trap_refuses_the_second_box_over_the_first() {
+        // `StructureMap.CanPlace` (`StructureMap.cs:24-49`): the inflated
+        // protected box refuses an overlapping second trap.
+        let mut w = trap_world(900, 800, 450, 500);
+        let mut protected = vec![(400, 460, 120, 100)];
+        let mut rng = Rng::from_seed(7);
+        assert!(!place_mining_explosives(&mut w, 450, 500, &mut protected, &mut rng));
+        assert_eq!(protected.len(), 1, "no second box registered");
+    }
+
+    #[test]
+    fn the_mining_pass_is_deterministic_for_a_seed() {
+        let run = || {
+            let mut w = trap_world(900, 800, 450, 500);
+            // A wider air band so the pass's random origins find pockets.
+            for x in 380..520 {
+                for y in 480..520 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile::default();
+                }
+            }
+            pass_mining_explosives(
+                &mut w,
+                200.0,
+                460.0,
+                3,
+                crate::seeds::SeedFlags::default(),
+                &mut Rng::from_seed(21),
+            );
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn the_mining_pass_skips_the_sub_vanilla_width() {
+        // `WorldGen.cs:27113`: `Next(380, maxTilesX - 380)` throws on a
+        // world <= 760 wide — the port's guard skips the block (the
+        // SEED42_512 pin stays unchanged).
+        let mut w = trap_world(512, 512, 256, 300);
+        let placed = pass_mining_explosives(
+            &mut w,
+            150.0,
+            300.0,
+            3,
+            crate::seeds::SeedFlags::default(),
+            &mut Rng::from_seed(21),
+        );
+        assert_eq!(placed, 0);
+        assert!(
+            !w.tiles.iter().any(|t| t.active() && (t.kind == 141 || t.kind == 411)),
+            "nothing placed on the 512-wide world"
+        );
+    }
+
+    #[test]
+    fn the_mining_count_multiplier_is_the_trap_world_one_point_five() {
+        // `WorldGen.cs:21068-21071`: `(getGoodWorld || noTraps) &&
+        // !notTheBees` scales the count by 1.5 (int truncation); the
+        // notTheBees arm keeps the raw count.
+        use crate::seeds::SeedFlags;
+        let classic = SeedFlags::default();
+        let worthy = SeedFlags::from_sum(SeedFlags::FOR_THE_WORTHY);
+        let no_traps = SeedFlags::from_sum(SeedFlags::NO_TRAPS);
+        let bees_worthy = SeedFlags::from_sum(SeedFlags::FOR_THE_WORTHY | SeedFlags::NOT_THE_BEES);
+        assert_eq!(explosive_trap_count(14, classic), 14);
+        assert_eq!(explosive_trap_count(14, worthy), 21);
+        assert_eq!(explosive_trap_count(29, worthy), 43); // 43.5 truncates
+        assert_eq!(explosive_trap_count(14, no_traps), 21);
+        assert_eq!(explosive_trap_count(14, bees_worthy), 14);
+    }
+
+    #[test]
+    fn the_wire_line_keeps_the_original_endpoint_axes() {
+        // `WorldUtils.cs:109-129`: the horizontal run rides the ORIGINAL
+        // start.Y and the vertical run the ORIGINAL end.X, even when the
+        // swaps reorder the corners.
+        let mut w = World::new("wl".into(), 40, 40);
+        wire_line(&mut w, (10, 20), (5, 30));
+        // start.Y = 20: the horizontal run x 5..=10 at y 20.
+        for x in 5..=10 {
+            assert!(w.wires.get(x, 20, crate::wiring::WireColor::Red));
+        }
+        // end.X = 5: the vertical run y 20..=30 at x 5.
+        for y in 20..=30 {
+            assert!(w.wires.get(5, y, crate::wiring::WireColor::Red));
+        }
+        assert!(!w.wires.get(10, 25, crate::wiring::WireColor::Red));
+    }
+
+    #[test]
+    fn the_thin_ice_freezes_the_snow_cavern_and_drains_the_pocket() {
+        // `ThinIceBiome.Place` (`ThinIceBiome.cs:9-34`): the snow-
+        // dominant 50×50 box passes the gate, the shrinking blotched
+        // circles leave 162 (BreakableIce) behind, and a liquid cell
+        // inside the first circle freezes AND drains (`:29`).
+        let mut w = snow_pocket_world();
+        // A water pocket cell inside the scan box (and the first circle).
+        let i = w.index(200, 172);
+        w.tiles[i].liquid = 255;
+        let mut rng = Rng::from_seed(7);
+        assert!(place_thin_ice(&mut w, 200, 170, &mut rng));
+        let ice = w.tiles.iter().filter(|t| t.active() && t.kind == 162).count();
+        assert!(ice > 100, "the thin ice sheet ({ice})");
+        // The liquid chain drains the pocket (`SetLiquid(0,0)`): no liquid
+        // survives in the pocket region (the blotched circles cover it).
+        let pocket_liquid = (195..205)
+            .flat_map(|x| (166..174).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.liquid > 0))
+            .count();
+        assert_eq!(pocket_liquid, 0, "the pocket drained");
+        // The freeze reaches the pocket region; the exact cell is
+        // RNG-dependent, so assert the neighbourhood.
+        let pocket_ice = (195..205)
+            .flat_map(|x| (166..174).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 162))
+            .count();
+        assert!(pocket_ice > 0, "the freeze reached the pocket ({pocket_ice})");
+    }
+
+    #[test]
+    fn the_thin_ice_rejects_the_hive_the_stone_and_the_mud() {
+        // `:16-19`: one hive tile vetoes. `:20-23`: snow must strictly
+        // outnumber the mud AND the dirt+stone (active cells only — air
+        // is inactive and never counted): a stone cavern (0 snow), a mud
+        // cavern (mud >= snow) and a dirt-dominant box all fail.
+        let mut w = snow_pocket_world();
+        let i = w.index(210, 160);
+        w.tiles[i].kind = 225;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = Rng::from_seed(7);
+        assert!(!place_thin_ice(&mut w, 200, 170, &mut rng));
+
+        let mut stone = snow_pocket_world();
+        for t in stone.tiles.iter_mut() {
+            if t.active() {
+                t.kind = 1;
+            }
+        }
+        assert!(!place_thin_ice(&mut stone, 200, 170, &mut rng));
+
+        let mut mud = snow_pocket_world();
+        for t in mud.tiles.iter_mut() {
+            if t.active() {
+                t.kind = 59;
+            }
+        }
+        assert!(!place_thin_ice(&mut mud, 200, 170, &mut rng));
+
+        // A dirt-dominant box: the upper 26 rows of the 50×50 scan box
+        // are active dirt 0, the lower 24 stay snow — dirt (1300) beats
+        // snow (1200), so the strict `snow > dirt+stone` gate rejects.
+        let mut dirty = snow_pocket_world();
+        for x in 175..225 {
+            for y in 145..171 {
+                let i = dirty.index(x, y);
+                dirty.tiles[i].kind = 0;
+                dirty.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(!place_thin_ice(&mut dirty, 200, 170, &mut rng));
+
+        // The gates draw nothing before the radius roll — the stream is
+        // untouched on every reject.
+        let mut a = Rng::from_seed(11);
+        let mut b = Rng::from_seed(11);
+        place_thin_ice(&mut stone, 200, 170, &mut a);
+        assert_eq!(a.next_u32(), b.next_u32());
+    }
+
+    #[test]
+    fn the_thin_ice_keeps_the_chests_and_the_hive_walls() {
+        // `:29`'s SkipTiles(21, 467, 226, 237): a chest inside the
+        // liquid chain's circle keeps its kind (the chain 1 OnlyTiles
+        // list excludes 21 too).
+        let mut w = snow_pocket_world();
+        let i = w.index(200, 172);
+        w.tiles[i].kind = 21;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].liquid = 255;
+        let mut rng = Rng::from_seed(7);
+        assert!(place_thin_ice(&mut w, 200, 170, &mut rng));
+        let t = w.tile(200, 172).unwrap();
+        assert_eq!(t.kind, 21, "the chest survives the freeze");
+    }
+
+    #[test]
+    fn the_thin_ice_pass_is_deterministic_and_gives_up_on_dry_worlds() {
+        // The pass replays bit-exact for a seed; on a world where every
+        // gate rejects (the stone cavern), the 1000-failure streak burns
+        // the wanted patches (`WorldGen.cs:20963-20970`) and the pass
+        // terminates with zero placed — no 162 anywhere.
+        let run = || {
+            let mut w = snow_pocket_world();
+            pass_thin_ice(&mut w, 100.0, 3, &mut Rng::from_seed(31));
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run());
+        let mut dry = World::new("ti".into(), 600, 800);
+        for t in dry.tiles.iter_mut() {
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+        }
+        let placed = pass_thin_ice(&mut dry, 100.0, 3, &mut Rng::from_seed(31));
+        assert_eq!(placed, 0);
+        assert!(!dry.tiles.iter().any(|t| t.active() && t.kind == 162));
     }
 
 }
