@@ -926,8 +926,17 @@ band, confined; base-vs-blend still 32 826 px in the slash bbox
 (952,276)-(1121,635). Full gate green on the synced tree (3367+1581+55+вЂ¦,
 0 failed, `m8-g3-gate.log`); `main_anchors` included. rustfmt: sprite.rs
 clean; projectile.rs carries 395 pre-existing fmt deviations on main
-itself вЂ” left untouched (no repo-wide fmt noise; the G-3 additions match
+itself — left untouched (no repo-wide fmt noise; the G-3 additions match
 the file's hand style).
+
+**Re-taken again at the wave-2 merge gate (L-D, 2026-11-19, merged
+af957ee4 — skyline atlas repack moves every UV).** Same recipe (golden.wld,
+`TR_DAY=1 TR_SHOT_FRAME=20 TR_DEBUG=0`, player present). Twin runs
+SHA256-equal: base `437D0C4F8F4CEEFED4CA737BC0C03281054C0C4BA0D22931D5496E594CA390AA`,
+blend `B24E48FDAA208516DF1FF689957AEA7645C21D10AC52963F116349F0B8999E3E`.
+Base-vs-blend still exactly 32 826 px in the slash bbox (952,242)-(1121,601)
+— the same confined slash region as the M8 re-take. The committed PNGs are
+these re-takes.
 
 ## Living trees (M5-LIVING-trees)
 
@@ -8685,6 +8694,13 @@ Deviations:
   zoom-2.0 frame-900 pair separately showed the known `TR_SHOT` harness
   timing sensitivity (the ANALYSIS harness note) in the HUD hotbar region
   only.
+  **Re-taken at the wave-2 merge gate (L-D, 2026-11-19, merged af957ee4):**
+  the seed-1 stand-in regenerated (the vines/K-2b worldgen re-pins move the
+  generated world by design) + the skyline atlas repack moves every UV.
+  Same recipe; twin runs SHA256-equal: zoom 1.0
+  `B39E064184AFA48F0DCA290C5A14A65711AE121BF203422FB56DBBBE2F13AC2A`,
+  zoom 2.0 `B8EE063DECBB4BBF25A7D2349428075A16AA3279EE44F2B29827980B9ED57376`.
+  The committed `temple_altar_z{1,2}{,_repeat}.png` are these re-takes.
 
 ## Polish passes (M1.4-WGEN-7)
 
@@ -21267,6 +21283,20 @@ with three torches on its floor).
 | white | `91563F56738BAB7614E3F5EE4C773534615C2AC8710C1FB86A61CC23DD143447` | `CD20AEE77E0B57A690190EFF907F2FB7B25F8AEE5920EC0688E3096C770DF016` |
 | retro | `E50314437A8C7D115457CF6733C21D61F8CC47538A4721A7D115D94236FD3226` | `AC140390249396157D3AC76FF72E4D5E9C5419C5F2E07A65ED8F8F6921D97BEE` |
 | trippy | `3146F9A2DA8C582ECEE52BDAD63FE065B3B3A6FC8BA0FE1B638556BA94567909` | `76F00760E84B4CE4A8F389E470F1D89377E04FB64C040BDFDCCA28893F7FEF23` |
+
+**Re-taken at the wave-2 merge gate (L-D, 2026-11-19, merged af957ee4 —
+skyline packer + E-4b gore sheets + L-8b mount sheets + the vines/K-2b
+worldgen re-pins).** The seed-1 stand-in was regenerated (`TR_REGEN=1
+TR_SEED=1` — the worldgen re-pins change the generated world by design),
+a pristine copy per run, same harness/env as above. Twin runs SHA256-equal
+for all eight; the committed PNGs are these re-takes:
+
+| mode | surface SHA256 | cave SHA256 |
+| --- | --- | --- |
+| color | `F1A462EC47C876A5810D2870F4EEA8BD14B760AF6B06EC362D7848062DEBBF34` | `02C58C21A6F2D52A8B6515D8C3009B331F26CC557D3FF9A5E59C853F2DDBD4EA` |
+| white | `AE5AB29E13C165C24BA037AEE3E6678B247AACDBBE5B8EE2754ABF0A94B43604` | `9B417646DD7FFFB8C85AF9BD3809FA1A568DC02C255A6118F7D164C0C9765E7D` |
+| retro | `DD8993C3B4F7BBF21769C8A4A2C31C78B35CC9AD417346FF1A2F129A97C72008` | `F16994CD2A06BC2D5A4D7DA9938597E80462445D6AD8D8FC83E8037DA8A48269` |
+| trippy | `EE4E6483B42EB1935487005FF9B10B1D7D078420DCEFD1CF36E418384523EFC4` | `62ABC5E3ECFBDA7BE455E86BA30D354D15794108F63B85F8D7DB83B277FBC1A1` |
 
 Observations (cave scene, the torch ring right of the centre torch, screen
 row at torch height; mean-of-RGB per tile step): Retro's subtractive carry
