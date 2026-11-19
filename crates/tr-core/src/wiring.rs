@@ -289,6 +289,14 @@ pub struct Wiring {
     /// `HitWireSingle`'s case-455 party-toggle requests
     /// (`BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`).
     party_toggles: u32,
+    /// The switch-click positions from `HitSwitch`'s seven
+    /// `SoundEngine.PlaySound(28, ...)` sites (`Wiring.cs:267`/`:272`/
+    /// `:285`/`:310`/`:323`/`:339`/`:375`, S1-E-21i) in world pixels, queued
+    /// in play order. The sound draw rides the CALLER's `Main.rand` stream
+    /// (the stage swap around the `HitSwitch` call), NOT the wiring stand-in
+    /// [`Self::rand`] — so the app layer drains these and plays them on its
+    /// stage's named stream (`take_statue_spawns`' event-queue seam).
+    switch_clicks: Vec<(i32, i32)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -575,6 +583,10 @@ impl Wiring {
     /// with a switchable tile turns into a `TripWire` over the device's rect.
     /// The device-specific effects (the mine's explosion `:210`, the geyser
     /// `:443`, the gem locks' item consuming) are M7-WIRE-2 passthroughs.
+    /// The seven Mech-28 click plays (`:267`/`:272`/`:285`/`:310`/`:323`/
+    /// `:339`/`:375`) queue into [`Self::take_switch_clicks`] — the pitch
+    /// draw rides the caller's stream, so the app plays them (S1-E-21i).
+    /// The mine (210) and the geyser (443) are silent (`:288-295`).
     pub fn hit_switch(&mut self, world: &mut World, i: i32, j: i32) {
         if !world.in_bounds(i, j) {
             return;
@@ -588,14 +600,18 @@ impl Wiring {
         }
         // The standard switches/levers/plates: a 1×1 trip (`:265-272`).
         if matches!(kind, 135 | 314 | 423 | 428 | 442 | 476) {
+            self.switch_clicks.push((i * 16, j * 16)); // `PlaySound(28)` `:267`
             self.trip_wire(world, i, j, 1, 1);
         } else if kind == 440 {
-            // The wide switch: a 3×3 trip (`:274-277`).
+            // The wide switch: a 3×3 trip (`:274-277`). The click's position
+            // is the device's far corner (`:272`: `i * 16 + 16, j * 16 + 16`).
+            self.switch_clicks.push((i * 16 + 16, j * 16 + 16));
             self.trip_wire(world, i, j, 3, 3);
         } else if kind == 136 {
             // The lever toggles its frame and trips (`:279-288`).
             let next = if frame_y == 0 { 18 } else { 0 };
             world.set_tile_frame_y(i, j, next);
+            self.switch_clicks.push((i * 16, j * 16)); // `:285`
             self.trip_wire(world, i, j, 1, 1);
         } else if kind == 144 {
             // The timer arms a 18000-tick cooldown when switched on (`:293`).
@@ -605,15 +621,19 @@ impl Wiring {
             } else {
                 world.set_tile_frame_y(i, j, 0);
             }
+            self.switch_clicks.push((i * 16, j * 16)); // `:310`
         } else if kind == 441 || kind == 468 {
             // The signal flags/gem-lock buttons trip their 2×2 device rect
             // (`:300-315`): the corner is derived from the negative frame
-            // offsets, wrapped by 4.
+            // offsets, wrapped by 4. The click sounds at the clicked cell
+            // (`:323`), not the corner.
             let (num, num2) = corner_from_frame(frame_x, frame_y, i, j);
+            self.switch_clicks.push((i * 16, j * 16));
             self.trip_wire(world, num, num2, 2, 2);
         } else if kind == 467 && frame_x / 36 == 4 {
             // The large gem lock's trigger variant (`:317-330`).
             let (num, num2) = corner_from_frame(frame_x, frame_y, i, j);
+            self.switch_clicks.push((i * 16, j * 16)); // `:339`
             self.trip_wire(world, num, num2, 2, 2);
         } else if kind == 210 {
             // The land mine explodes through the switch too (`:289-292`).
@@ -660,7 +680,7 @@ impl Wiring {
             // touch), so the wake is not run here; the lever/detonator has
             // no support cascade (a wall-mounted device) — noted in
             // research-23's D5 closure.
-            // `SoundEngine.PlaySound(28, ...)` (`:367`) — D19, unported.
+            self.switch_clicks.push((i * 16, j * 16)); // `PlaySound(28)` `:375`
             self.trip_wire(world, num6, num7, 2, 2); // `:368`
         }
     }
@@ -731,6 +751,16 @@ impl Wiring {
     /// Drains the statue spawn requests computed by the statue triggers.
     pub fn take_statue_spawns(&mut self) -> Vec<StatueSpawn> {
         std::mem::take(&mut self.statue_spawns)
+    }
+
+    /// Drains the switch-click positions queued by [`Self::hit_switch`]'s
+    /// seven `PlaySound(28)` sites (S1-E-21i), in play order, world pixels.
+    /// The caller plays each on ITS stage's `Main.rand` stream — the C#
+    /// draws the pitch inside `HitSwitch` under whatever swap wraps the
+    /// call (`Main.cs:17754`/`:17763`/`:17767`/`:17802`), never on the
+    /// wiring stand-in stream.
+    pub fn take_switch_clicks(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.switch_clicks)
     }
 
     /// Drains the trap emission requests (the case-137 trap family).
@@ -3126,6 +3156,113 @@ mod tests {
         let mut wiring = Wiring::new();
         wiring.hit_switch(&mut w, 9, 10);
         assert_eq!(w.tile(15, 10).unwrap().kind, 421, "the lamp flipped");
+    }
+
+    /// S1-E-21i — `HitSwitch`'s seven Mech-28 click sites
+    /// (`Wiring.cs:267`/`:272`/`:285`/`:310`/`:323`/`:339`/`:375`): each
+    /// queues one click at the C#'s position, in play order; the mine (210)
+    /// and the geyser (443) stay silent (`:288-295`), and a non-switch tile
+    /// queues nothing. The queue draws NOTHING from the wiring stream —
+    /// the pitch draw is the app's, on the caller's stage stream.
+    #[test]
+    fn s1_e_21i_hit_switch_queues_the_mech_clicks_per_type() {
+        // The 1×1 family (`:265-267`): one click at (i*16, j*16).
+        for kind in [135, 314, 423, 428, 442, 476] {
+            let mut w = world();
+            put_device(&mut w, 9, 10, kind, 0, 0);
+            let mut wiring = Wiring::new();
+            let peek = wiring.rand_mut().peek();
+            wiring.hit_switch(&mut w, 9, 10);
+            assert_eq!(
+                wiring.take_switch_clicks(),
+                vec![(9 * 16, 10 * 16)],
+                "kind {kind} clicks at its own cell"
+            );
+            assert_eq!(wiring.rand_mut().peek(), peek, "the queue draws nothing");
+            assert!(wiring.take_switch_clicks().is_empty(), "the drain empties");
+        }
+        // The wide switch 440 (`:270-272`): the +16/+16 far corner.
+        let mut w = world();
+        put_device(&mut w, 9, 10, 440, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 9, 10);
+        assert_eq!(wiring.take_switch_clicks(), vec![(9 * 16 + 16, 10 * 16 + 16)]);
+        // The lever 136 (`:275-285`): the frame flips AND the click queues.
+        let mut w = world();
+        put_device(&mut w, 9, 10, 136, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 9, 10);
+        assert_eq!(w.tile_frame_y(9, 10), 18, "the lever flipped on");
+        assert_eq!(wiring.take_switch_clicks(), vec![(9 * 16, 10 * 16)]);
+        // The timer 144 (`:296-310`): the click queues on BOTH arms.
+        for frame_y in [0, 18] {
+            let mut w = world();
+            put_device(&mut w, 9, 10, 144, 0, frame_y);
+            let mut wiring = Wiring::new();
+            wiring.hit_switch(&mut w, 9, 10);
+            assert_eq!(
+                wiring.take_switch_clicks(),
+                vec![(9 * 16, 10 * 16)],
+                "the timer clicks on frame_y {frame_y}"
+            );
+        }
+        // The signal flag 441 / gem button 468 (`:312-323`): the click sits
+        // at the clicked cell, not the derived trip corner. frame_x -18 →
+        // the corner offsets (num %= 4, +i) shift the trip to (8, 10).
+        for kind in [441, 468] {
+            let mut w = world();
+            put_device(&mut w, 9, 10, kind, -18, 0);
+            let mut wiring = Wiring::new();
+            wiring.hit_switch(&mut w, 9, 10);
+            assert_eq!(
+                wiring.take_switch_clicks(),
+                vec![(9 * 16, 10 * 16)],
+                "kind {kind} clicks at the clicked cell"
+            );
+        }
+        // The large gem lock 467 (`:326-339`): ONLY the frameX/36 == 4
+        // trigger variant clicks.
+        let mut w = world();
+        put_device(&mut w, 9, 10, 467, 4 * 36, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 9, 10);
+        assert_eq!(wiring.take_switch_clicks(), vec![(9 * 16, 10 * 16)]);
+        let mut w = world();
+        put_device(&mut w, 9, 10, 467, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 9, 10);
+        assert!(wiring.take_switch_clicks().is_empty(), "the non-trigger variant is silent");
+        // The lever 132 / detonator 411 else-arm (`:343-375`): the 2×2
+        // block's anchor click. frame (0,0) → num6 = i, num7 = j.
+        for kind in [132, 411] {
+            let mut w = world();
+            put_device(&mut w, 9, 10, kind, 0, 0);
+            let mut wiring = Wiring::new();
+            wiring.hit_switch(&mut w, 9, 10);
+            assert_eq!(
+                wiring.take_switch_clicks(),
+                vec![(9 * 16, 10 * 16)],
+                "kind {kind} clicks"
+            );
+        }
+        // A non-switch tile queues nothing (`:345-348`'s early return).
+        let mut w = world();
+        put_device(&mut w, 9, 10, 4, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 9, 10);
+        assert!(wiring.take_switch_clicks().is_empty());
+        // The mine (210) and the geyser (443) trip silently (`:288-295` —
+        // their arms carry no PlaySound).
+        for kind in [210, 443] {
+            let mut w = world();
+            put_device(&mut w, 9, 10, kind, 0, 0);
+            let mut wiring = Wiring::new();
+            wiring.hit_switch(&mut w, 9, 10);
+            assert!(
+                wiring.take_switch_clicks().is_empty(),
+                "kind {kind} is silent"
+            );
+        }
     }
 
     #[test]
