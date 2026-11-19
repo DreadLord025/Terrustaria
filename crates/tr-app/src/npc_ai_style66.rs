@@ -756,8 +756,12 @@ mod tests {
         let out2 = ai_style66(&mut n2, &w, &players, 484, 0.7, 0, &mut rng2);
         let num983b = roll as f32 * 0.01 * ((0.7f32 + 0.5) / 2.0);
         assert_eq!(out2.light.unwrap().2[0], 0.3 * num983b);
-        // A non-484 kind has no light and no flicker draw.
+        // A non-484 kind has no light and no flicker draw. The grounded
+        // timer must NOT expire in this fixture: localAI[1]=0 would tick
+        // to -1 and draw Next(600,1800) (`:34297-34308`), so seed a live
+        // timer (500) — then the whole tick is draw-free.
         let mut n3 = crawler(357, 1000.0, 1000.0);
+        n3.local_ai[1] = 500.0;
         let witness3 = rng.clone();
         let out3 = ai_style66(&mut n3, &w, &players, 357, 1.0, 0, &mut rng);
         assert!(out3.light.is_none());
@@ -801,24 +805,26 @@ mod tests {
     fn the_proximity_gate_is_euclidean_160_inclusive() {
         let w = air();
         let mut rng = UnifiedRandom::new(5);
-        // Worm centre (1005, 1002). Player centre exactly 160 to the
-        // right: (1165, 1002) → position (1155, 981).
-        let edge = [cand(1155.0, 981.0)];
+        // TruffleWorm box 20×10 → centre (1010, 1005) (`:34331` reads
+        // base.Center). Player box 20×42 → centre (x+10, y+21). Place
+        // the player CENTRE exactly 160 right, same Y: (1170, 1005) →
+        // position (1160, 984). Distance exactly 160.
+        let edge = [cand(1160.0, 984.0)];
         let mut t = crawler(374, 1000.0, 1000.0);
         t.local_ai[1] = 5000.0;
         let _ = ai_style66(&mut t, &w, &edge, 374, 1.0, 0, &mut rng);
         assert_eq!(t.ai[1], 1.0, "exactly 160 counts (the !(> 160) gate)");
-        // One px farther: the player CENTRE must sit at 161 — position
-        // (1156, 981) centres at (1166, 1002), distance 161 > 160 → no
-        // increment. (Position 1155 centres at 1165 = exactly 160.)
-        let out = [cand(1156.0, 981.0)];
+        // One px farther: position (1161, 984) centres at (1171, 1005),
+        // distance 161 > 160 → no increment.
+        let out = [cand(1161.0, 984.0)];
         let mut t2 = crawler(374, 1000.0, 1000.0);
         t2.local_ai[1] = 5000.0;
         let _ = ai_style66(&mut t2, &w, &out, 374, 1.0, 0, &mut rng);
         assert_eq!(t2.ai[1], 0.0);
-        // Manhattan would count a diagonal (120, 120) = 240 > 160
-        // Euclidean ≈ 169.7 — also out; use (113, 113) ≈ 159.8 IN while
-        // Manhattan 226 would be out: the gate is Euclidean.
+        // Manhattan would count a diagonal offset (108, 110) = 218 > 160
+        // while Euclidean ≈ 154.2 is IN: position (1108, 1094) centres
+        // (1118, 1115), offset (108, 110) from the worm centre
+        // (1010, 1005) — the gate is Euclidean.
         let diag = [cand(1005.0 + 113.0 - 10.0, 1002.0 + 113.0 - 21.0)];
         let mut t3 = crawler(374, 1000.0, 1000.0);
         t3.local_ai[1] = 5000.0;

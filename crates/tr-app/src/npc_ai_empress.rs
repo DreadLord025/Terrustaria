@@ -2056,10 +2056,13 @@ mod tests {
     fn the_ethereal_lances_ring_and_the_motion_flip() {
         // `:46343-46451` — hand-traced tick 0, classic: num83 = 0,
         // angle = π/8 → dir ≈ (0.92388, 0.38268); the classic outward
-        // push +0.5 → normalize ≈ (0.97815, 0.26287); the target is
-        // still → no flip; spawn = targetCentre(400,0) + dir×300
-        // (`:46396` vector32 = center3 + vector30*num84 - vel*30);
-        // ai0 = atan2 of (lead - spawn) = atan2(-78.86, -293.44).
+        // push +0.5 → normalize ≈ (0.97815, 0.26287). The STILL target
+        // FLIPS the ring too: `:46390` SafeNormalize(Vector2.UnitY)
+        // turns zero velocity into (0,1), whose dot with ring_dir is
+        // ring_dir.Y = +0.26287 > 0 → vector30 *= -1 BEFORE the spawn.
+        // spawn = targetCentre(400,0) - dir×300 (`:46396` vector32 =
+        // center3 + vector30*num84 - vel*30, vel = 0);
+        // ai0 = atan2 of (lead - spawn) = atan2(+78.86, +293.44).
         let mut s = state_at_center(0.0, 0.0);
         s.ai0 = 4.0;
         let env = env_night();
@@ -2079,9 +2082,9 @@ mod tests {
         let (ux, uy) = (dx / len, dy / len);
         match lances[0] {
             EmpressRequest::Projectile { x, y, ai0, ai1, damage, .. } => {
-                assert!((x - (400.0 + ux * 300.0)).abs() < 1e-3, "x {x}");
-                assert!((y - uy * 300.0).abs() < 1e-3, "y {y}");
-                let want_rot = (-(uy as f64) * 300.0).atan2(-(ux as f64) * 300.0) as f32;
+                assert!((x - (400.0 - ux * 300.0)).abs() < 1e-3, "x {x}");
+                assert!((y - (-(uy * 300.0))).abs() < 1e-3, "y {y}");
+                let want_rot = ((uy as f64) * 300.0).atan2((ux as f64) * 300.0) as f32;
                 assert!((ai0 - want_rot).abs() < 1e-5, "ai0 {ai0}");
                 assert_eq!(ai1, 0.0f32);
                 assert_eq!(damage, 50); // classic lance remap
@@ -2089,7 +2092,9 @@ mod tests {
             _ => unreachable!(),
         }
         // The motion flip: target velocity along +dir → dot > 0 → the
-        // ring direction flips before the spawn.
+        // ring direction flips before the spawn, AND `:46396` subtracts
+        // the target's velocity × 30 from the spawn (the lead term):
+        // x = 400 − ux·300 − vx·30.
         let mut s2 = state_at_center(0.0, 0.0);
         s2.ai0 = 4.0;
         let mut env2 = env_night();
@@ -2098,7 +2103,7 @@ mod tests {
         let out2 = empress_ai_step(&mut s2, &env2, &mut rng2, &[]);
         match proj(&out2, 919)[0] {
             EmpressRequest::Projectile { x, .. } => {
-                assert!((x - (400.0 - ux * 300.0)).abs() < 1e-3, "flipped x {x}");
+                assert!((x - (400.0 - ux * 300.0 - 30.0)).abs() < 1e-3, "flipped x {x}");
             }
             _ => unreachable!(),
         }

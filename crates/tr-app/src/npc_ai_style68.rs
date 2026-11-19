@@ -521,10 +521,12 @@ mod tests {
         World::new("t".into(), 200, 120)
     }
 
-    /// An air world with a liquid floor at row 100 — the waterfowl tests
-    /// need the bird's feet cell wet so the swim's dry-feet flip
-    /// (`NPC.cs:34661`) does not fire; the flight probe only scans 15 rows
-    /// below the feet (rows 63..78), so the floor never reads as ground.
+    /// An air world with a liquid floor at row 100 — the flight probe
+    /// only scans 15 rows below the feet (rows 63..78), so the floor
+    /// never reads as ground. NOTE the bird's own feet row 63 stays DRY
+    /// here: a swim fixture that must NOT take the dry-feet flip
+    /// (`NPC.cs:34661`) calls `wet_feet` below (the flutter/full-cycle
+    /// witnesses deliberately ride the dry-feet line = feet path).
     fn pool() -> World {
         let mut w = air();
         for x in 0..200 {
@@ -532,6 +534,21 @@ mod tests {
             w.tiles[i] = Tile { kind: 0, liquid: 255, ..Default::default() };
         }
         w
+    }
+
+    /// Liquid at the bird's own cells: a bird at (1000, 1000) has centre
+    /// row 63 / feet row 63 (`(int)((Y + height) / 16f)`, `:34652`) and
+    /// probe columns 62 (facing -1) / 64 (facing +1) (`:34649`), so rows
+    /// 62..64 × cols 61..65 carry liquid 255 — the swim's dry-feet flip
+    /// (`:34661`) stays quiet and the water line reads row 62's surface
+    /// (`:34686-34688`: 63*16 − 255/16 = 993, −6 → 987).
+    fn wet_feet(w: &mut World) {
+        for r in 62..=64 {
+            for col in 61..=65 {
+                let i = w.index(col, r);
+                w.tiles[i] = Tile { kind: 0, liquid: 255, ..Default::default() };
+            }
+        }
     }
 
     fn ctx(players: &[Style24Player]) -> Style68Ctx<'_> {
@@ -608,11 +625,18 @@ mod tests {
         }
     }
 
-    /// `NPC.cs:34639-34645` — the perch keeps the OLD facing when there
-    /// was a target (num1000 >= 0), even though TargetClosest re-faces.
+    /// `NPC.cs:34639-34645` — the perch restores the OLD facing after
+    /// TargetClosest re-faces. NOTE the C# gate `num1000 >= 0` reads the
+    /// OLD target: `ClearTarget()` sets 255 (`:42924-42927`), and 255 >= 0
+    /// is TRUE in the C# int — the restore fires for the sentinel too.
+    /// The only skip is the field initializer's -1 (`NPC.cs:6457`), which
+    /// SetDefaults overwrites before any AI tick — unreachable live.
     #[test]
     fn the_perch_keeps_its_old_facing_when_it_had_a_target() {
-        let w = pool();
+        let mut w = pool();
+        // Wet feet in BOTH probe columns (62 for facing -1, 64 for +1):
+        // the dry-feet flip (:34661) would otherwise undo the restore.
+        wet_feet(&mut w);
         // The player is to the RIGHT: a fresh TargetClosest faces +1.
         let players = [player(2000.0, 1000.0, 0.0, false)];
         let c = ctx(&players);
@@ -624,14 +648,27 @@ mod tests {
         n.wet = true; // stay perched (the dry arm would take off)
         ai_style_68(&mut n, 363, &w, &c, &mut UnifiedRandom::new(1));
         assert_eq!(n.facing, -1, "the old direction wins (:34644)");
-        // No old target (255): the new facing stands.
+        // The 255 ClearTarget sentinel ALSO restores: 255 >= 0 passes the
+        // C# gate (`:34642`), so TargetClosest's +1 is overwritten by the
+        // old -1 again. (The earlier witness expected +1 here — wrong:
+        // 255 is not a negative sentinel in the C# int compare.)
         let mut n2 = bird(363, 1000.0, 1000.0);
         n2.facing = -1;
         n2.old_direction = -1;
         n2.target = 255;
         n2.wet = true;
         ai_style_68(&mut n2, 363, &w, &c, &mut UnifiedRandom::new(1));
-        assert_eq!(n2.facing, 1, "TargetClosest's facing stands");
+        assert_eq!(n2.facing, -1, "255 >= 0: the restore fires (:34642-34644)");
+        // The true skip: the field-initializer -1 (`NPC.cs:6457`) — the
+        // only value that fails `num1000 >= 0`. TargetClosest's facing
+        // stands.
+        let mut n3 = bird(363, 1000.0, 1000.0);
+        n3.facing = -1;
+        n3.old_direction = -1;
+        n3.target = -1;
+        n3.wet = true;
+        ai_style_68(&mut n3, 363, &w, &c, &mut UnifiedRandom::new(1));
+        assert_eq!(n3.facing, 1, "-1 < 0: TargetClosest's facing stands");
     }
 
     /// `NPC.cs:34720-34726` — a dry perch takes off at once: ai[0] = 1,
@@ -989,6 +1026,15 @@ mod tests {
         // Wet: the single-player arm would flutter; the client returns
         // after the swim with no state change.
         n.wet = true;
+        // Steady-state facing: the player centre 1010 sits LEFT of the
+        // bird centre 1014, so SetTargetTrackingValues faces -1
+        // (`:77751-77754`). Mirror the UpdateNPC pre-AI latch with that
+        // settled facing (`:90393-90395`) — then target/facing/directionY
+        // are all unchanged and the shared change flag (`:77776-77779`)
+        // arms NOTHING; the takeoff netUpdate is the only flag left for
+        // the client to (not) raise.
+        n.facing = -1;
+        n.old_direction = -1;
         let out = ai_style_68(&mut n, 363, &w, &c, &mut UnifiedRandom::new(1));
         assert_eq!(n.ai[0], 0.0, "no flutter on the client");
         assert!(!n.net_update, "the client skips the takeoff netUpdate");
