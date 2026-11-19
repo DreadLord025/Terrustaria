@@ -24989,9 +24989,114 @@ RUN):
   the vx sign / the player side instead. Wiring the real
   `npc_target::target_closest` at each site changes no solo behaviour
   but touches the hot dispatch; deferred to the target-migration row
-  (the S1-D-3p pattern).
+  (the S1-D-3p pattern). **SUPERSEDED for the body + free head by the
+  census gap-fill below (`fix/golem-census-gaps`)** — the facing write
+  is NOT a no-op: the flight strafe read the slam-time facing. The
+  attached head + fists folds stand (their own rows).
 - **R22 G5 (axis claim) — documented, not forced.** The style axis
   (`npc.rs::update_rng`) claims 47 for the fists only; 45/46/48 still
   ride the kind match (`update_golem_rng`). Claiming them on the axis
   is a dispatch-shape refactor with zero behaviour delta (the family
   is one-kind-per-style) — deferred; the kind arms stay the live path.
+
+## The golem census gap-fill (fix/golem-census-gaps, 2026-11-19, code-only)
+
+The remaining gaps from the two census audits — R22 (the aiStyle-45
+census, `task/S1-D-3-aistyle45`) and R23 (the aiStyle-48 census,
+`task/S1-D-3-aistyle48`) — fixed on this branch. **Base choice:** the
+branch starts from `origin/main` (`c7fe175d`, the golem-audit merge)
+and merges `origin/fix/verifier-w1-golem-plantera` (`d0a26043`, R42's
+W1 wave) FIRST — the W1 wave already landed W1-2's `local_ai[1]`
+toggle, W1-6's f64 tier compares + raw-sqrt normalizes and R22 G3/G4,
+and touches the same `npc.rs`/`npc_ai_golem.rs` regions; basing on it
+avoids the conflicts (the merger lands the chain). Code-only mode —
+**no compiler invoked**; the new/updated witnesses are WRITTEN NOT RUN.
+
+- **R22 G2 — the body's five TargetClosest sites restored.** The C#
+  calls `TargetClosest` at the dead-target check (`NPC.cs:19529`, with
+  the `target >= 0` term + the dead re-check), the slam launch
+  (`:19685`, BEFORE `velocity.X = 4 * direction`), the flight tick
+  (`:19723`), the invalid-target tail (`:19769` — `target <= 0 ||
+  target == 255 || dead`; the `<= 0` INCLUDES solo target 0, so the
+  scan re-runs EVERY tick) and the despawn check (`:19774`, with the
+  distance RE-CHECK before `active = false`). All five now route
+  through `npc_target::target_closest` via the family helper
+  `Npc::golem_retarget` (the session candidate, `face_target = true`,
+  aiStyle 45, ticker 0 — the zombie precedent). Solo the SELECTION is
+  identity, but `SetTargetTrackingValues` (`:77744-77755`) re-faces
+  from the int-centre compare every call — the flight strafe now
+  reads the fresh direction (the v1 strafed the stale slam-time way
+  while the player crossed the body). The strafe also takes the C#'s
+  two-sign-arm shape (`direction < 0` / `> 0`, `:19741-19747`) instead
+  of the folded ±1. The helper's solo path was re-verified against
+  `:77652-77781` line-by-line: dead → tracked not faced; the boss
+  ignores the oldTarget inheritance gate; the int half-extents; ties
+  face +1. **RNG by construction:** `TargetClosest` /
+  `TryTrackingTarget` / `SetTargetTrackingValues` draw NO `Main.rand`
+  (the whole block re-read — the scan is Manhattan arithmetic, the
+  commit is rect/facing writes). Witnesses:
+  `npc.rs::r22_g2_the_golem_body_refaces_every_flight_tick` (the
+  flight flip + strafe sign, the charge-tick tail refresh, the despawn
+  re-check) — WRITTEN NOT RUN.
+- **R23 G3 — the free head's facing rides the target-face.** The C#
+  arm writes NO direction (`NPC.cs:31351-31586` has no `direction`
+  write); the facing comes from `TargetClosest` at `:31377` (per tick,
+  after the noTileCollide toggle) and `:31451` (the fire tick, before
+  the aim). The port's velocity-sign stand-in (the W1 wave's tail)
+  diverged while the head drifted away from the player. Both sites
+  now call `golem_retarget` (aiStyle 48) at the C# positions; the
+  vx-sign tail write is deleted. Witness:
+  `npc.rs::r23_g3_the_free_head_faces_the_target_not_the_velocity`
+  (drift-away + crossing) — WRITTEN NOT RUN.
+- **R23 G2 — the barrage/fireball ladders add per tier SEQUENTIALLY.**
+  The C# adds each tier to `ai[1]`/`ai[2]` one at a time (five
+  `this.ai[1] += num716`, `:31419-31434`; eight `this.ai[2] += num725`
+  + the flag54 `+= num725 * 10f`, `:31468-31504`) — each a rounded f32
+  add. The port pre-summed the ladder in the core fn and did ONE
+  `+=` (a different rounding path that can drift the 300-cadence /
+  the trigger crossing over long fights). `free_head_fireball_step` /
+  `free_head_barrage_step` now take the cadence accumulator as their
+  first argument and return it updated tier-by-tier (the pure-fn
+  shape kept); the seam assigns instead of `+=`. The DOUBLE tier
+  compares were already fixed by W1-6 (f64, verified); this round
+  adds the boundary witness the census named: lifeMax 21000 at the
+  30 % beam tier — `21000f32 * 0.3f32` rounds ABOVE 6300.0 (an f32
+  compare would take the tier at life == 6300), the C#'s double
+  product is exactly 6300 and the strict `<` does not. Witnesses:
+  `npc_ai_golem.rs::w1_6_the_free_head_tiers_compare_in_double`
+  (extended: the 21000/6300 boundary + the accumulator-first
+  signatures) and the new
+  `npc_ai_golem.rs::r23_g2_the_free_head_ladders_add_per_tier_sequentially`
+  (the 2^24 divergence: five sequential +1 adds stall at 16777216
+  ties-to-even where one pre-summed +5 lands 16777220) — WRITTEN NOT
+  RUN.
+- **R23 G5 — FindFrame case 249 reads the STORED mouth flag.** The C#
+  (`NPC.cs:72963-72976`) reads `localAI[0] == 1f` — the PRE-pin flag
+  the arm stores at `:31437-31448` BEFORE the flag53 pin `ai[1] = 20`.
+  The port recomputed `ai[1] < 20 || > 280` from the POST-pin cadence:
+  a blocked-line tick whose pre-pin `ai[1]` was in the window (285 →
+  pin 20) showed the mouth CLOSED where the C# shows it OPEN. Fixed:
+  `self.frame = if self.local_ai[0] == 1.0 { 1 } else { 0 }`. The
+  dead `frameCounter` 16-wrap (`:72972-72975`) stays cited-dead.
+  Witnesses: the free-head half of
+  `npc.rs::the_golem_head_turn_rows_and_free_head_mouth_row` now sets
+  `local_ai[0]` directly, and `w1_2_…` gains the pinned-tick pin
+  (pre-pin 285 → stored 1 → pin 20 → row 1) — WRITTEN NOT RUN.
+- **R22 G1 — the stale "preserved spawn swap" comment fixed.** The
+  body-init comment claimed the port pushes the fist kinds at each
+  other's offsets as a preserved deviation; the code below it pushes
+  247 LEFT at −84 / 248 RIGHT at +78 — the C# (`:19522-19523`,
+  `ID/NPCID.cs:11171`/`:11173`). The v1 swap was FIXED by the audit;
+  the comment described the v1. Comment-only edit, no behaviour
+  change.
+
+Out of scope this round (the census gaps deliberately left): R23 G1
+(the free head's noTileCollide phase machine) — ALREADY landed by the
+W1 wave's W1-2 fix (`local_ai[1]` + the two-probe toggle + the gated
+collision tail); R23 G4 (the seven-draw dust tail's stream offset) —
+the standing cosmetic-skip, quantified in the census; R22 G5 / the
+45/46/48 axis claims — the dispatch-shape refactor, deferred (the W1
+wave's note stands). The attached head's and fists' TargetClosest
+folds stay as documented (their machines re-derive facing per tick
+from their own geometry — no stale-facing defect of the body's class
+was found there).

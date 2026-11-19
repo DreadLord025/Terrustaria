@@ -6295,14 +6295,16 @@ impl Npc {
                 self.humanoid_town_frame();
             }
             NpcKind::GolemHeadFree => {
-                // `FindFrame`'s case 249 (`NPC.cs:72963-72981`): the mouth
-                // row only, off the free head's own 300-cadence
-                // `localAI[0]` (`:31439`/`:31443` — the same first/last-20
-                // window). No wind-up ramp, no side turn; the C#'s
-                // `frameCounter++` at :72976-72979 is dead (nothing reads
-                // it for this type) and is not carried.
-                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                self.frame = if mouth { 1 } else { 0 };
+                // `FindFrame`'s case 249 (`NPC.cs:72963-72976`): the mouth
+                // row reads the STORED `localAI[0]` flag (the arm writes
+                // it PRE-pin, `:31437-31448`) — R23 G5: recomputing the
+                // window from `ai[1]` here read the POST-pin cadence, so
+                // a flag53-pinned tick (pre-pin 285 -> pin 20) showed the
+                // mouth CLOSED where the C# shows it OPEN. No wind-up
+                // ramp, no side turn; the C#'s `frameCounter++` at
+                // :72972-72975 is dead (nothing reads it for this type)
+                // and is not carried.
+                self.frame = if self.local_ai[0] == 1.0 { 1 } else { 0 };
             }
             // The Pumpkin Moon family (`S1-F-13b` Phase 2): the walkers ride
             // `FindFrame`'s plain walker strip. `FindFrame`'s humanoid-group
@@ -14022,6 +14024,23 @@ impl Npc {
         self.update_golem_rng(world, player, rng);
     }
 
+    /// The golem family's `TargetClosest` seam (R22 G2 / R23 G3): the
+    /// C#'s arms call `TargetClosest()` at fixed sites (the body five —
+    /// `NPC.cs:19529`, `:19685`, `:19723`, `:19769`, `:19774`; the free
+    /// head two — `:31377`, `:31451`); the solo scan is a selection
+    /// no-op but `SetTargetTrackingValues` (`:77744-77755`) re-faces
+    /// the NPC EVERY call. `TargetClosest`/`TryTrackingTarget`/
+    /// `SetTargetTrackingValues` draw NO `Main.rand` (RNG-free by
+    /// construction — the whole `:77652-77781` block was re-read).
+    /// The ticker rides 0 until the caller migration (the zombie
+    /// precedent, `npc.rs`'s `update_zombie`); the stamp's only C#
+    /// reader is the unported target-line fade (`Main.cs:57174`).
+    fn golem_retarget(&mut self, world: &World, player: &Player, ai_style: i32) {
+        let cand = crate::npc_target::session_candidate(player);
+        crate::npc_target::target_closest(self, world, &[cand], true, ai_style, 0);
+        self.sprite_dir = self.facing;
+    }
+
     fn update_golem_rng(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -14052,16 +14071,13 @@ impl Npc {
                 }
                 // The init (the `localAI[0]` one-shot, `:19517-19525`):
                 // 247 (the LEFT fist) at -84, 248 (the RIGHT fist) at +78,
-                // 246 at -3/-57 — the v1 had the fist kinds SWAPPED.
+                // 246 at -3/-57 — the C# order (`:19522-19523`,
+                // `ID/NPCID.cs:11171`/`:11173`). R22 G1: the v1 had the
+                // fist kinds SWAPPED; the S1-D-3 audit FIXED the pushes
+                // below — the old "preserved swap" comment described the
+                // v1, not this code.
                 if self.caster_counter == 0 && self.cast_windup == 0 {
                     self.caster_counter = 1;
-                    // PRE-EXISTING DEVIATION (preserved, S1-D-3): the C#
-                    // spawns 247 (the LEFT fist) at -84 and 248 (the RIGHT)
-                    // at +78 (`:19522-19523`); the port pushes the kinds at
-                    // each other's offsets, so the fists cross the body to
-                    // their kind-correct anchors. Kept byte-identical —
-                    // the spawn wiring is untestable in code-only mode
-                    // (ANALYSIS "The Golem family's display").
                     self.wants_sphere
                         .push((NpcKind::GolemFistLeft, cx - 84.0, cy - 9.0, 0.0));
                     self.wants_sphere
@@ -14070,10 +14086,18 @@ impl Npc {
                         .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0, 0.0));
                 }
                 // The dead-target fly-through (`:19527-19534`): the
-                // noTileCollide flag rides `local_ai[1]` (the port's NPC
-                // has no field; the mapping is documented in ANALYSIS).
-                if player.dead {
-                    self.local_ai[1] = 1.0;
+                // `target >= 0 && player[target].dead` gate re-runs
+                // `TargetClosest` and re-checks the (possibly new) target;
+                // solo the scan keeps slot 0, so the double-check lands on
+                // the same player. R22 G2: the retarget now runs at the
+                // C# site. The noTileCollide flag rides `local_ai[1]` (the
+                // port's NPC has no field; the mapping is documented in
+                // ANALYSIS).
+                if self.target >= 0 && player.dead {
+                    self.golem_retarget(world, player, 45);
+                    if player.dead {
+                        self.local_ai[1] = 1.0;
+                    }
                 }
                 // The release (`:19627-19637`): descending past the
                 // player's top, or a clear line with no solid overlap.
@@ -14117,9 +14141,11 @@ impl Npc {
                         } else if self.cast_windup == -1 {
                             // The slam launch (`:19682-19701`): the
                             // fly-through on, the balance-scaled jump.
+                            // R22 G2: `TargetClosest()` (`:19685`) runs
+                            // BEFORE the `velocity.X = 4 * direction`
+                            // write — the facing comes from the scan.
                             self.local_ai[1] = 1.0;
-                            self.facing = if pcx >= cx { 1 } else { -1 };
-                            self.sprite_dir = self.facing;
+                            self.golem_retarget(world, player, 45);
                             self.vx = 4.0 * self.facing as f32;
                             self.vy = crate::npc_ai_golem::body_slam_vy(self.hp, self.max_hp, num);
                             self.ai[0] = 1.0;
@@ -14134,6 +14160,11 @@ impl Npc {
                 } else {
                     // The flight (`:19721-19765`): the hitbox-span test,
                     // the balance-scaled sink and the `num7` cap ladder.
+                    // R22 G2: `TargetClosest()` (`:19723`) re-faces EVERY
+                    // flight tick — the strafe below reads the fresh
+                    // direction, not the slam-time facing (the v1 strafed
+                    // the stale way while the player crossed the body).
+                    self.golem_retarget(world, player, 45);
                     let over_x = self.x < player.x && self.x + w > player.x + crate::player::WIDTH;
                     if over_x {
                         self.vx *= 0.9;
@@ -14141,17 +14172,37 @@ impl Npc {
                             self.vy += crate::npc_ai_golem::body_flight_sink(num);
                         }
                     } else {
-                        let dir = if self.facing < 0 { -1.0 } else { 1.0 };
-                        self.vx += dir * 0.2;
+                        // `:19741-19747` — the two sign arms (direction 0
+                        // adds nothing); the strafe step, then the cap.
+                        if self.facing < 0 {
+                            self.vx -= 0.2;
+                        } else if self.facing > 0 {
+                            self.vx += 0.2;
+                        }
                         let cap = crate::npc_ai_golem::body_flight_cap(self.hp, self.max_hp, num);
                         self.vx = self.vx.clamp(-cap, cap);
                     }
                 }
+                // The invalid-target tail (`:19767-19770`): `target <= 0
+                // || target == 255 || dead` — the `<= 0` INCLUDES solo
+                // target 0, so the C# re-runs the scan EVERY tick (R22
+                // G2). Solo the selection is a no-op but the facing
+                // refresh is not.
+                if self.target <= 0 || self.target == 255 || player.dead {
+                    self.golem_retarget(world, player, 45);
+                }
                 // The Manhattan-3000 despawn (`:19771-19779`): the C#
-                // deactivates without loot — the port's despawn window
-                // at 0 (the sim's retain removes it the same pass).
+                // re-runs `TargetClosest` (`:19774`) and RE-CHECKS the
+                // distance before the `active = false`; the port's
+                // despawn window at 0 (the sim's retain removes it the
+                // same pass). Solo the re-scan cannot change the target,
+                // so the re-check lands on the same distance — the
+                // retarget runs at the C# site anyway (R22 G2).
                 if (cx - pcx).abs() + (cy - pcy).abs() > 3000.0 {
-                    self.encourage_despawn(0);
+                    self.golem_retarget(world, player, 45);
+                    if (cx - pcx).abs() + (cy - pcy).abs() > 3000.0 {
+                        self.encourage_despawn(0);
+                    }
                 }
                 // The movement pass: the body is the family's only
                 // gravity kind (`SetDefaults` 245 has no noGravity,
@@ -14489,6 +14540,12 @@ impl Npc {
                     self.hp = 0;
                     return;
                 }
+                // R23 G3: the C# arm writes NO direction itself — the
+                // facing rides `TargetClosest`'s `SetTargetTrackingValues`
+                // target-face (`:77744-77755`); the old tail wrote facing
+                // from the velocity sign, which diverged while the head
+                // drifted away from the player. The call sits at the C#'s
+                // `:31377` position (after the toggle below).
                 // The noTileCollide toggle (`:31363-31371`, W1-2 fix): a
                 // blocked line sets noTileCollide AND flag53; a CLEAR
                 // line while the flag rides AND the box overlaps solids
@@ -14507,6 +14564,9 @@ impl Npc {
                 {
                     self.local_ai[1] = 0.0;
                 }
+                // R23 G3: `TargetClosest()` (`:31377`) — the per-tick
+                // target-face at the C# position (after the toggle).
+                self.golem_retarget(world, player, 48);
                 // The hover approach (`:31378-31417`): the 7-speed aim at
                 // player - (0, 300), the 0.05 converge with the sign-cross
                 // double — the v1 ran an invented spring + clamp.
@@ -14518,9 +14578,11 @@ impl Npc {
                 // The fireball salvo (`:31418-31465`): the (num+4)/5
                 // ladder over the BODY's 80/60/20/10 % DOUBLE tiers (the
                 // v1 carried only the 10 % one), the mouth window, the
-                // flag53 pin at 20, the 8-speed 258 dmg 20.
-                self.ai[1] += crate::npc_ai_golem::free_head_fireball_step(
-                    num, world.golem_hp, world.golem_max_hp,
+                // flag53 pin at 20, the 8-speed 258 dmg 20. R23 G2: the
+                // per-tier adds land on `ai[1]` SEQUENTIALLY (the C#'s
+                // five `this.ai[1] += num716`), not one pre-summed add.
+                self.ai[1] = crate::npc_ai_golem::free_head_fireball_step(
+                    self.ai[1], num, world.golem_hp, world.golem_max_hp,
                 );
                 self.local_ai[0] =
                     if self.ai[1] < 20.0 || self.ai[1] > 280.0 { 1.0 } else { 0.0 };
@@ -14528,6 +14590,9 @@ impl Npc {
                     self.ai[1] = 20.0;
                 }
                 if self.ai[1] >= 300.0 {
+                    // R23 G3: `TargetClosest()` (`:31451`) — the fire-tick
+                    // re-face before the aim (solo facing-only).
+                    self.golem_retarget(world, player, 48);
                     self.ai[1] = 0.0;
                     let (sx, sy) = (cx, cy - 10.0);
                     let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
@@ -14553,8 +14618,11 @@ impl Npc {
                 let flag54 = !crate::projectile::can_hit(
                     world, world.golem_x, world.golem_y, 1.0, 1.0, pcx, pcy, 1.0, 1.0,
                 );
-                self.ai[2] += crate::npc_ai_golem::free_head_barrage_step(
-                    num, world.golem_hp, world.golem_max_hp, flag54,
+                // R23 G2: the per-tier adds land on `ai[2]` SEQUENTIALLY
+                // (the C#'s eight `this.ai[2] += num725` + the flag54
+                // `+= num725 * 10f`), not one pre-summed add.
+                self.ai[2] = crate::npc_ai_golem::free_head_barrage_step(
+                    self.ai[2], num, world.golem_hp, world.golem_max_hp, flag54,
                 );
                 if self.ai[2] > crate::npc_ai_golem::free_head_barrage_trigger(rng) {
                     self.ai[2] = 0.0;
@@ -14586,11 +14654,6 @@ impl Npc {
                         ));
                     }
                 }
-                // W1-2: the per-tick `TargetClosest()` (`:31377`) — solo
-                // impact is facing only; the tail's vx-sign facing stands
-                // in (documented, ANALYSIS "The Golem family").
-                self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-                self.sprite_dir = self.facing;
                 // W1-2: free integration ONLY while the fly-through flag
                 // rides (`:31363-31371`); otherwise the same axis-separated
                 // tile pass the fists use (the port's `Collision.TileCollision`
@@ -19012,13 +19075,15 @@ mod tests {
         head.find_frame();
         assert_eq!(head.head_turn, 1, "the right turn");
         assert_eq!(head.frame, 3, "the mouth +2 row");
-        // The free head: case 249's mouth-only rows, no turn.
+        // The free head: case 249's mouth-only rows, no turn — R23 G5:
+        // the row reads the STORED `localAI[0]` flag (`NPC.cs:72963`),
+        // not a recomputed ai[1] window.
         let mut free = Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 100.0 * 16.0, -1, 0.0);
         free.hp = free.max_hp;
-        free.ai[1] = 5.0;
+        free.local_ai[0] = 1.0;
         free.find_frame();
         assert_eq!(free.frame, 1, "the free head's mouth row");
-        free.ai[1] = 150.0;
+        free.local_ai[0] = 0.0;
         free.find_frame();
         assert_eq!(free.frame, 0, "the free head's closed row");
     }
@@ -19078,6 +19143,30 @@ mod tests {
         free.vy = 0.0;
         free.update_golem(&w, &player);
         assert_eq!(free.local_ai[1], 0.0, "clear line + solids: released");
+        // R23 G5: the flag53-pinned tick above stored the PRE-pin mouth
+        // flag; FindFrame reads the STORED flag, not the pinned cadence.
+        // Re-block the line with the cadence in the mouth window (285):
+        // the flag stores 1, the pin lands 20 — the row stays OPEN.
+        for x in 95..106 {
+            for y in 129..131 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        free.x = 100.0 * 16.0;
+        free.y = 126.0 * 16.0;
+        free.vx = 0.0;
+        free.vy = 0.0;
+        free.ai[1] = 285.0;
+        free.update_golem(&w, &player);
+        assert_eq!(free.ai[1], 20.0, "flag53 pins the cadence");
+        assert_eq!(free.local_ai[0], 1.0, "the PRE-pin window stored 1");
+        free.find_frame();
+        assert_eq!(free.frame, 1, "the pinned tick keeps the mouth OPEN (R23 G5)");
         // With the flag down the tail tile-collides. The hover aim is
         // UP (the player sits above the head's centre - 300): vy steps
         // to -0.05, and the box already overlaps the solid floor — the
@@ -19091,6 +19180,92 @@ mod tests {
         assert_eq!(free.vy, 0.0, "the impact zeroed vy");
         assert!(free.collide_y, "the impact latched collideY");
         assert_eq!(free.y, y_before, "no integration into the floor");
+    }
+
+    #[test]
+    fn r22_g2_the_golem_body_refaces_every_flight_tick() {
+        // R22 G2 (`NPC.cs:19723`, `:19767-19770`): the C# re-runs
+        // `TargetClosest` at the flight tick AND at the invalid-target
+        // tail (the `target <= 0` gate INCLUDES solo 0 — every tick);
+        // `SetTargetTrackingValues` (`:77744-77755`) re-faces from the
+        // int-centre compare. The v1 wrote facing ad hoc at the slam and
+        // strafed the stale way while the player crossed the body.
+        // WRITTEN NOT RUN (code-only).
+        let mut w = ground_air();
+        w.golem_present = true;
+        let mut player = crate::player::Player::spawn(&w);
+        player.zones.jungle = true; // the solo balance below the surface
+        player.x = 115.0 * 16.0;
+        player.y = 90.0 * 16.0;
+        let mut body = Npc::new(NpcKind::Golem, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.alpha = 0;
+        body.caster_counter = 1; // skip the parts-spawn tick
+        body.ai[0] = 1.0; // the flight state
+        body.vy = -5.0; // airborne: the flight arm, not the landing
+        body.facing = 1; // STALE: aimed right from the slam
+        body.sprite_dir = 1;
+        // The player now LEFT of the body: the flight tick's retarget
+        // flips the facing and the strafe accelerates LEFT (-0.2).
+        player.x = 80.0 * 16.0;
+        body.update_golem(&w, &player);
+        assert_eq!(body.facing, -1, "the flight tick re-faces (`:19723`)");
+        assert_eq!(body.sprite_dir, -1);
+        assert_eq!(body.target, 0, "the scan commits the solo slot");
+        assert_eq!(
+            body.target_rect,
+            (player.x as i32, player.y as i32, 20, 42),
+            "the tracking rect rides the session player"
+        );
+        // vx started 0, the strafe added -0.2 (the fresh direction).
+        assert!(body.vx < 0.0, "the strafe reads the fresh facing");
+        // The grounded charge tick (no slam) still re-faces via the tail
+        // gate (`:19767-19770` — `target <= 0` includes solo 0).
+        body.ai[0] = 0.0;
+        body.vy = 0.0;
+        body.vx = 0.0;
+        body.facing = -1; // stale: aimed left
+        player.x = 115.0 * 16.0; // the player crosses back to the RIGHT
+        body.update_golem(&w, &player);
+        assert_eq!(body.facing, 1, "the tail gate re-faces every tick");
+        // The Manhattan-3000 despawn re-check (`:19771-19779`): the
+        // retarget runs, the distance still exceeds -> despawn window 0.
+        player.x = 400.0 * 16.0;
+        body.update_golem(&w, &player);
+        assert_eq!(body.despawn_timer, 0, "the re-checked despawn");
+        assert_eq!(body.facing, 1, "the despawn retarget still faces");
+    }
+
+    #[test]
+    fn r23_g3_the_free_head_faces_the_target_not_the_velocity() {
+        // R23 G3 (`NPC.cs:31377`, `:77744-77755`): the C# arm writes NO
+        // direction — the facing rides `TargetClosest`'s target-face.
+        // The old tail wrote facing from the velocity sign, so a head
+        // drifting AWAY from the player faced backwards. WRITTEN NOT RUN.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        w.golem_hp = 15000;
+        w.golem_max_hp = 15000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.zones.jungle = true;
+        player.x = 80.0 * 16.0; // LEFT of the head
+        player.y = 130.0 * 16.0;
+        let mut free = Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 126.0 * 16.0, 1, 0.0);
+        free.hp = free.max_hp;
+        free.vx = 2.0; // drifting RIGHT, away from the player
+        free.facing = 1;
+        free.update_golem(&w, &player);
+        assert_eq!(free.facing, -1, "the target-face wins over the vx sign");
+        assert_eq!(free.sprite_dir, -1);
+        assert_eq!(free.target, 0);
+        // The reverse drift: the player RIGHT, the head drifting LEFT —
+        // the old vx-sign stand-in faced -1, the target-face flips +1.
+        player.x = 120.0 * 16.0;
+        free.vx = -2.0;
+        free.update_golem(&w, &player);
+        assert_eq!(free.facing, 1, "the target-face tracks the crossing");
     }
 
     #[test]

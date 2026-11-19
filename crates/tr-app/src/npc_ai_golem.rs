@@ -272,68 +272,78 @@ pub fn free_head_hover_velocity(
 /// The free head's fireball cadence step (`NPC.cs:31418-31435`):
 /// `num716 = (num + 4) / 5`, extra adds while the BODY's life is under
 /// 80 %, 60 %, 20 % and 10 % (the double comparisons). The v1 carried
-/// only the 10 % tier.
-pub fn free_head_fireball_step(num: f32, body_hp: i32, body_max_hp: i32) -> f32 {
+/// only the 10 % tier. R23 G2: the C# adds each tier to `ai[1]`
+/// SEQUENTIALLY (`this.ai[1] += num716` five times, each a rounded f32
+/// add) — the fn takes the cadence accumulator and returns it updated,
+/// NOT a pre-summed delta (a different rounding path over long fights).
+pub fn free_head_fireball_step(cadence: f32, num: f32, body_hp: i32, body_max_hp: i32) -> f32 {
     let step = (num + 4.0) / 5.0;
-    let mut total = step;
+    let mut ai1 = cadence;
+    ai1 += step;
     // W1-6: the C# compares in DOUBLE (`:31420-31434`,
     // `(double)life < (double)lifeMax * 0.8` …) — f64 here, not f32.
     let (life, max) = (body_hp as f64, body_max_hp as f64);
     if life < max * 0.8 {
-        total += step;
+        ai1 += step;
     }
     if life < max * 0.6 {
-        total += step;
+        ai1 += step;
     }
     if life < max * 0.2 {
-        total += step;
+        ai1 += step;
     }
     if life < max * 0.1 {
-        total += step;
+        ai1 += step;
     }
-    total
+    ai1
 }
 
 /// The free head's eye-beam cadence step (`NPC.cs:31467-31505`): `num`,
 /// extra adds while the BODY's life is under `lifeMax / 1.25` and
 /// `/ 1.5` (DOUBLE divisions) then `/ 2`, `/ 3`, `/ 4`, `/ 5`, `/ 6`
 /// (INTEGER divisions), and `+= num * 10` while the BODY cannot hit the
-/// player (`flag54`, `:31497-31505`). The v1 ran a flat +1.
+/// player (`flag54`, `:31497-31505`). The v1 ran a flat +1. R23 G2: the
+/// C# adds each tier to `ai[2]` SEQUENTIALLY (`this.ai[2] += num725`
+/// eight times + the flag54 `+= num725 * 10f`, each a rounded f32 add)
+/// — the fn takes the cadence accumulator and returns it updated, NOT
+/// a pre-summed delta (a different rounding path over long fights).
 pub fn free_head_barrage_step(
+    cadence: f32,
     num: f32,
     body_hp: i32,
     body_max_hp: i32,
     body_line_blocked: bool,
 ) -> f32 {
-    let mut total = num;
+    let mut ai2 = cadence;
+    ai2 += num;
     // W1-6: the /1.25 and /1.5 tiers compare in DOUBLE (`:31469-31475`);
     // the /2../6 tiers below stay INTEGER (`:31477-31491`).
     let (life, max) = (body_hp as f64, body_max_hp as f64);
     if life < max / 1.25 {
-        total += num;
+        ai2 += num;
     }
     if life < max / 1.5 {
-        total += num;
+        ai2 += num;
     }
     if body_hp < body_max_hp / 2 {
-        total += num;
+        ai2 += num;
     }
     if body_hp < body_max_hp / 3 {
-        total += num;
+        ai2 += num;
     }
     if body_hp < body_max_hp / 4 {
-        total += num;
+        ai2 += num;
     }
     if body_hp < body_max_hp / 5 {
-        total += num;
+        ai2 += num;
     }
     if body_hp < body_max_hp / 6 {
-        total += num;
+        ai2 += num;
     }
     if body_line_blocked {
-        total += num * 10.0;
+        ai2 += num * 10.0;
     }
-    total
+    ai2
 }
 
 /// The free head's per-beam damage/speed tiers (`NPC.cs:31521-31548`):
@@ -624,18 +634,19 @@ mod tests {
     #[test]
     fn s1_d_3_golem_the_free_head_cadence_ladders() {
         // `NPC.cs:31418-31435`: solo step (1+4)/5 = 1; the full body adds
-        // nothing; a body under 10 % adds all four -> 5.
-        assert_eq!(free_head_fireball_step(1.0, 15000, 15000), 1.0);
-        assert_eq!(free_head_fireball_step(1.0, 1000, 15000), 5.0);
+        // nothing; a body under 10 % adds all four -> 5. R23 G2: the fns
+        // take the cadence accumulator (0 here = the per-tick delta).
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 15000, 15000), 1.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 1000, 15000), 5.0);
         // Under 60 % only: 1 + 0.8 tier + 0.6 tier? 8000 < 12000 yes,
         // 8000 < 9000 yes, < 3000 no -> 3.
-        assert_eq!(free_head_fireball_step(1.0, 8000, 15000), 3.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 8000, 15000), 3.0);
         // `NPC.cs:31467-31505`: the barrage's seven tiers; a body at
         // 1/7 of max passes /1.25, /1.5, /2, /3, /4, /5, /6 -> 8; the
         // blocked line adds 10 -> 18.
-        assert_eq!(free_head_barrage_step(1.0, 15000, 15000, false), 1.0);
-        assert_eq!(free_head_barrage_step(1.0, 2000, 15000, false), 8.0);
-        assert_eq!(free_head_barrage_step(1.0, 2000, 15000, true), 18.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 15000, 15000, false), 1.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 2000, 15000, false), 8.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 2000, 15000, true), 18.0);
     }
 
     #[test]
@@ -716,12 +727,12 @@ mod tests {
         // product on a future lifeMax where the widths diverge.
         // Fireball: exactly at 80 % (12000 of 15000) the tier does NOT
         // add (strict `<`); one hp below adds it.
-        assert_eq!(free_head_fireball_step(1.0, 12000, 15000), 1.0);
-        assert_eq!(free_head_fireball_step(1.0, 11999, 15000), 2.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 12000, 15000), 1.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 11999, 15000), 2.0);
         // Exactly at 10 % (1500 of 15000): the 80/60/20 tiers add, the
         // 10 % tier does not -> 4.
-        assert_eq!(free_head_fireball_step(1.0, 1500, 15000), 4.0);
-        assert_eq!(free_head_fireball_step(1.0, 1499, 15000), 5.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 1500, 15000), 4.0);
+        assert_eq!(free_head_fireball_step(0.0, 1.0, 1499, 15000), 5.0);
         // Beam tiers: exactly at 50 % (8000 of 16000) stays 24/11; one
         // below steps to 25/11.25; exactly at 10 % (1600) carries four
         // tiers (50/40/30/20) -> 28/12; one below adds the fifth.
@@ -738,12 +749,42 @@ mod tests {
         // exactly at /1.5 (10000) adds /1.25 only; 9999 adds both. The
         // INTEGER tiers /2../6 (`:31477-31491`) stay integer: at 5000
         // of 15000, /2 = 7500, /3 = 5000 — `5000 < 5000` is false.
-        assert_eq!(free_head_barrage_step(1.0, 12000, 15000, false), 1.0);
-        assert_eq!(free_head_barrage_step(1.0, 11999, 15000, false), 2.0);
-        assert_eq!(free_head_barrage_step(1.0, 10000, 15000, false), 2.0);
-        assert_eq!(free_head_barrage_step(1.0, 9999, 15000, false), 3.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 12000, 15000, false), 1.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 11999, 15000, false), 2.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 10000, 15000, false), 2.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 9999, 15000, false), 3.0);
         // 5000 of 15000: /1.25, /1.5, /2 add (3); /3 is the exact
         // integer boundary (no); /4 = 3750, /5 = 3000, /6 = 2500 no.
-        assert_eq!(free_head_barrage_step(1.0, 5000, 15000, false), 4.0);
+        assert_eq!(free_head_barrage_step(0.0, 1.0, 5000, 15000, false), 4.0);
+        // R23 G2: lifeMax 21000 at the 30 % beam tier — `21000.0f32 *
+        // 0.3f32` rounds ABOVE 6300.0, so an f32 compare would take the
+        // tier at life == 6300; the C#'s DOUBLE product is exactly 6300
+        // and the strict `<` does NOT (`:31533-31537`). One below adds
+        // it (50/40/30 -> 27 dmg / 11.75).
+        assert_eq!(free_head_beam_tier(6300, 21000, false), (26, 11.5));
+        assert_eq!(free_head_beam_tier(6299, 21000, false), (27, 11.75));
+    }
+
+    #[test]
+    fn r23_g2_the_free_head_ladders_add_per_tier_sequentially() {
+        // R23 G2 (`NPC.cs:31419-31434` / `:31468-31504`): the C# adds
+        // each tier to ai[1]/ai[2] SEQUENTIALLY — five/eight rounded f32
+        // adds, NOT one pre-summed `+=`. At a 2^24 accumulator the f32
+        // integer grid turns 2-wide and the two paths diverge:
+        // - fireball, solo num 1 (step exactly 1), body under 10 % (all
+        //   four tiers): each `16777216 + 1 = 16777217` is a tie that
+        //   rounds to EVEN -> stays 16777216, five times (the C# stalls
+        //   here too). One pre-summed `+= 5` gives 16777221 -> rounds to
+        //   16777220: DIFFERENT.
+        // - barrage, num 2 (step exactly 2), body under 1/6 (all seven
+        //   tiers): eight `+2` adds are exact on the 2-wide grid ->
+        //   16777232; also pins that the accumulator argument is honoured.
+        let base = 16_777_216.0f32; // 2^24
+        assert_eq!(free_head_fireball_step(base, 1.0, 1000, 15000), base);
+        assert_ne!(base + 5.0, base, "the pre-sum diverges at 2^24");
+        assert_eq!(
+            free_head_barrage_step(base, 2.0, 1000, 15000, false),
+            base + 16.0
+        );
     }
 }
