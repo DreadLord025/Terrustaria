@@ -398,22 +398,23 @@ mod tests {
     /// alpha), spawned at (160, 160) with the given velocity.
     fn proj(kind: u16, vx: f32, vy: f32) -> Projectile {
         let d = proj_data(kind).expect("the rowed kind");
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            pos: Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX),
-            vel: Vec2::new(vx, vy),
-            w: d.w,
-            h: d.h,
-            tile_collide: d.tile_collide,
-            alpha: d.alpha,
-            scale: d.scale,
-            time_left: d.time_left,
-            penetrate: d.penetrate,
-            extra_updates: d.extra_updates,
-            ..Default::default()
-        }
+        // Field-by-field on `Default` — the struct has private bookkeeping
+        // fields (E0451 outside projectile.rs).
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        p.vel = Vec2::new(vx, vy);
+        p.w = d.w;
+        p.h = d.h;
+        p.tile_collide = d.tile_collide;
+        p.alpha = d.alpha;
+        p.scale = d.scale;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.extra_updates = d.extra_updates;
+        p
     }
 
     fn step_pool(pool: &mut ProjectilePool, w: &mut World) {
