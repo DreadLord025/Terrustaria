@@ -45,14 +45,15 @@
 //! `the_style21_arm_draws_no_rng` pins a `UnifiedRandom` state across the
 //! calls (written, not run — code-only mode).
 //!
-//! Wiring deferred (the `drawdata_anim.rs` / S1-F-9b precedent): the port's
-//! roster has no `NpcKind::BlazingWheel` yet, so `update_rng`'s aiStyle axis
-//! (`npc.rs`) has no style-21 arm to claim; this module is the pure port +
-//! the minimal seam (the light triple is RETURNED for the caller to feed
-//! `EntityLights`, the frame step is a pure pair-function until the kind's
-//! `find_frame` row lands). See docs/ANALYSIS.md "The Blazing Wheel arm
-//! (S1-D-3 aiStyle-21)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+//! WIRED by S1-D-3-wire-smallkinds (2026-11-19): `NpcKind::BlazingWheel`
+//! (protocol id 353, vanilla type 72) now exists; `update_rng`'s aiStyle
+//! axis claims style 21 (`npc.rs`), calling [`ai_style21`] +
+//! [`collision_move_blazing_wheel`]; the light triple is fed to
+//! `EntityLights` by the draw-side pass (`app/frame/draw.rs`, reading the
+//! App's pulsing `mouse_text_color`), and [`blazing_wheel_frame`] drives
+//! the kind's `find_frame` row. See docs/ANALYSIS.md "The Blazing Wheel arm
+//! (S1-D-3 aiStyle-21)" + "The small-kinds wiring wave".
+#![allow(dead_code)] // WIRED by S1-D-3-wire-smallkinds (axis 21 + the light feed); the defaults row + witnesses stay as the audit cross-check
 
 use crate::collision::no_slope_collision;
 use crate::npc::Npc;

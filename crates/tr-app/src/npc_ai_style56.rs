@@ -3,13 +3,18 @@
 //!
 //! S1-D-3 (aiStyle-56 round, code-only mode): this module is the faithful
 //! 1:1 port of the arm as a pure function over `Npc` + a small Env seam
-//! (the d6bc30ed bat precedent). It is NOT wired into `Npc::update`'s
-//! style axis yet — the port has no `NpcKind::DungeonSpirit` at all
-//! (the escape-clause check: no kind row, no dispatch arm, no anchors
-//! row, no PORT_MAP row on main), so the wiring round adds the kind +
-//! its `SetDefaults` row + the dispatch claim together. Every other
-//! file is byte-identical except the one `mod` line in `main.rs` and
-//! the docs.
+//! (the d6bc30ed bat precedent).
+//!
+//! **WIRED by S1-D-3-wire-smallkinds (2026-11-19).** `NpcKind::DungeonSpirit`
+//! (protocol id 288, vanilla type 288) now exists with its `SetDefaults`
+//! row (`NPC.cs:12738-12752`) in `npc/data.rs`. The arm needs the shared
+//! `Main.dust` pool + the sibling-free `TargetCandidate` slice, so it runs
+//! in the world-sim tick closure (`world_sim/npcs.rs`) at the spirit's
+//! slot turn — [`style56_step`] fills a [`Style56Env`] from the App's
+//! `DustPool`/`SpawnCtx` and the `UpdateNPCs` stream. The style axis' 56
+//! arm (`npc.rs`) owns the post-`AI()` noTileCollide/noGravity integration
+//! tail (`NPC.cs:90494-90498`). See docs/ANALYSIS.md "The Dungeon Spirit
+//! aiStyle-56 arm" + "The small-kinds wiring wave".
 //!
 //! Family identity (verified from the C#, not from the roadmap): the
 //! ONLY `aiStyle = 56` assignment in `NPC.cs` is type 288
@@ -88,7 +93,7 @@
 //!   NOT integrate `position += velocity`: the spirit is
 //!   noTileCollide/noGravity (`:12750-12751`), so `UpdateNPC`
 //!   integrates after `AI()`; the caller owns the step.
-#![allow(dead_code)] // wiring deferred (code-only mode) — the kind row + dispatch claim are the follow-up round
+#![allow(dead_code)] // WIRED by S1-D-3-wire-smallkinds (the world-sim dust pre-pass + axis 56's integration tail); the witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

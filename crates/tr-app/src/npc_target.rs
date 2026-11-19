@@ -64,7 +64,6 @@ pub struct TargetCandidate {
 /// aiStyle-42 arm, `npc_ai_style42.rs`): stock aggro 0 / no-aggro false /
 /// no tank pet until those systems land, `itemAnimation` from the raw
 /// swing counter.
-#[allow(dead_code)] // UNWIRED until the S1-D-3 merge step wires the aiStyle machines.
 pub fn session_candidate(player: &crate::player::Player) -> TargetCandidate {
     TargetCandidate {
         active: true,

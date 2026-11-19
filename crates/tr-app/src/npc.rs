@@ -914,6 +914,30 @@ pub enum NpcKind {
     /// (`NPC.cs:13355-13368`). The true machine lands with the bespoke
     /// slice — slice A routes it to the Mourning Wood hover stand-in.
     Everscream,
+    /// `NPCID.BlazingWheel` (72) — the dungeon's ricochet trap
+    /// (`aiStyle 21`): 34x34, dmg 24, def 100, 100 HP, kb 0, alpha 100,
+    /// behindTiles, noGravity, dontTakeDamage, scale 1.2
+    /// (`NPC.cs:9714-9731`). WIRED by the small-kinds wave: the style
+    /// axis' 21 arm rides `npc_ai_style21::ai_style21` +
+    /// `collision_move_blazing_wheel`. The protocol id is 353 (the
+    /// vanilla 72 slot is the MartianWalker's, `to_u16`'s guard).
+    BlazingWheel,
+    /// `NPCID.AngryNimbus` (250) — the rain cloud (`aiStyle 49`): 34x26,
+    /// dmg 50, def 24, 300 HP, kb 0.3, value 300 (`NPC.cs:12221-12233`).
+    /// WIRED: the axis' 49 arm rides `npc_ai_style49::nimbus_step`.
+    AngryNimbus,
+    /// `NPCID.DungeonSpirit` (288) — the post-Plantera dungeon wisp
+    /// (`aiStyle 56`): 20x20, dmg 70, def 30, 200 HP, kb 0.2, value 500,
+    /// noTileCollide, noGravity (`NPC.cs:12738-12752`). WIRED: the
+    /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
+    /// axis' 56 arm owns the noTileCollide integration tail.
+    DungeonSpirit,
+    /// `NPCID.ForceBubble` (384) — the Martian Officer's shield rider
+    /// (`aiStyle 72`): 18x40, dmg 0, def 20, 1000 HP, kb 1, npcSlots 0,
+    /// noTileCollide, canGhostHeal false (`NPC.cs:13882-13894`). WIRED:
+    /// the world-sim host pre-pass runs `npc_ai_style72::ai_style72`;
+    /// the axis' 72 arm owns the gravity + integration tail.
+    ForceBubble,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1331,6 +1355,12 @@ pub struct Npc {
     /// `localAI[0]` 0 → 1 arm: the `NewNPC(..., 391, whoAmI)` — the sim
     /// resolves it after the tick).
     pub wants_scutlix: bool,
+    /// The Martian Officer's bubble spawn request (`AI_003_Fighters`'s
+    /// type-383 block, `NPC.cs:56222-56230` — the small-kinds wiring
+    /// wave): the sim drains it after the tick, spawns the ForceBubble
+    /// at the officer's centre and links the pair through `carrier_uid`
+    /// (the C#'s `ai[2] = slot + 1` / the bubble's `ai[0] = whoAmI`).
+    pub wants_force_bubble: bool,
     /// The carrier link the sim writes each tick (the WoF write-through
     /// shape): the living 391's centre in pixels, (-1, -1) = none.
     pub carrier_x: f32,
@@ -2245,7 +2275,9 @@ impl Npc {
                 .pumpkin_moon_defaults()
                 .map(|d| d.scale)
                 .or_else(|| kind.frost_moon_defaults().map(|d| d.scale))
-                .unwrap_or(1.0),
+                // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
+                // the small-kinds wiring wave).
+                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -2301,7 +2333,10 @@ impl Npc {
             ai: [0.0; 4],
             wants_servant: None,
             defense_override: None,
-            dont_take_damage: false,
+            // The BlazingWheel's `dontTakeDamage = true` (`NPC.cs:9729`,
+            // the small-kinds wiring wave); every other kind keeps the
+            // head's false (`NPC.cs:8507`) until its AI writes the flag.
+            dont_take_damage: kind == NpcKind::BlazingWheel,
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
@@ -2333,6 +2368,7 @@ impl Npc {
             wants_martian_invasion: false,
             wants_event_stop: false,
             wants_scutlix: false,
+            wants_force_bubble: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
             uid: 0,
@@ -2345,7 +2381,9 @@ impl Npc {
                 .pumpkin_moon_defaults()
                 .map(|d| d.alpha)
                 .or_else(|| kind.frost_moon_defaults().map(|d| d.alpha))
-                .unwrap_or(0),
+                // The BlazingWheel's `alpha = 100` row (`NPC.cs:9723`,
+                // the small-kinds wiring wave).
+                .unwrap_or(if kind == NpcKind::BlazingWheel { 100 } else { 0 }),
             head_turn: 0,
             wet: false,
             carrier_timer: -1.0,
@@ -2714,6 +2752,13 @@ impl Npc {
             NpcKind::PresentMimic => 0.25,
             NpcKind::GingerbreadMan => 0.2,
             NpcKind::Yeti | NpcKind::Everscream => 0.0,
+            // The small-kinds wiring wave: 72 0 (`NPC.cs:9727`), 250 0.3
+            // (`:12231`), 288 0.2 (`:12746`); 384 keeps the head's 1
+            // (`:8533`) — the stock `_ => 0.4` below never sees it.
+            NpcKind::BlazingWheel => 0.0,
+            NpcKind::AngryNimbus => 0.3,
+            NpcKind::DungeonSpirit => 0.2,
+            NpcKind::ForceBubble => 1.0,
             _ => 0.4,
         }
     }
@@ -3042,6 +3087,12 @@ impl Npc {
             NpcKind::GingerbreadMan => 26,
             NpcKind::Yeti => 50,
             NpcKind::Everscream => 38,
+            // The small-kinds wiring wave: 72 100 (`NPC.cs:9721`), 250 24
+            // (`:12227`), 288 30 (`:12744`), 384 20 (`:13886`).
+            NpcKind::BlazingWheel => 100,
+            NpcKind::AngryNimbus => 24,
+            NpcKind::DungeonSpirit => 30,
+            NpcKind::ForceBubble => 20,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3366,6 +3417,13 @@ impl Npc {
             NpcKind::GingerbreadMan => 1800.0,
             NpcKind::Yeti => 3000.0,
             NpcKind::Everscream => 10000.0,
+            // The small-kinds wiring wave: 72 writes no value row (the
+            // head's `value = 0f`, `NPC.cs:8544`), 250 300 (`:12232`),
+            // 288 500 (`:12749`), 384 keeps the head's 0 (`:13882-13894`
+            // writes none).
+            NpcKind::BlazingWheel | NpcKind::ForceBubble => 0.0,
+            NpcKind::AngryNimbus => 300.0,
+            NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3652,11 +3710,85 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
+            // BlazingWheel (72), the style's only user. The small-kinds
+            // wiring wave: the ricochet machine rides `npc_ai_style21`
+            // (RNG-free by construction — the arm draws no `Main.rand`).
+            // The returned light is the draw-side feed's
+            // (`npc_lights::npc_light` reads `App.mouse_text_color`); the
+            // tile move is the wheel's own 12x12 `noSlopeCollision` box.
+            21 => {
+                // The session player as slot 0 (the shared S1-D-3p
+                // candidate, `npc_target::session_candidate`).
+                let cand = crate::npc_target::session_candidate(player);
+                // The `EverLastingTicker` stand-in (the zombie convention,
+                // `update_zombie`): 0 until the caller migration. The
+                // mouse_text_color 255 only shapes the RETURNED light,
+                // which this call discards — the live feed is the
+                // draw-side `npc_lights::npc_light` (it reads the App's
+                // pulsing `mouse_text_color`).
+                let _ = crate::npc_ai_style21::ai_style21(self, world, &[cand], 0, 255);
+                crate::npc_ai_style21::collision_move_blazing_wheel(self, world);
+            }
             // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // `else if (this.aiStyle == 49)` (`NPC.cs:31587-31650`) — the
+            // AngryNimbus (250), the style's only user. The small-kinds
+            // wiring wave: `nimbus_step` is the arm + the dry move tail;
+            // the ONE `Next(width-20)` draw per 9th qualifying tick rides
+            // the caller's stream (`Main.rand`, `NPC.cs:31646`).
+            49 => crate::npc_ai_style49::nimbus_step(self, world, player, rng),
+            // `else if (this.aiStyle == 56)` (`NPC.cs:32742-32760`) — the
+            // DungeonSpirit (288). The arm itself (TargetClosest + the
+            // 100:1 blend + the type-180 NewDust) runs in the world-sim
+            // dust pre-pass (`world_sim/npcs.rs`, the shared `DustPool`
+            // lives on the App); this arm owns the tail the C# runs after
+            // `AI()`: the spirit is noGravity/noTileCollide
+            // (`NPC.cs:12750-12751`), so `UpdateNPC` takes the raw
+            // integration branch (`:90494-90498`).
+            56 => {
+                // `:90473-90476` — the dead-band X snap (double compare).
+                if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+                    self.vx = 0.0;
+                }
+                // `:90496-90498` — the stamps + the raw integration.
+                self.old_x = self.x;
+                self.old_y = self.y;
+                self.old_direction = self.facing;
+                self.x += self.vx;
+                self.y += self.vy;
+            }
+            // `else if (this.aiStyle == 72)` (`NPC.cs:35080-35101`) — the
+            // ForceBubble (384). The rider arm (the officer snap / the
+            // pop) runs in the world-sim host pre-pass
+            // (`world_sim/npcs.rs` — it reads the sibling NPC slots);
+            // this arm owns the post-`AI()` movement the C# runs for the
+            // bubble: noGravity is FALSE (`SetDefaults` 384 writes none,
+            // `NPC.cs:13882-13894`), so the depth-scaled 0.3 gravity +
+            // the 10 fall cap apply (`:90465-90472`), then the
+            // noTileCollide raw integration (`:90494-90498`). The next
+            // tick's snap re-zeroes the velocity — the one-tick sink is
+            // the C#'s own.
+            72 => {
+                self.vy = (self.vy
+                    + crate::npc_ai_golem::body_gravity(
+                        self.y,
+                        world.width as i32,
+                        world.world_surface,
+                    ))
+                .min(10.0);
+                if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+                    self.vx = 0.0;
+                }
+                self.old_x = self.x;
+                self.old_y = self.y;
+                self.old_direction = self.facing;
+                self.x += self.vx;
+                self.y += self.vy;
+            }
             // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) -
             // the Spazmatism (126), the style's only user. S1-D-3
             // aiStyle-31: the machine lives in `npc_ai_style31.rs`;
@@ -3689,6 +3821,44 @@ impl Npc {
         }
         self.find_frame();
         self.contact(player, rng);
+    }
+
+    /// The Martian Officer's bubble lifecycle — `AI_003_Fighters`'s
+    /// type-383 block (`NPC.cs:56222-56251`), the small-kinds wiring
+    /// wave's ForceBubble seam. NOT the bubble's own aiStyle-72 arm
+    /// (`npc_ai_style72::ai_style72`, the world-sim host pre-pass): this
+    /// is the OFFICER's spawn request + `dontTakeDamage` shield. The
+    /// world-sim drain spawns the bubble after the tick and links it
+    /// through `carrier_uid` (the C#'s `ai[2] = slot + 1` holds a slot
+    /// index; the port's list compacts, so the stable uid carries the
+    /// link — the Moon Lord parts' convention).
+    fn martian_officer_bubble(&mut self) {
+        // `:56222-56230` — the spawn gate: `ai[2] == 0 && localAI[0] == 0
+        // && Main.netMode != 1` (the host path folds true).
+        if self.carrier_uid == 0 && self.local_ai[0] == 0.0 {
+            self.wants_force_bubble = true;
+            self.net_update = true;
+        }
+        // `:56231-56251` — the shield: a living linked bubble (the
+        // pre-pass clears `carrier_uid` when it pops) makes the officer
+        // untouchable; else the 180-tick re-spawn cooldown climbs down.
+        if self.carrier_uid != 0 {
+            self.dont_take_damage = true;
+        } else {
+            self.dont_take_damage = false;
+            if self.wants_force_bubble {
+                // The spawn is pending this tick — the C#'s
+                // `localAI[0] = -1` latch (`:56226`), set at request time.
+                self.local_ai[0] = -1.0;
+            } else {
+                if self.local_ai[0] == -1.0 {
+                    self.local_ai[0] = 180.0;
+                }
+                if self.local_ai[0] > 0.0 {
+                    self.local_ai[0] -= 1.0;
+                }
+            }
+        }
     }
 
     /// S1-D-2: the aiStyle-5 family arm — `AI_005_EaterOfSouls`
@@ -3860,11 +4030,19 @@ impl Npc {
             // The martians: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Scrambler/RayGunner/zapper
             // shot arms land with the projectile work).
-            NpcKind::MartianOfficer
-            | NpcKind::GrayGrunt
+            NpcKind::GrayGrunt
             | NpcKind::MartianEngineer
             | NpcKind::GigaZapper
             | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            // The officer: the same aiStyle-3 walker, plus its own
+            // `AI_003_Fighters` bubble block (`NPC.cs:56222-56251`) — the
+            // small-kinds wiring wave's ForceBubble lifecycle seam. The
+            // walker runs first (the C#'s fighter movement), then the
+            // spawn request + the shield latch.
+            NpcKind::MartianOfficer => {
+                self.update_skeleton(world, player, dt);
+                self.martian_officer_bubble();
+            }
             // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
             // aiStyle-80 block, `NPC.cs:36532-36624`).
             NpcKind::MartianProbe => self.update_martian_probe(world, player),
@@ -4075,6 +4253,22 @@ impl Npc {
             // through `update_rng` (the axis claims style 9 first).
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
                 unreachable!("aiStyle 9 rides the style axis (S1-D-3)")
+            }
+            // The small-kinds wiring wave: the four kinds ride the style
+            // axis (21/49/56/72) — these arms are unreachable through
+            // `update_rng` (the axis claims their styles first; 56/72's
+            // AI bodies run in the world-sim pre-passes).
+            NpcKind::BlazingWheel => {
+                unreachable!("aiStyle 21 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
+            NpcKind::AngryNimbus => {
+                unreachable!("aiStyle 49 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
+            NpcKind::DungeonSpirit => {
+                unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
+            NpcKind::ForceBubble => {
+                unreachable!("aiStyle 72 rides the style axis (S1-D-3-wire-smallkinds)")
             }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
@@ -4502,6 +4696,44 @@ impl Npc {
             // (`Main.npcFrameCount[36]` = 2): the normal hand and its
             // red-hat row.
             NpcKind::SkeletronHand => {
+                self.frame = 0;
+            }
+            // The small-kinds wiring wave: the BlazingWheel's `case 72`
+            // (`NPC.cs:74642-74653`) — the 3-tick counter over the
+            // 4-frame strip (`Main.npcFrameCount[72]` = 4).
+            NpcKind::BlazingWheel => {
+                let (row, counter) =
+                    crate::npc_ai_style21::blazing_wheel_frame(self.frame, self.frame_counter);
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // The AngryNimbus' `case 250` (`NPC.cs:72884-72897`, shared
+            // with 264/268) — the 6-tick counter over the 4-frame strip.
+            NpcKind::AngryNimbus => {
+                let (row, counter) =
+                    crate::npc_ai_style49::nimbus_find_frame(self.frame, self.frame_counter);
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // The DungeonSpirit's `case 288` (`NPC.cs:72676-72688`) — the
+            // 6-tick counter over the 3-frame strip
+            // (`Main.npcFrameCount[288]` = 3, `Main.cs:67112`'s 280-289
+            // row, index 288 = the 9th entry).
+            NpcKind::DungeonSpirit => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 3 {
+                    self.frame = 0;
+                }
+            }
+            // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
+            // 77370` has no `case 384`; the post-switch tail is aiStyle-39
+            // only, `:77292`) — `Main.npcFrameCount[384]` = 1
+            // (`Main.cs:67122`), the single frame never advances.
+            NpcKind::ForceBubble => {
                 self.frame = 0;
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
@@ -15438,6 +15670,13 @@ impl Npc {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The small-kinds wiring wave: the protocol ids (353 is the
+            // BlazingWheel's port-local slot — the vanilla 72 is the
+            // MartianWalker's key above; 250/288/384 are free).
+            NpcKind::BlazingWheel => 353,
+            NpcKind::AngryNimbus => 250,
+            NpcKind::DungeonSpirit => 288,
+            NpcKind::ForceBubble => 384,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -19116,7 +19355,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 242] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19356,6 +19595,11 @@ mod tests {
         NpcKind::GingerbreadMan,
         NpcKind::Yeti,
         NpcKind::Everscream,
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds).
+        NpcKind::BlazingWheel,
+        NpcKind::AngryNimbus,
+        NpcKind::DungeonSpirit,
+        NpcKind::ForceBubble,
     ];
 
     #[test]
@@ -19402,6 +19646,113 @@ mod tests {
             ALL_KINDS.len(),
             "from_u16 decodes an id no kind encodes to"
         );
+    }
+
+    /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
+    /// kinds' `SetDefaults` rows pin against the C# (`NPC.cs:9714-9731` /
+    /// `:12221-12233` / `:12738-12752` / `:13882-13894`), through the port's
+    /// tables — the same shape as the frost-family pin
+    /// (`s1_f_13c_the_frost_defaults_match_the_csharp_rows`). WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BlazingWheel, 72u16, 21u8, 34.0, 34.0, 24, 100, 100, 0.0f32, 0.0f32),
+            (NpcKind::AngryNimbus, 250, 49, 34.0, 26.0, 50, 24, 300, 0.3, 300.0),
+            (NpcKind::DungeonSpirit, 288, 56, 20.0, 20.0, 70, 30, 200, 0.2, 500.0),
+            (NpcKind::ForceBubble, 384, 72, 18.0, 40.0, 0, 20, 1000, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The BlazingWheel's flag rows (`NPC.cs:9723-9730`): alpha 100,
+        // behindTiles, dontTakeDamage, scale 1.2.
+        let wheel = Npc::new(NpcKind::BlazingWheel, 0.0, 0.0, 1, 0.0);
+        assert_eq!(wheel.alpha, 100, "the wheel's alpha row");
+        assert!(wheel.behind_tiles, "the wheel draws behind tiles");
+        assert!(wheel.dont_take_damage, "the wheel is a trap — untouchable");
+        assert_eq!(wheel.scale, 1.2, "the wheel's scale row");
+        // The protocol ids: 353 is the wheel's port-local slot (the vanilla
+        // 72 is the MartianWalker's); the other three keep their vanilla ids.
+        assert_eq!(NpcKind::BlazingWheel.to_u16(), 353);
+        assert_eq!(NpcKind::AngryNimbus.to_u16(), 250);
+        assert_eq!(NpcKind::DungeonSpirit.to_u16(), 288);
+        assert_eq!(NpcKind::ForceBubble.to_u16(), 384);
+        for (kind, _, _, _, _, _, _, _, _, _) in rows {
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
+    /// the four kinds never reach `update_kind_ai`'s retired stand-in arms
+    /// (the `unreachable!` markers). A full `update` tick steps each kind
+    /// without panicking and keeps it inside its own frame strip. WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_3_wire_smallkinds_the_axis_claims_the_four_styles() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::BlazingWheel,
+            NpcKind::AngryNimbus,
+            NpcKind::DungeonSpirit,
+            NpcKind::ForceBubble,
+        ] {
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+        }
+    }
+
+    /// The small-kinds wiring wave: the Martian Officer's bubble lifecycle
+    /// (`AI_003_Fighters`, `NPC.cs:56222-56251`). The spawn gate raises the
+    /// request + the `localAI[0] = -1` latch; a living linked bubble shields
+    /// the officer (`dontTakeDamage`); a dropped link starts the 180-tick
+    /// re-spawn cooldown. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_3_wire_smallkinds_the_officer_bubble_lifecycle() {
+        let mut o = Npc::new(NpcKind::MartianOfficer, 100.0, 100.0, 1, 0.0);
+        // Fresh officer: no link, no cooldown → the spawn request fires.
+        o.martian_officer_bubble();
+        assert!(o.wants_force_bubble, "the spawn gate raises the request");
+        assert_eq!(o.local_ai[0], -1.0, "the :56226 latch");
+        assert!(!o.dont_take_damage, "no bubble yet — vulnerable");
+        // The drain links a living bubble (carrier_uid != 0) → shielded.
+        o.wants_force_bubble = false;
+        o.carrier_uid = 42;
+        o.martian_officer_bubble();
+        assert!(o.dont_take_damage, "the living bubble shields the officer");
+        assert!(!o.wants_force_bubble, "no re-spawn while linked");
+        // The bubble pops (the pre-pass clears the link) → vulnerable +
+        // the 180-tick cooldown begins (localAI[0] was -1 → 180 → 179).
+        o.carrier_uid = 0;
+        o.local_ai[0] = -1.0;
+        o.martian_officer_bubble();
+        assert!(!o.dont_take_damage, "the pop drops the shield");
+        assert_eq!(o.local_ai[0], 179.0, "the 180-tick cooldown's first step");
+        // The cooldown climbs down; no re-spawn until it reaches 0.
+        for _ in 0..179 {
+            o.martian_officer_bubble();
+        }
+        assert_eq!(o.local_ai[0], 0.0, "the cooldown expires");
+        o.martian_officer_bubble();
+        assert!(o.wants_force_bubble, "the re-spawn request fires at 0");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase

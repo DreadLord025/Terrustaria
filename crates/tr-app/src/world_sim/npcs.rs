@@ -2927,18 +2927,126 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     let player = &mut app.player;
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
+    // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
+    // shared `Main.dust` pool + its `SpawnCtx` — both App fields the
+    // `Npc::update_rng` signature cannot carry. The arm runs INSIDE
+    // the tick closure at the NPC's own slot turn (the C#'s
+    // `UpdateNPC` order), on the same `UpdateNPCs` stream; the
+    // axis' 56 arm then owns only the noTileCollide integration tail.
+    // `spawn_ctx` borrows the whole App immutably, so it is computed
+    // BEFORE the `&mut app.npcs`/`&mut app.dust` field borrows below.
+    let dust_ctx = app.spawn_ctx();
     // Limit the scope of borrows to just the tick closure
     {
         let world = &app.world;
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
+        let dust = &mut app.dust;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
+                // The small-kinds wiring wave — the ForceBubble's rider
+                // pre-pass (`NPC.AI()`'s aiStyle-72 block, `NPC.cs:
+                // 35080-35101`): the arm reads the SIBLING slots
+                // (`Main.npc[(int)ai[0]]`), which the per-NPC `&mut self`
+                // update cannot see — so it runs here, once per tick
+                // before the slot loop. ORDER DEVIATION (documented,
+                // ANALYSIS "The small-kinds wiring wave"): the C# runs
+                // the arm at the bubble's own slot turn; the port runs
+                // it at tick start, so the snap reads the officer's
+                // PREVIOUS-tick centre when the officer's slot is later
+                // (the one-tick lag the carrier write-through family
+                // already carries). RNG-free by construction.
+                {
+                    let hosts: Vec<crate::npc_ai_style72::BubbleHost> = npcs
+                        .iter()
+                        .map(|m| {
+                            let (mcx, mcy) = m.center();
+                            crate::npc_ai_style72::BubbleHost {
+                                active: m.hp > 0,
+                                npc_type: m.kind.cs_id() as i32,
+                                center: (mcx, mcy),
+                                gfx_off_y: m.gfx_off_y,
+                            }
+                        })
+                        .collect();
+                    for bi in 0..npcs.len() {
+                        if npcs[bi].kind != NpcKind::ForceBubble || npcs[bi].hp <= 0 {
+                            continue;
+                        }
+                        // The port's link is the officer's stable uid
+                        // (`carrier_uid`, the Moon Lord convention); the
+                        // module reads `(int)ai[0]` as the slot index, so
+                        // resolve the uid to the current slot. No living
+                        // officer → -1 → the module's pop branch.
+                        let officer_uid = npcs[bi].carrier_uid;
+                        let officer_slot = npcs.iter().position(|m| {
+                            m.uid != 0 && m.uid == officer_uid && m.hp > 0
+                        });
+                        npcs[bi].ai[0] =
+                            officer_slot.map(|s| s as f32).unwrap_or(-1.0);
+                        let npc_type = npcs[bi].kind.cs_id() as i32;
+                        let n = &mut npcs[bi];
+                        let outcome = crate::npc_ai_style72::ai_style72(
+                            n,
+                            &hosts,
+                            npc_type,
+                        );
+                        if let Some(g) = outcome.gfx_off_y {
+                            n.gfx_off_y = g;
+                        }
+                        // `outcome.died` — the pop (`:35096-35098`): hp is
+                        // already 0; the death retain below resolves the
+                        // deactivation (the `HitEffect()` dust is the
+                        // documented visual skip). The light is the
+                        // draw-side feed's (`npc_lights::npc_light`).
+                        let _ = outcome.light;
+                    }
+                    // The officer's shield link check (`NPC.cs:
+                    // 56233-56234`: `num13 != -1 && active && type ==
+                    // 384`): a dead/missing bubble drops the link so the
+                    // officer's `martian_officer_bubble` latch takes the
+                    // vulnerable + cooldown branch this tick.
+                    for oi in 0..npcs.len() {
+                        if npcs[oi].kind != NpcKind::MartianOfficer
+                            || npcs[oi].carrier_uid == 0
+                        {
+                            continue;
+                        }
+                        let link = npcs[oi].carrier_uid;
+                        let alive = npcs.iter().any(|m| {
+                            m.kind == NpcKind::ForceBubble && m.uid == link && m.hp > 0
+                        });
+                        if !alive {
+                            npcs[oi].carrier_uid = 0;
+                        }
+                    }
+                }
                 for (i, n) in npcs.iter_mut().enumerate() {
                     // The NPC's slot index (the C#'s `NPC.whoAmI`) — the
                     // spawn requests that carry an owner reference (the
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
+                    // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
+                    // block, `NPC.cs:32742-32760`): TargetClosest + the
+                    // 100:1 blend + the type-180 NewDust. It runs here at
+                    // the spirit's slot turn (the dust pool's rolls ride
+                    // the `UpdateNPCs` stream in slot order); the axis'
+                    // 56 arm owns the noTileCollide integration tail.
+                    if n.kind == NpcKind::DungeonSpirit && n.hp > 0 {
+                        let cand = crate::npc_target::session_candidate(player);
+                        let mut env = crate::npc_ai_style56::Style56Env {
+                            world,
+                            players: &[cand],
+                            // The `EverLastingTicker` stand-in (the
+                            // zombie convention): 0 until the migration.
+                            ticker: 0,
+                            dust: &mut *dust,
+                            dust_ctx: &dust_ctx,
+                            rng: npcs_rng,
+                        };
+                        crate::npc_ai_style56::style56_step(n, &mut env);
+                    }
                     // S1-E-21e — `AI_003_Fighters`' idle counter
                     // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
                     // movement integrates: `old_x` still holds the previous
@@ -4078,6 +4186,50 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.extend(new_carriers);
+    // The Martian Officer's ForceBubble (`AI_003_Fighters`'s type-383
+    // block, `NPC.cs:56222-56230` — the small-kinds wiring wave): the
+    // officer's AI raised `wants_force_bubble`; the drain spawns the 384
+    // at the officer's centre (`NewNPC` places it by `Bottom`,
+    // `NPC.cs:80770`), stamps `timeLeft = (int)(activeTime * 1.25)` = 937
+    // (`:80772`, `activeTime = 750` `:95186`), and links the pair through
+    // the stable uid (the C#'s `ai[2] = slot + 1` / the bubble's
+    // `ai[0] = whoAmI` hold slot indices; the port's list compacts).
+    {
+        let mut new_bubbles: Vec<Npc> = Vec::new();
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if n.kind != NpcKind::MartianOfficer || !n.wants_force_bubble {
+                continue;
+            }
+            n.wants_force_bubble = false;
+            let (cx, cy) = n.center();
+            let (bw, bh) = NpcKind::ForceBubble.size();
+            // `NewNPC`'s `Bottom = (X, Y)` with X/Y = `(int)Center`
+            // (`NPC.cs:56224`): the truncation is the C#'s.
+            let mut b = Npc::new(
+                NpcKind::ForceBubble,
+                cx as i32 as f32 - bw * 0.5,
+                cy as i32 as f32 - bh,
+                1,
+                0.0,
+            );
+            b.hp = b.max_hp;
+            // `:80772` — the spawn timeLeft (the port's despawn timer).
+            b.encourage_despawn(937);
+            b.uid = next;
+            next += 1;
+            b.net_update = true;
+            // The two-way link: the officer's `ai[2]` (its `carrier_uid`)
+            // and the bubble's `ai[0]` (its `carrier_uid`, resolved to the
+            // slot each tick by the rider pre-pass).
+            b.carrier_uid = n.uid;
+            n.carrier_uid = b.uid;
+            n.net_update = true;
+            new_bubbles.push(b);
+        }
+        app.next_npc_uid = next;
+        app.npcs.extend(new_bubbles);
+    }
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.

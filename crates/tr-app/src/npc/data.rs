@@ -491,6 +491,16 @@ impl NpcKind {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
+            // BlazingWheel's vanilla id 72 is the MartianWalker's protocol
+            // slot (`to_u16`'s bijection guard), so it takes the next free
+            // port-local id 353; the other three keep their vanilla ids
+            // (250/288/384 were free). `NPC.cs:9714-9731` / `:12221-12233`
+            // / `:12738-12752` / `:13882-13894`.
+            NpcKind::BlazingWheel => 353,
+            NpcKind::AngryNimbus => 250,
+            NpcKind::DungeonSpirit => 288,
+            NpcKind::ForceBubble => 384,
         }
     }
 
@@ -766,6 +776,13 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
+            // The small-kinds wiring wave: 353 is the BlazingWheel's
+            // port-local id (the vanilla 72 slot is the MartianWalker's);
+            // 250/288/384 keep their vanilla ids (`to_u16` above).
+            353 => NpcKind::BlazingWheel,
+            250 => NpcKind::AngryNimbus,
+            288 => NpcKind::DungeonSpirit,
+            384 => NpcKind::ForceBubble,
             _ => return None,
         })
     }
@@ -1576,6 +1593,14 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus
             | NpcKind::Flocko => "NPC_Hit_1",
+            // The small-kinds wiring wave: 72 NPCHit1 (`NPC.cs:9725`),
+            // 250 NPCHit30 (`:12229`), 288 NPCHit36 (`:12747`), 384
+            // NPCHit43 (`:13889`). Unregistered bank cues are the
+            // wave-A bank-gap skip (`audio.rs::play_npc_hit_sound`).
+            NpcKind::BlazingWheel => "NPC_Hit_1",
+            NpcKind::AngryNimbus => "NPC_Hit_30",
+            NpcKind::DungeonSpirit => "NPC_Hit_36",
+            NpcKind::ForceBubble => "NPC_Hit_43",
             _ => return None,
         })
     }
@@ -1835,6 +1860,14 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus => "NPC_Killed_1",
             NpcKind::Flocko => "NPC_Killed_6",
+            // The small-kinds wiring wave: 72 NPCDeath1 (`NPC.cs:9726`),
+            // 250 NPCDeath33 (`:12230`), 288 NPCDeath39 (`:12748`), 384
+            // NPCDeath45 (`:13890`). Unregistered bank cues are the
+            // wave-A bank-gap skip (`audio.rs::play_npc_death_sound`).
+            NpcKind::BlazingWheel => "NPC_Killed_1",
+            NpcKind::AngryNimbus => "NPC_Killed_33",
+            NpcKind::DungeonSpirit => "NPC_Killed_39",
+            NpcKind::ForceBubble => "NPC_Killed_45",
             _ => return None,
         })
     }
@@ -2040,6 +2073,14 @@ impl NpcKind {
             NpcKind::DD2Betsy => 110,
             // aiStyle 123 - NPC.cs:17453
             NpcKind::Deerclops => 123,
+            // The small-kinds wiring wave (S1-D-3-wire-smallkinds):
+            // aiStyle 21 - NPC.cs:9719 (the BlazingWheel, the only user);
+            // 49 - :12225 (the AngryNimbus); 56 - :12742 (the Dungeon
+            // Spirit); 72 - :13888 (the ForceBubble).
+            NpcKind::BlazingWheel => 21,
+            NpcKind::AngryNimbus => 49,
+            NpcKind::DungeonSpirit => 56,
+            NpcKind::ForceBubble => 72,
         }
     }
 
@@ -2488,6 +2529,13 @@ impl NpcKind {
             NpcKind::ElfArcher => (18.0, 40.0),
             NpcKind::Krampus => (18.0, 90.0),
             NpcKind::Flocko => (54.0, 54.0),
+            // The small-kinds wiring wave: 72 34x34 (`NPC.cs:9717-9718`),
+            // 250 34x26 (`:12223-12224`), 288 20x20 (`:12740-12741`),
+            // 384 18x40 (`:13885`/`:13887`).
+            NpcKind::BlazingWheel => (34.0, 34.0),
+            NpcKind::AngryNimbus => (34.0, 26.0),
+            NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::ForceBubble => (18.0, 40.0),
         }
     }
 
@@ -2543,6 +2591,14 @@ impl NpcKind {
             NpcKind::Hornet => 42,
             NpcKind::MeteorHead => 23, // `NPCID.MeteorHead` (the net id's correction, S1-F-3)
             NpcKind::FireImp => 24,
+            // The small-kinds wiring wave: the four kinds' vanilla
+            // `NPC.type` ids (`NPCID.cs:10821`/`:11177`/`:11253`/`:11445`).
+            // The BlazingWheel's protocol id is port-local 353, so its
+            // C#-type consumers (the AI arms' type gates) read 72 here.
+            NpcKind::BlazingWheel => 72,
+            NpcKind::AngryNimbus => 250,
+            NpcKind::DungeonSpirit => 288,
+            NpcKind::ForceBubble => 384,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -2660,6 +2716,9 @@ impl NpcKind {
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                // The BlazingWheel's `behindTiles = true` row
+                // (`NPC.cs:9724`, the small-kinds wiring wave).
+                | NpcKind::BlazingWheel
         )
     }
 
@@ -3028,6 +3087,12 @@ impl NpcKind {
             NpcKind::ElfArcher => 900,
             NpcKind::Krampus => 2500,
             NpcKind::Flocko => 450,
+            // The small-kinds wiring wave: 72 100 (`NPC.cs:9722`), 250
+            // 300 (`:12228`), 288 200 (`:12745`), 384 1000 (`:13884`).
+            NpcKind::BlazingWheel => 100,
+            NpcKind::AngryNimbus => 300,
+            NpcKind::DungeonSpirit => 200,
+            NpcKind::ForceBubble => 1000,
         }
     }
 
@@ -3340,6 +3405,13 @@ impl NpcKind {
             NpcKind::NutcrackerSpinning | NpcKind::Krampus => 100,
             NpcKind::ElfArcher => 70,
             NpcKind::Flocko => 75,
+            // The small-kinds wiring wave: 72 24 (`NPC.cs:9720`), 250 50
+            // (`:12226`), 288 70 (`:12743`), 384 keeps the `SetDefaults`
+            // head's `damage = 0` (`:8563`, the branch writes none).
+            NpcKind::BlazingWheel => 24,
+            NpcKind::AngryNimbus => 50,
+            NpcKind::DungeonSpirit => 70,
+            NpcKind::ForceBubble => 0,
         }
     }
 }

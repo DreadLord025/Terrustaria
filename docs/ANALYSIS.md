@@ -24893,3 +24893,140 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The small-kinds wiring wave (S1-D-3-wire-smallkinds, code-only mode, 2026-11-19)
+
+Four landed-UNWIRED NPC-AI modules from the entity-ai-census §2b worklist
+are now WIRED: the Blazing Wheel (aiStyle 21, type 72), the Angry Nimbus
+(aiStyle 49, type 250), the Dungeon Spirit (aiStyle 56, type 288) and the
+Force Bubble (aiStyle 72, type 384). Each was a pure module with no
+`NpcKind`, no dispatch arm, no anchors/PORT_MAP row on main. This wave
+adds the four kinds + their `SetDefaults` rows + the dispatch claims +
+the minimal Ctx seams, retiring the stand-in routing with `unreachable!`
+markers (the aiStyle-5/9 precedent). The modules' own witness tests stay
+as the audit cross-check; three new wiring tests per kind are WRITTEN,
+NOT RUN — **no compiler invoked**.
+
+**The kinds + protocol ids.** `NpcKind::{BlazingWheel, AngryNimbus,
+DungeonSpirit, ForceBubble}` (`npc.rs`). The protocol ids (`to_u16` /
+`from_u16`, `npc/data.rs`): AngryNimbus 250, DungeonSpirit 288,
+ForceBubble 384 keep their vanilla ids (all free); BlazingWheel takes the
+port-local **353** because the vanilla 72 slot is the MartianWalker's
+(`to_u16`'s bijection guard). `cs_id()` returns the vanilla `NPC.type`
+(72/250/288/384) for the AI arms' type gates. Every exhaustive `NpcKind`
+match gained arms (scripted scan): `to_u16`, `ai_style`, `size`,
+`max_hp`, `contact_damage`, `defense`, `value`, `render_key`,
+`update_kind_ai`, `find_frame`, `debuff_immune_ids`, the netglue
+`npc_seed`, the bestiary portrait table, the draw match. The `SetDefaults`
+rows are verbatim (`NPC.cs:9714-9731` / `:12221-12233` / `:12738-12752` /
+`:13882-13894`): the wheel's alpha 100 / behindTiles / dontTakeDamage /
+scale 1.2 land in `Npc::new`; the bubble's kb 1 (the head default,
+`:8533`) and dmg 0 (`:8563`) are explicit rows.
+
+**The dispatch split (the Ctx seams).** `Npc::update_rng`'s aiStyle axis
+(`npc.rs`) claims 21/49/56/72:
+- **21 (BlazingWheel)** — the arm runs inline: `ai_style21` (the
+  ricochet machine, RNG-free) + `collision_move_blazing_wheel` (the
+  12×12 `noSlopeCollision` centre box + the dry-move latch). The
+  `mouseTextColor`-pulsed centre light (`NPC.cs:24664`) is fed
+  draw-side by `app/frame/draw.rs` (it reads the App's pulsing
+  `mouse_text_color`, which the `&World`-only AI cannot see); the
+  returned light triple from the AI call is discarded. `blazing_wheel_frame`
+  drives the kind's `find_frame` row (the 3-tick 4-frame clock).
+- **49 (AngryNimbus)** — `nimbus_step` (the AI + the dry no-slope move
+  tail) runs inline with the caller's `UpdateNPCs` stream; the ONE
+  `Next(width-20)` = `Next(14)` draw per 9th qualifying tick
+  (`NPC.cs:31646`) rides it. The rain shot pushes onto
+  `wants_hostile_shot`, drained by `world_sim/npcs.rs` into the
+  projectile pool. `nimbus_find_frame` drives the 6-tick 4-frame row.
+- **56 (DungeonSpirit)** — the arm needs the shared `Main.dust` pool +
+  its `SpawnCtx` (App fields the `&mut self` update cannot carry), so
+  `style56_step` runs in the world-sim tick closure
+  (`world_sim/npcs.rs`) at the spirit's slot turn, filling a
+  `Style56Env` from `app.dust` / `app.spawn_ctx()` / the `UpdateNPCs`
+  stream. The six cited `NewDust` draws (the type-180 dust,
+  `NPC.cs:32755`) ride the pool in slot order. The axis' 56 arm owns
+  only the post-`AI()` noTileCollide/noGravity integration tail
+  (`NPC.cs:90494-90498`, the dead-band X snap + the stamps).
+- **72 (ForceBubble)** — the arm reads the SIBLING NPC slots
+  (`Main.npc[(int)ai[0]]`), so `ai_style72` runs in a world-sim host
+  pre-pass (`world_sim/npcs.rs`) that builds the `BubbleHost` view
+  slice and resolves the officer link. The axis' 72 arm owns the
+  post-`AI()` movement: the depth-scaled 0.3 gravity + the 10 fall cap
+  (`NPC.cs:90465-90472`, noGravity is FALSE for 384) + the noTileCollide
+  raw integration. The constant `AddLight(0.1, 0.5, 0.7)` (`:35092`)
+  feeds draw-side; the `gfxOffY` copy (`:35091`) is written onto
+  `Npc.gfx_off_y` and consumed by the bubble's draw anchor
+  (`render/entities.rs`, gated to 384 so the unicorn's pending
+  `gfxOffY` seam stays byte-identical).
+
+**The officer's bubble lifecycle (aiStyle 3, NOT the bubble's arm).**
+The Martian Officer's spawn/shield block (`AI_003_Fighters`,
+`NPC.cs:56222-56251`) is wired through `Npc::martian_officer_bubble`
+(called after the officer's walker step in `update_kind_ai`): the spawn
+gate (`carrier_uid == 0 && local_ai[0] == 0`) raises `wants_force_bubble`
++ the `localAI[0] = -1` latch; a living linked bubble sets
+`dont_take_damage = true`; a dropped link starts the 180-tick re-spawn
+cooldown. The world-sim drain spawns the ForceBubble at the officer's
+centre (`NewNPC`'s `Bottom` placement, `NPC.cs:80770`, the `(int)Center`
+truncation), stamps `timeLeft = (int)(activeTime * 1.25)` = 937
+(`:80772`, `activeTime = 750` `:95186`), and links the pair through the
+stable uid (`carrier_uid`, the Moon Lord parts' convention — the C#'s
+`ai[2] = slot + 1` / the bubble's `ai[0] = whoAmI` hold slot indices the
+compacting list cannot keep). The rider pre-pass resolves the uid to the
+current slot each tick and writes `ai[0]` before the module call.
+
+**Order deviation (documented).** The C# runs the bubble's aiStyle-72
+arm at the bubble's own slot turn; the port runs it in a pre-pass at
+tick start (the sibling-slot read needs the whole list borrowed
+immutably before the per-NPC `&mut` loop). The snap therefore reads the
+officer's PREVIOUS-tick centre when the officer's slot is later — the
+one-tick lag the carrier write-through family (WoF / Moon Lord /
+Scutlix) already carries. The arm is RNG-free, so the placement does not
+move any stream. The DungeonSpirit's arm DOES run at its slot turn (the
+dust draws keep their slot order).
+
+**RNG census (preserved).** The wheel (21) and the bubble (72) draw NO
+`Main.rand` by construction (the modules' headers pin this). The
+nimbus (49) draws exactly one `Next(14)` per fired shot. The spirit
+(56) draws the six cited `NewDust` rolls (the pressure-band gate + pos
+X/Y + vel X/Y + frame row + scale) per tick through the pool. The
+officer's spawn/shield block draws nothing. No new stream is introduced;
+the `UpdateNPCs` stream's draw order is unchanged for every pre-existing
+kind (the four new kinds only add their own draws at their own slots).
+
+**Atlas headroom (verified, no compiler).** The four kinds draw their
+own sheets (`NPC_72` 34×144, `NPC_250` 48×168, `NPC_288` 28×102,
+`NPC_384` 48×52 — decoded via the prebuilt `tr-content` `dims` example,
+not a fresh compile). A best-fit-decreasing shelf simulation over all
+737 static sheets (the `Atlas::build_ref` algorithm, `max_width` 8192,
+PAD 2) shows the four sheets backfill existing shelves: the static
+atlas grows 5318 → 5322 px (**+4 px**), far inside the 71 px headroom
+under the 8192 strict-GPU bound. The `item_icon_uvs_are_normalized_and_atlas_fits`
+test (`atlas.height <= 8192`) stays green. The bestiary sheet table
+(`BESTIARY_NPC_SHEET_IDS`, 175 → 179) and the portrait arms gained the
+four rows; the `npc_sheets` map keys them by vanilla net id.
+
+**Deliberate skips (unchanged from the modules).** The nimbus's
+netMode gate folds to the host path; the dust/thunder sound layers and
+the wet/slope collision halves are unported engine work; the 264 rain
+projectile's own aiStyle-45 arm is M4-PROJ work. The bubble's HitEffect
+dust arm (`NPC.cs:84342-84361`, dust 226, no gore) is the count-only
+visual skip (`bubble_hit_dust_plan`). The spirit's zero-distance NaN is
+the C#'s own (no invented clamp). The wheel's `dontTakeDamage` makes it
+untouchable (the trap behaviour).
+
+**Verification.** Code-only: every seam call site was checked against
+the actual signatures by read/grep (the four modules' fns, the
+`Style56Env`/`BubbleHost`/`Style72Outcome` shapes, `session_candidate`,
+`body_gravity`, `encourage_despawn`, the `carrier_uid` link, the
+`spawn_ctx` borrow); the exhaustive-match coverage was confirmed by a
+scripted scan (every `NpcKind` match carries the four variants or a
+wildcard); the C# `SetDefaults` rows + the officer block + the
+`UpdateNPC` gravity/integration tails were re-read line-by-line; the
+atlas headroom was verified by the shelf simulation above. The four
+modules' witness tests + the three new wiring tests
+(`s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows`,
+`..._the_axis_claims_the_four_styles`,
+`..._the_officer_bubble_lifecycle`) are WRITTEN, NOT RUN — **no compiler
+invoked**.

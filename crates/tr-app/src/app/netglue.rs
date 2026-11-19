@@ -2909,7 +2909,14 @@ fn npc_seed(
         | crate::npc::NpcKind::FireImp
         | crate::npc::NpcKind::ChaosBall
         | crate::npc::NpcKind::BurningSphere
-        | crate::npc::NpcKind::WaterSphere => {
+        | crate::npc::NpcKind::WaterSphere
+        // The small-kinds wiring wave: the four flyers' relay seeds ride
+        // the same hover placement (the box comes from `kind.size()`;
+        // the bubble's officer link rides the `23` body's ai[] relay).
+        | crate::npc::NpcKind::BlazingWheel
+        | crate::npc::NpcKind::AngryNimbus
+        | crate::npc::NpcKind::DungeonSpirit
+        | crate::npc::NpcKind::ForceBubble => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

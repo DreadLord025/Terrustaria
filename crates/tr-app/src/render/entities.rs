@@ -501,6 +501,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
+            .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -966,7 +967,14 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
 /// (`boss_half_size - frame_h / 2`), which put the boss trio 24 px and every
 /// humanoid whose box is not `frame_h - 8` off the C# anchor.
 fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
-    (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n)
+    // `gfxOffY` (`Main.cs:25512`'s `+ npc.gfxOffY`): the small-kinds wiring
+    // wave consumes it for the ForceBubble's per-tick officer copy
+    // (`NPC.cs:35091`). The unicorn's step-up lift (`npc_ai_unicorn.rs:381`)
+    // also writes the field, but its draw-side consumption is the pending
+    // `npc_ai_unicorn_b` tails seam — gated to the bubble here so the
+    // pre-wave unicorn/humanoid anchors stay byte-identical.
+    let gfx = if n.kind == NpcKind::ForceBubble { n.gfx_off_y } else { 0.0 };
+    (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n) + gfx
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
@@ -1153,6 +1161,18 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
     342, // the Gingerbread Man
     343, // the Yeti
     344, // the Everscream
+];
+
+/// The small-kinds wiring wave's sheets (S1-D-3-wire-smallkinds): one sheet
+/// per wired kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the
+/// Blazing Wheel (72), the Angry Nimbus (250), the Dungeon Spirit (288) and
+/// the Force Bubble (384) each draw their own `NPC_<id>` art. Keyed by the
+/// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
+    72,  // the Blazing Wheel
+    250, // the Angry Nimbus
+    288, // the Dungeon Spirit
+    384, // the Force Bubble
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2945,6 +2965,27 @@ pub(crate) fn draw_npcs(
                 let ty = n.kind.frost_moon_type().expect("a family kind");
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
+            // The small-kinds wiring wave (S1-D-3-wire-smallkinds): each
+            // kind draws its own sheet (`SMALL_KIND_SHEETS`) at
+            // `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[type]` (`Main.cs:67082`: 72 four frames,
+            // 250 four, 288 three, 384 one) with the generic centred
+            // anchor (`Main.cs:25511-25516`) — the pumpkin arm's shape.
+            // The BlazingWheel's 1.2 scale rides `scaled_anchor` (the
+            // stardust cells' convention); the wheel + the spirit rotate
+            // (the whitelist below).
+            NpcKind::BlazingWheel => {
+                scaled_anchor(assets.npc_sheet(72), npc_rows(72), n, w, h)
+            }
+            NpcKind::AngryNimbus => {
+                pumpkin_moon_draw(assets.npc_sheet(250), npc_rows(250), n, w, h)
+            }
+            NpcKind::DungeonSpirit => {
+                pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            NpcKind::ForceBubble => {
+                pumpkin_moon_draw(assets.npc_sheet(384), npc_rows(384), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3062,6 +3103,11 @@ pub(crate) fn draw_npcs(
                     // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
                     // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
                     | NpcKind::DD2Betsy
+                    // The small-kinds wiring wave: the BlazingWheel's spin
+                    // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
+                    // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
+                    | NpcKind::BlazingWheel
+                    | NpcKind::DungeonSpirit
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
