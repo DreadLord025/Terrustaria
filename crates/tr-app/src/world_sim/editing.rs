@@ -4415,6 +4415,55 @@ mod tests {
         assert_eq!(p.facing, 1);
     }
 
+    /// RNG purity (the clone-mirror contract): the wind-up tick
+    /// (`dontAttack`, `Player.cs:45168-45172`) and a non-intersecting stab
+    /// tick draw NOTHING — the C#'s `ItemCheck_GetMeleeHitbox` + the
+    /// `ItemCheck_MeleeHitNPCs` scan are pure until a hit lands
+    /// (`ProcessHitAgainstNPC`'s rolls, `:44298+`). The witness clones the
+    /// `UpdatePlayers` `UnifiedRandom` before the seam and asserts
+    /// equality after (the established clone pattern — the seam's own
+    /// draws, if any, would desync the clone). The use-START is excluded:
+    /// its `UseSound` draws belong to `start_swing_extras`, not the sweep
+    /// (`Player.cs:51681-51698`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_p_i05_the_windup_and_miss_ticks_draw_nothing() {
+        let mut app = thrust_app();
+        // Arm the swing WITHOUT the use-start (mine_down false skips the
+        // start block): 22 ticks, remaining 1.0 — the wind-up.
+        app.swing_max = 22.0 / 60.0;
+        app.swing = app.swing_max;
+        app.swing_style = 3;
+        app.mine_down = false;
+        let before = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        assert!(thrust_stab_tick(&mut app, false, false, false));
+        let after = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        assert_eq!(before, after, "the wind-up tick is RNG-pure");
+        // A mid-stab tick whose rect misses every NPC: the slime parked
+        // far right, out of the stab's reach (remaining 0.5 — the stab
+        // arm, the rect near the player at x 528).
+        app.npcs[0].x = 2000.0;
+        app.swing = 11.0 / 60.0;
+        let before = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        assert!(thrust_stab_tick(&mut app, false, false, false));
+        let after = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        assert_eq!(before, after, "the miss tick is RNG-pure");
+        // The miss tick still ran the cooldown decrement (`:43664`) —
+        // the sweep took the stab arm, it did not bail at the wind-up.
+        assert!(app.npcs[0].hp > 0, "nothing was struck");
+    }
+
     #[test]
     fn test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var() {
         // DW-3.2 — `Main.DamageVar(dmg, this.luck)` with the RAW value for

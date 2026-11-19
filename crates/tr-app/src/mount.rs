@@ -3079,10 +3079,13 @@ mod tests {
         m.ability_cooldown = 9;
         assert!(m.allow_direction_change(), "under half unlocks it");
         // A non-Scutlix mount always allows it (the `_type == 9` gate).
-        let mut horse = MountState::default();
-        horse.set_mount(40, false);
-        horse.ability_cooldown = 100;
-        assert!(horse.allow_direction_change(), "the horse never locks");
+        // The Drill (8, `Mount.cs:1273-1341`) — a ported row with no
+        // ability-cooldown direction gate; even a pinned cooldown never
+        // locks it.
+        let mut drill = MountState::default();
+        drill.set_mount(8, false);
+        drill.ability_cooldown = 100;
+        assert!(drill.allow_direction_change(), "the drill never locks");
     }
 
     #[test]

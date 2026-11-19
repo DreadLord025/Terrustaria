@@ -16706,10 +16706,13 @@ mod s1_p_i05_thrust_tests {
         assert_eq!(loc, [-1000.0, -1000.0], "0.6665 is still the wind-up");
         let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.666, 44.0, 1.0, 0.0, 946);
         assert_ne!(loc, [-1000.0, -1000.0], "0.666 is the stab arm");
-        // A 2/3 gate would wrongly hide 0.666..0.6667 — the C# literal
-        // is 0.666, so 0.6661 already stabs.
+        // The discriminator: 0.6661 sits between the C# literal 0.666 and
+        // 2/3 (0.6667). The correct 0.666 gate treats it as wind-up
+        // (HIDDEN); a 2/3 gate would wrongly REVEAL it (stab). So the
+        // correct port hides 0.6661 — assert_eq, the opposite of the
+        // pre-fix 2/3 behaviour. (0.6665 above pins the same band.)
         let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.6661, 44.0, 1.0, 0.0, 946);
-        assert_ne!(loc, [-1000.0, -1000.0], "the gate is 0.666, not 2/3");
+        assert_eq!(loc, [-1000.0, -1000.0], "0.6661 > 0.666: the C# gate hides it, a 2/3 gate would not");
     }
 
     /// The extension maths (`Player.cs:51041-51053`), facing right:
@@ -16732,11 +16735,14 @@ mod s1_p_i05_thrust_tests {
         // full extension holds: loc.X = 128 - 8 - 6 = 114.
         let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.1, 44.0, 1.0, 0.0, 946);
         assert!((loc[0] - 114.0).abs() < 1e-4, "the snap-to-8 extension: {}", loc[0]);
-        // The snap boundary: num14 == 4 exactly does NOT snap (`< 4f`).
-        // remaining = (4 + 10) / (44*1.2) = 14/52.8; loc.X = 128 - 4 - 6.
-        let r = 14.0 / 52.8;
-        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, r, 44.0, 1.0, 0.0, 946);
-        assert!((loc[0] - 118.0).abs() < 1e-3, "num14 == 4 keeps the raw value");
+        // The no-snap arm near the boundary: at remaining 0.3, num14 =
+        // 0.3*44*1.2 - 10 = 5.84 (>= 4, no snap, `:51048`'s `< 4f`);
+        // loc.X = 128 - 5.84 - 6 = 116.16. (The exact-4 boundary itself is
+        // not f32-pinnable: remaining = 14/52.8 rounds DOWN in f32 and
+        // num14 lands 3.9999990 — the C# float would snap it too, so no
+        // witness may claim "num14 == 4 keeps the raw value".)
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.3, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - 116.16).abs() < 1e-3, "num14 >= 4 keeps the raw value");
         // Facing left mirrors: num14 = 0.5*44*(-1)*1.2 - 10*(-1) = -16.4
         // (> -4? no: -16.4 < -4, no snap); loc.X = 100 + 10 - 18 + 16.4 + 6 = 114.4.
         let (loc, rot) = thrust_item_placement(100.0, 200.0, 20.0, -1.0, 0.5, 44.0, 1.0, 0.0, 946);

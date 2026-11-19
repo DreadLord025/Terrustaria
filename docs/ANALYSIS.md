@@ -17341,10 +17341,29 @@ the scaled + umbrella + plain shapes, the facing lock's four arms),
 `mount.rs::s1_p_i05_the_scutlix_cooldown_gates_the_direction_change` (the
 Scutlix cooldown gate + the non-Scutlix always-true), `render/player_layers.rs::
 s1_p_i05_the_render_thrust_rides_the_shared_port` (the delegation + the
-state-carried scale/type), `world_sim/editing.rs` (3: the press starts the
+state-carried scale/type), `world_sim/editing.rs` (4: the press starts the
 stab and the 8 wind-up ticks never hit, one hit per swing with the
 cooldown counting 14 → 1 across the animation + the second press re-arms,
-the sim's `frame_inputs.use_turn` lock).
+the sim's `frame_inputs.use_turn` lock, and the clone-mirror RNG purity —
+the wind-up + miss ticks draw nothing on the `UpdatePlayers` stream).
+
+**Retry round (W3-i05b, 2026-11-20, all test-side, module behaviour
+untouched):** three witness defects reconciled to the f32/C# reality —
+(a) the gate discriminator at `remaining = 0.6661` asserted the item
+REVEALED (`assert_ne!`), but 0.6661 lies between the C# literal 0.666
+and 2/3, so the correct gate HIDES it (wind-up) — the old assertion
+pinned the pre-fix 2/3 behaviour and contradicted the adjacent 0.6665
+case; flipped to `assert_eq!` (f32-verified: 0.6661 > 0.666, < 2/3);
+(b) the snap-boundary case claimed `num14 == 4` keeps the raw value at
+`remaining = 14/52.8`, but that ratio rounds DOWN in f32 and `num14`
+lands 3.9999990 (< 4 → the C# float snaps too); replaced with the
+no-snap arm at remaining 0.3 (`num14 = 5.84`, loc.X 116.16); (c) the
+non-Scutlix always-true arm used mount 40 (the Horse), which the port
+does not ship — `set_mount(40)` is a no-op and the case tested the
+inactive mount; repointed to the Drill (8, a ported row, `Mount.cs:
+1273-1341`). Added the clone-mirror RNG-purity witness above (the 4th
+sim witness). The landed module code (`24a2331d`) audited CORRECT
+against the census — no module change.
 
 ## The draw phase order (S1-B-7, 2026-11-14)
 
