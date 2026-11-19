@@ -136,7 +136,7 @@ impl OwnerView {
             gfx_off_y: p.gfx_off_y,
             control_left: p.control_left,
             control_right: p.control_right,
-            control_up: p.control_up,
+            control_up: p.control_jump, // the port's merged jump binding carries controlUp (W/ArrowUp feed control_jump — player.rs:2260-2264, the sleeping/sitting exit-mask precedent)
             control_down: p.control_down,
             mount_flying: p.mount.is_active() && p.mount.can_fly(),
         }
@@ -1356,11 +1356,11 @@ mod tests {
         // Center 80 px right of the owner: dx = -80 - 60 = -140 (the 892
         // draws no jitter), dy = -60 → dist ≈ 152.3. The 100-200 band
         // keeps accel 0.4; both axes steer one step off zero.
-        let mut pet = pet(DUKE_FISHRON_PET, cx - 10.0 + 80.0, cy - 10.0);
+        let mut duke = pet(DUKE_FISHRON_PET, cx - 10.0 + 80.0, cy - 10.0);
         let mut rng = RecordRng::default();
-        ai026_a_tick(&mut pet, &w, Some(&mut p), &mut rng);
-        assert!((pet.vel.x - -0.4).abs() < 1e-6, "accel 0.4: {}", pet.vel.x);
-        assert!((pet.vel.y - -0.4).abs() < 1e-6);
+        ai026_a_tick(&mut duke, &w, Some(&mut p), &mut rng);
+        assert!((duke.vel.x - -0.4).abs() < 1e-6, "accel 0.4: {}", duke.vel.x);
+        assert!((duke.vel.y - -0.4).abs() < 1e-6);
         assert!(rng.draws.is_empty(), "the 892 draws no jitter");
         // Beyond 400: dx = -560, dy = -60 → dist ≈ 563 → accel 0.7.
         let mut far = pet(DUKE_FISHRON_PET, cx - 10.0 + 500.0, cy - 10.0);
@@ -1381,18 +1381,18 @@ mod tests {
         // + RecordRng's min jitter (-10, -10) + the (-60, -60) offset →
         // (-45, -45), dist ≈ 63.6 — inside the 100 reset, outside the 50
         // close band. Bottom: cy - 25 - 13 + 26 = cy - 12 ≤ owner bottom.
-        let mut pet = pet(BABY_HORNET, cx - 13.0 - 25.0, cy - 13.0 - 25.0);
-        pet.ai[0] = 3.0;
-        pet.vel = Vec2::new(0.0, -10.0);
+        let mut hornet = pet(BABY_HORNET, cx - 13.0 - 25.0, cy - 13.0 - 25.0);
+        hornet.ai[0] = 3.0;
+        hornet.vel = Vec2::new(0.0, -10.0);
         let mut rng = RecordRng::default();
-        ai026_a_tick(&mut pet, &w, Some(&mut p), &mut rng);
-        assert_eq!(pet.ai[0], 0.0, "the reset fires");
+        ai026_a_tick(&mut hornet, &w, Some(&mut p), &mut rng);
+        assert_eq!(hornet.ai[0], 0.0, "the reset fires");
         // vy floors at -6; the far branch (dist ≥ 50) keeps accel 0.1
         // (dist < 100) and normalizes to 14 → target (-9.9, -9.9). Both
         // axes sit ABOVE their targets → the decrease branches: Y
         // -6 - 0.1 = -6.1 (not > 0, no double-step); X 0 - 0.1 = -0.1.
-        assert!((pet.vel.y - -6.1).abs() < 1e-4, "floor then steer: {}", pet.vel.y);
-        assert!((pet.vel.x - -0.1).abs() < 1e-4, "the X step: {}", pet.vel.x);
+        assert!((hornet.vel.y - -6.1).abs() < 1e-4, "floor then steer: {}", hornet.vel.y);
+        assert!((hornet.vel.x - -0.1).abs() < 1e-4, "the X step: {}", hornet.vel.x);
         // A falling owner blocks the reset.
         let mut p2 = owner(&w);
         p2.vy = 1.0;

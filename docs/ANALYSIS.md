@@ -11689,6 +11689,13 @@ surface branch of the tower-place retry is constants-off.
 
 ## AI_026 slice A — the flyer pets (S1-D-4b-10, code-only mode)
 
+**Merger compile fix (P2):** the wisp's control-offset read used the
+non-existent `Player::control_up`; the port's merged jump binding carries
+controlUp (W/ArrowUp feed `control_jump`, the sleeping/sitting exit-mask
+precedent player.rs:2260-2264), so `OwnerView::capture` maps
+`control_up: p.control_jump`. Two witness tests renamed their local
+`pet` bindings (they shadowed the `pet()` ctor).
+
 The aiStyle-26 mega-family (`AI_026`, `Projectile.cs:58102-65024`, 6 922
 lines over 68 types) lands in two disjoint slices. **Slice A** (this task,
 `crates/tr-app/src/projectile_ai026_a.rs`) ports the **14 early-return
