@@ -118,52 +118,60 @@ pub(crate) fn loot_all(
             },
         );
         if COIN_TYPES.contains(&item.kind) {
-            // `Player.GetItem`'s coin routing: the occupied coin rows first,
-            // then the empty ones.
+            // `Player.GetItem`'s isACoin routing (`Player.cs:39340-39394`),
+            // walked over the carry view in C# `Player.inventory` index order
+            // (grid 0..50, coin rows 50..54):
+            //  - the occupied pass `i = -4..50` (`num2 = -4`): coin rows
+            //    50-53 first, then the grid 0-49, each a
+            //    `GetItem_FillIntoOccupiedSlot` merge (`:39485-39524`) with
+            //    `DoCoins(i)` right after (`:39503` full-fit / `:39519`
+            //    cap-fill);
+            //  - the empty pass `i = 53..0` DESCENDING (the non-favorited
+            //    reverse scan `:39387-39394`; the `!isACoin` gate `:39365`
+            //    skips the coin hotbar-first empty pass), each a
+            //    `GetItem_FillEmptyInventorySlot` whole-remainder clone
+            //    (`:39551-39578`) + `DoCoins(i)` (`:39569`).
+            // The per-fill `DoCoins` is IMMEDIATE (not a post-sweep): a
+            // conversion can merge-and-air a slot the later empty pass then
+            // refills, exactly the C# order. S1-P-i50 retry: the empty fills
+            // were ASCENDING, the grid passes were missing and the
+            // conversions were deferred — all three fixed here.
             let coin_cap = crate::registry::max_stack(item.kind);
-            let mut filled: Vec<usize> = Vec::new();
-            for (ci, cs) in coins.iter_mut().enumerate() {
+            let mut slots = crate::item::carry_slots_mut(inventory, coins, None);
+            let n = slots.len(); // INV + COINS = 54
+            // The occupied pass: C# i = -4..50 → port indices 50..54 then 0..50.
+            let occupied: Vec<usize> = (crate::item::INV..n).chain(0..crate::item::INV).collect();
+            for i in occupied {
                 if item.count == 0 {
                     break;
                 }
-                if cs.count > 0 && can_stack(cs, &item) {
-                    let moved = item.count.min(coin_cap.saturating_sub(cs.count));
-                    cs.count += moved;
-                    item.count -= moved;
-                    if moved > 0 {
-                        // `GetItem_FillIntoOccupiedSlot`'s `DoCoins(i)`
-                        // (`Player.cs:39503`/`:39519`) — C# index 50 + ci.
-                        filled.push(crate::item::INV + ci);
+                if slots[i].count > 0 && can_stack(slots[i], &item) && slots[i].count < coin_cap {
+                    let room = coin_cap - slots[i].count;
+                    if item.count <= room {
+                        slots[i].count += item.count;
+                        item.count = 0;
+                        crate::item::do_coins(&mut slots, i); // `:39503`
+                        break;
                     }
+                    slots[i].count = coin_cap;
+                    item.count -= room;
+                    crate::item::do_coins(&mut slots, i); // `:39519`
                 }
             }
-            for (ci, cs) in coins.iter_mut().enumerate() {
+            // The empty pass: C# i = 53..0 → port indices 53..0 descending.
+            for i in (0..n).rev() {
                 if item.count == 0 {
                     break;
                 }
-                if cs.count == 0 {
-                    let put = item.count.min(coin_cap);
-                    *cs = ItemSlot {
+                if slots[i].count == 0 {
+                    *slots[i] = ItemSlot {
                         kind: item.kind,
                         name: item.name,
-                        count: put,
+                        count: item.count,
                         prefix: item.prefix,
                     };
-                    item.count -= put;
-                    // `GetItem_FillEmptyInventorySlot`'s `DoCoins(i)`
-                    // (`Player.cs:39569`).
-                    filled.push(crate::item::INV + ci);
-                }
-            }
-            // The port's merged fill runs the conversions after the row
-            // walk — `do_coins` on each filled slot in fill order (the
-            // sweep's per-slot form; the conversions commute with the
-            // remaining fills because a conversion only ever moves value
-            // UP a denomination).
-            if !filled.is_empty() {
-                let mut slots = crate::item::carry_slots_mut(inventory, coins, None);
-                for i in filled {
-                    crate::item::do_coins(&mut slots, i);
+                    item.count = 0;
+                    crate::item::do_coins(&mut slots, i); // `:39569`
                 }
             }
         } else if let Some(i) = crate::item::slot_for_pickup(inventory, item.kind, item.prefix) {
@@ -688,7 +696,9 @@ mod tests {
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
         let mut vault = empty_vault();
         loot_all(&mut container, &mut inventory, &mut coins, Some(&mut vault));
-        assert_eq!(coins[0].count, 50, "the coins ride the coin rows first");
+        // S1-P-i50 retry: the empty coin rows fill DESCENDING (row 53 first,
+        // `GetItem`'s `num = 54` reverse scan, `Player.cs:39387-39394`).
+        assert_eq!(coins[3].count, 50, "the coins ride the coin rows, row 53 first");
         assert_eq!(container[0].count, 0, "the vault took the whole wood stack");
         assert_eq!(container[2].count, 0, "the vault took the whole stone stack");
         assert_eq!(vault[0].kind, 9);
@@ -717,6 +727,50 @@ mod tests {
         loot_all(&mut container, &mut inventory, &mut coins, Some(&mut vault));
         assert_eq!(container[0].count, 5, "CanVoidVaultAccept refused");
         assert_eq!(vault[0].count, 0);
+    }
+
+    /// S1-P-i50 (retry) — `Player.GetItem`'s isACoin empty-fill order
+    /// (`Player.cs:39387-39394`, the `num = 54` reverse scan): with every
+    /// coin row EMPTY the stack lands in row 53 (the LAST row), not row 50;
+    /// and when all four coin rows are FULL the coins overflow into the grid
+    /// (the empty grid 49-0 descending), never back into the container while
+    /// a grid slot is free. The pre-retry port filled row 0 first and had no
+    /// grid passes — the C# walks `i = num - 1 .. 0` over 0..54.
+    #[test]
+    fn s1_p_i50_loot_all_fills_the_coin_rows_descending_and_overflows_to_the_grid() {
+        // All rows empty: row 53 takes the stack.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        assert_eq!(coins[3].count, 50, "the empty fill is DESCENDING (row 53)");
+        assert_eq!(coins[0].count, 0, "row 50 stays empty");
+        assert_eq!(container[0].count, 0);
+        // All four coin rows full: the overflow rides the grid's LAST slot.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut coins = [slot(71, 100), slot(71, 100), slot(71, 100), slot(71, 100)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        assert_eq!(inventory[49].kind, 71, "the grid overflow takes slot 49");
+        assert_eq!(inventory[49].count, 50);
+        assert_eq!(container[0].count, 0, "nothing stays while a grid slot is free");
+        // The occupied grid merge precedes the empty fills (`:39353-39364`):
+        // a partial grid copper soaks the drop before any empty row is used.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        inventory[12] = slot(71, 60);
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        // 60 + 50 = 110 → the occupied merge caps at 100, DoCoins converts
+        // the row to 1 silver (the merge arm `:39519` + `:39503`), the 10
+        // remainder rides the empty coin row 53.
+        assert_eq!(inventory[12].kind, 72, "the 100-copper row converted");
+        assert_eq!(inventory[12].count, 1);
+        assert_eq!(coins[3].count, 10, "the remainder rides row 53");
+        assert_eq!(container[0].count, 0);
     }
 
     #[test]

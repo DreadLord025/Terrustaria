@@ -33022,3 +33022,55 @@ partial merge), `s1_p_i50_pickup_converts_*` / `s1_p_i50_the_conversion_chain_*`
 `world_sim/editing.rs`: `s1_p_i50_the_lucky_coin_proc_draws_and_spawns_on_a_landed_hit`
 (the differential RNG witness: the ring's stream is the no-ring's advanced
 by exactly 1 or 6 draws; the spawn shape pinned when the gate fires).
+
+### The retry round (W3-i50b, 2026-11-20 — the original run went silent mid-flight)
+
+The original worker's implementation landed as `d0deb3b8` while the retry
+census was running; the retry re-audited the committed state against the C#
+and fixed THREE residual WRONGs (all coin-lane, all test-visible):
+
+1. **The deferred `DoCoins` sweep changed slot placement.** The first round
+   ran `do_coins_sweep` AFTER all fills, claiming "conversions commute with
+   the fills". FALSE: `Player.DoCoins` fires INSIDE each fill
+   (`Player.cs:39503` full-fit / `:39519` cap-fill / `:39569` empty-fill), so
+   a conversion can merge-and-air a coin row that the LATER empty pass
+   (`:39387-39394`, descending) then refills. Concrete divergence: 55 copper
+   onto row 50 = 95 copper + row 51 = 99 silver (rows 52/53 platinum): the
+   C# fills row 50 to 100 → 1 silver → merges into row 51 → 100 silver →
+   1 gold, airs row 50, and the 50-copper remainder refills the AIRED row 50;
+   the deferred sweep left row 50 full at empty-pass time and parked the
+   remainder in the grid. FIX: all three fill sites (`world_sim/items.rs`
+   coin block, `bank::loot_all`, `chest::quick_transfer_from_slot`) now walk
+   the `carry_slots_mut` view in C# index order (occupied `i = -4..50` →
+   coin rows 50-53 then grid 0-49; empty `i = 53..0` descending) and call
+   `do_coins(i)` IMMEDIATELY per fill. `do_coins_sweep` is REMOVED (its
+   doc claim was the defect).
+2. **`bank::loot_all` filled empty coin rows ASCENDING and had no grid
+   passes.** The C# `GetItem` empty scan is `num - 1 ..= 0` over 0..54
+   (`Player.cs:39387-39394`): row 53 first, and coins overflow into the grid
+   when the four rows are full. The first round's `loot_all` put the stack
+   in row 0 and kept the overflow in the container even with free grid
+   slots. FIX: the same carry-view walk as (1). The two DW-3.1 clicks
+   witnesses and the vault witness now assert row 53 (the descending fill).
+3. **A purse-mirror witness mis-seeded the purse.**
+   `s1_p_i50_pickup_converts_a_full_coin_row_via_do_coins` pre-seeded a
+   95-copper row but left `app.coins = 0`, then asserted the mirror read 100
+   after a 5-copper pickup — the mirror credits only what the DROP carries
+   (5), so the assertion could never hold. FIX: the fixture seeds
+   `app.coins = 95` (the pre-existing stacks' value), the assertion stays
+   100.
+
+New witnesses (WRITTEN, NOT RUN): `bank.rs::
+s1_p_i50_loot_all_fills_the_coin_rows_descending_and_overflows_to_the_grid`
+(the descending empty fill, the grid overflow, the occupied-grid merge +
+immediate conversion), `world_sim/items.rs::
+s1_p_i50_the_immediate_do_coins_lets_the_empty_pass_refill_the_aired_row`
+(the discriminating placement case above — a deferred sweep fails it).
+The retry verified the rest of `d0deb3b8` against the C# unchanged: the
+`do_coins` guard/merge/chain (`Player.cs:39246-39262`), the Gold Ring range
++ pull blend (`:35133`/`:35031-35041`, `Item.cs:49962`), the Lucky Coin
+equip grants + once-only luck tail (`:14975-14996`/`:13066-13069`), the
+melee proc's six-draw order (`:44537-44549`), the revenge arm's five fixes
+(`WorldItem.cs:1118-1201`), the case-38 pitch maths
+(`LegacySoundPlayer.cs:1337-1350`) and the coin-luck ladder
+(`Player.cs:18115-18153`). **No compiler invoked — tests written, not run.**

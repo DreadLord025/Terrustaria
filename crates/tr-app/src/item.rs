@@ -173,8 +173,13 @@ pub(crate) fn slot_for_pickup(
 /// `i` is the C# `Player.inventory` index (grid 0..50, coins 50..54, ammo
 /// 54..58); `slots` is the port's split storage in that same order
 /// ([`carry_slots_mut`]). The recursive call is a loop: after a merge the
-/// source is air, so the C#'s continued scan can never fire again — the
-/// merged slot becomes the new `i`, exactly the tail recursion.
+/// source is air (type 0), so the C#'s continued no-break scan can only
+/// match further EMPTY slots (`type 0 == type 0`, `stack 0 < maxStack`) and
+/// bump their stack to 1 while the type stays 0 — `IsAir` (`Item.cs:385-395`)
+/// still reads them air and every consumer treats type 0 as empty, so the
+/// quirk is invisible; the port's `break` + tail-loop keeps the visible
+/// state identical (the merged slot becomes the new `i`, exactly the tail
+/// recursion).
 pub(crate) fn do_coins(slots: &mut [&mut ItemSlot], mut i: usize) {
     loop {
         // `:39248` — `stack != 100 || (type != 71 && type != 72 && type != 73)`.
@@ -229,22 +234,13 @@ pub(crate) fn carry_slots_mut<'a>(
     v
 }
 
-/// `Player.GetItem`'s coin conversion sweep — every `DoCoins` call site runs
-/// it on the slot it just filled (`Player.cs:39286`/`:39301`/`:39319`/
-/// `:39503`/`:39519`/`:39544`/`:39569`); the port's merged fills call this
-/// once over the carry range. Slots convert only at exactly 100 of 71/72/73
-/// (the `:39248` guard), and a conversion always shrinks the total coin
-/// count, so sweeping the whole range is behaviour-identical to per-slot
-/// calls in any order.
-pub(crate) fn do_coins_sweep(
-    inventory: &mut [ItemSlot; INV],
-    equip: &mut crate::inv::EquipSlots,
-) {
-    let mut slots = carry_slots_mut(inventory, &mut equip.coins, Some(&mut equip.ammo));
-    for i in 0..slots.len() {
-        do_coins(&mut slots, i);
-    }
-}
+// S1-P-i50 retry note: the former `do_coins_sweep` (a post-fill conversion
+// sweep) is REMOVED — its "conversions commute with the fills" claim was
+// false. `Player.DoCoins` runs IMMEDIATELY per fill (`Player.cs:39503`/
+// `:39519`/`:39569`): a conversion can merge-and-air a coin row that the
+// later empty pass (`:39387-39394`, descending) then refills, so a deferred
+// sweep changes slot placement. Every fill site now calls [`do_coins`] on
+// the slot it just filled, over the [`carry_slots_mut`] view.
 
 pub const SIZE: f32 = 14.0;
 /// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`, read by

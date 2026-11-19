@@ -269,61 +269,65 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     // bank is not spendable), keeping those lanes alive
                     // while the stacks are the 1:1 storage.
                     let purse_before = remaining;
-                    // Occupied coin rows 50-53, ascending (`num2 = -4`).
-                    for s in equip.coins.iter_mut() {
-                        if remaining == 0 {
-                            break;
+                    {
+                        // The carry view in C# `Player.inventory` index order
+                        // (grid 0..50, coin rows 50..54; the ammo rows 54..58
+                        // are never touched — coins are `notAmmo`, so
+                        // `FitsAmmoSlot` is false and both `GetItem` scans
+                        // stop at 54). S1-P-i50 retry: `DoCoins` runs
+                        // IMMEDIATELY per fill (`Player.cs:39503`/`:39519`/
+                        // `:39569`), NOT as a post-sweep — a conversion can
+                        // merge-and-air a coin row the later empty pass then
+                        // refills, so the deferred sweep changed slot
+                        // placement.
+                        let mut slots =
+                            crate::item::carry_slots_mut(inventory, &mut equip.coins, None);
+                        let n = slots.len(); // INV + COINS = 54
+                        // Occupied pass, C# `i = -4..50` (`num2 = -4`,
+                        // `:39353-39364`): coin rows 50-53 first, then the
+                        // grid 0-49, ascending.
+                        for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+                            if remaining == 0 {
+                                break;
+                            }
+                            let s = &mut *slots[i];
+                            if s.count > 0
+                                && s.kind == drop.kind
+                                && s.prefix == drop.prefix
+                                && s.count < cap
+                            {
+                                let room = cap - s.count;
+                                chimes += 1; // `:39491` — before the fill
+                                if remaining <= room {
+                                    s.count += remaining;
+                                    remaining = 0;
+                                    crate::item::do_coins(&mut slots, i); // `:39503`
+                                    break;
+                                }
+                                s.count = cap;
+                                remaining -= room;
+                                crate::item::do_coins(&mut slots, i); // `:39519`
+                            }
                         }
-                        if s.count > 0 && s.kind == drop.kind && s.prefix == drop.prefix && s.count < cap {
-                            let take = remaining.min(cap - s.count);
-                            s.count += take;
-                            remaining -= take;
-                            chimes += 1;
-                        }
-                    }
-                    // Occupied grid 0..49, ascending.
-                    for s in inventory.iter_mut() {
-                        if remaining == 0 {
-                            break;
-                        }
-                        if s.count > 0 && s.kind == drop.kind && s.prefix == drop.prefix && s.count < cap {
-                            let take = remaining.min(cap - s.count);
-                            s.count += take;
-                            remaining -= take;
-                            chimes += 1;
-                        }
-                    }
-                    // Empty coin rows 53..50, descending (`num - 1 ..= 0`).
-                    for s in equip.coins.iter_mut().rev() {
-                        if remaining == 0 {
-                            break;
-                        }
-                        if s.count == 0 {
-                            *s = crate::item::ItemSlot {
-                                kind: drop.kind,
-                                name: registry::name(drop.kind),
-                                count: remaining,
-                                prefix: drop.prefix,
-                            };
-                            remaining = 0;
-                            chimes += 1;
-                        }
-                    }
-                    // Empty grid 49..0, descending (the non-favorited
-                    // arm `:39387-39394`; world drops are never favorited).
-                    for s in inventory.iter_mut().rev() {
-                        if remaining == 0 {
-                            break;
-                        }
-                        if s.count == 0 {
-                            *s = crate::item::ItemSlot {
-                                kind: drop.kind,
-                                name: registry::name(drop.kind),
-                                count: remaining,
-                                prefix: drop.prefix,
-                            };
-                            remaining = 0;
-                            chimes += 1;
+                        // Empty pass, C# `i = 53..0` DESCENDING (the
+                        // non-favorited reverse scan `:39387-39394`; the
+                        // `!isACoin` gate `:39365` skips the coin hotbar-first
+                        // empty pass; world drops are never favorited).
+                        for i in (0..n).rev() {
+                            if remaining == 0 {
+                                break;
+                            }
+                            if slots[i].count == 0 {
+                                *slots[i] = crate::item::ItemSlot {
+                                    kind: drop.kind,
+                                    name: registry::name(drop.kind),
+                                    count: remaining,
+                                    prefix: drop.prefix,
+                                };
+                                remaining = 0;
+                                chimes += 1; // `:39559`
+                                crate::item::do_coins(&mut slots, i); // `:39569`
+                            }
                         }
                     }
                     // The purse mirror credits only what the INVENTORY
@@ -359,14 +363,13 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                         }
                     }
                     if chimes > 0 {
-                        // `DoCoins` per filled slot (`Player.cs:39503`/
-                        // `:39519`/`:39569`) — the sweep is the port's
-                        // merged-fill form (item.rs::do_coins_sweep).
-                        crate::item::do_coins_sweep(inventory, equip);
                         // S1-E-21f — the chime per accepted slot
                         // (`Player.cs:39491`/`:39559`: `PlaySound(38)` —
                         // UNPOSITIONED), on the `UpdatePlayers` stream
-                        // (the `GrabItems` caller, `Main.cs:17754`).
+                        // (the `GrabItems` caller, `Main.cs:17754`). The
+                        // per-fill `DoCoins` already ran inline above (the
+                        // conversion is RNG-free, so the chime batch after
+                        // the fills keeps the draw order).
                         for _ in 0..chimes {
                             audio.play_pickup_sound(
                                 true,
@@ -1356,13 +1359,18 @@ mod pickup_tests {
             count: 95,
             prefix: 0,
         };
+        // The mirror starts where the pre-seeded stacks' value stands (the
+        // retry fix: the pickup credits only what the DROP carries — the
+        // pre-existing 95 copper are already the mirror's, the C# has no
+        // separate purse at all).
+        app.coins = 95;
         let pc = app.player.as_ref().unwrap().center();
         app.items.push(collectable_drop(71, 5, pc.0 - 4.0, pc.1 - 4.0));
         update_items(&mut app, 1.0 / 60.0);
         // 95 + 5 = 100 copper → 1 silver in row 50.
         assert_eq!(app.equip.coins[0].kind, 72, "the row converted to silver");
         assert_eq!(app.equip.coins[0].count, 1);
-        // The purse mirror still credits the full copper value (100).
+        // The mirror credits the drop's 5 copper on top of the seeded 95.
         assert_eq!(app.coins, 100, "the mirror is value-based, not stack-based");
     }
 
@@ -1395,6 +1403,61 @@ mod pickup_tests {
         update_items(&mut app, 1.0 / 60.0);
         assert_eq!(app.equip.coins[2].kind, 74, "platinum never converts");
         assert_eq!(app.equip.coins[2].count, 9999);
+    }
+
+    /// S1-P-i50 (retry) — the immediate per-fill `DoCoins` ordering
+    /// (`Player.cs:39503`/`:39519` fire INSIDE the occupied pass, before the
+    /// empty pass `:39387-39394`): a 55-copper drop onto row 50 = 95 copper
+    /// + row 51 = 99 silver (rows 52/53 occupied by platinum) fills row 50
+    /// to 100 → converts to 1 silver → MERGES into row 51 (99 + 1 = 100
+    /// silver → 1 gold), airing row 50 — and the 50-copper remainder then
+    /// refills the AIRED row 50 in the descending empty pass (53/52/51 all
+    /// occupied, 50 the first air). A deferred post-sweep would park the
+    /// remainder in the GRID instead (row 50 still full at empty-pass time)
+    /// — the placement differs, so the conversion must run per fill,
+    /// exactly the C#.
+    #[test]
+    fn s1_p_i50_the_immediate_do_coins_lets_the_empty_pass_refill_the_aired_row() {
+        let mut app = pickup_world();
+        app.equip.coins[0] = crate::item::ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 95,
+            prefix: 0,
+        };
+        app.equip.coins[1] = crate::item::ItemSlot {
+            kind: 72,
+            name: crate::registry::name(72),
+            count: 99,
+            prefix: 0,
+        };
+        // Rows 52/53 occupied (platinum never merges with copper) so the
+        // descending empty pass reaches the aired row 50 first.
+        for k in [2usize, 3] {
+            app.equip.coins[k] = crate::item::ItemSlot {
+                kind: 74,
+                name: crate::registry::name(74),
+                count: 1,
+                prefix: 0,
+            };
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 55, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the whole 55-stack was placed");
+        // Row 51: 99 silver + the converted 1 → 100 silver → 1 gold.
+        assert_eq!(app.equip.coins[1].kind, 73, "the chain reached gold");
+        assert_eq!(app.equip.coins[1].count, 1);
+        // Row 50: aired by the merge, then REFILLED by the empty pass with
+        // the 50-copper remainder (the descending scan's first air).
+        assert_eq!(app.equip.coins[0].kind, 71, "the remainder refilled row 50");
+        assert_eq!(app.equip.coins[0].count, 50);
+        assert!(
+            app.inventory.iter().all(|s| s.kind != 71),
+            "the deferred sweep would have parked it in the grid"
+        );
+        // The purse mirror: the full 55 copper value.
+        assert_eq!(app.coins, 55);
     }
 
     /// The Gold Ring's grab range on the world pickup (`GetItemGrabRange`,

@@ -3240,8 +3240,8 @@ mod tests {
             "the slot handler never saw the click"
         );
         assert_eq!(
-            app.equip.coins[0].count, 50,
-            "the coins ride the coin rows first"
+            app.equip.coins[3].count, 50,
+            "the coins ride the coin rows first (row 53, the descending empty fill)"
         );
         assert_eq!(
             app.world_chests[0].slots[1].count, 0,
@@ -3294,8 +3294,8 @@ mod tests {
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
         assert_eq!(
-            app.equip.coins[0].count, 50,
-            "the coins still ride the rows"
+            app.equip.coins[3].count, 50,
+            "the coins still ride the rows (row 53, the descending empty fill)"
         );
         assert!(
             app.world_chests[0].slots.iter().all(|s| s.count == 0),
