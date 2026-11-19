@@ -915,6 +915,16 @@ pub struct Player {
     jump_held: bool,
     pub spawn_x: f32,
     pub spawn_y: f32,
+    /// `Player.PotionOfReturnOriginalUsePosition` (`Player.cs:2480`): the
+    /// Bottom at the Potion of Return 4870 use (`:37501`), the return leg's
+    /// target (`DoPotionOfReturnReturnToOriginalUsePosition`, `:37512-37523`,
+    /// the `Teleport` style-8 follow-up). Recorded by the recall cluster's
+    /// 4870 arm (`recall_teleport.rs`).
+    pub potion_of_return_original_use_position: Option<(f32, f32)>,
+    /// `Player.PotionOfReturnHomePosition` (`Player.cs:2482`): the post-spawn
+    /// Bottom the 4870 use records (`:37506`), the return-gate hitbox centre
+    /// (`PotionOfReturnHelper.TryGetGateHitbox`).
+    pub potion_of_return_home_position: Option<(f32, f32)>,
     pub hp: i32,
     pub max_hp: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
@@ -2026,6 +2036,8 @@ impl Player {
             jump_held: false,
             spawn_x: sx,
             spawn_y: sy,
+            potion_of_return_original_use_position: None,
+            potion_of_return_home_position: None,
             hp: 100,
             max_hp: 100,
             armor_penetration: 0,
@@ -2706,6 +2718,20 @@ impl Player {
         self.jump = 0;
         self.fall_start = (y / TILE_PX) as i32;
         self.gfx_off_y = 0.0;
+    }
+
+    /// `Player.ResetFallDamage` (`Player.cs:37712-37716`): `fallStart =
+    /// fallStart2 = (int)(position.Y / 16f)` — the spawn/recall reset the
+    /// fall-damage row to the new position.
+    pub fn reset_fall_damage(&mut self) {
+        self.fall_start = (self.y / TILE_PX) as i32;
+        self.fall_start2 = self.fall_start;
+    }
+
+    /// `Entity.wetCount = 0` on spawn (`Player.cs:37636`) — the splash
+    /// cooldown the recall spawn clears with the wet flags.
+    pub fn reset_wet_count(&mut self) {
+        self.wet_count = 0;
     }
 
     pub fn respawn(&mut self) {

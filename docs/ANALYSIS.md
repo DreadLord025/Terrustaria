@@ -2229,6 +2229,85 @@ cues stack); (3) the net-sync arm (`Player.cs:51690-51692`, `NetMessage.SendData
 named by a `UseSound` row today) reads 0.0. Tile place/break sounds are NOT this
 wave (break landed in S1-E-21c; place is a follow-up).
 
+### The recall / mirror teleport (S1-P-i38)
+
+`Player.ItemCheck`'s spawn-recall arms — the mirror family (Magic Mirror 50, Cell
+Phone 3124, Ice Mirror 3199, Shellphone 5358, `Player.cs:42976-42999`), Recall
+Potion 2350 (`:43107-43140`) and Potion of Return 4870 (`:43141-43172`) — were
+entirely missing from the port (only the `SkipsInitialUseSound` gate
+`item.rs::initial_use_sound`, the bed check `bed_spawn_valid` and the camera-lerp
+seam existed). `crates/tr-app/src/recall_teleport.rs` ports them verbatim-order,
+wired into `world_sim/editing.rs::update_editing` at the boss-spawner seam (the
+item-use tick, not the cursor/reach path — the mirror fires mid-swing regardless
+of where the cursor points).
+
+The three arms differ exactly as the C#:
+
+* **Mirror family** — a per-tick `Main.rand.Next(2)` dust gate (`:42978`, draws
+  even when `NewDust` culls), teleport at `itemTime == item.useTime / 2` (90/2 =
+  45), 70 type-15 dust at the OLD position + `RemoveAllGrapplingHooks` +
+  `Spawn(RecallFromItem)` + 70 at the NEW (`:42988-42997`). **No stack consume, no
+  immune save/restore** — the mirror keeps the 60-tick spawn immunity. Its Item6
+  `UseSound` plays once at the use START (`:51696`), never at the teleport.
+* **Recall 2350** — Item3 + 10 Cyan dust at `ItemTimeIsZero` (`:43109-43117`),
+  teleport at the HARDCODED `itemTime == 20` (`:43118`, NOT useTime/2 = 15 — the
+  recall is faster than half its useTime), Item6 + 70 Cyan dust OLD, the
+  immune/immuneTime SAVE (`:43126-43127`) + Spawn + RESTORE (`:43129-43130`, no net
+  i-frames), 70 Cyan dust NEW, `stack--` (`:43135-43138`).
+* **Return 4870** — the recall twin, but the spawn leg is
+  `DoPotionOfReturnTeleportationAndSetTheComebackPoint` (`:37498-37510`): records
+  the use Bottom + the post-spawn home Bottom, saves/restores immune, `stack--`.
+
+All three call `Spawn(RecallFromItem)` — NOT `Player.Teleport` — so there is no
+`Main.TeleportEffect` dust/sound for them; the arm's own bursts + `UseSound` are
+the whole visual/audio. `spawn_recall` ports the RecallFromItem subset of
+`Player.Spawn` (`:37534-37710`): the bed re-validation (`FindSpawn` + `CheckSpawn`,
+the port's `check_bed_spawn`), the vanity stop, the lava refill, the dead/immune
+reset, the bed-else-world position pick, the wet/velocity/fall reset,
+`oldPosition = position + (0,-1)` (`BlehOldPositionFixer` `:3235`), `SetTalkNPC(-1)`,
+the 60-tick immunity + `immuneNoBlink` (`:37665-37672`) and the delay-0 camera lerp
+(`:37676`, NOT the `Teleport` style-1 potion-recall 10). The position helpers
+(`Spawn_IsAreaValidSpawn` `:37937-37985`, `Spawn_ValidSpawnFloor` `:37896-37912`,
+`Spawn_DescendFromDefaultSpace`+`_Inner` `:37818-37894`, `Spawn_GetPositionAtSpawn`
+`:37723-37804`, `Spawn_SetPosition` `:37987-37991`, `Spawn_ForceClearArea`
+`:37914-37935`) are verbatim.
+
+RNG contract: every `Main.rand` draw rides the `UpdatePlayers` stream
+(`Player.ItemCheck` under the `Main.cs:17754` swap) in C# order — the mirror's
+per-tick `Next(2)` gate, then the six `Dust.NewDust` default-block draws per spawned
+dust (`Dust.cs:170-175`, `:190`: `Next(w-4)`, `Next(h-4)`, `Next(-20,21)`×2,
+`Next(3)`, `Next(-20,21)`), then the teleport bursts (mirror 70+70; recall 10 start
++ 70+70). The witnesses mirror the cited draws on a CLONED `UnifiedRandom` and
+compare the full state (`UnifiedRandom: PartialEq`); the rig mutes audio so the
+case-2 legacy sound draws stay off the gameplay stream (S1-E-21 pins those
+separately). 13 witness tests WRITTEN NOT RUN (code-only mode, no compiler invoked).
+
+Deliberate deviations / scope:
+
+* The `Player.Teleport`/`Main.TeleportEffect` system is a SEPARATE follow-up: the
+  Potion of Return RETURN leg (`DoPotionOfReturnReturnToOriginalUsePosition`
+  `:37512-37523`, `Teleport` style 8) and the Shellphone Spawn 5359 arm
+  (`:43066-43106`, `Shellphone_Spawn` `:56164-56181`, `Teleport` style 11) are not
+  this cluster's to-spawn leg. The two `PotionOfReturn*` comeback fields ARE
+  recorded (the 4870 arm needs them; `Player.cs:2480-2482`).
+* `Spawn`'s unported state tails are cited-dropped: the head/body/leg position +
+  rotation resets (`:37582-37587`, the composite arms recompute per frame),
+  `lavaOpacity` (`:37590`), `insideUnbreakableWalls` + `DoUnbreakableWallScan`
+  (`:37591-37592`, derived per tick in `scene_scan.rs`), `DamageTracker.Reset`
+  (`:37593`), the advanced/social shadows (`:37642-37646`),
+  `UpdateBiomesIfMovedEnoughForBlackFade` (`:37677`, M6 cinematics) and the
+  `SpawningIntoWorld`/`ReviveFromDeath`-only tails (`:37687-37709`).
+* Single-player: the `Main.netMode` arms (`SendData`, the client `73` request) have
+  no port; `whoAmI == Main.myPlayer` always holds.
+* `Spawn_ForceClearArea`'s `WorldGen.KillTile(i, j)` rides the port's `break_tile`
+  (the `CanKillTile` refusal + sounds + drops); the liquid clear's
+  `SquareTileFrame` object drops drain through `spawn_item_drop`.
+* The start gate uses the port's `prev_mine_released && !prev_mine_down` press edge
+  (passed in — `update_editing` overwrites `mine_prev_down` to the current frame at
+  its top, the `throw_ready` convention); `CCed`/dead zeroes the animation
+  (`:42598-42603`). The port's frozen/HUD gates approximate the C#'s
+  `controlUseItem`/`CCed` gates upstream of the seam.
+
 ## In-game interface (M7-UI)
 
 The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
