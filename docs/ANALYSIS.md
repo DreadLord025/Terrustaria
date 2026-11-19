@@ -19645,6 +19645,121 @@ AND all five draws, exactly like the C#.
    `npc.rs:22987`); its `update_kind_ai` fallback is `unreachable!` —
    safe for the census, but any future kind claiming 58 must extend the
    gate, not fall through.
+## The Pumpking blade arm (S1-D-3 aiStyle-59, code-only mode)
+
+The 2026-11-19 aiStyle-59 round closes gap 3 of the aiStyle-58 census
+(above): the blade kind 328's machine. **Census**: the whole decompiled
+tree carries exactly TWO `aiStyle = 59;` rows — `NPC.cs:13162` (type 328
+`PumpkingBlade`, `ID/NPCID.cs:11333`, the `SetDefaults` row
+`:13158-13174`) and `Projectile.cs:4468` (the projectile aiStyle space,
+a different dispatch — not an NPC kind). No dynamic `aiStyle =`
+reassignment exists in NPC.cs (every write is a literal). So the family
+has ONE member and the whole arm is `NPC.AI()`'s inline
+`else if (this.aiStyle == 59)` block, `NPC.cs:33198-33373`.
+
+**The port**: `crates/tr-app/src/npc_ai_style59.rs::ai_style59` — pure
+fn over `Npc`, the carrier facts arrive as `PumpkingCarrier` (the sim
+resolves the `ai[1]` slot link — C# `Main.npc[(int)MathHelper.Clamp(
+ai[1], 0f, 199f)]` `:33201`, `Main.maxNPCs = 200` `InitData.cs:9`), the
+Flaming Scythe shot is RETURNED as `BladeShot` (the `wants_servant`
+drain shape), the despawn is the port's `hp = 0` convention. The arm
+ported block-by-block in C# order: the `-(int)ai[0]` sprite flip BEFORE
+the gate (`:33200-33202`); the missing/inactive/non-58-carrier ×0.9 damp
++ despawn (`:33203-33218`); the `ai[3] == 2` face-mode volley — the
+`localAI[1]` 91-tick counter (`> 90f` then reset, `:33221-33224`), the
+AIM point centre+30 → the player's `Top.Y`, the SPAWN point the centre
+itself, the `0.01 / Math.Max(1, sqrt)` normaliser, type 329 / dmg 60 /
+kb 0 with `rotation`/`spriteDirection` on `NewProjectile`'s ai0/ai1
+(`:33225-33230`, the signature `Projectile.cs:10862`, the centre→position
+halving `:10876-10877`; the 329 row `Projectile.cs:4215-4225`: 80×80,
+aiStyle 56, hostile, penetrate −1, no tile collide, timeLeft 420, light
+0.25); the daylight sink (`:33233-33237`); states 0/3 — the fleeing
+carrier's (`ai[1] == 2`) `EncourageDespawn(10)` (`:33240-33243`), the
+180-tick `ai[3]` clock + `ai[2]++` + netUpdate (`:33244-33250`), the
+midpoint ±170·side/+90 anchor with the >700-Manhattan carrier-only
+switch (`:33251-33260`), the 6/9/12/15/18/21 ladder on the floored
+PRE-push length (`:33261-33282`), the ±4 side push (`:33283-33290`), the
+scale-over-pre-push-length ×14/15 lerp (`:33291-33293`), the POST-push
+>20 rotation gate with the **1.57f literal** (`:33294-33297`); state 1
+— the (carrier ±200, top+230) aim with NO rotation gate (the computed
+`num891` is dead until the transition overwrite — carried verbatim,
+`:33304`), the ×0.95/−0.3/−14-cap rise, the `position.Y < top − 200`
+`TargetClosest()` + 18-speed dive (`:33312-33323`); state 2 — the
+below-player-POSITION / vy<0 / >800-Manhattan exit triad
+(`:33325-33333`); state 4 — the ×0.95 vy / ±0.3·(−side) vx wind-up with
+the ±14 clamps, the ±500 `TargetClosest()` + 17-speed sweep
+(`:33334-33363`); state 5 — the velocity-sign crossed-player exit or
+>800 Manhattan (`:33364-33372`). The two `TargetClosest` sites ride
+`npc_target::target_closest` (S1-D-3p, style 59) unmodified. The
+`SetDefaults` row is pinned field-by-field (`PUMPKING_BLADE`), incl.
+`dontTakeDamage`/`dontCountMe`/`npcSlots 0` and the unwritten `value`
+(the field default 0, `NPC.cs:6521`); `HitSound`/`DeathSound` =
+NPCHit1/NPCDeath1 = (3,1)/(4,1) (`SoundID.cs:1257`/`:1315`).
+`npcFrameCount[328] = 1` (`Main.cs:67116` col 9 of the 320-329 row
+`3, 3, 16, 15, 16, 10, 14, 12, 1, 10` — the port's verbatim
+`render/entities.rs::NPC_FRAME_COUNT` agrees); FindFrame has NO case
+328 (`NPC.cs:66705-77291`) and the post-switch tail covers aiStyle 39
+only (`:77292`), so the vanilla sheet never advances — the blade's
+visual spin is the chain draw + rotation (`Main.cs:22669-22700`), a
+render follow-up.
+
+**Despawn effects audit** (the census's "effect-free" claim corrected):
+`HitEffect` IS effect-free for 328 — no `type == 328` arm anywhere in
+its chain, the else-tail returns for any type ≠ 156 (`:89811-89816`).
+`checkDead` (`:78040-78412`) is NOT: it plays the row's NPCDeath1
+(`:78186-78194`), calls `NPCLoot` (`:78223` — `ItemDropDatabase` has no
+328 registration, so no item drops; the bestiary/banner kill credit can
+register, `:78839-78847`) and runs the wave-progress pair
+(`:78231-78232`): 328 has NO `CheckProgressPumpkinMoon` points case
+(the switch `:78658-78690` lists 305-315/325/326/327/329/330 — `num2 =
+0`, no points) and `CheckProgressFrostMoon` self-gates on
+`Main.snowMoon` (`:78447`); `GetNPCInvasionGroup`'s −2 group lists
+327/329/330 but NOT 328 (`:78359-78376`). The port's `hp = 0` seam
+defers the cue/credit to the kind wave's death resolution (the
+`npc_ai_style72.rs` precedent).
+
+**RNG by construction**: the arm (`:33198-33373`) contains no
+`Next`/`NextFloat`; neither do `TargetClosest`/`TryTrackingTarget`/
+`SetTargetTrackingValues` (`:77652-77781`), `EncourageDespawn`
+(`:7249-7256`), the effect-free `HitEffect` path or the no-loot/no-points
+`checkDead` chain for 328. The one downstream draw — the NPCDeath1
+pitch roll `Next(-10,11) * 0.01` (`LegacySoundPlayer.cs:693`) — rides
+the port's death-sound batch on the `UpdateNpcs` stream when the wiring
+lands (the S1-E-21c convention, `world_sim/npcs.rs`'s dead pass), NOT
+this arm. The nearest AI draws live on the CARRIER's aiStyle-58 arm
+(`:33067` `Next(3)`, `:33078-33083` the five-draw lob — the sibling
+`npc_ai_pumpkin_boss.rs` owns them). So `ai_style59` takes no RNG
+parameter; the witness `the_style59_arm_draws_no_rng` pins a seeded
+`UnifiedRandom` state (cursor + seed array, `PartialEq`) across 600
+ticks walking every state plus the day/despawn arms.
+
+**Deviations**: the C#'s `Math.Sqrt`/`Math.Atan2` are double; the port
+uses f32 `.sqrt()`/`.atan2()` (the house-wide convention, the same
+recorded seam as the 57/58 arms — boundary-tick divergence only). The
+`Main.netMode != 1` gates are folded (the port is host/single-player);
+the `SendData(28)` net arm is the wiring's fan-out. The `ai[1]` slot
+clamp is the caller's (the seam's `None` = missing/inactive/non-58).
+
+**Wiring deferred** (the `npc_ai_style21.rs` precedent): no
+`NpcKind::PumpkingBlade` exists (the Pumpking itself rides the hover
+stand-in on main), so there is no style-59 dispatch arm to claim. The
+follow-up needs: the kind row + defaults table, the aiStyle-axis claim,
+the carrier-slot resolution + the `PumpkingCarrier` feed, the
+`BladeShot` spawn drain (329's own aiStyle-56 arm is S1-D-4 territory),
+the two carrier-side `NewNPC` spawns (`:33093-33103` — keep the ORDER:
+blade −1 first, blade +1 second with `ai[3] = 150`, `NewNPC`'s
+Bottom placement `:80770`), the chain draw (`Main.cs:22669-22700`) and
+the death cue/credit resolution.
+
+**Verification status — tests written, NOT run (code-only mode,
+2026-11-19).** No cargo/rustc/rustfmt invoked. The port was verified by
+line-by-line re-reading of `NPC.cs:33198-33373` and every cited helper,
+plus hand-tracing all 13 witnesses (the frame-count row was recounted
+entry-by-entry — index 328 = 1, correcting the pre-resume draft's 4;
+the state-2/5 distance witnesses use strictly->800 fixtures; the
+volley's vy tolerance covers the f32 divide-multiply round trip). The
+13 tests run in the lead's compile window before the merge.
+
 ## The aiStyle-26 machine (S1-F-13b2 slice A, 2026-11-18)
 
 `npc_ai_unicorn.rs::unicorn_step` ports `AI_026_Unicorns`
