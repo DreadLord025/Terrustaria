@@ -3014,6 +3014,54 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
+
+The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
+themed group per pass, verbatim move) moved the grass/spread family out of
+`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
+`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
+`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
+consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
+hallow source-set slices, `box_has_source`, `spread_grass_walls`,
+`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
+wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
+2 MossConversion tests). Public seams re-exported from `growth`
+(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
+`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
+(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces the
+compile gate for this pass:
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
+  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
+  3227-3255, 3320-3422 for the tests) and string-compared against the new
+  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
+  verbatim** (per-block sha256 recorded in the move script's output;
+  grass.rs LF sha256 `4326a23c…cf44366`).
+- the only content differences are the declared visibility seams:
+  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
+  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
+  `set_wall` helper in growth.rs (the moved wall-arms test imports
+  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
+  the now-unused `use trees::kill_invalid_tree_above;` import left
+  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
+- a full unified diff of the new growth.rs against the origin blob shows
+  the added lines are exactly the `mod grass;` + re-export block + the two
+  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
+  moved blocks — no other edit.
+
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
 ## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
 
 `TileDrawing.GetTileDrawData` (`TileDrawing.cs:4527`, the type switch at
@@ -12068,7 +12116,7 @@ port (`Sets.SpreadUnderground` excludes 32/352).
 
 ### The wall chains
 
-`convert_wall_by_case` (growth.rs) was the three evil types' flat
+`convert_wall_by_case` (growth/grass.rs, re-exported from growth) was the three evil types' flat
 Grass/Stone/HardenedSand/Sandstone/NewWall ladder. It now carries every
 conversion type's wall arm in the C#'s order: the missing `Dirt`/`Snow`/`Ice`
 sets (`WallID.cs:39-41`), the glowing-mushroom set (`WallID.cs:88`), and the
