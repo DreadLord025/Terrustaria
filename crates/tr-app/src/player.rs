@@ -485,6 +485,17 @@ pub struct Player {
     /// `Player.MinionAttackTargetNPC = -1` (`Player.cs:3008`) — the
     /// right-click aim target; written by the use path (Phase 6).
     pub minion_attack_target_npc: i32,
+    /// `Player.MinionRestTargetPoint = Vector2.Zero` (`Player.cs:3006`) —
+    /// the minion rest spot; `HasMinionRestTarget` (`:4060`) is the
+    /// non-zero test. The writer `MinionRestTargetAim` (`:56935-56997`)
+    /// rides the Forbidden set's down double-tap (`KeyDoubleTap`
+    /// `:56779-56786`) — the armor set is unported, so the point stays
+    /// ZERO until it lands and the Guardian's rest states 1/3 revert to
+    /// idle exactly as the vanilla does without the set (S1-P-i56,
+    /// ANALYSIS "The Stardust Guardian arm"). The >1000-px invalidation
+    /// half of `UpdateMinionTarget` (`:57005-57007`) IS ported
+    /// (`invalidate_minion_target`).
+    pub minion_rest_target_point: Vec2,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -569,9 +580,20 @@ pub struct Player {
     /// penalty (`NPC.cs:77689`) and facing suppression (`:77740`).
     pub npc_type_no_aggro: Vec<bool>,
     /// `Player.tankPet` (`Player.cs:870`, default -1): the projectile
-    /// slot of the player's tank pet (the mount/pet system is unported —
-    /// stock -1; the target scan's steal arm reads it, `NPC.cs:77701`).
+    /// slot of the player's tank pet — AI_120's Guardian pins it every
+    /// non-idle tick (`Projectile.cs:44680-44684`, S1-P-i56); the target
+    /// scan's steal arm reads it (`NPC.cs:77701`).
     pub tank_pet: i32,
+    /// `Player.tankPetReset` (`Player.cs:872`, default false): the
+    /// one-tick grace latch — `Player.Update` (`:24539-24548`) sets it
+    /// on the first tick a tank pet is held and clears `tankPet` to -1
+    /// on the next tick the pet did NOT re-pin it. The Guardian's AI
+    /// writes false every non-idle tick (`Projectile.cs:44683`), so a
+    /// live Guardian keeps its claim; an idle/despawned one lets the
+    /// decay drop it. The player-side decay is ported as
+    /// `Player::tank_pet_decay`, called inside both fixed-step branches
+    /// of `world_sim::player::update_player` (S1-P-i56).
+    pub tank_pet_reset: bool,
     /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
     /// counter `/death` reads (`DeathCommand`).
     pub deaths_pve: u32,
@@ -1850,6 +1872,8 @@ impl Player {
             aggro: 0,
             npc_type_no_aggro: vec![false; crate::npc::NpcKind::CS_ID_COUNT],
             tank_pet: -1,
+            tank_pet_reset: false,
+            minion_rest_target_point: Vec2::ZERO,
             composite_front: crate::player::CompositeArmState::DISABLED,
             composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
@@ -8261,9 +8285,42 @@ impl Player {
         }
     }
 
-    /// `Player.MinionRestTargetAim`'s invalidation half (`Player.cs:57009-57011`):
-    /// a target that is no longer chaseable or drifted past 3000 px drops.
+    /// `Player.Update`'s tank-pet decay (`Player.cs:24539-24548`): while
+    /// `tankPet >= 0`, the first tick arms the one-tick grace latch
+    /// (`tankPetReset = true`); a tick where the pet did NOT re-pin the
+    /// claim (AI_120 writes `tankPetReset = false` every non-idle tick,
+    /// `Projectile.cs:44683`) drops it to -1. The callers run it inside
+    /// both fixed-step branches — the C# block sits ahead of the
+    /// dead-player early return (`:24749-24754`), so the dead player's
+    /// claim decays too. S1-P-i56.
+    pub fn tank_pet_decay(&mut self) {
+        if self.tank_pet >= 0 {
+            if !self.tank_pet_reset {
+                self.tank_pet_reset = true;
+            } else {
+                self.tank_pet = -1;
+            }
+        }
+    }
+
+    /// `Player.UpdateMinionTarget`'s invalidation halves (`Player.cs:57005-57011`):
+    /// a rest point drifted past 1000 px from the player's CENTRE zeroes
+    /// (`:57005-57007`, `base.Distance` = `Entity.cs:195-198`), and a whip
+    /// target that is no longer chaseable or drifted past 3000 px drops.
+    /// The `whoAmI != Main.myPlayer` early return (`:57001-57004`) folds
+    /// into the port's single local player. The stardustGuardian rest-point
+    /// dust ring (`:57013-57027`) is a documented visual skip — it fires
+    /// only with a rest target, which stays ZERO until the Forbidden set's
+    /// `MinionRestTargetAim` writer lands (S1-P-i56, ANALYSIS).
     pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        // `:57005-57007` — the rest-point half (S1-P-i56): the C# measures
+        // from the player's Center, not the position corner.
+        if self.minion_rest_target_point != Vec2::ZERO {
+            let (cx, cy) = self.center();
+            if (self.minion_rest_target_point - Vec2::new(cx, cy)).length() > 1000.0 {
+                self.minion_rest_target_point = Vec2::ZERO;
+            }
+        }
         if self.minion_attack_target_npc == -1 {
             return;
         }

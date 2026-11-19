@@ -340,6 +340,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
+                // S1-P-i56 — `Player.Update`'s tank-pet decay
+                // (`Player.cs:24539-24548`): the C# block sits AHEAD of the
+                // dead-player early return (`:24749-24754`), so the dead
+                // player's claim decays too — the Guardian's own dead-owner
+                // arm clears the summon flag, the 2-tick despawn follows
+                // and the claim drops one grace tick later.
+                p.tank_pet_decay();
                 respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
                     || respawn_now;
                 p.reset_projectile_caches();
@@ -838,9 +845,20 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.acc_sentry_backpack_grab_cooldown > 0 {
                 p.acc_sentry_backpack_grab_cooldown -= 1;
             }
-            // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
-            // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
-            // target drops every tick.
+            // S1-P-i56 — `Player.Update`'s tank-pet decay
+            // (`Player.cs:24539-24548`, `Player::tank_pet_decay`): while a
+            // tank pet is claimed, the first tick arms the one-tick grace
+            // latch; a tick where the pet did NOT re-pin it (AI_120 writes
+            // `tankPetReset = false` every non-idle tick,
+            // `Projectile.cs:44683`) drops the claim to -1. The projectile
+            // pass runs AFTER the player pass (`frame/world.rs` players →
+            // projectiles), so the previous tick's re-pin is what this
+            // reads — the vanilla order. The C# runs it ahead of
+            // `UpdateMinionTarget` (`:24738`), mirrored here.
+            p.tank_pet_decay();
+            // M4-PROJ-8 Phase 6 — `UpdateMinionTarget`'s invalidation halves
+            // (`Player.cs:57005-57011`): a >1000-px rest point zeroes and an
+            // unchaseable or >3000-px whip target drops every tick.
             p.invalidate_minion_target(&app.npcs);
             // `Player.cs:27608-27614`: right after the NPC collision pass,
             // the tile-contact damage check (`GetHurtTile` +

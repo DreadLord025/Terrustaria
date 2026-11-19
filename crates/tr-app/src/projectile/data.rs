@@ -3154,6 +3154,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // The Stardust Guardian's 19-frame sheet (`Main.cs:8497`) —
+        // AI_120's idle machine wraps at 8 (`Projectile.cs:44693`), the
+        // rest-hover at projFrames − 4 = 15 (`:44830`) and the dash at
+        // 19 → 14 (`:44852-44855`). S1-P-i56.
+        STARDUST_GUARDIAN => 19,
         // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
