@@ -290,7 +290,7 @@ fn step_up_probe(npc: &mut Npc, world: &World, ctx: &mut Style39Context) {
         ((probe_x + (wi / 2) as f32 + ((wi / 2 + 1) * num560) as f32) / 16.0) as i32;
     let num562 = ((probe_y + h - 1.0) / 16.0) as i32;
     // `:29165` — the probe tile must straddle the hitbox horizontally.
-    if !((num561 * 16) as f32 >= probe_x + w || (num561 * 16 + 16) as f32 <= probe_x) {
+    if !((num561 * 16) as f32 >= probe_x + w || ((num561 * 16 + 16) as f32) <= probe_x) {
         // `:29167-29172` — the six tiles (t1 the top, t6 the foot row,
         // t2 the behind-column tile at t3's row).
         let t1 = tile_safely(world, num561, num562 - 4);
