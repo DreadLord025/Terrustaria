@@ -167,6 +167,76 @@ pub const SIZE: f32 = 14.0;
 /// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`, read by
 /// `GetItemGrabRange`, `Player.cs:35132`) — the px radius the magnet pulls in.
 const MAGNET_RADIUS: f32 = 42.0;
+/// `Item.lifeGrabRange = 250` (`Item.cs:49964`): `GetItemGrabRange` adds it
+/// when `lifeMagnet` is armed and the kind is a heart (`Player.cs:35145-35148`).
+pub const LIFE_GRAB_RANGE: f32 = 250.0;
+/// `Item.manaGrabRange = 300` (`Item.cs:49963`): the star family's bonus under
+/// `manaMagnet` (`Player.cs:35137-35140`).
+pub const MANA_GRAB_RANGE: f32 = 300.0;
+
+/// `Player.PickupItem`'s heart family (`Player.cs:35059`): the Heart 58, the
+/// Candy Apple 1734 (Halloween) and the Candy Cane 1867 (Christmas) — the
+/// `Item.NewItem` seasonal remap's products (`Item.cs:49668-49714`).
+pub const HEART_KINDS: [u16; 3] = [58, 1734, 1867];
+/// `Player.PickupItem`'s star family (`Player.cs:35065`): the Mana Star 184,
+/// the Soul Cake 1735 and the Sugar Plum 1868.
+pub const STAR_KINDS: [u16; 3] = [184, 1735, 1868];
+/// `ItemID.Sets.IsAPickup`'s heart/star subset (`ItemID.cs:493` — the full
+/// set also holds the nebula trio 3453-3455 and the Mana Cloak star 4143,
+/// unported families): `Player.ItemSpace` returns `CanTakeItem: true`
+/// unconditionally for them (`Player.cs:39155-39158`) — an inventory-full
+/// player still grabs them, and a FULL-life/full-mana player consumes them
+/// too (the heal/restore caps; only the star's PULL is gated at full mana,
+/// `Player.cs:34947`).
+pub fn is_heart_or_star(kind: u16) -> bool {
+    HEART_KINDS.contains(&kind) || STAR_KINDS.contains(&kind)
+}
+
+/// The heart/star pull inputs — the C#'s `Player` fields `GrabItems` reads
+/// (`Player.cs:34943-34952`). The generic drop keeps the port's radial
+/// stand-in pull (the ITEMS-2 deviation); the heart/star families run the
+/// verbatim magnet speeds.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PickupContext {
+    /// `Player.lifeMagnet` — buff 105 (`Player.cs:10140`).
+    pub life_magnet: bool,
+    /// `Player.manaMagnet` — accessories 2219/2220/2221/4000.
+    pub mana_magnet: bool,
+    /// `HeldItem.magic` (`Player.cs:34947`): a magic weapon in hand pulls
+    /// stars even at full mana.
+    pub held_item_magic: bool,
+    /// `statMana != statManaMax2` (`Player.cs:34947`).
+    pub mana_not_full: bool,
+}
+
+/// `Player.GetItemGrabRange` (`Player.cs:35130-35166`), the heart/star rows:
+/// the 42 base + the 250 `lifeGrabRange` under `lifeMagnet` for hearts, the
+/// 300 `manaGrabRange` under `manaMagnet` for stars. The coin/treasure/
+/// nebula/journey rows are unported families (the standing ITEMS-2 note).
+pub fn grab_range(kind: u16, ctx: &PickupContext) -> f32 {
+    let mut num = MAGNET_RADIUS;
+    if ctx.mana_magnet && STAR_KINDS.contains(&kind) {
+        num += MANA_GRAB_RANGE; // `:35137-35140`
+    }
+    if ctx.life_magnet && HEART_KINDS.contains(&kind) {
+        num += LIFE_GRAB_RANGE; // `:35145-35148`
+    }
+    num
+}
+
+/// `Player.PullItem_Pickup` (`Player.cs:35031-35041`): the unit direction
+/// from the drop's box centre to the player's centre scaled to `speed`,
+/// blended into the velocity as `(vel * (acc - 1) + pull) / acc`. The C#
+/// centre is `position + (width / 2, height / 2)` — the INTEGER halving of
+/// the heart/star's 12x12 box (`Item.cs` SetDefaults) is +6; the port's
+/// 14x14 drop box centre rides [`ItemDrop::center`] (+7, the standing
+/// drop-box deviation).
+fn pull_item_pickup(vel: Vec2, drop_center: Vec2, player_center: Vec2, speed: f32, acc: f32) -> Vec2 {
+    let mut d = player_center - drop_center;
+    let num3 = speed / (d.x * d.x + d.y * d.y).sqrt();
+    d *= num3;
+    (vel * (acc - 1.0) + d) / acc
+}
 /// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`):
 /// `float gravity = 0.1f; float maxFallSpeed = 7f;` — the wet/shimmer/honey
 /// arms override them (`:380-396`), the air case is this pair.
@@ -312,14 +382,71 @@ impl ItemDrop {
     }
 
     /// One fixed 60 Hz step of gravity, collision and the pickup magnet.
-    /// Returns true when the drop was collected by `player`.
+    /// Returns true when the drop was collected by `player`. The legacy
+    /// entry point: no magnet flags and no held weapon (the pre-i52
+    /// behaviour for the generic radial pull; the star pull gate reads
+    /// `mana_not_full: true` — the caller with a live player passes the
+    /// real context through [`Self::update_with_pickup`]).
     pub fn update(&mut self, world: &World, player_center: Option<Vec2>, dt: f32) -> bool {
+        self.update_with_pickup(
+            world,
+            player_center,
+            &PickupContext { mana_not_full: true, ..PickupContext::default() },
+            dt,
+        )
+    }
+
+    /// [`Self::update`] with the `GrabItems` player context (S1-P-i52): the
+    /// heart/star families run the C#'s grab-range bonuses and magnet pulls
+    /// (`Player.cs:34943-34952`, `:35130-35166`); every other kind keeps the
+    /// port's radial stand-in (the ITEMS-2 deviation).
+    pub fn update_with_pickup(
+        &mut self,
+        world: &World,
+        player_center: Option<Vec2>,
+        ctx: &PickupContext,
+        dt: f32,
+    ) -> bool {
         self.age += dt;
         self.shimmer_wet = self.box_in_shimmer(world);
         if let Some(pc) = player_center {
             let d = pc - self.center();
             let dist = d.length();
-            if self.age > PICKUP_DELAY && dist < MAGNET_RADIUS {
+            if self.age > PICKUP_DELAY && is_heart_or_star(self.kind) {
+                // The direct `Hitbox.Intersects` pickup (`Player.cs:34917-34922`)
+                // fires regardless of the pull gates — a full-mana player
+                // standing ON a star still consumes it (`ItemSpace`'s
+                // `IsAPickup` short-circuit, `:39155-39158`). The port's
+                // 10 px centre-distance stand-in is the ITEMS-2 convention.
+                if dist < 10.0 {
+                    return true;
+                }
+                let star = STAR_KINDS.contains(&self.kind);
+                // `:34947` — `else if (!flag2 || this.HeldItem.magic ||
+                // this.statMana != this.statManaMax2)`: a star with no
+                // `manaMagnet`, no magic weapon in hand and full mana is
+                // NOT pulled at all (the whole pull chain is skipped).
+                let pull_gated =
+                    star && !ctx.mana_magnet && !ctx.held_item_magic && !ctx.mana_not_full;
+                if dist < grab_range(self.kind, ctx) && !pull_gated {
+                    if star && ctx.mana_magnet {
+                        // `:34943-34946` — `PullItem_Pickup(worldItem, 12f, 5)`.
+                        self.vel = pull_item_pickup(self.vel, self.center(), pc, 12.0, 5.0);
+                    } else if !star && ctx.life_magnet {
+                        // `:34949-34952` — `PullItem_Pickup(worldItem, 15f, 5)`.
+                        self.vel = pull_item_pickup(self.vel, self.center(), pc, 15.0, 5.0);
+                    } else {
+                        // The unmagnetised heart/star falls to the port's
+                        // radial stand-in for `PullItem_Common(0.75f)`
+                        // (`:34971`, the ITEMS-2 deviation).
+                        let speed = if dist < 10.0 { 8.0 } else { 4.0 };
+                        self.vel = d.normalize_or_zero() * speed;
+                    }
+                    self.pos += self.vel;
+                    return false;
+                }
+                // Out of range or pull-gated: the drop keeps its physics.
+            } else if self.age > PICKUP_DELAY && dist < MAGNET_RADIUS {
                 // Pull toward the player; skip the ground physics while collecting.
                 let speed = if dist < 10.0 { 8.0 } else { 4.0 };
                 self.vel = d.normalize_or_zero() * speed;
@@ -665,5 +792,147 @@ mod tests {
             }
         }
         assert!(collected, "drop was never collected (pos {:?})", it.pos);
+    }
+
+    // ---- S1-P-i52 — the heart/star grab families (written, NOT run) ----
+
+    /// `Player.GetItemGrabRange` (`Player.cs:35130-35166`): the 42 base
+    /// (`:57121`), +250 `Item.lifeGrabRange` (`Item.cs:49964`) for the heart
+    /// trio under `lifeMagnet` (`:35145-35148`), +300 `Item.manaGrabRange`
+    /// (`:49963`) for the star trio under `manaMagnet` (`:35137-35140`).
+    /// The candy variants ride the SAME rows — the C# tests the type lists,
+    /// not the base ids.
+    #[test]
+    fn s1_p_i52_the_grab_range_rows_add_the_magnet_bonuses() {
+        let plain = PickupContext::default();
+        for k in HEART_KINDS {
+            assert_eq!(grab_range(k, &plain), 42.0, "heart {k} plain");
+        }
+        for k in STAR_KINDS {
+            assert_eq!(grab_range(k, &plain), 42.0, "star {k} plain");
+        }
+        let life = PickupContext { life_magnet: true, ..Default::default() };
+        for k in HEART_KINDS {
+            assert_eq!(grab_range(k, &life), 292.0, "heart {k} + lifeMagnet");
+        }
+        for k in STAR_KINDS {
+            assert_eq!(grab_range(k, &life), 42.0, "lifeMagnet ignores stars");
+        }
+        let mana = PickupContext { mana_magnet: true, ..Default::default() };
+        for k in STAR_KINDS {
+            assert_eq!(grab_range(k, &mana), 342.0, "star {k} + manaMagnet");
+        }
+        for k in HEART_KINDS {
+            assert_eq!(grab_range(k, &mana), 42.0, "manaMagnet ignores hearts");
+        }
+        // A generic kind never earns either bonus (`:35137`/`:35145`'s
+        // type gates).
+        let both = PickupContext { life_magnet: true, mana_magnet: true, ..Default::default() };
+        assert_eq!(grab_range(12, &both), 42.0);
+    }
+
+    /// `Player.PullItem_Pickup` (`Player.cs:35031-35041`): a resting drop
+    /// 100 px to the RIGHT of the player, heart + lifeMagnet (speed 15,
+    /// acc 5): the pull vector is (-15, 0), the blend `(0*4 + (-15))/5` =
+    /// -3 — the first magnet tick moves the heart 3 px, not the radial
+    /// stand-in's 4. The star + manaMagnet arm (12/5) blends to -2.4.
+    #[test]
+    fn s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc() {
+        let w = ground();
+        let pc = Vec2::new(200.0, 200.0);
+        // centre at (300, 200) — pos = centre - 7 (the 14x14 box).
+        let mut heart = ItemDrop::new(58, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        heart.age = 1.0; // past PICKUP_DELAY
+        let ctx = PickupContext { life_magnet: true, ..Default::default() };
+        assert!(!heart.update_with_pickup(&w, Some(pc), &ctx, 1.0 / 60.0));
+        // f32: 15/100 is inexact, so the blend lands within an ulp of -3
+        // (the C# runs the same f32 arithmetic).
+        assert!((heart.vel.x - -3.0).abs() < 1e-4, "15/5 blend from rest: {}", heart.vel.x);
+        assert_eq!(heart.vel.y, 0.0);
+        assert!((heart.pos.x - 290.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
+        assert_eq!(heart.pos.y, 193.0);
+        // The second tick blends again: (−3*4 + −15)/5 = −5.4.
+        assert!(!heart.update_with_pickup(&w, Some(pc), &ctx, 1.0 / 60.0));
+        assert!((heart.vel.x - -5.4).abs() < 1e-4, "vel {}", heart.vel.x);
+        let mut star = ItemDrop::new(184, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        star.age = 1.0;
+        let ctx = PickupContext { mana_magnet: true, mana_not_full: true, ..Default::default() };
+        assert!(!star.update_with_pickup(&w, Some(pc), &ctx, 1.0 / 60.0));
+        assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
+    }
+
+    /// `Player.GrabItems` `:34947` — `else if (!flag2 || this.HeldItem.magic
+    /// || this.statMana != this.statManaMax2)`: a star at FULL mana with no
+    /// manaMagnet and no magic weapon in hand is not pulled at all (it keeps
+    /// falling under gravity); a magic weapon in hand pulls it (the radial
+    /// stand-in), and so does a non-full mana pool.
+    #[test]
+    fn s1_p_i52_the_full_mana_star_pull_gate_follows_the_held_class() {
+        let w = ground();
+        let pc = Vec2::new(200.0, 200.0);
+        let mk = || {
+            let mut s = ItemDrop::new(184, 1, 0, 223.0, 193.0, 0.0, 0.0, 0.0);
+            s.age = 1.0;
+            s
+        };
+        // Full mana, no magnet, no magic held: outside the pull, gravity runs.
+        let full = PickupContext { mana_not_full: false, ..Default::default() };
+        let mut s = mk();
+        assert!(!s.update_with_pickup(&w, Some(pc), &full, 1.0 / 60.0));
+        assert!(s.pos.x == 223.0, "no horizontal pull: {}", s.pos.x);
+        assert!(s.vel.y > 0.0, "gravity applied instead: {}", s.vel.y);
+        // Magic weapon in hand: pulled even at full mana.
+        let magic = PickupContext { mana_not_full: false, held_item_magic: true, ..Default::default() };
+        let mut s = mk();
+        s.update_with_pickup(&w, Some(pc), &magic, 1.0 / 60.0);
+        assert!(s.vel.x < 0.0, "the magic-held pull: {}", s.vel);
+        // Not full: pulled.
+        let hungry = PickupContext { mana_not_full: true, ..Default::default() };
+        let mut s = mk();
+        s.update_with_pickup(&w, Some(pc), &hungry, 1.0 / 60.0);
+        assert!(s.vel.x < 0.0, "the non-full pull: {}", s.vel);
+        // manaMagnet overrides the gate entirely (`:34943`'s first arm).
+        let magnet = PickupContext { mana_not_full: false, mana_magnet: true, ..Default::default() };
+        let mut s = mk();
+        s.update_with_pickup(&w, Some(pc), &magnet, 1.0 / 60.0);
+        assert!(s.vel.x < 0.0, "the magnet pull at full mana: {}", s.vel);
+    }
+
+    /// The DIRECT pickup is never refused at full stats: `ItemSpace`'s
+    /// `IsAPickup` short-circuit (`Player.cs:39155-39158`, `ItemID.cs:493`)
+    /// returns `CanTakeItem: true` before any slot walk, and `GrabItems`'
+    /// `Hitbox.Intersects` arm (`:34917-34922`) fires without the `:34947`
+    /// pull gate — a full-mana player standing ON a star consumes it (the
+    /// restore caps at the max). The heart never had any gate.
+    #[test]
+    fn s1_p_i52_the_touch_pickup_fires_at_full_stats() {
+        let w = ground();
+        let pc = Vec2::new(200.0, 200.0);
+        let full = PickupContext { mana_not_full: false, ..Default::default() };
+        for k in [58u16, 1734, 1867, 184, 1735, 1868] {
+            let mut d = ItemDrop::new(k, 1, 0, pc.x - 7.0, pc.y - 7.0, 0.0, 0.0, 0.0);
+            d.age = 1.0;
+            assert!(
+                d.update_with_pickup(&w, Some(pc), &full, 1.0 / 60.0),
+                "kind {k} collected on touch at full stats"
+            );
+        }
+    }
+
+    /// The heart's 292 px reach under Heartreach: a heart 250 px away (out
+    /// of the plain 42 reach) is pulled; at 300 px (past 292) it is not.
+    #[test]
+    fn s1_p_i52_the_heartreach_potion_extends_the_heart_reach() {
+        let w = ground();
+        let pc = Vec2::new(400.0, 200.0);
+        let ctx = PickupContext { life_magnet: true, ..Default::default() };
+        let mut near = ItemDrop::new(1734, 1, 0, 400.0 + 250.0 - 7.0, 193.0, 0.0, 0.0, 0.0);
+        near.age = 1.0;
+        near.update_with_pickup(&w, Some(pc), &ctx, 1.0 / 60.0);
+        assert!(near.vel.x < 0.0, "250 px is inside the 292 reach");
+        let mut far = ItemDrop::new(1734, 1, 0, 400.0 + 300.0 - 7.0, 193.0, 0.0, 0.0, 0.0);
+        far.age = 1.0;
+        far.update_with_pickup(&w, Some(pc), &ctx, 1.0 / 60.0);
+        assert_eq!(far.vel.x, 0.0, "300 px is outside the 292 reach");
     }
 }

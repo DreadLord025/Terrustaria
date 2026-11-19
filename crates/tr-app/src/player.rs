@@ -983,8 +983,31 @@ pub struct Player {
     /// pre-defense, crit-doubled) as mana, capped at `statManaMax2`, and calls
     /// `ManaEffect` (`:4531-4538`) — the port queues the HealMana combat text.
     /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
-    /// chain); 2221's `manaMagnet` half is its own unported family.
+    /// chain); 2221's `manaMagnet` half rides `mana_magnet` below (S1-P-i52).
     pub magic_cuffs: bool,
+    /// `Player.manaMagnet` (`Player.cs:932`): the Celestial Magnet 2219
+    /// (`:14940-14943`), the Celestial Emblem 2220 (`:14944-14948`), the
+    /// Celestial Cuffs 2221 (`:14949-14953`) and the Magnet Flower 4000
+    /// (`:14455-14458`) arm it per tick; `ResetEffects` clears it (`:18491`).
+    /// `GetItemGrabRange` adds `Item.manaGrabRange = 300` for the star family
+    /// (`:35137-35140`, `Item.cs:49963`) and `GrabItems` pulls stars at
+    /// speed 12 / acc 5 (`:34943-34946`).
+    pub mana_magnet: bool,
+    /// `Player.lifeMagnet` (`Player.cs:934`): the Heartreach Potion's buff 105
+    /// arms it (`UpdateBuffs` `:10138-10141`); `ResetEffects` clears it
+    /// (`:18492`). `GetItemGrabRange` adds `Item.lifeGrabRange = 250` for the
+    /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
+    /// hearts at speed 15 / acc 5 (`:34949-34952`).
+    pub life_magnet: bool,
+    /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
+    /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
+    /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
+    /// (120 ticks). The buff-396 effect arm (`:10328-10341`, the `manaHeat`
+    /// decay) and its `magicDamage *= manaHeat` consumer (`:25906`) are the
+    /// UpdateBuffs/damage-recalc census's seam — deferred (ANALYSIS
+    /// "Heart & star pickups (S1-P-i52)").
+    pub latest_mana_potion_damage_bonus: f32,
+    pub latest_mana_potion_duration: f32,
     /// The S1-C-7 wave B retaliate family (`Player.Hurt`, `Player.cs:38401-
     /// 38517`). The C# carries `Item` references (`starCloakItem`,
     /// `honeyCombItem`, the four `starCloakItem_*OverrideItem`s); the port
@@ -1354,6 +1377,11 @@ pub struct Player {
     /// `pending_hurt_sound` convention). The C# `CombatText.NewText` rect is
     /// the player's own hitbox at the hurt position.
     pending_mana_effect: Option<i32>,
+    /// `Player.HealEffect` (`Player.cs:4522-4529`): the heart pickup's heal
+    /// text (`PickupItem` `:35062` → `Heal` `:35117`) — the same queue
+    /// convention as `pending_mana_effect`, drained by the items pass (the
+    /// pickup site owns the combat-text pool + the `UpdatePlayers` stream).
+    pending_heal_effect: Option<i32>,
     /// S1-C-7 wave B: the accepted-hurt retaliation request (`Player.Hurt`'s
     /// `ImmunityCooldownID.Sets.Retaliate` block, `Player.cs:38401-38517`).
     /// `hurt_inner` has no NPC list / projectile pool, so it records the
@@ -2048,6 +2076,10 @@ impl Player {
             shadow_dodge: false,
             long_invince: false,
             magic_cuffs: false,
+            mana_magnet: false,
+            life_magnet: false,
+            latest_mana_potion_damage_bonus: 0.0,
+            latest_mana_potion_duration: 0.0,
             star_cloak: false,
             star_veil_override: false,
             bee_cloak_override: false,
@@ -2592,6 +2624,39 @@ impl Player {
         self.pending_mana_effect.take()
     }
 
+    /// Takes the queued heal text amount (`Player.HealEffect`,
+    /// `Player.cs:4522-4529`) — the caller owns `Main.combatText`
+    /// (the `take_mana_effect` convention).
+    pub(crate) fn take_heal_effect(&mut self) -> Option<i32> {
+        self.pending_heal_effect.take()
+    }
+
+    /// `Player.Heal(int)` (`Player.cs:35112-35123`): `statLife += amount`,
+    /// the local-player `HealEffect(amount)` text, THEN the `statLifeMax2`
+    /// cap — the text carries the RAW amount even when the cap eats part of
+    /// the heal (the heart at 95/100 heals 5 but prints 20). The NetMessage
+    /// 35 broadcast (`:4525-4528`) is MP-only.
+    pub(crate) fn heal(&mut self, amount: i32) {
+        self.hp += amount;
+        self.pending_heal_effect = Some(amount);
+        if self.hp > self.max_hp {
+            self.hp = self.max_hp;
+        }
+    }
+
+    /// `Player.TryApplyManaHeat(float power, float time)`
+    /// (`Player.cs:52006-52014`): the latest-bonus pair is written first,
+    /// then `AddBuff(396, (int)duration)` when both are non-zero. The
+    /// buff-396 arm's `manaHeat` decay (`:10328-10341`) is the deferred
+    /// UpdateBuffs census seam.
+    pub(crate) fn try_apply_mana_heat(&mut self, power: f32, time: f32) {
+        self.latest_mana_potion_damage_bonus = power;
+        self.latest_mana_potion_duration = time * 60.0;
+        if time != 0.0 && power != 0.0 {
+            self.buffs.add_buff(396, self.latest_mana_potion_duration as i32);
+        }
+    }
+
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
     /// `num2` + pre-knockback position/center/velocity). The caller owns the
@@ -2780,6 +2845,7 @@ impl Player {
         self.pending_sticky_dust.clear();
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
+        self.pending_heal_effect = None;
         self.pending_retaliate = None;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
@@ -3907,8 +3973,8 @@ impl Player {
             // The damage/crit accessories OUTSIDE the combat family
             // (`ApplyEquipFunctional`): the Sniper Scope's +10 ranged
             // crit/+10% ranged damage (1858, `Player.cs:14907-14911`),
-            // the Celestial Magnet's +15% magic (2220, `:14944-14948` —
-            // its `manaMagnet` half is an unported family), the minion
+            // the Celestial Emblem's +15% magic + `manaMagnet` (2220,
+            // `:14944-14948`, S1-P-i52), the minion
             // emblems +15%/+10% (1167/1864/1845, `:15315-15330` — their
             // `minionKB += 2f` halves have no live consumer yet, the
             // `maxMinions++` budget rides `grant_summon_caps`) and the
@@ -3923,7 +3989,14 @@ impl Player {
                 self.ranged_crit += 10;
                 self.ranged_damage += 0.1;
             }
-            2220 => self.magic_damage += 0.15,
+            2220 => {
+                self.magic_damage += 0.15;
+                // `:14946`: the Celestial Emblem's `manaMagnet` (S1-P-i52).
+                self.mana_magnet = true;
+            }
+            // The Celestial Magnet 2219 (`Player.cs:14940-14943`): the bare
+            // `manaMagnet` flag (S1-P-i52).
+            2219 => self.mana_magnet = true,
             1167 => self.minion_damage += 0.15,
             // 1864/1845 also carry `maxMinions++` in the C#; the budget
             // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
@@ -4006,8 +4079,19 @@ impl Player {
             // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
             // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
             // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
-            // (`:14951`) is a separate unported family.
-            1595 | 2221 => self.magic_cuffs = true,
+            // (`:14951`) arms the star magnet (S1-P-i52).
+            1595 => self.magic_cuffs = true,
+            2221 => {
+                self.magic_cuffs = true;
+                self.mana_magnet = true;
+            }
+            // The Magnet Flower 4000 (`Player.cs:14455-14458`):
+            // `manaFlower` + `manaMagnet`. The port folds `manaFlower` to
+            // its -0.08 `manaCost` row (the 555 convention, S1-P-i52).
+            4000 => {
+                self.mana_cost -= 0.08;
+                self.mana_magnet = true;
+            }
             // The S1-C-7 wave B retaliate family (`Player.Hurt`
             // `:38401-38517`): the star cloak + its four override kinds, the
             // honeycomb family and the strong-bee flag. The C# carries Item
@@ -4505,6 +4589,11 @@ impl Player {
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
+        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false`
+        // (`Player.cs:18491-18492`): the magnet accessories and buff 105
+        // re-arm them per tick (S1-P-i52).
+        self.mana_magnet = false;
+        self.life_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -4818,6 +4907,9 @@ impl Player {
                 // the tick; the buff is granted by the set bonus's
                 // `onHitDodge` scan, which is an armor-set row (out of scope).
                 59 => self.shadow_dodge = true,
+                // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
+                // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
+                105 => self.life_magnet = true,
                 // `:10201-10204` — `BuffID.Endurance` (114): +10%.
                 114 => self.endurance += 0.1,
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
@@ -11238,6 +11330,81 @@ mod tests {
         // No accessory: nothing armed.
         let p = player_with_accessory(0);
         assert!(p.has_jump_options.iter().all(|&b| !b));
+    }
+
+    // ---- S1-P-i52 — the heart/star magnet grants (written, NOT run) ----
+
+    /// `ApplyEquipFunctional`'s manaMagnet rows (`Player.cs:14940-14953`,
+    /// `:14455-14458`): the Celestial Magnet 2219 (bare flag), the Celestial
+    /// Emblem 2220 (+15% magic AND the flag), the Celestial Cuffs 2221
+    /// (magicCuffs AND the flag), the Magnet Flower 4000 (the 555-style
+    /// −0.08 manaCost fold AND the flag). The Magic Cuffs 1595 arm
+    /// magicCuffs but NOT the magnet (`:14936-14939`). `ResetEffects`
+    /// (`:18491`) clears the flag when the item comes off.
+    #[test]
+    fn s1_p_i52_the_magnet_accessories_arm_mana_magnet() {
+        let p = player_with_accessory(2219);
+        assert!(p.mana_magnet, "the Celestial Magnet");
+        let p = player_with_accessory(2220);
+        assert!(p.mana_magnet, "the Celestial Emblem");
+        assert!((p.magic_damage - 1.15).abs() < 1e-4, "its +15% magic");
+        let p = player_with_accessory(2221);
+        assert!(p.mana_magnet, "the Celestial Cuffs");
+        assert!(p.magic_cuffs, "the cuffs half");
+        let p = player_with_accessory(4000);
+        assert!(p.mana_magnet, "the Magnet Flower");
+        assert!((p.mana_cost - 0.92).abs() < 1e-4, "the manaFlower fold");
+        let p = player_with_accessory(1595);
+        assert!(p.magic_cuffs);
+        assert!(!p.mana_magnet, "the plain Magic Cuffs carry no magnet");
+        let p = player_with_accessory(0);
+        assert!(!p.mana_magnet, "ResetEffects cleared it");
+        assert!(!p.life_magnet);
+    }
+
+    /// `UpdateBuffs`' Heartreach arm (`Player.cs:10138-10141`): buff 105
+    /// arms `lifeMagnet` per tick; the expiry + `ResetEffects` (`:18492`)
+    /// clear it.
+    #[test]
+    fn s1_p_i52_the_heartreach_buff_arms_life_magnet() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(105, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.life_magnet, "buff 105 armed the heart magnet");
+        // The buff gone: the next tick's reset clears the flag.
+        p.buffs.clear_buff(105);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.life_magnet, "the expiry cleared it");
+    }
+
+    /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —
+    /// the text carries the raw amount. `TryApplyManaHeat`
+    /// (`:52006-52014`): the pair writes, the 120-tick buff, and the
+    /// zero-power/zero-time arm that writes the pair but adds NO buff.
+    #[test]
+    fn s1_p_i52_heal_caps_after_the_text_and_mana_heat_gates_the_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.max_hp = 100;
+        p.hp = 95;
+        p.heal(20);
+        assert_eq!(p.hp, 100, "capped");
+        assert_eq!(p.take_heal_effect(), Some(20), "the RAW amount queued");
+        assert_eq!(p.take_heal_effect(), None, "the text is a one-shot");
+        p.try_apply_mana_heat(0.2, 2.0);
+        assert_eq!(p.latest_mana_potion_damage_bonus, 0.2);
+        assert!(
+            (p.latest_mana_potion_duration - 120.0).abs() < 1e-3,
+            "2 s * 60 = 120 ticks: {}",
+            p.latest_mana_potion_duration
+        );
+        assert!(p.buffs.find_buff_index(396).is_some());
+        // The zero arm: the pair still writes, no buff added.
+        let mut p = Player::spawn(&w);
+        p.try_apply_mana_heat(0.0, 0.0);
+        assert_eq!(p.latest_mana_potion_duration, 0.0);
+        assert!(p.buffs.find_buff_index(396).is_none(), "the gate refused");
     }
 
     #[test]
