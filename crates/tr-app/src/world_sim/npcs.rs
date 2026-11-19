@@ -11187,6 +11187,11 @@ mod worm_tests {
                 };
                 expected = v;
             }
+            // Type 13 overrides the (consumed) first draw with the constant
+            // segment count — the oracle still drew it for stream parity.
+            if kind == NpcKind::EaterOfWorldsHead {
+                expected = 65;
+            }
             let mut next_id = 1u32;
             // No player: the head machine is skipped, only the chain
             // init draws — the budget ledger is isolated.
@@ -11258,7 +11263,9 @@ mod worm_tests {
         let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
         update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
-        let child = npcs.last().unwrap();
+        // The FIRST child (the chain grows head→bodies→tail in the same
+        // pass; `last()` is the tail, not the head's direct child).
+        let child = &npcs[1];
         assert_eq!(child.kind, NpcKind::GiantWormBody);
         // X = (int)(160.7 + 14/2) - 14/2 = 167 - 7 = 160
         assert_eq!(child.x, 160.0, "int-truncated bottom-centre X");
@@ -11271,11 +11278,11 @@ mod worm_tests {
         // `NPC.cs:51575-51597`: one `Next(100)` per OVERLAPPING tile in
         // scan order (X outer, Y inner), even when the crumble guards
         // fail. A 22x22 Devourer head at (160,160) over a solid floor at
-        // row 11 overlaps tiles (10,10),(10,11),(11,10),(11,11) — four
+        // row 10 overlaps tiles (10,10),(10,11),(11,10),(11,11) — four
         // draws per tick, THEN the head machine's own draws (none).
         let mut world = World::new("t".into(), 64, 800);
         for x in 0..64 {
-            for y in 11..800 {
+            for y in 10..800 {
                 let i = world.index(x, y);
                 world.tiles[i] = tr_core::Tile {
                     kind: 1,
@@ -11322,7 +11329,7 @@ mod worm_tests {
         // consumes it too (it just never crumbles).
         let mut world = World::new("t".into(), 64, 800);
         for x in 0..64 {
-            for y in 11..800 {
+            for y in 10..800 {
                 let i = world.index(x, y);
                 world.tiles[i] = tr_core::Tile {
                     kind: 1,
@@ -11331,8 +11338,10 @@ mod worm_tests {
                 world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
-        // 14x14 at (160,160): overlaps (10,10),(10,11),(11,10),(11,11).
-        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        // 14x14 at (159,159): the rect [159,173)x[159,173) straddles the
+        // tile boundaries, overlapping (9,9),(9,10),(10,9),(10,10) — four
+        // crumble draws per tick (the scan's X-outer/Y-inner order).
+        let mut head = Npc::new(NpcKind::LeechHead, 159.0, 159.0, 1, 0.0);
         head.hp = head.max_hp;
         head.worm_inited = true;
         head.worm_id = 99;
@@ -11447,9 +11456,13 @@ mod worm_tests {
     #[test]
     fn the_far_player_forces_the_dig_override() {
         // `NPC.cs:51598-51615`: a listed head in open air with no player
-        // inside the ±1000-px box burrows anyway (flag3 forced).
+        // inside the ±1000-px box burrows anyway (flag3 forced). The
+        // Giant Worm (type 10) is in the list but NOT in the corruption
+        // escape's 7/13 pair — the aim keeps pointing at the far player
+        // (a Devourer here would aim straight down, `:52048-52049`, the
+        // escape's own witness below).
         let world = World::new("t".into(), 200, 800);
-        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
         head.hp = head.max_hp;
         head.worm_inited = true;
         head.worm_id = 99;
@@ -11462,8 +11475,8 @@ mod worm_tests {
         update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
         let speed = (npcs[0].vx * npcs[0].vx + npcs[0].vy * npcs[0].vy).sqrt();
         assert!(
-            (speed - 9.0).abs() < 0.01,
-            "the override digs at full speed: {speed}"
+            (speed - 6.0).abs() < 0.01,
+            "the override digs at full speed (the Giant Worm's num45 = 6): {speed}"
         );
         assert!(npcs[0].vx > 0.0, "toward the far player");
     }
