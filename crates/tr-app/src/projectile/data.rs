@@ -2229,11 +2229,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (Phase 2's arm), aiStyle 158; the `friendly`/`drawLayer` lines
             // have no port consumer (the module doc).
             BABY_BIRD => (10.0, 10.0, 158, -1, 18000, 0, true, false, false, RESET_STATE),
-            // `Projectile.cs:3516-3525` (266) — the Slime Staff's minion,
-            // aiStyle 26 (the hop family, unported — the dispatch no-ops like
-            // the other unported styles), 24x16, `penetrate = -1`,
-            // `timeLeft *= 5` and the idStatic-12 pair.
-            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:3516-3528` (266) — the Slime Staff's minion,
+            // aiStyle 26 (the ground hop machine, AI_026 slice C —
+            // `projectile_ai026_c.rs`), 24x16, `penetrate = -1`,
+            // `timeLeft *= 5` and the idStatic-12 pair (`:3526-3527`,
+            // the state group below — NOT the local pair).
+            SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 12, 0, 1.0)),
             // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
             // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
             // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
@@ -2494,7 +2495,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => (true, 18),
         ABIGAIL => (true, 20),
         BABY_BIRD => (true, 15),
-        SLIME_MINION => (true, 12),
+        // The 266's pair is idStatic-12 (`Projectile.cs:3526-3527`) —
+        // it rides its own row's state group, NOT this local overlay
+        // (AI_026 slice C's row witness caught the misfile).
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3 => (true, 3),
         _ => (false, -2),
     };
@@ -2614,6 +2617,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // The aiStyle-67 pirate/frog rows set neither
                     // ignoreWater (`Projectile.cs:4755-4768`/`:7814-7828`).
                     | ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
+                    // The 266's block (`Projectile.cs:3516-3528`) sets no
+                    // ignoreWater either — the stock false (`:761`) stands
+                    // (AI_026 slice C; its wet-swim arm `:64475-64485` is a
+                    // live C# branch the port folds dry with the wet flags).
+                    | SLIME_MINION
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
@@ -2823,6 +2831,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`:60240-60247`).
         SKELETRON_PET => 10,
         SKELETRON_PRIME_PET => 11,
+        // AI_026 slice C: the slime minion's 12-frame sheet
+        // (`Main.cs:8612`) — the fly-out frames 8-11
+        // (`Projectile.cs:61209`) and the ground frames 0-7
+        // (`:64445`/`:64470`) slice it.
+        SLIME_MINION => 12,
         // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
         // walk (0-3), bite (4-9) and flight (10-14) machines index it.
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,

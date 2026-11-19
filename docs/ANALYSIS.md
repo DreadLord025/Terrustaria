@@ -22386,6 +22386,26 @@ ground-pet idle/walk/jump machine (`Projectile.cs:60254-65024`) for the
   pets, the pygmies 191-194, the spiders 390-392, the Pals 1094/1113
   (their rows + the per-type tails in `ground_machine_census` are the
   follow-up slices' scope).
+- **The retry review's data-layer fixes (worker R39b, same branch,
+  code-only)**: the first pass's machine port was faithful, but three
+  `proj_data` values contradicted the C# `SetDefaults` block
+  (`Projectile.cs:3516-3528`) and would have failed the slice's own
+  row witness — corrected in `projectile/data.rs`:
+  1. `proj_frames(266)` had no row (read the init default 1) — the
+     fly-out wrap (`:61209`) and the witness need **12**
+     (`Main.cs:8612`); the row joins the table.
+  2. The immunity pair sat in the LOCAL overlay (`(true, 12)`) —
+     the C# sets `usesIDStaticNPCImmunity` + `idStaticNPCHitCooldown
+     = 12` (`:3526-3527`); it now rides the row's own state group
+     `(false, -2, true, 12, 0, 1.0)` and the local overlay drops it
+     (the idStatic hit gate keys the pool's `id_static` map, not the
+     per-slot local array).
+  3. The blanket summon `ignore_water` gave the 266 `true` — its
+     block sets no `ignoreWater`, the stock false (`:761`) stands;
+     the 266 joins the Storm-Tiger/pirate exemption list (its
+     wet-swim arm `:64475-64485` is a live C# branch, not a
+     no-water kind). No existing witness read the old values
+     (`MINION_KINDS` in `test_DW_1_1` omits the 266).
 ## The dungeon-debris trio (S1-D-5, 2026-11-19, code-only mode)
 The 736/737/738 `BlueDungeonDebris`/`GreenDungeonDebris`/`PinkDungeonDebris`
 rows, the aiStyle-10 `AI_010` arm (`Projectile.cs:57826-58100`, dispatch

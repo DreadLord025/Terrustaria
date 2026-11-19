@@ -32,7 +32,7 @@
 //!   early like the flyers).
 //!
 //! Of ALL of those, the port's `proj_data` carries a row for exactly
-//! ONE: **266** (`projectile/data.rs:2236`, `Projectile.cs:3516-3528`:
+//! ONE: **266** (`projectile/data.rs:2237`, `Projectile.cs:3516-3528`:
 //! 24x16, aiStyle 26, penetrate -1, `timeLeft *= 5` -> 18000, `minion =
 //! true`, `minionSlots = 1`, `usesIDStaticNPCImmunity` + cooldown 12,
 //! `netImportant`). The gate routes ONLY the 266; every other type
