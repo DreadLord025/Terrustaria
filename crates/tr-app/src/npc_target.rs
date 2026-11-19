@@ -58,6 +58,30 @@ pub struct TargetCandidate {
     pub tank_pet: Option<TankPet>,
 }
 
+/// The single session player as a slot-0 [`TargetCandidate`] — the
+/// S1-D-3p wiring convention shared by the aiStyle machines that call
+/// `TargetClosest` (the zombie's inline candidate, `npc.rs`, and the
+/// aiStyle-42 arm, `npc_ai_style42.rs`): stock aggro 0 / no-aggro false /
+/// no tank pet until those systems land, `itemAnimation` from the raw
+/// swing counter.
+#[allow(dead_code)] // UNWIRED until the S1-D-3 merge step wires the aiStyle machines.
+pub fn session_candidate(player: &crate::player::Player) -> TargetCandidate {
+    TargetCandidate {
+        active: true,
+        dead: player.dead,
+        // The port has no hardcore ghosts (`Player.ghost`).
+        ghost: false,
+        x: player.x,
+        y: player.y,
+        width: crate::player::WIDTH as i32,
+        height: crate::player::HEIGHT as i32,
+        aggro: 0,
+        item_animation: player.frame_inputs.swing_anim as i32,
+        npc_type_no_aggro: false,
+        tank_pet: None,
+    }
+}
+
 /// `NPC.TargetClosest(bool faceTarget = true)` (`NPC.cs:77652-77666`):
 /// scan the player slots, then commit the tracking values. `ai_style` is
 /// `this.aiStyle` (the `:77761` fighter arm); the port's kinds carry no
