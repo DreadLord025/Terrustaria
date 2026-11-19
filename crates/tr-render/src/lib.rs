@@ -20,7 +20,7 @@ pub use post::{
     pass_index, FilterImages, FilterPass, FilterParams, PassId, PostPipeline, MAX_CHAIN,
     PASS_TABLE,
 };
-pub use sprite::{Globals, SpriteInstance, SpriteRenderer};
+pub use sprite::{BlendMode, Globals, SpriteInstance, SpriteRenderer};
 pub use targets::{
     init_target_layout, is_partially_offscreen, render_to_targets_plan, sky_target_active,
     target_transition, LayerCamera, LayerUpdate, RenderTargetFamily, SceneLayer, ScreenTarget,

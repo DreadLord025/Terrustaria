@@ -189,7 +189,7 @@ projectiles hold position and never animate, damage or expire:
 
 | style | Rust kinds (ids) | C# behaviour | Severity |
 | --- | --- | --- | --- |
-| 2 | DUTCHMAN_SHELL (240) | aiStyle-2 machine: wind, per-type dust/rotation (23205-23689) | behavioural |
+| 2 | DUTCHMAN_SHELL (240) | aiStyle-2 machine: wind, per-type dust/rotation (23205-23689) | ~~behavioural~~ **armed S1-D-4b-8** (the family completed: the 968/909/861/304/166 state machines + the exact counters) |
 | 23 | EYE_FIRE (101) | 20-tick alpha fade-in + the expected-type switch (33165) | behavioural |
 | 26 | SLIME_MINION (266) | `AI_026` (58102): the shared minion/sentry machine | behavioural |
 | 66 | RETANIMINI (387), SPAZMAMINI (388) | the owner-centre aim + the death kill (29604) | behavioural |
@@ -227,7 +227,7 @@ Rust data row, so nothing spawns it).
 | aiStyle | C# behaviour (arm line) | Rust arm | Verdict | Sev | Note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `AI_001` arrow/bullet flight, 142 per-type arms (54002) | `ai_arrow`/`ai_style1_flight` + riders | Pa | behavioural | one generic arm for 36 kinds; only 5 kinds special-cased |
-| 2 | inline: wind + per-type dust/rotation (23205) | `ai_shuriken` (3610), kind-gated | Pa | behavioural | DutchmanShell has a row but no arm |
+| 2 | inline: wind + per-type dust/rotation (23205) | `ai_style2` (the full per-kind ladder) + `ai_dutchman_shell` | P | — | S1-D-4b-8 completed the family (the 968/909/861/304/166 state machines); the dust/gore rolls are documented skips |
 | 3 | `AI_003_Boomerang` (23690) | `ai_boomerang` | P | — | |
 | 4 | inline: net-mode timers, per-type tails (23694) | — | M | n/a | |
 | 5 | inline: localAI timers (23830) | — | M | n/a | |

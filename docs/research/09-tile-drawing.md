@@ -88,16 +88,17 @@ render-target cache.
 | 3. `DrawTile_LiquidBehindTile` on solid layer (:524) | PORTED | `render/liquids.rs::draw_tile_liquid_behind` | |
 | 4. Special-point classification switch (:534-723) — vines / MultiTileVine / MultiTileGrass / VoidLens / Pylon / MasterTrophy / AnyDirectionalGrass / WindyGrass | PARTIAL | none (registry) | Inlined: grass+sunflower sway (`tiles.rs:671-751`, `838-851`), trees (`foliage.rs`). The **deferred ordering** is lost — `tiles.rs:671-678` admits the "z-order approximation". |
 | 5. `DrawSingleTile` (:864-1411) | PARTIAL | `tiles.rs::draw_tiles` body | See coverage table; `GetTileDrawData`, the positional switch, flames, half/slice/slope are ported. |
-| 6. `DrawTileCracks` (solid only, :732-733) | MISSING | — | No crack overlay pass. |
+| 6. `DrawTileCracks` (solid only, :732-733) | PORTED | `render/tile_cracks.rs::draw_tile_cracks` | S1-G-1 wave C: `Main.cs:61533-61626` verbatim (the damage ladder, the tree/mushroom shape arms, the 18 px rects, the `Lighting.GetColor` tint); the port's mining accumulator projects onto the `HitTile` damage units. The wall sites (`WallDrawing.cs:203-204`) draw when the wall book fills — the projection already emits `CRACK_WALL` records. Deviations: ANALYSIS "The tile-crack overlay (S1-G-1 wave C)". |
 | 7. `DrawSpecialTilesLegacy` (:736, :7893-8024) | MISSING | — | No SunOrb / in-tile item / item frame / food platter / weapon rack / critter cage. |
 | 8. `DrawEntities_DisplayDolls`/`HatRacks` (:8026/:8039) | MISSING | — | No tile-entity sprite pass. |
 | 9. `DrawTrees` (:8052) | PORTED | `foliage.rs::draw_tree_foliage` | Canopy + branch + leaf gores; sway per `DrawGrass`. |
 | 10. `DrawGrass`/`DrawAnyDirectionalGrass` (:8326/:8383) | PARTIAL | `tiles.rs:786-799`, `838-851` | WindyGrass inlined; `AnyDirectionalGrass` (tile 184) has no separate pass. |
 | 11. `DrawMultiTileGrass(…InWind)` (:8738/:8916) | PARTIAL | `tiles.rs:721-751` | Sunflower ported per-cell; the general 2×n multi-tile grass pass is not. |
 | 12. `DrawMultiTileVines(…InWind)`/`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip` (:8829-9238) | PARTIAL | `render/vines.rs` (S1-G-1 wave A, 2026-11-18) | `DrawVines`/`DrawVineStrip` + the root crawl ported term-for-term (the sway ladder, the grid push, the anchor walk, the 638 glowmask); the strips draw after the foliage pass. `DrawReverseVines`/`DrawRisingVineStrip` (549) and `DrawMultiTileVines(…InWind)` still MISSING. Deviations: ANALYSIS "The vine strip pass" (LitNature shader, biomeSight dust). |
-| 13. `DrawTeleportationPylons` (:8639) | MISSING | — | Point collected only (tile 597 → `TileCounterType.TeleportationPylon`). |
-| 14. `DrawMasterTrophies` (:8597) | MISSING | — | |
-| 15. `DrawVoidLenses` (:8708) | MISSING | — | |
+| 12. `DrawMultiTileVines(…InWind)`/`DrawVines`/`DrawReverseVines`/`DrawVineStrip`/`DrawRisingVineStrip` (:8829-9238) | MISSING | — | No vine strip passing. |
+| 13. `DrawTeleportationPylons` (:8639) | PORTED | `render/pylons.rs::pylon_sprites` | S1-G-1 wave D (`task/S1-G-1d`): the crystal + 6-copy ring, byte colour math, IsVisible gate, selection arm (fed 0). Deviations: fx-range z-order, dust skipped, counter stand-in — ANALYSIS "The pylon/trophy/void-lens passes". |
+| 14. `DrawMasterTrophies` (:8597) | PORTED | `render/pylons.rs::trophy_sprites` | S1-G-1 wave D: the 1×28 row, the frameY/72 flip, the light-tinted ring, Glow-coating white. |
+| 15. `DrawVoidLenses` (:8708) | PORTED | `render/pylons.rs::void_lens_sprites` + `void_lens_light` | S1-G-1 wave D: `VoidLensHelper.cs:11-105` — the -2px anchor, float-mod frame, 3-copy purple ring, the AddLight(0.4,0.2,0.9) into EntityLights; dust skipped. |
 | 16. `PostDrawTiles` (:414) | MISSING | — | |
 | 17. `Update` counters (:367-388) | PORTED | `wind.rs::advance_counter`/`…_tree`/`…_sunflower`/`…_vine` | |
 
@@ -127,7 +128,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Plants / herbs (SwaysInWindBasic, 83, 227, 529/530, 485/489/490...)** — `DrawGrass` :8326, `ShouldSwayInWind` :7702 | sway transform `pos + (cycle, |cycle|)`, rotation `cycle*0.1` about `(tileWidth/2, 16-tileTop)` | `tiles.rs:786-799` (default-size), `:800-824` (non-16×16), `wind.rs::cycle` | **PORTED inline** (z-order deviation) |
 | **Sunflower 113 / multi-tile grass** — `DrawMultiTileGrassInWind` :8916-9041 | 2×4 object swayed as one about the bottom-centre anchor, `_sunflowerWindCounter` cadence `1/420 + num*5/420` (:374, :7719 area) | `tiles.rs::sunflower_sway` :216-253 + tests :1552/:1605/:1624; `wind.rs::advance_sunflower_counter` :768 | **PORTED (per-cell approximation)** — general `DrawMultiTileGrass` not |
 | **Vines / reverse vines / vine strips** — :8829-9238, `CrawlToTopOfVineAndAddSpecialPoint` :744 | strip passes with `ClimbCatTail`, average/highest grid push, `GetAverageWindGridPush` :9195 | `render/vines.rs` (S1-G-1 wave A): `DrawVines`/`DrawVineStrip` + the crawl + `BottomEdgeCanBeAttachedTo` | **PARTIAL** — the hanging-vine strip pass ported (10 `s1_g_1a_*` tests); reverse vines (549) + multi-tile vines still missing |
-| **Ropes (BackRope 149?/`DrawTile_BackRope` :3766)** — dispatched for `typeCache == 380 \|\| Platforms[type]` :1511 | rope sprite drawn behind the platform/planter cell | no call site | **MISSING** |
+| **Ropes (BackRope 149?/`DrawTile_BackRope` :3766)** — dispatched for `typeCache == 380 \|\| Platforms[type]` :1511 + `DrawTile_MinecartTrack` :3792 | rope sprite drawn behind the platform/planter/track cell: rect `(90, (tileY+tileX)%3*18)` of the TOP rope tile's sheet (`Main.tile[tileX, topRopeY]` :3776-3781), cell's raw `tileLight`, `WorldGen.IsRope`/`GetRopeEnds` :70026-70104 | `render/ropes.rs` (S1-G-1 wave B): `back_rope_cell`/`draw_back_rope` + `is_rope`/`rope_ends` verbatim incl. the no-top-end down-scan quirk; the rope tiles' own vertical segments already ride `DrawSingleTile` | **PORTED, UNWIRED** — the tiles pass call sites land with the wave-A merge (no pixels change until then) |
 | **Cacti 80/227** — `rectangle.Y += 54/108/162` :1132-1145 | biome row on the plain flat rect only | `drawdata.rs::cactus_source_y_offset` :1184 + `apply_world_corrections` :1231-1234, consumed in `flat_src_uv` :1189 (BUG-19b) | **PORTED** |
 | **Trees (5, 583-589, 596, 616, 634, 72 shroom cap, 323 palm)** — `DrawTrees` :8052, `GetTreeBiome` :1735, `GetTreeVariant` :1778, `GetPalmTreeVariant` :3491, shroom-cap sprite :994-1006 | 20×20 trunks on a 22 px grid, canopy/branch sheets by biome+variant+`tileColor`, shroom cap overlay | `foliage.rs::draw_tree_foliage` + `resolve_tile_frame` is_tree arm; the trunk biome probe is `drawdata::tree_biome`/`tree_variant` via `tree::trunk_sheet_offset_at` (S1-F-9 wave A, 2026-11-18 — was a 100-row any-non-tree approximation); shroom cap MISSING | **PARTIAL** — trunk biome/variant selection PORTED; the canopy style's per-region `TreeTops.GetTreeStyle` randomisation stays a documented deviation (`tree.rs::Foliage::for_ground`) |
 | **Animated tiles generally** — `Main.tileFrame[type]` + animator (`Update` :367) | every `case` row keyed on `tileFrame` | `tile_frame ≡ 0` (`tiles.rs:543-545`, `drawdata.rs:5-8`) | **MISSING** — biggest single-row gap |
@@ -135,7 +136,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Particles/dust from tiles** — `DrawTiles_EmitParticles` :6688-7548, `EmitLivingTreeLeaf` :7549, `EmitAlchemyHerbParticles` :9605 | per-tile sparkle/dust rolls on `Main.TileFrameSeed` | none (leaves only: `tiles.rs:868-914`) | **MISSING** (leaves partial) |
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
 | **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open |
-| **Master trophy / pylon / void lens / critter cage** | dedicated passes | none | **MISSING** |
+| **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
 
 ## Tests
 
@@ -198,6 +199,13 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 5. **Chest frame rewrite missing** — `behavioural`. `Main.chest[i].frame` (+0/+38/+76,
    `tileHeight=18`) never reaches the source rect, so opening chests do not animate and the
    bottom row is 16 px tall instead of 18. **Not admitted in ROADMAP.**
+   **S1-F-9 wave C update (2026-11-18)**: the rewrite itself is ported
+   (`drawdata_furniture.rs::chest_draw_rewrite`, per-case tests); what remains is the
+   wiring — an open-frame field on the chest state and the `tiles.rs` call after the
+   campfire epilogue (deferred to the S1-F-9 merge; waves A/B own `drawdata.rs`/`tiles.rs`).
+   The cage-frame draw rewrites (deviation 4's furniture slice) are likewise ported in
+   `drawdata_furniture.rs::cage_draw_data` with the `Main.*CageFrame` tables as a lookup;
+   only the cage animator (`Main.AnimateTiles_CritterCages`) is still missing.
 6. **Platforms: martian-conduit glow rows (frameY/18 == 26/27) and slope side-fill quads
    missing** — `pixel`. `SET_PLATFORMS` is generated but unused by the renderer. **Not
    admitted.**
@@ -231,6 +239,9 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
     Requirement = (255*(1-q)+30q, ×1.1, ×1.2)` and `_medium… = (50*(1-q)+2q, …)` (:479-486)
     vs the port's `HIGH_LIGHT`/`MEDIUM_LIGHT` (`tiles.rs:362-366`). **Not admitted.**
 12. **`DrawTileCracks` missing** — `cosmetic` (the mining/hit overlay).
+    **RESOLVED 2026-11-18 (S1-G-1 wave C)**: `render/tile_cracks.rs` ports the
+    pass; the single-accumulator projection + the world-seeded crack-style
+    roll are the recorded deviations (ANALYSIS "The tile-crack overlay").
 
 ## Task seeds
 

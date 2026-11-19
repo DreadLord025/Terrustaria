@@ -8,6 +8,7 @@ mod app;
 mod assets;
 mod achievements;
 mod achievements_data;
+mod accessory_combat;
 mod audio;
 mod bank;
 mod banners;
@@ -24,6 +25,7 @@ mod combat_text;
 #[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
+mod drawdata_cases_a;
 mod dye;
 mod emotes;
 mod env;
@@ -51,8 +53,16 @@ mod mount;
 mod net;
 mod npc;
 mod npc_chat;
+mod npc_spatial;
 mod revenge;
 mod npc_ai;
+mod npc_ai_pumpkin_boss;
+mod npc_ai_style10;
+mod npc_ai_style14;
+mod npc_ai_style16;
+mod npc_ai_style24;
+mod npc_ai_style28;
+mod npc_ai_style29;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED — the merge union feeds it into
 // npc_ai_plantera.rs's hook_anchor parameter (docs/ANALYSIS.md "The
@@ -60,6 +70,7 @@ mod npc_ai;
 // ride the sibling npc_ai_style52/53/50 branches.
 mod npc_ai_plantera_anchor;
 mod npc_target;
+mod npc_ai_style21;
 mod npc_buffs;
 mod persist;
 mod grapple;

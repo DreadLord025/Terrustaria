@@ -51,6 +51,87 @@ pub struct SpriteInstance {
     /// (`UIElement.cs:222-237`) is a device scissor in the C#; the port bakes
     /// the rect into the instance and the fragment shader discards outside it.
     pub clip: [f32; 4],
+    /// The blend batch this instance rides ([`BlendMode`]): the C# ends and
+    /// re-begins `Main.spriteBatch` around the additive / reverse-subtract
+    /// batches (`Main.cs:27457-27494`); the port keeps one buffer and splits
+    /// each range into contiguous blend runs in `draw_ranges` (S1-G-3).
+    pub blend: u32,
+}
+
+/// The sprite pipeline's blend batches (S1-G-3, research/41 D-2). The vanilla
+/// frame runs at least three `SpriteBatch.Begin` blend configurations; one
+/// blend state cannot express them all (`Main.cs:27462-27490`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u32)]
+pub enum BlendMode {
+    /// `BlendState.AlphaBlend` (`Main.cs:22193`, `:27494`) — the default
+    /// batch; the premultiplied-source convention documented at the pipeline
+    /// (`sprite.rs`'s alpha factors, research/41 D-2).
+    #[default]
+    AlphaBlend = 0,
+    /// `BlendState.Additive` (`Main.cs:27490`, the Lightsbane magenta glow):
+    /// XNA's stock additive state — `(SourceAlpha, One)` Add on both the
+    /// color and the alpha channels.
+    Additive = 1,
+    /// `Main._multiplyBlendState` (`Main.cs:27462-27470`): the custom
+    /// "multiply" batch — `ReverseSubtract` with `ColorSourceBlend =
+    /// SourceAlpha`, `ColorDestinationBlend = One`, and the same three
+    /// fields on the alpha channel (`dst − src·srcAlpha`).
+    Multiply = 2,
+}
+
+impl BlendMode {
+    /// The fixed-function blend factors, 1:1 with the C# `BlendState` fields
+    /// (`Main.cs:27462-27470` for Multiply; XNA's stock `BlendState.Additive`
+    /// for Additive). The fragment output is unchanged across the modes —
+    /// exactly like the vanilla, where the same SpriteBatch shader feeds all
+    /// three `Begin` configurations and only the device blend state differs.
+    pub fn blend_state(self) -> wgpu::BlendState {
+        match self {
+            Self::AlphaBlend => wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            },
+            // XNA `BlendState.Additive`: SourceAlpha/One, Add — color and
+            // alpha alike (`Main.cs:27490`'s Begin).
+            Self::Additive => wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            },
+            // Main.cs:27462-27470 — ColorBlendFunction = ReverseSubtract,
+            // ColorDestinationBlend = One, ColorSourceBlend = SourceAlpha;
+            // AlphaBlendFunction/AlphaDestinationBlend/AlphaSourceBlend the
+            // same. ReverseSubtract computes `dst·dstFactor − src·srcFactor`.
+            Self::Multiply => wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::ReverseSubtract,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::ReverseSubtract,
+                },
+            },
+        }
+    }
 }
 
 /// One dye uniform-table row: the pass mode and the two colors. Mirrors
@@ -81,11 +162,19 @@ pub struct RenderStats {
 /// world, world-fx, map-back, map and UI ranges. The honest draw-call bound
 /// the docs claim (`docs/ARCHITECTURE.md`'s renderer rows; S1-G-12 corrected
 /// the stale "2 draw calls" — the real structure is up to 6 per frame, 3 + 3
-/// under the split post path with 1..4 filter passes on top).
+/// under the split post path with 1..4 filter passes on top). S1-G-3 adds
+/// blend-run splits inside a range: each contiguous [`BlendMode`] run is its
+/// own draw, so a range holding the Lightsbane multiply/additive batches
+/// (`Main.cs:27457-27494`) costs up to 3 draws instead of 1 (up to 8 per
+/// frame when both batches are live).
 pub const PASS_BUFFERS: usize = 6;
 
 pub struct SpriteRenderer {
-    pipeline: wgpu::RenderPipeline,
+    /// One pipeline per [`BlendMode`], indexed by the mode's discriminant
+    /// (S1-G-3): alpha-blend (the default), additive, reverse-subtract
+    /// "multiply" — the C#'s three `SpriteBatch.Begin` blend batches
+    /// (`Main.cs:27457-27494`).
+    pipelines: [wgpu::RenderPipeline; 3],
     bgl: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     bind_world: wgpu::BindGroup,
@@ -310,66 +399,69 @@ impl SpriteRenderer {
             immediate_size: 0,
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sprite-pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<SpriteInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &wgpu::vertex_attr_array![
-                        0 => Float32x2,
-                        1 => Float32x2,
-                        2 => Float32x2,
-                        3 => Float32x2,
-                        4 => Float32x4,
-                        5 => Float32,
-                        6 => Float32,
-                        7 => Uint32,
-                        8 => Uint32,
-                        9 => Float32x4,
-                    ],
-                })],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: gpu.config.format,
-                    // XNA `BlendState.AlphaBlend` (premultiplied): the rgb source
-                    // factor is One, so a tint with alpha 0 (the tile flames'
-                    // `Color(200,200,200,0)`) is a pure rgb add; the shader
-                    // outputs straight-alpha texels without pre-multiplying rgb
-                    // by alpha, and these factors finish the equation.
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        // S1-G-3 (research/41 D-2): one pipeline per blend batch. The C#
+        // re-begins `Main.spriteBatch` with a different BlendState around the
+        // Lightsbane batches (`Main.cs:27457-27494`); the port keeps one
+        // instance buffer and switches pipelines per contiguous blend run.
+        // The fragment shader is identical across the three — exactly like
+        // the vanilla, where only the device blend state changes.
+        let make_pipeline = |blend: BlendMode, label: &str| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<SpriteInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![
+                            0 => Float32x2,
+                            1 => Float32x2,
+                            2 => Float32x2,
+                            3 => Float32x2,
+                            4 => Float32x4,
+                            5 => Float32,
+                            6 => Float32,
+                            7 => Uint32,
+                            8 => Uint32,
+                            9 => Float32x4,
+                            10 => Uint32,
+                        ],
+                    })],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: gpu.config.format,
+                        // XNA `BlendState.AlphaBlend` (premultiplied): the rgb source
+                        // factor is One, so a tint with alpha 0 (the tile flames'
+                        // `Color(200,200,200,0)`) is a pure rgb add; the shader
+                        // outputs straight-alpha texels without pre-multiplying rgb
+                        // by alpha, and these factors finish the equation.
+                        blend: Some(blend.blend_state()),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipelines = [
+            make_pipeline(BlendMode::AlphaBlend, "sprite-pipeline"),
+            make_pipeline(BlendMode::Additive, "sprite-pipeline-additive"),
+            make_pipeline(BlendMode::Multiply, "sprite-pipeline-multiply"),
+        ];
 
         let capacity = 262_144u32;
         let make_instances = |cap: u32| {
@@ -413,7 +505,7 @@ impl SpriteRenderer {
         ];
 
         Self {
-            pipeline,
+            pipelines,
             bgl: layout,
             sampler,
             bind_world,
@@ -639,6 +731,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -662,6 +755,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -686,6 +780,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -711,6 +806,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -739,6 +835,50 @@ impl SpriteRenderer {
             dye,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
+        });
+    }
+
+    /// Rotated screen-space sprite in an explicit blend batch (S1-G-3): the
+    /// C#'s `DrawProj_LightsBane` re-begins the batch with the
+    /// reverse-subtract "multiply" state and later `BlendState.Additive`
+    /// (`Main.cs:27457-27494`); the port pushes those quads into the same
+    /// range the other projectile quads ride (`push_ui_sprite_rot`, screen
+    /// pixels) tagged with the mode, and `draw_ranges` splits the range into
+    /// contiguous blend runs. Follows [`Self::push_sprite_origin_rot`]'s
+    /// convention exactly: `pos` is the UNROTATED top-left — for a C#
+    /// `Draw(position, …, origin, scale)` call, `pos = anchor − origin·scale`
+    /// (the `foliage.rs::palm_placement` precedent) — and `origin` is the sprite-local pivot
+    /// already in scaled screen pixels. The top-left is shifted by
+    /// `origin − R(rot)·origin`, so the origin texel lands on `pos + origin`
+    /// (the C#'s `position` anchor).
+    pub fn push_ui_sprite_blend(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        origin: [f32; 2],
+        blend: BlendMode,
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.ui.push(SpriteInstance {
+            pos: tl,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+            paint: 0.0,
+            dye: 0,
+            layer: 0,
+            clip: self.clip.current(),
+            blend: blend as u32,
         });
     }
 
@@ -774,6 +914,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -843,6 +984,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -867,6 +1009,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -883,6 +1026,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -899,6 +1043,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -915,6 +1060,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -941,6 +1087,7 @@ impl SpriteRenderer {
             dye: 0,
             layer,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -964,6 +1111,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -986,6 +1134,7 @@ impl SpriteRenderer {
             dye: 0,
             layer: 0,
             clip: self.clip.current(),
+            blend: 0,
         });
     }
 
@@ -1011,6 +1160,7 @@ impl SpriteRenderer {
                     dye: 0,
                     layer: 0,
                     clip: self.clip.current(),
+                    blend: 0,
                 });
             }
             cx += gw * scale;
@@ -1277,32 +1427,29 @@ impl SpriteRenderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(&self.pipelines[0]);
             pass.set_vertex_buffer(0, buffer.slice(..));
             if world_half && !self.back.is_empty() {
                 pass.set_bind_group(0, &self.bind_world, &[]);
-                pass.draw(0..6, 0..self.back.len() as u32);
-                stats.draw_calls += 1;
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.back, 0);
             }
             if world_half && !self.world.is_empty() {
                 let start = self.back.len() as u32;
                 pass.set_bind_group(0, &self.bind_world, &[]);
-                pass.draw(0..6, start..(start + self.world.len() as u32));
-                stats.draw_calls += 1;
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.world, start);
             }
             // The world-effect range: the UI camera transform, the world draw
             // order — under the map batches and the interface.
             if world_half && !self.fx.is_empty() {
                 let start = (self.back.len() + self.world.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
-                pass.draw(0..6, start..(start + self.fx.len() as u32));
-                stats.draw_calls += 1;
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.fx, start);
             }
             if ui_half && !self.map_back.is_empty() {
                 let start = (self.back.len() + self.world.len() + self.fx.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
-                pass.draw(0..6, start..(start + self.map_back.len() as u32));
-                stats.draw_calls += 1;
+                stats.draw_calls +=
+                    draw_blend_runs(&mut pass, &self.pipelines, &self.map_back, start);
             }
             if ui_half && !self.map.is_empty() {
                 if let Some(bind_map) = &self.bind_map {
@@ -1310,8 +1457,8 @@ impl SpriteRenderer {
                         (self.back.len() + self.world.len() + self.fx.len() + self.map_back.len())
                             as u32;
                     pass.set_bind_group(0, bind_map, &[]);
-                    pass.draw(0..6, start..(start + self.map.len() as u32));
-                    stats.draw_calls += 1;
+                    stats.draw_calls +=
+                        draw_blend_runs(&mut pass, &self.pipelines, &self.map, start);
                 }
             }
             if ui_half && !self.ui.is_empty() {
@@ -1321,14 +1468,55 @@ impl SpriteRenderer {
                     + self.map_back.len()
                     + self.map.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
-                pass.draw(0..6, start..(start + self.ui.len() as u32));
-                stats.draw_calls += 1;
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.ui, start);
             }
         }
 
         gpu.queue.submit(Some(encoder.finish()));
         stats
     }
+}
+
+/// One `pass.draw` per contiguous same-[`BlendMode`] run of a range (S1-G-3):
+/// the C# wraps the additive / reverse-subtract batches in
+/// `End()`/`Begin(blendState)` pairs (`Main.cs:27457-27494`), which flush the
+/// batch in push order; the port's ranges keep push order too, so a run
+/// boundary is exactly the C#'s batch boundary. An all-alpha range (every
+/// range but the Lightsbane quads today) stays a single draw — the default
+/// path is unchanged. Returns the number of draws issued.
+fn draw_blend_runs(
+    pass: &mut wgpu::RenderPass<'_>,
+    pipelines: &[wgpu::RenderPipeline; 3],
+    range: &[SpriteInstance],
+    start: u32,
+) -> u32 {
+    let mut draws = 0;
+    for (mode, run_start, run_end) in blend_runs(range) {
+        pass.set_pipeline(&pipelines[(mode as usize).min(pipelines.len() - 1)]);
+        pass.draw(0..6, (start + run_start)..(start + run_end));
+        draws += 1;
+    }
+    draws
+}
+
+/// The contiguous same-blend runs of a range as `(mode, start, end)` index
+/// triples — pure so the batch-split contract is unit-testable without a
+/// GPU. An all-alpha range yields exactly one run (the pre-S1-G-3 single
+/// draw); the Lightsbane sequence alpha…multiply×6, additive×2, alpha…
+/// (`Main.cs:27483-27492`) yields one run per C# `Begin` batch.
+fn blend_runs(range: &[SpriteInstance]) -> Vec<(u32, u32, u32)> {
+    let mut runs = Vec::new();
+    let mut run_start = 0usize;
+    while run_start < range.len() {
+        let mode = range[run_start].blend;
+        let mut run_end = run_start + 1;
+        while run_end < range.len() && range[run_end].blend == mode {
+            run_end += 1;
+        }
+        runs.push((mode, run_start as u32, run_end as u32));
+        run_start = run_end;
+    }
+    runs
 }
 
 /// `TR_PROBE=x,y`: log every sprite whose rect covers that world point, in draw
@@ -1475,8 +1663,8 @@ mod tests {
         // `draw_ranges` copies each range straight into the instance ring at
         // `range_index * size_of::<SpriteInstance>()` (no per-range staging
         // buffer), so the stride must be 4-byte aligned for `write_buffer` —
-        // wgpu's `COPY_BUFFER_ALIGNMENT`. 80 today: 2+2+2+2 floats (32), color
-        // (16), rot/paint (8), dye/layer (8), clip (16).
+        // wgpu's `COPY_BUFFER_ALIGNMENT`. 84 today: 2+2+2+2 floats (32), color
+        // (16), rot/paint (8), dye/layer (8), clip (16), blend (4, S1-G-3).
         let stride = std::mem::size_of::<SpriteInstance>();
         assert_eq!(
             stride % wgpu::COPY_BUFFER_ALIGNMENT as usize,
@@ -1486,7 +1674,7 @@ mod tests {
         // And the vertex layout's `array_stride` is that same stride, so the
         // shader's `Instance` struct and the CPU struct cannot drift apart
         // without this failing first.
-        assert_eq!(stride, 80, "the fields documented above add up to 80 bytes");
+        assert_eq!(stride, 84, "the fields documented above add up to 84 bytes");
     }
 
     #[test]
@@ -1506,10 +1694,248 @@ mod tests {
             7 => Uint32,
             8 => Uint32,
             9 => Float32x4,
+            10 => Uint32,
         ];
         let total: u64 = attrs.iter().map(|a| a.format.size()).sum();
         assert_eq!(total, std::mem::size_of::<SpriteInstance>() as u64);
         assert_eq!(attrs[9].shader_location, 9);
         assert_eq!(attrs[9].format, wgpu::VertexFormat::Float32x4);
+        assert_eq!(attrs[10].shader_location, 10);
+        assert_eq!(attrs[10].format, wgpu::VertexFormat::Uint32);
+    }
+
+    // ---- S1-G-3: the blend batches (research/41 D-2, Main.cs:27457-27494) ----
+
+    /// The three blend states are 1:1 with the C# `BlendState` fields: the
+    /// default alpha batch keeps its premultiplied factors (unchanged from
+    /// pre-S1-G-3), Additive is XNA's stock `(SourceAlpha, One)` Add, and
+    /// Multiply is `Main._multiplyBlendState`'s ReverseSubtract with
+    /// SourceAlpha/One on both channels (`Main.cs:27462-27470`).
+    #[test]
+    fn blend_states_match_the_csharp_fields() {
+        let alpha = BlendMode::AlphaBlend.blend_state();
+        for c in [alpha.color, alpha.alpha] {
+            assert_eq!(c.src_factor, wgpu::BlendFactor::One);
+            assert_eq!(c.dst_factor, wgpu::BlendFactor::OneMinusSrcAlpha);
+            assert_eq!(c.operation, wgpu::BlendOperation::Add);
+        }
+        let add = BlendMode::Additive.blend_state();
+        for c in [add.color, add.alpha] {
+            assert_eq!(c.src_factor, wgpu::BlendFactor::SrcAlpha);
+            assert_eq!(c.dst_factor, wgpu::BlendFactor::One);
+            assert_eq!(c.operation, wgpu::BlendOperation::Add);
+        }
+        let mul = BlendMode::Multiply.blend_state();
+        for c in [mul.color, mul.alpha] {
+            assert_eq!(c.src_factor, wgpu::BlendFactor::SrcAlpha);
+            assert_eq!(c.dst_factor, wgpu::BlendFactor::One);
+            assert_eq!(c.operation, wgpu::BlendOperation::ReverseSubtract);
+        }
+        // The instance tag is the pipeline index — the discriminants must
+        // stay 0/1/2 or `draw_blend_runs` picks the wrong pipeline.
+        assert_eq!(BlendMode::AlphaBlend as u32, 0);
+        assert_eq!(BlendMode::Additive as u32, 1);
+        assert_eq!(BlendMode::Multiply as u32, 2);
+    }
+
+    /// The batch-split contract: an all-alpha range stays ONE draw (the
+    /// pre-S1-G-3 default path is unchanged); the Lightsbane push sequence —
+    /// alpha content, six multiply quads, two additive quads, alpha content
+    /// (`Main.cs:27483-27494`) — splits into one run per C# `Begin` batch,
+    /// in push order.
+    #[test]
+    fn blend_runs_split_only_at_batch_boundaries() {
+        let inst = |blend: u32| SpriteInstance {
+            pos: [0.0; 2],
+            size: [0.0; 2],
+            uv0: [0.0; 2],
+            uv1: [0.0; 2],
+            color: [1.0; 4],
+            rot: 0.0,
+            paint: 0.0,
+            dye: 0,
+            layer: 0,
+            clip: crate::clip::NO_CLIP,
+            blend,
+        };
+        let plain: Vec<SpriteInstance> = (0..7).map(|_| inst(0)).collect();
+        assert_eq!(blend_runs(&plain), vec![(0, 0, 7)]);
+        assert!(blend_runs(&[]).is_empty());
+        let mut seq = vec![inst(0), inst(0)];
+        seq.extend((0..6).map(|_| inst(BlendMode::Multiply as u32)));
+        seq.extend((0..2).map(|_| inst(BlendMode::Additive as u32)));
+        seq.push(inst(0));
+        assert_eq!(
+            blend_runs(&seq),
+            vec![(0, 0, 2), (2, 2, 8), (1, 8, 10), (0, 10, 11)]
+        );
+    }
+
+    /// The GPU blend equations, pinned against the C# on both an sRGB
+    /// target (the swapchain convention) and a plain UNORM target (the
+    /// vanilla's non-sRGB backbuffer, where the blend maths runs on the
+    /// stored bytes directly): a known source over a known destination must
+    /// land on `dst + src·srcAlpha` (Additive, `Main.cs:27490`) and
+    /// `dst − src·srcAlpha` clamped at 0 (Multiply, `Main.cs:27462-27470`),
+    /// while the alpha-blend default keeps its `(One, OneMinusSrcAlpha)`
+    /// equation. Tolerance 1 LSB for the sRGB encode/decode round-trip.
+    #[test]
+    fn blend_equations_land_on_the_csharp_batches() {
+        let Some((device, queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blend-test"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    var p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    return vec4<f32>(p[vi], 0.0, 1.0);
+}
+@fragment fn fs() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.5, 0.25, 0.75, 0.5);
+}
+"#
+                .into(),
+            ),
+        });
+        // src = (0.5, 0.25, 0.75, 0.5), dst = (0.6, 0.6, 0.6, 1.0).
+        let src = [0.5f32, 0.25, 0.75, 0.5];
+        let dst = [0.6f32, 0.6, 0.6, 1.0];
+        for format in [
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureFormat::Rgba8Unorm,
+        ] {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            });
+            for mode in [
+                BlendMode::AlphaBlend,
+                BlendMode::Additive,
+                BlendMode::Multiply,
+            ] {
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("blend-test-pipeline"),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs"),
+                        buffers: &[],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: Some(mode.blend_state()),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                });
+                let tex = crate::gpu::offscreen_target_on(&device, format, 4, 4, "blend-test");
+                let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                // The destination as stored bytes: on the sRGB target the
+                // clear value is linear (wgpu encodes it on store); on UNORM
+                // it is the raw value, like the vanilla's backbuffer.
+                let clear = if format == wgpu::TextureFormat::Rgba8UnormSrgb {
+                    wgpu::Color {
+                        r: srgb_decode(dst[0]) as f64,
+                        g: srgb_decode(dst[1]) as f64,
+                        b: srgb_decode(dst[2]) as f64,
+                        a: dst[3] as f64,
+                    }
+                } else {
+                    wgpu::Color {
+                        r: dst[0] as f64,
+                        g: dst[1] as f64,
+                        b: dst[2] as f64,
+                        a: dst[3] as f64,
+                    }
+                };
+                let mut enc =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                {
+                    let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(clear),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    pass.set_pipeline(&pipeline);
+                    pass.draw(0..3, 0..1);
+                }
+                queue.submit(Some(enc.finish()));
+                let px = crate::test_gpu::read_texture(&device, &queue, &tex, (4, 4), 4);
+                // The expected bytes: the blend runs in the target's working
+                // space — linear on sRGB (the fragment output IS linear, the
+                // stored dst decodes, the result re-encodes), raw on UNORM
+                // (the vanilla's own backbuffer convention). The source is
+                // the shader's output in both cases — never decoded again.
+                let s = src;
+                let d = if format == wgpu::TextureFormat::Rgba8UnormSrgb {
+                    [
+                        srgb_decode(dst[0]),
+                        srgb_decode(dst[1]),
+                        srgb_decode(dst[2]),
+                        dst[3],
+                    ]
+                } else {
+                    dst
+                };
+                let expect: [f32; 4] = match mode {
+                    BlendMode::AlphaBlend => [
+                        s[0] + d[0] * (1.0 - s[3]),
+                        s[1] + d[1] * (1.0 - s[3]),
+                        s[2] + d[2] * (1.0 - s[3]),
+                        s[3] + d[3] * (1.0 - s[3]),
+                    ],
+                    BlendMode::Additive => [
+                        d[0] + s[0] * s[3],
+                        d[1] + s[1] * s[3],
+                        d[2] + s[2] * s[3],
+                        (d[3] + s[3] * s[3]).min(1.0),
+                    ],
+                    BlendMode::Multiply => [
+                        (d[0] - s[0] * s[3]).max(0.0),
+                        (d[1] - s[1] * s[3]).max(0.0),
+                        (d[2] - s[2] * s[3]).max(0.0),
+                        (d[3] - s[3] * s[3]).max(0.0),
+                    ],
+                };
+                for ch in 0..4 {
+                    // The fixed-function blend clamps the result to [0, 1].
+                    let e = expect[ch].clamp(0.0, 1.0);
+                    let want = if format == wgpu::TextureFormat::Rgba8UnormSrgb && ch < 3 {
+                        (srgb_encode(e) * 255.0).round() as i32
+                    } else {
+                        (e * 255.0).round() as i32
+                    };
+                    let got = px[ch] as i32;
+                    assert!(
+                        (got - want).abs() <= 1,
+                        "{mode:?} on {format:?} channel {ch}: got {got}, want {want}"
+                    );
+                }
+            }
+        }
     }
 }
