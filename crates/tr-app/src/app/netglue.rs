@@ -2934,6 +2934,22 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The Frost Moon family, slice A (`S1-F-13c`): the same seed shape
+        // as the pumpkin roster — the walkers (the Zombie Elf trio, the
+        // Present Mimic, the Gingerbread Man and the Yeti, whose aiStyle-3/25
+        // stand-ins ride the walker family) plant the feet on the column
+        // surface; the Everscream's aiStyle-57 hover stand-in rides the
+        // hover ctor (`NPC.cs:13281-13368` SetDefaults).
+        crate::npc::NpcKind::ZombieElf
+        | crate::npc::NpcKind::ZombieElfBeard
+        | crate::npc::NpcKind::ZombieElfGirl
+        | crate::npc::NpcKind::PresentMimic
+        | crate::npc::NpcKind::GingerbreadMan
+        | crate::npc::NpcKind::Yeti => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Everscream => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 
