@@ -1287,6 +1287,18 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 }
                 let landed =
                     crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
+                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                // the Destroyer body's probe gate (`:89266-89285`) — the
+                // roll rides the melee strike's stream (the `UpdatePlayers`
+                // swap the damage/crit rolls above already ride).
+                if landed {
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[idx], probe_rng, false,
+                    ) {
+                        app.npcs[idx].wants_probe = Some(anchor);
+                    }
+                }
                 if landed {
                     // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
                     // NPC spawns the combat text with the post-defence number

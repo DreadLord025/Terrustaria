@@ -370,6 +370,15 @@ impl NpcKind {
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
             NpcKind::TheDestroyer => 50,
+            // S1-D-3-wire-destroyer: the body/tail/probe kinds (vanilla
+            // types 135/136/139, `NPCID.cs:10947-10949`/`:10955`; the
+            // protocol space is port-local). GATE REASSIGN (L-B): the
+            // branch's 148/149/152 collide with the landed queenbee bees
+            // (149/152, save-compat) + R78's reserved LeechTail 148; the
+            // three take the next-free 216/217/218 (213/214 R10 reserved).
+            NpcKind::TheDestroyerBody => 216,
+            NpcKind::TheDestroyerTail => 217,
+            NpcKind::Probe => 218,
             NpcKind::SkeletronPrime => 51,
             NpcKind::Retinazer => 52,
             NpcKind::Spazmatism => 53,
@@ -663,6 +672,11 @@ impl NpcKind {
             48 => NpcKind::LeechHead,
             49 => NpcKind::LeechBody,
             50 => NpcKind::TheDestroyer,
+            // S1-D-3-wire-destroyer: the gate-reassigned 216/217/218
+            // holes (`to_u16` above; vanilla types 135/136/139).
+            216 => NpcKind::TheDestroyerBody,
+            217 => NpcKind::TheDestroyerTail,
+            218 => NpcKind::Probe,
             51 => NpcKind::SkeletronPrime,
             52 => NpcKind::Retinazer,
             53 => NpcKind::Spazmatism,
@@ -851,7 +865,6 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
-                | NpcKind::TheDestroyer
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
@@ -878,6 +891,8 @@ impl NpcKind {
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::TheDestroyerBody
+                | NpcKind::TheDestroyerTail
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
@@ -895,7 +910,10 @@ impl NpcKind {
         }
     }
 
-    /// The Destroyer: the head of its own same-kind chain (`AI_037`).
+    /// The Destroyer family left the worm pass with S1-D-3-wire-destroyer:
+    /// `AI_037` is its own machine (`npc_ai_style37.rs` +
+    /// `world_sim/npcs.rs::update_destroyers`), NOT `AI_006` — the family is
+    /// deliberately absent from `is_worm`/`is_worm_head`/`is_worm_mid`.
     pub fn is_worm_head(self) -> bool {
         matches!(
             self,
@@ -903,14 +921,13 @@ impl NpcKind {
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
-                | NpcKind::TheDestroyer
                 | NpcKind::SolarCrawltipedeHead
         )
     }
 
     /// The mid-body kinds that spawn another of themselves while the
-    /// budget holds (`:51350`'s list plus the Destroyer's same-kind
-    /// chain).
+    /// budget holds (`:51350`'s list; the Destroyer family runs its own
+    /// `AI_037` chain, not this pass).
     pub fn is_worm_mid(self) -> bool {
         matches!(
             self,
@@ -918,7 +935,6 @@ impl NpcKind {
                 | NpcKind::GiantWormBody
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
-                | NpcKind::TheDestroyer
                 | NpcKind::SolarCrawltipedeBody
         )
     }
@@ -926,10 +942,6 @@ impl NpcKind {
     /// The next segment's kind down the chain (`type + 1` in the vanilla
     /// spawns, `:51347`/`:51357`).
     pub fn worm_next(self) -> NpcKind {
-        if self == NpcKind::TheDestroyer {
-            // The same-kind chain: every segment IS the head type.
-            return self;
-        }
         match self {
             NpcKind::DevourerHead => NpcKind::DevourerBody,
             NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
@@ -1417,6 +1429,8 @@ impl NpcKind {
             NpcKind::SkeletronHead => "NPC_Hit_2",
             NpcKind::WallOfFlesh => "NPC_Hit_8",
             NpcKind::TheDestroyer => "NPC_Hit_4",
+            // 135/136/139 (`NPC.cs:10689`/`:10709`/`:10729`): NPCHit4.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => "NPC_Hit_4",
             NpcKind::SkeletronPrime => "NPC_Hit_4",
             NpcKind::Retinazer => "NPC_Hit_1",
             NpcKind::Spazmatism => "NPC_Hit_1",
@@ -1679,6 +1693,8 @@ impl NpcKind {
             NpcKind::SkeletronHead => "NPC_Killed_2",
             NpcKind::WallOfFlesh => "NPC_Killed_10",
             NpcKind::TheDestroyer => "NPC_Killed_14",
+            // 135/136/139 (`NPC.cs:10690`/`:10710`/`:10730`): NPCDeath14.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => "NPC_Killed_14",
             NpcKind::SkeletronPrime => "NPC_Killed_14",
             NpcKind::Retinazer => "NPC_Killed_14",
             NpcKind::Spazmatism => "NPC_Killed_14",
@@ -1998,8 +2014,10 @@ impl NpcKind {
             NpcKind::PrimeCannon => 35,
             // aiStyle 36 - NPC.cs:10622
             NpcKind::PrimeLaser => 36,
-            // aiStyle 37 - NPC.cs:10664
-            NpcKind::TheDestroyer => 37,
+            // aiStyle 37 - NPC.cs:10664, :10685, :10705
+            NpcKind::TheDestroyer | NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail => 37,
+            // aiStyle 5 - NPC.cs:10725 (the Probe rides AI_005's type-139 arm)
+            NpcKind::Probe => 5,
             // aiStyle 38 - NPC.cs:10809, :10823, :10837
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 38,
             // aiStyle 39 - NPC.cs:15360
@@ -2281,6 +2299,10 @@ impl NpcKind {
             NpcKind::WallOfFlesh => (120.0, 120.0),
             // `SetDefaults` case 134 (`NPC.cs:10662`): 38x38 x1.25.
             NpcKind::TheDestroyer => (48.0, 48.0),
+            // 135/136 (`NPC.cs:10683-10684`/`:10703-10704`): the same box.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail => (48.0, 48.0),
+            // 139 (`NPC.cs:10723-10724`): 30x30, no scale row.
+            NpcKind::Probe => (30.0, 30.0),
             // `SetDefaults` case 127 (`NPC.cs:10558`): 80x102.
             NpcKind::SkeletronPrime => (80.0, 102.0),
             // The Twins: `SetDefaults` cases 125/126 are 100x110.
@@ -2597,6 +2619,15 @@ impl NpcKind {
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
+            // The Destroyer head keeps its vanilla type; the body/tail/Probe
+            // have NO hand row — like every folded segment family (Devourer/
+            // GiantWorm/EoW/Golem parts) they fall through to the bestiary
+            // net id (the head's 134, `BestiaryDatabaseNPCsPopulator.cs:688-
+            // 690`). GATE FIX (L-B): the branch's explicit 135/136/139 rows
+            // broke s1_f_3's cs_id==net_id invariant; the machine reads its
+            // own `family_npc_type` (134/135/136) and `render_key` keeps the
+            // real types — neither rides cs_id.
+            NpcKind::TheDestroyer => 134,
             NpcKind::UndeadMiner => 44, // `NPCID.UndeadMiner` (the net id's correction, S1-F-3)
             NpcKind::CaveBat => 49,
             NpcKind::JungleBat => 51,
@@ -2738,6 +2769,8 @@ impl NpcKind {
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
+                | NpcKind::TheDestroyerBody
+                | NpcKind::TheDestroyerTail
         )
     }
 
@@ -2831,6 +2864,11 @@ impl NpcKind {
             // shares the head's life (`NPC.cs:49836-49853`), so the worm
             // has 80000 HP in total, not 80000 per link.
             NpcKind::TheDestroyer => 80000,
+            // 135/136 (`NPC.cs:10688`/`:10708`): the same 80000 row — the
+            // realLife mirror makes the segment show the head's pool.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail => 80000,
+            // 139 (`NPC.cs:10728`): 200 HP, its own life (no realLife).
+            NpcKind::Probe => 200,
             // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
             NpcKind::SkeletronPrime => 28000,
             // `SetDefaults` cases 125/126.
@@ -3163,6 +3201,11 @@ impl NpcKind {
             NpcKind::LeechHead => 26,
             NpcKind::LeechBody => 22,
             NpcKind::TheDestroyer => 70,
+            // `NPC.cs`'s 135 (55, `:10686`) / 136 (40, `:10706`) / 139 (50,
+            // `:10726`).
+            NpcKind::TheDestroyerBody => 55,
+            NpcKind::TheDestroyerTail => 40,
+            NpcKind::Probe => 50,
             NpcKind::SkeletronPrime => 47,
             NpcKind::Retinazer => 45,
             NpcKind::Spazmatism => 50,

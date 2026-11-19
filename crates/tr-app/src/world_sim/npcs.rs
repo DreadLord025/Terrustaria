@@ -1155,9 +1155,9 @@ pub(crate) fn update_worms_in(
             i += 1;
             continue;
         }
-        // The budget roll only at the chain start (the same-kind chains —
-        // the Destroyer — keep the head kind down the chain; the re-roll
-        // would refill every child's budget and never terminate).
+        // The budget roll only at the chain start. (The Destroyer family
+        // left this pass with S1-D-3-wire-destroyer — `AI_037`'s own chain
+        // runs in `update_destroyers`; `is_worm()` excludes it.)
         let total = if kind.is_worm_head() && npcs[i].seg_index == 0 {
             match kind {
                 // `:51310`'s `Next(8, 13)` / `:51313`'s `Next(4, 7)` — the
@@ -1167,11 +1167,9 @@ pub(crate) fn update_worms_in(
                 // The leech head: `Next(3, 6)` (`AI_006`'s type-117 branch).
                 NpcKind::LeechHead => rng.next_range(3, 6) as u32,
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
-                // the difficulty work); the Destroyer's ~80 segments
-                // (`AI_037`'s ai[2] roll).
+                // the difficulty work).
                 // The crawltipede's 30 segments (`:51375`'s `num34 = 30`).
                 NpcKind::SolarCrawltipedeHead => 29,
-                NpcKind::TheDestroyer => 80,
                 _ => 65,
             }
         } else {
@@ -1247,57 +1245,12 @@ pub(crate) fn update_worms_in(
         }
         // The heads don't trail — the split heads keep their seg_index
         // (`Transform(13)` keeps the NPC identity), so the skip keys on
-        // the KIND; the Destroyer's same-kind links are "heads" that
-        // still trail (`worm_next() == kind` marks the same-kind chain).
+        // the KIND. (The Destroyer family's trail/laser runs in
+        // `update_destroyers` — `AI_037`'s own machine, not this pass.)
         if npcs[i].seg_index == 0
             || (npcs[i].kind.is_worm_head() && npcs[i].kind.worm_next() != npcs[i].kind)
         {
             continue;
-        }
-        // The Destroyer's segment laser (`AI_037_Destroyer`'s type-135
-        // arm, `NPC.cs:49856-49891`): `localAI[0] += Next(4)`; when it
-        // crosses the fresh `Next(1400, 26000)` roll — reset, `CanHit`,
-        // fire the hostile laser 100 (the dmg 22 classic): the aim = the
-        // player's centre minus the segment's with the +-20 px jitter,
-        // the speed 8 with the +-0.05 spread, the spawn at the centre +
-        // the aim x 5, `timeLeft = 300`. The vanilla's tail (136) never
-        // fires; the port's last link rides along (the same kind).
-        if npcs[i].hp > 0 && npcs[i].seg_index > 0 && npcs[i].kind.worm_next() == npcs[i].kind {
-            // `localAI[0] += Main.rand.Next(4)` and the
-            // `Next(1400, 26000)` threshold (`NPC.cs:49858-49859`).
-            npcs[i].caster_counter += rng.next_max(4) as i32;
-            let threshold = rng.next_range(1400, 26000);
-            if npcs[i].caster_counter >= threshold {
-                npcs[i].caster_counter = 0;
-                if let Some((pcx, pcy)) = player {
-                    let (lw, lh) = npcs[i].size();
-                    let cx = npcs[i].x + lw * 0.5;
-                    let cy = npcs[i].y + lh * 0.5;
-                    // `:49863`: `CanHit(base.position, base.width,
-                    // base.height, player.position, player.width,
-                    // player.height)` — the centres stand in for the
-                    // boxes (the anchor math is `centre / 16`).
-                    if crate::projectile::can_hit(
-                        world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0,
-                    ) {
-                        // The four `Next(-20, 21)` draws
-                        // (`NPC.cs:49866-49871`).
-                        let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
-                        let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
-                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                        dx = dx / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
-                        dy = dy / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
-                        npcs[i].wants_hostile_shot.push((
-                            crate::projectile::DESTROYER_LASER,
-                            cx + dx / 8.0 * 5.0,
-                            cy + dy / 8.0 * 5.0,
-                            dx,
-                            dy,
-                            22,
-                        ));
-                    }
-                }
-            }
         }
         let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
         let Some(leader) = npcs
@@ -1604,6 +1557,142 @@ fn worm_head_step(
     // The off-world guard (the framework shape).
     if npc.y > world.height as f32 * TILE_PX + 200.0 {
         npc.hp = 0;
+    }
+}
+
+/// S1-D-3-wire-destroyer: the Destroyer family's sim pass — `AI_037`
+/// (`npc_ai_style37.rs::destroyer_family_step`) + the Probe's `AI_005`
+/// type-139 arm (`probe_step`) + the strike-queued probe spawns + the
+/// event resolve (lasers → `wants_hostile_shot`, the roar, the daytime
+/// family despawn). Runs after the per-NPC step, the worm pass's position
+/// (the family is NOT `is_worm()` — the stand-in retired).
+///
+/// RNG: the family's cadence draws ride the `UpdateNPCs` stream
+/// (`Main.cs:17767-17769` wraps `NPC.UpdateNPC`); the probe machine draws
+/// nothing (its wobble is a counter, the dust arms exclude 139). The probe
+/// LAUNCH roll rides the strike's stream at the strike site
+/// (`probe_launch_on_hit`), not here.
+pub(crate) fn update_destroyers(app: &mut App) {
+    let has_family = app
+        .npcs
+        .iter()
+        .any(|n| crate::npc_ai_style37::is_destroyer_family(n.kind) && n.hp > 0);
+    let has_probe = app.npcs.iter().any(|n| n.kind == NpcKind::Probe && n.hp > 0);
+    let has_probe_req = app.npcs.iter().any(|n| n.wants_probe.is_some());
+    if !has_family && !has_probe && !has_probe_req {
+        return;
+    }
+    // The target candidate (the `npc_target` convention, single-player).
+    let players: Vec<crate::npc_target::TargetCandidate> = match app.player.as_ref() {
+        Some(p) => vec![crate::npc_target::TargetCandidate {
+            active: true,
+            dead: p.dead,
+            ghost: false,
+            x: p.x,
+            y: p.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            aggro: 0,
+            item_animation: p.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        }],
+        None => Vec::new(),
+    };
+    // The strike-queued probe spawns (`HitEffect`, `NPC.cs:89278`): the
+    // anchor is the body's bottom-centre; `NewNPC`'s `Bottom = (X, Y)`.
+    let mut probe_spawns = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some((ax, ay)) = n.wants_probe.take() {
+            probe_spawns.push((ax, ay));
+        }
+    }
+    for (ax, ay) in probe_spawns {
+        let (pw, ph) = NpcKind::Probe.size();
+        let mut probe = Npc::new(NpcKind::Probe, ax - pw * 0.5, ay - ph, 1, 0.0);
+        probe.hp = probe.max_hp;
+        app.npcs.push(probe);
+    }
+    if players.is_empty() {
+        return;
+    }
+    // The family machine (the chain spawn + the per-slot AI_037 ticks).
+    let events = {
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        crate::npc_ai_style37::destroyer_family_step(
+            &mut app.npcs,
+            &app.world,
+            &players,
+            rng,
+            &mut app.next_worm_id,
+            0, // the EverLastingTicker stamp (the S1-D-3p convention)
+        )
+    };
+    // The event resolve, in tick order (the C#'s per-slot side effects).
+    let mut despawn_family = false;
+    for (i, ev) in events {
+        if let Some(shot) = ev.laser {
+            // `NPC.cs:49877-49878` — type 100, timeLeft 300 (the drain's
+            // override list already carries DESTROYER_LASER).
+            app.npcs[i].wants_hostile_shot.push((
+                crate::projectile::DESTROYER_LASER,
+                shot.x,
+                shot.y,
+                shot.vx,
+                shot.vy,
+                shot.damage,
+            ));
+        }
+        if ev.roar {
+            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)` (Roar_0).
+            let (nx, ny) = (app.npcs[i].x, app.npcs[i].y);
+            app.audio.play_at("Roar_0", nx, ny, 1.0);
+        }
+        if ev.wants_death {
+            // The orphan death wrote life = 0 in place; the death pass
+            // (the retain below in update_npcs) carries the events.
+        }
+        if ev.despawn_family {
+            despawn_family = true;
+        }
+        // The fade dust (`:49799-49804`) and the AddLight (`:49929`) ride
+        // the documented cosmetic skip (the other machines' convention —
+        // no dust/light seam inside the AI pass yet; ANALYSIS).
+    }
+    if despawn_family {
+        // `NPC.cs:49971-49977` — every aiStyle-37 NPC goes inactive below
+        // the rock layer at dawn. The C#'s `active = false` fires NO death
+        // events (no loot/sound/progression) — the port drops the family
+        // outright, bypassing the death retain's event pass.
+        app.npcs
+            .retain(|n| !crate::npc_ai_style37::is_destroyer_family(n.kind));
+    }
+    // The Probe's AI_005 type-139 arm (the same UpdateNPCs stream — the
+    // machine draws nothing, so the borrow is order-only).
+    {
+        let world = &app.world;
+        for n in app.npcs.iter_mut() {
+            if n.kind != NpcKind::Probe || n.hp <= 0 {
+                continue;
+            }
+            n.old_vx = n.vx;
+            n.old_vy = n.vy;
+            let just_hit = n.hurt_cd > 0.0;
+            if let Some(shot) = crate::npc_ai_style37::probe_step(
+                n, world, &players, just_hit, 0,
+            ) {
+                // `NPC.cs:50625` — type 84, the snapped aim velocity, no
+                // timeLeft override (the SetDefaults 600 rides).
+                n.wants_hostile_shot.push((
+                    crate::projectile::PROBE_LASER,
+                    shot.x,
+                    shot.y,
+                    shot.vx,
+                    shot.vy,
+                    shot.damage,
+                ));
+            }
+        }
     }
 }
 
@@ -3478,6 +3567,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // reads the same spawn order, one tick of AI/integration lag for
     // freshly spawned minions — the documented pool-pass deviation).
     update_plantera_minions(app);
+    // S1-D-3-wire-destroyer: the Destroyer family's OWN machine (`AI_037`)
+    // + the Probe's `AI_005` type-139 arm — the same after-the-step position
+    // as the worm pass (the family is no longer `is_worm()`).
+    update_destroyers(app);
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
@@ -6959,10 +7052,11 @@ mod invasion_tests {
     }
     #[test]
     fn the_destroyer_segments_fire_lasers() {
-        // `AI_037_Destroyer`'s type-135 arm (`NPC.cs:49856-49891`): the
-        // timer rolls Next(4) per tick against the fresh
-        // Next(1400, 26000) threshold; the fire sets the hostile laser
-        // 100 payload (the dmg 22, the speed 8, the CanHit gate).
+        // `AI_037_Destroyer`'s type-135 arm (`NPC.cs:49856-49882`) through
+        // the WIRED family driver (S1-D-3-wire-destroyer): the timer rolls
+        // Next(4) per tick against the fresh Next(1400, 26000) threshold;
+        // the fire queues the hostile laser 100 payload (dmg 22 classic,
+        // speed ~8, the CanHit gate). WRITTEN NOT RUN (code-only mode).
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
             for y in 30..800 {
@@ -6975,26 +7069,50 @@ mod invasion_tests {
             }
         }
         w.compute_column_surface();
+        w.day_time = false;
         // The head (seg 0) never fires; the body link does. Both sit in
-        // the open air above the ground so the CanHit line exists.
+        // the open air above the ground so the CanHit line exists. The
+        // chain is pre-assembled (ai[0] != 0 closes the spawn gate).
         let mut head = Npc::spawn_worm_head(&w, 30, 25, NpcKind::TheDestroyer);
         head.hp = head.max_hp;
         head.worm_id = 5;
         head.seg_index = 0;
-        head.worm_inited = true;
-        let mut body = Npc::new(NpcKind::TheDestroyer, head.x, head.y + 20.0, 1, 0.0);
+        head.ai[0] = 2.0;
+        let mut body = Npc::new(NpcKind::TheDestroyerBody, head.x, head.y + 20.0, 1, 0.0);
         body.hp = body.max_hp;
         body.worm_id = 5;
         body.seg_index = 1;
-        body.worm_inited = true;
         let mut npcs = vec![head, body];
+        let players = [crate::npc_target::TargetCandidate {
+            active: true,
+            dead: false,
+            ghost: false,
+            x: 470.0,
+            y: 360.0,
+            width: 20,
+            height: 42,
+            aggro: 0,
+            item_animation: 0,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        }];
         let mut rng = UnifiedRandom::new(1);
         let mut next_id = 9u32;
         // One body link fires ~once per 9100 ticks (the vanilla's 80
         // links make the fight rate) — the window gives the ~97% hit.
         let mut shot = None;
         for _ in 0..40000 {
-            update_worms_in(&w, Some((480.0, 380.0)), &mut npcs, &mut rng, &mut next_id);
+            let events = crate::npc_ai_style37::destroyer_family_step(
+                &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+            );
+            for (i, ev) in events {
+                if let Some(laser) = ev.laser {
+                    npcs[i].wants_hostile_shot.push((
+                        crate::projectile::DESTROYER_LASER,
+                        laser.x, laser.y, laser.vx, laser.vy, laser.damage,
+                    ));
+                }
+            }
             if let Some(p) = npcs[1].wants_hostile_shot.pop() {
                 shot = Some(p);
             }

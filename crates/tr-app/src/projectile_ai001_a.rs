@@ -7,7 +7,8 @@
 //! and is recorded in ROADMAP S1-D-5 / ANALYSIS "aiStyle-1 per-type arms".
 //!
 //! Kind set (all rowed in `projectile/data.rs`, C# `SetDefaults` aiStyle 1):
-//! 14 MusketBall, 81 WoodenArrowHostile, 83 EyeLaser, 98 TrapDart,
+//! 14 MusketBall, 81 WoodenArrowHostile, 83 EyeLaser, 84 DeathLaser (the
+//! Probe's laser, S1-D-3-wire-destroyer), 98 TrapDart,
 //! 100 DestroyerLaser, 180 PirateArrow, 184 SuperDart, 248 FlowerPowPetal,
 //! 259 GolemEyeBeam, 270 Skull, 325 FlamingWood, 389 MiniRetinaLaser,
 //! 436 BrainScrambler, 438 RayGunner.
@@ -46,7 +47,7 @@ use tr_core::World;
 
 use crate::projectile::{
     Projectile, BRAIN_SCRAMBLER, DESTROYER_LASER, EYE_LASER, FLOWER_POW_PETAL, FLAMING_WOOD,
-    GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW, RAY_GUNNER, SKULL,
+    GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW, PROBE_LASER, RAY_GUNNER, SKULL,
     TRAP_DART, TRAP_SUPERDART, WOODEN_ARROW_HOSTILE,
 };
 
@@ -55,10 +56,11 @@ use crate::projectile::{
 /// C# `SetDefaults` gives it aiStyle **14** (`Projectile.cs:2717-2727`);
 /// its row carried aiStyle 1 until the S1-D-5/S1-D-4c data-row fix split it
 /// onto its own style-14 arm.
-pub(crate) const SLICE_A_KINDS: [u16; 14] = [
+pub(crate) const SLICE_A_KINDS: [u16; 15] = [
     MUSKET_BALL,          // 14
     WOODEN_ARROW_HOSTILE, // 81
     EYE_LASER,            // 83
+    PROBE_LASER,          // 84 (S1-D-3-wire-destroyer: the Probe's laser)
     TRAP_DART,            // 98
     DESTROYER_LASER,      // 100
     PIRATE_ARROW,         // 180
@@ -127,6 +129,12 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         // `:55229-55233` — `ai[1] = 1f` + `SoundID.Item33` (SKIPPED).
         EYE_LASER => {
             latch_ai1(p); // Projectile.cs:55229-55233
+            finish(p, world, false, Gravity::Rest, Rot::Default);
+        }
+        // `:55291-55295` — `ai[1] = 1f` + `SoundID.Item12` (SKIPPED); 84 is
+        // on the `flag3 = false` skip list (`:55956`) — straight flight.
+        PROBE_LASER => {
+            latch_ai1(p); // Projectile.cs:55291-55295
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
         // `:55311-55315` — `ai[1] = 1f` + `SoundID.Item17` (SKIPPED).

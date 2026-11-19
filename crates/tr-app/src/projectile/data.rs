@@ -120,6 +120,10 @@ pub const QUEEN_BEE_STINGER: u16 = 719;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
+/// `ProjectileID.DeathLaser` (84) — the Probe's laser (`NPC.cs:50619`'s
+/// `num11 = 84`; `Projectile.cs:1646-1659`: 4×4, aiStyle 1, hostile,
+/// penetrate 3, extraUpdates 2, timeLeft 600).
+pub const PROBE_LASER: u16 = 84;
 /// `ProjectileID.CursedFlameHostile` (96) — the Spazmatism's phase-1 spit
 /// (`NPC.cs:27223`'s `num451`).
 pub const CURSED_FLAME: u16 = 96;
@@ -1100,6 +1104,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1632-1645` — the EyeLaser: 4x4, aiStyle 1,
             // penetrate 3, extraUpdates 2, timeLeft 600, hostile.
             EYE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
+            // `Projectile.cs:1646-1659` — the Probe's DeathLaser: the same
+            // 4x4 aiStyle-1 flight, penetrate 3, extraUpdates 2, timeLeft
+            // 600, hostile (the light/alpha/scale/magic rows are draw-only).
+            PROBE_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, RESET_STATE),
             // `Projectile.cs:1803-1815` — the CursedFlameHostile: 16x16,
             // aiStyle 8, penetrate -1, hostile.
             CURSED_FLAME => (

@@ -687,9 +687,11 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
             Some(body)
         }
         NpcKind::TheDestroyer => {
+            // S1-D-3-wire-destroyer: the head alone — the sim's
+            // `update_destroyers` pass spawns the 81-link chain on its
+            // first tick (`AI_037`, `NPC.cs:49833-49855`).
             let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
             h.hp = h.max_hp;
-            h.worm_left = 80;
             Some(h)
         }
         _ => None,
