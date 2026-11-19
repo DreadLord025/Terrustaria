@@ -15,11 +15,19 @@
 //! `:23333-23345` + feather shot `:23416-23436`, 156's trident shot
 //! `:23458-23484`) are cited skips — they land with their kinds.
 //!
-//! UNWIRED (code-only mode): the live dispatch still routes the four kinds
-//! through `npc.rs::update_cave_bat`'s hash-jitter stand-in (research/25's
-//! `AI_014` row, finding 25-6); the migration replaces that call with
-//! [`bat_ai`] and drains [`DemonSickleShot`] through the projectile pool.
-//! Every other module is byte-identical.
+//! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
+//! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
+//! feeds `Entity.wet` via the `is_wet` pass + the session-player
+//! `TargetCandidate`/`players_wet` slices, drains [`DemonSickleShot`] into
+//! `wants_hostile_shot` (type 44, damage 21; the sim's timed-shot pass
+//! applies the `timeLeft = 300` write, `NPC.cs:23450`), and integrates
+//! through the no-gravity `integrate_flyer_collision` stand-in
+//! (`UpdateCollision`, `NPC.cs:92523-92580`). The distrust-verbatim audit
+//! re-read the whole arm against `NPC.cs:22849-23486` at the wiring —
+//! verdict FAITHFUL (the ungated second generic pass, the Hellbat's own
+//! arm, the X-before-Y shot draws and the short-circuit `Next(300)` all
+//! match; no f1701eb0-class defect found). Every other module is
+//! byte-identical.
 //!
 //! RNG by construction: the ONLY `Main.rand` draws on the ported paths are
 //! the VoodooDemon/Demon (62/66) shot arm's — two `Next(-100, 101)` aim
@@ -30,7 +38,7 @@
 //! (49/51/60) draw nothing. `TargetClosest` is RNG-free (the Manhattan
 //! scan, `NPC.cs:77652-77781`). The witness tests below pin the stream
 //! position for each case (written, NOT run — code-only mode).
-#![allow(dead_code)] // wiring lands with the update_cave_bat migration
+// WIRED by the S1-D-3 bat/fish reconcile (`update_cave_bat`'s migration).
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
