@@ -553,7 +553,7 @@ pub fn cultist_ai_step(
     let expert_mode = env.expert;
     let flag = s.life <= s.life_max / 2; // INTEGER half (`:64421`).
     let mut num = 120; // the ice-mist period
-    let attack_damage_for_projectiles = attack_damage_for_projectiles(env.difficulty, 35.0, 25.0);
+    let attack_damage_for_projectiles = crate::npc_ai_style37::attack_damage_for_projectiles(env.difficulty, 35.0, 25.0);
     if expert_mode {
         num = 90;
     }
@@ -562,7 +562,7 @@ pub fn cultist_ai_step(
     }
     let mut num2 = 18; // the fireball period
     let mut num3 = 3; // the fireball count
-    let attack_damage_for_projectiles2 = attack_damage_for_projectiles(env.difficulty, 30.0, 20.0);
+    let attack_damage_for_projectiles2 = crate::npc_ai_style37::attack_damage_for_projectiles(env.difficulty, 30.0, 20.0);
     if expert_mode {
         num2 = 12;
         num3 = 4;
