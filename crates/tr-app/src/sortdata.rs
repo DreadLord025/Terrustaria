@@ -304,6 +304,26 @@ pub const PROJ_HOOK: BoolSet = BoolSet {
     ],
 };
 
+/// `Sets.DualEquipArmor` (`ID/ItemID.cs:336`, S1-P-i48): the Empty Bucket
+/// (205), the Badger's Hat (5004) and the Rabbit Order (4955) — the three
+/// head pieces `CanEquipInArmorSlot` lets a player wear once for real and
+/// once for vanity (`ItemSlot.cs:1453-1462`).
+pub const DUAL_EQUIP_ARMOR: BoolSet = BoolSet {
+    default: false,
+    ids: &[205, 5004, 4955],
+};
+
+/// `Sets.HasItemSwap` (`ID/ItemID.cs:1385`, S1-P-i48): the right-click
+/// variant-swap kinds (`ItemSlot.TryItemSwap`, `ItemSlot.cs:1668-1675`).
+pub const HAS_ITEM_SWAP: BoolSet = BoolSet {
+    default: false,
+    ids: &[
+        5325, 4131, 5060, 5059, 5324, 5329, 5330, 4346, 5391, 5323, 5455, 4767,
+        5453, 5309, 5454, 6190, 6195, 5358, 5360, 5361, 5359, 5437, 6168, 6169,
+        6193, 6194, 2611, 5526,
+    ],
+};
+
 /// `Main.tileFrameImportant` (`Main.cs:7232`).
 pub const TILE_FRAME_IMPORTANT: BoolSet = BoolSet {
     default: false,
