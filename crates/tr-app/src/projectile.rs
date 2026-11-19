@@ -724,7 +724,7 @@ tile.active()
 /// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
 /// its centre over active non-top solids. The C#'s exact point cloud is a
 /// margin-level difference — recorded in ANALYSIS.
-fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
 let pts = [
     (pos.x, pos.y),
     (pos.x + w, pos.y),
@@ -14862,6 +14862,25 @@ impl ProjectilePool {
                                     b.knock_back,
                                 );
                             }
+                        }
+                        // `AI()`'s `else if (this.aiStyle == 26)`
+                        // (`Projectile.cs:26416-26419`) → `AI_026` —
+                        // SLICE A ONLY (S1-D-4b-10): the 14 early-return
+                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`).
+                        // Every other aiStyle-26 kind (the 266 slime
+                        // minion today, slice B's ground pets tomorrow —
+                        // task/S1-D-4b-11-melee-b) keeps the pre-existing
+                        // `_ => {}` fall-through, byte-identical: the gate
+                        // returns false and nothing mutates.
+                        26 => {
+                            // The gate's false return is the no-op: the
+                            // non-slice kind keeps the old no-arm state.
+                            let _ = crate::projectile_ai026_a::ai026_a_tick(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref_mut(),
+                                rng,
+                            );
                         }
                         _ => {}
                     }
