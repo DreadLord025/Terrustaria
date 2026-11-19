@@ -192,7 +192,7 @@ fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
 /// The C#'s INTEGER tick comparisons out of the port's per-frame seconds
 /// timers: `round(secs * 60)` at the 60 Hz fixed step. The C# reads
 /// `itemAnimation` / `itemAnimationMax` / `useTime` as integers
-/// (`Player.cs:4066`, `:53626`, `:53674`) while `app.swing` / `app.item_time`
+/// (`Player.cs:4066`, `:53635`, `:53663`) while `app.swing` / `app.item_time`
 /// decay by the frame's `dt`, so every window the roll chain reads is derived
 /// from these counts — never from a raw float compare against "eight ticks",
 /// which would drift with the frame time.
@@ -613,10 +613,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_down, held_weapon, app.attack_cd, app.reuse_delay
         );
         if held_use_ammo > 0 && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
-            // The shooter's use start — regardless of the ammo
-            // (`ItemCheck_TryStartUse` sets the timers before
-            // `ItemCheck_Shoot`'s `canShoot` gate). The shot itself fires at
-            // `ItemTimeIsZero` (the fire block below).
+            // `ItemCheck_TryStartUse` → `ItemCheck_CheckCanUse_Inner` →
+            // `HasAmmo` (`Player.cs:52021-52023`, `:52316-52319`,
+            // `:53431-53446`): with NO matching ammo stack anywhere the use
+            // is REFUSED — no swing starts, no timer arms (S1-P-i15; the old
+            // "dry swing" was a divergence — the C#'s `canShoot = false`
+            // early-return only fires mid-swing when the last ammo drained).
+            if !crate::ammo::has_ammo(&app.inventory, &app.equip, held_use_ammo) {
+                return;
+            }
+            // The shooter's use start — the ammo exists (`HasAmmo` above);
+            // the shot itself fires at `ItemTimeIsZero` (the fire block
+            // below).
             app.swing_max = shooter_swing_secs(held.kind, held.prefix);
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
@@ -1694,7 +1702,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // ## The tick semantics
     //
     // The C# compares `itemAnimation`, `itemAnimationMax` and `useTime` as
-    // INTEGERS (`:4066`, `:53626`, `:53674`) while the port's timers are seconds
+    // INTEGERS (`:4066`, `:53635`, `:53663`) while the port's timers are seconds
     // decaying per frame (`:45`/`:72`), so the wire derives the three counts
     // once, rounded at 60 Hz, and reads every window off those — never a raw
     // float compare against "eight ticks". `item_time` is read the same way so
@@ -1723,7 +1731,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             .player
             .as_ref()
             .map_or(crate::ammo::AmmoCycling::default(), |p| p.ammo_cycling);
-        // `PickAmmo_IterateRange`'s Clentaminator override (`Player.cs:53708-53711`):
+        // `PickAmmo_IterateRange`'s Clentaminator override (`Player.cs:53706-53709`):
         // the two solution guns always take their FIRST matching stack,
         // whatever the mode and offset — forced here so `ammo::pick` stays
         // shooter-agnostic.
@@ -1785,7 +1793,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let proj_to_shoot = resolved.projectile;
         // `Player.cs:53569-53577`: the cycling update, inside `PickAmmo` AFTER
         // the resolution chain and BEFORE the roll chain — so a `Random` mode's
-        // `Main.rand.Next()` draw (`:53577`) precedes the roll arms' draws.
+        // `Main.rand.Next()` draw (`:53575`) precedes the roll arms' draws.
         // `!dontConsume` only: the four gunProj items never advance the cycler.
         let dont_consume = gun_proj.is_some();
         if !dont_consume && cycling.is_some() {
@@ -1795,7 +1803,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 p.ammo_cycling.cooldown = anim_max_ticks + 120;
                 p.ammo_cycling.offset += 1;
                 if p.ammo_cycling.mode == crate::ammo::AmmoCyclingMode::Random {
-                    // `ammoCyclingOffset = Main.rand.Next()` (`:53577`) — one
+                    // `ammoCyclingOffset = Main.rand.Next()` (`:53575`) — one
                     // unbounded draw from the same stream the roll arms below
                     // read (`Player.ItemCheck` → the `UpdatePlayers` swap,
                     // `Main.cs:17754`); `UnifiedRandom::next` is already
@@ -1819,13 +1827,21 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             proj_to_shoot,
             &crate::ammo::VolleyWindows {
                 just_started,
-                // `itemAnimation > sItem.useAnimation - 8` (`:53626`) — the
+                // `itemAnimation > sItem.useAnimation - 8` (`:53635`) — the
                 // Fairy Queen's first-eight-ticks window.
                 anim_gt_use_anim_minus_8: remaining_anim_ticks > anim_max_ticks - 8,
-                // `itemAnimation < itemAnimationMax - sItem.useTime` (`:53674`)
-                // — the spray/Clentaminator first-shot window.
+                // `itemAnimation < itemAnimationMax - sItem.useTime`
+                // (`:53663`, `:53667`) — the spray/Clentaminator first-shot
+                // window.
                 anim_lt_anim_max_minus_use_time: remaining_anim_ticks
                     < anim_max_ticks - use_time_ticks,
+                // `Main.remixWorld` (`:53659`) — the Snowball Cannon's remix
+                // save gate, read off the world's seed flags
+                // (`tr_core::seeds::SeedFlags::REMIX`, S1-P-i15).
+                remix_world: app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::REMIX),
             },
             &flags,
             dont_consume,
@@ -1834,12 +1850,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         ) {
             let mut equip = std::mem::take(&mut app.equip);
             let mut inv = app.inventory;
-            let drained = crate::ammo::drain(src, &mut inv, &mut equip);
+            // `Player.cs:53675-53682`: the drain mutates the picked slot when
+            // `item.consumable` — the gate lives inside `drain` — and the
+            // shot fires EITHER WAY: the Endless Quiver / Musket Pouch are
+            // picked and fired with no stack change. `drain`'s false return
+            // is informational, never a refusal (S1-P-i15).
+            crate::ammo::drain(src, &mut inv, &mut equip);
             app.inventory = inv;
             app.equip = equip;
-            if !drained {
-                return;
-            }
         }
         // The shot's stats. `Player.cs:53541-53568` fuses the ammo's own damage
         // (through the weapon's class multiplier) and shootSpeed onto the
@@ -1891,9 +1909,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 }
                 if resolved.projectile == 285 {
                     // `:53556-53559`: the Nanite-bullet arm scales the FUSED
-                    // damage, so the weapon's own part takes the same factor
-                    // (the resolver already applied it to its own half).
-                    damage *= 1.25;
+                    // damage — ONE site, after the add (S1-P-i15 / i03 census
+                    // A1: the resolver's old ammo-half scale doubled it to
+                    // ×1.5625; the resolver now returns the unscaled `num`).
+                    damage = (damage * 1.25) as i32 as f32;
                 }
                 // `KnockBack *= 1.1f` (`:53547`) runs BEFORE
                 // `KnockBack += item.knockBack` (`:53568`), so it scales the
@@ -4461,21 +4480,22 @@ mod tests {
     }
 
     #[test]
-    fn the_bow_without_ammo_plays_a_dry_swing() {
-        // `canShoot = false` (`Player.cs:53462-53466`): no ammo — the use
-        // plays out (the swing starts) but nothing spawns and nothing drains.
+    fn the_bow_without_ammo_refuses_the_use() {
+        // `ItemCheck_TryStartUse` → `HasAmmo` (`Player.cs:52021-52023`,
+        // `:52316-52319`, `:53431-53446`): no ammo anywhere → the use is
+        // refused, NO swing starts (S1-P-i15 fixed the old "dry swing"
+        // divergence — `canShoot = false` (`:53462-53466`) only declines a
+        // shot MID-swing, it never starts one).
         let mut app = shooter_app();
         let before = app.inventory[app.selected].count;
-        // The swing start runs through the mine_down pass; the cursor sits
-        // 80 px right of the screen centre (within the 6-tile reach).
+        // The cursor sits 80 px right of the screen centre (within the
+        // 6-tile reach) — the reach gate is not what refuses the use.
         let (sw, sh) = app.screen_size();
         app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
         let screen = Vec2::new(sw, sh);
         update_editing(&mut app, 1.0 / 60.0, screen);
-        // The swing started (the timers set).
-        assert!(app.swing > 0.0, "the swing plays");
-        assert_eq!(app.swing_style, 5, "the bow's useStyle is Shoot");
-        // The fire tick: no ammo — no shot, no drain.
+        assert_eq!(app.swing, 0.0, "no swing — HasAmmo refused the use");
+        // The later ticks keep refusing: nothing fires, nothing drains.
         for _ in 0..40 {
             update_editing(&mut app, 1.0 / 60.0, screen);
         }
@@ -4564,7 +4584,7 @@ mod tests {
     /// One frame of the shot wire at the exact 60 Hz step, recording
     /// `(remaining animation ticks, live shots)` AFTER the frame whenever a shot
     /// fired in it — the tick value the roll chain's windows read
-    /// (`Player.cs:4066`, `:53626`, `:53674`), which the DW-4.1 edge assertions
+    /// (`Player.cs:4066`, `:53635`, `:53663`), which the DW-4.1 edge assertions
     /// check instead of eyeballing.
     fn step(app: &mut App, screen: Vec2, log: &mut Vec<(i32, usize)>) {
         let before = shots(app);
@@ -4783,9 +4803,10 @@ mod tests {
 
     #[test]
     fn test_DW_4_2_the_gun_prog_four_stay_dry_without_ammo() {
-        // `Player.cs:53462-53466`'s gate survives the gunProj reset: the ammo
-        // is still REQUIRED — without it `canShoot` stays false and the swing
-        // plays dry (no shot, no drain, no panic).
+        // `HasAmmo` (`Player.cs:53431-53446`, `:52316-52319`) refuses the use
+        // start without ammo — the gunProj reset never runs (S1-P-i15: the
+        // old "the swing plays dry" wording pinned the pre-HasAmmo shape).
+        // No shot, no drain, no panic either way.
         for (kind, name) in [
             (3475u16, "Vortex Beater"),
             (3540, "Phantasm"),
@@ -4802,8 +4823,155 @@ mod tests {
     }
 
     #[test]
+    fn s1_p_i15_the_endless_quiver_fires_without_draining() {
+        // `Player.cs:53675`: `if (!flag && item.consumable)` — the Endless
+        // Quiver 3103 (`consumable: false`, `Item.cs:28700-28711`, `ammo:
+        // Arrow`) is picked and fired but its stack never moves. The wire's
+        // old `if !drained { return; }` refused the shot outright (S1-P-i15
+        // fixed it): the shot must SPAWN and the stack must stay 1.
+        let mut app = shooter_rig(435, "Cobalt Repeater", &[(0, 3103, 1)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 26, &mut log);
+        assert_eq!(log.len(), 1, "the Endless Quiver fired");
+        assert_eq!(shots(&app), 1, "the wooden arrow spawned (proj 1)");
+        assert_eq!(
+            app.equip.ammo[0].count, 1,
+            "`item.consumable` false — the stack never drains"
+        );
+        assert_eq!(app.equip.ammo[0].kind, 3103, "no TurnToAir");
+        // The Endless Musket Pouch 3104 (`ammo: Bullet`) is the gun twin —
+        // the Clockwork 434's FIRST shot always attempts the drain (its
+        // window arm saves only the later volley shots, `Player.cs:53631`),
+        // so the non-consumable gate is exercised deterministically.
+        let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 3104, 1)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 14, &mut log);
+        assert_eq!(log.len(), 3, "the whole 3-shot volley fired");
+        assert_eq!(app.equip.ammo[0].count, 1, "the pouch never drains");
+    }
+
+    #[test]
+    fn s1_p_i15_has_ammo_refuses_the_use_start_without_a_stack() {
+        // `Player.HasAmmo` (`Player.cs:53431-53446`) inside
+        // `ItemCheck_CheckCanUse_Inner` (`:52316-52319`): no matching stack
+        // anywhere → the use is refused, no swing arms. A grid-only wrong
+        // ammo kind (bullets for a bow) is the same refusal as an empty
+        // inventory — the scan is over ALL three arrays.
+        let mut app = shooter_rig(435, "Cobalt Repeater", &[(20, 97, 99)]);
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let screen = app.screen_size().into();
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        assert_eq!(app.swing, 0.0, "the wrong ammo kind refuses the use");
+        let mut log = Vec::new();
+        hold(&mut app, screen, 30, &mut log);
+        assert!(log.is_empty(), "nothing fired");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "no draw spent on a refused use"
+        );
+        // Add a matching arrow stack: the SAME rig now starts and fires.
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 5,
+            prefix: 0,
+        };
+        repress(&mut app);
+        let mut log = Vec::new();
+        hold(&mut app, screen, 26, &mut log);
+        assert_eq!(log.len(), 1, "with ammo the use starts and fires");
+    }
+
+    #[test]
+    fn s1_p_i15_the_nanite_bullet_scales_the_fused_damage_once() {
+        // `Player.cs:53552-53559`: `Damage += (int)(num * mult)` THEN
+        // `Damage = (int)(Damage * 1.25f)` — ONE scale on the FUSED value.
+        // The old port scaled the ammo half in the resolver AND the fused
+        // value at the wire (×1.5625 on the ammo half — i03 census A1).
+        // Proj 285 has no `proj_data` row yet (M4-PROJ), so the spawn
+        // declines and the fused damage is read off the resolver + the
+        // wire's formula directly: the Musket 31 + the Nano Bullet 10 = 41,
+        // `(int)(41 * 1.25)` = 51 — NOT 31 + 12 = 43 (the double-scale).
+        let mut app = shooter_rig(96, "Musket", &[(0, 1350, 9)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        // The Musket is not autoReuse: one idle frame arms the press edge.
+        app.mine_down = false;
+        hold(&mut app, screen, 1, &mut log);
+        app.mine_down = true;
+        hold(&mut app, screen, 34, &mut log);
+        assert_eq!(app.equip.ammo[0].count, 8, "the Nano Bullet drained");
+        let resolved = crate::ammo::resolve_projectile(
+            96,
+            1350,
+            97,
+            10,
+            4.6,
+            3.6,
+            10,
+            9.0,
+            96,
+            &crate::ammo::AmmoFlags::default(),
+        )
+        .expect("the pair resolves");
+        assert_eq!(resolved.projectile, 285);
+        assert_eq!(resolved.damage, 10, "the resolver returns the unscaled num");
+        let fused = 31 + resolved.damage;
+        assert_eq!((fused as f32 * 1.25) as i32, 51, "one fused ×1.25");
+    }
+
+    #[test]
+    fn s1_p_i15_the_remix_snowball_cannon_saves_half_its_ammo() {
+        // `Player.cs:53659-53661`: on a REMIX world the Snowball Cannon 1319
+        // saves 1/2 its snowballs; on a plain world it drains every shot. The
+        // gate is `World.seeds` (`SeedFlags::REMIX`), threaded through
+        // `VolleyWindows::remix_world`. Both rigs share one seed, so the
+        // remix run's drain count must equal the mirrored `Next(2) == 0`
+        // stream's non-saves — the gate's observable, seed-robust.
+        let run = |remix: bool| {
+            let mut app = shooter_rig(1319, "Snowball Cannon", &[(0, 949, 999)]);
+            if remix {
+                app.world.seeds |= tr_core::seeds::SeedFlags::REMIX;
+            }
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+                tr_core::UnifiedRandom::new(0x5190_0519);
+            let screen = app.screen_size().into();
+            let mut log = Vec::new();
+            for _ in 0..60 {
+                hold(&mut app, screen, 21, &mut log);
+                repress(&mut app);
+            }
+            assert_eq!(log.len(), 60, "60 swings fired (remix {remix})");
+            999 - app.equip.ammo[0].count
+        };
+        let plain = run(false);
+        let remix = run(true);
+        assert_eq!(plain, 60, "a plain world drains every snowball");
+        // The mirror: per shot the remix arm's `Next(2)` (save on 0) then the
+        // wire's crit draw `next_range(1, 101)` (`crit_roll`, the shot fires
+        // whether or not the ammo drained) — the chain's exact draw sequence
+        // for this shooter (its only roll arm).
+        let mut mirror = tr_core::UnifiedRandom::new(0x5190_0519);
+        let drains = (0..60)
+            .filter(|_| {
+                let saved = mirror.next_max(2) == 0;
+                let _crit = mirror.next_range(1, 101);
+                !saved
+            })
+            .count();
+        assert_eq!(
+            remix as usize, drains,
+            "the remix drain count is the mirrored Next(2) stream's"
+        );
+        assert!(remix < 60, "the remix arm saved at least once");
+    }
+
+    #[test]
     fn test_DW_4_3_the_ammo_slots_mode_picks_alternately_behind_the_offset() {
-        // `Player.cs:53685-53726` + `:53569-53577`: with a cycling mode granted
+        // `Player.cs:53685-53725` + `:53569-53577`: with a cycling mode granted
         // the pick rotates behind the offset, and every successful pick without
         // `dontConsume` advances it. Two arrow stacks in the ammo slots: the
         // picks alternate 0/1/0/1 as the offset grows and wraps modulo the
@@ -4884,7 +5052,7 @@ mod tests {
 
     #[test]
     fn test_DW_4_3_the_clentaminator_always_picks_the_first_stack() {
-        // `PickAmmo_IterateRange`'s Clentaminator override (`Player.cs:53708-53711`):
+        // `PickAmmo_IterateRange`'s Clentaminator override (`Player.cs:53706-53709`):
         // 779/5134 force `num = 0` regardless of the mode and the offset, so
         // their sprays always come out of the first matching stack. The offset
         // here is armed to a value that WOULD rotate a normal weapon to the
@@ -4977,7 +5145,7 @@ mod tests {
     #[test]
     fn test_DW_4_3_a_random_cycling_pick_spends_one_extra_draw() {
         // The determinism invariant, pinned on the stream: the `Random` mode's
-        // `ammoCyclingOffset = Main.rand.Next()` (`Player.cs:53577`) is ONE extra
+        // `ammoCyclingOffset = Main.rand.Next()` (`Player.cs:53575`) is ONE extra
         // draw on the `UpdatePlayers` stream, spent BEFORE the shot's own crit
         // roll (the C# updates the cycler inside `PickAmmo`, the roll arms after
         // it). The Cobalt Repeater carries no roll arm of its own and the ammo
@@ -5043,18 +5211,18 @@ mod tests {
 
     #[test]
     fn test_dirty_a_volley_swing_without_ammo_stays_dry_and_spends_nothing() {
-        // A volley shooter with no ammo: `PickAmmo` finds nothing on every tick
-        // of the swing, `ItemCheck_Shoot` returns before `ApplyItemTime`
-        // (`Player.cs:47147`), so `itemTime` stays zero and the gate re-runs
-        // each frame — and NOTHING is drawn: no resolve, no roll, no crit, no
-        // drain. The RNG stream's immobility is the assertion (the determinism
-        // invariant).
+        // A volley shooter with no ammo: `HasAmmo` (`Player.cs:53431-53446`,
+        // called `:52316-52319` inside `ItemCheck_CheckCanUse_Inner`) refuses
+        // the use START — no swing, no pick, no resolve, no roll, no crit, no
+        // drain (S1-P-i15: the old "the swing still played out" pinned a
+        // divergence). The RNG stream's immobility is the assertion (the
+        // determinism invariant).
         let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[]);
         let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         update_editing(&mut app, ONE_TICK_SECS, screen);
-        assert!(app.swing > 0.0, "the swing still played out");
+        assert_eq!(app.swing, 0.0, "the use is refused — no swing starts");
         hold(&mut app, screen, 30, &mut log);
         assert!(log.is_empty(), "nothing fired");
         assert_eq!(shots(&app), 0);
