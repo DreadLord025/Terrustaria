@@ -29699,3 +29699,108 @@ hook chain nesting, the flag3 switch membership, the HandleMovement stick
 arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
 Update countdown position). The 10 witness tests in
 `projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.
+## The projectile sound wave (S1-E-21h, 2026-11-19)
+
+**Code-only mode**: this wave was implemented without invoking any compiler —
+no cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The `s1_e_21h_*` witness tests are WRITTEN, NOT RUN; the branch
+`task/S1-E-21h-proj-sounds` is pushed unmerged for a verification pass.
+
+### Census (437 `PlaySound` sites in `Projectile.cs`)
+
+The projectile-owned scope after the landed waves (item-use A, tile-place B,
+NPC-hit playback C, footsteps D, fighter ambience E, world-sounds i) and the
+sibling scopes (player E21f, NPC E21g, world E21i). The 437 sites split into:
+the per-kind first-tick latch chains (`AI_001` `:55209-55365`, the inline
+aiStyle arms 8/27/28/50), the `soundDelay` cooldown families (the boomerang
+whoosh `AI_003` `:38868-38891`, the Magic Missile hum `AI_009`
+`:43361-43367`, the Light's Bane slash `AI_188` `:42231-42239`), the
+`Kill()`/`Kill_Bombs_DoUsualKillCode` explosion tail (`:70642-78533`, ~200
+sites), the fishing-bobber splash family (legacy id 19), the trackable
+`Sounds/Custom/` families (case 42) and the zombie-voice legacy ids (14/26/
+29/66 — the E21e ambience table's projectile callers).
+
+**This wave ports 24 sites** — every site whose ported Rust arm exists and
+whose cue is a plain `SoundID.ItemN` legacy id-2 style play:
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:24238`/`:24243` (aiStyle 8, kinds 258/96) | Item20 | `ai_ball_of_fire`'s `localAI[0]` latch |
+| `:26534`/`:26538` (aiStyle 27 shared latch) | Item60 (132) / Item8 | `ai_unholy_trident` |
+| `:26661`/`:26673` (aiStyle 28 latch) | Item60 (967) / Item28 | `ai_frost_bolt` |
+| `:28363` (aiStyle 50 latch) | Item74 | `ai_inferno_fork` |
+| `:28421` (aiStyle 51, hostile 293) | Item8 | `ai_spectre_shot` |
+| `:38889` (`AI_003` whoosh, delay 8 × (extraUpdates+1)) | Item7 | `ai_boomerang` head |
+| `:43366` (`AI_009`, kind 16, delay 10, speed-sum > 2 gate) | Item9 | `ai_magic_missile` tail |
+| `:42234` (`AI_188`, delay −1, at Center) | Item60 | `ai_lights_bane` head |
+| `:55348`/`:55232`/`:55314`/`:55309`/`:55353`/`:55324`/`:55358`/`:55242`/`:55299`/`:54155`/`:55257` (`AI_001` slice-A latches, kinds 81/83/98/100/180/184/248/259/389/436/438) | Item5/33/17/33/11/17/17/33/12/12/12 | `projectile_ai001_a::latch_ai1` |
+| `:78331`/`:78386` (`Kill_Bombs_DoUsualKillCode`, kinds 28/37/516/519 + 29) | Item14 | `ai_bomb`'s detonation latch |
+
+### The stream argument (why the drain is safe)
+
+`Main.UpdateProjectiles` runs under the `Main.rand` swap
+(`Main.cs:17775-17777`): every `PlaySound` inside the projectile walk —
+the AI arms AND the `Kill()` tail — draws its case-2 pitch from the
+`UpdateProjectiles` stream. The port queues each play as a
+`(id, style, x, y, pitchOffset)` intent (`Projectile.wants_sound`, the
+`wants_mark_spawn` pattern; the pool forwards it into
+`pending_proj_sounds` right after the dispatch) and drains at the pass
+tail in `world_sim/projectiles.rs` — AFTER the wave-C NPC-hit drain, on
+the same named stream. `Audio::play_proj_sound` gates attenuation BEFORE
+any draw (`LegacySoundPlayer.cs:369-436` precedes the case switch), the
+E21e precedent; the `GetRandomPitch` NextFloat rides the audio-only
+`sound_style_random`. The C# plays mid-walk; the port's batch drain moves
+the draw to the pass tail — the same recorded deviation as wave C's
+strike plays (relative order among the tick's sound draws is preserved;
+the interleaving with gameplay draws is not). The witness tests pin the
+contract: muted/out-of-range plays draw NOTHING, an audible play draws
+exactly one `Next(-6, 7)` on `UpdateProjectiles`, every other stage
+stream stays pristine.
+
+### Deviations (deliberate, recorded)
+
+- **The Light's Bane post-gate volume scale** (`:42237`,
+  `Volume *= 0.15f * ai[0]` on the returned instance) is DEFERRED — the
+  queue→drain batch plays at the style's own volume. The cue, position
+  (Center) and −1 latch are ported.
+- **The bomb cue fires at the detonation latch** (`timeLeft <= 3`), not
+  inside `explode_bomb`: the position is the PRE-`PrepareBombToBlow`
+  `base.position` the C# reads (`:78331` precedes the `Resize`), and the
+  fuse-instance Stop (`:70675`) has no pool (the standing D4 deviation).
+  Gated to the five kinds `explode_bomb` accepts.
+- **The 301 Stacked Discs' −0.33-pitch whoosh arm** (`:38879`) has no
+  ported row — deferred; the generic 8-tick arm covers the ported
+  boomerangs. The Phaseblade family and 383 exclusions (`:38868`) name
+  unported kinds — the port's gate is unconditional over its own rows.
+- **The slice-A latch order**: the C# plays before the `ai[1]` latch on
+  81/180/248 and after it on the rest; the queue payload is identical
+  either way (the drain runs at the pass tail), so one helper keeps the
+  pair. The Flaming Wood 325's `SoundID.Item42` trackable (`:55194`) is
+  DEFERRED (the D3 trackable pool) — its latch rides cue-less.
+- **Deferred families** (no ported arm or a non-id-2 façade): the
+  aiStyle-1 slice-B latches (`projectile_ai001_b` — the 462 arm's
+  `Next(2)` cue pick + dust draws need the arm's RNG threading), the
+  fishing-bobber splash family (legacy 19), the gem-staff first-tick +
+  bounce cues (`:37864`/`:18050`), the DD2/Betsy trackables, the
+  zombie-voice legacy ids (the E21e table's projectile callers), the
+  `Kill()` tail's non-bomb arms (the rocket/grenade/boulder families —
+  `explode_bomb` ports the bomb family only), the `AI_016_Bombs`
+  sticky-grenade fuse loop (`:47131`, kind 102 unported) and the
+  `AI_189_Volcano` DD2 trackable (`:42269`).
+- **`soundDelay` is a new slot field** (`Projectile.cs:348`, reset 0
+  `:749`): the per-update decrement (`:16768-16771`, positive-only) runs
+  ahead of the AI sub-steps; the −1 latch stays down. No existing arm
+  read the field, so the addition is behaviour-neutral for every
+  pre-existing kind.
+
+Bank: `Item_14`/`Item_17`/`Item_33`/`Item_74` join `SFX_CUES` (all four
+`.xnb` assets verified on disk); every other style the wave names was
+already registered by wave A.
+
+**Verification.** Code-only: every edited arm was re-read against its C#
+block (the latch flags, the cooldown re-arms, the position reads —
+`base.position` vs `base.Center`), the queue/drain seam was checked
+against the `wants_mark_spawn` precedent and the wave-C drain order, and
+the four new bank assets were confirmed on disk. The 7 new `s1_e_21h_*`
+witness tests (5 pool/arm, 1 audio façade, 1 pass-stream) are WRITTEN,
+NOT RUN — **no compiler invoked**.

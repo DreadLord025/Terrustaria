@@ -218,6 +218,14 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_11", 2),
     ("Item_12", 2),
     ("Item_13", 2),
+    // S1-E-21h — the projectile-wave bank gaps: the bomb blast's Item14
+    // (`Projectile.cs:78331`/:78386), the dart/petal latch's Item17
+    // (`:55314`/:55324`/:55358`), the laser latch's Item33 (`:55232`/
+    // `:55242`/:55309`) and the Inferno Fork's Item74 (`:28363`).
+    ("Item_14", 2),
+    ("Item_17", 2),
+    ("Item_33", 2),
+    ("Item_74", 2),
     ("Item_15", 2),
     ("Item_16", 2),
     ("Item_18", 2),
@@ -1817,6 +1825,40 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
         Some("Drown")
+    }
+
+    /// S1-E-21h — one projectile-family cue play: the AI arms' first-tick
+    /// latches (`AI_001`'s `:55209-55365` chain, the aiStyle-8/27/28/50
+    /// gates), the boomerang whoosh (`AI_003` `:38868-38891`), the Magic
+    /// Missile hum (`AI_009` `:43361-43367`), the Light's Bane slash
+    /// (`AI_188` `:42231-42239`) and the bomb blast
+    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). Every ported site is
+    /// a `SoundID.ItemN` style play — the same façade as wave A
+    /// (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on the
+    /// audio-only `sound_style_random`, then the attenuation gate
+    /// `LegacySoundPlayer.cs:369-436`, then case 2's `Main.rand` pitch
+    /// roll). The gameplay draw rides the caller's stream — the pool pass
+    /// drains the queue under the `Main.cs:17775` `UpdateProjectiles`
+    /// swap. `pitch_offset` is the C# call's third argument (the ported
+    /// sites all pass none; the 301 Stacked Discs' −0.33 arm is deferred).
+    /// Returns the cue played; `None` when the gate refused or the style
+    /// is not a legacy id-2 row (the trackable families ride their own
+    /// façades — deferred, ANALYSIS S1-E-21h).
+    pub fn play_proj_sound(
+        &mut self,
+        (id, style): (u16, i32),
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if id != 2 {
+            return None;
+        }
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.sound_id == 2 && s.style == style)?;
+        self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -3524,6 +3566,59 @@ mod tests {
             Some("dd2_goblin_hurt_0")
         );
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+    }
+
+    /// S1-E-21h — the projectile cue play's RNG contract: every ported
+    /// site is a legacy id-2 style play, so the case-2 default pitch arm
+    /// (`LegacySoundPlayer.cs:632`, one `Next(-6, 7)`) rides the caller's
+    /// stream ONLY after the attenuation gate passed — the E21e/E21c
+    /// attenuation-BEFORE-draws precedent, on the `UpdateProjectiles`
+    /// stream the pool drain passes.
+    #[test]
+    fn s1_e_21h_the_proj_sound_draws_ride_the_passed_stream_only_when_audible() {
+        use tr_core::unified_random::UnifiedRandom;
+        // An audible bomb-blast play draws exactly one Next(-6, 7).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-6, 7);
+        let cue = audio.play_proj_sound((2, 14), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_14"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!((-0.06..=0.06).contains(&(roll as f32 * 0.01)));
+        // Muted (soundVolume 0): the gate refuses before the switch —
+        // no gameplay draw (`:369-372` precedes `:516`).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((2, 7), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play is draw-free");
+        // Out of attenuation range: also draw-free (`:390-397`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((2, 60), 5000.0, 0.0, 0.0, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
+        // The wave's whole style set resolves through the generated rows
+        // to registered cues (the bank gaps closed: 14/17/33/74).
+        for style in [5, 7, 8, 9, 11, 12, 14, 17, 20, 28, 33, 60, 74] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+        // A non-id-2 family (the deferred trackables) refuses draw-free.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract
