@@ -2619,13 +2619,15 @@ impl NpcKind {
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
             NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
-            // The Destroyer family + the Probe keep their vanilla type ids
-            // (the bestiary fold would read 134 for all four — the caps
-            // and the ambient gates speak `NPC.type`).
+            // The Destroyer head keeps its vanilla type; the body/tail/Probe
+            // have NO hand row — like every folded segment family (Devourer/
+            // GiantWorm/EoW/Golem parts) they fall through to the bestiary
+            // net id (the head's 134, `BestiaryDatabaseNPCsPopulator.cs:688-
+            // 690`). GATE FIX (L-B): the branch's explicit 135/136/139 rows
+            // broke s1_f_3's cs_id==net_id invariant; the machine reads its
+            // own `family_npc_type` (134/135/136) and `render_key` keeps the
+            // real types — neither rides cs_id.
             NpcKind::TheDestroyer => 134,
-            NpcKind::TheDestroyerBody => 135,
-            NpcKind::TheDestroyerTail => 136,
-            NpcKind::Probe => 139,
             NpcKind::UndeadMiner => 44, // `NPCID.UndeadMiner` (the net id's correction, S1-F-3)
             NpcKind::CaveBat => 49,
             NpcKind::JungleBat => 51,
