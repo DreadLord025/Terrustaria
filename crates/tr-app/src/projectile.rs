@@ -9920,6 +9920,157 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-10 arm (`Projectile.cs:24367-24370`) -> `AI_010`
+    /// (`:57826-58100`) for the dungeon-debris trio 736/737/738 — the shards
+    /// a broken cracked dungeon brick drops (`WorldGen.cs:63839-63850`, the
+    /// spawner is its own task). The other aiStyle-10 kinds stay unported
+    /// here: the sand family rides the pool's falling-tile tail and the
+    /// 109/411-414/1081 arms have no rows (the dispatch gates this arm on
+    /// [`DUNGEON_DEBRIS`]).
+    ///
+    /// The stock `friendly`/`hostile` are both false (`SetDefaults`
+    /// `:788`/`:764` — the `:7748-7755` arm touches neither), so the C#
+    /// debris damages nothing (`Damage_PVE_Inner`'s `!friendly` refusal
+    /// `:12611`, `Damage_EVP`'s `!hostile` refusal `:14775`); the pool's
+    /// slot default is `friendly = true`, so the arm holds the C# state
+    /// explicitly (the `ai_spectre_wrath` precedent) and the dispatch gates
+    /// both damage passes on the trio.
+    ///
+    /// The dust trail (`:57927-57937`) is SKIPPED — no dust layer — but its
+    /// `Next(40)` gate roll stays on the stream (the leaf-blower precedent:
+    /// the gate rolls are state-bearing for the stream census). The
+    /// `netUpdate` writes (`:57994`) are skipped (no MP layer).
+    fn ai_dungeon_debris(
+        &mut self,
+        world: &mut World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        // The stock friendly = false (`:788`), held for the slot's whole
+        // life — the damage passes refuse the trio either way.
+        self.friendly = false;
+        // `:57927-57937` — the 1-in-40 dust gate: the roll stays, the
+        // `Dust.NewDust` (type - 736 + 275) and its velocity blend are
+        // SKIPPED with their internal draws (the dust-skip convention).
+        if rng.next_range(0, 40) == 0 {
+            // The dust spawn and its 0.5/0.5 velocity blend — SKIPPED.
+        }
+        // `:57942-57950` — the first tick: the frame roll picks the sheet
+        // row, the scale roll shrinks it 0-29%, and `localAI[0]` advances
+        // unconditionally (the one-shot latch).
+        if self.local_ai[0] == 0.0 {
+            self.frame = rng.next_range(0, 3);
+            self.scale = 1.0 - rng.next_range(0, 30) as f32 * 0.01;
+        }
+        self.local_ai[0] += 1.0;
+        // `:57951-57952` — the per-tick reset.
+        self.tile_collide = true;
+        self.local_ai[1] = 0.0;
+        // `:57953-57996` — the owner's first tick: tileCollide drops for the
+        // tick (the tile walk below skips it), and the channel branch
+        // (`:57956`) excludes the trio (`type < 736 || type > 738`), so the
+        // else arm always runs: `ai[0] = 1` (the `netUpdate` is skipped).
+        if self.owner == local_owner && self.ai[0] == 0.0 {
+            self.tile_collide = false;
+            self.ai[0] = 1.0;
+        }
+        // `:58006-58021` — the fall: `ai[0] == 1` adds 0.41/tick (the trio
+        // is not in the 42/65/68/354 sand special `:58008`).
+        if self.ai[0] == 1.0 {
+            self.vel.y += 0.41;
+        } else if self.ai[0] == 2.0 {
+            // `:58022-58037` — the settle mode: 0.2/tick gravity and the X
+            // damp toward 0 in 0.04 steps. No ported spawner arms it (the
+            // C# debris never leaves mode 1); ported for the shape.
+            self.vel.y += 0.2;
+            if self.vel.x < -0.04 {
+                self.vel.x += 0.04;
+            } else if self.vel.x > 0.04 {
+                self.vel.x -= 0.04;
+            } else {
+                self.vel.x = 0.0;
+            }
+        }
+        // `:58038-58072` — the owner's tile walk over the box's tiles: the
+        // breakables die, a top slope flattens and lifts the shard 16 px.
+        if self.owner == local_owner && self.tile_collide {
+            let x0 = (self.pos.x / 16.0) as i32;
+            let x1 = ((self.pos.x + self.w) / 16.0) as i32;
+            let y0 = (self.pos.y / 16.0) as i32;
+            let y1 = ((self.pos.y + self.h) / 16.0) as i32;
+            for tx in x0..=x1 {
+                for ty in y0..=y1 {
+                    // `WorldGen.InWorld(i, j)` (`WorldGen.cs:9688`, fluff 0)
+                    // + the null/active guard (`:58044-58052`).
+                    if !world.in_bounds(tx, ty) {
+                        continue;
+                    }
+                    let Some(tile) = world.tile(tx, ty) else {
+                        continue;
+                    };
+                    if !tile.active() {
+                        continue;
+                    }
+                    // `:58053-58060` — the breakable set: the small/large
+                    // piles 185-187, the stalactite 165, the heart 12, the
+                    // life-crystal boulder 665, the mana crystal 639, the
+                    // statues 105, the exposed gems 178 (`TileID.cs:653`/
+                    // `:839`/`:959`/`:985`/`:999-1003`/`:1907`/`:1959`).
+                    let kind = tile.kind;
+                    if (185..=187).contains(&kind)
+                        || kind == 165
+                        || kind == 12
+                        || kind == 665
+                        || kind == 639
+                        || kind == 105
+                        || kind == 178
+                    {
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                    } else if tile.top_slope()
+                        && !tr_core::tiledata::SET_PLATFORMS.has(kind)
+                    {
+                        // `:58061-58068` — `WorldGen.SlopeTile(i, j)`
+                        // (`WorldGen.cs:80768-80803`): clear the half brick
+                        // and the slope (the `slope_tile_flatten` shape,
+                        // `tileobject.rs:1264`), then lift the shard one
+                        // tile. The `CanPoundTile` gate (`:80770`) and the
+                        // fail-dust/sound/net tails are unported — the
+                        // flatten is unconditional (ANALYSIS).
+                        if let Some(t) = world.tile_mut(tx, ty) {
+                            t.flags &= !tr_core::tile::FLAG_HALF_BRICK;
+                            t.set_slope(0);
+                        }
+                        self.pos.y -= 16.0;
+                    }
+                }
+            }
+        }
+        // `:58073-58091` — the per-frame spin and the 10 px/tick fall cap.
+        if self.frame == 0 {
+            self.rot -= 0.1;
+        } else if self.frame == 1 {
+            self.rot += 0.1;
+        } else {
+            self.rot += 0.15;
+        }
+        if self.vel.y > 10.0 {
+            self.vel.y = 10.0;
+        }
+        // `HandleMovement`'s aiStyle-10 arm (`:17592-17597`): the trio takes
+        // the plain `TileCollision(pos, vel, w, h, flag6, flag6)` with
+        // `flag6 = true` (the default `:17478`; the trio is NOT in
+        // `FallingBlockDoesNotFallThroughPlatforms`, `ProjectileID.cs:433`),
+        // so platforms block it too. A blocked move falls through the whole
+        // per-type chain to the default `position += velocity; Kill()`
+        // (`:19849-19853`) — the `kill_step` stand-in (the ai_sharp_tears
+        // precedent). The blocked-move chain's tile-cut prologue
+        // (`:17910-17948`) would roll `Next(3)` for a `CanCutTiles()`-true
+        // shot, but the trio is `friendly = false`/`hostile = false`, so the
+        // gate is false and the whole chain (roll included) is skipped —
+        // the dd2_sentry_step precedent.
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-2 block (`Projectile.cs:23366-23410`) — the Flying
     /// Dutchman's cannon shell (240): the `SoundID.Item14` one-shot latch,
     /// the 16-tick gravity delay (`+0.18f` / `×0.991f`) and the alpha-0
