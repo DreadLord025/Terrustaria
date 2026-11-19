@@ -460,12 +460,14 @@ pub fn lane_spawn_roll_d1(
             } else {
                 None
             };
-            // `:1077-1098`: the Dark Mage's `if` is its own statement — the
-            // chain after it re-assigns `num4` whenever it fires, so the boss
-            // only survives when the chain picks nothing.
+            // `:1078-1093`: the Dark Mage's `if` is its own statement and
+            // its `NewNPC` RUNS; the chain after it re-assigns `num4` (the
+            // net-sync handle) but spawns its body TOO — both NPCs spawn.
+            // B-6d: the old `chain.or(boss)` dropped the mage whenever the
+            // chain fired.
             LaneSpawn {
-                first: chain.or(boss),
-                second: None,
+                first: boss,
+                second: chain,
             }
         }
         _ => LaneSpawn::one(552),

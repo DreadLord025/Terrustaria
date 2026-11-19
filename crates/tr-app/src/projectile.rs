@@ -587,9 +587,12 @@ pub struct Projectile {
     /// (or the parent's) bonus tag damage, the minion prefixes' row.
     pub bonus_tag_damage: i32,
     /// `AI_103`'s mark spawn (`Projectile.cs:33467-33475`'s
-    /// `NPC.NewNPC(..., localAI[0])`): the (kind, x, y, localai0, localai1) the
-    /// world_sim's projectile pass resolves into the NPC vec.
-    pub wants_mark_spawn: Option<(u16, f32, f32, f32, f32)>,
+    /// `NPC.NewNPC(..., localAI[0])`) and `AI_108`'s 579 pair
+    /// (`:33850-33855`'s `for num815 < 2`): the (kind, x, y, vx, vy)
+    /// requests the world_sim's projectile pass resolves into the NPC
+    /// vec. B-6d: a Vec, not an Option — the 579 spawns TWO VortexAliens
+    /// and the single Option overwrote the first.
+    pub wants_mark_spawn: Vec<(u16, f32, f32, f32, f32)>,
     /// The 578's 580 spawn (`Projectile.cs:33838-33841`): the (x, y,
     /// vx, vy, ai0) payload the world_sim resolves into the pool.
     pub wants_ritual_bolt: Option<(f32, f32, f32, f32, f32)>,
@@ -681,7 +684,7 @@ impl Default for Projectile {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
-            wants_mark_spawn: None,
+            wants_mark_spawn: Vec::new(),
             wants_ritual_bolt: None,
             minion: false,
             sentry: false,
@@ -3190,13 +3193,26 @@ impl Projectile {
                 self.wants_ritual_bolt = Some((self.pos.x - vx, self.pos.y - vy, vx, vy, self.ai[1]));
             } else {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
-                // with `-UnitY.RotatedByRandom(2*PI) * rand(4, 9) - UnitY*2`.
+                // with `-UnitY.RotatedByRandom(2*PI) * rand.Next(4, 9) - UnitY*2`.
+                // B-6d: BOTH spawn (`for num815 < 2`) — the single-Option
+                // seam overwrote the first alien.
+                self.ai[1] = 1.0; // `:33848`'s burst latch
                 for _ in 0..2 {
-                    let ang = rng.next_float() * std::f32::consts::PI * 2.0;
-                    let mag = 4.0 + rng.next_float() * 5.0;
-                    let (vx, vy) = (-ang.sin() * mag, -ang.cos() * mag - 2.0);
-                    self.wants_mark_spawn =
-                        Some((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
+                    // `RotatedByRandom` (`Utils.cs:1697-1700`) is TWO
+                    // NextDouble draws: `NextDouble()*max - NextDouble()*max`
+                    // (the ai067_b convention maps NextDouble onto the
+                    // shared stream's next_float). `RotatedBy`
+                    // (`Utils.cs:1675-1684`) on UnitY (0,1) gives
+                    // (-sin a, cos a); the leading minus flips both.
+                    let max = 6.2831854820251465f64;
+                    let a = rng.next_float() as f64 * max - rng.next_float() as f64 * max;
+                    let (s, c) = (a.sin() as f32, a.cos() as f32);
+                    // B-6d: the magnitude is the INTEGER `Next(4, 9)`
+                    // (4..=8), not a continuous 4..9 float draw.
+                    let mag = rng.next_range(4, 9) as f32;
+                    let (vx, vy) = (s * mag, -c * mag - 2.0);
+                    self.wants_mark_spawn
+                        .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
             }
         }
@@ -3274,8 +3290,8 @@ impl Projectile {
                 // `:33467-33475`'s spawn.
                 if self.local_ai[1] == 0.0 && self.local_ai[0] > 0.0 {
                     self.local_ai[1] = 1.0;
-                    self.wants_mark_spawn =
-                        Some((self.local_ai[0] as u16, self.pos.x, self.pos.y, 0.0, 0.0));
+                    self.wants_mark_spawn
+                        .push((self.local_ai[0] as u16, self.pos.x, self.pos.y, 0.0, 0.0));
                 }
             }
         }
@@ -12618,9 +12634,7 @@ impl ProjectilePool {
     pub fn drain_mark_spawns(&mut self) -> Vec<(u16, f32, f32, f32, f32)> {
         let mut out = Vec::new();
         for p in self.slots.iter_mut() {
-            if let Some(req) = p.wants_mark_spawn.take() {
-                out.push(req);
-            }
+            out.append(&mut p.wants_mark_spawn);
         }
         out
     }
@@ -13501,22 +13515,55 @@ impl ProjectilePool {
                         }
                         122 => {
                             // `:34927-34929`'s homing run, then the contact's
-                            // shield spend (`NPC.cs:72944-72955`).
-                            let (hit, dmg) = {
-                                let slot = &mut self.slots[i];
-                                (slot.ai_tower_damage_bolt(&npcs[..]), slot.damage)
-                            };
+                            // shield spend — `Projectile.Kill()`'s type-629
+                            // block (`Projectile.cs:72944-72979`), read whole.
+                            let hit = self.slots[i].ai_tower_damage_bolt(&npcs[..]);
                             if hit {
                                 self.slots[i].active = false;
-                                let tower = self.slots[i].ai[0] as usize;
-                                let shield = match tower {
-                                    0 => &mut world.tower_shield_solar,
-                                    1 => &mut world.tower_shield_vortex,
-                                    2 => &mut world.tower_shield_nebula,
-                                    _ => &mut world.tower_shield_stardust,
+                                // B-6d: `ai[0]` is the HOST NPC INDEX, not a
+                                // tower ordinal (`:72946` switches on
+                                // `Main.npc[(int)ai[0]].type`) — and the spend
+                                // is −1 per bolt (`:72953`), NOT the bolt's
+                                // damage (the 629 spawns with damage 0,
+                                // `NPC.cs:79290`).
+                                let host_idx = self.slots[i].ai[0] as usize;
+                                let host_kind = npcs.get(host_idx).map(|h| h.kind);
+                                // `:72953`'s clamp max is `ShieldStrengthTowerMax`
+                                // (`NPC.cs:6795-6806`, the port's
+                                // `tower_shield_max`) — read before the mutable
+                                // shield borrow below.
+                                let max = crate::world_sim::npcs::tower_shield_max(world);
+                                let shield = match host_kind {
+                                    Some(NpcKind::SolarTower) => {
+                                        Some(&mut world.tower_shield_solar)
+                                    }
+                                    Some(NpcKind::VortexTower) => {
+                                        Some(&mut world.tower_shield_vortex)
+                                    }
+                                    Some(NpcKind::NebulaTower) => {
+                                        Some(&mut world.tower_shield_nebula)
+                                    }
+                                    Some(NpcKind::StardustTower) => {
+                                        Some(&mut world.tower_shield_stardust)
+                                    }
+                                    // `:72946-72976`'s switch has no default:
+                                    // a non-tower host spends nothing.
+                                    _ => None,
                                 };
-                                // The clamp `:72946-72948`'s shape.
-                                *shield = (*shield - dmg).max(0);
+                                if let Some(shield) = shield {
+                                    // `:72949-72951`: the shield-flash trigger
+                                    // `ai[3] = 1f` fires only while the shield
+                                    // still stands.
+                                    if *shield != 0 {
+                                        if let Some(h) = npcs.get_mut(host_idx) {
+                                            h.ai[3] = 1.0;
+                                        }
+                                    }
+                                    // `:72953`'s `Clamp(strength - 1, 0, Max)`.
+                                    *shield = (*shield - 1).clamp(0, max);
+                                }
+                                // `:72977-72978`'s netUpdate + SendData(101)
+                                // are unmodelled (single-player port).
                             }
                         }
                         88 => {
@@ -20582,7 +20629,7 @@ mod phasmal_projectile_tests {
             original_damage: 0,
             net_important: false,
             ignore_water: false,
-            wants_mark_spawn: None,
+            wants_mark_spawn: Vec::new(),
             wants_ritual_bolt: None,
             w: 14.0,
             h: 14.0,
@@ -20726,7 +20773,8 @@ mod phasmal_projectile_tests {
         for _ in 0..12 {
             p.ai_stardust_mark(&world, &npcs);
         }
-        let (kind, x, y, _vx, _vy) = p.wants_mark_spawn.expect("the spawn request");
+        let (kind, x, y, _vx, _vy) = p.wants_mark_spawn[0];
+        assert_eq!(p.wants_mark_spawn.len(), 1, "the mark spawns one");
         assert_eq!(kind, NpcKind::StardustCellBig.to_u16());
         assert!((x - 500.0).abs() < 1.0 && (y - 100.0).abs() < 1.0);
         // The pool's drain carries it out.
@@ -20734,7 +20782,7 @@ mod phasmal_projectile_tests {
         pool.slots[0] = p;
         let drained = pool.drain_mark_spawns();
         assert_eq!(drained.len(), 1);
-        assert!(pool.slots[0].wants_mark_spawn.is_none(), "the intent clears");
+        assert!(pool.slots[0].wants_mark_spawn.is_empty(), "the intent clears");
     }
 
     #[test]
@@ -20751,6 +20799,151 @@ mod phasmal_projectile_tests {
         let hit = p.ai_tower_damage_bolt(&npcs);
         assert!(hit, "the bolt lands on the tower");
         let _ = world;
+    }
+
+    /// One pool tick over a small NPC vec — the aiStyle-122 dispatch arm
+    /// runs the homing + the contact's shield spend.
+    fn bolt_tick(world: &mut World, pool: &mut ProjectilePool, npcs: &mut [Npc]) {
+        pool.update(
+            world,
+            npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    #[test]
+    fn b6d_the_bolt_spends_one_by_host_type_not_damage() {
+        // `Projectile.Kill()`'s 629 block (`Projectile.cs:72944-72979`):
+        // the spend is `Clamp(strength - 1, 0, Max)` per bolt — NOT the
+        // bolt's damage (the 629 spawns with damage 0, `NPC.cs:79290`) —
+        // and the shield is picked by `Main.npc[(int)ai[0]].type`, the
+        // HOST NPC's type, not by `ai[0]` as a tower ordinal.
+        let mut world = surface_world();
+        world.tower_shield_solar = 100;
+        world.tower_shield_vortex = 100;
+        world.tower_shield_nebula = 100;
+        world.tower_shield_stardust = 100;
+        // The host sits at vec index 1 — the old ordinal code would have
+        // drained the VORTEX shield (slot 1); the C# drains SOLAR (517).
+        let mut npcs = vec![Npc::new(NpcKind::Slime, 10.0, 10.0, 1, 0.0)];
+        let mut tower = Npc::new(NpcKind::SolarTower, 300.0, 100.0, 1, 0.0);
+        tower.hp = tower.max_hp;
+        npcs.push(tower);
+        let mut pool = ProjectilePool::new();
+        pool.spawn(
+            TOWER_DAMAGE_BOLT,
+            0,
+            Vec2::new(360.0, 235.0),
+            Vec2::ZERO,
+            30,
+            0.0,
+            false,
+        );
+        pool.slots_mut()[0].ai[0] = 1.0; // the host's vec index
+        bolt_tick(&mut world, &mut pool, &mut npcs);
+        assert!(!pool.slots()[0].active, "the contact kills the bolt");
+        assert_eq!(world.tower_shield_solar, 99, "−1 per bolt, not −damage");
+        assert_eq!(world.tower_shield_vortex, 100, "the ordinal slip is gone");
+        assert_eq!(world.tower_shield_nebula, 100);
+        assert_eq!(world.tower_shield_stardust, 100);
+        assert_eq!(npcs[1].ai[3], 1.0, "`:72951`'s shield-flash trigger");
+    }
+
+    #[test]
+    fn b6d_the_bolt_maps_each_tower_type_to_its_shield() {
+        // `:72948/72955/72962/72969`: 517→solar, 422→vortex, 507→nebula,
+        // 493→stardust — one contact each, every host at index 0.
+        for (kind, field) in [
+            (NpcKind::SolarTower, 0usize),
+            (NpcKind::VortexTower, 1),
+            (NpcKind::NebulaTower, 2),
+            (NpcKind::StardustTower, 3),
+        ] {
+            let mut world = surface_world();
+            world.tower_shield_solar = 100;
+            world.tower_shield_vortex = 100;
+            world.tower_shield_nebula = 100;
+            world.tower_shield_stardust = 100;
+            let mut tower = Npc::new(kind, 300.0, 100.0, 1, 0.0);
+            tower.hp = tower.max_hp;
+            let mut npcs = vec![tower];
+            let mut pool = ProjectilePool::new();
+            pool.spawn(
+                TOWER_DAMAGE_BOLT,
+                0,
+                Vec2::new(360.0, 235.0),
+                Vec2::ZERO,
+                0,
+                0.0,
+                false,
+            );
+            bolt_tick(&mut world, &mut pool, &mut npcs);
+            let shields = [
+                world.tower_shield_solar,
+                world.tower_shield_vortex,
+                world.tower_shield_nebula,
+                world.tower_shield_stardust,
+            ];
+            for (i, s) in shields.iter().enumerate() {
+                assert_eq!(*s, if i == field { 99 } else { 100 }, "{kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn b6d_the_empty_shield_takes_no_flash_and_clamps_at_zero() {
+        // `:72949-72953`: the `ai[3] = 1f` flash fires only while the
+        // shield is non-zero; the clamp floors at 0.
+        let mut world = surface_world();
+        world.tower_shield_solar = 0;
+        let mut tower = Npc::new(NpcKind::SolarTower, 300.0, 100.0, 1, 0.0);
+        tower.hp = tower.max_hp;
+        let mut npcs = vec![tower];
+        let mut pool = ProjectilePool::new();
+        pool.spawn(
+            TOWER_DAMAGE_BOLT,
+            0,
+            Vec2::new(360.0, 235.0),
+            Vec2::ZERO,
+            0,
+            0.0,
+            false,
+        );
+        bolt_tick(&mut world, &mut pool, &mut npcs);
+        assert_eq!(world.tower_shield_solar, 0, "the clamp floors at 0");
+        assert_eq!(npcs[0].ai[3], 0.0, "no flash on an empty shield");
+    }
+
+    #[test]
+    fn b6d_the_spend_clamps_to_the_post_moonlord_max() {
+        // `:72953`'s `Clamp(strength - 1, 0, ShieldStrengthTowerMax)` —
+        // the max halves once the Moon Lord is downed (`NPC.cs:6795-6806`),
+        // so a stale 100 shield snaps to 50 on the first spend.
+        let mut world = surface_world();
+        world.downed_moon_lord = true;
+        world.tower_shield_solar = 100;
+        let mut tower = Npc::new(NpcKind::SolarTower, 300.0, 100.0, 1, 0.0);
+        tower.hp = tower.max_hp;
+        let mut npcs = vec![tower];
+        let mut pool = ProjectilePool::new();
+        pool.spawn(
+            TOWER_DAMAGE_BOLT,
+            0,
+            Vec2::new(360.0, 235.0),
+            Vec2::ZERO,
+            0,
+            0.0,
+            false,
+        );
+        bolt_tick(&mut world, &mut pool, &mut npcs);
+        assert_eq!(world.tower_shield_solar, 50, "Clamp(99, 0, 50) = 50");
     }
 }
 
@@ -20822,7 +21015,7 @@ mod ritual_projectile_tests {
             original_damage: 0,
             net_important: false,
             ignore_water: false,
-            wants_mark_spawn: None,
+            wants_mark_spawn: Vec::new(),
             wants_ritual_bolt: None,
             w: 32.0,
             h: 32.0,
@@ -20868,18 +21061,76 @@ mod ritual_projectile_tests {
             }
         }
         assert_eq!(p.ai[0], 90.0, "the burst's tick");
-        assert!(p.wants_mark_spawn.is_some(), "the two aliens spawn");
+        assert_eq!(p.ai[1], 1.0, "`:33848`'s burst latch");
+        // B-6d: the C#'s `for num815 < 2` spawns BOTH aliens — the old
+        // single-Option seam overwrote the first.
+        assert_eq!(p.wants_mark_spawn.len(), 2, "the two aliens spawn");
         // The drain carries them out.
         let mut pool = ProjectilePool::new();
         pool.slots[0] = p;
         let drained = pool.drain_mark_spawns();
-        assert_eq!(drained.len(), 1, "the intent holds one of the pair");
-        let (kind, _x, _y, vx, vy) = drained[0];
-        assert_eq!(kind, NpcKind::VortexAlien.to_u16());
-        // `Projectile.cs:33844-33856`: `-UnitY.RotatedByRandom(2*PI)*rand(4,9) - UnitY*2`
-        // => vy in [-11, 7), vx in (-9, 9).
-        assert!((-11.0..=7.0).contains(&vy), "the launch's spread: {vy}");
-        assert!(vx.abs() < 9.0, "the sideways spread: {vx}");
+        assert_eq!(drained.len(), 2, "the intent holds the pair");
+        for (kind, _x, _y, vx, vy) in drained {
+            assert_eq!(kind, NpcKind::VortexAlien.to_u16());
+            // `Projectile.cs:33853`: `-UnitY.RotatedByRandom(2*PI) * Next(4,9)
+            // - UnitY*2` — integer magnitude 4..=8 => vy in [-10, 6],
+            // |vx| <= 8.
+            assert!((-10.0..=6.0).contains(&vy), "the launch's spread: {vy}");
+            assert!(vx.abs() <= 8.0, "the sideways spread: {vx}");
+        }
+    }
+
+    /// A scripted stream for the 579 burst's RNG witness: the floats and
+    /// integer draws are recorded separately so the draw ORDER and the
+    /// `Next(4, 9)` bounds are both observable.
+    struct ScriptedBurstRng {
+        floats: std::collections::VecDeque<f32>,
+        ints: std::collections::VecDeque<(i32, i32, i32)>,
+        log: Vec<&'static str>,
+    }
+
+    impl DropRng for ScriptedBurstRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            let (lo, hi, v) = self.ints.pop_front().expect("an int draw");
+            assert_eq!((min, max), (lo, hi), "the Next bounds");
+            self.log.push("int");
+            v
+        }
+        fn next_float(&mut self) -> f32 {
+            self.log.push("float");
+            self.floats.pop_front().expect("a float draw")
+        }
+    }
+
+    #[test]
+    fn b6d_the_579_burst_draws_two_angles_then_an_integer_magnitude_per_alien() {
+        // `Projectile.cs:33850-33855` + `Utils.cs:1697-1700`: per alien the
+        // order is RotatedByRandom's TWO NextDouble draws (floats on the
+        // port's shared stream, the ai067_b convention) then the INTEGER
+        // `Main.rand.Next(4, 9)` — not a continuous `4 + NextFloat*5`.
+        let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
+        p.ai[0] = 89.0; // one tick under the burst
+        let mut rng = ScriptedBurstRng {
+            // Alien 1: angle (0.25 - 0.75)*2π = -π → (vx,vy) = (0, +mag-2);
+            // alien 2: angle (0.5 - 0.25)*2π = +π/2 → (vx,vy) = (+mag, -2).
+            floats: [0.25f32, 0.75, 0.5, 0.25].into_iter().collect(),
+            ints: [(4, 9, 4), (4, 9, 8)].into_iter().collect(),
+            log: Vec::new(),
+        };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(
+            rng.log,
+            ["float", "float", "int", "float", "float", "int"],
+            "two rotation draws then the integer magnitude, per alien"
+        );
+        assert!(rng.floats.is_empty() && rng.ints.is_empty());
+        assert_eq!(p.wants_mark_spawn.len(), 2);
+        let (_, _, _, vx1, vy1) = p.wants_mark_spawn[0];
+        let (_, _, _, vx2, vy2) = p.wants_mark_spawn[1];
+        assert!(vx1.abs() < 1e-3, "angle -π: vx ≈ 0, got {vx1}");
+        assert!((vy1 - 2.0).abs() < 1e-3, "mag 4: vy = +4-2, got {vy1}");
+        assert!((vx2 - 8.0).abs() < 1e-3, "angle π/2, mag 8: vx = 8, got {vx2}");
+        assert!((vy2 + 2.0).abs() < 1e-3, "vy = -2, got {vy2}");
     }
 
     #[test]
