@@ -24893,3 +24893,132 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The aiStyle-45 census audit (S1-D-3, docs-only, code-only mode, 2026-11-19)
+
+**Census.** A whole-file `aiStyle = 45;` grep over `decompiled/Terraria/NPC.cs`
+finds **exactly ONE** assignment: type 245, the Golem body (`NPC.cs:12167`,
+the `SetDefaults` row `:12163-12178`). The dispatch is
+`else if (this.aiStyle == 45) { this.AI_045_Golem(); }` (`:31125-31128`),
+the arm `AI_045_Golem` (`:19505-19780`). The other `45` hits in the tree are
+the projectile space (the 264 Nimbus rain's own aiStyle-45 arm —
+`Projectile.cs`, M4-PROJ work, out of NPC scope). No dynamic reassignment.
+
+**Identity verified from C#.** NPCID 245 (`ID/NPCID.cs:11169`-region, the
+family band `:11167-11175`: Golem 245, GolemHead 246, GolemFistLeft 247,
+GolemFistRight 248, GolemHeadFree 249). `SetDefaults` 245 (`:12163-12178`):
+140×140, damage 72, defense 26, lifeMax 15000, NPCHit4/NPCDeath14,
+knockBackResist 0, value 15 gold, **alpha 255**, boss, npcSlots 5. The
+port's rows agree (`npc/data.rs:1966` `Golem => 45`, `:2377` 140×140,
+`:2930` 15000, `:3237` 72; `npc.rs:1486`/`:1742` the sounds).
+
+**Verdict: style 45 is ALREADY PORTED — WIRED — via the golem-audit merge
+(`c7fe175d`, MERGER-L7).** The body rides `npc.rs::update_golem_rng`'s
+`NpcKind::Golem` arm (`npc.rs:14037-14191`) + the numeric cores in
+`npc_ai_golem.rs` (`enrage_balance`, `body_charge_rate`, `body_slam_vy`,
+`body_flight_sink`, `body_flight_cap`, `body_gravity`). The kind match
+(`npc.rs:3839-3843`) routes all five golem kinds there; the aiStyle axis
+claims `47 =>` for the fists (`npc.rs:3678`) — style 45 itself has no axis
+arm yet (it falls through to the kind match, the documented S1-D-2
+migration shape). No new module was created; this round is the
+distrust-verbatim audit of the landed coverage (the S1-D-3q/51/63 census
+precedent).
+
+**The f1701eb0 defect catalogue applied class by class to the body arm**
+(the aiStyle-29 Hungry checklist — anchor half-width ints, missing
+TargetClosest, per-tick stat resets, f32-ratio vs f64/int compares,
+missing resets, direction/sprite writes, float vs integer extents):
+
+| # | Class | C# cite | Port evidence | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 | Enrage/balance gate | `:19508-19516` | `enrage_balance` (`npc_ai_golem.rs:35-51`): solo 1, ×2 outside BOTH zones OR above `worldSurface*16` — the exact boolean shape; body's +2 getGood bonus parameterised (`npc.rs:14027`) | faithful (getGood false — documented) |
+| 2 | Charge ladder int divisions | `:19643-19676` | `body_charge_rate` (`:59-95`): base 1, +2 per dead part in flag2/flag3/flag order, +1 damaged, +4 `max_hp/2`, +8 `max_hp/3` — INTEGER division on i32, then `*= num`, then +100 getGood AFTER the multiply | faithful |
+| 3 | Cap flip + slam launch | `:19677-19701` | `npc.rs:14106-14119`: `>=300 → -20` + `frame_counter = 0`; `== -1` → fly-through on, `vx = 4*facing`, `body_slam_vy` = −12.1·(num+9)/10 floored −19.1 (damaged) / −12.1 (healthy), ai[0]=1, ai[1]=0 | faithful |
+| 4 | Flight sink/cap | `:19721-19765` | the hitbox-span test `x < player.x && x+w > player.x+20` (`npc.rs:14129`, `player::WIDTH = 20` = the C# player width), ×0.9 damp, `Bottom.Y < player.position.Y` sink gate, `body_flight_sink`/`body_flight_cap` with the (num+1)/2 factor + the 3/+1/+1/+1 int-division ladder, ±0.2 strafe by direction sign | faithful |
+| 5 | Alpha fade | `:19535-19543` | `npc.rs:14041-14044`: `alpha -= 10` saturating (the C# clamps at 0), `ai[1] = 0` (the `cast_windup` fold) | faithful |
+| 6 | Dead-target fly-through + release | `:19527-19534`, `:19627-19637` | `npc.rs:14067-14081`: `local_ai[1]` carries noTileCollide; release on descending past the player TOP or `can_hit` + `!collides_rect` (the SolidTiles stand-in) | faithful modulo the collision stand-in |
+| 7 | Part scan + shield | `:19544-19567` | the sim's anchor passes scan the pool (`world_sim/npcs.rs:2864-2875`, `:3797-3809`) and write `dont_take_damage = head_alive` (`:3815`) | faithful (the scan hoisted to the sim — the documented seam) |
+| 8 | Despawn | `:19771-19779` | Manhattan-3000 → `encourage_despawn(0)` (`npc.rs:14145-14147`), the retain removes it without the death chain (the C#'s `active = false`) | faithful modulo the retarget-before-despawn fold (see G2) |
+| 9 | Gravity | `UpdateNPC_UpdateGravity` `:90878-90936` | `body_gravity` (`npc_ai_golem.rs:459-469`): the f64 `(y/16 − (60 + 10·(maxTilesX/4200)²)) / (worldSurface/6)` depth factor clamped 0.25..1, ×0.3, the 10 fall cap; 245 hits no per-type override branch | faithful (dry-only — the wet overrides documented) |
+| 10 | Spawn init | `:19517-19525` | `npc.rs:14048-14063`: the `caster_counter`/`cast_windup` one-shot, 247 at −84 / 248 at +78 / 246 at (−3,−57) | **see G1 — the code matches C# but the comment claims a swap** |
+| 11 | FindFrame case 245 | `:72898-72930` | `npc.rs:6010-6033`: the 5-row −16/−12/−8/−4/0 charge ramp over `cast_windup`, row 0 while charging | faithful modulo the flight's literal `frame.Y = 1` PIXEL write folded to row 0 (the documented 1-px deviation) |
+| 12 | RNG census | `:19592-19604`, `:19610-19622`, `:19717` | every `Main.rand` draw in the arm rides the dead-part dust bursts / the landing gore — all documented cosmetic skips; the arm's GAMEPLAY path draws ZERO | RNG-free by construction (the body takes the rng param only for the family's shared signature) |
+
+**Gaps / stale claims found (docs-only — no code touched):**
+
+- **G1 — the "preserved spawn swap" comment is STALE.** `npc.rs:14050-14056`
+  claims "the port pushes the kinds at each other's offsets" as a preserved
+  pre-existing deviation — but the code directly below pushes
+  `GolemFistLeft` at −84 and `GolemFistRight` at +78, which IS the C#
+  (`:19522-19523`: 247 = GolemFistLeft `ID/NPCID.cs:11171` at −84,
+  248 = GolemFistRight `:11173` at +78). The v1 swap was actually FIXED by
+  the audit; the comment (and the S1-D-3-aistyle47 ROADMAP row's
+  "PRESERVED as a pre-existing deviation" clause) describes the v1, not the
+  landed code. The fist arm's own side folds agree (`fist_anchor`'s
+  `left → −84`, `npc.rs:14354-14358`'s 247/248 side gate, the rotation
+  arms `:14371-14375`/`:14403-14407` — all keyed on
+  `kind == GolemFistLeft` = 247). **No behavioural defect** — a doc/comment
+  correction for the next code round.
+- **G2 — the retarget sites are folded.** The C# calls `TargetClosest` at
+  FIVE sites: the dead-target check (`:19529`), the slam launch (`:19685`),
+  the flight tick (`:19723`), the invalid-target tail (`:19769`, the
+  `target <= 0 || target == 255 || dead` gate — note `<= 0` INCLUDES solo
+  target 0, so the C# re-runs the scan EVERY tick for the solo player) and
+  twice in the despawn check (`:19774`, `:19775`). The port writes facing
+  ad hoc at the slam (`npc.rs:14113`) and never retargets elsewhere; the
+  single-player target is always slot 0 so the SELECTION is a no-op fold,
+  but `TargetClosest` → `SetTargetTrackingValues` (`:77751-77759`) also
+  refreshes `direction`/`directionY` per tick — the port's flight strafe
+  reads the slam-time facing, so a player crossing the body mid-flight
+  strafes the stale way until the next slam (the C# flips within the tick).
+  The dead-target gate also skips the `target >= 0` term and the
+  double-check. Wiring obligation: route the five sites through
+  `npc_target::target_closest` (S1-D-3p) in the axis-claim round.
+- **G3 — the body's spawn alpha is 0, not 255.** `SetDefaults` 245 writes
+  `alpha = 255` (`:12175`) — the body fades in over 26 ticks like the
+  parts. `Npc::new`'s alpha default (`npc.rs:2344-2348`) only carries the
+  pumpkin/frost tables, and the sim's spawn-resolve alpha fix
+  (`world_sim/npcs.rs:3611-3617`) covers the PARTS only; the altar summon
+  (`world_sim/editing/doors.rs:121`) and the debug spawn
+  (`debug_panel.rs:670`) never set it. The body pops in fully visible
+  (visual-only; the `alpha > 0` fade branch also never runs, so the
+  `ai[1] = 0` pin inside it is skipped — harmless while the charge starts
+  at 0). One-line fix for the next code round: the body joins the
+  spawn-alpha arm (or `Npc::new` gains the golem row).
+- **G4 — the gravity order MATCHES; the residual is the vx deadband snap.**
+  The C# computes the gravity constant BEFORE `AI()`
+  (`UpdateNPC_UpdateGravity` `:90380` vs `:90423`) but ADDS it to velocity
+  AFTER (`:90465-90472`), then integrates — the port's arm-tail
+  add-then-integrate (`npc.rs:14154-14190`) is the same order (the AI's
+  `velocity.Y == 0` gate sees the pre-add value in both; the MERGER-L7
+  body-slam witness timing note pins the launch-tick cadence to this
+  shape). The C# gravity add runs even under noTileCollide (only
+  `!noGravity` gates it, `:90465`) — the port's fly-through arm also adds
+  gravity, matching. The unported tail term is the ±0.005 DOUBLE
+  `velocity.X` deadband snap (`:90473-90476`) — the port's ×0.8 charge
+  damp decays toward 0 without the snap (a sub-pixel residual, the
+  f1701eb0 ±0.1-damp class at a smaller threshold); the collision
+  response itself stays the documented axis-separated stand-in.
+- **G5 — the axis claim is outstanding.** Style 45 still falls through
+  `update_kind_ai` (`npc.rs:3839-3843`); the `45 =>` axis arm (the S1-D-2
+  migration shape, 47's precedent at `:3678`) is the family's remaining
+  wiring step, together with G2's retarget plumbing.
+
+**Out of scope (recorded, not gaps of this arm):** the getGoodWorld
+torch-crush block (`:19568-19585`, no port field), the netOffset bracket
+(`:19586`/`:19626`, single-player no-op), the `netMode != 1` spawn gate
+(`:19520`, the port is the server), the dust/sound/gore rows with their
+draws (the standing cosmetic skip), the fist state-3's missing C# writer,
+and the head/fist/free-head arms' own censuses (46/47/48 — the sibling
+rounds' territory; the MERGER-L7 reconcile note above stands).
+
+**Verification.** Docs-only, code-only mode — no cargo/rustc/rustfmt/tests,
+no graphify; every claim above was re-read against `NPC.cs` (the whole
+`AI_045_Golem` arm `:19505-19780`, `GetMyBalance` `:18483-18491`,
+`UpdateNPC_UpdateGravity` `:90878-90936`, `SetTargetTrackingValues`
+`:77713-77781`, `FindFrame` case 245 `:72898-72930`, `SetDefaults`
+`:12163-12178`) and the landed Rust (`npc.rs`'s body arm + FindFrame +
+dispatch, `npc_ai_golem.rs`'s six body cores + their 14 written-not-run
+witnesses, `world_sim/npcs.rs`'s two anchor passes + the spawn resolve +
+the death chain, `npc/data.rs`'s rows). **No compiler invoked.** The
+sibling code stays byte-identical.
