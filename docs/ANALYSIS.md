@@ -10068,19 +10068,17 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
 - **The peer slots are seeded at the world spawn** on first sight (the C#'s
   `Main.player[i]` exists at the spawn before its first `13`), so the first
   snapshot's lag accrues from there rather than from (0, 0).
-- **S1-I-4b — the NPC send cadence is ported but not yet wired.**
-  `app/net_npc_sync.rs` ports `NPC.UpdateNetworkCode` + the `NetMessage`
-  `case 23`/`case 28` fan-out 1:1 (citations in the ROADMAP S1-I-4 row) as
-  pure functions; the live `net_tick` still sends the whole NPC set at 10 Hz
-  (`netglue.rs`) until a follow-up drains the `NpcSend` outbox. Deliberate
-  shape choices: (1) the per-client `broadcast`/`IsConnected` gates ride a
-  caller-supplied `PlayerView` array (the port's `Server::slot_ids` + section
-  bookkeeping map onto it); (2) `NPC.oldHomeless/oldHomeTileX/Y` start at the
-  C# `false/0/0` defaults — the port's `old_home: None` fires one extra `60`
-  on the very first observation of a `(false, 0, 0)` home, which no
-  head-index town NPC ever has; (3) `CanBeRemovedByNetMessage` is empty in
-  this decompilation (`BuffID.cs:48`), so `137` is ported as a gated-off
-  no-op, not omitted.
+- **S1-I-4b — the NPC send cadence is ported; WIRED by S1-I-4d (see "The net
+  sync swap" below).** `app/net_npc_sync.rs` ports `NPC.UpdateNetworkCode` +
+  the `NetMessage` `case 23`/`case 28` fan-out 1:1 (citations in the ROADMAP
+  S1-I-4 row) as pure functions. Deliberate shape choices: (1) the per-client
+  `broadcast`/`IsConnected` gates ride a caller-supplied `PlayerView` array
+  (the port's `Server::slot_ids` + section bookkeeping map onto it); (2)
+  `NPC.oldHomeless/oldHomeTileX/Y` start at the C# `false/0/0` defaults — the
+  port's `old_home: None` fires one extra `60` on the very first observation
+  of a `(false, 0, 0)` home, which no head-index town NPC ever has; (3)
+  `CanBeRemovedByNetMessage` is empty in this decompilation (`BuffID.cs:48`),
+  so `137` is ported as a gated-off no-op, not omitted.
 ## Localized item tooltips (M6-LOCALIZE-wire)
 
 The "wire the localization core into the HUD/menus" row's item-hover slice:
@@ -22919,7 +22917,76 @@ functions (`ProjSync`), disjoint from `netglue.rs` (wave A) and
 4. The per-slot bookkeeping lives beside the pool (`ProjSync`) instead of on
    `Projectile` so `projectile.rs` stays untouched by this wave.
 Verification: `cargo test -p tr-app net_proj_sync` вЂ” 10 per-site tests green
-(`test result: ok. 10 passed; 0 failed`).
+(`test result: ok. 10 passed; 0 failed`). **Superseded by the wave-D swap below
+(`projectile_sync_plan` is deleted; the engine is live).**
+
+## The net sync swap (S1-I-4d, code-only mode, 2026-11-19)
+
+The wave-B (`net_npc_sync.rs`) and wave-C (`net_proj_sync.rs`) decision layers
+landed INERT (zero callers). This wave SWAPS them into the live loop and DELETES
+the old duplicate sends — wiring both would double-send, so the swap is atomic.
+
+**What was removed (the old paths):**
+- `netglue.rs::net_tick`'s whole-set 10 Hz `23 NPCInfo` broadcast (one message per
+  live NPC every cadence tick) — replaced by the per-NPC `netSpam` cadence.
+- `netglue.rs::projectile_sync_plan` (the 10 Hz `27` change-diff + the vanished-key
+  `29` feed) and its `App.net_proj_last` / `net_proj_spam` maps — replaced by
+  `ProjSync`'s faithful budget.
+- The client's absence-from-the-stream despawn prune (`App.net_npc_seen`,
+  `net_npcs_seen_at`, the `NPC_STALE` const) — the event-driven `23` stream has no
+  "whole set" to diff against; despawns are explicit life-0 bodies now.
+
+**What was wired (the new paths):**
+- `App::npc_sync_cadence` (host-only, `NPC.cs:90590`) steps
+  `net_npc_sync::update_network_code` per NPC per fixed step, in slot order
+  (`Main.cs:17948-17952`). State is keyed by the stable `Npc.uid` (the port's Vec
+  compacts on death, so the index is not stable). `App::flush_npc_outbox` drains
+  the `NpcSend` outbox through `S2c::NpcInfo` / `NpcHouse` / `NpcBuffs`.
+- `App::proj_sync_cadence` steps `net_proj_sync::ProjSync` per fixed step
+  (`Projectile.cs:17210-17244`); spawn `27` (`:11096`), kill `29` with the entry
+  position (`:77254-77257`, `:70648`), and the budget pass. `App::drain_proj_outbox`
+  sends through `S2c::Projectile` / `ProjectileDead` (host) or `C2s` (client).
+- Both cadences run on a 60 Hz accumulator (`App.net_sync_cadence_timer`) inside
+  `net_tick`, so the real frame loop AND the net-only test pump drive them; the
+  outboxes drain on the 10 Hz tick. The message-id table (S1-I-1) is UNCHANGED.
+
+**Swap proof (no double-send):** each subsystem has exactly ONE producer now.
+The NPC `23` comes only from `npc_sync_cadence` → `flush_npc_outbox` (the old
+broadcast loop is gone); the projectile `27`/`29` only from `proj_sync_cadence` →
+`drain_proj_outbox` (`projectile_sync_plan` is gone). Within the projectile
+cadence the spawn site and the change-detect producer are disjoint (the `fresh`
+set skips first-sight), so a spawn emits ONE `27`, not two. Witnesses:
+`the_npc_cadence_sends_once_then_throttles_not_every_tick`,
+`the_proj_cadence_spawn_sends_one_27_not_two`,
+`the_npc_cadence_throttles_a_moving_npc_to_the_netSpam_rate` (cadence parity),
+`the_npc_despawn_streams_one_life0_body_and_the_client_drops_it` (stream-order).
+
+**Deliberate deviations / interim stand-ins (recorded, not silent):**
+1. **Interim change-detect producers.** The C# `netUpdate = true` comes from ~337
+   projectile AI sites + the NPC AI arms. The NPC arms already set
+   `Npc.net_update`; one projectile producer is wired (the gem-staff retarget,
+   `Projectile.cs:37891`, via the new `Projectile.net_update` field). Until the
+   full census lands, a state change vs the last body ALSO arms the dirty flag
+   (`npc_sync_cadence` / `proj_sync_cadence`), so moving entities still sync. The
+   send BUDGET is the faithful C# gate, not the diff — the diff only decides
+   *whether* to dirty, the `netSpam` throttle decides *when* to send.
+2. **The despawn feed** is the uid gone-diff (a uid the cadence knew that left the
+   live set emits one life-0 `23`), not the C#'s per-slot `active=false` — the
+   port's Vec removes dead NPCs, so the cadence (not the removed slot) emits it.
+   The client removes on life≤0 with a generation guard (`MessageBuffer.cs:1661`).
+3. **Hostile shots (owner 255)** are out of the projectile budget sync (the owner
+   gate matches `Projectile.cs:17210` and the old diff's scope). On the C# server
+   `Main.myPlayer == 255` folds them in; the port's host keeps a local player
+   (owner 0), so hostile-shot sync lands with the owner-model reconcile.
+4. **`has_head_index`** rides `NpcKind::is_town_npc()` (the town roster) until the
+   `TypeToDefaultHeadIndex` table lands (`NPC.cs:90621`).
+5. **The event-site helpers** (`sync_now`, `recheck_sections`, `note_broadcast`,
+   `despawn_mark_applies`) stay dead-code-parity until their simulation callers
+   land; the cadence's section culling rides the decision layer's own fan-out.
+Verification: code-only mode — no compiler/test run this wave; the decision
+layers' landed per-site tests (`net_npc_sync` 20, `net_proj_sync` 10) plus the
+four new wiring witnesses are the tests-as-code. C# cross-reads cited per block.
+
 ## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
 `crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
 `if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) — the Cursed Skull

@@ -617,6 +617,13 @@ pub struct Projectile {
     pub original_damage: i32,
     /// `Projectile.netImportant` (stock false, `:706`).
     pub net_important: bool,
+    /// `Projectile.netUpdate` (`Projectile.cs:384`, reset false `:766`): an AI
+    /// arm dirtied the slot this tick; the update-tail cadence
+    /// (`Projectile.cs:17210-17244`) sends a `27` and clears it. S1-I-4d wires
+    /// the gem-staff retarget producer (`:37891`) through it; the remaining
+    /// 336 C# sites are the follow-up census (the interim change-detect
+    /// producer in `netglue` covers them until then).
+    pub net_update: bool,
     /// `Projectile.ignoreWater` (stock false, `:752`).
     pub ignore_water: bool,
     /// `Projectile.shouldFallThrough` (`:462`, reset false `:709`) — the
@@ -689,6 +696,7 @@ impl Default for Projectile {
             minion_pos: 0,
             original_damage: 0,
             net_important: false,
+            net_update: false,
             ignore_water: false,
             should_fall_through: false,
             step_speed: 1.0,
@@ -6211,14 +6219,16 @@ impl Projectile {
             }
             let mut target = self.ai[2] as i32 - 1;
             // `:37884-37893`: the owner-only refresh — `this.owner ==
-            // Main.myPlayer` is the port's `self.owner == 0`. The C#'s
-            // `netUpdate = true` write is net code — SKIPPED.
+            // Main.myPlayer` is the port's `self.owner == 0`. S1-I-4d wires the
+            // `netUpdate = true` producer (`:37891`): a retarget dirties the
+            // slot so the update-tail cadence sends a `27`.
             if self.owner == 0 {
                 let held = target;
                 target =
                     find_target_with_line_of_sight(world, npcs, self.pos, self.w, self.h, range, &[]);
                 if target != held {
                     self.ai[2] = (target + 1) as f32;
+                    self.net_update = true; // `Projectile.cs:37891`
                 }
             }
             if target >= 0 {
@@ -12103,6 +12113,16 @@ impl ProjectilePool {
         if slot < self.slots.len() {
             self.slots[slot].active = false;
             self.slots[slot].time_left = 0;
+        }
+    }
+
+    /// S1-I-4d: the `Projectile.Update` tail clear (`Projectile.cs:17244`) —
+    /// `this.netUpdate = false` on every slot once the cadence has read it. The
+    /// net cadence (`netglue::proj_sync_cadence`) calls this after arming the
+    /// `ProjSync` budget, mirroring the C#'s once-per-update reset.
+    pub fn clear_net_update_flags(&mut self) {
+        for p in self.slots.iter_mut() {
+            p.net_update = false;
         }
     }
 
@@ -20581,6 +20601,7 @@ mod phasmal_projectile_tests {
             minion_pos: 0,
             original_damage: 0,
             net_important: false,
+            net_update: false,
             ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
@@ -20821,6 +20842,7 @@ mod ritual_projectile_tests {
             minion_pos: 0,
             original_damage: 0,
             net_important: false,
+            net_update: false,
             ignore_water: false,
             wants_mark_spawn: None,
             wants_ritual_bolt: None,
