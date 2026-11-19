@@ -694,6 +694,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Giant Worm",
     },
+    // The wyvern family (`S1-D-3` wyvern): ONE entry on the head's id 87
+    // — the segments' bestiary draw modifiers carry `Hide = true`
+    // (`NPCID.cs:1821-1856`) and the kills credit the head (the
+    // Devourer's fold below, `entry_for_npc`). The Sky spawn-condition
+    // tag rides all six ids (`BestiaryDatabaseNPCsPopulator.cs:1713-1718`);
+    // the name is the localization's `"WyvernHead": "Wyvern"` row
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "WyvernHead",
+        net_id: 87,
+        kind: NpcKind::WyvernHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Wyvern",
+    },
     // The worm segments fold onto the head's entry (`entry_for_npc`'s
     // mapping): the vanilla credits the whole worm to the head's bestiary
     // id — one entry per credit.
@@ -1421,6 +1436,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: true,
         name: "Martian Saucer Core",
+    },
+    // The Tesla Turret (`S1-F-13d`): the Engineer's placed turret — the
+    // C#'s name row is "Tesla Turret" (`NPCID.cs:12449`'s `NameToIdMap`),
+    // the draw mods Position(2,0)/Velocity 3 (`NPCID.cs:3788-3794`). The
+    // Force Bubble 384 has NO entry: its draw modifiers hide it
+    // (`NPCID.cs:3766-3770`'s `Hide = true`) — it folds onto the Officer's
+    // credit in `entry_for_npc` (the banner fold's precedent,
+    // `BannerSystem.cs:777-779`: 383/384 share banner 141).
+    BestiaryEntryDef {
+        credit_id: "MartianTurret",
+        net_id: 387,
+        kind: NpcKind::MartianTurret,
+        variant: None,
+        quick_unlock: false,
+        name: "Tesla Turret",
     },
     BestiaryEntryDef {
         credit_id: "FlyingDutchman",
@@ -2204,6 +2234,14 @@ pub fn try_entry_for_npc(
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — the whole serpent is
+        // one bestiary credit, the Devourer precedent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2239,6 +2277,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // The wyvern segments fold onto the head's entry (`NPCID.cs`:
+        // 1821-1856's `Hide = true` draw modifiers — one credit for the
+        // whole serpent).
+        NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => NpcKind::WyvernHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2271,6 +2317,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // `texture_net_id`'s own rows.
         NpcKind::DetonatingBubble => NpcKind::DukeFishron,
         NpcKind::Sharkron2 => NpcKind::Sharkron,
+        // The Force Bubble rides the Officer's row — the vanilla's bestiary
+        // draw modifiers hide it (`NPCID.cs:3766-3770`'s `Hide = true`), so
+        // it never has an entry of its own (the Sleeping Angler precedent;
+        // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
+        NpcKind::ForceBubble => NpcKind::MartianOfficer,
         other => other,
     };
     ENTRIES

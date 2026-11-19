@@ -261,6 +261,11 @@ impl NpcKind {
             NpcKind::PirateCaptain => 186,
             NpcKind::MartianProbe => 187,
             NpcKind::MartianDrone => 188,
+            // The bubble/turret pair (`S1-F-13d`): the next free band above
+            // S1-D-3ff wave A's 189..212 — port-local like the rest of the
+            // martian family (the vanilla 384/387 are NOT the wire ids).
+            NpcKind::ForceBubble => 213,
+            NpcKind::MartianTurret => 214,
             NpcKind::BrainScrambler => 85,
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
@@ -428,6 +433,8 @@ impl NpcKind {
             // included) so nothing collides. The port's other kinds keep
             // their port-local ids; `NpcKind::pumpkin_moon_type` is the
             // named kind→type seam the spawn wiring and the kill walk use.
+            // (`S1-F-13d` appended the ForceBubble/MartianTurret 213/214
+            // pair above S1-D-3ff wave A's 189..212 band.)
             // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
             // (325), `:13129` (326), `:13142` (327), `:13175` (329),
             // `:13188` (330).
@@ -501,22 +508,22 @@ impl NpcKind {
             NpcKind::Sharkron => 221,
             NpcKind::Sharkron2 => 222,
             // S1-D-3z (zombie fighter audit) — the five holiday zombie
-            // variants + the blood-moon pair. GATE REASSIGN (L-I): the
-            // branch's 221..227 collide with the landed fishron band
-            // 219-222 — next-free ascending after a to_u16 scan of the
-            // merged lane tree: 223..229 (213/214 stay R10-martian
-            // reserved, 148 LeechTail / 353 wheel reserved; wyvern R79
-            // continues after 229). The vanilla types ride `cs_id`/`net_id`
-            // (319-321/331-332/489/490), NOT these protocol ids — the
-            // spawner's holiday arms (`NPC.cs:4727-4735`) pick by the
-            // vanilla type.
-            NpcKind::ZombieDoctor => 223,
-            NpcKind::ZombieSuperman => 224,
-            NpcKind::ZombiePixie => 225,
-            NpcKind::ZombieXmas => 226,
-            NpcKind::ZombieSweater => 227,
-            NpcKind::BloodZombie => 228,
-            NpcKind::Drippler => 229,
+            // variants + the blood-moon pair. GATE REASSIGN (L-I, re-scan
+            // after the wyvern forward-merge): the branch's 221..227
+            // collide with the landed fishron 219-222 AND wyvern 223-228
+            // bands — next-free ascending after a to_u16 scan of the
+            // merged lane tree: 230..236 (213/214 martian-defaults taken,
+            // 148 LeechTail / 353 wheel reserved). The vanilla types ride
+            // `cs_id`/`net_id` (319-321/331-332/489/490), NOT these
+            // protocol ids — the spawner's holiday arms
+            // (`NPC.cs:4727-4735`) pick by the vanilla type.
+            NpcKind::ZombieDoctor => 230,
+            NpcKind::ZombieSuperman => 231,
+            NpcKind::ZombiePixie => 232,
+            NpcKind::ZombieXmas => 233,
+            NpcKind::ZombieSweater => 234,
+            NpcKind::BloodZombie => 235,
+            NpcKind::Drippler => 236,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344, above the whole port-local space exactly like the
             // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
@@ -549,6 +556,22 @@ impl NpcKind {
             NpcKind::PlanterasHook => 154,
             NpcKind::PlanterasTentacle => 155,
             NpcKind::Spore => 215,
+            // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
+            // the vanilla ids 87-92 collide with the port-local
+            // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
+            // branch's 213-218 band TRIPLE-collides with R10 martian
+            // 213/214 (keeps, earliest push) + R50 fishron 219-222 + R55
+            // destroyer 216-218 — the six take the next-free 223-228
+            // (148 reserved R78 LeechTail). Save-compat safe: the branch
+            // had not merged when the ids moved. The vanilla `NPC.type`
+            // rides the bestiary entry (`net_id` 87, the segments fold
+            // onto the head's entry like every other worm family).
+            NpcKind::WyvernHead => 223,
+            NpcKind::WyvernLegs => 224,
+            NpcKind::WyvernBody => 225,
+            NpcKind::WyvernBody2 => 226,
+            NpcKind::WyvernBody3 => 227,
+            NpcKind::WyvernTail => 228,
         }
     }
 
@@ -757,6 +780,10 @@ impl NpcKind {
             186 => NpcKind::PirateCaptain,
             187 => NpcKind::MartianProbe,
             188 => NpcKind::MartianDrone,
+            // The bubble/turret pair (`S1-F-13d`) — `NPC.cs:13882` (384)
+            // and `:13922` (387) ride the port-local 213/214.
+            213 => NpcKind::ForceBubble,
+            214 => NpcKind::MartianTurret,
             // The Pumpkin Moon family (`S1-F-13b`): the vanilla ids
             // 305-314/315/325/326/327/329/330 decode here (the same ids
             // `to_u16` encodes above) — they sit above the whole port-local
@@ -826,16 +853,16 @@ impl NpcKind {
             222 => NpcKind::Sharkron2,
             // S1-D-3z — the holiday zombie band + blood-moon pair decode
             // here (the same ids `to_u16` encodes above; GATE REASSIGN
-            // L-I: 223..229 next-free after the merged-roster scan;
-            // 213/214 R10-reserved). `NPC.cs:13033-13074` (319-321),
-            // `:13204-13229` (331-332), `:14605-14631` (489/490).
-            223 => NpcKind::ZombieDoctor,
-            224 => NpcKind::ZombieSuperman,
-            225 => NpcKind::ZombiePixie,
-            226 => NpcKind::ZombieXmas,
-            227 => NpcKind::ZombieSweater,
-            228 => NpcKind::BloodZombie,
-            229 => NpcKind::Drippler,
+            // L-I re-scan post-wyvern: 230..236 next-free; fishron
+            // 219-222 + wyvern 223-228 landed). `NPC.cs:13033-13074`
+            // (319-321), `:13204-13229` (331-332), `:14605-14631` (489/490).
+            230 => NpcKind::ZombieDoctor,
+            231 => NpcKind::ZombieSuperman,
+            232 => NpcKind::ZombiePixie,
+            233 => NpcKind::ZombieXmas,
+            234 => NpcKind::ZombieSweater,
+            235 => NpcKind::BloodZombie,
+            236 => NpcKind::Drippler,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344 decode here (the same ids `to_u16` encodes above).
             // `NPC.cs:13281-13368`.
@@ -857,6 +884,15 @@ impl NpcKind {
             154 => NpcKind::PlanterasHook,
             155 => NpcKind::PlanterasTentacle,
             215 => NpcKind::Spore,
+            // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
+            // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
+            // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
+            223 => NpcKind::WyvernHead,
+            224 => NpcKind::WyvernLegs,
+            225 => NpcKind::WyvernBody,
+            226 => NpcKind::WyvernBody2,
+            227 => NpcKind::WyvernBody3,
+            228 => NpcKind::WyvernTail,
             _ => return None,
         })
     }
@@ -942,6 +978,17 @@ impl NpcKind {
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
+                // The wyvern chain shares the head's life pool
+                // (`NPC.cs:51158-51159`/`:51182-51183`: `ai[3] = whoAmI`,
+                // `realLife = whoAmI` on the head and every link). Inert
+                // until the wiring sets `worm_id`/`seg_index` (the
+                // carrier resolution keys on them, `npc.rs:3419`).
+                | NpcKind::WyvernHead
+                | NpcKind::WyvernLegs
+                | NpcKind::WyvernBody
+                | NpcKind::WyvernBody2
+                | NpcKind::WyvernBody3
+                | NpcKind::WyvernTail
         )
     }
 
@@ -1019,6 +1066,12 @@ impl NpcKind {
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
+            // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
+            // precedent): the shared pass's budget chain + dig head are
+            // NOT the wyvern's machine — the fixed 14-link chain and the
+            // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
+            NpcKind::WyvernHead => (11.0, 0.25),
             _ => (8.0, 0.07),
         }
     }
@@ -1501,6 +1554,10 @@ impl NpcKind {
             NpcKind::MartianWalker => "NPC_Hit_4",
             NpcKind::MartianProbe => "NPC_Hit_4",
             NpcKind::MartianDrone => "NPC_Hit_42",
+            // The bubble: NPCHit43 (`NPC.cs:13889`); the turret: NPCHit53
+            // (`NPC.cs:13930`).
+            NpcKind::ForceBubble => "NPC_Hit_43",
+            NpcKind::MartianTurret => "NPC_Hit_53",
             NpcKind::ScutlixRider => "NPC_Hit_39",
             NpcKind::Scutlix => "NPC_Hit_51",
             NpcKind::MartianSaucer => "NPC_Hit_4",
@@ -1689,6 +1746,14 @@ impl NpcKind {
             NpcKind::DukeFishron => "NPC_Hit_14",
             NpcKind::DetonatingBubble => "NPC_Hit_3",
             NpcKind::Sharkron | NpcKind::Sharkron2 => "NPC_Hit_1",
+            // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
+            // `:9984`/`:10002`/`:10020`/`:10038`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Hit_7",
             _ => return None,
         })
     }
@@ -1782,6 +1847,10 @@ impl NpcKind {
             NpcKind::MartianWalker => "NPC_Killed_14",
             NpcKind::MartianProbe => "NPC_Killed_14",
             NpcKind::MartianDrone => "NPC_Killed_44",
+            // The bubble: NPCDeath45 (`NPC.cs:13890`); the turret:
+            // NPCDeath56 (`NPC.cs:13931`).
+            NpcKind::ForceBubble => "NPC_Killed_45",
+            NpcKind::MartianTurret => "NPC_Killed_56",
             NpcKind::ScutlixRider => "NPC_Killed_57",
             NpcKind::Scutlix => "NPC_Killed_54",
             NpcKind::MartianSaucer => "NPC_Killed_14",
@@ -1973,6 +2042,14 @@ impl NpcKind {
             NpcKind::DukeFishron => "NPC_Killed_20",
             NpcKind::DetonatingBubble => "NPC_Killed_3",
             NpcKind::Sharkron | NpcKind::Sharkron2 => "NPC_Killed_1",
+            // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
+            // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Killed_8",
             _ => return None,
         })
     }
@@ -2057,6 +2134,10 @@ impl NpcKind {
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
             NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            // aiStyle 6 — the wyvern family (`NPC.cs:9945`, :9962, :9980,
+            // :9998, :10016, :10034).
+            NpcKind::WyvernHead | NpcKind::WyvernLegs | NpcKind::WyvernBody |
+            NpcKind::WyvernBody2 | NpcKind::WyvernBody3 | NpcKind::WyvernTail => 6,
             // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
             NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
             NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
@@ -2149,6 +2230,10 @@ impl NpcKind {
             NpcKind::ElfCopter => 62,
             // aiStyle 63 - NPC.cs:13475
             NpcKind::Flocko => 63,
+            // aiStyle 72 - NPC.cs:13888 (the Officer's shield bubble)
+            NpcKind::ForceBubble => 72,
+            // aiStyle 73 - NPC.cs:13926 (the Engineer's Tesla Turret)
+            NpcKind::MartianTurret => 73,
             // aiStyle 74 - NPC.cs:13939, :15372
             NpcKind::MartianDrone | NpcKind::SolarCorite => 74,
             // aiStyle 75 - NPC.cs:13973, :14000, :14018, :14035, :14655, :15338
@@ -2477,6 +2562,10 @@ impl NpcKind {
             NpcKind::MartianProbe => (42.0, 72.0),
             // The drone: 40x30 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => (40.0, 30.0),
+            // The bubble: 18x40 (`NPC.cs:13885`/`:13887`); the turret:
+            // 20x50 (`NPC.cs:13924-13925`).
+            NpcKind::ForceBubble => (18.0, 40.0),
+            NpcKind::MartianTurret => (20.0, 50.0),
             // The shooters: 18x40 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => (18.0, 40.0),
             // The rider + its carrier: 18x40 / 60x40 (`NPC.cs`'s cases
@@ -2656,6 +2745,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
+            // The wyvern family: every kind 32x32 (`NPC.cs:9943-9944`/
+            // `:9960-9961`/`:9978-9979`/`:9996-9997`/`:10014-10015`/
+            // `:10032-10033`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => (32.0, 32.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
             // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
@@ -2952,6 +3050,8 @@ impl NpcKind {
                 | NpcKind::MartianWalker
                 | NpcKind::MartianProbe
                 | NpcKind::MartianDrone
+                | NpcKind::ForceBubble
+                | NpcKind::MartianTurret
                 | NpcKind::BrainScrambler
                 | NpcKind::RayGunner
                 | NpcKind::ScutlixRider
@@ -3083,6 +3183,10 @@ impl NpcKind {
             NpcKind::MartianProbe => 500,
             // The drone: 300 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => 300,
+            // The bubble: 1000 (`NPC.cs:13884`); the turret: 200
+            // (`NPC.cs:13929`).
+            NpcKind::ForceBubble => 1000,
+            NpcKind::MartianTurret => 200,
             // The shooters: 350/350 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => 350,
             // The rider 350, the carrier 600 (`NPC.cs`'s cases 390/391).
@@ -3237,6 +3341,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 150,
+            // The wyvern family: every kind lifeMax 4000 (`NPC.cs:9949`/
+            // `:9966`/`:9983`/`:10001`/`:10019`/`:10037`) — one shared
+            // pool through `realLife` (`:51158-51183`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 4000,
             NpcKind::KingSlime => 2000,
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
@@ -3434,6 +3547,11 @@ impl NpcKind {
             // The drone: 60 (`NPC.cs`'s case 388 — the explode arm's 80
             // rides damage_override).
             NpcKind::MartianDrone => 60,
+            // The bubble: no damage row — the head default 0
+            // (`NPC.cs:8563`; case 384 `:13882-13894`); the turret: 10
+            // (`NPC.cs:13927`).
+            NpcKind::ForceBubble => 0,
+            NpcKind::MartianTurret => 10,
             // The shooters: 50/50 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => 50,
             // The rider 65, the carrier 85 (`NPC.cs`'s cases 390/391).
@@ -3580,6 +3698,14 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead => 22,
             NpcKind::EaterOfWorldsBody => 13,
             NpcKind::EaterOfWorldsTail => 11,
+            // The wyvern: the head 80, every segment 40 (`NPC.cs:9947`/
+            // `:9964`/`:9981`/`:9999`/`:10017`/`:10035`).
+            NpcKind::WyvernHead => 80,
+            NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 40,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
             // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).

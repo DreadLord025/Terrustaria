@@ -149,9 +149,11 @@ impl Default for NpcBuffs {
 /// `NPCID.cs:6085`), Zombie (3, `NPCID.cs:6086`) and WanderingEye (133,
 /// `NPCID.cs:6905`) have null entries — no immunity, like the C# else-branch
 /// (`NPC.cs:17826-17832`). The slime variants all share type 1.
-/// `ImmuneToWhips` / `ImmuneToAllBuffsThatAreNotWhips` are false for every
-/// roster entry, so `ApplyToNPC`'s mask loops never fire
-/// (`NPCDebuffImmunityData.cs:10-19`).
+/// `ImmuneToAllBuffsThatAreNotWhips` rows (the Poltergeist 330, the Force
+/// Bubble 384, the saucer family 392-395) have no slot field here — this
+/// table carries `SpecificallyImmuneTo` only, so those kinds ride `&[]`
+/// (the port's documented gap, see the family arms below).
+/// `ImmuneToWhips` rides [`whip_immune`] separately.
 fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
     match kind {
         // `{ 1, SpecificallyImmuneTo: [20] }` (`NPCID.cs:6079-6084`).
@@ -246,6 +248,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsHead
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
+        // The wyvern family: `{ 87..92, SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:6600-6641`) — On Fire! immunity, all six kinds.
+        NpcKind::WyvernHead
+        | NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => &[31],
         NpcKind::KingSlime => &[20, 31],
         // The eye and the servant: no `DebuffImmunitySets` rows.
         NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
@@ -259,23 +269,34 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoblinSummoner => &[],
         // The frost trio: no `DebuffImmunitySets` rows.
         NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => &[],
-        // The martians: no `DebuffImmunitySets` rows.
+        // The martians (`S1-F-13d` audit — `NPCID.Sets.DebuffImmunitySets`,
+        // `NPCID.cs:8338-8401`/`:8423-8428`/`:9032-9037`): the Officer 383,
+        // the Grunt 385, the Engineer 386, the Zapper 389, the rider 390,
+        // the carrier 391 and the Ray Gunner 382 are null rows; the Brain
+        // Scrambler 381 is [31] (`:8339-8343`), the drone 388 and the
+        // probe 399 are [20, 31] (`:8363-8368`/`:8423-8428`), the walker
+        // 520 is [20, 24, 31, 323] (`:9032-9037`), the Tesla Turret 387 is
+        // [20, 31] (`:8356-8361`). The Force Bubble 384 (`:8347-8353`)
+        // and the saucer family 392-395 (`:8373-8401`) carry
+        // `ImmuneToAllBuffsThatAreNotWhips = true` — the mask loop is
+        // unmodelled, so they ride `&[]` (the documented gap; the
+        // saucer's `ImmuneToWhips` rides `whip_immune`).
         NpcKind::MartianOfficer
         | NpcKind::GrayGrunt
         | NpcKind::MartianEngineer
         | NpcKind::GigaZapper
-        | NpcKind::MartianWalker
-        | NpcKind::MartianProbe
-        | NpcKind::MartianDrone
-        | NpcKind::BrainScrambler
         | NpcKind::RayGunner
         | NpcKind::ScutlixRider
         | NpcKind::Scutlix
+        | NpcKind::ForceBubble
         | NpcKind::MartianSaucer
         | NpcKind::MartianSaucerTurret
         | NpcKind::MartianSaucerCannon
-        | NpcKind::MartianSaucerCore
-        | NpcKind::FlyingDutchman
+        | NpcKind::MartianSaucerCore => &[],
+        NpcKind::BrainScrambler => &[31],
+        NpcKind::MartianDrone | NpcKind::MartianProbe | NpcKind::MartianTurret => &[20, 31],
+        NpcKind::MartianWalker => &[20, 24, 31, 323],
+        NpcKind::FlyingDutchman
         | NpcKind::FlyingDutchmanCannon
         | NpcKind::DD2GoblinT1
         | NpcKind::DD2GoblinT2

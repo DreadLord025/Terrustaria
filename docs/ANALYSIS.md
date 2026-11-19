@@ -5416,7 +5416,12 @@ UNWIRED, the live `update_hungry` keeps running until the wiring round.**
 
 **The Leeches (117/118)** вЂ” the aiStyle-6 worm family: the head rides
 the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
-default tunables, the 14Г—14/60 HP segments).
+default tunables, the 14×14/60 HP segments).
+**Correction (W-A2-1): the budget is TWO draws — the discarded
+`Next(8, 13)` (`NPC.cs:51310`) runs first for every listed head, then
+the `Next(3, 6)` override (`:51341`); the crumble `Next(100)` also runs
+for the Leech even though the type-117 guard blocks the effect
+(`:51590`). Both ledgers are pinned in `worm_tests`.**
 
 Deviations: the eye/mouth mirrors (114, the 100Г—100 8000-HP wall parts)
 are the render-machinery follow-up (the vanilla draws them inside the
@@ -19102,6 +19107,138 @@ which for every aiStyle-3 kind, so it needs its own branch and its own test pass
 (S1-D-3p)" below; the caller migration is the documented remainder.
 
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 вЂ” code-only mode)
+## The Wyvern family (S1-D-3, 2026-11-19 — code-only mode)
+
+The audit `docs/research/55-audit-worms.md` T3a (branch `docs/audit-worms`)
+found the Wyvern 87-92 family **UNPORTED entirely** — no kinds, no 14-link
+chain, no altitude gates. This round lands the kind wave + the head machine,
+**code-only mode: no compiler invoked**; the 16 witness tests in
+`npc_ai_wyvern.rs` are WRITTEN NOT RUN. Branch `task/S1-D-3-wyvern-port`,
+NOT merged.
+
+**Identity census** (`NPCID.cs:10851-10861`): WyvernHead 87, WyvernLegs 88,
+WyvernBody 89, WyvernBody2 90, WyvernBody3 91, WyvernTail 92 — all six are
+`aiStyle = 6` (`NPC.cs:9945`/`:9962`/`:9980`/`:9998`/`:10016`/`:10034`), the
+shared `AI_006_Worms` sim-pass serves them; there is no `AI_037`-style
+dedicated method (the brief's "style 37?" is the Destroyer's, not the
+wyvern's). The roster's `DD2WyvernT1-3` are the Etherian 558-560 — a
+different family, untouched.
+
+**The kind wave** (the frost precedent — every exhaustive `NpcKind` match
+gained arms, found by a scripted scan of all `match` blocks over the enum):
+- `npc.rs`: the 6 variants; `knock_back_resist` 0 (`NPC.cs:9953` etc.),
+  `defense` 10/20 (`:9948`/`:9965`...), `value` 10000 except WyvernBody's
+  **2000** (`:9989` — the one divergent coin row), `update_kind_ai` no-op
+  (the sim-pass convention), `find_frame` no-op (FindFrame has NO case
+  87-92 — verified over the whole `:66705-77291` switch;
+  `Main.npcFrameCount[87..92]` = 1, `Main.cs:67092-67093`), `render_key`
+  (the gate-reassigned 223-228 band), `ALL_KINDS` 253 → 259 at the L-C gate;
+- `npc/data.rs`: `to_u16`/`from_u16` **223-228** (GATE REASSIGN L-C: the
+  branch's 213-218 TRIPLE-collided with R10 martian 213/214 — keeps,
+  earliest push — + R55 destroyer 216-218 + R50 fishron 219-222; the six
+  took the next-free 223-228, 148 reserved R78 LeechTail. The vanilla
+  87-92 collide with the port-local Scutlix 87/88 + saucer 89-92 ids —
+  the pirate renumber's precedent; the vanilla `NPC.type` rides the
+  bestiary entry),
+  `ai_style` 6, `size` 32×32, `max_hp` 4000, `contact_damage` 80/40,
+  `hit_sound` NPC_Hit_7 / `death_sound` NPC_Killed_8 (`:9950-9951` etc.),
+  `worm_tunables` (11, 0.25) (`:51720-51724`), `shares_carrier_life` all
+  six (`:51158-51159`/`:51182-51183`);
+- `npc_buffs.rs`: `SpecificallyImmuneTo = [31]` (On Fire!) for all six
+  (`NPCID.cs:6600-6641`);
+- `bestiary.rs`: ONE entry (credit `WyvernHead`, net 87, name "Wyvern" —
+  the localization row); the five segments fold onto it
+  (`NPCID.cs:1821-1856`'s `Hide = true` draw modifiers; the Sky tag rides
+  all six ids, `BestiaryDatabaseNPCsPopulator.cs:1713-1718`). The banner
+  chain already existed: 87-92 → banner 86 → item 1700
+  (`BannerSystem.cs:638-644`/`:611-612`, `tr-core/src/bestiary.rs:293-298`);
+  the loot rows already existed (`loot_db_gen.rs:299-300` — the kite 4379
+  wind-gated 1/25 + the Souls of Flight 575 5-10 classic / 10-20 expert,
+  `ItemDropDatabase.cs:1008-1009`);
+- `app/netglue.rs::npc_seed`: the hover-ctor arm (the net state overwrites
+  the position); `render/entities.rs`: the six draw arms + the rotation
+  whitelist + `npc_health_bar_scale` 1.5 for the head
+  (`Main.cs:45911-45914`); `ui/bestiary.rs::portrait_data`: the 32×32 rows;
+- `audio.rs`: the `NPC_Killed_8` bank row (the asset ships).
+
+**Deliberate membership choice**: the wyvern kinds are NOT in
+`is_worm`/`is_worm_head`/`is_worm_mid` (the `StardustWormHead` precedent).
+The shared pass's budget-roll chain + dig/air head are the WRONG machine
+for a fixed-count sky flyer — adding them would make the live
+`update_worms_in` spawn a budget chain with the wrong per-index kinds and
+run the velocity-snap stand-in head. `shares_carrier_life` IS extended
+(inert until the wiring sets `worm_id`/`seg_index`). The shared sim-pass
+is **R77's lane** (the audit's T1/T2 fixes) and was NOT edited.
+
+**The machine** (`crates/tr-app/src/npc_ai_wyvern.rs`, UNWIRED):
+- `assemble_wyvern_chain` ports `:51156-51190` whole: the fixed 14 links,
+  `wyvern_chain_kind(m)` = legs 88 at m 1/8, body2 90 at 11, body3 91 at
+  12, tail 92 at 13, body 89 default (`:51164-51180`); the `NewNPC` Bottom
+  placement (`:80770`, `Entity.cs:130` — every link stacked on the head's
+  truncated bottom-centre), the ai[0]/ai[1]/ai[3]/realLife links, the
+  port's stable `worm_id`/`seg_index` identity alongside;
+- `wyvern_head_step` ports the type-87 path in source order: the realLife
+  mirror (`:51133-51135`), the dead/invalid re-target (`:51137-51140`,
+  `npc_target::target_closest` style 6), the dead-target
+  `EncourageDespawn(300)` with NO flag sink (87 has no `:51112-51128`
+  case), the chain request, the velocity-sign sprite flip
+  (`:51616-51626`), the 16-px snapped aim (`:51855-51860`, truncating
+  casts), the ×num67 scale (`:51997-52002`), the **altitude gates**
+  (`:52053-52078`: the reversal turn-boost — any-axis opposition +
+  Manhattan > num46/2 + dist < 300 → ×1.1 below max; the climb rule —
+  head centre below player centre OR player centre below worldSurface
+  (the f64 tile compare) OR dead → |vx| < 5.5 ramp ×1.1 with the
+  `vx == 0` kick `-direction`, else `vy -= 0.25` while `vy > -11`), the
+  shared three-arm steer (`:52112-52198` verbatim — the 0.2/0.5 bands,
+  the 1.1/2× multipliers, the cross-brakes), the head rotation
+  `atan2 + PI/2` (`:52201` — the Math.PI/2 constant, distinct from the
+  followers' 1.57f literal);
+- `wyvern_follower_step` ports `:51867-51922` with the 42 spacing
+  (`:51881-51884`) and the step-sign flip (`:51911-51921`) — the shared
+  follow MODEL is faithful per the audit (T2a), this is the
+  wyvern-parameterised copy for the unwired path;
+- `wyvern_hit_dust_plan` ports the `:88909-88933` counts (the
+  double-precision `dmg/lifeMax*50` hit loop; the death half's 10 dusts +
+  the wiring's `Next(1,4)` gore count with per-gore `Next(11,14)` draws).
+
+**RNG by construction**: the 87-92 path through AI_006 draws NOTHING —
+every `Main.rand` site in `:50963-52273` belongs to another type's arm
+(the full census is in the module docs; the budget list `:51303` excludes
+87, the crumble draw `:51590` is unreachable under flag3-true, the dig
+sound `:51976` excludes 87). Neither the assembly nor the steps take an
+RNG parameter; the witness pins a seeded `UnifiedRandom` bit-identical
+across 120 ticks of a full chain. The ONLY wyvern RNG is the death-gore
+pair in HitEffect (the strike path, not the AI) — the plan returns counts
+and the wiring owns the draws in C# order.
+
+**Documented deferrals**:
+1. **Sheet deferral (NO atlas sheets)**: NPC_87..92 are not packed. The
+   best-fit atlas stands at **8121 px** against the 8192 strict-GPU bound
+   (`tr-render/src/atlas.rs:98-105`) — **~71 px of headroom**; the six
+   sheets (the head alone is a multi-frame 100+-px strip) do not fit.
+   The draw arms ask `npc_sheet(87..92)` → None → the `let Some(tex)`
+   guard skips; the bestiary portrait skips the same way. The repack
+   (a wider shelf strategy or the array-layer path) + the
+   `BESTIARY_NPC_SHEET_IDS` rows + the head's draw modifiers
+   (`NPCID.cs:1811-1819`: Position (55,15), portrait overrides (4,10))
+   ride the atlas wave.
+2. **Sim wiring** (the next wave, R77's lane): the head's
+   `update_kind_ai` arm calls `wyvern_head_step` (or the style-6 axis
+   claims it), drains `wants_chain` through `assemble_wyvern_chain`,
+   runs `wyvern_follower_step` for seg_index > 0 with the 42 spacing,
+   and adds the orphan-death checks (`:51425-51433` the leader-gone
+   segment death, `:51468-51475` the follower-gone head death — both
+   need the pool, cited in the module). The natural-spawn gate
+   (`Main.SpawnNPC`'s wyvern arm — hardmode + sky altitude + the
+   `NPC.downedMechBossAny` gate) rides the spawner wave.
+3. The wyvern health bar's dedicated worm arm
+   (`DrawInterface_Healthbar_Worm(npc, 92, scale)`, `Main.cs`'s case-87)
+   stays with S1-D-6b's worm-bar work; the 1.5 scale landed.
+4. `CopyInteractions` (`:51185`) is the identity at assembly time (the
+   fresh head has no interaction flags on the spawn tick); the wiring
+   re-copies if it ever assembles later.
+
+## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
 `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)
 is ported as `crates/tr-app/src/npc_ai_style37.rs` вЂ” pure functions over the
@@ -29860,6 +29997,138 @@ Utils/Dust/Vector2D helpers); the dispatch insertion checked against the
 existing arm list (no style-0/171/173/179/180 arm existed — the five kinds
 rode `_ => {}`); the 9 witness tests are WRITTEN, NOT RUN — **no compiler
 invoked**.
+### The worm sim-pass RNG + placement (W-A2-1, code-only mode)
+
+Audit `docs/research/55-audit-worms.md` (branch `origin/docs/audit-worms`)
+finding W-A2-1 — the shared `AI_006_Worms` mechanics in
+`world_sim/npcs.rs` (`update_worms_in` + `worm_head_step`), fixed in
+place on `fix/worm-rng-placement`. The C# was re-read whole at every
+cited window before each edit.
+
+**The fixes (per audit finding):**
+
+- **T1c budget draws (`NPC.cs:51303-51342`).** Every head in the
+  `:51303` list rolls `ai[2] = Next(8, 13)` FIRST (`:51310`); type 10
+  (GiantWorm) rolls again `Next(4, 7)` (`:51313`), type 117 (Leech)
+  again `Next(3, 6)` (`:51341`), type 13 (EoW) overrides with
+  `GetEaterOfWorldsSegmentsCount()` (`:51317`) but the first draw was
+  still consumed. The pre-fix port drew once per family — a stream
+  shift for every later `UpdateNpcs` consumer on every worm spawn.
+  Now: draw-then-override, the discarded result kept advancing the
+  stream. The Destroyer (`AI_037`'s own roll) and the crawltipede
+  (the fixed 30-link spawn, `:51369-51392`) are OUTSIDE the list and
+  draw nothing — their spawn routing stays byte-identical (R55 boundary).
+- **T1g flag3 scan (`NPC.cs:51525-51597`).** The margins are
+  `(int)(x/16)-1 .. (int)((x+w)/16)+2` exclusive-high, clamped; a tile
+  counts when `nactive && (tileSolid || (tileSolidTop && frameY==0))`
+  OR `liquid > 64` (liquid on INACTIVE tiles too), and only when its
+  16-px box actually overlaps the NPC rect (`:51586`). Each
+  overlapping tile draws `Main.rand.Next(100)` (`:51590`) — the draw
+  sits BEFORE the `type != 117 && nactive && tileSolid` guards in the
+  C# `&&` chain, so Leech heads and liquid-only tiles consume it too;
+  on 0 the effect-only `KillTile(fail:true, effectOnly:true)` fires
+  (dust only — the dust effect rides the unwired dust seam, the DRAW
+  cannot be skipped). The pre-fix scan had no margins, no overlap
+  test, no solidTop arm, liquid gated on active, and no draw at all —
+  a per-digging-tick stream divergence. The always-fly presets
+  (`:51548-51567`) skip the scan entirely (`!flag3 | flag2` is false);
+  of the ported kinds only the crawltipede 412-414 (`:51560-51563`) —
+  ported so its stream stays draw-free.
+- **T1a head rotation (`NPC.cs:52201`).** `rotation = Atan2(vy, vx) +
+  Math.PI/2` at the tail of the no-leader `else` — every head, every
+  tick. The pre-fix `worm_head_step` never wrote rotation (heads drew
+  frame-up while digging sideways). The heads use PI/2
+  (`FRAC_PI_2`), the followers keep the `1.57f` literal (`:51878`) —
+  the two constants stay distinct.
+- **T2b child placement (`NPC.cs:51347` + `NewNPC:80770` +
+  `Entity.cs:128-131`).** `NewNPC` sets `Bottom = (X, Y)`:
+  `child.pos = (X - width/2, Y - height)` with
+  `X = (int)(pos.X + (float)(width/2))` — the width is an INT, so
+  `width/2` is integer division — and `Y = (int)(pos.Y + height)`.
+  The child's BOTTOM sits at the parent's bottom; the pre-fix port
+  put the child's TOP there, one child-height low per link, and did
+  not int-truncate. Fixed.
+- **T2c pass order.** C# runs `AI_006` inside each NPC's `Update` in
+  slot order; `NewNPC`'s `Start = whoAmI` gives every child a higher
+  slot, so the head moves first and each follower snaps to the
+  leader's SAME-TICK centre. The pre-fix pass ran followers before
+  heads — a one-tick lag along the chain. Now heads first, then the
+  follower trail in ascending slot order (= ascending `seg_index`).
+- **T1d surface gate (`NPC.cs:51110-51148`).** `flag = true` for
+  types 10/39/95/117/510 (ported: GiantWorm, Leech); target dead OR
+  (flag && player above `worldSurface*16`) → `EncourageDespawn(300)`
+  (the existing `despawn_timer` seam) + `velocity.Y += 0.2` while
+  gated. The dead-target arm runs for every segment (family-wide).
+  The `TargetClosest()` retarget has no single-player seam (the
+  target IS the one player) — documented. The 513/510/621 rows ride
+  their kind waves.
+- **T1e corruption escape (`NPC.cs:52004-52050`).** INSIDE the dig
+  branch after the aim scale: Devourer/EoW whose target is outside
+  Corrupt/Crimson or dead → flag6; no living player in ZoneCorrupt
+  (flag7 — Corrupt only, NOT Crimson) → below
+  `(rockLayer + maxTilesY)/2` the head deactivates and walks the
+  `ai[0]` chain dead (the port kills the head + every DOWNSTREAM
+  `seg_index` of its `worm_id` — an EoW split fragment ahead keeps
+  its own life, as the C# walk never reaches it), and the aim
+  overrides to straight down (`num48 = 0, num49 = num45`).
+- **T1f 1000-px override (`NPC.cs:51598-51615`).** A listed head
+  (ported: Devourer/GiantWorm/EoW/Leech) with no player inside the
+  ±1000-px box around its rect forces flag3 (one rectangle test,
+  strict inequalities, int-truncated positions).
+
+**The RNG argument (stream-position parity).** `UnifiedRandom` is the
+exact .NET subtractive stream (`next_range`/`next_max` = one
+`Sample()` each). Per head kind, at chain start: Devourer 1 draw
+(`Next(8,13)` kept), GiantWorm 2 (`Next(8,13)` discarded +
+`Next(4,7)`), Leech 2 (discarded + `Next(3,6)`), EoW 1 (discarded,
+constant 65), Destroyer 0, crawltipede 0. Per digging tick: one
+`Next(100)` per overlapping candidate tile in X-outer/Y-inner scan
+order, for every listed head including the Leech; the always-fly
+crawltipede draws none. The witness tests replay each ledger on a
+twin oracle stream and assert the NEXT raw draw after the pass is
+equal — pre/post stream-position parity per head kind, plus the
+two-tick crumble ledger. The tests are WRITTEN, NOT RUN (code-only
+mode, no compiler invoked).
+
+**Deliberate deviations / deferred:**
+- The air stumble / dig steer stays the documented stand-in — the
+  faithful three-arm accel steer (`:52112-52198`) is audit T1b, wave
+  W-A2-2 (it changes no draws, so the RNG parity here is independent).
+- The crumble's effect-only `KillTile` dust is unwired (the dust
+  seam); the draw runs regardless.
+- The surface gate's `TargetClosest()` retarget: single-player, the
+  target is the one player — no seam needed.
+- `WormHeadCtx` carries `px/py` (position) alongside the centre; the
+  centre-only test seam (`update_worms_in`) defaults position ≈
+  centre, dead = false, no evil zones — production
+  (`update_worms`) passes the full snapshot incl.
+  `scene_metrics.zone_corrupt/zone_crimson`.
+- T1h tunables (Digger/Wyvern/BoneSerpent rows, EoW expert tiers,
+  Leech WoF-rage), T3b EoW Transform semantics, T3c orb gate, T3e
+  LeechTail: R78's lane. Destroyer 81-links/tail-laser/Probe 139:
+  R55's lane.
+
+**Boundary note (Destroyer routing).** The port's Destroyer still
+rides this aiStyle-6 pass (the faithful `npc_ai_style37.rs` is
+UNWIRED, ROADMAP S1-D-3 aiStyle-37). Its chain spawn draws nothing
+(unchanged) and its segment lasers keep their exact ledger
+(`Next(4)` + `Next(1400,26000)` + the four jitters, unchanged). Its
+heads now run the shared scan/crumble + rotation + gates like every
+other head in the pass — a behaviour change confined to the shared
+mechanics the audit already scopes to this lane (T4: "shared
+mechanics audited above apply"); the faithful AI_037 tile probe
+(`:49884-49924`) and machine replace the stand-in wholesale when
+R55 wires it.
+
+**Verification.** Code-only: the C# windows re-read whole
+(`:51108-51159`, `:51295-51399`, `:51520-51619`, `:51855-51929`,
+`:51990-52064`, `:52185-52229`, `:80758-80782`, `Entity.cs:122-132`,
+`EncourageDespawn:7249-7256`); every seam checked by read/grep
+(`encourage_despawn`/`tick_despawn`/`despawn_expired`, `TileSet::has`,
+`World.tile`/`width`/`height`/`world_surface`/`rock_layer`,
+`Player.x/y/dead/center`, `scene_metrics.zone_corrupt/zone_crimson`,
+`UnifiedRandom.peek/next`). The 9 new witness tests in `worm_tests`
+are WRITTEN, NOT RUN — **no compiler invoked**.
 ## The Frost Moon projectile family (S1-D-4)
 
 **Code-only round** (`task/S1-D-4-santa-projectiles`, 2026-11-19): no
@@ -30115,6 +30384,109 @@ hook chain nesting, the flag3 switch membership, the HandleMovement stick
 arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
 Update countdown position). The 10 witness tests in
 `projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The Martian Madness defaults completion (S1-F-13d, code-only mode, 2026-11-19)
+
+**Census first.** The martian family's 17 vanilla ids (`NPCID.cs`):
+381 BrainScrambler, 382 RayGunner, 383 MartianOfficer, **384 ForceBubble**,
+385 GrayGrunt, 386 MartianEngineer, **387 MartianTurret** ("Tesla Turret",
+`NPCID.cs:12449`), 388 MartianDrone, 389 GigaZapper, 390 ScutlixRider,
+391 Scutlix, 392-395 the Saucer family, 399 MartianProbe, 520 MartianWalker.
+Against the post-sync roster (origin/main + S1-D-3ff wave A + the frost
+slices): **15 of 17 already ported**; only the ForceBubble 384 and the
+Tesla Turret 387 were missing. Two census corrections: "Scutlix 380" is
+wrong — the carrier is **391** (`NPCID.cs`; 380 is not a martian id), and
+"StormDiver" is **`VortexRifleman` 425** (`NPCID.cs:11525`, the display
+name row `:12478` `{ "Storm Diver", 425 }`) — a Vortex-pillar kind, already
+on the roster, not a Martian Madness member.
+
+**What landed (defaults + frames only).** The two `NpcKind` variants with
+the verbatim `SetDefaults` rows — the bubble (`NPC.cs:13882-13894`:
+18x40, aiStyle 72, def 20, 1000 HP, NPCHit43/NPCDeath45, npcSlots 0,
+noTileCollide, canGhostHeal false; NO damage/kb/value rows — the head
+defaults 0/1f/0f `NPC.cs:8563`/`:8533`/`:8544` stand) and the turret
+(`NPC.cs:13922-13934`: 20x50, aiStyle 73, dmg 10, def 40, 200 HP, kb 0,
+NPCHit53/NPCDeath56, canGhostHeal false, no value row). FindFrame: the
+turret's case 387 verbatim (`NPC.cs:71663-71696` — idle every 15; firing
+`ai[0] > 0` steps every 10 with +1 at `ai[0] >= 20` and +1 at `>= 40`);
+the bubble has NO case 384 — the single-frame strip rests row 0
+(`Main.npcFrameCount[384]` = 1, `[387]` = 2, hand-counted from the
+`Main.cs:67082` 697-entry initializer). Sounds: `SoundID.cs`'s
+`NPCHit43/53 = LegacySoundStyle(3, …)`, `NPCDeath45/56 = (4, …)` → the
+`NPC_Hit_43/53` + `NPC_Killed_45/56` cues. Debuffs
+(`NPCID.Sets.DebuffImmunitySets`): turret [20, 31] (`NPCID.cs:8356-8361`);
+the family audit corrected the existing rows — Scrambler [31]
+(`:8339-8343`), drone/probe [20, 31] (`:8363-8368`/`:8423-8428`), walker
+[20, 24, 31, 323] (`:9032-9037`); the Officer/Grunt/Engineer/Zapper/
+rider/carrier/RayGunner rows are null. Bestiary: the turret carries its
+own entry (draw mods Position(2,0)/Velocity 3, `NPCID.cs:3788-3794`);
+the bubble is hidden (`Hide = true`, `NPCID.cs:3766-3770`) and folds onto
+the Officer's credit (the Sleeping Angler precedent; the banner fold
+agrees — 383/384 share 141, 387 owns 144, `BannerSystem.cs:777-785`).
+Invasion: the turret joins the group-4 list (`NPC.cs:78327-78340`, case
+387 at `:78332`) as a **0-point kill** (`NPC.cs:78256-78257`); the port's
+`report_invasion_kill` now honours the `if (num9 > 0)` gate
+(`NPC.cs:78260`) — a 0-point kill neither drains the size nor refreshes
+the report. The group-4 list stays six kinds + the turret: the C#'s 13
+cases include the Scrambler/RayGunner/drone/rider/Scutlix/saucer parts
+whose kill wiring rides their spawn/AI waves (documented in
+`world_sim/npcs.rs::npc_invasion_group`).
+
+**Wire ids.** The pre-sync draft used 189/190; origin/main's S1-D-3ff
+wave A had claimed 189..212 (TwiggyZombie 189 … ZombieRaincoat 212), so
+the keep-both merge moved the pair to **213/214** (`to_u16`/`from_u16`).
+The render-key (G6) values ride the **vanilla type ids 384/387** (the
+Pumpkin/Frost Moon convention — unused by every other arm, injective);
+the draft's 189/190 render keys would have collided with TwiggyZombie/
+FemaleZombie. `ALL_KINDS` 238 → 240; the wire-roster pin 238 → 240.
+
+**Stand-in routing (AI arms = later wave).** Both kinds hold still in
+`update_kind_ai` (`NpcKind::ForceBubble => {}` / `MartianTurret => {}`):
+the bubble's AI_072 owner-pin (`NPC.cs:35081-35101`) already has its pure
+machine in `npc_ai_style72.rs` (S1-D-3-aistyle72, unwired — its header
+note updated: the kind now exists, the axis claim is the wiring wave);
+the turret's AI_073 warp-in (`NPC.cs:35102-35216`) is unported. The
+Officer's spawn/shield block (`NPC.cs:56222-56249`) and the Engineer's
+placement (`NPC.cs:59004-59030`, the `NewNPC(..., 387)` + feet plant at
+`:59029-59030`) ride those waves. Draw: the bubble draws NOTHING on its
+own path — the C#'s `if (type == 384) break` (`Main.cs:25041-25044`); the
+Officer's arm draws NPC_384 as its shield overlay (`Main.cs:25773-25777`,
+gated on `ai[2]`) — the overlay lands with the Officer's draw wave. The
+turret draws its 2-frame strip; the GlowMask[32] overlay
+(`Main.cs:25961-25972`) is unmodelled like every glow mask.
+
+**Deliberate gaps.** The `ImmuneToAllBuffsThatAreNotWhips` mask (the
+bubble `NPCID.cs:8347-8353`, the saucer family `:8373-8401`) has no slot
+field in `NpcBuffs` — those kinds ride `&[]` (the Poltergeist precedent;
+the saucer's `ImmuneToWhips` rides the separate `whip_immune` gate).
+
+**Atlas status.** `NPC_384` (18x40, 1 frame) and `NPC_387` (20x100, 2
+frames) join `STATIC_SHEET_NAMES` — ~1800 px² + padding against the
+8192-px shelf bound (main reportedly within ~71 px of it at the last
+pack). Code-only mode cannot run the packer to measure the new height;
+the `item_icon_uvs_are_normalized_and_atlas_fits` test asserts
+`atlas.height <= 8192` and runs in the lead's compile window. **If it
+trips, the sheet enumeration defers to the atlas-packer task** (drop the
+two names + the `npc_tex` lookups; the defaults data stands alone — the
+draw arms already tolerate `None` sheets). Dependency documented here
+and on the ROADMAP row.
+
+**Match audit.** A scripted scan over every `match` whose arms enumerate
+`NpcKind` variants (11 exhaustive sites: `npc.rs` kb/def/value/render_key,
+`npc/data.rs` to_u16/ai_style/size/max_hp/contact_damage, `npc_buffs.rs`
+debuff_immune_ids, `netglue.rs` npc_seed) — every site carries both new
+arms; the wildcard-carrying matches (find_frame dispatch, cs_id,
+texture_net_id, hit/death sounds' fallbacks) resolve the pair through
+their explicit arms or the bestiary-backed fallbacks.
+
+**Verification.** Code-only: the C# rows re-read line-by-line (the two
+SetDefaults cases, FindFrame 387 + the absent 384, the frame-count
+initializer hand-count, the debuff sets, the banner/hide rows, the
+invasion points/group cases, the draw break/overlay); every Rust seam
+checked by read/grep (the method signatures the tests call, the
+`World::new`/`Player::spawn`/`UnifiedRandom::new` shapes, the wire-id
+collision scan). The 8 `s1_f_13d_*` tests are WRITTEN, NOT RUN — **no
+compiler invoked**.
 ## The projectile sound wave (S1-E-21h, 2026-11-19)
 
 **Code-only mode**: this wave was implemented without invoking any compiler —

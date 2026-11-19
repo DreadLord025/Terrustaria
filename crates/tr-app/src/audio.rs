@@ -125,6 +125,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
+    // The Force Bubble's hit cue (`NPC.cs:13889`'s `NPCHit43`) and the
+    // Tesla Turret's (`NPC.cs:13930`'s `NPCHit53`, S1-F-13d).
+    ("NPC_Hit_43", 3),
+    ("NPC_Hit_53", 3),
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
@@ -134,6 +138,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
+    // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
+    ("NPC_Killed_8", 4),
     ("NPC_Killed_10", 4),
     ("NPC_Killed_11", 4),
     ("NPC_Killed_12", 4),
@@ -151,6 +158,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_24", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
+    // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the
+    // Tesla Turret's (`NPC.cs:13931`'s `NPCDeath56`, S1-F-13d).
+    ("NPC_Killed_45", 4),
+    ("NPC_Killed_56", 4),
     ("NPC_Killed_54", 4),
     ("NPC_Killed_57", 4),
     ("NPC_Killed_59", 4),

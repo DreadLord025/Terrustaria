@@ -872,6 +872,22 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsHead, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        // The wyvern head's portrait: the 32x32 single-frame box
+        // (`NPC.cs:9943-9944`, `Main.npcFrameCount[87]` = 1). The sheet
+        // itself is deferred (the ~71-px atlas headroom, ANALYSIS "The
+        // Wyvern family") — `entry_sheet` returns None and the portrait
+        // draw skips until the repack; the vanilla's draw modifiers
+        // (`NPCID.cs:1811-1819`: the NPC_87 custom path, Position
+        // (55, 15), the portrait overrides (4, 10)) ride that wave too.
+        // The segments never reach this arm through the catalog (the
+        // head's fold, `NPCID.cs:1821-1856`'s `Hide = true`) — the rows
+        // exist for the match's exhaustiveness, the same 32x32 box.
+        (NpcKind::WyvernHead, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        (NpcKind::WyvernLegs, _)
+        | (NpcKind::WyvernBody, _)
+        | (NpcKind::WyvernBody2, _)
+        | (NpcKind::WyvernBody3, _)
+        | (NpcKind::WyvernTail, _) => (sheet_i, 32.0, 32.0, 32.0, white),
         (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Nurse, _) => (sheet_i, 48.0, 38.0, 48.0, white),
@@ -984,6 +1000,19 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
         }
+        // The Tesla Turret (S1-F-13d): the 2-frame NPC_387 strip over the
+        // 20x50 frames.
+        (NpcKind::MartianTurret, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(50.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        // The bubble: hidden in the bestiary (`NPCID.cs:3766-3770`'s
+        // `Hide = true`) — it folds onto the Officer's entry, so this arm
+        // never renders; the SetDefaults box (18x40, `NPC.cs:13885`/
+        // `:13887`) stands as the shape.
+        (NpcKind::ForceBubble, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         // The shooters: the 9-frame NPC_381/382 strips over the 18x40
         // frames.
         (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {

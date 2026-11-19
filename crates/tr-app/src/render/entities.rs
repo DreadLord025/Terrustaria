@@ -269,6 +269,13 @@ pub(crate) struct NpcAssets {
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
     pub(crate) martian_drone: Option<BgTex>,
+    /// `NPC_384` — the Force Bubble (1 frame of 18x40,
+    /// `Main.npcFrameCount[384]` = 1); the C# never draws it on its own
+    /// path (`Main.cs:25041-25044`'s `break`) — the Officer's arm draws it
+    /// as an overlay (`Main.cs:25773-25777`). `NPC_387` — the Tesla
+    /// Turret (2 frames of 20x50, `Main.npcFrameCount[387]` = 2).
+    pub(crate) force_bubble: Option<BgTex>,
+    pub(crate) martian_turret: Option<BgTex>,
     /// `NPC_381` the Brain Scrambler / `NPC_382` the Ray Gunner (9 rows of
     /// 48 / 46) — the two shooters ride the same FindFrame case as the
     /// walkers but each keeps its own sheet.
@@ -534,6 +541,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_walker_big: npc_tex(atlas, "NPC_520"),
         martian_probe: npc_tex(atlas, "NPC_399"),
         martian_drone: npc_tex(atlas, "NPC_388"),
+        force_bubble: npc_tex(atlas, "NPC_384"),
+        martian_turret: npc_tex(atlas, "NPC_387"),
         brain_scrambler: npc_tex(atlas, "NPC_381"),
         ray_gunner: npc_tex(atlas, "NPC_382"),
         scutlix_rider: npc_tex(atlas, "NPC_390"),
@@ -1074,6 +1083,14 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::VortexHeadcrab => 428,
         NpcKind::VortexSoldier => 429,
         NpcKind::SolarSpearman => 518,
+        // The wyvern family (S1-D-3): one sheet per kind, the vanilla
+        // ids (the sheets are deferred — the ~71-px atlas headroom).
+        NpcKind::WyvernHead => 87,
+        NpcKind::WyvernLegs => 88,
+        NpcKind::WyvernBody => 89,
+        NpcKind::WyvernBody2 => 90,
+        NpcKind::WyvernBody3 => 91,
+        NpcKind::WyvernTail => 92,
         NpcKind::MoonLordHead => 396,
         NpcKind::MoonLordHand => 397,
         NpcKind::MoonLordCore => 398,
@@ -1090,6 +1107,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // S1-F-13d: the Force Bubble's bestiary credit folds onto the
+        // Officer (Hide=true), but its DRAW sheet is its own NPC_384
+        // (the officer's shield overlay, `Main.cs:25773-25777`) — the
+        // fishron-hazard precedent. The turret has its own entry (387).
+        NpcKind::ForceBubble => 384,
         _ => kind.net_id() as u16,
     }
 }
@@ -2050,10 +2072,13 @@ fn npc_shows_health_bar(n: &Npc) -> bool {
 /// The boss-scale 1.5 list of `DrawInterface_14_EntityHealthBars`
 /// (`Main.cs:45839-45922`), restricted to the kinds the port ships:
 /// 4/35/36/50/113/114/125-131/222/245-249/262/266/551/564/565/576/577/439.
-/// The unshipped ids (87 the Wyvern, 370 Duke Fishron, 454/510/621 the
-/// late-game worm heads) have no port kind. The Destroyer's 134-136 arm
-/// (`:45930-45975`, the smoothed shared bar) stays with the open worm-bar
-/// work (S1-D-6b, `docs/ANALYSIS.md`).
+/// The unshipped ids (370 Duke Fishron, 454/510/621 the late-game worm
+/// heads) have no port kind. The Wyvern's 87 arm (`Main.cs:45911-45914`)
+/// lands with S1-D-3 wyvern; its dedicated worm health bar
+/// (`DrawInterface_Healthbar_Worm(npc, 92, scale)`, `Main.cs`'s case-87
+/// arm) stays with the open worm-bar work (S1-D-6b). The Destroyer's
+/// 134-136 arm (`:45930-45975`, the smoothed shared bar) stays there too
+/// (`docs/ANALYSIS.md`).
 fn npc_health_bar_scale(kind: NpcKind) -> f32 {
     use NpcKind::*;
     match kind {
@@ -2085,6 +2110,8 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DD2OgreT3
         // S1-D-3 W-9: `type == 439 || type == 370` (`Main.cs:45919`).
         | DukeFishron
+        // `Main.cs:45911-45914` — `if (type == 87) scale = 1.5f`.
+        | WyvernHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -2300,6 +2327,19 @@ pub(crate) fn draw_npcs(
             NpcKind::MartianProbe => martian_draw(assets.martian_probe.as_ref(), 8, n, w, h),
             // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
             NpcKind::MartianDrone => martian_draw(assets.martian_drone.as_ref(), 2, n, w, h),
+            // The bubble: `Main.DrawNPCDirect`'s `if (type == 384) break`
+            // (`Main.cs:25041-25044`) — the bubble NEVER draws on its own
+            // path; the Officer's arm draws NPC_384 as its shield overlay
+            // (`Main.cs:25773-25777`, gated on the Officer's ai[2] owner
+            // slot). The overlay rides the Officer's AI/draw wave — until
+            // then the bubble draws nothing, exactly like the C#'s own
+            // pass.
+            NpcKind::ForceBubble => (None, 40.0, [18.0, 40.0], [n.x, n.y]),
+            // The Tesla Turret: the 2-frame NPC_387 strip over the 20x50
+            // frames (`Main.npcFrameCount[387]` = 2). The C#'s
+            // GlowMask[32] overlay (`Main.cs:25961-25972`) is unmodelled
+            // like every other glow mask in the port.
+            NpcKind::MartianTurret => martian_draw(assets.martian_turret.as_ref(), 2, n, w, h),
             // The shooters: `NPC_381`'s 9 rows of 48 / `NPC_382`'s 9 of 46.
             NpcKind::BrainScrambler => {
                 martian_draw(assets.brain_scrambler.as_ref(), 9, n, w, h)
@@ -2862,6 +2902,22 @@ pub(crate) fn draw_npcs(
                     [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
+            // The wyvern family (`S1-D-3` wyvern): single-frame segments
+            // (`Main.npcFrameCount` 87..92 = 1, `Main.cs:67092-67093`),
+            // rotated along the chain like the worms above. **Sheet
+            // deferral**: NPC_87..92 are NOT packed — the best-fit atlas
+            // stands at 8121 px against the 8192 strict-GPU bound
+            // (`tr-render/src/atlas.rs:98-105`), only ~71 px of headroom,
+            // and the six sheets do not fit; `npc_sheet` returns None and
+            // the draw skips (the `let Some(tex)` guard below). The
+            // packing + the bestiary portraits ride the atlas-repack
+            // wave (docs/ANALYSIS.md "The Wyvern family").
+            NpcKind::WyvernHead => generic_anchor(assets.npc_sheet(87), 1, n, w, h),
+            NpcKind::WyvernLegs => generic_anchor(assets.npc_sheet(88), 1, n, w, h),
+            NpcKind::WyvernBody => generic_anchor(assets.npc_sheet(89), 1, n, w, h),
+            NpcKind::WyvernBody2 => generic_anchor(assets.npc_sheet(90), 1, n, w, h),
+            NpcKind::WyvernBody3 => generic_anchor(assets.npc_sheet(91), 1, n, w, h),
+            NpcKind::WyvernTail => generic_anchor(assets.npc_sheet(92), 1, n, w, h),
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 // The hovers: `FindFrame`'s case 6 (`NPC.cs`, the 8-tick
                 // advance over `Main.npcFrameCount` — 6 = 2, 42 = 3, 23 =
@@ -3155,6 +3211,14 @@ pub(crate) fn draw_npcs(
                     | NpcKind::EaterOfWorldsHead
                     | NpcKind::EaterOfWorldsBody
                     | NpcKind::EaterOfWorldsTail
+                    // The wyvern chain (`AI_006`'s `:51878` follower /
+                    // `:52201` head rotations — the same atan2 tilt).
+                    | NpcKind::WyvernHead
+                    | NpcKind::WyvernLegs
+                    | NpcKind::WyvernBody
+                    | NpcKind::WyvernBody2
+                    | NpcKind::WyvernBody3
+                    | NpcKind::WyvernTail
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,
