@@ -54,7 +54,7 @@
 //!   the behaviour). The firefly itself is in the C# loop but its
 //!   `damage == 0` excludes it (`:34123`); the caller may include or drop
 //!   its own view — both are byte-identical.
-//! * `Main.tileSolid[type]` is the RUNTIME table: `WorldGen.cs:15715`
+//! * `Main.tileSolid[type]` is the RUNTIME table: `WorldGen.cs:15714`
 //!   clears `[192]` (living-tree leaves) after generation, so the scan
 //!   excludes 192 (the `collision.rs::solid_kind` precedent). Platforms
 //!   are `tileSolidTop`, NOT `tileSolid` — they do not bounce a firefly;
@@ -194,7 +194,7 @@ fn in_world2(world: &World, x: i32, y: i32) -> bool {
 
 /// The arm's `Main.tileSolid[type]` read — the RUNTIME table: the
 /// generated `TILE_SOLID` minus the living-tree leaves (192) that
-/// `WorldGen.cs:15715` clears after generation (the
+/// `WorldGen.cs:15714` clears after generation (the
 /// `collision.rs::solid_kind` precedent). `tileSolidTop` (platforms) is
 /// NOT in this set.
 fn tile_solid_runtime(kind: u16) -> bool {

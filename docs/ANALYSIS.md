@@ -24893,3 +24893,120 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
+
+**Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
+`crates/tr-app/src/npc_ai_style64.rs` (`ai_064_step` + `Ai64Ctx`/
+`Ai64Effects`), branch `task/S1-D-3-aistyle64`. UNWIRED — no compiler
+invoked; the 19 witness tests are WRITTEN, NOT RUN.
+
+**Identity (verified from the C#, whole-tree census).** The brief's
+earlier-diag guess "critters (bunny/squirrel family)" is WRONG for this
+style: a whole-tree `aiStyle\s*=\s*64` census finds exactly four NPC rows
+and two projectile rows. The NPC arm is the FIREFLY family:
+
+| kind | NPCID | SetDefaults row | box / flags |
+| --- | --- | --- | --- |
+| Firefly 355 | `NPCID.cs:11387` | `NPC.cs:13517-13530` (`aiStyle = 64` `:13521`) | 10x10, dmg 0, def 0, life 5, npcSlots 0.2, noGravity, catchItem 1992 |
+| LightningBug 358 | `NPCID.cs:11393` | `NPC.cs:13559-13572` (`:13563`) | 12x12, the same zero-stat row, catchItem 2004 |
+| Lavafly 654 | `NPCID.cs:11985` | `NPC.cs:17265-17279` (`:17269`) | 10x10, lavaImmune, catchItem 4847 |
+| Shimmerfly 677 | `NPCID.cs:12031` | `NPC.cs:17579-17593` (`:17583`) | 10x10, noTileCollide, catchItem 5350 |
+
+The two projectile rows (`Projectile.cs:4670`/`:4692`, types 384/386 —
+the Martian Saucer deathray shards) are a DIFFERENT dispatch and out of
+NPC scope. The bunny/squirrel walkers are aiStyle 3 (the speed-table
+family), NOT 64. On main the style is unported: no `NpcKind` for any of
+the four, no `=> 64` row in `npc/data.rs::ai_style`, no `64 =>` arm in
+`npc.rs::update_rng`'s axis. (The `=> 64` hits elsewhere in `npc/data.rs`
+are `to_u16` protocol ids and `contact_damage` values — different tables.)
+
+**The arm.** `NPC.AI`'s inline `else if (this.aiStyle == 64)` block,
+`NPC.cs:34019-34248` (no `AI_064_*` method). Ported 1:1 in the module,
+per-kind branches included: the 677 world-margin keep-in + threat flee
+(`:34070-34153`), the 358/654/else glow colours (`:34160-34171`), the
+677 rotation tail (`:34234-34237`).
+
+**Faithfulness traps kept (each has a witness):**
+- The 677 TOP-margin clamp writes `base.velocity.Y = 3f` (`:34098`),
+  NOT the aim `num959` — the aim keeps its unclamped value while the
+  velocity is pinned; the pin feeds the `:34189` blend. The other three
+  margins clamp the aim.
+- `ToTileCoordinates` (`:34073`, margins) is `(int)X >> 4` — an
+  arithmetic shift (`Utils.cs:1807-1810`); the glow tail's
+  `(int)Center.X / 16` (`:34156-34157`) TRUNCATES toward zero. They
+  differ below coordinate 0 (witnessed with a negative-centre fly).
+- The down-scan's `velocity.Y *= 0.9f` is INSIDE the 4-tile loop
+  (`:34200-34203`) — up to four damps per tick, one per blocking tile
+  (solid OR `liquid > 0`); the up-scan's 30-tile walk counts solid only
+  and damps ONCE after the scan (`:34220-34227`).
+- `num963 -= Main.rand.Next(100, 251)` (`:34050`) is a CONDITIONAL draw
+  (only when `position.Y > player.Y - 100f`) — the stream length shifts
+  with the geometry; the far speed ladder draws the base `Next(50,151)`
+  AND the band replacement (`:34037-34045` — both draws happen, the
+  second wins).
+- The far/near normalize is f64 `Math.Sqrt` over an INT sum, cast to f32
+  BEFORE the divide (`:34052`/`:34062`); NO zero guard — the C# NaN/Inf
+  passes through into `ai[0]`/`ai[1]`. Kept.
+- `Entity.DirectionFrom` (`Entity.cs:210-213`) is XNA `Normalize(Center
+  - Source)` — a zero vector yields NaN, carried by the f32 threat sum
+  (slot order matters). The flee's `SafeNormalize(Vector2.Zero)`
+  (`Utils.cs:1837-1844`) folds zero/NaN to (0,0), so a NaN velocity
+  zeroes at the 8-cap. Kept.
+- `Hitbox.Distance(Center)` is `Utils.cs:1507-1542`'s rect-to-point
+  distance over the INT-truncated Hitbox (`Entity.cs:171-183`): the
+  `FloatIntersect` touching-edge overlap (`Utils.cs:982-989`), the axis
+  bands, the corner `Vector2.Distance`. The threat scan reads ONLY
+  `active` for players (`:34132` — dead/ghost players still scare).
+- `Main.tileSolid[type]` is the RUNTIME table — 192 (living-tree leaves)
+  cleared after generation (`WorldGen.cs:15714`, the
+  `collision.rs::solid_kind` precedent). Platforms (`tileSolidTop`) do
+  NOT bounce; liquid bounces on the down-scan only.
+
+**RNG by construction.** The arm's only `Main.rand` draws, in C# order:
+the scale latch `Next(75,111)` (`:34028`, once, before the rearm check);
+on rearm — `TargetClosest()` (`:34032`, draws nothing) THEN
+`Next(60,180)` (`:34033`), then either the FAR sequence
+(`Next(50,151)` [+ `Next(150,201)`/`Next(100,151)` band replacement],
+`Next(100,251)` direction-scaled X, `Next(-50,51)`, the CONDITIONAL
+`Next(100,251)` Y-bias) or the NEAR quad (`Next(5,151)`,
+`Next(-100,101)` x2); then the non-677 idle else `Next(30,180)` +
+the CONDITIONAL `Next(10,30)` (`:34181-34185`, night OR
+`(double)(Y/16f) > worldSurface + 10.0` — the f64 compare). Rearm and
+idle can share a tick; the rearm's draws precede. Everything else (the
+margins, the flee scan, the blend, the bounces, the rotation) is pure
+maths. The witnesses mirror the cited `Next` calls on a CLONED
+`UnifiedRandom` and assert stream-state equality (`PartialEq`) — a
+drifted order or a skipped draw fails by construction.
+
+**Deliberate folds (all cited in the module):** `Main.netMode != 1` →
+true (single-player); `Lighting.AddLight` → `Ai64Effects::light` (the
+colours pre-scaled by `scale`, coords truncated here — the wiring feeds
+`EntityLights`); the dead read `vector121 = Center + zero * 10f`
+(`:34148`) skipped (never used, no RNG); the threat scan's NPC list is
+handed in slot order by the caller (the compacted-Vec fold — the fly
+itself is excluded by `damage == 0` either way).
+
+**Wiring step (deferred).** The four `NpcKind` rows + their `SetDefaults`
+tables + the `=> 64` style-axis row + the `64 =>` dispatch arm + the
+glow `EntityLights` feed + the `noGravity`/`noTileCollide` integration
+flags (677) + the catch-item rows. Until then the module keys on the
+vanilla type id with the box on `size_override` (the
+`npc_ai_style53.rs` tentacle precedent); `npc_target::target_closest`
+is reused UNMODIFIED (style 64 — the `:77761` fighter arm is
+style-3-only, so no `directionY` rewrite).
+
+**Verification.** Code-only mode: the whole arm was re-read line-by-line
+against the module (resume re-verification 2026-11-19: the census, the
+four SetDefaults rows, `Utils.cs:1507-1542`/`:1807-1810`/`:1837-1844`/
+`:982-989`, `Entity.cs:50-60`/`:171-183`/`:210-213`,
+`WorldGen.cs:9688-9695`/`:15714` — all match); every seam call site was
+checked against the merged tree's actual signatures (`target_closest`'s
+6-arg shape, `TargetCandidate`'s 11 fields, `Npc`'s fields incl.
+`size_override`/`collide_x`/`local_ai`, `UnifiedRandom`'s
+Clone+PartialEq+`next_range`, `World::new`/`tile`/`tile_mut`/
+`day_time`/`world_surface`, `Tile::default`/`FLAG_ACTIVE`,
+`TILE_SOLID.has`). The 19 witness tests are WRITTEN, NOT RUN —
+**no compiler invoked**; the witness arithmetic was additionally
+hand-checked (the top-margin pin-then-blend, the per-hit damps, the
+conditional-draw stream lengths, the truncated-vs-floored coords).
