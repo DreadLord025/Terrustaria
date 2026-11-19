@@ -22898,10 +22898,13 @@ mod s1_f_13b_tests {
     /// Poltergeist kind ALONE — every other kind's dispatch arm must stay
     /// byte-identical to its pre-slice body. The B run replays the pre-slice
     /// arms verbatim (the walker stand for the 13 walkers incl. the two
-    /// aiStyle-26 kinds, the hover stands for 325/327, the caster machine
-    /// for the five casters the Poltergeist used to share) behind the same
+    /// aiStyle-26 kinds, the caster machine for the five casters the
+    /// Poltergeist used to share) behind the same
     /// `update_rng` prelude; every tick's kinematics, ai[], frame state and
-    /// the RNG stream position must be bit-equal. The closing witness runs
+    /// the RNG stream position must be bit-equal. The 325/327 hover stands
+    /// left this pin when slice B landed their named machines
+    /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now).
+    /// The closing witness runs
     /// one Poltergeist tick both ways and asserts the runs DIVERGE (the
     /// machine's alpha-0 row vs the stand's untouched SetDefaults 100) —
     /// proving the comparison has teeth and the gate is real.
@@ -22933,8 +22936,6 @@ mod s1_f_13b_tests {
             NpcKind::Splinterling,
             NpcKind::HeadlessHorseman,
             NpcKind::Hellhound,
-            NpcKind::MourningWood,
-            NpcKind::Pumpking,
         ];
         // The casters: the Poltergeist's OLD stand-in family — their shared
         // `update_caster` arm must not have moved either.
@@ -22983,32 +22984,6 @@ mod s1_f_13b_tests {
                     | NpcKind::Hellhound => {
                         legacy.update_skeleton(&w, &mut player_b, 1.0 / 60.0)
                     }
-                    NpcKind::MourningWood => legacy.update_hover(
-                        &w,
-                        &player_b,
-                        HoverParams {
-                            max_speed: 2.0,
-                            accel: 0.1,
-                            surface_damped: false,
-                            double_add: true,
-                            no_tile_collide: true,
-                            bounce: 0.7,
-                            rotation: HoverRotation::Velocity,
-                        },
-                    ),
-                    NpcKind::Pumpking => legacy.update_hover(
-                        &w,
-                        &player_b,
-                        HoverParams {
-                            max_speed: 6.0,
-                            accel: 0.4,
-                            surface_damped: false,
-                            double_add: true,
-                            no_tile_collide: true,
-                            bounce: 0.7,
-                            rotation: HoverRotation::Velocity,
-                        },
-                    ),
                     NpcKind::GoblinSorcerer
                     | NpcKind::Tim
                     | NpcKind::DarkCaster
