@@ -32,6 +32,8 @@ mod emotes;
 mod env;
 mod entity_lights;
 mod npc_lights;
+mod player_lights;
+mod proj_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
@@ -59,6 +61,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
+mod npc_ai_unicorn;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
@@ -66,6 +69,8 @@ mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
 mod npc_ai_style33;
+mod npc_ai_style37;
+mod npc_ai_style39;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED — the merge union feeds it into
 // npc_ai_plantera.rs's hook_anchor parameter (docs/ANALYSIS.md "The
