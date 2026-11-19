@@ -46,10 +46,6 @@ const SMOOTHING_RANGE: f32 = 300.0;
 /// port's tick runs at 10 Hz, so 42 calls cover the same span.
 const NET_HEARTBEAT_TICKS: u32 = 42;
 
-/// A client NPC slot silent past this is despawned: the host streams the live
-/// set at 10 Hz and says nothing when an NPC dies, so the client prunes on
-/// staleness (two missed cadence ticks).
-const NPC_STALE: std::time::Duration = std::time::Duration::from_millis(200);
 const TXT_WRONG_VERSION: &str = "You are not using the same version as this server.";
 const TXT_BAD_PASSWORD: &str = "Incorrect password.";
 const TXT_NAME_EMPTY: &str = "Name is empty.";
@@ -176,34 +172,11 @@ impl App {
             for ev in client_events {
                 self.client_event(client, ev);
             }
-            // The `23` despawn diff: the host streams every live NPC each
-            // cadence tick, so a slot missing from this poll's batch is gone
-            // (the C# equivalent turns life to 0 and keeps the slot).
-            if !self.net_npc_seen.is_empty() {
-                let seen: std::collections::HashSet<u32> = self.net_npc_seen.drain(..).collect();
-                self.net_npcs.retain(|slot, _| seen.contains(slot));
-                self.net_npcs_dirty = true;
-            }
-            // Staleness prune: a slot the host stopped streaming (it died, or
-            // the host stopped simulating it) disappears after `NPC_STALE`.
-            let now = Instant::now();
-            let stale: Vec<u32> = self
-                .net_npcs
-                .keys()
-                .copied()
-                .filter(|slot| {
-                    self.net_npcs_seen_at
-                        .get(slot)
-                        .is_some_and(|t| now.duration_since(*t) >= NPC_STALE)
-                })
-                .collect();
-            if !stale.is_empty() {
-                for slot in stale {
-                    self.net_npcs.remove(&slot);
-                    self.net_npcs_seen_at.remove(&slot);
-                }
-                self.net_npcs_dirty = true;
-            }
+            // S1-I-4d: the `23` stream is now event-driven (the faithful
+            // `netSpam` cadence), not a whole-set broadcast, so there is no
+            // "missing from the batch" despawn diff or staleness prune. A dead
+            // NPC arrives as an explicit life-0 `23` (`NPC.cs:90385-90392`),
+            // removed in the `NpcInfo` arm below (`MessageBuffer.cs:1661-1664`).
             self.net_rebuild_lists();
             // The client's own timeout (`Main.cs:64540-64544`).
             if self.net_state > net::client_state::NOT_CONNECTED
@@ -1465,12 +1438,26 @@ impl App {
             // store (`net_npcs`) and recreates a slot only on a kind change or
             // the spawn flag (the C#'s `generation`/`spawnNeedsSyncing` test,
             // `MessageBuffer.cs:1602-1613`); the smoothing is the same
-            // netOffset accumulator (`MessageBuffer.cs:1636-1646`). Seen
-            // slots feed the despawn diff in `poll_net`.
+            // netOffset accumulator (`MessageBuffer.cs:1636-1646`).
             S2c::NpcInfo(info) => {
                 let slot = info.slot as u32;
-                self.net_npc_seen.push(slot);
-                self.net_npcs_seen_at.insert(slot, Instant::now());
+                // S1-I-4d: a life-0 body is the despawn (`NPC.cs:90385-90392`);
+                // the C# sets `active = false` (`MessageBuffer.cs:1661-1664`),
+                // the port drops the slot from the render store. The generation
+                // guard keeps a stale despawn from deleting a recycled slot.
+                if !info.life_full && info.hp <= 0 {
+                    let gen_matches = self
+                        .net_npc_gen
+                        .get(&slot)
+                        .map(|(_, g)| *g == info.generation as u32)
+                        .unwrap_or(true);
+                    if gen_matches {
+                        self.net_npcs.remove(&slot);
+                        self.net_npc_gen.remove(&slot);
+                        self.net_npcs_dirty = true;
+                    }
+                    return;
+                }
                 // The slot's generation rides back on this client's strikes.
                 self.net_npc_gen
                     .insert(slot, (info.kind, info.generation as u32));
@@ -2030,28 +2017,276 @@ impl App {
         }
     }
 
-    /// Sends our player (and, when hosting, the authoritative state) at 10 Hz.
-    /// The in-world gate is the accept gate's mirror: the internal messages
-    /// are only legal at `IN_WORLD` (`MessageBuffer.cs:161`).
-    /// The `27` diff pass for this machine's own projectiles: the states that
-    /// changed since the last send, gated by the C#'s send budget
-    /// (`Projectile.cs:17224-17238`: budget 60, cost 5, refill 1/tick — the
-    /// net tick runs at 10 Hz, so the refill is 10 here), plus the keys that
-    /// left the locally-simulated set (the `29` despawns). The caller sends
-    /// the plan in the direction its role dictates.
-    fn projectile_sync_plan(&mut self) -> (Vec<net::ProjectileState>, Vec<i32>) {
-        for v in self.net_proj_spam.values_mut() {
-            *v = (*v - 10).max(0);
+    /// S1-I-4d: `Main.netMode` for this process (0 single-player, 1 client,
+    /// 2 host) — the gate every `SendData` site reads (`NetMessage.cs:83-86`).
+    fn net_mode(&self) -> u8 {
+        match self.net {
+            NetRole::Host(_) => 2,
+            NetRole::Client(_) => 1,
+            NetRole::Off => 0,
+        }
+    }
+
+    /// S1-I-4d: the `23` body for one NPC (`NetMessage.cs:686-748`), the same
+    /// shape the old whole-set broadcast wrote. `slot` is the CURRENT Vec index
+    /// (the wire `whoAmI`); `spawn`/`generation` ride the caller's bump logic.
+    fn npc_info_of(
+        slot: usize,
+        npc: &crate::npc::Npc,
+        spawn: bool,
+        generation: u32,
+    ) -> net::NpcInfo {
+        net::NpcInfo {
+            slot: slot as u8,
+            generation: generation as u8,
+            spawn,
+            kind: npc.kind.to_u16() as i16,
+            x: npc.x,
+            y: npc.y,
+            vx: npc.vx,
+            vy: npc.vy,
+            dir_right: npc.facing > 0,
+            dir_y_down: npc.vy > 0.0,
+            sprite_right: npc.facing > 0,
+            life_full: npc.hp >= npc.max_hp,
+            hp: npc.hp,
+        }
+    }
+
+    /// S1-I-4d: the per-NPC `NpcView` the cadence reads (`net_npc_sync::NpcView`).
+    /// `boss`/`town_npc` come from the kind; `proximity_sync` is the
+    /// `NPCID.Sets.UsesMultiplayerProximitySyncing` set (396/397/398, the
+    /// Martian saucer parts — `NPCID.cs:10454`), keyed on the vanilla `cs_id`.
+    fn npc_view_of(npc: &crate::npc::Npc) -> crate::app::net_npc_sync::NpcView {
+        use crate::app::net_npc_sync::NpcView;
+        let cs_id = npc.kind.cs_id();
+        let (cx, cy) = npc.center();
+        let (homeless, hx, hy) = match npc.home {
+            Some((hx, hy)) => (false, hx, hy),
+            None => (true, 0, 0),
+        };
+        NpcView {
+            active: npc.hp > 0,
+            life: npc.hp,
+            boss: npc.boss,
+            town_npc: npc.kind.is_town_npc_like(),
+            net_always: false,
+            proximity_sync: matches!(cs_id, 396 | 397 | 398),
+            vx: npc.vx,
+            vy: npc.vy,
+            center: Vec2::new(cx, cy),
+            section: (
+                net::section_x(npc.x as i32 / TILE_PX as i32),
+                net::section_y(npc.y as i32 / TILE_PX as i32),
+            ),
+            // `NPC.TypeToDefaultHeadIndex(type) > 0` (`NPC.cs:90621`): the town
+            // residents with a housing head icon. The port's town roster stands
+            // in until the head-index table lands.
+            has_head_index: npc.kind.is_town_npc(),
+            home: (homeless, hx, hy),
+        }
+    }
+
+    /// S1-I-4d: the NPC-STATE cadence — the SWAP target for the old whole-set
+    /// 10 Hz broadcast. Runs once per fixed step (the C# `NPC.UpdateNPC` tail,
+    /// `NPC.cs:90513` → `UpdateNetworkCode`, `:90583-90631`), in slot order,
+    /// host-only. It fills `net_npc_outbox` with the decision layer's `NpcSend`s
+    /// (tagged by the stable uid so the 10 Hz drain survives Vec compaction) and
+    /// queues despawn `23`s for uids that left the list.
+    ///
+    /// Producer wiring: the port's AI arms already set `Npc.net_update`
+    /// (`npc_target.rs:535`, `npc_ai_caster.rs`, …). Until the full C# netUpdate
+    /// producer census lands, a state change vs the last `23` body ALSO arms the
+    /// flag (the interim change-detect producer, recorded in ANALYSIS) so a
+    /// moving NPC still syncs. The send BUDGET is the faithful `netSpam` gate.
+    fn npc_sync_cadence(&mut self) {
+        use crate::app::net_npc_sync::{self as nns, PlayerView};
+        if self.net_mode() != 2 {
+            return; // `NPC.cs:90590-90593` — the server gate.
+        }
+        // Gather the per-client views WITHOUT holding the server borrow across
+        // the mutation below: id, camera, and the set of sections already
+        // streamed (`RemoteClient.IsSectionActive`, `NetMessage.cs:1740`).
+        let (w, h) = (self.world.width, self.world.height);
+        let (gx, gy) = (net::sections_x(w), net::sections_y(h));
+        let mut clients: Vec<(u32, Vec2, Vec<(i32, i32)>)> = Vec::new();
+        if let NetRole::Host(server) = &self.net {
+            for id in server.slot_ids() {
+                if server.state(id) < net::slot_state::IN_WORLD {
+                    continue;
+                }
+                let cam = self
+                    .remote_players
+                    .get(&id)
+                    .map(|p| Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5))
+                    .unwrap_or(Vec2::ZERO);
+                let mut sent = Vec::new();
+                for sy in 0..gy {
+                    for sx in 0..gx {
+                        if server.is_section_sent(id, sx, sy) {
+                            sent.push((sx, sy));
+                        }
+                    }
+                }
+                clients.push((id, cam, sent));
+            }
+        }
+        // The stable identity (`NPC.whoAmI`, `NPC.cs:6145`): every NPC takes its
+        // uid once, exactly as `update_npcs` does (`world_sim/npcs.rs:2643`).
+        // The net-only test pump never runs the sim, so the cadence assigns the
+        // uids itself; in the live loop they are already set (idempotent).
+        {
+            let mut next = self.next_npc_uid;
+            for n in self.npcs.iter_mut() {
+                if n.uid == 0 {
+                    n.uid = next;
+                    next += 1;
+                }
+            }
+            self.next_npc_uid = next;
+        }
+        // The live uid set (for the despawn diff below).
+        let mut live: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for (slot, npc) in self.npcs.iter().enumerate() {
+            let uid = npc.uid;
+            // `NPC.UpdateNPC` returns early when `!active` (`NPC.cs:90277`): a
+            // dead NPC is not cadence-ticked. Its despawn rides the gone-diff
+            // below (the sim's `retain(hp > 0)` removes it, or it lingers in a
+            // net-only test — either way it leaves the live set exactly once).
+            if npc.hp <= 0 {
+                continue;
+            }
+            live.insert(uid);
+            let view = Self::npc_view_of(npc);
+            // The generation bump the old broadcast did: a kind change (or a
+            // fresh slot) raises the generation + the spawn flag so the client
+            // recreates the slot (`MessageBuffer.cs:1602-1613`).
+            let kind = npc.kind.to_u16() as i16;
+            let (spawn, generation) = match self.net_npc_gen.get(&(slot as u32)) {
+                Some((k, g)) if *k == kind => (false, *g),
+                _ => {
+                    let g = self
+                        .net_npc_gen
+                        .get(&(slot as u32))
+                        .map(|(_, g)| g.wrapping_add(1))
+                        .unwrap_or(1);
+                    (true, g)
+                }
+            };
+            self.net_npc_gen.insert(slot as u32, (kind, generation));
+            let info = Self::npc_info_of(slot, npc, spawn, generation);
+            // Per-NPC player array: section_active is per (client, NPC-section).
+            let mut players = [PlayerView {
+                active: false,
+                connected: false,
+                camera: Vec2::ZERO,
+                section_active: false,
+            }; 256];
+            for (id, cam, sent) in &clients {
+                let i = *id as usize;
+                if i >= 256 {
+                    continue;
+                }
+                players[i] = PlayerView {
+                    active: true,
+                    connected: true,
+                    camera: *cam,
+                    section_active: sent.contains(&view.section),
+                };
+            }
+            // The per-uid throttle state; a first sighting arms spawnNeedsSyncing
+            // (`NPC.cs:80785`) so the priority `23` clears the counters.
+            let first = !self.net_npc_states.contains_key(&uid);
+            let st = self.net_npc_states.entry(uid).or_default();
+            if first {
+                st.spawn_needs_syncing = true;
+            }
+            // Producer: the AI flag OR a state change vs the last body. The
+            // `spawn` flag is a one-shot create marker (true on the first body,
+            // false after), NOT sync state — normalize it out so it does not
+            // read as a change on the second tick (the no-double-send witness).
+            let changed = match self.net_npc_last_info.get(&uid) {
+                Some(prev) => {
+                    let (mut a, mut b) = (*prev, info);
+                    a.spawn = false;
+                    b.spawn = false;
+                    a != b
+                }
+                None => true,
+            };
+            if npc.net_update || changed || first {
+                st.net_update = true;
+            }
+            // Call the per-NPC gate directly with the REAL slot index (the
+            // `npc_sync_tick` whole-array hook would renumber a 1-element slice
+            // to 0). `NPC.cs:90513` → `UpdateNetworkCode(i)`.
+            let mut out = Vec::new();
+            nns::update_network_code(st, &view, slot as i16, 2, &players, nns::NPC_STREAM_SPEED, &mut out);
+            st.net_update = false; // `NPC.cs:90515` — the tail clear.
+            for s in out {
+                self.net_npc_outbox.push((uid, s));
+            }
+            self.net_npc_last_info.insert(uid, info);
+            self.net_npc_uid_slot.insert(uid, slot as u32);
+        }
+        // Clear the AI flags (the UpdateNPC tail, `NPC.cs:90515`).
+        for npc in self.npcs.iter_mut() {
+            npc.net_update = false;
+        }
+        // The despawn diff: a uid the cadence knew that is no longer live gets
+        // one priority `23` with life 0 (`NPC.cs:90385-90392` / `:77991-77998`).
+        let gone: Vec<u32> = self
+            .net_npc_last_info
+            .keys()
+            .copied()
+            .filter(|uid| !live.contains(uid))
+            .collect();
+        for uid in gone {
+            if let Some(mut info) = self.net_npc_last_info.remove(&uid) {
+                info.hp = 0;
+                info.life_full = false;
+                info.spawn = false;
+                if let Some(slot) = self.net_npc_uid_slot.remove(&uid) {
+                    info.slot = slot as u8;
+                }
+                self.net_npc_despawns.push(info);
+            }
+            self.net_npc_states.remove(&uid);
+        }
+        // Prune the generation bookkeeping of slots beyond the live list (the
+        // old broadcast's tail; the uid-keyed despawn diff above owns the wire).
+        self.net_npc_gen
+            .retain(|slot, _| (*slot as usize) < self.npcs.len());
+    }
+
+    /// S1-I-4d: the projectile cadence — the SWAP target for
+    /// `projectile_sync_plan`'s 10 Hz diff. Runs once per fixed step (the C#
+    /// `Projectile.Update` tail, `Projectile.cs:17210-17244`), owner-gated, and
+    /// fills `net_proj_outbox` through the faithful `ProjSync` budget. Spawn /
+    /// kill are event-driven at their sites (`Projectile.cs:11096` /
+    /// `:77254-77257`); the interim change-detect producer arms `mark_dirty`
+    /// until the 337 AI `netUpdate` sites land (recorded in ANALYSIS).
+    fn proj_sync_cadence(&mut self) {
+        let net_mode = self.net_mode();
+        if net_mode == 0 {
+            return; // `NetMessage.cs:83-86` — SendData's netMode gate.
         }
         let local = self.local_id as u8;
-        let mut current: Vec<net::ProjectileState> = Vec::new();
+        // Snapshot this machine's OWN bodies + detect spawns / changes. The
+        // owner gate matches `Projectile.cs:17210` (and the old diff's scope):
+        // the server-owned hostile shots (owner 255) are a recorded follow-up —
+        // on the C# server `Main.myPlayer == 255` folds them into the same gate,
+        // but the port's host keeps a local player (owner 0), so hostile-shot
+        // budget sync lands with the owner-model reconcile (ANALYSIS).
+        let mut current: Vec<(usize, i32, net::ProjectileState)> = Vec::new();
         for slot in 0..crate::projectile::MAX_PROJECTILES {
             let p = &self.projectiles.slots()[slot];
             if !p.active || p.owner != local {
                 continue;
             }
-            current.push(net::ProjectileState {
-                key: self.projectiles.key_of(slot),
+            let key = self.projectiles.key_of(slot);
+            let st = net::ProjectileState {
+                key,
                 x: p.pos.x,
                 y: p.pos.y,
                 vx: p.vel.x,
@@ -2060,38 +2295,200 @@ impl App {
                 ai0: if p.ai[0] != 0.0 { Some(p.ai[0]) } else { None },
                 ai1: if p.ai[1] != 0.0 { Some(p.ai[1]) } else { None },
                 banner_id: 0,
-                damage: p.damage.clamp(0, i16::MAX as i32) as i16,
+                damage: p.damage as i16,
                 knock_back: p.knock_back,
-                original_damage: 0,
+                original_damage: p.original_damage as i16,
                 ai2: if p.ai[2] != 0.0 { Some(p.ai[2]) } else { None },
-            });
+            };
+            current.push((slot, key, st));
         }
-        let mut sends = Vec::new();
-        for st in &current {
-            if self.net_proj_last.get(&st.key) == Some(st) {
-                continue;
-            }
-            let budget = self.net_proj_spam.entry(st.key).or_insert(0);
-            if *budget >= 60 {
-                continue; // parked until the budget frees (`netUpdate2`)
-            }
-            *budget += 5;
-            sends.push(*st);
-            self.net_proj_last.insert(st.key, *st);
-        }
-        let mut dead = Vec::new();
-        for key in self.net_proj_last.keys().copied().collect::<Vec<_>>() {
-            if !current.iter().any(|st| st.key == key) {
-                dead.push(key);
+        // Spawn site: a key not seen before gets ONE `27` (`Projectile.cs:11096`).
+        // The change-detect producer below skips first-sight so the spawn is not
+        // double-sent through the budget (the no-double-send witness pins this).
+        let mut fresh: std::collections::HashSet<i32> = std::collections::HashSet::new();
+        for (slot, key, _) in &current {
+            if !self.net_proj_prev.contains_key(key) {
+                fresh.insert(*key);
+                if let Some(send) = self.proj_sync.spawn_sync(&self.projectiles, *slot, net_mode) {
+                    self.net_proj_outbox.push(send);
+                }
             }
         }
-        for key in &dead {
-            self.net_proj_last.remove(key);
-            self.net_proj_spam.remove(key);
+        // Producer: the AI flag (`Projectile.net_update`, e.g. the gem-staff
+        // retarget `Projectile.cs:37891`) OR — interim, until the 337-site
+        // census lands — a state change on an ALREADY-SEEN key arms the budget's
+        // dirty flag (`ProjSync::mark_dirty`, the seam).
+        for (slot, key, st) in &current {
+            let ai_flag = self.projectiles.slots()[*slot].net_update;
+            if ai_flag || (!fresh.contains(key) && self.net_proj_prev.get(key) != Some(st)) {
+                self.proj_sync.mark_dirty(*slot);
+            }
         }
-        (sends, dead)
+        // The update-tail clear (`Projectile.cs:17244`): every slot's flag resets
+        // after the cadence read it (the budget's own tail clear runs in
+        // `ProjSync::step` below; this mirrors it onto the pool field).
+        self.projectiles.clear_net_update_flags();
+        // Kill site: a key that left the local set gets one `29` with the entry
+        // (last-known) position (`Projectile.cs:77254-77257`, `:70648`).
+        let gone: Vec<i32> = self
+            .net_proj_prev
+            .keys()
+            .copied()
+            .filter(|k| !current.iter().any(|(_, ck, _)| ck == k))
+            .collect();
+        for key in gone {
+            let (owner, slot, _gen) = net::projectile_key_parts(key);
+            let entry = self
+                .net_proj_prev
+                .get(&key)
+                .map(|st| (st.x, st.y))
+                .unwrap_or((0.0, 0.0));
+            // The Kill site (`Projectile.cs:77254-77257`) carries the DYING
+            // occupant's key. If the slot was recycled this tick, `key_of` now
+            // names the NEW occupant — emit the gone key directly and leave the
+            // fresh slot's bookkeeping alone (kill_sync would reset it).
+            if slot < crate::projectile::MAX_PROJECTILES
+                && self.projectiles.key_of(slot) == key
+            {
+                if let Some(send) =
+                    self.proj_sync
+                        .kill_sync(&self.projectiles, slot, entry, owner, net_mode)
+                {
+                    self.net_proj_outbox.push(send);
+                }
+            } else if net_mode != 0 {
+                self.net_proj_outbox
+                    .push(crate::app::net_proj_sync::ProjSend::Kill {
+                        key,
+                        x: entry.0,
+                        y: entry.1,
+                    });
+            }
+            self.net_proj_prev.remove(&key);
+        }
+        // The per-update budget pass (`Projectile.cs:17210-17244`).
+        let sends = self.proj_sync.step(&self.projectiles, local, net_mode);
+        self.net_proj_outbox.extend(sends);
+        // Refresh the change-detect reference.
+        for (_, key, st) in current {
+            self.net_proj_prev.insert(key, st);
+        }
     }
 
+    /// S1-I-4d: drain the NPC outbox + despawns through the existing `23`/`60`
+    /// wires (host). The decision layer already did the per-client section
+    /// culling, so each `State` is targeted; the body is rebuilt from the last
+    /// cadence snapshot (the uid survives Vec compaction). Takes `&self` + the
+    /// already-extracted outboxes so it can run inside the `match &self.net`
+    /// borrow (the caller `mem::take`s them first).
+    fn flush_npc_outbox(
+        &self,
+        server: &net::Server,
+        outbox: Vec<(u32, crate::app::net_npc_sync::NpcSend)>,
+        despawns: Vec<net::NpcInfo>,
+    ) {
+        use crate::app::net_npc_sync::NpcSend;
+        // The despawn `23`s (priority, life 0) go FIRST: the C# dead NPC's
+        // `UpdateNPC` runs before the later slots' spawns (`NPC.cs:90385-90392`
+        // ahead of `:90513`), and the port's Vec compaction can reuse the slot.
+        for info in despawns {
+            server.broadcast(&S2c::NpcInfo(Box::new(info)));
+        }
+        for (uid, send) in outbox {
+            match send {
+                NpcSend::State { to, .. } => {
+                    let Some(info) = self.net_npc_last_info.get(&uid) else {
+                        continue;
+                    };
+                    let mut body = info.clone();
+                    if let Some(slot) = self.net_npc_uid_slot.get(&uid) {
+                        body.slot = *slot as u8;
+                    }
+                    match to {
+                        Some(i) => server.send(i, &S2c::NpcInfo(Box::new(body))),
+                        None => server.broadcast(&S2c::NpcInfo(Box::new(body))),
+                    }
+                }
+                NpcSend::TownHome { homeless, x, y, .. } => {
+                    // `60 NPCHomeChange` (`NetMessage.cs:1067-1071`); the status
+                    // byte is `GetHouseholdStatus` (`TownRoomManager.cs:130`):
+                    // 1 homeless, else 2 housed (the port's home presence). The
+                    // wire slot resolves through the uid (post-compaction).
+                    let Some(slot) = self.net_npc_uid_slot.get(&uid).copied() else {
+                        continue;
+                    };
+                    let status = if homeless { 1 } else { 2 };
+                    server.broadcast(&S2c::NpcHouse(net::NpcHouse {
+                        npc: slot as i16,
+                        home_x: x as i16,
+                        home_y: y as i16,
+                        status,
+                    }));
+                }
+                NpcSend::BuffList { .. } => {
+                    let Some(slot) = self.net_npc_uid_slot.get(&uid).copied() else {
+                        continue;
+                    };
+                    if let Some(npc) = self.npcs.get(slot as usize) {
+                        let buffs = npc_buffs_of(npc);
+                        server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
+                            npc: slot as i16,
+                            buffs,
+                        }));
+                    }
+                }
+                // The strike / add-buff / debuff sites are event-driven at their
+                // simulation callers (the `28` relay already lives in
+                // `host_event`); the cadence outbox carries only State/TownHome/
+                // BuffList today.
+                NpcSend::Strike { .. }
+                | NpcSend::AddBuff { .. }
+                | NpcSend::RemoveBuff { .. }
+                | NpcSend::DebuffDot { .. } => {}
+            }
+        }
+    }
+
+    /// S1-I-4d: drain the projectile outbox through the existing `27`/`29`
+    /// wires, in the direction the role dictates.
+    fn drain_proj_outbox(&mut self) {
+        use crate::app::net_proj_sync::ProjSend;
+        let outbox = std::mem::take(&mut self.net_proj_outbox);
+        match &self.net {
+            NetRole::Host(server) => {
+                for send in outbox {
+                    match send {
+                        ProjSend::Sync(st) => server.broadcast(&S2c::Projectile(Box::new(st))),
+                        ProjSend::SyncTo { state, client } => {
+                            server.send(client as u32, &S2c::Projectile(Box::new(state)))
+                        }
+                        ProjSend::Kill { key, x, y } => {
+                            server.broadcast(&S2c::ProjectileDead { key, x, y })
+                        }
+                    }
+                }
+            }
+            NetRole::Client(client) => {
+                for send in outbox {
+                    match send {
+                        ProjSend::Sync(st) => client.send(&C2s::Projectile(Box::new(st))),
+                        ProjSend::SyncTo { state, .. } => {
+                            client.send(&C2s::Projectile(Box::new(state)))
+                        }
+                        ProjSend::Kill { key, .. } => client.send(&C2s::ProjectileDead { key }),
+                    }
+                }
+            }
+            NetRole::Off => {}
+        }
+    }
+
+    /// The 10 Hz state tick: the player snapshot, the world-item cadence
+    /// (wave A) and the OUTBOX DRAINS of the NPC/projectile decision layers
+    /// (S1-I-4d). The NPC `23` / projectile `27`/`29` sends are produced at
+    /// 60 Hz by `npc_sync_cadence` / `proj_sync_cadence` below (the C#'s
+    /// per-NPC / per-projectile `netSpam` gates, `NPC.cs:90583-90631` /
+    /// `Projectile.cs:17210-17244`) — NOT by a whole-set broadcast here.
     pub(crate) fn net_tick(&mut self, dt: f32) {
         if matches!(self.net, NetRole::Off) {
             return;
@@ -2117,12 +2514,34 @@ impl App {
                 .encode(),
             );
         }
+        // S1-I-4d: the NPC/projectile decision layers run on the C#'s 60 Hz
+        // simulation cadence (`NPC.cs:90513`, `Projectile.cs:17210`), NOT the
+        // 10 Hz send tick. Step them once per accumulated fixed step here so
+        // both the real frame loop and the net-only test pump drive them; the
+        // outboxes they fill drain on the 10 Hz tick below. Cap the burst like
+        // `FixedStepper` so a long stall does not run away.
+        self.net_sync_cadence_timer += dt;
+        let mut steps = 0;
+        while self.net_sync_cadence_timer >= 1.0 / 60.0 && steps < 8 {
+            self.net_sync_cadence_timer -= 1.0 / 60.0;
+            self.npc_sync_cadence();
+            self.proj_sync_cadence();
+            steps += 1;
+        }
+        if self.net_sync_cadence_timer > 8.0 / 60.0 {
+            self.net_sync_cadence_timer = 8.0 / 60.0;
+        }
         self.net_timer += dt;
         if self.net_timer < 0.1 {
             return;
         }
         self.net_timer = 0.0;
         let Some(p) = self.player.as_ref() else {
+            // No local player: the cadence still ran above, so drop its outboxes
+            // rather than let them grow unbounded (the sends need a player).
+            self.net_npc_outbox.clear();
+            self.net_proj_outbox.clear();
+            self.net_npc_despawns.clear();
             return;
         };
         let me = net::PlayerNet {
@@ -2144,9 +2563,12 @@ impl App {
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
         // (type, seed) pairs leave the store before the role borrow.
         let ambience_spawns = self.take_unsent_ambience();
-        // The `27` diff for this machine's own projectiles, sent in the
-        // direction the role dictates below.
-        let (proj_sends, proj_dead) = self.projectile_sync_plan();
+        // S1-I-4d: the projectile outbox (filled by the 60 Hz cadence above)
+        // drains through the `27`/`29` wires in the direction the role dictates.
+        self.drain_proj_outbox();
+        // The NPC outbox + despawns leave the store before the role borrow.
+        let npc_outbox = std::mem::take(&mut self.net_npc_outbox);
+        let npc_despawns = std::mem::take(&mut self.net_npc_despawns);
         match &self.net {
             NetRole::Host(server) => {
                 // The host's own snapshot, as `13 PlayerState`.
@@ -2163,18 +2585,6 @@ impl App {
                         body,
                     });
                 }
-                // The `27` broadcast for the host's own projectiles and the
-                // `29` despawns (`Projectile.cs:17224-17238`).
-                for st in &proj_sends {
-                    server.broadcast(&S2c::Projectile(Box::new(*st)));
-                }
-                for key in &proj_dead {
-                    server.broadcast(&S2c::ProjectileDead {
-                        key: *key,
-                        x: f32::NAN,
-                        y: f32::NAN,
-                    });
-                }
                 // Newly approached sections stream before the cadence batch
                 // (the C#'s per-tick CheckSection).
                 for (id, sx, sy) in self.pending_sections(server) {
@@ -2182,45 +2592,11 @@ impl App {
                     let block = self.tile_block_at(sx, sy);
                     server.send(id, &S2c::TileBlock(Box::new(block)));
                 }
-                // `23 NPCInfo` — one message per live NPC, the C#'s per-NPC
-                // `SendData(23, -1, -1, null, whoAmI)` (`NPC.cs:90613`). The
-                // port sends the whole live set each cadence tick (the C#'
-                // `netSpam` per-NPC gate and the section culling are the
-                // M6-NET-3 follow-ups), which doubles as the despawn feed.
-                for (i, npc) in self.npcs.iter().enumerate() {
-                    let slot = i as u32;
-                    let kind = npc.kind.to_u16() as i16;
-                    let (spawn, generation) = match self.net_npc_gen.get(&slot) {
-                        Some((k, g)) if *k == kind => (false, *g),
-                        _ => {
-                            let g = self
-                                .net_npc_gen
-                                .get(&slot)
-                                .map(|(_, g)| g.wrapping_add(1))
-                                .unwrap_or(1);
-                            (true, g)
-                        }
-                    };
-                    self.net_npc_gen.insert(slot, (kind, generation));
-                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
-                        slot: slot as u8,
-                        generation: generation as u8,
-                        spawn,
-                        kind,
-                        x: npc.x,
-                        y: npc.y,
-                        vx: npc.vx,
-                        vy: npc.vy,
-                        dir_right: npc.facing > 0,
-                        dir_y_down: npc.vy > 0.0,
-                        sprite_right: npc.facing > 0,
-                        life_full: npc.hp >= npc.max_hp,
-                        hp: npc.hp,
-                    })));
-                }
-                // Prune the generation bookkeeping of slots that died.
-                self.net_npc_gen
-                    .retain(|slot, _| (*slot as usize) < self.npcs.len());
+                // S1-I-4d SWAP: the old whole-set 10 Hz `23` broadcast is gone.
+                // The per-NPC `netSpam` cadence (`net_npc_sync`, filled at 60 Hz
+                // above) owns the `23` fan-out + section culling + despawns
+                // (`NPC.cs:90583-90631`, `NetMessage.cs:1719-1749`); drain it.
+                self.flush_npc_outbox(server, npc_outbox, npc_despawns);
                 // `Main.UpdateServer` (`Main.cs:64557-64580`): the server
                 // counter advances once per 60 Hz tick (the port batches it
                 // on the 10 Hz cadence tick — 6 per batch), and every 60th
@@ -2274,15 +2650,9 @@ impl App {
                 });
             }
             NetRole::Client(client) => {
-                // The client's own projectiles go to the host as `27`
-                // (`Projectile.cs:17210-17244`'s owner machine) and its
-                // despawns as `29`.
-                for st in &proj_sends {
-                    client.send(&C2s::Projectile(Box::new(*st)));
-                }
-                for key in &proj_dead {
-                    client.send(&C2s::ProjectileDead { key: *key });
-                }
+                // S1-I-4d: the client's own projectiles already drained through
+                // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
+                // machine → `27`, despawns → `29`).
                 // The C#'s `TrySyncingInput` change-driven send plus the
                 // 420-tick heartbeat (`Player.cs:6852-6916`,
                 // `Main.cs:64522-64529`); the port's control flags are not
@@ -4021,8 +4391,8 @@ mod handshake_tests {
         );
     }
 
-    /// The own-projectile diff: the host's shot reaches the client's pool and
-    /// its death comes back as `29`.
+    /// S1-I-4d: the own-projectile cadence — the host's shot reaches the client's
+    /// pool via the spawn `27`, and a live shot emits no `29`.
     #[test]
     fn the_host_projectile_broadcast_reaches_the_client() {
         let (mut host_app, mut client_app) = in_world_pair();
@@ -4039,13 +4409,22 @@ mod handshake_tests {
             .filter(|p| p.active)
             .count();
         assert!(active >= 1, "the client received the host's projectile");
-        let (_, proj_dead) = client_app.projectile_sync_plan();
-        let (_, host_dead) = host_app.projectile_sync_plan();
+        // A further cadence step on a LIVE stationary shot queues no `29`
+        // despawn (count the outbox BEFORE the drain empties it).
+        host_app.proj_sync_cadence();
+        let host_dead = host_app
+            .net_proj_outbox
+            .iter()
+            .filter(|s| matches!(s, crate::app::net_proj_sync::ProjSend::Kill { .. }))
+            .count();
+        assert_eq!(host_dead, 0, "the live shot is not dead");
+        host_app.drain_proj_outbox();
+        // The client does not own the host's shot, so its cadence sends nothing.
+        client_app.proj_sync_cadence();
         assert!(
-            proj_dead.is_empty(),
-            "the host's shot is not the client's to despwn"
+            client_app.net_proj_outbox.is_empty(),
+            "the host's shot is not the client's to sync/despawn"
         );
-        assert!(host_dead.is_empty(), "the live shot is not dead");
     }
 
     /// The `28` strike: a client's hit is validated and relayed by the host,
@@ -4108,6 +4487,129 @@ mod handshake_tests {
             Some(hp_after),
             "the stale strike was dropped"
         );
+    }
+
+    // --- S1-I-4d: the SWAP witnesses (no-double-send, cadence, stream-order) ---
+
+    /// Counts the `NpcSend::State` intents the NPC cadence queues for one step.
+    fn npc_state_sends(app: &App) -> usize {
+        app.net_npc_outbox
+            .iter()
+            .filter(|(_, s)| matches!(s, crate::app::net_npc_sync::NpcSend::State { .. }))
+            .count()
+    }
+
+    /// NO-DOUBLE-SEND (NPC): the cadence is the ONLY `23` producer. A stationary
+    /// NPC sends its priority spawn `23` once, then the `netSpam` window decays
+    /// silently — the old whole-set 10 Hz broadcast would have re-sent it every
+    /// tick. `NPC.cs:90602-90618` (the throttle) + the swap (one send path).
+    #[test]
+    fn the_npc_cadence_sends_once_then_throttles_not_every_tick() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        // First cadence step: the priority spawn (spawnNeedsSyncing) fans out
+        // one State per connected client (here: the one joined client).
+        host_app.npc_sync_cadence();
+        let first = npc_state_sends(&host_app);
+        assert!(first >= 1, "the spawn 23 fires once");
+        host_app.net_npc_outbox.clear();
+        // The next 29 steps: no flag, no change -> netSpam decays, NOTHING sends
+        // (the C# throttle, not the old per-tick whole-set broadcast).
+        for _ in 0..29 {
+            host_app.npc_sync_cadence();
+            assert_eq!(
+                npc_state_sends(&host_app),
+                0,
+                "a stationary NPC does not re-send inside the netSpam window"
+            );
+            host_app.net_npc_outbox.clear();
+        }
+        let _ = client_app;
+    }
+
+    /// CADENCE PARITY (NPC): a continuously-moving NPC bursts the `netSpam`
+    /// budget then settles to one packet per 30 ticks (`NPC.cs:6139-6145`,
+    /// `:90602-90614`) — the port's cadence matches the decision layer's rate,
+    /// not the old fixed 10 Hz.
+    #[test]
+    fn the_npc_cadence_throttles_a_moving_npc_to_the_netSpam_rate() {
+        let (mut host_app, _client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        let mut sends_by_tick: Vec<usize> = Vec::new();
+        for tick in 0..40 {
+            // Move the NPC every tick so the change-detect producer keeps it dirty.
+            host_app.npcs[0].x = 100.0 + tick as f32;
+            host_app.npc_sync_cadence();
+            sends_by_tick.push(npc_state_sends(&host_app));
+            host_app.net_npc_outbox.clear();
+        }
+        // The first four dirty ticks all send (the 3*30 gate, NPC.cs:90605)...
+        assert!(sends_by_tick[0] >= 1);
+        assert!(sends_by_tick[1] >= 1);
+        assert!(sends_by_tick[2] >= 1);
+        assert!(sends_by_tick[3] >= 1);
+        // ...the fifth defers (netSpam 116 > 90) and arms the pending cooldown.
+        assert_eq!(sends_by_tick[4], 0, "the 5th burst tick defers");
+        // The sustained rate is one packet per 30 ticks: the next send lands at
+        // tick 31 (index 30), exactly as the decision layer's own test pins.
+        let next = sends_by_tick.iter().skip(5).position(|&n| n >= 1);
+        assert_eq!(next, Some(25), "the deferred update lands at tick 31");
+    }
+
+    /// NO-DOUBLE-SEND (projectile): a fresh shot emits exactly ONE spawn `27`
+    /// (`Projectile.cs:11096`), not a second through the budget — the spawn and
+    /// the change-detect producer are disjoint (the `fresh` set).
+    #[test]
+    fn the_proj_cadence_spawn_sends_one_27_not_two() {
+        let (mut host_app, _client_app) = in_world_pair();
+        host_app
+            .projectiles
+            .spawn_with_data_owned(1, 0, 100.0, 100.0, 3.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .expect("spawn");
+        host_app.proj_sync_cadence();
+        let syncs = host_app
+            .net_proj_outbox
+            .iter()
+            .filter(|s| matches!(s, crate::app::net_proj_sync::ProjSend::Sync(_)))
+            .count();
+        assert_eq!(syncs, 1, "the spawn 27 fires exactly once");
+        // A stationary shot on the next step sends nothing (no change, no flag).
+        host_app.net_proj_outbox.clear();
+        host_app.proj_sync_cadence();
+        assert!(
+            host_app.net_proj_outbox.is_empty(),
+            "a stationary shot does not re-send"
+        );
+    }
+
+    /// STREAM-ORDER (NPC despawn): a removed NPC emits ONE life-0 `23`, and the
+    /// client drops the slot (`MessageBuffer.cs:1661-1664`). The despawn rides
+    /// the uid gone-diff, not the old absence-from-the-whole-set prune.
+    #[test]
+    fn the_npc_despawn_streams_one_life0_body_and_the_client_drops_it() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.npcs.len(), 1, "the client learned the NPC");
+        // Remove it (the sim's death retain): the next cadence queues one despawn.
+        host_app.npcs.clear();
+        host_app.npc_sync_cadence();
+        assert_eq!(host_app.net_npc_despawns.len(), 1, "one despawn 23");
+        assert_eq!(host_app.net_npc_despawns[0].hp, 0);
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.npcs.is_empty(),
+            "the life-0 body removed the client slot"
+        );
+        // A further cadence does NOT re-emit the despawn (the uid is gone).
+        host_app.npc_sync_cadence();
+        assert!(host_app.net_npc_despawns.is_empty(), "the despawn fires once");
     }
 }
 

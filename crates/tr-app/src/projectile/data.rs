@@ -329,10 +329,15 @@ pub const TRAP_DART: u16 = 98;
 /// The Super Dart Trap's projectile (`Projectile.cs:2707-2716`).
 pub const TRAP_SUPERDART: u16 = 184;
 /// The Spiky Ball Trap's projectile (`Projectile.cs:2717-2727` — the C#
-/// `SpikyBallTrap = 185`; the WIRE-1 legacy named it TRAP_SPEAR).
+/// `SpikyBallTrap = 185`, aiStyle 14, 14×14, `timeLeft = 900`; the WIRE-1
+/// legacy named it TRAP_SPEAR; S1-D-4c fixed the row's aiStyle 1 → 14).
 pub const TRAP_SPIKY_BALL: u16 = 185;
-/// The Spear Trap's projectile (`Projectile.cs:2717-2727`'s next arm — the
-/// C# `SpearTrap = 186`, aiStyle 14, 14×14, `timeLeft = 900`).
+/// The Spear Trap's projectile (the C# `SpearTrap = 186`,
+/// `Projectile.cs:2728-2740`: **aiStyle 37**, 10×14, `tileCollide = false`,
+/// `ignoreWater`, `timeLeft = 300`). The port's row deliberately keeps the
+/// WIRE-1 legacy values (aiStyle 14, 14×14, 900 — the C# 185's row, a
+/// historical 185/186 swap); the faithful 37 row + `AI_037` port are a
+/// follow-up — ANALYSIS "The spiky ball's row fix (S1-D-4c)".
 pub const TRAP_SPEAR: u16 = 186;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
@@ -1315,8 +1320,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
-            // `penetrate = -1`, `trap = true`. (The spiky ball 185 left this
-            // group in S1-D-5: its own arm below carries the C# aiStyle 14.)
+            // `penetrate = -1`, `trap = true`, aiStyle 1. (The spiky ball 185
+            // left this group in S1-D-5/S1-D-4c: its own arm below carries
+            // the C# aiStyle 14.)
             TRAP_DART | TRAP_SUPERDART | TRAP_VENOM_DART => (
                 10.0,
                 10.0,
@@ -1329,14 +1335,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 RESET_STATE,
             ),
-            // `Projectile.cs:2717-2727` — the Spiky Ball Trap's ball (185):
-            // 14x14, aiStyle 14, `penetrate = -1`, `timeLeft = 900`, trap.
+            // `Projectile.cs:2717-2727` — the Spiky Ball Trap's ball (185,
+            // `ProjectileID.SpikyBallTrap`): 14x14, **aiStyle 14** (the
+            // shared S1-D-5/S1-D-4c fix — the rowed 1 sent the ball down the
+            // plain-arrow flight), `penetrate = -1`, `timeLeft = 900`, trap.
             // The C# sets friendly AND hostile; the row shape carries
             // neither flag (ANALYSIS "The projectile data-row deviations").
-            // The tile bounce (`HandleMovement` `:19703-19713`: the changed
-            // axis flips to `lastVelocity * -0.9f`, the Y only when
-            // `lastVelocity.Y > 1f`) is unported — `ai_spear` kills on the
-            // tile scan instead (same ANALYSIS section).
+            // The C# AI_014 has NO 185-type branch (`:24830-25307`) — 185
+            // rides the generic default arm (`:25142-25160`); its bounce
+            // lives in `HandleMovement`'s collision block (`:19703-19713`:
+            // the changed axis flips to `lastVelocity * -0.9f`, the Y only
+            // when `lastVelocity.Y > 1f`) — unported; the port's `ai_spear`
+            // kills on the tile scan instead (same ANALYSIS section).
             TRAP_SPIKY_BALL => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
             // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
             // `extraUpdates = 5`, the local immunity cooldown −1.
