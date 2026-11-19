@@ -19,6 +19,9 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
+mod doors;
+use doors::interact_tile;
+pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -4523,96 +4526,6 @@ mod tests {
         app
     }
 
-    /// The bed rig: a floor row at y 60 with a style-0 bed placed at
-    /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
-    /// bottom row) — and the player parked near the sleep anchor.
-    fn bed_app() -> App {
-        let mut w = World::new("t".into(), 80, 200);
-        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
-        for x in 0..80 {
-            let i = w.index(x, 60);
-            w.tiles[i] = Tile {
-                kind: 1,
-                ..Default::default()
-            };
-            w.tiles[i].flags |= FLAG_ACTIVE;
-        }
-        w.compute_column_surface();
-        assert!(edit::place_item_tile(&mut w, 40, 59, 79, 0, -1));
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        let mut player = Player::spawn(&app.world);
-        // The sleep anchor for the clicked top-half cell (41, 58)
-        // (`GetSleepingTargetInfo`): column `41 - 36/18 + 1 = 40`, row `59`
-        // → `(648, 960)` — the player's bottom starts 17.9 px from the tile
-        // centre, inside the 96-px gate.
-        player.x = 638.0;
-        player.y = 918.0;
-        app.player = Some(player);
-        app
-    }
-
-    #[test]
-    fn the_bed_sleep_half_snaps_within_96_px_and_toggles_off() {
-        // DW-1.3/DW-1.6 — `Player.cs:32669-32677`: the 96-px gate wraps
-        // `sleeping.StartSleeping`; the same-anchor re-click wakes
-        // (`PlayerSleepingHelper.cs:167-171`); the pose rotation arms
-        // (`:73-74`).
-        let mut app = bed_app();
-        assert!(interact_tile(&mut app, 41, 58));
-        let p = app.player.as_ref().unwrap();
-        assert!(p.sleeping);
-        assert_eq!(p.facing, -1);
-        assert_eq!(p.sleeping_style, 0);
-        assert!((p.full_rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
-        // The spawn cell stayed untouched (the sleep half is not the spawn
-        // half, `IsHoveringOverABottomSideOfABed`).
-        assert_eq!(app.world.bed_spawn, None);
-        // The same anchor re-click wakes.
-        assert!(interact_tile(&mut app, 41, 58));
-        assert!(!app.player.as_ref().unwrap().sleeping);
-    }
-
-    #[test]
-    fn the_bed_sleep_refuses_beyond_96_px_but_consumes_the_click() {
-        // The gate at `Player.cs:32670-32676`: an out-of-range click still
-        // sets `flag2 = true` (consumed, no fall-through to the place path)
-        // but `StartSleeping` never runs.
-        let mut app = bed_app();
-        let p = app.player.as_mut().unwrap();
-        p.x = 638.0 + 7.0 * 16.0; // ~130 px from the tile centre
-        assert!(interact_tile(&mut app, 41, 58));
-        assert!(!app.player.as_ref().unwrap().sleeping);
-    }
-
-    #[test]
-    fn the_spawn_scan_counts_the_candelabra_solid() {
-        // DW-1.4 — `CheckSpawn`'s `tileSolid[379]` window (`Player.cs:54535`,
-        // the frame toggle `Main.cs:9468`/`:17753`/`:17799`): the candelabra
-        // is solid for the whole check — one hovering inside the 3x3 box
-        // above the spawn cell obstructs it (the generated `TILE_SOLID`
-        // already carries that base state).
-        let mut app = bed_app();
-        // The spawn cell for the bottom-half click (40, 59): column
-        // `39 + 2 = 41`, row `60`. The open-air room check fails on its own,
-        // so the scan is isolated by its message.
-        let mut chat = crate::chat::ChatMonitor::default();
-        let _ = check_bed_spawn(&app.world, 41, 60, &mut chat);
-        let open_air = chat.messages.last().unwrap().text.clone();
-        // The candelabra at (40, 57) — inside the scan box (40..=42,
-        // 57..=59), above the bed's top row.
-        let i = app.world.index(40, 57);
-        app.world.tiles[i] = Tile {
-            kind: 379,
-            ..Default::default()
-        };
-        app.world.tiles[i].flags |= FLAG_ACTIVE;
-        let mut chat = crate::chat::ChatMonitor::default();
-        assert!(!check_bed_spawn(&app.world, 41, 60, &mut chat));
-        assert_eq!(chat.messages.last().unwrap().text, "The bed is obstructed.");
-        assert_ne!(open_air, "The bed is obstructed.");
-    }
-
     #[test]
     fn test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var() {
         // DW-3.2 — `Main.DamageVar(dmg, this.luck)` with the RAW value for
@@ -4878,49 +4791,6 @@ mod tests {
         );
     }
 
-    // ---- Phase 4 (DW-4.1/DW-4.3): the interaction hook ---------------------
-
-    #[test]
-    fn test_DW_4_1_interaction_events_map_results_to_cues_and_drops() {
-        use edit::TileInteraction;
-        // `None` = no interaction: the caller falls through to the place path
-        // with no cue and no drops.
-        assert!(interaction_events(TileInteraction::None).is_none());
-
-        let (cue, events) = interaction_events(TileInteraction::DoorOpened {
-            object_drops: vec![edit::ObjectDrop {
-                tile_kind: 10,
-                x: 10,
-                y: 18,
-                ..Default::default()
-            }],
-        })
-        .unwrap();
-        assert_eq!(cue, Some("Door_Opened")); // PlaySound(8), WorldGen.cs:37732
-        assert_eq!(events, vec![(25, 10, 18)]); // GetDoorItem(0) = 25
-
-        let (cue, events) = interaction_events(TileInteraction::DoorClosed {
-            object_drops: vec![],
-        })
-        .unwrap();
-        assert_eq!(cue, Some("Door_Closed")); // PlaySound(9), WorldGen.cs:31906
-        assert!(events.is_empty());
-
-        // The blocked path carries cleanup drops with no cue — `PlaySound`
-        // sits behind every failure return in the C# bodies.
-        let (cue, events) = interaction_events(TileInteraction::DoorBlocked {
-            object_drops: vec![edit::ObjectDrop {
-                tile_kind: 14,
-                x: 10,
-                y: 17,
-                ..Default::default()
-            }],
-        })
-        .unwrap();
-        assert_eq!(cue, None);
-        assert_eq!(events, vec![(32, 10, 17)]);
-    }
-
     #[test]
     fn s1_e_21c_kill_cue_maps_the_legacy_families() {
         // The five families the tile-break table can emit, pinned to the
@@ -4966,56 +4836,6 @@ mod tests {
             1,
             "one break cue, no per-drop sound"
         );
-    }
-
-    #[test]
-    fn dw_2_1_interaction_events_map_dial_results_to_cue() {
-        use edit::TileInteraction;
-        // The fired dial plays `SoundID.Item4` and spawns no drops — the
-        // dial arms kill no tiles (`Player.cs:32642`/:32652).
-        let (cue, events) =
-            interaction_events(TileInteraction::DialStarted { sundial: true }).unwrap();
-        assert_eq!(cue, Some("Item_4"));
-        assert!(events.is_empty());
-        let (cue, events) =
-            interaction_events(TileInteraction::DialStarted { sundial: false }).unwrap();
-        assert_eq!(cue, Some("Item_4"));
-        assert!(events.is_empty());
-        // The refused gate stays consumed-but-silent (`flag2 = true`,
-        // `Player.cs:32637`; no `PlaySound` behind the `:32638`/:32648 gate).
-        let (cue, events) = interaction_events(TileInteraction::DialRefused).unwrap();
-        assert_eq!(cue, None);
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn test_DW_4_3_cell_blocked_by_entity() {
-        // The entity half of `Collision.EmptyTile(ignoreTiles: true)`
-        // (`Collision.cs:1359-1378`): strict rectangle overlap against the
-        // player and NPCs.
-        let w = object_world();
-        let mut player = Player::spawn(&w);
-        player.x = 160.0;
-        player.y = 304.0; // the 20x42 hitbox covers cell (10, 19)
-        assert!(cell_blocked_by_entity(Some(&player), &[], 10, 19));
-        assert!(!cell_blocked_by_entity(Some(&player), &[], 15, 19));
-        assert!(!cell_blocked_by_entity(None, &[], 10, 19));
-
-        // A slime spawned on the surface covers the cells its 30x24 body
-        // intersects.
-        let slime = Npc::spawn_slime(&w, 20).unwrap();
-        assert!(cell_blocked_by_entity(
-            None,
-            std::slice::from_ref(&slime),
-            20,
-            19
-        ));
-        assert!(!cell_blocked_by_entity(
-            None,
-            std::slice::from_ref(&slime),
-            5,
-            19
-        ));
     }
 
     // ---- Phase 1 (M1.4-TO-5): the ungated LMB mining branch ----------------
@@ -6002,7 +5822,7 @@ mod tests {
         assert_eq!(p.bonus_tag_damage, want);
     }
 
-    fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
+    pub(super) fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
         let i = w.index(x, y);
         w.tiles[i] = Tile {
             kind,
@@ -6286,34 +6106,6 @@ mod tests {
             !app2.world.tile(10, 19).unwrap().active(),
             "nothing written"
         );
-    }
-
-    /// The switch family (`Player.cs:32171-32179`): using a lever (132), a
-    /// switch (136) or a timer (144) trips the wiring.
-    #[test]
-    fn using_a_switch_trips_the_wiring() {
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = object_world();
-        let i = app.world.index(10, 19);
-        app.world.tiles[i].kind = 136; // the switch tile
-        app.world.tiles[i].flags |= FLAG_ACTIVE;
-        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
-        // `Wiring.HitSwitch`'s switch arm (`:279-288`) flips the tile's
-        // frame between 0 and 18.
-        assert_eq!(app.world.tile_frame_y(10, 19), 18, "the switch flipped");
-    }
-
-    /// The lever (132) and the timer (144) take the same arm.
-    #[test]
-    fn the_lever_and_the_timer_take_the_same_arm() {
-        for kind in [132u16, 144] {
-            let mut app = flow_app(None, vec![], vec![]);
-            app.world = object_world();
-            let i = app.world.index(10, 19);
-            app.world.tiles[i].kind = kind;
-            app.world.tiles[i].flags |= FLAG_ACTIVE;
-            assert!(interact_tile(&mut app, 10, 19), "kind {kind}");
-        }
     }
 
     #[test]
@@ -7265,222 +7057,6 @@ mod tests {
 
     // DW-3.6: the Staff-of-Regrowth replant support matrix 78/380/579
     // (`Player.cs:45826`, called from the `flag` block :41279/:41290).
-    // ---- M3-STORE-1: the bank open toggle + the void-vault pickup -------
-
-    #[test]
-    fn test_store_1_the_piggy_right_click_toggles_the_bank() {
-        // `Player.cs:33122-33138` + the shared open block (:33230-33252, the
-        // M3-CHEST-INT unify routes it through `chest::toggle_open`): the
-        // right-click opens chest -2 (the piggy), the re-click closes to -1;
-        // the inventory opens with the bank (`OpenChest`'s
-        // `Main.playerInventory = true`, `:33517`) and STAYS open on the
-        // chest close — the C# close arm never touches `playerInventory`
-        // (the world-chest panel's close behaves the same; the STORE-1
-        // pair-close deviation is gone). The furniture interact tests
-        // drive `interact_tile` directly (the route's press edge is latched
-        // at `update_editing`'s head).
-        let mut w = object_world();
-        // The piggy rides ON a table: the table row at 20, the piggy at 19.
-        set_tile(&mut w, 10, 20, 14);
-        set_tile(&mut w, 11, 20, 14);
-        set_tile(&mut w, 12, 20, 14);
-        set_tile(&mut w, 10, 19, 29);
-        set_tile(&mut w, 11, 19, 29);
-        w.frame_important[29] = true;
-        if let Some(t) = w.tile_mut(10, 19) {
-            t.frame_x = 0;
-        }
-        if let Some(t) = w.tile_mut(11, 19) {
-            t.frame_x = 18;
-        }
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        app.player = Some(Player::spawn(&app.world));
-        // The first click opens chest -2.
-        assert!(interact_tile(&mut app, 10, 19));
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.chest, -2, "the piggy opens chest -2");
-        assert!(app.inventory_open, "the bank opens the inventory");
-        assert_eq!(
-            (p.chest_x, p.chest_y),
-            (10, 19),
-            "OpenChest sets the origin for the banks too (:33524-33525)"
-        );
-        // The re-click closes; the inventory stays open (C# 1:1).
-        assert!(interact_tile(&mut app, 10, 19));
-        assert_eq!(
-            app.player.as_ref().unwrap().chest,
-            -1,
-            "the re-click closes"
-        );
-        assert!(app.inventory_open, "the close keeps the inventory open");
-        assert_eq!(
-            (
-                app.player.as_ref().unwrap().chest_x,
-                app.player.as_ref().unwrap().chest_y
-            ),
-            (10, 19),
-            "the close keeps chestX/Y (:33236)"
-        );
-    }
-
-    /// A container tile with its sheet frame set (the 2×2 chest shape's
-    /// corners — `chest.rs`'s `place_chest` test fixture).
-    fn set_container_tile(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
-        let i = w.index(x, y);
-        w.tiles[i] = Tile {
-            kind,
-            ..Default::default()
-        };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        w.tiles[i].frame_x = fx;
-        w.tiles[i].frame_y = fy;
-    }
-
-    /// The world-position of tile `(x, y)`'s centre (the
-    /// `chest::try_open_chest_at_cursor` route's `(px / TILE_PX).floor()`).
-    fn world_click(x: i32, y: i32) -> Vec2 {
-        Vec2::new(x as f32 * TILE_PX + 8.0, y as f32 * TILE_PX + 8.0)
-    }
-
-    /// DW-1.1 — opening a bank closes an open world chest (`Player.chest`,
-    /// `Player.cs:2876`, the M3-CHEST-INT unify): the world chest opened by
-    /// the right-click route (`chest::try_open_chest_at_cursor`, store index
-    /// 0) is replaced when the bank tile's click runs the shared open block
-    /// — the cross-close is free with one field and one open path.
-    #[test]
-    fn test_DW_1_1_opening_a_bank_closes_the_world_chest() {
-        let mut w = object_world();
-        // A world chest 2×2 at (30, 15) — the frame corners 0/18.
-        set_container_tile(&mut w, 30, 15, 21, 0, 0);
-        set_container_tile(&mut w, 31, 15, 21, 18, 0);
-        set_container_tile(&mut w, 30, 16, 21, 0, 18);
-        set_container_tile(&mut w, 31, 16, 21, 18, 18);
-        // The piggy on its table row (the store-1 fixture shape).
-        set_tile(&mut w, 10, 20, 14);
-        set_tile(&mut w, 11, 20, 14);
-        set_tile(&mut w, 12, 20, 14);
-        set_container_tile(&mut w, 10, 19, 29, 0, 0);
-        set_container_tile(&mut w, 11, 19, 29, 18, 0);
-        w.frame_important[29] = true;
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        app.player = Some(Player::spawn(&app.world));
-
-        // The world chest opens (store index 0, the lazy entry).
-        assert!(crate::chest::try_open_chest_at_cursor(
-            &mut app,
-            world_click(30, 15)
-        ));
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.chest, 0, "the world chest is open");
-        assert_eq!((p.chest_x, p.chest_y), (30, 15));
-
-        // The piggy's click runs the shared block through the bank arm: the
-        // world chest is replaced by the bank — one field, no second open
-        // container.
-        assert!(interact_tile(&mut app, 10, 19));
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.chest, -2, "the bank replaced the world chest");
-        assert_eq!((p.chest_x, p.chest_y), (10, 19), "the origin moved too");
-        assert!(app.inventory_open, "the bank opened with the inventory");
-    }
-
-    /// DW-1.1 — the reverse: opening a world chest closes an open bank.
-    #[test]
-    fn test_DW_1_1_opening_a_world_chest_closes_the_bank() {
-        let mut w = object_world();
-        set_container_tile(&mut w, 30, 15, 21, 0, 0);
-        set_container_tile(&mut w, 31, 15, 21, 18, 0);
-        set_container_tile(&mut w, 30, 16, 21, 0, 18);
-        set_container_tile(&mut w, 31, 16, 21, 18, 18);
-        set_tile(&mut w, 10, 20, 14);
-        set_tile(&mut w, 11, 20, 14);
-        set_tile(&mut w, 12, 20, 14);
-        set_container_tile(&mut w, 10, 19, 29, 0, 0);
-        set_container_tile(&mut w, 11, 19, 29, 18, 0);
-        w.frame_important[29] = true;
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        app.player = Some(Player::spawn(&app.world));
-
-        // The bank opens first.
-        assert!(interact_tile(&mut app, 10, 19));
-        assert_eq!(app.player.as_ref().unwrap().chest, -2);
-        // The world chest's right-column click: the origin decodes to
-        // (30, 15), the bank closes (the shared block's `num76 != chest`
-        // switch arm).
-        assert!(crate::chest::try_open_chest_at_cursor(
-            &mut app,
-            world_click(31, 15)
-        ));
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.chest, 0, "the world chest replaced the bank");
-        assert_eq!((p.chest_x, p.chest_y), (30, 15));
-    }
-
-    /// DW-1.3 — the bank open/close/re-click path goes through
-    /// `chest::toggle_open` (`Player.cs:33230-33252`, the shared block): the
-    /// fresh open sets `chest`/`chestX`/`chestY` — the C# origin decode lands
-    /// on the piggy's left column even when the RIGHT tile is clicked
-    /// (`Player.cs:33060-33079`) — and the inventory opens with it; the
-    /// re-click closes (the inventory stays open — the C# close arm never
-    /// touches `playerInventory`); a second bank's click switches (the
-    /// sound-12 arm). The sound ids themselves are pinned by
-    /// `chest::tests::test_DW_1_3_toggle_open_returns_the_shared_block_sound_ids`
-    /// (`toggle_open`'s return contract; this arm plays them through
-    /// `play_menu_sound`).
-    #[test]
-    fn test_DW_1_3_bank_clicks_route_through_toggle_open() {
-        let mut w = object_world();
-        // The piggy on its table row.
-        set_tile(&mut w, 10, 20, 14);
-        set_tile(&mut w, 11, 20, 14);
-        set_tile(&mut w, 12, 20, 14);
-        set_container_tile(&mut w, 10, 19, 29, 0, 0);
-        set_container_tile(&mut w, 11, 19, 29, 18, 0);
-        w.frame_important[29] = true;
-        // A safe (97) 2×2 elsewhere — the switch target.
-        set_container_tile(&mut w, 20, 17, 97, 0, 0);
-        set_container_tile(&mut w, 21, 17, 97, 18, 0);
-        set_container_tile(&mut w, 20, 18, 97, 0, 18);
-        set_container_tile(&mut w, 21, 18, 97, 18, 18);
-        w.frame_important[97] = true;
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = w;
-        app.player = Some(Player::spawn(&app.world));
-
-        // The RIGHT piggy tile's click: the origin decodes to (10, 19).
-        assert!(interact_tile(&mut app, 11, 19));
-        let p = app.player.as_ref().unwrap();
-        assert_eq!(p.chest, -2, "the piggy opens chest -2");
-        assert_eq!(
-            (p.chest_x, p.chest_y),
-            (10, 19),
-            "the C# origin decode (:33060-33079)"
-        );
-        assert!(
-            app.inventory_open,
-            "OpenChest's playerInventory = true (:33517)"
-        );
-        // The re-click closes; the inventory stays open.
-        assert!(interact_tile(&mut app, 10, 19));
-        assert_eq!(
-            app.player.as_ref().unwrap().chest,
-            -1,
-            "the re-click closes"
-        );
-        assert!(app.inventory_open, "the close keeps the inventory open");
-        // A fresh piggy open, then the safe's click switches.
-        assert!(interact_tile(&mut app, 10, 19));
-        assert_eq!(app.player.as_ref().unwrap().chest, -2);
-        assert!(interact_tile(&mut app, 20, 17));
-        assert_eq!(
-            app.player.as_ref().unwrap().chest,
-            -3,
-            "the switch opens the safe"
-        );
-    }
 
     #[test]
     fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
@@ -8713,96 +8289,6 @@ mod loot_summon_tests {
             app.npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
-        );
-    }
-    #[test]
-    fn the_golem_altar_consumes_a_cell_and_summons() {
-        // `TileInteractionsUse`'s altar arm (`Player.cs:32755-32790`) +
-        // `NPC.SpawnOnPlayer`'s case-245 column scan (`NPC.cs:80475-80531`):
-        // the Power Cell 1293 in the inventory with hardmode and Plantera
-        // down pays one cell and puts the Golem at the altar column's
-        // `(up + up + down) / 3`; a missing gate refuses free.
-        let mut app = flow_app(None, vec![], vec![]);
-        let mut w = tr_core::World::new("t".into(), 64, 200);
-        for x in 0..64 {
-            for y in 120..200 {
-                let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-            }
-        }
-        // The altar's origin cell (237, frame 18/0) with a ceiling 10
-        // above and a floor 6 below for the solid scans.
-        for &(ax, ay, kind, fx, fy) in &[
-            (30, 30, 237u16, 18i16, 0i16),
-            (30, 20, 1, 0, 0),
-            (30, 36, 1, 0, 0),
-        ] {
-            let i = w.index(ax, ay);
-            w.tiles[i] = tr_core::Tile {
-                kind,
-                frame_x: fx,
-                frame_y: fy,
-                ..Default::default()
-            };
-            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-        }
-        w.compute_column_surface();
-        app.world = w;
-        let mut player = crate::player::Player::spawn(&app.world);
-        player.x = 30.0 * 16.0;
-        player.y = 30.0 * 16.0;
-        app.player = Some(player);
-        app.world.hard_mode = true;
-        app.world.downed_plant_boss = true;
-        // No cell: the click is consumed but nothing spawns.
-        assert!(
-            interact_tile(&mut app, 30, 30),
-            "the altar consumes the click"
-        );
-        assert!(
-            app.npcs.iter().all(|n| n.kind != NpcKind::Golem),
-            "the missing cell refuses"
-        );
-        // The cell: one paid, the Golem at the (20 + 20 + 36)/3 row.
-        app.inventory[app.selected] = ItemSlot {
-            kind: 1293,
-            name: "Lihzahrd Power Cell".into(),
-            count: 2,
-            prefix: 0,
-        };
-        assert!(interact_tile(&mut app, 30, 30));
-        assert_eq!(app.inventory[app.selected].count, 1, "one cell paid");
-        let golem = app
-            .npcs
-            .iter()
-            .find(|n| n.kind == NpcKind::Golem)
-            .expect("the Golem spawns");
-        assert_eq!(golem.x, 30.0 * 16.0 + 8.0, "the altar column");
-        assert_eq!(golem.y, 25.0 * 16.0, "the (20+20+36)/3 row");
-        // A living Golem refuses the re-summon; hardmode off refuses too.
-        interact_tile(&mut app, 30, 30);
-        assert_eq!(app.inventory[app.selected].count, 1, "the living-boss gate");
-        for n in app.npcs.iter_mut() {
-            if n.kind == NpcKind::Golem {
-                n.hp = 0;
-            }
-        }
-        app.world.hard_mode = false;
-        app.inventory[app.selected].count = 2;
-        interact_tile(&mut app, 30, 30);
-        assert_eq!(
-            app.inventory[app.selected].count, 2,
-            "the hardmode gate refuses free"
-        );
-        assert!(
-            app.npcs
-                .iter()
-                .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
-            "the hardmode gate refuses"
         );
     }
     #[test]
