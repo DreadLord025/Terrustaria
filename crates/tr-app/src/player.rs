@@ -3609,6 +3609,16 @@ impl Player {
     /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
     /// lookups only).
     fn apply_equip_functional(&mut self, _item_slot: usize, kind: u16) {
+        // S1-C-12 wave E — the combat/damage family has ONE grant path:
+        // `accessory_combat::apply_combat_accessory` claims its kinds here
+        // and the former inline arms (489/490/491/2998/935/897/936/1343/
+        // 1301/3015) are deleted from the match below, so nothing grants
+        // twice. The family kinds are disjoint from every remaining arm
+        // (the C# rows are independent per-type `if`s, `Player.cs:14368-
+        // 15450`), so claiming them before the match is order-identical.
+        if crate::accessory_combat::apply_combat_accessory(kind, self) {
+            return;
+        }
         match kind {
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
@@ -3745,57 +3755,24 @@ impl Player {
             // The Titan Glove's melee-speed row (`:15103-15107`); its
             // `autoReuseGlove` flag has no port consumer yet.
             211 => self.melee_speed_bonus += 0.12,
-            // The damage/crit accessories (`ApplyEquipFunctional`, the
-            // `Player.cs:15223-15560` block): the four class emblems at
-            // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
-            // the Avenger Emblem's +12% to all four (935), the melee-speed
-            // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
-            // damage), the Sniper Scope's +10 ranged crit/+10% ranged
-            // damage (1858), the Celestial Stone-style +8 crit/+10% all
-            // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
-            // emblems +15%/+10% with their extra slot (1167/1864/1845),
-            // the Ankh/Stone rows' crit-and-damage mix (3015) and the
-            // Empress Brooch's +7.5% move (4989).
-            489 => self.magic_damage += 0.15,
-            490 => self.melee_damage += 0.15,
-            491 => self.ranged_damage += 0.15,
-            2998 => self.minion_damage += 0.15,
-            935 => {
-                self.melee_damage += 0.12;
-                self.ranged_damage += 0.12;
-                self.magic_damage += 0.12;
-                self.minion_damage += 0.12;
-            }
-            897 => self.melee_speed_bonus += 0.12,
-            936 => {
-                self.melee_speed_bonus += 0.12;
-                self.melee_damage += 0.12;
-            }
-            1343 => {
-                self.melee_speed_bonus += 0.12;
-                self.melee_damage += 0.12;
-            }
+            // The damage/crit accessories OUTSIDE the combat family
+            // (`ApplyEquipFunctional`): the Sniper Scope's +10 ranged
+            // crit/+10% ranged damage (1858, `Player.cs:14907-14911`),
+            // the Celestial Magnet's +15% magic (2220, `:14944-14948` —
+            // its `manaMagnet` half is an unported family), the minion
+            // emblems +15%/+10% (1167/1864/1845, `:15315-15330` — their
+            // `minionKB += 2f` halves have no live consumer yet, the
+            // `maxMinions++` budget rides `grant_summon_caps`) and the
+            // Empress Brooch's +7.5% move (4989). The class emblems
+            // (489/490/491/2998), the Avenger (935), the gloves
+            // (897/936/1343/3992), the Destroyer Emblem (1301), the
+            // Putrid Scent (3015) and the Flesh Knuckles (3016) are
+            // claimed by `accessory_combat::apply_combat_accessory`
+            // ABOVE — their inline arms were deleted in wave E
+            // (S1-C-12e) so each kind grants exactly once.
             1858 => {
                 self.ranged_crit += 10;
                 self.ranged_damage += 0.1;
-            }
-            1301 => {
-                self.melee_crit += 8;
-                self.ranged_crit += 8;
-                self.magic_crit += 8;
-                self.melee_damage += 0.1;
-                self.ranged_damage += 0.1;
-                self.magic_damage += 0.1;
-                self.minion_damage += 0.1;
-            }
-            3015 => {
-                self.melee_crit += 5;
-                self.ranged_crit += 5;
-                self.magic_crit += 5;
-                self.melee_damage += 0.05;
-                self.ranged_damage += 0.05;
-                self.magic_damage += 0.05;
-                self.minion_damage += 0.05;
             }
             2220 => self.magic_damage += 0.15,
             1167 => self.minion_damage += 0.15,
@@ -4392,6 +4369,14 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // S1-C-12 wave E — the combat family's per-tick clears the wired
+        // grants need: `minionKB = 0f` (`Player.cs:18347`) and `kbGlove
+        // = false` (`:18709`). Without them the sky-stone bundle's
+        // `minionKB += 0.5f` and the gloves' `kbGlove` would accumulate
+        // / stick after the item comes off. (`autoReuseGlove`/
+        // `meleeScaleGlove` `:18710-18711` have no port fields.)
+        self.minion_kb = 0.0;
+        self.kb_glove = false;
         // `GrantArmorBenefits` (' armor/accessory rows, `Player.cs:13121`):
         // every equipped wearable's `Item.defense` — the three armor slots AND
         // the seven functional accessory slots (Shackle +1, Cobalt Shield +1,
@@ -4437,26 +4422,22 @@ impl Player {
                 _ => 0.0,
             };
         }
-        // `:12988-13003`: the Celestial Stone bundle. The flag is set by the
-        // three stones (`:15412-15424`): 1865 (Celestial Stone) and 3110
-        // (Celestial Shell) always, 899 (Sun Stone) by day, 900 (Moon Stone) by
-        // night or during an eclipse.
-        self.sky_stone_effects = self.equipped[..10].contains(&1865)
-            || self.equipped[..10].contains(&3110)
-            || (self.equipped[..10].contains(&899) && world.day_time)
-            || (self.equipped[..10].contains(&900) && (!world.day_time || world.eclipse));
+        // `:12988-13003`: the Celestial Stone bundle — S1-C-12 wave E
+        // dedupe: both halves now ride `accessory_combat` (the former
+        // inline copies are deleted; ONE grant path per row). The flag
+        // is set by the stones (`:15412-15423`): 1865 (Celestial Stone)
+        // and 3110 (Celestial Shell) always, 899 (Sun Stone) by day,
+        // 900 (Moon Stone) by night or during an eclipse. The fold adds
+        // the bundle's stats incl. `minionKB += 0.5f` (`:13002` — the
+        // inline copy had missed it); its `lifeRegen += 2` half rides
+        // the `accessory_life_regen` fold after `update_equips`.
+        self.sky_stone_effects = crate::accessory_combat::set_sky_stone_flag(
+            &self.equipped[..10],
+            world.day_time,
+            world.eclipse,
+        );
         if self.sky_stone_effects {
-            self.stat_defense += 4;
-            self.melee_speed_bonus += 0.1;
-            self.melee_damage += 0.1;
-            self.melee_crit += 2;
-            self.ranged_damage += 0.1;
-            self.ranged_crit += 2;
-            self.magic_damage += 0.1;
-            self.magic_crit += 2;
-            // `pickSpeed -= 0.15f` — the port's bonus field is the negation.
-            self.pick_speed_bonus += 0.15;
-            self.minion_damage += 0.1;
+            crate::accessory_combat::apply_sky_stone_effects(self);
         }
         // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
         // the completed Snow/Molten sets (`set_buff_immunity`).
@@ -9152,8 +9133,10 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!((p.melee_damage - 1.12).abs() < 1e-4);
         assert!((p.minion_damage - 1.12).abs() < 1e-4);
-        // Necromantic Scroll (1301): +8 to three crits and +10% to four
-        // classes on top of the 4-point crit bases.
+        // Destroyer Emblem (1301, `ItemID.cs:4285` — the Necromantic
+        // Scroll is 1845): +8 to three crits and +10% to four classes
+        // on top of the 4-point crit bases. Wave E: granted by
+        // `accessory_combat::destroyer_emblem`, exactly once.
         p.equipped[3] = 1301;
         p.update(&w, PlayerInput::default());
         assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (12, 12, 12));
@@ -9163,6 +9146,118 @@ mod tests {
         p.equipped[3] = 1864;
         p.update(&w, PlayerInput::default());
         assert!((p.minion_damage - 1.15).abs() < 1e-4);
+    }
+
+    /// S1-C-12 wave E — the no-double-grant witnesses: every combat-family
+    /// kind grants EXACTLY ONCE through the wired seam
+    /// (`apply_equip_functional` -> `accessory_combat::apply_combat_accessory`;
+    /// the former inline arms are deleted). Each row pins the FULL C#
+    /// effect set (`Player.cs:14411-14417`/`:14636-14650`/`:14912-14921`/
+    /// `:15299-15314`/`:15369-15376`/`:15428-15450`) on a fresh spawn
+    /// (damage classes 1.0, crits 4, melee-speed bonus 0), then re-ticks:
+    /// a second grant path would show up either as a doubled first-tick
+    /// value or as drift on the second tick.
+    #[test]
+    fn each_combat_accessory_grants_exactly_once_through_the_wired_seam() {
+        let w = World::new("t".into(), 64, 800);
+        // (kind, melee/ranged/magic/minion damage, melee/ranged/magic crit,
+        //  melee-speed bonus, kbGlove)
+        let rows: [(u16, [f32; 4], [i32; 3], f32, bool); 12] = [
+            // Sorcerer Emblem `:15428-15431`.
+            (489, [1.0, 1.0, 1.15, 1.0], [4, 4, 4], 0.0, false),
+            // Warrior Emblem `:15432-15435`.
+            (490, [1.15, 1.0, 1.0, 1.0], [4, 4, 4], 0.0, false),
+            // Ranger Emblem `:15436-15439`.
+            (491, [1.0, 1.15, 1.0, 1.0], [4, 4, 4], 0.0, false),
+            // Summoner Emblem `:15440-15443`.
+            (2998, [1.0, 1.0, 1.0, 1.15], [4, 4, 4], 0.0, false),
+            // Avenger Emblem `:15444-15450`.
+            (935, [1.12, 1.12, 1.12, 1.12], [4, 4, 4], 0.0, false),
+            // Destroyer Emblem `:14912-14921`.
+            (1301, [1.1, 1.1, 1.1, 1.1], [12, 12, 12], 0.0, false),
+            // Putrid Scent `:14636-14646` (aggro −400 unported).
+            (3015, [1.05, 1.05, 1.05, 1.05], [9, 9, 9], 0.0, false),
+            // Flesh Knuckles `:14647-14650` (aggro +400 only — unported).
+            (3016, [1.0, 1.0, 1.0, 1.0], [4, 4, 4], 0.0, false),
+            // Power Glove `:15299-15305`.
+            (897, [1.0, 1.0, 1.0, 1.0], [4, 4, 4], 0.12, true),
+            // Mechanical Glove `:15369-15376`.
+            (936, [1.12, 1.0, 1.0, 1.0], [4, 4, 4], 0.12, true),
+            // Fire Gauntlet `:15306-15314` (magmaStone unported).
+            (1343, [1.12, 1.0, 1.0, 1.0], [4, 4, 4], 0.12, true),
+            // Berserker's Glove `:14411-14417` — NO meleeDamage row
+            // (wave B's +0.12 copy was removed in the wave-E re-read).
+            (3992, [1.0, 1.0, 1.0, 1.0], [4, 4, 4], 0.12, true),
+        ];
+        for (kind, dmg, crit, speed, kb) in rows {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            for tick in 0..2 {
+                p.update(&w, PlayerInput::default());
+                let msg = format!("kind {kind}, tick {tick}");
+                assert!((p.melee_damage - dmg[0]).abs() < 1e-4, "melee {msg}");
+                assert!((p.ranged_damage - dmg[1]).abs() < 1e-4, "ranged {msg}");
+                assert!((p.magic_damage - dmg[2]).abs() < 1e-4, "magic {msg}");
+                assert!((p.minion_damage - dmg[3]).abs() < 1e-4, "minion {msg}");
+                assert_eq!(
+                    (p.melee_crit, p.ranged_crit, p.magic_crit),
+                    (crit[0], crit[1], crit[2]),
+                    "crits {msg}"
+                );
+                assert!((p.melee_speed_bonus - speed).abs() < 1e-4, "speed {msg}");
+                assert_eq!(p.kb_glove, kb, "kbGlove {msg}");
+            }
+            // Taking the accessory off ends the grant next tick (the
+            // per-tick clears: damage/crit/speed bases + `kbGlove = false`
+            // `Player.cs:18709`).
+            p.equipped[3] = 0;
+            p.update(&w, PlayerInput::default());
+            assert!((p.melee_damage - 1.0).abs() < 1e-4, "off {kind}");
+            assert_eq!(p.melee_crit, 4, "off {kind}");
+            assert!(!p.kb_glove, "kbGlove off {kind}");
+        }
+        // Two slots with the same emblem stack per slot (the C# loop
+        // applies each slot's row once, `Player.cs:12946-12952`).
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 490;
+        p.equipped[4] = 490;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.30).abs() < 1e-4);
+    }
+
+    /// S1-C-12 wave E — the sky-stone bundle's single grant path: the
+    /// flag scan + stat fold ride `accessory_combat` (the inline copies
+    /// are deleted), the `minionKB += 0.5f` row (`Player.cs:13002`) lands
+    /// once per tick thanks to the new `minionKB = 0f` reset (`:18347`),
+    /// and a combat emblem beside the stone grants each family once.
+    #[test]
+    fn the_sky_stone_bundle_grants_once_including_minion_knockback() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1865; // Celestial Stone — always on.
+        for tick in 0..2 {
+            p.update(&w, PlayerInput::default());
+            assert!(p.sky_stone_effects, "tick {tick}");
+            assert_eq!(p.stat_defense, 4, "tick {tick}");
+            assert!((p.melee_damage - 1.1).abs() < 1e-4, "tick {tick}");
+            assert!((p.melee_speed_bonus - 0.1).abs() < 1e-4, "tick {tick}");
+            assert_eq!(p.melee_crit, 6, "tick {tick}");
+            assert!((p.minion_kb - 0.5).abs() < 1e-4, "minionKB tick {tick}");
+        }
+        // The stone + a Warrior Emblem: each family's row once (melee
+        // 1.0 + 0.1 + 0.15, crit 4 + 2).
+        p.equipped[4] = 490;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.25).abs() < 1e-4);
+        assert_eq!(p.melee_crit, 6);
+        assert!((p.minion_kb - 0.5).abs() < 1e-4);
+        // Everything off: the bundle and its knockback end next tick.
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        assert!((p.minion_kb - 0.0).abs() < 1e-4);
+        assert!((p.melee_damage - 1.0).abs() < 1e-4);
     }
 
     /// M3-EQUIP-9 — `manaCost` folds the armor pieces, the accessories, the
