@@ -1141,10 +1141,12 @@ pub(crate) fn update_worms_in(
         // (the port's gore/dust deviation, ANALYSIS wave G).
         if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
             npcs[i].local_ai[1] = 1.0;
+            // E0502 gate fix: read the position before the mutable push.
+            let (sx, sy) = (npcs[i].x, npcs[i].y);
             npcs[i].wants_sound.push(crate::npc::NpcSoundRequest {
                 cue: crate::npc::NpcSoundCue::NpcDeath13,
-                x: npcs[i].x,
-                y: npcs[i].y,
+                x: sx,
+                y: sy,
             });
         }
         // The tails (9/12/15) sit outside the chain-spawn lists
