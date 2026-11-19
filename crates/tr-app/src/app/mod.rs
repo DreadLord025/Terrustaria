@@ -13,8 +13,10 @@ pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
+pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
+pub(crate) mod net_proj_sync;
 pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
@@ -602,6 +604,20 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
+    /// The current dig's break interval in seconds — the `mine_timer`
+    /// denominator the tile-crack overlay maps onto the C# `HitTile`
+    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    pub(crate) mine_hardness: f32,
+    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
+    /// rolled crack style the no-repeat reroll compares against.
+    pub(crate) mine_crack_style: i32,
+    /// The dig target the current crack style was rolled for (the C# rolls
+    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
+    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
+    /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
+    /// (determinism rule, ANALYSIS "The tile-crack overlay").
+    pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -812,6 +828,11 @@ pub(crate) struct App {
     /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
     /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
     pub(crate) sunflower_wind_step: FixedStepper,
+    /// `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
+    /// strips' own sway counter (`DrawVineStrip` reads it, `:9041`). C#
+    /// advances it in the same `TileDrawing.Update` as the sunflower's, so
+    /// it rides the same 60 Hz accumulator (S1-G-1).
+    pub(crate) vine_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
@@ -3423,6 +3444,10 @@ impl App {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
+            mine_hardness: 0.0,
+            mine_crack_style: 0,
+            mine_crack_target: None,
+            mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
@@ -3528,6 +3553,7 @@ impl App {
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
+            vine_wind_counter: 0.0,
             leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
@@ -4552,14 +4578,14 @@ pub(crate) fn spawn_ctx_from(
 }
 
 #[cfg(test)]
-mod tr_hooks {
+pub(crate) mod tr_hooks {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// Serializes env-var mutation across the binary's parallel test threads:
     /// `load_world`'s pins are process-global reads, so any test that sets or
     /// removes a `TR_*` variable must hold this lock for the whole call.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Runs `f` with `name` set to `value`, then removes it — the `TR_PLACE`/
     /// `TR_TOGGLE`/`TR_TILES` parsers moved into `crate::env` as env-reading
@@ -4957,7 +4983,8 @@ mod tr_hooks {
 
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
-        let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-pins");
+        let path = dir.join("tr-dw-1-6-pins.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -4972,7 +4999,7 @@ mod tr_hooks {
         let (world, sections) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(
             world.fast_forward_to_dawn,
@@ -5006,7 +5033,8 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
-        let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-clear");
+        let path = dir.join("tr-dw-1-6-clear.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -5014,7 +5042,7 @@ mod tr_hooks {
         )
         .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
         assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));

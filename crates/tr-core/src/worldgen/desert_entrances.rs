@@ -111,7 +111,7 @@ fn rect(
 /// `Utils.PlotLine` (`Utils.cs:2238-2292`): the Bresenham walk — `jump: true`
 /// (the tail plotter's outer walk) skips the stepped cell, `jump: false` (its
 /// inner width walks) plots it.
-fn plot_line(mut plot: impl FnMut(i32, i32), x0: i32, y0: i32, x1: i32, y1: i32, jump: bool) {
+pub(crate) fn plot_line(mut plot: impl FnMut(i32, i32), x0: i32, y0: i32, x1: i32, y1: i32, jump: bool) {
     if x0 == x1 && y0 == y1 {
         plot(x0, y0);
         return;
