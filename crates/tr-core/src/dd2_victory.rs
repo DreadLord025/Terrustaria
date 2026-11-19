@@ -92,20 +92,22 @@ pub fn wave_complete_medals(difficulty: i32, new_wave: i32) -> Option<i32> {
 /// `_damageTracker.Stop(won: true)` (`:484-487`) has no port counterpart
 /// yet (the tracker is deferred with the scene's filters/music).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct VictoryScene {
+pub struct VictoryScene<'a> {
     /// `DD2Event.WonThisRun = true` — set before the crystal lookup.
     pub won: bool,
     /// The first 548's slot gets `(ai0, ai1) = (2, 2)`; `None` = no crystal.
     pub crystal_slot: Option<usize>,
     /// Every live 549's slot gets `(ai0, ai1) = (0, 1)` — only when the
-    /// crystal exists (the C#'s early `return`).
-    pub portal_slots: &'static [usize],
+    /// crystal exists (the C#'s early `return`). The slice borrows the
+    /// caller's live scan (S1-E-12c: the driver collects a `Vec`, not a
+    /// static table).
+    pub portal_slots: &'a [usize],
 }
 
 /// Builds the `StartVictoryScene` plan from the NPC scan the caller
 /// already has: `crystal` = `NPC.FindFirstNPC(548)` (first active match,
 /// `None` = -1), `portals` = the active 549 slots in `Main.npc` order.
-pub fn victory_scene(crystal: Option<usize>, portals: &'static [usize]) -> VictoryScene {
+pub fn victory_scene<'a>(crystal: Option<usize>, portals: &'a [usize]) -> VictoryScene<'a> {
     VictoryScene {
         won: true, // `:483` — unconditional, before the lookup
         crystal_slot: crystal,
@@ -412,6 +414,27 @@ mod tests {
             already_dropped: 0,
         };
         assert!(should_drop_crystals(&mut s, 1, 1, 0, 5), "5/0 = +inf");
+    }
+
+    // --- no-double-with-loss witness ---------------------------------------
+
+    #[test]
+    fn the_won_gate_refuses_the_kill_progress_like_the_lost_gate() {
+        // `CheckProgress`'s gate (`DD2Event.cs:364`) refuses on EITHER
+        // decided flag: once `WonThisRun` latches (the win sentinel), no
+        // further kill advances the wave — the same refusal `LostThisRun`
+        // gets. Victory never double-fires with loss (S1-E-12c).
+        let won = crate::dd2::check_progress(true, false, true, 0, 1, 59.0, 59.0, 1.0, false);
+        assert!(won.is_none(), "the won gate refuses");
+        let lost = crate::dd2::check_progress(true, true, false, 0, 1, 59.0, 59.0, 1.0, false);
+        assert!(lost.is_none(), "the lost gate refuses");
+        // Both decided: still refused (the win/loss are mutually exclusive
+        // outcomes, but the gate reads them independently).
+        let both = crate::dd2::check_progress(true, true, true, 0, 1, 59.0, 59.0, 1.0, false);
+        assert!(both.is_none());
+        // Undecided: the budget-passing kill advances.
+        let open = crate::dd2::check_progress(true, false, false, 0, 1, 59.0, 59.0, 1.0, false);
+        assert_eq!(open, Some(1));
     }
 
     // --- RNG witness ------------------------------------------------------

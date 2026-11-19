@@ -7981,9 +7981,10 @@ pub fn use_pirate_map(app: &mut App) -> bool {
 /// then `ConsumeItem` and `DD2Event.SummonCrystal` (`StartInvasion` + the
 /// crystal NPC at the point + the starter-crystal drops).
 ///
-/// Deviations: `WouldFailSpawningHere` folds to the stand-tile check (the port
-/// has no lane machinery — the DD2Event framework's slice);
-/// `DropStarterCrystals`' per-player drops ride the item-drop pass.
+/// Deviations: `DropStarterCrystals`' per-player drops ride the item-drop pass;
+/// `WouldFailSpawningHere` (`DD2Event.cs:603-613`) landed with B-6c (S1-E-12d) —
+/// the 60-tile each-side arena check + the bartender warning, the walker in
+/// `tr_core::stray`.
 pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
         return false;
@@ -8011,6 +8012,28 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
         .map(|t| (t.frame_x as i32, t.frame_y as i32))
         .unwrap_or((0, 0));
     let (sx, sy) = (tx * 16 - fx / 18 * 16 + 40, ty * 16 - fy / 18 * 16 + 64);
+    // B-6c (S1-E-12d): `WouldFailSpawningHere(myX, num28)`
+    // (`Player.cs:32432`, `DD2Event.cs:603-613`): the arena walker must
+    // find >= 60 walkable tiles on EACH side of the clicked stand column
+    // (`CheckArenaScore(Point(x,y).ToWorldCoordinates())` — the default
+    // (8,8) centre, `Utils.cs:1762-1765`), else the use fails with the
+    // bartender warning (`FailureMessage`, `:614-627` — yellow 255,255,0,
+    // `DungeonDefenders2.BartenderWarning`) and NOTHING consumes. The
+    // C#'s `num28` is the stand's bottom row (frameY 0/18/36 → +3/+2/+1,
+    // `Player.cs:32404-32417`); the port's single-tile stand fixture
+    // carries frameY 0, so +3. The walker draws no RNG.
+    let stand_y = ty + if fy == 0 { 3 } else if fy == 18 { 2 } else { 1 };
+    let (left_end, right_end) = tr_core::stray::check_arena_score(
+        &app.world,
+        (tx as f32 * 16.0 + 8.0, stand_y as f32 * 16.0 + 8.0),
+    );
+    if right_end.0 - tx < 60 || tx - left_end.0 < 60 {
+        app.chat.new_text(
+            crate::lang::text("DungeonDefenders2.BartenderWarning"),
+            [255, 255, 0],
+        );
+        return false;
+    }
     // The consume.
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
@@ -8025,6 +8048,11 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.world.dd2_wave = 1;
     app.world.dd2_wave_kills = 0.0;
     app.world.dd2_lost = false;
+    // `:272`: `WonThisRun = false`; `:257-259`: the crystal-drop budget
+    // zeroes; `:270`: `_spawnedBetsyT3 = false` (S1-E-12c).
+    app.world.dd2_won = false;
+    app.world.dd2_crystal_drops = tr_core::dd2_victory::CrystalDropState::default();
+    app.world.dd2_betsy_spawned = false;
     app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
     app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_START;
     crate::world_sim::npcs::wipe_dd2_entities(app);
