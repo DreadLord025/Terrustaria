@@ -541,6 +541,7 @@ mod tests {
             jungle: false,
             glowshroom: false,
             dungeon: false,
+            temple: false,
         }
     }
 

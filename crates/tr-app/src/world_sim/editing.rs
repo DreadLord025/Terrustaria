@@ -7992,6 +7992,18 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
+    // `StartInvasion` (`DD2Event.cs:253-291`): the counters and the boss
+    // latches start clean (`:268-275`), `LostThisRun`/`WonThisRun` clear
+    // (`:271-272`), the 300-tick spawn hold arms (`:288`) and
+    // `WipeEntities` runs (`:289`) — all BEFORE the crystal's `NewNPC`
+    // (`SummonCrystalDirect`, `:596-597`), so the wipe cannot eat it.
+    app.world.dd2_event_ongoing = true;
+    app.world.dd2_wave = 1;
+    app.world.dd2_wave_kills = 0.0;
+    app.world.dd2_lost = false;
+    app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
+    app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_START;
+    crate::world_sim::npcs::wipe_dd2_entities(app);
     // The crystal + the event start.
     let mut crystal = Npc::new(
         NpcKind::DD2EterniaCrystal,
@@ -8002,12 +8014,6 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     );
     crystal.hp = crystal.max_hp;
     app.npcs.push(crystal);
-    app.world.dd2_event_ongoing = true;
-    app.world.dd2_wave = 1;
-    // `StartInvasion` (`DD2Event.cs:273-275`): the counters and the boss
-    // latches start clean (`:268-270`).
-    app.world.dd2_wave_kills = 0.0;
-    app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
     let held = app.inventory[app.selected];
     app.swing_max = crate::item::use_animation_secs(held.kind);
     app.swing = app.swing_max;

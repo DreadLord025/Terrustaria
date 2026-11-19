@@ -1199,6 +1199,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_342",
         "NPC_343",
         "NPC_344",
+        // The Frost Moon wave family (`S1-F-13c` slice B — `FROST_SHEETS`).
+        "NPC_345",
+        "NPC_346",
+        "NPC_347",
+        "NPC_348",
+        "NPC_349",
+        "NPC_350",
+        "NPC_351",
+        "NPC_352",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the

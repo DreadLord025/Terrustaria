@@ -1824,9 +1824,11 @@ fn dd2_tier(app: &App) -> i32 {
 /// `Difficulty_N_GetRequiredWaveKills`) opens the next wave with the
 /// 1800-tick break, and the wave-6 sentinel is the win (`WonThisRun`).
 fn dd2_report_kill(app: &mut App, kind: NpcKind) {
-    // `:364`: the hold's refusal runs FIRST — the kill under the break
-    // scores nothing at all.
-    if app.world.dd2_spawn_hold != 0 {
+    // `:364`: `!Ongoing || LostThisRun || WonThisRun ||
+    // EnemySpawningIsOnHold` — the lost run scores nothing at all (the
+    // loss scene's kill wipe must not advance the wave), and the hold's
+    // refusal runs FIRST — the kill under the break scores nothing.
+    if !app.world.dd2_event_ongoing || app.world.dd2_lost || app.world.dd2_spawn_hold != 0 {
         return;
     }
     // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
@@ -2077,8 +2079,56 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         app.world.dd2_crystal_alive = false;
         return;
     }
+    // `NPC.checkDead`'s crystal intercept (`NPC.cs:78087-78095`): the
+    // crystal's death does not kill it — `ai[1] = 1`, `ai[0] = 0`,
+    // `life = lifeMax`, `dontTakeDamageFromHostiles = true`, and
+    // `checkDead` returns. The port's damage lands in the NPC pass ahead
+    // of this resolve, so the flip runs before the death retain — the
+    // crystal survives into the loss scene. The scene's first-tick arm
+    // (`NPC.cs:40868-40885`, `ai[0] == 0`) rides the same resolve: every
+    // active portal (549) flips to its fade (`ai[1] = 1`, `ai[0] = 0`),
+    // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene
+    // projectile (`:40883`, aiStyle 132's filters/sound/gore drama) is
+    // deferred — the port carries no scene filters yet (ANALYSIS).
+    let mut loss_entered = false;
+    for n in app.npcs.iter_mut() {
+        if n.kind == NpcKind::DD2EterniaCrystal
+            && n.hp <= 0
+            && !n.wants_event_stop
+            && tr_core::dd2::crystal_death_starts_loss_scene(n.ai[1])
+        {
+            n.ai[1] = 1.0;
+            n.ai[0] = 0.0;
+            n.hp = n.max_hp;
+            n.dont_take_damage = true;
+            loss_entered = true;
+        }
+    }
+    if loss_entered {
+        // `:40870-40879`: the portal marks — the scene's crystal-side
+        // sweep runs before `ReportLoss` (`:40882`).
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::DD2LanePortal && n.hp > 0 {
+                n.ai[1] = 1.0;
+                n.ai[0] = 0.0;
+            }
+        }
+        // `DD2Event.ReportLoss` (`DD2Event.cs:507-515`).
+        tr_core::dd2::report_loss(&mut app.world.dd2_lost, &mut app.world.dd2_spawn_hold);
+    }
+    // `DD2Event.UpdateTime` (`DD2Event.cs:194-251`): the hold's decay,
+    // then — at the exact zero crossing (`:222-236`) — the loss arm
+    // broadcasts `LoseInvasionMessage` (`:344-347`, the red
+    // `INFO_FAILURE_INVASION_COLOR`). The `!LostThisRun` arm's new-wave
+    // broadcast + Betsy summon (`:227-231`) is the victory slice's scope.
     if app.world.dd2_spawn_hold > 0 {
         app.world.dd2_spawn_hold -= 1;
+        if app.world.dd2_spawn_hold == 0 && app.world.dd2_lost {
+            app.chat.new_text(
+                crate::lang::text("DungeonDefenders2.InvasionLose"),
+                tr_core::dd2::INFO_FAILURE_INVASION_COLOR,
+            );
+        }
     }
     // `NPC.AnyNPCs(548)`'s port: the lane gates' aiStyle-106 arm reads it
     // from the machine, so the world carries the crystal's live state.
@@ -2086,17 +2136,63 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         .npcs
         .iter()
         .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.hp > 0);
-    // The win-death resolve (`AI`'s aiStyle-105 arm's
-    // `DD2Event.StopInvasion`): the event stops and the crystal goes.
+    // The scene-end resolve (`AI`'s aiStyle-105 arm's
+    // `DD2Event.StopInvasion`, `NPC.cs:40956`): the event stops and the
+    // crystal goes. The loss form wipes the entities (`DD2Event.cs:308`);
+    // the win form's wipe belongs to the victory slice.
     if app
         .npcs
         .iter()
         .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
     {
-        app.world.dd2_event_ongoing = false;
-        app.world.dd2_spawn_hold = 0;
-        app.npcs
-            .retain(|n| !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop));
+        let was_lost = app.world.dd2_lost;
+        if tr_core::dd2::stop_invasion_loss(
+            &mut app.world.dd2_event_ongoing,
+            &mut app.world.dd2_wave,
+            &mut app.world.dd2_wave_kills,
+        ) {
+            app.world.dd2_spawn_hold = 0;
+            app.npcs
+                .retain(|n| !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop));
+            if was_lost {
+                wipe_dd2_entities(app);
+            }
+        }
+    }
+}
+
+/// `DD2Event.WipeEntities` (`DD2Event.cs:629-638`) — the three sweeps in
+/// the C#'s order: the sentry towers, the invasion hostiles, the energy
+/// crystals in the open chests. The `netMode == 2` `SendData(114)` tail
+/// is the netplay slice's scope.
+pub(crate) fn wipe_dd2_entities(app: &mut App) {
+    // `ClearAllTowersInGame` (`:640-649`): every active
+    // `ProjectileID.Sets.IsADD2Turret` slot dies (`Projectile.Kill`).
+    for i in 0..app.projectiles.slots().len() {
+        if app.projectiles.slots()[i].active
+            && tr_core::dd2::is_dd2_turret(app.projectiles.slots()[i].kind)
+        {
+            app.projectiles.kill(i);
+        }
+    }
+    // `ClearAllDD2HostilesInGame` (`:651-664`): `active = false` — the
+    // direct removal, NOT the death chain (no loot, no kill credit, no
+    // death sound; the port's retain drops the slot). The kind's vanilla
+    // id rides the pool table (`dd2_pool_id`); the bartender (550) is
+    // out of `BelongsToInvasionOldOnesArmy` and survives.
+    app.npcs
+        .retain(|n| !dd2_pool_id(n.kind).is_some_and(tr_core::dd2::belongs_to_ooa));
+    // `ClearAllDD2EnergyCrystalsInChests` (`:666-692`): the currently
+    // open chests only — the 3822 stacks turn to air.
+    let open = app.player.as_ref().map(|p| p.chest).unwrap_or(-1);
+    if open >= 0 {
+        if let Some(chest) = app.world_chests.get_mut(open as usize) {
+            for slot in chest.slots.iter_mut() {
+                if slot.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM && slot.count > 0 {
+                    *slot = crate::item::EMPTY_SLOT;
+                }
+            }
+        }
     }
 }
 
@@ -2757,7 +2853,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
             app.world.golem_vx = body.vx;
+            // S1-D-3: the anchor's FULL velocity (`:19258`'s
+            // `nPC.velocity`), the body's raw life/lifeMax (the free
+            // head's mixed DOUBLE/INTEGER tier comparisons, `:31420`/
+            // `:31477`) and the part scan (`:19544-19566`'s flags).
+            app.world.golem_vy = body.vy;
+            app.world.golem_hp = body.hp;
+            app.world.golem_max_hp = body.max_hp;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
+            app.world.golem_head_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            app.world.golem_fist_left_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistLeft && n.hp > 0);
+            app.world.golem_fist_right_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistRight && n.hp > 0);
         } else {
             app.world.golem_present = false;
         }
@@ -3675,11 +3790,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
             app.world.golem_vx = body.vx;
+            app.world.golem_vy = body.vy;
+            app.world.golem_hp = body.hp;
+            app.world.golem_max_hp = body.max_hp;
             app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
             let head_alive = app
                 .npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            app.world.golem_head_alive = head_alive;
+            app.world.golem_fist_left_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistLeft && n.hp > 0);
+            app.world.golem_fist_right_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemFistRight && n.hp > 0);
             if let Some(b) = app
                 .npcs
                 .iter_mut()
@@ -3763,12 +3890,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
-        // (`NPC.cs:29022`/`:29084`) and Plantera's seeds
-        // (`NPC.cs:31966-31969` — every volley kind except the 277 thorn
+        // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
+        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3) and Plantera's seeds
+        // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
         // ball).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
+            || kind == crate::projectile::GOLEM_EYE_BEAM
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
         {
@@ -9036,6 +9165,286 @@ mod crystal_death_tests {
                 .any(|m| m.kind == NpcKind::DD2EterniaCrystal),
             "the crystal is gone"
         );
+    }
+}
+
+#[cfg(test)]
+mod dd2_loss_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn base_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 3;
+        app.world.dd2_wave_kills = 40.0;
+        app.world.dd2_spawn_hold = 0;
+        app
+    }
+
+    fn crystal(app: &mut App) {
+        let mut n = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        n.caster_counter = 200; // past the spawn-in shield
+        app.npcs.push(n);
+    }
+
+    #[test]
+    fn the_crystal_death_enters_the_loss_scene_instead_of_dying() {
+        // `NPC.checkDead`'s intercept (`NPC.cs:78087-78095`): hp <= 0
+        // with ai[1] != 1 → the loss scene (ai[1] = 1, ai[0] = 0,
+        // life = lifeMax); `ReportLoss` (`:40882` → `DD2Event.cs:507-515`)
+        // latches LostThisRun and holds the spawns 30 ticks. The crystal
+        // and the portals survive the tick.
+        let mut app = base_app();
+        crystal(&mut app);
+        let mut gate = Npc::new(
+            NpcKind::DD2LanePortal,
+            140.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        gate.hp = gate.max_hp;
+        app.npcs.push(gate);
+        app.npcs[0].hp = 0; // the killing blow
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.dd2_lost, "LostThisRun latches");
+        assert_eq!(app.world.dd2_spawn_hold, tr_core::dd2::SPAWN_HOLD_LOSS - 1);
+        assert!(
+            app.world.dd2_event_ongoing,
+            "the event runs through the scene"
+        );
+        let c = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .expect("the crystal survives into the scene");
+        assert_eq!(c.ai[1], 1.0);
+        assert!(c.hp > 0, "life = lifeMax");
+        assert!(c.dont_take_damage);
+        // The intercept ran after this tick's AI pass: the scene's
+        // counters start clean (ai[0] = 0) and tick from the next frame.
+        assert_eq!(c.ai[0], 0.0);
+        let g = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2LanePortal)
+            .expect("the portal survives — only its fade arm opens");
+        assert_eq!(g.ai[1], 1.0, "the portal mark (`NPC.cs:40875`)");
+        assert_eq!(g.ai[0], 0.0, "the fade arm starts at 0");
+    }
+
+    #[test]
+    fn the_lost_run_scores_no_kills() {
+        // `CheckProgress`'s gate (`DD2Event.cs:364`): LostThisRun refuses
+        // the whole kill during the loss scene.
+        let mut app = base_app();
+        app.world.dd2_lost = true;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave_kills, 40.0);
+        assert_eq!(app.world.dd2_wave, 3);
+    }
+
+    #[test]
+    fn the_loss_hold_expiry_broadcasts_the_red_message() {
+        // `UpdateTime` (`DD2Event.cs:219-236`): the hold's zero crossing
+        // with LostThisRun → `LoseInvasionMessage` (`:344-347`) in
+        // `INFO_FAILURE_INVASION_COLOR` (255, 0, 0).
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_lost = true;
+        app.world.dd2_spawn_hold = 1;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.dd2_spawn_hold, 0);
+        let line = app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.color == tr_core::dd2::INFO_FAILURE_INVASION_COLOR)
+            .expect("the loss broadcast rides");
+        assert_eq!(
+            line.text,
+            crate::lang::text("DungeonDefenders2.InvasionLose")
+        );
+        // The message fires ONCE — the crossing, not every zero tick.
+        let count = app
+            .chat
+            .messages
+            .iter()
+            .filter(|m| m.color == tr_core::dd2::INFO_FAILURE_INVASION_COLOR)
+            .count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.chat
+                .messages
+                .iter()
+                .filter(|m| m.color == tr_core::dd2::INFO_FAILURE_INVASION_COLOR)
+                .count(),
+            count
+        );
+    }
+
+    #[test]
+    fn the_scene_end_stops_the_event_and_wipes_the_entities() {
+        // The 600-tick end (`NPC.cs:40954-40967`) → `StopInvasion()`
+        // (`DD2Event.cs:293-312`): the counters clear and `WipeEntities`
+        // (`:629-638`) sweeps the towers, the hostiles and the open
+        // chests' energy crystals. The bartender (550) survives — he is
+        // not in `BelongsToInvasionOldOnesArmy`.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_lost = true;
+        // The scene already runs; its counter is one tick from the end.
+        app.npcs[0].ai[1] = 1.0;
+        app.npcs[0].ai[0] = 599.0;
+        // A live hostile + a portal + the bartender + a non-DD2 NPC.
+        for kind in [
+            NpcKind::DD2GoblinT1,
+            NpcKind::DD2LanePortal,
+            NpcKind::DD2Bartender,
+            NpcKind::Zombie,
+        ] {
+            let mut n = Npc::new(kind, 145.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
+        // A sentry tower (677) + an ordinary shot (1) in the pool.
+        app.projectiles.spawn(
+            677,
+            0,
+            glam::Vec2::new(150.0 * TILE_PX, 110.0 * TILE_PX),
+            glam::Vec2::ZERO,
+            10,
+            0.0,
+            false,
+        );
+        app.projectiles.spawn(
+            1,
+            0,
+            glam::Vec2::new(151.0 * TILE_PX, 110.0 * TILE_PX),
+            glam::Vec2::ZERO,
+            10,
+            0.0,
+            false,
+        );
+        // The open chest carries an energy crystal (3822) + an ordinary item.
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (150, 119),
+            slots: vec![
+                crate::item::ItemSlot {
+                    kind: tr_core::dd2::ENERGY_CRYSTAL_ITEM,
+                    name: "Elder Crystal".into(),
+                    count: 5,
+                    prefix: 0,
+                },
+                crate::item::ItemSlot {
+                    kind: 757,
+                    name: "Terra Blade".into(),
+                    count: 1,
+                    prefix: 0,
+                },
+            ],
+            name: String::new(),
+            max_items: 40,
+        });
+        app.player.as_mut().unwrap().chest = 0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.dd2_event_ongoing, "the event stops");
+        assert_eq!(app.world.dd2_wave, 0, "waveNumber = 0 (`:307`)");
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
+        for gone in [
+            NpcKind::DD2EterniaCrystal,
+            NpcKind::DD2GoblinT1,
+            NpcKind::DD2LanePortal,
+        ] {
+            assert!(!app.npcs.iter().any(|n| n.kind == gone), "{gone:?} wiped");
+        }
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::DD2Bartender));
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Zombie));
+        let live: Vec<u16> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .map(|p| p.kind)
+            .collect();
+        assert_eq!(live, vec![1], "the tower dies, the ordinary shot stays");
+        assert_eq!(app.world_chests[0].slots[0].count, 0, "3822 TurnToAir");
+        assert_eq!(app.world_chests[0].slots[1].count, 1, "the sword stays");
+    }
+
+    #[test]
+    fn the_wipe_skips_the_closed_chests() {
+        // `ClearAllDD2EnergyCrystalsInChests` (`:672-679`): only the
+        // currently open chests lose their crystals.
+        let mut app = base_app();
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (150, 119),
+            slots: vec![crate::item::ItemSlot {
+                kind: tr_core::dd2::ENERGY_CRYSTAL_ITEM,
+                name: "Elder Crystal".into(),
+                count: 5,
+                prefix: 0,
+            }],
+            name: String::new(),
+            max_items: 40,
+        });
+        // No chest open (p.chest == -1).
+        wipe_dd2_entities(&mut app);
+        assert_eq!(app.world_chests[0].slots[0].count, 5);
+    }
+
+    #[test]
+    fn the_scene_crystal_rises_then_fades() {
+        // `NPC.cs:40892-40904`: under 96 the rise (vy = -ai[0]/96), at
+        // 96+ the fade (alpha += 50 capped 255). The machine holds
+        // life = lifeMax every tick.
+        let world = World::new("t".into(), 300, 200);
+        let mut player = Player::spawn(&world);
+        player.x = 200.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut n = Npc::new(NpcKind::DD2EterniaCrystal, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 1.0;
+        n.ai[0] = 0.0;
+        let y0 = n.y;
+        for _ in 0..96 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.y < y0, "the crystal rose");
+        assert_eq!(n.alpha, 50, "the first fade tick at ai[0] == 96");
+        assert_eq!(n.hp, n.max_hp, "life = lifeMax holds");
+        for _ in 0..5 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.alpha, 255, "the fade caps at 255");
     }
 }
 
