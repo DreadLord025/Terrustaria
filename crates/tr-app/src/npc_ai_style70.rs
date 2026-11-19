@@ -570,8 +570,12 @@ mod tests {
         let wx = twin.next_range(-10, 11) as f32;
         let wy = twin.next_range(-10, 11) as f32;
         let _ = ai_style70(&mut n, &w, &players, 0.5, false, 0, &mut rng);
+        // GATE FIX (L-B): the hand arithmetic skipped the 40:20 homing
+        // blend (`:34894-34895` divides by 41 — even a zero aim decays
+        // the velocity 40/41); the machine is the faithful C# order.
+        let by = (51.0f32 * 40.0 + 0.0 * 20.0) / 41.0;
         let ex = (0.0f32 * 50.0 + 0.5 * 2.0 + wx * 0.1) / 51.0;
-        let ey = (51.0f32 * 50.0 + -0.25 + wy * 0.2) / 51.0 - 0.04;
+        let ey = (by * 50.0 + -0.25 + wy * 0.2) / 51.0 - 0.04;
         assert!((n.vx - ex).abs() < 1e-5);
         assert!((n.vy - ey).abs() < 1e-5);
         // Rising: no damp.
@@ -584,7 +588,8 @@ mod tests {
         let _wx2 = twin2.next_range(-10, 11);
         let wy2 = twin2.next_range(-10, 11) as f32;
         let _ = ai_style70(&mut m, &w, &players, 0.5, false, 0, &mut rng2);
-        let ey2 = (-51.0f32 * 50.0 + -0.25 + wy2 * 0.2) / 51.0;
+        let by2 = (-51.0f32 * 40.0 + 0.0 * 20.0) / 41.0;
+        let ey2 = (by2 * 50.0 + -0.25 + wy2 * 0.2) / 51.0;
         assert!((m.vy - ey2).abs() < 1e-5, "no -0.04 on a rise");
     }
 
