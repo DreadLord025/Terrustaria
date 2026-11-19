@@ -1257,6 +1257,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // The Queen Bee's volley minions (S1-D-3 W-3 — `BEE_SHEETS`).
         "NPC_210",
         "NPC_211",
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four
+        // wired kinds' own sheets, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s SMALL_KIND_SHEETS).
+        "NPC_72",
+        "NPC_250",
+        "NPC_288",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1842,7 +1848,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 178] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1874,6 +1880,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 178] = [
         210, 211,
         // The Tesla Turret (S1-F-13d) — appended last for the same reason.
         387,
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
+        // last so the earlier slots keep their indexes.
+        72, 250, 288,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2631,6 +2640,11 @@ impl Lookups {
                 atlas.sheet("NPC_211").copied(),
                 // The Tesla Turret (S1-F-13d) — the 2-frame NPC_387 strip.
                 atlas.sheet("NPC_387").copied(),
+                // The small-kinds wiring wave (S1-D-3-wire-smallkinds) —
+                // the three new strips (72/250/288; 384 packed above).
+                atlas.sheet("NPC_72").copied(),
+                atlas.sheet("NPC_250").copied(),
+                atlas.sheet("NPC_288").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

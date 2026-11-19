@@ -120,6 +120,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_14", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
+    // Nimbus' NPCHit30 (`NPC.cs:12229`), the Dungeon Spirit's NPCHit36
+    // (`:12747`) and the Force Bubble's NPCHit43 (`:13889`) — the
+    // `Sounds/NPC_Hit_*.xnb` assets exist; S1-E-21 wave C's bank-gap close.
+    ("NPC_Hit_30", 3),
+    ("NPC_Hit_36", 3),
+    ("NPC_Hit_43", 3),
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
@@ -149,6 +156,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_20", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
+    // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
+    // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the
+    // `Sounds/NPC_Killed_*.xnb` assets exist; the bank-gap close.
+    ("NPC_Killed_33", 4),
+    ("NPC_Killed_39", 4),
+    ("NPC_Killed_45", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the

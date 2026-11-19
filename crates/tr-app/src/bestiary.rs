@@ -2056,6 +2056,42 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Eater of Worlds",
     },
+    // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four
+    // wired kinds' own entries — the populator registers all four
+    // (`BestiaryDatabaseNPCsPopulator.cs:1174`/`:1180`/`:1282`/`:1413`
+    // find their entries by id).
+    BestiaryEntryDef {
+        credit_id: "BlazingWheel",
+        net_id: 72,
+        kind: NpcKind::BlazingWheel,
+        variant: None,
+        quick_unlock: false,
+        name: "Blazing Wheel",
+    },
+    BestiaryEntryDef {
+        credit_id: "AngryNimbus",
+        net_id: 250,
+        kind: NpcKind::AngryNimbus,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Nimbus",
+    },
+    BestiaryEntryDef {
+        credit_id: "DungeonSpirit",
+        net_id: 288,
+        kind: NpcKind::DungeonSpirit,
+        variant: None,
+        quick_unlock: false,
+        name: "Dungeon Spirit",
+    },
+    BestiaryEntryDef {
+        credit_id: "ForceBubble",
+        net_id: 384,
+        kind: NpcKind::ForceBubble,
+        variant: None,
+        quick_unlock: false,
+        name: "Force Bubble",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

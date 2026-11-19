@@ -1537,6 +1537,34 @@ fn portrait_data(
         | NpcKind::TwiggyZombie
         | NpcKind::FemaleZombie
         | NpcKind::ZombieRaincoat, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four
+        // wired kinds' portraits — the sheet's own row height over
+        // `Main.npcFrameCount[type]` (72/250 four frames, 288 three, 384
+        // one; `Main.cs:67082`), the frame width the sheet's own.
+        (NpcKind::BlazingWheel, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::AngryNimbus, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::DungeonSpirit, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::ForceBubble, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(46.0);
+            (sheet_i, h, 22.0, h, white)
+        }
     }
 }
 

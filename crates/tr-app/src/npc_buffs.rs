@@ -459,6 +459,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DetonatingBubble
         | NpcKind::Sharkron
         | NpcKind::Sharkron2 => &[],
+        // The small-kinds wiring wave: none of 72/250/288/384 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+` has no entry for
+        // them) — the C# else-branch's no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::BlazingWheel
+        | NpcKind::AngryNimbus
+        | NpcKind::DungeonSpirit
     }
 }
 

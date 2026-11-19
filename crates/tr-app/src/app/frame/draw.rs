@@ -420,9 +420,10 @@ impl App {
                             continue;
                         }
                         let (w, h) = n.size();
+                        let pos = Vec2::new(n.x, n.y) + n.net_offset;
                         if let Some((x, y, rgb)) = crate::npc_lights::npc_light(
                             n.kind,
-                            Vec2::new(n.x, n.y) + n.net_offset,
+                            pos,
                             w,
                             h,
                         ) {
@@ -439,6 +440,38 @@ impl App {
                             h,
                         ) {
                             self.entity_lights.add(x, y, rgb);
+                        }
+                        // The small-kinds wiring wave (S1-D-3-wire-smallkinds):
+                        // the BlazingWheel's centre light (`NPC.cs:24664` —
+                        // the green term reads the pulsing `Main.mouseTextColor`)
+                        // and the ForceBubble's constant (0.1, 0.5, 0.7) at the
+                        // truncated centre tile (`NPC.cs:35092`). Both are
+                        // RNG-free; the bubble's is fed only while attached
+                        // (the pop tick zeroes hp, the `hp <= 0` gate above).
+                        match n.kind {
+                            NpcKind::BlazingWheel => {
+                                let (x, y, rgb) = crate::npc_ai_style21::blazing_wheel_light(
+                                    pos.x,
+                                    pos.y,
+                                    (w, h),
+                                    self.mouse_text_color,
+                                );
+                                self.entity_lights.add(x, y, rgb);
+                            }
+                            NpcKind::ForceBubble => {
+                                let x = crate::entity_lights::tile_x(
+                                    pos,
+                                    w,
+                                    crate::entity_lights::XAnchor::CenterTruncated,
+                                );
+                                let y = crate::entity_lights::tile_y(
+                                    pos,
+                                    h,
+                                    crate::entity_lights::XAnchor::CenterTruncated,
+                                );
+                                self.entity_lights.add(x, y, [0.1, 0.5, 0.7]);
+                            }
+                            _ => {}
                         }
                     }
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,

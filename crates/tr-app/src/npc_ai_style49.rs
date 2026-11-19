@@ -8,25 +8,24 @@
 //! every 9th such tick (`ai[0] > 8f`) it drops a Rain projectile (264,
 //! speed (0, 5), damage 20) from a random x inside its own body.
 //!
-//! **UNWIRED module (code-only mode, 2026-11-18).** The port's `NpcKind`
-//! has no AngryNimbus variant yet and `npc/data.rs`'s id/ai_style/stat
-//! tables are contested by the in-flight S1-D-3 sibling branches, so this
-//! slice lands as pure functions with the kind-table rows + dispatch
-//! wiring deferred to the family's merge step (the `npc_ai_style42.rs`
-//! precedent, `render/special_tiles.rs` pattern). Intended call sites:
-//! * [`angry_nimbus_ai`] — `update_rng`'s `match self.kind.ai_style()`
-//!   axis (`npc.rs`), a `49 =>` arm once `NpcKind::AngryNimbus` carries
-//!   `ai_style() == 49` (`NPC.cs:12225`).
-//! * [`nimbus_step`] — the arm plus the generic movement tail the wiring
-//!   needs: `Collision_MoveNormal` (`NPC.cs:92723-92726`, type 250 is not
-//!   in `ApplyTileCollision`'s special list `:92612-92627`) +
-//!   `Collision_MoveWhileDry` (`:92591-92607`). The 250 defaults set
+//! **WIRED by S1-D-3-wire-smallkinds (2026-11-19).** `NpcKind::AngryNimbus`
+//! (protocol id 250, vanilla type 250) now carries `ai_style() == 49`
+//! (`NPC.cs:12225`) and the kind-table rows landed in `npc/data.rs`. Live
+//! call sites:
+//! * [`nimbus_step`] — `update_rng`'s `match self.kind.ai_style()` axis
+//!   (`npc.rs`), the `49 =>` arm: the AI plus the generic movement tail
+//!   (`Collision_MoveNormal`, `NPC.cs:92723-92726` — type 250 is not in
+//!   `ApplyTileCollision`'s special list `:92612-92627` — +
+//!   `Collision_MoveWhileDry`, `:92591-92607`). The 250 defaults set
 //!   `noGravity` ONLY — `noTileCollide` stays false, so the cloud DOES
 //!   collide with tiles (it rests on ceilings; it never falls).
-//! * [`nimbus_find_frame`] — `FindFrame`'s `case 250` (`NPC.cs:72884-
-//!   72897`, shared with 264/268): the frame advances every 6 ticks over
-//!   the 4-frame sheet (`Main.npcFrameCount[250] = 4`, the initializer
-//!   `Main.cs:67082`, row `:67109` index 250).
+//! * [`angry_nimbus_ai`] — called by `nimbus_step` (the pure AI half).
+//! * [`nimbus_find_frame`] — the kind's `find_frame` row (`npc.rs`):
+//!   `FindFrame`'s `case 250` (`NPC.cs:72884-72897`, shared with 264/268),
+//!   the frame advances every 6 ticks over the 4-frame sheet
+//!   (`Main.npcFrameCount[250] = 4`, `Main.cs:67082`, row `:67109` index 250).
+//! The rain shot rides `Npc::wants_hostile_shot`, drained by
+//! `world_sim/npcs.rs` into the projectile pool.
 //!
 //! ## RNG order (by construction)
 //!
@@ -62,7 +61,7 @@
 //!   it lands it draws BEFORE the AI arm each tick. The `HitEffect`
 //!   dust/gore rows (`:88959-88979`, cloud puff 54) are the dust-layer
 //!   skip (the S1-D-3e/f precedent).
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-D-3 merge step.
+#![allow(dead_code)] // WIRED by S1-D-3-wire-smallkinds (axis 49 → nimbus_step); the defaults row + witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_target::TargetCandidate;

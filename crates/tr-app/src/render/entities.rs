@@ -512,6 +512,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(PLANTERA_MINION_SHEETS)
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
+            .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1211,6 +1212,18 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
 /// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
 pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
+
+/// The small-kinds wiring wave's sheets (S1-D-3-wire-smallkinds): one sheet
+/// per wired kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the
+/// Blazing Wheel (72), the Angry Nimbus (250), the Dungeon Spirit (288) and
+/// the Force Bubble (384) each draw their own `NPC_<id>` art. Keyed by the
+/// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
+    72,  // the Blazing Wheel
+    250, // the Angry Nimbus
+    288, // the Dungeon Spirit
+    384, // the Force Bubble
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3058,6 +3071,27 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
+            // The small-kinds wiring wave (S1-D-3-wire-smallkinds): each
+            // kind draws its own sheet (`SMALL_KIND_SHEETS`) at
+            // `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[type]` (`Main.cs:67082`: 72 four frames,
+            // 250 four, 288 three) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the pumpkin arm's shape. The
+            // BlazingWheel's 1.2 scale rides `scaled_anchor` (the stardust
+            // cells' convention); the wheel + the spirit rotate (the
+            // whitelist below). GATE DEDUPE (L-B): the branch's ForceBubble
+            // draw arm is dropped — S1-F-13d's arm above keeps the C#'s
+            // `if (type == 384) break` (the bubble draws only as the
+            // Officer's shield overlay, `Main.cs:25041-25044`).
+            NpcKind::BlazingWheel => {
+                scaled_anchor(assets.npc_sheet(72), npc_rows(72), n, w, h)
+            }
+            NpcKind::AngryNimbus => {
+                pumpkin_moon_draw(assets.npc_sheet(250), npc_rows(250), n, w, h)
+            }
+            NpcKind::DungeonSpirit => {
+                pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3189,6 +3223,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::DukeFishron
                     | NpcKind::Sharkron
                     | NpcKind::Sharkron2
+                    // The small-kinds wiring wave: the BlazingWheel's spin
+                    // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
+                    // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
+                    | NpcKind::BlazingWheel
+                    | NpcKind::DungeonSpirit
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

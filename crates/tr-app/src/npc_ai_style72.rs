@@ -77,41 +77,46 @@
 //! `dontTakeDamage = false`, `NPC.cs:8507`); it is the OFFICER that the
 //! living bubble shields.
 //!
-//! Wiring deferred (the BlazingWheel / `npc_ai_style21.rs` precedent,
-//! commit 901452bd; the spore pair 613aac92): `NpcKind::ForceBubble`
-//! landed with S1-F-13d (defaults + frames only), but `update_rng`'s
-//! aiStyle axis still has no style-72 arm — the kind's stand-in holds
-//! still until this machine is claimed (the wiring wave). This module
-//! is the pure port + the minimal seams:
-//! * `Npc` has no `gfx_off_y` field — the arm's per-tick copy is
-//!   RETURNED in [`Style72Outcome`] for the wiring caller's draw offset.
+//! **WIRED by S1-D-3-wire-smallkinds (2026-11-19).** `NpcKind::ForceBubble`
+//! (protocol id 384, vanilla type 384) now exists with its `SetDefaults`
+//! row (`NPC.cs:13882-13894`). The arm reads the SIBLING NPC slots, so it
+//! runs in the world-sim host pre-pass (`world_sim/npcs.rs`), which builds
+//! the [`BubbleHost`] view slice and resolves the officer link; the style
+//! axis' 72 arm (`npc.rs`) owns the post-`AI()` gravity + integration tail.
+//! The seams, as landed:
+//! * `Npc.gfx_off_y` now exists — the wiring caller writes the arm's
+//!   returned [`Style72Outcome::gfx_off_y`] onto it, and the NPC draw
+//!   consumes it for the bubble (`render/entities.rs`, gated to 384).
 //! * `Npc` has no `active` field — the pop sets `hp = 0` here (the C#
 //!   `life = 0`, `:35096`) and returns `died`; the caller then runs the
 //!   `HitEffect()` + deactivation pair (`:35097-35098`). `checkDead`
 //!   (`NPC.cs:78040`) has no 384-specific branch; the port's death
 //!   resolution is the `world_sim/npcs.rs` retain.
 //! * The host officer is read through a [`BubbleHost`] view slice
-//!   indexed by `(int)ai[0]`, mirroring `Main.npc[num1016]`. The C#
-//!   indexes without a bounds check; the port `.get()`s and treats an
-//!   out-of-range/negative slot as "no valid officer" → the pop branch.
-//!   Vanilla only ever writes `ai[0] = whoAmI` (`:56228`, `< 200`) or
-//!   the `SetDefaults` 0 (`:8564-8567`), so the out-of-range case is
-//!   unreachable from vanilla writes — recorded as a defensive seam.
+//!   indexed by `(int)ai[0]`, mirroring `Main.npc[num1016]`. The port's
+//!   officer link is the stable uid (`carrier_uid`, the Moon Lord
+//!   convention); the pre-pass resolves it to the current slot and writes
+//!   `ai[0]` before the call. The C# indexes without a bounds check; the
+//!   port `.get()`s and treats an out-of-range/negative slot as "no valid
+//!   officer" → the pop branch.
+//! * The officer's spawn + shield (`AI_003_Fighters`, `NPC.cs:56222-56251`)
+//!   is wired through `Npc::martian_officer_bubble` (the request) + the
+//!   world-sim drain (the spawn, the `carrier_uid` two-way link).
 //! * `FindFrame` (`NPC.cs:66684-77370`) has NO case 384 — the switch
 //!   falls through and the post-switch tail is aiStyle-39 only
 //!   (`:77292`), so the frame NEVER advances: the bubble is single-frame
 //!   (`Main.npcFrameCount[384] = 1`, `Main.cs:67122`, the 380-389 row
 //!   `12, 9, 9, 9, 1, 9, 11, 2, 2, 9` of the `:67082` array, index 384 =
-//!   the 5th entry = 1). No frame helper is needed; the const pins it.
+//!   the 5th entry = 1). The kind's `find_frame` row pins frame 0.
 //! * The arm sets `velocity = 0` and snaps `position`; the C#
 //!   `UpdateNPC` gravity (`:90465-90472`, `noGravity` is false for 384)
 //!   and the `noTileCollide` raw integration (`:90494-90498`) run AFTER
-//!   `AI()` (`:90423`) and are the caller's movement step, not this
+//!   `AI()` (`:90423`) and are the axis-72 arm's movement step, not this
 //!   arm's — the bubble re-snaps to the officer every tick.
 //!
 //! See docs/ANALYSIS.md "The force bubble (S1-D-3 aiStyle-72,
-//! code-only)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+//! code-only)" + "The small-kinds wiring wave".
+#![allow(dead_code)] // WIRED by S1-D-3-wire-smallkinds (the world-sim host pre-pass + axis 72's gravity/integration tail); the defaults row + witnesses stay as the audit cross-check
 
 use glam::Vec2;
 
