@@ -606,7 +606,7 @@ pub fn destroyer_step(
             if npcs[me].vy > num18 {
                 npcs[me].vy = num18;
             }
-            if (npcs[me].vx.abs() + npcs[me].vy.abs()) as f64 < num18 as f64 * 0.4 {
+            if ((npcs[me].vx.abs() + npcs[me].vy.abs()) as f64) < num18 as f64 * 0.4 {
                 if npcs[me].vx < 0.0 {
                     npcs[me].vx -= num19 * 1.1;
                 } else {
@@ -709,7 +709,7 @@ pub fn destroyer_step(
                 } else if npcs[me].vx > num21 {
                     npcs[me].vx -= num19 * 1.1;
                 }
-                if (npcs[me].vx.abs() + npcs[me].vy.abs()) as f64
+                if ((npcs[me].vx.abs() + npcs[me].vy.abs()) as f64)
                     < num18 as f64 * 0.5
                 {
                     if npcs[me].vy > 0.0 {
@@ -725,7 +725,7 @@ pub fn destroyer_step(
                 } else if npcs[me].vy > num22 {
                     npcs[me].vy -= num19 * 1.1;
                 }
-                if (npcs[me].vx.abs() + npcs[me].vy.abs()) as f64
+                if ((npcs[me].vx.abs() + npcs[me].vy.abs()) as f64)
                     < num18 as f64 * 0.5
                 {
                     if npcs[me].vx > 0.0 {
