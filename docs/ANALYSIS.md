@@ -15816,6 +15816,13 @@ Deliberate deviations and skips (all one-line-cited in the code):
 
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
+**Census correction (S1-D-3q, 2026-11-18):** the arm ported below is NOT
+the Retinazer's — `NPC.cs:32761-33043` is the shared MourningWood (325) /
+Everscream (344) aiStyle-57 floater; the Retinazer (125) is aiStyle 30
+(`:10526`, arm `:26405+`). The style ids were fixed by S1-D-2; the machine
+re-port is a D-3 follow-up. See "The aiStyle-57 shared-kind census
+(S1-D-3q)" below.
+
 `AI_057` (`NPC.cs:32761-33043`) is the Retinazer's family machine — the
 Twins' left boss ✓ (the Spazmatism is an aiStyle-3 ground fighter ✓).
 The port ran one EoC-shaped v1 arm for both Twins: a hover, a dash and a
@@ -19651,3 +19658,149 @@ velocity kicks `Gore.cs:1327-1328`, the named-arg `Atan2(x: dx, y: dy)`
 reading, the classic-difficulty identities) were independently
 re-verified against the C# during the audit and are reflected in the
 census section's G1/G3/G5 findings against the sibling.
+## The aiStyle-57 shared-kind census (S1-D-3q, code-only mode, 2026-11-18)
+**Census method.** `grep 'aiStyle\s*=\s*57'` over every `.cs` in
+`decompiled/` returns exactly three hits: `NPC.cs:13119` (the `type == 325`
+SetDefaults row, `:13115-13128`), `NPC.cs:13359` (the `type == 344` row,
+`:13355-13368`) and `Projectile.cs:4331` (a PROJECTILE aiStyle, a different
+axis — not an NPC). Family identity from `ID/NPCID.cs`:
+`MourningWood = 325` (`:11327`), `Everscream = 344` (`:11365`). So the
+aiStyle-57 arm (`NPC.AI`, `NPC.cs:32761-33043`) is shared by **exactly two
+kinds — the Pumpkin Moon's Mourning Wood and the Frost Moon's Everscream**.
+No third kind rides it. (The Rust-side `data.rs` grep hit
+`NpcKind::GoblinThief => 57` is a PROTOCOL id in `to_u16`, not an aiStyle
+claim; the `ai_style()` table has `MourningWood => 57` only on main, plus
+`MourningWood | Everscream => 57` on the in-flight
+`task/S1-F-13c-defaults-a`.) `FindFrame`'s `case 57` group
+(`NPC.cs:74181-74226`, shared with 55/58/102/241/465/592/607) never runs for
+these two kinds — the TYPE switch (`:66705`) matches first: case 325
+(`:72491-72520`) and case 344 (`:72463-72489`).
+**Verdict per kind.**
+* **MourningWood (325)** — PORTED on the sibling `982d3caf`
+  (`task/S1-F-13b2-bosses`, `npc_ai_pumpkin_boss.rs::mourning_wood_step`,
+  NOT yet merged into main). The kind-gate is the style axis's
+  `57 if self.kind == NpcKind::MourningWood` claim in `update_rng`; the
+  `update_kind_ai` hover stand-in became `unreachable!`. Line-by-line
+  re-read against `:32761-33043` (distrust-verbatim rule, the f1701eb0
+  defect catalogue classes applied): the type-325 path is faithful — the
+  f64 hp ladder (`:32771-32778`, `:32795-32801`), the idle pick's
+  `type != 344` low-hp arm correctly taken for 325 (`:32806-32813`,
+  `Next(3,5)` vs `Next(1,3)`), the stomp/spin/beam/barrage rows (15/8/30/10
+  cadences, 50/40/75/50 damage, the 10/10+|dx|·0.004-cap-14/16/12+|dx|·0.002-cap-16
+  speeds, the player-TOP aim `:32853`/`:32901` etc.), the spin's strict
+  (60,240) window (`:32897`), the `(vx*20 ± num836)/21` approach and the
+  ×0.9 damp with the ±0.1 snap (`:32974-32992`), the |Centre.X−player
+  Centre.X| < 50 damp gate (`:32970`), the player-overlap test (`:32997`),
+  the 80×20 probe at `Centre.X − 40, bottom − 20` (`:32993-32995`, the
+  INTEGER `num865/2` = 40 exact in f32) and the rise/fall ramps with the
+  −4/+10 caps (`:33001-33042`). RNG by construction: the C# evaluates
+  `NewProjectile`'s named arguments in TEXTUAL order, so the aim jitters
+  draw first, then SpeedX/SpeedY, then `Type: Main.rand.Next(326, 329)`
+  LAST (`:32913`, `:32962`); the sibling keeps that order and pins it with
+  stream-equality witnesses (19 `s1_f_13b2_*` tests, WRITTEN NOT RUN —
+  code-only mode). Residuals found (below).
+* **Everscream (344)** — KIND + DEFAULTS in flight
+  (`task/S1-F-13c-defaults-a`: `NpcKind::Everscream`, `FrostDefaults`
+  ai_style 57, 172×130, 13000 hp, 110 dmg — matches `:13355-13368`), but
+  **NO machine exists on any branch**: the frost sibling `41bc275f`
+  (`task/S1-F-13c-boss-ai`, `npc_ai_frost_boss.rs`) ports IceQueen (345,
+  aiStyle 60) only and its dispatch seam is gated to 345, explicitly
+  deferring 344/346 to "the next slice-C round". The pumpkin sibling
+  documents "the type-344 (Everscream) branches are not ported". **The
+  344 branches of the shared arm are the census's gap** — spec below.
+**The 344 gap spec (for the merger / the next slice-C round).** Everything
+the shared arm does differently when `type == 344`:
+1. **Light** (`:32779-32782`): `Lighting.AddLight(Bottom + (0,−30), 0.3,
+   0.16, 0.125)` (325's is `0.3, 0.125, 0.06`, `:32783-32786`). Cosmetic;
+   no rand.
+2. **Idle pick gate** (`:32806`): `life < lifeMax*0.25 && type != 344` —
+   the Everscream NEVER picks states 3/4; it always draws `Next(1, 3)`
+   even at low hp. The triple-time counter (`:32795-32802`) is shared.
+3. **State 1 — pine needles** (`:32819-32845`): per tick,
+   `Main.rand.Next(5) == 0` gates a dust (`Dust.NewDust(position +
+   Main.rand.NextVector2Square(0,1) * Size − (1,2), 10, 14, 245, 0, 0,
+   254, Transparent, 0.25)`, then `velocity *= 0.2`). **This dust arm
+   draws `Main.rand` at the AI level** — the `Next(5)` roll every tick and
+   the `NextVector2Square`'s TWO `NextDouble` draws (X then Y,
+   `Utils.cs:1251-1254`) on a hit, plus `Dust.NewDust`'s own pool-threshold
+   rolls (`Dust.cs:114-148`) when it does not early-return. Skipping the
+   dust VISUAL is therefore NOT stream-neutral for 344 (unlike 325, whose
+   skipped light draws nothing): the port must either replay these draws
+   or record the divergence explicitly. Then `flag61 = true`, `ai[1]++`,
+   and every 5th tick (`ai[1] % 5 == 0`): origin =
+   `(X + 20 + Next(width−40), Y + 20 + Next(height−40))` (X draw then Y
+   draw); aim at the player's TOP-centre; `dx += Next(−50,51)`;
+   `dy = dy + Next(−50,51) − |dx| * (Next(0,21) * 0.01)` — note `|dx|`
+   reads the ALREADY-JITTERED dx (`:32833-32834` order); speed 12.5
+   normalised; `NewProjectile(Type: 345, Damage: 43, KnockBack: 0,
+   SpeedX: dx·(1 + Next(−20,21)·0.02), SpeedY: dy·(1 + Next(−20,21)·0.02),
+   ai0: Next(0,31))` — textual order: SpeedX jitter, SpeedY jitter, then
+   the `ai0` draw LAST. State ends at `ai[1] >= 180` (325's ends at 120).
+4. **State 2 — ornaments** (`:32869-32892`): `flag61 = true`, `ai[1]++`;
+   fire window `> 60 && < 240 && % 15 == 0` (325's is % 8); base speed
+   `num846 = 4.5` **UNCAPPED** (325's 10 caps at 14); origin =
+   `(X + 20 + Next(width−40), Y + 60 + Next(height−80))`; `dy −= |dx|·0.3`
+   and `num846 += |dx|·0.004` both read the PRE-jitter dx (`:32878-32879`);
+   then `dx += Next(−50,51)`, `dy −= Next(50,201)`, normalise,
+   SpeedX/SpeedY jitters `Next(−30,31)·0.01`, `Type: 346, Damage: 57`,
+   `ai1: Next(2)` drawn LAST (after the literal `ai0: 0`). Ends at 300
+   (shared with 325).
+5. **States 3/4 have NO 344 gate** (`:32922-32969`): unreachable through
+   the idle for 344, but a net-synced `ai[0] = 3/4` would run the shared
+   wood arms — the port must not kind-gate them away.
+6. **The tail is fully shared** (`:32970-33042`): damp/approach/probe/
+   ramps identical for both kinds; `num836`'s day-8 and hp bands too.
+7. **Projectiles 345/346 are unported**: `PineNeedleHostile` 345
+   (`ProjectileID.cs:1244`; SetDefaults `Projectile.cs:4353-4360`: 4×4,
+   aiStyle 1, hostile, scale 0.8) and `OrnamentHostile` 346 (`:1246`;
+   `Projectile.cs:4361-4369`: 18×18, aiStyle 14, hostile, penetrate −1,
+   timeLeft 300). `projectile/data.rs` has neither row (only
+   `FLAMING_WOOD` 325 + the Greek fires 326-328 landed with S1-D-3i).
+8. **FindFrame case 344** (`:72463-72489`): standing (`velocity.X == 0`)
+   `frameCounter++`, moving `frameCounter += Max(1, |vx|·0.75)`; `> 5`
+   wraps the counter and advances one row; rows wrap past `num*9` to 0.
+   Case 325 (`:72491-72520`): `> 4` wraps; standing walks rows 0..4,
+   moving CLAMPS into rows 5..9. The port runs `walker_frame()` for
+   MourningWood (`npc.rs:5608-5612`) — a gap for BOTH kinds, to fix in the
+   wiring round (Everscream's frame row needs the same treatment when the
+   kind lands on main).
+**Residuals in the claimed-faithful 325 port (f1701eb0 catalogue classes;
+for the merger, none blocking).**
+* **`Player::solid_collision` misses `!inActive()`** — the C# probe gate
+  (`Collision.cs:2715`) reads `!inActive() && active() && tileSolid &&
+  !tileSolidTop`; the port's helper (`player.rs:1985-2018`) checks
+  active/solid/solidTop/halfBrick but NOT the actuator-inactive flag, so
+  an actuated-off floor tile still holds the Wood up. (The sibling's own
+  `solid_tile` helper for the Pumpking lob DOES check `!t.inactive()` —
+  the two probes disagree.) Pre-existing helper defect, shared with every
+  `solid_collision` caller; fix belongs to the helper, not this arm.
+* **The ±0.1 damp snap is f32, the C# casts to double** (`:32977`:
+  `(double)velocity.X > -0.1 && < 0.1`) — the f32-vs-f64 literal
+  comparison class from the f1701eb0 catalogue; boundary velocities can
+  snap differently. Same class: the C#'s `velocity.Y` band compares
+  `(double) > -0.2` / `< 0.1` (`:33011`/`:33030`) vs the port's f32.
+* **`EncourageDespawn`'s `despawnEncouraged = true`** (`NPC.cs:7255`) is
+  not modelled by `Npc::encourage_despawn` (`npc.rs:1643`) — the port has
+  no `despawnEncouraged` field at all (pre-existing convention, the timer
+  itself is faithful).
+* **The integration tail** (`NPC.cs:90494-90503`): the sibling's
+  `x += vx; y += vy` matches `:90498`, but the C# also latches
+  `oldPosition`/`oldDirection` (`:90496-90497`) and runs the
+  `WetCollision` → `TryRemovingWaterPerishableEffects` check
+  (`:90499-90502`) — the port's machine-level integration convention
+  (same as `worm_head_step`) skips both; recorded, not new.
+* **The S1-D-3i mislabel stands**: `npc.rs::update_retinazer` ports THIS
+  arm (`:32761-33043`) under the Retinazer's name, but the Retinazer
+  (125) is aiStyle **30** (`NPC.cs:10526`; the real arm `:26405+`, the
+  rotation-tracking laser eye) and the Spazmatism (126) is 31
+  (`:10543`). The style IDS were corrected by the S1-D-2 extraction
+  (ANALYSIS "The NPC aiStyle dispatch axis", the doc-drift note); the
+  MACHINE is still the 57-shaped stand-in running under kind dispatch.
+  Re-porting `AI_030`/`AI_031` for the Twins is a D-3 follow-up, out of
+  this census's scope. PORT_MAP's aiStyle-57 row carries the correction
+  note now.
+**Mode.** Code-only round per the worker directive: no compiler invoked,
+no tests written or run (docs-only census — the two-kind arm needs no new
+`npc_ai_style57_shared.rs`; the missing 344 branches belong to the
+Everscream machine round, spec above). The sibling machines
+(`npc_ai_pumpkin_boss.rs`, `npc_ai_frost_boss.rs`) are untouched.
