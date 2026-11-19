@@ -25297,3 +25297,72 @@ is already recorded (ANALYSIS "The Golem family (S1-D-3)" — axis 47
 delegates, style46/47 stay unwired references); the discarded TR-D3s48
 partial adds nothing the landed arm lacks except the G1 field sketch.
 Docs-only round — **no compiler invoked**.
+### The slime family's aiStyle-1 re-port (S1-D-3, audit A1-4, code-only mode)
+
+The A-1 audit (`docs/research/54-audit-slime-eye.md` §1, branch
+`docs/audit-slime-eye`) found the LIVE slime family — the most-played AI in
+the game — is a **stand-in**: `npc.rs::update_slime` (`:6652-6731`) runs an
+invented sin-timer hop cadence (`hop_timer = 1.0 + |sin(anim·7)|·0.5`),
+invented hop constants (vx 1.4 / vy -4.2), an invented 60-tile aggro gate,
+an invented gravity pair (0.4/8, no depth scaling), an invented wall bounce
+(`vx = -vx·0.4`) and landing brake (`vx *= 0.6`), and treats honey/shimmer
+as water. This round ports `NPC.AI_001_Slimes` (`NPC.cs:60341-61723`) into
+the NEW `crates/tr-app/src/npc_ai_slime.rs` (`ai_001_slimes` + the
+`SlimeCtx`/`SlimeEffects`/`SlimeShot` seam, the style55 precedent), landed
+**UNWIRED** — the live arm is byte-identical; the wiring swap is the next
+wave. **Code-only mode: no cargo/rustc/rustfmt/tests invoked; the 14
+witness tests are written, not run.**
+
+**Audit-seed coverage (the report's §1 findings → this module):**
+
+| Audit finding | C# cite | Status |
+|---|---|---|
+| §1a invented sin-timer cadence → the ai[0] tick machine, ZERO-RNG | `:61511-61703` | PORTED — init latch `-100` + TargetClosest (`:61512-61517`), flag3 double-step (`:61550-61554`), every per-type bonus (`:61555-61602`, incl. the 59 +2, 81 +4, the 304 INTEGER life/lifeMax row), the three num51 tier windows (`:61612-61624`), hop -6/-8 + 2/3·dir + the -120+num50 / -120+2·num50 / -200 resets (`:61632-61664`), the 659/685/141/377/446 hop rows (`:61665-61697`), the aiAction wind-up (`:61699-61702`). NO distance gate anywhere — the stand-in's 60-tile aggro is gone |
+| §1a stuck-flip on BOTH branches | `:61469-61473` / `:61524-61528` | PORTED — `ai[3] == position.X → direction *= -1; ai[2] = 200` TICKS (the stand-in's `200/60` seconds is gone), the ai[2] countdown (`:61459-61462`) + the `ai[2]==1 && flag3` re-aim (`:61506-61509`) |
+| §1a air steer + landing brake | `:61704-61721` / `:61544-61548` | PORTED — +0.2·dir under the 3 cap else ×0.93, the collideX `\|vx\|==0.2` 1.4-px nudge, the landing unstick (`:61520-61523`/`:61710-61713`, `Collision.SolidCollision` ported verbatim incl. the slope-accepting quirk), the ×0.8 brake with the f64 ±0.1 deadband. The invented wall bounce is NOT ported (the C# generic pass zeroes vx on collideX; AI_001 never negates) |
+| §1b gravity 0.3 depth-scaled / 10 + honey/shimmer merges | `:90878-90955` | PORTED — `slime_gravity`: the num2 depth factor clamp [0.25,1] (the golem `body_gravity` shape), water 0.2/7, **honey 0.1/4**, **shimmer 0.15/5.5**; `wet_collision` ports `Collision.WetCollision` (`Collision.cs:1572-1651`) — the centre probe, the liquid-surface drop, the FIRST-cell-wins kind flags, the sloped-tile-under-liquid arm. The caller applies `vy += gravity` + cap AFTER the AI (`:90465-90472`) — the module never integrates |
+| §1b wet buoyancy tail + LavaSlime rows | `:61463-61510` | PORTED — collideY → -2, ×0.9 over 2, -0.5/tick, cap -4; the 59 !remix arm (-0.8 directionY lift, cap -10) |
+| §1c LavaSlime +2 cadence / -8-2 jump / +3.5 vx | `:61555-61558` / `:61634-61643` | PORTED (the !remix gates read `world.seeds` REMIX) |
+| §1c CorruptSlime +4 cadence | `:61592-61602` | PORTED (the C#'s `scale >= 0f` verbatim) + the Next(30) dust gate (`:61072`) |
+| §1c SpikedIceSlime spike-shooter | `:61151-61210` | PORTED WHOLE — the Next(8) gate, the localAI[0] cooldown, the <120 expert 5-spike fan (15 draws) / the <200 classic lob (1 Next(0,200) draw), the ai[0] = -40 + vx ×0.9 wind-up, shots ride `SlimeEffects.shots` (174, dmg 9 — `GetAttackDamage_ForProjectiles(9,9)` is the constant 9) |
+| §1c IceSlime Next(10) dust gate | `:61101-61108` | PORTED as the gate draw (the dust body is the DustRng skip, S1-E-1) — the RNG-order contract S1-A-10 |
+| §1c item-content init | `:60356-60576` + `:61734-61848` | DEFERRED to A1-5 — the full draw census is in the module header (every Next, in order, with the short-circuit gates: the vampireSeed Next(13) draws BEFORE the depth check; GetRandomVoiceItem rides WorldGen.genRand, a DIFFERENT stream) |
+| §1c King-slime rain gate deviations | `:79080-79096` | OUT OF SCOPE (the gate lives outside AI_001; the audit's two deviations — the kill filter + the placement — stay with the A1-2/A1-6 King Slime seeds) |
+
+**Also ported (whole-arm completeness):** the type-1 direction-0 latch
+(`:61041-61045`), the `ai[0] == -999` balloon freeze (`:61046-61052`, the
+frameCounter reset rides `SlimeEffects` — the field is private to npc.rs,
+the style42 precedent), flag3 (`:61060-61099` + the unported kinds' rows),
+the 667 speed-short-circuited Next(4) gate, the conveyor 3609 grounded row
+(`:61530-61541`, content-gated but kept verbatim for A1-5).
+
+**Documented deferrals:** the item-content init + the ai[1] > 0 content
+rows (`:60694-61040`: the ore-slime stat block + the flag2 hover — flag2
+folds to false, no content yet), the type-1 paint tint (`:60577-60693`),
+the 75-lantern (`:60343-60355`), the 244 rainbow colour, the 535/658/659/
+204 shooters + the 377/446 friendly latch (unported kinds — their cadence/
+flag3/hop rows ARE ported), the lights (npc_lights seam), every
+`Dust.NewDust` INTERNAL draw (the DustRng seam — the gate draws are kept),
+and the generic UpdateNPC tail (gravity application, the ±0.005 vx snap,
+UpdateCollision/integration — the caller's, as in every unwired AI module).
+
+**RNG argument (by construction):** the hop cadence draws ZERO Main.rand
+values — the audit confirmed the census's "jump rolls" worry is unfounded;
+the arm's ported draws are the 81 Next(30), the 147 Next(10), the 667
+speed-gated Next(4), the 184 Next(8) + the shooter's 15 (expert fan) or 1
+(classic lob), and the 685 hop Next(2) — all censused with their
+short-circuit gates in the module header. The real RNG deficit is the
+spawn-time item-content init (A1-5): its census there pins every Next in
+source order, including the two stream-crossing quirks (genRand voice
+items; the vampireSeed draw-before-gate). The witnesses mirror the cited
+draws on a cloned UnifiedRandom and compare the full state.
+
+**Verification.** Code-only: the whole C# arm was re-read in windows
+(`:60341-61853` + the gravity `:90878-90955` + WetCollision
+`Collision.cs:1572-1651` + SolidCollision `:2700-2733`); every seam call
+site checked against the actual signatures by read/grep
+(`npc_target::target_closest`'s 6-arg shape, `projectile::can_hit`'s 9-arg
+shape, `NpcKind::cs_id`, `World.seeds/day_time/world_surface/slime_rain`,
+`Tile::liquid_kind`); the 27-row aiStyle=1 census verified against
+`SetDefaults` + `NPCID.cs`. The 14 witness tests are WRITTEN, NOT RUN —
+**no compiler invoked**.
