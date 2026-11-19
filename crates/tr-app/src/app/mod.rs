@@ -845,6 +845,12 @@ pub(crate) struct App {
     /// previous frame's list (`LightingEngine.cs:210-214`), so `end_frame` must
     /// run once per frame after every source has contributed.
     pub(crate) entity_lights: crate::entity_lights::EntityLights,
+    /// `Main.essScale` / `Main.essDir` (`Main.cs:544-545`): the essence
+    /// flicker scale, seeded 1.0 / -1 (`Main.cs:66673-66674`), drifting
+    /// 0.7..1.0 once per draw pass (`:62264-62277`,
+    /// `item_lights::update_ess_scale`). The step-time light arms read it.
+    pub(crate) ess_scale: f32,
+    pub(crate) ess_dir: i32,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -3560,6 +3566,9 @@ impl App {
             // (`Gore.cs:1507-1510`).
             gore: tr_core::gore::GorePool::new(),
             entity_lights: crate::entity_lights::EntityLights::default(),
+            // `Main.cs:66673-66674` — `essScale = 1f; essDir = -1;`.
+            ess_scale: 1.0,
+            ess_dir: -1,
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed
