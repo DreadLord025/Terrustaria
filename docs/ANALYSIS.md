@@ -23946,6 +23946,128 @@ fall-through, byte-identical.
   machine (`:60254-65024`), the pygmies/spiders, the Pal summons
   1094/1113, the 266 slime minion's hop machine вЂ” the ROADMAP row's
   remainder.
+  1094/1113, the 266 slime minion's hop machine — the ROADMAP row's
+  remainder. **(Slice C landed the 266 half 2026-11-19 — see "AI_026
+  slice C" below; the row-less types stay open.)**
+## AI_026 slice C (S1-D-4b-16, task/S1-D-4b-16-melee-c, 2026-11-19)
+**Code-only mode** — no compiler invoked this round (no cargo/rustc/
+rustfmt/tests/graphify); the witness tests in `projectile_ai026_c.rs`
+are WRITTEN, NOT RUN. Verification is by construction against the
+decompiled source. `crates/tr-app/src/projectile_ai026_c.rs` ports the
+ground-pet idle/walk/jump machine (`Projectile.cs:60254-65024`) for the
+**266** slime minion (`ProjectileID.BabySlime`, the Slime Staff summon).
+- **The census**: the WHOLE remaining block was read. Its type
+  dispatch covers ~45 ground pets (111/112/127/200/208/209/210/236/
+  268/269/313/314/319/324/334/353/398/499/765/816/821/825/854/858/859/
+  860/875/881/884/890/891/897/899/900/934/956/958/959/960/994/998/
+  1003/1004/1027/1095/1096), the pygmies 191-194 (`flag6`), the spiders
+  390-392 (`flag7`) and the Pal summons 1094/1113 (`flag8`). Of those,
+  the port's `proj_data` carries a row for exactly ONE — the 266
+  (`projectile/data.rs:2236`). The gate routes ONLY the 266; every
+  other aiStyle-26 kind keeps the byte-identical `_ => {}`
+  fall-through (row-less kinds cannot spawn anyway). The per-type
+  tails the 266 does not reach are catalogued in the module's
+  `ground_machine_census` doc fn with citations — the follow-up
+  slices' map (the pygmy spear's three draws `:61698-61705`, the
+  spider separation loop's `velocity.Y +=` X-branch typo `:61907`,
+  the 860 gore burst `:62889-62892`, the 825 idle re-roll
+  `:63500-63502`, the 958 idle `Next(100)` `:62389`, the 1027
+  materialize ring `:62559-62566`, the Pal shot/petting frame cycles).
+- **The machine**: the fly-out decision (`:60254-60344`: the
+  500+40·minionPos return range, +500 while attacking +100 more for
+  the 266, the >2000 px DUSTLESS teleport — unlike the flyers' 24-draw
+  teleports — and the vertical-velocity sign kill), the fly-out arm
+  (`:60387-61548`: the 40·direction chase offset + the 700-px
+  owner-relative Manhattan scan with `CanHit`, the formation offset
+  when no target, the grounded reset, speed 10/accel 0.2 with the
+  GUARDED ×1.5 same-sign boost — unlike slice B's unguarded one —
+  the frames 8-11 flight cycle), the ground scan (`:61755-62004`: the
+  whip-mark-first closest-chaseable pick with the no-line-of-sight
+  fallback point, the 300/150 surface-split idle range, the ±5/±10
+  dead bands, the `friendly` flip + the 60-tick `localAI[0]` cooldown,
+  the −10/−13/−15/−17/−18 height ladder), the walk core
+  (`:62046-62318`: speed 6/accel 0.2 boosted to the owner's |vx|+|vy|
+  with accel 0.3, the ±3.5 quarter-accel band, the 0.9 damping with
+  the accel-wide zero snap, the closed-door-exempt wall probe, the
+  shared `Collision.StepUp`, the ledge-hop −5.1/−7.1/−11.1/−10.1/−9.1
+  ladder with the null-tile catch, and **the 266 hop
+  `velocity.Y -= 6`** `:62271-62274`), the direction/sprite pins
+  (`:62284-62317`) and the 266's ground frames (`:64435-64494`: the
+  airborne 5-tick frames 1-7, the grounded 8-tick frames 5-7 with the
+  1→5 jump, the idle owner-facing on the X stall, the dry +0.4 gravity
+  capped at 10).
+- **RNG by construction**: the 266 draws NO `Main.rand` anywhere in
+  `AI_026` — the pygmy `Next(2,10)` (`:58919`) is flag6-gated, the
+  pygmy/Pal attack draws (`:61698-61705`) flag10-gated, the flight
+  dust chain EXCLUDES the 266 by type (`:61541`), the ground scan/hop/
+  frames are pure arithmetic. The ONE draw is `Update`'s blocked-move
+  `Main.rand.Next(3)` (`:17948`) — the FIRST `&&` operand, so it fires
+  on EVERY blocked move regardless of owner/damage; the 266 passes
+  `CanCutTiles()` (`:15323-15334`), so the draw is CONSUMED on the
+  pass's stream while the cut body skips with the unported tile-cut
+  layer (the `dd2_sentry_step` precedent — but that precedent SKIPS
+  the draw for its refusal-list kinds; the 266 is not on the list, so
+  here it stays). The witness
+  `the_blocked_move_consumes_the_tile_cut_roll` pins the exact
+  one-draw sequence; the no-target/teleport/hop witnesses pin the
+  empty sequences.
+- **The blocked move does NOT kill**: the default
+  `position += velocity; Kill()` (`:19851-19852`) sits inside the
+  `!correctSlopeCollision` gate (`:18398`); the 266's
+  `Main.projPet[266] = true` (`Main.cs:8739` → `Projectile.cs:707`)
+  closes it — a blocked move only stops the minion (the
+  `pirate_movement` precedent).
+- **The `old_position` field**: `Entity.oldPosition`
+  (`Projectile.cs:17013`) joins the slot — the C# latches it BETWEEN
+  `AI()` and `HandleMovement`, so the machine's `flag32` X-stall test
+  (`:62318`) reads the PREVIOUS tick's pre-movement position; the
+  port keeps that order (latch after `ground_machine`, before
+  `ground_movement`). The other arms keep the stock ZERO until their
+  movement ports land.
+- **The damage gates**: the idle machine holds `friendly = false`
+  (`:61999-62002`) while the C# stock `hostile` stays false — so both
+  pool damage proxies gain the 266 refusal (the PVE walk's
+  `!friendly` gate, the `RAINBOW_CRYSTAL_EXPLOSION` precedent; the
+  player-contact call site's kind exemption, the `DUNGEON_DEBRIS`
+  precedent). The attack window (`:61949`) flips `friendly` true and
+  the PVE walk hits.
+- **Documented stand-ins**: `Collision.SolidCollision` → `box_solid`
+  (5-point), `Collision.CanHit` → `can_hit` (Manhattan walk),
+  `CanBeChasedBy` → `chaseable` (three fields),
+  `OwnerMinionAttackTargetNPC` → `minion_attack_target_npc` (exactly
+  the property, `:566-576`); `ignoreDoors` (projPet true) is not
+  carried by the port's `tile_collision` — doors block (the
+  `pirate_movement` precedent); the wet-swim branch (`:64475-64485`)
+  folds dry (no wet flags); the `UpdatePosition` slope pass
+  (`:20447-20474`) and the inner `SlopeCollision` passes are deferred
+  (the twins/pirate precedent); `flag9` petting folds false
+  (unported); the `SolidTileAllowBottomSlope` hop probe keeps the
+  FULL C# conjunction (the platform-proper-top-frame clause + the
+  inactive test the tr-core edit-side variant drops).
+- **Still open in AI_026**: every row-less type — the ~45 ground
+  pets, the pygmies 191-194, the spiders 390-392, the Pals 1094/1113
+  (their rows + the per-type tails in `ground_machine_census` are the
+  follow-up slices' scope).
+- **The retry review's data-layer fixes (worker R39b, same branch,
+  code-only)**: the first pass's machine port was faithful, but three
+  `proj_data` values contradicted the C# `SetDefaults` block
+  (`Projectile.cs:3516-3528`) and would have failed the slice's own
+  row witness — corrected in `projectile/data.rs`:
+  1. `proj_frames(266)` had no row (read the init default 1) — the
+     fly-out wrap (`:61209`) and the witness need **12**
+     (`Main.cs:8612`); the row joins the table.
+  2. The immunity pair sat in the LOCAL overlay (`(true, 12)`) —
+     the C# sets `usesIDStaticNPCImmunity` + `idStaticNPCHitCooldown
+     = 12` (`:3526-3527`); it now rides the row's own state group
+     `(false, -2, true, 12, 0, 1.0)` and the local overlay drops it
+     (the idStatic hit gate keys the pool's `id_static` map, not the
+     per-slot local array).
+  3. The blanket summon `ignore_water` gave the 266 `true` — its
+     block sets no `ignoreWater`, the stock false (`:761`) stands;
+     the 266 joins the Storm-Tiger/pirate exemption list (its
+     wet-swim arm `:64475-64485` is a live C# branch, not a
+     no-water kind). No existing witness read the old values
+     (`MINION_KINDS` in `test_DW_1_1` omits the 266).
 ## The dungeon-debris trio (S1-D-5, 2026-11-19, code-only mode)
 The 736/737/738 `BlueDungeonDebris`/`GreenDungeonDebris`/`PinkDungeonDebris`
 rows, the aiStyle-10 `AI_010` arm (`Projectile.cs:57826-58100`, dispatch
@@ -29004,3 +29126,479 @@ every seam signature was checked by read/grep (`can_hit`'s 9-arg shape,
 `convert_wall_by_case`, the `TILE_SOLID`/`SET_CONVERSION_*`/`SET_ICE`
 sets). The 15 witness tests in `projectile_ai_misc.rs` are WRITTEN, NOT
 RUN — **no compiler invoked**.
+## The NPC sound sites wave (S1-E-21g, 2026-11-19, code-only mode)
+
+**Scope.** The NPC.cs `PlaySound` census (~250 sites) minus the landed
+waves: wave C owns the StrikeNPC/checkDead hit+death cues, wave E the
+fighter moans, S1-E-25 the critter table; E21f (player) and E21h
+(projectile) are siblings' territory. Wave G lands the boss/AI-side
+subset: the roars, the caster teleport puffs, the attack-loop cues and
+the worm dig cadence — 19 call sites across 10 machines.
+
+**The queue seam.** The AI machines run without the `Audio` borrow, so
+the sites queue `NpcSoundRequest` on `Npc::wants_sound` (the
+`wants_hostile_shot` shape). `world_sim/npcs.rs` drains per NPC right
+after `update_rng` — BEFORE the moan/critter emitters (the C#'s plays
+sit inside `AI()`, which precedes `UpdateNPC_CritterSounds`,
+`NPC.cs:90323`) — and the worm pass drains its own queue after the
+chain walk. Every play method gates attenuation BEFORE any case draw
+(the E21e precedent, `LegacySoundPlayer.cs:369-436` precedes the type
+switch); the draws ride the `UpdateNPCs` stream (`Main.cs:17767`).
+
+**The overload split (the wave's RNG argument).** `SoundEngine.cs:93-99`
+(the `SoundID.*` style façade) consumes the `GetRandomPitch`
+NextFloat on the audio-only `sound_style_random`; `:102-108` (the
+int overload) draws NONE. Wave G ports both: `play_npc_hit_int` /
+`play_npc_death_int` (no NextFloat) vs `play_npc_death_style` /
+`play_npc_item_cue` / `play_eow_dig` (façade). The gameplay draws:
+case 2 one `Next(-6,7)*0.01` (the Item8/14/34 puffs), case 3/4 one
+`Next(-10,11)*0.01`, case 27 one `Next(-10,11)*0.01` in BOTH the
+live-instance and fresh branches (`:984`/`:994`), cases 15/36/42
+NOTHING.
+
+**The landed sites** (C# cites → port homes):
+- EoC spin hand-off pair `NPC.cs:20364` (int 3) + `:20375` (roar 0)
+  → `update_eye_of_cthulhu`'s phase-3 else arm; the gore/dust draws
+  between them are SKIPPED (the standing deviation), so the pair queues
+  back to back.
+- EoC dash roar `:20500` (case 36 style 0) → the final-phase
+  `ai[1]==1` arm. The expert `:20694` (style −1, +0.6 pitch) is
+  coded in `roar_case36` but unwired (no expert rage states).
+- EoC death roar `HitEffect :87297` — played TWICE (inside the
+  `num567 < 2` gore loop) → the death-retain pass, after the death
+  cue. Headless both pass (the fresh-slot table); with a live device
+  the second refuses on case 15's guard.
+- Skeletron charge roar `:22169` (`ai[2]==2` after the increment)
+  → `update_skeletron`'s charge arm; the Dungeon Guardian's
+  first-tick roar `:21946` is table-complete behind `cs_id()==68`
+  (no ported kind yet, the E21e duck precedent).
+- Brain retreat pair `:32408` + `:32418` → `update_brain`'s
+  `ai[0]<0` head, latched on the generic `local_ai[2]` (the C#'s
+  `localAI[2]`; `brain_local[2]` carries the Creeper count — the
+  documented repurpose). Both blink puffs `:32505` (new centre) /
+  `:32622` (OLD centre — the C# plays before the position rewrite).
+- Caster teleport pair `:20862` (departure, OLD position) + `:20931`
+  (arrival, placed position) + the cast puff `:21232` (`type!=172`)
+  → `npc_ai_bat::ai_style_8_step`.
+- Spazmatism flamethrower loop `:27493` (Item34 at the 23-tick
+  `localAI[2]` wrap) → `npc_ai_style31`.
+- Golem fist launch `:19415` (Item14 at `ai[1]==1` of the dash) →
+  the fists' `ai[0]==2` arm; the `Next(2)` dust roll behind it
+  stays skipped (it draws AFTER the play — order holds).
+- Tower dissolve cry `:39059` (int 4 style 22, `ai[1]%60==1`) →
+  `update_ancient_cultist`'s dissolve counter (`ai[2]`, the recorded
+  stand-in).
+- Moon Lord crash cry `:41432` (NPCDeath61 at `ai[1]==1` of the
+  crash) + the three laser wind-ups `:41838`/`:42338`/`:42611`
+  (int 4 style 6 at the 35-ticks-out mark) → the core/hand/head/TrueEye
+  machines.
+- Leech tunnel-entry burst `:50968` (NPCDeath13, `localAI[1]` latch)
+  → the worm pass's chain init.
+- Worm dig rumble `:51976-51995` — the `soundDelay==0` cadence,
+  distance/40 clamped 10..20 re-armed BEFORE the play; EoW heads play
+  the `EOWDiggin` trackable (`:51990`), other heads the roar at the
+  int overload's DEFAULT Style 1 (`:51994`). `Npc::sound_delay`
+  ticks BEFORE the machine (`NPC.cs:90381-90384`). The Destroyer's
+  own `AI_037` roar (`:50081-50093`) shares the shape — the worm
+  pass stands for it (the port's Destroyer rides the worm machine).
+
+**The maths.** `sound.rs::roar_case15` (`:826-842`): style 4 → slot
+1 at ×0.25, the null-or-Stopped guard refuses BEFORE the instance;
+`roar_case36` (`:1309-1325`): Style-is-slot, −1 → slot 0 +0.6 pitch,
+NO guard. `Audio` gained the `SoundInstanceRoar[3]` slots and the
+`SoundInstancePixie` slot; `play_pixie` ports case 27's
+draw-in-both-branches shape (the wing-hum seam — no ported Pixie kind
+yet, table-complete like the duck). Bank: `Roar_1/2`, `Pixie`,
+`NPC_Killed_13/61`, `Item_14/17`, `eow_dig` join (all assets
+verified on disk).
+
+**Deviations / deferrals.** The gore/dust draws around the EoC/Brain
+pairs and the leech burst are skipped (the standing gore/dust deviation
+— the plays' relative order is kept, the interleaved stream draws are
+not: a documented RNG-stream deviation for those three sites, the same
+class as wave E's dust skips). The tower shield-flip cries
+(`:39089`/`:39093`) need the shield-strength mirror (unported).
+The Sand Shark (`:40581`, case 15 style 4), the duck (`:23680`),
+the Pixie (`:24855`), the Queen Bee charge hiss (`:24449`), the
+Goblin Summoner apparition cue (`:56403`), the Deerclops screams and
+the DD2/Pal cue families await their kinds/machines — the case maths
+and bank rows are table-complete. The EoC expert rage roars
+(`:20694`/`:20729`) await the expert states.
+
+**Verification.** Code-only: the census grepped every `PlaySound` in
+NPC.cs, each landed site re-read with its enclosing method + guards;
+the bank assets and `soundid.rs` rows verified by grep. Witness
+tests WRITTEN, NOT RUN — `s1_e_21g_*`: 2 in sound.rs (the case-15/36
+tables), 4 in audio.rs (the roar draw-neutrality, the overload split,
+the case-2 stream contract, the pixie draw), 3 in world_sim/npcs.rs
+(the Skeletron roar wiring, the drain's ordered-draws contract with
+the muted draw-free control, the worm soundDelay cadence). **No
+compiler invoked.**
+## S1-D-4 empress proj — the Empress of Light's projectile AIs (code-only)
+
+**Task.** R7's Empress machine (`npc_ai_empress.rs`, `task/S1-D-3-empress-audit`,
+ebdf83e3, pushed not merged) documented its projectile AIs as the remainder.
+This round ports them into the NEW `crates/tr-app/src/projectile_ai_empress.rs`
+as pure per-kind functions behind a kind gate, adds the five missing
+`proj_data` rows, and claims a gated dispatch arm. **No compiler invoked**
+(code-only wave); the 9 witness tests are WRITTEN, NOT RUN.
+
+**Census (verified, the brief's guesses corrected).** Ids from
+`ID/ProjectileID.cs`, styles/flags from each `SetDefaults` arm, arms located
+through the `AI()` if/else chain (`Projectile.cs:23199-36807`):
+
+| id | name | aiStyle | SetDefaults | AI arm | main row |
+|----|------|---------|-------------|--------|----------|
+| 872 | HallowBossLastingRainbow (`ProjectileID.cs:2298`) | 173 | `:8403-8415` | `AI_173_HallowBossRainbowTrail` `:45429-45440` | MISSING → added |
+| 873 | HallowBossRainbowStreak (`:2300`) — the prismatic bolt | 171 | `:8354-8366` | `AI_171_HallowBossRainbowStreak` `:45451-45558` | MISSING → added |
+| 874 | HallowBossDeathAurora (`:2302`) | **0** | `:8367-8379` | NONE (no style-0 arm in `AI()`) | MISSING → added |
+| 919 | FairyQueenLance (`:2392`) — the ethereal lance | 179 | `:8714-8726` | `AI_179_FairyQueenLance` `:45032-45056` | MISSING → added |
+| 923 | FairyQueenSunDance (`:2400`) | 180 | `:8757-8770` | `AI_180_FairyQueenSunDance` `:44984-45030` | MISSING → added |
+
+The brief's "874 PrismaticBolt / 873 EtherealLance / 872 SunDance?" was
+remapped: the prismatic bolt is 873, the ethereal lance is 919, the sun
+dance is 923; 874 is the death-aurora flash (a pure visual). **871**
+(HallowBossSplitShotCore, style 172, `:8380-8392`,
+`AI_172_HallowBossRainbowPelletStorm` `:45569-45625` + the
+`HallowBossPelletStormInfo` struct `:197-237`) and **924** (FairyQueenHymn —
+NO `SetDefaults` arm exists; an unused id) are NOT spawned by `AI_120`
+(R7's request set is exactly {874, 873, 919, 872, 923}) — both stay
+unclaimed and unrowed. Boundaries: R56's style 194 untouched; R19b's ai001
+slice-C kinds untouched (none of the five is aiStyle 1); the style-171
+weapon variants **931/1039** are EXCLUDED from the gate — their `AI_171`
+parameter overrides (`:45462-45492`, `:45551-45554`) and the friendly
+`FindTargetWithLineOfSight` branch (`:45507-45526`, `:45627-45660`) belong
+to the player-weapon port. For hostile 873 `friendly` is constant false
+(`:8361`), so the friendly branch is unreachable by construction.
+
+**Coverage.** All four AI arms ported WHOLE (not just the two highest-value):
+- **872 / AI_173**: the opacity = `GetLerpValue(0,60,timeLeft)` ×
+  `GetLerpValue(660,600,timeLeft)`; the velocity rotates by `ai[0]` FIRST,
+  then `ai[0] += (π/360)/30` while `< π/360` (a 30-tick curvature ramp into
+  a constant-curvature spiral); `rotation = ToRotation + π/2`.
+- **873 / AI_171 (hostile)**: three timeLeft phases — `>140` swirl
+  (`×0.98` then the cos-phased turn, phase = `whoAmI%6/6 + x/320 + y/160`),
+  `140≥t>30` homing (`Vector2.SmoothStep` toward
+  `DirectionTo(player[(int)ai[0]].Center)*30` at amount
+  `Lerp(0.05,0.1,GetLerpValue(140,30,t))`; an out-of-range index keeps the
+  velocity), `≤30` straight. The opacity ramp `GetLerpValue(240,220,t)` is
+  1 for the whole 200-tick life (alpha 0 from tick 1 — the spawn's 255 never
+  shows). The SmoothStep is XNA's zero-tangent Hermite (the ReLogic double
+  twin `Vector2D.cs:437-456` pins the polynomial; the guards are unreachable
+  at amount ∈ [0.05, 0.1]).
+- **919 / AI_179**: `localAI[0]++`; at `≥60` the velocity re-writes to
+  `ai[0].ToRotationVector2()*40` EVERY tick + the 1-in-3 dust; the 360-tick
+  self-kill (unreachable at the stock 240 life, kept verbatim) returns
+  BEFORE the alpha/rotation tail; `alpha = (int)Lerp(255,0,GetLerpValue(0,20,localAI[0]))`
+  (truncation), `rotation = ai[0]`.
+- **923 / AI_180**: the first-tick sound (skipped, no rand); `localAI[0]++`;
+  the 180-tick kill; `alpha -= 15` floored 0; `scale` = the 0→20 × 180→120
+  ramp product; `rotation = ai[0] + GetLerpValue(50,180,localAI[0])·π/9`;
+  `ai[1]` in range → velocity zero + (live 636 only) the centre snap; out
+  of range → `Kill()`. The 13-point `CastLightOpen` walk is the lighting skip.
+- **874 / style 0**: no AI writes; only `HandleMovement`'s default arm
+  (`position += velocity`, `:19851`) — the port integrates after the match.
+
+**RNG by construction** (every draw cited; the dust-pool assumption is R7's:
+below the 50 % skip tier `Dust.cs:142-148`, on-screen, `ChildSafety.Disabled`):
+- 872 / 874 / 923: **zero** `Main.rand` draws (pure maths / no arm / sound +
+  light only).
+- 873: **zero in the AI**. The 20-dust death burst is in `Kill()`
+  (`:71490-71521`): per dust `NewDustPerfect` 6 (`Dust.cs:170-175`, `:190`)
+  + the colour `NextFloat` (`:71502`) + the velocity `NextFloat` (`:71519`)
+  = 8 × 20 = 160 draws — the port's kill seam runs no `Kill()` visuals
+  pool-wide (the ai001/ai026 precedent), a documented pool-wide skip.
+- 919: the ONE site — every tick `localAI[0] ≥ 60`: `Next(3)` ALWAYS (1
+  draw); on 0 the dust's 6 (`Next(1)`×2 with w/h clamped to 5,
+  `Next(-20,21)`×2, `Next(3)`, `Next(-20,21)`; type 267 is in none of the
+  extra-draw lists `Dust.cs:214-252`) + the colour `NextFloat` (`:45044`;
+  `AI_171_GetColor` `:45560-45567` draws nothing) = 8 total. The visuals
+  skip; the draws are consumed in C# order (witness-pinned).
+
+**Deliberate deviations / remainder.**
+- The movement is the `HandleMovement` default-arm stand-in (all five are
+  `tileCollide = false`); `Vector2.Normalize` guards zero → zero (the
+  Fishron/R7 precedent, differs only on exact overlap).
+- The double-precision casts are kept where the C# spells them
+  (`RotatedBy`/`ToRotation`/`ToRotationVector2` compute cos/sin/atan2 in
+  double then cast — `Utils.cs:1655-1684`).
+- **Wiring remainder**: the spawner is UNWIRED — R7's
+  `EmpressRequest::Projectile` drain + the `NpcKind::HallowBoss` (636) row
+  land with R7's merge; until then `npc_ref`'s `is_empress` is false, so the
+  sun-dance centre snap cannot fire through the live dispatch (the core is
+  faithful and witness-tested through `EmpressNpcRef`). The dispatch arm is
+  KIND-gated ahead of `_ => {}` — every unclaimed kind (incl. 931/1039)
+  keeps the fall-through byte-identical.
+- **Damage-side slices** (the wiring/damage work owns them): the telegraph
+  invuln (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
+  `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+  `:14788-14796`), 919's ±40-px line hitbox (`Colliding` `:15625-15641`),
+  923's three-segment beam (`:15642-15668`), 872's every-2nd-of-50 oldPos
+  hitbox (`:15675-15694` — needs the 120-entry `TrailCacheLength` ring,
+  `ProjectileID.cs:522`, vs the port's fixed 10).
+- **Render-side slices**: 872/873's mode-2 trail rings (cache 120/60,
+  `ProjectileID.cs:521-522`), the `GetAlpha`/`AI_173_GetColor` tints
+  (`:45442-45449`, `:78999-79002`), 923's `drawLayer = 2` (`:8769`) + beam
+  draw (`Main.cs:28268`), the sounds (`SoundID.Item159` `:44988`).
+
+**Verification.** Code-only: the C# arms re-read whole (the SetDefaults
+slices, the AI bodies, the Kill burst, the Colliding/Damage gates, the
+Utils/Dust/Vector2D helpers); the dispatch insertion checked against the
+existing arm list (no style-0/171/173/179/180 arm existed — the five kinds
+rode `_ => {}`); the 9 witness tests are WRITTEN, NOT RUN — **no compiler
+invoked**.
+## The Frost Moon projectile family (S1-D-4)
+
+**Code-only round** (`task/S1-D-4-santa-projectiles`, 2026-11-19): no
+cargo/rustc/rustfmt/tests invoked — file reads/writes + git only. The
+witness tests in `crates/tr-app/src/projectile_ai_frostmoon.rs::tests` are
+WRITTEN, NOT RUN; run `cargo test -p tr-app projectile_ai_frostmoon` when a
+compiler pass is allowed.
+
+### The census (present/missing on main before this round)
+
+R25's style-61 census documented the SantaNK1 rows 350/351/352 unported
+(`Projectile.cs:4400-4429`). This round extended the census to the whole
+Frost Moon projectile family — Everscream's needles/ornaments and
+IceQueen's wave/shards included. **All eight rows were missing** from
+`proj_data`, and no dispatch arm claimed any of the kinds (the only
+pre-existing hit was the aiStyle-2 ladder's 347 arm,
+`projectile.rs:2264` — the shrapnel's flight tail was already ported but
+the kind had no row, so it could never spawn). The task brief's id guesses
+(347/348/349 for ornaments/needles, 353/354/355 for the IceQueen pair) are
+corrected against `ProjectileID.cs:1244-1258`: 353 is BabyGrinch, 354
+CrimsandBallGun (rowed, the sand family), 355 VenomFang (rowed, the
+M4-PROJ-6 rider) — none is Frost Moon.
+
+| id | name (`ProjectileID.cs`) | style | SetDefaults (`Projectile.cs`) | row before | arm before | landed |
+| --- | --- | --- | --- | --- | --- | --- |
+| 345 | PineNeedleHostile `:1244` | 1 | `:4353-4360` (4x4, scale 0.8) | MISSING | generic `ai_arrow` (no 345 hook) | row + `step` (the `:57116-57128` 50-tick +0.5 drop, the counting flag3) |
+| 346 | OrnamentHostile `:1246` | 14 | `:4361-4369` (18x18, pen -1, life 300) | MISSING | `ai_spear` generic (no 346 block) | row + `ornament` head (frame pin, burst) ahead of `ai_spear` |
+| 347 | OrnamentHostileShrapnel `:1248` | 2 | `:4370-4377` (6x6, pen -1) | MISSING | the style-2 ladder's 347 arm existed (`:23503-23510`) | row only — the existing arm now reachable |
+| 348 | FrostWave `:1250` | 1 | `:4378-4389` (48x48, pen -1, no tile, extra 1, life 900) | MISSING | generic `ai_arrow` | row + `step` (the `:56246-56273` ai[0] pulse, flag3 rest) |
+| 349 | FrostShard `:1252` | 1 | `:4390-4399` (12x12, pen -1, life 900) | MISSING | generic `ai_arrow` | row + `step` (the `:56221-56245` frame pin + every-tick +0.2 + localAI[0] pulse) |
+| 350 | Missile `:1254` | 1 | `:4400-4410` (14x14, alpha 255, pen -1, no tile, life 300) | MISSING | generic `ai_arrow` | row + `step` (the `:55130-55163` fade-100 + ai[1] latch) |
+| 351 | Present `:1256` | 58 | `:4411-4420` (24x24, alpha 255, pen -1, no tile) | MISSING | NO style-58 dispatch arm | row + `present` + the new gated `58 =>` arm (`:28906-28937`) |
+| 352 | Spike `:1258` | 14 | `:4421-4429` (30x30, pen -1, life 1200) | MISSING | `ai_spear` generic (no 352 block) | row + `spike_pulse` head (`:24848-24866`) ahead of `ai_spear` |
+
+Frame sheets (`Main.cs`): 351→2 (`:8529`), 349→5 (`:8530`), 346→2
+(`:8565`), 347→2 (`:8566`); 345/348/350/352 keep the init 1.
+
+Boundary exclusions honoured: R62's empress kinds (872-874/919/923),
+R63's styles 31/147/181/193, R56's 194, R19b's ai001-C kinds
+(110/275/276/634/635/645/662/675/685 — verified against
+`origin/task/S1-D-5-aistyle1-types-c`'s `SLICE_C_KINDS`) are untouched; the
+new aiStyle-1 gate is kind-disjoint from slices A/B/C by construction.
+
+### Structure decisions
+
+- The four aiStyle-1 kinds ride the slice-A/B module shape
+  (`projectile_ai_frostmoon::step` + `finish_flight`, the verbatim
+  `ai_style1_flight` tail replication) — the C# block order preserved:
+  hook group → flag3 counter → below-counter hooks → the gravity else-if
+  chain → the shared tail. 345 counts (not on the flag3 list) and pins at
+  50 in its own arm; 348/349/350 rest (`:55985-55987`) so the generic
+  `ai[0] >= 15` gravity never opens for them — they fly straight (the
+  349's +0.2 is its own hook's, applied every tick).
+- The aiStyle-14 pair are HEADS only: the dispatch runs `ornament` /
+  `spike_pulse` and then the SAME generic `ai_spear` tail — no parallel
+  flight copy. The 346 burst's five spawns ride back to the pool
+  (`ShrapnelSpawn`, the nebula request shape) and drain through
+  `spawn_with_data_ai_owned` with the ornament's owner, Damage 40 / KB 0
+  (`:24894`), `ai1 = ornament.ai[1]` (the frame payload), the box centred
+  (`NewProjectile` `:10876-10877` — the spawn site subtracts the 6x6
+  half-box). The spawned shrapnel is flipped `friendly = false` (the
+  `spawn_hostile` convention — the row's stock friendly is false, the
+  pool's slot default true).
+- The style-58 arm is inline in the module (`present`) and gated to 351
+  in the dispatch — the style's only rowed kind, so no other kind's
+  behaviour changes. The C#'s two consecutive `if`s (`:28913`/`:28926`)
+  are kept: the tick that flips ai[0] to 1 runs BOTH blocks (frame 1, the
+  second +0.1, the drag) in the same tick — the witness pins it.
+- The 346 burst's `owner == Main.myPlayer` gate (`:24883`) folds to the
+  pool's `simulated` gate: the port models hostile shots as owner 255
+  (`spawn_hostile`) while the C# spawns with `Owner: Main.myPlayer`
+  (`NPC.cs:32885`); the arm only runs on locally-simulated slots
+  (`projectile.rs:12961-12965`), which IS the owner test in the
+  single-player port (the saucer precedent).
+
+### RNG by construction
+
+- **Zero-draw arms**: 345 (`:57116-57128` — the latch is sound-only), 348
+  (`:56246-56273` — sound-only latch), 349 (`:56221-56245`), 352
+  (`:24848-24866`), 351 (`:28906-28937`) contain no `Main.rand` call at
+  all. Their ports cannot drift any stream.
+- **350's dust window** (`:55138-55157`): `Next(3)` (+ inner `Next(10)`),
+  `Next(4)` (+ inner `Next(5)`) — every draw feeds `Main.dust` alone, no
+  observable state. The window is SKIPPED whole with its draws (the
+  aiStyle-1 pool's zero-RNG convention, the slice-A/B precedent — the
+  same documented stream-position deviation those slices carry). No
+  trajectory can change; the deviation is the convention, recorded here.
+- **346's burst** (`:24885-24894`): the draws FEED observable state (the
+  five shrapnel velocities) and are KEPT on the pass's threaded stream in
+  the C#'s exact order — per fragment `Next(-20,21)` → `Next(-20,0)` →
+  `Next(-30,31)` (SpeedX's jitter, named-argument evaluation order) →
+  `Next(-30,31)` (SpeedY's). The Y draw's range tops at −1, so the
+  `10/sqrt(dx²+dy²)` normalise never divides by zero. The recording-stream
+  witness (`the_ornament_bursts_five_shrapnel_in_draw_order`) pins the
+  20-draw sequence. The burst fires once per ornament (timeLeft == 1),
+  so the stream cost is deterministic per spawn.
+- The spawn-site draws (`NPC.cs:32838`'s `Next(0,31)` ai0 payload,
+  `:32885`'s `Next(2)` frame pick, `:33607`'s `Next(5)`, the velocity
+  jitters) belong to the NPC-side machines (the S1-F-13c frost-boss
+  slices own them — `npc_ai_frost_boss.rs`/`_b.rs` already carry them);
+  this round adds no spawn site, so no UpdateNPCs-stream position moves.
+
+### Deliberate skips
+
+Dust (350's window, 346/349's Kill bursts `:74171-74181`/`:74236-74249`,
+345's Kill burst `:74020-74028` — all dust/sound-only), light (346's
+per-frame `AddLight` `:24877`/`:24881`, 350's `:55137`), sound (345 Item1,
+346 Item1, 348 Item8, 350 Item42), `netUpdate`, `coldDamage` (348/349 —
+damage-side, no consumer). The `Kill()` dust arms need no port: the pool's
+death path carries no per-kind Kill hooks for these kinds and the C#
+blocks roll nothing observable.
+## The Moon Lord projectile family (S1-D-4, task/S1-D-4-moonlord-projectiles, 2026-11-19, code-only mode)
+
+**Scope.** The moon-lord projectile family completeness pass: census every
+Moon Lord / lunar-event projectile id, verify its data row + dispatch arm on
+main, port the missing ones. The moon-lord NPC machine (R6b, TR-D3moon) was
+NOT touched. Boundaries honoured: R62 empress (872-874/919/923), R63 styles
+31/147/181/193, R56 style 194, R64 frostmoon (347-355), R19b ai001-C kinds
+(110/275/276/634/635/645/662/675/685) — all excluded.
+
+### Census table (ids verified against ProjectileID.cs, not the brief)
+
+The task brief guessed "PhantasmalBolt/PhantasmalEye/PhantasmalDeathray/
+PhantasmalSphere ~613-617" — **wrong**: the phantasmal ids are 452/454/455/462
+(`ProjectileID.cs:1458`/`:1462`/`:1464`/`:1478`); 613-617 are the DD2
+squire/apprentice shots + the Vortex Beater pair (615/616).
+
+| id | name | family | SetDefaults | row on main | arm on main | this task |
+| --- | --- | --- | --- | --- | --- | --- |
+| 452 | PhantasmalEye | ML hostile | `:5240-5249` (14x14, st82, pen −1, t600, α255) | yes | `ai_phasmal_eye` (st82 dispatch) | verified, untouched |
+| 454 | PhantasmalSphere | ML hostile | `:5259-5269` (40x40, st83, tileCollide false) | yes | `ai_phasmal_sphere` (st83) | verified, untouched |
+| 455 | PhantasmalDeathray | ML hostile | `:5270-5280` (36x36, st84) | yes | `ai_phasmal_deathray` (st84 kind split) | verified, untouched |
+| 456 | MoonLeech | ML hostile | `:5281-5291` (16x16, st85) | yes | `ai_moon_leech` (st85) | verified, untouched |
+| 462 | PhantasmalBolt | ML hostile | `:5329-5339` (8x8, st1, extra 3, tileCollide false) | yes | ai001_b `step` | verified, untouched |
+| 622 | BlowupSmokeMoonlord | ML drama | `:6691-6698` (10x10, st1, extra 2) | yes | ai001_b `step` | verified, untouched |
+| 638 | MoonlordBullet | ML drop (S.D.M.G.) | `:6858-6872` | **NO** | **NO** (generic ai_arrow) | **PORTED** |
+| 639 | MoonlordArrow | ML drop (Phantasm) | `:6873-6888` | **NO** | **NO** | **PORTED** |
+| 640 | MoonlordArrowTrail | ML drop (Phantasm ghost) | `:6889-6903` | **NO** | **NO** | **PORTED** |
+| 641 | MoonlordTurret | ML drop (sentry) | `:6916-6928` (st123) | yes | `ai_floating_turrets` (S1-D-4b-3) | verified, untouched |
+| 642 | MoonlordTurretLaser | ML drop beam | `:6904-6915` (st84) | yes | `ai_moonlord_turret_laser` | verified, untouched |
+| 645 | LunarFlare | ML drop (spell) | `:6953-6965` (st1, extra 5, tileCollide false) | yes — under the misnamed `POISON_DART` const | ai001-C IN FLIGHT (`task/S1-D-5-aistyle1-types-c`) | const doc corrected; arm EXCLUDED (C owns it) |
+| 634/635 | NebulaBlaze1/2 | lunar weapon | `:6820-6857` | yes | ai001-C IN FLIGHT (R19b) | EXCLUDED per boundary |
+| 607 | SolarFlareRay | lunar weapon (Solar Eruption) | `:6542-6553` (st116) | no | no (st116 `:34438` unported) | DEFERRED (census row) |
+| 615 | VortexBeater | lunar weapon (holder) | `:6620-6631` (st75) | yes (the gunProj row `615 \| 630 \| 705 \| 714`) | **st75 falls into `ai_last_prism`** — see deviation below | DEFERRED + deviation recorded |
+| 616 | VortexBeaterRocket | lunar weapon | `:6632-6643` (st1, extra 2, t90×Max) | no | no | DEFERRED (census row) |
+| 625-628 | StardustDragon1-4 | lunar weapon (minion) | `:6729-6753` (st121, minion, 0.5 slots for 626/627) | no (only the MINION_SACRIFICABLE/TARGETING lists) | no (`AI_121_StardustDragon` `:42824` unported) | DEFERRED (census row) |
+| 646-649 | Lunar hooks | lunar weapon (hooks) | `:6966-6976` (st7) | yes (grapple rows) | `ai_hook` (M4-PROJ-5) | verified, untouched |
+
+The lunar PILLAR ritual projectiles (540 mark, 574 nebula eye, 578/579/580
+vortex, 629 tower bolt) are event-machine shots, not moon-lord drops —
+already rowed/armed (S1-D-4c), outside this row's scope.
+
+### What was ported (the three drop shots)
+
+`crates/tr-app/src/projectile_ai_moonlord.rs` — the gated aiStyle-1 seam
+(the ai001_a/b precedent): `covers()` claims ONLY 638/639/640, chained after
+A/B in the dispatch; every other kind keeps `ai_arrow` byte-identical. The
+in-flight C slice (110/275/276/634/635/645/662/675/685) is kind-disjoint.
+
+- **638**: the byte-truncated speed fade `alpha -= (byte)(speed * 0.3)`
+  (`Projectile.cs:55866-55874`, double product → i32 cast exact for every
+  reachable speed); flag3 rest (`:56018`); the proximity dust burst
+  (`:55875-55898`) skipped with its `Next(15,31)` draw.
+- **639**: the one-shot centre/velocity latch (`:55417-55423` — localAI[0..1]
+  = Centre, ai[0..1] = velocity; the Kill() trail spawn reads them back),
+  fade 25 (`:55424-55428`), flag3 rest (`:56019`), the own gravity arm
+  `timeLeft <= MaxUpdates*45 − 14` = 76 → +0.1 (`:57542-57548`, no counter
+  pin — ai[0] holds the latched vx).
+- **640**: fade 25 + the at-rest block (`:55430-55451`): ai[0] = 0, the
+  oldPos all-equal scan → Kill+return; NOT on the flag3 list — counts, so
+  the generic `ai[0] >= 15` gravity arm applies while flying (`:57568`);
+  the own rotation tail `atan2 + π/2` only while moving (`:57737-57743`);
+  the stick arm (`HandleMovement` `:18308-18316`): first blocked move →
+  localAI[1] += 2, one last full-velocity step, velocity zeroed; while
+  localAI[1] > 0 the `:17590` gate skips TileCollision entirely.
+- **Pool-side** (`projectile.rs`): the 640's `ai[1] > 0` spawn-delay
+  countdown skips the WHOLE sub-step ahead of the out-of-world guard
+  (`:16679-16683`); the `moonlord_arrow_kill` death hook ports the 639's
+  Kill() arm (`:73431-73452`): spawn the 640 at the latched centre with the
+  latched velocity, damage/knockback/owner carried, `ai1 = num + 1` where
+  `num` is Kill()'s captured pre-zeroing timeLeft (`:70649` — the new
+  `Projectile.kill_time_left` field, written by the death paths that zero
+  time_left) plus one more when the new slot sits above the update loop
+  index (`:73446-73449` — the same-tick double-update compensation; the
+  port's `for i in 0..MAX` loop reaches a higher slot in the same update,
+  so the bump is exact). The corpse-active flip during GetNextSlot mirrors
+  the C#'s ordering (Kill's `active = false` lands at `:77262`, AFTER the
+  arm).
+- **On-hit decay** (`damage_pve`'s landed block): the 638/639/640's
+  `damage = (int)((double)damage * 0.96)` (`:14177-14180`), after the
+  strike, ahead of the penetrate decrement — the C# arm's own position.
+- **Rows** (`projectile/data.rs`): the three verbatim SetDefaults slices
+  with the local-immunity −1 pairs, `arrow = true` on the 639 only,
+  MaxUpdates → extraUpdates via the setter (`:560-563`), the ignoreWater
+  tail entries; `trailing_mode` gains the three mode-0 entries
+  (`ProjectileID.cs:521`). Sheets exist (`Projectile_638/639/640.xnb`).
+
+### RNG argument (zero draws by construction)
+
+The module takes NO rng parameter. Every C# `Main.rand` draw in the ported
+blocks is dust-only — its result feeds nothing but a dust count/velocity/
+scale, never state: the 638 proximity burst `Next(15,31)` (`:55889`), the
+640 dust gates `Next(extraUpdates)`/`Next(2|6)`/`Next(2)`/`NextDouble`/
+`Next(10)` (`:55453-55470`) and the numUpdates==1 trail dust
+(`:55473-55481`), the Kill() dust counts `Next(5,10)` (`:73433`) and
+`Next(2,5)` (`:76123`). Skipping them with the dust layer therefore keeps
+every state-bearing decision identical (the ai001_a/b dust-skip
+convention). The ported arms draw nothing, so the pass's UpdateProjectiles
+stream is untouched for every OTHER kind — byte-identical by construction.
+The `damage_pve` decay is pure arithmetic (no variance draw added).
+
+### Deliberate deviations / deferrals
+
+- **`POISON_DART` = 645 is the LunarFlare, not a poison dart.** The C#
+  `ProjectileID.PoisonDart` is 98 (`ProjectileID.cs:750`, rowed as
+  TRAP_DART); `Projectile.cs:6953-6965` is the 645 LunarFlare block. The
+  existing row's values (10x10 st1 pen−1 extra5 tileCollide false) are
+  correct for the LunarFlare; its α/immunity state stays on the Phase-2
+  freeze (the baseline sweep test pins it) until ai001-C lands. The const
+  doc now records the misnomer; the RENAME is left to the C slice (it owns
+  the 645 arm and references the name).
+- **The 615 VortexBeater rides the Last Prism arm.** The st75 dispatch
+  (`projectile.rs`'s `75 => ai_last_prism`) has no kind gate; the C#
+  `AI_075` runs per-type blocks (`:66872-66981` for the 615 — the 5-tick
+  machine-gun cadence, the ammo PickAmmo, the every-7th-volley 616 rocket
+  at Damage+20/KnockBack×1.25). The 615 row exists (the gunProj ammo row),
+  so a spawned Vortex Beater today channels like a Last Prism. RECORDED,
+  not changed here (the fix is the 615/616 deferred slice: the AI_075 kind
+  split + the 616 row/arm + its Kill() burst `:73646-73674` with the
+  80x80 Damage() resize and the gore `Next(61,64)`/`Next(-10,11)` draws).
+- **The dead duplicate phantasmal rows** (data.rs's second phantasmal
+  group, byte-identical unreachable repeats of the first) belong to the
+  in-flight `task/S1-D-5-projdata-deviations` purge ("the moon-lord
+  merge's 11 byte-identical duplicate rows" + deny(unreachable_patterns))
+  — left untouched to avoid a merge conflict; the census confirms they
+  are dead (the first match arm wins).
+- **The 640's ring length**: the C# TrailCacheLength is 20
+  (`ProjectileID.cs:522`); the port's fixed 10-entry ring + once-per-update
+  shift is the pre-existing recorded trail-density deviation
+  (`shift_trailing_history`). The all-equal kill scan reads the port's
+  ring — a stuck trail settles in ≤10 updates instead of ≤20.
+- **The 640's numUpdates==1 dust arm** has no port field (`numUpdates` is
+  the sub-step loop counter, not slot state) — skipped with the dust.
+- **The 638's `base.wet = false`** (`:16786-16789`) — no wet state in the
+  pool; skipped.
+- **Deferred lunar weapons** (census rows above): 607 (st116), 615/616
+  (the AI_075 split + the rocket), 625-628 (AI_121, needs the unported
+  minion-chain machinery `:43008-43022`). None is moon-lord-hostile; they
+  are player weapons and ride their own future slices.
+
+**Verification.** Code-only: the C# blocks were re-read whole (the AI_001
+hook chain nesting, the flag3 switch membership, the HandleMovement stick
+arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
+Update countdown position). The 10 witness tests in
+`projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.

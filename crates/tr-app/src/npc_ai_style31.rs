@@ -48,9 +48,10 @@
 //!   raise only run on an ACTIVE timer (>= 0).
 //! - `Main.netMode != 1` is constant-true (the port is single-player,
 //!   netMode 0): the shot blocks and the discourage loop always run.
-//! - The dust/gore visuals and the sounds (3 / 15 / Item34) are
-//!   SKIPPED — no dust/gore/sound layer — but every `Main.rand` draw
-//!   they carry is kept in order (see the RNG list above).
+//! - The dust/gore visuals and the phase sounds (3 / 15) are
+//!   SKIPPED — no dust/gore layer — but every `Main.rand` draw
+//!   they carry is kept in order (see the RNG list above). The
+//!   flamethrower's Item34 loop (`:27493`) queues its play (S1-E-21g).
 //! - `reflectsProjectiles = false` (`:27099`) / `= true` under the
 //!   Mech Queen (`:27330`): the port has no NPC projectile-reflect
 //!   flag; with no Mech Queen the C# value is constant-false, the
@@ -598,11 +599,17 @@ fn ai_body(
             crate::player::WIDTH,
             player.height,
         ) {
-            // `:27489-27494` — the 23-tick flamethrower sound loop
-            // (Item34 skipped, the counter kept).
+            // `:27489-27494` — the 23-tick flamethrower sound loop: the
+            // counter wraps past 22 and the wrap plays Item34 (S1-E-21g
+            // wires the cue; the queue rides the machine's stream).
             npc.local_ai[2] += 1.0;
             if npc.local_ai[2] > 22.0 {
                 npc.local_ai[2] = 0.0;
+                npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Item34,
+                    x: npc.x,
+                    y: npc.y,
+                });
             }
             // netMode != 1 is constant-true.
             // `:27497-27513` — the shot timer with the hp ladder.

@@ -1032,6 +1032,64 @@ pub struct GallopDustAi {
     pub vy: f32,
 }
 
+/// S1-E-21g — one queued NPC-side sound play (the `wants_hostile_shot`
+/// shape): the AI machines run without the `Audio` borrow, so the
+/// `SoundEngine.PlaySound` sites queue their (case, style, position)
+/// and the sim drains them AFTER the machine's own draws, on the
+/// `UpdateNPCs` stream (`Main.cs:17767`), attenuation-gated inside the
+/// play method before any case draw (the E21e precedent). The queue
+/// preserves the C#'s intra-tick play order.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NpcSoundCue {
+    /// `PlaySound(15, pos, style)` — the boss roar, case 15
+    /// (`LegacySoundPlayer.cs:826-842`; `NPC.cs:20375`/`:21946`/
+    /// `:22169`/`:32418`, the EoC death `:87297`). No draws.
+    Roar(i32),
+    /// `PlaySound(36, pos, style)` — the dash roar, case 36
+    /// (`LegacySoundPlayer.cs:1309-1325`; the EoC's `NPC.cs:20500`/
+    /// `:20694`). No draws.
+    DashRoar(i32),
+    /// `PlaySound(SoundID.Item8, pos)` — the caster teleport puff
+    /// (`NPC.cs:20862`/`:20931`/`:21232`, the Brain's blinks
+    /// `:32505`/`:32622`); the style façade + case 2's one pitch draw.
+    Item8,
+    /// `PlaySound(SoundID.Item14, pos)` — the Golem fist's dash launch
+    /// (`NPC.cs:19415`, `AI_047_GolemFist`'s `ai[1] == 1` tick); case 2.
+    Item14,
+    /// `PlaySound(SoundID.Item34, pos)` — the Spazmatism flamethrower
+    /// loop (`NPC.cs:27493`, the 23-tick `localAI[2]` wrap); case 2.
+    Item34,
+    /// `PlaySound(3, pos)` — the int hit overload (Style defaults 1):
+    /// the EoC's phase hand-off (`NPC.cs:20364`) and the Brain's retreat
+    /// entry (`:32408`); case 3's one pitch draw, NO NextFloat.
+    NpcHit(i32),
+    /// `PlaySound(4, pos, style)` — the int killed overload: the tower
+    /// dissolve's 60-tick cry (`NPC.cs:39059`, style 22), the Moon
+    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6);
+    /// case 4's one pitch draw, NO NextFloat.
+    NpcDeath(i32),
+    /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
+    /// crash cry (`NPC.cs:41432`, the style façade); case 4.
+    NpcDeath61,
+    /// `PlaySound(SoundID.NPCDeath13, pos)` — the leech head's
+    /// tunnel-entry burst (`NPC.cs:50968`, the style façade); case 4.
+    NpcDeath13,
+    /// `PlaySound(SoundID.EOWDiggin, pos)` — the EoW head's dig rumble
+    /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
+    /// draws, the pinned variation like wave A).
+    EowDig,
+}
+
+/// One queued play: the cue plus the C# call site's world-pixel position
+/// (`base.position` truncated by the int overload; the style overloads
+/// pass the Vector2 and `SoundEngine.cs:88-91` truncates it the same way).
+#[derive(Clone, Copy, Debug)]
+pub struct NpcSoundRequest {
+    pub cue: NpcSoundCue,
+    pub x: f32,
+    pub y: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Npc {
     /// `NPC.shimmerTransparency` (`NPC.cs`'s field) — the 1.0 of a
@@ -1144,7 +1202,10 @@ pub struct Npc {
     pub despawn_timer: i32,
     /// `NPC.soundDelay` (`NPC.cs:6440`): the AI sound cooldown, decremented
     /// once per update BEFORE the AI runs (`NPC.cs:90381-90383`). The
-    /// Destroyer's burrow roar arms it (`AI_037`, `:50081-50094`).
+    /// Destroyer's burrow roar arms it (`AI_037`, `:50081-50094`);
+    /// S1-E-21g's roar/wing play sites re-arm it with the distance/40
+    /// clamp (10..20) (`:40580`/`:50092`/`:51987`) — one shared field
+    /// (the just_hit dedupe precedent).
     pub sound_delay: i32,
     /// The Destroyer body's probe launch (`HitEffect`, `NPC.cs:89266-89285`):
     /// the strike path rolls the gate and parks the bottom-centre anchor;
@@ -1436,6 +1497,12 @@ pub struct Npc {
     /// 62437`): fully-rolled at the AI site, drained into the DustPool
     /// post-tick (`world_sim/npcs.rs`).
     pub wants_gallop_dust: Vec<GallopDustAi>,
+    /// S1-E-21g — the NPC-side sound requests (`SoundEngine.PlaySound`
+    /// sites inside the AI machines): the sim drains them after the
+    /// machine's draws on the `UpdateNPCs` stream (the
+    /// `wants_hostile_shot` shape). Empty for every kind whose machine
+    /// has no wired cue.
+    pub wants_sound: Vec<NpcSoundRequest>,
     /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
     /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
     /// 263/264/265 have no port arms yet, so the sim records the request
@@ -2528,6 +2595,7 @@ impl Npc {
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
+            wants_sound: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
@@ -8281,6 +8349,25 @@ impl Npc {
                     // instead of standing still.
                     if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
+                    } else {
+                        // S1-E-21g — `:20364-20375`'s hand-off pair: the
+                        // int `PlaySound(3, pos)` (Style defaults 1) then
+                        // the case-15 roar `PlaySound(15, pos, 0)`. The
+                        // gore/dust burst between them draws Main.rand
+                        // (`:20367-20373`) — SKIPPED (the port's gore/dust
+                        // deviation), so the two plays queue back to back
+                        // (ANALYSIS, wave G). Neither play's position is
+                        // the centre — `base.position` (`:20364`/`:20375`).
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::NpcHit(1),
+                            x: self.x,
+                            y: self.y,
+                        });
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::Roar(0),
+                            x: self.x,
+                            y: self.y,
+                        });
                     }
                 }
             }
@@ -8343,6 +8430,13 @@ impl Npc {
                 self.ai[3] = 0.0;
             }
         } else if self.ai[1] == 1.0 {
+            // S1-E-21g — `NPC.cs:20500`: the dash wind-up's case-36 roar
+            // (`PlaySound(36, pos, 0)` — slot 0, no pitch bump). No draws.
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::DashRoar(0),
+                x: self.x,
+                y: self.y,
+            });
             self.rotation = num6;
             let cx = self.x + w * 0.5;
             let cy = self.y + h * 0.5;
@@ -9397,6 +9491,19 @@ impl Npc {
         if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
             self.ai[1] = 2.0;
         }
+        // S1-E-21g — `NPC.cs:21943-21947`: the Dungeon Guardian's (68)
+        // first-tick roar, `localAI[0]` 0 → 1 latched. The `Main.netMode
+        // == 1` half of the gate is the client's replay arm (unported);
+        // no ported kind is 68 yet, so the latch stays table-complete
+        // for the future kind (the E21e duck precedent).
+        if self.kind.cs_id() == 68 && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::Roar(0),
+                x: self.x,
+                y: self.y,
+            });
+        }
         match self.ai[1] as i32 {
             0 => {
                 // `:22019-22051` — the spin: the timer (800 ticks → the
@@ -9495,6 +9602,16 @@ impl Npc {
                 // timer (400 ticks → the spin) and the 1.5-px rush.
                 self.defense_override = Some(self.defense() - 10);
                 self.ai[2] += 1.0;
+                // S1-E-21g — `NPC.cs:22166-22170`: the charge's second
+                // tick roars (`ai[2] == 2` after the increment — the C#
+                // increments then compares).
+                if self.ai[2] == 2.0 {
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::Roar(0),
+                        x: self.x,
+                        y: self.y,
+                    });
+                }
                 if self.ai[2] >= 400.0 {
                     self.ai[2] = 0.0;
                     self.ai[1] = 0.0;
@@ -11824,6 +11941,17 @@ impl Npc {
                 self.vx += (0.0 - self.vx) * 0.98;
                 self.vy += (-0.5 - self.vy) * 0.98;
                 self.ai[1] += 1.0;
+                // S1-E-21g — `NPC.cs:41430-41433`: the crash's first tick
+                // cries (`ai[1] == 1` AFTER the increment — the C# checks
+                // at the arm's tail; `NPCDeath61` at base.Center, the
+                // style façade).
+                if self.ai[1] == 1.0 {
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::NpcDeath61,
+                        x: cx,
+                        y: cy,
+                    });
+                }
                 if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
                     // `:41405-41428`'s smoke: one 622 (0 damage) at the
                     // ±(π/8 + π/4·rand) rotation about the down axis.
@@ -12030,6 +12158,15 @@ impl Npc {
                     self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
                 }
+                // S1-E-21g — `NPC.cs:41836-41838`: the laser wind-up's
+                // 35-ticks-out cry (`PlaySound(4, pos, 6)`, int overload).
+                if num2 == dur - 35.0 {
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::NpcDeath(6),
+                        x: self.x,
+                        y: self.y,
+                    });
+                }
                 if num2 == dur - 14.0 || num2 == dur - 7.0 || num2 == dur {
                     let (ex, ey) = (
                         self.moon_local[0].cos() * 30.0 * self.moon_local[1],
@@ -12140,6 +12277,15 @@ impl Npc {
                     self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
                 }
+                // S1-E-21g — `NPC.cs:42336-42338`: the head's wind-up cry
+                // (`PlaySound(4, pos, 6)` at the 35-ticks-out mark).
+                if num == dur - 35.0 {
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::NpcDeath(6),
+                        x: self.x,
+                        y: self.y,
+                    });
+                }
                 if num == dur - 14.0 || num == dur - 7.0 || num == dur {
                     let (ex, ey) = (
                         self.moon_local[0].cos() * 27.0 * self.moon_local[1],
@@ -12203,6 +12349,15 @@ impl Npc {
                 if num < 90.0 - 19.0 {
                     self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                }
+                // S1-E-21g — `NPC.cs:42609-42611`: the True Eye's wind-up
+                // cry (`PlaySound(4, pos, 6)` at the 35-ticks-out mark).
+                if num == 90.0 - 35.0 {
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::NpcDeath(6),
+                        x: self.x,
+                        y: self.y,
+                    });
                 }
                 if num == 90.0 - 14.0 || num == 90.0 - 7.0 || num == 90.0 {
                     let (ex, ey) = (
@@ -13584,6 +13739,18 @@ impl Npc {
     fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The timer: the 180-tick dissolve (`:39060-39066`'s `ai[1]`).
         self.ai[2] += 1.0;
+        // S1-E-21g — `NPC.cs:39057-39059`: the dissolve's 60-tick cry
+        // (`ai[1] % 60 == 1` — the port's dissolve counter is `ai[2]`,
+        // the recorded stand-in): `PlaySound(4, Center, 22)`, the int
+        // killed overload at styles 1/61/121 of the 180-tick ride.
+        if self.ai[2] % 60.0 == 1.0 {
+            let (ccx, ccy) = self.center();
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::NpcDeath(22),
+                x: ccx,
+                y: ccy,
+            });
+        }
         if self.ai[2] >= 180.0 {
             self.hp = 0;
             return;
@@ -15331,11 +15498,21 @@ impl Npc {
                         };
                     }
                 } else if self.ai[0] == 2.0 {
-                    // The dash (`:19392-19449`): the tick count (the
-                    // Item14 sound + the Next(2) dust roll SKIPPED), the
+                    // The dash (`:19392-19449`): the tick count, the
                     // past-the-player fly-through release on the dominant
                     // axis, the `>700 || collideX || collideY` exit.
                     self.ai[1] += 1.0;
+                    // S1-E-21g — `NPC.cs:19412-19416`: the launch's first
+                    // tick plays Item14 (`ai[1] == 1` after the increment;
+                    // the Next(2) dust roll at `:19417` stays SKIPPED —
+                    // it draws AFTER the play, so the queue order holds).
+                    if self.ai[1] == 1.0 {
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::Item14,
+                            x: self.x,
+                            y: self.y,
+                        });
+                    }
                     if self.vx.abs() > self.vy.abs() {
                         if (self.vx > 0.0 && cx > pcx) || (self.vx < 0.0 && cx < pcx) {
                             self.local_ai[0] = 0.0;
@@ -15519,6 +15696,27 @@ impl Npc {
                 .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
         };
         if self.ai[0] < 0.0 {
+            // S1-E-21g — `NPC.cs:32406-32418`: the retreat entry's pair —
+            // the int `PlaySound(3, pos)` (`:32408`, Style defaults 1)
+            // BEFORE the `localAI[2]` latch, then the gore/dust burst
+            // (draws SKIPPED, the port's gore/dust deviation) and the
+            // case-15 roar (`:32418`). The C#'s latch is `localAI[2]`;
+            // the port's `brain_local[2]` carries the Creeper count (the
+            // documented repurpose, `npc.rs:1246`), so the sound latch
+            // rides the generic `local_ai[2]` slot.
+            if self.local_ai[2] == 0.0 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::NpcHit(1),
+                    x: self.x,
+                    y: self.y,
+                });
+                self.local_ai[2] = 1.0;
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::Roar(0),
+                    x: self.x,
+                    y: self.y,
+                });
+            }
             // `:32420-32430` — the retreat's velocity: the 8-px drift toward
             // the player through the 50/51 blend.
             let dx = pcx - cx;
@@ -15568,6 +15766,14 @@ impl Npc {
                         self.ai[3] = 255.0;
                         self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
                         self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        // S1-E-21g — `NPC.cs:32505`: the blink's Item8
+                        // puff at the NEW centre (`base.Center` — the
+                        // position was just rewritten).
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::Item8,
+                            x: self.x + w * 0.5,
+                            y: self.y + h * 0.5,
+                        });
                         self.ai[0] = -3.0;
                     }
                     self.alpha = (self.ai[3] as i32).clamp(0, 255) as u8;
@@ -15654,6 +15860,14 @@ impl Npc {
                         self.alpha = 255;
                         self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
                         self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        // S1-E-21g — `NPC.cs:32622`: the normal-phase
+                        // blink's Item8 puff — the C# plays BEFORE the
+                        // position rewrite, at the OLD centre.
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::Item8,
+                            x: cx,
+                            y: cy,
+                        });
                         self.ai[0] = 2.0;
                     }
                 }
