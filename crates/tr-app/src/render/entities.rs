@@ -1097,6 +1097,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // S1-F-13d: the Force Bubble's bestiary credit folds onto the
+        // Officer (Hide=true), but its DRAW sheet is its own NPC_384
+        // (the officer's shield overlay, `Main.cs:25773-25777`) — the
+        // fishron-hazard precedent. The turret has its own entry (387).
+        NpcKind::ForceBubble => 384,
         _ => kind.net_id() as u16,
     }
 }

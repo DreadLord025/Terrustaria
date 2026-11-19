@@ -29304,8 +29304,11 @@ mod s1_f_13d_tests {
         assert_eq!(NpcKind::from_u16(148), None, "hole 148 stays free");
         assert!(!(78..=84).contains(&213));
         assert!(!(78..=84).contains(&214));
-        // Wave A's band stays untouched (189 TwiggyZombie, 212 ZombieRaincoat).
-        assert_eq!(NpcKind::from_u16(189), Some(NpcKind::TwiggyZombie));
+        // Wave A's band stays untouched (GATE UPDATE L-B: 189 is MotherSlime
+        // on main — the branch's TwiggyZombie note was stale; Twiggy rides
+        // 210, ZombieRaincoat 212).
+        assert_eq!(NpcKind::from_u16(189), Some(NpcKind::MotherSlime));
+        assert_eq!(NpcKind::from_u16(210), Some(NpcKind::TwiggyZombie));
         assert_eq!(NpcKind::from_u16(212), Some(NpcKind::ZombieRaincoat));
         // The render key rides the vanilla type ids (384/387, unused above).
         let bubble = Npc::new(NpcKind::ForceBubble, 0.0, 0.0, 1, 0.0);
