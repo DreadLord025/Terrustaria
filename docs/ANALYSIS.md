@@ -12532,6 +12532,61 @@ The batch review's three spell-arm findings (the missing
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
 
+## The hardmode staves' use census (S1-P-i21, 2026-11-20, code-only mode)
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`projectile.rs::magic_ai_tests` and `world_sim/editing.rs::tests` are WRITTEN,
+NOT RUN — each expected value was verified by re-reading the cited C# and hand
+arithmetic. A follow-up build must run `cargo test -p tr-app` before merging.
+
+The census of `Player.ItemCheck_Shoot`'s magic arm for the 12 hardmode staves
+(`Player.cs:47056+`), each against its `Item.shoot` kind and the port:
+
+| Staff (item) | shoot | C# shoot arm | Port verdict |
+| --- | --- | --- | --- |
+| CrystalStorm 518 | 94 | dedicated `:47820-47826` (±0.04 spread) | CORRECT — the generic arm's 518 tweak + `ai_crystal_storm` (24) |
+| CursedFlames 519 | 95 | generic tail `:49437` | CORRECT — generic spawn + `ai_ball_of_fire` (8) |
+| GoldenShower 1336 | 280 | generic tail | **MISSING** — no 280 row → spawn refused; row + aiStyle-12 arm landed |
+| MagnetSphere 1266 | 254 | generic tail | CORRECT — generic spawn + `magnet_sphere_step` (47) |
+| RainbowRod 495 | 79 | generic tail (channel) | CORRECT — generic spawn + `ai_magic_missile` (9) + the channel write |
+| NimbusRod 1244 | 237 | dedicated `:48271-48277` (ai0/ai1 = cursor) | **MISSING** — no 237 row; row + shoot arm + the aiStyle-45 chain landed |
+| ShadowbeamStaff 1444 | 294 | generic tail | **MISSING** — no 294 row; row + reflect/delay/decay landed (the 48 arm existed) |
+| InfernoFork 1445 | 295 | generic tail | CORRECT — generic spawn + `ai_inferno_fork` (50) + the blast kill hook |
+| SpectreStaff 1446 | 297 | generic tail | CORRECT — generic spawn + `ai_spectre_shot` (51) |
+| BatScepter 1801 | 316 | dedicated `:48344-48354` (Next(2,4) flock) | **MISSING** — no 316 row; row + shoot arm + aiStyle-36 arm landed |
+| Razorpine 1930 | 336 | dedicated `:47647-47662` (volley) | **MISSING** — no 336 row; row + shoot arm + the AI_001 needle branch landed |
+| BlizzardStaff 1931 | 337 | dedicated `:47663-47692` (sky icicles) | **MISSING** — no 337 row; row + shoot arm + the AI_001 icicle branch landed |
+
+The six MISSING staves shared one root cause: their projectile kinds had no
+`proj_data` row, so `spawn_with_data_ai` returned `None` and the staff fired
+nothing. The fix lands the eight `SetDefaults` rows (the six kinds plus the
+Nimbus chain's raining cloud 238 and rain drop 239), the four dedicated shoot
+arms, and the projectile AIs the rows dispatch to.
+
+Deliberate deviations (the pool-wide conventions, same as M4-PROJ-6):
+- **Dust/sound skipped with their draws** — the Golden Shower's three-dust
+  trail + `Next(8)` sparkle (`Projectile.cs:24522-24540`), the Blizzard's
+  `Next(2)` dust (`:56949`), the bat's frame dust, the cloud's rain dust. The
+  arms keep the state markers (alpha/scale/frame) so the tick order stays
+  observable; the RNG streams are preserved BY CONSTRUCTION (no draw consumed
+  for a skipped cosmetic).
+- **The wet/shimmer gates fold dry** — the bat's wet kill (`:27294`), the rain
+  drop's shimmer bounce (`:28088`), the NPC `wet` chase gate (`:27377`): the
+  port carries no liquid-wet/shimmer state on the slot or the NPC, so these
+  read their dry default (the M4-PROJ-6 convention).
+- **The Shadowbeam's per-hit ×0.9 decay** (`:13411`) lands in `damage_pve`'s
+  landed block AFTER the strike (the moon-lord 0.96 precedent): the C# switch
+  runs before `StrikeNPC` but the strike reads the local `dmg` computed at
+  `:12938` from the pre-decay store, so this hit keeps full damage and the next
+  hit reads the decayed value — behaviour-identical.
+- **The Nimbus cloud cap** (`:28058-28082`) ages out the oldest of >2 living
+  raining clouds (`ai[1] = 18000`); the `netUpdate` flag is the MP bookkeeping
+  the single-player port drops.
+- **The bat's homing** picks the tightest-Manhattan candidate (the C#'s
+  `num281 < num277` closest-wins loop, `:27382`), not the magnet sphere's
+  first-candidate stand-in — the bat's C# has no RNG pick, so it is faithful.
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
