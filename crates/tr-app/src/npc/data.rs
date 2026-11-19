@@ -1808,11 +1808,11 @@ impl NpcKind {
             // 305/310 → 2f, 306/311 → 1.25f, 307/312 → 2.25f, 308/313 → 1.5f,
             // 309/314 → 1f — with Splinterling (326) in the cap-2 group
             // (`:57554-57578`). The Headless Horseman (315) and the
-            // Hellhound (329) are aiStyle 26 (`AI_026_Unicorns`); their true
-            // machine rides the S1-F-13b2 row — until it lands they walk on
-            // this table's 6f cap, the machine's own chase ceiling
-            // (`NPC.cs:62622`), through the wave arm's documented
-            // stand-in routing.
+            // Hellhound (329) are aiStyle 26 (`AI_026_Unicorns`) — their
+            // named machine landed with S1-F-13b2 slice A
+            // (`npc_ai_unicorn.rs`); these rows stay as the cap pins the
+            // family tests read, matching the machine's own chase
+            // ceiling (`num10 = 6f`, `NPC.cs:62617`).
             NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 2.0,
             NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 1.25,
             NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 2.25,
