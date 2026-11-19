@@ -32870,3 +32870,151 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The thrown consumables (S1-P-i28, task/S1-P-i28-thrown-consumables, 2026-11-20, code-only mode)
+
+The twelve thrown consumable weapons — Shuriken (42), Throwing Knife (279),
+Poisoned Knife (287), Bone Javelin (3378), Molotov Cocktail (2590), Grenade
+(168), Sticky Grenade (2586), Bouncy Grenade (3116), Beenade (1130), Holy
+Water (422), Unholy Water (423), Blood Water (3477) — censused against
+`Player.ItemCheck_Shoot` (`Player.cs:47056-49468`), the `ItemCheck` consumable
+arm (`:43280-43326`), and the projectile `SetDefaults`/`AI`/`Kill`/`StatusNPC`
+arms. The Javelin (3094) rides the same throwing arm and the same 507
+projectile family as the Bone Javelin, so it is covered too.
+
+### The census verdicts
+
+**Item rows — OK (all twelve).** `itemdata.rs`'s generated rows match
+`Item.cs` field-for-field (the `useStyle`/`shoot`/`shootSpeed`/`useTime`/
+`useAnimation`/`consumable`/`ranged`/`crit`/`knockBack`/`autoReuse` values).
+The three water bottles carry NO `ranged` flag (`Item.cs:6285-6318`,
+`:31200-31216`); the other nine are `ranged`. The Poisoned Knife (287) and the
+Bone Javelin (3378) are `autoReuse`; the rest are not. No row changed.
+
+**The throwing arm — three WRONGs fixed (`world_sim/editing.rs`):**
+1. The consumable decrement was unconditional (`count.saturating_sub(1)`).
+   The C# (`Player.cs:43283-43300`) runs four not-consume rolls for a `ranged`
+   consumable, each flag-gated and each consuming its draw even when an
+   earlier roll already saved the stack (the `if`s are independent):
+   `huntressAmmoCost90 → Next(10)==0`, `chloroAmmoCost80 → Next(5)==0`,
+   `ammoCost80 → Next(5)==0`, `ammoCost75 → Next(4)==0`. The port now runs the
+   chain on the `UpdatePlayers` stream in that order. `CanConsumeConsumableItem`
+   is const-true (`:5496-5499`) and none of the twelve is in
+   `ItemID.Sets.ForceConsumption` (`ItemID.cs:413-427`), so those gates pass.
+   The water bottles skip the chain (no `ranged` flag) and always consume.
+2. The javelin spawn-Y override was missing (`Player.cs:47225-47228`): the
+   Javelin (3094) / Bone Javelin (3378) throw from `position.Y + height/3`
+   (the integer division truncates 42/3 = 14), not the centre. Added.
+3. The stack-empty cadence latch was missing (`Player.cs:43321-43324`):
+   `if (item.stack <= 0) itemTime = itemAnimation`. The last throw now locks
+   `item_time` to the remaining swing so the empty slot cannot re-fire.
+
+**Projectile rows — MISSING, landed (`projectile/data.rs`).** Only the
+Shuriken (3) and Throwing Knife (48) had rows. Added: Poisoned Knife (54,
+aiStyle 2), the three waters (69/70/621, aiStyle 2), the three grenades
+(30/397/517, aiStyle 16, `timeLeft 180`, the sticky's `tileCollide=false`),
+the Molotov (399, aiStyle 68, alpha 255), the three greek fires (400/401/402,
+aiStyle 14, penetrate 3, timeLeft 360), the Beenade (183, aiStyle 14,
+timeLeft 180), the bees (181/566, aiStyle 36, extraUpdates 3, alpha 255,
+idStatic-10), the Bone Javelin (598, aiStyle 113, alpha 255). Each cited to
+its `SetDefaults` block.
+
+**Flight AI — the knives/waters/beenade already ride the ported arms** once
+their rows land (`ai_style2`'s per-kind ladder covers 54 via the default
+20-tick arm and 69/70/621 via the 10-tick arm `:23557-23565`; `ai_spear`
+covers the beenade 183 and the greek fires 400-402 via the default arm
+`:25143-25159`). The MISSING arms landed in `projectile_ai_thrown.rs`:
+- **aiStyle 68 (Molotov 399)** `:30166-30239`: the 0.25·direction spin, the
+  3-tick alpha fade-in, the 15-tick gravity (+0.2, clamp 16, X·0.99), the
+  `timeLeft<=3` resize-to-80 prime, the wet prime (folds dry — no liquid-wet
+  flag on the slot). The `HandleMovement`-68 collision (`:19780-19786`) stops
+  the bottle and primes it (`velocity=0`, alpha 255, timeLeft 3) instead of
+  killing it.
+- **aiStyle 113 (Bone Javelin 598)** `AI_113_TargetSticker` `:40562-40899`:
+  the 25/tick alpha fade, the flying arc (45-tick then X·0.98/Y+0.35), the
+  stick state (`ai[0]==1`) pinning the javelin to its NPC for 900 ticks
+  (60·15), the kill on expiry / dead target. The stick pin itself
+  (`:13210-13217`), the Daybroken debuff and the 6-javelin cap ride the
+  pool's on-hit seam.
+- **aiStyle 36 (bees 181/566)** `:27292-27471`: the alpha fade-in + the
+  `extraUpdates` collapse, the 3-frame flutter, the 30-tick then 800-Manhattan
+  homing scan, the per-axis accel steering (the giant bee 6.8/0.14 vs the bee
+  6/0.1).
+- **aiStyle 1 (Javelin 507)** `AI_001`'s `:57471-57478` gravity arm (the
+  507/508/662/680/685 group): the 60-tick then X·0.98/Y+0.3 fall, the default
+  rotation, the +16 clamp. Kind-disjoint from the ai001 A/B/C slices.
+
+**Grenade `ai_bomb` — three WRONGs fixed (`projectile.rs`):**
+1. The gravity gate was `ai[0] > 5` for all bombs; the grenades wait
+   `ai[0] > 10` (`:47507`'s first clause). Fixed.
+2. The flight damage was zeroed for all bombs; the grenades are on the
+   keep-damage list (`:47175`) and hit NPCs directly. Fixed.
+3. `explode_bomb` set damage 100 and dug a full crater; the grenades keep
+   their damage (`PrepareBombToBlow` `:46799-46803` has no `damage=` line)
+   and break ONLY cracked-brick tiles in the radius-4 circle
+   (`Kill_ExplodeTiles` `:77271-77295` → `ExplodeCrackedTiles` `:78758-78778`),
+   no walls. Fixed.
+
+**On-hit debuffs — MISSING, landed (`StatusNPC`):** the Poisoned Knife's 1/2
+Poisoned 600 (`:11628-11634`), the Molotov + greek fires' OnFire `60·Next(3,7)`
+(`:11506-11509`), the Bone Javelin's Daybroken 900 gated on the stick pin
+(`:11335-11338`). The `KillOldestJavelin` 6-cap (`:15074-15101`) kills the
+oldest stuck javelin on a NPC when a 6th lands.
+
+**Death hooks — MISSING, landed (`Kill()`):** the water bottles' splash
+conversion (`:77629-77645` → `WorldGen.Convert(centerTile, type, 4)`, the
+Manhattan<6 diamond; hallow/corruption/crimson), the Beenade's bee burst
+(`:76431-76463`, `Next(15,25)` bees with the `beeType`/`beeDamage`/`beeKB`
+chain), the Molotov's six greek fires (`:73921-73951`).
+
+### RNG order (the `UpdatePlayers` / `UpdateProjectiles` streams)
+
+- The throwing arm's not-consume chain rides `UpdatePlayers`
+  (`Player.ItemCheck` under the `Main.cs:17754` swap), in the C# order:
+  huntress `Next(10)`, chloro `Next(5)`, ammoCost80 `Next(5)`, ammoCost75
+  `Next(4)` — each flag-gated, no short-circuit. The crit roll precedes it
+  (the throw's existing roll). The water bottles draw nothing (no `ranged`).
+- The flight arms (68/113/36/507) draw ZERO `Main.rand` — their only rand
+  riders are dust/sound, skipped whole with their draws (the `ai_style2` /
+  frostmoon precedent).
+- The on-hit debuffs ride `UpdateProjectiles` in C# order: the poisoned
+  knife's `Next(2)`, the molotov/fire's `Next(3,7)`. The Daybroken is
+  unconditional.
+- The beenade death burst: 4 gore rows (`Next(61,64)` type + the `NewGore`
+  kicks `Next(10,31)` Y-then-`Next(-20,21)` X, the G3 draw-census), then
+  `Next(15,25)` count, then per bee the velocity `Next(-35,36)` X-then-Y, the
+  `beeType` coin flip, `beeDamage`, `beeKB` (the `hurt_modifiers` order).
+- The molotov death burst: per fire the X offset `Next(20,50)` +
+  `Next(-20,21)`, the Y offset `Next(30,50)` + `Next(-20,5)`, then the
+  fire-type `Next(3)` — six fires.
+
+### Documented deviations / skips
+
+- Dust, gore bodies, `Lighting.AddLight`, sound bodies (the cues ride
+  `wants_sound` where the pool drains them), `netUpdate`/`NetMessage.SendData`,
+  the stuck javelin's 30-tick `HitEffect` pulse — no such layers in the pool.
+- The bee group-static immunity identity (both 181 and 566 use
+  `UseGroupStaticImmunity(181)`, `Projectile.cs:2684`/`:6183`) folds to the
+  port's kind-keyed `id_static` map — the two bee kinds do not share one
+  immunity clock in the port (the map is `(kind, npc)`-keyed).
+- The molotov's wet prime (`:30235-30238`) and the bee's wet-kill head
+  (`:27294-27297`) fold dry — the slot carries no liquid-wet flag (the
+  pool-wide convention).
+- The water splash uses `convert_cell_flavor` (the per-cell map, the
+  `convert_cleanse` precedent) with its documented `reframe_area` superset;
+  the genRand surface/depth wall rolls are the shared spread deviation.
+- The bone javelin's stick reads its pinned NPC off the pool's `npcs` slice
+  by index (the port's stable-index convention); the C# indexes
+  `Main.npc[ai[1]]` (stable NPC slots).
+
+### Verification
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt invoked. The 14 witness tests in
+`projectile_ai_thrown.rs` and the 4 throwing-arm tests in
+`world_sim/editing.rs` are WRITTEN, NOT RUN; every expected value is
+hand-derived from the cited C# lines. Every seam call site was checked
+against the actual signatures by read/grep (`proj_data`'s 10-tuple + state
+group, `spawn_with_data_ai_owned`'s 11-arg shape, `Npc::new`'s 5-arg
+`pub(crate)` form, `convert_cell_flavor`'s flavor enum, `can_hit`'s 9-arg
+shape, the `#[deny(unreachable_patterns)]` dispatch — no duplicate style/kind
+arms).
+

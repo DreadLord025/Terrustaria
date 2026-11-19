@@ -185,6 +185,12 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i28: the thrown-consumable projectile family's missing flight arms
+// (aiStyle 68 molotov / 113 bone javelin / 36 bees / the 507 javelin AI_001
+// arm) + the death hooks (water splash, beenade bee burst, molotov fires) and
+// the on-hit debuffs. The dispatch claim + the death-hook drain are wired in
+// projectile.rs (module doc + docs/ANALYSIS.md "The thrown consumables").
+mod projectile_ai_thrown;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs

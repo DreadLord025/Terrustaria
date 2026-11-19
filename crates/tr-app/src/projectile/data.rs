@@ -86,6 +86,51 @@ pub const VILE_TIP: u16 = 8;
 /// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
 /// (`Projectile.cs:1310-1316`).
 pub const THROWING_KNIFE: u16 = 48;
+/// `ProjectileID.PoisonedKnife` (54) — the thrown aiStyle-2 kind with the
+/// 1/2 Poisoned-on-hit roll (`Projectile.cs:1366-1374`, `:11628-11634`).
+pub const POISONED_KNIFE: u16 = 54;
+/// `ProjectileID.HolyWater` (69) — the thrown aiStyle-2 bottle, the hallow
+/// splash on death (`Projectile.cs:1488-1495`, `:77629-77645`).
+pub const HOLY_WATER: u16 = 69;
+/// `ProjectileID.UnholyWater` (70) — the corruption twin of the holy water
+/// (`Projectile.cs:1496-1503`).
+pub const UNHOLY_WATER: u16 = 70;
+/// `ProjectileID.BloodWater` (621) — the crimson twin of the holy water
+/// (`Projectile.cs:1504-1511`).
+pub const BLOOD_WATER: u16 = 621;
+/// `ProjectileID.Grenade` (30) — the thrown aiStyle-16 bomb
+/// (`Projectile.cs:1122-1130`).
+pub const GRENADE: u16 = 30;
+/// `ProjectileID.StickyGrenade` (397) — the sticky aiStyle-16 bomb,
+/// `tileCollide = false` (`Projectile.cs:4781-4790`).
+pub const STICKY_GRENADE: u16 = 397;
+/// `ProjectileID.BouncyGrenade` (517) — the bouncy aiStyle-16 bomb
+/// (`Projectile.cs:5870-5878`).
+pub const BOUNCY_GRENADE: u16 = 517;
+/// `ProjectileID.MolotovCocktail` (399) — the thrown aiStyle-68 bottle that
+/// bursts into the three greek fires on death (`Projectile.cs:4801-4811`,
+/// `:73921-73951`).
+pub const MOLOTOV_COCKTAIL: u16 = 399;
+/// `ProjectileID.MolotovFire` (400) — the molotov's first ground-fire child,
+/// aiStyle 14 (`Projectile.cs:4812-4835`).
+pub const MOLOTOV_FIRE_1: u16 = 400;
+/// `ProjectileID.MolotovFire2` (401) — the molotov's second fire child.
+pub const MOLOTOV_FIRE_2: u16 = 401;
+/// `ProjectileID.MolotovFire3` (402) — the molotov's third fire child.
+pub const MOLOTOV_FIRE_3: u16 = 402;
+/// `ProjectileID.Beenade` (183) — the thrown aiStyle-14 bee grenade that
+/// bursts into a swarm of bees on death (`Projectile.cs:2697-2706`,
+/// `:76431-76463`).
+pub const BEENADE: u16 = 183;
+/// `ProjectileID.Bee` (181) — the beenade's small bee child, aiStyle 36
+/// (`Projectile.cs:2673-2685`).
+pub const BEE: u16 = 181;
+/// `ProjectileID.GiantBee` (566) — the beenade's strong-bee child, aiStyle 36
+/// (`Projectile.cs:6172-6184`).
+pub const GIANT_BEE: u16 = 566;
+/// `ProjectileID.BoneJavelin` (598) — the thrown aiStyle-113 sticking javelin
+/// (`Projectile.cs:6470-6480`).
+pub const BONE_JAVELIN: u16 = 598;
 /// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
 /// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
 pub const SNOWBALL: u16 = 166;
@@ -1117,6 +1162,72 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 10.0,
                 2,
                 2,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // S1-P-i28 — the thrown-consumable family's missing rows.
+            // `Projectile.cs:1366-1374` — the poisoned knife (54): 12x12,
+            // aiStyle 2, `penetrate = 2` (the throwing knife's box).
+            POISONED_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:1488-1511` — the three water bottles (69/70/621):
+            // 14x14, aiStyle 2, `penetrate = 1`. The splash conversion rides
+            // the death hook (`:77629-77645`), not the row.
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
+                (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // `Projectile.cs:1122-1130` — the grenade (30): 14x14, aiStyle 16,
+            // `penetrate = -1`; `NewProjectile` pins `timeLeft = 180`
+            // (`:10993-10996`).
+            GRENADE => (14.0, 14.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4781-4790` — the sticky grenade (397): the same
+            // box/style, `tileCollide = false`; `timeLeft = 180`
+            // (`:11029-11032`).
+            STICKY_GRENADE => (14.0, 14.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5870-5878` — the bouncy grenade (517): 14x14,
+            // aiStyle 16, `penetrate = -1`; `timeLeft = 180` (`:10997-11000`).
+            BOUNCY_GRENADE => (14.0, 14.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4801-4811` — the molotov cocktail (399): 14x14,
+            // aiStyle 68, `penetrate = 1`, `alpha = 255`.
+            MOLOTOV_COCKTAIL => (
+                14.0,
+                14.0,
+                68,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:4812-4835` — the three greek fires (400/401/402):
+            // aiStyle 14, `penetrate = 3`, `timeLeft = 360`; the three sizes
+            // 14x16 / 12x14 / 6x12.
+            MOLOTOV_FIRE_1 => (14.0, 16.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            MOLOTOV_FIRE_2 => (12.0, 14.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            MOLOTOV_FIRE_3 => (6.0, 12.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2697-2706` — the beenade (183): 14x22, aiStyle 14,
+            // `penetrate = 1`, `timeLeft = 180`.
+            BEENADE => (14.0, 22.0, 14, 1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2673-2685` — the bee (181): 8x8, aiStyle 36,
+            // `penetrate = 3`, `alpha = 255`, `timeLeft = 600`,
+            // `extraUpdates = 3`, `UseGroupStaticImmunity(181)` (idStatic-10).
+            BEE => (8.0, 8.0, 36, 3, 600, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `Projectile.cs:6172-6184` — the giant bee (566): 16x16, aiStyle
+            // 36, `penetrate = 4`, `alpha = 255`, `timeLeft = 660`,
+            // `extraUpdates = 3`, the same group-static immunity (identity 181).
+            GIANT_BEE => (16.0, 16.0, 36, 4, 660, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `Projectile.cs:6470-6480` — the bone javelin (598): 16x16,
+            // aiStyle 113, `penetrate = -1`, `alpha = 255`.
+            BONE_JAVELIN => (
+                16.0,
+                16.0,
+                113,
+                -1,
                 TIME_LEFT_DEFAULT,
                 0,
                 true,

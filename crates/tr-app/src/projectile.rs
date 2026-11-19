@@ -5469,9 +5469,13 @@ impl Projectile {
                 self.vel.y = -0.2;
             }
         }
-        // The gravity tail (`:47505-47520`): the thrown arc — the gravity
-        // waits `ai[0] > 5f`.
-        if self.ai[0] > 5.0 {
+        // The gravity tail (`:47505-47523`): the thrown arc. S1-P-i28 — the
+        // grenades (30/397/517) wait `ai[0] > 10f` (`:47507`'s first clause),
+        // the other bombs `ai[0] > 5f` (the second clause). The C# pins
+        // `ai[0] = 10` inside the arm, so the grenade's counter rests at 10.
+        let grenade = matches!(self.kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE);
+        let gravity_ready = if grenade { self.ai[0] > 10.0 } else { self.ai[0] > 5.0 };
+        if gravity_ready {
             self.ai[0] = 10.0;
             if self.vel.y == 0.0 && self.vel.x != 0.0 {
                 self.vel.x *= 0.97;
@@ -5506,22 +5510,30 @@ impl Projectile {
             self.pos += self.vel;
         }
         self.rot += self.vel.x * 0.1;
-        // The flight damage zeroes (`:47175-47176` — the kinds outside the
-        // keep-damage list; all the port's bombs are) — the explosion
-        // re-arms the damage.
-        self.damage = 0;
+        // The flight damage zeroes (`:47175-47177` — the kinds OUTSIDE the
+        // keep-damage list). S1-P-i28 — the grenades (30/397/517) ARE on the
+        // keep-damage list (`:47175`), so they keep their flight damage and
+        // hit NPCs directly; the bombs/dynamite zero it (the explosion
+        // re-arms the damage).
+        if !matches!(self.kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE) {
+            self.damage = 0;
+        }
         // The detonation (`:47165-47167`): `timeLeft <= 3` on the local
         // owner.
         if self.time_left <= 3 && !self.detonated {
             // `Kill_Bombs_DoUsualKillCode`'s explosion cue
-            // (`Projectile.cs:78331` the bomb family 28/37/516/519,
+            // (`Projectile.cs:78331` the bomb family 28/30/37/397/517/516/519,
             // `:78386` the dynamite 29): `SoundID.Item14` at the slot's
             // PRE-`PrepareBombToBlow` `base.position` (S1-E-21h). The port
             // queues it at the detonation latch — one cue per death; the
             // bomb-fuse instance Stop (`:70675`) has no pool (D4). Gated to
             // the kinds `explode_bomb` accepts — the same set the C# kill
-            // arms name.
-            if matches!(self.kind, BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE) {
+            // arms name (S1-P-i28 adds the three grenades).
+            if matches!(
+                self.kind,
+                BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE
+                    | GRENADE | STICKY_GRENADE | BOUNCY_GRENADE
+            ) {
                 self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
             }
             self.detonated = true;
@@ -13770,6 +13782,17 @@ impl ProjectilePool {
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
                                 crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
                             }
+                            // S1-P-i28 — the Javelin (507, `AI_001`'s
+                            // 507/508/662/680/685 gravity arm
+                            // `Projectile.cs:57471-57478`): kind-disjoint from
+                            // A/B/C, the riders and the frostmoon/moonlord
+                            // sets, so the gate order never double-applies.
+                            kind if crate::projectile_ai_thrown::covers_ai001(kind) => {
+                                crate::projectile_ai_thrown::javelin_friendly_step(
+                                    &mut self.slots[i],
+                                    world,
+                                )
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
@@ -14083,6 +14106,38 @@ impl ProjectilePool {
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
                         23 => self.slots[i].ai_eye_fire(world),
+                        // S1-P-i28 — the thrown-consumable flight arms.
+                        // aiStyle 68: the Molotov cocktail (399)
+                        // (`Projectile.cs:30166-30239` + the movement-68
+                        // collision `:19780-19786`). The arm owns its
+                        // integration (the stop-and-prime collision).
+                        68 => {
+                            crate::projectile_ai_thrown::molotov_step(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
+                        // aiStyle 113: the Bone javelin (598)
+                        // (`AI_113_TargetSticker` `:40562-40899`). The stick
+                        // pin + Daybroken + the 6-javelin cap ride the on-hit
+                        // seam; the arm reads the pinned NPC off `npcs`.
+                        113 => {
+                            crate::projectile_ai_thrown::bone_javelin_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                            );
+                        }
+                        // aiStyle 36: the bees (181/566), the beenade's
+                        // children (`Projectile.cs:27292-27471`). The arm owns
+                        // its kill-on-tile integration.
+                        36 => {
+                            crate::projectile_ai_thrown::bee_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                            );
+                        }
                         // The aiStyle-158 Baby Bird (759) (`:48757-48928`): the
                         // perch keep-alive, the walk and the home formation.
                         // The sibling reads (the group index and the two
@@ -16142,6 +16197,13 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // S1-P-i28 — the thrown-consumable death hooks. The water
+                // bottles' splash conversion (`Kill()` `:77629-77645`), the
+                // beenade's bee burst (`:76431-76463`) and the molotov's
+                // greek-fire burst (`:73921-73951`). The beenade/molotov
+                // bursts spawn through the pool (the arm cannot see the slot
+                // array); the water conversion writes tiles directly.
+                self.thrown_consumable_death(i, world, player.as_deref(), rng);
             }
         }
     }
@@ -16584,6 +16646,91 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i28 — the thrown-consumable death hooks (`Kill()`): the water
+    /// bottles' splash conversion (`Projectile.cs:77629-77645`), the beenade's
+    /// bee burst (`:76431-76463`) and the molotov's greek-fire burst
+    /// (`:73921-73951`). The bursts spawn through the pool with the dying
+    /// slot's owner; the water conversion writes tiles directly. The death
+    /// hook fires once (a dead slot never returns to active).
+    fn thrown_consumable_death(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
+                crate::projectile_ai_thrown::water_death(&self.slots[slot], world);
+            }
+            BEENADE => {
+                let strong = player.is_some_and(|p| p.strong_bees);
+                let bees =
+                    crate::projectile_ai_thrown::beenade_death(&self.slots[slot], strong, rng);
+                let owner = self.slots[slot].owner;
+                for b in bees {
+                    // `NewProjectile` centres the box (`:10876-10877`); the
+                    // C# spawns at `base.position` (the beenade's top-left),
+                    // so the bee's top-left is that point minus its half-box.
+                    let row = proj_data(b.kind);
+                    let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                    self.spawn_with_data_ai_owned(
+                        b.kind, owner, b.x - hw, b.y - hh, b.vx, b.vy, b.damage, b.knock_back,
+                        0.0, 0.0,
+                    );
+                }
+            }
+            MOLOTOV_COCKTAIL => {
+                let fires = crate::projectile_ai_thrown::molotov_death(&self.slots[slot], rng);
+                let owner = self.slots[slot].owner;
+                for f in fires {
+                    let row = proj_data(f.kind);
+                    let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                    self.spawn_with_data_ai_owned(
+                        f.kind, owner, f.x - hw, f.y - hh, f.vx, f.vy, f.damage, 0.0, 0.0, 0.0,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// S1-P-i28 — `Projectile.KillOldestJavelin` (`Projectile.cs:15074-15101`,
+    /// called from the bone javelin's on-hit arm `:13979-13990`): scan the
+    /// pool for the owner's bone javelins stuck (`ai[0]==1`) on this NPC
+    /// (`ai[1]==target`), excluding the just-pinned slot; once 6 are found,
+    /// kill the one with the lowest `timeLeft` (the oldest). The C# breaks the
+    /// scan at the buffer length (6), so only the first 6 in slot order count.
+    fn kill_oldest_javelin(&mut self, protected: usize, target: u16) {
+        let owner = self.slots[protected].owner;
+        let mut oldest = usize::MAX;
+        let mut lowest = i32::MAX;
+        let mut count = 0usize;
+        for (i, p) in self.slots.iter().enumerate() {
+            if i != protected
+                && p.active
+                && p.owner == owner
+                && p.kind == BONE_JAVELIN
+                && p.ai[0] == 1.0
+                && p.ai[1] == target as f32
+            {
+                if p.time_left < lowest {
+                    lowest = p.time_left;
+                    oldest = i;
+                }
+                count += 1;
+                if count >= 6 {
+                    break;
+                }
+            }
+        }
+        // `:15088-15091` — fewer than 6 found: nothing dies.
+        if count >= 6 && oldest != usize::MAX {
+            self.kill(oldest);
+        }
+    }
+
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
     /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
     /// dust layer in the pool), and the `AoeExplosion` feature's damage half
@@ -16779,12 +16926,19 @@ impl ProjectilePool {
     /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
     /// digs the radius circle, and the slot deactivates.
     fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+        // S1-P-i28 — the grenades (30/397/517) resize to 128×128 and set
+        // knockback 8 but KEEP their damage (`PrepareBombToBlow`
+        // `Projectile.cs:46799-46803` — no `damage =` line), unlike the bombs
+        // (damage 100) and dynamite (damage 250). `None` = keep the slot's
+        // current damage.
         let (w, h, damage, knock_back) = match self.slots[slot].kind {
             // `:46775-46781`: the bombs — 128×128, damage 100, knockback 8.
-            BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH => (128.0, 128.0, 100, 8.0),
+            BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH => (128.0, 128.0, Some(100), 8.0),
             // `:46787-46791`: the dynamite — 250×250, damage 250,
             // knockback 10.
-            DYNAMITE => (250.0, 250.0, 250, 10.0),
+            DYNAMITE => (250.0, 250.0, Some(250), 10.0),
+            // `:46799-46803`: the grenades — 128×128, knockback 8, damage kept.
+            GRENADE | STICKY_GRENADE | BOUNCY_GRENADE => (128.0, 128.0, None, 8.0),
             _ => {
                 self.slots[slot].detonated = false;
                 return;
@@ -16797,7 +16951,9 @@ impl ProjectilePool {
         p.w = w;
         p.h = h;
         p.pos = Vec2::new(cx - w * 0.5, cy - h * 0.5);
-        p.damage = damage;
+        if let Some(d) = damage {
+            p.damage = d;
+        }
         p.knock_back = knock_back;
         p.tile_collide = false;
         p.detonated = false;
@@ -16810,6 +16966,38 @@ impl ProjectilePool {
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
         );
+        // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
+        // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
+        // (`:77271-77295` → `:78758-78778`) — ONLY cracked-brick tiles in the
+        // radius-4 circle die, no walls. The bombs/dynamite take the full
+        // crater arm (`:77297+`) below.
+        if matches!(self.slots[slot].kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE) {
+            let p = &self.slots[slot];
+            let ccx = (p.pos.x + p.w * 0.5) / 16.0;
+            let ccy = (p.pos.y + p.h * 0.5) / 16.0;
+            let min_i = ((ccx - 4.0) as i32).max(0);
+            let max_i = ((ccx + 4.0) as i32).min(world.width - 1);
+            let min_j = ((ccy - 4.0) as i32).max(0);
+            let max_j = ((ccy + 4.0) as i32).min(world.height - 1);
+            for ty in min_j..=max_j {
+                for tx in min_i..=max_i {
+                    let dx = (tx as f32 - ccx).abs();
+                    let dy = (ty as f32 - ccy).abs();
+                    if (dx * dx + dy * dy).sqrt() >= 4.0 {
+                        continue;
+                    }
+                    let Some(t) = world.tile(tx, ty) else {
+                        continue;
+                    };
+                    if t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind) {
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                    }
+                }
+            }
+            self.slots[slot].active = false;
+            self.slots[slot].time_left = 0;
+            return;
+        }
         // `Kill_ExplodeTiles`: the radius circle kills the tiles
         // (`ExplodeTiles` `:78707+` — the distance check per tile), the
         // 3×3 walls around each kill follow (`:78741-78762`).
@@ -17232,6 +17420,21 @@ impl ProjectilePool {
                 continue;
             }
             let hit = center;
+            // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
+            // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
+            // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
+            // `velocity = (npc.Center - Center) * 0.75`. Runs BEFORE the
+            // strike (the C# arm precedes `StatusNPC`/`StrikeNPC`), so the
+            // Daybroken gate below reads the fresh pin.
+            if self.slots[slot].kind == BONE_JAVELIN && self.slots[slot].ai[0] < 2.0 {
+                let (ncx, ncy) = npcs[idx].center();
+                let p = &mut self.slots[slot];
+                let pcx = p.pos.x + p.w * 0.5;
+                let pcy = p.pos.y + p.h * 0.5;
+                p.ai[0] = 1.0;
+                p.ai[1] = idx as f32;
+                p.vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
+            }
             // `:12919-12933`: the tag-damage math runs on the hit's damage —
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
@@ -17295,6 +17498,23 @@ impl ProjectilePool {
                 // `ApplyWhipDebuffs`).
                 if is_whip {
                     self.whip_debuffs(slot, &mut npcs[idx], rng);
+                }
+                // S1-P-i28 — `StatusNPC`'s thrown-consumable debuffs
+                // (`Projectile.cs:13580`): the poisoned knife's 1/2 Poisoned,
+                // the molotov/fire's OnFire, the bone javelin's Daybroken
+                // (the stick pin above already landed). The explicit rolls
+                // ride this pass's stream in C# order.
+                crate::projectile_ai_thrown::thrown_on_hit(
+                    &self.slots[slot],
+                    &mut npcs[idx],
+                    idx as u16,
+                    rng,
+                );
+                // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
+                // `:15074-15101`): the bone javelin caps the sticks on one NPC
+                // at 6 — the 6th stick kills the oldest (lowest timeLeft).
+                if self.slots[slot].kind == BONE_JAVELIN {
+                    self.kill_oldest_javelin(slot, idx as u16);
                 }
                 // `:13581-13584`: any tag-carrying item's projectile applies
                 // its tag to the hit NPC (the whip's, in the port today).
