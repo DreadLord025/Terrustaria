@@ -1266,20 +1266,20 @@ impl NpcKind {
         self.frost_moon_defaults().map(|d| d.vanilla_type)
     }
 
-    /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
-    /// the velocity ceiling each kind walks at.
-    ///
-    /// The C#'s groups:
-    /// - the `num107` default (`:58322-58374`): 1f;
-    /// - the `num83` group (`:57606-57691`): 1.5f with the per-type rows;
-    /// - the cap-2 group (`:57554-57578`);
-    /// - the cap-3 group (`:57520-57552`);
-    /// - the shooters' group (`:59717-59750`): 1f with the per-type rows;
-    /// - the Martian engineer's own arm (`:58032-58069`): 1.5f.
-    ///
-    /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
-    /// the Goblin Archer) carry their own speed and are not listed — the
-    /// table is the walkers' shared source.
+    /// The wave roster's vanilla `NPC.type` → the ported kind — the inverse of
+    /// [`NpcKind::pumpkin_moon_type`]/[`NpcKind::frost_moon_type`] the F-13a
+    /// moon ladders' picks decode through (`S1-F-13b` Phase 2's spawn wiring,
+    /// extended by `S1-F-13c` slices A+B). `None` for every id outside the two
+    /// families: the pumpkin
+    /// wave-20 unported bosses and every port-local id consume the pick and
+    /// spawn nothing.
+    pub fn moon_wave_kind(vanilla_type: u16) -> Option<NpcKind> {
+        NpcKind::from_u16(vanilla_type).filter(|kind| {
+            kind.pumpkin_moon_type() == Some(vanilla_type)
+                || kind.frost_moon_type() == Some(vanilla_type)
+        })
+    }
+
     /// `NPC.HitSound` (`NPC.cs:6475`, the per-kind `SetDefaults` assignment)
     /// — the cue the strike plays (`NPC.StrikeNPC`, `:81544-81553`).
     ///
@@ -1874,36 +1874,26 @@ impl NpcKind {
             // aiStyle 84 - NPC.cs:14216
             NpcKind::AncientCultist => 84,
             // aiStyle 85 - NPC.cs:15026, :15134
-            // The Frost Moon family (`S1-F-13c` slice B): the four aiStyle-3
-            // walkers' caps — 348 and 351 in the cap-2 group
-            // (`NPC.cs:57554-57578`), 349 in the cap-6 group
-            // (`:57403-57427`), 350 the shooters' `num180 = 1f` default
-            // (`:59717` — no type-350 override exists).
-            NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
-            NpcKind::NutcrackerSpinning => 6.0,
-            NpcKind::ElfArcher => 1.0,
-            // The Frost Moon family, slice A (`S1-F-13c`): the five
-            // aiStyle-3 walkers. The Zombie Elf trio and the Gingerbread Man
-            // ride the num83 group (`NPC.cs:57606`) — 338 → 1.75f
-            // (`:57637-57639`), 339 → 1.25f (`:57641-57643`), 340 → 2f
-            // (`:57645-57647`), 342 → the group base 1.5f (`:57608`; the C#'s
-            // `:57693-57695` scale factor `1 + (1 - scale)` is 1 at the 1f
-            // default scale). The Yeti rides the cap-2 group (`:57554`,
-            // ±2f, accel 0.07). The Present Mimic (341, aiStyle 25) rides the
-            // documented walker stand-in at its hop launch's 3.5f cap
-            // (`NPC.cs:25617`); the Everscream (344, aiStyle 57) hovers on
-            // the Mourning Wood stand-in's rows — neither reads this table.
-            NpcKind::ZombieElf => 1.75,
-            NpcKind::ZombieElfBeard => 1.25,
-            NpcKind::ZombieElfGirl => 2.0,
-            NpcKind::GingerbreadMan => 1.5,
-            NpcKind::Yeti => 2.0,
-            NpcKind::PresentMimic => 3.5,
+            NpcKind::StardustCellBig | NpcKind::BrainSuckler => 85,
             // aiStyle 123 - NPC.cs:17453
             NpcKind::Deerclops => 123,
         }
     }
 
+    /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
+    /// the velocity ceiling each kind walks at.
+    ///
+    /// The C#'s groups:
+    /// - the `num107` default (`:58322-58374`): 1f;
+    /// - the `num83` group (`:57606-57691`): 1.5f with the per-type rows;
+    /// - the cap-2 group (`:57554-57578`);
+    /// - the cap-3 group (`:57520-57552`);
+    /// - the shooters' group (`:59717-59750`): 1f with the per-type rows;
+    /// - the Martian engineer's own arm (`:58032-58069`): 1.5f.
+    ///
+    /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
+    /// the Goblin Archer) carry their own speed and are not listed — the
+    /// table is the walkers' shared source.
     pub fn ai3_walk_speed(self) -> Option<f32> {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
@@ -1943,6 +1933,31 @@ impl NpcKind {
             NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 1.0,
             NpcKind::Splinterling => 2.0,
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => 6.0,
+            // The Frost Moon family (`S1-F-13c` slice B): the four aiStyle-3
+            // walkers' caps — 348 and 351 in the cap-2 group
+            // (`NPC.cs:57554-57578`), 349 in the cap-6 group
+            // (`:57403-57427`), 350 the shooters' `num180 = 1f` default
+            // (`:59717` — no type-350 override exists).
+            NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
+            NpcKind::NutcrackerSpinning => 6.0,
+            NpcKind::ElfArcher => 1.0,
+            // The Frost Moon family, slice A (`S1-F-13c`): the five
+            // aiStyle-3 walkers. The Zombie Elf trio and the Gingerbread Man
+            // ride the num83 group (`NPC.cs:57606`) — 338 → 1.75f
+            // (`:57637-57639`), 339 → 1.25f (`:57641-57643`), 340 → 2f
+            // (`:57645-57647`), 342 → the group base 1.5f (`:57608`; the C#'s
+            // `:57693-57695` scale factor `1 + (1 - scale)` is 1 at the 1f
+            // default scale). The Yeti rides the cap-2 group (`:57554`,
+            // ±2f, accel 0.07). The Present Mimic (341, aiStyle 25) rides the
+            // documented walker stand-in at its hop launch's 3.5f cap
+            // (`NPC.cs:25617`); the Everscream (344, aiStyle 57) hovers on
+            // the Mourning Wood stand-in's rows — neither reads this table.
+            NpcKind::ZombieElf => 1.75,
+            NpcKind::ZombieElfBeard => 1.25,
+            NpcKind::ZombieElfGirl => 2.0,
+            NpcKind::GingerbreadMan => 1.5,
+            NpcKind::Yeti => 2.0,
+            NpcKind::PresentMimic => 3.5,
             // The Frost Moon family (`S1-F-13c` slice B): the four aiStyle-3
             // walkers' caps — 348 and 351 in the cap-2 group
             // (`NPC.cs:57554-57578`), 349 in the cap-6 group
