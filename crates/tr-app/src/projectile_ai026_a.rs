@@ -1675,8 +1675,9 @@ mod tests {
     }
 
     /// The pool seam: the `26 =>` gate routes the 14 through
-    /// `ai026_a_tick` and leaves the 266 slime minion on the old
-    /// fall-through (no arm, position frozen). The 64×64 test world's
+    /// `ai026_a_tick`; the 266 slime minion falls through A's gate to
+    /// slice C's ground machine (`ai026_c_tick`, S1-D-4b-16 — it walks
+    /// now; A's own arm still never touches it). The 64×64 test world's
     /// bounds are 1024 px — the owner stands at (400, 400) so both spawns
     /// stay inside (the out-of-world guard kills non-minions there).
     #[test]
@@ -1693,7 +1694,6 @@ mod tests {
         let slime = pool
             .spawn_with_data_ai_owned(SLIME_MINION, 0, cx + 50.0, cy, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
             .expect("slime slot");
-        let slime_pos = pool.slots()[slime].pos;
         pool.update(
             &mut w,
             &mut [],
@@ -1707,7 +1707,16 @@ mod tests {
             true,
         );
         assert!(pool.slots()[eater].vel.x < 0.0, "the eater steers home");
-        assert_eq!(pool.slots()[slime].pos, slime_pos, "the slime stays unarmed");
-        assert_eq!(pool.slots()[slime].vel, Vec2::ZERO);
+        // Slice C arms the 266: the band walks it left toward the
+        // formation slot behind the owner (the pre-C fall-through froze
+        // it — the slice C module's own pool witness pins the move).
+        assert!(
+            pool.slots()[slime].vel.x < 0.0,
+            "slice C's ground machine walks the slime"
+        );
+        // A's arm never ran on it: no flyer keep-alive pin, no flight
+        // frame (the ground machine's frames stay in 0-7).
+        assert_eq!(pool.slots()[slime].time_left, 18000 - 1);
+        assert!(pool.slots()[slime].frame < 8, "no flyer frame");
     }
 }

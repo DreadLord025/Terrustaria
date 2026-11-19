@@ -23678,6 +23678,128 @@ fall-through, byte-identical.
   machine (`:60254-65024`), the pygmies/spiders, the Pal summons
   1094/1113, the 266 slime minion's hop machine вЂ” the ROADMAP row's
   remainder.
+  1094/1113, the 266 slime minion's hop machine — the ROADMAP row's
+  remainder. **(Slice C landed the 266 half 2026-11-19 — see "AI_026
+  slice C" below; the row-less types stay open.)**
+## AI_026 slice C (S1-D-4b-16, task/S1-D-4b-16-melee-c, 2026-11-19)
+**Code-only mode** — no compiler invoked this round (no cargo/rustc/
+rustfmt/tests/graphify); the witness tests in `projectile_ai026_c.rs`
+are WRITTEN, NOT RUN. Verification is by construction against the
+decompiled source. `crates/tr-app/src/projectile_ai026_c.rs` ports the
+ground-pet idle/walk/jump machine (`Projectile.cs:60254-65024`) for the
+**266** slime minion (`ProjectileID.BabySlime`, the Slime Staff summon).
+- **The census**: the WHOLE remaining block was read. Its type
+  dispatch covers ~45 ground pets (111/112/127/200/208/209/210/236/
+  268/269/313/314/319/324/334/353/398/499/765/816/821/825/854/858/859/
+  860/875/881/884/890/891/897/899/900/934/956/958/959/960/994/998/
+  1003/1004/1027/1095/1096), the pygmies 191-194 (`flag6`), the spiders
+  390-392 (`flag7`) and the Pal summons 1094/1113 (`flag8`). Of those,
+  the port's `proj_data` carries a row for exactly ONE — the 266
+  (`projectile/data.rs:2236`). The gate routes ONLY the 266; every
+  other aiStyle-26 kind keeps the byte-identical `_ => {}`
+  fall-through (row-less kinds cannot spawn anyway). The per-type
+  tails the 266 does not reach are catalogued in the module's
+  `ground_machine_census` doc fn with citations — the follow-up
+  slices' map (the pygmy spear's three draws `:61698-61705`, the
+  spider separation loop's `velocity.Y +=` X-branch typo `:61907`,
+  the 860 gore burst `:62889-62892`, the 825 idle re-roll
+  `:63500-63502`, the 958 idle `Next(100)` `:62389`, the 1027
+  materialize ring `:62559-62566`, the Pal shot/petting frame cycles).
+- **The machine**: the fly-out decision (`:60254-60344`: the
+  500+40·minionPos return range, +500 while attacking +100 more for
+  the 266, the >2000 px DUSTLESS teleport — unlike the flyers' 24-draw
+  teleports — and the vertical-velocity sign kill), the fly-out arm
+  (`:60387-61548`: the 40·direction chase offset + the 700-px
+  owner-relative Manhattan scan with `CanHit`, the formation offset
+  when no target, the grounded reset, speed 10/accel 0.2 with the
+  GUARDED ×1.5 same-sign boost — unlike slice B's unguarded one —
+  the frames 8-11 flight cycle), the ground scan (`:61755-62004`: the
+  whip-mark-first closest-chaseable pick with the no-line-of-sight
+  fallback point, the 300/150 surface-split idle range, the ±5/±10
+  dead bands, the `friendly` flip + the 60-tick `localAI[0]` cooldown,
+  the −10/−13/−15/−17/−18 height ladder), the walk core
+  (`:62046-62318`: speed 6/accel 0.2 boosted to the owner's |vx|+|vy|
+  with accel 0.3, the ±3.5 quarter-accel band, the 0.9 damping with
+  the accel-wide zero snap, the closed-door-exempt wall probe, the
+  shared `Collision.StepUp`, the ledge-hop −5.1/−7.1/−11.1/−10.1/−9.1
+  ladder with the null-tile catch, and **the 266 hop
+  `velocity.Y -= 6`** `:62271-62274`), the direction/sprite pins
+  (`:62284-62317`) and the 266's ground frames (`:64435-64494`: the
+  airborne 5-tick frames 1-7, the grounded 8-tick frames 5-7 with the
+  1→5 jump, the idle owner-facing on the X stall, the dry +0.4 gravity
+  capped at 10).
+- **RNG by construction**: the 266 draws NO `Main.rand` anywhere in
+  `AI_026` — the pygmy `Next(2,10)` (`:58919`) is flag6-gated, the
+  pygmy/Pal attack draws (`:61698-61705`) flag10-gated, the flight
+  dust chain EXCLUDES the 266 by type (`:61541`), the ground scan/hop/
+  frames are pure arithmetic. The ONE draw is `Update`'s blocked-move
+  `Main.rand.Next(3)` (`:17948`) — the FIRST `&&` operand, so it fires
+  on EVERY blocked move regardless of owner/damage; the 266 passes
+  `CanCutTiles()` (`:15323-15334`), so the draw is CONSUMED on the
+  pass's stream while the cut body skips with the unported tile-cut
+  layer (the `dd2_sentry_step` precedent — but that precedent SKIPS
+  the draw for its refusal-list kinds; the 266 is not on the list, so
+  here it stays). The witness
+  `the_blocked_move_consumes_the_tile_cut_roll` pins the exact
+  one-draw sequence; the no-target/teleport/hop witnesses pin the
+  empty sequences.
+- **The blocked move does NOT kill**: the default
+  `position += velocity; Kill()` (`:19851-19852`) sits inside the
+  `!correctSlopeCollision` gate (`:18398`); the 266's
+  `Main.projPet[266] = true` (`Main.cs:8739` → `Projectile.cs:707`)
+  closes it — a blocked move only stops the minion (the
+  `pirate_movement` precedent).
+- **The `old_position` field**: `Entity.oldPosition`
+  (`Projectile.cs:17013`) joins the slot — the C# latches it BETWEEN
+  `AI()` and `HandleMovement`, so the machine's `flag32` X-stall test
+  (`:62318`) reads the PREVIOUS tick's pre-movement position; the
+  port keeps that order (latch after `ground_machine`, before
+  `ground_movement`). The other arms keep the stock ZERO until their
+  movement ports land.
+- **The damage gates**: the idle machine holds `friendly = false`
+  (`:61999-62002`) while the C# stock `hostile` stays false — so both
+  pool damage proxies gain the 266 refusal (the PVE walk's
+  `!friendly` gate, the `RAINBOW_CRYSTAL_EXPLOSION` precedent; the
+  player-contact call site's kind exemption, the `DUNGEON_DEBRIS`
+  precedent). The attack window (`:61949`) flips `friendly` true and
+  the PVE walk hits.
+- **Documented stand-ins**: `Collision.SolidCollision` → `box_solid`
+  (5-point), `Collision.CanHit` → `can_hit` (Manhattan walk),
+  `CanBeChasedBy` → `chaseable` (three fields),
+  `OwnerMinionAttackTargetNPC` → `minion_attack_target_npc` (exactly
+  the property, `:566-576`); `ignoreDoors` (projPet true) is not
+  carried by the port's `tile_collision` — doors block (the
+  `pirate_movement` precedent); the wet-swim branch (`:64475-64485`)
+  folds dry (no wet flags); the `UpdatePosition` slope pass
+  (`:20447-20474`) and the inner `SlopeCollision` passes are deferred
+  (the twins/pirate precedent); `flag9` petting folds false
+  (unported); the `SolidTileAllowBottomSlope` hop probe keeps the
+  FULL C# conjunction (the platform-proper-top-frame clause + the
+  inactive test the tr-core edit-side variant drops).
+- **Still open in AI_026**: every row-less type — the ~45 ground
+  pets, the pygmies 191-194, the spiders 390-392, the Pals 1094/1113
+  (their rows + the per-type tails in `ground_machine_census` are the
+  follow-up slices' scope).
+- **The retry review's data-layer fixes (worker R39b, same branch,
+  code-only)**: the first pass's machine port was faithful, but three
+  `proj_data` values contradicted the C# `SetDefaults` block
+  (`Projectile.cs:3516-3528`) and would have failed the slice's own
+  row witness — corrected in `projectile/data.rs`:
+  1. `proj_frames(266)` had no row (read the init default 1) — the
+     fly-out wrap (`:61209`) and the witness need **12**
+     (`Main.cs:8612`); the row joins the table.
+  2. The immunity pair sat in the LOCAL overlay (`(true, 12)`) —
+     the C# sets `usesIDStaticNPCImmunity` + `idStaticNPCHitCooldown
+     = 12` (`:3526-3527`); it now rides the row's own state group
+     `(false, -2, true, 12, 0, 1.0)` and the local overlay drops it
+     (the idStatic hit gate keys the pool's `id_static` map, not the
+     per-slot local array).
+  3. The blanket summon `ignore_water` gave the 266 `true` — its
+     block sets no `ignoreWater`, the stock false (`:761`) stands;
+     the 266 joins the Storm-Tiger/pirate exemption list (its
+     wet-swim arm `:64475-64485` is a live C# branch, not a
+     no-water kind). No existing witness read the old values
+     (`MINION_KINDS` in `test_DW_1_1` omits the 266).
 ## The dungeon-debris trio (S1-D-5, 2026-11-19, code-only mode)
 The 736/737/738 `BlueDungeonDebris`/`GreenDungeonDebris`/`PinkDungeonDebris`
 rows, the aiStyle-10 `AI_010` arm (`Projectile.cs:57826-58100`, dispatch
