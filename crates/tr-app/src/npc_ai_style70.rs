@@ -46,10 +46,10 @@
 //!    `Next(80, 121)` (`:34889`, the scale), `Next(165, 265)` (`:34890`,
 //!    the speed), `Next(-100, 101)` X then `Next(-100, 101)` Y
 //!    (`:34891`, the jitter — C# evaluates the `Vector2` ctor arguments
-//!    left to right). FIVE draws, then `netUpdate = true`.
+//!    left to right). FOUR draws, then `netUpdate = true`.
 //!    Short-circuit gate: the phase-7 Fishron spawn presets `target`
 //!    and `ai[3]` (`:49478-49481`, its OWN `Next(80, 121)` at the spawn
-//!    site), so those bubbles never run this block — the five draws
+//!    site), so those bubbles never run this block — the four draws
 //!    never happen for them.
 //! 2. EVERY tick, including the detonation tick (the draws precede the
 //!    state machine and its early return): `Next(-10, 11)` for the wind
@@ -188,7 +188,7 @@ pub struct Style70Outcome {
 
 /// One fixed step of the aiStyle-70 arm (`NPC.cs:34884-34957`), in C#
 /// order. Draws the `Main.rand` stream exactly as the module docs
-/// enumerate: five draws on the `target == 255` init tick, two every
+/// enumerate: four draws on the `target == 255` init tick, two every
 /// tick.
 ///
 /// `players` feeds `TargetClosest()` (`:34888`, faceTarget true)
@@ -438,12 +438,12 @@ mod tests {
         assert_eq!(DETONATING_BUBBLE_FRAME_ROW, 1);
     }
 
-    /// `NPC.cs:34886-34893` — the init tick draws EXACTLY five, in
+    /// `NPC.cs:34886-34893` — the init tick draws EXACTLY four, in
     /// order: Next(80,121), Next(165,265), Next(-100,101) X,
     /// Next(-100,101) Y — after the RNG-free TargetClosest. Witness:
     /// a twin stream replayed by hand must stay in lockstep.
     #[test]
-    fn the_init_tick_draws_five_in_order() {
+    fn the_init_tick_draws_four_in_order() {
         let w = air();
         let players = [cand(2000.0, 1000.0)];
         let mut n = bubble(1000.0, 1000.0);
@@ -451,7 +451,7 @@ mod tests {
         let mut twin = UnifiedRandom::new(12345);
         let out = ai_style70(&mut n, &w, &players, 0.0, false, 7, &mut rng);
         assert!(!out.detonated);
-        // The five init draws ...
+        // The four init draws ...
         let scale_roll = twin.next_range(80, 121);
         let speed_roll = twin.next_range(165, 265);
         let jx = twin.next_range(-100, 101);
@@ -750,7 +750,7 @@ mod tests {
         }
     }
 
-    /// The full stream witness: init tick (5+2 draws) → steady tick
+    /// The full stream witness: init tick (4+2 draws) → steady tick
     /// (2) → death tick (2), replayed by hand against a twin stream.
     #[test]
     fn the_stream_witness_replays_the_whole_life() {
@@ -761,7 +761,7 @@ mod tests {
         let mut twin = UnifiedRandom::new(2026);
         // Tick 1: the init gate fires (target 255).
         let _ = ai_style70(&mut n, &w, &players, 0.0, false, 1, &mut rng);
-        for _ in 0..5 {
+        for _ in 0..4 {
             let _ = twin.next();
         }
         for _ in 0..2 {

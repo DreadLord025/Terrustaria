@@ -95,6 +95,21 @@ pub fn walker_step(
     } else {
         npc.vx *= 0.9;
     }
+    walker_integrate(npc, world, params, gravity, max_fall);
+}
+
+/// The gravity + tile-collision integration shared by [`walker_step`] and
+/// [`walker_step_ladder`] — verbatim the second half of the walk step
+/// (`NPC.cs:10586+`'s position pass). Extracted so the ladder variant
+/// swaps only the velocity write, never the choreography.
+fn walker_integrate(
+    npc: &mut Npc,
+    world: &World,
+    params: WalkerParams,
+    gravity: f32,
+    max_fall: f32,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
     npc.vy = (npc.vy + gravity).min(max_fall);
 
     let nx = npc.x + npc.vx;
@@ -121,6 +136,113 @@ pub fn walker_step(
         npc.y = (ty + 1) as f32 * TILE_PX;
         npc.vy = 0.0;
     }
+}
+
+/// S1-D-3 (speed table) — [`walker_step`] with the `AI_003_Fighters`
+/// per-type velocity ladder (`npc_ai3_speeds.rs`, `NPC.cs:57403-58401`)
+/// replacing the direct `vx = facing * speed` write for the aiStyle-3
+/// kinds. The facing/sprite writes, the aggro window, the gravity and the
+/// integration stay byte-identical to [`walker_step`]; a kind the ladder
+/// declines (sibling-owned frost ids, the shooter-block exclusions) or a
+/// non-aiStyle-3 kind falls back to the direct write, so every existing
+/// caller's behaviour is preserved unless the C# ladder names its type.
+pub fn walker_step_ladder(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    params: WalkerParams,
+    gravity: f32,
+    max_fall: f32,
+    target_dead: bool,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+    let dx = target_x - cx;
+    let dy = target_y - cy;
+    let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
+    if aggro {
+        npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // BUG-07's lockstep write, as `walker_step` (`NPC.cs:19867`).
+        npc.sprite_dir = npc.facing;
+        if !run_ai3_ladder(npc, world, target_x, target_y, gravity, target_dead) {
+            npc.vx = npc.facing as f32 * params.speed;
+        }
+    } else {
+        npc.vx *= 0.9;
+    }
+    walker_integrate(npc, world, params, gravity, max_fall);
+}
+
+/// Build the [`crate::npc_ai3_speeds::LadderCtx`] from the NPC + world +
+/// target, run the ladder and write its results back. Returns false when
+/// the kind is not aiStyle 3 or the ladder declines the type (the caller
+/// keeps its current walk). The zombie's own machine (`npc.rs`'s
+/// `update_zombie`) calls this at the C#'s ladder position too.
+pub fn run_ai3_ladder(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    gravity: f32,
+    target_dead: bool,
+) -> bool {
+    if npc.kind.ai_style() != 3 {
+        return false;
+    }
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+    let mut ctx = crate::npc_ai3_speeds::LadderCtx {
+        npc_type: npc.kind.cs_id(),
+        vx: npc.vx,
+        vy: npc.vy,
+        direction: npc.facing,
+        sprite_direction: npc.sprite_dir,
+        scale: npc.scale,
+        life: npc.hp,
+        life_max: npc.max_hp,
+        ai2: npc.ai[2],
+        ai3: npc.ai[3],
+        center_x: cx,
+        center_y: cy,
+        // The port's effective per-tick gravity stands in for the C#'s
+        // `NPC.gravity` static (`NPC.cs:90881`'s 0.3f default).
+        gravity,
+        target_center_x: target_x,
+        target_center_y: target_y,
+        target_dead,
+        day_time: world.day_time,
+        below_surface: (npc.y as f64) > world.world_surface * 16.0,
+        // `Collision.CanHit(Center, 1, 1, …)` (`:58299`) — the port's
+        // line-ray seam (`projectile::can_hit_line`, the `CanHitLine`
+        // port) at the same 1×1 centres.
+        can_hit_target: crate::projectile::can_hit_line(
+            world, cx, cy, 1.0, 1.0, target_x, target_y, 1.0, 1.0,
+        ),
+        def_damage: npc.kind.contact_damage(),
+    };
+    let Some(((vx, vy), fx)) = crate::npc_ai3_speeds::apply_ladder(&mut ctx) else {
+        return false;
+    };
+    npc.vx = vx;
+    npc.vy = vy;
+    if let Some(v) = fx.ai2 {
+        npc.ai[2] = v;
+    }
+    if let Some(v) = fx.ai3 {
+        npc.ai[3] = v;
+    }
+    if let Some(v) = fx.damage {
+        // The port's live `NPC.damage` seam is `damage_override` (the
+        // contact path reads it at `npc.rs`'s `damage_override.unwrap_or`
+        // over the kind's `contact_damage()` — the C# `this.damage` write,
+        // `NPC.cs:58266`/`:58308`).
+        npc.damage_override = Some(v);
+    }
+    // `fx.hop_flag` (the `:57847` flag) feeds the C#'s obstacle-jump scan
+    // (`:59831`) — the port's collision jump is that scan's stand-in;
+    // ANALYSIS deferral.
+    true
 }
 
 /// `AI_002_FloatingEye`'s fly-and-bob step (`NPC.cs:52274+`, the eye
@@ -428,308 +550,12 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
     npc.facing = if target.center_x >= cx { 1 } else { -1 };
 }
 
-/// `AI_008`'s per-kind constants (`NPC.cs`'s aiStyle 8 block).
-#[derive(Clone, Copy, Debug)]
-pub struct CasterParams {
-    /// `num88` — the teleport search radius in tiles (20; the Fire Imp 5,
-    /// `NPC.cs:21089-21093`).
-    pub teleport_radius: i32,
-    /// The post-teleport windup (`ai[1] = num88`, `:21101`).
-    pub post_teleport_windup: i32,
-    /// The shoot tick — the windup countdown fires the sphere when it
-    /// reaches it (`num89` = 25 for the standard casters, `:21115`; the
-    /// Fire Imp checks `ai[1] == 10`, `:21166`). `None` for the Desert
-    /// Djinn: its windup fires the curse volley on the `% 30` ticks
-    /// (`:21117-21119`), not on a fixed countdown tick — and that volley
-    /// draws `Main.rand` (`:21140-21141`/`:21195-21196`), so the port
-    /// skips it wholesale (S1-E-5's RNG rule) and never shoots.
-    pub shoot_tick: Option<i32>,
-    /// The `ai[0]` shot-trigger tick and the windup it sets — the
-    /// standard casters trigger at 100/200/300 with `ai[1] = 30`
-    /// (`:21069-21073`); the Djinn triggers once at 180 with
-    /// `ai[1] = 181` (`:21031-21038`).
-    pub trigger: CasterTrigger,
-    /// The `ai[0]` wrap threshold — 650 for the standard casters
-    /// (`:21083`); the Djinn wraps early at 360 (`:21079-21082`'s
-    /// `ai[0] = 650`, which the very next `>= 650` block turns into the
-    /// teleport attempt).
-    pub wrap_at: i32,
-}
-
-/// `AI_008`'s per-kind `ai[0]` shot trigger (`NPC.cs:21011-21074`).
-#[derive(Clone, Copy, Debug)]
-pub enum CasterTrigger {
-    /// The else group's three ticks, each setting `ai[1] = 30`.
-    Standard,
-    /// The Djinn's single tick 180, setting `ai[1] = 181`.
-    Djinn,
-}
-
-impl CasterParams {
-    /// The Goblin Sorcerer/Tim/Dark Caster group (`:21069`'s triggers with
-    /// the `num88 = 20` / `num89 = 25` defaults).
-    pub const STANDARD: Self = Self {
-        teleport_radius: 20,
-        post_teleport_windup: 20,
-        shoot_tick: Some(25),
-        trigger: CasterTrigger::Standard,
-        wrap_at: 650,
-    };
-    /// The Fire Imp (`:21090-21093`'s `num88 = 5`, `:21166`'s shoot tick).
-    pub const FIRE_IMP: Self = Self {
-        teleport_radius: 5,
-        post_teleport_windup: 5,
-        shoot_tick: Some(10),
-        trigger: CasterTrigger::Standard,
-        wrap_at: 650,
-    };
-    /// The Desert Djinn (`NPC.cs:21031-21038`'s 180/181 trigger,
-    /// `:21079-21082`'s 360 wrap, `:21089`'s `num88 = 20` default; the
-    /// curse volley's `% 30` shots draw `Main.rand` and are skipped).
-    pub const DESERT_DJINN: Self = Self {
-        teleport_radius: 20,
-        post_teleport_windup: 20,
-        shoot_tick: None,
-        trigger: CasterTrigger::Djinn,
-        wrap_at: 360,
-    };
-}
-
-/// `AI_008`'s `ai[0]`/`ai[1]` pair folded into the caller's fields
-/// (`npc.caster_counter`/`npc.cast_windup`).
-pub struct CasterPhase {
-    /// `ai[0]` — the cycle counter (the 500 init, the 100/200/300 shot
-    /// triggers, the 650 teleport threshold).
-    pub counter: i32,
-    /// `ai[1]` — the windup countdown (30 from a trigger, `num88` after a
-    /// teleport).
-    pub windup: i32,
-}
-
-/// `AI_AttemptToFindTeleportSpot` (`NPC.cs:18937-19007`): 100 random
-/// attempts, each a random x column scanned downward from a random y in the
-/// radius window; the floor must be active+solid, the 3×3 body space above
-/// it free (`Collision.SolidTiles(x±1, i-4..i-2)` must be false, fluff 1),
-/// the tile above not lava (`:19053`), and the ±5-tile telefrag rect clear
-/// of the player's hitbox (`:19056-19071`; the port drops the velocity
-/// extrapolation). The caster's own ±1 tile never counts (`:18962`'s skip).
-/// Deviations: the Dark Caster's dungeon-wall gate (`:19045-19050`) is
-/// constants-off (the dungeon sets land with the dungeon work); the
-/// velocity-prediction rect is dropped.
-fn find_teleport_spot(
-    world: &World,
-    rng: &mut UnifiedRandom,
-    target_tile: (i32, i32),
-    self_tile: (i32, i32),
-    radius: i32,
-    player_x: f32,
-    player_y: f32,
-) -> Option<(i32, i32)> {
-    for _ in 0..100 {
-        let x = target_tile.0
-            - radius
-            // `Main.rand.Next(-radius, radius + 1)` per axis
-            // (`NPC.cs:18948`).
-            + rng.next_range(-radius, radius + 1) as i32;
-        let y_start = target_tile.1
-            - radius
-            + rng.next_range(-radius, radius + 1) as i32;
-        for y in y_start..target_tile.1 + radius {
-            if (x - self_tile.0).abs() <= 1 && (y - self_tile.1).abs() <= 1 {
-                continue;
-            }
-            // The floor: active + solid (`:18966`'s `nactive` skip plus
-            // `:18968`'s `tileSolid` reject — the `teleportInAir: false`
-            // default).
-            if !world
-                .tile(x, y)
-                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
-            {
-                continue;
-            }
-            // The lava gate (`:19053`'s `else if (lava())` — the tile above
-            // the floor must not be lava).
-            if world.tile(x, y - 1).is_some_and(|t| {
-                t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
-            }) {
-                continue;
-            }
-            // The body space above the floor (`:18971-18975`):
-            // `SolidTiles(x - fluff..x + fluff, i - 3 - fluff..i - 1)` must
-            // be false — fluff 1: cols x-1..x+1, rows i-4..i-1 (four rows —
-            // the 40 px caster body spans three of them plus the settle).
-            let mut blocked = false;
-            'outer: for bx in (x - 1)..=(x + 1) {
-                for by in (y - 4)..=(y - 1) {
-                    if world
-                        .tile(bx, by)
-                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
-                    {
-                        blocked = true;
-                        break 'outer;
-                    }
-                }
-            }
-            if blocked {
-                continue;
-            }
-            // The telefrag gate (`:19056-19071`): the spot's 16×16 rect
-            // inflated by 5 tiles (176 px) must not intersect the player's
-            // 20x42 hitbox.
-            let sx = (x * 16 - 80) as f32;
-            let sy = (y * 16 - 80) as f32;
-            if sx < player_x + 10.0
-                && sx + 176.0 > player_x - 10.0
-                && sy < player_y + 21.0
-                && sy + 176.0 > player_y - 21.0
-            {
-                continue;
-            }
-            return Some((x, y));
-        }
-    }
-    None
-}
-
-/// `AI_008`'s caster cycle (`NPC.cs:20817-21278`). The order is vanilla:
-/// the stand snap, the 500 counter init (`:20836-20843`), `ai[0]++`
-/// (`:20993`), the shot triggers at 100/200/300 (`:21069-21073` — `flag5`'s
-/// firing-distance gate is constant-on in the port, the
-/// `Main.MaxWorldViewSize` rectangle lands with the camera work), the
-/// teleport attempt at 650 (`:21083-21112`), the generic gravity + floor
-/// stop (`:90465-90470`'s `NPC.gravity` block + `UpdateCollision`), then
-/// the windup countdown + the shoot (`:21113+`). Returns true on the shoot
-/// tick — the caller spawns the sphere through `wants_sphere`.
-pub fn caster_cycle(
-    npc: &mut Npc,
-    world: &World,
-    target_x: f32,
-    target_y: f32,
-    rng: &mut UnifiedRandom,
-    params: CasterParams,
-    phase: &mut CasterPhase,
-) -> bool {
-    // The stand: `velocity.X *= 0.93`, snapped to 0 inside ±0.1
-    // (`:20831-20835`).
-    npc.vx *= 0.93;
-    if npc.vx > -0.1 && npc.vx < 0.1 {
-        npc.vx = 0.0;
-    }
-    npc.facing = if target_x >= npc.x + npc.size().0 * 0.5 {
-        1
-    } else {
-        -1
-    };
-    if phase.counter == 0 {
-        phase.counter = 500;
-    }
-    phase.counter += 1;
-    match params.trigger {
-        CasterTrigger::Standard => {
-            if phase.counter == 100 || phase.counter == 200 || phase.counter == 300 {
-                phase.windup = 30;
-            }
-        }
-        // `:21031-21038` — the Djinn's single 180 trigger sets the long
-        // 181-tick windup (the curse volley's five `% 30` shots).
-        CasterTrigger::Djinn => {
-            if phase.counter == 180 {
-                phase.windup = 181;
-            }
-        }
-    }
-    // `:21079-21082` — the Djinn's early wrap feeds the same `>= 650`
-    // teleport block below.
-    if phase.counter >= params.wrap_at && params.wrap_at < 650 {
-        phase.counter = 650;
-    }
-    if phase.counter >= 650 {
-        phase.counter = 1;
-        let (w, h) = npc.size();
-        let self_tile = (
-            ((npc.x + w * 0.5) / TILE_PX) as i32,
-            ((npc.y + h * 0.5) / TILE_PX) as i32,
-        );
-        if let Some((tx, ty)) = find_teleport_spot(
-            world,
-            rng,
-            ((target_x / TILE_PX) as i32, (target_y / TILE_PX) as i32),
-            self_tile,
-            params.teleport_radius,
-            target_x,
-            target_y,
-        ) {
-            phase.windup = params.post_teleport_windup;
-            // The teleport placement (`:20924-20930`): the feet land on the
-            // spot's floor tile, the X centred on the tile, velocity zeroed.
-            npc.x = tx as f32 * TILE_PX - w * 0.5 + 8.0;
-            npc.y = ty as f32 * TILE_PX - h;
-            npc.vx = 0.0;
-            npc.vy = 0.0;
-        }
-    }
-    // The X stand decay meets the tiles (`UpdateCollision`'s X stop).
-    let (w, h) = npc.size();
-    let nx = npc.x + npc.vx;
-    if !crate::player::collides_rect(world, nx, npc.y, w, h) {
-        npc.x = nx;
-    } else {
-        npc.vx = 0.0;
-    }
-    // The generic gravity + floor stop (`:90465-90470` + `UpdateCollision`).
-    npc.vy = (npc.vy + crate::npc::GRAVITY).min(crate::npc::MAX_FALL);
-    let ny = npc.y + npc.vy;
-    if !crate::player::collides_rect(world, npc.x, ny, w, h) {
-        npc.y = ny;
-        npc.on_ground = false;
-    } else if npc.vy > 0.0 {
-        let ty = ((ny + h) / TILE_PX).floor() as i32;
-        npc.y = ty as f32 * TILE_PX - h;
-        npc.vy = 0.0;
-        npc.on_ground = true;
-    } else {
-        npc.vy = 0.0;
-    }
-    // The windup countdown + the shoot tick (`:21113-21175`). The Djinn's
-    // `% 30` curse volley (`:21117-21119`) draws `Main.rand` and is skipped
-    // wholesale — `shoot_tick: None` never fires.
-    if phase.windup > 0 {
-        phase.windup -= 1;
-        if Some(phase.windup) == params.shoot_tick {
-            return true;
-        }
-    }
-    false
-}
-
-/// `AI_009`'s sphere core (`NPC.cs:21404-21429`): the velocity points at
-/// the player ONCE (`target == 255`'s launch arm — `TargetClosest` + the
-/// normalized delta × `num120`), then the ball flies straight
-/// (`noGravity` + `noTileCollide`: the generic `position += velocity`
-/// integration, `:90495-90498`). The port launches while the velocity is
-/// still zero. `num120` is 6, the Burning Sphere 5 (`:21395-21399`).
-pub fn sphere_step(npc: &mut Npc, target_x: f32, target_y: f32, world: &World) {
-    let (w, h) = npc.size();
-    if npc.vx == 0.0 && npc.vy == 0.0 {
-        let dx = target_x - (npc.x + w * 0.5);
-        let dy = target_y - (npc.y + h * 0.5);
-        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-        let speed = match npc.kind {
-            NpcKind::BurningSphere => 5.0,
-            _ => 6.0,
-        };
-        npc.vx = dx / d * speed;
-        npc.vy = dy / d * speed;
-    }
-    npc.x += npc.vx;
-    npc.y += npc.vy;
-    npc.facing = if npc.vx >= 0.0 { 1 } else { -1 };
-    // The off-world guard (the flyer_step shape): the balls fly through
-    // everything, so the only stop is the world edge.
-    if npc.y > world.height as f32 * TILE_PX + 200.0 {
-        npc.hp = 0;
-    }
-}
+// S1-D-3: the aiStyle-8 caster family (`CasterParams`/`CasterPhase`/
+// `caster_cycle`/`find_teleport_spot`) moved to `npc_ai_bat.rs` —
+// `ai_style_8_step` + `attempt_find_teleport_spot`, the faithful
+// `NPC.cs:20817-21376` / `:18937-19007` port (the deferred teleport, the
+// dungeon-wall gate, the telefrag velocity union, the firing-distance
+// rect and the shared `TargetClosest` all landed there).
 
 /// The swim tunables — `AI_016`'s per-kind constants (`NPC.cs`'s aiStyle 16
 /// block: the chase accel/caps and the aggro gate).
@@ -955,6 +781,65 @@ mod tests {
         assert!(npc.x < 90.0 * 16.0, "the walker approached the target");
         assert!(jumped, "the walker jumped the obstacles");
         assert!(npc.on_ground, "the walker landed");
+    }
+
+    #[test]
+    fn s1_d_3_the_ladder_walker_accelerates_at_the_csharp_rate() {
+        // S1-D-3 (speed table): the zombie (type 3) rides the num107
+        // default arm (`NPC.cs:58322-58401`) — the 0.07 accel, not the
+        // old direct `vx = facing * speed` write. Flat ground, no
+        // obstacles: the velocity curve is the C#'s own.
+        let w = ground();
+        let mut npc = Npc::new(NpcKind::Zombie, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        npc.on_ground = true;
+        let target = (60.0 * 16.0, 119.0 * 16.0);
+        walker_step_ladder(
+            &mut npc,
+            &w,
+            target.0,
+            target.1,
+            WalkerParams::ZOMBIE,
+            0.4,
+            10.0,
+            false,
+        );
+        // Tick 1: vx 0 → -0.07 (the target is left), NOT -1.0.
+        assert!((npc.vx - (-0.07)).abs() < 1e-6, "vx {}", npc.vx);
+        for _ in 0..14 {
+            walker_step_ladder(
+                &mut npc,
+                &w,
+                target.0,
+                target.1,
+                WalkerParams::ZOMBIE,
+                0.4,
+                10.0,
+                false,
+            );
+        }
+        // Tick 15: the cap 1 (`:58324`) — 15 × 0.07 = 1.05 clamps at 1.
+        assert!((npc.vx - (-1.0)).abs() < 1e-5, "vx {}", npc.vx);
+        assert!(npc.x < 90.0 * 16.0, "the ladder walker still chases");
+    }
+
+    #[test]
+    fn s1_d_3_the_ladder_walker_keeps_the_direct_write_for_declined_kinds() {
+        // A non-aiStyle-3 kind (the DemonEye, style 2) keeps the old
+        // direct write byte-for-byte — the ladder only claims style 3.
+        let w = ground();
+        let mut npc = Npc::new(NpcKind::DemonEye, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        npc.on_ground = true;
+        let params = WalkerParams {
+            speed: 2.0,
+            jump: -6.2,
+            aggro_x: 80.0 * 16.0,
+            aggro_y: 40.0 * 16.0,
+        };
+        walker_step_ladder(&mut npc, &w, 60.0 * 16.0, 119.0 * 16.0, params, 0.4, 10.0, false);
+        assert_eq!(npc.vx, -2.0, "the declined kind keeps the direct write");
+        // The aggro window's outside decay is unchanged too.
+        walker_step_ladder(&mut npc, &w, 5000.0, 119.0 * 16.0, params, 0.4, 10.0, false);
+        assert_eq!(npc.vx, -2.0 * 0.9);
     }
 
     #[test]

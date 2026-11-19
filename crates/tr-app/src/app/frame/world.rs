@@ -27,6 +27,10 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The town-chatter panel's Close button + hover tick
+    // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
+    // is consumed before the chest/crafting/inventory handlers see it.
+    self.handle_npc_chat_clicks();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
@@ -485,7 +489,16 @@ impl App {
     // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
     // budget the countdown re-arms from (`:61818-61821`).
     m.map_time_max = self.gfx_quality.map_time_max;
-    m.update(&self.world, self.player.as_ref(), &self.light, dt);
+    if self.light_mode != tr_core::lighting::LightMode::Color {
+        // S1-E-19 wave B: the legacy engine exports from its own
+        // `ProcessArea` (`LegacyLighting.cs:341-358`, wired in
+        // `frame/draw.rs`); the update side only runs the per-frame
+        // `Main.mapTime` countdown (`Main.cs:61818-61821`). The modern
+        // `ExportToMiniMap` countdown lives inside `WorldMap::update`.
+        m.tick_map_time();
+    } else {
+        m.update(&self.world, self.player.as_ref(), &self.light, dt);
+    }
     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
     // the markers older than 15 s drop while the map is up.
     m.age_pings(dt);
