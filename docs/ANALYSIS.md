@@ -24893,3 +24893,73 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The vines keep their background walls (fix/vines-destroy-walls)
+
+**User report.** Spawned vines destroy background-wall tiles: in mini-caves
+with a destructible `dirt_wall`, the wall disappears and a vine stands in
+its place.
+
+**Root cause — the worldgen Vines pass, not the growth tick or the draw.**
+`worldgen/biome_detail.rs::pass_vines` planted each vine segment by
+REPLACING the whole `Tile` struct:
+
+```rust
+world.tiles[i] = Tile { kind: vine, frame_x: 0, ..Default::default() };
+world.tiles[i].flags |= FLAG_ACTIVE;
+```
+
+`Tile::default()` zeroes `wall`, `wall_frame`, `liquid`, `meta` (paint) —
+so every generated vine erased the cell's background wall. The C# Vines
+pass writes fields only (`WorldGen.cs:20210-20216` for the 52 arm,
+`:20246-20251` for the jungle 62 arm, `:20390-20395` for the corrupt 636
+arm): `active(true)`, `type = <vine>`, `ClearSlope()` — `tile.wall` and
+`wallFrame` are never touched. Jungle-grass overhangs above mini-cave
+pockets carrying the natural dirt wall grew vines straight through the
+wall field, which is exactly the reported symptom.
+
+The two other suspects were re-verified faithful and left unchanged:
+
+- The runtime growth arm (`growth.rs::grow_vine_arm`,
+  `WorldGen.cs:73311-73341` + the four sibling families `:73343-73499`)
+  writes `kind`/`flags`/`liquid` only; `wall` is a separate `Tile` field
+  (`tile.rs:19`) it never touches. (Its `SquareTileFrame` /
+  `CopyPaintAndCoating` calls remain the documented M7-GROWTH omissions.)
+- The draw layer: walls draw in their own pass BEFORE tiles
+  (`render/tiles.rs`, `Main.DrawWalls` shape), gated only by
+  `wall_visible` + `tile_hides_wall` — the frame-opacity proxy for
+  `WallDrawing.FullTile` (`WallDrawing.cs:91`, `:241-442`), which returns
+  false for every non-solid kind. Vine frames are transparent, so the
+  wall draws under vine cells; the deferred `DrawVines` strip pass
+  (`render/vines.rs`, S1-G-1) draws only vine sprites and never touches
+  the wall layer.
+
+**Fix.** `pass_vines` now writes the C#'s fields in place: `FLAG_ACTIVE`,
+`kind = vine`, `set_slope(0)` + clear `FLAG_HALF_BRICK`
+(`Tile.ClearSlope`, `Tile.cs:130-134`), `frame_x = 0` (the port's existing
+framing convention for vine segments). Wall, wall frame, liquid and paint
+survive. The RNG draw order is unchanged — the write itself draws nothing
+— so `generation_is_reproducible_for_a_seed` (a == b) stays green; the two
+pinned world-hash VALUES (`world_hash.rs` `SEED42_512` / `DEFAULT_WORLD`)
+are stale by design (vine cells now carry their walls) and must be
+re-measured at the merge gate.
+
+**Tests-as-code (written, not run — code-only mode, no compiler invoked).**
+
+- `biome_detail::tests::vines_grow_without_erasing_the_background_wall` —
+  a jungle-grass overhang above a dirt-walled pocket: every grown vine
+  cell keeps wall 2, its (5,2) autotile frame, the paint and the liquid;
+  `ClearSlope` ran.
+- `biome_detail::tests::forest_vines_keep_the_wall_and_clear_the_slope` —
+  the 52 arm keeps the wall and wipes a leftover slope + half-brick.
+- `growth::tests::the_vine_arm_preserves_the_wall_and_wall_frame` — the
+  runtime arm over 599 seeds: grown vines keep wall + wall_frame.
+- `render::tiles::tests::walls_draw_under_vine_cells` — the wall-pass gate
+  (`tile_hides_wall`) does not cull a vine cell's wall; an opaque dirt
+  block does (the `FullTile` control), slopes/half-bricks never do.
+
+**Out of scope (pre-existing, unchanged).** The compact `pass_vines`
+model itself (per-family length caps 12/20 vs the C#'s `Next(1,10)`
+counter runs, the missing 382/636/205/638 arms and the leaf-192 arm) is
+the documented M1.4-WGEN-3 approximation; this fix changes only the cell
+write, not the pass shape or its stream.
