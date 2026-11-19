@@ -24893,3 +24893,148 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The Moon Lord projectile family (S1-D-4, task/S1-D-4-moonlord-projectiles, 2026-11-19, code-only mode)
+
+**Scope.** The moon-lord projectile family completeness pass: census every
+Moon Lord / lunar-event projectile id, verify its data row + dispatch arm on
+main, port the missing ones. The moon-lord NPC machine (R6b, TR-D3moon) was
+NOT touched. Boundaries honoured: R62 empress (872-874/919/923), R63 styles
+31/147/181/193, R56 style 194, R64 frostmoon (347-355), R19b ai001-C kinds
+(110/275/276/634/635/645/662/675/685) — all excluded.
+
+### Census table (ids verified against ProjectileID.cs, not the brief)
+
+The task brief guessed "PhantasmalBolt/PhantasmalEye/PhantasmalDeathray/
+PhantasmalSphere ~613-617" — **wrong**: the phantasmal ids are 452/454/455/462
+(`ProjectileID.cs:1458`/`:1462`/`:1464`/`:1478`); 613-617 are the DD2
+squire/apprentice shots + the Vortex Beater pair (615/616).
+
+| id | name | family | SetDefaults | row on main | arm on main | this task |
+| --- | --- | --- | --- | --- | --- | --- |
+| 452 | PhantasmalEye | ML hostile | `:5240-5249` (14x14, st82, pen −1, t600, α255) | yes | `ai_phasmal_eye` (st82 dispatch) | verified, untouched |
+| 454 | PhantasmalSphere | ML hostile | `:5259-5269` (40x40, st83, tileCollide false) | yes | `ai_phasmal_sphere` (st83) | verified, untouched |
+| 455 | PhantasmalDeathray | ML hostile | `:5270-5280` (36x36, st84) | yes | `ai_phasmal_deathray` (st84 kind split) | verified, untouched |
+| 456 | MoonLeech | ML hostile | `:5281-5291` (16x16, st85) | yes | `ai_moon_leech` (st85) | verified, untouched |
+| 462 | PhantasmalBolt | ML hostile | `:5329-5339` (8x8, st1, extra 3, tileCollide false) | yes | ai001_b `step` | verified, untouched |
+| 622 | BlowupSmokeMoonlord | ML drama | `:6691-6698` (10x10, st1, extra 2) | yes | ai001_b `step` | verified, untouched |
+| 638 | MoonlordBullet | ML drop (S.D.M.G.) | `:6858-6872` | **NO** | **NO** (generic ai_arrow) | **PORTED** |
+| 639 | MoonlordArrow | ML drop (Phantasm) | `:6873-6888` | **NO** | **NO** | **PORTED** |
+| 640 | MoonlordArrowTrail | ML drop (Phantasm ghost) | `:6889-6903` | **NO** | **NO** | **PORTED** |
+| 641 | MoonlordTurret | ML drop (sentry) | `:6916-6928` (st123) | yes | `ai_floating_turrets` (S1-D-4b-3) | verified, untouched |
+| 642 | MoonlordTurretLaser | ML drop beam | `:6904-6915` (st84) | yes | `ai_moonlord_turret_laser` | verified, untouched |
+| 645 | LunarFlare | ML drop (spell) | `:6953-6965` (st1, extra 5, tileCollide false) | yes — under the misnamed `POISON_DART` const | ai001-C IN FLIGHT (`task/S1-D-5-aistyle1-types-c`) | const doc corrected; arm EXCLUDED (C owns it) |
+| 634/635 | NebulaBlaze1/2 | lunar weapon | `:6820-6857` | yes | ai001-C IN FLIGHT (R19b) | EXCLUDED per boundary |
+| 607 | SolarFlareRay | lunar weapon (Solar Eruption) | `:6542-6553` (st116) | no | no (st116 `:34438` unported) | DEFERRED (census row) |
+| 615 | VortexBeater | lunar weapon (holder) | `:6620-6631` (st75) | yes (the gunProj row `615 \| 630 \| 705 \| 714`) | **st75 falls into `ai_last_prism`** — see deviation below | DEFERRED + deviation recorded |
+| 616 | VortexBeaterRocket | lunar weapon | `:6632-6643` (st1, extra 2, t90×Max) | no | no | DEFERRED (census row) |
+| 625-628 | StardustDragon1-4 | lunar weapon (minion) | `:6729-6753` (st121, minion, 0.5 slots for 626/627) | no (only the MINION_SACRIFICABLE/TARGETING lists) | no (`AI_121_StardustDragon` `:42824` unported) | DEFERRED (census row) |
+| 646-649 | Lunar hooks | lunar weapon (hooks) | `:6966-6976` (st7) | yes (grapple rows) | `ai_hook` (M4-PROJ-5) | verified, untouched |
+
+The lunar PILLAR ritual projectiles (540 mark, 574 nebula eye, 578/579/580
+vortex, 629 tower bolt) are event-machine shots, not moon-lord drops —
+already rowed/armed (S1-D-4c), outside this row's scope.
+
+### What was ported (the three drop shots)
+
+`crates/tr-app/src/projectile_ai_moonlord.rs` — the gated aiStyle-1 seam
+(the ai001_a/b precedent): `covers()` claims ONLY 638/639/640, chained after
+A/B in the dispatch; every other kind keeps `ai_arrow` byte-identical. The
+in-flight C slice (110/275/276/634/635/645/662/675/685) is kind-disjoint.
+
+- **638**: the byte-truncated speed fade `alpha -= (byte)(speed * 0.3)`
+  (`Projectile.cs:55866-55874`, double product → i32 cast exact for every
+  reachable speed); flag3 rest (`:56018`); the proximity dust burst
+  (`:55875-55898`) skipped with its `Next(15,31)` draw.
+- **639**: the one-shot centre/velocity latch (`:55417-55423` — localAI[0..1]
+  = Centre, ai[0..1] = velocity; the Kill() trail spawn reads them back),
+  fade 25 (`:55424-55428`), flag3 rest (`:56019`), the own gravity arm
+  `timeLeft <= MaxUpdates*45 − 14` = 76 → +0.1 (`:57542-57548`, no counter
+  pin — ai[0] holds the latched vx).
+- **640**: fade 25 + the at-rest block (`:55430-55451`): ai[0] = 0, the
+  oldPos all-equal scan → Kill+return; NOT on the flag3 list — counts, so
+  the generic `ai[0] >= 15` gravity arm applies while flying (`:57568`);
+  the own rotation tail `atan2 + π/2` only while moving (`:57737-57743`);
+  the stick arm (`HandleMovement` `:18308-18316`): first blocked move →
+  localAI[1] += 2, one last full-velocity step, velocity zeroed; while
+  localAI[1] > 0 the `:17590` gate skips TileCollision entirely.
+- **Pool-side** (`projectile.rs`): the 640's `ai[1] > 0` spawn-delay
+  countdown skips the WHOLE sub-step ahead of the out-of-world guard
+  (`:16679-16683`); the `moonlord_arrow_kill` death hook ports the 639's
+  Kill() arm (`:73431-73452`): spawn the 640 at the latched centre with the
+  latched velocity, damage/knockback/owner carried, `ai1 = num + 1` where
+  `num` is Kill()'s captured pre-zeroing timeLeft (`:70649` — the new
+  `Projectile.kill_time_left` field, written by the death paths that zero
+  time_left) plus one more when the new slot sits above the update loop
+  index (`:73446-73449` — the same-tick double-update compensation; the
+  port's `for i in 0..MAX` loop reaches a higher slot in the same update,
+  so the bump is exact). The corpse-active flip during GetNextSlot mirrors
+  the C#'s ordering (Kill's `active = false` lands at `:77262`, AFTER the
+  arm).
+- **On-hit decay** (`damage_pve`'s landed block): the 638/639/640's
+  `damage = (int)((double)damage * 0.96)` (`:14177-14180`), after the
+  strike, ahead of the penetrate decrement — the C# arm's own position.
+- **Rows** (`projectile/data.rs`): the three verbatim SetDefaults slices
+  with the local-immunity −1 pairs, `arrow = true` on the 639 only,
+  MaxUpdates → extraUpdates via the setter (`:560-563`), the ignoreWater
+  tail entries; `trailing_mode` gains the three mode-0 entries
+  (`ProjectileID.cs:521`). Sheets exist (`Projectile_638/639/640.xnb`).
+
+### RNG argument (zero draws by construction)
+
+The module takes NO rng parameter. Every C# `Main.rand` draw in the ported
+blocks is dust-only — its result feeds nothing but a dust count/velocity/
+scale, never state: the 638 proximity burst `Next(15,31)` (`:55889`), the
+640 dust gates `Next(extraUpdates)`/`Next(2|6)`/`Next(2)`/`NextDouble`/
+`Next(10)` (`:55453-55470`) and the numUpdates==1 trail dust
+(`:55473-55481`), the Kill() dust counts `Next(5,10)` (`:73433`) and
+`Next(2,5)` (`:76123`). Skipping them with the dust layer therefore keeps
+every state-bearing decision identical (the ai001_a/b dust-skip
+convention). The ported arms draw nothing, so the pass's UpdateProjectiles
+stream is untouched for every OTHER kind — byte-identical by construction.
+The `damage_pve` decay is pure arithmetic (no variance draw added).
+
+### Deliberate deviations / deferrals
+
+- **`POISON_DART` = 645 is the LunarFlare, not a poison dart.** The C#
+  `ProjectileID.PoisonDart` is 98 (`ProjectileID.cs:750`, rowed as
+  TRAP_DART); `Projectile.cs:6953-6965` is the 645 LunarFlare block. The
+  existing row's values (10x10 st1 pen−1 extra5 tileCollide false) are
+  correct for the LunarFlare; its α/immunity state stays on the Phase-2
+  freeze (the baseline sweep test pins it) until ai001-C lands. The const
+  doc now records the misnomer; the RENAME is left to the C slice (it owns
+  the 645 arm and references the name).
+- **The 615 VortexBeater rides the Last Prism arm.** The st75 dispatch
+  (`projectile.rs`'s `75 => ai_last_prism`) has no kind gate; the C#
+  `AI_075` runs per-type blocks (`:66872-66981` for the 615 — the 5-tick
+  machine-gun cadence, the ammo PickAmmo, the every-7th-volley 616 rocket
+  at Damage+20/KnockBack×1.25). The 615 row exists (the gunProj ammo row),
+  so a spawned Vortex Beater today channels like a Last Prism. RECORDED,
+  not changed here (the fix is the 615/616 deferred slice: the AI_075 kind
+  split + the 616 row/arm + its Kill() burst `:73646-73674` with the
+  80x80 Damage() resize and the gore `Next(61,64)`/`Next(-10,11)` draws).
+- **The dead duplicate phantasmal rows** (data.rs's second phantasmal
+  group, byte-identical unreachable repeats of the first) belong to the
+  in-flight `task/S1-D-5-projdata-deviations` purge ("the moon-lord
+  merge's 11 byte-identical duplicate rows" + deny(unreachable_patterns))
+  — left untouched to avoid a merge conflict; the census confirms they
+  are dead (the first match arm wins).
+- **The 640's ring length**: the C# TrailCacheLength is 20
+  (`ProjectileID.cs:522`); the port's fixed 10-entry ring + once-per-update
+  shift is the pre-existing recorded trail-density deviation
+  (`shift_trailing_history`). The all-equal kill scan reads the port's
+  ring — a stuck trail settles in ≤10 updates instead of ≤20.
+- **The 640's numUpdates==1 dust arm** has no port field (`numUpdates` is
+  the sub-step loop counter, not slot state) — skipped with the dust.
+- **The 638's `base.wet = false`** (`:16786-16789`) — no wet state in the
+  pool; skipped.
+- **Deferred lunar weapons** (census rows above): 607 (st116), 615/616
+  (the AI_075 split + the rocket), 625-628 (AI_121, needs the unported
+  minion-chain machinery `:43008-43022`). None is moon-lord-hostile; they
+  are player weapons and ride their own future slices.
+
+**Verification.** Code-only: the C# blocks were re-read whole (the AI_001
+hook chain nesting, the flag3 switch membership, the HandleMovement stick
+arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
+Update countdown position). The 10 witness tests in
+`projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.

@@ -540,7 +540,14 @@ pub struct Projectile {
     pub old_rot: [f32; 10],
     /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
     /// modes 2-5 records beside the ring positions.
-    pub old_sprite_direction: [i32; 10],    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
+    pub old_sprite_direction: [i32; 10],
+    /// `Kill()`'s captured `num = this.timeLeft` (`Projectile.cs:70649`,
+    /// taken BEFORE the `:70650` zeroing) — the 639 MoonlordArrow's death
+    /// hook (`:73444-73451`) computes the 640 trail's spawn delay from it.
+    /// Only the moon-lord arms write it (S1-D-4); every other death path
+    /// leaves the stock 0 and no consumer reads it for them.
+    pub kill_time_left: i32,
+    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
     /// `Projectile.tileCollide` (the default true, `:787`-defaults).
@@ -664,6 +671,7 @@ impl Default for Projectile {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -7818,6 +7826,7 @@ impl Projectile {
         let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
         self.pos += self.vel;
         if hit_x || hit_y {
+            self.kill_time_left = self.time_left;
             self.active = false;
             self.time_left = 0;
         }
@@ -10282,8 +10291,11 @@ impl Projectile {
     }
 
     /// `Kill()` (`Projectile.cs:70644-70648`): the slot's death — `active`
-    /// off and `timeLeft` zeroed.
+    /// off and `timeLeft` zeroed. The `num` capture (`:70649`, the
+    /// pre-zeroing timeLeft) rides `kill_time_left` for the 639's death
+    /// hook (`:73444`); every other kind's consumer reads nothing.
     fn kill(&mut self) {
+        self.kill_time_left = self.time_left;
         self.active = false;
         self.time_left = 0;
     }
@@ -10667,7 +10679,13 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // no trail drawer reads them yet — the after-image path is its own row).
         CRYSTAL_STORM | TYPHOON | BRAIN_SCRAMBLER | RAY_GUNNER | PHANTASMAL_EYE
         | PHANTASMAL_BOLT | CANNON_EXPLOSIVE | NEBULA_ARCANUM | SKY_FRACTURE
-        | DARK_MAGE_FLAME | SHADOW_HAND => 0,
+        | DARK_MAGE_FLAME | SHADOW_HAND
+        // `ProjectileID.cs:521` — the moon-lord drop shots' mode-0 entries
+        // (638/639/640, S1-D-4). The 640's at-rest kill scan reads the ring
+        // (`Projectile.cs:55441-55447`); its C# `TrailCacheLength` is 20
+        // (`ProjectileID.cs:522`) — the port's fixed 10-entry ring is the
+        // recorded trail-density deviation (ANALYSIS).
+        | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
@@ -12101,6 +12119,7 @@ impl ProjectilePool {
 
     pub fn kill(&mut self, slot: usize) {
         if slot < self.slots.len() {
+            self.slots[slot].kill_time_left = self.slots[slot].time_left;
             self.slots[slot].active = false;
             self.slots[slot].time_left = 0;
         }
@@ -12978,6 +12997,15 @@ impl ProjectilePool {
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
             for sub in 0..sub_steps {
+                // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
+                // spawn-delay countdown: while `ai[1] > 0` the WHOLE
+                // sub-step is skipped (ahead of the out-of-world guard, the
+                // AI and the lifetime block) — the trail hangs frozen until
+                // the 639's death hook delay drains (S1-D-4).
+                if self.slots[i].kind == MOONLORD_ARROW_TRAIL && self.slots[i].ai[1] > 0.0 {
+                    self.slots[i].ai[1] -= 1.0;
+                    continue;
+                }
                 // `Projectile.cs:16683-16703` — the out-of-world guard sits at
                 // the top of every sub-step, ahead of the AI, and skips the
                 // aiStyle-3 slots (the boomerang family legitimately leaves).
@@ -13094,6 +13122,18 @@ impl ProjectilePool {
                             // byte-identical.
                             kind if crate::projectile_ai001_b::covers(kind) => {
                                 crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
+                            }
+                            // S1-D-4 — the Moon Lord drop-weapon shots
+                            // (638 MoonlordBullet / 639 MoonlordArrow /
+                            // 640 MoonlordArrowTrail, `AI_001`
+                            // `Projectile.cs:55415-55482`/`:55864-55899`/
+                            // `:57542-57548`/`:57737-57743`), gated to
+                            // `projectile_ai_moonlord`'s own kind list ONLY
+                            // (disjoint from A/B and the in-flight C slice):
+                            // every other kind keeps the generic `ai_arrow`
+                            // flight byte-identical.
+                            kind if crate::projectile_ai_moonlord::covers(kind) => {
+                                crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
@@ -15163,6 +15203,7 @@ impl ProjectilePool {
                     let p = &mut self.slots[i];
                     p.time_left -= 1;
                     if p.time_left <= 0 || p.penetrate == 0 {
+                        p.kill_time_left = p.time_left;
                         p.time_left = 0;
                         p.active = false;
                     }
@@ -15226,6 +15267,9 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
+                // S1-D-4): the 639's death spawns its 640 trail.
+                self.moonlord_arrow_kill(i);
             }
         }
     }
@@ -15398,6 +15442,72 @@ impl ProjectilePool {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`, S1-D-4):
+    /// the 639's death spawns its 640 ghost trail at the latched centre
+    /// (`localAI[0..1]`, the AI_001 hook `:55417-55423`) with the latched
+    /// velocity (`ai[0..1]`), the arrow's damage/knockback/owner and
+    /// `ai1 = num + 1` — `num` is `Kill()`'s captured pre-zeroing timeLeft
+    /// (`:70649`, the slot's `kill_time_left`), plus one more when the free
+    /// slot sits above the update loop index (`:73446-73449`, the C#'s
+    /// same-tick double-update guard — the port's `spawn_with_data_ai_owned`
+    /// takes the first free slot, so the comparison is `next > i`). The
+    /// `owner == Main.myPlayer` gate folds to the simulated-slot set (the
+    /// pool only updates local-owned slots). The 5-9× dust-220 burst
+    /// (`:73433-73441`, `Main.rand.Next(5, 10)` + the NewDust internals) is
+    /// SKIPPED with the dust layer — the draw gates nothing but the dust
+    /// count (the ai001 dust-skip convention, ANALYSIS). Kind-gated to the
+    /// 639; a dead slot never returns to `active`, so the spawn fires at
+    /// most once per death (the `spawn_inferno_blast` precedent).
+    fn moonlord_arrow_kill(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        if p.kind != MOONLORD_ARROW {
+            return;
+        }
+        let (x, y, vx, vy, damage, kb, owner, num) = (
+            p.local_ai[0],
+            p.local_ai[1],
+            p.ai[0],
+            p.ai[1],
+            p.damage,
+            p.knock_back,
+            p.owner,
+            p.kill_time_left,
+        );
+        // `:73444` — `int num379 = num + 1`.
+        let mut delay = num + 1;
+        // `GetNextSlot` (`:73445`) ran while the arrow was STILL active —
+        // the C# `Kill()`'s `active = false` lands at `:77262`, after this
+        // arm; the port's death convention zeroes it before the hook. The
+        // corpse flag is lifted for the scan so the ghost takes the NEXT
+        // free slot, exactly as the C#'s, then restored.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            MOONLORD_ARROW_TRAIL,
+            owner,
+            x,
+            y,
+            vx,
+            vy,
+            damage,
+            kb,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+        if let Some(new_slot) = spawned {
+            // `:73446-73449` — `Main.ProjectileUpdateLoopIndex < nextSlot &&
+            // != -1`: a ghost placed ABOVE the loop index is updated again
+            // this same tick (the port's `for i in 0..MAX` loop reaches it
+            // too), so the C# adds one more delay sub-step to compensate.
+            // The port's loop index is `slot` (always ≥ 0).
+            if slot < new_slot {
+                delay += 1;
+            }
+            // `:73451` — the ai1 payload rides after the slot-order bump.
+            self.slots[new_slot].ai[1] = delay as f32;
         }
     }
 
@@ -16119,6 +16229,15 @@ impl ProjectilePool {
             }
             if landed {
                 let p = &mut self.slots[slot];
+                // `Damage_PVE_Inner`'s moon-lord shot arm
+                // (`Projectile.cs:14177-14180`, S1-D-4): every landed hit
+                // decays the 638/639/640's damage by the `(int)((double)
+                // damage * 0.96)` truncation — AFTER this hit's strike
+                // (the C# arm runs below the damage application, ahead of
+                // `numHits++` `:14199`).
+                if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
+                    p.damage = (p.damage as f64 * 0.96) as i32;
+                }
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -20594,6 +20713,7 @@ mod phasmal_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
@@ -20834,6 +20954,7 @@ mod ritual_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
             gfx_off_y: 0.0,
