@@ -501,6 +501,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FROST_SHEETS)
             .chain(WAVE_A_SHEETS)
             .chain(SNOW_SHEETS)
+            .chain(FISHRON_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1070,6 +1071,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::MoonLordCore => 398,
         NpcKind::MoonLordFreeEye => 400,
         NpcKind::MoonLordLeechBlob => 401,
+        // S1-D-3 W-9 fishron wiring — the hazards' bestiary entries fold
+        // onto the boss/Sharkron rows (`entry_for_npc`), but their DRAW
+        // sheets are their own `TextureAssets.Npc[type]` (371/373).
+        NpcKind::DetonatingBubble => 371,
+        NpcKind::Sharkron2 => 373,
         _ => kind.net_id() as u16,
     }
 }
@@ -1114,6 +1120,16 @@ pub(crate) const WAVE_A_SHEETS: &[u32] = &[
     16, 59, 71, 81, 138, 147, 183, 184, 225, // the nine slimes
     190, 191, 192, 193, 194, // the five demon-eye variants
     52, 53, 132, 161, 186, 187, 188, 189, 200, 223, // the ten walkers
+];
+
+/// S1-D-3 W-9 fishron wiring — the boss + its three hazards' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`.
+pub(crate) const FISHRON_SHEETS: &[u32] = &[
+    370, // Duke Fishron
+    371, // the Detonating Bubble
+    372, // the Sharkron
+    373, // the Sharkron2
 ];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
@@ -2026,6 +2042,8 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DD2DarkMageT3
         | DD2OgreT2
         | DD2OgreT3
+        // S1-D-3 W-9: `type == 439 || type == 370` (`Main.cs:45919`).
+        | DukeFishron
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -2945,6 +2963,19 @@ pub(crate) fn draw_npcs(
                 let ty = n.kind.frost_moon_type().expect("a family kind");
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
+            // S1-D-3 W-9 fishron wiring — the boss + its three hazards
+            // draw their OWN sheets (`FISHRON_SHEETS`) at
+            // `Main.npcFrameCount[type]` rows (370 = 8, 371/372/373 =
+            // 2/4/4, `Main.cs:67121`) with the generic centred anchor —
+            // the wave-A shape. The bubble/sharkron FindFrame pins row 1;
+            // the boss's state strip walks rows 0..7.
+            NpcKind::DukeFishron
+            | NpcKind::DetonatingBubble
+            | NpcKind::Sharkron
+            | NpcKind::Sharkron2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
         };
         let Some(tex) = tex else {
             continue;
@@ -3062,6 +3093,13 @@ pub(crate) fn draw_npcs(
                     // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
                     // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
                     | NpcKind::DD2Betsy
+                    // S1-D-3 W-9 fishron wiring — the boss's charge aim /
+                    // spin rotation (`AI_069`'s rotation tracking,
+                    // `NPC.cs:48888-48975`) and the Sharkron pair's dash
+                    // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
+                    | NpcKind::DukeFishron
+                    | NpcKind::Sharkron
+                    | NpcKind::Sharkron2
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -3807,6 +3845,7 @@ mod offset_fix {
             NpcKind::GolemHeadFree,     // 249
             NpcKind::Plantera,          // 262
             NpcKind::BrainOfCthulhu,    // 266
+            NpcKind::DukeFishron,       // 370 (S1-D-3 W-9)
             NpcKind::AncientCultist,    // 439
             NpcKind::DD2Betsy,          // 551
             NpcKind::DD2DarkMage,       // 564

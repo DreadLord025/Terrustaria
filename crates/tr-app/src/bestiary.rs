@@ -1882,6 +1882,31 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Golem",
     },
+    // S1-D-3 W-9 fishron wiring — the boss's entry (the vanilla
+    // `NPCID.Search.GetName(370)` = "DukeFishron", the boss quick-unlock
+    // rule) plus the Sharkron's own entry (372 has one; the C#'s
+    // `BestiaryDatabaseNPCsPopulator.cs:691` maps its UI credit onto 370,
+    // the kill credit stays "Sharkron"). 371/373 are Hide=true exclusions
+    // (`NPCID.cs`'s NPCBestiaryDrawOffset rows) — no entries; the port's
+    // `entry_for_npc` folds them onto the boss/Sharkron rows (the Golem
+    // parts' precedent) so `net_id()` resolves; their DRAW sheet id rides
+    // `texture_net_id`'s own rows, not the folded net id.
+    BestiaryEntryDef {
+        credit_id: "DukeFishron",
+        net_id: 370,
+        kind: NpcKind::DukeFishron,
+        variant: None,
+        quick_unlock: true,
+        name: "Duke Fishron",
+    },
+    BestiaryEntryDef {
+        credit_id: "Sharkron",
+        net_id: 372,
+        kind: NpcKind::Sharkron,
+        variant: None,
+        quick_unlock: false,
+        name: "Sharkron",
+    },
     BestiaryEntryDef {
         credit_id: "PrimeCannon",
         net_id: 128,
@@ -2053,6 +2078,11 @@ pub fn try_entry_for_npc(
         | NpcKind::GolemFistLeft
         | NpcKind::GolemFistRight
         | NpcKind::GolemHeadFree => NpcKind::Golem,
+        // S1-D-3 W-9: the Hide=true hazards fold onto the boss (the Golem
+        // parts' precedent); the Sharkron 372 keeps its OWN entry (its
+        // kill credit is "Sharkron" — only the UI provider maps onto 370,
+        // `BestiaryDatabaseNPCsPopulator.cs:691`).
+        NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2095,6 +2125,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // never has an entry of its own.
         NpcKind::SleepingGolfer => NpcKind::Golfer,
         NpcKind::BoundGoblin => NpcKind::GoblinTinkerer,
+        // S1-D-3 W-9 fishron wiring — the Hide=true exclusions (371 the
+        // Detonating Bubble, 373 the Sharkron2 — `NPCID.cs`'s
+        // NPCBestiaryDrawOffset rows) have no entries of their own; they
+        // fold onto the boss / the plain Sharkron row (the Golem parts'
+        // one-credit precedent). The DRAW sheet ids stay 371/373 through
+        // `texture_net_id`'s own rows.
+        NpcKind::DetonatingBubble => NpcKind::DukeFishron,
+        NpcKind::Sharkron2 => NpcKind::Sharkron,
         other => other,
     };
     ENTRIES

@@ -21779,6 +21779,126 @@ a shark with the projectile's velocity, the 386 alone seeding
 `ai[2] = width` / `ai[3] = −1.5`) is the projectile family's wiring
 wave; the module documents the seed contract.
 
+## The Fishron chain wiring (W-9, code-only, 2026-11-19)
+
+`task/S1-D-3-wire-fishron` wires the whole Duke Fishron chain: the boss
+(370, `npc_ai_fishron`, ad41a646), the Detonating Bubble (371,
+`npc_ai_style70`, 456a2366) and the Sharkron pair (372/373,
+`npc_ai_style71`, 80fcb43b). **Base choice (option b)**: the branch
+merges `origin/main` c7fe175d + `origin/task/S1-D-3-aistyle70` 456a2366 +
+`origin/task/S1-D-3-aistyle71` 80fcb43b — the two minion branches were
+unmerged; the octopus merge's only conflicts were keep-both doc appends
+(anchors.txt, ANALYSIS.md), resolved by keeping both sections. The
+merger lands the chain in one merge. **Code-only mode**: no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the 8 wiring witnesses
+(`world_sim/npcs.rs::fishron_wiring_tests`) are WRITTEN NOT RUN.
+
+**The wiring shape.** The four kinds join `NpcKind` (protocol band
+213..216 — the port-local space above wave A's 189..212; the vanilla
+`cs_id` hand rows 370-373 keep the type gates honest against the
+bestiary fold). The aiStyle axis (`npc.rs::update_rng`) claims 69/70/71
+(`NPC.cs:34880-34883`/`:34884`/`:34958`); the kind match keeps
+exhaustive delegate arms (the Spazmatism precedent). The adapters:
+* `ai_069_fishron` — the `FishronState`/`FishronEnv` round-trip. The
+  `TargetClosest` gate (`:48848-48853`) is resolved AHEAD of the step
+  (the pick + the gate are RNG-free and read nothing the pre-gate stat
+  block writes — behaviour-identical, one step per tick). The
+  noTileCollide integration (`NPC.cs:90490-90498`) is the direct
+  position add. The per-tick damage/defense rewrites ride
+  `damage_override`/`defense_override` (the golem convention). The
+  spawn requests drain in `world_sim/npcs.rs`: the volley bubbles
+  (`:49246`) at the NewNPC bottom-centre (`NPC.cs:80771`) with the
+  stock target 255; the trail bubbles (`:49476-49481`) with
+  target/velocity/ai[3] presets AT THE SPAWN SITE — the scale
+  `Next(80,121)/100f` is drawn INSIDE the boss's tick at request time
+  (the C# draws it at `:49481`, after the NewNPC + preset writes; a
+  post-pass drain would reorder it against the other NPCs' draws).
+  The bolts (`:49279-49280`/`:49505`) spawn through
+  `spawn_hostile_ai_owned` with `Owner: Main.myPlayer` (the C# arg —
+  the stock owner-255 hostile spawn would leave the bolt unsimulated)
+  and the enrage flag on `localAI[0]` (`set_local_ai0`).
+* `ai_070_bubble` — the faithful arm verbatim; `windSpeedCurrent` is
+  pre-stamped by the sim (the `plantera_hook_anchor` pre-pass
+  convention — the AI's `&World` cannot reach `app.wind`), `justHit`
+  rides the `hurt_cd > 0` stand-in. The strike re-arm
+  (`bubble_check_dead`, `NPC.cs:78046-78051`) lands in
+  `strike_pooled`/`hurt`/`hurt_from_projectile` at the C#'s checkDead
+  site (`:81561`). The detonation (`hp = 0`) rides the existing death
+  retain; the death tick's contact damage is zeroed
+  (`damage_override = Some(0)`) — the C# deactivates mid-update
+  (`active = false`, `:34945`), so the tick deals no contact. The
+  detonation's sound 4 style 3 IS the NPCDeath3 cue the death pass
+  plays (the same sound, the S1-E-21c batch-timing deviation).
+* `ai_071_sharkron` — the faithful arm verbatim; the vanilla type for
+  the 373-only sway gate is passed explicitly (the bestiary fold would
+  misreport 373 as 372 through `cs_id`'s fallback — the hand row fixes
+  it). The gravity return (`ai[1] >= 60`, `:35069-35072`) rides the
+  outcome into the adapter's gravity term — the C#'s DEFAULT 0.3 /
+  maxFallSpeed 10 (`UpdateNPC_UpdateGravity`, `NPC.cs:90877-90881`;
+  the pair has no per-type arm, the port's walker 0.4/8 constants are
+  the fighter rows); the tile kill rides the death retain (the
+  NPCDeath1 cue is the same sound the C# plays at `:35059-35062`).
+
+**The projectile chain (the sharks' spawner).** The 372/373 sharks
+spawn ONLY from the aiStyle-64 cloud arm (`Projectile.cs:29419-29533`),
+so the chain needs the proj rows: 384 ForceBubble / 385 SharknadoBolt /
+386 Cthulunado (`Projectile.cs:4664-4697`), the aiStyle-64 arm
+(`ai_sharknado_cloud` — the scale ladder, the alpha ramp, the segment
+re-spawn, the every-4th/2nd shark cadence) and the aiStyle-65 arm
+(`ai_sharknado_bolt` — the aimed chase / free bob, the wet kill), plus
+the 385's Kill death-cloud arm (`sharknado_bolt_kill`,
+`Projectile.cs:73761-73818`: the unaimed bolt spawns the 384, the aimed
+bolt ground-scans the column and spawns the 386). The segment re-spawn
+and the shark spawn ride request fields (`wants_cloud_segment`,
+`wants_shark_spawn`) drained by `world_sim/projectiles.rs` (the
+mark-spawn shape — a slot arm cannot grow the pools mid-iteration).
+The 386's presets `ai[2] = width` / `ai[3] = -1.5` (`:29512-29516`) are
+seeded AT THE SPAWN SITE — the style71 sway/rise reads them on the
+first tick.
+
+**RNG argument (the censuses preserved).** style70: the four init
+draws (`Next(80,121)`, `Next(165,265)`, two `Next(-100,101)`,
+`:34889-34891`) gated `target == 255`, plus two `Next(-10,11)` wind
+jitters EVERY tick including the detonation tick (the draws precede
+the fuse's early return) — all on the caller's UpdateNPCs stream; the
+phase-7 trail presets short-circuit the init (zero init draws).
+style71: ZERO draws (no `Next` in the arm; `TargetClosest` is
+RNG-free). AI_069: ZERO draws itself (the charge dust loops are the
+documented skip); the ONE draw the boss tick makes is the trail
+bubble's scale (`:49481`), drawn at request time. The aiStyle-64/65
+projectile arms draw ZERO (the 385 Kill's 36-dust ring and the bolt's
+six-dust ring are skipped WHOLESALE with their internals — the spore
+precedent; the dust-skip is stream-neutral only because the whole arm
+goes). The `the_wired_rng_census` + `the_trail_preset_short_circuits_the_init`
+witnesses pin the streams against mirrored twins (written, not run).
+
+**Correction landed with the wiring.** The style71 module's
+`SHARKRON_FRAME_COUNT`/`SHARKRON2_FRAME_COUNT` consts claimed
+`Main.npcFrameCount[372] = [373] = 2`; the W-9 re-verification counted
+the `Main.cs:67082` array programmatically: the 370-379 row
+(`:67121`) is `8, 2, 4, 4, 4, 4, 2, 2, 4, 12` — [372] = [373] = **4**.
+The consts + the module's witness are corrected; the FindFrame pin
+(`frame.Y = num`, row 1) is count-independent, so no behaviour changes.
+
+**Persistence.** `World::downed_fishron` (`NPC.cs:6369`, the case-370
+death flag `:79349`) persists in TRWLD **v17** (the v15 queen-slime
+byte's shape; the back-compat tail-length tests updated) and the .wld
+flags block's `downedFishron` byte (`WorldFile.cs:1343` — the
+previously-unowned skip is now read/written; the expected-flags test
+table carries it). `DukeFishronDefeated` reads the flag.
+
+**Documented remainders.** The dust/sound/oldPos visual layers (the
+modules' censuses), the expert/master stat tweaks
+(`ScaleStats_ByDifficulty_Tweaks`, `:18417-18424` — the port is
+single-difficulty normal), the MP branches, the 385-bolt's aimed chase
+at a non-zero player slot (the port's single session player is slot 0
+— the C# reads the inactive slot's zero centre; the port keeps the
+previous velocity), the dash roar (sound 4 style 19 — no NPC sound
+table row), the bestiary draw-offset rows for 370/372 (the portrait
+nudges), and the Tempest Staff's own 408 sharknado (the minion
+projectile family — its Kill arm does NOT spawn sharks; the 372
+spawner is the 384 cloud the boss's unaimed bolt deaths create).
+
 ## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_frost_boss_b.rs` ports the two remaining Frost

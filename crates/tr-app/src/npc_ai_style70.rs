@@ -123,7 +123,10 @@
 //!
 //! See docs/ANALYSIS.md "The Detonating Bubble (S1-D-3 aiStyle-70,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+// S1-D-3 W-9: WIRED — the aiStyle-70 axis arm (`npc.rs::ai_070_bubble`)
+// + the strike re-arm (`strike_pooled`/`hurt`) claim the machine; the
+// defaults/plan helpers stay test/read seams.
+#![allow(dead_code)] // the defaults + HitEffect plan are the audit seams; the wiring reads a subset
 
 use glam::Vec2;
 

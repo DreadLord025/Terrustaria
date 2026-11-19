@@ -96,9 +96,10 @@
 //! * `FindFrame`'s case 371/372/373 (`NPC.cs:72138-72142`) pins
 //!   `frame.Y = num` — the SECOND frame, forever (`num` = sheet
 //!   height / frameCount, `:66694`). The port's `frame` is the row
-//!   index, so the const is 1. `Main.npcFrameCount[372] = [373] = 2`
+//!   index, so the const is 1. `Main.npcFrameCount[372] = [373] = 4`
 //!   (`Main.cs:67121`, the 370-379 row `8, 2, 4, 4, 4, 4, 2, 2, 4,
-//!   12` of the `:67082` array).
+//!   12` of the `:67082` array — the W-9 wiring re-verified the row;
+//!   the original 2s were a misread, the pin is count-independent).
 //! * The expert/master stat tweaks (`ScaleStats_ByDifficulty_Tweaks`,
 //!   `NPC.cs:18417-18424`: the 371/372/373 group — damage ×0.75 for
 //!   372/373, knockback ×0.75 for all three) ride the difficulty
@@ -110,7 +111,10 @@
 //!
 //! See docs/ANALYSIS.md "The Sharkron pair (S1-D-3 aiStyle-71,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+// S1-D-3 W-9: WIRED — the aiStyle-71 axis arm (`npc.rs::ai_071_sharkron`)
+// claims the machine; the shark spawns ride the projectile aiStyle-64
+// cloud arm (`projectile.rs::ai_sharknado_cloud`).
+#![allow(dead_code)] // the defaults + dust plan are the audit seams; the wiring reads a subset
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -169,14 +173,17 @@ pub const SHARKRON2: SharkronDefaults = SharkronDefaults {
     alpha: 255,
 };
 
-/// `Main.npcFrameCount[372]` = 2 (`Main.cs:67121`, the 370-379 row of
-/// the `:67082` array). `FindFrame` case 372 (`NPC.cs:72139-72141`)
-/// pins `frame.Y = num` — the SECOND row.
-pub const SHARKRON_FRAME_COUNT: u32 = 2;
+/// `Main.npcFrameCount[372]` = 4 (`Main.cs:67121`, the 370-379 row
+/// `8, 2, 4, 4, 4, 4, 2, 2, 4, 12` of the `:67082` array — W-9 wiring
+/// re-verified the row programmatically: the module's original 2 was a
+/// misread; the FindFrame pin below is row 1 either way, so no behaviour
+/// changes). `FindFrame` case 372 (`NPC.cs:72139-72141`) pins
+/// `frame.Y = num` — the SECOND row.
+pub const SHARKRON_FRAME_COUNT: u32 = 4;
 
-/// `Main.npcFrameCount[373]` = 2 (`Main.cs:67121`, same row); the
-/// shared case 373 pins the same second row.
-pub const SHARKRON2_FRAME_COUNT: u32 = 2;
+/// `Main.npcFrameCount[373]` = 4 (`Main.cs:67121`, same row — the W-9
+/// re-verification above); the shared case 373 pins the same second row.
+pub const SHARKRON2_FRAME_COUNT: u32 = 4;
 
 /// The `FindFrame` pin: both kinds render row 1 forever
 /// (`NPC.cs:72138-72142` — `this.frame.Y = num`, no counter).
@@ -485,9 +492,11 @@ mod tests {
         assert!(t.no_gravity);
         assert_eq!(t.knock_back_resist, 0.0);
         assert_eq!(t.alpha, 255);
-        // Main.cs:67121 — the 370-379 row `8,2,4,4,4,4,2,2,4,12`.
-        assert_eq!(SHARKRON_FRAME_COUNT, 2);
-        assert_eq!(SHARKRON2_FRAME_COUNT, 2);
+        // Main.cs:67121 — the 370-379 row `8,2,4,4,4,4,2,2,4,12`
+        // (W-9 wiring re-verified programmatically; the original 2s
+        // were a misread — the row-1 pin is count-independent).
+        assert_eq!(SHARKRON_FRAME_COUNT, 4);
+        assert_eq!(SHARKRON2_FRAME_COUNT, 4);
         // NPC.cs:72138-72142 — frame.Y = num: the second row, pinned.
         assert_eq!(SHARKRON_FRAME_ROW, 1);
     }

@@ -2926,6 +2926,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.npcs[i].plantera_hook_anchor = anchor;
         }
     }
+    // S1-D-3 W-9 fishron wiring — `Main.windSpeedCurrent` pre-stamp for
+    // the Detonating Bubble's wind blend (`NPC.cs:34903`): the AI's
+    // `&World` borrow cannot reach `app.wind`, so the sim stamps it
+    // before the update (the plantera_hook_anchor pre-pass convention).
+    {
+        let wind = app.wind.speed_current;
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::DetonatingBubble {
+                n.wind_speed_current = wind;
+            }
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
@@ -3354,6 +3366,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Golem => {
                 app.world.downed_golem = true;
             }
+            // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
+            // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
+            // downedFishron, 7)`. The progression notification (the
+            // flag-7 net message) rides the flag; the port's
+            // notify_progression_net carries the WoF precedent's shape.
+            NpcKind::DukeFishron => {
+                app.world.downed_fishron = true;
+            }
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
@@ -3619,6 +3639,72 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // S1-D-3 W-9 fishron wiring — Duke Fishron's spawn requests
+    // (`AI_069_DukeFishron`): the phase-1 bubble volley
+    // (`NPC.NewNPC(..., (int)p.X, (int)p.Y + 45, 371)`, `NPC.cs:49246`)
+    // and the phase-2 Cthulunado trail (`:49476-49481`). The volley
+    // bubbles spawn with the stock target 255 — their own aiStyle-70
+    // init draws the four RNG values on a later tick (the style70
+    // census); the trail bubbles inherit target/velocity/ai[3] AT THE
+    // SPAWN SITE (the scale was drawn inside the boss's tick, `:49481`)
+    // and short-circuit that init. `NPC.NewNPC`'s Bottom = (X, Y)
+    // (`NPC.cs:80771`).
+    let mut fishron_spawns = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::DukeFishron {
+            continue;
+        }
+        for (sx, sy) in n.wants_fishron_bubbles.drain(..) {
+            let (w, h) = NpcKind::DetonatingBubble.size();
+            let mut bubble = Npc::new(NpcKind::DetonatingBubble, sx - w * 0.5, sy - h, 1, 0.0);
+            bubble.hp = bubble.max_hp;
+            fishron_spawns.push(bubble);
+        }
+        for (sx, sy, svx, svy, target, scale) in n.wants_fishron_trail.drain(..) {
+            let (w, h) = NpcKind::DetonatingBubble.size();
+            let mut bubble = Npc::new(NpcKind::DetonatingBubble, sx - w * 0.5, sy - h, 1, 0.0);
+            bubble.hp = bubble.max_hp;
+            // `:49477-49481` — the preset writes, verbatim.
+            bubble.target = target;
+            bubble.vx = svx;
+            bubble.vy = svy;
+            bubble.net_update = true;
+            bubble.ai[3] = scale;
+            fishron_spawns.push(bubble);
+        }
+    }
+    app.npcs.append(&mut fishron_spawns);
+    // Fishron's sharknado bolts (`Projectile.NewProjectile(..., 385)` —
+    // phase 1's pair `NPC.cs:49279-49280`, phase 2's aimed bolt
+    // `:49505`): the ai0/ai1 payload rides `spawn_hostile_ai` (the
+    // saucer deathray's shape); the enrage flag is the C#'s third
+    // spawn arg (`localAI[0]`, `:49505`'s `flag6 ? 1 : 0`).
+    let mut bolts = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::DukeFishron {
+            continue;
+        }
+        for (x, y, vx, vy, ai0, ai1, enrage) in n.wants_fishron_bolts.drain(..) {
+            bolts.push((x, y, vx, vy, ai0, ai1, enrage));
+        }
+    }
+    for (x, y, vx, vy, ai0, ai1, enrage) in bolts {
+        // The C#'s NewProjectile takes the CENTRE; the port's spawn
+        // takes the top-left (the inferno-blast precedent). The owner
+        // is Main.myPlayer (`NPC.cs:49279`/`:49505`) — the local id.
+        if let Some(slot) = app.projectiles.spawn_hostile_ai_owned(
+            crate::projectile::SHARKNADO_BOLT,
+            app.local_id as u8,
+            Vec2::new(x - 15.0, y - 15.0),
+            Vec2::new(vx, vy),
+            0,
+            0.0,
+            ai0,
+            ai1,
+        ) {
+            app.projectiles.set_local_ai0(slot, enrage);
+        }
+    }
     // `AI_032`'s limb-spawn init (`NPC.cs:27635-27661`): the head's first
     // tick sets `wants_limbs` and the sim resolves it here — the four
     // limbs at the head's CENTRE with the vanilla's seat signs (the cannon
@@ -12730,5 +12816,300 @@ mod dw3_tests {
             witness,
             "the moan spends exactly the arm roll + the slot draw"
         );
+    }
+}
+
+/// S1-D-3 W-9 fishron wiring — the dispatch/spawn/RNG witnesses.
+/// WRITTEN NOT RUN (code-only mode: no cargo/rustc invoked this round).
+#[cfg(test)]
+mod fishron_wiring_tests {
+    use super::*;
+    use tr_core::World;
+
+    fn air() -> World {
+        World::new("t".into(), 400, 240)
+    }
+
+    fn fishron(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::DukeFishron, x, y, 1, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// The roster rows: the four kinds' `SetDefaults` boxes/stats/styles
+    /// (`NPC.cs:13701-13761`), the protocol band 213..216 round-trip and
+    /// the vanilla `cs_id` hand rows (the bestiary fold must not leak
+    /// into the type gates).
+    #[test]
+    fn the_fishron_family_roster_rows() {
+        assert_eq!(NpcKind::DukeFishron.size(), (150.0, 100.0));
+        assert_eq!(NpcKind::DukeFishron.ai_style(), 69);
+        assert_eq!(NpcKind::DukeFishron.max_hp(), 60000);
+        assert_eq!(NpcKind::DukeFishron.contact_damage(), 100);
+        assert_eq!(NpcKind::DukeFishron.cs_id(), 370);
+        assert_eq!(NpcKind::DetonatingBubble.size(), (36.0, 36.0));
+        assert_eq!(NpcKind::DetonatingBubble.ai_style(), 70);
+        assert_eq!(NpcKind::DetonatingBubble.max_hp(), 1);
+        assert_eq!(NpcKind::DetonatingBubble.cs_id(), 371);
+        assert_eq!(NpcKind::Sharkron.size(), (120.0, 24.0));
+        assert_eq!(NpcKind::Sharkron.ai_style(), 71);
+        assert_eq!(NpcKind::Sharkron.max_hp(), 100);
+        assert_eq!(NpcKind::Sharkron.contact_damage(), 100);
+        assert_eq!(NpcKind::Sharkron.cs_id(), 372);
+        assert_eq!(NpcKind::Sharkron2.size(), (100.0, 24.0));
+        assert_eq!(NpcKind::Sharkron2.ai_style(), 71);
+        assert_eq!(NpcKind::Sharkron2.contact_damage(), 120);
+        assert_eq!(NpcKind::Sharkron2.cs_id(), 373);
+        for (kind, id) in [
+            (NpcKind::DukeFishron, 213u16),
+            (NpcKind::DetonatingBubble, 214),
+            (NpcKind::Sharkron, 215),
+            (NpcKind::Sharkron2, 216),
+        ] {
+            assert_eq!(kind.to_u16(), id);
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+        }
+        // The hazards spawn invisible (`alpha = 255` rows).
+        assert_eq!(Npc::new(NpcKind::DetonatingBubble, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::Sharkron, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::Sharkron2, 0.0, 0.0, 1, 0.0).alpha, 255);
+        // The boss flag (`NPC.cs:13716`).
+        assert!(Npc::new(NpcKind::DukeFishron, 0.0, 0.0, 1, 0.0).boss);
+    }
+
+    /// The axis claims: a Fishron/bubble/shark stepping through
+    /// `update_rng` runs the faithful machine (the ai[0] -1 materialize
+    /// latch, the bubble's alpha 50 pin, the shark's ai[1] counter) —
+    /// not a stand-in.
+    #[test]
+    fn the_axis_claims_the_three_machines() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(7);
+        // Fishron: the first tick latches localAI[0] = 1, ai[0] = -1,
+        // alpha 255 (`NPC.cs:48877-48887`).
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(boss.local_ai[0], 1.0);
+        assert_eq!(boss.ai[0], -1.0);
+        assert_eq!(boss.alpha, 255);
+        // The bubble: the init draws four, the alpha pins 50
+        // (`NPC.cs:34886-34902`).
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(bubble.alpha, 50);
+        assert!(bubble.ai[3] >= 0.8 && bubble.ai[3] <= 1.2, "the scale draw");
+        assert_ne!(bubble.target, 255, "TargetClosest ran");
+        // The shark: phase 0 ticks ai[1], vy rides ai[3] = 0
+        // (`NPC.cs:34970-34975`).
+        let mut shark = Npc::new(NpcKind::Sharkron, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(shark.ai[1], 1.0);
+        assert!(shark.dont_take_damage);
+    }
+
+    /// The RNG census, wired: the bubble's init draws FOUR on the
+    /// caller's stream (Next(80,121), Next(165,265), two Next(-100,101))
+    /// plus the TWO per-tick wind jitters; the shark draws ZERO; the
+    /// boss's own tick draws ZERO (the trail draw is the one exception,
+    /// exercised by the preset witness below).
+    #[test]
+    fn the_wired_rng_census() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // The bubble: 4 init + 2 wind = 6 draws on the first tick.
+        // The fixture sits far from the player: no proximity fuse, no
+        // contact overlap (the contact pass's DamageVar would draw).
+        let mut rng = UnifiedRandom::new(11);
+        let mut twin = UnifiedRandom::new(11);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 80.0 * 16.0, 80.0 * 16.0, 1, 0.0);
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(80, 121);
+        let _ = twin.next_range(165, 265);
+        let _ = twin.next_range(-100, 101);
+        let _ = twin.next_range(-100, 101);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "the init four + the wind two, in order");
+        // The second tick: only the two wind jitters (the init is spent).
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "the steady tick draws two");
+        // The shark: zero across its whole fall window + the dash's first
+        // ticks (the fixture sits far from the player — no contact draw).
+        let mut rng = UnifiedRandom::new(11);
+        let twin = UnifiedRandom::new(11);
+        let mut shark = Npc::new(NpcKind::Sharkron, 60.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        for _ in 0..95 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, twin, "the style71 arm draws nothing");
+        // The boss's materialize tick: zero (no trail yet).
+        let mut rng = UnifiedRandom::new(11);
+        let twin = UnifiedRandom::new(11);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, twin, "AI_069 itself draws nothing");
+    }
+
+    /// The phase-7 preset short-circuit: a trail bubble seeded with
+    /// target/velocity/ai[3] AT THE SPAWN SITE draws only the two wind
+    /// jitters — the four-draw init never runs (`NPC.cs:49477-49481`
+    /// presets; the style70 census).
+    #[test]
+    fn the_trail_preset_short_circuits_the_init() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(3);
+        let mut twin = UnifiedRandom::new(3);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 80.0 * 16.0, 80.0 * 16.0, 1, 0.0);
+        bubble.target = 0;
+        bubble.vx = 6.0;
+        bubble.vy = 0.0;
+        bubble.ai[3] = 1.05;
+        bubble.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng, twin, "only the wind two");
+        assert_eq!(bubble.ai[3], 1.05, "the preset scale survives");
+        assert_eq!(bubble.scale, 1.05, "scale rides ai[3]");
+    }
+
+    /// The volley drain: the boss's `wants_fishron_bubbles` requests
+    /// become live DetonatingBubbles at the NewNPC bottom-centre point
+    /// (`NPC.cs:49246`, `NPC.cs:80771`), stock target 255; the trail
+    /// request carries its presets through. The requests are seeded on
+    /// a boss whose machine is mid-materialize (local_ai[0] = 1, ai0 =
+    /// -1) so the tick adds no fresh requests — the drain is the subject.
+    #[test]
+    fn the_volley_drains_into_live_bubbles() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.local_ai[0] = 1.0;
+        boss.ai[0] = -1.0;
+        boss.wants_fishron_bubbles.push((1600.0, 1500.0));
+        boss.wants_fishron_trail.push((1700.0, 1500.0, 6.0, 0.0, 0, 1.1));
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let bubbles: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::DetonatingBubble)
+            .collect();
+        assert_eq!(bubbles.len(), 2, "the volley + the trail bubble");
+        // The trail bubble carries the presets (the volley's own init
+        // rolls a scale in [0.8, 1.2], so key on the exact preset).
+        let trail = bubbles.iter().find(|b| b.ai[3] == 1.1).expect("the trail");
+        assert_eq!(trail.target, 0);
+        // Bottom = (X, Y): x - 18, y - 36 (one tick of the homing blend
+        // moved it a few px at most).
+        assert!((trail.x - (1700.0 - 18.0)).abs() < 8.0);
+        assert!((trail.y - (1500.0 - 36.0)).abs() < 8.0);
+        // The volley bubble spawned at its own bottom point too.
+        let volley = bubbles.iter().find(|b| b.ai[3] != 1.1).expect("the volley");
+        assert!((volley.x - (1600.0 - 18.0)).abs() < 16.0);
+        assert!((volley.y - (1500.0 - 36.0)).abs() < 16.0);
+    }
+
+    /// The strike re-arm: a struck bubble does NOT die — checkDead's 371
+    /// arm restores full life and arms the 4-tick detonation
+    /// (`NPC.cs:78046-78051`); four ticks later it detonates (hp 0, the
+    /// death retain drops it).
+    #[test]
+    fn the_struck_bubble_rearms_then_detonates() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut rng = UnifiedRandom::new(5);
+        let mut bubble = Npc::new(NpcKind::DetonatingBubble, 95.0 * 16.0, 95.0 * 16.0, 1, 0.0);
+        // Seed the target so the init is spent (the strike path is the
+        // subject, not the init draws).
+        bubble.target = 0;
+        bubble.ai[3] = 1.0;
+        let mut npcs = vec![bubble];
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0)));
+        assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
+        assert_eq!(npcs[0].ai[0], 1.0);
+        assert_eq!(npcs[0].ai[1], 4.0);
+        assert!(npcs[0].dont_take_damage);
+        // Four armed ticks: the countdown ends in the detonation.
+        for _ in 0..4 {
+            npcs[0].update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(npcs[0].hp, 0, "the detonation zeroes life");
+    }
+
+    /// The death flag: a Fishron death raises `downed_fishron`
+    /// (`NPC.cs:79348-79350`'s case 370).
+    #[test]
+    fn the_fishron_death_raises_the_flag() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = fishron(90.0 * 16.0, 90.0 * 16.0);
+        boss.hp = 0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_fishron);
+        assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
+    }
+
+    /// The shark spawn seam: the aiStyle-64 cloud's request becomes a
+    /// live shark at the NewNPC bottom point with the cloud's velocity;
+    /// the 386's presets (ai2 = width, ai3 = -1.5) ride AT THE SPAWN
+    /// SITE (`Projectile.cs:29509-29516`) — the style71 sway/rise reads
+    /// them on the first tick.
+    #[test]
+    fn the_cloud_spawns_the_shark_with_the_presets() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        // A Cthulunado cloud at the segment hand-off: ai0 = 2 (drops to
+        // 1 on the second tick), ai1 = 24 (the 2nd-bolt cadence fires).
+        let slot = app
+            .projectiles
+            .spawn_hostile_ai_owned(
+                crate::projectile::CTHULUNADO,
+                app.local_id as u8,
+                Vec2::new(1600.0, 1500.0),
+                Vec2::new(0.0, 8.0),
+                80,
+                4.0,
+                2.0,
+                24.0,
+            )
+            .expect("the cloud spawns");
+        // The init latch needs one tick first (localAI[0] = 1).
+        crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[slot].local_ai[0], 1.0);
+        crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        let sharks: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Sharkron2)
+            .collect();
+        assert_eq!(sharks.len(), 1, "the 24th segment spawns a Sharkron2");
+        let s = sharks[0];
+        assert_eq!(s.ai[3], -1.5, "the rise preset");
+        assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
     }
 }

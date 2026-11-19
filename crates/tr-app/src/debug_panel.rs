@@ -101,6 +101,8 @@ const BOSS_LIST: [(NpcKind, &str, &str); 12] = [
     (NpcKind::Spazmatism, "Spazmatism", "NPC_126"),
     (NpcKind::SkeletronPrime, "Skeletron Prime", "NPC_127"),
     (NpcKind::Plantera, "Plantera", "NPC_262"),
+    // S1-D-3 W-9 fishron wiring.
+    (NpcKind::DukeFishron, "Duke Fishron", "NPC_370"),
 ];
 
 /// The row count of a tab, after the filter. `World` is a fixed menu; `Recipes`
@@ -653,7 +655,9 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
         | NpcKind::Retinazer
         | NpcKind::Spazmatism
         | NpcKind::SkeletronPrime
-        | NpcKind::Plantera => {
+        | NpcKind::Plantera
+        // S1-D-3 W-9 fishron wiring.
+        | NpcKind::DukeFishron => {
             let mut b = Npc::new(kind, x_px, y_px, 1, 0.0);
             b.hp = b.max_hp;
             Some(b)

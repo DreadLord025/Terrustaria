@@ -479,6 +479,14 @@ impl NpcKind {
             NpcKind::TwiggyZombie => 210,
             NpcKind::FemaleZombie => 211,
             NpcKind::ZombieRaincoat => 212,
+            // S1-D-3 W-9 fishron wiring — the boss + its three hazards take
+            // the free 213..216 band (the port-local space above wave A's
+            // 189..212; the vanilla ids 370-373 stay free for the wire's
+            // `net_id`/bestiary space).
+            NpcKind::DukeFishron => 213,
+            NpcKind::DetonatingBubble => 214,
+            NpcKind::Sharkron => 215,
+            NpcKind::Sharkron2 => 216,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344, above the whole port-local space exactly like the
             // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
@@ -756,6 +764,11 @@ impl NpcKind {
             210 => NpcKind::TwiggyZombie,
             211 => NpcKind::FemaleZombie,
             212 => NpcKind::ZombieRaincoat,
+            // S1-D-3 W-9 fishron wiring — the 213..216 band's decode arms.
+            213 => NpcKind::DukeFishron,
+            214 => NpcKind::DetonatingBubble,
+            215 => NpcKind::Sharkron,
+            216 => NpcKind::Sharkron2,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344 decode here (the same ids `to_u16` encodes above).
             // `NPC.cs:13281-13368`.
@@ -1576,6 +1589,12 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus
             | NpcKind::Flocko => "NPC_Hit_1",
+            // S1-D-3 W-9 fishron wiring — 370 `SoundID.NPCHit14`
+            // (`NPC.cs:13713`), 371 `NPCHit3` (`:13727`), 372/373
+            // `NPCHit1` (`:13742`/`:13756`).
+            NpcKind::DukeFishron => "NPC_Hit_14",
+            NpcKind::DetonatingBubble => "NPC_Hit_3",
+            NpcKind::Sharkron | NpcKind::Sharkron2 => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -1835,6 +1854,12 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus => "NPC_Killed_1",
             NpcKind::Flocko => "NPC_Killed_6",
+            // S1-D-3 W-9 fishron wiring — 370 `SoundID.NPCDeath20`
+            // (`NPC.cs:13714`), 371 `NPCDeath3` (`:13728`), 372/373
+            // `NPCDeath1` (`:13743`/`:13757`).
+            NpcKind::DukeFishron => "NPC_Killed_20",
+            NpcKind::DetonatingBubble => "NPC_Killed_3",
+            NpcKind::Sharkron | NpcKind::Sharkron2 => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2040,6 +2065,13 @@ impl NpcKind {
             NpcKind::DD2Betsy => 110,
             // aiStyle 123 - NPC.cs:17453
             NpcKind::Deerclops => 123,
+            // S1-D-3 W-9 fishron wiring — `AI_069_DukeFishron`
+            // (`NPC.cs:48774-49754`), aiStyle 69 (`NPC.cs:13705`); the
+            // Detonating Bubble's aiStyle 70 (`:13723`) and the Sharkron
+            // pair's aiStyle 71 (`:13739`/`:13753`).
+            NpcKind::DukeFishron => 69,
+            NpcKind::DetonatingBubble => 70,
+            NpcKind::Sharkron | NpcKind::Sharkron2 => 71,
         }
     }
 
@@ -2488,6 +2520,14 @@ impl NpcKind {
             NpcKind::ElfArcher => (18.0, 40.0),
             NpcKind::Krampus => (18.0, 90.0),
             NpcKind::Flocko => (54.0, 54.0),
+            // S1-D-3 W-9 fishron wiring — the `SetDefaults` boxes:
+            // 370 150x100 (`NPC.cs:13703-13704`), 371 36x36
+            // (`:13721-13722`), 372 120x24 (`:13736-13737`), 373 100x24
+            // (`:13750-13751`).
+            NpcKind::DukeFishron => (150.0, 100.0),
+            NpcKind::DetonatingBubble => (36.0, 36.0),
+            NpcKind::Sharkron => (120.0, 24.0),
+            NpcKind::Sharkron2 => (100.0, 24.0),
         }
     }
 
@@ -2548,6 +2588,14 @@ impl NpcKind {
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
+            // S1-D-3 W-9 fishron wiring — the hand rows: the hazards'
+            // bestiary entries fold (371→370, 373→372), so the fallback
+            // would misreport their vanilla type (the 373-only sway gate
+            // and the MechSpawn caps read THIS).
+            NpcKind::DukeFishron => 370,
+            NpcKind::DetonatingBubble => 371,
+            NpcKind::Sharkron => 372,
+            NpcKind::Sharkron2 => 373,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3028,6 +3076,12 @@ impl NpcKind {
             NpcKind::ElfArcher => 900,
             NpcKind::Krampus => 2500,
             NpcKind::Flocko => 450,
+            // S1-D-3 W-9 fishron wiring — the `lifeMax` rows: 370 60000
+            // (`NPC.cs:13708`), 371 1 (`:13726`), 372/373 100
+            // (`:13741`/`:13755`).
+            NpcKind::DukeFishron => 60000,
+            NpcKind::DetonatingBubble => 1,
+            NpcKind::Sharkron | NpcKind::Sharkron2 => 100,
         }
     }
 
@@ -3340,6 +3394,12 @@ impl NpcKind {
             NpcKind::NutcrackerSpinning | NpcKind::Krampus => 100,
             NpcKind::ElfArcher => 70,
             NpcKind::Flocko => 75,
+            // S1-D-3 W-9 fishron wiring — the `damage` rows: 370 100
+            // (`NPC.cs:13706` — the AI rewrites it per tick from
+            // `defDamage`), 371 100 (`:13724`), 372 100 (`:13739`),
+            // 373 120 (`:13753`).
+            NpcKind::DukeFishron | NpcKind::DetonatingBubble | NpcKind::Sharkron => 100,
+            NpcKind::Sharkron2 => 120,
         }
     }
 }
