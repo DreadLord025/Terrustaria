@@ -1485,10 +1485,12 @@ pub struct Npc {
     /// `AI_077_MoonLordCore`'s `localAI[0..2]` (`NPC.cs:41229-41232`): the
     /// core's three part slots — 0/1 the hands (`ai[2]` 0/1) and 2 the
     /// head — as the NPC indices the pre-pass resolves.
-    /// The Moon Lord parts' `localAI[0..2]` (`AI_078`'s eyelid angle,
-    /// `AI_079`'s open factor, the lid): the port packs the vanilla's
-    /// per-part locals into one array.
-    pub moon_local: [f32; 3],
+    /// The Moon Lord parts' `localAI[0..3]` (`AI_078`'s eyelid angle +
+    /// iris, `AI_079`'s aim/open/lid/iris-frame, `AI_081`'s aim/iris/scale):
+    /// the port packs the vanilla's per-part locals into one array. S1-D-3
+    /// widened it to 4 for the head's `localAI[3]` lid frame
+    /// (`NPC.cs:42364-42380`, the `dontTakeDamage >= 15` gate at `:42096`).
+    pub moon_local: [f32; 4],
     /// `AI_078`/`AI_079`/`AI_081`'s alive-core gate: the pre-pass sets
     /// it while `Main.npc[ai[3]]` is the living 398.
     pub moon_core_alive: bool,
@@ -1510,6 +1512,33 @@ pub struct Npc {
     /// phase on every return to the zero state and spawned a second pair
     /// of hands every 60 ticks.
     pub moon_spawn_latch: bool,
+    /// S1-D-3: the core's `active = false` kills that BYPASS `checkDead` —
+    /// the lost-part gate (`NPC.cs:41267-41272`) and the despawn ride's end
+    /// (`:41504`). The death pass must not raise `downed_moon_lord` for
+    /// them (the vanilla's flag rides the drama's `checkDead` only).
+    pub moon_despawn_kill: bool,
+    /// S1-D-3: `NPC.PrepareForDeathAnimation` (`NPC.cs:78032-78038`) — the
+    /// `checkDead` moon arms restore `life = lifeMax` + `dontTakeDamage`
+    /// and hand the NPC its death phase (the parts `-2` + a True Eye, the
+    /// core `2`). The flag keeps the death pass from re-crediting the
+    /// restored NPC.
+    pub moon_dying: bool,
+    /// S1-D-3: the core's current `ai[0]` mirrored by the carrier pre-pass —
+    /// the head's `-2` death arm reads `Main.npc[ai[3]].ai[0] == 2`
+    /// (`NPC.cs:42155-42159`) to hand itself the `-3` corpse tilt.
+    pub moon_core_phase: f32,
+    /// S1-D-3: the core's drama/despawn sweep request (`NPC.cs:41316-41335`
+    /// at `ai[1] == 60`, `:41455-41488` at `ai[1] == 40`): the five Moon-Lord
+    /// projectile kinds (456/462/455/452/454) die and every True Eye (400)
+    /// falls. The sim resolves the pools (the AI holds no projectile/NPC
+    /// list); the gore sweep (`:41481-41488`) is unmodelled.
+    pub wants_moon_sweep: u8,
+    /// S1-D-3: the enrage hop's ride-along delta (`NPC.cs:41549-41574`): the
+    /// core teleports to the player and the three parts + every True Eye
+    /// take the SAME delta on the SAME tick. The sim applies it after the
+    /// AI pass (the C# applies it inside the core's AI; the parts' own AI
+    /// already ran — the position ride is same-tick either way).
+    pub moon_hop: Option<(f32, f32)>,
     pub rifleman_rearmed: bool,
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
@@ -1751,6 +1780,169 @@ pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
     }
     angle = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
     angle
+}
+
+/// `NPC.SimpleFlyMovement` (`NPC.cs:77397-77431`): the per-axis step
+/// toward the desired velocity, with the sign-cross double step. The Moon
+/// Lord's cruise (`:41245`/`:41303`) and the hands' hover
+/// (`:41650`/`:41671`) ride it.
+pub(crate) fn simple_fly_step(vx: &mut f32, vy: &mut f32, dvx: f32, dvy: f32, s: f32) {
+    if *vx < dvx {
+        *vx += s;
+        if *vx < 0.0 && dvx > 0.0 {
+            *vx += s;
+        }
+    } else if *vx > dvx {
+        *vx -= s;
+        if *vx > 0.0 && dvx < 0.0 {
+            *vx -= s;
+        }
+    }
+    if *vy < dvy {
+        *vy += s;
+        if *vy < 0.0 && dvy > 0.0 {
+            *vy += s;
+        }
+    } else if *vy > dvy {
+        *vy -= s;
+        if *vy > 0.0 && dvy < 0.0 {
+            *vy -= s;
+        }
+    }
+}
+
+/// The Moon Lord cruise's fly block (`AI_077`'s `:41240-41247` /
+/// `:41298-41305`): `desired = Normalize(vector - velocity) * 8`, the 0.5
+/// `SimpleFlyMovement` step, then `Lerp(velocity, oldVelocity, 0.5)` — the
+/// midpoint of the stepped and the old velocity. S1-D-3: the port used to
+/// normalize the position vector alone and single-lerp toward it (the
+/// wrong vector, no sign-cross double step, the wrong lerp semantics).
+pub(crate) fn moon_cruise_fly(
+    vx: &mut f32,
+    vy: &mut f32,
+    dx: f32,
+    dy: f32,
+    d: f32,
+) {
+    if d <= 20.0 {
+        return;
+    }
+    let (ex, ey) = (dx - *vx, dy - *vy);
+    let len = (ex * ex + ey * ey).sqrt();
+    if len == 0.0 {
+        return; // XNA's `Normalize` leaves the zero vector alone
+    }
+    let (dvx, dvy) = (ex / len * 8.0, ey / len * 8.0);
+    let (ox, oy) = (*vx, *vy);
+    simple_fly_step(vx, vy, dvx, dvy, 0.5);
+    // `Vector2.Lerp(base.velocity, value, 0.5)` — new + (old − new)·0.5.
+    *vx = *vx + (ox - *vx) * 0.5;
+    *vy = *vy + (oy - *vy) * 0.5;
+}
+
+/// The Moon Lord hand's hover fly block (`AI_078`'s `:41642-41653` /
+/// `:41663-41674`): `Normalize(slot - center) * 6`, the 0.3
+/// `SimpleFlyMovement` step, then `Lerp(oldVelocity, velocity, 0.5)` — the
+/// same midpoint as the core's cruise.
+pub(crate) fn moon_hover_fly(
+    vx: &mut f32,
+    vy: &mut f32,
+    dx: f32,
+    dy: f32,
+    d: f32,
+) {
+    if d <= 20.0 {
+        return;
+    }
+    let (dvx, dvy) = (dx / d * 6.0, dy / d * 6.0);
+    let (ox, oy) = (*vx, *vy);
+    simple_fly_step(vx, vy, dvx, dvy, 0.3);
+    // `Vector2.Lerp(value, base.velocity, 0.5)` — old + (new − old)·0.5.
+    *vx = ox + (*vx - ox) * 0.5;
+    *vy = oy + (*vy - oy) * 0.5;
+}
+
+/// `Utils.Vector2FromElipse` (`Utils.cs:965-980`): the point on the ellipse
+/// `sizes` along the unit direction `(ux, uy)` — normalize the direction,
+/// divide by the normalized sizes, re-normalize, scale by `sizes / 2`. The
+/// Moon Lord's eye/laser muzzles ride it (`NPC.cs:41701`/`:41842`/
+/// `:42342`/`:42615`).
+pub(crate) fn moon_ellipse_point(ux: f32, uy: f32, sx: f32, sy: f32) -> (f32, f32) {
+    if (sx == 0.0 && sy == 0.0) || (ux == 0.0 && uy == 0.0) {
+        return (0.0, 0.0);
+    }
+    let sl = (sx * sx + sy * sy).sqrt();
+    let (nx, ny) = (sx / sl, sy / sl);
+    let (mut ex, mut ey) = (ux / nx, uy / ny);
+    let el = (ex * ex + ey * ey).sqrt();
+    if el == 0.0 {
+        return (0.0, 0.0);
+    }
+    ex /= el;
+    ey /= el;
+    (ex * sx * 0.5, ey * sy * 0.5)
+}
+
+/// `Vector2.SmoothStep` (XNA): the per-component Hermite
+/// `t*t*(3-2t)` blend — the hand flood's ride (`NPC.cs:41736`/
+/// `:41752`/`:41799`/`:41815`).
+pub(crate) fn smooth_step2(ax: f32, ay: f32, bx: f32, by: f32, t: f32) -> (f32, f32) {
+    let t = t.clamp(0.0, 1.0);
+    let w = t * t * (3.0 - 2.0 * t);
+    (ax + (bx - ax) * w, ay + (by - ay) * w)
+}
+
+/// The retargeting laser's shared block (`AI_078`'s `:41826-41845`,
+/// `AI_079`'s `:42326-42344`, `AI_081`'s `:42591-42617`): the
+/// player-velocity×20 lead, the short-way `AngleLerp` at 0.5 inside
+/// `[0, dur-19)`, the 0.05 iris ramp clamped at 1, and the three
+/// −14/−7/0 shots — the muzzle rides `Vector2FromElipse` and the shot's
+/// velocity is the plain aim rotation × 8 (not the ellipse normal).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn moon_laser_aim(
+    n: &mut Npc,
+    cx: f32,
+    cy: f32,
+    pcx: f32,
+    pcy: f32,
+    pvx: f32,
+    pvy: f32,
+    ex: f32,
+    ey: f32,
+    num: f32,
+    dur: f32,
+    damage: i32,
+) {
+    let (lx, ly) = (pcx + pvx * 20.0 - cx, pcy + pvy * 20.0 - cy);
+    if num < dur - 14.0 - 5.0 {
+        n.moon_local[0] = angle_lerp(n.moon_local[0], ly.atan2(lx), 0.5);
+        n.moon_local[1] += 0.05;
+    }
+    if n.moon_local[1] > 1.0 {
+        n.moon_local[1] = 1.0;
+    }
+    // S1-E-21g — `NPC.cs:41836-41838`/`:42336-42338`/`:42609-42611`:
+    // the wind-up cry 35 ticks before the release (`PlaySound(4, pos,
+    // 6)`, int overload) — main's three per-arm pushes fold into the
+    // shared block (L-B merge).
+    if num == dur - 35.0 {
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::NpcDeath(6),
+            x: n.x,
+            y: n.y,
+        });
+    }
+    if num == dur - 14.0 || num == dur - 7.0 || num == dur {
+        let (ux, uy) = (n.moon_local[0].cos(), n.moon_local[0].sin());
+        let (mx, my) = moon_ellipse_point(
+            ux,
+            uy,
+            ex * n.moon_local[1],
+            ey * n.moon_local[1],
+        );
+        n.wants_hostile_shot
+            .push((462u16, cx + mx, cy + my, ux * 8.0, uy * 8.0, damage));
+    }
 }
 
 /// The Brain of Cthulhu's blink target (`NPC.cs:32440-32474` for the
@@ -2631,12 +2823,17 @@ impl Npc {
             king_slime_local: [0.0; 4],
             size_override: None,
             brain_local: [0.0; 4],
-            moon_local: [0.0; 3],
+            moon_local: [0.0; 4],
             moon_core_alive: false,
             moon_parts: [0, 0, 0],
             moon_parts_lost: false,
             moon_parts_dead: false,
             moon_spawn_latch: false,
+            moon_despawn_kill: false,
+            moon_dying: false,
+            moon_core_phase: 0.0,
+            wants_moon_sweep: 0,
+            moon_hop: None,
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
@@ -12314,128 +12511,256 @@ impl Npc {
     /// >2400-px enrage hop.
     ///
     /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
-    /// is unmodelled — the port's drama is the timer + the 622 smoke.
-        fn update_moon_lord_core(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-            // `:41163-41168`'s init: the first tick arms the spawn phase. The
-            // C#'s latch is `localAI[3]` (0 → 1) — a one-shot; the port's
-            // `ai[0] == 0` test alone re-armed the phase on every return to
-            // the zero state (a second hands+head every 60 ticks).
-            if self.ai[0] == 0.0 && !self.moon_spawn_latch {
+    /// is unmodelled — the port's drama is the timer + the 622 smoke; the
+    /// death/despawn sound cues are unmodelled (their RNG draws are still
+    /// consumed); the phase-2 dust storm's DUST-INTERNAL draws (the
+    /// `Dust.NewDust` streams, `:41365-41403`) are unmodelled — the
+    /// unconditional top-level draws are consumed, the dust-gated ones
+    /// deferred; the enrage hop's same-tick part/400 ride
+    /// (`:41551-41574`) rides the pre-pass anchor one tick later
+    /// (documented, S1-D-3).
+    fn update_moon_lord_core(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // `:41159-41162`'s roar: the gate excludes the spawn-in and the
+        // drama; the sound is unmodelled but BOTH draws ride the stream
+        // (S1-D-3: the port omitted them).
+        if self.ai[0] != -1.0 && self.ai[0] != 2.0 && rng.next_max(200) == 0 {
+            let _ = rng.next_range(93, 100);
+        }
+        // `:41163-41168`'s init: the FIRST tick arms the spawn phase,
+        // whatever `ai[0]` holds. The C#'s latch is `localAI[3]` (0 → 1) —
+        // a one-shot; the port's `ai[0] == 0` test alone re-armed the phase
+        // on every return to the zero state (a second hands+head every 60
+        // ticks).
+        if !self.moon_spawn_latch {
             self.ai[0] = -1.0;
             self.moon_spawn_latch = true;
         }
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        match self.ai[0] as i32 {
-            -2 => {
-                // `:41169-41192`'s teleport re-entry: the 60-tick windup,
-                // then back to the cruise.
-                self.dont_take_damage = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
+        // S1-D-3: the C# is a SEQUENCE of ifs, not a switch — the `-2`/`-1`
+        // windups hand `ai[0] = 0` at the 60th tick and the cruise block
+        // runs on the SAME tick (the fall-through the port's match missed).
+        if self.ai[0] == -2.0 {
+            // `:41169-41192`'s teleport re-entry: the 60-tick windup,
+            // then back to the cruise.
+            self.dont_take_damage = true;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 60.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                // `:41187-41188`: `ai[2] = Main.rand.Next(3)` then the
+                // immediate overwrite to 0 — a dead draw the vanilla's
+                // stream still takes (S1-D-3: the port omitted it).
+                let _ = rng.next_max(3);
+                self.ai[2] = 0.0;
             }
-            -1 => {
-                // `:41193-41235`'s spawn-in: the two hands + the head ride
-                // `wants_moon_parts` on the 60th tick.
-                self.dont_take_damage = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 && !self.wants_moon_parts {
-                    self.wants_moon_parts = true;
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                }
+        }
+        if self.ai[0] == -1.0 {
+            // `:41193-41235`'s spawn-in: the two hands + the head ride
+            // `wants_moon_parts` on the 60th tick.
+            self.dont_take_damage = true;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 60.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                self.ai[2] = 0.0;
+                self.wants_moon_parts = true;
             }
-            2 => {
-                // `:41307-41445`'s crash drama: the slow rise, the 622
-                // smoke every 15 ticks inside [90, 480), the 600-tick end.
-                self.dont_take_damage = true;
-                self.vx += (0.0 - self.vx) * 0.98;
-                self.vy += (-0.5 - self.vy) * 0.98;
-                self.ai[1] += 1.0;
-                // S1-E-21g — `NPC.cs:41430-41433`: the crash's first tick
-                // cries (`ai[1] == 1` AFTER the increment — the C# checks
-                // at the arm's tail; `NPCDeath61` at base.Center, the
-                // style façade).
-                if self.ai[1] == 1.0 {
-                    self.wants_sound.push(NpcSoundRequest {
-                        cue: NpcSoundCue::NpcDeath61,
-                        x: cx,
-                        y: cy,
-                    });
-                }
-                if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
-                    // `:41405-41428`'s smoke: one 622 (0 damage) at the
-                    // ±(π/8 + π/4·rand) rotation about the down axis.
-                    // `(Next(4) < 2).ToDirectionInt() * (pi/8 + pi/4 *
-                    // NextFloat())` and `(0 - NextFloat()) * 0.5f - 0.5f`
-                    // (`NPC.cs:41421-41422`).
-                    let rot = std::f32::consts::FRAC_PI_8
-                            + std::f32::consts::FRAC_PI_4 * rng.next_float();
-                        let sign = if rng.next_max(4) < 2 { -1.0 } else { 1.0 };
-                    let vx = rot.sin() * sign * 6.0;
-                    let vy = -rot.cos() * (rng.next_float() * 0.5 + 0.5);
-                    self.wants_hostile_shot.push((622u16, cx, cy, vx, vy, 0));
-                }
-                self.x += self.vx;
-                self.y += self.vy;
-                if self.ai[1] >= 600.0 {
-                    // `:41439-41442`'s end: `life = 0` → the death pass
-                    // raises `downed_moon_lord`.
+        }
+        if self.ai[0] == 0.0 || self.ai[0] == 1.0 {
+            // `:41236-41306`'s cruise: the 130-px-above hover —
+            // `Normalize(vector - velocity) * 8`, the 0.5
+            // `SimpleFlyMovement` step, the midpoint lerp (S1-D-3).
+            self.dont_take_damage = self.ai[0] != 1.0;
+            let (dx, dy) = (pcx - cx, pcy - cy + 130.0);
+            let d = (dx * dx + dy * dy).sqrt();
+            moon_cruise_fly(&mut self.vx, &mut self.vy, dx, dy, d);
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.ai[0] == 0.0 {
+                // `:41251-41272`'s lost-part gate (S1-D-3): AFTER the
+                // cruise's move, a part slot that points at no living part
+                // takes the core down — `life = 0; active = false`, which
+                // bypasses `checkDead` (no drama, no downed flag). The
+                // pre-pass computes the flag; the death pass owns the kill.
+                // The empty-slot guard: the C# spawns the parts
+                // SYNCHRONOUSLY inside the `-1` arm (`:41217-41231`), so
+                // its same-tick fall-through reads populated slots; the
+                // port's spawn resolve runs after the AI pass, so the
+                // spawn tick's pre-pass flag is stale-true — the gate
+                // only applies once the slots hold ids.
+                if self.moon_parts_lost && self.moon_parts.iter().any(|&u| u > 0) {
                     self.hp = 0;
-                }
-            }
-            3 => {
-                // `:41446-41515`'s despawn ride.
-                self.dont_take_damage = true;
-                self.vx += (self.facing as f32 - self.vx) * 0.98;
-                self.vy += (-0.5 - self.vy) * 0.98;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 {
-                    self.wants_moon_parts_clear = true;
-                    self.hp = 0;
-                }
-                self.x += self.vx;
-                self.y += self.vy;
-            }
-            _ => {
-                // `:41236-41306`'s cruise: the 130-px-above hover at the
-                // 8-px cap over the 0.5 smoothing.
-                self.dont_take_damage = self.ai[0] != 1.0;
-                let (dx, dy) = (pcx - cx, pcy - cy + 130.0);
-                let d = (dx * dx + dy * dy).sqrt();
-                if d > 20.0 {
-                    let inv = 8.0 / d.max(0.001);
-                    self.vx += (dx * inv - self.vx) * 0.5;
-                    self.vy += (dy * inv - self.vy) * 0.5;
-                }
-                self.x += self.vx;
-                self.y += self.vy;
-                // `:41537-41542`'s player guard: no live player despawns.
-                if player.hp <= 0 {
-                    self.ai[0] = 3.0;
-                    self.ai[1] = 0.0;
+                    self.moon_despawn_kill = true;
                     return;
                 }
-                // `:41543-41550`'s enrage hop past 2400 px (the parts ride
-                // it in the pre-pass).
-                if (pcx - cx).hypot(pcy - cy) > 2400.0 {
-                    self.x += pcx - cx;
-                    self.y += pcy - cy - 150.0;
-                }
-                // `:41251-41291`'s part bookkeeping: all three parts in
-                // their death state hand the core its vulnerable phase
-                // (`ai[0] = 1`, `dontTakeDamage = false`). The check runs
-                // in the C#'s `ai[0] == 0` phase only — the vulnerable
-                // phase is past it.
-                if self.ai[0] == 0.0 && self.moon_parts_dead {
+                // `:41273-41291`'s flag2: all three parts in their death
+                // state hand the core its vulnerable phase.
+                if self.moon_parts_dead {
                     self.ai[0] = 1.0;
                     self.dont_take_damage = false;
                 }
             }
+        } else if self.ai[0] == 2.0 {
+            // `:41307-41445`'s crash drama: the slow rise, the 622
+            // smoke every 15 ticks inside [90, 480), the 600-tick end.
+            self.dont_take_damage = true;
+            self.vx += (0.0 - self.vx) * 0.98;
+            self.vy += (-0.5 - self.vy) * 0.98;
+            self.ai[1] += 1.0;
+            // S1-E-21g — `NPC.cs:41430-41433`: the crash's first tick
+            // cries (`ai[1] == 1` AFTER the increment — the C# checks
+            // at the arm's tail; `NPCDeath61` at base.Center, the
+            // style façade). Kept from main inside the branch's
+            // if-sequence rewrite (L-B merge).
+            if self.ai[1] == 1.0 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::NpcDeath61,
+                    x: cx,
+                    y: cy,
+                });
+            }
+            if self.ai[1] == 60.0 {
+                // `:41316-41335`'s sweep: the five Moon-Lord projectile
+                // kinds die and every True Eye (400) falls — the sim's
+                // resolve owns the pools (S1-D-3: the port never swept, so
+                // the eyes kept attacking through the whole drama).
+                self.wants_moon_sweep = 1;
+            }
+            if (self.ai[1] as i64) % 3 == 0 && self.ai[1] < 580.0 && self.ai[1] > 60.0 {
+                // `:41336-41403`'s dust storm: the dust is unmodelled, but
+                // the UNCONDITIONAL top-level draws ride the stream in the
+                // C#'s order (S1-D-3): RandomVector2 (two NextDouble), the
+                // radius NextFloat, Next(6, 19), four NextFloats (the
+                // angle/speed/scale/fadeIn), the SelectRandom pick, then
+                // per inner-loop iteration another RandomVector2 + radius.
+                // The dust-GATED draws (the `num4 * 2` fan + the inner
+                // Dust.NewDust streams) are deferred with the dust engine.
+                let _ = rng.next_double();
+                let _ = rng.next_double();
+                let _ = rng.next_float();
+                let _ = rng.next_range(6, 19);
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_max(2); // Utils.SelectRandom(31, 229)
+                let inner = (self.ai[1] / 60.0).ceil() as i32;
+                for _ in 0..inner {
+                    let _ = rng.next_double();
+                    let _ = rng.next_double();
+                    let _ = rng.next_float();
+                }
+            }
+            if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
+                    // `:41405-41428`'s smoke: the C#'s draw order is the
+                    // offset pair (`RandomVector2(-1,1)`, two NextDouble),
+                    // the radius NextFloat, then — only when the spot is
+                    // in-world and not solid — `Next(4)`, the angle
+                    // NextFloat and the point NextFloat (S1-D-3: the port
+                    // drew them out of order, at the centre, and dropped
+                    // the ×6 on the vy).
+                    let mut ox = rng.next_double() as f32 * 2.0 - 1.0;
+                    let mut oy = rng.next_double() as f32 * 2.0 - 1.0;
+                    let ol = (ox * ox + oy * oy).sqrt();
+                    if ol != 0.0 {
+                        ox /= ol;
+                        oy /= ol;
+                    }
+                    let r = 20.0 + rng.next_float() * 400.0;
+                    let (sx, sy) = (cx + ox * r, cy + oy * r);
+                    let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+                    let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+                    let solid = in_world
+                        && world
+                            .tile(tx, ty)
+                            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                    if in_world && !solid {
+                        // `(0 - NextFloat()) * 0.5f - 0.5f` rotated by
+                        // `±(π/8 + π/4·NextFloat())`, BOTH components ×6.
+                        // `(Next(4) < 2).ToDirectionInt()` is +1 when TRUE
+                        // (`Utils.cs:2010-2017`) — S1-D-3: the partial had
+                        // the sign inverted.
+                        let sign = if rng.next_max(4) < 2 { 1.0 } else { -1.0 };
+                        let rot = sign
+                            * (std::f32::consts::FRAC_PI_8
+                                + std::f32::consts::FRAC_PI_4 * rng.next_float());
+                        let py = (0.0 - rng.next_float()) * 0.5 - 0.5;
+                        let (c, s) = (rot.cos(), rot.sin());
+                        let vx = (0.0 * c - py * s) * 6.0;
+                        let vy = (0.0 * s + py * c) * 6.0;
+                        self.wants_hostile_shot.push((622u16, sx, sy, vx, vy, 0));
+                    }
+                }
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.ai[1] >= 600.0 {
+                // `:41439-41442`'s end: `life = 0` → the death pass
+                // raises `downed_moon_lord` (the `HitEffect(0, 1337)`
+                // drama is the unmodelled gore ride).
+                self.hp = 0;
+                return;
+            }
+        } else if self.ai[0] == 3.0 {
+            // `:41446-41515`'s despawn ride.
+            self.dont_take_damage = true;
+            self.vx += (self.facing as f32 - self.vx) * 0.98;
+            self.vy += (-0.5 - self.vy) * 0.98;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 40.0 {
+                // `:41455-41488`'s sweep: the five projectile kinds + the
+                // 400s drop (the gore sweep is unmodelled — the port has
+                // no gore pool).
+                self.wants_moon_sweep = 1;
+            }
+            if self.ai[1] >= 60.0 {
+                // `:41490-41514`: the parts + the 400s drop, then
+                // `active = false` DIRECTLY — no `checkDead`, so no
+                // downed flag — and `LunarApocalypseIsUp = false`.
+                self.wants_moon_parts_clear = true;
+                self.hp = 0;
+                self.moon_despawn_kill = true;
+                return;
+            }
+            self.x += self.vx;
+            self.y += self.vy;
+        }
+        // `:41517-41542`'s player guard (S1-D-3: it runs AFTER every
+        // phase, not just the cruise): the -2/-1/2/3 phases are immune;
+        // otherwise a dead player arms the despawn ride.
+        let mut keep = matches!(self.ai[0] as i32, -2 | -1 | 2 | 3);
+        if player.hp > 0 && !player.dead {
+            keep = true;
+        }
+        if !keep {
+            self.ai[0] = 3.0;
+            self.ai[1] = 0.0;
+        }
+        // `:41543-41574`'s enrage hop past 2400 px: the core rides to the
+        // player lifted 150 px AND enters the 60-tick teleport re-entry
+        // (`ai[0] = -2`) — the port skipped the phase hand-off. S1-D-3:
+        // `base.Distance` (`:41543`, `Entity.cs:195-198`) reads
+        // `base.Center` BEFORE the tick's integration (`position +=
+        // velocity` rides `UpdateNPC`'s tail, `:90498`, after the whole
+        // AI) — the distance and the ride delta both use the tick's
+        // START centre `(cx, cy)`; the port's inline integration already
+        // added this tick's velocity, so applying the pre-move delta to
+        // the moved position lands exactly where the C# lands
+        // (`(pre + delta) + velocity`).
+        if self.ai[0] >= 0.0
+            && self.ai[0] < 2.0
+            && (pcx - cx).hypot(pcy - cy) > 2400.0
+        {
+            self.ai[0] = -2.0;
+            // `:41549`'s delta: player centre − UnitY·150 − core centre.
+            let (hx, hy) = (pcx - cx, pcy - cy - 150.0);
+            self.x += hx;
+            self.y += hy;
+            // `:41551-41574`: the three parts + every True Eye take the
+            // SAME delta on the SAME tick — the sim's resolve owns the
+            // pool walk (`moon_hop`).
+            self.moon_hop = Some((hx, hy));
         }
     }
 
@@ -12470,11 +12795,20 @@ impl Npc {
     ///
     /// Deviations: the 452/454 projectile engines (the vanilla's aiStyle
     /// 82/83) are unmodelled; the release wave fires the wave projectile
-    /// through `wants_hostile_shot` instead of rewriting the owned 454s.
+    /// through `wants_hostile_shot` instead of rewriting the owned 454s
+    /// (`:41787-41797`); the `frameCounter == 19` attached-projectile pop
+    /// (`:41588-41591`) is unmodelled; the flood's 454 `ai0 = whoAmI`
+    /// owner tag rides the plain shot list (no owner). S1-D-3: the `-2`
+    /// death phase's `damage = 0` + 32-tick `ai[1]` wrap (`:41630-41641`)
+    /// now ride the arm; `checkDead`'s 397 entry (`:78060-78072` — the
+    /// life restore + the True Eye spawn) rides the sim's death pass.
     fn update_moon_lord_hand(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:41579-41583`'s orphan guard (the pre-pass owns the link).
+        // `:41579-41583`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead — S1-D-3: the flag keeps
+        // the death pass from restoring the death hover.
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
         let row: [(u32, i32); 5] = if self.ai[2] == 0.0 {
@@ -12483,137 +12817,247 @@ impl Npc {
             [(1, 70), (0, 50), (3, 90), (0, 60), (2, 330)]
         };
         let num = if self.ai[2] == 0.0 { -1.0f32 } else { 1.0f32 };
-        self.ai[1] += 1.0;
-        let (pick, num2, dur) = Self::moon_lord_pick(&row, &mut self.ai[1]);
-        self.ai[0] = row[pick].0 as f32;
+        self.facing = num as i32;
+        // `:41592`: the eyelid frame gates the damage — the counter rides
+        // `num4 * 7` at the arm's end (`:41866-41882`).
+        self.dont_take_damage = self.frame_counter >= 21.0;
+        // `:41598-41627`: the `-2` death state skips the sequencer.
+        let mut num4 = 0i32;
+        let mut num2 = 0.0f32;
+        let mut dur = 0.0f32;
+        if self.ai[0] != -2.0 {
+            self.ai[1] += 1.0;
+            let (pick, t, d) = Self::moon_lord_pick(&row, &mut self.ai[1]);
+            self.ai[0] = row[pick].0 as f32;
+            num2 = t;
+            dur = d;
+        }
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        // The anchor (`:41642`/`:41701`'s slot): the core's centre +
+        // The anchor (`:41642`/`:41663`'s slot): the core's centre +
         // (±350, -100).
         let (ax, ay) = (self.carrier_x + 350.0 * num, self.carrier_y - 100.0);
         match self.ai[0] as i32 {
-            -2 | 0 => {
-                // `:41628-41675`'s hover: the side slot at the 6-px cap
-                // over the 0.3 smoothing.
-                self.dont_take_damage = self.ai[0] == -2.0;
+            -2 => {
+                // `:41628-41653`'s death hover: the side slot at the 6-px
+                // cap over the 0.3 step + the midpoint lerp. S1-D-3: the
+                // `damage = 0` + the `ai[1]` 32-tick wrap (`:41630-41641`,
+                // the eyelid pulse the death hover keeps riding) were
+                // missing — `checkDead`'s 397 arm zeroes `ai[1]` on entry
+                // (`:78065`) and the wrap keeps the corpse animating.
+                self.damage = 0;
+                self.dont_take_damage = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 32.0 {
+                    self.ai[1] = 0.0;
+                }
+                if self.ai[1] < 0.0 {
+                    self.ai[1] = 0.0;
+                }
                 let (dx, dy) = (ax - cx, ay - cy);
                 let d = (dx * dx + dy * dy).sqrt();
-                if d > 20.0 {
-                    let inv = 6.0 / d.max(0.001);
-                    self.vx += (dx * inv - self.vx) * 0.3;
-                    self.vy += (dy * inv - self.vy) * 0.3;
-                }
+                moon_hover_fly(&mut self.vx, &mut self.vy, dx, dy, d);
+            }
+            0 => {
+                // `:41655-41675`'s hover: the iris closes at 0.05/tick.
+                num4 = 3;
+                self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
+                let (dx, dy) = (ax - cx, ay - cy);
+                let d = (dx * dx + dy * dy).sqrt();
+                moon_hover_fly(&mut self.vx, &mut self.vy, dx, dy, d);
             }
             1 => {
                 // `:41676-41717`'s Phantasmal Eyes: the 56-tick eyelid
                 // cycle (`7 × 4` half-point ticks) fires the 452 (30) every
-                // 4 ticks from the ring's point.
+                // 4 ticks from the ellipse muzzle. S1-D-3: the close
+                // threshold is 56 (not 66), the cadence is `% 4 == 0`, the
+                // muzzle rides `Vector2FromElipse` at the CONSTANT
+                // `vector.Length() * 0.4` radius, the velocity is the
+                // ellipse normal × 8 and each shot draws its `ai1`
+                // (`:41704`).
                 let (ex, ey) = (30.0f32, 66.0f32);
-                if num2 >= dur - 4.0 {
+                let ring_len = (ex * ex + ey * ey).sqrt();
+                if num2 >= 56.0 {
                     self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
                 } else if num2 >= 28.0 {
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.75);
-                    if num2 % 4.0 < 1.0 {
-                        let ang = std::f32::consts::PI * 2.0 * (num2 % 28.0) / 28.0
-                            - std::f32::consts::FRAC_PI_2;
-                        let (rx, ry) = (ang.cos() * ex, ang.sin() * ey);
-                        let d = (rx * rx + ry * ry).sqrt().max(0.001);
-                        self.wants_hostile_shot.push((
-                            452u16,
-                            cx + rx / d * (d * 0.4) + 1.0 * -num,
-                            cy + ry / d * (d * 0.4) + 3.0,
-                            rx / d * 8.0,
-                            ry / d * 8.0,
-                            30,
-                        ));
+                    let ang = std::f32::consts::PI * 2.0 * (num2 % 28.0) / 28.0
+                        - std::f32::consts::FRAC_PI_2;
+                    let (rx, ry) = (ang.cos() * ex, ang.sin() * ey);
+                    self.moon_local[0] = ry.atan2(rx);
+                    if num2 % 4.0 == 0.0 {
+                        let (ux, uy) = (self.moon_local[0].cos(), self.moon_local[0].sin());
+                        let (mx, my) = moon_ellipse_point(
+                            ux,
+                            uy,
+                            ex * self.moon_local[1],
+                            ey * self.moon_local[1],
+                        );
+                        let ml = (mx * mx + my * my).sqrt();
+                        let (nx, ny) = if ml > 0.0 { (mx / ml, my / ml) } else { (0.0, 0.0) };
+                        // `:41704`'s ai1: `(2π·NextDouble() − π)/30 +
+                        // π/180·num`.
+                        let ai1 = (std::f32::consts::TAU * rng.next_double() as f32
+                            - std::f32::consts::PI)
+                            / 30.0
+                            + std::f32::consts::PI / 180.0 * num;
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 452,
+                            x: cx + nx * ring_len * 0.4 + 1.0 * -num,
+                            y: cy + ny * ring_len * 0.4 + 3.0,
+                            vx: nx * 8.0,
+                            vy: ny * 8.0,
+                            damage: 30,
+                            ai0: 0.0,
+                            ai1,
+                        });
                     }
                 } else {
                     self.moon_local[1] = (self.moon_local[1] + 0.02).min(0.75);
+                    let ang = std::f32::consts::PI * 2.0 * (num2 % 28.0) / 28.0
+                        - std::f32::consts::FRAC_PI_2;
+                    let (rx, ry) = (ang.cos() * ex, ang.sin() * ey);
+                    self.moon_local[0] = ry.atan2(rx);
                 }
             }
             2 => {
-                // `:41718-41817`'s flood: six 454s (40) on the 30-tick
-                // cadence, the 20-px travel, the release wave at the
-                // 292nd tick.
-                let t = num2 - 30.0;
-                if t >= 0.0 && t < 180.0 && (t as i64) % 30 == 0 {
-                    let i = t / 30.0;
-                    let mut vx = (5.0 * num + (i - 3.5) * num * 3.0) * 1.2;
-                    let mut vy = (-8.0 + (i - 4.5)) * 1.2;
-                    vx = vx;
-                    vy = vy;
-                    self.wants_hostile_shot.push((454u16, cx, cy, vx, vy, 40));
+                // `:41718-41817`'s flood: the six 454s (40) on the 30-tick
+                // cadence, the SmoothStep ride out and back, the release
+                // wave at the 292nd tick.
+                self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
+                // `:41725-41728`'s ride anchors.
+                let (bx, by) = (
+                    self.carrier_x + 220.0 * num + 100.0 * num,
+                    self.carrier_y - 60.0 - 50.0,
+                );
+                let (ox, oy) = (400.0 * num, -60.0);
+                if num2 < 30.0 {
+                    // `:41729-41738`: the SmoothStep toward the anchor at
+                    // min(8, dist).
+                    let (dx, dy) = (bx - cx, by - cy);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d != 0.0 {
+                        let cap = d.min(8.0);
+                        let (tx, ty) = (dx / d * cap, dy / d * cap);
+                        let (nx, ny) = smooth_step2(self.vx, self.vy, tx, ty, 0.2);
+                        self.vx = nx;
+                        self.vy = ny;
+                    }
+                } else if num2 < 210.0 {
+                    num4 = 1;
+                    let t = num2 - 30.0;
+                    if (t as i64) % 30 == 0 {
+                        // `:41743-41750`: the six-shot fan.
+                        let i = (t as i64) / 30;
+                        let mut vx = 5.0 * num;
+                        let mut vy = -8.0f32;
+                        vx += (i as f32 - 3.5) * num * 3.0;
+                        vy += (i as f32 - 4.5) * 1.0;
+                        vx *= 1.2;
+                        vy *= 1.2;
+                        self.wants_hostile_shot.push((454u16, cx, cy, vx, vy, 40));
+                    }
+                    // `:41752-41758`: the SmoothStep slide at the 20-px
+                    // cap over the 0.5 lerp.
+                    let f = (num2 - 30.0) / 180.0;
+                    let (sx, sy) = smooth_step2(bx, by, bx + ox, by + oy, f);
+                    let (dx, dy) = (sx - cx, sy - cy);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d != 0.0 {
+                        let cap = d.min(20.0);
+                        let (tx, ty) = (dx / d * cap, dy / d * cap);
+                        self.vx += (tx - self.vx) * 0.5;
+                        self.vy += (ty - self.vy) * 0.5;
+                    }
+                } else if num2 < 282.0 {
+                    num4 = 0;
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                } else if num2 < 287.0 {
+                    num4 = 1;
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                } else if num2 < 292.0 {
+                    num4 = 2;
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                } else if num2 < 300.0 {
+                    num4 = 3;
+                    if num2 == 292.0 {
+                        // `:41778-41797`'s release wave: the 12-px lance
+                        // aimed from 350 px above the hand (the vanilla
+                        // rewrites the owned 454s — the port fires the
+                        // wave shot, the documented deviation).
+                        let (dx, dy) = (pcx - cx, pcy - (cy - 350.0));
+                        let d = (dx * dx + dy * dy).sqrt();
+                        let (nx, ny) = if d > 0.0 { (dx / d, dy / d) } else { (0.0, 1.0) };
+                        self.wants_hostile_shot.push((
+                            462u16,
+                            cx,
+                            cy - 350.0,
+                            nx * 12.0,
+                            ny * 12.0,
+                            30,
+                        ));
+                    }
+                    // `:41799-41805`: the ride back at the 14-px cap over
+                    // the 0.1 lerp.
+                    let f = 1.0 - (num2 - 270.0) / 30.0;
+                    let (sx, sy) = smooth_step2(bx, by, bx + ox, by + oy, f);
+                    let (dx, dy) = (sx - cx, sy - cy);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d != 0.0 {
+                        let cap = d.min(14.0);
+                        let (tx, ty) = (dx / d * cap, dy / d * cap);
+                        self.vx += (tx - self.vx) * 0.1;
+                        self.vy += (ty - self.vy) * 0.1;
+                    }
+                } else {
+                    num4 = 3;
+                    let (dx, dy) = (bx - cx, by - cy);
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d != 0.0 {
+                        let cap = d.min(8.0);
+                        let (tx, ty) = (dx / d * cap, dy / d * cap);
+                        let (nx, ny) = smooth_step2(self.vx, self.vy, tx, ty, 0.2);
+                        self.vx = nx;
+                        self.vy = ny;
+                    }
                 }
-                if num2 == 292.0 {
-                    // `:41846`'s release wave: the 12-px lance aimed from
-                    // 350 px above the hand.
-                    let (dx, dy) = (pcx - cx, pcy - (cy - 350.0));
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.wants_hostile_shot.push((
-                        462u16,
-                        cx,
-                        cy - 350.0,
-                        dx / d * 12.0,
-                        dy / d * 12.0,
-                        30,
-                    ));
-                }
-                // The travel (`:41787`'s SmoothStep at the 20-px cap).
-                let (dx, dy) = (ax - cx, ay - cy);
-                let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                let inv = 20.0 / d;
-                self.vx += (dx * inv - self.vx) * 0.2;
-                self.vy += (dy * inv - self.vy) * 0.2;
             }
             _ => {
-                // `:41819-41846`'s retargeting laser: the 462 (30) aimed
-                // at the player's led position at the −14/−7/0 ticks.
-                if num2 < dur - 19.0 {
-                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
-                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
-                }
-                // S1-E-21g — `NPC.cs:41836-41838`: the laser wind-up's
-                // 35-ticks-out cry (`PlaySound(4, pos, 6)`, int overload).
-                if num2 == dur - 35.0 {
-                    self.wants_sound.push(NpcSoundRequest {
-                        cue: NpcSoundCue::NpcDeath(6),
-                        x: self.x,
-                        y: self.y,
-                    });
-                }
-                if num2 == dur - 14.0 || num2 == dur - 7.0 || num2 == dur {
-                    let (ex, ey) = (
-                        self.moon_local[0].cos() * 30.0 * self.moon_local[1],
-                        self.moon_local[0].sin() * 66.0 * self.moon_local[1],
-                    );
-                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
-                    self.wants_hostile_shot.push((
-                        462u16,
-                        cx + ex / d * 30.0,
-                        cy + ey / d * 66.0,
-                        ex / d * 8.0,
-                        ey / d * 8.0,
-                        30,
-                    ));
-                }
-                // The idle drift toward the anchor.
-                let (dx, dy) = (ax - cx, ay - cy);
-                let d = (dx * dx + dy * dy).sqrt();
-                if d > 20.0 {
-                    let inv = 6.0 / d.max(0.001);
-                    self.vx += (dx * inv - self.vx) * 0.3;
-                    self.vy += (dy * inv - self.vy) * 0.3;
-                }
+                // `:41819-41846`'s retargeting laser: the shared aim block
+                // (the player-velocity×20 lead, the AngleLerp, the ellipse
+                // muzzle). S1-D-3: the port aimed raw, without the lead,
+                // and fired along the ellipse normal. The S1-E-21g
+                // 35-ticks-out cry rides the shared block (L-B merge).
+                moon_laser_aim(
+                    self,
+                    cx,
+                    cy,
+                    pcx,
+                    pcy,
+                    player.vx,
+                    player.vy,
+                    30.0,
+                    66.0,
+                    num2,
+                    dur,
+                    30,
+                );
             }
         }
         self.x += self.vx;
         self.y += self.vy;
-        // `:41847-41882`'s frame box clamp (the hand's wander limits).
-        let min_x = self.carrier_x + 220.0 * num - 100.0;
-        let max_x = self.carrier_x + (220.0 + 370.0) * num;
+        // `:41847-41865`'s frame box clamp: min = core + (220·num, −60) +
+        // (110·num, −150), max = min + (370·num, 150) — the clamp rides
+        // `Center + velocity` (S1-D-3: the port's constants were −100 /
+        // 590·num / +90).
+        let min_x = self.carrier_x + 220.0 * num + 110.0 * num;
+        let max_x = min_x + 370.0 * num;
         let min_y = self.carrier_y - 60.0 - 150.0;
-        let max_y = self.carrier_y - 60.0 + 150.0;
+        let max_y = min_y + 150.0;
         let (lo_x, hi_x) = if min_x <= max_x {
             (min_x, max_x)
         } else {
@@ -12624,9 +13068,22 @@ impl Npc {
         } else {
             (max_y, min_y)
         };
-        self.x = self.x.clamp(lo_x, hi_x);
-        self.y = self.y.clamp(lo_y, hi_y);
-        let _ = rng;
+        let (ncx, ncy) = (
+            (self.x + w * 0.5 + self.vx).clamp(lo_x, hi_x),
+            (self.y + h * 0.5 + self.vy).clamp(lo_y, hi_y),
+        );
+        self.x = ncx - self.vx - w * 0.5;
+        self.y = ncy - self.vy - h * 0.5;
+        // `:41866-41882`'s eyelid frame counter: `num4 * 7`, clamped
+        // [0, 21] — it gates `dontTakeDamage` at the arm's top.
+        let target = (num4 * 7) as f32;
+        if target > self.frame_counter {
+            self.frame_counter += 1.0;
+        }
+        if target < self.frame_counter {
+            self.frame_counter -= 1.0;
+        }
+        self.frame_counter = self.frame_counter.clamp(0.0, 21.0);
     }
 
     /// `AI_079_MoonLordHead` (`NPC.cs:42084-42457`) — the 396: the head
@@ -12634,11 +13091,18 @@ impl Npc {
     /// phantom deathray (455), the Moon Leech summon (456) and the
     /// retargeting laser (462).
     fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:42086-42091`'s orphan guard (the pre-pass owns the link).
+        // `:42086-42091`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead (the flag, S1-D-3).
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
+        // `:42096-42097`: the iris frame gates the damage; the head never
+        // moves on its own — the slot owns its position.
+        self.dont_take_damage = self.moon_local[3] >= 15.0;
+        self.vx = 0.0;
+        self.vy = 0.0;
         // `:42098`'s fixed slot: the core's centre 400 px up.
         self.x = self.carrier_x - self.size().0 * 0.5;
         self.y = self.carrier_y - 400.0 - self.size().1 * 0.5;
@@ -12650,10 +13114,61 @@ impl Npc {
         if self.ai[0] >= 0.0 {
             self.ai[0] = row[pick].0 as f32;
         }
-        let _ = dur;
+        // `:42172-42346`'s frame drivers: num3 = the iris driver (×7,
+        // `:42347`), num4 = the lid driver (×5, `:42364`) — S1-D-3: the
+        // port had the two multipliers swapped (the iris reached 10
+        // instead of the C#'s 14).
+        let mut num3 = 0i32;
+        let mut num4 = 0i32;
         match self.ai[0] as i32 {
+            -3 => {
+                // `:42134-42152`'s corpse tilt (S1-D-3: the whole arm was
+                // missing — the head fell into the laser `_` arm): the
+                // rotation eases toward π/12 at 0.07, the `ai[2]` 32-tick
+                // wrap, and the iris (`localAI[2]`) takes its own +1.
+                // NO early return — the shared counters below still run
+                // with num3 = num4 = 0, so the iris's +1 here is undone
+                // by the shared -1 (the C#'s net-zero hold; at 14 the
+                // arm skips the +1 and the shared -1 drops it to 13 —
+                // the 13/14 oscillation is the vanilla's).
+                self.damage = 0;
+                self.dont_take_damage = true;
+                self.rotation += (std::f32::consts::PI / 12.0 - self.rotation) * 0.07;
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 32.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.moon_local[2] < 14.0 {
+                    self.moon_local[2] += 1.0;
+                }
+            }
+            -2 => {
+                // `:42153-42171`'s death hover (S1-D-3: the whole arm was
+                // missing): the core's drama phase (`Main.npc[ai[3]].ai[0]
+                // == 2`, the pre-pass mirror `moon_core_phase`) hands the
+                // corpse tilt with an EARLY RETURN — the frame counters
+                // do not run on that tick.
+                if self.moon_core_phase == 2.0 {
+                    self.ai[0] = -3.0;
+                    return;
+                }
+                self.damage = 0;
+                self.dont_take_damage = true;
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 32.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+            }
             0 => {
-                // `:42172-42190`'s open/close factor: `1 - |aim| / 500`.
+                // `:42172-42190`'s open/close factor: `1 - |aim| / 500`,
+                // doubled and clamped — the aim leads 22 px DOWN.
+                num4 = 3;
                 let (dx, dy) = (pcx - cx, pcy - cy + 22.0);
                 let d = (dx * dx + dy * dy).sqrt();
                 let open = ((1.0 - d / 500.0).clamp(0.0, 1.0) * 2.0).clamp(0.0, 1.0);
@@ -12662,79 +13177,162 @@ impl Npc {
                 self.moon_local[2] += (1.0 - self.moon_local[2]) * 0.2;
             }
             1 => {
-                // `:42191-42280`'s phantom deathray: the 455 (75) on the
-                // 180th tick, sweeping at the ±2π/540 rate.
+                // `:42191-42280`'s phantom deathray. S1-D-3: the shot is
+                // the UNIT aim rotated by ∓π/3 at speed 1 (the port fired
+                // a 6-px unrotated vector), the sweep rides `ai[2]` at
+                // ±2π/540, and the close phase is the last 15 ticks (the
+                // port closed from tick 0).
                 if num < 180.0 {
                     self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
-                } else if num == 180.0 {
-                    let (dx, dy) = (pcx - cx, pcy - cy);
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.wants_hostile_shot
-                        .push((455u16, cx, cy, dx / d * 6.0, dy / d * 6.0, 75));
-                    self.moon_local[0] = dy.atan2(dx);
-                    self.moon_local[1] = 1.0;
-                } else {
+                    // `:42204-42227`'s 229 dust (60..120: one, 120..180:
+                    // two) is unmodelled — its NextDouble draws are absent
+                    // (documented, S1-D-3).
+                } else if num < dur - 15.0 {
+                    if num == 180.0 {
+                        let (dx, dy) = (pcx - cx, pcy - cy);
+                        let d = (dx * dx + dy * dy).sqrt();
+                        let (mut ux, mut uy) = if d > 0.0 {
+                            (dx / d, dy / d)
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        let sign = if ux < 0.0 { 1.0 } else { -1.0 };
+                        let rot = -sign * std::f32::consts::TAU / 6.0;
+                        let (c, s) = (rot.cos(), rot.sin());
+                        let (rx, ry) = (ux * c - uy * s, ux * s + uy * c);
+                        ux = rx;
+                        uy = ry;
+                        // `:42242`: the 455 (75) at speed 1, ai0 = the
+                        // ±2π/540 sweep, ai1 = the head's slot + 1 (the
+                        // port's deathray arm finds its host by kind).
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 455,
+                            x: cx,
+                            y: cy,
+                            vx: ux,
+                            vy: uy,
+                            damage: 75,
+                            ai0: sign * std::f32::consts::TAU / 540.0,
+                            ai1: 0.0,
+                        });
+                        self.ai[2] = (uy.atan2(ux) + std::f32::consts::PI * 3.0) * sign;
+                    }
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                    // `:42251-42259`'s sweep accumulator.
+                    let dir = if self.ai[2] >= 0.0 { 1.0 } else { -1.0 };
+                    let mag = self.ai[2].abs() - std::f32::consts::PI * 3.0
+                        + dir * std::f32::consts::TAU / 540.0;
+                    self.moon_local[0] = mag;
+                    self.ai[2] = (mag + std::f32::consts::PI * 3.0) * dir;
+                } else {
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
+                    num4 = 3;
                 }
             }
             2 => {
-                // `:42281-42318`'s Moon Leech summon: the 456 (0) per
-                // player at the attack's start, the 401 clot per leeched
-                // player at 120/180/240 — both ride the sim's resolve.
-                if num == 0.0 || num == 120.0 || num == 180.0 || num == 240.0 {
+                // `:42281-42318`'s Moon Leech summon: the 456 (0) at the
+                // attack's start from 216 px below the head (the port's
+                // leech engine rides the projectile pool), the 401 clot
+                // per leeched player at 120/180/240 — the sim's resolve.
+                num3 = 2;
+                num4 = 3;
+                // S1-D-3: the ≤3000-px gate (`:42292`) was missing — the
+                // C# only launches the leech at a player within 3000 px
+                // of the launch point (216 px below the head).
+                let (dx, dy) = (pcx - cx, pcy - (cy + 216.0));
+                let d = (dx * dx + dy * dy).sqrt();
+                if num == 0.0 && !player.dead && d <= 3000.0 {
+                    let (nx, ny) = if d > 0.0 { (dx / d, dy / d) } else { (0.0, 0.0) };
+                    self.wants_hostile_shot.push((
+                        456u16,
+                        cx,
+                        cy + 216.0,
+                        nx,
+                        ny,
+                        0,
+                    ));
+                }
+                if num == 120.0 || num == 180.0 || num == 240.0 {
                     self.wants_moon_leech = true;
                 }
             }
             _ => {
-                // `:42319-42346`'s retargeting laser: the 462 (30) at the
-                // −14/−7/0 ticks over the attack's own duration.
-                if num < dur - 19.0 {
-                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
-                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
-                }
-                // S1-E-21g — `NPC.cs:42336-42338`: the head's wind-up cry
-                // (`PlaySound(4, pos, 6)` at the 35-ticks-out mark).
-                if num == dur - 35.0 {
-                    self.wants_sound.push(NpcSoundRequest {
-                        cue: NpcSoundCue::NpcDeath(6),
-                        x: self.x,
-                        y: self.y,
-                    });
-                }
-                if num == dur - 14.0 || num == dur - 7.0 || num == dur {
-                    let (ex, ey) = (
-                        self.moon_local[0].cos() * 27.0 * self.moon_local[1],
-                        self.moon_local[0].sin() * 59.0 * self.moon_local[1],
-                    );
-                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
-                    self.wants_hostile_shot.push((
-                        462u16,
-                        cx + ex / d * 27.0,
-                        cy + ey / d * 59.0,
-                        ex / d * 8.0,
-                        ey / d * 8.0,
-                        30,
-                    ));
-                }
+                // `:42319-42346`'s retargeting laser: the shared aim block
+                // over the (27, 59) ellipse (S1-D-3: the lead + AngleLerp
+                // + the ellipse muzzle + the rotation×8 velocity). The
+                // S1-E-21g 35-ticks-out cry rides the shared block (L-B
+                // merge).
+                moon_laser_aim(
+                    self,
+                    cx,
+                    cy,
+                    pcx,
+                    pcy,
+                    player.vx,
+                    player.vy,
+                    27.0,
+                    59.0,
+                    num,
+                    dur,
+                    30,
+                );
             }
         }
-        // `:42347-42380`'s lid/iris counters (the two clamping bugs of the
-        // original fold into one clamp).
+        // `:42347-42363`'s iris counter: `num3 * 7`, clamped [0, 14].
+        let target = (num3 * 7) as f32;
+        if target > self.moon_local[2] {
+            self.moon_local[2] += 1.0;
+        }
+        if target < self.moon_local[2] {
+            self.moon_local[2] -= 1.0;
+        }
         self.moon_local[2] = self.moon_local[2].clamp(0.0, 14.0);
+        // `:42364-42380`'s lid counter: `num4 * 5`, clamped [0, 15] — the
+        // C#'s two clamp arms write `localAI[2]` (the IRIS — a vanilla
+        // quirk, not a decompilation artifact); the port keeps them
+        // verbatim (S1-D-3: clamping the lid itself diverged whenever the
+        // lid crossed 15).
+        let target = (num4 * 5) as f32;
+        if target > self.moon_local[3] {
+            self.moon_local[3] += 1.0;
+        }
+        if target < self.moon_local[3] {
+            self.moon_local[3] -= 1.0;
+        }
+        if self.moon_local[3] < 0.0 {
+            self.moon_local[2] = 0.0;
+        }
+        if self.moon_local[3] > 15.0 {
+            self.moon_local[2] = 15.0;
+        }
         let _ = rng;
     }
 
-    /// `AI_081_TrueEyeOfCthulhu` (`NPC.cs:42459-42880`) — the 400: the
+    /// `AI_081_TrueEyeOfCthulhu` (`NPC.cs:42459-42922`) — the 400: the
     /// `MoonLordAttacksArray2` sequencer, the aimed drift (0), the
-    /// retargeting laser (1), the orbit + the 454 release (2) and the
-    /// ring's 452 volley (3).
+    /// retargeting laser (1), the orbit + the 454 release (2), the ring's
+    /// 452 volley (3) and the phantom deathray (4).
     ///
     /// Deviations: the 454/452 projectile engines (the vanilla's aiStyle
-    /// 82/83) are unmodelled.
+    /// 82/83) are unmodelled — the orbit's owned-454 velocity boosts
+    /// (`:42699-42707`/`:42722-42731`) fold into the release shot; the
+    /// 229 dust (the orbit's pair, the deathray's 60/120 fan) is
+    /// unmodelled, so its draws are absent; the eye's rotation eases are
+    /// render-only and unmodelled; the drift's 100-px sibling separation
+    /// (`:42556-42577`) needs the sibling list and is deferred (S1-D-3).
     fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:42466-42470`'s orphan guard (the pre-pass owns the link).
+        // `:42461-42464`'s roar (S1-D-3: both draws were missing — they
+        // ride the stream BEFORE the orphan guard, every tick the eye
+        // lives): `Next(420) == 0` gates the `Next(100, 101)` pitch draw
+        // (the sound itself is unmodelled; the draw is not).
+        if rng.next_max(420) == 0 {
+            let _ = rng.next_range(100, 101);
+        }
+        // `:42466-42470`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead (the flag, S1-D-3).
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
         let (w, h) = self.size();
@@ -12754,84 +13352,282 @@ impl Npc {
         ];
         self.ai[1] += 1.0;
         let (pick, num, dur) = Self::moon_lord_pick(&row, &mut self.ai[1]);
-        self.ai[0] = row[pick].0 as f32;
-        let _ = dur;
+        // `:42494-42499`: the `-2` spawn-in holds until the table picks 0.
+        let dying = self.ai[0] == -2.0;
+        if row[pick].0 as f32 != self.ai[0] && (!dying || row[pick].0 == 0) {
+            self.ai[0] = row[pick].0 as f32;
+        }
         match self.ai[0] as i32 {
+            -1 => {
+                // `:42500-42537`'s spawn-in (the death ride): the 180-tick
+                // wrap, the three 60-tick iris stages.
+                self.ai[1] += 1.0;
+                if self.ai[1] > 180.0 {
+                    self.ai[1] = 0.0;
+                }
+                let scale_target;
+                if self.ai[1] < 60.0 {
+                    scale_target = 0.75;
+                    self.moon_local[0] = 0.0;
+                    self.moon_local[1] =
+                        (self.ai[1] * std::f32::consts::TAU / 15.0).sin() * 0.35;
+                    if self.moon_local[1] < 0.0 {
+                        self.moon_local[0] = std::f32::consts::PI;
+                    }
+                } else if self.ai[1] < 120.0 {
+                    scale_target = 1.0;
+                    if self.moon_local[1] < 0.5 {
+                        self.moon_local[1] += 0.025;
+                    }
+                    self.moon_local[0] += std::f32::consts::PI / 15.0;
+                } else {
+                    scale_target = 1.15;
+                    self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
+                }
+                self.moon_local[2] += (scale_target - self.moon_local[2]) * 0.3;
+            }
             1 => {
                 // `:42579-42619`'s retargeting laser: the 462 (35) at the
-                // −14/−7/0 ticks.
+                // −14/−7/0 ticks over the (30, 30) ellipse.
                 self.vx *= 0.95;
-                if num < 90.0 - 19.0 {
-                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
-                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                self.vy *= 0.95;
+                if (self.vx * self.vx + self.vy * self.vy).sqrt() < 1.0 {
+                    self.vx = 0.0;
+                    self.vy = 0.0;
                 }
-                // S1-E-21g — `NPC.cs:42609-42611`: the True Eye's wind-up
-                // cry (`PlaySound(4, pos, 6)` at the 35-ticks-out mark).
-                if num == 90.0 - 35.0 {
-                    self.wants_sound.push(NpcSoundRequest {
-                        cue: NpcSoundCue::NpcDeath(6),
-                        x: self.x,
-                        y: self.y,
-                    });
-                }
-                if num == 90.0 - 14.0 || num == 90.0 - 7.0 || num == 90.0 {
-                    let (ex, ey) = (
-                        self.moon_local[0].cos() * 30.0 * self.moon_local[1],
-                        self.moon_local[0].sin() * 30.0 * self.moon_local[1],
-                    );
-                    let d = (ex * ex + ey * ey).sqrt().max(0.001);
-                    self.wants_hostile_shot.push((
-                        462u16,
-                        cx + ex / d * 30.0,
-                        cy + ey / d * 30.0,
-                        ex / d * 8.0,
-                        ey / d * 8.0,
-                        35,
-                    ));
-                }
+                moon_laser_aim(
+                    self,
+                    cx,
+                    cy,
+                    pcx,
+                    pcy,
+                    player.vx,
+                    player.vy,
+                    30.0,
+                    30.0,
+                    num,
+                    dur,
+                    35,
+                );
             }
             2 => {
-                // `:42620-42737`'s orbit: the inward ring (the 454 (40) at
-                // speed 4 every 10 ticks), the charge, the release over
-                // 105..120.
-                if num >= 15.0 && num < 75.0 && ((num as i64) - 15) % 10 == 0 {
+                // `:42620-42737`'s orbit: the six-spoke ring (the 454 (40)
+                // at speed 4 every 10 ticks along the lerped spokes), the
+                // 75-tick charge, the release over 105..120.
+                if num < 15.0 {
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
+                    self.moon_local[2] += (0.4 - self.moon_local[2]) * 0.2;
+                    self.vx *= 0.8;
+                    self.vy *= 0.8;
+                    if (self.vx * self.vx + self.vy * self.vy).sqrt() < 1.0 {
+                        self.vx = 0.0;
+                        self.vy = 0.0;
+                    }
+                } else if num < 75.0 {
+                    // `:42638-42667`'s spoke pair table.
+                    let f = (num - 15.0) / 10.0;
+                    let (a, b) = match f as i32 {
+                        0 => (0, 2),
+                        1 => (2, 5),
+                        2 => (5, 3),
+                        3 => (3, 1),
+                        4 => (1, 4),
+                        _ => (4, 0),
+                    };
+                    let spoke = |k: i32| -> (f32, f32) {
+                        let ang = k as f32 * std::f32::consts::TAU / 6.0;
+                        // (0, -30) rotated by ang.
+                        (30.0 * ang.sin(), -30.0 * ang.cos())
+                    };
+                    let (ax, ay) = spoke(a);
+                    let (bx, by) = spoke(b);
+                    let t = f - f.floor();
+                    let (sx, sy) = (ax + (bx - ax) * t, ay + (by - ay) * t);
+                    let len = (sx * sx + sy * sy).sqrt();
+                    self.moon_local[0] = sy.atan2(sx);
+                    self.moon_local[1] += (len / 30.0 - self.moon_local[1]) * 0.5;
+                    if ((num as i64) - 15) % 10 == 0 {
+                        // `:42679-42688`: the 454 from the spoke point at
+                        // speed 4 (ai0 = 30, ai1 = the owner — the port's
+                        // plain list carries neither).
+                        let (nx, ny) = if len > 0.0 {
+                            (sx / len, sy / len)
+                        } else {
+                            (0.0, -1.0)
+                        };
+                        self.wants_hostile_shot.push((
+                            454u16,
+                            cx + sx,
+                            cy + sy,
+                            nx * 4.0,
+                            ny * 4.0,
+                            40,
+                        ));
+                    }
+                } else if num < 105.0 {
+                    // `:42690-42712`'s charge: the aim eases toward the
+                    // stored release angle, the rise decays at 0.96.
+                    self.moon_local[0] =
+                        angle_lerp(self.moon_local[0], self.ai[2] - std::f32::consts::FRAC_PI_2, 0.2);
+                    self.moon_local[2] += (0.75 - self.moon_local[2]) * 0.2;
+                    if num == 75.0 {
+                        self.vx = 0.0;
+                        self.vy = -7.0;
+                    }
+                    self.vy *= 0.96;
+                    self.ai[2] = (pcy - cy).atan2(pcx - cx) + std::f32::consts::FRAC_PI_2;
+                } else if num < 120.0 {
+                    // `:42713-42732`'s release: the 24-px lance along the
+                    // stored angle (the vanilla rewrites the owned 454s —
+                    // the port fires the wave shot, the documented
+                    // deviation).
+                    let ang = self.ai[2] - std::f32::consts::FRAC_PI_2;
+                    let (ux, uy) = (ang.cos() * 12.0, ang.sin() * 12.0);
+                    self.vx = ux * 2.0;
+                    self.vy = uy * 2.0;
                     self.wants_hostile_shot
-                        .push((454u16, cx, cy, 0.0, -4.0, 40));
-                }
-                if num >= 105.0 && num < 120.0 {
-                    let (dx, dy) = (pcx - cx, pcy - cy);
-                    let ang = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
-                    self.wants_hostile_shot.push((
-                        454u16,
-                        cx,
-                        cy,
-                        ang.cos() * 24.0,
-                        ang.sin() * 24.0,
-                        40,
-                    ));
+                        .push((454u16, cx, cy, ux, uy, 40));
+                } else {
+                    self.vx *= 0.92;
+                    self.vy *= 0.92;
                 }
             }
             3 => {
-                // `:42739-42880`'s ring: the 452 (35) volley every 10
-                // ticks inside the 150-tick window at the 8-px speed.
-                if num >= 45.0 && num < 185.0 && ((num as i64) - 45) % 10 == 0 {
-                        // The port's ring-angle stand-in (the C# ring fires
-                        // from the emitter fan, `NPC.cs:42739-42880`).
-                        let ang = rng.next_float() * std::f32::consts::PI * 2.0;
-                        self.wants_hostile_shot
-                            .push((452u16, cx, cy, ang.cos() * 8.0, ang.sin() * 8.0, 35));
+                // `:42739-42803`'s ring: the 45-tick windup, the rotating
+                // emitter (ai[2] = ±2π/40, decaying ×0.95 every 40 ticks),
+                // the 452 (35) volley every 10 ticks at speed 8 from the
+                // ellipse muzzle, the eye riding the emitter at 8→20.
+                if num < 15.0 {
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
+                    self.moon_local[2] += (0.4 - self.moon_local[2]) * 0.2;
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                    if (self.vx * self.vx + self.vy * self.vy).sqrt() < 1.0 {
+                        self.vx = 0.0;
+                        self.vy = 0.0;
+                    }
+                } else if num < 45.0 {
+                    self.moon_local[0] = 0.0;
+                    self.moon_local[1] =
+                        ((num - 15.0) * std::f32::consts::TAU / 15.0).sin() * 0.5;
+                    if self.moon_local[1] < 0.0 {
+                        self.moon_local[0] = std::f32::consts::PI;
+                    }
+                } else if num < 185.0 {
+                    if num == 45.0 {
+                        // `:42768`: the spin direction draw.
+                        let sign = if rng.next_max(2) == 0 { -1.0 } else { 1.0 };
+                        self.ai[2] = sign * std::f32::consts::TAU / 40.0;
+                    }
+                    if ((num as i64) - 45) % 40 == 0 {
+                        self.ai[2] *= 0.95;
+                    }
+                    self.moon_local[0] += self.ai[2];
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                    let (ux, uy) = (self.moon_local[0].cos(), self.moon_local[0].sin());
+                    let (rx, ry) = (
+                        ux * 30.0 * self.moon_local[1],
+                        uy * 30.0 * self.moon_local[1],
+                    );
+                    let len = (rx * rx + ry * ry).sqrt();
+                    let speed = 8.0 + (20.0 - 8.0) * ((num - 45.0) / 140.0);
+                    if len > 0.0 {
+                        self.vx = rx / len * speed;
+                        self.vy = ry / len * speed;
+                    }
+                    if ((num as i64) - 45) % 10 == 0 {
+                        // `:42785-42789`: the muzzle at the constant
+                        // `vector.Length() * 0.4` radius, the ai1 draw.
+                        let ring_len = (30.0f32 * 30.0 + 30.0 * 30.0).sqrt();
+                        let ai1 = (std::f32::consts::TAU * rng.next_double() as f32
+                            - std::f32::consts::PI)
+                            / 30.0
+                            + std::f32::consts::PI / 180.0 * self.ai[2];
+                        let (nx, ny) = if len > 0.0 { (rx / len, ry / len) } else { (0.0, 0.0) };
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 452,
+                            x: cx + nx * ring_len * 0.4,
+                            y: cy + ny * ring_len * 0.4,
+                            vx: nx * 8.0,
+                            vy: ny * 8.0,
+                            damage: 35,
+                            ai0: 0.0,
+                            ai1,
+                        });
+                    }
+                } else {
+                    self.vx *= 0.88;
+                    self.vy *= 0.88;
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
+                    self.moon_local[2] += (1.0 - self.moon_local[2]) * 0.2;
+                }
+            }
+            4 => {
+                // `:42804-42921`'s phantom deathray: the 180-tick close,
+                // the 455 (50) at the 180th tick, the ±2π/540 sweep, the
+                // last-15 close.
+                if num < 180.0 {
+                    self.moon_local[2] += (1.0 - self.moon_local[2]) * 0.2;
+                    self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
+                    self.vx *= 0.95;
+                    self.vy *= 0.95;
+                    if (self.vx * self.vx + self.vy * self.vy).sqrt() < 1.0 {
+                        self.vx = 0.0;
+                        self.vy = 0.0;
+                    }
+                    // `:42857-42878`'s 229 dust is unmodelled (its
+                    // NextDouble draws are absent — documented).
+                } else if num < dur - 15.0 {
+                    if num == 180.0 {
+                        let (dx, dy) = (pcx - cx, pcy - cy);
+                        let d = (dx * dx + dy * dy).sqrt();
+                        let (mut ux, mut uy) = if d > 0.0 {
+                            (dx / d, dy / d)
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        let sign = if ux < 0.0 { 1.0 } else { -1.0 };
+                        let rot = -sign * std::f32::consts::TAU / 6.0;
+                        let (c, s) = (rot.cos(), rot.sin());
+                        let (rx, ry) = (ux * c - uy * s, ux * s + uy * c);
+                        ux = rx;
+                        uy = ry;
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 455,
+                            x: cx,
+                            y: cy,
+                            vx: ux,
+                            vy: uy,
+                            damage: 50,
+                            ai0: sign * std::f32::consts::TAU / 540.0,
+                            ai1: 0.0,
+                        });
+                        self.ai[2] = (uy.atan2(ux) + std::f32::consts::PI * 3.0) * sign;
+                    }
+                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
+                    let dir = if self.ai[2] >= 0.0 { 1.0 } else { -1.0 };
+                    let mag = self.ai[2].abs() - std::f32::consts::PI * 3.0
+                        + dir * std::f32::consts::TAU / 540.0;
+                    self.moon_local[0] = mag;
+                    self.ai[2] = (mag + std::f32::consts::PI * 3.0) * dir;
+                } else {
+                    self.moon_local[1] = (self.moon_local[1] - 0.07).max(0.0);
                 }
             }
             _ => {
-                // `:42538-42578`'s drift: aim at the player's led centre,
-                // hover 200 px above at the 24-px cap.
-                if num <= 53.0 {
-                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
-                    self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.7);
-                    let (dx, dy) = (pcx - cx, pcy - cy - 200.0);
-                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.vx += (dx / d * 24.0 - self.vx) / 30.0;
-                    self.vy += (dy / d * 24.0 - self.vy) / 30.0;
+                // `:42538-42578`'s drift (0 and the -2 hold): the aim
+                // eases at the player's led centre, the iris ramps to 0.7,
+                // the hover 200 px above at the 24-px cap over the /30
+                // blend. The 100-px sibling separation is deferred.
+                let (lx, ly) = (pcx + player.vx * 20.0 - cx, pcy + player.vy * 20.0 - cy);
+                self.moon_local[0] = angle_lerp(self.moon_local[0], ly.atan2(lx), 0.5);
+                self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.7);
+                self.moon_local[2] += (1.0 - self.moon_local[2]) * 0.2;
+                let (dx, dy) = (pcx - cx, pcy - cy - 200.0);
+                let d = (dx * dx + dy * dy).sqrt();
+                if d > 0.0 {
+                    self.vx = (self.vx * 29.0 + dx / d * 24.0) / 30.0;
+                    self.vy = (self.vy * 29.0 + dy / d * 24.0) / 30.0;
                 }
             }
         }
@@ -17074,6 +17870,260 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod s1_d_3_moonlord_rng_witnesses {
+    //! S1-D-3 (code-only): the Moon Lord family's RNG census, WRITTEN NOT
+    //! RUN. Every `Main.rand` draw the ported arms consume is cited and
+    //! replayed against a mirrored `UnifiedRandom` (the stream-state
+    //! comparison — the `golden` pattern in `unified_random.rs`). The
+    //! dust-gated draws (the drama fan `NPC.cs:41365-41373`, the head's
+    //! 229 fan `:42221`, the eye's dust pairs) stay deferred with the dust
+    //! engine — their absence is the documented deviation, not a stream
+    //! drift inside the ported blocks.
+    use super::*;
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        w.compute_column_surface();
+        w
+    }
+
+    fn player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 118.0 * TILE_PX;
+        p
+    }
+
+    #[test]
+    fn the_core_roar_draws_every_tick_except_spawn_and_drama() {
+        // `NPC.cs:41159-41162`: `Next(200)` EVERY tick while ai[0] is not
+        // -1/2; the `Next(93, 100)` pitch draw rides only on the hit.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 0.0;
+        core.moon_spawn_latch = true;
+        core.moon_parts = [1, 2, 3];
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        for _ in 0..30 {
+            core.update_moon_lord_core(&w, &p, &mut rng);
+            if mirror.next_max(200) == 0 {
+                let _ = mirror.next_range(93, 100);
+            }
+            assert_eq!(rng.peek(), mirror.peek(), "the roar census");
+        }
+        // The -1 spawn-in and the 2 drama draw NOTHING at the roar gate.
+        for phase in [-1.0f32, 2.0] {
+            core.ai[0] = phase;
+            core.ai[1] = 0.0;
+            let before = rng.peek();
+            core.update_moon_lord_core(&w, &p, &mut rng);
+            // The drama's first tick: ai[1] = 1 — no storm (needs >60),
+            // no smoke (needs >=90), so the whole tick is draw-free.
+            assert_eq!(rng.peek(), before, "phase {phase} draws no roar");
+        }
+    }
+
+    #[test]
+    fn the_drama_storm_draws_the_unconditional_nine_plus_three_per_iteration() {
+        // `NPC.cs:41336-41403` at ai[1] % 3 == 0, 60 < ai[1] < 580:
+        // RandomVector2 (2 NextDouble), radius NextFloat, Next(6,19),
+        // four NextFloats, SelectRandom's Next(2), then per inner
+        // iteration (ceil(ai[1]/60)) another 2 NextDouble + NextFloat.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 122.0; // -> 123: %3 == 0, inner = ceil(123/60) = 3
+        core.moon_spawn_latch = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+        }
+        let _ = mirror.next_float();
+        let _ = mirror.next_range(6, 19);
+        for _ in 0..4 {
+            let _ = mirror.next_float();
+        }
+        let _ = mirror.next_max(2);
+        for _ in 0..3 {
+            let _ = mirror.next_double();
+            let _ = mirror.next_double();
+            let _ = mirror.next_float();
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the storm census at 123");
+    }
+
+    #[test]
+    fn the_drama_smoke_draws_the_offset_then_the_gated_triple() {
+        // `NPC.cs:41405-41428` at ai[1] % 15 == 0, 90 <= ai[1] < 480:
+        // RandomVector2 (2 NextDouble) + radius NextFloat always; the
+        // Next(4) + angle NextFloat + point NextFloat only when the spot
+        // is in-world and not solid. The sign is +1 when Next(4) < 2
+        // (`Utils.cs:2010-2017`'s ToDirectionInt).
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 89.0; // -> 90: the smoke gate, no storm (90 % 3 == 0
+        // but the storm gate needs > 60 AND %3 — 90 qualifies for BOTH;
+        // use the storm census too).
+        core.moon_spawn_latch = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        // The storm at 90: inner = ceil(90/60) = 2.
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+        }
+        let _ = mirror.next_float();
+        let _ = mirror.next_range(6, 19);
+        for _ in 0..4 {
+            let _ = mirror.next_float();
+        }
+        let _ = mirror.next_max(2);
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+            let _ = mirror.next_double();
+            let _ = mirror.next_float();
+        }
+        // The smoke: the offset pair + radius, then the gated triple.
+        let ox = (mirror.next_double() as f32) * 2.0 - 1.0;
+        let oy = (mirror.next_double() as f32) * 2.0 - 1.0;
+        let r = 20.0 + mirror.next_float() * 400.0;
+        let ol = (ox * ox + oy * oy).sqrt();
+        let (ux, uy) = if ol != 0.0 { (ox / ol, oy / ol) } else { (ox, oy) };
+        let (cw, ch) = core.size();
+        let sx = core.x - core.vx + cw * 0.5 + ux * r;
+        let sy = core.y - core.vy + ch * 0.5 + uy * r;
+        let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+        let in_world = tx >= 0 && ty >= 0 && tx < w.width && ty < w.height;
+        let solid = in_world
+            && w.tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+        if in_world && !solid {
+            let d4 = mirror.next_max(4);
+            let _ = mirror.next_float();
+            let _ = mirror.next_float();
+            assert_eq!(core.wants_hostile_shot.len(), 1, "the 622 smoke");
+            let shot = core.wants_hostile_shot[0];
+            assert_eq!(shot.0, 622);
+            // The sign witness: +1 exactly when the draw is < 2.
+            let sign = if d4 < 2 { 1.0 } else { -1.0 };
+            // vy's sign follows the rotation of the downward point by
+            // ±(π/8..3π/8): both signs keep vy < 0 — the ×6 scale pins.
+            assert!(shot.4 < 0.0, "the smoke rises");
+            assert!(shot.3.abs() <= 6.0 && shot.4.abs() <= 6.0, "the ×6 cap");
+            let _ = sign;
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the smoke census at 90");
+    }
+
+    #[test]
+    fn the_teleport_reentry_takes_the_dead_next3_draw() {
+        // `NPC.cs:41185-41189`: the 60th tick draws `Next(3)` then
+        // overwrites ai[2] = 0 — the dead draw still rides the stream.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = -2.0;
+        core.ai[1] = 59.0;
+        core.moon_spawn_latch = true;
+        core.moon_parts = [1, 2, 3];
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        // The roar gate excludes only -1/2 (`:41159`), so the -2 tick
+        // draws Next(200) too, then the dead Next(3) at the 60th.
+        if mirror.next_max(200) == 0 {
+            let _ = mirror.next_range(93, 100);
+        }
+        let _ = mirror.next_max(3);
+        assert_eq!(rng.peek(), mirror.peek(), "the dead Next(3) rides");
+        assert_eq!(core.ai[0], 0.0, "the re-entry hands the cruise");
+        assert_eq!(core.ai[2], 0.0, "the overwrite");
+    }
+
+    #[test]
+    fn the_true_eye_roar_draws_before_the_orphan_guard() {
+        // `NPC.cs:42461-42464`: Next(420) EVERY tick, the Next(100,101)
+        // pitch on the hit — before the orphan guard.
+        let w = world();
+        let p = player(&w);
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.moon_core_alive = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        for _ in 0..50 {
+            // The sequencer overwrites ai[0] from the table every tick
+            // (`:42495`); row 0 is the drift (53 ticks) — reset the timer
+            // each tick to stay inside it (the attack arms' draws are
+            // their own witnesses).
+            eye.ai[0] = 0.0;
+            eye.ai[1] = 0.0;
+            eye.update_true_eye(&w, &p, &mut rng);
+            if mirror.next_max(420) == 0 {
+                let _ = mirror.next_range(100, 101);
+            }
+            assert_eq!(rng.peek(), mirror.peek(), "the eye roar census");
+        }
+    }
+
+    #[test]
+    fn the_hand_eye_volley_draws_one_nextdouble_per_shot() {
+        // `NPC.cs:41704`: the 452's ai1 = (2π·NextDouble − π)/30 +
+        // π/180·num — ONE draw per shot tick.
+        let w = world();
+        let p = player(&w);
+        let mut hand = Npc::new(NpcKind::MoonLordHand, 110.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        hand.hp = hand.max_hp;
+        hand.moon_core_alive = true;
+        hand.carrier_x = 150.0 * TILE_PX;
+        hand.carrier_y = 100.0 * TILE_PX;
+        hand.ai[2] = 0.0;
+        hand.ai[1] = 77.0; // -> 78: attack 1, num2 = 28 — the volley gate
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        hand.update_moon_lord_hand(&w, &p, &mut rng);
+        assert_eq!(hand.wants_hostile_shot_ai.len(), 1, "the 28th tick fires");
+        // The muzzle rides the pre-move centre (the C# fires before
+        // `UpdateNPC`'s integration, `:90498`).
+        let (hw, hh) = hand.size();
+        let cx = hand.x - hand.vx + hw * 0.5;
+        let cy = hand.y - hand.vy + hh * 0.5;
+        let shot = hand.wants_hostile_shot_ai[0];
+        assert_eq!(shot.kind, 452);
+        assert_eq!(shot.damage, 30);
+        let speed = (shot.vx * shot.vx + shot.vy * shot.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.01, "the ellipse normal × 8");
+        let (ox, oy) = (shot.x - cx, shot.y - cy);
+        let od = (ox * ox + oy * oy).sqrt();
+        let ring_len = (30.0f32 * 30.0 + 66.0 * 66.0).sqrt();
+        // The muzzle sits at the constant ring radius; the (−num, 3)
+        // offset (length √10) shifts it by at most that much.
+        assert!(
+            (od - ring_len * 0.4).abs() <= (10.0f32).sqrt() + 0.01,
+            "the constant-radius muzzle + the (−num, 3) offset: {od}"
+        );
+        let want = (std::f32::consts::TAU * mirror.next_double() as f32
+            - std::f32::consts::PI)
+            / 30.0
+            + std::f32::consts::PI / 180.0 * -1.0;
+        assert_eq!(shot.ai1, want, "the ai1 draw");
+        assert_eq!(rng.peek(), mirror.peek(), "one draw per shot");
+    }
 }
 
 #[cfg(test)]
