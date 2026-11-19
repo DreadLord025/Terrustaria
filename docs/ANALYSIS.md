@@ -24743,6 +24743,105 @@ Deliberate stand-ins:
 - Dead C# stores dropped: `num448 = num447` (`:27135`) and the queen
   tail's first `num462`/`num463` pair (`:27545-27546`, overwritten
   at `:27547-27548`).
+## The Retinazer's aiStyle-30 machine (S1-D-3 retinazer, code-only mode)
+
+`crates/tr-app/src/npc_ai_style30.rs` ports `NPC.AI()`'s aiStyle-30 arm
+(`NPC.cs:26405-27014`, read whole in two windows) — type 125 (Retinazer)
+is the style's only user (`NPCID.cs:10927` Retinazer = **125**, NOT 126;
+`SetDefaults` case 125, `NPC.cs:10522-10537`: 100x110, aiStyle 30, def 10,
+dmg 45, 20000 HP, kb 0, noGravity + noTileCollide, boss, value 120000,
+npcSlots 5; the port's kind table already agrees — `npc/data.rs:1944`
+ai_style 30, `:2236` size, `:2759` hp, `:3079` dmg; the protocol id 52 at
+`:374` is the PORT id, not vanilla).
+
+**The mislabel, confirmed (B-1 audit MAJOR, research/51 §1).** The live
+`npc.rs::update_retinazer` (`:13118-13334`, reached via the kind arm
+`:3812` because the style axis has no `30 =>`) ports the **aiStyle-57
+MourningWood** arm (`NPC.cs:32761-33043`) — its own doc comment cites
+`:32761-33043` and every in-body citation is a `:327xx-330xx` line.
+Evidence: hp-band speeds 2/3/4 + day 8 (`:13125-13134` ≈ C#
+`:32771-32790`), the 300-tick idle `Next(1,3)`/`Next(3,5)`
+(`:13149-13155`), FLAMING_WOOD 325 stomps + Greek fires `Next(326,329)`
+(`:13163-13213`) — none of which exist in style 30. Verdict table:
+
+| # | class | C# (style 30) | live `update_retinazer` | new module |
+| --- | --- | --- | --- | --- |
+| R1 | machine | `:26405-27014` | the style-57 port | ported whole, UNWIRED |
+| R2 | projectiles | 83 phase-0 (`:26628`), 100 phase-3 (`:26895`/`:26996`) | 325 + 326-328 | EYE_LASER 83 + DESTROYER_LASER 100 (`ProjectileID.cs:720`/`:754`), dmg pairs 20/19, 25/23, 18/17 (`:26627`/`:26894`/`:26995`, `GetAttackDamage_ForProjectiles` `NPC.cs:7052-7055`) |
+| R3 | gates | day/dead flee + `EncourageDespawn(10)` (`:26486-26491`), 40% transform (`:26702-26709`), `Collision.CanHit` (`:26890`/`:26991`), twin discourage (`:26466-26475`) | none (day only speeds to 8) | all four |
+| R4 | phase-3 stats | `(int)(45*1.5)` = 67 dmg, 10+10 = 20 def, NPCHit4 (`:26773-26775`) | none | the overrides; Hit4 a documented skip (static cue table) |
+| R5 | RNG | gate `Next(5)` every tick; 83-jitter X-then-Y x0.08 (`:26636-26637`); spin burst 52 (`:26747-26756`) + pair (`:26760`); NOTHING else | idle/stomp/spin/beam rolls desync the shared stream | by construction, 4 witness pins |
+| R6 | integration | `noTileCollide` position += velocity | solid-tile probe hover + gravity ramps | the style31 tail (`:197-202` precedent) |
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests were invoked (user
+directive); the 18 `s1_d_3_a30_*` witness tests are WRITTEN NOT RUN,
+verified by re-reading the C# line by line + hand arithmetic.
+
+**Coverage: the WHOLE arm is ported** (the brief's 15-minute floor was
+phase 0 + transform + one attack; the style31 template made the rest
+mechanical). Nothing is deferred behaviourally except the stand-ins
+below. Notable C# facts pinned:
+- The turn rate is **0.1** (`:26421`), not the Spazmatism's 0.15, and
+  there is NO queen quartering (style31 `:27033-27035` has one).
+- The phase-0 hover has NO per-tick retarget (style31 `:27110` does);
+  the hover point is ±300 side / **-300 up** (`:26514-26515`); the shot
+  gate needs the NPC's bottom above the player's top AND the
+  pre-normalize hover distance `num407 < 400` (`:26592`).
+- The dash cycle wraps at **4** dashes (`:26691`), 70-tick period,
+  0.96 damp from tick 25 (`:26668-26680`) — vs the Spazmatism's 10/42/
+  0.9-from-8.
+- Phase 3 has **no dash state**: every non-zero `ai[1]` rides the ±340
+  strafe (`:26909-27013`, no `else if` guard); the approach flip
+  (`:26857-26864`) and the 180-tick wrap (`:27006-27013`) call
+  **TargetClosest**, not ClearTarget; the rotation SNAPS to the plain
+  atan2 every approach/strafe tick (`:26868`/`:26967`), overriding the
+  preamble turn; the approach laser fires past **180** at 8.5 (expert
+  10), the strafe laser past **60** at 9 (NO expert speed variant), the
+  strafe timer ladder is fractional (+0.5/+0.75/+1/+1.5) plus the
+  expert's flat +1.5 (`:26970-26990`).
+- The queen orbit anchor uses **-150** X (`:26481`) where style31 uses
+  +150 (`:27093`); the phase-0 queen blend is 60:1 (`:26534-26536`) but
+  the phase-3 approach blend is 4:1 (`:26810-26811`); the queen shot
+  cadence is 90, or 120 with an active Destroyer body — type **135**
+  (`:26581`, `NPCID.cs:10947`), carried as
+  `Style30Env::destroyer_body_active`.
+
+**RNG by construction** (the header's contract): exactly one `Next(5)`
+gate draw per tick before the day gate; the 83-shot adds X-then-Y
+`Next(-40,41)*0.08` on firing hover ticks; the spin transition adds 52
+draws (2 x 3 gores x 2 + 20 dusts x 2) BEFORE the per-tick pair when NOT
+entering `ai[0]==3`. The dashes roll NOTHING (the brief's "dash rolls"
+do not exist in this arm) and BOTH phase-3 DeathLasers fire jitter-free
+(the Spazmatism's Y-first 101 pair at `:27525-27526` has no style-30
+counterpart). Four stream-position witnesses pin these facts.
+
+Deliberate stand-ins (the style31 precedent, verbatim):
+- `Main.expertMode`/`Main.getGoodWorld` ride `Style30Env` (classic
+  solo dispatch); every branch stays ported + witness-tested.
+- `NPC.IsMechQueenUp`: no type-127 kind in the port — `mech_queen:
+  None`; the branches stay ported behind the SHARED
+  `npc_ai_style31::MechQueenAnchor` struct (no duplicate type).
+- The twin `timeLeft` list is a seam input (`&[]` until the sim pass);
+  `DiscourageDespawn` gates on the port's -1 sentinel.
+- `netMode != 1` constant-true; the `netMode == 1` return
+  (`:26869-26872`) folds away.
+- Dust/gore/sounds skipped with every rand draw kept;
+  `reflectsProjectiles` constant-false dropped; `HitSound = NPCHit4`
+  (`:26775`) skipped (static per-kind cue table).
+- The aim/approach/dead-band helpers mirror style31's private fns; a
+  shared extraction is deferred to the wiring wave (keeps the landed
+  module untouched this round).
+
+**Mislabel retirement plan (next wave, documented in the module
+header):** claim `30 => crate::npc_ai_style30::retinazer_ai(...)` on the
+style axis (the style31 `npc.rs:3665-3671` precedent), delete the
+`NpcKind::Retinazer => self.update_retinazer` kind arm (`:3812`) and
+`update_retinazer` itself (the machine it ports already lives in
+`npc_ai_pumpkin_boss.rs::mourning_wood_step` behind the axis's
+`57 if kind == MourningWood` claim), repoint the S1-D-3i-era Retinazer
+tests, and feed `twin_time_lefts` from the sim — the twin-despawn
+coupling goes live for BOTH twins in the same pass.
+
 ## The Golem family (S1-D-3, 2026-11-18)
 
 **Audit verdict: PARTIAL → core ported. Code-only mode — no compiler
