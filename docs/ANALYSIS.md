@@ -912,21 +912,21 @@ rustfmt/test/screenshot runs in this pass — the compile window owns them):
   (scale 2, zoom 1.5), including the `pos + origin = anchor` invariant.
   WRITTEN NOT RUN — they must go green in the compile window.
 
-**Screenshot re-take DEFERRED to the compile window — REQUIRED BEFORE
-MERGE.** The committed `s1-g-3-lights-bane-{base,blend}.png` predate D1/D2
-and no longer represent the code. Recipe (from the worktree, after
-`cargo build`): run the app on golden.wld with `TR_DAY=1 TR_THROW=974
-TR_SHOT_FRAME=20 TR_NOPLAYER=1 TR_DEBUG=0 TR_SHOT=<path>` twice per variant
-(base = the pre-blend frame, blend = the slash frame) into
-`docs/screenshots/s1-g-3-lights-bane-{base,blend}.png`; the two identical
-runs must be SHA256-equal (`Get-FileHash`), and `tools/pixel_diff.py`
-against the old committed shots must show the change confined to the
-slash's bbox (the ghosts now pivot on the anchor; the tint drops ≤1 LSB).
-Then the full gate: `cargo test --workspace -- --skip
-migrates_version_2_kinds_to_item_ids` + `cargo test -p tr-app --test
-main_anchors` (judge by the `test result: ok` lines). rustfmt was NOT run
-in this pass either — style matched by hand; run it on the two touched
-files in the compile window.
+**Screenshot re-take DONE in the compile window (M8, 2026-11-19).** The
+committed `s1-g-3-lights-bane-{base,blend}.png` predated D1/D2; re-taken on
+the synced branch (golden.wld, `TR_DAY=1 TR_SHOT_FRAME=20 TR_DEBUG=0`,
+base = no `TR_THROW`, blend = `TR_THROW=974`; note `TR_NOPLAYER=1` from the
+original recipe note is incompatible with the throw fixture — it removes
+`app.player`, the fixture's spawn anchor — the original d7fbab4f shots ran
+with the player present, same here). Twin runs SHA256-equal: base
+`9AE3526A…`, blend `D72601B9…`. `tools/pixel_diff.py` vs the old committed
+shots: 8 px, max delta 7, bbox (786,152)-(847,178) — the ghost-tint ≤1-LSB
+band, confined; base-vs-blend still 32 826 px in the slash bbox
+(952,276)-(1121,635). Full gate green on the synced tree (3367+1581+55+…,
+0 failed, `m8-g3-gate.log`); `main_anchors` included. rustfmt: sprite.rs
+clean; projectile.rs carries 395 pre-existing fmt deviations on main
+itself — left untouched (no repo-wide fmt noise; the G-3 additions match
+the file's hand style).
 
 ## Living trees (M5-LIVING-trees)
 
