@@ -21010,7 +21010,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 44] = [
+    const BASELINE_ROWS: [u16; 43] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -21047,7 +21047,6 @@ mod widened_state_tests {
         BOMB_FISH,
         DYNAMITE,
         SCRAMBLER_SHOT,
-        PIRATE_ARROW,
         MARTIAN_RAY,
         DD2_SPEAR,
         DD2_SPEAR_T3,
@@ -21161,6 +21160,17 @@ mod widened_state_tests {
         // turns it invisible on tick 3 — so it leaves the reset sweep too.
         let shell = proj_data(DUTCHMAN_SHELL).unwrap_or_else(|| panic!("the shell lost its row"));
         assert_eq!(shell.alpha, 255, "`alpha = 255` (`:3226`)");
+        // S1-D-3 W-6: the Deadeye/ElfCopter bullet 180 (`:2660-2672`)
+        // writes `alpha = 255` + `scale = 1.2f` + `timeLeft = 180` +
+        // `extraUpdates = 1` in its `SetDefaults` arm, so it leaves the
+        // reset sweep too (the copter's shot rides this id).
+        let deadeye = proj_data(PIRATE_ARROW).unwrap_or_else(|| panic!("the 180 lost its row"));
+        assert_eq!(deadeye.alpha, 255, "`alpha = 255` (`:2668`)");
+        assert!((deadeye.scale - 1.2).abs() < f32::EPSILON, "`scale = 1.2f` (`:2669`)");
+        assert_eq!(deadeye.time_left, 180, "`timeLeft = 180` (`:2670`)");
+        assert_eq!(deadeye.extra_updates, 1, "`extraUpdates = 1` (`:2671`)");
+        assert_eq!(deadeye.penetrate, -1, "`penetrate = -1` (`:2666`)");
+        assert!(!deadeye.arrow, "the 180 arm never sets `arrow`");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"

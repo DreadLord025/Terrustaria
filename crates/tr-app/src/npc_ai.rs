@@ -101,8 +101,10 @@ pub fn walker_step(
 /// The gravity + tile-collision integration shared by [`walker_step`] and
 /// [`walker_step_ladder`] — verbatim the second half of the walk step
 /// (`NPC.cs:10586+`'s position pass). Extracted so the ladder variant
-/// swaps only the velocity write, never the choreography.
-fn walker_integrate(
+/// swaps only the velocity write, never the choreography. The frost mob
+/// wiring (`npc_ai_frost_mob.rs`, S1-D-3 W-6) reuses it at the AI_003
+/// movement-tail position with the -6.2 jump stand-in.
+pub(crate) fn walker_integrate(
     npc: &mut Npc,
     world: &World,
     params: WalkerParams,

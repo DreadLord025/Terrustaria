@@ -19255,6 +19255,109 @@ Documented deviations / deferrals, all deliberate:
 19 tests (`npc_ai_frost_mob::tests`) cover the three machines' math, the
 hop cadence, the walk caps/brakes/scale term, the transform gate, the
 dispatch's claim set (bosses excluded) and the RNG-order witnesses.
+
+## The Frost Moon MOB wiring (S1-D-3 W-6, census slice W-6, code-only mode, 2026-11-19)
+
+`task/S1-D-3-wire-frostmobs` wires the census's UNWIRED Frost Moon MOBS to
+their named machines (the slice-D pure fns above + the slice-B ElfArcher
+shooter). **The bosses 344/345/346 are R41's row
+(`task/S1-F-13c-wire-bosses`, IN FLIGHT) and are NOT touched here** — their
+`update_hover` stand-ins stay. Code-only: no compiler invoked, tests
+written NOT run; verification = line-by-line C# re-reading.
+
+**Kind census (the Frost family 338-352, `NPCID.cs:11353-11381`):**
+
+| kind | id | aiStyle | pre-W-6 routing | W-6 routing |
+| --- | --- | --- | --- | --- |
+| ZombieElf/Beard/Girl | 338/339/340 | 3 | WIRED-DELEGATE (`update_skeleton` ladder) | unchanged |
+| PresentMimic | 341 | 25 | STAND-IN (`update_skeleton` @3.5f) | **WIRED** — style axis 25 → `frost_mob_step` |
+| GingerbreadMan | 342 | 3 | WIRED-DELEGATE | unchanged |
+| Yeti | 343 | 3 | WIRED-DELEGATE | unchanged |
+| Everscream | 344 | 57 | STAND-IN (hover) | **R41** — untouched |
+| IceQueen | 345 | 60 | STAND-IN (hover) | **R41** — untouched |
+| SantaNK1 | 346 | 61 | STAND-IN (hover) | **R41** — untouched |
+| ElfCopter | 347 | 62 | STAND-IN (`update_hover`) | **WIRED** — style axis 62 → `frost_mob_step` |
+| Nutcracker | 348 | 3 | STAND-IN (`update_skeleton`) | **WIRED** — kind arm → `frost_mob_step` (+transform) |
+| NutcrackerSpinning | 349 | 3 | STAND-IN (`update_skeleton`) | **WIRED** — kind arm → `frost_mob_step` |
+| ElfArcher | 350 | 3 | STAND-IN (`update_skeleton`) | **WIRED** — kind arm → `frost_mob_step` (shooter) |
+| Krampus | 351 | 3 | WIRED-DELEGATE | unchanged |
+| Flocko | 352 | 63 | STAND-IN (`update_hover`) | **WIRED** — style axis 63 → `frost_mob_step` |
+
+**The wiring seam** (`npc_ai_frost_mob.rs::frost_mob_step`, `pub(crate)`):
+copies the AI-visible `Npc` fields into `FrostMobState`/`FrostMobBState`,
+runs the pure machine, copies the writes back. The `TargetClosest()` sites
+ride `npc_target::target_closest` over the single session candidate (the
+zombie wiring's convention) at their exact C# positions via retarget
+callbacks (`present_mimic_ai_retarget` / `elf_archer_ai_retarget` — the
+pure forms pass a no-op so the module tests keep the resolved-target
+shape). The flyers (347/352, `noGravity`+`noTileCollide`) integrate their
+velocity directly; the walkers/mimic/archer ride `npc_ai::walker_integrate`
+(the shared gravity + tile-collision pass, the -6.2 jump stand-in for the
+deferred AI_003 stuck/jump core, S1-D-3p).
+
+**Dispatch**: the style axis (`Npc::update_rng`) claims aiStyles 25/62/63
+kind-gated to PresentMimic/ElfCopter/Flocko (the aiStyle-25 chest's other
+C# kinds 85/629 are unported; aiStyle 62's only kind is 347 — the
+DesertDjinn 533 is aiStyle 8; aiStyle 63's only kind is 352). The aiStyle-3
+twins + archer ride the kind match. The retired stand-in arms
+(PresentMimic/ElfCopter/Flocko) are `unreachable!` (the MourningWood
+precedent); the Nutcracker/ElfArcher kind arms call `frost_mob_step`.
+
+**The Nutcracker transform** (`NPC.cs:57031-57034` → `Transform(349)`
+`:81084-81141`): the kind swaps to NutcrackerSpinning, the hp fraction
+preserved (`life = num*lifeMax/num2`, floored at 1), the ai[] slots zeroed
+(the call's default ai0..ai3 = 0), localAI/frame reset, `TargetClosest()`
+re-pick. The equal-height twins make the `position.Y ±height` reposition a
+no-op; `TransformVisuals` (`:80963-81033`) has NO 348→349 arm.
+
+**Shot seams**: the copter's Type-180 request rides `wants_hostile_shot`
+(`PIRATE_ARROW`, 32 dmg); the archer's Type-82 request rides
+`FLAMING_ARROW_HOSTILE` (45 dmg). Both drain into the pool via the sim's
+existing `wants_hostile_shot` pass (`world_sim/npcs.rs`). **Two projectile
+rows were corrected/added to carry the shots** (the data-carrying spawn
+drops a rowless kind):
+- `FLAMING_ARROW_HOSTILE` (82) — NEW row (`Projectile.cs:1625-1631`: 10x10,
+  aiStyle 1, hostile, stock penetrate 1 / timeLeft 3600, `arrow` false) +
+  the slice-A `AI_001` arm (the 81/82 shared latch `:55346-55350`, the
+  GENERIC arrow gravity `:57568-57578` pin-15/+0.1 — NOT the wooden twin's
+  20/0.07). The OnFire-on-hit roll (`StatusPlayer :12284`, `Next(3)`) is a
+  HIT-time draw on the projectile's own tick — the player-debuff layer is
+  unported (documented).
+- `PIRATE_ARROW` (180) — the row was a placeholder (timeLeft 3600 /
+  extraUpdates 0 / alpha 0 / scale 1.0 / arrow true) that contradicted its
+  own comment AND C# `:2660-2672`; corrected to the verbatim arm (timeLeft
+  180 / extraUpdates 1 / alpha 255 / scale 1.2 / arrow false). It left the
+  `BASELINE_ROWS` reset sweep (the shell/spike pattern) with explicit
+  assertions. The Deadeye/Captain shooters already rode this id, so the
+  correction aligns them with C# too.
+
+**RNG argument (preserved censuses)**: Flocko/mimic/walkers draw NOTHING;
+the copter draws exactly SIX on the firing tick (`:33960-33967`) and zero
+otherwise; the archer draws exactly TWO per fire/entry site (the `_b`
+module's header census). The transform draws NOTHING (`TransformVisuals`
+has no 348→349 arm, `SetDefaults` rand-free, `TargetClosest` the
+deterministic Manhattan scan). The wiring adds NO draws beyond the
+machines' own — the retarget scan and the shot-request push are rand-free.
+8 wiring witness tests (`s1_d_3_w6_*`) exercise the live seam: the claim
+set, Flocko's draw-free spin, the copter's six-draw shot + the zero-draw
+half, the mimic's nudge/hop, the transform, the archer's entry/fire.
+
+**Deliberate deviations** (documented, not folded):
+- The archer's `stealth`/`itemAnimation` refusal gate (`:59641-59644`) is
+  carried verbatim on the target seam. C# `Player.stealth` defaults 1f
+  (`Player.cs:1562`) and only the shroomite armour drives it toward 0; the
+  port's field is unwritten (starts 0, the shroomite system unported), so
+  the seam maps the C# default 1f while `shroomite_stealth` is off —
+  otherwise a stationary port player (`itemAnimation == 0`) would be
+  refused forever. The gate is NOT folded; the field-default mapping is
+  the documented deviation.
+- `justHit` folds onto `hurt_cd > 0` (the Poltergeist precedent);
+  `confused` reads buff 31 (`NPC.cs:92029-92032`).
+- The AI_003 shared stuck/jump core stays S1-D-3p (the -6.2 collision jump
+  stands in); the FindFrame arms already landed with the defaults slices.
+- The copter's per-tick flame dust / the archer's shot trail are VISUAL
+  draw-pass effects, unported (no AI-state reads them).
+
 ## The Frost Moon family, slice B (S1-F-13c, 2026-11-18) — CODE-ONLY MODE
 
 The 8 boss/mob kinds 345-352 (`IceQueen`, `SantaNK1`, `ElfCopter`,

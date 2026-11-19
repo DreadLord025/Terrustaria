@@ -46,17 +46,18 @@ use tr_core::World;
 
 use crate::projectile::{
     Projectile, BRAIN_SCRAMBLER, DESTROYER_LASER, EYE_LASER, FLOWER_POW_PETAL, FLAMING_WOOD,
-    GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW, RAY_GUNNER, SKULL,
-    TRAP_DART, TRAP_SUPERDART, WOODEN_ARROW_HOSTILE,
+    FLAMING_ARROW_HOSTILE, GOLEM_EYE_BEAM, MINI_RETINA_LASER, MUSKET_BALL, PIRATE_ARROW,
+    RAY_GUNNER, SKULL, TRAP_DART, TRAP_SUPERDART, WOODEN_ARROW_HOSTILE,
 };
 
 /// The slice-A kind set — slice B must take ids ≥ 449 disjointly
 /// (ROADMAP S1-D-5). 185 (TrapSpikyBall) is deliberately NOT here: the
 /// C# `SetDefaults` gives it aiStyle **14** (`Projectile.cs:2717-2727`),
 /// so its rowed aiStyle 1 is a data deviation for a separate fix.
-pub(crate) const SLICE_A_KINDS: [u16; 14] = [
+pub(crate) const SLICE_A_KINDS: [u16; 15] = [
     MUSKET_BALL,          // 14
     WOODEN_ARROW_HOSTILE, // 81
+    FLAMING_ARROW_HOSTILE, // 82
     EYE_LASER,            // 83
     TRAP_DART,            // 98
     DESTROYER_LASER,      // 100
@@ -83,9 +84,13 @@ enum Gravity {
     /// `flag3 = false` (`:55947-56032`): `ai[0]` never increments, no
     /// gravity arm fires — straight flight.
     Rest,
-    /// `:56888-56895` — `if (ai[0] >= 20f) { ai[0] = 20f;
+    /// `:56888-56895` - `if (ai[0] >= 20f) { ai[0] = 20f;
     /// velocity.Y += 0.07f; }` (the hostile wooden arrow).
     HostileArrow,
+    /// `:57568-57578` — the generic arrow arm: `if (ai[0] >= 15f) {
+    /// ai[0] = 15f; velocity.Y += 0.1f; }` (`flag4` false — the 1006
+    /// inversion is not a slice-A kind). The hostile FlamingArrow 82.
+    GenericArrow,
 }
 
 /// The per-kind rotation tail of the `:57582-57752` chain.
@@ -122,6 +127,19 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
         WOODEN_ARROW_HOSTILE => {
             latch_ai1(p); // Projectile.cs:55346-55350
             finish(p, world, true, Gravity::HostileArrow, Rot::Default);
+        }
+        // `:55346-55350` — the 81/82 shared latch arm (`SoundID.Item5`
+        // SKIPPED, the `ai[1] = 1f` state rides). 82 is NOT on the flag3
+        // skip list (`:55947-56032`) so the counter runs, and NOT on the
+        // 81/91 gravity arm (`:56888`) — it takes the GENERIC arrow
+        // gravity (`:57568-57578`: at 15 ticks `ai[0] = 15`,
+        // `velocity.Y += 0.1f`), unlike the wooden twin's 20/0.07. The
+        // ElfArcher's shot (S1-D-3 W-6). The per-tick flame dust
+        // (`:17036-17040`, `Dust.NewDust` type 6) is a VISUAL with its
+        // own draws — the projectile draw-pass is unported (ANALYSIS).
+        FLAMING_ARROW_HOSTILE => {
+            latch_ai1(p); // Projectile.cs:55346-55350
+            finish(p, world, true, Gravity::GenericArrow, Rot::Default);
         }
         // `:55229-55233` — `ai[1] = 1f` + `SoundID.Item33` (SKIPPED).
         EYE_LASER => {
@@ -315,6 +333,14 @@ fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravit
                 p.vel.y += 0.07;
             }
         }
+        // `Projectile.cs:57568-57578` — the generic arrow gravity (the
+        // hostile FlamingArrow 82; `flag4` false, so the +0.1 branch).
+        Gravity::GenericArrow => {
+            if p.ai[0] >= 15.0 {
+                p.ai[0] = 15.0;
+                p.vel.y += 0.1;
+            }
+        }
     }
     // The rotation tail chain, in the C#'s order BEFORE the clamp.
     let angle = p.vel.y.atan2(p.vel.x);
@@ -476,6 +502,40 @@ mod tests {
             ai001_slice_a(&mut q, &w, None);
         }
         assert_eq!(q.vel.y, 0.0, "no gravity before tick 20");
+    }
+
+    /// S1-D-3 W-6 — the hostile FlamingArrow 82 (the ElfArcher's shot):
+    /// the 81/82 shared latch (`:55346-55350`), the counter runs (82 is
+    /// NOT on the flag3 skip list), and the GENERIC arrow gravity
+    /// (`:57568-57578`: pin at 15, +0.1/tick) — NOT the wooden twin's
+    /// 20/0.07. Hand arithmetic: after 20 ticks ai[0] = 15 (pinned),
+    /// gravity fired on ticks 15..20 = 6 times → vel.y ≈ 6 × 0.1 = 0.6.
+    #[test]
+    fn s1_d_3_w6_the_flaming_arrow_hostile_pins_at_fifteen_and_falls_at_01() {
+        let w = world();
+        let mut p = proj(FLAMING_ARROW_HOSTILE, 2.0, 0.0);
+        for _ in 0..20 {
+            ai001_slice_a(&mut p, &w, None);
+        }
+        assert_eq!(p.ai[1], 1.0, "the first-tick latch (`:55349`)");
+        assert_eq!(p.ai[0], 15.0, "the generic pin (`:57570`)");
+        assert!(
+            (p.vel.y - 6.0 * 0.1).abs() < 1e-5,
+            "6 gravity ticks × 0.1, got {}",
+            p.vel.y
+        );
+        // Before tick 15 the arrow flies flat (the generic arm's gate).
+        let mut q = proj(FLAMING_ARROW_HOSTILE, 2.0, 0.0);
+        for _ in 0..14 {
+            ai001_slice_a(&mut q, &w, None);
+        }
+        assert_eq!(q.vel.y, 0.0, "no gravity before tick 15");
+        // The row: 10x10, stock penetrate 1 / timeLeft 3600, arrow false.
+        let d = proj_data(FLAMING_ARROW_HOSTILE).expect("the rowed kind");
+        assert_eq!((d.w, d.h), (10.0, 10.0));
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
+        assert!(!d.arrow, "the 82 arm never sets `arrow` (`:1625-1631`)");
     }
 
     /// The six latch-only lasers/darts (`:55229`/`:55311`/`:55306`/
