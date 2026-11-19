@@ -275,8 +275,11 @@ pub fn tree_frame(frame_y: i16) -> usize {
     }
 }
 
-/// Biome variant from `TileDrawing.GetTreeVariant` (-1 = forest). Selects the
-/// 176 px section of `Tiles_5.png` and the foliage texture set.
+/// Biome variant table of `TileDrawing.GetTreeVariant`
+/// (TileDrawing.cs:1778-1808) applied to a GROUND kind, kind-only: the
+/// jungle's surface/underground split needs the ground row and lives in
+/// [`crate::drawdata::tree_variant`] (and the foliage probe
+/// `GetCommonTreeFoliageData`, WorldGen.cs:62930-62944). -1 = forest.
 #[inline]
 pub fn biome(kind: u16) -> i32 {
     match kind {
@@ -288,13 +291,6 @@ pub fn biome(kind: u16) -> i32 {
         70 => 6,        // glowing mushroom
         _ => -1,        // forest
     }
-}
-
-/// `tileFrameX += 176 * (treeBiome + 1)` in `GetTileDrawData`.
-#[inline]
-pub fn trunk_sheet_offset(kind: u16) -> i32 {
-    let v = biome(kind);
-    if v < 0 { 0 } else { 176 * (v + 1) }
 }
 
 /// Texture set used for canopy and branch sprites.
@@ -423,19 +419,25 @@ pub fn foliage_at(
     return Some(Foliage::for_ground(kind, 2, frame_y).unwrap());
 }
 
-/// Biome section of `Tiles_5.png` for a trunk tile, found by following the trunk
-/// column down to the ground (`TileDrawing.GetTreeBiome`). Forest trees use the
-/// first 176 px section (offset 0).
-pub fn trunk_sheet_offset_at(world: &World, x: i32, y: i32) -> i32 {
-    for dy in 0..100 {
-        let Some(t) = world.tile(x, y + dy) else {
-            break;
-        };
-        if t.active() && !is_tree(t.kind) {
-            return trunk_sheet_offset(t.kind);
-        }
+/// Biome section of the trunk sheet (`Tiles_5.png`), the `GetTileDrawData`
+/// case-5 rewrite `tileFrameX += 176 * (GetTreeBiome(x, y, fx, fy) + 1)`
+/// (TileDrawing.cs:4645-4649). The probe shifts the column by the
+/// trunk/branch marker frame and walks down cells of the START kind
+/// (`GetTreeBiome`, TileDrawing.cs:1735-1776); forest trees (-1) keep the
+/// first 176 px section (offset 0). The variant trunks (583-589/596/616/634)
+/// have their own sheets and no shift (TileDrawing.cs:4650-4662).
+pub fn trunk_sheet_offset_at(
+    world: &World,
+    x: i32,
+    y: i32,
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+) -> i32 {
+    if kind != TREE {
+        return 0;
     }
-    0
+    crate::drawdata::tree_frame_x_offset(world, x, y, frame_x, frame_y)
 }
 
 #[cfg(test)]
@@ -455,9 +457,80 @@ mod tests {
 
     #[test]
     fn forest_uses_first_sheet_section() {
-        assert_eq!(trunk_sheet_offset(2), 0);
-        assert_eq!(trunk_sheet_offset(147), 176 * 4);
+        assert_eq!(biome(2), -1);
+        assert_eq!(biome(147), 3);
         assert_eq!(Foliage::for_ground(5, 2, 198).unwrap().style, 0);
         assert_eq!(Foliage::for_ground(5, 60, 198).unwrap().top_h, 96.0);
+    }
+
+    // ---- S1-F-9 wave A: the case-5 trunk sheet probe (GetTreeBiome) ----
+
+    use crate::tile::FLAG_ACTIVE;
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        let mut t = crate::tile::Tile::default();
+        t.kind = kind;
+        t.flags |= FLAG_ACTIVE;
+        w.tiles[i] = t;
+    }
+
+    #[test]
+    fn trunk_probe_walks_the_start_kind_and_shifts_by_marker() {
+        // Three trunk columns x=19/20/21, y=10..13, on snow/corrupt/crimson
+        // ground. GetTreeBiome shifts the probe column by the marker frame
+        // (TileDrawing.cs:1740-1771) and then walks down cells of the START
+        // kind (kind 5 here).
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 19..=21 {
+            for y in 10..14 {
+                put(&mut w, x, y, 5);
+            }
+        }
+        put(&mut w, 19, 14, 147); // snow
+        put(&mut w, 20, 14, 23); // corruption
+        put(&mut w, 21, 14, 199); // crimson
+        // Straight trunk cell (frame 0,0): walks down x=20 -> variant 0.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 0, 0), 176 * 1);
+        // Branch-right marker (66, >=198): column x-1 -> snow -> variant 3.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 66, 242), 176 * 4);
+        // Branch-left marker (44, >=198): column x+1 -> crimson -> variant 4.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 44, 220), 176 * 5);
+        // Trunk-region shifts: (66, fy<=45) -> x+1; (88, 66..110) -> x-1.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 66, 44), 176 * 5);
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 88, 66), 176 * 4);
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 88, 110), 176 * 4);
+        // Band 132..197: (22) -> x-1, (44) -> x+1.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 22, 132), 176 * 4);
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 44, 176), 176 * 5);
+        // Outside every shift window the column stays put.
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 66, 66), 176 * 1);
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 88, 132), 176 * 1);
+        // The variant trunks keep their own sheets — no shift
+        // (TileDrawing.cs:4650-4662).
+        for kind in [583u16, 584, 585, 586, 587, 588, 589, 596, 616, 634] {
+            assert_eq!(trunk_sheet_offset_at(&w, 20, 10, kind, 0, 0), 0);
+        }
+    }
+
+    #[test]
+    fn trunk_probe_stops_at_a_foreign_kind_not_at_any_non_tree() {
+        // GetTreeBiome walks while type == START type (TileDrawing.cs:1772):
+        // a foreign active tile mid-column stops the walk and IS the ground.
+        let mut w = World::new("t".into(), 64, 64);
+        put(&mut w, 20, 10, 5);
+        put(&mut w, 20, 11, 60); // jungle mid-column: the C# stops here
+        put(&mut w, 20, 12, 5);
+        put(&mut w, 20, 13, 23);
+        w.world_surface = 30.0;
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 0, 0), 176 * 2);
+        // An inactive cell also stops the walk and classifies -1 (forest).
+        let mut w = World::new("t".into(), 64, 64);
+        put(&mut w, 20, 10, 5);
+        let mut t = crate::tile::Tile::default();
+        t.kind = 23;
+        let i = w.index(20, 11);
+        w.tiles[i] = t; // inactive corruption
+        assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 0, 0), 0);
     }
 }

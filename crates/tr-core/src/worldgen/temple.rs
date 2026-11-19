@@ -1985,7 +1985,23 @@ fn place_buried_chest(world: &mut World, x: i32, y: i32, not_near: bool, style: 
     if not_near && near_other_chests(world, x - 1, y - 1) {
         return false;
     }
-    let Some(instance) = crate::tileobject::can_place(world, x, y, def, style, 1, None) else {
+    // S1-F-7b: the placement stream is taken out for the read-only
+    // `can_place` call and restored after (chest 21 has RandomStyleRange 0,
+    // so this path draws nothing — the pass stream stays aligned).
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        1,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let Some(instance) = instance else {
         return false;
     };
     crate::tileobject::place(world, &instance)

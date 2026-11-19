@@ -13,8 +13,10 @@ pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
+pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
+pub(crate) mod net_proj_sync;
 pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
@@ -288,6 +290,13 @@ pub(crate) struct App {
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
+    /// `InGameNotificationsTracker._notifications`
+    /// (`UI/InGameNotificationsTracker.cs:13`) — the achievement-unlock
+    /// popups (S1-E-26 wave A). The `OnAchievementCompleted` subscriber
+    /// (`AddCompleted`, `:75-81`) appends here; `Update` (`Main.cs:17045`)
+    /// ticks it and `DrawInterface_13_AchievementCompletePopups`
+    /// (`Main.cs:44779-44783`) draws it.
+    pub(crate) notifications: ui::notifications::NotificationsTracker,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -473,6 +482,12 @@ pub(crate) struct App {
     pub(crate) net_ps_last: net::PlayerState,
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
+    /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
+    /// counter, wrapping at 3600 (`Main.cs:64558-64562`).
+    pub(crate) net_play_counter: u32,
+    /// `Main.lastItemUpdate` (`Main.cs:64572-64576`): the round-robin slot the
+    /// 1 Hz `21` heartbeat walks.
+    pub(crate) last_item_update: usize,
     /// The `27` projectile sync: the last-sent state per key (the
     /// change-detection diff) and the per-projectile send budget in ticks
     /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
@@ -528,11 +543,23 @@ pub(crate) struct App {
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     pub(crate) mouse_item: ItemSlot,
+    /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
+    /// slot whose head rides the cursor for a housing relocation; −1 with
+    /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
+    pub(crate) mouse_npc_index: i32,
+    /// `Main.mouseNPCType` (`Main.cs:753`, default −1): the carried head's
+    /// NPC type (0 = the housing query's "?"). `SetMouseNPC`
+    /// (`Main.cs:3176-3185`) writes the pair.
+    pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
+    /// `Main.mouseLeftRelease`'s in-world arm — the left button's release
+    /// edge the achievement popup's click reads (`InGamePopups.cs:124`'s
+    /// `Main.mouseLeft && Main.mouseLeftRelease`), consumed per frame.
+    pub(crate) ui_left_release: bool,
     /// `Main.buffAlpha[Player.maxBuffs]` (`Main.cs:668`-ish): the buff bar's
     /// per-slot icon alpha (`Main.DrawBuffIcon`).
     pub(crate) buff_alpha: [f32; crate::buffs::MAX_BUFFS],
@@ -573,6 +600,20 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
+    /// The current dig's break interval in seconds — the `mine_timer`
+    /// denominator the tile-crack overlay maps onto the C# `HitTile`
+    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    pub(crate) mine_hardness: f32,
+    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
+    /// rolled crack style the no-repeat reroll compares against.
+    pub(crate) mine_crack_style: i32,
+    /// The dig target the current crack style was rolled for (the C# rolls
+    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
+    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
+    /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
+    /// (determinism rule, ANALYSIS "The tile-crack overlay").
+    pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -783,6 +824,11 @@ pub(crate) struct App {
     /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
     /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
     pub(crate) sunflower_wind_step: FixedStepper,
+    /// `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
+    /// strips' own sway counter (`DrawVineStrip` reads it, `:9041`). C#
+    /// advances it in the same `TileDrawing.Update` as the sunflower's, so
+    /// it rides the same 60 Hz accumulator (S1-G-1).
+    pub(crate) vine_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
@@ -1105,6 +1151,34 @@ impl App {
 
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
+    }
+
+    /// `Main.mouseNPC`'s per-frame lifecycle
+    /// (`DrawInterface_38_MouseCarriedObject`, `Main.cs:45182-45211` +
+    /// `DrawInterface_25`'s closed-inventory clear, `:45664-45667`):
+    /// a carried item drops the head (`:45185-45187`), a closed inventory
+    /// drops it (`:45666`), and a carried NPC that died or changed type
+    /// downgrades to the housing query (`:45205-45211`). Runs once per
+    /// frame beside `resolve_equip_page`; the click handler re-checks the
+    /// item arm after its own pickups so the drop is same-frame.
+    pub(crate) fn refresh_mouse_npc(&mut self) {
+        if self.mouse_item.count > 0 || !self.inventory_open {
+            // `SetMouseNPC(-1, -1)` (`Main.cs:3176-3180`).
+            self.mouse_npc_index = -1;
+            self.mouse_npc_type = -1;
+            return;
+        }
+        if self.mouse_npc_index >= 0 {
+            let live = self
+                .npcs
+                .get(self.mouse_npc_index as usize)
+                .is_some_and(|n| n.kind.net_id() == self.mouse_npc_type);
+            if !live {
+                // `SetMouseNPC_ToHousingQuery()` (`Main.cs:3182-3185`).
+                self.mouse_npc_index = -1;
+                self.mouse_npc_type = 0;
+            }
+        }
     }
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
@@ -1616,6 +1690,50 @@ impl App {
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         true
+    }
+
+    /// The `OnAchievementCompleted` subscribers (`AchievementManager.cs:39`,
+    /// fired from `AchievementCompleted` `:180-187`), drained once per frame
+    /// after the update branch:
+    ///
+    /// - `InGameNotificationsTracker.AddCompleted`
+    ///   (`UI/InGameNotificationsTracker.cs:75-81`): the unlock popup, behind
+    ///   the `Main.netMode != 2` gate — the port's `NetRole::Host` server
+    ///   role (the `audio.rs` S1-E-24 convention).
+    /// - `AchievementInitializer.OnAchievementCompleted`
+    ///   (`Initializers/AchievementInitializer.cs:728-735`): the
+    ///   `Achievements.Completed` chat line with the `[a:NAME]` tag
+    ///   (`AchievementTagHandler.GenerateTag`) through `Main.NewText` (white,
+    ///   `PlaySound(12)` — the port's `Menu_Tick` cue), then the tracked
+    ///   `SoundID.AchievementComplete` when no instance is already playing
+    ///   (`SoundEngine.FindActiveSound`'s guard).
+    pub(crate) fn drain_achievement_completions(&mut self) {
+        let completed = self.achievements.take_completed_events();
+        if completed.is_empty() {
+            return;
+        }
+        // `Main.netMode != 2` (`InGameNotificationsTracker.cs:77`).
+        let not_server = !matches!(self.net, NetRole::Host(_));
+        for name in completed {
+            if not_server {
+                let icon = achievements::AchievementManager::icon_index(name).unwrap_or(0);
+                let title = crate::lang::text(&ui::achievements::name_key(name));
+                self.notifications.add_completed(name, icon, title);
+            }
+            // `Main.NewText(Language.GetTextValue("Achievements.Completed",
+            // AchievementTagHandler.GenerateTag(achievement)))` (`:730`).
+            let tag = format!("[a:{name}]");
+            let line = crate::lang::text_args("Achievements.Completed", &[tag]);
+            self.chat.new_text(line, [255, 255, 255]);
+            // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
+            self.audio.play("Menu_Tick");
+            // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
+            // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
+            let style = crate::achievements::achievement_complete_style();
+            if self.audio.find_active_tracked(&style).is_none() {
+                self.audio.play_tracked_global(style);
+            }
+        }
     }
 
     /// The edit-to-map-queue hook: the edited tile's 3x3 ring queues for
@@ -2396,11 +2514,12 @@ impl App {
         if let Some(n) = crate::env::coins() {
             coins = n;
         }
-        // `TR_DASH=<1|2|3|6>` pins `Player.dashType` — the granting items land
-        // with M3-EQUIP-3 (Tabi/EoC Shield/Master Ninja Gear).
+        // `TR_DASH=<1|2|3|6>` pins `Player.dashType` through the `pinned_dash`
+        // stand-in (the accessory granters - Tabi/EoC Shield/Master Ninja
+        // Gear - arm it for real now; the pin survives the per-tick clear).
         if let Some(d) = crate::env::dash_type() {
             if let Some(p) = player.as_mut() {
-                p.dash_type = d.clamp(0, 6);
+                p.pinned_dash = d.clamp(0, 6);
             }
         }
         // `TR_MOUNT=<id|name>` pins a mount (the granting saddle items are
@@ -3175,6 +3294,9 @@ impl App {
                 let mask = crate::env::achievements_categories().unwrap_or(0xF);
                 [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
             },
+            // `InGameNotificationsTracker`'s static list starts empty
+            // (`InGameNotificationsTracker.cs:109-112`).
+            notifications: ui::notifications::NotificationsTracker::default(),
             emotes: {
                 // `TR_EMOTES` opens the wheel for the screenshot runs.
                 let mut sys = emotes::EmoteSystem::default();
@@ -3266,6 +3388,8 @@ impl App {
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
+            net_play_counter: 0,
+            last_item_update: 0,
             net_proj_last: HashMap::new(),
             net_proj_spam: HashMap::new(),
             net_npc_slots: Vec::new(),
@@ -3290,9 +3414,12 @@ impl App {
             music: audio::MusicSystem::new(assets::content_dir()),
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
+            mouse_npc_index: -1,
+            mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,
+            ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,
@@ -3312,6 +3439,10 @@ impl App {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
+            mine_hardness: 0.0,
+            mine_crack_style: 0,
+            mine_crack_target: None,
+            mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
@@ -3417,6 +3548,7 @@ impl App {
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
+            vine_wind_counter: 0.0,
             leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600

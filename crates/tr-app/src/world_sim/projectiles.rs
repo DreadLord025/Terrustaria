@@ -175,6 +175,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
+    // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
+    let disco = app.disco;
+    app.projectiles.set_disco(disco);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -190,6 +194,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
+    // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
+    // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch
+    // draw ride the `UpdateProjectiles` stream (`Main.cs:17775`), only
+    // after each play's attenuation gate passed. The C# draws mid-walk;
+    // the port drains at the pass tail (ANALYSIS, S1-E-21c).
+    for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
+        app.audio.play_npc_hit_sound(cue, x, y, rng);
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {
