@@ -25578,6 +25578,85 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
   aiStyle-39 only (`:77292`) вЂ” single frame,
   `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
   entry).
+## The Martian Turret (S1-D-3 aiStyle-73, code-only)
+
+`crates/tr-app/src/npc_ai_style73.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 73)` arm (`NPC.cs:35102-35217`) — the
+MartianTurret 387 (`SetDefaults` `:13922-13934`, `ID/NPCID.cs:11451`),
+the Martian Madness gun emplacement. CODE-ONLY MODE: no
+cargo/rustc/rustfmt invoked; the 14 witness tests are written, not run.
+Wiring deferred (the ForceBubble `npc_ai_style72.rs` / BlazingWheel
+precedent): no `NpcKind::MartianTurret` exists (the saucer's
+`MartianSaucerTurret` 393 is a different kind), so the style axis has no
+arm to claim; only the one-line `mod npc_ai_style73;` seam landed.
+
+- **Census — exactly one NPC kind**: the whole-tree `aiStyle = 73;`
+  census returns two hits: `NPC.cs:13926` (the `type == 387` branch) and
+  `Projectile.cs:4955` (the fountain projectiles 419-422 — projectile
+  space, out of NPC scope; the wiring engine's dropped fountain
+  requests ride that style, "Wiring engine (M7-WIRE-2)"). No dynamic
+  reassignment to 73 exists. The port had NO style-73 trace before this
+  round (no kind, no axis arm, no module).
+- **The machine** (in C# order): `TargetClosest(faceTarget: false)`
+  (`:35104`, the shared `npc_target.rs` — track without facing),
+  `spriteDirection = direction` (`:35105`), the X decay ×0.93 with the
+  STRICT ±0.1 snap (`:35106-35110` — the decay runs FIRST, so an input
+  of exactly 0.1 decays to 0.093 and snaps), the `flag74` firing gate
+  (`:35112`, `AI_GlobalFiringDistanceCheck` `:55835-55841` through the
+  `npc_ai_caster.rs` port — the 1920×1200 Point-centred rect inflated
+  −50).
+- **The materialize block** (`:35113-35178`, the 387-only branch): while
+  `ai[1] < 120` — `ai[1]++` FIRST, the alpha ramp
+  `(int)((1 - (ai[1]-60)/60) * 255)` above 60 / flat 255 at ≤60,
+  `dontTakeDamage = true`, `frameCounter = 0` / `frame.Y = 0`, the
+  four-pair dust-226 ring, the num1019-scaled blue light at
+  `((int)Center.X/16, (int)(Center.Y-10)/16)`, and the early `return`
+  (`:35168` — exits `AI()` only; the caller's gravity/integration tail
+  still runs). The 120 → 121 one-shot latch arms `netUpdate`
+  (`:35170-35174`); from then on the constant (0.1, 0.5, 0.7) light,
+  `dontTakeDamage = false`, `alpha = 0` (`:35175-35177`).
+- **The shot cycle** (`:35179-35216`): the `ai[0] == 0 && !flag74`
+  re-arm to −120, the `< 60` increment, the `justHit` reset to −30 +
+  `netUpdate` (AFTER the increment), and at `ai[0] == 60 && netMode != 1`
+  the type-435 `MartianTurretBolt` (`ID/ProjectileID.cs:1424`) from
+  `Center - (0, 10)` — the aim jittered by four `Main.rand` draws,
+  `Normalize()` with the NaN → −UnitY fallback, ×14 speed, damage
+  `GetAttackDamage_ForProjectiles(35, 35*0.8)` (the `381..=392` Martian
+  band `:35211-35214` — classic 35, expert/master 28 through the
+  `npc_ai_style37.rs` Remap port), kb 0. The bolt request rides the
+  `Style73Outcome.shot` seam; the type-435 `SetDefaults` row is the
+  projectile family's wiring obligation.
+- **RNG by construction**: the arm's ONLY arm-level draws are the
+  shot's four `Next` calls in the fixed order X jitter `Next(-100,101)`,
+  Y jitter `Next(-100,101)`, X scale `Next(70,131)*0.01`, Y scale
+  `Next(70,131)*0.01` (`:35199-35202`) — the witness
+  `the_shot_consumes_the_four_draws_in_order` replays them against a
+  mirrored oracle stream and pins the aim bit-for-bit. The fade's eight
+  `Dust.NewDust` calls per tick (`:35157`/`:35162`) draw only INSIDE
+  `Dust.NewDust` (`Dust.cs:170-175`/`:190`); the dust system is unported
+  (S1-E-2/S1-E-3), so the ring is skipped wholesale — the
+  `npc_lights.rs` precedent, stream untouched.
+  `turret_materialize_dust_plan` ports the ring geometry (the
+  `(0,-30).RotatedBy(ai[1]/60 * 1.5 * 2π) * (1, 0.4)` spin through the
+  style-37 `rotated_by`, the four offsets/scales −15/0.15, −5/0.3,
+  +5/0.6, +20/0.45, the per-pair `*= -1` mirror) count-only, no RNG
+  parameter. `TargetClosest`/`AI_GlobalFiringDistanceCheck`/
+  `Lighting.AddLight` draw nothing; the non-shot witness pins 130
+  fade/idle ticks + the hold/client paths at zero draws.
+- **FindFrame case 387** (`:71663-71696`) ports as the pure pair
+  function `turret_find_frame` (the `blazing_wheel_frame` precedent —
+  `Npc::frame_counter` is private): `ai[0] > 0` advances 1/tick +1 at
+  `>= 20` +1 at `>= 40`, flipping the 2-row strip every 10; else the
+  flat 15-tick flip. `Main.npcFrameCount[387] = 2` (`Main.cs:67122`, the
+  380-389 row's 8th entry). The fade pins the counter/row to 0 every
+  tick, so the strip only runs once solid.
+- **Deviations / seams**: `justHit` is a caller parameter (`Npc` has no
+  such field — the style-10/16 convention); the player slice `.get()`s
+  the target slot (the C# indexes without a bounds check; an absent
+  slot reads inactive — defensive, unreachable from vanilla writes);
+  the shot's player re-read uses the same captured slot (nothing moves
+  it between `:35111` and `:35196` within one tick); the dust ring and
+  the bolt's own projectile machine are the documented skips/requests.
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides

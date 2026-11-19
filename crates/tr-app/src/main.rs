@@ -115,6 +115,7 @@ mod npc_ai_style59;
 // no NpcKind yet; the kind-wave wiring is the S1-D-3 merge step.
 mod npc_ai_style67;
 mod npc_ai_style72;
+mod npc_ai_style73;
 mod npc_ai_style9;
 mod npc_ai_style31;
 mod npc_ai_style47;
