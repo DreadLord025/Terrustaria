@@ -3014,6 +3014,53 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
+
+The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
+themed group per pass, verbatim move) moved the grass/spread family out of
+`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
+`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
+`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
+consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
+hallow source-set slices, `box_has_source`, `spread_grass_walls`,
+`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
+wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
+2 MossConversion tests). Public seams re-exported from `growth`
+(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
+`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
+(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces the
+compile gate for this pass:
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
+  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
+  3227-3255, 3320-3422 for the tests) and string-compared against the new
+  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
+  verbatim** (per-block sha256 recorded in the move script's output;
+  grass.rs LF sha256 `4326a23c…cf44366`).
+- the only content differences are the declared visibility seams:
+  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
+  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
+  `set_wall` helper in growth.rs (the moved wall-arms test imports
+  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
+  the now-unused `use trees::kill_invalid_tree_above;` import left
+  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
+- a full unified diff of the new growth.rs against the origin blob shows
+  the added lines are exactly the `mod grass;` + re-export block + the two
+  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
+  moved blocks — no other edit.
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
 ### S1-K-3d — the herbs split (2026-11-18, code-only mode)
 
 The herbs S1-K-3 group (`task/S1-K-3d-herbs-split`, the K-3 precedent: one
@@ -3064,45 +3111,6 @@ compile gate for this pass (the K-3b method):
   (11 483 bytes); new growth.rs sha256
   `4675057e388f4ccd3008b68cd9ebf4c58a88fdcfa4b43a6c9c0395d386ce7caf`
   (171 878 bytes). Tests moved unchanged, NOT run.
-### S1-K-3b — the grass/spread split (2026-11-18, code-only mode)
-
-The second S1-K-3 group (`task/S1-K-3b-grass-split`, the K-3 precedent: one
-themed group per pass, verbatim move) moved the grass/spread family out of
-`growth.rs` into `growth/grass.rs` (1 222 lines; `growth.rs` 4 651 → 3 458):
-`update_world_grass_growth` + `spread_grass`, `moss_conversion` +
-`grow_moss_arm`, and the whole M5-SPREAD-1 wall block (the wall conversion
-consts + `SPREAD_UNDERGROUND`, `convert_wall_by_case`, the crimson/corrupt/
-hallow source-set slices, `box_has_source`, `spread_grass_walls`,
-`spread_desert_walls`), plus their 10 tests (the 4 spread-direction pins, the
-wall-arms test, the spread-stop-flag test, the 2 SpreadGrass-conversion and
-2 MossConversion tests). Public seams re-exported from `growth`
-(`spread_grass`/`update_world_grass_growth`/`spread_grass_walls`/
-`spread_desert_walls` pub, `convert_wall_by_case` pub(crate)) so every caller
-(`spread.rs`, `worldgen/spider_gem_moss.rs`, the dispatchers) is unchanged.
-
-**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
-graphify — file reads/writes + git only. The byte-equality proof replaces the
-compile gate for this pass:
-
-- the moved blocks were extracted mechanically from
-  `git show origin/main:crates/tr-core/src/growth.rs` (line ranges
-  451-654, 1009-1160, 3425-3847 for the code; 2073-2301, 2956-3009,
-  3227-3255, 3320-3422 for the tests) and string-compared against the new
-  `growth/grass.rs`: **48 582 chars across 7 blocks, every block found
-  verbatim** (per-block sha256 recorded in the move script's output;
-  grass.rs LF sha256 `4326a23c…cf44366`).
-- the only content differences are the declared visibility seams:
-  `pub(super)` on `grow_moss_arm` and `SPREAD_UNDERGROUND` in grass.rs
-  (each a 1-line seam-diff), and `pub(super)` on `mod tests` + the
-  `set_wall` helper in growth.rs (the moved wall-arms test imports
-  `crate::growth::tests::set_wall`, the trees.rs `test_fixtures` precedent);
-  the now-unused `use trees::kill_invalid_tree_above;` import left
-  growth.rs with `spread_grass` (grass.rs imports it via `super::trees`).
-- a full unified diff of the new growth.rs against the origin blob shows
-  the added lines are exactly the `mod grass;` + re-export block + the two
-  `pub(super)` seams, and all 1 204 deleted lines are accounted for by the
-  moved blocks — no other edit.
-
 **Gate deferred:** `cargo test --workspace -- --skip
 migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
 `generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
@@ -3110,6 +3118,84 @@ main_anchors` were NOT run on this branch — they are the merge pass's
 mandatory step (MAIN-RULES §1). No behaviour change is possible from a
 verbatim move of already-`pub` items + re-exports; if the deferred gate
 fails, the branch is fixed or dropped before merging, never merged red.
+
+### S1-K-3e — the pumpkins split (2026-11-18, code-only mode)
+
+The last mapped S1-K-3 group (`task/S1-K-3e-pumpkins-split`, the K-3
+precedent: one themed group per pass, verbatim move; siblings grass/spread
+`task/S1-K-3b-grass-split` — read its byte-proof method — decorations
+`task/S1-K-3c-decorations-split`, herbs `task/S1-K-3d-herbs-split`) moved the
+pumpkin-growth family out of `growth.rs` into `growth/pumpkins.rs`
+(345 lines; `growth.rs` 4 651 → 4 328): `place_pumpkin`
+(`WorldGen.cs:52438-52488`), `grow_pumpkin` (`:52490-52552`) and
+`halloween_pumpkins` (the `GrassPlantsEvilPlantsAndPumpkinsOnSurface`
+holiday arm `:20067-20086`), plus the `pumpkin_world` fixture and the 3
+tests (`place_pumpkin_lays_the_two_by_two_over_the_grass_row`,
+`grow_pumpkin_widens_one_patch_and_caps_at_four`,
+`the_pumpkin_sweep_runs_only_under_the_holiday_flags`). The public seams
+are re-exported from `growth` (`pub use pumpkins::{grow_pumpkin,
+halloween_pumpkins, place_pumpkin};`) — the family has no callers outside
+its own module (the worldgen step hook is deferred, the doc seam at
+`growth.rs`), so every caller is unchanged. No visibility seams were
+needed: `test_fixtures` stays in `growth.rs` (trees.rs keeps using it) and
+nothing outside imports `growth::tests`.
+
+**Code-only mode (user directive):** no cargo/rustc/rustfmt/test runs, no
+graphify — file reads/writes + git only. The byte-equality proof replaces
+the compile gate for this pass (the S1-K-3b method):
+
+- the moved blocks were extracted mechanically from
+  `git show origin/main:crates/tr-core/src/growth.rs` (blob sha256
+  `b12149972c1da57eb42fc816e1f3eaab10b0370436f065302352e8b2b38ad322`,
+  LF; the checkout is CRLF via `core.autocrlf=true`, content-identical) —
+  block A lines **1556-1746** (the M5-SEED-2 section header + the three
+  functions + the trailing blank; 191 lines, 7 638 bytes, sha256
+  `4a379716325d2d6b594a427dfe36e29e47fbb43160033fa5a8aaef26f063781e`) and
+  block B lines **1771-1908** (the tests-module slice: the
+  `MicroSeedFlags` import, `pumpkin_world`, the 3 tests + the trailing
+  blank; 138 lines, 6 669 bytes, sha256
+  `64100a658a39f23608494b9265960095049ee332b5e7ebbdf11abba37b23fe94`) —
+  and string-compared against the new `growth/pumpkins.rs`: **14 307
+  bytes across 2 blocks, every block found verbatim** (pumpkins.rs LF
+  sha256 `fec8ee710d791b4e46eb4af2c4c04043fd960d1ec4d5e7a720baecbb6108c06d`).
+- pumpkins.rs is exactly the declared seams + the blocks: the 7-line
+  module doc + 3 imports + blank (500 bytes), block A, the 5-line test
+  wrapper (`#[cfg(test)]` / `mod tests {` / `use super::*;` /
+  `use crate::tile::Tile;` — the bare `Tile` the moved fixture needs, the
+  trees.rs `test_fixtures` precedent — and the closing `}`; 72 bytes),
+  block B. Reconstructing seams+blocks byte-for-byte equals the written
+  file (script check `True`); no other content.
+- a full `difflib` opcode diff of the new growth.rs against the origin
+  blob: the added lines are exactly the 6-line seam (`mod pumpkins;` +
+  the re-export block, inserted after line 57 `use
+  trees::kill_invalid_tree_above;`) and all **329 deleted lines are
+  accounted for by the moved blocks** (A+B in order) — no other edit.
+- brace balance: origin growth.rs, new growth.rs and pumpkins.rs each
+  count `{`−`}` = 0, and origin == new + pumpkins.
+- Tests moved unchanged and were **NOT run**. No rustfmt was run (the
+  moved bytes keep their exact original indentation; the new wrapper's
+  blank-line placement mirrors the K-3b grass.rs precedent).
+
+**Gate deferred:** `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` (incl. the world-hash pins +
+`generation_is_reproducible_for_a_seed`) and `cargo test -p tr-app --test
+main_anchors` were NOT run on this branch — they are the merge pass's
+mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
+not run. No behaviour change is possible from a verbatim move + visibility
+seams; if the deferred gate fails, the branch is fixed or dropped before
+merging, never merged red.
+
+**Merge note (4 sibling splits edit growth.rs):** merge sequentially,
+keep-both on the re-export blocks — each sibling adds its own
+`mod <name>;` + `pub use` seam after the trees re-export block; the
+groups' line ranges are disjoint. This branch's ranges vs `origin/main`
+`bfe68db8`: deletions **1556-1746** and **1771-1908**; the seam insert at
+line 58 (after `use trees::kill_invalid_tree_above;`). K-3b's deletions
+(451-654, 1009-1160, 3425-3847 + its test ranges) do not overlap these;
+the herbs/decorations groups sit between/around them. If a conflict
+touches the tests-module header region (the `MicroSeedFlags` import line
+1771 was pumpkin-only; `use super::*;` at 1909 stays), keep both sides'
+imports — never pick a side wholesale (MAIN-RULES §2).
 
 **Merger note (K3b/K3c/K3d/K3e all edit growth.rs):** land sequentially with
 keep-both resolutions. K3d's growth.rs edits against `origin/main`
@@ -3123,10 +3209,6 @@ by symbol (the five herb test names), not by line number. K3d touches no
 `pub(super)` seam, so no seam collision with K3b/K3c is possible; the
 module-header/re-export region (growth.rs lines 43-58) is the one textual
 hotspot — keep all three groups' `mod` + `pub use` blocks.
-mandatory step (MAIN-RULES §1). The moved tests travel unchanged and were
-not run. No behaviour change is possible from a verbatim move + visibility
-seams; if the deferred gate fails, the branch is fixed or dropped before
-merging, never merged red.
 
 ## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
 
@@ -11827,6 +11909,81 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## AI_026 slice A — the flyer pets (S1-D-4b-10, code-only mode)
+
+**Merger compile fix (P2):** the wisp's control-offset read used the
+non-existent `Player::control_up`; the port's merged jump binding carries
+controlUp (W/ArrowUp feed `control_jump`, the sleeping/sitting exit-mask
+precedent player.rs:2260-2264), so `OwnerView::capture` maps
+`control_up: p.control_jump`. Two witness tests renamed their local
+`pet` bindings (they shadowed the `pet()` ctor).
+
+The aiStyle-26 mega-family (`AI_026`, `Projectile.cs:58102-65024`, 6 922
+lines over 68 types) lands in two disjoint slices. **Slice A** (this task,
+`crates/tr-app/src/projectile_ai026_a.rs`) ports the **14 early-return
+flyer pets**: 175 BabyEater, 197 BabySkeletronHead, 198 BabyHornet, 199
+TikiSpirit, 211 Wisp, 380 ZephyrFish, 774 SharkPup, 815 LilHarpy, 817
+GlitteryButterfly, 886 QueenBeePet, 892 DukeFishronPet, 894 MoonLordPet,
+901 DD2BetsyPet, 1046 Pufferfish. All five flight arms (`:59120-59243`,
+`:59244-59407`, `:59408-59781`, `:59782-59948`, `:59949-60091`) `return`
+before the idle/walk/jump/attack machine (`:60092+`), so slice A needs
+none of it — **slice B** (`task/S1-D-4b-11-melee-b`) owns everything else
+in `AI_026` (the ground pets, the pygmies/spiders, the Pal summons, the
+266 slime minion's hop machine). The dispatch gate (`projectile.rs`'s
+`26 =>` arm) routes ONLY the 14 (`AI_026_A_KINDS`); every other
+aiStyle-26 kind keeps the pre-existing `_ => {}` fall-through,
+byte-identical (the 266's row already existed and stays unarmed).
+
+- **Code-only mode.** This task ran with NO compiler/test invocation
+  (no cargo/rustc/rustfmt, no dotnet, no graphify) — file edits + git
+  only. The witness tests in `projectile_ai026_a::tests` are written,
+  NOT run; the first build/test pass belongs to the merge round.
+- **The flail premise correction.** The task row's original framing
+  ("the Flail's helper 405 included") was wrong twice over: the flails
+  are aiStyle **15** (`DefaultToFlail`, `Projectile.cs:10753-10762`,
+  already ported as `ai_flail`), and the type **405 FlaironBubble is
+  aiStyle 70** (`Projectile.cs:30304-30354`, ported with S1-D-4b-1) —
+  neither belongs to `AI_026`. The ROADMAP S1-D-4b-8 row is corrected.
+- **RNG order.** Per tick, in the C#'s order: the flyer group's Y jitter
+  `Next(-10, 21)` THEN the X jitter (`:59446-59447`, skipped for the
+  892/894 pair); the 197's `localAI[0] += Next(10)` (`:59357`); the
+  teleports' 12 dusts × (`NextFloat` X then Y) (`:59182`/`:59314`/
+  `:59655`/`:59996`). **The 24 teleport `NextFloat` draws are CONSUMED**
+  even though the dust visuals are unported — the task's RNG-order
+  constraint wins over the `ai_flying_minion` dust-skip precedent; the
+  dusts' INTERNAL rolls (`Dust.cs:114-152`'s pool-occupancy gates +
+  `:170-190`'s position/velocity/frame/scale draws) are skipped with the
+  layer (they depend on the unmodelled `Main.dust` occupancy, so no
+  fixed count exists to replay). The wisp's flight dust (`:59864`) has
+  no explicit `Main.rand` in `AI_026` — skipped wholesale. No head rand
+  fires for the 14 (the pygmy `Next(2, 10)` `:58919` is slice B).
+- **The head's unobservable parts.** `flag2`/`flag3` (the direction band
+  `:59008-59026`, num = 85 for all 14), `flag9` (petting `:58118`),
+  `flag12`/`flag13` (the -1/-2 direction forcing `:59016-59026`) feed
+  only the idle machine the 14 never reach — not ported. The `flag11`
+  `timeLeft = 2` pin (`:58944-58947`) IS observable and is ported.
+- **Deviations (the standing ones).** `Collision.SolidCollision` →
+  `box_solid` (the 5-point stand-in, documented since M4-PROJ-8);
+  `netUpdate` → no-op (single-player); `base.wet` → always dry (no
+  liquid-wet slot flags, the `:5473` precedent — the 774/1046 frame
+  offsets always ride the `!wet` +4/+6 branch); the pet keep-alive
+  flags' GRANT side (the pet buff/item pass) is unported — the 14 new
+  `Player` flags stay false until it lands, the AI-side clear/pin is
+  exact; the 211's `light = 1f` has no port consumer. The C#'s source
+  quirks are ported verbatim: the 892's `type == 892 || type == 892`
+  close-damp typo (`:59500`, only the 892 damps 0.95), the 892/894/901
+  dead `speed = 6` write (`:59470-59474`, the unconditional overwrite
+  wins), the wisp's unconditional `speed / dist` normalization at
+  dist = 0 (`:59898`, IEEE NaN semantics kept).
+- **The rows.** `proj_data` gains the 14 (aiStyle 26, friendly,
+  penetrate -1, timeLeft 18000 = 3600 × 5, the stock tileCollide true —
+  each arm clears it on its first tick); `netImportant` on all but the
+  175 (its `SetDefaults` block `:2612-2620` has no such line),
+  `ignoreWater` on the 199/211 only; `proj_frames` gains the 13 sheets
+  (the 197 has no `Main.projFrames` override — the init loop's 1 stands,
+  and its arm never reads `frame`).
+
 ## The lunar battery projectiles (M4-EVENT-16)
 
 The Moon Lord's and the pillars' shots run through six aiStyles, all ported
@@ -17824,17 +17981,16 @@ rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
 and the render sheets resolving with the C#'s `npcFrameCount`.
 
 Documented deviations, all deliberate:
-- **The bespoke machines ride stand-ins** until S1-F-13b2's slices land: the
-  Headless Horseman (315) and the Hellhound (329) — aiStyle 26
-  (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
-  C#'s own chase cap (`num10 = 6f`, `:62622`); the MourningWood (325,
-  aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
-  own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
-  = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
-  rows). Each stand-in cites its machine's own constants. (Slice B retired
-  the two bosses' stand-ins — see "The Pumpkin Moon bosses" below; the
-  Poltergeist left the caster stand with slice C — see its section below;
-  the aiStyle-26 stand-ins remain for slice A.)
+- **The bespoke machines**: the Headless Horseman (315) and the Hellhound
+  (329) — aiStyle 26 (`AI_026_Unicorns`, `NPC.cs:62366-62924`) — landed
+  their named machine with S1-F-13b2 slice A (`npc_ai_unicorn.rs`, see
+  "The aiStyle-26 machine" below); the Poltergeist (330) — aiStyle 22 —
+  rides its named machine with slice C (`npc_ai_poltergeist.rs`, see its
+  section below); the MourningWood (325,
+  aiStyle 57) and the Pumpking (327, aiStyle 58) fly their named machines
+  with slice B (`npc_ai_pumpkin_boss.rs`, `num836 = 2f` with the `/21`
+  approach, `num875 = 6` with the `/15` lerp — see "The Pumpkin Moon
+  bosses" below; the hover stand-ins are retired).
 - **The unported wave kinds still consume**: the frost family (F-13c) and
   the wave-20 unported bosses draw their vanilla rolls and spawn nothing
   (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
@@ -18184,6 +18340,77 @@ AND all five draws, exactly like the C#.
    `npc.rs:22987`); its `update_kind_ai` fallback is `unreachable!` —
    safe for the census, but any future kind claiming 58 must extend the
    gate, not fall through.
+## The aiStyle-26 machine (S1-F-13b2 slice A, 2026-11-18)
+
+`npc_ai_unicorn.rs::unicorn_step` ports `AI_026_Unicorns`
+(`NPC.cs:62366-62924`, the caller arm `:25631-25634`) for the Headless
+Horseman (315) and the Hellhound (329), wired kind-scoped in
+`update_kind_ai` — NOT a global aiStyle-26 axis claim (423 rides its own
+`update_nebula_beast`, M4-EVENT-9; 155/410/546 are unported kinds). The
+port is block-by-block verbatim: the turn flag + stuck windows
+(`:62373-62469` — the non-short-circuit `|`, the >300 wrap, the justHit
+reset, netUpdate at exactly 30, the <200-px clear), the Horseman's
+481st-tick pumpkin lob (`:62409-62440` — `localAI[0]++ >= 480f`
+post-increment), the 155/329 hop with INTEGER `width / 2` centres
+(`:62558-62564` — 315 never hops), the moon-gated chase/wander split
+(`:62581-62616` — outside the pumpkin moon `EncourageDespawn(10)` replaces
+`TargetClosest`), the walk core (`:62617-62740` — 315 runs its OWN
+cap/approach block `:62651-62684` AND the shared block `:62717-62739`:
+0.07+0.07 first tick; 329's ±0.1 band nudge + 0.07 = 0.17), the inline
+step-up (`:62741-62805`) and the jump probe (`:62806-62903` — `flag7`
+false for 315/329 folds the below-1 conjunct away).
+
+**Tests written, not run — code-only mode** (no cargo/rustc invoked this
+slice; verification was a line-by-line re-read of the C#). 10
+`s1_f_13b2_*` tests pin the windows, the double accel, the wander flips,
+the hop, the wall-height jump rows, the step-up lift, the lob's payload
+and its three-draw witness stream, and the untouched stream between lobs.
+
+RNG order (the `UpdateNPCs` stream, `Main.cs:17767-17769`): the only
+ported draws are the lob's three, in C# order — the
+`NextVector2Circular(40, 40)` angle `NextFloat` (`NPC.cs:62417` →
+`Utils.cs:1261-1264`, `2π·f` with f64 `Math.Cos/Sin` cast to f32,
+`:1665-1668`), the radial `NextFloat` (`Utils.cs:1268`), then
+`NextFloatDirection() * 3f` (`Utils.cs:1203-1206`). The gallop-dust arm
+(`:62431-62438`: `Next(3)` + two `NextFloat`) is deferred WITH its draws
+(the `npc_lights.rs` S1-E-5 precedent); the Hellhound and every non-fire
+tick draw nothing. `target_closest` is deterministic.
+
+Documented deviations, all deliberate:
+- **The stuck latch**: the C# reads `oldPosition.X` latched AFTER the AI
+  (`Collision_MoveWhileDry`, `NPC.cs:92605`); the port's `update_rng`
+  latches `old_x` BEFORE it, so the machine carries its own end-of-tick
+  `unicorn_stuck_x` latch (the `frost_stuck_x` precedent,
+  `npc.rs:6623-6627`), init 0.0 = `Entity.oldPosition`'s field default
+  (`Entity.cs:14`).
+- **`justHit` → `hurt_cd > 0`**: the house stand-in (the port has no
+  per-tick justHit flag).
+- **Target 255 on the first tick**: `target_player()` maps the
+  still-unresolved slot to the session player; the C# would index the
+  inactive slot-255 dummy at the world origin for exactly that tick
+  (`ClearTarget`, `NPC.cs:42924-42927`). The lob's `num3 != 255` gate is
+  verbatim — a never-resolved target suppresses the shot but still resets
+  the counter.
+- **The gravity seam**: the movement tail integrates the port's
+  GRAVITY/MAX_FALL (0.4/8.0) like `walker_step`; the C#'s depth-scaled
+  0.3/10 (`UpdateNPC_UpdateGravity`, `:90878+`) rides the port-wide
+  gravity seam.
+- **The lob is dropped until projectile 1001 lands**: `proj_data` has no
+  HorsemanPumpkin (1001) row (`projectile/data.rs`'s `_ => return None`),
+  so the pool silently drops the `wants_hostile_shot_ai` request (the
+  documented house pattern, `projectile.rs:1321-1324`). The request stays
+  faithful; the row is out of slice A's scope.
+- **Deferred to slice B**: the gallop dust visuals WITH their RNG draws,
+  the `FindFrame` case-315/329 sprite arms (`NPC.cs:74465` /
+  `:74375-74403` — the kinds ride `walker_frame` today), the Horseman's
+  `Lighting.AddLight(Center, 0.4, 0.36, 0.2)` (`:62420`), and the
+  `gfxOffY` decay/render arms (`:90397-90420` — slice A records the
+  step-up writes into the new `gfx_off_y`/`step_speed` fields,
+  `NPC.cs:6095`/`:6097`).
+- **The 22/57/58 arms are untouched**: the Poltergeist's caster stand and
+  the MourningWood/Pumpking hovers keep their S1-F-13b stand-ins (other
+  workers' slices); the `ai3_walk_speed` 6.0 rows stay as the cap pins
+  the family tests read.
 
 ## The frame phase split (S1-B-8)
 
@@ -20849,3 +21076,72 @@ only READS `ai[2] == 0`), and `FindFrame`'s style-39 tail (`:77292+`:
 `type != 417` zeroes the rotation, `frameCounter += |vx| * 1.1`, the 6-px
 frame bands). The four unported kinds (153/154/496/497) ride
 `Style39Type` + `size_override` until their `NpcKind`s land.
+## The aiStyle-26 tails (S1-F-13b2 slice B, 2026-11-19, code-only mode)
+
+Branch `task/S1-F-13b2-unicorn-b`, disjoint from slice A
+(`task/S1-F-13b2-unicorn`'s `npc_ai_unicorn.rs` + `Npc` field/dispatch
+edits). **Code-only mode: no compiler invoked on this branch** — no
+cargo/rustc/rustfmt/tests run; the `s1_f_13b2b_*` tests are written,
+not run, and the merge verification (the catalog `cargo test` command)
+belongs to the union step. Everything lives in the NEW file
+`crates/tr-app/src/npc_ai_unicorn_b.rs` (pure free functions over
+passed-in state — compiles against `origin/main` alone, sidestepping
+slice A's not-yet-merged `gfx_off_y`/`step_speed` fields and the private
+`frame_counter`), plus the `proj_data` 1001 row
+(`projectile/data.rs`) and its `mod` declaration.
+
+Ported, each with its C# cite in the file:
+- **FindFrame case 315** (`NPC.cs:74465-74497`): the ±1 turn dead-band
+  (runs even wet+airborne, before the reset), the airborne row-0 reset,
+  the |vx|-per-tick gallop at >= 8, wrap past row 10 to row 1.
+- **FindFrame case 329** (`NPC.cs:74375-74403`): falling row 3 / rising
+  row 2 (counter 0, sprite untouched — the breaks precede the
+  `spriteDirection` assignment), the |vx|*0.4 walk at > 4 (strict),
+  clamp rows 2..=9. Row-index convention: the port's `frame: u32` is
+  the C# `frame.Y / num`, so the sheet row height `num` cancels; frame
+  counts 315=11 / 329=10 (`Main.cs:67082`, already in the port's
+  `NPC_FRAME_COUNT`).
+- **The gallop dust** (`NPC.cs:62421-62439`): rows 4..=7 only;
+  `Next(3)` ALWAYS when the gate passes, the two `NextFloat` jitters
+  (x then y) ONLY on the spawn branch, then `NewDustPerfect` type 6
+  with the NPC velocity — the empty-pool internals are seven further
+  draws (`Next(1)`×2, `Next(-20,21)`×2, `Next(3)`, `Next(-20,21)`,
+  `Next(-10,6)` — the type-6 tweak, `Dust.cs:214-221`); post-spawn
+  `scale 0.6 / fadeIn 1.1 / noGravity / noLight`, sentinel included.
+  The draws ride the UpdateNPCs stream IN-STEP at the C# position
+  (after the lob + AddLight, before the stuck counter) — deliberately
+  NOT the deferred spark-queue seam (`player.rs`), whose C# draws
+  happen outside the AI. Stream-replay witness tests clone the stream
+  and require state equality across seeds 0..8 × rows {3,4,7,8}.
+- **AddLight** (`NPC.cs:62420`): `Center`, (0.4, 0.36, 0.2), every
+  Horseman tick; render-side `EntityLights` feed (the `npc_lights.rs`
+  S1-E-5 precedent), no RNG.
+- **gfxOffY decay** (`NPC.cs:90395-90420`): pre-AI, after the
+  old-target/direction latches; `(1 + |vx|/3) * stepSpeed` toward 0,
+  zero-crossing snap, ±16 clamp. Render adds it to the draw Y
+  (`Main.cs:25414` etc.) at union.
+- **Projectile 1001** (`Projectile.cs:9511-9522`): the `proj_data` row
+  (26×26, aiStyle 194, hostile via the spawn seam, `tileCollide=false`,
+  `ignoreWater`, `timeLeft=360`, `alpha=255`, stock penetrate 1).
+
+Union points (the file's module docs carry the full wiring list):
+1. `gfx_off_y_decay` → `Npc::update_rng` ahead of the AI dispatch, on
+   slice A's fields.
+2. `horseman_gallop_dust` → slice A's `if horseman` block at the
+   deferred comment; `unicorn_step` gains `&mut DustPool` + `&SpawnCtx`
+   threaded from the `update_npcs` tick closure (the `audio` pattern).
+3. `horseman_light` → beside `npc_light` in `app/frame/draw.rs`'s NPC
+   light loop.
+4. The FindFrame fns → `Npc::find_frame`'s 315/329 arms (inside
+   `impl Npc`, so the private `frame_counter` needs no accessor).
+5. `horseman_pumpkin_scale` → the lob's FOURTH draw at slice A's queue
+   site (`Projectile.cs:9518`'s `Next(51)` runs at `NewProjectile` time
+   inside the AI); the value rides a new `HostileShotAi.scale` field to
+   the spawned slot. Rolling it at the post-tick drain instead would
+   move the draw past every later NPC's AI draws — a stream deviation,
+   so the row carries the 1f base only.
+
+Still deferred after the union: the aiStyle-194 flight
+(`AI_194_HorsemanPumpkin`, `Projectile.cs:41293`) — until it lands the
+1001 slot spawns with the row's data but no bespoke AI (the pool
+previously dropped the shot entirely for want of the row).
