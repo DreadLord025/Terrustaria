@@ -153,6 +153,9 @@ an agent needs before touching code.
 - `growth.rs` + `growth/trees.rs` + `growth/herbs.rs` — the `WorldGen.UpdateWorld`
   runtime growth ticks (grass/spread, vines/moss, shells, pumpkins, dye plants, the
   dispatchers).
+- `growth.rs` + `growth/trees.rs` + `growth/grass.rs` + `growth/decorations.rs` — the
+  `WorldGen.UpdateWorld` runtime growth ticks
+  (herbs, vines/moss, shells, pumpkins, the dispatchers).
   S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
   `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
   `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
@@ -162,6 +165,18 @@ an agent needs before touching code.
   `is_alchemy_plant_harvestable`/`is_harvestable_herb_with_seed` + their 5 tests) —
   verbatim move, public seams re-exported from `growth` (code-only mode,
   byte-proof, cargo gate deferred — ANALYSIS "S1-K-3d").
+  re-exported from `growth`. S1-K-3b split out the grass/spread family into
+  `growth/grass.rs` (`update_world_grass_growth`, `spread_grass`,
+  `moss_conversion`/`grow_moss_arm`, the M5-SPREAD-1 wall block —
+  `convert_wall_by_case`, `spread_grass_walls`, `spread_desert_walls`) —
+  verbatim move, public seams re-exported from `growth` (code-only mode,
+  byte-proof, cargo gate deferred — ANALYSIS "S1-K-3b").
+  re-exported from `growth`. S1-K-3c split out the decorations family into
+  `growth/decorations.rs` (`check_cat_tail`/`grow_cat_tail`,
+  `grow_check_seaweed`, `grow_web`, `plant_dye`/`place_dye`,
+  `try_growing_abigails_flower` + helpers and their 12 tests) — verbatim
+  move, public seams re-exported from `growth` (ANALYSIS "The decorations
+  split (S1-K-3c)").
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets
@@ -229,17 +244,23 @@ an agent needs before touching code.
 
   ```
   SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4,
-                   rot: f32, paint: f32, dye: u32, layer: u32, clip: vec4 }  // 80 B
+                   rot: f32, paint: f32, dye: u32, layer: u32, clip: vec4,
+                   blend: u32 }  // 84 B
   ```
 
   `clip` is the per-instance scissor rect (`clip.rs::NO_CLIP` when unclipped;
   `push_clip`/`pop_clip` intersect nested rects) — the UI batch is one draw call,
   so `OverflowHidden` (`UIElement.cs:199-238`) is a fragment `discard` rather than
   device scissor state (ANALYSIS "UI list clipping and the ∞-height parent").
+  `blend` is the blend-batch tag (`sprite.rs::BlendMode`, S1-G-3): 0 = the
+  alpha-blend default, 1 = `BlendState.Additive`, 2 = the custom
+  ReverseSubtract "multiply" state (`Main.cs:27462-27470`) — the C#'s
+  `End()`/`Begin(blendState)` pairs around `DrawProj_LightsBane`
+  (`Main.cs:27457-27494`) become contiguous blend runs inside a range.
 
   Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
   space), written as two `write_buffer` calls and drawn as 2 instanced calls of 6 vertices —
-  the scene renders through at most 6 draw calls (the background, world, world-fx, map-back, map and UI instance buffers — 3 + 3 under the split post path, with 1..4 filter passes on top; `sprite.rs::PASS_BUFFERS`). The ring has three buffers so a frame never rewrites
+  the scene renders through up to 6 draw calls (the background, world, world-fx, map-back, map and UI instance buffers — 3 + 3 under the split post path, with 1..4 filter passes on top; `sprite.rs::PASS_BUFFERS`). S1-G-3 splits a range into one draw per contiguous blend run, so a frame carrying the Lightsbane multiply/additive batches costs up to 8 (the world-fx or UI range holds three runs); an all-alpha frame keeps the 6. The ring has three buffers so a frame never rewrites
   memory the GPU may still be reading. An 8×8 bitmap font (`font8x8`) is baked into the
   atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
 - `sprite.wgsl` — `world = pos + rot(corner*size)`, then `(world - cam) * zoom + screen/2`
@@ -346,7 +367,7 @@ The three interfaces the refactor introduced, each mirroring a C# abstraction:
 
 | Decision | Why |
 | --- | --- |
-| One atlas + instancing | up to 6 draw calls regardless of scene complexity (one per instance buffer — `sprite.rs::PASS_BUFFERS`); no per-tile state changes |
+| One atlas + instancing | up to 6 draw calls regardless of scene complexity (one per instance buffer — `sprite.rs::PASS_BUFFERS`; S1-G-3's blend runs split a range only where the C# re-begins the batch with another BlendState — up to 8 with the Lightsbane batches live); no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
 | Screen-pixel snapping for entities | Player/NPC sprites are drawn at interpolated sub-pixel world positions; nearest sampling then changes the source texel phase every frame (visible as a face row appearing/disappearing). Rounding the sprite's top-left to an integer screen pixel keeps the texel grid fixed while the camera still moves smoothly |
 | Vanilla HUD textures and layout | The hotbar, hearts, breath and boss bar use the original `Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` sheets with the constants from `GUIHotbarDrawInner`, `ClassicPlayerResourcesDisplaySet` and `BigProgressBarHelper`, instead of custom panels |
