@@ -621,6 +621,12 @@ pub enum NpcKind {
     /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
     /// aiStyle 6, dmg 22, def 6, 60 HP).
     LeechBody,
+    /// `NPCID.LeechTail` (119) — the chain's closing link (`NPC.cs:
+    /// 10437-10452`: 14×14, aiStyle 6, dmg 18, def 10, 60 HP,
+    /// noGravity/noTileCollide, behindTiles). W-A2-3: the budget-exhausted
+    /// body spawns `type + 1` (`NPC.cs:51357`), and the tail rides the
+    /// leader-death list (`NPC.cs:51411`).
+    LeechTail,
     /// `NPCID.TheDestroyer` (134) — the mech worm (`NPC.cs:10659+`,
     /// the same-kind chain; M4-BOSS-7).
     TheDestroyer,
@@ -2639,8 +2645,8 @@ impl Npc {
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
-            // 115/117/118: knockBackResist 0.
-            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // 115/117-119: knockBackResist 0 (`NPC.cs:10448` — the tail).
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
             NpcKind::EyeOfCthulhu => 1.0,
@@ -2961,11 +2967,13 @@ impl Npc {
             NpcKind::BoundGoblin => 15,
             NpcKind::GoblinTinkerer => 15,
             NpcKind::KingSlime => 10,
-            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
-            // per-tick tiers ride `defense_override`.
+            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) / 119 (10,
+            // `:10444` — W-A2-3) — the hungry's per-tick tiers ride
+            // `defense_override`.
             NpcKind::Hungry => 10,
             NpcKind::LeechHead => 2,
             NpcKind::LeechBody => 6,
+            NpcKind::LeechTail => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
             NpcKind::EyeOfCthulhu => 12,
@@ -3295,8 +3303,9 @@ impl Npc {
             NpcKind::BoundGoblin => 0.0,
             NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
-            // The hungry/leech rows carry no value line.
-            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // The hungry/leech rows carry no value line (119 neither,
+            // `NPC.cs:10437-10452`).
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
             NpcKind::ServantOfCthulhu => 0.0,
@@ -4092,7 +4101,8 @@ impl Npc {
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail
             | NpcKind::LeechHead
-            | NpcKind::LeechBody => {}
+            | NpcKind::LeechBody
+            | NpcKind::LeechTail => {}
             // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
             // roster rides alive. The 11 aiStyle-3 walkers ride the walker
             // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
@@ -5583,7 +5593,9 @@ impl Npc {
                     self.frame_counter = 0.0;
                 }
             }
-            NpcKind::LeechHead | NpcKind::LeechBody => {
+            // 117-119: `Main.npcFrameCount` = 1 (`Main.cs:67095`), no
+            // `FindFrame` case — the single row (W-A2-3: the tail).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => {
                 self.frame = 0;
             }
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
@@ -11703,11 +11715,14 @@ impl Npc {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        // The steering toward the player (`:51670-51743`'s 9/0.3 pair).
+        // The steering toward the player (`:51670-51743`'s 9/0.3 pair —
+        // W-A2-3: read from the shared `worm_tunables` row, the same
+        // source the worm pass's head machine reads).
+        let (num45, num46) = self.kind.worm_tunables();
         let (dx, dy) = (pcx - cx, pcy - cy);
         let d = (dx * dx + dy * dy).sqrt().max(0.001);
-        self.vx += (dx / d * 9.0 - self.vx) * 0.3;
-        self.vy += (dy / d * 9.0 - self.vy) * 0.3;
+        self.vx += (dx / d * num45 - self.vx) * num46;
+        self.vy += (dy / d * num45 - self.vy) * num46;
         // The cycle.
         self.ai[2] += 1.0;
         let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
@@ -15354,6 +15369,9 @@ impl Npc {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            // W-A2-3: the leech tail's G6 key (the free 56 slot — the
+            // protocol id 148 is the wire space, not this one).
+            NpcKind::LeechTail => 56,
             NpcKind::TheDestroyer => 50,
             NpcKind::SkeletronPrime => 51,
             NpcKind::Retinazer => 52,
@@ -16009,6 +16027,7 @@ mod tests {
             NpcKind::EaterOfWorldsTail,
             NpcKind::LeechHead,
             NpcKind::LeechBody,
+            NpcKind::LeechTail,
             NpcKind::TheDestroyer,
         ] {
             assert!(
@@ -18417,19 +18436,46 @@ mod tests {
     fn the_leech_head_grows_the_chain() {
         // The leech head rides the worm pass: the init rolls the 3..5
         // budget (`AI_006`'s `Next(3, 6)`), the links chain via
-        // `worm_next`.
+        // `worm_next`. W-A2-3 (T3e): the budget-exhausted body spawns
+        // `type + 1` = the 119 tail (`NPC.cs:51357`), NOT another body.
         let w = ground_air();
         let mut leech = Npc::new(NpcKind::LeechHead, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
         leech.hp = leech.max_hp;
         assert!(leech.kind.is_worm() && leech.kind.is_worm_head());
         assert_eq!(leech.kind.worm_next(), NpcKind::LeechBody);
-        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechBody);
+        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechTail);
         assert_eq!(leech.max_hp, 60);
         assert_eq!(leech.defense(), 2);
         let mut body = Npc::new(NpcKind::LeechBody, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
         assert_eq!(body.max_hp, 60);
         assert_eq!(body.defense(), 6);
         assert_eq!(body.kind.contact_damage(), 22);
+        // The tail's `SetDefaults` row (`NPC.cs:10437-10452`): 14x14,
+        // 60 HP, def 10, dmg 18, the shared hit/death cues, kb 0.
+        let tail = Npc::new(NpcKind::LeechTail, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        assert_eq!(tail.size(), (14.0, 14.0));
+        assert_eq!(tail.max_hp, 60);
+        assert_eq!(tail.defense(), 10);
+        assert_eq!(tail.kind.contact_damage(), 18);
+        assert_eq!(tail.knock_back_resist(), 0.0);
+        assert!(tail.behind_tiles);
+        assert!(tail.kind.is_worm() && tail.kind.shares_carrier_life());
+        assert!(!tail.kind.is_worm_head() && !tail.kind.is_worm_mid());
+        assert_eq!(tail.kind.ai_style(), 6);
+        assert_eq!(tail.kind.hit_sound(), Some("NPC_Hit_9"));
+        assert_eq!(tail.kind.death_sound(), Some("NPC_Killed_12"));
+        // The protocol id round-trips (the free 148 hole) and the
+        // bestiary folds onto 117 like every other worm family.
+        assert_eq!(NpcKind::LeechTail.to_u16(), 148);
+        assert_eq!(NpcKind::from_u16(148), Some(NpcKind::LeechTail));
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::LeechTail, SlimeVariant::Blue).net_id,
+            117
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::LeechBody, SlimeVariant::Blue).net_id,
+            117
+        );
     }
 
     #[test]
@@ -19116,7 +19162,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 239] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19279,6 +19325,7 @@ mod tests {
         NpcKind::Hungry,
         NpcKind::LeechHead,
         NpcKind::LeechBody,
+        NpcKind::LeechTail,
         NpcKind::TheDestroyer,
         NpcKind::SkeletronPrime,
         NpcKind::Retinazer,

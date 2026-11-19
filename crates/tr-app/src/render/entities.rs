@@ -2210,7 +2210,10 @@ pub(crate) fn draw_npcs(
             NpcKind::Hungry => boss_draw(assets.hungry.as_ref(), 3, n, w, h),
                         // NPC_117 is 18x30 — one frame (`Main.npcFrameCount[117]` = 1); the
             // v1 drew a 14x14 box quad.
-            NpcKind::LeechHead | NpcKind::LeechBody => boss_draw(assets.leech.as_ref(), 1, n, w, h),
+            // W-A2-3: the 119 tail rides the same 1-frame family sheet.
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => {
+                boss_draw(assets.leech.as_ref(), 1, n, w, h)
+            }
             // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 let (tex, frames) = match n.kind {

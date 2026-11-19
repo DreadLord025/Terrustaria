@@ -2047,6 +2047,9 @@ pub fn try_entry_for_npc(
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // W-A2-3: the leech links fold like every other worm family (the
+        // vanilla credits the whole leech to 117).
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2071,6 +2074,8 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // W-A2-3: the leech links fold onto 117 like every other worm.
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

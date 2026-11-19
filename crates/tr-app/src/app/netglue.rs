@@ -2926,7 +2926,8 @@ fn npc_seed(
         // overwrites the position below (the hover arm's shape).
         crate::npc::NpcKind::Hungry
         | crate::npc::NpcKind::LeechHead
-        | crate::npc::NpcKind::LeechBody => {
+        | crate::npc::NpcKind::LeechBody
+        | crate::npc::NpcKind::LeechTail => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

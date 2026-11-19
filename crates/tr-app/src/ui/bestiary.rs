@@ -804,7 +804,9 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
         }
-        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) | (NpcKind::LeechTail, _) => {
+            (sheet_i, 14.0, 14.0, 14.0, white)
+        }
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {

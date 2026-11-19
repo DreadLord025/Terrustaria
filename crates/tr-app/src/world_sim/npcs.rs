@@ -1191,7 +1191,18 @@ pub(crate) fn update_worms_in(
         // the speed 8 with the +-0.05 spread, the spawn at the centre +
         // the aim x 5, `timeLeft = 300`. The vanilla's tail (136) never
         // fires; the port's last link rides along (the same kind).
-        if npcs[i].hp > 0 && npcs[i].seg_index > 0 && npcs[i].kind.worm_next() == npcs[i].kind {
+        if npcs[i].hp > 0
+            && npcs[i].seg_index > 0
+            && npcs[i].kind.worm_next() == npcs[i].kind
+            // W-A2-3: the laser is the Destroyer's OWN arm (`:49856`'s
+            // `type == 135` gate) — the same-kind-chain marker alone
+            // would catch the classic tails (DevourerTail/GiantWormTail
+            // and the new LeechTail map to themselves as the chain-end
+            // convention), leaking two rand draws per tail per tick.
+            // The kind gate keeps the stream Destroyer-only, exactly as
+            // the C# (the audit's §5 tail-laser leak, R55's catalogue).
+            && npcs[i].kind == NpcKind::TheDestroyer
+        {
             // `localAI[0] += Main.rand.Next(4)` and the
             // `Next(1400, 26000)` threshold (`NPC.cs:49858-49859`).
             npcs[i].caster_counter += rng.next_max(4) as i32;
@@ -1240,7 +1251,29 @@ pub(crate) fn update_worms_in(
             // `checkDead`), and so does the Destroyer's (`AI_037`'s
             // `NPC.cs:49820-49828`).
             if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                // W-A2-3 (T3b): the FULL `Transform(13, ai[0])` semantics
+                // (`NPC.cs:81084-81145`), not a bare kind swap: the
+                // bottom-anchored reposition (`:81092-81100`:
+                // `position.Y += height` before `SetDefaults`, `-= height`
+                // after) and the life rescale (`:81106-81110`:
+                // `life = oldLife * newLifeMax / oldLifeMax`, min 1, the
+                // integer multiply-then-divide order). The kind-keyed
+                // tables refresh defense/damage/size; the chain links
+                // (`worm_id`/`seg_index`) ride on — the new head keeps the
+                // old follower link (`ai[0]`), and `ai[2] = 0` means a
+                // split head never re-spawns a chain (the port's
+                // `seg_index > 0` budget gate holds that by construction).
+                let old_h = npcs[i].size().1;
+                let (old_life, old_max) = (npcs[i].hp, npcs[i].max_hp);
+                npcs[i].y += old_h;
                 npcs[i].kind = NpcKind::EaterOfWorldsHead;
+                npcs[i].y -= npcs[i].size().1;
+                npcs[i].max_hp = NpcKind::EaterOfWorldsHead.max_hp();
+                npcs[i].hp = if old_max > 0 {
+                    (old_life * npcs[i].max_hp / old_max).max(1)
+                } else {
+                    1
+                };
             } else {
                 npcs[i].hp = 0;
             }
@@ -1275,7 +1308,21 @@ pub(crate) fn update_worms_in(
             .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
         if !follower_alive {
             if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                // W-A2-3 (T3b): `Transform(15, 0f, ai[1])` — the same
+                // reposition + life rescale as the head split above
+                // (`NPC.cs:81092-81110`); the new tail keeps its leader
+                // link (`ai[1]` = the port's `seg_index - 1`).
+                let old_h = npcs[i].size().1;
+                let (old_life, old_max) = (npcs[i].hp, npcs[i].max_hp);
+                npcs[i].y += old_h;
                 npcs[i].kind = NpcKind::EaterOfWorldsTail;
+                npcs[i].y -= npcs[i].size().1;
+                npcs[i].max_hp = NpcKind::EaterOfWorldsTail.max_hp();
+                npcs[i].hp = if old_max > 0 {
+                    (old_life * npcs[i].max_hp / old_max).max(1)
+                } else {
+                    1
+                };
             } else {
                 npcs[i].hp = 0;
             }
@@ -3758,7 +3805,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // nearest player; the port polls the count delta (the flag edge is
     // the edge — the sim resets it to 0 on the summon, exactly like the
     // vanilla's `shadowOrbCount = 0`).
-    if app.world.shadow_orb_count >= 3 && !app.world.downed_eow {
+    // W-A2-3 (T3c): the gate is the C#'s LIVING-BOSS check
+    // (`WorldGen.cs:54296`: `!(AnyNPCs(266) & flag) && (!AnyNPCs(13) ||
+    // flag)` — the corruption arm reduces to `!AnyNPCs(13)`), NOT
+    // `downed_eow`: once the EoW is killed the orbs summon it again
+    // freely while none lives. The crimson-Brain arm still rides the
+    // heart-detection wave.
+    if app.world.shadow_orb_count >= 3
+        && !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+    {
         app.world.shadow_orb_count = 0;
         if let Some(p) = app.player.as_ref() {
             let (px, py) = p.center();
@@ -10147,6 +10205,251 @@ mod worm_tests {
         n.ai[2] = 599.0;
         n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         assert_eq!(n.ai[2], 0.0, "the counter resets");
+    }
+
+    #[test]
+    fn the_stardust_worm_head_joins_the_worm_pass_without_a_chain() {
+        // W-A2-3 (T3f): kind 144 rides `is_worm` now (`NPC.cs:51564-51567`
+        // — 402 IS an AI_006 kind, `flag3 = true` always), but it is a
+        // MINION: type 402 sits outside the `:51301` chain-spawn lists,
+        // so the pass never grows links and its own machine keeps the
+        // steering (`npc.rs::update_stardust_worm_head`).
+        assert!(NpcKind::StardustWormHead.is_worm());
+        assert!(!NpcKind::StardustWormHead.is_worm_head());
+        assert!(!NpcKind::StardustWormHead.is_worm_mid());
+        assert!(!NpcKind::StardustWormHead.shares_carrier_life());
+        assert_eq!(NpcKind::StardustWormHead.worm_tunables(), (9.0, 0.3));
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustWormHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        let mut npcs = vec![n];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        for _ in 0..8 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some((160.0 * TILE_PX, 116.0 * TILE_PX)),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert_eq!(npcs.len(), 1, "the lone minion grows no chain");
+        assert!(npcs[0].worm_inited, "the pass claims it (is_worm)");
+        // The pass's head machine never touches it (not is_worm_head):
+        // the velocity stays whatever its own machine wrote (zero here).
+        assert_eq!((npcs[0].vx, npcs[0].vy), (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_leech_chain_grows_a_tail_when_the_budget_runs_out() {
+        // W-A2-3 (T3e) witness: `AI_006`'s chain (`NPC.cs:51339-51366`) —
+        // the 117 head rolls `Next(3, 6)`, spawns 118; each 118 with
+        // `ai[2] > 0` spawns another 118 (`:51350-51353`); the exhausted
+        // body spawns `type + 1` = the 119 tail (`:51357`). The old
+        // `worm_next(LeechBody) == LeechBody` ended the chain tailless.
+        let world = fixture();
+        let mut head = Npc::new(
+            NpcKind::LeechHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(7);
+        // The draw census: the whole assembly consumes EXACTLY the
+        // head's one `Next(3, 6)` budget roll — the tail spawn and every
+        // link after it draw nothing (the laser gate is Destroyer-only,
+        // `NPC.cs:49856`'s `type == 135`).
+        let mut census = UnifiedRandom::new(7);
+        let budget = census.next_range(3, 6) as usize;
+        let mut next_id = 1u32;
+        for _ in 0..16 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some((160.0 * TILE_PX, 116.0 * TILE_PX)),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert_eq!(rng, census, "one budget roll, no other draw");
+        let tails = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::LeechTail)
+            .count();
+        let bodies = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::LeechBody)
+            .count();
+        assert_eq!(tails, 1, "the chain closes with exactly one 119 tail");
+        assert_eq!(bodies, budget, "the Next(3,6) budget: {bodies}");
+        assert_eq!(npcs.len(), 1 + bodies + 1, "head + bodies + tail");
+        assert_eq!(npcs[npcs.len() - 1].kind, NpcKind::LeechTail);
+        // The tail shares the head's pool (`realLife`, `:51360-51363`)
+        // and its strike lands on the carrier.
+        let pool = npcs[0].max_hp;
+        let tail = npcs.len() - 1;
+        let tail_x = npcs[tail].x;
+        assert!(Npc::strike_melee(
+            &mut npcs, tail, 9, tail_x, 0.0, false, None
+        ));
+        assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
+        assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
+    }
+
+    #[test]
+    fn the_eow_split_rescales_life_and_repositions_like_transform() {
+        // W-A2-3 (T3b) witness: `Transform` (`NPC.cs:81084-81145`) — the
+        // orphaned 14 becomes 13 (`:51513`), the followerless 14 becomes
+        // 15 (`:51517`); both carry the bottom-anchored Y reposition
+        // (`:81092-81100`) and `life = oldLife * newLifeMax / oldLifeMax`
+        // (min 1, `:81106-81110`). The port's EoW rows share lifeMax 150
+        // (`NPC.cs:8912`/`:8931`/`:8951`) so the ratio is 1:1 — the
+        // rescale must still run (a wounded body keeps its wound) and a
+        // zero-life edge floors at 1.
+        let world = fixture();
+        // A three-link EoW: head (seg 0), body (seg 1), tail (seg 2).
+        let mut head = Npc::new(
+            NpcKind::EaterOfWorldsHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.worm_id = 1;
+        head.worm_inited = true;
+        head.hp = head.max_hp;
+        let mut body = Npc::new(
+            NpcKind::EaterOfWorldsBody,
+            150.0 * TILE_PX,
+            113.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        body.worm_id = 1;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        body.hp = 75; // half life — the rescale keeps the ratio
+        let mut tail = Npc::new(
+            NpcKind::EaterOfWorldsTail,
+            150.0 * TILE_PX,
+            114.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        tail.worm_id = 1;
+        tail.seg_index = 2;
+        tail.worm_inited = true;
+        tail.hp = tail.max_hp;
+        let body_y = body.y;
+        let body_h = body.size().1;
+        let mut npcs = vec![head, body, tail];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 2u32;
+        // Kill the head: the body is orphaned → Transform(13). The
+        // player is None so the head machine does not integrate after
+        // the transform — the reposition assertion reads the split site
+        // alone (the C#'s new head steps AI_006 the same tick; that is
+        // the head machine's own hunk, R77's wave).
+        npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(npcs[1].kind, NpcKind::EaterOfWorldsHead, "the orphan became a head");
+        assert_eq!(npcs[1].hp, 75, "the life ratio rides the transform (150/150)");
+        assert_eq!(npcs[1].max_hp, 150);
+        // The 38x38 → 38x38 swap repositions by old_h - new_h = 0; the
+        // bottom anchor held (`y += old_h; y -= new_h`).
+        assert_eq!(npcs[1].y, body_y + body_h - npcs[1].size().1);
+        // The new head keeps its follower link — the tail survives.
+        assert!(npcs[2].hp > 0, "the tail keeps its leader (the new head)");
+        // Now kill the new head's follower (the tail): the head dies
+        // (`:51501-51509`) — and a followerless BODY would Transform(15).
+        // Direct witness of the tail arm: a fresh body with no follower.
+        let mut lone = Npc::new(
+            NpcKind::EaterOfWorldsBody,
+            150.0 * TILE_PX,
+            113.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        lone.worm_id = 2;
+        lone.seg_index = 1;
+        lone.worm_inited = true;
+        lone.hp = 1; // the min-1 floor arm
+        let mut leader = Npc::new(
+            NpcKind::EaterOfWorldsHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        leader.worm_id = 2;
+        leader.worm_inited = true;
+        leader.hp = leader.max_hp;
+        let mut pool = vec![leader, lone];
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            None,
+            &mut pool,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(pool[1].kind, NpcKind::EaterOfWorldsTail, "the followerless body became a tail");
+        assert_eq!(pool[1].hp, 1, "1 * 150 / 150 = 1 (the min-1 floor holds)");
+        assert_eq!(pool[1].max_hp, 150);
+    }
+
+    #[test]
+    fn the_orbs_resummon_the_eow_after_the_first_kill() {
+        // W-A2-3 (T3c) witness: `WorldGen.cs:54296` — the third-orb gate
+        // is `!AnyNPCs(13)` (a LIVING-head scan), NOT `downedBoss2`. Once
+        // the EoW is killed the counter's next third break summons it
+        // again; while a head lives the gate holds (the count is NOT
+        // reset — the C# leaves `shadowOrbCount` at 3 until a summon).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        // The first kill already happened: downed_eow is set.
+        app.world.downed_eow = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0),
+            "the orbs re-summon after the kill (the old !downed_eow gate blocked this)"
+        );
+        assert_eq!(app.world.shadow_orb_count, 0, "the summon resets the counter");
+        // While the head lives, the next third break does NOT summon.
+        app.world.shadow_orb_count = 3;
+        let heads_before = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+            .count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let heads_after = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+            .count();
+        assert_eq!(heads_after, heads_before, "AnyNPCs(13) blocks the second summon");
+        assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate leaves the count");
     }
 }
 
