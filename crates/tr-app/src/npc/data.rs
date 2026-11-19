@@ -434,6 +434,33 @@ impl NpcKind {
             NpcKind::Pumpking => 327,
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
+            // S1-D-3ff wave A — the 24 LOW-id kinds take the free
+            // 189..212 band (the port-local space; the moon kinds ride
+            // the vanilla 305-330 ids above it).
+            NpcKind::MotherSlime => 189,
+            NpcKind::LavaSlime => 190,
+            NpcKind::DungeonSlime => 191,
+            NpcKind::CorruptSlime => 192,
+            NpcKind::IlluminantSlime => 193,
+            NpcKind::IceSlime => 194,
+            NpcKind::Crimslime => 195,
+            NpcKind::SpikedIceSlime => 196,
+            NpcKind::UmbrellaSlime => 197,
+            NpcKind::CataractEye => 198,
+            NpcKind::SleepyEye => 199,
+            NpcKind::DialatedEye => 200,
+            NpcKind::GreenEye => 201,
+            NpcKind::PurpleEye => 202,
+            NpcKind::DoctorBones => 203,
+            NpcKind::TheGroom => 204,
+            NpcKind::BaldZombie => 205,
+            NpcKind::ZombieEskimo => 206,
+            NpcKind::PincushionZombie => 207,
+            NpcKind::SlimedZombie => 208,
+            NpcKind::SwampZombie => 209,
+            NpcKind::TwiggyZombie => 210,
+            NpcKind::FemaleZombie => 211,
+            NpcKind::ZombieRaincoat => 212,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344, above the whole port-local space exactly like the
             // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
@@ -672,6 +699,30 @@ impl NpcKind {
             327 => NpcKind::Pumpking,
             329 => NpcKind::Hellhound,
             330 => NpcKind::Poltergeist,
+            189 => NpcKind::MotherSlime,
+            190 => NpcKind::LavaSlime,
+            191 => NpcKind::DungeonSlime,
+            192 => NpcKind::CorruptSlime,
+            193 => NpcKind::IlluminantSlime,
+            194 => NpcKind::IceSlime,
+            195 => NpcKind::Crimslime,
+            196 => NpcKind::SpikedIceSlime,
+            197 => NpcKind::UmbrellaSlime,
+            198 => NpcKind::CataractEye,
+            199 => NpcKind::SleepyEye,
+            200 => NpcKind::DialatedEye,
+            201 => NpcKind::GreenEye,
+            202 => NpcKind::PurpleEye,
+            203 => NpcKind::DoctorBones,
+            204 => NpcKind::TheGroom,
+            205 => NpcKind::BaldZombie,
+            206 => NpcKind::ZombieEskimo,
+            207 => NpcKind::PincushionZombie,
+            208 => NpcKind::SlimedZombie,
+            209 => NpcKind::SwampZombie,
+            210 => NpcKind::TwiggyZombie,
+            211 => NpcKind::FemaleZombie,
+            212 => NpcKind::ZombieRaincoat,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
             // 338-344 decode here (the same ids `to_u16` encodes above).
             // `NPC.cs:13281-13368`.
@@ -1386,6 +1437,32 @@ impl NpcKind {
             NpcKind::Pumpking => "NPC_Hit_1",
             NpcKind::Hellhound => "NPC_Hit_1",
             NpcKind::Poltergeist => "NPC_Hit_1",
+            // S1-D-3ff wave A — every kind's `HitSound = SoundID.NPCHit1`
+            // (the `SetDefaults` rows cited in `npc.rs`'s enum).
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => "NPC_Hit_1",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCHit1` (`NPC.cs:13286`/`:13348`), 341's
             // `NPCHit4` (`:13322`), 342 and 344's `NPCHit7`
@@ -1604,6 +1681,36 @@ impl NpcKind {
             NpcKind::Pumpking => "NPC_Killed_1",
             NpcKind::Hellhound => "NPC_Killed_5",
             NpcKind::Poltergeist => "NPC_Killed_6",
+            // S1-D-3ff wave A — the `DeathSound` rows: the slimes and
+            // eyes NPCDeath1 (`NPC.cs:8973` etc.), the Illuminant Slime
+            // NPCDeath6 (`:10757`), the ten walkers NPCDeath2
+            // (`:9427`/`:9441`/`:10642`/`:11026`/`:11384`/`:11397`/
+            // `:11410` region/`:11423` region/`:11568` region/`:11881`
+            // region).
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => "NPC_Killed_1",
+            NpcKind::IlluminantSlime => "NPC_Killed_6",
+            NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => "NPC_Killed_2",
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
             // and the Yeti's `NPCDeath1` (`NPC.cs:13287`/`:13349`), 341 and
             // 342's `NPCDeath6` (`:13323`/`:13336`), 344's `NPCDeath5`
@@ -1627,10 +1734,27 @@ impl NpcKind {
             // aiStyle 0 - NPC.cs:10248, :10262, :10498, :13507, :13801, :16657
             NpcKind::SleepingAngler | NpcKind::WebbedStylist | NpcKind::SleepingGolfer | NpcKind::BoundWizard |
             NpcKind::BoundMechanic | NpcKind::BoundGoblin => 0,
-            // aiStyle 1 - NPC.cs:8576
-            NpcKind::Slime => 1,
+            // aiStyle 1 - NPC.cs:8576; wave A: :8968, :9520, :9702,
+            // :9842, :10752, :10851 region, :11336 region, :11350
+            // region, :11902 region.
+            NpcKind::Slime
+            | NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => 1,
             // aiStyle 2 - NPC.cs:8590, :10650
-            NpcKind::DemonEye | NpcKind::WanderingEye => 2,
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => 2,
             // aiStyle 3 - NPC.cs:8603, :9040, :9312, :11726, :11739, :11752, :11765, :11778, :12933, :13133, :13285, :13331, :13344, :13860, :13876, :13902, :13916, :13959, :13986, :15053, :15065, :15148, :15192, :15204, :15217, :15228, :15241, :15326, :15350, :15389, :15649, :15663, :15677, :15719, :15732, :15760
             NpcKind::Zombie | NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::GoblinThief | NpcKind::GoblinWarrior |
             NpcKind::GoblinArcher | NpcKind::GoblinPeon | NpcKind::GoblinSummoner | NpcKind::MartianOfficer |
@@ -1644,6 +1768,19 @@ impl NpcKind {
             NpcKind::Scarecrow6 | NpcKind::Scarecrow7 | NpcKind::Scarecrow8 | NpcKind::Scarecrow9 |
             NpcKind::Scarecrow10 | NpcKind::Splinterling | NpcKind::ZombieElf | NpcKind::ZombieElfBeard |
             NpcKind::ZombieElfGirl | NpcKind::GingerbreadMan | NpcKind::Yeti => 3,
+            // aiStyle 3 — wave A (`NPC.cs:9422`, :9436, :10637, :11021,
+            // :11379, :11392, :11405 region, :11418 region, :11563
+            // region, :11876 region).
+            NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => 3,
             // aiStyle 4 - NPC.cs:8707
             NpcKind::EyeOfCthulhu => 4,
             // aiStyle 5 - NPC.cs:8724, :8738, :9067, :9283
@@ -1820,6 +1957,23 @@ impl NpcKind {
             NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 1.0,
             NpcKind::Splinterling => 2.0,
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => 6.0,
+            // S1-D-3ff wave A — the `num107` group's per-type rows
+            // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
+            // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
+            // 186 1.1f (`:58329-58332`), 187 0.9f (`:58333-58336`),
+            // 188 1.2f (`:58337-58340`), 189 0.8f (`:58341-58344`),
+            // 200 0.87f (`:58349-58352`), 223 1.05f (`:58353-58356`).
+            // The `num107 *= 1f + (1f - scale)` factor (`:58374-58377`)
+            // is 1 for these kinds (the port carries no per-kind scale
+            // outside the slime variants — documented deviation).
+            NpcKind::DoctorBones | NpcKind::TheGroom | NpcKind::ZombieEskimo => 1.0,
+            NpcKind::BaldZombie => 0.95,
+            NpcKind::PincushionZombie => 1.1,
+            NpcKind::SlimedZombie => 0.9,
+            NpcKind::SwampZombie => 1.2,
+            NpcKind::TwiggyZombie => 0.8,
+            NpcKind::FemaleZombie => 0.87,
+            NpcKind::ZombieRaincoat => 1.05,
             // The Frost Moon family, slice A (`S1-F-13c`): the five
             // aiStyle-3 walkers. The Zombie Elf trio and the Gingerbread Man
             // ride the num83 group (`NPC.cs:57606`) — 338 → 1.75f
@@ -1861,8 +2015,38 @@ impl NpcKind {
     pub fn size(self) -> (f32, f32) {
         match self {
             NpcKind::Slime => (24.0, 18.0),
-            NpcKind::DemonEye | NpcKind::WanderingEye => (30.0, 32.0),
-            NpcKind::Zombie => (18.0, 40.0),
+            // S1-D-3ff wave A — the `SetDefaults` boxes: 16/71 36x24
+            // (`NPC.cs:8966-8967`/`:9700-9701`), 59/138/147/184 24x18
+            // (`:9518-9519`/`:10750-10751`/`:10849-10850` region/
+            // `:11348-11349` region), 81/183 40x30 (`:9840-9841`/
+            // `:11334-11335` region), 225 38x26 (`:11900-11901` region).
+            // The C# `scale` rows (1.25/1.1/1.05) are unported outside
+            // the slime variants — documented deviation.
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => (36.0, 24.0),
+            NpcKind::LavaSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::SpikedIceSlime => (24.0, 18.0),
+            NpcKind::CorruptSlime | NpcKind::Crimslime => (40.0, 30.0),
+            NpcKind::UmbrellaSlime => (38.0, 26.0),
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => (30.0, 32.0),
+            NpcKind::Zombie
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => (18.0, 40.0),
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
             NpcKind::Merchant => (18.0, 40.0),
@@ -2634,6 +2818,34 @@ impl NpcKind {
             NpcKind::Pumpking => 26000,
             NpcKind::Hellhound => 1800,
             NpcKind::Poltergeist => 1250,
+            // S1-D-3ff wave A — the `SetDefaults` lifeMax rows: 16 90
+            // (`NPC.cs:8971`), 59 50 (`:9523`), 71 150 (`:9705`), 81 170
+            // (`:9845`), 138 180 (`:10755`), 147 30 (`:10854` region),
+            // 183 200 (`:11339` region), 184 60 (`:11353` region),
+            // 225 35 (`:11905` region); 190 65 (`:11434`), 191/193/194
+            // 60 (`:11447`/`:11473`/`:11486`), 192 50 (`:11460`); 52 500
+            // (`:9425`), 53 200 (`:9439`), 132/187 40 (`:10640`/
+            // `:11395`), 161/186/223 50 (`:11024`/`:11382`/`:11879`
+            // region), 188/189 45 (`:11408` region/`:11421` region),
+            // 200 38 (`:11566` region).
+            NpcKind::MotherSlime => 90,
+            NpcKind::LavaSlime => 50,
+            NpcKind::DungeonSlime => 150,
+            NpcKind::CorruptSlime => 170,
+            NpcKind::IlluminantSlime => 180,
+            NpcKind::IceSlime => 30,
+            NpcKind::Crimslime => 200,
+            NpcKind::SpikedIceSlime => 60,
+            NpcKind::UmbrellaSlime => 35,
+            NpcKind::CataractEye => 65,
+            NpcKind::SleepyEye | NpcKind::GreenEye | NpcKind::PurpleEye => 60,
+            NpcKind::DialatedEye => 50,
+            NpcKind::DoctorBones => 500,
+            NpcKind::TheGroom => 200,
+            NpcKind::BaldZombie | NpcKind::SlimedZombie => 40,
+            NpcKind::ZombieEskimo | NpcKind::PincushionZombie | NpcKind::ZombieRaincoat => 50,
+            NpcKind::SwampZombie | NpcKind::TwiggyZombie => 45,
+            NpcKind::FemaleZombie => 38,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13294`/`:13301`/`:13309` —
             // 600/700/500), 341 900 (`:13321`), 342 750 (`:13334`),
@@ -2648,7 +2860,10 @@ impl NpcKind {
         }
     }
 
-    pub(super) fn contact_damage(self) -> i32 {
+    /// `NPC.defDamage`'s stand-in — the kind's `SetDefaults` contact
+    /// damage. `pub(crate)` since S1-D-3: the aiStyle-3 ladder's charge
+    /// family (`NPC.cs:58266`/`:58308`) restores/boosts it from `npc_ai`.
+    pub(crate) fn contact_damage(self) -> i32 {
         match self {
             NpcKind::Slime => 7,         // NPC.cs:8571
             NpcKind::DemonEye => 18,     // case 2
@@ -2901,6 +3116,38 @@ impl NpcKind {
             NpcKind::Pumpking => 50,
             NpcKind::Hellhound => 80,
             NpcKind::Poltergeist => 90,
+            // S1-D-3ff wave A — the `SetDefaults` damage rows: 16 20
+            // (`NPC.cs:8969`), 59 15 (`:9521`), 71 30 (`:9703`), 81 55
+            // (`:9843`), 138 70 (`:10753`), 147 8 (`:10852` region),
+            // 183 60 (`:11337` region), 184 12 (`:11351` region), 225 10
+            // (`:11903` region); 190/192 18 (`:11432`/`:11458`), 191 16
+            // (`:11445`), 193 20 (`:11471`), 194 14 (`:11484`); 52 20
+            // (`:9423`), 53 14 (`:9437`), 132 15 (`:10638`), 161/186/189/
+            // 223 16 (`:11022`/`:11380`/`:11419` region/`:11877` region),
+            // 187/188 13 (`:11393`/`:11406` region), 200 12 (`:11564`
+            // region).
+            NpcKind::MotherSlime => 20,
+            NpcKind::LavaSlime => 15,
+            NpcKind::DungeonSlime => 30,
+            NpcKind::CorruptSlime => 55,
+            NpcKind::IlluminantSlime => 70,
+            NpcKind::IceSlime => 8,
+            NpcKind::Crimslime => 60,
+            NpcKind::SpikedIceSlime => 12,
+            NpcKind::UmbrellaSlime => 10,
+            NpcKind::CataractEye | NpcKind::DialatedEye => 18,
+            NpcKind::SleepyEye => 16,
+            NpcKind::GreenEye => 20,
+            NpcKind::PurpleEye => 14,
+            NpcKind::DoctorBones => 20,
+            NpcKind::TheGroom => 14,
+            NpcKind::BaldZombie => 15,
+            NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::ZombieRaincoat => 16,
+            NpcKind::SlimedZombie | NpcKind::SwampZombie => 13,
+            NpcKind::FemaleZombie => 12,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13292`/`:13299`/`:13307` —
             // 65/52/78), 341 100 (`:13319`), 342 90 (`:13332`), 343 140

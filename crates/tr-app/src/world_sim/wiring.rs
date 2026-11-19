@@ -301,6 +301,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 }
             }
         }
+        // S1-E-21i — the timer expiries' Mech-28 clicks (`UpdateMech`'s
+        // case-144 `HitSwitch`, `Wiring.cs:2159`'s port; `WorldGen.cs:71509`
+        // calls `Wiring.UpdateMech` from `UpdateWorld`): the wiring tick
+        // rides the `UpdateWorldGen` swap (`Main.cs:17802-17805` →
+        // `UpdateWorld_WorldGenAndInvasion`), so the pitch draws use that
+        // stream — drained at the step tail like the statue spawns.
+        for (px, py) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            );
+        }
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
