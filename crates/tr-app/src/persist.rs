@@ -160,7 +160,8 @@ mod tests {
         p.x = 123.5;
         p.y = 45.25;
         p.hp = 73;
-        let path = std::env::temp_dir().join("tr-persist-test.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-player-state");
+        let path = dir.join("tr-persist-test.trwld");
         let mut inv = [(0u16, 0u32); 50];
         inv[0] = (2, 12);
         inv[1] = (3, 3);
@@ -187,12 +188,13 @@ mod tests {
         assert_eq!(s.inventory[49], (0, 0));
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, dye);
-        let _ = std::fs::remove_file(player_path(&path));
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
     fn version_3_loads_with_empty_armor() {
-        let path = std::env::temp_dir().join("tr-persist-v3.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v3");
+        let path = dir.join("tr-persist-v3.trwld");
         let mut line = String::from("3\n1.0 2.0 100\n");
         for _ in 0..50 {
             line.push_str("0 0 ");
@@ -201,14 +203,15 @@ mod tests {
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("v3 sidecar");
         assert_eq!(s.armor, [0, 0, 0]);
-        let _ = std::fs::remove_file(player_path(&path));
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// DW-4.2 (dirty): a v5 sidecar (no dye line) loads with every dye slot
     /// empty — the version-6 dye read is gated on the file version.
     #[test]
     fn version_5_loads_with_empty_dye() {
-        let path = std::env::temp_dir().join("tr-persist-v5.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v5");
+        let path = dir.join("tr-persist-v5.trwld");
         let mut line = String::from("5\n1.0 2.0 100\n");
         for _ in 0..50 {
             line.push_str("0 0 ");
@@ -218,13 +221,14 @@ mod tests {
         let s = load(&path).expect("v5 sidecar");
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, [0; 10]);
-        let _ = std::fs::remove_file(player_path(&path));
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// The same gate one version down: a v4 sidecar (armor, no kills, no dye).
     #[test]
     fn version_4_loads_with_empty_dye() {
-        let path = std::env::temp_dir().join("tr-persist-v4.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v4");
+        let path = dir.join("tr-persist-v4.trwld");
         let mut line = String::from("4\n1.0 2.0 100\n");
         for _ in 0..50 {
             line.push_str("0 0 ");
@@ -234,12 +238,13 @@ mod tests {
         let s = load(&path).expect("v4 sidecar");
         assert_eq!(s.armor, [91, 82, 78]);
         assert_eq!(s.dye, [0; 10]);
-        let _ = std::fs::remove_file(player_path(&path));
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
     fn migrates_version_2_kinds_to_item_ids() {
-        let path = std::env::temp_dir().join("tr-persist-v2.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v2");
+        let path = dir.join("tr-persist-v2.trwld");
         // Version 2: tile kinds and the wall/weapon/coin ranges. (The fixture
         // previously glued the version and position into one line — "210 20
         // 100" — so the version match failed and the test could never load.)
@@ -260,7 +265,7 @@ mod tests {
         assert_eq!(s.inventory[3], (42, 5));
         assert_eq!(s.inventory[4], (73, 5));
         assert_eq!(s.armor, [0, 0, 0]);
-        let _ = std::fs::remove_file(player_path(&path));
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     /// Task 9: the `.map` sidecar shares the world's stem, one directory up from

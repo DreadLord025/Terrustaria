@@ -18431,6 +18431,73 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## Test temp-path isolation (fix/test-temp-path-isolation, 2026-11-18)
+
+**The race.** Disk-writing tests joined CONSTANT names onto
+`std::env::temp_dir()` (`tr-s1-j-4-validate.trwld`, `tr-flow-char-fav`,
+`tr-persist-v3.trwld`, …). `%TEMP%` is per-user, not per-worktree: two gates
+running `cargo test` concurrently in sibling worktrees share every one of
+those paths — one gate's `remove_file`/`remove_dir_all` wipes the other's
+in-flight fixture, producing spurious "file not found"/parse failures that
+vanish on a serial re-run. The fix is test-code-only: every scratch output
+moves into a unique per-test directory
+`temp_dir()/tr-test-<pid>-<name>` (pid separates concurrent binaries, the
+test slug separates tests inside one binary), created empty and removed
+best-effort at the test's end. Committed fixtures (`assets/test/golden.*`)
+keep their paths — only scratch outputs moved.
+
+**The shared helper.** `crates/tr-app/src/test_world_helpers.rs` (the
+existing test-utils module) gains `test_scratch(name)` (wipe-stale +
+`create_dir_all`) and `remove_scratch(dir)` (errors ignored). The local
+`scratch`/`ach_scratch` (saveglue) and `temp_dir` (save_list) helpers now
+delegate to it; `tr-core`'s `wld/mod.rs` scratch helper already keyed on
+pid + name and stays local (tr-core cannot depend on tr-app).
+
+**Census — fixed constant paths (all fixed, pre-fix file:line):**
+
+- `crates/tr-app/src/achievements.rs:914` (`tr-ach-test.trdat`)
+- `crates/tr-app/src/app/flow.rs:2040` (`terrustaria-delete-gate.trwld`),
+  `:2481` (`tr-flow-char-fav`)
+- `crates/tr-app/src/app/mod.rs:4955` (`tr-dw-1-6-pins.trwld`), `:5004`
+  (`tr-dw-1-6-clear.trwld`)
+- `crates/tr-app/src/app/saveglue.rs:955, 1192, 1242, 1289, 1328, 1373,
+  1431, 1458, 1498, 1594, 1637` (the DW-2.x / S1-J-4 / S1-J-7 round-trip
+  files)
+- `crates/tr-app/src/persist.rs:163, 195, 211, 227, 242` (the sidecar
+  version fixtures)
+- `crates/tr-app/src/ui/save_list.rs:453-454` (the fixed-name `temp_dir`
+  helper; callers `:526, 557, 582, 630, 645, 740, 797, 818, 972`), plus
+  `:575` (`tr-savelist-nope`) and `:634` (`tr-savelist-noplayers`) — the
+  two missing-dir probes now point at an absent child of a unique dir
+- `crates/tr-app/src/ui/world_creation.rs:1501, 1532`;
+  `crates/tr-app/src/ui/world_select.rs:1417`
+
+**Census — already pid-unique (safe across gates, left as-is):**
+`assets.rs:3115, 3140`; `app/worldgen_job.rs:265, 308`;
+`app/mod.rs:4591, 4655, 4673`; `app/flow.rs:2988`; `map.rs:882`;
+`ui/ingame_options.rs:2319`; `tr-core/src/wld/mod.rs:1151`; saveglue's
+`scratch`/`ach_scratch` (`:417, :1666`, now delegating). `tools/` uses
+Python `tempfile.TemporaryDirectory`/`mkdtemp` (`GenItemData/gen.py:3035`,
+`GenItemData/test_gen.py:20`, `GenSortData/gen.py:372`) — already unique.
+No `%TEMP%` literals or hardcoded `Temp` paths exist in test code.
+
+**Code-only note.** Written under the swarm's code-only directive: no
+cargo/rustc/rustfmt/test runs, no compiler invoked; style matched by hand.
+Concurrency verification is DEFERRED to the compile window — run the same
+filter twice in parallel, once per worktree (PowerShell):
+
+```powershell
+Start-Job -Name gateA { Set-Location 'C:\Users\DreadLord\Desktop\TR-tmpfix';
+    cargo test -p tr-app --bin terraria-rust saveglue 2>&1 }
+Start-Job -Name gateB { Set-Location 'C:\Users\DreadLord\Desktop\<sibling-worktree>';
+    cargo test -p tr-app --bin terraria-rust saveglue 2>&1 }
+Receive-Job gateA -Wait; Receive-Job gateB -Wait
+# both must print `test result: ok` (cargo may exit 1 on success here —
+# judge only by the result lines). Repeat with the filters `persist`,
+# `savelist`, `worldcreate`, `dw_1_6` and finally the full gate:
+# cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
+```
+
 <!-- Folded pending ANALYSIS entry (S1-I-4c sync fold, 2026-11-19) -->
 # INTENT: ANALYSIS note for S1-I-4 wave C (task/S1-I-4c)
 
