@@ -500,6 +500,15 @@ impl WindGrid {
         }
     }
 
+    /// The grid clock (`_gameTime`, `WindGrid.cs:36`): every `Update` ticks
+    /// it, so a stamp's push window decays even while the player stands
+    /// still. The G6 world-range key mixes it in when vine strips are on
+    /// screen (S1-G-1) — the push decay changes pixels without any other
+    /// key input moving.
+    pub fn key(&self) -> u32 {
+        self.game_time as u32
+    }
+
     /// `WindGrid.SetWindTime` (`WindGrid.cs:64-71`).
     pub fn set_wind_time(&mut self, tile_x: i32, tile_y: i32, direction_x: i32, direction_y: i32) {
         let idx = (tile_x.rem_euclid(self.width as i32) * self.height as i32
@@ -514,7 +523,7 @@ impl WindGrid {
 
 /// `Utils.Clamp` (`Utils.cs:223-234`): the C#'s clamp tests the max
 /// first, so a reversed range folds onto the max.
-fn cs_clamp(value: i32, min: i32, max: i32) -> i32 {
+pub(crate) fn cs_clamp(value: i32, min: i32, max: i32) -> i32 {
     if value > max {
         return max;
     }
