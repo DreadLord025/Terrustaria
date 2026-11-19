@@ -18,8 +18,10 @@ use tr_core::World;
 pub struct WalkerParams {
     /// The walk speed toward the player (`npc.velocity.X`'s target).
     pub speed: f32,
-    /// The jump velocity at a blocked path (`AI_003`'s `velocity.Y = -6.2`
-    /// for the humanoids; the skeleton family jumps the 3-tile walls).
+    /// The jump velocity at a blocked path (`AI_003`'s `velocity.Y = -6f`
+    /// for the humanoids, `NPC.cs:60125`; the skeleton family jumps the
+    /// 3-tile walls). S1-D-3z: the old `-6.2` cite was wrong — no such
+    /// constant exists in the C# arm.
     pub jump: f32,
     /// The aggro radius in pixels (`AI_003`'s 80-tile × 40-tile window for
     /// the zombie; the skeletons see further).
@@ -29,9 +31,13 @@ pub struct WalkerParams {
 
 impl WalkerParams {
     /// The zombie's numbers (`AI_003_Fighters`' defaults, `NPC.cs:10586+`).
+    /// S1-D-3z: the jump is the C#'s `-6f` (`NPC.cs:60125`), not -6.2. The
+    /// 0.6 speed / 80×40 box are the legacy archetype stand-ins the
+    /// test-only `walker_step` reads; the live zombie path rides the
+    /// `num107` ladder + the despawn-discouragement gate instead.
     pub const ZOMBIE: Self = Self {
         speed: 0.6,
-        jump: -6.2,
+        jump: -6.0,
         aggro_x: 80.0 * TILE_PX,
         aggro_y: 40.0 * TILE_PX,
     };
@@ -39,7 +45,7 @@ impl WalkerParams {
     /// on the aiTimer).
     pub const WANDER: Self = Self {
         speed: 0.5,
-        jump: -6.2,
+        jump: -6.0,
         aggro_x: 0.0,
         aggro_y: 0.0,
     };

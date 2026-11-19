@@ -429,7 +429,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SwampZombie
         | NpcKind::TwiggyZombie
         | NpcKind::FemaleZombie
-        | NpcKind::ZombieRaincoat => &[],
+        | NpcKind::ZombieRaincoat
+        // S1-D-3z — the holiday zombies' null `DebuffImmunitySets` rows
+        // (`NPCID.cs:7964-7966` for 319-321, `:8024-8025` for 331-332).
+        | NpcKind::ZombieDoctor
+        | NpcKind::ZombieSuperman
+        | NpcKind::ZombiePixie
+        | NpcKind::ZombieXmas
+        | NpcKind::ZombieSweater => &[],
     }
 }
 

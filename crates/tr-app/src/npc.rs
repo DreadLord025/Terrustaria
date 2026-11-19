@@ -886,6 +886,31 @@ pub enum NpcKind {
     /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) — the rain zombie
     /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70.
     ZombieRaincoat,
+    // S1-D-3z (zombie fighter audit) — the five holiday zombie variants.
+    // All aiStyle 3 (`AI_003_Fighters`), 18x40, the case-3 walk strip
+    // (`NPC.cs:76338-76342`), `Main.npcFrameCount` 3 (`Main.cs:67115`/
+    // `:67116`/`:67117`). The halloween trio (319-321) carries `scale` rows;
+    // the xmas pair (331-332) is the base Zombie's stat twin.
+    /// `NPCID.ZombieDoctor` (319, `NPCID.cs:11315`) — the halloween zombie
+    /// (`NPC.cs:13033-13046`): 18x40, dmg 20, def 6, 40 HP, kb 0.6,
+    /// value 85, scale 0.9.
+    ZombieDoctor,
+    /// `NPCID.ZombieSuperman` (320, `NPCID.cs:11317`) — the halloween zombie
+    /// (`NPC.cs:13047-13060`): 18x40, dmg 15, def 8, 60 HP, kb 0.5,
+    /// value 105, scale 1.05.
+    ZombieSuperman,
+    /// `NPCID.ZombiePixie` (321, `NPCID.cs:11319`) — the halloween zombie
+    /// (`NPC.cs:13061-13074`): 18x40, dmg 20, def 14, 34 HP, kb 0.3,
+    /// value 120, scale 1.1.
+    ZombiePixie,
+    /// `NPCID.ZombieXmas` (331, `NPCID.cs:11339`) — the xmas zombie
+    /// (`NPC.cs:13204-13216`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
+    /// value 60 (the base Zombie's stat twin, no scale row).
+    ZombieXmas,
+    /// `NPCID.ZombieSweater` (332, `NPCID.cs:11341`) — the xmas zombie
+    /// (`NPC.cs:13217-13229`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
+    /// value 60 (the base Zombie's stat twin, no scale row).
+    ZombieSweater,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -1018,7 +1043,11 @@ pub struct Npc {
     /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
-    /// Accumulated daylight burn time (zombies only).
+    /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie
+    /// fighter audit): the C# `AI_003_Fighters` has no daylight damage, so
+    /// the zombie's dawn "burn" was removed in favour of `EncourageDespawn`
+    /// (`NPC.cs:57377-57380`). The field stays for struct-layout stability
+    /// but no machine reads or writes it.
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
@@ -2159,11 +2188,20 @@ impl Npc {
     }
 
     pub fn spawn_zombie(world: &World, x_tile: i32) -> Option<Self> {
+        Self::spawn_zombie_variant(world, x_tile, NpcKind::Zombie)
+    }
+
+    /// S1-D-3z — a zombie-family variant at the surface, the same placement
+    /// as [`Self::spawn_zombie`] (feet on the column top, the liquid gate,
+    /// the -1 initial facing). The holiday arms of the night ladder
+    /// (`NPC.cs:4727-4735`) pick the variant by the vanilla type; the kind
+    /// carries its own `SetDefaults` stats + scale (`Npc::new`).
+    pub fn spawn_zombie_variant(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
             return None;
         }
-        let (w, h) = NpcKind::Zombie.size();
+        let (w, h) = kind.size();
         let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
         let y = top as f32 * TILE_PX - h;
         if collides_rect(world, x, y, w, h) {
@@ -2172,7 +2210,7 @@ impl Npc {
         if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
             return None;
         }
-        Some(Self::new(NpcKind::Zombie, x, y, -1, 0.0))
+        Some(Self::new(kind, x, y, -1, 0.0))
     }
 
     /// Demon eyes spawn a few tiles above the surface and ignore gravity.
@@ -2245,6 +2283,10 @@ impl Npc {
                 .pumpkin_moon_defaults()
                 .map(|d| d.scale)
                 .or_else(|| kind.frost_moon_defaults().map(|d| d.scale))
+                // S1-D-3z — the halloween zombie trio's scale rows
+                // (`NPC.cs:13045`/`:13059`/`:13073`); the xmas pair and
+                // every other kind keep the 1f default.
+                .or_else(|| kind.holiday_zombie_scale())
                 .unwrap_or(1.0),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -2704,6 +2746,12 @@ impl Npc {
             | NpcKind::ZombieRaincoat => 0.45,
             NpcKind::SlimedZombie | NpcKind::TwiggyZombie => 0.55,
             NpcKind::FemaleZombie => 0.6,
+            // S1-D-3z — the holiday zombies' `SetDefaults` knockBackResist
+            // rows: 319 0.6 (`NPC.cs:13043`), 320 0.5 (`:13057`), 321 0.3
+            // (`:13071`), 331/332 0.5 (`:13214`/`:13227`).
+            NpcKind::ZombieDoctor => 0.6,
+            NpcKind::ZombieSuperman | NpcKind::ZombieXmas | NpcKind::ZombieSweater => 0.5,
+            NpcKind::ZombiePixie => 0.3,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13295`/`:13302`/`:13310` —
             // 0.4/0.2/0.25), 341 0.25 (`:13325`), 342 0.2 (`:13337`),
@@ -3031,6 +3079,12 @@ impl Npc {
             NpcKind::BaldZombie => 5,
             NpcKind::SlimedZombie => 6,
             NpcKind::TwiggyZombie | NpcKind::FemaleZombie => 4,
+            // S1-D-3z — the holiday zombies' `SetDefaults` defense rows:
+            // 319 6 (`NPC.cs:13039`), 320 8 (`:13053`), 321 14 (`:13067`),
+            // 331/332 6 (`:13210`/`:13223`).
+            NpcKind::ZombieDoctor | NpcKind::ZombieXmas | NpcKind::ZombieSweater => 6,
+            NpcKind::ZombieSuperman => 8,
+            NpcKind::ZombiePixie => 14,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's three rows (`NPC.cs:13293`/`:13300`/`:13308` —
             // 18/24/14), 341 32 (`:13320`), 342 26 (`:13333`), 343 50
@@ -3357,6 +3411,13 @@ impl Npc {
             NpcKind::ZombieEskimo | NpcKind::SwampZombie => 80.0,
             NpcKind::SlimedZombie => 55.0,
             NpcKind::TwiggyZombie | NpcKind::ZombieRaincoat => 70.0,
+            // S1-D-3z — the holiday zombies' `SetDefaults` value rows
+            // (copper): 319 85 (`NPC.cs:13044`), 320 105 (`:13058`),
+            // 321 120 (`:13072`), 331/332 60 (`:13215`/`:13228`).
+            NpcKind::ZombieDoctor => 85.0,
+            NpcKind::ZombieSuperman => 105.0,
+            NpcKind::ZombiePixie => 120.0,
+            NpcKind::ZombieXmas | NpcKind::ZombieSweater => 60.0,
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
             // group's 1200 (`NPC.cs:13288`), 341 2000 (`Item.buyPrice(0, 0,
             // 20)` = 20 silver, `:13324`), 342 1800 (`:13338`), 343 3000
@@ -3768,7 +3829,15 @@ impl Npc {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => self.update_zombie(world, player, dt),
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies ride the same aiStyle-3 walker
+            // (the C#'s `AI_003_Fighters` is one arm per style; the per-type
+            // rows are stats + the `num107` cap, `NPC.cs:58322-58401`).
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => self.update_zombie(world, player, dt),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -5760,7 +5829,14 @@ impl Npc {
             | NpcKind::SwampZombie
             | NpcKind::TwiggyZombie
             | NpcKind::FemaleZombie
-            | NpcKind::ZombieRaincoat => {
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies ride the SAME case-3 arm
+            // (`NPC.cs:76338-76342` lists 319-321/331-332), the 3-row strip.
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater => {
                 self.find_frame_wave_a(
                     crate::npc_findframe_a::find_frame_kind(self.kind)
                         .expect("a wave-A kind"),
@@ -6797,7 +6873,17 @@ impl Npc {
             && world.day_time
             && !self.spawned_from_statue
             && !((self.y as f64) > world.world_surface * 16.0);
-        if !discouraged {
+        // S1-D-3z (zombie fighter audit) — the chase gate's MISSING idle
+        // term: `NPC.cs:57336` is `ai[3] < num57 && NotDiscouraged(...)`,
+        // and `num57` is 60 for the zombie family (the type-120 row's 180,
+        // `:57035-57038`, cannot fire for these kinds). The batch-1
+        // `walker_step_fighter` already carries this term (`npc_ai.rs`);
+        // the zombie's own inline fold dropped it, so a zombie whose idle
+        // counter reached 60 kept chasing instead of wandering. `ai[3]` is
+        // the idle counter `world_sim/npcs.rs` ticks ahead of `update_rng`
+        // (`ambient_sound::fighter_idle_counter`, `NPC.cs:57034-57149`).
+        let num57 = 60.0;
+        if self.ai[3] < num57 && !discouraged {
             // The `EverLastingTicker` is not plumbed into `Npc::update`
             // yet; the stamp's only C# reader is the unported target-line
             // fade (`Main.cs:57174`) — 0 until the caller migration.
@@ -6820,7 +6906,44 @@ impl Npc {
                 self.vx *= 0.9;
             }
         } else {
-            self.vx *= 0.9;
+            // S1-D-3z (zombie fighter audit) — the discouraged arm is the
+            // C#'s wander-flip + daytime despawn (`NPC.cs:57375-57401`), NOT
+            // the port's old `vx *= 0.9` decay. For the zombie family
+            // `CanBeBusyWithAction` is false (`:60332-60339` — none of the
+            // listed types), so the `else if` at `:57375` always runs when
+            // the chase gate fails.
+            //
+            // `:57377-57380` — the daytime flee-despawn gate:
+            // `IsItDay() && position.Y / 16 < worldSurface && type != 624
+            // && type != 631` → `EncourageDespawn(10)`. The zombie family is
+            // never 624/631. NOTE the boundary is `<` on the TILE coordinate
+            // (`position.Y / 16`), distinct from the chase gate's `>` on
+            // pixels (`:60302`). This REPLACES the port's invented daylight
+            // "burn" (`hp -= 6`/sec) — the C# has no such damage; the zombie
+            // leaves via the 10-tick `timeLeft` window (`:7249-7256`,
+            // `:77986-77996`), which `world_sim/npcs.rs` ticks and culls.
+            if world.day_time && (self.y as f64 / 16.0) < world.world_surface {
+                self.encourage_despawn(10);
+            }
+            // `:57381-57397` — the wander-flip: grounded and stopped, the
+            // `ai[0]` idle counter advances and flips the direction every 2
+            // ticks; any horizontal motion resets it.
+            if self.vx == 0.0 {
+                if self.vy == 0.0 {
+                    self.ai[0] += 1.0;
+                    if self.ai[0] >= 2.0 {
+                        self.facing = -self.facing;
+                        self.sprite_dir = self.facing;
+                        self.ai[0] = 0.0;
+                    }
+                }
+            } else {
+                self.ai[0] = 0.0;
+            }
+            // `:57398-57401` — a zero direction snaps to +1.
+            if self.facing == 0 {
+                self.facing = 1;
+            }
         }
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
 
@@ -6828,8 +6951,14 @@ impl Npc {
         if !collides_rect(world, nx, self.y, w, h) {
             self.x = nx;
         } else if self.on_ground {
-            // Jump a one-tile ledge or wall instead of grinding into it.
-            self.vy = -6.2;
+            // S1-D-3z (zombie fighter audit) — the blocked-path jump is the
+            // C#'s `velocity.Y = -6f` (`NPC.cs:60125`, the one-tile-wall
+            // step-up arm of `AI_003_Fighters`' obstacle scan), NOT the
+            // port's old -6.2 (no such constant exists in the C# arm). The
+            // collision-jump stand-in keeps the C#'s velocity; the full
+            // step-up/door-bash scan (`:59831-60088`) is the documented
+            // remainder (ANALYSIS "The zombie fighter audit").
+            self.vy = -6.0;
             self.on_ground = false;
         } else {
             self.vx = 0.0;
@@ -6850,15 +6979,12 @@ impl Npc {
             self.vy = 0.0;
         }
 
-        if world.day_time {
-            self.burn += 1.0 / 60.0;
-            if self.burn >= 1.0 {
-                self.burn -= 1.0;
-                self.hp -= 6;
-            }
-        } else {
-            self.burn = 0.0;
-        }
+        // S1-D-3z (zombie fighter audit) — the port's old daylight "burn"
+        // (`self.burn += 1/60; hp -= 6` per second) is REMOVED: the C#
+        // `AI_003_Fighters` has no daylight damage — the zombie leaves via
+        // `EncourageDespawn(10)` in the discouraged arm above
+        // (`NPC.cs:57377-57380`). ANALYSIS's "the vanilla burn" label was a
+        // misread; the `burn` field is now unused by this machine.
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -15439,6 +15565,13 @@ impl Npc {
             NpcKind::TwiggyZombie => 189,
             NpcKind::FemaleZombie => 200,
             NpcKind::ZombieRaincoat => 223,
+            // S1-D-3z — the holiday zombies' vanilla types (the G6 key stays
+            // injective; none of 319-321/331-332 is used by another arm).
+            NpcKind::ZombieDoctor => 319,
+            NpcKind::ZombieSuperman => 320,
+            NpcKind::ZombiePixie => 321,
+            NpcKind::ZombieXmas => 331,
+            NpcKind::ZombieSweater => 332,
             // The Frost Moon family, slice A (`S1-F-13c`): the vanilla type
             // ids (the same values `to_u16` rides) — unused by every arm
             // above, so the G6 key stays injective.
@@ -16424,7 +16557,12 @@ mod tests {
     }
 
     #[test]
-    fn zombie_walks_to_the_player_and_burns_at_dawn() {
+    fn zombie_walks_to_the_player_and_despawns_at_dawn() {
+        // S1-D-3z (zombie fighter audit) — repointed off the removed
+        // daylight "burn": the C# `AI_003_Fighters` deals NO daylight
+        // damage; the zombie leaves via `EncourageDespawn(10)`
+        // (`NPC.cs:57377-57380`) and the 10-tick `timeLeft` cull
+        // (`:77986-77996`).
         let mut w = ground();
         let mut player = Player::spawn(&w);
         for _ in 0..120 {
@@ -16439,13 +16577,19 @@ mod tests {
         assert!(zombie.x < start_x, "zombie walked the wrong way");
         assert!(player.hp < player.max_hp, "hp {}", player.hp);
 
-        // Daylight burns the zombie away.
+        // Daylight: the zombie takes NO damage (the burn is gone) but the
+        // discouraged arm arms the 10-tick despawn window.
         w.day_time = true;
         let hp = zombie.hp;
-        for _ in 0..600 {
-            zombie.update(&w, &mut player, 1.0 / 60.0);
+        zombie.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(zombie.hp, hp, "daylight deals no damage (the burn is removed)");
+        assert_eq!(zombie.despawn_timer, 10, "EncourageDespawn(10) armed");
+        // The sim's per-tick `timeLeft--` + cull (`world_sim/npcs.rs`) drops
+        // it once the window expires — mirrored here.
+        for _ in 0..10 {
+            zombie.tick_despawn();
         }
-        assert!(zombie.hp < hp, "hp {} stayed at {hp}", zombie.hp);
+        assert!(zombie.despawn_expired(), "the 10-tick window expired");
     }
 
     #[test]
@@ -19127,7 +19271,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 243] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19360,6 +19504,12 @@ mod tests {
         NpcKind::TwiggyZombie,
         NpcKind::FemaleZombie,
         NpcKind::ZombieRaincoat,
+        // S1-D-3z — the holiday zombie variants.
+        NpcKind::ZombieDoctor,
+        NpcKind::ZombieSuperman,
+        NpcKind::ZombiePixie,
+        NpcKind::ZombieXmas,
+        NpcKind::ZombieSweater,
         NpcKind::ZombieElf,
         NpcKind::ZombieElfBeard,
         NpcKind::ZombieElfGirl,
@@ -26101,6 +26251,8 @@ mod s1_d_2_tests {
     // scratch helpers (MERGER-P6 first-compile fix).
     use super::tests::{bare, ground, ALL_KINDS};
     use tr_core::world::World;
+    // S1-D-3z — the holiday-zombie / audit witnesses build their own walls.
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
     /// extracted mechanically from the 1.4.5.8 decompile (the compound
@@ -26745,6 +26897,212 @@ mod s1_d_2_tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    }
+
+    // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +
+    // the live-path audit fixes. Tests-as-code, WRITTEN NOT RUN (code-only
+    // mode — no compiler invoked). Every constant pins to its C# literal. ----
+
+    /// The five holiday zombies' `SetDefaults` rows (`NPC.cs:13033-13074`
+    /// for 319-321, `:13204-13229` for 331-332): size, aiStyle, lifeMax,
+    /// damage, defense, value, knockBackResist — and the halloween trio's
+    /// scale rows (`:13045`/`:13059`/`:13073`).
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale)
+        let table = [
+            (NpcKind::ZombieDoctor, 319, 18.0, 40.0, 3, 40, 20, 6, 85.0, 0.6, 0.9),
+            (NpcKind::ZombieSuperman, 320, 18.0, 40.0, 3, 60, 15, 8, 105.0, 0.5, 1.05),
+            (NpcKind::ZombiePixie, 321, 18.0, 40.0, 3, 34, 20, 14, 120.0, 0.3, 1.1),
+            (NpcKind::ZombieXmas, 331, 18.0, 40.0, 3, 45, 14, 6, 60.0, 0.5, 1.0),
+            (NpcKind::ZombieSweater, 332, 18.0, 40.0, 3, 45, 14, 6, 60.0, 0.5, 1.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale) in table {
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(n.scale, scale, "{kind:?} scale");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The null `DebuffImmunitySets` rows (`NPCID.cs:7964-7966`/
+            // `:8024-8025`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(
+                !b.buff_immune.iter().any(|x| *x),
+                "{kind:?} null immunity row"
+            );
+        }
+    }
+
+    /// The protocol ids ride the free 221..225 band and round-trip; the
+    /// vanilla types (319-321/331-332) are distinct from the protocol ids.
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_protocol_ids_round_trip() {
+        let table = [
+            (NpcKind::ZombieDoctor, 221u16),
+            (NpcKind::ZombieSuperman, 222),
+            (NpcKind::ZombiePixie, 223),
+            (NpcKind::ZombieXmas, 224),
+            (NpcKind::ZombieSweater, 225),
+        ];
+        for (kind, id) in table {
+            assert_eq!(kind.to_u16(), id, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            // The band stays clear of the taken 213-220 martian/fishron band
+            // and the 148 LeechTail hole.
+            assert!(id >= 221 && id <= 225, "{kind:?} off the free band");
+        }
+    }
+
+    /// The `num107` walk cap (`NPC.cs:58322-58401`): all five ride the 1f
+    /// default (no per-type override at `:58329-58364`); 331/332 are in the
+    /// `:58374` scale-factor set but their scale is 1f, so the effective
+    /// cap is 1f for all five.
+    #[test]
+    fn s1_d_3z_the_holiday_zombie_walk_caps() {
+        for kind in [
+            NpcKind::ZombieDoctor,
+            NpcKind::ZombieSuperman,
+            NpcKind::ZombiePixie,
+            NpcKind::ZombieXmas,
+            NpcKind::ZombieSweater,
+        ] {
+            assert_eq!(kind.ai3_walk_speed(), Some(1.0), "{kind:?} num107 cap");
+        }
+    }
+
+    /// The holiday zombies ride the case-3 walk strip through the bridge
+    /// (`NPC.cs:76338-76342`): the stand row 0, the |vx| bands, the air pin.
+    #[test]
+    fn s1_d_3z_the_holiday_zombies_walk_the_three_rows() {
+        for kind in [
+            NpcKind::ZombieDoctor,
+            NpcKind::ZombieSuperman,
+            NpcKind::ZombiePixie,
+            NpcKind::ZombieXmas,
+            NpcKind::ZombieSweater,
+        ] {
+            let mut n = bare(kind);
+            n.frame = 2;
+            n.frame_counter = 12.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 0.0), "{kind:?} stand");
+            // Airborne pins row 2.
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} air");
+        }
+    }
+
+    /// AUDIT FIX A — the daylight "burn" is REMOVED: the C# `AI_003_Fighters`
+    /// deals no daylight damage; the zombie leaves via `EncourageDespawn(10)`
+    /// (`NPC.cs:57377-57380`). A daytime tick above the surface arms the
+    /// 10-tick window and leaves HP untouched.
+    #[test]
+    fn s1_d_3z_daylight_arms_despawn_not_burn() {
+        let mut w = ground();
+        w.day_time = true;
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        let hp = z.hp;
+        z.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z.hp, hp, "no daylight damage (the burn is removed)");
+        assert_eq!(z.despawn_timer, 10, "EncourageDespawn(10)");
+        // Below the surface the daytime gate does NOT fire (`:57377`'s
+        // `position.Y / 16 < worldSurface`).
+        let mut deep = Npc::spawn_zombie(&w, 30).unwrap();
+        deep.y = (w.world_surface as f32 + 10.0) * TILE_PX;
+        deep.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(deep.despawn_timer, -1, "below the surface: no despawn");
+    }
+
+    /// AUDIT FIX B — the blocked-path jump is the C#'s `-6f`
+    /// (`NPC.cs:60125`), not the port's old -6.2.
+    #[test]
+    fn s1_d_3z_the_blocked_path_jump_is_minus_six() {
+        let mut w = ground();
+        // A wall directly in the zombie's path.
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        z.on_ground = true;
+        z.vx = 1.0;
+        // Place a solid tile immediately to the right at body height so the
+        // X move collides while grounded.
+        let tx = ((z.x + z.size().0 + 1.0) / TILE_PX) as i32;
+        let ty = ((z.y + z.size().1 - 1.0) / TILE_PX) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        z.update(&w, &mut player, 1.0 / 60.0);
+        // The jump velocity is -6 (the C# literal), not -6.2.
+        assert!(z.vy <= -6.0 && z.vy > -6.2, "the -6f jump, got {}", z.vy);
+    }
+
+    /// AUDIT FIX C — the chase gate carries the `ai[3] < num57` idle term
+    /// (`NPC.cs:57336`): a zombie whose idle counter reached 60 stops
+    /// chasing (the wander arm runs instead).
+    #[test]
+    fn s1_d_3z_the_chase_gate_carries_the_idle_term() {
+        let mut w = ground();
+        w.day_time = false; // night: the despawn-discouragement gate passes
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        // Idle counter below 60: the chase runs (the target is acquired).
+        z.ai[3] = 0.0;
+        z.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z.target, 0, "the chase acquires the target");
+        // Idle counter at 60: the chase gate fails — the target is NOT
+        // re-acquired (the wander arm runs). Reset the target sentinel and
+        // confirm the chase does not fire.
+        let mut z2 = Npc::spawn_zombie(&w, 30).unwrap();
+        z2.ai[3] = 60.0;
+        z2.target = 255;
+        z2.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(z2.target, 255, "ai[3] >= num57 blocks the chase");
+    }
+
+    /// The zombie machine consumes ZERO `Main.rand` draws — the audit fixes
+    /// (despawn gate, wander-flip, jump) are all draw-free, and the moan
+    /// arms ride the caller's stream in `world_sim/npcs.rs`, not here. The
+    /// `UnifiedRandom` PartialEq mirror pins the stream position.
+    #[test]
+    fn s1_d_3z_the_zombie_machine_consumes_no_rand_draws() {
+        let mut w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut z = Npc::spawn_zombie(&w, 30).unwrap();
+        let mut rng = tr_core::UnifiedRandom::new(12345);
+        let before = rng.clone();
+        for _ in 0..60 {
+            z.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, before, "the zombie machine draws nothing");
+        // Daytime too (the despawn arm is draw-free).
+        w.day_time = true;
+        for _ in 0..60 {
+            z.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(rng, before, "the daytime despawn arm draws nothing");
     }
 
 }

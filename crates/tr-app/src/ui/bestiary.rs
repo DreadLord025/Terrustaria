@@ -1494,6 +1494,13 @@ fn portrait_data(
         | NpcKind::TwiggyZombie
         | NpcKind::FemaleZombie
         | NpcKind::ZombieRaincoat, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // S1-D-3z — the holiday zombies' portrait rests the same 18x40
+        // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
+        (NpcKind::ZombieDoctor
+        | NpcKind::ZombieSuperman
+        | NpcKind::ZombiePixie
+        | NpcKind::ZombieXmas
+        | NpcKind::ZombieSweater, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 

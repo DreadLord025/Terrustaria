@@ -2704,7 +2704,15 @@ fn npc_seed(
         | crate::npc::NpcKind::SwampZombie
         | crate::npc::NpcKind::TwiggyZombie
         | crate::npc::NpcKind::FemaleZombie
-        | crate::npc::NpcKind::ZombieRaincoat => {
+        | crate::npc::NpcKind::ZombieRaincoat
+        // S1-D-3z — the holiday zombies plant their feet on the column
+        // surface like the wave-A walkers (the aiStyle-3 family machine
+        // takes over on the first tick).
+        | crate::npc::NpcKind::ZombieDoctor
+        | crate::npc::NpcKind::ZombieSuperman
+        | crate::npc::NpcKind::ZombiePixie
+        | crate::npc::NpcKind::ZombieXmas
+        | crate::npc::NpcKind::ZombieSweater => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::CataractEye

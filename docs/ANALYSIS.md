@@ -1635,6 +1635,10 @@ direction when it rises along the same x — so slimes float and bob at the surf
 flying demon eye steers toward the player with a sine bob (25 HP, 14 damage) and a zombie standing in for `AI_003_Fighters`: an 18×40 hitbox
 with 45 HP, 14 damage, a 0.6 px/tick chase toward the player, a jump when a one-tile ledge
 blocks the path, and 6 damage/second while the world is in daylight (the vanilla burn).
+**CORRECTION (S1-D-3z, 2026-11-19)**: "the vanilla burn" was a misread — the C#
+`AI_003_Fighters` deals NO daylight damage; the zombie leaves via
+`EncourageDespawn(10)` (`NPC.cs:57377-57380`). The invented burn is removed — see
+"The zombie fighter audit (S1-D-3z)" below.
 Night spawns mix zombies, demon eyes and slimes; daytime spawns are slimes. Up to four NPCs
 are kept near the player and respawn every six seconds.
 
@@ -25048,3 +25052,209 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The zombie fighter audit (S1-D-3z, code-only mode, 2026-11-19)
+
+Branch `fix/zombie-fighter-audit-defects` on the chain base `aab09419`
+(S1-D-3p walker migration batch 1). Scope: distrust-verbatim audit of the
+port's zombie fighter (`npc.rs::update_zombie`, the `AI_003_Fighters`
+family, `NPC.cs:55856-60339`) + the missing small zombie variant kinds.
+**Code-only mode — no cargo/rustc/rustfmt/tests invoked; every test below
+is WRITTEN, NOT RUN.**
+
+### The three verified defects (fixed)
+
+**A — the invented daylight burn.** The port accumulated `burn += 1/60`
+in daylight and dealt `hp -= 6` per second ("the vanilla burn", the old
+M4-first-pass note at ANALYSIS "NPCs and combat" — now corrected in
+place). The C# `AI_003_Fighters` has NO daylight damage anywhere in
+`:55856-60339`: the discouraged arm's daytime block is
+`if (Main.IsItDay() && (double)(position.Y / 16f) < Main.worldSurface
+&& type != 624 && type != 631) EncourageDespawn(10)` (`NPC.cs:57377-57380`)
+— a 10-tick `timeLeft` flee-despawn window (`EncourageDespawn`
+`:7249-7256`, the per-tick decrement + cull `:77986-77996`, mirrored by
+the port's `despawn_timer`/`tick_despawn` in `world_sim/npcs.rs`). Fix:
+the burn block is removed; the discouraged arm now calls
+`encourage_despawn(10)` under the C#'s gate. NOTE the two boundaries are
+different compares: the despawn gate is `<` on the TILE coordinate
+(`position.Y / 16 < worldSurface`), the chase-discouragement gate is `>`
+on PIXELS (`position.Y > worldSurface * 16`, `:60302`). The `burn` field
+stays in `Npc` for struct-layout stability but is RETIRED — no machine
+reads or writes it. The old test
+`zombie_walks_to_the_player_and_burns_at_dawn` is repointed to
+`zombie_walks_to_the_player_and_despawns_at_dawn` (no hp loss + the
+10-tick window armed + expired).
+
+**B — the blocked-path jump constant.** The port jumped `-6.2` at a
+blocked path; `-6.2` exists NOWHERE in the C# arm. The one-tile-wall
+step-up arm is `base.velocity.Y = -6f` (`NPC.cs:60125`, inside the
+obstacle scan's `SolidTileNoPlatforms(num198, num199 - 1)` branch
+`:60111-60128`; the taller walls jump `-8f`/`-7f` `:60102`/`:60107`, the
+slope arm `-5f` `:60131`). Fix: `update_zombie`'s jump → `-6.0`;
+`npc_ai.rs::WalkerParams::ZOMBIE`/`WANDER` jump → `-6.0` and the false
+`-6.2` cite corrected to `NPC.cs:60125`. The port keeps its
+collision-jump STAND-IN (jump whenever the horizontal move is blocked
+and grounded) — the full door-bash / step-up scan (`:59831-60088`) is
+the documented remainder below.
+
+**C — the chase gate's missing idle term.** C# `NPC.cs:57336` is
+`if (this.ai[3] < (float)num57 && NPC.DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged(...))`;
+`num57` is 60 for the zombie family (the 180 override is the type-120
+row, `:57035-57038`, unreachable for these kinds). The port's inline
+fold tested only `!discouraged`, so a zombie whose idle counter reached
+60 kept chasing instead of wandering. Fix: `self.ai[3] < 60.0 &&
+!discouraged`. `ai[3]` is the fighter idle counter that
+`world_sim/npcs.rs` ticks via `ambient_sound::fighter_idle_counter`
+(`NPC.cs:57034-57149`) BEFORE `update_rng` (the S1-E-21 wave E wiring —
+unchanged by this task). The batch-1 `walker_step_fighter`
+(`npc_ai.rs`) already carried this term; the zombie's own fold had
+dropped it. The discouraged arm itself was also wrong (`vx *= 0.9`
+decay): it now ports the C#'s else-if body (`NPC.cs:57375-57401`) — for
+the zombie family `CanBeBusyWithAction` is false (none of the listed
+types, `:60332-60339`), so the arm always runs when the gate fails: the
+daytime despawn (defect A), then the wander-flip (grounded + stopped →
+`ai[0]++`, flip `direction`/`spriteDirection` every 2 ticks; any
+horizontal motion resets `ai[0]`; `:57381-57397`), then the zero-direction
+snap to +1 (`:57398-57401`).
+
+### The audited-CORRECT rows (no changes)
+
+The existing 10 zombie variants' `SetDefaults` stat rows (dmg/def/hp/
+kb/value/size), the banner id 87 rows (`BannerSystem.cs:645-667`), the
+`npcFrameCount` 3 rows, the `FindFrame` case-3 arm membership
+(`NPC.cs:76324-76391`), the debuff-immunity null rows
+(`NPCID.cs:7964-7966`/`:8024-8025` → `npc_buffs.rs` `&[]`) and the
+`num107` walk caps (`npc/data.rs::ai3_walk_speed`, `NPC.cs:58322-58401`)
+were re-read against the C# entry-by-entry and found CORRECT — no
+numeric changes.
+
+### The five missing kinds (added, fully wired)
+
+The holiday zombies — the C# night-spawn ladder's halloween/xmas arms
+(`NPC.cs:4727-4735`: `Main.halloween && Next(2) == 0` →
+`Next(319, 322)`; `Main.xMas && Next(2) == 0` → `Next(331, 333)`):
+
+| vanilla type | kind | protocol id | dmg/def/hp/kb/value | scale | SetDefaults cite |
+| --- | --- | --- | --- | --- | --- |
+| 319 ZombieDoctor | `NpcKind::ZombieDoctor` | 221 | 20/6/40/0.6/85 | 0.9 | `NPC.cs:13033-13046` |
+| 320 ZombieSuperman | `NpcKind::ZombieSuperman` | 222 | 15/8/60/0.5/105 | 1.05 | `NPC.cs:13047-13060` |
+| 321 ZombiePixie | `NpcKind::ZombiePixie` | 223 | 20/14/34/0.3/120 | 1.1 | `NPC.cs:13061-13074` |
+| 331 ZombieXmas | `NpcKind::ZombieXmas` | 224 | 14/6/45/0.5/60 | — | `NPC.cs:13204-13216` |
+| 332 ZombieSweater | `NpcKind::ZombieSweater` | 225 | 14/6/45/0.5/60 | — | `NPC.cs:13217-13229` |
+
+Protocol ids 221-225 verified free in `npc/data.rs::to_u16` (the taken
+bands: 213-220 entirely, 148, 353/354 — none touched). All five: aiStyle
+3 (`:13037`/`:13051`/`:13065`/`:13208`/`:13221`), 18×40 box (the scale
+rows ride `Npc::scale`, NOT the hitbox), `NPC_Hit_1`/`NPC_Killed_2`,
+`npcFrameCount` 3 (`Main.cs:67115` for 319, `:67116` for 320-321,
+`:67117` for 331-332), the SAME `FindFrame` case-3 arm as the other
+walkers (`NPC.cs:76338-76342` lists them), banner 87, no buff
+immunities, name "Zombie" (en-US NPCs.json; `lang_tables.rs` already
+carried the rows). The `num107` cap is 1f for all five: 319/320/321 are
+NOT in the `:58374` scale-factor set; 331/332 are, but their C# scale is
+1f (no `SetDefaults` scale row), so `1f * (1 + (1 - 1)) = 1f`. The
+halloween trio's scale rides the new `NpcKind::holiday_zombie_scale()`
+(0.9/1.05/1.1) chained into `Npc::new`'s scale lookup after the
+pumpkin/frost rows. Wiring: every exhaustive `NpcKind` match extended
+(`to_u16`/`from_u16`/`hit_sound`/`death_sound`/`ai_style`/
+`ai3_walk_speed`/`size`/`max_hp`/`contact_damage` in `npc/data.rs`;
+knockback/defense/value/`update_kind_ai`/`find_frame`/`render_key`/
+`ALL_KINDS` (238→243)/scale chain in `npc.rs`), bestiary entries,
+`npc_buffs` `&[]`, `netglue` `npc_seed`, `render/entities.rs` draw arm +
+`HOLIDAY_ZOMBIE_SHEETS` (NPC_319/320/321/331/332 chained into
+`npc_sheets`), `assets.rs` `STATIC_SHEET_NAMES`, `ui/bestiary.rs`
+portrait arm, `ambient_sound.rs::fighter_walker_kind` (all fifteen
+variants — the idle counter + the moan pass, see the RNG argument),
+`npc_findframe_a.rs` (5 `FindFrameKind` variants, count 3,
+the walker arm — `all_ten_walkers_share_the_zombie_arm` →
+`all_fifteen_walkers_share_the_zombie_arm`). New
+`Npc::spawn_zombie_variant(world, x_tile, kind)` carries the shared
+placement (feet on the column top, the liquid gate, the -1 initial
+facing); `spawn_zombie` delegates with `NpcKind::Zombie`. The spawner's
+halloween/xmas arms now spawn the matching variant kinds — the DRAW
+ORDER is unchanged (the gate's `Next(2)` then the type pick `Next(3)`/
+`Next(2)`), only the spawned kind differs; the fingerprint test
+`the_endless_holiday_flags_gate_the_spawner_holiday_arms` accepts
+Doctor/Superman/Pixie.
+
+### The RNG argument
+
+The machine draws ZERO `Main.rand` values. Every rand site in the
+audited C# block is either (a) the seven ambient-moan arms
+(`NPC.cs:57340-57367`, inside the chase gate, `shimmerTransparency < 1`
+— the port's coverage rides `ambient_sound::fighter_ambient_moans` on
+the CALLER's `UpdateNPCs` stream in `world_sim/npcs.rs`, the S1-E-21
+wave E wiring; the type-3 family's `Next(1000)` at `:57340` already
+lists 319/320/321/331/332 and the ten wave-A variant types, so the moan
+TABLE needed no change), or (b) dust/gore cosmetics outside the audited
+fold (the standing cosmetic-skip pattern). The one wiring gap this
+audit closed: `ambient_sound::fighter_walker_kind` (the kind gate for
+BOTH the idle-counter tick and the moan pass) listed only the base
+`Zombie` — the ten wave-A variants and the five new holiday kinds were
+missing, so their `ai[3]` never ticked (fix C would have been inert for
+them) and their C# moan rolls never ran (a stream shortfall vs the C#
+for those kinds). All fifteen now ride the gate — the same one
+`Next(1000)` per qualifying tick in the same stream position the C#
+draws for them. The three fixes themselves touch no draw: the burn
+removal deleted only hp arithmetic, the jump is a constant, the
+idle-gate term is a compare. The discouraged arm's wander-flip/despawn
+are draw-free in the C# too. The spawner change consumes the SAME draws
+in the SAME order (the `Next(2)` gate short-circuit preserved — on a
+classic world neither holiday roll runs). Witnesses:
+`s1_d_3z_the_zombie_machine_consumes_no_rand_draws` +
+`ambient_sound::s1_d_3z_the_zombie_variants_are_walker_kinds_and_moan_once`.
+
+### Deliberate deviations / remainder
+
+- **The door-bash / step-up scan** (`NPC.cs:59831-60088` + the jump
+  ladder `:60089-60138`): the port keeps the collision-jump stand-in
+  (blocked + grounded → jump) with the CORRECTED `-6f` velocity. The
+  full scan (the door-open/bash states, the 2/3-tile wall probes, the
+  `-8f`/`-7f`/`-5f` ladder rows, the slope arms) is the documented
+  remainder — a follow-up round.
+- **The `num107` ladder's position**: the C# runs the velocity ladder
+  (`:58322-58401`) UNCONDITIONALLY, outside the chase gate (an else-if
+  chain sibling of the per-type groups); the port keeps it INSIDE the
+  gate (the S1-D-3 speed-table wiring's pre-existing shape). A
+  discouraged zombie in the C# still brakes/accelerates toward its
+  wander direction; the port's discouraged arm only flips. Structural
+  deviation, unchanged by this task — recorded here for the follow-up.
+- **The discouraged-gate fold**: the port's inline `discouraged`
+  expression covers the zombie family's reachable terms only
+  (`!eclipse && day && !statue && !(y > surface*16)`); the full
+  `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+  (`:60300-60330`) lives in `npc_ai.rs::fighters_not_discouraged`
+  (batch 1) — the zombie's arm joins a migration batch later (the
+  S1-D-3p remainder).
+- **`burn` RETIRED, not deleted**: the field stays for struct-layout
+  stability; no reader/writer remains (grep-verified).
+- **The other fighters' `-6.2` jumps**: the same invented constant rides
+  ~25 other `WalkerParams` sites (the skeleton/goblin/pirate/scarecrow
+  families' `update_skeleton` folds, the wander stand-in `npc.rs:7604`,
+  the `npc_ai.rs` test params). They are the SAME defect class but
+  outside this task's zombie scope — left byte-identical for the sibling
+  walker audits (the `WalkerParams::ZOMBIE`/`WANDER` consts and the
+  zombie's own fold are the only sites this round corrects).
+- **The `directionY > 0` bottom-edge flip** (`NPC.cs:57370-57373`)
+  rides the shared `npc_target::target_closest` seam (S1-D-3p) —
+  unchanged.
+- **Expert/getGood**: no expert terms exist in the audited zombie path
+  (the armed-zombie spawns `:4717`/`:4737` are the spawner's separate
+  arms, out of scope).
+
+### Verification
+
+Code-only: the C# blocks re-read line-by-line in ≤240-line windows
+(`:57330-57409` the gate + discouraged arm, `:58322-58406` the num107
+ladder, `:60089-60138` the jump ladder, `:4700-4759` the spawn ladder,
+`:13033-13074`/`:13204-13229` the SetDefaults rows, `Main.cs:67082-67153`
+the frame counts); every exhaustive `NpcKind` match census-verified via
+the `ZombieRaincoat` touchpoint list (all other files' matches carry
+`_ =>` wildcards). Tests WRITTEN NOT RUN: the repointed dawn test + 8
+new `s1_d_3z_*` witnesses (`the_holiday_zombie_setdefaults_rows`,
+`the_holiday_zombie_protocol_ids_round_trip`,
+`the_holiday_zombie_walk_caps`, `the_holiday_zombies_walk_the_three_rows`,
+`daylight_arms_despawn_not_burn`, `the_blocked_path_jump_is_minus_six`,
+`the_chase_gate_carries_the_idle_term`,
+`the_zombie_machine_consumes_no_rand_draws`) + the extended findframe-a
+tables + the updated spawner fingerprint test — **no compiler invoked**.
