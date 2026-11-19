@@ -22544,3 +22544,89 @@ takes no RNG parameter and cannot perturb any stream; the witness
 of every kind (including the bomb's full fuse) to identical state
 and an untouched same-seed stream. When the dust/gore/audio feeds
 land, the draws must be re-armed in the C# order above.
+## The Queen Bee's aiStyle-43 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+
+`NPC.AI()`'s `else if (this.aiStyle == 43)` arm (`NPC.cs:30190-30860`) is
+ported 1:1 into `crates/tr-app/src/npc_ai_style43.rs` (`queen_bee_ai`) -
+the ONLY style-43 user is the Queen Bee (type 222, `SetDefaults`
+`NPC.cs:11855-11871`: 66x66, dmg 30, def 8, 3400 HP, kb 0, value 50000,
+boss, noGravity + noTileCollide, npcSlots 7; `NPCID.cs:11121`). The port's
+`NpcKind::QueenBee` already carries `ai_style() == 43` but runs the
+`update_queen_bee` v1 stand-in (an EoC-shaped cycle with the bee's numbers,
+`npc.rs`) - no enrage term, no state machine, no bees/stingers.
+
+**UNWIRED (the 8ac80b4e LostGirl precedent).** The hot `npc.rs` kind tables
+and the `update_rng` style axis are contested by the in-flight S1-D-3
+sibling branches, so this slice lands as pure functions. The merge step adds
+the `43 => crate::npc_ai_style43::queen_bee_ai(...)` axis arm, removes the
+v1 kind arm, and drains the `QueenBeeOut` payloads (the bee 210/211
+`NpcKind` rows + the 719 stinger `proj_data` row do not exist yet). The
+module writes velocity only - the C# `AI()` never integrates the position
+(`UpdateNPC`, `NPC.cs:90274`, does); the wiring keeps the sim's
+integration.
+
+**RNG argument (the arm is NOT draw-free).** Every `Main.rand` draw is
+cited and threaded through the caller's `UnifiedRandom` in C# order:
+state -1 the `do { Next(3) } while (== ai[1])` re-pick loop
+(`:30279-30292`, 1+ draws, mapped 1->2 / 2->3 so the picks are {0,2,3});
+state 1 `Next(20)` EVERY tick for the spawn-point X offset (`:30582`)
+then `Next(210, 212)` for the bee type only on a spawn tick (`:30628`);
+state 3 `Next(20)` EVERY tick (`:30701`) then the two jitter draws
+`Next(-num653, num653+1)` / `Next(-num654, num654+1)` only on a fire
+tick, X before Y (`:30739-30740`). States 0/2/4/5 and the head draw
+nothing; `TargetClosest` (`NPC.cs:77652-77781`, reused via
+`npc_target::target_closest` unchanged) is a deterministic scan. The
+witness `s1_d_3_s43_the_rng_draws_only_in_the_cited_states` pins an
+untouched stream across the draw-free states and the per-seed replay /
+cross-seed divergence of the volley.
+
+**Deliberate stand-ins / folds:**
+- `Main.expertMode`: the port is single-difficulty; the wiring passes
+  `expert = false` (the `eoc_fight.rs` `expert: bool` convention). The
+  parameter keeps the full expert ladders (the defense ramp over
+  `defDefense`, the charge 16+2-per-band, the hover caps, the turn
+  distances, the volley/stinger periods) portable and testable.
+- `Main.getGoodWorld`: read live from `world.seeds`
+  (`SeedFlags::FOR_THE_WORTHY`, the `variants.rs` convention); the
+  `num619 += 0.5f` term is armed.
+- `Main.netMode == 1` early return (`:30273-30276`) folds to the host
+  path; the `netMode != 1` spawn gates (`:30626`, `:30717`) always
+  fire on the host.
+- The `!Main.player[target].active` re-pick term (`:30197`) folds open -
+  the port's single session player is always active (slot 0).
+- The sounds (`SoundEngine.PlaySound(29, ..., 125)` `:30362`, `(3, ...)`
+  `:30625`, `SoundID.Item17` `:30716`) are skipped - no tracked sound
+  layer for this kind yet.
+- The bee's `CanBeReplacedByOtherNPCs = true` (`:30632`) has no port
+  field - dropped; `localAI[0] = 60` (`:30633`) and the `netUpdate`
+  ride the spawn payload for the wiring step.
+- The expert state-1 player count (`:30590-30598`) loops the 255 slots;
+  the port's one session player makes `num641 / 2` = 0 (INTEGER division)
+  - kept verbatim over the one candidate.
+- `flag52` (`:30707`) and the dead stores `num637 = num633/num637`
+  (`:30544`), `num640 = num644/sqrt(...)` (`:30644`), `num650 =
+  num646/num650` (`:30757`/`:30795`) are computed-then-unread in the C#
+  - dropped with this note (no side effects); `num633`/`num644`/
+  `num646` are kept `_`-named for the citations.
+- The `timeLeft < 60 -> 60` floor (`:30218-30221`) is verbatim over the
+  port's `despawn_timer` (the -1 never-despawn default clamps to 60 here
+  exactly as the C#'s default 600 would); the wiring step's boss-despawn
+  gate owns the survival semantics. `EncourageDespawn(10)` (`:30269`)
+  rides `Npc::encourage_despawn` (only ever lowers).
+- `Collision.CanHit` rides `projectile::can_hit` (`Collision.cs:381-479`
+  Bresenham walk); the vector77/79 spawn points use the C#'s INTEGER
+  `(width / 2)` half-width while the vector75..81 centres use the FLOAT
+  `width * 0.5f` - both forms kept verbatim (66/20 are even, so they
+  agree here, but the forms must not drift).
+
+**Code-only mode:** no cargo/rustc/rustfmt/tests invoked. 17 witness tests
+WRITTEN NOT RUN (`npc_ai_style43.rs` `tests`): the defaults-row pin, the
+enrage term's three gates + the strict surface `<`, the expert defense
+ramp (no compounding), the leash/dead-player/timeLeft gates, the flee
+drift both halves, the re-pick never-repeat, the cycle-end strict/even
+gate + the 0.5 truncation, the level charge's strict 20-px window + the
+12/16/24 speed ladder, the hover caps + X band, the turn brake/decel
+hand-off, the climb's strict 200 hand-off + the reversal double-add gate,
+the volley period/truncation/exit, the barrage period/bottom-edge gate/
+719-11-300 payload/expert ladder, the per-branch reversal boosts, the
+return steer + 2000 hand-off, the RNG witness, the bee line-of-sight gate.
