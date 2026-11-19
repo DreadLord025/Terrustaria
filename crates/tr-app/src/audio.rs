@@ -3109,6 +3109,10 @@ mod tests {
             "Zombie_23",
             "Zombie_109",
         ] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
     /// S1-E-21i — the wall-break play's RNG contract
     /// (`WorldGen.cs:60423-60441`'s four arms): Shatter (13) draws NOTHING,
     /// Grass (6) draws one `Next(-30, 31)`, NPCHit25 draws one
