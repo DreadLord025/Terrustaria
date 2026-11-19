@@ -7,9 +7,9 @@
 //! **Disjoint-file slice.** Slice A (`npc_ai_unicorn.rs`, branch
 //! `task/S1-F-13b2-unicorn`) owns the `AI_026_Unicorns` core and the
 //! `Npc` field/dispatch edits; this file is pure free functions over
-//! passed-in state so it compiles against `origin/main` alone. Nothing
-//! here is wired yet — the union points below say exactly where each
-//! function lands when the two branches merge. Code-only mode: the
+//! passed-in state so it compiles against `origin/main` alone. WIRED by
+//! S1-D-4 census slice W-10 (the union points below name the live call
+//! sites). Code-only mode: the
 //! tests are written, not run (no compiler invoked on this branch).
 //!
 //! # Union points (merge wiring, in C# order)

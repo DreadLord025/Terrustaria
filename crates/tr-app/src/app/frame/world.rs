@@ -393,6 +393,27 @@ impl App {
     self.update_waterfalls(dt, screen);
     }
 
+    /// `Main.AnimateTiles` (`Main.cs:17150`, body `:18516-19304`): the
+    /// pre-gate Animate cluster's tile animator, right after
+    /// `DoUpdate_AnimateWalls` (`:17149`) — like the waterfalls it ticks
+    /// while paused, on the shared 60 Hz accumulator (S1-G-1f wiring).
+    /// The two `Main.rand` drift draws (453/456) and the weather-vane bob
+    /// roll ride the bare-`Main.rand` stand-in (`NamedRngs::global()`),
+    /// the same stream the ambience scheduler draws; the
+    /// `WorldGen.isGeneratingOrLoadingWorld` gate is false in the frame
+    /// loop (the port's worldgen completes before it starts).
+    fn animate_tiles_phase(&mut self, dt: f32) {
+    self.phase("animate_tiles");
+    let wind = self.wind.speed_current;
+    let rng = self.rngs.global();
+    let step = &mut self.tile_anim_step;
+    let animator = &mut self.tile_anim;
+    step.tick(dt, |_| {
+        animator.animate_tiles(wind, rng, false);
+    });
+    step.cap_backlog();
+    }
+
     /// S1-B-3: the post-gate weather cluster (`Main.cs:17222`'s
     /// `Rain.MakeRain`, `:17228-17231`'s dayRate walks) — frozen while the
     /// pause gate holds, live on stepper-blocked frames.
@@ -576,6 +597,10 @@ impl App {
             self.growth_phase(dt);
         }
         self.waterfalls_phase(dt, screen);
+        // `Main.AnimateTiles` (`Main.cs:17150`) — the pre-gate Animate
+        // cluster, right after `DoUpdate_AnimateWalls` (`:17149`); the
+        // waterfall pass above stands in for the walls animator's slot.
+        self.animate_tiles_phase(dt);
         if !paused {
             self.weather_cluster(dt, screen);
         }

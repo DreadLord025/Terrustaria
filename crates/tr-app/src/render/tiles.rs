@@ -317,6 +317,12 @@ pub(crate) fn draw_tiles(
     wiring: &tr_core::wiring::Wiring,
     party_is_up: bool,
     show_invisible_blocks: bool,
+    // S1-G-1f: the wired tile animator (`Main.tileFrame`/`tileFrameCounter`,
+    // `Main.cs:1596-1597`) — `GetTileDrawData`'s `Main.tileFrame[typeCache]`
+    // row (`TileDrawing.cs:4533`), slice B's per-type counter and the
+    // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
+    // `App::animate_tiles_phase` (`Main.cs:17150`).
+    tile_anim: &tr_core::drawdata_anim::TileAnimator,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -333,9 +339,9 @@ pub(crate) fn draw_tiles(
     let y1 = ((max.y / TILE_PX).ceil() as i32 + 1).clamp(0, world.height - 1);
 
     // S1-F-9 slice B: the engine-driven `GetTileDrawData` cases' per-frame
-    // environment (`drawdata_cases_b.rs`). `tile_frame`/`counter` and the
-    // weather-vane bob stay 0 until the animator (wave B, `drawdata_anim.rs`)
-    // is wired — the vanilla t=0 state; the clock is
+    // environment (`drawdata_cases_b.rs`). S1-G-1f: the animator is WIRED —
+    // the weather-vane bob rides `TileAnimator::weather_vane_bobframe`
+    // (`Main.weatherVaneBobframe`, `Main.cs:2237`); the clock is
     // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`
     // (`Main.cs:16836`).
     let case_env = crate::drawdata_cases_b::CaseEnv {
@@ -343,7 +349,7 @@ pub(crate) fn draw_tiles(
         wind,
         wiring,
         inputs: crate::drawdata_cases_b::CaseInputs {
-            weather_vane_bobframe: 0,
+            weather_vane_bobframe: tile_anim.weather_vane_bobframe,
             player_center_x: player.map(|p| p.center().0),
             show_invisible_blocks,
             party_is_up,
@@ -640,19 +646,33 @@ pub(crate) fn draw_tiles(
                 // `GetTileDrawData`: per-type sprite size/top/flip/frame data
                 // (torches 20x20 with `tileTop 4`, plants 20 px, herbs,
                 // candles, palms, frame strides...). `tile_frame` is
-                // `Main.tileFrame[kind]`; the animator is not ported, so the
-                // vanilla t=0 state is passed.
+                // `Main.tileFrame[kind]` (`TileDrawing.cs:4533`), fed from
+                // the wired animator (S1-G-1f, `drawdata_anim.rs`).
                 let dd = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
+                    // The animator arrays are `[TileID.Count]`
+                    // (`Main.cs:66976-66977`); an out-of-range kind keeps the
+                    // vanilla t=0 row (the `solid` probe below bounds-checks
+                    // the same way).
+                    let anim_row = if (tile.kind as usize) < td::TILE_COUNT {
+                        tile_anim.animation_row(tile.kind)
+                    } else {
+                        0
+                    };
+                    let anim_counter = if (tile.kind as usize) < td::TILE_COUNT {
+                        tile_anim.tile_frame_counter[tile.kind as usize]
+                    } else {
+                        0
+                    };
                     let mut dd = tr_core::drawdata::draw_data(
                         tile.kind,
                         tx,
                         ty,
                         tile.frame_x,
                         tile.frame_y,
-                        0,
+                        anim_row,
                         solid_above,
                     );
                     // The world-probing frame corrections C# applies in
@@ -665,7 +685,7 @@ pub(crate) fn draw_tiles(
                         ty,
                         tile.frame_x,
                         tile.frame_y,
-                        0,
+                        anim_row,
                     );
                     // S1-F-9 slice B: the engine-driven special-tile cases
                     // (wind, the player, the party, pressed plates, echo
@@ -681,8 +701,8 @@ pub(crate) fn draw_tiles(
                         ty,
                         tile.frame_x,
                         tile.frame_y,
-                        0,
-                        0,
+                        anim_row,
+                        anim_counter,
                         dd,
                         &case_env,
                     ) {
@@ -825,6 +845,22 @@ pub(crate) fn draw_tiles(
                     continue;
                 }
                 stats.visible += 1;
+                // S1-G-1f: `DrawTile_BackRope` (`TileDrawing.cs:3766-3784`),
+                // wired at the two C# dispatch sites: `DrawBasicTile`'s
+                // planter/platform gate (`:1511-1514`, BEFORE the cell's own
+                // sprite) and `DrawTile_MinecartTrack` (`:3792`, before the
+                // track sprites). Both run after `DrawSingleTile`'s `!flag`
+                // return (`:1014-1017`) and the switch's early-return arms —
+                // the dark-cell merge, `skip_draw`, unframed and echo-hidden
+                // `continue`s above are those gates. The tint is the RAW
+                // `drawData.tileLight` (`:3781`, `raw_l` — never the
+                // actuation-ghosted `l`); the sheet/paint come from the rope
+                // tile at the column's top end (`:3776-3780`).
+                if crate::render::ropes::wants_back_rope(tile.kind) {
+                    stats.quads += crate::render::ropes::draw_back_rope(
+                        r, world, lookups, atlas, raw_l, style, anim_time, tx, ty, dd.flip,
+                    );
+                }
                 // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
                 // `SwaysInWindBasic` tiles draw with the grass wind counter —
                 // position shifted by `(cycle, |cycle|)` and rotated
@@ -1768,6 +1804,72 @@ fn draw_tile_flames(
 mod tests {
     use super::*;
     use tr_core::wind::Wind;
+
+    /// S1-G-1f draw-order witness: the back-rope hook sits at the C#
+    /// dispatch position — AFTER `DrawSingleTile`'s visibility gates
+    /// (`!flag` return `:1014-1017`, `IsVisible` `:983`, the dark-cell
+    /// merge) and BEFORE the cell's own sprite (`DrawBasicTile` draws it
+    /// first, `TileDrawing.cs:1511-1514`; `DrawTile_MinecartTrack` before
+    /// the track sprites, `:3792`). The tint argument is the RAW
+    /// `raw_l` (`drawData.tileLight`, `:3781`), never the ghosted `l`.
+    #[test]
+    fn back_rope_draws_after_the_gates_before_the_cell_sprite() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        // Cut before the test module — its own literals must not count.
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let visible = body.find("stats.visible += 1;").expect("the visibility gate");
+        let hook = body.find("ropes::wants_back_rope").expect("the back-rope hook");
+        let cell_sprite = body[hook..].find("if is_tree {").expect("the cell sprite arms");
+        assert!(
+            visible < hook,
+            "the back rope must draw after the visibility gates (the C# !flag return)"
+        );
+        assert!(
+            cell_sprite > 0,
+            "the back rope must draw before the cell's own sprite"
+        );
+        // The hook call passes the RAW light, not the actuation-ghosted `l`.
+        let call = &body[hook..hook + 400];
+        assert!(
+            call.contains("raw_l, style"),
+            "the tint is drawData.tileLight (TileDrawing.cs:3781), not finalColor"
+        );
+        // Exactly one dispatch site — the gate covers both C# call sites
+        // (380/platforms :1511 and the track :3792) via wants_back_rope.
+        assert_eq!(
+            body.matches("ropes::draw_back_rope").count(),
+            1,
+            "one hook, gated by wants_back_rope for both C# sites"
+        );
+    }
+
+    /// S1-G-1f draw-feed witness: the animator's rows/counters feed the
+    /// per-cell drawdata resolution (`Main.tileFrame[typeCache]`,
+    /// `TileDrawing.cs:4533`) — `draw_data`, `apply_world_corrections` and
+    /// `case_draw_data` all receive `anim_row`, and slice B's counter arm
+    /// receives `anim_counter`; the weather-vane bob rides `CaseInputs`.
+    #[test]
+    fn the_animator_rows_feed_the_drawdata_dispatch() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        assert!(
+            dd_block.contains("tile_anim.animation_row(tile.kind)"),
+            "draw_data's tile_frame is Main.tileFrame[kind]"
+        );
+        assert!(
+            dd_block.contains("tile_anim.tile_frame_counter[tile.kind as usize]"),
+            "slice B's counter is Main.tileFrameCounter[kind]"
+        );
+        // Both draw_data and apply_world_corrections take anim_row (the
+        // two `anim_row,` arguments), and case_draw_data takes the pair.
+        assert_eq!(dd_block.matches("anim_row,").count(), 3);
+        assert!(dd_block.contains("anim_counter,"));
+        assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
     // (`TileDrawing.cs:3578-3581` high arm, `:3634-3637` medium arm): the

@@ -100,8 +100,9 @@ pub const WOODEN_ARROW: u16 = 1;
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
-/// `ProjectileID.SnowBallHostile` (109) — the Mystery Snowman's aimed
-/// throw (`aiStyle 10`, `Projectile.cs` type 109's SetDefaults).
+/// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
+/// the port's `MysterySnowman`) aimed throw (`aiStyle 10`,
+/// `Projectile.cs` type 109's SetDefaults).
 pub const SNOW_BALL_HOSTILE: u16 = 109;
 /// `ProjectileID.BulletSnowman` (110) — the Snowman Gangsta's bottle
 /// throw (`aiStyle 1`, `Projectile.cs` type 110's SetDefaults).
@@ -1057,6 +1058,42 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
             // (the AI_037 arm overrides to 300 post-spawn).
             DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false, RESET_STATE),
+            // `Projectile.cs:1966-1977` — the SnowBallHostile (109): 10x10,
+            // aiStyle 10, hostile, `penetrate = -1`, `scale = 0.9f`, the
+            // stock 3600 life (the Balla's throw overrides it to 300,
+            // `NPC.cs:29088`). `knockBack = 6f` is overridden by the throw's
+            // `KnockBack: 0f` (`NPC.cs:29086`); `coldDamage`/`ranged` have no
+            // port field (the damage-class flags, ANALYSIS S1-D-3q).
+            SNOW_BALL_HOSTILE => (
+                10.0,
+                10.0,
+                10,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 0, 0.9),
+            ),
+            // `Projectile.cs:1978-1991` — the BulletSnowman (110): 4x4,
+            // aiStyle 1, hostile, `penetrate = -1`, `alpha = 255`,
+            // `scale = 1.2f`, `timeLeft = 600`, `extraUpdates = 1` (the
+            // Gangsta's throw overrides the life to 300, `NPC.cs:29026`).
+            // `light = 0.5f` (`:1985`) rides S1-E-5's `set_defaults_light`
+            // row for this kind (the data-carrying spawn copies it).
+            BULLET_SNOWMAN => (
+                4.0,
+                4.0,
+                1,
+                -1,
+                600,
+                1,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.2),
+            ),
             // `Projectile.cs:3417-3426` — the Fireball: 16x16, aiStyle 8,
             // `timeLeft = 300`, `penetrate = -1`, hostile, alpha 100.
             GOLEM_FIREBALL => (16.0, 16.0, 8, -1, 300, 0, true, false, false, RESET_STATE),
@@ -1599,12 +1636,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `Projectile.cs:1978-1991` — the Snowman Gangsta's bullet (110):
-            // 4x4, aiStyle 1, hostile, `penetrate = -1`, `light = 0.5f`,
-            // alpha 255, `scale = 1.2f`, `timeLeft = 600`, `extraUpdates = 1`
-            // (S1-E-5: the Frost Legion throw requests it, `npc.rs`'s Gangsta
-            // arm; the row lets the data-carrying spawn land it).
-            BULLET_SNOWMAN => (4.0, 4.0, 1, -1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // ---- The Frost Moon bosses' hostile shots (S1-F-13c wiring).
             // `Projectile.cs:4353-4360` — the Everscream's pine needle (345):
             // 4x4, aiStyle 1, hostile, `scale = 0.8f`; the stock penetrate 1
@@ -2525,8 +2556,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // spawn-time UpdateNPCs-stream draw — the row carries the
             // 1f base, the roll rides the lob's queue site at union
             // (`npc_ai_unicorn_b.rs::horseman_pumpkin_scale`, module
-            // docs union point 5). The aiStyle-194 flight
-            // (`AI_194_HorsemanPumpkin`, `:41293`) is a follow-up.
+            // docs union point 5 — wired by S1-D-4 W-10). The
+            // aiStyle-194 flight (`AI_194_HorsemanPumpkin`, `:41293`)
+            // is armed: `ai_horseman_pumpkin` (S1-D-4 census W-10).
             HORSEMAN_PUMPKIN => (
                 26.0,
                 26.0,

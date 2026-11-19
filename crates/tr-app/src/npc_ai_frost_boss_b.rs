@@ -972,6 +972,9 @@ pub fn frost_boss_b_step(
                 damage: shot.damage,
                 ai0: shot.ai0,
                 ai1: shot.ai1,
+                // The frost bosses roll no spawn-scale override — the
+                // proj_data row's scale stands (S1-D-4 W-10 field).
+                scale: None,
             });
         }
     }

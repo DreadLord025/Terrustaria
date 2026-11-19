@@ -2486,17 +2486,18 @@ fn invasion_spawn_pick(
     progress_frac: f32,
 ) -> NpcKind {
     let _hard_type = if invasion_type == 1 { Some(1) } else { None };
-    // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the gates are the
-    // vanilla's sequential `Next(n) == 0` chain — `Next(7)` the Gangsta,
-    // `Next(3)` the Balla, else the MysterySnowman.
+    // `invasionType == 2`'s table (`NPC.cs:1453-1466`): the gates are the
+    // vanilla's sequential `Next(n) == 0` chain — `Next(7)` → net 145
+    // (the port's `MysterySnowman`), `Next(3)` → net 143 (the Gangsta),
+    // else net 144 (the port's `SnowBalla`).
     if invasion_type == 2 {
         if rng.next_max(7) == 0 {
-            return NpcKind::SnowmanGangsta;
+            return NpcKind::MysterySnowman; // 145
         }
         if rng.next_max(3) == 0 {
-            return NpcKind::SnowBalla;
+            return NpcKind::SnowmanGangsta; // 143
         }
-        return NpcKind::MysterySnowman;
+        return NpcKind::SnowBalla; // 144
     }
     // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the roll ORDER is
     // vanilla — num6 (`Next(7)`), the Saucer gate (`Next(45)` + the 30%
@@ -4261,12 +4262,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // sim's current one).
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
+    let mut gallop_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
         }
         for shot in n.wants_hostile_shot_ai.drain(..) {
             ai_shots.push(shot);
+        }
+        for d in n.wants_gallop_dust.drain(..) {
+            gallop_dust.push(d);
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -4294,6 +4299,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         } else {
             0
         };
+        // The Frost throws' `ai[0] = 2f` post-spawn writes
+        // (`NPC.cs:29025`/`:29087`): for 109 the value keeps tile collision
+        // on while both `AI_010` gravity arms exclude the kind (the ball
+        // flies straight); for 110 it is inert (`AI_001`'s `flag3 = false`
+        // list holds the counter, `Projectile.cs:55962`). The laser keeps
+        // its `NewProjectile` default 0 (`NPC.cs:49877`).
+        let ai0 = if kind == crate::projectile::BULLET_SNOWMAN
+            || kind == crate::projectile::SNOW_BALL_HOSTILE
+        {
+            2.0
+        } else {
+            0.0
+        };
         if time_left > 0 {
             app.projectiles.spawn_hostile_timed(
                 kind,
@@ -4302,6 +4320,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dmg,
                 0.0,
                 time_left,
+                ai0,
             );
         } else {
             app.projectiles
@@ -4319,7 +4338,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
-        app.projectiles.spawn_hostile_ai(
+        let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
             Vec2::new(shot.x, shot.y),
             Vec2::new(shot.vx, shot.vy),
@@ -4328,6 +4347,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             shot.ai0,
             shot.ai1,
         );
+        // S1-D-4 W-10: the Horseman's pumpkin scale roll
+        // (`Projectile.cs:9518`) was consumed at the lob's QUEUE site
+        // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
+        if let (Some(slot), Some(scale)) = (slot, shot.scale) {
+            app.projectiles.set_scale(slot, scale);
+        }
+    }
+    // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
+    // the arm-level gate + jitter draws already rode the UpdateNPCs
+    // stream in-step; `Dust.NewDustPerfect(pos, 6, velocity)` and its
+    // post-spawn writes run here on the SAME stream (the pool-internal
+    // draw placement after the tick's AI is the recorded deviation,
+    // ANALYSIS "W-10 unicorn tails").
+    if !gallop_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        for d in gallop_dust {
+            let idx = app.dust.new_dust_perfect(
+                rng,
+                &ctx,
+                &app.world,
+                Vec2::new(d.x, d.y),
+                6,
+                Some(Vec2::new(d.vx, d.vy)),
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            // `:62434-62437` — the post-spawn writes, sentinel included.
+            let slot = app.dust.slot_mut(idx);
+            slot.scale = 0.6;
+            slot.fade_in = 1.1;
+            slot.no_gravity = true;
+            slot.no_light = true;
+        }
     }
     // S1-D-3 W-1 — the WoF's `NPC.NewNPC` drain (`NPC.cs:25712`,
     // `:26036`, `:26044-26049`). The faithful aiStyle-27 arm emits the
@@ -7059,8 +7113,10 @@ mod invasion_tests {
 
         #[test]
         fn the_frost_spawn_table_picks_the_trio() {
-            // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
-            // 1/3, else the MysterySnowman — always the frost trio.
+            // `invasionType == 2`'s table (`NPC.cs:1453-1466`): the 1/7
+            // arm is net 145 (the port's MysterySnowman), the 1/3 arm net
+            // 143 (the Gangsta), else net 144 (the port's SnowBalla) —
+            // always the frost trio.
             let mut rng = UnifiedRandom::new(9);
             for _ in 0..60 {
                 assert!(matches!(
@@ -7068,6 +7124,12 @@ mod invasion_tests {
                     NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
                 ));
             }
+            // The per-arm net-id mapping: the 1/7 arm's kind carries net
+            // 145's stats (22 def), the 1/3 arm's net 143's (20), the
+            // else's net 144's (26) — `NPC.cs:10805-10846`.
+            assert_eq!(Npc::new(NpcKind::MysterySnowman, 0.0, 0.0, 1, 0.0).defense(), 22);
+            assert_eq!(Npc::new(NpcKind::SnowmanGangsta, 0.0, 0.0, 1, 0.0).defense(), 20);
+            assert_eq!(Npc::new(NpcKind::SnowBalla, 0.0, 0.0, 1, 0.0).defense(), 26);
             // The goblin table stays on type 1.
             let mut rng = UnifiedRandom::new(9);
             for _ in 0..40 {

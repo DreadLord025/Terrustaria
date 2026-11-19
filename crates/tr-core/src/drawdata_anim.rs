@@ -5,10 +5,12 @@
 //! update (`Main.cs:17150`, inside `DoUpdate`, after `DoUpdate_AnimateWalls`).
 //! `GetTileDrawData` then keys its source rows on `Main.tileFrame[typeCache]`
 //! (`TileDrawing.cs:4533`), which the port's [`crate::drawdata::draw_data`]
-//! receives as its `tile_frame` argument. This module owns that state; the
-//! renderer wiring (feeding `animation_row(kind)` into `draw_data` instead of
-//! the current constant 0) is a separate wave — see docs/ANALYSIS.md
-//! "S1-F-9b animated-tile animator".
+//! receives as its `tile_frame` argument. This module owns that state;
+//! WIRED since S1-G-1f (2026-11-19): `App::animate_tiles_phase` ticks it on
+//! the 60 Hz accumulator beside the waterfalls, `render/tiles.rs::draw_tiles`
+//! feeds [`TileAnimator::animation_row`] / the counters / the bobframe into
+//! the drawdata dispatch, and the G6 `WorldFrameKey::tile_anim` covers the
+//! state via [`TileAnimator::anim_key`] gated on [`TileAnimator::is_animated_kind`].
 //!
 //! Determinism: the two `Main.rand` draws (tiles 453/456, `Main.cs:19109`,
 //! `:19118`) and the weather-vane bob roll (`Main.cs:19325`) take the caller's
@@ -54,6 +56,150 @@ impl TileAnimator {
             tile_frame_counter: [0; TILE_COUNT],
             weather_vane_bobframe: 0,
         }
+    }
+
+    /// The world-load reset (`Main.cs:8393-8394`): every `tileFrame[l]` and
+    /// `tileFrameCounter[l]` back to 0; `weatherVaneBobframe` resets with
+    /// them (`Main.cs:67242`).
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// G6 key input (S1-G-1f wiring): a hash of every animator value that
+    /// rides the world instance range's pixels — the animation rows
+    /// (`draw_data`/`case_draw_data`'s `tile_frame`), the tick counters
+    /// (slice B's `counter`, e.g. cases 453/456/489/493) and the weather-vane
+    /// bob (`CaseInputs::weather_vane_bobframe`). Compared bit-exactly by
+    /// `WorldFrameKey::tile_anim`; two frames with different animator state
+    /// must not share a cached world range. FNV-1a over the raw `i32`
+    /// little-endian bytes — deterministic, order-sensitive, no RNG.
+    pub fn anim_key(&self) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325u64;
+        let mut feed = |v: i32| {
+            for b in v.to_le_bytes() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        for &v in &self.tile_frame {
+            feed(v);
+        }
+        for &v in &self.tile_frame_counter {
+            feed(v);
+        }
+        feed(self.weather_vane_bobframe);
+        h
+    }
+
+    /// Every tile kind [`Self::animate_tiles`] writes a frame or counter
+    /// for (the `Main.AnimateTiles` body, `Main.cs:18516-19304`, including
+    /// the mirrors 665/696/271/581/355 and the weather vane 490 whose bob
+    /// rides `weather_vane_bobframe`). The G6 gate
+    /// (`WorldFrameKey::tile_anim`) keys on the animator state only when
+    /// one of these kinds is active in the view rect — animator-free
+    /// worlds keep the pre-wiring cache behaviour bit-for-bit. The
+    /// `every_touched_kind_is_in_the_gate_set` test proves the list covers
+    /// every index the tick actually mutates.
+    pub fn is_animated_kind(kind: u16) -> bool {
+        matches!(
+            kind,
+            12 | 17
+                | 31
+                | 77
+                | 96
+                | 106
+                | 129
+                | 133
+                | 171
+                | 207
+                | 215
+                | 217
+                | 218
+                | 219
+                | 220
+                | 228
+                | 231
+                | 235
+                | 238
+                | 243
+                | 244
+                | 247
+                | 270
+                | 271
+                | 272
+                | 300
+                | 301
+                | 302
+                | 303
+                | 305
+                | 306
+                | 307
+                | 308
+                | 314
+                | 326
+                | 327
+                | 328
+                | 329
+                | 336
+                | 340
+                | 341
+                | 342
+                | 343
+                | 344
+                | 345
+                | 351
+                | 354
+                | 355
+                | 377
+                | 379
+                | 390
+                | 405
+                | 406
+                | 410
+                | 412
+                | 421
+                | 422
+                | 452
+                | 453
+                | 455
+                | 456
+                | 458
+                | 459
+                | 463
+                | 464
+                | 480
+                | 485
+                | 489
+                | 490
+                | 491
+                | 493
+                | 499
+                | 507
+                | 508
+                | 509
+                | 564
+                | 565
+                | 572
+                | 581
+                | 592
+                | 593
+                | 594
+                | 597
+                | 614
+                | 639
+                | 642
+                | 657
+                | 658
+                | 660
+                | 665
+                | 696
+                | 708
+                | 720
+                | 721
+                | 725
+                | 739
+                | 748
+        )
     }
 
     /// The `tile_frame` argument for [`crate::drawdata::draw_data`]:
@@ -370,6 +516,58 @@ mod tests {
         for _ in 0..n {
             a.animate_tiles(wind, rand, false);
         }
+    }
+
+    /// S1-G-1f key-coverage witness: every array index `animate_tiles`
+    /// mutates must be in [`TileAnimator::is_animated_kind`]'s gate set —
+    /// otherwise a view holding that kind would keep a stale cached world
+    /// range while its pixels animate. Runs the full tick under several
+    /// winds (the weather-vane bob arms differ) and diffs both arrays plus
+    /// the bobframe against a fresh state each tick.
+    #[test]
+    fn every_touched_kind_is_in_the_gate_set() {
+        for wind in [0.0f32, 0.3, -0.7, 1.2] {
+            let mut a = TileAnimator::new();
+            let mut r = UnifiedRandom::new(9);
+            for _ in 0..700 {
+                let before = a.clone();
+                a.animate_tiles(wind, &mut r, false);
+                for k in 0..TILE_COUNT {
+                    if a.tile_frame[k] != before.tile_frame[k]
+                        || a.tile_frame_counter[k] != before.tile_frame_counter[k]
+                    {
+                        assert!(
+                            TileAnimator::is_animated_kind(k as u16),
+                            "kind {k} animates (wind {wind}) but is outside the G6 gate set"
+                        );
+                    }
+                }
+                if a.weather_vane_bobframe != before.weather_vane_bobframe {
+                    assert!(
+                        TileAnimator::is_animated_kind(490),
+                        "the weather vane (490) bobs but is outside the G6 gate set"
+                    );
+                }
+            }
+        }
+    }
+
+    /// S1-G-1f: `anim_key` is deterministic, changes with state, and the
+    /// world-load reset returns the fresh key.
+    #[test]
+    fn anim_key_tracks_state_and_reset() {
+        let mut a = TileAnimator::new();
+        let fresh = a.anim_key();
+        assert_eq!(fresh, TileAnimator::new().anim_key());
+        let mut r = UnifiedRandom::new(3);
+        tick_n(&mut a, 1, 0.0, &mut r);
+        assert_ne!(fresh, a.anim_key());
+        let after_one = a.anim_key();
+        tick_n(&mut a, 1, 0.0, &mut r);
+        assert_ne!(after_one, a.anim_key());
+        a.reset();
+        assert_eq!(fresh, a.anim_key(), "reset restores the fresh key");
+        assert_eq!(a.animation_row(12), 0);
     }
 
     /// Fresh state is the world-load reset: all rows/counters zero
