@@ -189,10 +189,13 @@ pub fn planteras_hook_step(
     if p_dead {
         flag59 = true;
     }
-    // `:32090` — the C#'s `(double)position.Y < Main.worldSurface * 16.0`
+    // `:32090` - the C#'s `(double)position.Y < Main.worldSurface * 16.0`
     // is a double comparison; the underworld bound is the f32 cast of
     // `Main.UnderworldLayer * 16` (int product) with a strict `>`.
     // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
+    // NOTE the decompile's LAST operator is a non-short-circuit `| flag59`
+    // (the first three ride `||`): a dead target always enters this arm,
+    // so flag58 AND flag59 both set - the speed ladder multiplies x4.
     let underworld_layer = world.height - 200;
     if (ctx.plant_boss != -1 && !p_zone_jungle)
         || (p_y as f64) < world.world_surface * 16.0
@@ -702,9 +705,10 @@ mod tests {
         // Retreat (player above the surface): ×2 → 12 at full life.
         let high = [cand(1000.0, 100.0)];
         assert!((speed_of(&mut setup(30000), &ctx, &high) - 12.0).abs() < 1e-4);
-        // Dead target: x2 -> 12; dead + retreat -> x4 = 24. The anchor is
-        // placed > 12 + 24 = 36 px out so even the x4 case stays in the
-        // normalised-flight band (the snap band would mask the ladder).
+        // Dead target: the C# :32090 gate ends with a NON-short-circuit `| flag59`,
+        // so a dead target ALWAYS sets flag58 too: dead = x2*x2 = 24, dead+retreat
+        // = 24 as well (flag58 already set). Anchor > 12+24 = 36 px out keeps
+        // both in the normalised-flight band (the snap band masks the ladder).
         let setup_dead = |hp: i32| {
             let mut pool = [boss(900.0, 700.0), hook(500.0, 500.0)];
             pool[0].hp = hp;
@@ -714,7 +718,7 @@ mod tests {
         };
         let mut dead = [cand(1000.0, 800.0)];
         dead[0].dead = true;
-        assert!((speed_of(&mut setup_dead(30000), &ctx, &dead) - 12.0).abs() < 1e-4);
+        assert!((speed_of(&mut setup_dead(30000), &ctx, &dead) - 24.0).abs() < 1e-4);
         let mut dead_high = [cand(1000.0, 100.0)];
         dead_high[0].dead = true;
         assert!((speed_of(&mut setup_dead(30000), &ctx, &dead_high) - 24.0).abs() < 1e-4);
