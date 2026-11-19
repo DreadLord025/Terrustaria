@@ -25617,3 +25617,104 @@ teleport, the -700/12 ring velocity, the 482 clone-shot X, the antipodal slot-0
 jump). The 16 witness tests are WRITTEN NOT RUN - **no compiler invoked**. The
 live `npc.rs` stub + every other file except the one `mod` line in
 `main.rs` and the docs are byte-identical.
+## The pillar machine re-port (B-6a, S1-D-3-pillar)
+
+**Status: code-only module, UNWIRED.** `crates/tr-app/src/npc_ai_pillar.rs`
+(branch `task/S1-D-3-pillar-report`, base `c7fe175d`). No compiler invoked;
+the 14 witness tests are WRITTEN, NOT RUN. The live stand-in
+(`npc.rs:12553-12606`, dispatched at `:3936-3940`) is byte-identical on this
+branch; the wiring wave swaps the dispatch arm and inserts the death-pass
+intercept. Boundary honoured: the sim death path (`world_sim/npcs.rs`) and
+`lunar.rs:136` (R71's one-line slot fix) are untouched; R72 owns the 629
+spawn sites + the damage gate and consumes this module's seams.
+
+### Stand-in evidence (the audit's B-6a finding, re-verified against C#)
+
+The live `update_ancient_cultist` body counts `ai[2] += 1; >= 180 -> hp = 0`
+(`npc.rs:12555-12558`). In C#, `ai[2]` is the dissolve FLAG set only by
+`checkDead` (`NPC.cs:78080-78086`); the 180-tick counter is `ai[1]` INSIDE
+the `ai[2] == 1` arm (`:38982`, `:39061`). Net live defects: every pillar
+self-destructs 180 ticks after spawn unprovoked; no `dontTakeDamage` gate
+reads `world.tower_shield_*` (killable from tick 1); the 579 ritual fires at
+the player centre every tick with no ai[1] cooldown, no count gates, no
+tile scan, no 578 branch; `rng` is discarded (`:12605`).
+
+### Identity census (verified, one audit correction)
+
+Solar **517** (`NPCID.cs:11711`, SetDefaults `NPC.cs:15256`), Vortex **422**
+(`:11689`, `NPC.cs:15179`), Nebula **507** (`:11687`, `NPC.cs:15108`),
+Stardust **493** (`:11659`, `NPC.cs:14995`) — all aiStyle 94, 130×270,
+20000 hp, dmg 0, def 20. **SolarGoop 519** (`NPCID.cs:11715`) is **aiStyle
+99** (`NPC.cs:15409-15423`: 26×26, dmg 120, def 0, lifeMax 1, noGravity,
+noTileCollide, no sounds, kb 0), NOT the audit port-spec's "aiStyle-3
+fighter" guess; its machine is the style-99 arm (`NPC.cs:39927-39990`:
+landing latch, 5-tick pinned dissolve, 0.2 gravity/12 cap, ToRotation−π/2
+spin, dust trail) — a follow-up census row. The port's tower NET ids
+(113/114/115/146) remain the pre-existing S1-F-1-family collision (audit
+§0); `pillar_vanilla_id` is the correct-id seam for consumers.
+
+### Coverage vs deferral
+
+| C# block | Range | Status |
+| --- | --- | --- |
+| checkDead intercept + PrepareForDeathAnimation | `NPC.cs:78080-78086`, `:78032-78038` | ported (`check_dead_pillar_intercept`; SetStrikePhaseChange is netMode==1-only, folded) |
+| dissolve arm | `:38970-39067` | ported (dust bodies deferred, gate draws kept) |
+| ai[3] flash cycle | `:39069-39100` | ported (NPCDeath58/NPCDeath3 as effect flags) |
+| per-type shield gate | `:39101-39115` | ported (`pillar_shield` over the faithful World state) |
+| TargetClosest + regen + bob | `:39116-39131`, `:39190-39195` | ported (the inert-counter quirk kept) |
+| ground hover | `:39132-39153` | ported (`Conditions.IsSolid` — platforms count, actuated NOT excluded) |
+| edge clamps + surface floor | `:39154-39189` | ported (the `maxTilesX*16` Y-axis quirk copied) |
+| 517 Solar spawn arm | `:39347-39382` | ported FULLY (the one complete spawn arm) |
+| 493 mark-tree call + body | `:39221-39224`, `:43821-43907` | DEFERRED body; ambient gates + ai[1] cooldown kept |
+| 507 dust-only arm | `:39226-39247` | gates kept; no attack exists in C# |
+| 422 two attack arms | `:39275-39345` | DEFERRED bodies; ambient gates + ai[1] cooldown kept |
+| 629 chip loop | `:79279-79320`, `Projectile.cs:72944-72979` | SEAMS (`bolt_host_pillar`, `bolt_shield_spend`) — R72 wires |
+| death → apocalypse | `:79321-79345` | already faithful (`npcs.rs:3360-3406`) — untouched |
+
+### RNG argument (by construction)
+
+Kept draws, in C# order: the dissolve gates `Next(5)` (`:39003`, drawn even
+at ai[1]≥120 — left operand first), 3×`Next(4)` only while ai[1]<150
+(`:39016-39030`), `Next(5)` (`:39031`), `Next(3)` (`:39050`); the per-type
+ambient `Next(5)` + 3×`Next(5)` (`:39198/:39207`, `:39228/:39237`,
+`:39251/:39260`, `:39351/:39360`); the solar spawn's `RandomVector2`
+X-then-Y pair (`Utils.cs:2431-2434`), `RotatedByRandom`'s
+`NextDouble()*max - NextDouble()*max` pair (`Utils.cs:1697-1700`) and the
+speed `NextFloat` (`:39377`). Witness tests compare full `UnifiedRandom`
+state against mirrored manual sequences (6 draws per early dissolve tick,
+3 past ai[1]=150, 4 per idle tower tick, 9 per solar spawn tick).
+**Documented deviations:** dust BODIES unmodelled — the rolls inside a
+passed gate (`Dust.NewDust` internals + explicit `NextFloat`/
+`RotatedByRandom` jitter) are skipped with the dust system (S1-E-2/E-3
+owns them); the deferred 493/422 attack bodies take their rearm/window/BFS
+draws (`60+Next(120)`, `420+Next(360)`, the 100-try X-then-Y pairs, the mark
+tree's `SelectRandom`/`Next(5,16)`/`Next(3,6)`/`Next(0,4)`/BFS floats) with
+them until the wiring wave ports them — exact ranges + draw censuses
+recorded in the module doc so the wiring needs no re-derivation.
+
+### Faithful quirks kept
+
+* The Y edge clamp uses `maxTilesX*16` on BOTH axes (`:39154-39155`).
+* The regen counter is INERT in vanilla: the second if's else resets
+  `localAI[0]` whenever < 60 (`:39121-39130`) — the counter never
+  accumulates past 1 through this arm alone (the stand-in's accumulating
+  `caster_counter` was a different, wrong machine).
+* The dissolve clamp is two SEQUENTIAL ifs: 0.24 → 0.26 → 0.24 in one
+  tick (`:38973-38980`).
+* `Opacity` is a view over `alpha` (`NPC.cs:6820-6829`):
+  `(int)Clamp((1-v)*255)`.
+* `Vector2.Distance`/`Length` are `(float)Math.Sqrt` on the f32 sum
+  (double sqrt); `Math.Sin` likewise runs in double — ported as f64 casts.
+* The 629 spend is −1 per bolt regardless of damage, clamped 0..max, with
+  the ai[3]=1 flash only while the shield stood; downed flags belong to
+  the tower's death, NOT shield exhaustion (the live `tower_shield_absorb`
+  model is wrong even if wired — audit §2.2; retired by R72).
+
+**Verification.** Code-only: every seam call checked against the actual
+signatures by read/grep (`npc_target::target_closest`'s 6-arg shape +
+`session_candidate`, `projectile::get_lerp_value`'s clamped 3-arg form,
+`UnifiedRandom::{next_max,next_float,next_double}` + its PartialEq derive,
+`World::{tile,tile_mut,rock_layer,world_surface,tower_shield_*,
+downed_tower_solar}`, `Npc::{ai,local_ai,alpha,net_update,dont_take_damage,
+size}`, `NpcKind` Debug derive); the C# blocks re-read line-by-line. The
+14 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
