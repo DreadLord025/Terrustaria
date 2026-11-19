@@ -103,6 +103,9 @@ mod npc_ai_style52;
 mod npc_ai_style53;
 mod npc_ai_style55;
 mod npc_ai_style56;
+// S1-D-3 (aiStyle-67): UNWIRED snail wall-crawler machine (359/360/655) -
+// no NpcKind yet; the kind-wave wiring is the S1-D-3 merge step.
+mod npc_ai_style67;
 mod npc_ai_style72;
 mod npc_ai_style9;
 mod npc_ai_style31;

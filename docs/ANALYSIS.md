@@ -24893,3 +24893,116 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The snail wall-crawler family (aiStyle-67)
+
+S1-D-3 (aiStyle-67), code-only mode, 2026-11-19.
+`crates/tr-app/src/npc_ai_style67.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 67)` inline arm (`NPC.cs:34348-34622`; the family
+has NO `AI_067_*` method) as pure functions over a single `Npc`.
+**NPC aiStyle 67 is NOT projectile aiStyle 67** (the pirate shots,
+`AI_067_FreakingPirates`, siblings S1-D-4b7/12) — a different dispatch in
+`Projectile.cs`, untouched here.
+
+**Census.** The only three `this.aiStyle = 67;` rows in `SetDefaults`:
+Snail 359 (`NPC.cs:13573-13586`, `NPCID.cs:11395`, 12×12, dmg 0 / def 0 /
+lifeMax 5, npcSlots 0.5, noGravity, catchItem 2006), GlowingSnail 360
+(`:13587-13600`, `NPCID.cs:11397`, 14×14, catchItem 2007) and MagmaSnail 655
+(`:17280-17294`, `NPCID.cs:11987`, 14×14 + lavaImmune, catchItem 4849).
+None has an `NpcKind` — the module is UNWIRED (`#![allow(dead_code)]`); the
+machine is type-parameterised (`SnailCtx::npc_type`) and activates
+unchanged when the kinds land.
+
+**Fidelity notes (the quirks kept 1:1).**
+- The shimmer probe's clamp upper is `Main.maxTilesX`/`maxTilesY`
+  INCLUSIVE (`:34352-34353`) — an edge index reads a null tile and skips;
+  the port's `World::tile` returns `None` out of bounds. The cast is
+  `(int)(Center.X / 16f)` (AFTER the divide) here, but
+  `(int)Center.X / 16` (BEFORE) for the lights (`:34387`/`:34391`) — both
+  orders preserved.
+- The 359 resize reads the OLD box once before either axis resizes
+  (`:34368-34377`), uses the INTEGER `width / 2` half and the `-2f` X
+  quirk; Y uses the FULL old height. `size_override` carries
+  `base.width/height`. The scale roll runs AFTER the resize block, so the
+  roll tick never resizes (the witness pins it).
+- `GetShimmered` (`NPC.cs:91548-91565`): the statue arm despawns
+  (`SpawnedFromStatue`), else all three types `Transform(677 Shimmerfly)`
+  (`NPCID.cs:10470`'s `359,677`/`360,677`/`655,677` rows, `NPCID.cs:12031`).
+  The 677 kind is unported, so both arms ride `SnailEvents` intents; the
+  early return writes no `noGravity` (`None`). The `liquid > 30` gate is
+  strict (30 does not shimmer).
+- The fall roll `Next(7200)` rides the RIGHT `&&` operand (`:34411`):
+  drawn only while `ai[2] == 0`, a gate-FAIL draw is still consumed.
+- The fall block's ground probe is
+  `(int)(Center.X + width/2 * -direction) / 16` — integer half-width,
+  cast AFTER the add (`:34446-34453`); a non-topSlope tile + collideY
+  decrements the timer, a bottomSlope ahead flips direction.
+- The flag70 wall latch (`:34458-34464`) skips the whole rotation ease;
+  the stuck detector (`:34465-34482`) forces direction +1 after 11 ticks
+  at the same X (`localAI[2] > 10`).
+- The rotation ease captures the target, restores the current rotation
+  (`:34577-34578`), wraps at the strict `> 6.28` / `< 0` with the
+  `(double)` compare kept as an f64 promotion, then runs TWO separate
+  `if`s (not else-if) with the `> 3.14` long-way branch and the
+  clamp-to-target.
+- `Collision_MoveSnailOnSlopes` (`:92704-92721`, dispatched at
+  `:92568-92571` in place of the normal slope pass) keeps the vanilla
+  `direction *= -direction` quirk (`:92711`) — for ±1 that is always −1.
+  The C#'s `NPC.gravity` argument to `Collision.SlopeCollision` is UNUSED
+  in the body (`Collision.cs:1791-2031`; only `WalkDownSlope` reads it,
+  `:1688`), so the port's gravity-free `slope_collision` signature is
+  faithful.
+- `snail_find_frame` is the pure twin
+  `(vx, vy, frame, counter) -> (frame, counter)` (the
+  `npc_ai_style49.rs::nimbus_find_frame` convention —
+  `Npc::frame_counter` is private to `npc.rs`); the wiring drives both
+  fields from `find_frame`. Fall rows 4/5 at the 6-tick phase (reset at
+  `6*2-1 = 11`), walk rows 0/1/2/3/2/1 at the 10-tick phases (reset at
+  `10*6-1 = 59`), zero velocity freezes both (`:72258-72261`).
+
+**RNG by construction.** Exactly TWO `Main.rand` sites in the arm, in
+source order, both on the caller's `UnifiedRandom` (the exact `Main.rand`
+stream):
+1. `Next(80, 111)` (`:34381`) — type 359 ONLY, once, when `ai[3] == 0`
+   AND `netMode != 1`; zero draws once `ai[3]` is set (the resize never
+   re-rolls).
+2. `Next(7200)` (`:34411`) — when `ai[2] == 0` AND `netMode != 1`,
+   gate-fail draw consumed; zero draws once the fall timer is armed.
+Nothing else draws: the lights, speed split, tile probes, state machine,
+rotation ease and velocity tail are RNG-free; `TargetClosest`
+(`NPC.cs:77652-77781`) and `SlopeCollision` (`Collision.cs:1791-2031`)
+were re-read — no `Main.rand` in either body. The witness tests replay
+the stream draw-for-draw against a clone (`assert_eq!(rng, witness)`);
+the client path (`netMode == 1`) draws nothing at all.
+
+**Seams.** `SnailEvents::no_gravity` (the arm's `noGravity` writes, last
+write wins — `Npc` carries no gravity flag), `SnailEvents::light`
+(`(tile_x, tile_y, [r,g,b])` for the `EntityLights` feed,
+`npc_lights.rs`'s vocabulary), `shimmer_statue_despawn` /
+`shimmer_transform` (the `GetShimmered` intents).
+
+**Documented skips (outside the AI arm).**
+- `Collision_WaterCollision` (`NPC.cs:93055-93060`): aiStyle 67 never
+  wets (`wetCount = 0`, `lava = false`); `Npc` has no `wetCount` — the
+  wiring keeps the family dry.
+- `HitEffect` dust/gore (`:85253-85314`): 359 dust 201 + gore 547/548,
+  360 dust 202 + gore 549/550, 655 dust 174 + gore 1256, each death a
+  6-dust burst with a `Next(2)` roll — the hit-path RNG/particles ride
+  the caller's strike seam (the style52 dust skips' convention).
+- `GetAlpha` light floors (`:93555-93591`): 360 min RGB (75,175,255),
+  655 min (255,100,50), alpha 255 — render-side tint, unported.
+
+**Verification.** Code-only: the arm, `GetShimmered`,
+`Collision_MoveSnailOnSlopes`, FindFrame case 359/360/655 and the three
+`SetDefaults` rows were re-read line-by-line against the decompilation;
+every Rust API call site checked by read/grep
+(`npc_target::target_closest`'s 6-arg shape,
+`collision::slope_collision`'s `SlopeCollision{pos,vel}`,
+`Npc::center/size/size_override`, `Tile::top_slope/bottom_slope/
+liquid_kind`, `UnifiedRandom::next_range/next_max`, `World::tile`'s
+`Option`). The `frame_counter` privacy forced the pure-twin frame
+signature (the style49/21 precedent). The stale `no_slope_collision`
+comment in `collision.rs` (which misattributed the caller to the snail)
+was repointed to the Blazing Wheel (`NPC.cs:92775-92783`, ported by
+`npc_ai_style21.rs`). 17 `s1_d_3_s67_*` witness tests WRITTEN, NOT RUN —
+**no compiler invoked**.
