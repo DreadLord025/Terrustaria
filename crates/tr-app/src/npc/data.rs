@@ -491,6 +491,19 @@ impl NpcKind {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
+            // the vanilla ids 87-92 collide with the port-local
+            // Scutlix/saucer band (87-92 above), so the family rides the
+            // free 213-218 band above the 189-212 wave-A block — the
+            // pirate renumber's precedent. The vanilla `NPC.type` rides
+            // the bestiary entry (`net_id` 87, the segments fold onto the
+            // head's entry like every other worm family).
+            NpcKind::WyvernHead => 213,
+            NpcKind::WyvernLegs => 214,
+            NpcKind::WyvernBody => 215,
+            NpcKind::WyvernBody2 => 216,
+            NpcKind::WyvernBody3 => 217,
+            NpcKind::WyvernTail => 218,
         }
     }
 
@@ -766,6 +779,15 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
+            // The Wyvern family (`S1-D-3` wyvern): the 213-218 port band
+            // (`to_u16` above; the vanilla 87-92 collide with the
+            // Scutlix/saucer ids). `NPCID.cs:10851-10861`.
+            213 => NpcKind::WyvernHead,
+            214 => NpcKind::WyvernLegs,
+            215 => NpcKind::WyvernBody,
+            216 => NpcKind::WyvernBody2,
+            217 => NpcKind::WyvernBody3,
+            218 => NpcKind::WyvernTail,
             _ => return None,
         })
     }
@@ -850,6 +872,17 @@ impl NpcKind {
                 | NpcKind::SolarCrawltipedeHead
                 | NpcKind::SolarCrawltipedeBody
                 | NpcKind::SolarCrawltipedeTail
+                // The wyvern chain shares the head's life pool
+                // (`NPC.cs:51158-51159`/`:51182-51183`: `ai[3] = whoAmI`,
+                // `realLife = whoAmI` on the head and every link). Inert
+                // until the wiring sets `worm_id`/`seg_index` (the
+                // carrier resolution keys on them, `npc.rs:3419`).
+                | NpcKind::WyvernHead
+                | NpcKind::WyvernLegs
+                | NpcKind::WyvernBody
+                | NpcKind::WyvernBody2
+                | NpcKind::WyvernBody3
+                | NpcKind::WyvernTail
         )
     }
 
@@ -930,6 +963,12 @@ impl NpcKind {
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
+            // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
+            // precedent): the shared pass's budget chain + dig head are
+            // NOT the wyvern's machine — the fixed 14-link chain and the
+            // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
+            NpcKind::WyvernHead => (11.0, 0.25),
             _ => (8.0, 0.07),
         }
     }
@@ -1576,6 +1615,14 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus
             | NpcKind::Flocko => "NPC_Hit_1",
+            // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
+            // `:9984`/`:10002`/`:10020`/`:10038`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Hit_7",
             _ => return None,
         })
     }
@@ -1835,6 +1882,14 @@ impl NpcKind {
             | NpcKind::ElfArcher
             | NpcKind::Krampus => "NPC_Killed_1",
             NpcKind::Flocko => "NPC_Killed_6",
+            // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
+            // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => "NPC_Killed_8",
             _ => return None,
         })
     }
@@ -1907,6 +1962,10 @@ impl NpcKind {
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail | NpcKind::EaterOfWorldsHead |
             NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail | NpcKind::LeechHead | NpcKind::LeechBody => 6,
+            // aiStyle 6 — the wyvern family (`NPC.cs:9945`, :9962, :9980,
+            // :9998, :10016, :10034).
+            NpcKind::WyvernHead | NpcKind::WyvernLegs | NpcKind::WyvernBody |
+            NpcKind::WyvernBody2 | NpcKind::WyvernBody3 | NpcKind::WyvernTail => 6,
             // aiStyle 7 - NPC.cs:8986, :9000, :9014, :9028, :9055, :9217, :9452, :10277, :10291, :10514, :11660, :11674, :11931, :11945, :13494, :13679, :13693, :14710, :16267, :16644, :17153, :17390
             NpcKind::Guide | NpcKind::DD2Bartender | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse |
             NpcKind::ArmsDealer | NpcKind::Demolitionist | NpcKind::Painter | NpcKind::WitchDoctor |
@@ -2434,6 +2493,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
+            // The wyvern family: every kind 32x32 (`NPC.cs:9943-9944`/
+            // `:9960-9961`/`:9978-9979`/`:9996-9997`/`:10014-10015`/
+            // `:10032-10033`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => (32.0, 32.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
             // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
@@ -2956,6 +3024,15 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 150,
+            // The wyvern family: every kind lifeMax 4000 (`NPC.cs:9949`/
+            // `:9966`/`:9983`/`:10001`/`:10019`/`:10037`) — one shared
+            // pool through `realLife` (`:51158-51183`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 4000,
             NpcKind::KingSlime => 2000,
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
@@ -3267,6 +3344,14 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead => 22,
             NpcKind::EaterOfWorldsBody => 13,
             NpcKind::EaterOfWorldsTail => 11,
+            // The wyvern: the head 80, every segment 40 (`NPC.cs:9947`/
+            // `:9964`/`:9981`/`:9999`/`:10017`/`:10035`).
+            NpcKind::WyvernHead => 80,
+            NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 40,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
             // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).

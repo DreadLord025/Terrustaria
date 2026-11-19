@@ -473,6 +473,33 @@ pub enum NpcKind {
     EaterOfWorldsBody,
     /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
     EaterOfWorldsTail,
+    /// `NPCID.WyvernHead` (87) — the sky-serpent's head (`NPC.cs:9939-9956`:
+    /// 32×32, aiStyle 6, 4000 HP, dmg 80, def 10, kb 0, value 10000,
+    /// npcSlots 5, noGravity/noTileCollide/netAlways; the fixed 14-link
+    /// chain `NPC.cs:51156-51190`, the altitude gates `:52053-52078`).
+    /// S1-D-3 wyvern: the head machine is `npc_ai_wyvern.rs` (UNWIRED).
+    WyvernHead,
+    /// `NPCID.WyvernLegs` (88) — the claw segments at chain indices 1/8
+    /// (`NPC.cs:9957-9974`: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20,
+    /// kb 0, value 10000, dontCountMe; `:51167-51170`).
+    WyvernLegs,
+    /// `NPCID.WyvernBody` (89) — the default chain segment (`NPC.cs`:
+    /// 9975-9992: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value **2000** — the one segment with a different coin row,
+    /// dontCountMe).
+    WyvernBody,
+    /// `NPCID.WyvernBody2` (90) — the chain segment at index 11 (`NPC.cs`:
+    /// 9993-10010: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51171-51173`).
+    WyvernBody2,
+    /// `NPCID.WyvernBody3` (91) — the chain segment at index 12 (`NPC.cs`:
+    /// 10011-10028: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51174-51176`).
+    WyvernBody3,
+    /// `NPCID.WyvernTail` (92) — the chain's tail at index 13 (`NPC.cs`:
+    /// 10029-10046: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51177-51179`).
+    WyvernTail,
     /// `NPCID.Merchant` (17) — the second town NPC (`NPC.cs:8980`: 18x40,
     /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's
     /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`).
@@ -2594,6 +2621,14 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 0.0,
+            // The wyvern family: knockBackResist 0 (`NPC.cs:9953`/`:9970`/
+            // `:9987`/`:10005`/`:10023`/`:10041`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             // `SetDefaults` case 17: knockBackResist 0.5.
@@ -2920,6 +2955,14 @@ impl Npc {
             NpcKind::EaterOfWorldsHead => 2,
             NpcKind::EaterOfWorldsBody => 4,
             NpcKind::EaterOfWorldsTail => 8,
+            // The wyvern: the head 10, every segment 20 (`NPC.cs:9948`/
+            // `:9965`/`:9982`/`:10000`/`:10018`/`:10036`).
+            NpcKind::WyvernHead => 10,
+            NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 20,
             NpcKind::Guide => 15,
             // `SetDefaults` case 17: defense 15.
             NpcKind::Merchant => 15,
@@ -3253,6 +3296,15 @@ impl Npc {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 800.0,
+            // The wyvern: the head/legs/body2/body3/tail 10000, the plain
+            // body 2000 (`NPC.cs:9954`/`:9971`/`:9989`/`:10007`/`:10025`/
+            // `:10043`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 10000.0,
+            NpcKind::WyvernBody => 2000.0,
             NpcKind::Guide => 0.0,
             // The town NPCs carry no coin value.
             NpcKind::Merchant => 0.0,
@@ -4093,6 +4145,16 @@ impl Npc {
             | NpcKind::EaterOfWorldsTail
             | NpcKind::LeechHead
             | NpcKind::LeechBody => {}
+            // The wyvern family: the chain assembly + the follower trail run
+            // in the world sim's worm pass; the head's altitude-gate machine
+            // (`npc_ai_wyvern.rs`, S1-D-3) is UNWIRED — the sim wiring is the
+            // follow-up wave (docs/ANALYSIS.md "The Wyvern family").
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => {}
             // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
             // roster rides alive. The 11 aiStyle-3 walkers ride the walker
             // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
@@ -5947,6 +6009,17 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            // The wyvern family: `FindFrame` has no case 87-92 either
+            // (`NPC.cs:66705-77291` — the switch carries no 87..92 arm) and
+            // `Main.npcFrameCount` 87..92 = 1 (`Main.cs:67092-67093`): the
+            // single-frame segments hold row 0; the chain rotation is the
+            // AI's write (`:51878`/`:52201`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => {}
             NpcKind::GoblinPeon
             | NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
@@ -15438,6 +15511,16 @@ impl Npc {
             NpcKind::GingerbreadMan => 342,
             NpcKind::Yeti => 343,
             NpcKind::Everscream => 344,
+            // The wyvern family (S1-D-3): the protocol ids (`to_u16`'s
+            // 213-218 band) — the vanilla 87-92 collide with the
+            // Scutlix/saucer arms above, so the hash rides the port band
+            // (the pirate renumber's precedent); injective either way.
+            NpcKind::WyvernHead => 213,
+            NpcKind::WyvernLegs => 214,
+            NpcKind::WyvernBody => 215,
+            NpcKind::WyvernBody2 => 216,
+            NpcKind::WyvernBody3 => 217,
+            NpcKind::WyvernTail => 218,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -19116,7 +19199,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 244] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19356,6 +19439,13 @@ mod tests {
         NpcKind::GingerbreadMan,
         NpcKind::Yeti,
         NpcKind::Everscream,
+        // The wyvern family (S1-D-3 wyvern).
+        NpcKind::WyvernHead,
+        NpcKind::WyvernLegs,
+        NpcKind::WyvernBody,
+        NpcKind::WyvernBody2,
+        NpcKind::WyvernBody3,
+        NpcKind::WyvernTail,
     ];
 
     #[test]
@@ -22628,7 +22718,7 @@ mod s1_f_3_tests {
         let mut sentinel = 0;
         let mut bad: Vec<String> = Vec::new();
         // The kind roster walks the wire-id space (the round-trip test pins
-        // exactly 199 decodable ids).
+        // the decodable-id count to ALL_KINDS' size).
         for wire in 0..=u16::MAX {
             let Some(kind) = NpcKind::from_u16(wire) else {
                 continue;
@@ -22653,8 +22743,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            238,
-            "every decodable kind resolves (the wire roster's size - 238 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen)"
+            244,
+            "every decodable kind resolves (the wire roster's size - 244 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 wyvern's six)"
         );
         assert!(
             covered > 43,
@@ -26189,6 +26279,14 @@ mod s1_d_2_tests {
         (NpcKind::GingerbreadMan, 3),
         (NpcKind::Yeti, 3),
         (NpcKind::Everscream, 57),
+        // The wyvern family (S1-D-3 wyvern, `NPC.cs:9945`/`:9962`/
+        // `:9980`/`:9998`/`:10016`/`:10034`).
+        (NpcKind::WyvernHead, 6),
+        (NpcKind::WyvernLegs, 6),
+        (NpcKind::WyvernBody, 6),
+        (NpcKind::WyvernBody2, 6),
+        (NpcKind::WyvernBody3, 6),
+        (NpcKind::WyvernTail, 6),
     ];
 
     #[test]
