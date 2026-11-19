@@ -894,7 +894,7 @@ mod tests {
         let w = air();
         let players = [cand(1010.0, 979.0)];
         let mut rng = UnifiedRandom::new(2026);
-        let witness = rng.clone();
+        let mut witness = rng.clone();
         let mut night = crawler(484, 1000.0, 1000.0);
         let mut truffle = crawler(374, 1000.0, 1000.0);
         let mut worm = crawler(357, 1000.0, 1000.0);

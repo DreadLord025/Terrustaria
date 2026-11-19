@@ -2250,8 +2250,8 @@ mod tests {
         // The 14th lance: num78 == 1.0 exactly (hand-traced f32).
         match lances[13] {
             EmpressRequest::Projectile { y, ai1, .. } => {
-                assert_eq!(*ai1, 1.0f32);
-                assert_eq!(*y, 975.0f32);
+                assert_eq!(ai1, 1.0f32);
+                assert_eq!(y, 975.0f32);
             }
             _ => unreachable!(),
         }
@@ -2266,8 +2266,8 @@ mod tests {
         assert_eq!(lances2.len(), 18);
         match lances2[0] {
             EmpressRequest::Projectile { x, damage, .. } => {
-                assert_eq!(*x, -87.5f32);
-                assert_eq!(*damage, 65); // phase-1 expert wall remap (num7=70→num15=65)
+                assert_eq!(x, -87.5f32);
+                assert_eq!(damage, 65); // phase-1 expert wall remap (num7=70→num15=65)
             }
             _ => unreachable!(),
         }
@@ -2393,8 +2393,8 @@ mod tests {
         let out2 = empress_ai_step(&mut s2, &env2, &mut rng2, &[]);
         match proj(&out2, 919)[0] {
             EmpressRequest::Projectile { x, y, .. } => {
-                assert_eq!(*x, 400.0f32);
-                assert_eq!(*y, -100.0f32);
+                assert_eq!(x, 400.0f32);
+                assert_eq!(y, -100.0f32);
             }
             _ => unreachable!(),
         }
@@ -2428,14 +2428,14 @@ mod tests {
         let want = rotated_by((0.0, -20.0), (PI * 2.0 * num23) as f64);
         match bolts[0] {
             EmpressRequest::Projectile { vx, vy, ai1, .. } => {
-                assert_eq!(*vx, want.0);
-                assert_eq!(*vy, want.1);
-                assert_eq!(*ai1, num23);
+                assert_eq!(vx, want.0);
+                assert_eq!(vy, want.1);
+                assert_eq!(ai1, num23);
             }
             _ => unreachable!(),
         }
         match bolts[1] {
-            EmpressRequest::Projectile { ai0, .. } => assert_eq!(*ai0, 3.0f32),
+            EmpressRequest::Projectile { ai0, .. } => assert_eq!(ai0, 3.0f32),
             _ => unreachable!(),
         }
     }
