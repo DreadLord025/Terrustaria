@@ -18652,3 +18652,68 @@ collision pass. Deliberate folds, all cited in the module:
 - Position integration stays OUT of the arm (the C# AI ends before
   `UpdateCollision`); `wet`/`collideX`/`collideY` are read a tick late,
   exactly like the source.
+## The Blazing Wheel arm (S1-D-3 aiStyle-21, task/S1-D-3-aistyle21, 2026-11-18)
+
+**Code-only mode**: this round ran with file reads/writes + git only — no
+cargo/rustc/rustfmt/tests invoked. The 12 tests in `npc_ai_style21.rs::tests`
+are WRITTEN NOT RUN; the verification wave must run
+`cargo test -p tr-app npc_ai_style21` (plus the workspace catalog command)
+before the wiring lands.
+
+The C#'s `NPC.AI()` aiStyle-21 arm (`NPC.cs:24615-24665`) serves ONE type: the
+Blazing Wheel (72, `ID/NPCID.cs:10821`; `SetDefaults` `NPC.cs:9714-9731`: 0.3
+slots, 34x34, dmg 24, def 100, 100 HP, alpha 100, behindTiles, kb 0, noGravity,
+dontTakeDamage, scale 1.2). The port had no kind and no arm — nothing routed to
+style 21 (the aiStyle axis claims only style 5 so far). The sibling aiStyle-22
+(Poltergeist, `NPC.cs:24666+`) is untouched.
+
+`crates/tr-app/src/npc_ai_style21.rs` ports the arm as pure functions over
+`Npc` + the shared `npc_target.rs` selection:
+
+* `ai_style21` — the init (`TargetClosest()` once, `directionY = 1`,
+  `ai[0] = 1`, `:24617-24622`), the two `ai[1]` axis modes with the
+  collide-latch/flip/swap order exactly as written (mode 0 `:24624-24642`,
+  mode 1 `:24643-24661` — the immediate-contact arms run AFTER the
+  cleared-contact arms in the same tick, so a simultaneous X+Y contact does
+  both writes in source order), the ±`direction * directionY * 0.13` spin
+  (int product, then float scale) and the constant ±6 velocity tail
+  (`:24662-24663`).
+* The light (`:24664`) is RETURNED as `(tileX, tileY, [0.9, g, 0.2])` — the
+  minimal seam for the `EntityLights` feed (the `npc_lights.rs` vocabulary):
+  INTEGER half-extents, int-truncated centre, `/16` per axis, and
+  `g = 0.3 + (270 - Main.mouseTextColor)/400` (the 190..=255 pulse,
+  `Main.cs:18216-18223`).
+* `collision_move_blazing_wheel` — `Collision_MoveBlazingWheel`
+  (`:92775-92783`): the 12x12 box centred with INTEGER halves, through
+  `collision.rs::no_slope_collision` (`Collision.cs:2033-2133`) with
+  `fallThrough: true, fall2: true`; then the `Collision_MoveWhileDry` latch
+  (`:92591-92607`: the up-pin 0.01, collideX/collideY from the oldVelocity
+  diff, oldPosition, integrate). The dry branch is the ONLY reachable one:
+  `Collision_WaterCollision` forces the wheel dry (`:93055-93060`) and
+  `UpdateCollision` skips its slope pass for type 72 (`:92572`);
+  `UpdateCollision`'s pre-pass latch order (oldVelocity copy + flag clear
+  BEFORE the tile pass, `:92538-92540`) is folded in.
+* `blazing_wheel_frame` — FindFrame case 72 (`:74642-74653`): the 3-tick
+  stride over `npcFrameCount[72] = 4` (`Main.cs:67092`). Pure pair-function
+  until the kind's `find_frame` row lands (`Npc::frame_counter` is private to
+  npc.rs).
+
+**RNG argument (by construction, cited)**: no `Next`/`NextFloat` appears in
+`NPC.cs:24615-24665`, `TargetClosest`/`TryTrackingTarget`/
+`SetTargetTrackingValues` (`:77652-77781`), `noSlopeCollision`
+(`Collision.cs:2033-2133`), `Collision_MoveWhileDry` (`:92591-92607`),
+FindFrame case 72 (`:74642-74653`) or the `AddLight` funnel
+(`Lighting.cs:157-163`). The nearest wheel-numbered draw —
+`GetStackForSlimeItemDrop` case 72's `Next(20, 100)` (`:79782-79784`) — is
+keyed on ItemID 72 (SilverCoin, `ID/ItemID.cs:1827`), a loot helper with no
+caller in the decompile. So the functions take no RNG parameter, and the
+witness test `the_style21_arm_draws_no_rng` pins a seeded `UnifiedRandom`'s
+full state across 120 ticks of arm+collision+frame (written, not run).
+
+**Deliberate deviations**: (1) wiring deferred — no `NpcKind::BlazingWheel`
+roster row, no `update_rng` axis arm, no EntityLights feed, no `find_frame`
+case; the module is `#![allow(dead_code)]` until the kind wave (the
+`drawdata_anim.rs`/S1-F-9b precedent). (2) The `GetColor` type-72 arm
+(`:93597-93602`, keeps the light colour) and the dust/gore visuals are
+render-side, out of this AI round. (3) The SetDefaults row is a const struct
+(`BLAZING_WHEEL`) rather than roster fields, for the same reason.
