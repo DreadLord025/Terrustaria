@@ -11357,9 +11357,10 @@ Deviations and notes:
     take their positive branch (no gravity potion in the port); the sleeping/sitting
     offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
     The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
-    but their own AI arms (53/197/130) do not call the reposition yet — 134/137/138 reach
-    it, and since S1-D-4b-3 the 123 pair (the 641/643 sentries) and the 642 beam's
-    carried ride (`:31414-31417`, the aiStyle-84 head anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    but their own AI arms (53/197) do not call the reposition yet — 134/137/138 reach
+    it, 130 joined them with S1-D-4b-9, and since S1-D-4b-3 the 123 pair (the 641/643
+    sentries) and the 642 beam's carried ride (`:31414-31417`, the aiStyle-84 head
+    anchor) do too. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
     C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
     `_type = -1`; the port's `dismount()` likewise resets the kind).
   - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
@@ -11449,6 +11450,74 @@ Deviations and notes:
   - **120/130 deferred**: the Stardust Guardian's aiStyle-120 arm (`:44634-44964`) and the
     Flame Burst Tower's aiStyle-130 arm (`:68107-68361`) stay unported — the next round of
     S1-D-4b-3; their rows keep holding position (the ROADMAP row carries the split).
+
+### The Flame Burst Tower slice (S1-D-4b-9, code-only mode)
+
+**Code-only mode**: this task ran without a compiler — no `cargo`/`rustc`/`rustfmt`,
+no test run, no graphify. The port was verified by re-reading the C# line by line;
+the tests below are written as code, NOT executed. The sibling branch
+`task/S1-D-4b-3` owns aiStyle 123 and the shots 642/644; this slice touches neither.
+
+S1-D-4b-9 ported aiStyle **130** (Flame Burst Tower, `AI_130_FlameBurstTower`,
+`Projectile.cs:68107-68360`) + its target pick (`AI_130_FlameBurstTower_FindTarget`,
+`:68362-68407`) and the aiStyle-**131** shot (`AI_131_FlameBurstShot`, `:68456-68508`,
+the 664/666/668 rows `:7153-7162` — 16x16, alpha 255, local-immunity −1), plus the
+Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
+`:485`/`:489`) and the towers' `proj_frames` 7/9/9 (`Main.cs:8458-8460`).
+
+- **The arm mirrors the 134 Ballista inline precedent** (the per-kind constants, the
+  muzzle captured BEFORE the backpack reposition — Bottom + (direction*6, −40/−44/−46),
+  the 300-wrap `localAI[0]`, the init latch, the backpack branch, the reload/target
+  state, the fire state at `ai[1] == 12` with the frame `1 + ai[1]/4`, the cycle wrap
+  `num6*num7` into the 80/70/60-tick reload, the gravity tail + `dd2_sentry_step`).
+  The Apprentice T2 buffs (`:68275-68280`) tighten the angle cone to 0.1 and multiply
+  the range ×1.5 / the speed ×1.4. The fire-state scan passes
+  `canChangeDirection: false` (rejects targets behind the facing).
+- **The cone differs from the Ballista's**: `|dir.X| < |dir.Y| * angleRatioMax`
+  rejects steep targets BOTH above and below (`:68378`/`:68400` have NO `dir.Y > 0`
+  clause, unlike `AI_134_Ballista_FindTarget`'s dead-bottom cone). The reload-state
+  facing flip reads `Math.Sign(DirectionTo(npc.Center).X)` from the tower's CENTRE
+  (`Entity.cs:205-208`), not the muzzle.
+- **The shot spawn has NO ±16 clamp**: aiStyle 131 ≠ 1, so `NewProjectile`'s
+  aiStyle-1 velocity decay (`:10895-10902`) does not run — the 12/15/18-px shots
+  (16.8/21/25.2 with Apprentice T2) fly at full speed from the centred muzzle
+  (`x − 8, y − 8`).
+- **RNG order preserved by construction** (unlike the 137 skip-and-document
+  precedent, this task draws the gates): per tick the 130 arm draws the type-270
+  dust gate `Next(2)` (`:68138`/`:68190`/`:68242`, only while `ai[2] != 1` — the
+  flag is captured BEFORE the pickup latch, `:68119`); on a 0 the two
+  UNCONDITIONAL `NextFloat`s follow (`fadeIn` `:68141`, `velocity.X` `:68146` —
+  they draw even when `NewDustDirect` returns the culled dummy slot 6000); then
+  the smoke gates `Next(5)` × 1/2/3 per tier (`:68158`/`:68210`/`:68262`). The
+  131 shot draws `Next(2)` × 1/2/3 per tier (`:68495`) and, on a non-zero, the
+  always-0-but-consuming `Next(1)` (`:68500`). The targeting, the fire, the shot
+  spawn and the alpha fade draw nothing. Tests
+  `s1_d_4b_9_the_tower_dust_gates_draw_in_the_csharp_order` /
+  `s1_d_4b_9_the_shot_dust_gates_draw_in_the_csharp_order` replay the exact draw
+  sequence against a reference `FastRandom` stream.
+- **Skipped layers**: the dust BODIES and `Dust.NewDust`'s pool-occupancy-dependent
+  internal draws (`Dust.cs:116-146`/`:170-175` — they cannot be reproduced without
+  a dust pool; the gate/NextFloat draws above ARE kept), the `Lighting.AddLight`
+  casts (`:68124-68125` etc.), the 131's tracked sound latch (`:68465-68475`), the
+  `netUpdate` writes (port-wide convention). The 664/666/668 on-hit `StatusNPC`
+  On Fire rolls (`:11319-11330`) ride the port-wide `StatusNPC` per-type skip
+  (S1-C-8); the 664/666/668 kill-dust burst (`:71821+`) and the draw tint
+  (`:79280-79283`) are decor.
+- **The 131 shot's movement** rides the generic `kill_step` (the aiStyle-28 frost
+  bolt precedent): the shot keeps `tileCollide = true`, integrates `pos += vel`
+  and dies on a tile hit — the generic `HandleMovement` tail, not a per-type arm.
+- **Deferred — aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
+  scope took the tower style first. The Guardian needs unported player machinery
+  (`tankPet`/`tankPetReset` `Player.cs:870-872`/`:24539-24547`,
+  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` — the rest-hover states 1/3
+  depend on them; without the rest target they revert to the idle state) plus its
+  19-frame sheet (`Main.cs:8497`) and the teleport dust bursts. It stays on the
+  S1-D-4b-3 row.
+- Tests (written, not run): `s1_d_4b_9_flame_burst_tests` — the row/frame pins,
+  the dispatch + 300-wrap, the unclamped shot fire + muzzle centring + same-tick
+  shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
+  facing flip, the backpack ride, the shot fade/rotation and the two RNG-order
+  proofs; `player.rs`'s armor-set test gained the Apprentice T2/T3 triples.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -17108,36 +17177,110 @@ rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
 and the render sheets resolving with the C#'s `npcFrameCount`.
 
 Documented deviations, all deliberate:
-- **The five bespoke machines ride stand-ins** until S1-F-13b2: the
+- **The bespoke machines ride stand-ins** until S1-F-13b2's slices land: the
   Headless Horseman (315) and the Hellhound (329) — aiStyle 26
   (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
-  C#'s own chase cap (`num10 = 6f`, `:62622`); the Poltergeist (330) —
-  aiStyle 22 — rides the port's caster machine (its shot arm's `_ => return`
-  leaves it shotless until the named machine lands); the MourningWood (325,
+  C#'s own chase cap (`num10 = 6f`, `:62622`); the MourningWood (325,
   aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
   own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
   = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
   rows). Each stand-in cites its machine's own constants. (Slice B retired
   the two bosses' stand-ins — see "The Pumpkin Moon bosses" below; the
-  aiStyle-26/22 stand-ins remain for slice A.)
+  Poltergeist left the caster stand with slice C — see its section below;
+  the aiStyle-26 stand-ins remain for slice A.)
 - **The unported wave kinds still consume**: the frost family (F-13c) and
   the wave-20 unported bosses draw their vanilla rolls and spawn nothing
   (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
 - **`ImmuneToAllBuffsThatAreNotWhips`** (330) is unmodelled — the port's
-  table carries `SpecificallyImmuneTo` only; noted at the arm, pending
-  S1-F-13b2.
+  table carries `SpecificallyImmuneTo` only; slice C did not carry it (the
+  buff-immunity table is its own port).
 - **The Poltergeist caster-stand test was rewritten** (2026-11-17): the
   pre-existing test asserted `vx == 0.0` at frame 30 from `vx 2.0`, but the
   C#'s verbatim stand is `velocity.X *= 0.93f` with the ±0.1 snap
   (`NPC.cs:20831-20835`) — the exact park is frame 42 (`2.0×0.93³⁰ =
   0.22673497` at frame 30). The test now asserts the iterated decay curve,
-  the exact park and the hold.
+  the exact park and the hold. **Superseded 2026-11-18** by slice C: the
+  Poltergeist half of the routing test now asserts the named machine's
+  dispatch (the flee row's alpha-0 + `EncourageDespawn(10)`, the on-moon
+  anchor latch); the walker/floater halves are untouched.
 - **`pumpkin_moon_type`'s family scoping**: the map returns `Some` only for
   the 16 pumpkin kinds — the frost family's kinds (F-13c) keep consuming
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
 
+## The Poltergeist's aiStyle-22 machine (S1-F-13b2 slice C, 2026-11-18)
+
+The Poltergeist (type 330) leaves the caster stand for its named machine on
+`task/S1-F-13b2-poltergeist`: `npc_ai_poltergeist.rs::poltergeist_ai` ports
+`NPC.AI()`'s aiStyle-22 arm (`NPC.cs:24666-25234`) with the 330 branches
+only — the off-moon flee gate (`:24670`), the dwell anchor's ±16 px X /
+±40 px Y windows and the 60-tick flip into the −200 dash (`:24722-24764`),
+the 330 row's 0.1 dash creep (`:24774`), the fall gate
+(`Bottom.Y > player.Top.Y` → no gravity, `:24971-24976`), the 330 tail row
+(alpha 0 every tick, the ±4 speed cap, `TargetClosest` on the live moon /
+`EncourageDespawn(10)` off it, the 0.9 opposite-velocity damping,
+`:25148-25168`), the shared X/Y approach tails (0.1 accel with the far-cap
+double-add and the 0.05 near-zero brake; 0.04/0.05/0.03 with the ±1.5
+clamp, `:25169-25233`) and the `noTileCollide` half of `UpdateCollision`
+(the `oldVelocity` capture + flag reset `:92538-92540`, the straight
+integration `:92605-92607`). `FindFrame`'s `case 330`
+(`NPC.cs:74886-74906`) rides its own strip (`Npc::poltergeist_frame`): the
+vx-sign sprite flip, the `vx * 0.15` tilt and the 8-tick row step wrapping
+over the 8-row sheet — the walker stand-in no longer covers 330.
+
+**The ROADMAP's "shot arm" label is a misnomer**: in 1.4.5.8 the type-330
+path through aiStyle-22 carries NO `Projectile.NewProjectile` — the arm's
+shot blocks belong to types 122/169/268 only. The Poltergeist's offence is
+its 90-damage contact body (`SetDefaults`, `:13188-13203`).
+
+**RNG order**: the one draw on the whole 330 path is the flee branch's
+`Main.rand.Next(-1, 2) * 1.5f` while `velocity.X == 0f` (`:24716-24720`),
+riding the caller's `UpdateNPCs` stream. Witness tests pin it: exactly one
+draw per parked-flee tick (clone-and-peek), zero draws across 30 moving
+flee ticks and 600 active ticks — the active machine is draw-free, so the
+`UpdateNPCs` stream order for every mixed roster is unchanged on-moon.
+
+Documented deviations (house pattern, all cited at the arm):
+- `justHit` (`:24682-24685`) folds onto `hurt_cd > 0` (the port's per-tick
+  hurt cooldown, as in the WoF/Deerclops machines).
+- `npcTypeNoAggro` (`:24997-25013`) is constant-false (no aggro table yet)
+  — the scan never runs, as in `npc_target.rs`.
+- `flag36` (`AI_GlobalFiringDistanceCheck`, `:24795`) feeds only the
+  122/268 shot arms — a pure no-op for 330, dropped.
+- `flag30` is constant-false for 330: its only setters are the type-316
+  arm and the 169/268 roof scan, and the `ai[2] >= 30 && num291 == 16`
+  test (`:24743`) is dead C# (`num291` is always 40 there) — `:25030-25038`
+  never fires and is not carried.
+- `TargetClosest` rides the shared `npc_target::target_closest` with the
+  single session player (the S1-D-3p convention, ticker 0).
+
+13 `s1_f_13b2c_*` tests (11 in the module: the anchor latch, the counter
+climb, the 60-tick flip, the dash creep/cap, the left mirror + damping,
+the fall gate/Y approach, the three RNG witnesses, the justHit reset, the
+tile fly-through; 2 in `npc.rs`: the case-330 frame strip and the A/B pin
+`s1_f_13b2c_the_generic_arms_stay_byte_identical` — 20 non-Poltergeist
+kinds (the 13 walkers incl. the aiStyle-26 pair, the two hover floaters,
+the five casters the ghost used to share) replay their pre-slice arms
+verbatim behind the same `update_rng` prelude for 180 ticks each,
+bit-comparing kinematics/ai[]/frame state/player hp AND the RNG stream
+position every tick; a closing divergence witness runs one off-moon
+Poltergeist tick both ways — the named machine's alpha-0 +
+EncourageDespawn(10) vs the stand's untouched alpha-100 — proving the
+gate changed exactly one kind and the comparison has teeth. The dispatch
+seam itself rides the rewritten routing test's Poltergeist half).
+Slices A (aiStyle 26) and B (aiStyles 57/58) remain on their own
+branches — their stand-ins and frame arms are untouched.
+
+**Code-only mode (2026-11-18)**: this slice landed under a no-compiler
+directive — no cargo/rustc/rustfmt/test runs were made; the tests are
+written, NOT run. Verification was C# re-reading: every ported block was
+re-checked against the decompiled source (the arm `:24666-25234`, the
+330 row `:25148-25168`, `FindFrame :74886-74906`, `SetDefaults
+:13188-13203`, `EncourageDespawn :7249-7256`, `UpdateCollision
+:92538-92540`/`:92605-92607`, `npcFrameCount[330]=8` counted out of the
+`Main.cs:67082` initializer). The first `cargo test` after this branch
+merges must confirm the suite; the anchors row is the canary meanwhile.
 ## The Pumpkin Moon bosses (S1-F-13b2 slice B, 2026-11-18)
 
 The Mourning Wood (325, aiStyle 57) and the Pumpking (327, aiStyle 58) leave
