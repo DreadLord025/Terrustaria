@@ -1319,6 +1319,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
+    // The vanilla slot (`WorldGen.cs:21066-21100`): the Micro Biomes pass's
+    // explosives block runs after the campsites (`:21031`) and before the
+    // mahogany block (`:21105`) — S1-K-2 wave B's `MiningExplosivesBiome`
+    // port. (The port's campsites step sits earlier in the grouped chain.)
+    step!("mining explosives", "Micro Biomes", step_mining_explosives),
     // The vanilla slot (`WorldGen.cs:21105-21123`): the Micro Biomes pass's
     // mahogany block runs after the sword shrines (`:20979`) and the
     // campsites (`:21031`) — S1-K-2 wave A's `MahoganyTreeBiome` port.
@@ -2343,6 +2348,53 @@ fn step_sword_shrines(
     );
 }
 
+fn step_mining_explosives(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `WorldGen.cs:21061-21064`: the `actuallyNoTrapsForRealIMeanIt` veto
+    // and the `!notTheBees || remix` gate.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+    {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    if not_the_bees && !remix {
+        return;
+    }
+    // `:21067`: the ExplosiveTrapCount config roll (Min 14 / Max 29 /
+    // WorldArea). The step reads its own "Micro Biomes" section (the
+    // display-name view `apply_step` hands is the same here) and draws
+    // from a fresh `pass_rng("Micro Biomes")` copy — the per-pass re-seed
+    // model; the mahogany ledger stays untouched (the wave-C thin-ice
+    // precedent).
+    let pass_config = super::config::WorldGenConfig::parse().pass("Micro Biomes");
+    let mut rng = streams.pass_rng("Micro Biomes");
+    let count = pass_config
+        .get_range("ExplosiveTrapCount")
+        .map(|r| r.get_random(&mut rng, world.width, world.height))
+        .unwrap_or(0);
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    mini_biomes::pass_mining_explosives(
+        world,
+        world_surface,
+        rock_layer,
+        count,
+        opts.flags,
+        &mut rng,
+    );
+}
+
 fn step_mahogany_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -2695,6 +2747,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     // Lihzahrd brick 226 is not (bricks auto-frame).
     world.frame_important[137] = true;
     world.frame_important[237] = true;
+    // The mining-explosives pair (S1-K-2 wave B): the explosives 141
+    // (`Main.cs:7750`) and the detonator 411 (`Main.cs:8314`) are
+    // frame-important — the framer keeps the stored frames the
+    // `Place1x1`/`Place2x2` writes leave (`MiningExplosivesBiome.cs:78-79`).
+    world.frame_important[141] = true;
+    world.frame_important[411] = true;
     world.frame_important[78] = true;
     world.frame_important[82] = true;
     world.frame_important[83] = true;
@@ -3045,7 +3103,9 @@ mod tests {
         // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
         // S1-K-2 wave A: + `mahogany trees` (vanilla "Micro Biomes",
         // `WorldGen.cs:21105`) after `sword shrines`.
-        assert_eq!(names.len(), 64);
+        // S1-K-2 wave B: + `mining explosives` (vanilla "Micro Biomes",
+        // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
+        assert_eq!(names.len(), 65);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3123,6 +3183,7 @@ mod tests {
                 "campsites",
                 "spike pits",
                 "sword shrines",
+                "mining explosives",
                 "mahogany trees",
                 "webs and honey",
                 "mushroom and jungle plants",
@@ -3316,12 +3377,14 @@ mod tests {
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's
     /// vanilla slot — after `sword shrines` (`WorldGen.cs:20979`) and
     /// before `webs and honey` (the port's grouped neighbour; the mahogany
-    /// block itself is `:21105`).
+    /// block itself is `:21105`). Wave B slots `mining explosives`
+    /// (`:21066`) between them.
     #[test]
     fn s1_k_2_the_mahogany_step_sits_after_the_sword_shrines() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("mahogany trees"), pos("sword shrines") + 1);
+        assert_eq!(pos("mining explosives"), pos("sword shrines") + 1);
+        assert_eq!(pos("mahogany trees"), pos("mining explosives") + 1);
         assert_eq!(pos("mahogany trees") + 1, pos("webs and honey"));
     }
 

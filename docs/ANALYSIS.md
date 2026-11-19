@@ -8417,6 +8417,79 @@ The micro-biome decorators over the finished world:
   cannot pass in the compact terrain — the snow band is a one-row skin
   over the ice shell (`terrain.rs:320-330`), so the biome would be dead
   code until the faithful `Generate Ice Biome` pass lands.
+- **The mining explosives** (`MiningExplosivesBiome`, `:10-83` - S1-K-2
+  wave B, 2026-11-19, **code-only**): the faithful port of the Micro
+  Biomes pass's explosives block (`WorldGen.cs:21061-21101`) - the
+  `actuallyNoTrapsForRealIMeanIt` + `!notTheBees || remix` gates (the step
+  adapter), the `ExplosiveTrapCount` config roll (Min 14 / Max 29 /
+  WorldArea) with the `(getGoodWorld || noTraps) && !notTheBees` x1.5
+  multiplier (`explosive_trap_count`, int truncation), the 3000-attempt
+  budget and the `RandomWorldPoint(rockLayer, 380, 200, 380)` origins
+  (x first; the remix band swaps to `worldSurface`/`rockLayer`). The
+  Place body: the solid-origin + spider-216/lizhahrd-187 wall vetoes, the
+  `Utils.SelectRandom` ore pick over the four rolled tier kinds (gold,
+  silver, iron, copper order - one `Next(4)`; the `GenVars.*Bar`
+  conditions map onto `world.ore_tiers`), the `NextDouble*2-1` direction,
+  the side-40 (`Right`/`Left`, origin-inclusive) + down-80 `IsSolid`
+  finds (`Conditions.cs:84-97` - the RAW `tileSolid` table with the
+  `InWorld(x,y,10)` gate, not `WorldGen.SolidTile`), the
+  `ShapeRunner(10.0, 20, (num, 1.0))` scan (`ShapeRunner.cs:23-58` - the
+  Manhattan-disc walker, the `num8 = (int)(num3/50)+1` double-decrement,
+  the `RandomVector2D(-0.5, 0.5)` velocity jitters + the +/-1 clamp) with
+  `Blotches()` (scale 2 - the two-`NextDouble` draws, first discarded,
+  the 0.3 spread over `Next(1-scale,1)..Next(0,scale)` x same) ->
+  `Scanner` -> `Modifiers.IsSolid` (`SolidOrSlopedTile`) -> `Scanner`; the
+  `solid < total/2` gate (integer division), the 30x20
+  `StructureMap.CanPlace` box (`GeneralPlacementTiles` =
+  `CreateBoolSet(true, ...)` - all kinds valid EXCEPT the 28 listed), the
+  `ModShapes.All` ore fill (insertion order - the port's deduped Vec
+  stands in for the `HashSet<Point16>`), the offset `Circle(5)` blotched
+  `ClearTile(frameNeighbors: true)` hollow (`(int)(num * -5.0)` x-shift),
+  the two down-10 finds with the `Next(4)==0` -> 3-else-7 width pick (the
+  C# `&` is non-short-circuiting - both finds always run), the 3-wide
+  5-tall detonator alcove with the `ResetToType(1)` floor reset (the
+  wall survives - `Tile.cs:249-259` keeps it), the `CanKillTile` veto
+  AFTER the writes (the C# bails late too), `Place1x1(141)`
+  (`WorldGen.cs:45188-45235` - the `SolidTile2` floor + empty cell) +
+  `Place2x2(411)` (`:51330-51423` - the 2x2 body at `(x-1,y-1)`,
+  `frameX = k*18`, `frameY = l*18`) and `WorldUtils.WireLine`
+  (`WorldUtils.cs:109-129` - the endpoint captures BEFORE the swaps: the
+  horizontal run rides the ORIGINAL `start.Y`, the vertical the ORIGINAL
+  `end.X`; red wire via the sparse side table). The step draws from a
+  fresh `pass_rng("Micro Biomes")` copy (the wave-A mahogany ledger
+  untouched - the per-pass re-seed model). The 141/411 frame-important
+  boot statics (`Main.cs:7750`/`:8314`) landed in `boot_statics`; the
+  ore kinds frame through the existing `SET_ORE`/merge-table arms (no
+  new framing arms needed - 141/411 keep their stored frames).
+  **Wave-B choice**: the alphabetically earlier unported classes are
+  `DeadMansChestBiome` (16 KB - not small), `DitherSnake*` (the
+  dual-dungeons seed machinery) and `HiveBiome` (10 KB + the faithful
+  `Beehives` rewrite + `GenVars.larvaX/Y`); `CorruptionPitBiome` is dead
+  code (no call site) and `GraniteBiome`/`MarbleBiome` are already
+  ported (M5-BIOME-2). `MiningExplosivesBiome.cs` (3.6 KB) is the first
+  small unported one; wave C took `ThinIceBiome` (3b445ed4).
+  **Pins (code-only deferral)**: `SEED42_512` UNCHANGED - the
+  `Next(380, maxTilesX-380)` beach band is empty on a 512-wide world
+  (the C# throws; the port's width guard skips the block before any
+  draw; wave C's deferral note missed this x-band collapse). The
+  `DEFAULT_WORLD` re-pin is DEFERRED: the traps move the default world
+  by design but no compiler may run on this branch, so the value cannot
+  be measured - the gate re-pins. The `fix/vines-destroy-walls` branch
+  (b95bfc60) also moves the worldgen pins (stale-by-design); both
+  branches re-pin at the gate, sequentially.
+  Deviations: the `setSelfFrames`/`TileFrame`/`SquareTileFrame` calls
+  ride the deferred post-pipeline framing seam; the
+  `tileSolid[162/232/229]` Larva/MicroBiomes-head toggles
+  (`WorldGen.cs:20897-20909`) are not modelled (the boot table stands -
+  the temple `solid_tile2_p2` precedent); the `dualDungeons` origin veto
+  is deferred with the seed (the `ocean.rs:620` precedent); the
+  `ShapeData` iteration order is insertion order (the .NET
+  `HashSet<Point16>` enumeration order is not reproducible - the same
+  recorded deviation the mahogany endpoints carry).
+  **Tests written NOT run** (7 new: the vetoes, the full placement, the
+  protected-box refusal, the pass determinism, the sub-vanilla skip, the
+  x1.5 multiplier, the WireLine original-axes quirk) + the pipeline
+  order/count tests updated (65 steps).
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword

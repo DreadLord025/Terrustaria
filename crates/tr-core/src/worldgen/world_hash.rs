@@ -220,6 +220,13 @@ mod tests {
     // `Next(worldSurface + 50, maxTilesY - 500)` band collapses), and the
     // framing's 383/384 merge arms (`WorldGen.cs:82077-82082`) only fire
     // on the new kinds.
+    // S1-K-2 wave B (code-only): `pass_mining_explosives` lands after the
+    // sword shrines — the pin stays UNCHANGED for the same reason: the
+    // `RandomWorldPoint(rockLayer, 380, 200, 380)` x-band
+    // `Next(380, maxTilesX - 380)` is empty on a 512-wide world (the C#
+    // throws there; the port's width guard skips the block before any
+    // draw). The 141/411 frame-important boot bits are inert without the
+    // kinds. The DEFAULT_WORLD re-pin is deferred to the gate (below).
     const SEED42_512: u32 = 2673964944;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -232,6 +239,19 @@ mod tests {
     // downstream tile-dependent passes (the vines on the mud, the slopes,
     // the tree/flora placement) legitimately re-roll around them.
     // Measured on this branch (the synced a23d87e5 base).
+    // S1-K-2 wave B (2026-11-19, code-only): `pass_mining_explosives`
+    // (`MiningExplosivesBiome.cs:10-83` + `WorldGen.cs:21061-21101`) lands
+    // on a fresh `pass_rng("Micro Biomes")` copy — on a DEFAULT-sized world
+    // the wired ore traps (the tier-ore veins, the 141/411 pair, the red
+    // wires) move this pin BY DESIGN. The re-pin is DEFERRED: no compiler
+    // may run on this branch, so the new value cannot be measured; the
+    // gate re-pins it. The `fix/vines-destroy-walls` branch (b95bfc60)
+    // also moves the worldgen pins (stale-by-design) — both branches re-pin
+    // at the gate, sequentially. `SEED42_512` below is UNCHANGED: the
+    // explosives block's `Next(380, maxTilesX - 380)` beach band collapses
+    // on a 512-wide world (the C# throws; the port's sub-vanilla width
+    // guard skips the block), and the 141/411 boot-static bits only matter
+    // when those kinds exist.
     const DEFAULT_WORLD: u32 = 143177146;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
