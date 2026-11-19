@@ -103,11 +103,19 @@
 //! Manhattan scan (`npc_target::target_closest`, S1-D-3p) — no draws.
 //! `NewNPC`/`Transform`/`DiscourageDespawn` draw nothing.
 //!
-//! ## Wiring seams (deferred — the BlazingWheel / style72 precedent)
+//! ## Wiring seams (WIRED — `task/S1-D-3-wire-saucer`, code-only)
 //!
-//! The live `npc.rs::update_scutlix_rider` / `update_saucer_mount` keep
-//! running byte-identical; this module is the faithful reference the
-//! wiring wave swaps in. Seams:
+//! The live `npc.rs::update_scutlix_rider` / `update_saucer_mount` /
+//! `update_solar_drakomire_rider` stand-ins are RETIRED; the aiStyle-75
+//! axis claim routes the six kinds to this `style75_step`: the SIM runs
+//! it as a pooled arm in `world_sim/npcs.rs`'s tick closure over the
+//! slot-aligned `App::npcs` on the `UpdateNPCs` stream (draining
+//! `Style75Out` there), and a bare `update_rng` caller rides
+//! `Npc::update_rng_style75_solo` over a one-slot pool. The carrier-link
+//! pre-pass writes the slot-aligned `ai[0]` host links + the shell's
+//! `local_ai[0..3]` crew slots each tick (the port's nearest-living-kind
+//! stand-in for the C# index links).
+//! Seams:
 //! * The pool is slot-aligned (`npcs[me]` is `Main.npc[whoAmI]`, the
 //!   `npc_ai_style37.rs` convention); `ai[0]`/`localAI[i]` index it
 //!   directly. The live sim's uid links are the wiring caller's
@@ -134,9 +142,8 @@
 //!   owes the `HitEffect()` + deactivation pair (the style72 pop
 //!   precedent).
 //!
-//! See docs/ANALYSIS.md "The mount machine (S1-D-3 aiStyle-75,
-//! code-only)".
-#![allow(dead_code)] // wiring deferred — the dispatch swap lands with the wiring wave
+//! See docs/ANALYSIS.md "The mount machine (S1-D-3 aiStyle-75, code-only)"
+//! and "The saucer wiring (S1-D-3-wire-saucer, code-only)".
 
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};

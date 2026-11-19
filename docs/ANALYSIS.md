@@ -24979,3 +24979,105 @@ impl, `target_closest`'s 6-arg shape, the `Npc` fields
 `:7052-7055`, `Dust.NewDust` `:75-256`, `Utils.RotatedBy/ToRotation*`,
 `LegacySoundPlayer.cs:610-634`). The 16 witness tests are WRITTEN, NOT
 RUN — **no compiler invoked**.
+
+## The saucer wiring (S1-D-3-wire-saucer, code-only)
+
+`task/S1-D-3-wire-saucer` wires R34's faithful `npc_ai_style75.rs` module
+into the live sim, closing the **P0 event-progression blocker** the R58b
+audit flagged as M3: the live `update_saucer_mount` had NO phase bridge,
+so killing the Martian saucer crew (392 shell / 393 turrets / 394 cannons)
+NEVER opened the core 395 and the invasion fight could not progress. The
+old witness `the_dead_crew_opening_the_core_kills_it` asserted
+`core.is_some() || invasion_type == 0` — a tautology that admitted the gap.
+
+**Base.** The work is based on R34's module branch
+`task/S1-D-3-aistyle75` (tip `ac1f45a2`), merged onto `origin/main`
+(`c7fe175d`) in the `TR-wire16` worktree — the chain lands both the module
+and the wiring. CODE-ONLY MODE: no cargo/rustc/rustfmt/tests invoked; the
+new witnesses are written, not run.
+
+**What the wiring does.**
+- **Axis claim.** `npc.rs::update_rng`'s aiStyle axis gains
+  `75 => self.update_rng_style75_solo(...)`; the six kinds' kind-match arms
+  (`ScutlixRider`, `MartianSaucer`/`Turret`/`Cannon`, `FlyingDutchmanCannon`,
+  `SolarDrakomireRider`) become `unreachable!` markers and the three
+  stand-in functions are deleted. The duplicate dead saucer arm
+  (`npc.rs:4036-4038` in the audit) is marked unreachable too.
+- **Pooled sim path.** The family machine is a POOL step (the host/crew
+  slot links read `App::npcs` live), so `world_sim/npcs.rs`'s tick closure
+  runs `style75_step(npcs, i, ...)` in slot order on the `UpdateNPCs`
+  stream for every aiStyle-75 NPC — ahead of the solo `update_rng` axis
+  (which only sees a one-slot pool). The shared `NPC.Update` preamble is
+  extracted to `Npc::update_preamble`; the pooled arm runs
+  preamble → `style75_step` → `find_frame` → `contact`, matching
+  `update_rng`. The solo wrapper (`update_rng_style75_solo`) keeps bare
+  `update_rng` test callers faithful over a one-slot pool.
+- **Slot-aligned links.** `carrier_link_pre_pass` (+ its linear A/B twin)
+  now writes the slot-aligned `ai[0]` host link (the module's
+  `npcs[ai[0]]` read) and the 392 shell's `local_ai[0..3]` crew slots (the
+  C#'s `localAI` links, `NPC.cs:36095-36102`), adds the 416 DrakomireRider,
+  and NO LONGER kills orphaned mounts — the module owns the orphan-death
+  (`:36064-36069`) and the riders' `Transform(382/518)` fallbacks
+  (`:36056-36063`). A hostless mount gets `ai[0] = -1`.
+- **Seam drains.** `Style75Out.shots` → `wants_hostile_shot` /
+  `wants_hostile_shot_ai` (the sim's shot drain resolves them);
+  `spawn_carrier` → `wants_mount_carrier` (a resolve pass spawns the 391/415
+  Bottom-placed, `NPC.cs:80770`, `timeLeft = 750`); `transform` →
+  `wants_transform` (a resolve pass runs `Npc::transform_to_kind`, the
+  `NPC.Transform` maths `:81084-81114`); `sounds` → `Audio::play_use_sound`
+  drained at the C# call position on the `UpdateNPCs` stream (the case-2
+  `Next(-6,7)` pitch draw, `LegacySoundPlayer.cs:632`); `died` → hp already
+  0, the death pass owns HitEffect + deactivation. Dust spawns through the
+  REAL `DustPool::new_dust` on `app.dust` with `app.spawn_ctx()`.
+
+**M1–M4 resolution (the audit's mount defects).**
+- **M1 (seats unrotated/unscaled)** — RESOLVED by activation: the module's
+  ride offsets do `offset *= core.scale` THEN `RotatedBy(core.rotation)`
+  (`NPC.cs:35547-35551` shell, `:35623-35627` turret, `:35637-35641`
+  cannon, `:35652-35656` Dutchman), exactly the C# order. The wiring feeds
+  the live core's `scale`/`rotation` through the slot-aligned pool.
+- **M2 (grouped one-emitter battery)** — RESOLVED by activation: the module
+  draws ONE `Next(maxValue4/5)` gate per LIVE-flag emitter in the order
+  turret-left, turret-right, cannon-left, cannon-right, each hit drawing
+  its own NextDouble/NextDouble/Next/Next chain (`NPC.cs:35978-36025`).
+  The wiring runs that exact code on the `UpdateNPCs` stream.
+- **M3 (phase bridge absent)** — RESOLVED: the module's 392 arm implements
+  the bridge (`NPC.cs:35552-35613`, read whole): flag80 = core in [0,1) AND
+  no crew lives; the %200 crew netUpdate marks; crew all dead → core
+  `ai[0] = 3` (classic) / `1` (expert) + zero ai[1..3] + netUpdate. The
+  wiring drains it through the sim (the module writes the core slot
+  directly in the pooled step). The tautology witness is replaced by
+  `the_dead_crew_open_the_core_and_the_fight_progresses`: live crew blocks
+  the bridge, dead crew opens the core (ai[0]=3, ai[1..3]=0), the core's
+  death ride (`NPC.cs:36104-36107`) kills it next tick.
+- **M4 (despawn-ride restore inverted)** — the −1→0 / −2→2 restore lives in
+  the CORE's aiStyle-76 machine (`update_saucer_core`, `NPC.cs:36130-36149`),
+  which is R35's branch territory (89b65c54, in-place fixes). This wiring
+  does NOT touch `update_saucer_core`; the bridge writes core `ai[0]` only.
+  The module's mount-side M4 concern (the riders' despawn mirrors) is
+  carried by `DiscourageDespawn(60)` + the `timeLeft` mirrors.
+
+**RNG argument.** The wiring adds NO draws of its own: the sim calls the
+SAME `style75_step` on the SAME `UpdateNPCs` stream the module's 16
+witnesses pin (per-slot battery gates + hit chains + dust gates, the real
+`DustPool::new_dust` internals, the sentinel velocity writes). The only
+new stream consumers are the Item12/Item39 sound drains, which the module
+already accounts for via `Style75Out::sounds` (the audio seam owns the one
+`Next(-6,7)` pitch draw per audible play, at the C# call position). The
+carrier-spawn/Transform resolves draw nothing (`NewNPC`/`Transform`/
+`TargetClosest` are RNG-free). The `the_wired_style75_path_is_rng_parity_deterministic`
+witness pins two identical apps to byte-identical NPC state + the
+`UpdateNPCs` stream at the same position.
+
+**Boundary.** Core 395 rides aiStyle 76 = R35's branch (`89b65c54`,
+in-place fixes). `update_saucer_core` is UNTOUCHED; the bridge writes the
+core's `ai[0]` (and zeroes ai[1..3]) only, exactly as the C# shell arm does.
+
+**Verification.** Code-only: every seam call site checked against the
+actual signatures by read/grep (`style75_step`'s 8-arg shape,
+`Style75Ctx`/`Style75Out` fields, `play_use_sound`'s 6-arg shape,
+`transform_to_kind`'s kind-table swap, `DustPool::new_dust`'s 12-arg shape,
+`session_candidate`/`target_closest`). The C# bridge (`NPC.cs:35540-35619`)
+and Transform (`:81084-81148`) and NewNPC Bottom placement (`:80755-80784`)
+were re-read whole. The progression/retirement/RNG-parity witnesses are
+WRITTEN, NOT RUN — **no compiler invoked**.
