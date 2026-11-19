@@ -268,12 +268,50 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     let sections = load_sections(table)?;
 
     world.frame_important = std::mem::take(&mut table.importance);
-    world.compute_spawn_y();
+    // `WorldFile.cs:730`: `CheckSavedOreTiers` runs after a successful load —
+    // a pre-216 file (or a -1 quartet) re-derives the four metals from the
+    // tiles. `spawnTileY` keeps the file's value (`LoadWorldFlags:2069`); the
+    // old `compute_spawn_y` override was a deviation, removed with S1-J-3b.
+    check_saved_ore_tiers(&mut world);
     Ok(LoadedWorld {
         world,
         sections,
         version,
     })
+}
+
+/// `WorldFile.CheckSavedOreTiers` (`WorldFile.cs:794-849`): when any of the
+/// four pre-hardmode tiers is -1, count the ore tiles
+/// (`WorldGen.CountTileTypesInWorld(7, 166, 6, 167, 9, 168, 8, 169)`,
+/// `WorldGen.cs:86885-86907` — active tiles only, first matching kind wins)
+/// and pick per pair: the classic metal when its count is strictly greater,
+/// the alternate otherwise. All four pairs are re-derived together, as the
+/// C# does.
+fn check_saved_ore_tiers(world: &mut World) {
+    {
+        let t = &world.ore_tiers;
+        if t.copper != -1 && t.iron != -1 && t.silver != -1 && t.gold != -1 {
+            return;
+        }
+    }
+    const KINDS: [u16; 8] = [7, 166, 6, 167, 9, 168, 8, 169];
+    let mut counts = [0i32; 8];
+    for tile in &world.tiles {
+        if !tile.active() {
+            continue;
+        }
+        for (k, &kind) in KINDS.iter().enumerate() {
+            if tile.kind == kind {
+                counts[k] += 1;
+                break;
+            }
+        }
+    }
+    let t = &mut world.ore_tiers;
+    t.copper = if counts[0] > counts[1] { 7 } else { 166 };
+    t.iron = if counts[2] > counts[3] { 6 } else { 167 };
+    t.silver = if counts[4] > counts[5] { 9 } else { 168 };
+    t.gold = if counts[6] > counts[7] { 8 } else { 169 };
 }
 
 /// C#'s `Position != positions[i]` check (`LoadWorld_Version2:1767-1780`):
@@ -730,9 +768,17 @@ mod tests {
         b.extend_from_slice(&900i32.to_le_bytes()); // bottom
         b.extend_from_slice(&6i32.to_le_bytes()); // maxTilesY
         b.extend_from_slice(&8i32.to_le_bytes()); // maxTilesX
-                                                  // flags: GameMode (+9 bools when >= 209), creation time, last played.
+        // flags: GameMode (i32 from 209) + the nine seed bools, EACH gated on
+        // its own introduction version (`LoadWorldFlags:1983-2024`: 222/227/
+        // 238/239/241/249/266/267/302 — not all nine from 209), creation
+        // time, last played.
         if version >= 209 {
-            b.extend_from_slice(&[0u8; 13]);
+            b.extend_from_slice(&[0u8; 4]); // GameMode i32
+            for min_version in [222, 227, 238, 239, 241, 249, 266, 267, 302] {
+                if version >= min_version {
+                    b.push(0);
+                }
+            }
         } else {
             if version >= 112 {
                 b.push(0); // GameMode as bool (absent below 112 — C#-faithful)
@@ -1596,6 +1642,41 @@ mod tests {
         world.fast_forward_to_dawn = true;
         world.fast_forward_to_dusk = true;
         world.unlocked_slime_rainbow_spawn = true;
+        // S1-J-3b: the creation clock and a non-default tier sweep.
+        world.creation_time = 5250991586427387904i64;
+        world.last_played = 5250991586427387905i64;
+        world.ore_tiers = crate::ores::SavedOreTiers {
+            copper: 166,
+            iron: 167,
+            silver: 168,
+            gold: 169,
+            cobalt: 221,
+            mythril: 222,
+            adamantite: 223,
+        };
+        // S1-J-3b: the newly-owned saved-NPC / quest / event / tower / unlock
+        // flags, each at a distinct non-default value.
+        world.saved_wizard = true;
+        world.saved_mech = true;
+        world.saved_angler = true;
+        world.angler_quest = 17;
+        world.saved_stylist = true;
+        world.saved_tax_collector = true;
+        world.saved_golfer = true;
+        world.downed_ancient_cultist = true;
+        world.downed_moon_lord = true;
+        world.downed_queen_slime = true;
+        world.downed_tower_solar = true;
+        world.downed_tower_vortex = true;
+        world.downed_tower_nebula = true;
+        world.downed_tower_stardust = true;
+        world.tower_active_solar = true;
+        world.tower_active_vortex = true;
+        world.tower_active_nebula = true;
+        world.tower_active_stardust = true;
+        world.lunar_apocalypse_is_up = true;
+        world.unlocked_party_girl = true;
+        world.unlocked_princess = true;
         world
     }
 
@@ -1736,6 +1817,82 @@ mod tests {
             got.unlocked_slime_rainbow_spawn, want.unlocked_slime_rainbow_spawn,
             "{context}: rainbow slime"
         );
+        // S1-J-3b: the newly-closed header fields.
+        assert_eq!(got.creation_time, want.creation_time, "{context}: creation");
+        assert_eq!(got.last_played, want.last_played, "{context}: last played");
+        assert_eq!(got.ore_tiers, want.ore_tiers, "{context}: ore tiers");
+        // S1-J-3b: the saved-NPC flags and the quest index.
+        assert_eq!(got.saved_wizard, want.saved_wizard, "{context}: savedWizard");
+        assert_eq!(got.saved_mech, want.saved_mech, "{context}: savedMech");
+        assert_eq!(got.saved_angler, want.saved_angler, "{context}: savedAngler");
+        assert_eq!(got.angler_quest, want.angler_quest, "{context}: anglerQuest");
+        assert_eq!(
+            got.saved_stylist, want.saved_stylist,
+            "{context}: savedStylist"
+        );
+        assert_eq!(
+            got.saved_tax_collector, want.saved_tax_collector,
+            "{context}: savedTaxCollector"
+        );
+        assert_eq!(got.saved_golfer, want.saved_golfer, "{context}: savedGolfer");
+        // S1-J-3b: the event bosses, the towers and the apocalypse phase.
+        assert_eq!(
+            got.downed_ancient_cultist, want.downed_ancient_cultist,
+            "{context}: downedAncientCultist"
+        );
+        assert_eq!(
+            got.downed_moon_lord, want.downed_moon_lord,
+            "{context}: downedMoonlord"
+        );
+        assert_eq!(
+            got.downed_queen_slime, want.downed_queen_slime,
+            "{context}: downedQueenSlime"
+        );
+        assert_eq!(
+            got.downed_tower_solar, want.downed_tower_solar,
+            "{context}: downedTowerSolar"
+        );
+        assert_eq!(
+            got.downed_tower_vortex, want.downed_tower_vortex,
+            "{context}: downedTowerVortex"
+        );
+        assert_eq!(
+            got.downed_tower_nebula, want.downed_tower_nebula,
+            "{context}: downedTowerNebula"
+        );
+        assert_eq!(
+            got.downed_tower_stardust, want.downed_tower_stardust,
+            "{context}: downedTowerStardust"
+        );
+        assert_eq!(
+            got.tower_active_solar, want.tower_active_solar,
+            "{context}: TowerActiveSolar"
+        );
+        assert_eq!(
+            got.tower_active_vortex, want.tower_active_vortex,
+            "{context}: TowerActiveVortex"
+        );
+        assert_eq!(
+            got.tower_active_nebula, want.tower_active_nebula,
+            "{context}: TowerActiveNebula"
+        );
+        assert_eq!(
+            got.tower_active_stardust, want.tower_active_stardust,
+            "{context}: TowerActiveStardust"
+        );
+        assert_eq!(
+            got.lunar_apocalypse_is_up, want.lunar_apocalypse_is_up,
+            "{context}: LunarApocalypseIsUp"
+        );
+        // S1-J-3b: the two owned town-NPC spawn unlocks.
+        assert_eq!(
+            got.unlocked_party_girl, want.unlocked_party_girl,
+            "{context}: unlockedPartyGirlSpawn"
+        );
+        assert_eq!(
+            got.unlocked_princess, want.unlocked_princess,
+            "{context}: unlockedPrincessSpawn"
+        );
     }
 
     #[test]
@@ -1754,7 +1911,8 @@ mod tests {
         let z = |b: &mut Vec<u8>, n: usize| b.resize(b.len() + n, 0);
         b.extend_from_slice(&0i32.to_le_bytes()); // GameMode — unowned
         z(&mut b, 9); // the nine world-flavour bools — unowned
-        z(&mut b, 16); // CreationTime, LastPlayed — no wall clock
+        b.extend_from_slice(&(world.creation_time as u64).to_le_bytes());
+        b.extend_from_slice(&(world.last_played as u64).to_le_bytes());
         b.push(world.moon_type);
         b.extend(flags_tail_prefix(world));
         // The tail opens with the two owned event flags; the fixture table
@@ -1762,6 +1920,126 @@ mod tests {
         let mut tail = flags_tail(VER);
         tail[0] = u8::from(world.blood_moon);
         tail[1] = u8::from(world.eclipse);
+        // The hardmode trio at tail offset 76 (2+8+1+11+7+8+1+20+8+1+9 bytes
+        // of flags before it) — `SaveWorldFlags:1315-1317`.
+        let mut at = 76;
+        for v in [
+            world.ore_tiers.cobalt,
+            world.ore_tiers.mythril,
+            world.ore_tiers.adamantite,
+        ] {
+            tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
+            at += 4;
+        }
+        // The pre-hardmode quartet at tail offset 2005 (8 setBG + 10 cloud +
+        // 4 angler count + 1+4+1+1+1 saved NPCs + 4+4 invasion/cultist +
+        // 2+1172+2+586 banner arrays + 1 dawn + 9+9 event/tower + 10 party +
+        // 13 sandstorm + 4 DD2 + 1+1+3 BG + 1 book + 7 lantern + 4+52 tree
+        // tops + 2 seasons past the trio's end at 88) —
+        // `SaveWorldFlags:1388-1391`.
+        let mut at = 2005;
+        for v in [
+            world.ore_tiers.copper,
+            world.ore_tiers.iron,
+            world.ore_tiers.silver,
+            world.ore_tiers.gold,
+        ] {
+            tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
+            at += 4;
+        }
+        // S1-J-3b: the newly-owned single-byte flags, each at its C# tail
+        // offset (the running sum of the field widths in `flags_tail`).
+        // savedWizard/savedMech sit in the 7-byte savedGoblin..downedPirates
+        // run that starts at 22 (2+8+1+11): goblin@22, wizard@23, mech@24.
+        tail[23] = u8::from(world.saved_wizard); // savedWizard (`:1294`)
+        tail[24] = u8::from(world.saved_mech); // savedMech (`:1295`)
+        // The OLDER owned flags the writer also emits (DW-2.2's set) — the
+        // table must carry the world's values for every owned field, not
+        // just the S1-J-3b close set.
+        // The 11-byte downed run at 11 (`SaveWorldFlags:1283-1293`), incl.
+        // the derived downedMechBossAny (`:1290`).
+        for (i, v) in [
+            world.downed_eoc,
+            world.downed_eow,
+            world.downed_skeletron,
+            world.downed_queen_bee,
+            world.downed_mech_boss1,
+            world.downed_mech_boss2,
+            world.downed_mech_boss3,
+            world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3,
+            world.downed_plant_boss,
+            world.downed_golem,
+            world.downed_slime_king,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            tail[11 + i] = u8::from(v);
+        }
+        tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
+        tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
+        tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
+        tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
+        // The orbs/meteor/counts/hardmode block at 29..36 (`:1299-1305`).
+        tail[29] = u8::from(world.shadow_orb_smashed);
+        tail[30] = u8::from(world.spawn_meteor);
+        tail[31] = world.shadow_orb_count as u8; // C# truncates to a byte
+        tail[32..36].copy_from_slice(&world.altars_smashed.to_le_bytes());
+        tail[36] = u8::from(world.hard_mode);
+        // The invasion block at 38..57 + slime rain + sundial (`:1306-1312`).
+        tail[38..42].copy_from_slice(&world.invasion_delay.to_le_bytes());
+        tail[42..46].copy_from_slice(&world.invasion_size.to_le_bytes());
+        tail[46..50].copy_from_slice(&world.invasion_type.to_le_bytes());
+        tail[50..58].copy_from_slice(&world.invasion_x.to_le_bytes());
+        tail[58..66].copy_from_slice(&world.slime_rain_time.to_le_bytes());
+        tail[66] = world.sundial_cooldown;
+        // The rain snapshot at 67..75 (`SetTempToOngoing:1057-1059`).
+        tail[67] = u8::from(world.raining);
+        tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
+        tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
+        // The owned background styles inside setBG 0..7 at 88..95
+        // (`:1318-1325`): corrupt@89, jungle@90, hallow@92, crimson@93.
+        tail[89] = world.corrupt_bg_style;
+        tail[90] = world.jungle_bg_style;
+        tail[92] = world.hallow_bg_style;
+        tail[93] = world.crimson_bg_style;
+        // savedAngler..savedGolfer follow the 4-byte angler-list count at
+        // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
+        tail[110] = u8::from(world.saved_angler); // savedAngler (`:1334`)
+        tail[111..115].copy_from_slice(&(world.angler_quest as i32).to_le_bytes()); // anglerQuest (`:1335`)
+        tail[115] = u8::from(world.saved_stylist); // savedStylist (`:1336`)
+        tail[116] = u8::from(world.saved_tax_collector); // savedTaxCollector (`:1337`)
+        tail[117] = u8::from(world.saved_golfer); // savedGolfer (`:1338`)
+        tail[118..122].copy_from_slice(&world.invasion_size_start.to_le_bytes()); // (`:1339`)
+        // The event bosses past the banner arrays (which end at 1888):
+        // dawn@1888, fishron@1889, martians@1890, cultist@1891, moonlord@1892.
+        tail[1891] = u8::from(world.downed_ancient_cultist); // downedAncientCultist (`:1345`)
+        tail[1892] = u8::from(world.downed_moon_lord); // downedMoonlord (`:1346`)
+        tail[1888] = u8::from(world.fast_forward_to_dawn); // fastForwardTimeToDawn (`:1342`)
+        tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
+        // The four tower downeds + four actives + the apocalypse phase, after
+        // the five seasonal bosses (1893..1897): 1898..1906.
+        tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
+        tail[1899] = u8::from(world.downed_tower_vortex); // (`:1353`)
+        tail[1900] = u8::from(world.downed_tower_nebula); // (`:1354`)
+        tail[1901] = u8::from(world.downed_tower_stardust); // (`:1355`)
+        tail[1902] = u8::from(world.tower_active_solar); // (`:1356`)
+        tail[1903] = u8::from(world.tower_active_vortex); // (`:1357`)
+        tail[1904] = u8::from(world.tower_active_nebula); // (`:1358`)
+        tail[1905] = u8::from(world.tower_active_stardust); // (`:1359`)
+        tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
+        // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
+        tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
+        // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
+        // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
+        tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
+        tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
+        tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
+        // green/old/purple, then rainbow@2041.
+        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
+        tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
+        tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
         b
     }
@@ -2518,8 +2796,7 @@ mod tests {
     fn wld_roundtrip_metadata() {
         // `SaveWorldHeader:1221` + `SaveWorldFlags:1238`: every header field the
         // port owns, and the footer's name (`SaveFooter:1752`). `spawn_y` is
-        // recomputed from the grid (`parse_table`'s `compute_spawn_y`), so it is
-        // not part of the file contract.
+        // the file's own value since S1-J-3b (`LoadWorldFlags:2069`).
         let mut world = World::new("Metadata — ünïcode".into(), 8, 6);
         world.seed = 424242;
         world.generator_version = 140_015_933_8497;
@@ -2557,9 +2834,9 @@ mod tests {
         assert_eq!(back.generator_version, world.generator_version);
         assert_eq!(back.unique_id, world.unique_id);
         assert_eq!(back.world_id, world.world_id);
-        // `SaveWorldFlags:1245-1249`: the spawn column (`spawnTileX`); the row
-        // is derived from the tiles on load.
+        // `SaveWorldFlags:1270-1271`: the spawn column and row (`spawnTileX/Y`).
         assert_eq!(back.spawn_x, world.spawn_x);
+        assert_eq!(back.spawn_y, world.spawn_y);
         assert_eq!(back.time, world.time);
         assert_eq!(back.day_time, world.day_time);
         assert_eq!(back.moon_type, world.moon_type);
@@ -2798,6 +3075,24 @@ mod tests {
         );
         assert_eq!((w.width, w.height), (40, 30));
         assert_eq!(loaded.version, 326);
+        // S1-J-3b: the closed header fields — the pinned creation clock, the
+        // file's spawn row (`LoadWorldFlags:2069`, no derivation) and the
+        // seven ore tiers (`:2131-2133`/`:2344-2347`).
+        assert_eq!(w.creation_time, 5250991586427387904);
+        assert_eq!(w.last_played, 5250991586427387904);
+        assert_eq!(w.spawn_y, 18);
+        assert_eq!(
+            w.ore_tiers,
+            crate::ores::SavedOreTiers {
+                copper: 7,
+                iron: 6,
+                silver: 9,
+                gold: 8,
+                cobalt: 107,
+                mythril: 108,
+                adamantite: 111,
+            }
+        );
         // The flags block's owned scalars (SaveWorldFlags).
         assert_eq!(w.spawn_x, 20);
         assert_eq!(w.world_surface, 12.0);
@@ -2899,12 +3194,15 @@ mod tests {
         // exactly (a field-by-field walk in SaveWorldFlags order), so a future
         // change that owns one of these fields — or breaks an owned one — is
         // caught. The documented divergences (ANALYSIS "The C#-written golden
-        // fixture"): CreationTime (unowned), spawnTileY (derived from the tiles
-        // on load, compute_spawn_y), the seven ore tiers (the .wld flags writer
-        // writes zeros; the port keeps them on the .trwld side), the banner
-        // kill/claimable counts (no .wld store), the tree-top variations (no
-        // store) and the world-gen manifest JSON (the port writes the empty
-        // string). Every OTHER field re-writes byte-identical.
+        // fixture"): the banner kill/claimable counts (no .wld store), the
+        // tree-top variations (no store) and the world-gen manifest JSON (the
+        // port writes the empty string). S1-J-3b closed CreationTime,
+        // spawnTileY, the seven ore tiers (`World.creation_time`, the
+        // file-faithful spawn read, `World.ore_tiers`), the saved-NPC flags
+        // (wizard/mech/angler/stylist/taxCollector/golfer), the angler quest
+        // index, the cultist/Moon Lord/Queen Slime kills, the four tower
+        // downeds/actives + the apocalypse phase, and the party-girl/princess
+        // spawn unlocks. Every OTHER field re-writes byte-identical.
         let loaded = golden_loaded();
         let bag = golden_bag(&loaded);
         let rewritten = to_bytes(&loaded.world, &bag, 1).expect("re-write");
@@ -3007,15 +3305,290 @@ mod tests {
         // The exact divergence set — the unowned fields, nothing else.
         assert_eq!(
             diffs,
-            vec![
-                "CreationTime", "spawnTileY",
-                "Cobalt", "Mythril", "Adamantite",
-                "killCount[1]", "claimable[1]", "treeTop[0]",
-                "Copper", "Iron", "Silver", "Gold",
-                "manifest",
-            ],
+            vec!["killCount[1]", "claimable[1]", "treeTop[0]", "manifest",],
             "the header/flags divergences must be exactly the documented unowned fields"
         );
+    }
+
+    #[test]
+    fn s1_j_3b_check_saved_ore_tiers_rederives_the_quartet_from_the_tiles() {
+        // `WorldFile.cs:794-849`: any -1 quartet member triggers the tile
+        // count; per pair the classic metal wins only on a STRICTLY greater
+        // count (`num > num2`), a tie lands the alternate. All four pairs
+        // re-derive together even when only one member was -1.
+        let mut world = World::new("OreCheck".into(), 4, 8);
+        world.ore_tiers = crate::ores::SavedOreTiers {
+            copper: -1,
+            iron: 6,
+            silver: 9,
+            gold: 8,
+            cobalt: 107,
+            mythril: 108,
+            adamantite: 111,
+        };
+        // Two copper (7) vs one tin (166); one iron (6) vs one lead (167) —
+        // the tie; no silver/gold tiles at all (0 vs 0 — also ties).
+        for (x, y, kind) in [(0, 4, 7u16), (1, 4, 7), (2, 4, 166), (0, 5, 6), (1, 5, 167)] {
+            let i = world.index(x, y);
+            world.tiles[i].kind = kind;
+            world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // An INACTIVE copper tile does not count (`CountTileTypesInWorld`'s
+        // `!tile.active()` continue, `WorldGen.cs:86892-86895`).
+        let inactive = world.index(3, 4);
+        world.tiles[inactive].kind = 7;
+        check_saved_ore_tiers(&mut world);
+        assert_eq!(world.ore_tiers.copper, 7, "2 > 1 keeps the classic");
+        assert_eq!(world.ore_tiers.iron, 167, "the tie lands the alternate");
+        assert_eq!(world.ore_tiers.silver, 168, "0 vs 0 lands the alternate");
+        assert_eq!(world.ore_tiers.gold, 169);
+        // The hardmode trio is untouched by the check.
+        assert_eq!(world.ore_tiers.cobalt, 107);
+        assert_eq!(world.ore_tiers.mythril, 108);
+        assert_eq!(world.ore_tiers.adamantite, 111);
+        // A fully-set quartet is a no-op (`:796-799`'s early return) even when
+        // the tiles would say otherwise.
+        world.ore_tiers.copper = 166;
+        check_saved_ore_tiers(&mut world);
+        assert_eq!(world.ore_tiers.copper, 166, "no -1: the check returns");
+    }
+
+    #[test]
+    fn s1_j_3b_a_pre_216_wld_resets_and_rederives_the_ore_tiers() {
+        // `LoadWorldFlags:2349-2354`: below 216 the quartet is not in the file
+        // and resets to -1; the post-load `CheckSavedOreTiers`
+        // (`WorldFile.cs:730`) then re-derives it from the tiles. The v150
+        // synthetic fixture carries no ore tiles, so every pair ties and all
+        // four alternates land. v150 carries seven sections (tile entities
+        // exist from 116; pressure plates only from 170).
+        let data = synthetic_file(150, &[2, 144], 160, 7);
+        let world = parse(&data).expect("v150 loads");
+        assert_eq!(world.ore_tiers.copper, 166);
+        assert_eq!(world.ore_tiers.iron, 167);
+        assert_eq!(world.ore_tiers.silver, 168);
+        assert_eq!(world.ore_tiers.gold, 169);
+        // The trio came from the file's zeros (the synthetic flags table).
+        assert_eq!(world.ore_tiers.cobalt, 0);
+        assert_eq!(world.ore_tiers.mythril, 0);
+        assert_eq!(world.ore_tiers.adamantite, 0);
+    }
+
+    #[test]
+    fn s1_j_3b_the_closed_header_fields_rewrite_byte_identical_to_the_fixture() {
+        // The S1-J-3b contract slice: the fixture's world head plus the flags
+        // block UP TO the first remaining unowned field (the banner kill
+        // counts) re-writes byte-for-byte — CreationTime, spawnTileY and the
+        // Cobalt/Mythril/Adamantite trio included. (The quartet after the tree
+        // tops is pinned by the divergence walk above: Copper..Gold no longer
+        // appear in its diff list.)
+        let loaded = golden_loaded();
+        let bag = golden_bag(&loaded);
+        let rewritten = to_bytes(&loaded.world, &bag, 1).expect("re-write");
+        let f = section_bodies(GOLDEN_WLD);
+        let r = section_bodies(&rewritten);
+        // The same field walk as the divergence test, stopping after
+        // `_tempCultistDelay` — the last owned field before `BannerSystem.Save`.
+        let mut fr = crate::binio::Reader::new(f[1]);
+        let mut rr = crate::binio::Reader::new(r[1]);
+        macro_rules! both {
+            ($m:ident) => {{
+                assert_eq!(fr.$m(), rr.$m());
+            }};
+        }
+        both!(cs_string); both!(cs_string); both!(u64); // name, seed, genVer
+        for _ in 0..16 { both!(u8); } // GUID
+        for _ in 0..7 { both!(i32); } // worldId + bounds + dims
+        both!(i32); // GameMode
+        for _ in 0..9 { both!(boolean); } // flavour bools
+        both!(u64); both!(u64); // CreationTime, LastPlayed
+        both!(u8); // moonType
+        for _ in 0..17 { both!(i32); } // tree/cave arrays + back styles
+        both!(i32); both!(i32); // spawnTileX/Y
+        both!(f64); both!(f64); both!(f64); // surface, rock, time
+        both!(boolean); both!(i32); // dayTime, moonPhase
+        for _ in 0..2 { both!(boolean); } // bloodMoon, eclipse
+        both!(i32); both!(i32); both!(boolean); // dungeonX/Y, crimson
+        for _ in 0..18 { both!(boolean); } // downed/saved flags
+        both!(boolean); both!(boolean); both!(u8); both!(i32); // orbs..altars
+        both!(boolean); both!(boolean); // hardMode, afterPartyOfDoom
+        for _ in 0..3 { both!(i32); } // invasion delay/size/type
+        both!(f64); both!(f64); both!(u8); // invasionX, slimeRain, sundial
+        both!(boolean); both!(i32); both!(f32); // the rain triple
+        for _ in 0..3 { both!(i32); } // the ore trio — now owned
+        for _ in 0..8 { both!(u8); } // setBG 0..7
+        both!(i32); both!(i16); both!(f32); // clouds + wind
+        let n = fr.i32().unwrap();
+        assert_eq!(n, rr.i32().unwrap());
+        for _ in 0..n { both!(cs_string); } // angler list
+        both!(boolean); both!(i32); // savedAngler, anglerQuest
+        for _ in 0..3 { both!(boolean); } // savedStylist..savedGolfer
+        both!(i32); both!(i32); // invasionSizeStart, _tempCultistDelay
+        let cut = fr.pos();
+        assert_eq!(cut, rr.pos());
+        assert_eq!(
+            &f[1][..cut],
+            &r[1][..cut],
+            "the header through the ore trio must re-write byte-identical"
+        );
+    }
+
+    /// Locates the flags tail inside a synthetic file's pointer-1 section:
+    /// the block ends the section, so the tail is its last `flags_tail(v)`
+    /// bytes — independent of the world-head width.
+    fn tail_offset_in_synthetic(data: &[u8], version: i32) -> usize {
+        // The pointer table starts after the version i32 (+ the 20-byte
+        // FileMetadata from v135) + the i16 section count; pointer 1 is the
+        // second entry (`SaveFileFormatHeader:1174-1180`).
+        let ptr_at = 4 + if version >= 135 { 20 } else { 0 } + 2;
+        let ptr1 = i32::from_le_bytes(data[ptr_at + 4..ptr_at + 8].try_into().unwrap()) as usize;
+        ptr1 - flags_tail(version).len()
+    }
+
+    #[test]
+    fn s1_j_3b_the_newly_owned_flags_land_at_their_csharp_byte_offsets() {
+        // The byte-layout contract for the S1-J-3b close set: patch each
+        // newly-owned flag into the independent `flags_tail` table at its C#
+        // offset (`SaveWorldFlags:1294-1406`), then the reader must land every
+        // value in its World field. The offsets are the running sum of the
+        // field widths — the same ones `expected_flags_block` pins for the
+        // writer, here checked against the reader.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        let patch = |data: &mut Vec<u8>, off: usize, v: u8| data[tail_at + off] = v;
+        patch(&mut data, 23, 1); // savedWizard (`:1294`)
+        patch(&mut data, 24, 1); // savedMech (`:1295`)
+        patch(&mut data, 110, 1); // savedAngler (`:1334`)
+        data[tail_at + 111..tail_at + 115].copy_from_slice(&17i32.to_le_bytes()); // anglerQuest (`:1335`)
+        patch(&mut data, 115, 1); // savedStylist (`:1336`)
+        patch(&mut data, 116, 1); // savedTaxCollector (`:1337`)
+        patch(&mut data, 117, 1); // savedGolfer (`:1338`)
+        patch(&mut data, 1891, 1); // downedAncientCultist (`:1345`)
+        patch(&mut data, 1892, 1); // downedMoonlord (`:1346`)
+        for off in 1898..=1901 {
+            patch(&mut data, off, 1); // downedTower{Solar,Vortex,Nebula,Stardust} (`:1352-1355`)
+        }
+        for off in 1902..=1905 {
+            patch(&mut data, off, 1); // TowerActive{Solar,Vortex,Nebula,Stardust} (`:1356-1359`)
+        }
+        patch(&mut data, 1906, 1); // LunarApocalypseIsUp (`:1360`)
+        patch(&mut data, 2025, 1); // downedQueenSlime (`:1396`)
+        patch(&mut data, 2030, 1); // unlockedPartyGirlSpawn (`:1401`)
+        patch(&mut data, 2035, 1); // unlockedPrincessSpawn (`:1406`)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.saved_wizard, "savedWizard at tail 23");
+        assert!(w.saved_mech, "savedMech at tail 24");
+        assert!(w.saved_angler, "savedAngler at tail 110");
+        assert_eq!(w.angler_quest, 17, "anglerQuest at tail 111 (i32 -> u8)");
+        assert!(w.saved_stylist, "savedStylist at tail 115");
+        assert!(w.saved_tax_collector, "savedTaxCollector at tail 116");
+        assert!(w.saved_golfer, "savedGolfer at tail 117");
+        assert!(w.downed_ancient_cultist, "downedAncientCultist at tail 1891");
+        assert!(w.downed_moon_lord, "downedMoonlord at tail 1892");
+        assert!(w.downed_tower_solar && w.downed_tower_vortex);
+        assert!(w.downed_tower_nebula && w.downed_tower_stardust);
+        assert!(w.tower_active_solar && w.tower_active_vortex);
+        assert!(w.tower_active_nebula && w.tower_active_stardust);
+        assert!(w.lunar_apocalypse_is_up, "LunarApocalypseIsUp at tail 1906");
+        assert!(w.downed_queen_slime, "downedQueenSlime at tail 2025");
+        assert!(w.unlocked_party_girl, "unlockedPartyGirlSpawn at tail 2030");
+        assert!(w.unlocked_princess, "unlockedPrincessSpawn at tail 2035");
+        // The writer's own block carries the same values at the same offsets
+        // (`expected_flags_block` is the independent table): the owned-world
+        // sweep round-trips through the whole block, not just the fields.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let want = expected_flags_block(&world);
+        // The block ends pointer 1's section; anchor from its end so the
+        // world-head width (name/seed text lengths) does not matter.
+        let flags_at = ptr1 - want.len();
+        assert_eq!(
+            &buf[flags_at..ptr1],
+            &want[..],
+            "the owned flags block matches the C# table byte for byte"
+        );
+    }
+
+    #[test]
+    fn s1_j_3b_active_towers_restore_their_shields_on_load() {
+        // `LoadWorldFlags:2235-2250`: an active tower comes back at
+        // `ShieldStrengthTowerMax` (`NPC.cs:6795-6806` — the normal power,
+        // halved once the Moon Lord is downed). The `.wld` does not serialize
+        // the shield strengths, so the restore is the only source.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        // Solar + nebula active, vortex + stardust downed but inactive; the
+        // Moon Lord still up -> the full normal power (100, the World default).
+        data[tail_at + 1902] = 1; // TowerActiveSolar
+        data[tail_at + 1904] = 1; // TowerActiveNebula
+        data[tail_at + 1899] = 1; // downedTowerVortex (inactive)
+        data[tail_at + 1901] = 1; // downedTowerStardust (inactive)
+        let w = parse(&data).expect("the tower fixture parses");
+        assert_eq!(w.tower_shield_solar, 100, "active solar: full shield");
+        assert_eq!(w.tower_shield_nebula, 100, "active nebula: full shield");
+        assert_eq!(w.tower_shield_vortex, 0, "inactive vortex keeps 0");
+        assert_eq!(w.tower_shield_stardust, 0, "inactive stardust keeps 0");
+        // With the Moon Lord downed the max halves (100 / 2 = 50).
+        data[tail_at + 1892] = 1; // downedMoonlord
+        let w = parse(&data).expect("the post-Moon-Lord fixture parses");
+        assert!(w.downed_moon_lord);
+        assert_eq!(w.tower_shield_solar, 50, "the halved max");
+        assert_eq!(w.tower_shield_nebula, 50, "the halved max");
+    }
+
+    #[test]
+    fn s1_j_3b_the_saved_npc_and_unlock_gates_follow_the_csharp() {
+        // The C# read gates (`LoadWorldFlags`): savedAngler @99 (`:2161`),
+        // anglerQuest @101 (`:2166`), savedStylist @104 (`:2171`),
+        // savedTaxCollector @129 (`:2174`), savedGolfer @201 (`:2178`),
+        // downedQueenSlime @223 (`:2371`), the eight unlocks @251 (`:2396-2403`).
+        // Below a gate the field keeps its fresh-world default.
+        // v98: the block ends at the angler-list count (`flags_tail` < 99).
+        let w = parse(&synthetic_file(98, &[2, 144], 160, 6)).expect("v98 loads");
+        assert!(!w.saved_angler, "below 99: savedAngler stays false");
+        // v100: savedAngler lands, the quest index does not exist yet. The
+        // pre-118 tail lacks the slimeKing byte, afterPartyOfDoom, the slime
+        // rain double and the sundial byte (11 bytes), so savedAngler sits at
+        // 110 - 11 = 99.
+        let mut data = synthetic_file(100, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 100);
+        data[tail_at + 99] = 1; // savedAngler
+        let w = parse(&data).expect("v100 loads");
+        assert!(w.saved_angler, "savedAngler reads from 99");
+        assert_eq!(w.angler_quest, 0, "below 101: the quest index stays 0");
+        // v102: the quest index lands (i32), the stylist does not exist yet.
+        let mut data = synthetic_file(102, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 102);
+        data[tail_at + 99] = 1; // savedAngler
+        data[tail_at + 100..tail_at + 104].copy_from_slice(&23i32.to_le_bytes());
+        let w = parse(&data).expect("v102 loads");
+        assert!(w.saved_angler);
+        assert_eq!(w.angler_quest, 23, "anglerQuest reads from 101");
+        assert!(!w.saved_stylist, "below 104: savedStylist stays false");
+        // v104: the stylist lands; the tax collector needs 129.
+        let mut data = synthetic_file(104, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 104);
+        data[tail_at + 104] = 1; // savedStylist
+        let w = parse(&data).expect("v104 loads");
+        assert!(w.saved_stylist, "savedStylist reads from 104");
+        assert!(!w.saved_tax_collector, "below 129: stays false");
+        // v250: the slime-blue byte exists (250) but the eight unlocks need
+        // 251 — the party girl/princess stay false. Eleven pointers: bestiary
+        // (210) and creative powers (220) both exist by now.
+        let w = parse(&synthetic_file(250, &[2, 144], 160, 11)).expect("v250 loads");
+        assert!(!w.unlocked_party_girl, "below 251: the unlocks stay false");
+        assert!(!w.unlocked_princess);
+        // v251: the unlock block lands — party girl (3rd) and princess (8th).
+        let mut data = synthetic_file(251, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 251);
+        // The v251 tail lacks the 257 afterPartyOfDoom byte and the 289
+        // claimable array (2 + 586) relative to v326 — 589 bytes before the
+        // unlocks: partyGirl@2030-589=1441, princess@2035-589=1446.
+        data[tail_at + 1441] = 1; // unlockedPartyGirlSpawn
+        data[tail_at + 1446] = 1; // unlockedPrincessSpawn
+        let w = parse(&data).expect("v251 loads");
+        assert!(w.unlocked_party_girl, "unlockedPartyGirlSpawn reads from 251");
+        assert!(w.unlocked_princess, "unlockedPrincessSpawn reads from 251");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------
