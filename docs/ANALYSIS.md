@@ -1,4 +1,4 @@
-﻿# Source analysis вЂ” Terraria 1.4.5.8
+# Source analysis вЂ” Terraria 1.4.5.8
 
 All figures below come from decompiling the retail `Terraria.exe` (v1.4.5.8, 25.4 MB) with
 ILSpy into `decompiled/` (1 549 `.cs` files) and `ReLogic.dll` into `decompiled-libs/ReLogic`
@@ -8621,6 +8621,144 @@ The micro-biome decorators over the finished world:
   Deviations: the `SetFrames`/`PlaceWall` framing rides the post-pipeline
   framing seam; the chest keeps the shared `place_chest` +
   `stock_placed_chest` stand-in (no special-seed loot arms); the
+  `dualDungeons` origin veto is deferred with the seed.
+- **The mining explosives** (`MiningExplosivesBiome`, `:10-83` - S1-K-2
+  wave B, 2026-11-19, **code-only**): the faithful port of the Micro
+  Biomes pass's explosives block (`WorldGen.cs:21061-21101`) - the
+  `actuallyNoTrapsForRealIMeanIt` + `!notTheBees || remix` gates (the step
+  adapter), the `ExplosiveTrapCount` config roll (Min 14 / Max 29 /
+  WorldArea) with the `(getGoodWorld || noTraps) && !notTheBees` x1.5
+  multiplier (`explosive_trap_count`, int truncation), the 3000-attempt
+  budget and the `RandomWorldPoint(rockLayer, 380, 200, 380)` origins
+  (x first; the remix band swaps to `worldSurface`/`rockLayer`). The
+  Place body: the solid-origin + spider-216/lizhahrd-187 wall vetoes, the
+  `Utils.SelectRandom` ore pick over the four rolled tier kinds (gold,
+  silver, iron, copper order - one `Next(4)`; the `GenVars.*Bar`
+  conditions map onto `world.ore_tiers`), the `NextDouble*2-1` direction,
+  the side-40 (`Right`/`Left`, origin-inclusive) + down-80 `IsSolid`
+  finds (`Conditions.cs:84-97` - the RAW `tileSolid` table with the
+  `InWorld(x,y,10)` gate, not `WorldGen.SolidTile`), the
+  `ShapeRunner(10.0, 20, (num, 1.0))` scan (`ShapeRunner.cs:23-58` - the
+  Manhattan-disc walker, the `num8 = (int)(num3/50)+1` double-decrement,
+  the `RandomVector2D(-0.5, 0.5)` velocity jitters + the +/-1 clamp) with
+  `Blotches()` (scale 2 - the two-`NextDouble` draws, first discarded,
+  the 0.3 spread over `Next(1-scale,1)..Next(0,scale)` x same) ->
+  `Scanner` -> `Modifiers.IsSolid` (`SolidOrSlopedTile`) -> `Scanner`; the
+  `solid < total/2` gate (integer division), the 30x20
+  `StructureMap.CanPlace` box (`GeneralPlacementTiles` =
+  `CreateBoolSet(true, ...)` - all kinds valid EXCEPT the 28 listed), the
+  `ModShapes.All` ore fill (insertion order - the port's deduped Vec
+  stands in for the `HashSet<Point16>`), the offset `Circle(5)` blotched
+  `ClearTile(frameNeighbors: true)` hollow (`(int)(num * -5.0)` x-shift),
+  the two down-10 finds with the `Next(4)==0` -> 3-else-7 width pick (the
+  C# `&` is non-short-circuiting - both finds always run), the 3-wide
+  5-tall detonator alcove with the `ResetToType(1)` floor reset (the
+  wall survives - `Tile.cs:249-259` keeps it), the `CanKillTile` veto
+  AFTER the writes (the C# bails late too), `Place1x1(141)`
+  (`WorldGen.cs:45188-45235` - the `SolidTile2` floor + empty cell) +
+  `Place2x2(411)` (`:51330-51423` - the 2x2 body at `(x-1,y-1)`,
+  `frameX = k*18`, `frameY = l*18`) and `WorldUtils.WireLine`
+  (`WorldUtils.cs:109-129` - the endpoint captures BEFORE the swaps: the
+  horizontal run rides the ORIGINAL `start.Y`, the vertical the ORIGINAL
+  `end.X`; red wire via the sparse side table). The step draws from a
+  fresh `pass_rng("Micro Biomes")` copy (the wave-A mahogany ledger
+  untouched - the per-pass re-seed model). The 141/411 frame-important
+  boot statics (`Main.cs:7750`/`:8314`) landed in `boot_statics`; the
+  ore kinds frame through the existing `SET_ORE`/merge-table arms (no
+  new framing arms needed - 141/411 keep their stored frames).
+  **Wave-B choice**: the alphabetically earlier unported classes are
+  `DeadMansChestBiome` (16 KB - not small), `DitherSnake*` (the
+  dual-dungeons seed machinery) and `HiveBiome` (10 KB + the faithful
+  `Beehives` rewrite + `GenVars.larvaX/Y`); `CorruptionPitBiome` is dead
+  code (no call site) and `GraniteBiome`/`MarbleBiome` are already
+  ported (M5-BIOME-2). `MiningExplosivesBiome.cs` (3.6 KB) is the first
+  small unported one; wave C took `ThinIceBiome` (3b445ed4).
+  **Pins (code-only deferral)**: `SEED42_512` UNCHANGED - the
+  `Next(380, maxTilesX-380)` beach band is empty on a 512-wide world
+  (the C# throws; the port's width guard skips the block before any
+  draw; wave C's deferral note missed this x-band collapse). The
+  `DEFAULT_WORLD` re-pin is DEFERRED: the traps move the default world
+  by design but no compiler may run on this branch, so the value cannot
+  be measured - the gate re-pins. The `fix/vines-destroy-walls` branch
+  (b95bfc60) also moves the worldgen pins (stale-by-design); both
+  branches re-pin at the gate, sequentially.
+  Deviations: the `setSelfFrames`/`TileFrame`/`SquareTileFrame` calls
+  ride the deferred post-pipeline framing seam; the
+  `tileSolid[162/232/229]` Larva/MicroBiomes-head toggles
+  (`WorldGen.cs:20897-20909`) are not modelled (the boot table stands -
+  the temple `solid_tile2_p2` precedent); the `dualDungeons` origin veto
+  is deferred with the seed (the `ocean.rs:620` precedent); the
+  `ShapeData` iteration order is insertion order (the .NET
+  `HashSet<Point16>` enumeration order is not reproducible - the same
+  recorded deviation the mahogany endpoints carry).
+  **Tests written NOT run** (7 new: the vetoes, the full placement, the
+  protected-box refusal, the pass determinism, the sub-vanilla skip, the
+  x1.5 multiplier, the WireLine original-axes quirk) + the pipeline
+  order/count tests updated (66 steps with wave C's thin ice).
+- **The thin ice sheets** (`ThinIceBiome`, `ThinIceBiome.cs:9-34` — S1-K-2
+  wave C, 2026-11-19, **code-only mode: written NOT run**): the faithful
+  port of the Micro Biomes pass's thin-ice block (`WorldGen.cs:20941-
+  20973`) — the `ThinIcePatchCount` config roll (Min 3 / Max 5 /
+  WorldWidth), `RandomWorldPoint(worldSurface+20, 50, 200, 50)` attempts
+  with the 1000-failure streak give-up (`:20963-20970`), the 50×50
+  `TileScanner(0, 59, 147, 1, 225)` gate (`:12-23` — any hive 225 vetoes;
+  snow 147 must strictly outnumber the mud 59 AND the air+dirt {0,1}),
+  then the shrinking circles (`:24-31`): radius `Next(10, 15)` stepping
+  down while > 5, per-circle x-offset `Next(-5, 5)`, the centre walking
+  down `radius - 2`; chain 1 = `Blotches(4)` + `OnlyTiles(147, 161, 224,
+  0, 1)` + `SetTile(162, setSelfFrames: true)`, chain 2 = `Blotches(4)` +
+  `HasLiquid()` + `SkipTiles(21, 467, 226, 237)` + `SetTile(162)` +
+  `SetLiquid(0, 0)` (freeze AND drain). The gate's `{0,1}` pair is
+  ACTIVE dirt 0 + stone 1 (`Actions.TileScanner` counts active cells
+  only, `Actions.cs:76-84`) — air is inactive and never counted. The exact per-cell draw order:
+  `Shapes.Circle` is **y-major** (`Shapes.cs:33-49`, the row-span
+  `min(r, (int)sqrt((r+1)²-dy²))`), `Blotches` draws two `NextDouble`s
+  per cell (first discarded) then the 0.3-spread box `Next(1-scale,1)..
+  Next(0,scale)`² (`Modifiers.cs:126-146`) — the shared
+  `mini_biomes::circle_gen`/`blotched_gen`/`only_tiles` helpers carry it.
+  `:32`'s `AddStructure(50×50, 8)` feeds the **non-protected** structure
+  list, which no vanilla `CanPlace` reads (`StructureMap.cs:19-52,68-85`)
+  — the port does not register it (the mahogany/honey passes register
+  PROTECTED rects). The step draws from its own fresh
+  `pass_rng("Micro Biomes")` stream (the name-mixed isolation — the
+  mahogany step's stream is untouched) and sits before `campsites` in
+  the port's grouped Micro Biomes slot (the vanilla block order: dead
+  man's chests `:20922` → thin ice `:20941` → shrines `:20979` →
+  campsites `:21031` → explosives `:21066` → mahogany `:21105`). The
+  framing's 162 arm (`WorldGen.cs:82040-82042` — `TileMergeAttempt(-2,
+  TileID.Sets.IcesSnow)` = {161, 200, 163, 164, 147}) landed in
+  `framing.rs`; the port's generic path reads the `-2` slots as open
+  sides (the compiled generic -2 blend tables stay the grass family's —
+  the same documented approximation the 383/384 arms carry).
+  **The gate is dead in the compact terrain**: the snow band is one 147
+  row over the 161 ice shell (`terrain.rs:320-330`), so no 50×50 box can
+  make snow dominate the active dirt+stone below the skin — the pass
+  places nothing on generated worlds until the faithful `Generate Ice
+  Biome` pass lands; the port
+  still runs the exact searches/gates/draws so the behaviour flips on
+  with the ice pass, no re-port needed. **Pins: `SEED42_512` and
+  `DEFAULT_WORLD` both UNCHANGED, re-pin deferred** — the dead gate
+  means zero tile writes and the fresh stream shifts no other step's
+  ledger; the 162 framing arm only fires on the new kind (no
+  pre-existing 162 tiles). Code-only mode: no compiler invoked, the 5
+  `the_thin_ice_*` tests + the `s1_k_2c_*` framing/pipeline tests are
+  written NOT run; the DEFAULT_WORLD re-pin (if the ice pass ever moves
+  it) rides that follow-up. Deviations: the `setSelfFrames` framing
+  rides the post-pipeline seam; the `dualDungeons` origin veto is
+  deferred with the seed.
+  Wave-C scope/disjointness: Granite/Marble (`biomes.rs::pass_marble/
+  pass_granite`) and Spider Caves (`spider_gem_moss.rs`) were already
+  ported (M5-BIOME-2 / M5-STRUCT-5) and the C# has no `SpiderNest` biome
+  class; sibling wave B (`task/S1-K-2b`) took `MiningExplosivesBiome`
+  (the wave-B bullet above — the merge reconciled the scope notes), wave
+  C took the LATER unported ThinIceBiome. Wave C's original
+  `MiningExplosivesBiome` deferral reasoning (the WorldArea count can
+  draw 1 on the 512 pin world with a "LIVE placement band") missed the
+  x-band: `RandomWorldPoint(top, 380, bottom, 380)` draws
+  `Next(380, maxTilesX - 380)` FIRST (`WorldGen.cs:27113`), which is
+  empty on a 512-wide world — the C# throws there and the port's width
+  guard skips the block before any draw, so `SEED42_512` stays unchanged
+  (the wave-B bullet's pin argument).
   `dualDungeons` origin veto is deferred with the seed. ThinIceBiome
   stays unported: its snow-dominance gate (`dictionary[147] >
   dictionary[0]+dictionary[1]` over the 50Г—50 box, `ThinIceBiome.cs:12-23`)
