@@ -3017,4 +3017,43 @@ mod tests {
             "the header/flags divergences must be exactly the documented unowned fields"
         );
     }
+
+    // --- S1-A-7: the C#-generated world (real genRand) -----------------------
+    //
+    // `assets/test/parity_real.wld` is written by tools/WorldGenParityHarness in
+    // REAL mode: the verbatim C# WorldGen.TileRunner driven by the REAL Knuth
+    // UnifiedRandom(42) (WorldGen.genRand), then the real save path. This is a
+    // genuine C#-generated world — the artifact the ROADMAP row asks for. It is
+    // NOT byte-comparable with the port's generator (the port draws xorshift64,
+    // not Knuth; research/35 #5), so this test pins what IS comparable: the port
+    // decodes every section, and re-writes the TILE section byte-identical (the
+    // tile codec is stream-independent — S1-J-3 proved the same for the golden
+    // fixture). The algorithm-level parity proof (the port's tile_runner vs the
+    // verbatim C# TileRunner fed the port's stream) lives in
+    // worldgen/tile_runner.rs::s1_a_7_the_tile_runner_matches_the_csharp_differential.
+
+    /// The C#-generated world (real genRand, seed 42), written by
+    /// tools/WorldGenParityHarness REAL mode.
+    const PARITY_REAL_WLD: &[u8] = include_bytes!("../../../../assets/test/parity_real.wld");
+
+    #[test]
+    fn s1_a_7_the_csharp_generated_world_decodes_and_rewrites_tiles() {
+        let loaded = parse_with_sections(PARITY_REAL_WLD).expect("the C#-generated world parses");
+        let w = &loaded.world;
+        assert_eq!((w.width, w.height), (200, 400));
+        assert_eq!(w.name, "S1A7Parity");
+        assert_eq!(loaded.version, 326);
+        // The runner painted ore (7), mud (59) and carved pockets — the world is
+        // not the all-stone input.
+        assert!(w.tiles.iter().any(|t| t.active() && t.kind == 7), "ore placed");
+        assert!(w.tiles.iter().any(|t| t.active() && t.kind == 59), "mud placed");
+        assert!(w.tiles.iter().any(|t| !t.active()), "pockets carved");
+        // Re-write: the tile section (index 2) is byte-identical — the tile codec
+        // is stream-independent, exactly as S1-J-3 proved for the golden fixture.
+        let bag = loaded.sections.clone();
+        let rewritten = to_bytes(w, &bag, 1).expect("re-write");
+        let f = section_bodies(PARITY_REAL_WLD);
+        let r = section_bodies(&rewritten);
+        assert_eq!(f[2], r[2], "the tile section must re-write byte-identical to the C#");
+    }
 }
