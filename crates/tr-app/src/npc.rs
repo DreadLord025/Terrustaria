@@ -24481,6 +24481,9 @@ mod s1_f_13c_tests {
 #[cfg(test)]
 mod s1_d_2_tests {
     use super::*;
+    // The S1-D-3ff wave-A witnesses below reuse the main tests module's
+    // scratch helpers (MERGER-P6 first-compile fix).
+    use super::tests::{bare, ground, ALL_KINDS};
     use tr_core::world::World;
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
