@@ -1251,6 +1251,42 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     // type 453, which the port does not ship.
                     flymeal_town_hit = true;
                 }
+                // The struck NPC's Copy reads — captured before the
+                // mutable buff borrow below ends the `n` borrow (NLL).
+                let n_defense = n.defense();
+                let (nx, ny) = (n.x, n.y);
+                let (bw, bh) = n.size();
+                // The kind's hit cue (`NPC.HitSound`) — read before the app
+                // borrows below.
+                let hit_cue = n.kind.hit_sound();
+                // `this.StatusToNPC(sItem.type, npcIndex)`
+                // (`Player.cs:44391`, the block `:6502-6617`) — the melee
+                // on-hit debuff infliction runs AFTER the crit/DamageVar
+                // rolls above and BEFORE the nano-flask boost / the
+                // armour-pen add / `StrikeNPC` (`:44396-44403`). The
+                // buff-duration `Next` rolls ride the same
+                // `UpdatePlayers` stream in the C#'s block order (the
+                // `melee_on_hit.rs` module doc); an immune NPC still
+                // consumes them (the C# evaluates the duration argument
+                // before `NPC.AddBuff`'s guard, `NPC.cs:89928`).
+                let enchant_flags = app.player.as_ref().map(|p| p.melee_on_hit_flags());
+                if let Some(flags) = enchant_flags {
+                    let status_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::melee_on_hit::status_to_npc_flags(
+                        flags,
+                        held.kind,
+                        &mut app.npcs[idx].buffs,
+                        status_rng,
+                    );
+                    // `if (this.meleeEnchant == 6) num2 = (int)((float)
+                    // num2 * Player.GetNanoFlaskDamageBoost())`
+                    // (`Player.cs:44396-44399`, `:44423-44426`) — the
+                    // Flask of Nanites' ×1.05 on the rolled damage,
+                    // between StatusToNPC and the armour-pen add.
+                    if flags.melee_enchant == 6 {
+                        dmg = (dmg as f32 * crate::melee_on_hit::nano_flask_damage_boost()) as i32;
+                    }
+                }
                 // `:44383`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
                 // — the player's own penetration sum (the Shark Tooth
@@ -1259,19 +1295,16 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 dmg += tr_core::damage::check_armor_penetration(
                     melee_pen,
                     pen_percent,
-                    n.defense(),
+                    n_defense,
                     false,
                     false,
                     false,
                 );
-                let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
+                let dmg = tr_core::damage::strike_npc_damage(dmg, n_defense, crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
-                let (nx, ny) = (n.x, n.y);
-                let (bw, bh) = n.size();
-                // The kind's hit cue (`NPC.HitSound`) — read before the app
-                // borrows below.
-                let hit_cue = n.kind.hit_sound();
+                // (`NPC.cs:81546`) so the hit is placed at the NPC corner —
+                // the position/size/cue reads were captured above, before
+                // the StatusToNPC buff borrow.
                 // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
                 // the item's `knockBack` times the glove/buff multipliers (the
                 // port's 1f — no ported accessory grants them).
@@ -3885,6 +3918,120 @@ mod tests {
             b.player.as_ref().map(|p| p.equipped[3]),
             b.player.as_ref().map_or(0, |p| p.get_armor_penetration(true))
         );
+    }
+
+    /// S1-P-i10 — the Bee Keeper's Confused lands unconditionally
+    /// (`Player.StatusToNPC` `Player.cs:6613-6615`, called at `:44391`
+    /// BEFORE the strike): 31 for a fixed 120, no roll. The slime is
+    /// only immune to 20 (`NPCID.cs:6079-6084`), so 31 sticks.
+    #[test]
+    fn s1_p_i10_the_bee_keeper_confuses_on_the_melee_hit() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 1123; // Bee Keeper (no projectile row)
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1);
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(31).expect("Confused lands");
+        assert_eq!(n.buffs.buff_time[slot], 120, "the fixed 120 (:6614)");
+    }
+
+    /// S1-P-i10 — the Magma Stone's OnFire3 ALWAYS lands (the 360/240/120
+    /// ladder, `Player.cs:6552-6566`) and its 1-2 draws shift the
+    /// `UpdatePlayers` stream vs the same hit without the flag (the
+    /// DW-3.2 stream-divergence pattern). The flag is the derived field
+    /// the hit reads — set directly like `m3_equip_20`'s penetration
+    /// (the grant arms are pinned in `player.rs`/`accessory_combat.rs`).
+    #[test]
+    fn s1_p_i10_the_magma_stone_burns_and_draws_on_the_hit_stream() {
+        let mut plain = melee_app();
+        plain.inventory[plain.selected].kind = 24;
+        plain.inventory[plain.selected].count = 1;
+        mine_frames(&mut plain, 1);
+        assert!(plain.npcs[0].buffs.find_buff_index(323).is_none());
+        let stream_plain = plain.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        a.player.as_mut().unwrap().magma_stone = true;
+        mine_frames(&mut a, 1);
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(323).expect("OnFire3 always lands");
+        assert!(
+            [120, 240, 360].contains(&n.buffs.buff_time[slot]),
+            "the ladder's three fixed times (:6556/:6560/:6564)"
+        );
+        assert_ne!(
+            *a.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            stream_plain,
+            "the magma ladder drew 1-2 extra Next rolls mid-hit"
+        );
+    }
+
+    /// S1-P-i10 — the Flask of Venom adds Venom 70 (60 * Next(5, 10))
+    /// AND PotentAcid 395 (fixed 60) on the melee hit
+    /// (`Player.cs:6506-6510`).
+    #[test]
+    fn s1_p_i10_the_venom_flask_adds_both_debuffs_on_the_melee_hit() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        a.player.as_mut().unwrap().melee_enchant = 1;
+        mine_frames(&mut a, 1);
+        let n = &a.npcs[0];
+        let v = n.buffs.find_buff_index(70).expect("Venom lands");
+        let t = n.buffs.buff_time[v];
+        assert!((300..600).contains(&t) && t % 60 == 0, "60 * Next(5, 10) = {t}");
+        let p = n.buffs.find_buff_index(395).expect("PotentAcid lands");
+        assert_eq!(n.buffs.buff_time[p], 60, "the fixed 60 (:6509)");
+    }
+
+    /// S1-P-i10 — the Poison flask's draw is consumed even though the
+    /// slime is immune to Poisoned 20: the buff never lands but the
+    /// stream still diverges from the plain hit (the C# evaluates
+    /// `60 * Main.rand.Next(5, 10)` before `NPC.AddBuff`'s guard,
+    /// `NPC.cs:89928-89931`).
+    #[test]
+    fn s1_p_i10_the_poison_flask_draws_even_on_the_immune_slime() {
+        let mut plain = melee_app();
+        plain.inventory[plain.selected].kind = 24;
+        plain.inventory[plain.selected].count = 1;
+        mine_frames(&mut plain, 1);
+        let stream_plain = plain.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        a.player.as_mut().unwrap().melee_enchant = 8;
+        mine_frames(&mut a, 1);
+        assert!(
+            a.npcs[0].buffs.find_buff_index(20).is_none(),
+            "the slime's immunity rejects the buff"
+        );
+        assert_ne!(
+            *a.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            stream_plain,
+            "the duration draw happened before the immunity guard"
+        );
+    }
+
+    /// S1-P-i10 — the Flymeal's Stinky 120 (fixed 300, `:6571-6574`)
+    /// lands on the town NPC it is allowed to slap (the `:44274`
+    /// friendly-gate exception, BUG-10's rig).
+    #[test]
+    fn s1_p_i10_the_flymeal_stinks_up_the_guide() {
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].y = 260.0 * TILE_PX;
+        a.inventory[a.selected].kind = 5129;
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1);
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(120).expect("Stinky lands");
+        assert_eq!(n.buffs.buff_time[slot], 300, "the fixed 300 (:6573)");
     }
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s

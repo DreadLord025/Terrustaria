@@ -30121,10 +30121,12 @@ decompiled sources):
   same-tick behaviour identical.
 
 Deliberate deferrals (no port fields/seams yet):
-- the `frostBurn` on-hit consumers (`Player.cs:6548-6551` StatusToNPC,
-  `Projectile.cs:11518-11521`/`:11851-11854`/`:17323` - no melee
-  StatusToNPC / projectile enchant seam exists; `magmaStone` equally
-  unported);
+- the `frostBurn` on-hit consumers — the MELEE half
+  (`Player.cs:6548-6551` StatusToNPC) landed with S1-P-i10
+  (`melee_on_hit.rs`, ANALYSIS "The melee on-hit debuffs"); the
+  projectile halves (`Projectile.cs:11518-11521`/`:11851-11854`/
+  `:17323`) stay deferred; `magmaStone`'s melee consumer + grant arms
+  also landed with S1-P-i10 (its projectile halves stay deferred);
 - the `lavaRose` halves (`Player.cs:27703-27707`) and the remix-world
   lava variants (`:27689-27693`, `:27696-27699`);
 - the empressBrooch/Magiluminescence movement arms (`:26500-26510`);
@@ -32870,3 +32872,96 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The melee on-hit debuffs (S1-P-i10)
+
+**Scope.** The DIRECT melee swing's debuff infliction —
+`Player.StatusToNPC` (`Player.cs:6502-6617`), the single call site
+`ProcessHitAgainstNPC` `:44391`. Ported verbatim as
+`crates/tr-app/src/melee_on_hit.rs::status_to_npc_flags`, wired in
+`world_sim/editing.rs`'s melee arm between the `DamageVar` roll and the
+armour-pen add — exactly the C# position (crit `:44298` → DamageVar
+`:44342` → Flymeal town multiplier `:44344-44353` → **StatusToNPC
+`:44391`** → nano-flask ×1.05 `:44396-44399` → armour pen `:44400` →
+`StrikeNPC` `:44403`).
+
+**Census verdicts (C# → port, all were MISSING before this task):**
+- `NPC.StrikeNPC`/`StrikeNPC_Inner` (`NPC.cs:81189-81563`) apply **no**
+  weapon debuffs — the only `AddBuff` in the strike/death region is the
+  Daybreak death-spread 189 (`:81730-81751`, a projectile-inflicted
+  debuff's death effect, the projectile lane). No port change needed
+  there; the census claim "StrikeNPC debuff application" resolves to
+  "none exists in the C#".
+- Weapon imbues (`meleeEnchant` 1-8, `:6504-6535`): Venom 70
+  `60*Next(5,10)` + PotentAcid 395 fixed 60 (enchant 1); CursedInferno 39
+  `60*Next(3,7)` (2); OnFire 24 `60*Next(3,7)` (3); Ichor 69
+  `60*Next(10,20)` (5); Confused 31 `60*Next(1,4)` (6); Poisoned 20
+  `60*Next(5,10)` (8); Midas 72 fixed 120 (4, no roll). Enchant 7
+  (Party) has NO debuff arm — its confetti 289 spawns in
+  `ApplyNPCOnHitEffects` `:44465-44468` (projectile lane, out of scope).
+  The if-chain order is the SOURCE order 1,2,3,5,6,8,4 (not numeric).
+- Catalyst Band (`catalystBand`, `:6536-6539`): AcceleratePoisons 398
+  fixed 300, no roll.
+- Per-weapon inflictions (`:6540-6547`, `:6567-6616`): 2330 Purple
+  Clubberfish Confused 31 gate `Next(2)==0` then `60*Next(1,4)`; 3352
+  Stylist scissors Bleeding 30 `60*Next(4,7)`; 3211 Bladetongue Ichor 69
+  `60*Next(5,10)`; 5129 Flymeal Stinky 120 fixed 300; the switch — 121
+  Fiery Greatsword OnFire 24/180 gate 1/2; 3823 Brand of the Inferno
+  OnFire3 323/300 gate 1/4; 5382 Waffle's Iron OnFire3 323/300 gate 1/3;
+  122 Molten Pickaxe OnFire 24/180 gate 1/10; 190 Blade of Grass
+  Poisoned 20/420 gate 1/4; 217 Molten Hamaxe OnFire 24/180 gate 1/5;
+  1123 Bee Keeper Confused 31 fixed 120 no roll.
+- Frost armor set (`frostBurn`, `:6548-6551`): Frostburn2 324
+  `60*Next(5,15)` — the flag existed (S1-C-12 wave D) with no consumer;
+  the melee consumer now reads it (the wave-D deferral note's melee
+  half is closed).
+- Magma Stone family (`magmaStone`, `:6552-6566`): OnFire3 323 ALWAYS —
+  `Next(4)==0` → 360 (one draw), else `Next(2)==0` → 240 (two draws),
+  else 120 (two draws). Flag + grant arms were absent; now
+  `Player.magma_stone` with the three granters: 1322 Magma Stone
+  (`:15336-15339`), 1343 Fire Gauntlet (`:15306-15314`, the
+  `accessory_combat.rs` arm), 6178 Pyroclast (`:14580-14583`).
+- Nano-flask damage boost (`GetNanoFlaskDamageBoost`, `:44423-44426`,
+  applied `:44396-44399`): `(int)(num2 * 1.05f)` between StatusToNPC and
+  the armour-pen add — ported at the same site.
+
+**RNG contract.** All draws ride the hitting lane's `Main.rand` — the
+port's `UpdatePlayers` stream (`Main.cs:17754` swap), the same stream
+the crit/DamageVar rolls already use. Draw ORDER inside StatusToNPC is
+the C# block order: imbue → catalyst (no draw) → 2330 gate [+duration] →
+3352 duration → frost duration → magma ladder (1-2 draws) → 3211
+duration → 5129 (no draw) → the weapon switch gate LAST. The duration
+argument evaluates BEFORE `NPC.AddBuff`'s `buffImmune` guard
+(`NPC.cs:89928-89931`) — an immune NPC still consumes the draw
+(witnessed: the Poison flask on the immune-20 slime draws and diverges
+the stream while storing nothing).
+
+**Deviations / deferrals (deliberate):**
+- `StatusToPlayerPvP` (`Player.cs:6619-6713`) is NOT ported — the port's
+  melee path has no PvP lane. Its rolls DIFFER (frost `Next(1,8)`, magma
+  `Next(7)`/`Next(3)` with 360/120/60, no catalyst/2330/3352 arms); the
+  NPC-lane constants above are the ones ported.
+- The projectile/whip enchant consumers (`Projectile.cs:11192-11224`,
+  `:11755-11782`, `:17362-17470`) and the `ApplyNPCOnHitEffects`
+  projectile spawns (`:44441-44550` — Bee Keeper bees, Bladetongue
+  ichor stream 524, confetti 289, Volcano eruption) are OTHER workers'
+  lanes; only the direct-swing debuffs land here.
+- 6178's `accPyroclast` half (`:14582`, the snapping-stone strike
+  `:44338-44341`) and 6185's `accPoisonBarb`/`pStone` halves
+  (`:14616-14617`) stay unported families — only the on-hit flag halves
+  land.
+- The C# evaluates the per-weapon switch for ANY item type — including
+  tools swung as melee; the port matches on `held.kind` at the same
+  site, so the Molten Pickaxe/Hamaxe rows fire on their mining-tool
+  swings too (the port's melee arm already runs for tools, BUG-09).
+- The struck NPC's `netOffset` reposition (`ItemCheck_MeleeHitNPCs`
+  `:44248-44250`) has no port model — unchanged, predates this task.
+
+**Verification.** Code-only mode — **no compiler invoked**. 13 witness
+tests in `melee_on_hit.rs` (per-arm draws/times, the full-block draw
+order, the immunity-consumes-draw contract, the AddBuff longer-time
+early-out), 5 integration witnesses in `world_sim/editing.rs` (Bee
+Keeper Confused, magma burn + stream divergence, Venom flask pair,
+Poison-flask immune draw, Flymeal Stinky on the Guide), 1 grant/clear
+witness in `player.rs` (1322/6178/1343/6185 + ResetEffects) and the
+extended Fire Gauntlet pin in `accessory_combat.rs` — WRITTEN, NOT RUN.
