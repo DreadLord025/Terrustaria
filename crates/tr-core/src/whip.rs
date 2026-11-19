@@ -162,7 +162,11 @@ pub fn fill_whip_control_points(i: &WhipCurveInputs, settings: &WhipSettings) ->
     }
     let num2 = 0.5f32;
     let num3 = 1.0 + num2;
-    let num4 = std::f32::consts::PI * 10.0 * (1.0 - num * num3) * (i.sprite_direction as f32)
+    // `:48292`: `(float)(-proj.spriteDirection)` — the spiral winds the OTHER
+    // way from the sprite facing. The sign is invisible while `num13 == 0`
+    // (ai1 = 0, the render curve of a fresh spawn) but flips the collision
+    // spiral, where `getActualCollisionPoints` forces `num13 = 1`.
+    let num4 = std::f32::consts::PI * 10.0 * (1.0 - num * num3) * (-(i.sprite_direction as f32))
         / settings.segments as f32;
     let mut num5 = num * num3;
     let mut num6 = 0.0f32;
@@ -576,7 +580,10 @@ pub fn modify_tagged_hit(e: &TagEffect, changes: &mut TagDamageChanges, rng: &mu
     if changes.highest_added_base_damage < e.tag_damage {
         changes.highest_added_base_damage = e.tag_damage;
     }
-    if rng.next_range(1, 101) < e.crit_chance {
+    // `WhipTagEffect.cs:69`: `Main.rand.Next(100) < CritChance` — the roll is
+    // 0..99 (NOT the 1..100 the projectile class-crit rolls use), so a 10%
+    // tag crits on 0..9. The draw fires even at `CritChance == 0`.
+    if rng.next_range(0, 100) < e.crit_chance {
         changes.crit = Some(true);
     }
 }
@@ -783,6 +790,74 @@ mod tests {
     }
 
     #[test]
+    fn the_collision_spiral_winds_against_the_sprite_facing() {
+        // `:48292`: `num4` carries `(float)(-proj.spriteDirection)`. The sign
+        // is invisible while `num13 == 0` (ai1 = 0, the render curve), but the
+        // collision path forces `num13 = 1` (`getActualCollisionPoints`), so
+        // the spiral winds the OTHER way from the sprite facing. Pin the
+        // golden tip of a mid-swing BlandWhip collision curve (ai0 = 30,
+        // timeToFlyOut 60, segments 20, range 0.75, arm (100,100), vlen 4,
+        // held useAnimation 30, spriteDirection +1, rotation 0).
+        let settings = get_whip_settings(841, 30.0, 2.0, 0.0, false);
+        let mut inputs = curve_inputs(841, 30.0, 0);
+        inputs.get_actual_collision_points = true;
+        let pts = fill_whip_control_points(&inputs, &settings);
+        let golden_tip = Vec2::new(74.40054, 77.250645);
+        assert!(
+            (pts[settings.segments] - golden_tip).length() < 0.05,
+            "collision tip {:?} must wind against the facing",
+            pts[settings.segments]
+        );
+        // The wrong-sign spiral lands at (121.69, 69.44) — far from the
+        // golden, so the witness discriminates the fix.
+        let wrong_tip = Vec2::new(121.68749, 69.44269);
+        assert!(
+            (pts[settings.segments] - wrong_tip).length() > 10.0,
+            "the collision tip must NOT match the wrong-sign spiral"
+        );
+        // A mid-segment point also discriminates (the spiral winds apart).
+        let golden_seg10 = Vec2::new(91.15973, 62.93821);
+        assert!(
+            (pts[10] - golden_seg10).length() < 0.05,
+            "seg10 {:?} must follow the corrected spiral",
+            pts[10]
+        );
+    }
+
+    #[test]
+    fn the_range_multiplier_stretches_the_collision_sweep() {
+        // `FillWhipControlPoints` `:48301`: `num7` scales by
+        // `owner.whipRangeMultiplier`, so the reach (and the collision sweep)
+        // stretches with it. A mid-swing BlandWhip collision curve at the
+        // 1f default misses an NPC box at (50, 40, 6×6); at 2f (the Tiki /
+        // Stardust / Obsidian Outlaw / Mobius adds) the stretched sweep hits
+        // it. The pure geometry witness for the `damage_pve` consumer that
+        // reads the live player field.
+        let settings = get_whip_settings(841, 30.0, 2.0, 0.0, false);
+        let mut now_in = curve_inputs(841, 30.0, 0);
+        now_in.get_actual_collision_points = true;
+        let mut prev_in = now_in;
+        prev_in.frame_offset = -1;
+        let npc = Rect::new(50, 40, 6, 6);
+        // The 1f default misses.
+        let now = fill_whip_control_points(&now_in, &settings);
+        let prev = fill_whip_control_points(&prev_in, &settings);
+        assert!(
+            !sweep_hits(&now, &prev, 18, 18, npc),
+            "the base-reach sweep must miss the far box"
+        );
+        // The 2f stretch hits.
+        now_in.whip_range_multiplier = 2.0;
+        prev_in.whip_range_multiplier = 2.0;
+        let now2 = fill_whip_control_points(&now_in, &settings);
+        let prev2 = fill_whip_control_points(&prev_in, &settings);
+        assert!(
+            sweep_hits(&now2, &prev2, 18, 18, npc),
+            "the stretched sweep must reach the far box"
+        );
+    }
+
+    #[test]
     fn the_sweep_spans_the_gap_between_frames() {
         let settings = get_whip_settings(841, 30.0, 2.0, 0.0, false);
         let inputs_now = curve_inputs(841, 30.0, 0);
@@ -890,6 +965,28 @@ mod tests {
         modify_tagged_hit(e, &mut no_crit, &mut FixedRoll(95));
         assert_eq!(no_crit.crit, None);
         assert_eq!(no_crit.added_base_damage, 20);
+    }
+
+    #[test]
+    fn the_tag_crit_roll_is_next_100_not_next_1_101() {
+        // `WhipTagEffect.cs:69`: `Main.rand.Next(100) < CritChance` — the roll
+        // is 0..99, so a 10% tag crits on 0..9 (roll 9 crits, roll 10 does
+        // not). The old `next_range(1, 101)` shifted the window to 1..10,
+        // making roll 10 crit and roll 0 impossible — an off-by-one.
+        let e = tag_effect(4914).unwrap(); // crit 10.
+        let mut at9 = TagDamageChanges::none();
+        modify_tagged_hit(e, &mut at9, &mut FixedRoll(9));
+        assert_eq!(at9.crit, Some(true), "roll 9 < 10 crits");
+        let mut at10 = TagDamageChanges::none();
+        modify_tagged_hit(e, &mut at10, &mut FixedRoll(10));
+        assert_eq!(at10.crit, None, "roll 10 >= 10 does not crit");
+        // The draw fires even at CritChance 0 (the stream must advance): a
+        // 0% tag never crits regardless of the roll.
+        let plain = tag_effect(4672).unwrap(); // crit 0.
+        let mut zero = TagDamageChanges::none();
+        modify_tagged_hit(plain, &mut zero, &mut FixedRoll(0));
+        assert_eq!(zero.crit, None, "a 0% tag never crits");
+        assert!(zero.add_projectile_tag_damage, "the tag still lands");
     }
 
     #[test]

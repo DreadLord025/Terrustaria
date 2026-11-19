@@ -606,6 +606,43 @@ pub struct Player {
     /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
     /// player applied (`tag_effects.rs`, M4-PROJ-7).
     pub tag_effects: crate::tag_effects::TagEffectStack,
+    /// `Player.whipRangeMultiplier` (`Player.cs:1140`, reset 1f `:18498`):
+    /// the whip curve's reach scale (`FillWhipControlPoints` `:48301`). The
+    /// Tiki head (+0.1 `:13854`), the Stardust body/legs (+0.15 `:13879`),
+    /// the Tiki set (+0.2 `ArmorSetBonuses.cs:15`), the Obsidian Outlaw set
+    /// (+0.3 `:123`) and the Mobius Strip (+0.1 `:12979`) add to it.
+    pub whip_range_multiplier: f32,
+    /// `Player.whipUseTimeMultiplier` (`Player.cs:1142`, reset 1f `:18499`):
+    /// the whip swing's use-time scale (`ApplyItemAnimation` `:4476`). The
+    /// Obsidian Outlaw set multiplies it by `1/1.15` (`ArmorSetBonuses.cs:124`).
+    pub whip_use_time_multiplier: f32,
+    /// `Player.summonerWeaponSpeedBonus` (`Player.cs:2460`, reset 0 `:18341`):
+    /// the whip-speed buff adds (Dark Harvest 311 +0.35, Sword Whip 308 +0.25,
+    /// Thorn Whip 314 +0.12, `:10110-10121`); `CapAttackSpeeds` (`:29025`)
+    /// converts `meleeSpeed + bonus` into the use-time multiplier the swing
+    /// reads. Stored as the RAW bonus until the cap fold.
+    pub summoner_weapon_speed_bonus: f32,
+    /// `Player.coolWhipBuff` / `cobWhipBuff` (`Player.cs:2108`/`:2110`, reset
+    /// `:18400-18401`): the Cool/Cob Whip's one-snowflake/one-spark latch
+    /// (`Projectile.cs:13918`/`:13929`) — the buff 312/365 arms re-affirm them.
+    pub cool_whip_buff: bool,
+    pub cob_whip_buff: bool,
+    /// `Player.accSnakeBand` / `accWickedArmlet` / `accMobiusStrip` /
+    /// `accSilverBracer` (`Player.cs:1208`/`:1214`/`:1210`/`:1212`, reset
+    /// `:18519-18522`): the whip accessory flags. The Snake Band repeats the
+    /// swing (`:42711-42731`), the Wicked Armlet adds +1 knockback per whip
+    /// throw (`:48663-48666`), the Mobius Strip / Silver Bracer / Wicked
+    /// Armlet raise `maxTagEffects` (`:12974-12984`).
+    pub acc_snake_band: bool,
+    pub acc_wicked_armlet: bool,
+    pub acc_mobius_strip: bool,
+    pub acc_silver_bracer: bool,
+    /// `Player.repeatWhipSwings` (`Player.cs:1216`, default −1) and
+    /// `repeatWhipsResetCooldown` (`:1218`): the Snake Band's swing counter
+    /// (`++` per whip throw `:48686`, reset to −1 after 120 idle ticks
+    /// `Update_SnakeBand` `:28412-28418`).
+    pub repeat_whip_swings: i32,
+    pub repeat_whips_reset_cooldown: i32,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -1866,6 +1903,24 @@ impl Player {
             immune_no_blink: false,
             minion_attack_target_npc: -1,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
+            whip_range_multiplier: 1.0,
+            whip_use_time_multiplier: 1.0,
+            // The C# field starts 0 (`Player.cs:2460`) and `ResetEffects`
+            // re-zeroes it (`:18341`), but `CapAttackSpeeds` (`:29025`) folds
+            // it to `1/(meleeSpeed+0) = 1` on the FIRST update, before any
+            // `ApplyItemAnimation` read (`:25976` < `:28285`). The port's
+            // spawn stands in for that post-first-fold state so the editing
+            // tests (which drive `update_editing` without the player tick)
+            // read the same 1f the live sim folds to.
+            summoner_weapon_speed_bonus: 1.0,
+            cool_whip_buff: false,
+            cob_whip_buff: false,
+            acc_snake_band: false,
+            acc_wicked_armlet: false,
+            acc_mobius_strip: false,
+            acc_silver_bracer: false,
+            repeat_whip_swings: -1,
+            repeat_whips_reset_cooldown: 0,
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -3601,6 +3656,52 @@ impl Player {
         1.0 + self.melee_speed_bonus
     }
 
+    /// `Player.TurnAttackSpeedToUseTimeMultiplier` (`Player.cs:29028-29039`):
+    /// cap the attack speed at 3f, then invert (0 stays 0). The whip swing's
+    /// use-time multiplier is `1 / (meleeSpeed + summonerWeaponSpeedBonus)`.
+    fn turn_attack_speed_to_use_time_multiplier(speed: f32) -> f32 {
+        let speed = speed.min(3.0);
+        if speed != 0.0 {
+            1.0 / speed
+        } else {
+            speed
+        }
+    }
+
+    /// `Player.CapAttackSpeeds` (`Player.cs:29021-29026`): the summoner
+    /// weapon-speed bonus folds `meleeSpeed + bonus` through the cap/invert
+    /// into the use-time multiplier the whip swing reads
+    /// (`ApplyItemAnimation` `:4476`). Runs after the buff/equipment grants
+    /// (`:25976`), before `ItemCheck` (`:28285`). The melee half assigns
+    /// `meleeSpeed` itself; the port's `melee_speed()` accessor already
+    /// returns the uncapped `1 + bonus` the flail/shoot paths read, so only
+    /// the summoner fold lands here (the melee cap is a separate deviation).
+    pub fn cap_attack_speeds(&mut self) {
+        self.summoner_weapon_speed_bonus = Self::turn_attack_speed_to_use_time_multiplier(
+            self.melee_speed() + self.summoner_weapon_speed_bonus,
+        );
+    }
+
+    /// The whip swing's animation multiplier (`Player.ApplyItemAnimation`
+    /// `:4474-4476`): `summonerWeaponSpeedBonus * whipUseTimeMultiplier`,
+    /// read AFTER `CapAttackSpeeds` folded the bonus into a use-time scale.
+    pub fn whip_animation_multiplier(&self) -> f32 {
+        self.summoner_weapon_speed_bonus * self.whip_use_time_multiplier
+    }
+
+    /// `Player.Update_SnakeBand` (`Player.cs:28412-28418`): the whip-repeat
+    /// reset cooldown counts down one per tick; at 0 the swing counter
+    /// returns to −1 (the next whip throw is swing #0). Called from the
+    /// world-sim player pass at the `:24567` position.
+    pub fn update_snake_band(&mut self) {
+        if self.repeat_whips_reset_cooldown > 0 {
+            self.repeat_whips_reset_cooldown -= 1;
+            if self.repeat_whips_reset_cooldown == 0 {
+                self.repeat_whip_swings = -1;
+            }
+        }
+    }
+
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
     /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
     /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
@@ -4038,12 +4139,42 @@ impl Player {
                 self.mana_cloak_override = true;
             }
             // Serpent's Coil 6186 (`:14620-14624`): the cloak + the
-            // snakeCloak override (star type 1133). (`accSnakeBand` is its
-            // own unported family.)
+            // snakeCloak override (star type 1133) + `accSnakeBand` (the
+            // whip-repeat flag, `:14621`).
             6186 => {
                 self.star_cloak = true;
                 self.snake_cloak_override = true;
+                self.acc_snake_band = true;
             }
+            // The whip accessory flags (`ApplyEquipFunctional`,
+            // `Player.cs:14509-14624`): Silver Bracer 6156 (`:14510`),
+            // Mobius Strip 6158 (`:14513`), Wicked Armlet 6159 (`:14516`),
+            // Ouroboros Ring 6162 (`:14519-14520`, Mobius + Snake), Twilight
+            // Grasp 6163 (`:14523`, Silver Bracer + Wicked), Snake Band 6157
+            // (`:14526`), Armlet of Ruin 6179 (`:14585`, Wicked), Wicked
+            // Claws 6182 (`:14601-14603`, Wicked + meleeSpeed +0.12), Silver
+            // Shield 6183 (`:14606`, Silver Bracer — its knockback/fire-walk
+            // halves ride `accessory_defense`). The `maxTagEffects` /
+            // `whipRangeMultiplier` / `tagEffectDuration` consumers fold in
+            // `update_equips`' tail (`:12970-12984`).
+            6156 => self.acc_silver_bracer = true,
+            6158 => self.acc_mobius_strip = true,
+            6159 => self.acc_wicked_armlet = true,
+            6162 => {
+                self.acc_mobius_strip = true;
+                self.acc_snake_band = true;
+            }
+            6163 => {
+                self.acc_silver_bracer = true;
+                self.acc_wicked_armlet = true;
+            }
+            6157 => self.acc_snake_band = true,
+            6179 => self.acc_wicked_armlet = true,
+            6182 => {
+                self.acc_wicked_armlet = true;
+                self.melee_speed_bonus += 0.12;
+            }
+            6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
             // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
@@ -4494,6 +4625,24 @@ impl Player {
         // `grant_summon_caps`) re-add per tick.
         self.max_minions = 1;
         self.max_turrets = 1;
+        // `ResetEffects`' whip rows (`Player.cs:18498-18499` whipRange/
+        // whipUseTime = 1f, `:18341` summonerWeaponSpeedBonus = 0f,
+        // `:18400-18401` cool/cobWhipBuff = false, `:18517-18518`
+        // maxTagEffects = 1 / tagEffectDuration = 1f, `:18519-18522` the four
+        // whip accessory flags = false): the buff arms, the armor rows and
+        // the accessory match below re-derive them per tick. The Snake Band
+        // counters (`repeatWhipSwings`/`repeatWhipsResetCooldown`) are NOT
+        // reset here — they are a countdown (`Update_SnakeBand`, `:28412`).
+        self.whip_range_multiplier = 1.0;
+        self.whip_use_time_multiplier = 1.0;
+        self.summoner_weapon_speed_bonus = 0.0;
+        self.cool_whip_buff = false;
+        self.cob_whip_buff = false;
+        self.acc_snake_band = false;
+        self.acc_wicked_armlet = false;
+        self.acc_mobius_strip = false;
+        self.acc_silver_bracer = false;
+        self.tag_effects.set_player_caps(1, 1.0);
         // The 28 summon keep-alive flags (`:18620-18646`+`:18741`) — the
         // arms table is the single source of the flag set.
         self.clear_summon_flags();
@@ -4615,6 +4764,8 @@ impl Player {
                 self.magic_crit += piece.magic_crit;
                 self.move_speed += piece.move_speed;
                 self.melee_speed_bonus += piece.melee_speed;
+                self.whip_range_multiplier += piece.whip_range;
+                self.whip_use_time_multiplier *= piece.whip_use_time_mult;
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
@@ -4758,6 +4909,8 @@ impl Player {
             self.thorns += set.thorns;
             self.cactus_thorns |= set.cactus_thorns;
             self.turtle_thorns |= set.turtle_thorns;
+            self.whip_range_multiplier += set.whip_range;
+            self.whip_use_time_multiplier *= set.whip_use_time_mult;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -4852,6 +5005,18 @@ impl Player {
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
+                // `:10110-10121` — the whip-speed buffs: Dark Harvest (311)
+                // +0.35, Sword Whip (308) +0.25, Thorn Whip (314) +0.12, per
+                // slot. `CapAttackSpeeds` (`:29025`) folds `meleeSpeed + bonus`
+                // into the use-time multiplier the whip swing reads.
+                311 => self.summoner_weapon_speed_bonus += 0.35,
+                308 => self.summoner_weapon_speed_bonus += 0.25,
+                314 => self.summoner_weapon_speed_bonus += 0.12,
+                // `:10122-10129` — the Cool/Cob Whip buff flags: the on-hit
+                // latch (`Projectile.cs:13918`/`:13929`) reads them to spawn
+                // one snowflake/spark; the buff re-affirms the flag per tick.
+                312 => self.cool_whip_buff = true,
+                365 => self.cob_whip_buff = true,
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -5003,6 +5168,26 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
+        // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
+        // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
+        // `maxTagEffects++` and `whipRangeMultiplier += 0.1f`, the Wicked
+        // Armlet adds `maxTagEffects++`. The base cap/duration reset to 1/1f
+        // in `ResetEffects` (`:18517-18518`); the stack reads them per tick.
+        let mut max_tag_effects = 1usize;
+        let mut tag_effect_duration = 1.0f32;
+        if self.acc_silver_bracer {
+            tag_effect_duration += 2.0;
+            max_tag_effects += 1;
+        }
+        if self.acc_mobius_strip {
+            max_tag_effects += 1;
+            self.whip_range_multiplier += 0.1;
+        }
+        if self.acc_wicked_armlet {
+            max_tag_effects += 1;
+        }
+        self.tag_effects.set_player_caps(max_tag_effects, tag_effect_duration);
         // S1-C-12 wave C — the defense/immunity accessory rows kept in
         // their own module (the Obsidian/Paladin-family shields' knockback
         // + fire-walk grants, `Player.cs:14605-14631`/`:15209-15213`/
@@ -5021,6 +5206,10 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // `Player.CapAttackSpeeds` (`Player.cs:25976`): after the buff and
+        // equipment grants, before `ItemCheck` (`:28285`) — the whip swing's
+        // use-time multiplier folds `meleeSpeed + summonerWeaponSpeedBonus`.
+        self.cap_attack_speeds();
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
@@ -11217,6 +11406,114 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         p
+    }
+
+    #[test]
+    fn the_whip_speed_buffs_fold_through_cap_attack_speeds() {
+        // `Player.cs:10110-10121`: Dark Harvest (311) +0.35, Sword Whip (308)
+        // +0.25, Thorn Whip (314) +0.12 per slot. `CapAttackSpeeds` (`:29025`)
+        // folds `meleeSpeed(1) + bonus` through `TurnAttackSpeedToUseTimeMultiplier`
+        // (cap 3, invert) into the use-time multiplier the whip swing reads.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(311, 600); // Dark Harvest
+        p.update(&w, PlayerInput::default());
+        // bonus 0.35 → 1/(1+0.35) = 0.7407…; whipUseTimeMultiplier 1.
+        let want = 1.0 / 1.35;
+        assert!(
+            (p.whip_animation_multiplier() - want).abs() < 1e-5,
+            "the Dark Harvest swing scales to {want}, got {}",
+            p.whip_animation_multiplier()
+        );
+        // The three buffs stack: 0.35 + 0.25 + 0.12 = 0.72 → 1/1.72.
+        let mut p2 = Player::spawn(&w);
+        p2.buffs.add_buff(311, 600);
+        p2.buffs.add_buff(308, 600);
+        p2.buffs.add_buff(314, 600);
+        p2.update(&w, PlayerInput::default());
+        let want2 = 1.0 / 1.72;
+        assert!(
+            (p2.whip_animation_multiplier() - want2).abs() < 1e-5,
+            "the stacked whip speed scales to {want2}, got {}",
+            p2.whip_animation_multiplier()
+        );
+    }
+
+    #[test]
+    fn the_obsidian_outlaw_set_speeds_the_whip_and_stretches_its_reach() {
+        // `ArmorSetBonuses.cs:120-125`: minionDamage +0.15, whipRange +0.3,
+        // whipUseTimeMultiplier ×1/1.15. The set triple is (3266, 3267, 3268).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3266;
+        p.equipped[1] = 3267;
+        p.equipped[2] = 3268;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.whip_range_multiplier - 1.3).abs() < 1e-5,
+            "the set adds +0.3 reach, got {}",
+            p.whip_range_multiplier
+        );
+        // No speed buff: summonerWeaponSpeedBonus folds 1/(1+0) = 1, times
+        // the set's 1/1.15.
+        let want = 1.0 / 1.15;
+        assert!(
+            (p.whip_animation_multiplier() - want).abs() < 1e-5,
+            "the set's use-time scale {want}, got {}",
+            p.whip_animation_multiplier()
+        );
+    }
+
+    #[test]
+    fn the_whip_accessories_raise_the_tag_cap_and_duration() {
+        // `Player.cs:12970-12984`: Silver Bracer +1 cap / +2 duration, Mobius
+        // Strip +1 cap / +0.1 range, Wicked Armlet +1 cap. The base is 1/1f.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 6156; // Silver Bracer
+        p.equipped[4] = 6158; // Mobius Strip
+        p.equipped[5] = 6159; // Wicked Armlet
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_silver_bracer && p.acc_mobius_strip && p.acc_wicked_armlet);
+        // cap 1 + 3 = 4; duration 1 + 2 = 3; range 1 + 0.1 = 1.1.
+        assert!(
+            (p.whip_range_multiplier - 1.1).abs() < 1e-5,
+            "the Mobius Strip adds +0.1 reach"
+        );
+        // The stack caps at 4: four distinct tags all stay active.
+        for item in [4672u16, 5074, 4913, 4678] {
+            p.tag_effects.try_apply_tag_to_npc(item, 0, crate::npc::NpcKind::Zombie);
+        }
+        assert_eq!(p.tag_effects.active_types().len(), 4, "the cap is 4");
+        // The Silver Bracer's +2 duration stretches the mark: 240 × 3 = 720.
+        assert!(p.tag_effects.is_npc_tagged(4678, 0));
+        for _ in 0..240 {
+            p.tag_effects.update_tick();
+        }
+        assert!(
+            p.tag_effects.is_npc_tagged(4678, 0),
+            "the 720-tick mark outlives the base 240"
+        );
+    }
+
+    #[test]
+    fn the_snake_band_cooldown_resets_the_swing_counter() {
+        // `Update_SnakeBand` (`Player.cs:28412-28418`): the reset cooldown
+        // counts down one per tick; at 0 the swing counter returns to −1.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.repeat_whip_swings = 5;
+        p.repeat_whips_reset_cooldown = 2;
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, 5, "not yet reset");
+        assert_eq!(p.repeat_whips_reset_cooldown, 1);
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, -1, "the counter resets at 0");
+        assert_eq!(p.repeat_whips_reset_cooldown, 0);
+        // A zero cooldown is inert (the `> 0` gate).
+        p.repeat_whip_swings = 3;
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, 3, "the idle cooldown changes nothing");
     }
 
     #[test]

@@ -915,6 +915,11 @@ pub(crate) struct App {
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
+    /// The Snake Band's repeat-swing latch: the current whip throw is the
+    /// `withAudioVisualFeedback = false` refire (`Player.cs:42729` →
+    /// `ItemCheck_Shoot`'s `:48668-48682` variant). Set by the repeat-swing
+    /// trigger, consumed by the whip fire arm.
+    pub(crate) whip_snake_refire: bool,
     /// Use-button edges for the non-`autoReuse` gates; refreshed every frame
     /// like `Player.releaseUseItem` (`Player.cs:42822`).
     pub(crate) place_prev_down: bool,
@@ -3691,6 +3696,7 @@ impl App {
             swing_aim: 0.0,
             shot_fired: false,
             swing_max: 0.0,
+            whip_snake_refire: false,
             place_prev_down: false,
             place_released: false,
             mine_prev_down: false,

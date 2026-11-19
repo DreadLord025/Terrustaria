@@ -241,6 +241,107 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
 /// gate): 121-126 plus the amber bolt 597.
 const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
 
+/// `Player.ItemCheck_Shoot`'s whip arm (`Player.cs:48655-48690`): spawn one
+/// whip projectile with the per-throw spin seed, the Wicked Armlet's +1
+/// knockback, and — for the Snake Band's `withAudioVisualFeedback = false`
+/// refire (`snake_refire`) — the rotated velocity, the `ai2` timeToFlyOut
+/// override and the damage/knockback cut. The audible swing bumps the
+/// repeat counter (`:48684-48688`).
+///
+/// RNG order (the `UpdatePlayers` stream, `Main.cs:17754`): the spin seed
+/// `NextFloat` (`:48657`), then — for every whip but the Dark Harvest (4680)
+/// — the `Next(3)` flip roll (`:48658`); the refire adds the
+/// `RotatedByRandom` pair (`:48670`, two `NextDouble`s, `Utils.cs:1697-1700`).
+/// The whip never self-crits (`DefaultToWhip` sets no class flag, ANALYSIS).
+#[allow(clippy::too_many_arguments)]
+fn spawn_whip_shot(
+    projectiles: &mut crate::projectile::ProjectilePool,
+    player: Option<&mut Player>,
+    loot_rng: &mut UnifiedRandom,
+    held: ItemSlot,
+    def: &crate::registry::ItemDef,
+    held_fx: Option<crate::prefix::PrefixedStats>,
+    proj: u16,
+    spawn: Vec2,
+    shot: Vec2,
+    raw_damage: i32,
+    fx_kb: f32,
+    snake_refire: bool,
+) {
+    let mut spin = 0.6 + 0.4 * loot_rng.next_float();
+    if held.kind != 4680 && loot_rng.next_range(0, 3) == 0 {
+        spin *= -2.5;
+    }
+    let mut whip_kb = fx_kb;
+    // `:48663-48666` — the Wicked Armlet adds +1 knockback.
+    let wicked = player.as_ref().is_some_and(|p| p.acc_wicked_armlet);
+    if wicked {
+        whip_kb += 1.0;
+    }
+    let mut whip_vx = shot.x;
+    let mut whip_vy = shot.y;
+    let mut whip_ai2 = 0.0f32;
+    let mut whip_damage = raw_damage;
+    if snake_refire {
+        // `:48670` — `RotatedByRandom(0.3141592741012573)` = π/10: two
+        // `NextDouble` draws, the difference times the max radians.
+        let angle = loot_rng.next_double() * 0.3141592741012573
+            - loot_rng.next_double() * 0.3141592741012573;
+        let rotated = Vec2::new(whip_vx, whip_vy).rotate(Vec2::from_angle(angle as f32));
+        whip_vx = rotated.x;
+        whip_vy = rotated.y;
+        // `:48673` — `ai2 = 1000 + itemAnimationMax * 2`.
+        let animation_max = held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+        whip_ai2 = 1000.0 + animation_max * 2.0;
+        // `:48676-48681` — damage ×0.3 floored at 3, knockback ×0.25.
+        whip_damage = ((whip_damage as f32) * 0.3) as i32;
+        if whip_damage < 3 {
+            whip_damage = 3;
+        }
+        whip_kb *= 0.25;
+    }
+    let slot = projectiles.spawn_with_data_ai(
+        proj, spawn.x, spawn.y, whip_vx, whip_vy, whip_damage, whip_kb, 0.0, spin,
+    );
+    if let Some(slot) = slot {
+        projectiles.set_crit(slot, false);
+        if snake_refire {
+            projectiles.set_ai2(slot, whip_ai2);
+        }
+        // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`): the tag row
+        // off the firing item + the prefix's `bonusTagDamage`, plus
+        // `AI_165_Whip`'s `timeToFlyOut` inputs (the prefixed
+        // `itemAnimationMax`).
+        let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+            held.kind
+        } else {
+            0
+        };
+        let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+        let animation_max = held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+        projectiles.set_whip_params(slot, tag_type, bonus_tag, animation_max);
+    }
+    // `:48684-48688` — only the audible swing bumps the repeat counter and
+    // re-arms the 120-tick reset.
+    if !snake_refire {
+        if let Some(p) = player {
+            p.repeat_whip_swings += 1;
+            p.repeat_whips_reset_cooldown = 120;
+        }
+    }
+}
+
+/// `Player.GetWeaponDamage` (`Player.cs:53421-53429`): `(int)(damage *
+/// multiplier + 5E-06f)` — the epsilon guards the float truncation. The
+/// whip fire path reads it (the generic shoot path's `raw` is the same
+/// value; the epsilon is the C#'s own).
+fn whip_weapon_damage(base_damage: i32, multiplier: f32) -> i32 {
+    if base_damage <= 0 {
+        return base_damage;
+    }
+    (base_damage as f32 * multiplier + 5e-6) as i32
+}
+
 use crate::projectile::GemStaffFeatures;
 
 /// `Utils.Remap` (`Utils.cs`): the value's position in [from_min, from_max]
@@ -497,6 +598,85 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         held.kind, app.mine_down
     );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    // `Player.ItemCheck`'s Snake Band repeat swing (`Player.cs:42711-42731`):
+    // with `accSnakeBand`, every third swing (`repeatWhipSwings % 3 == 0`)
+    // fires a second whip at the animation's half-way point
+    // (`itemAnimation == (int)(itemAnimationMax * 0.5f)`), via
+    // `ItemCheck_Shoot(..., withAudioVisualFeedback: false)`. The port's
+    // `app.swing` counts DOWN from `swing_max`, so the C# countdown value
+    // `itemAnimation` maps to `ticks_of(app.swing)`. The refire picks the
+    // next whip in the inventory when `maxTagEffects > 1` (`:42717-42728`);
+    // the port fires the held whip (the inventory-scan variant is a
+    // documented follow-up). The trigger arms `whip_snake_refire` for the
+    // fire arm below and spawns the refire projectile directly (the C#
+    // calls `ItemCheck_Shoot` mid-animation, not at the use start).
+    app.whip_snake_refire = false;
+    if let Some(p) = app.player.as_ref() {
+        if p.acc_snake_band
+            && held.count > 0
+            && held.kind > 0
+            && tr_core::whip::is_whip(registry::projectile(held.kind).unwrap_or(0))
+            && p.repeat_whip_swings % 3 == 0
+            && app.swing > 0.0
+        {
+            let anim = ticks_of(app.swing);
+            let anim_max = ticks_of(app.swing_max);
+            if anim > 0 && anim == (anim_max as f32 * 0.5) as i32 {
+                app.whip_snake_refire = true;
+            }
+        }
+    }
+    if app.whip_snake_refire {
+        // The refire is a direct `ItemCheck_Shoot(..., withAudioVisualFeedback:
+        // false)` call (`Player.cs:42729`) — it spawns mid-animation without
+        // the use-start timers. The aim/spawn mirror the fire path: the mouse
+        // direction normalized to `shootSpeed`, the spawn at the player
+        // center + 10 px along the aim. The damage is the weapon damage
+        // (`GetWeaponDamage`, `:42653`), the knockback the item's.
+        if let (Some(def), Some(proj)) = (registry::get(held.kind), registry::projectile(held.kind)) {
+            let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+            let (fx_dmg, fx_spd, fx_kb) = held_fx.map_or(
+                (def.damage, def.shoot_speed, def.knock_back),
+                |s| (s.damage, s.shoot_speed, s.knock_back),
+            );
+            // The aim/spawn scalars read the player immutably; the borrow
+            // ends before the spawn helper re-borrows the pool/player/rng.
+            let aim = app.player.as_ref().map(|p| {
+                let (pcx, pcy) = p.center();
+                let (sw, sh) = app.screen_size();
+                let mouse_world = Vec2::new(
+                    app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                    app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+                );
+                let dir = (mouse_world - Vec2::new(pcx, pcy)).normalize_or_zero();
+                let raw = whip_weapon_damage(fx_dmg, p.weapon_damage_multiplier(def.class));
+                (dir, raw)
+            });
+            if let Some((dir, raw)) = aim {
+                if dir != Vec2::ZERO {
+                    let (pcx, pcy) = app.player.as_ref().unwrap().center();
+                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                    let shot = dir * fx_spd;
+                    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    spawn_whip_shot(
+                        &mut app.projectiles,
+                        app.player.as_mut(),
+                        loot_rng,
+                        held,
+                        def,
+                        held_fx,
+                        proj,
+                        spawn,
+                        shot,
+                        raw,
+                        fx_kb,
+                        true,
+                    );
+                }
+            }
+        }
+        app.whip_snake_refire = false;
+    }
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
     // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
     // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
@@ -1001,6 +1181,32 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
                         }
+                    } else if tr_core::whip::is_whip(proj) {
+                        // `Player.ItemCheck_Shoot`'s whip arm
+                        // (`Player.cs:48655-48690`): the 18 whip items fire
+                        // their own projectile with a per-throw spin seed.
+                        // The C# `return`s here, so the generic tweaks above
+                        // never run for a whip. The audible swing bumps the
+                        // Snake Band repeat counter (`:48684-48688`); the
+                        // mid-animation refire is a separate trigger above.
+                        // The damage is `GetWeaponDamage` (`Player.cs:42653`
+                        // → `:53421-53429`, the `+5E-06f` epsilon), the same
+                        // value the refire reads.
+                        let whip_dmg = whip_weapon_damage(fx_dmg, p.weapon_damage_multiplier(class));
+                        spawn_whip_shot(
+                            &mut app.projectiles,
+                            Some(&mut *p),
+                            loot_rng,
+                            held,
+                            def,
+                            held_fx,
+                            proj,
+                            spawn,
+                            shot,
+                            whip_dmg,
+                            fx_kb,
+                            false,
+                        );
                     } else {
                         // The generic `Item.shoot` firing, with the two
                         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -1068,10 +1274,27 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         app.inventory[app.selected].count =
                             app.inventory[app.selected].count.saturating_sub(1);
                     }
-                    // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
+                    // `Player.ApplyItemAnimation` (`Player.cs:4463-4495`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
                     // matches so the throw repeats only when the swing is over.
-                    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+                    // The whip items (`SummonerWeaponThatScalesWithAttackSpeed`,
+                    // `:4474-4476`) scale it by `summonerWeaponSpeedBonus *
+                    // whipUseTimeMultiplier` — the folded use-time multiplier
+                    // (`CapAttackSpeeds`, `:29025`) times the Obsidian Outlaw
+                    // set's `1/1.15`. `SetItemAnimation` (`:4453-4461`)
+                    // truncates to int ticks and floors at 1.
+                    let base_swing = crate::item::use_animation_secs_of(held.kind, held.prefix);
+                    app.swing_max = if def.summon
+                        && crate::projectile::SUMMONER_WEAPON_SCALES_WITH_ATTACK_SPEED
+                            .contains(&held.kind)
+                    {
+                        let base_ticks = ticks_of(base_swing);
+                        let scaled = (base_ticks as f32 * p.whip_animation_multiplier()) as i32;
+                        let scaled = if base_ticks > 0 { scaled.max(1) } else { scaled };
+                        scaled as f32 * ONE_TICK_SECS
+                    } else {
+                        base_swing
+                    };
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
@@ -5369,6 +5592,93 @@ mod tests {
             .expect("the SwordWhip");
         let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
         assert_eq!(p.bonus_tag_damage, want);
+    }
+
+    #[test]
+    fn the_whip_spin_seed_is_nonzero_and_seed_deterministic() {
+        // `Player.cs:48657-48661`: `ai1 = 0.6 + 0.4 * NextFloat()`, then the
+        // `×−2.5` flip on `Next(3) == 0` (every whip but the Dark Harvest).
+        // The old generic path spawned ai1 = 0 (a straight whip); the spin
+        // seed winds the collision spiral. Two same-seed runs agree.
+        let run = |seed: i32| {
+            let mut app = whip_app(4672);
+            seed_stream(&mut app, seed);
+            mine_frames(&mut app, 1);
+            app.mine_down = true;
+            mine_frames(&mut app, 1);
+            app.projectiles
+                .slots()
+                .iter()
+                .find(|p| p.active)
+                .map(|p| p.ai[1])
+                .unwrap()
+        };
+        let a = run(0x5EED);
+        let b = run(0x5EED);
+        assert_eq!(a, b, "the spin seed is seed-stable");
+        assert!(a != 0.0, "the spin seed is nonzero (the spiral winds)");
+        // The seed is either the positive arm [0.6, 1.0] or the flipped
+        // negative arm [−2.5, −1.5].
+        assert!(
+            (0.6..=1.0).contains(&a) || (-2.5..=-1.5).contains(&a),
+            "spin {a} outside the C# arms"
+        );
+    }
+
+    #[test]
+    fn the_dark_harvest_never_flips_its_spin() {
+        // `Player.cs:48658`: the `Next(3)` flip is skipped for the Dark
+        // Harvest (4680) — its spin stays in the positive [0.6, 1.0] arm
+        // across seeds (the flip roll is not even drawn).
+        for seed in 0..24i32 {
+            let mut app = whip_app(4680);
+            seed_stream(&mut app, seed);
+            mine_frames(&mut app, 1);
+            app.mine_down = true;
+            mine_frames(&mut app, 1);
+            let spin = app
+                .projectiles
+                .slots()
+                .iter()
+                .find(|p| p.active)
+                .map(|p| p.ai[1])
+                .unwrap();
+            assert!(
+                (0.6..=1.0).contains(&spin),
+                "seed {seed}: Dark Harvest spin {spin} must stay positive"
+            );
+        }
+    }
+
+    #[test]
+    fn the_whip_throw_bumps_the_repeat_counter_and_cooldown() {
+        // `Player.cs:48684-48688`: the audible swing increments
+        // `repeatWhipSwings` (from −1 → 0) and re-arms the 120-tick reset.
+        let mut app = whip_app(4672);
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.repeat_whip_swings, 0, "the first throw is swing #0");
+        assert_eq!(p.repeat_whips_reset_cooldown, 120, "the reset re-arms");
+    }
+
+    #[test]
+    fn the_wicked_armlet_adds_one_knockback_to_the_whip() {
+        // `Player.cs:48663-48666`: `accWickedArmlet` adds +1 knockback per
+        // whip throw. The BlandWhip's base knockback is 1.0 → 2.0.
+        let mut app = whip_app(4672);
+        app.player.as_mut().unwrap().acc_wicked_armlet = true;
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 1);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the whip");
+        assert!((p.knock_back - 2.0).abs() < 1e-5, "kb {} = base 1 + 1", p.knock_back);
     }
 
     pub(super) fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
