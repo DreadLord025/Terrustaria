@@ -166,9 +166,10 @@ ambience emitters) — plus `crates/tr-content/src/sound.rs` (43, the `.xnb` PCM
 
 | Category | C# source | Rust | Status |
 | --- | --- | --- | --- |
-| Item use / pickup | `SoundGrab` `:177`, `SoundItem[]` `:241-244`, `SoundCoin[]` `:211-214` | `Grab`, `Item_1`, `Coin_0` (`audio.rs:26/28/42`) | PARTIAL |
+| Item use / pickup | `SoundGrab` `:177`, `SoundItem[]` `:241-244`, `SoundCoin[]` `:211-214` | `play_use_sound` (wave A) + `play_pickup_sound`/`play_coin_ping` (S1-E-21f: cases 7/38, `Coin_0..4` id 38, the GetItem chimes + the revenge moneyPing; the chest transfers on the bare stream) | PORTED (code-only, tests not run — the starGame arm off, the per-fill chime collapse; ANALYSIS "The player-sounds wave") |
 | NPC hit / killed | `SoundNpcHit[]` `:245-248`, `SoundNpcKilled[]` `:249-252` | `play_npc_hit_sound`/`play_npc_death_sound` (case 3/4 maths + pitch + pools, S1-E-21c-npchit) | PORTED (the trackable `_0` pin remains) |
-| Player hurt / death | `SoundPlayerHit[]` `:195-197`, `SoundFemaleHit[]`, `SoundPlayerKilled` `:201` | `Player_Hit_0` (`frame.rs:364`) | PARTIAL |
+| Player hurt / death | `SoundPlayerHit[]` `:195-197`, `SoundFemaleHit[]`, `SoundPlayerKilled` `:201` | `play_hurt_sound`/`play_death_sound` (S1-E-21f: case 1's `Next(3)` slot pick `Player_Hit_0..2`, case 5 at the top-left `:38745`; the S1-E-21b queues drain on `UpdatePlayers`) | PORTED (code-only — the voice variants beyond 1 deferred) |
+| Player movement sounds (jumps/splash/flap/drown/grapple) | `Player.cs:20793-21004` (16), `:20846` (Item16), `:27772-27944` (19 + wetCount), `:26835-26858` (Item32), `:23257` (23), `:6408` (UseSound) | `player.rs` queues + `play_double_jump_sound`/`play_splash_sound`/`play_drown_sound` + the Item16/Item32 façades + `grapple::quick_grapple_item_kind` (S1-E-21f, code-only — tests written not run; the wing default-machine stand-in + the any-liquid splash union documented) | PORTED |
 | Tile break / dig | `SoundDig[0..2]` `:179-181`, case 0 `:440-452` | `Dig_0/1/2` (`editing.rs`) | PARTIAL (no instance reuse, no pitch) |
 | Footsteps / run | `SoundRun` `:236` | `audio.rs::play_step_sound` + `player.rs::spawn_fast_run_particles` | PORTED (S1-E-21 wave D, 2026-11-18 — vanilla has no per-tile-type footstep cues; the fast-run `hermesStepSound` only, `Player.cs:20212-20216`/`:35947-35964`) |
 | Item tink / research | `SoundTink[]` `:192-194`, `SoundResearch[]` `:188-191` | — | MISSING |

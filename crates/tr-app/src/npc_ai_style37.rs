@@ -1,18 +1,18 @@
 //! The Destroyer's machine — `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`,
 //! dispatched by `else if (this.aiStyle == 37)` at `NPC.cs:28991-28994`).
-//! S1-D-3 (aiStyle-37), **code-only mode**: the machine is ported here as
-//! pure functions over the NPC pool; the sim wiring is deferred (the port's
-//! Destroyer currently rides the aiStyle-6 worm pass — `npc.rs`'s
-//! `NpcKind::TheDestroyer => {}` arm + `world_sim/npcs.rs::update_worms_in`'s
-//! 80-budget chain). See docs/ANALYSIS.md "The Destroyer machine (aiStyle-37)".
+//! S1-D-3 (aiStyle-37) machine + **S1-D-3-wire-destroyer wiring**: the sim
+//! runs the family through `world_sim/npcs.rs::update_destroyers` (the
+//! `destroyer_family_step` driver below) — the aiStyle-6 worm pass skips the
+//! family (`is_worm()` no longer lists it) and `npc.rs`'s kind arm is a no-op
+//! with the machine claimed here. See docs/ANALYSIS.md "The Destroyer
+//! machine (aiStyle-37)".
 //!
 //! The C# family is three types — the head (134), the body (135) and the tail
 //! (136), all aiStyle 37 (`SetDefaults`, `NPC.cs:10659-10719`: 38×38, scale
 //! 1.25, noGravity/noTileCollide, alpha 255, lifeMax 80000; the head dmg 70 /
 //! def 0 / value 120000 / boss, the body dmg 55 / def 30, the tail dmg 40 /
-//! def 35). The port has only `NpcKind::TheDestroyer` (the head), so the
-//! machine is **type-parameterised** (`DestroyerCtx::npc_type`): the body/tail
-//! branches activate unchanged when their kinds land.
+//! def 35). The port ships all three (`NpcKind::TheDestroyer/Body/Tail`);
+//! the machine stays **type-parameterised** (`DestroyerCtx::npc_type`).
 //!
 //! Determinism: the machine's only `Main.rand` draws are the body's laser
 //! cadence — `Next(4)` (`NPC.cs:49858`) and `Next(1400, 26000)` (`:49859`)
@@ -34,6 +34,24 @@ use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
 use tr_core::tiledata as td;
 use tr_core::{UnifiedRandom, World};
+
+/// The family membership (`NPC.cs:49765`'s `type >= 134 && type <= 136`).
+pub fn is_destroyer_family(kind: NpcKind) -> bool {
+    matches!(
+        kind,
+        NpcKind::TheDestroyer | NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail
+    )
+}
+
+/// The vanilla type of a family kind (`SetDefaults`, `NPC.cs:10659-10719`).
+pub fn family_npc_type(kind: NpcKind) -> i32 {
+    match kind {
+        NpcKind::TheDestroyer => 134,
+        NpcKind::TheDestroyerBody => 135,
+        NpcKind::TheDestroyerTail => 136,
+        _ => unreachable!("the driver gates on is_destroyer_family"),
+    }
+}
 
 /// `Main.maxNPCs` (`InitData.cs:9`) — the Mech Queen chain walk's bound
 /// (`NPC.cs:49763`).
@@ -163,6 +181,45 @@ pub fn destroyer_segments_count(get_good_world: bool) -> i32 {
     80
 }
 
+/// The probe launch gate — `NPC.HitEffect`'s type-135 arm
+/// (`NPC.cs:89266-89285`), called from `StrikeNPC_Inner` (`:81488`) after
+/// the knockback: a LIVING body (`life > 0`, host only) that has not
+/// launched yet (`ai[2] == 0`) rolls `Main.rand.Next(25)` (50 with the Mech
+/// Queen); a 0 sets `ai[2] = 1`, spawns the Probe (139) at the body's
+/// bottom-centre (`(int)(pos.X + width/2), (int)(pos.Y + height)`,
+/// `:89278`) and flags `netUpdate`.
+///
+/// RNG: the `Next(maxValue)` draw happens ONLY when `ai[2] == 0` — the C#'s
+/// `&&` short-circuits (`:89275`), so a launched body never draws again.
+/// The roll rides the STRIKE's stream (the C# `HitEffect` runs inside
+/// `StrikeNPC`, under the projectile/melee update's `Main.rand` swap), not
+/// the NPC pass's. The caller resolves the returned bottom-centre into a
+/// `NpcKind::Probe` spawn (the port's slot allocation is the sim's job).
+pub fn probe_launch_on_hit(
+    n: &mut Npc,
+    rng: &mut dyn tr_core::loot::DropRng,
+    mech_queen_up: bool,
+) -> Option<(f32, f32)> {
+    // `:89268` — type 135, alive, host (`Main.netMode != 1`; the port is
+    // single-player).
+    if n.kind != NpcKind::TheDestroyerBody || n.hp <= 0 {
+        return None;
+    }
+    let max_value = if mech_queen_up { 50 } else { 25 };
+    // `:89275` — the `ai[2] == 0` gate BEFORE the draw (short-circuit).
+    // `next_range(0, max)` is the same single Sample()*max draw as the
+    // concrete `next_max` (UnifiedRandom.cs:126-130 vs :140) — the strike
+    // paths hand a `dyn DropRng` (the projectile pass's stream seam).
+    if n.ai[2] == 0.0 && rng.next_range(0, max_value) == 0 {
+        n.ai[2] = 1.0;
+        n.net_update = true;
+        let (w, h) = n.size();
+        // `:89278` — the NewNPC bottom-centre anchor (the integer casts).
+        return Some(((n.x + w * 0.5) as i32 as f32, (n.y + h) as i32 as f32));
+    }
+    None
+}
+
 /// `NPC.GetAttackDamage_ForProjectiles` (`NPC.cs:7052-7055`):
 /// `(int)Utils.Remap(difficulty, Classic(1), Expert(2), normal, expert)` —
 /// `Remap` is `Lerp(toMin, toMax, GetLerpValue(from, to, t, clamped: true))`
@@ -204,11 +261,12 @@ pub fn mech_queen_center(queen: &Npc, queen_type: i32) -> (f32, f32) {
 }
 
 /// The family type of a pool NPC for the Mech Queen chain walk
-/// (`NPC.cs:49765`: `type >= 134 && type <= 136`). The port's only family
-/// kind is the head; the body/tail kinds join when they land.
+/// (`NPC.cs:49765`: `type >= 134 && type <= 136`).
 fn family_type(n: &Npc) -> Option<i32> {
     match n.kind {
         NpcKind::TheDestroyer => Some(134),
+        NpcKind::TheDestroyerBody => Some(135),
+        NpcKind::TheDestroyerTail => Some(136),
         _ => None,
     }
 }
@@ -786,6 +844,374 @@ pub fn destroyer_step(
     ev
 }
 
+/// The Probe's shot intent (`NPC.cs:50609-50625`): projectile type 84 at
+/// the SNAPPED centre (`vector`, the 8-px grid), velocity = the snapped aim
+/// (`num4`/`num5` — NOT re-normalised in the classic fight), damage
+/// `GetAttackDamage_ForProjectiles(25, 22)` (`:50618`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProbeShot {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub proj_type: i32,
+}
+
+/// The Probe's machine — `AI_005_EaterOfSouls`'s type-139 path
+/// (`NPC.cs:50244-50961`, the arm dispatched by aiStyle 5). The classic
+/// solo port (no Mech Queen, no zenithWorld, single-player host):
+///
+/// * `:50250-50252` — the target re-pick runs EVERY tick (the C#'s
+///   `target <= 255` middle term is always true — the port's
+///   `target_closest`, aiStyle 5).
+/// * `:50294-50295` — `num = 6`, `num2 = 0.05` (the default row; 139's own
+///   `num = 3` branch is zenithWorld-only, `:50414-50417`).
+/// * `:50418-50444` — the 8-px snapped aim at speed `num`.
+/// * `:50445-50479` — the `num8` wobble: 139 IS in the `num8` set, so while
+///   the raw distance > 100 the `ai[0]` counter drives the ±0.023 drifts
+///   (the same family block the Eater of Souls rides).
+/// * `:50489-50545` — the `ai[3] != 0` Mech-Queen ride is constants-off;
+///   the else arm clears `dontTakeDamage` (`:50546-50549`) and runs the
+///   plain approach (`flag5` false for 139 — no double-add, `:50447`).
+/// * `:50593-50641` — the laser cadence: `localAI[0]++` every tick
+///   (`+2` more while riding, `justHit` resets), fires at ≥ 120 when the
+///   target exists, the firing-distance rect holds and `CanHit` passes;
+///   then the tile-light probe and the sprite-aim rotation
+///   (`atan2(num5, num4)`, +3.14 when the aim points left — `:50633-50641`).
+/// * `:50656-50707` — the collide-bounce block: 139 is on the family list
+///   (`num14 = 0.7`) but `noTileCollide` (`SetDefaults :10733`) means the
+///   port integrates straight through (the `hover_step` convention); the
+///   trail dust excludes 139 (`:50695`), so NO rand draws ride it.
+/// * `:50813-50831` — the far-chase boost: when the snapped distance > 600
+///   and the velocity aligns with the aim, `vx *= 1.05` below 12; else
+///   `vx *= 0.9`.
+///
+/// RNG: the type-139 path draws NOTHING from `Main.rand` (the wobble is a
+/// counter, the dust arms exclude 139) — the function takes no rng, so the
+/// `UpdateNPCs` stream is untouched BY CONSTRUCTION.
+pub fn probe_step(
+    n: &mut Npc,
+    world: &World,
+    players: &[TargetCandidate],
+    just_hit: bool,
+    ticker: u64,
+) -> Option<ProbeShot> {
+    // `:50250-50252` — `target < 0 || target <= 255 || dead`: the middle
+    // term is ALWAYS true (the 255-slot array), so AI_005 re-picks the
+    // target EVERY tick — unlike AI_037's `== 255` sentinel gate.
+    target_closest(n, world, players, true, 5, ticker);
+    let p = *target_player(players, n.target);
+    // `:50294-50295` — the default speed pair.
+    let num = 6.0f32;
+    let num2 = 0.05f32;
+    let (w, h) = n.size();
+    // `:50418-50426` — the 8-px snap on both centres (the player's halves
+    // are INTEGER divisions, `:50419-50420`).
+    let mut vector = (n.x + w * 0.5, n.y + h * 0.5);
+    let mut num4 = p.x + (p.width / 2) as f32;
+    let mut num5 = p.y + (p.height / 2) as f32;
+    num4 = (num4 / 8.0).trunc() * 8.0;
+    num5 = (num5 / 8.0).trunc() * 8.0;
+    vector.0 = (vector.0 / 8.0).trunc() * 8.0;
+    vector.1 = (vector.1 / 8.0).trunc() * 8.0;
+    num4 -= vector.0;
+    num5 -= vector.1;
+    let mut num6 = (num4 * num4 + num5 * num5).sqrt();
+    let num7 = num6;
+    // `:50429-50432` — `flag3` (the > 600 px chase flag).
+    let flag3 = num6 > 600.0;
+    // `:50433-50444` — the normalised aim; a zero distance keeps velocity.
+    if num6 == 0.0 {
+        num4 = n.vx;
+        num5 = n.vy;
+    } else {
+        num6 = num / num6;
+        num4 *= num6;
+        num5 *= num6;
+    }
+    // `:50445-50473` — the `num8` wobble (139 is in the set, `:50445`;
+    // `flag4` false). The `|` operands are plain bools — no short-circuit
+    // difference. The inner gate is the RAW distance > 100.
+    if num7 > 100.0 {
+        n.ai[0] += 1.0;
+        if n.ai[0] > 0.0 {
+            n.vy += 0.023;
+        } else {
+            n.vy -= 0.023;
+        }
+        if n.ai[0] < -100.0 || n.ai[0] > 100.0 {
+            n.vx += 0.023;
+        } else {
+            n.vx -= 0.023;
+        }
+        if n.ai[0] > 200.0 {
+            n.ai[0] = -200.0;
+        }
+    }
+    // `:50480-50484` — the dead-target flee vector.
+    if p.dead {
+        num4 = n.facing as f32 * num / 2.0;
+        num5 = (0.0 - num) / 2.0;
+    }
+    // `:50489-50549` — the Mech Queen ride is constants-off; the else arm
+    // clears the shield (`:50546-50548`) and approaches (`flag5` false).
+    n.dont_take_damage = false;
+    if n.vx < num4 {
+        n.vx += num2;
+    } else if n.vx > num4 {
+        n.vx -= num2;
+    }
+    if n.vy < num5 {
+        n.vy += num2;
+    } else if n.vy > num5 {
+        n.vy -= num2;
+    }
+    // `:50593-50641` — the laser cadence + the sprite-aim rotation.
+    let mut shot = None;
+    n.local_ai[0] += 1.0;
+    // `:50596-50598` — the +2 ride bonus is Mech-Queen-only (off).
+    // `:50599-50602` — `justHit` resets the counter (the port's `hurt_cd`
+    // stand-in rides the caller's flag).
+    if just_hit {
+        n.local_ai[0] = 0.0;
+    }
+    // `:50603-50607` — the 120-tick threshold (360 with the Queen, off).
+    if n.local_ai[0] >= 120.0 {
+        n.local_ai[0] = 0.0;
+        // `:50611` — `(targetData.Type != None) & flag2` then `CanHit`.
+        // A dead player is still a Player target (the C# gate does not
+        // read `dead` — the flee vector only bends the aim).
+        // The firing-distance rect (`AI_GlobalFiringDistanceCheck`,
+        // `NPC.cs:55835-55842`): the target centre's 1920×1200 view rect
+        // deflated 50, containing the probe's centre.
+        let pcx = p.x + p.width as f32 * 0.5;
+        let pcy = p.y + p.height as f32 * 0.5;
+        let in_range = (vector.0 - pcx).abs() <= 1920.0 / 2.0 - 50.0
+            && (vector.1 - pcy).abs() <= 1200.0 / 2.0 - 50.0;
+        if in_range
+            && crate::projectile::can_hit(
+                world, n.x, n.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            )
+        {
+            // `:50618-50625` — damage 25/22, type 84, the SNAPPED centre
+            // and the snapped aim as the velocity (the Queen's
+            // re-normalised 8-speed form is off).
+            shot = Some(ProbeShot {
+                x: vector.0,
+                y: vector.1,
+                vx: num4,
+                vy: num5,
+                damage: attack_damage_for_projectiles(1.0, 25.0, 22.0),
+                proj_type: 84,
+            });
+        }
+    }
+    // `:50627-50632` — the tile-light probe (no port lighting seam inside
+    // the AI; the fixed 0.3/0.1/0.05 colour rides the sim's light pass
+    // convention — SKIPPED like the other machines' AddLight lines).
+    // `:50633-50641` — the sprite-aim rotation (the type-23 shape).
+    if num4 > 0.0 {
+        n.sprite_dir = 1;
+        n.rotation = num5.atan2(num4);
+    }
+    if num4 < 0.0 {
+        n.sprite_dir = -1;
+        n.rotation = num5.atan2(num4) + 3.14;
+    }
+    // `:50656-50707` — the bounce block: `noTileCollide` (`:10733`) means
+    // the direct integration (the collideX/Y flags never arm); the dust
+    // arm excludes 139 (`:50695`) — no draws.
+    n.x += n.vx;
+    n.y += n.vy;
+    // `:50813-50831` — the far-chase boost (the non-short-circuit `&` is
+    // two plain bools).
+    if flag3 {
+        if (n.vx > 0.0 && num4 > 0.0) || (n.vx < 0.0 && num4 < 0.0) {
+            // `num25 = 12` (5 with the Queen, off).
+            if n.vx.abs() < 12.0 {
+                n.vx *= 1.05;
+            }
+        } else {
+            n.vx *= 0.9;
+        }
+    }
+    // The off-world guard (the framework shape, `worm_head_step`).
+    if n.y > world.height as f32 * 16.0 + 200.0 {
+        n.hp = 0;
+    }
+    shot
+}
+
+/// One tick of the whole family — the sim driver's core (the pieces the
+/// tests drive directly). Runs AFTER the per-NPC step (the `AI_006` pass's
+/// position, `world_sim/npcs.rs::update_destroyers`):
+///
+/// 1. the head's first tick allocates the chain (the C#'s `NewNPC` loop,
+///    `NPC.cs:49833-49855` — j 0..=count, 135s then the 136 at j == count,
+///    each at the parent's bottom-centre; `NewNPC` draws no rand);
+/// 2. the `realLife` pool pays parked damage and mirrors the head's life
+///    onto the links (`NPC.cs:81374-81378`, the worm pass's precedent);
+/// 3. every family slot runs `destroyer_step` in pool order (the C#'s
+///    `UpdateNPC` slot order — the head's slot is below its children's,
+///    `GetAvailableNPCSlot` searches upward from the head's `Start`).
+///
+/// Slot mapping: the C#'s `ai[1]`/`ai[3]` slot links cannot survive the
+/// port's compacting pool, so the driver runs the machine over a SCRATCH
+/// pool of the family alone with a dummy slot 0 — the C#'s
+/// `CannotSpawnInSlot0` (`NPCID.cs:10452` lists 134/135/136) guarantees no
+/// family member ever sits at slot 0, so `ai[1] = parent_scratch_index`
+/// keeps the machine's `ai[1] > 0` gate verbatim. The stable carrier
+/// identity stays `worm_id`/`seg_index` (`Npc::carrier_index`).
+///
+/// RNG: only `destroyer_step`'s body cadence draws (2 per body per tick,
+/// +4 on a firing tick), in pool order on the caller's `UpdateNPCs`
+/// stream. The chain spawn and the pool mirror draw NOTHING.
+///
+/// Returns `(pool_index, events)` per family slot, in tick order.
+pub fn destroyer_family_step(
+    npcs: &mut Vec<Npc>,
+    world: &World,
+    players: &[TargetCandidate],
+    rng: &mut UnifiedRandom,
+    next_worm_id: &mut u32,
+    ticker: u64,
+) -> Vec<(usize, DestroyerEvents)> {
+    // 1. The chain spawn (the head's first tick, `ai[0] == 0`).
+    let head_idx = npcs
+        .iter()
+        .position(|n| n.kind == NpcKind::TheDestroyer && n.hp > 0 && n.ai[0] == 0.0);
+    if let Some(head) = head_idx {
+        if npcs[head].worm_id == 0 {
+            npcs[head].worm_id = *next_worm_id;
+            *next_worm_id += 1;
+        }
+        let count = destroyer_segments_count(false);
+        // `:49836-49837` — `ai[3] = realLife = whoAmI` (the carrier stamp;
+        // the port's pool index stands in for the slot).
+        npcs[head].ai[3] = head as f32;
+        let (hw, hh) = npcs[head].size();
+        // `:49847` — the bottom-centre anchor (the integer casts).
+        let spawn_x = (npcs[head].x + hw * 0.5) as i32 as f32;
+        let spawn_y = (npcs[head].y + hh) as i32 as f32;
+        let wid = npcs[head].worm_id;
+        for j in 0..=count {
+            // `:49842-49846` — 136 at j == count, else 135.
+            let kind = if j == count {
+                NpcKind::TheDestroyerTail
+            } else {
+                NpcKind::TheDestroyerBody
+            };
+            let (cw, ch) = kind.size();
+            // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the box's
+            // bottom-centre lands on the anchor.
+            let mut link = Npc::new(kind, spawn_x - cw * 0.5, spawn_y - ch, 1, 0.0);
+            link.hp = link.max_hp;
+            link.worm_id = wid;
+            link.seg_index = (j + 1) as u32;
+            link.ai[3] = head as f32;
+            npcs.push(link);
+        }
+        // `:49851` — `parent.ai[0] = child` closes the first-tick gate
+        // (any non-zero value; the port stores the first child's index+1).
+        npcs[head].ai[0] = (head + 1) as f32;
+    }
+    // 2. The realLife pool (`NPC.cs:81374-81378`): parked damage pays the
+    // carrier, then every link mirrors the head's life/lifeMax.
+    let mut carrier_of = std::collections::HashMap::new();
+    for (i, n) in npcs.iter().enumerate() {
+        if is_destroyer_family(n.kind) && n.seg_index == 0 && n.worm_id != 0 {
+            carrier_of.insert(n.worm_id, i);
+        }
+    }
+    for i in 0..npcs.len() {
+        if !is_destroyer_family(npcs[i].kind) {
+            continue;
+        }
+        let dmg = npcs[i].pending_pool_damage;
+        if dmg != 0 {
+            npcs[i].pending_pool_damage = 0;
+            if let Some(&c) = carrier_of.get(&npcs[i].worm_id) {
+                npcs[c].hp -= dmg;
+            }
+        }
+    }
+    for i in 0..npcs.len() {
+        if !is_destroyer_family(npcs[i].kind) || npcs[i].seg_index == 0 {
+            continue;
+        }
+        if let Some(&c) = carrier_of.get(&npcs[i].worm_id) {
+            npcs[i].hp = npcs[c].hp;
+            npcs[i].max_hp = npcs[c].max_hp;
+        }
+    }
+    // 3. The machine pass over the scratch pool (dummy slot 0).
+    let family: Vec<usize> = npcs
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| is_destroyer_family(n.kind) && n.hp > 0)
+        .map(|(i, _)| i)
+        .collect();
+    if family.is_empty() {
+        return Vec::new();
+    }
+    let mut scratch: Vec<Npc> = Vec::with_capacity(family.len() + 1);
+    scratch.push(npcs[family[0]].clone()); // the dummy slot 0 (never read)
+    let mut slot_of = std::collections::HashMap::new();
+    for &i in &family {
+        slot_of.insert(i, scratch.len());
+        scratch.push(npcs[i].clone());
+    }
+    // The parent link: seg k's parent is seg k-1 of the same chain (the
+    // C#'s ai[1] write, `:49850`); the head keeps ai[1] = 0.
+    let mut parent_slot = std::collections::HashMap::new();
+    for &i in &family {
+        let key = (npcs[i].worm_id, npcs[i].seg_index);
+        parent_slot.insert(key, slot_of[&i]);
+    }
+    let mut out = Vec::with_capacity(family.len());
+    for &i in &family {
+        let me = slot_of[&i];
+        // `NPC.cs:92538` — `oldVelocity = velocity` right before the
+        // position integration (the port's no-collision machines stamp it
+        // at the AI tail, the poltergeist/style10 precedent).
+        scratch[me].old_vx = scratch[me].vx;
+        scratch[me].old_vy = scratch[me].vy;
+        let seg = scratch[me].seg_index;
+        scratch[me].ai[1] = if seg == 0 {
+            0.0
+        } else {
+            parent_slot
+                .get(&(scratch[me].worm_id, seg - 1))
+                .map(|&s| s as f32)
+                .unwrap_or(0.0)
+        };
+        let mut ctx = DestroyerCtx::head(me as i32);
+        ctx.npc_type = family_npc_type(scratch[me].kind);
+        ctx.just_hit = scratch[me].hurt_cd > 0.0;
+        // `NPC.cs:90381-90383` — `soundDelay--` once per update, BEFORE
+        // the AI runs (the roar's cooldown decay).
+        scratch[me].sound_delay = (scratch[me].sound_delay - 1).max(0);
+        ctx.sound_delay = scratch[me].sound_delay;
+        let ev = destroyer_step(&mut scratch, me, &mut ctx, world, players, rng, ticker);
+        scratch[me].sound_delay = ctx.sound_delay;
+        // `noTileCollide` (`NPC.cs:10670-10671`): the direct integration
+        // (`NPC.cs:90495-90498`, the `integrate_no_tile_collide` shape).
+        // The follower branch zeroed the velocity, so its snap position
+        // rides unchanged; the head integrates its steer.
+        scratch[me].x += scratch[me].vx;
+        scratch[me].y += scratch[me].vy;
+        // Copy the machine's writes back (ai[1] holds the scratch link —
+        // the driver re-stamps it every tick; the stable identity is
+        // worm_id/seg_index).
+        let mut updated = scratch[me].clone();
+        updated.ai[1] = npcs[i].ai[1];
+        npcs[i] = updated;
+        out.push((i, ev));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1064,5 +1490,145 @@ mod tests {
         pool[0].ai[0] = 4.0; // the first child's slot, as the caller writes
         let ev2 = destroyer_step(&mut pool, 0, &mut ctx, &w, &players, &mut rng, 0);
         assert_eq!(ev2.spawn_segments, None);
+    }
+
+    // ---- S1-D-3-wire-destroyer: the wiring witnesses (WRITTEN NOT RUN,
+    // code-only mode — no compiler invoked on this branch). ----
+
+    /// `NPC.cs:89266-89285` — the probe gate draws Next(25) ONLY while
+    /// `ai[2] == 0` (the `&&` short-circuit); a launched body never draws
+    /// again. Witness: the stream state equals a clone advanced by exactly
+    /// the gated rolls.
+    #[test]
+    fn s1_d_3_wire_the_probe_gate_draws_only_before_launch() {
+        let mut body = head(500.0, 500.0);
+        body.kind = NpcKind::TheDestroyerBody;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        // Roll until the launch fires (the 1/25 gate); every roll is one
+        // Next(25) on both streams.
+        let mut anchor = None;
+        for _ in 0..1000 {
+            let d = witness.next_max(25);
+            anchor = probe_launch_on_hit(&mut body, &mut rng, false);
+            assert_eq!(rng, witness, "one Next(25) per gated roll");
+            if anchor.is_some() {
+                assert_eq!(d, 0, "the launch fires on the 0 roll");
+                break;
+            }
+        }
+        let (ax, ay) = anchor.expect("a 0 rolls within 1000 tries");
+        assert_eq!(body.ai[2], 1.0);
+        assert!(body.net_update);
+        // The bottom-centre anchor (`:89278`, the integer casts).
+        assert_eq!(ax, (500.0 + 24.0) as i32 as f32);
+        assert_eq!(ay, (500.0 + 48.0) as i32 as f32);
+        // After the launch: NO draws (the ai[2] gate short-circuits).
+        let before = rng.clone();
+        assert!(probe_launch_on_hit(&mut body, &mut rng, false).is_none());
+        assert_eq!(rng, before, "the launched body never draws");
+        // The head and the tail never roll (`:89268`'s type gate).
+        let mut h = head(500.0, 500.0);
+        let before = rng.clone();
+        assert!(probe_launch_on_hit(&mut h, &mut rng, false).is_none());
+        assert_eq!(rng, before);
+    }
+
+    /// `NPC.cs:50593-50616` — the probe's cadence: localAI[0]++ per tick,
+    /// justHit resets, the fire at >= 120 needs the sight line; the shot
+    /// is type 84 / damage 25 at the SNAPPED centre with the snapped aim
+    /// velocity. The machine draws NOTHING (witness: no rng parameter).
+    #[test]
+    fn s1_d_3_wire_the_probe_fires_at_120_ticks_on_the_snapped_aim() {
+        let w = air();
+        let players = [cand(1000.0, 500.0)];
+        let mut n = Npc::new(NpcKind::Probe, 500.0, 500.0, 1, 0.0);
+        n.hp = n.max_hp;
+        // 119 quiet ticks (the counter climbs; the probe drifts toward the
+        // player — the sight line stays clear, no fire before 120).
+        for _ in 0..119 {
+            assert!(probe_step(&mut n, &w, &players, false, 0).is_none());
+        }
+        assert_eq!(n.local_ai[0], 119.0);
+        // The 120th tick fires at the CURRENT snapped centre/aim.
+        let (cx, cy) = (n.x + 15.0, n.y + 15.0);
+        let sx = (cx / 8.0).trunc() * 8.0;
+        let sy = (cy / 8.0).trunc() * 8.0;
+        let shot = probe_step(&mut n, &w, &players, false, 0)
+            .expect("the 120th tick fires");
+        assert_eq!(n.local_ai[0], 0.0, "the fire resets the counter");
+        assert_eq!(shot.proj_type, 84);
+        assert_eq!(shot.damage, 25);
+        assert_eq!((shot.x, shot.y), (sx, sy), "the snapped centre");
+        // The aim: the player centre (1010, 521) snaps to (1008, 520);
+        // the difference normalised to speed 6 (the num=6 row).
+        let sp = (shot.vx * shot.vx + shot.vy * shot.vy).sqrt();
+        assert!((sp - 6.0).abs() < 0.01, "the num=6 aim ({sp})");
+        assert!(shot.vx > 0.0);
+        // justHit resets the counter mid-climb (`:50599-50602`).
+        n.local_ai[0] = 50.0;
+        probe_step(&mut n, &w, &players, true, 0);
+        assert_eq!(n.local_ai[0], 0.0);
+    }
+
+    /// `NPC.cs:50813-50831` — the far-chase boost: past 600 px the aligned
+    /// velocity grows 1.05 below 12; the misaligned decays 0.9. (The
+    /// wobble's ±0.023 and the approach's ±0.05 run FIRST — the witness
+    /// arithmetic carries them.)
+    #[test]
+    fn s1_d_3_wire_the_probe_boosts_when_far_and_aligned() {
+        let w = air();
+        // The player 1000 px right: the snapped distance > 600.
+        let players = [cand(1500.0, 500.0)];
+        let mut n = Npc::new(NpcKind::Probe, 500.0, 500.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vx = 5.0; // aligned (+X toward the aim), below 12
+        probe_step(&mut n, &w, &players, false, 0);
+        // ai[0] 0→1: the wobble's vx −0.023 (ai[0] ≤ 100), then the
+        // approach +0.05 (5.027 < num4 ≈ 6), then ×1.05.
+        assert!((n.vx - (5.0 - 0.023 + 0.05) * 1.05).abs() < 0.001, "vx {}", n.vx);
+        // Misaligned: the approach +0.05 first (−5 → −4.973), then ×0.9.
+        let mut m = Npc::new(NpcKind::Probe, 500.0, 500.0, 1, 0.0);
+        m.hp = m.max_hp;
+        m.vx = -5.0;
+        probe_step(&mut m, &w, &players, false, 0);
+        assert!((m.vx - (-5.0 - 0.023 + 0.05) * 0.9).abs() < 0.001, "vx {}", m.vx);
+    }
+
+    /// The driver: the chain spawn (82 slots, the body/tail kinds), the
+    /// realLife mirror, the once-only gate, and the RNG order — the spawn
+    /// draws nothing, the bodies draw 2/tick each in pool order.
+    #[test]
+    fn s1_d_3_wire_the_driver_spawns_the_chain_and_mirrors_the_pool() {
+        let w = air();
+        let players = [cand(1000.0, 1000.0)];
+        let mut h = head(500.0, 500.0);
+        h.slot = 0;
+        let mut npcs = vec![h];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Tick 1: the spawn draws NOTHING (the C# NewNPC has no rand).
+        let mut spawn_witness = rng.clone();
+        let events = destroyer_family_step(
+            &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+        );
+        assert_eq!(npcs.len(), 82, "head + 80 bodies + tail");
+        assert_eq!(npcs[81].kind, NpcKind::TheDestroyerTail);
+        // The 80 bodies each drew Next(4)+Next(1400,26000) in pool order
+        // (the head/tail draw nothing) — the witness replays exactly that.
+        for _ in 0..80 {
+            let _ = spawn_witness.next_max(4);
+            let _ = spawn_witness.next_range(1400, 26000);
+        }
+        assert_eq!(rng, spawn_witness, "the cadence order: 2 draws per body");
+        assert_eq!(events.len(), 82);
+        // The pool mirror: a strike on a body lands on the head's pool.
+        npcs[40].pending_pool_damage = 100;
+        let hp_before = npcs[0].hp;
+        destroyer_family_step(&mut npcs, &w, &players, &mut rng, &mut next_id, 0);
+        assert_eq!(npcs[0].hp, hp_before - 100);
+        assert_eq!(npcs[40].hp, npcs[0].hp, "the mirror (:81377-81378)");
+        // The once-only gate: no re-spawn on the later ticks.
+        assert_eq!(npcs.len(), 82);
     }
 }

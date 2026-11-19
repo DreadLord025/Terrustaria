@@ -901,6 +901,12 @@ fn portrait_data(
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
         (NpcKind::TheDestroyer, _) => (sheet_i, 48.0, 48.0, 48.0, white),
+        // The segments fold onto the head's entry (never drawn alone);
+        // the arms keep the match exhaustive at the SetDefaults boxes.
+        (NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail, _) => {
+            (sheet_i, 48.0, 48.0, 48.0, white)
+        }
+        (NpcKind::Probe, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
