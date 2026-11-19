@@ -78,11 +78,15 @@ mod npc_ai_style27;
 mod npc_ai_fishron;
 mod npc_ai_plantera;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
-// (NPC.cs:31743-31762), UNWIRED — the merge union feeds it into
+// (NPC.cs:31743-31762), UNWIRED - the merge union feeds it into
 // npc_ai_plantera.rs's hook_anchor parameter (docs/ANALYSIS.md "The
 // Plantera hook-centroid anchor"). The 263/264/265 machines themselves
 // ride the sibling npc_ai_style52/53/50 branches.
 mod npc_ai_plantera_anchor;
+mod npc_ai_style41;
+// S1-D-3 (aiStyle-42): UNWIRED Lost Girl machine - the kind-table rows +
+// dispatch arm are the family's merge step (see the module doc).
+mod npc_ai_style42;
 mod npc_target;
 mod npc_ai_style21;
 mod npc_buffs;
@@ -101,7 +105,9 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+mod projectile_ai067_b;
 mod projectile_ai026_a;
+mod projectile_ai026_b;
 mod rain;
 mod regen;
 mod research;

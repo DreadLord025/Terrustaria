@@ -2208,6 +2208,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 20x30, `friendly = true` (the arm re-pins it per tick, `:49587`),
             // the idStatic-10 pair and the manual fall-through decision.
             VAMPIRE_FROG => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            // The aiStyle-67 pets, slice B (S1-D-4b-12): the Crimson Heart
+            // (`Projectile.cs:5413-5424`) — 20x20, `scale = 0.8f`,
+            // `ignoreWater`, the stock tileCollide true and no immunity pair;
+            // the Dirtiest Block (`:9637-9647`) — 16x16; the Boulder Pet
+            // (`:9987-9997`) — 32x32. All three: `penetrate = -1`,
+            // `netImportant`, `timeLeft *= 5`, `friendly = true` (the arm
+            // re-pins it false per tick, `:49562`), no minion slice.
+            CRIMSON_HEART => (20.0, 20.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
             // ignoreWater (the stock true / false).
@@ -2223,6 +2234,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the other unported styles), 24x16, `penetrate = -1`,
             // `timeLeft *= 5` and the idStatic-12 pair.
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
+            // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
+            // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
+            // block; 889 SkeletronPrimePet): 20x20, aiStyle 26,
+            // friendly, `penetrate = -1`, `timeLeft *= 5` (3600 →
+            // 18000), the stock `tileCollide = true` reset (`:745`) —
+            // the arm sets it false on its first tick (`:60096`), so
+            // `HandleMovement` never collides them. `netImportant`
+            // (`:8488`/`:8523`) rides the overlay below.
+            SKELETRON_PET | SKELETRON_PRIME_PET => {
+                (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE)
+            }
+
             // AI_026 slice A (S1-D-4b-10) — the 14 early-return flyer pets.
             // Every row: aiStyle 26, friendly, `penetrate = -1`,
             // `timeLeft *= 5` (3600 → 18000), the stock `tileCollide = true`
@@ -2565,7 +2589,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry
+        net_important: minion
+            || sentry
+            // The slice-B pets set `netImportant` themselves
+            // (`Projectile.cs:5419`/`:9643`/`:9993`).
+            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // AI_026 slice B: the boss-head pets' `netImportant = true`
+            // (`Projectile.cs:8488`/`:8523`).
+            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -2586,6 +2617,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
+            // The slice-B pets set `ignoreWater` themselves
+            // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
+            || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -2623,6 +2657,14 @@ pub const SOULSCOURGE_PIRATE: u16 = 394;
 pub const PIRATE_CAPTAIN: u16 = 395;
 /// `ProjectileID.VampireFrog` (`ProjectileID.cs:2070`) — the aiStyle-67 frog.
 pub const VAMPIRE_FROG: u16 = 758;
+/// `ProjectileID.CrimsonHeart` (`ProjectileID.cs:1554`) — the aiStyle-67
+/// pet, slice B (S1-D-4b-12).
+pub const CRIMSON_HEART: u16 = 500;
+/// `ProjectileID.DirtiestBlock` (`ProjectileID.cs:2590`).
+pub const DIRTIEST_BLOCK: u16 = 1018;
+/// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
+pub const BOULDER_PET: u16 = 1056;
+
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
@@ -2630,6 +2672,15 @@ pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
+/// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the
+/// spinning Skeletron-head pet (`Projectile.cs:60092-60253`'s shared
+/// 885/889 arm; buff 288's pet, `Player.cs:11105`).
+pub const SKELETRON_PET: u16 = 885;
+/// `ProjectileID.SkeletronPrimePet` (889) — AI_026 slice B: the spinning
+/// Skeletron-Prime-head pet with the `localAI[0]` laser-eye accumulator
+/// (buff 292's pet, `Player.cs:11121`).
+pub const SKELETRON_PRIME_PET: u16 = 889;
+
 // AI_026 slice A (S1-D-4b-10): the 14 early-return flyer pets of
 // `AI_026` (`Projectile.cs:59120-60091`) — `ProjectileID.cs:904/948/950/
 // 952/976/1314/2102/2184/2188/2326/2338/2342/2356/2646`. Everything else
@@ -2766,11 +2817,22 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
+        // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
+        // (`Projectile.cs:60192`) and the walk steps frames 0-5
+        // (`:60240-60247`).
+        SKELETRON_PET => 10,
+        SKELETRON_PRIME_PET => 11,
         // The pirate trio's 15-frame sheet (`Main.cs:8518-8520`) — AI_067's
         // walk (0-3), bite (4-9) and flight (10-14) machines index it.
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
+        // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
+        // keep the init default 1 (no override in `Main.cs:8444-8727`).
+        CRIMSON_HEART => 4,
+
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
         // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.
