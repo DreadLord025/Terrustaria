@@ -58,6 +58,20 @@ pub struct World {
     /// reproducible there; the port seeds deterministically from the world seed
     /// via [`World::seed_frame_rng`].
     pub frame_rng: crate::unified_random::UnifiedRandom,
+    /// The placement random-style stream — the port's `Main.rand` stand-in
+    /// for `TileObject.CanPlace`'s `RandomStyleRange`/`SpecificRandomStyles`
+    /// draws (`TileObject.cs:787`/:819, S1-F-7b). A dedicated stream like
+    /// `craft_rng`/`frame_rng` (vanilla shares one `Main.rand`; the port keeps
+    /// per-consumer streams so the worldgen contract streams stay untouched),
+    /// seeded beside `frame_rng` via [`World::seed_frame_rng`].
+    pub place_rng: crate::unified_random::UnifiedRandom,
+    /// `TileObjectPreviewData.randomCache` (`TileObjectPreviewData.cs:31`) —
+    /// the random-style stickiness cache `TileObject.CanPlace` reads
+    /// (`TileObject.cs:764-792`/:796-824). `None` = the C# null static (the
+    /// null-create :764-767 zero-initialises); the only writer is the
+    /// `onlyCheck` preview writeback (:826-837), which the port does not run,
+    /// so production stays `None`.
+    pub tile_object_random_cache: Option<crate::tileobject::RandomCache>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -226,6 +240,10 @@ pub struct World {
     /// hands' tether reads) — the skeletron_x/y pair.
     pub skeletron_x: f32,
     pub skeletron_y: f32,
+    /// `FindFirstNPC(35)`'s `ai[3]` mirror (S1-E-14b): the Dark Caster's
+    /// `aiStyle 8` arm reads the first active Skeletron head's red-hat
+    /// latch (`NPC.cs:20820-20827`); false with no live head.
+    pub skeletron_red_hat: bool,
     /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
@@ -483,6 +501,8 @@ impl World {
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
+            place_rng: crate::unified_random::UnifiedRandom::new(0),
+            tile_object_random_cache: None,
             // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
             // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
             // (`Main.cs:66530`).
@@ -532,6 +552,7 @@ impl World {
             prime_x: 0.0,
             prime_y: 0.0,
             skeletron_y: 0.0,
+            skeletron_red_hat: false,
             golem_y: 0.0,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
@@ -1034,6 +1055,10 @@ impl World {
     /// generated or loaded world, before any edit can reframe.
     pub fn seed_frame_rng(&mut self) {
         self.frame_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
+        // S1-F-7b: the placement random-style stream (`TileObject.cs:787`/
+        // :819) seeds from the same world seed — a distinct `UnifiedRandom`
+        // instance, so its draws never interleave with the framing rolls.
+        self.place_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
     }
 
     /// `Tile.frameNumber()` (`Tile.cs:464-470`, `bTileHeader2` bits 4-5).

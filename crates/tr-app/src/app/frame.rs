@@ -185,6 +185,9 @@ impl App {
         // page the player selected with the tabs. Recomputed every frame so the
         // auto-jump is undone the moment the cursor stack empties.
         self.resolve_equip_page();
+        // `DrawInterface_38_MouseCarriedObject`'s per-frame head lifecycle
+        // (`Main.cs:45185-45211`) + the closed-inventory clear (`:45666`).
+        self.refresh_mouse_npc();
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -414,6 +417,14 @@ impl App {
         let (screen, m_h) = self.frame_shared_setup(dt);
         let focus_paused = self.frame_focus_pause();
 
+        // `InGameNotificationsTracker.Update()` (`Main.cs:17045`): the popup
+        // timers tick on every update — menus included (the call sits before
+        // the `gameMenu` return at `:17166`), and the capture gate
+        // (`:16886-16890`) freezes it like the rest of the update. S1-E-26.
+        if !self.capture.is_capturing() {
+            self.notifications.update();
+        }
+
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
@@ -433,6 +444,12 @@ impl App {
             // branch (the front end never draws it).
             self.update_capture(screen);
         }
+        // The `OnAchievementCompleted` subscribers (`AchievementManager.cs:
+        // 180-187` → `InGameNotificationsTracker.AddCompleted` +
+        // `AchievementInitializer.OnAchievementCompleted`): the completions
+        // the update branch queued this frame become popups + the chat line
+        // + the cue. S1-E-26 wave A.
+        self.drain_achievement_completions();
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.
