@@ -21108,6 +21108,88 @@ frozen), the style ids now carry the C#'s rows. Same for the Golem family
 `:12198`, the free head 48 `:12212`), the Wall of Flesh (27,
 `:10347`) and the Moon Lord core/head (77/79, `:14127`/`:14089`).
 
+## Plantera's Hook machine (aiStyle-52, 2026-11-18, code-only mode)
+
+**Source.** The C# has no `AI_052_*` method — the machine is the inline
+`else if (this.aiStyle == 52)` block of `NPC.AI` (`NPC.cs:32076-32240`).
+The family is ONE type: `NPCID.PlanterasHook` (263), the only
+`this.aiStyle = 52;` row in `SetDefaults` (`NPC.cs:12402`; the row
+`:12396-12409`: 40×40, noGravity/noTileCollide, dmg 60, def 24, lifeMax
+4000, `dontTakeDamage = true`). The port has no hook `NpcKind` and the
+Plantera v1 (`npc.rs::update_plantera`) spawns no hooks, so the machine
+lands UNWIRED (`crates/tr-app/src/npc_ai_style52.rs`, the Destroyer
+precedent `be63c688`): pure fns over the NPC pool, type-parameterised via
+`HookCtx::npc_type` + the caller's `type_of` kind→id closure (the
+`:32129` same-type scan), activating unchanged when the kind lands.
+
+**The port** (`planteras_hook_step`), in C# order: the orphan strike
+(`:32080-32085` — `StrikeNPCNoInteraction(9999,0,0)` + netUpdate rides
+`HookEvents::orphan_strike`; an absent/inactive boss slot reads as the
+cleared `NPC.plantBoss` static, `NPC.cs:8393`/`:95175`); the dead /
+non-jungle / above-surface / below-underworld retreat gates
+(`:32086-32094` — the surface compare is the C#'s `(double)` form, the
+underworld bound the f32 cast of the int `UnderworldLayer * 16`, strict
+`>`); the client anchor latch (`:32095-32105` — BOTH slots copy
+`Center.X / 16f`, the decompile's X/X quirk kept 1:1); the timer ladder
+(`:32108-32124` — the unanchored reset, the −1 tick, the −2/−2 boss-life
+accelerations on the INTEGER `lifeMax / 2` / `/ 4` strict thresholds, the
+−6 retreat drain); the sibling re-arm (`:32125-32134`); the anchor search
+(`:32135-32183`); the positive-anchor early return (`:32185-32188`); the
+speed ladder (`:32189-32213` — 6/8/10, +1 expert, +1 expert-below-half,
+×2 retreat, ×2 dead, both multiplies stack); the anchor pull
+(`:32214-32237` — the anchor centre `ai*16 − 8`, the STRICT
+`dist < 12 + speed` snap band keeps the raw delta, else the
+`delta * (speed / dist)` normalise); the ftw thorn latch
+(`:32220-32233` — `localAI[3]`, `SpawnPlanteraThorns`
+(`WorldGen.cs:76113`) rides `HookEvents::spawn_thorns`); the rotation
+(`:32238-32239` — `Atan2(x: bossDx, y: bossDy) − 1.57f`, the named args
+put dx first and 1.57f is the literal, not π/2).
+
+**RNG argument** (every draw cited, all on the caller's `UnifiedRandom` =
+the `Main.rand` stream under the `UpdateNpcs` swap):
+1. `Next(60, 300)` (`:32131`) — once PER matching pool slot inside the
+   `!flag59 && localAI[0] <= 0 && ai[0] != 0` gate: every other active
+   same-type NPC with either velocity component non-zero re-arms the
+   timer; the loop does NOT break, the last match's draw wins. Zero draws
+   when the gate fails or no sibling moves.
+2. `Next(300, 600)` (`:32137`) — on entering the search.
+3. Per attempt (1..=1001 — `num778 <= 1000` with the pre-increment,
+   `:32140-32142`): two `Next(-num781, num781 + 1)` jitters (`:32156`,
+   `:32157`) ALWAYS drawn — even when the wall-target arm overwrites the
+   aim — then `Next(6)` (`:32158`) ONLY below half boss life: the draw
+   rides the left `&&` operand, so it is consumed even when `!= 0` (the
+   gate-fail draw) and skipped entirely at full life.
+4. Nothing else draws: `TargetClosest` (`:32160`) scans without
+   `Main.rand`; the ladder/snap/rotation are pure maths.
+The 13 witness tests (WRITTEN NOT RUN — code-only mode, no compiler
+invoked) replay the stream draw-for-draw against a clone: the orphan
+path consumes zero draws, the re-arm consumes exactly one draw per
+moving sibling (and none for a stationary one), a full-life anchoring
+attempt consumes exactly timer + 2 jitters, a below-half attempt adds
+the failing `Next(6)`, the client latch consumes zero.
+
+**Deliberate stand-ins (the unwired seams).** `HookCtx` carries the stock
+flags (single-player netMode 0, classic, no getGoodWorld) plus
+`boss_target_zone_jungle` (the port's `Player` has no `zone_jungle` field
+— the wiring passes the scene-metrics flag per tick). The boss's target
+slot absent from the player slice reads as the C# inactive-slot zeros
+(dead false, ZoneJungle false, position (0,0)). The strike and the thorn
+tile edits ride `HookEvents` (the port has no strike/thorn seam inside a
+pure AI fn). The local `in_world`/`solid_tile` probes mirror
+`WorldGen.InWorld` (`WorldGen.cs:9688-9695`) / `WorldGen.SolidTile`
+(`:70111-70132`, the `tr_core::edit::solid_tile` shape — crate-private,
+kept local like the Destroyer precedent's tile probes). The anchor
+search's `try/catch` (`:32169-32181`) is the `InWorld` gate: an OOB index
+can never anchor.
+
+**Wiring follow-up.** When `NpcKind::PlanterasHook` (263) lands: the
+`SetDefaults` row, the `ai_style()` table row (52), the style-axis claim
+(`npc.rs`'s `match self.kind.ai_style()`), the Plantera hook spawn (the
+`AI_051` machine's tentacle/hook burst), and the `HookCtx` feed
+(`plant_boss` = the Plantera pool index, `type_of` = the kind→id table).
+Until then the module is dormant — no sim path calls it, no RNG stream
+changes (the UpdateNpcs stream is untouched by construction).
+
 ## The footstep sound wave (S1-E-21 wave D, 2026-11-18)
 
 **Source correction:** vanilla 1.4.5.8 has NO per-tile-type player footstep
