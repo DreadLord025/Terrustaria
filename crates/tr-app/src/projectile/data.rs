@@ -615,6 +615,10 @@ pub struct ProjData {
     pub alpha: i32,
     /// `Projectile.scale` (default `1f`, `:320`/`:785`).
     pub scale: f32,
+    /// `Projectile.light` (default `0f`, `:378`/`:773`) — the `SetDefaults`
+    /// amount the `ProjLight` chain multiplies (`Projectile.cs:16153-16661`,
+    /// S1-E-5); the data-carrying spawn copies it onto the slot.
+    pub light: f32,
     /// The summon identification (M4-PROJ-8): `Projectile.minion` +
     /// `Projectile.minionSlots` (the stock false / 0f, `Projectile.cs:775-776`).
     pub minion: bool,
@@ -872,6 +876,54 @@ fn set_defaults_scale(kind: u16) -> f32 {
         25 => 0.9,
         26 | 35 | 154 => 0.8,
         _ => 1.0,
+    }
+}
+
+/// The ported rows' `SetDefaults` `this.light` slice (S1-E-5): the amount
+/// `ProjLight` (`Projectile.cs:16153-16661`) multiplies into the frame's
+/// `AddLight` contribution (`proj_lights.rs`). Only the kinds with a
+/// `proj_data` row appear — a kind without a row never spawns through the
+/// data-carrying seam, so its light never reaches a slot. The unlisted
+/// kinds keep the stock `0f` reset (`:773`) and `ProjLight` early-returns.
+pub(crate) fn set_defaults_light(kind: u16) -> f32 {
+    match kind {
+        FLAME_ARROW => 1.0,                    // `:824`
+        ENCHANTED_BOOMERANG => 0.4,            // `:872`
+        MUSKET_BALL => 0.5,                    // `:957`
+        BULLET_SNOWMAN => 0.5,                 // `:1985`
+        BALL_OF_FIRE => 0.8,                   // `:970`
+        MAGIC_MISSILE => 0.8,                  // `:980`
+        GREEN_LASER => 0.75,                   // `:1025`
+        FLAMELASH => 0.8,                      // `:1168`
+        DEMON_SCYTHE => 0.2,                   // `:1288`
+        DUAL_HOOK_BLUE | DUAL_HOOK_RED => 0.4, // `:1546`
+        RAINBOW_ROD_BULLET => 0.8,             // `:1600`
+        ICE_BLOCK => 0.5,                      // `:1615`
+        EYE_LASER => 0.75,                     // `:1639`
+        PURPLE_LASER => 0.75,                  // `:1709`
+        CRYSTAL_STORM => 0.5,                  // `:1784`
+        CURSED_FLAME_FRIENDLY => 0.8,          // `:1798`
+        CURSED_FLAME => 0.8,                   // `:1809`
+        DESTROYER_LASER => 0.75,               // `:1878`
+        ICE_BOOMERANG => 0.4,                  // `:2020`
+        UNHOLY_TRIDENT => 0.5,                 // `:2029`
+        UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
+        SWORD_BEAM => 0.5,                     // `:2054`
+        TERRA_BEAM => 0.5,                     // `:2216`
+        LIGHT_BEAM => 0.5,                     // `:2441`
+        NIGHT_BEAM => 0.5,                     // `:2453`
+        ENCHANTED_BEAM => 0.2,                 // `:2598`
+        PIRATE_ARROW => 0.5,                   // `:2667`
+        FROST_HYDRA => 0.25,                   // `:4003`
+        BALL_OF_FROST => 0.8,                  // `:3364`
+        MAGNET_SPHERE_BALL => 0.5,             // `:3376`
+        GOLEM_EYE_BEAM => 0.3,                 // `:3436`
+        CHRISTMAS_HOOK => 0.5,                 // `:4256`
+        MINI_RETINA_LASER => 0.75,             // `:4736`
+        ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
+        ILLUMINANT_HOOK => 0.3,                // `:5631`
+        CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
+        _ => 0.0,
     }
 }
 
@@ -1412,6 +1464,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `Projectile.cs:1978-1991` — the Snowman Gangsta's bullet (110):
+            // 4x4, aiStyle 1, hostile, `penetrate = -1`, `light = 0.5f`,
+            // alpha 255, `scale = 1.2f`, `timeLeft = 600`, `extraUpdates = 1`
+            // (S1-E-5: the Frost Legion throw requests it, `npc.rs`'s Gangsta
+            // arm; the row lets the data-carrying spawn land it).
+            BULLET_SNOWMAN => (4.0, 4.0, 1, -1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             MARTIAN_RAY => (
                 8.0,
                 8.0,
@@ -2390,6 +2448,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         } else {
             scale
         },
+        // The `SetDefaults` `light` slice (S1-E-5): the `ProjLight` amount
+        // the frame feed multiplies (`proj_lights.rs`); the unlisted kinds
+        // keep the stock 0f and stay dark.
+        light: set_defaults_light(kind),
         // The summon identification (M4-PROJ-8 Phase 1): the
         // `minion`/`minionSlots` slice; every summon arm sets `netImportant`
         // and `ignoreWater` (but the Storm Tigers keep the stock false).
