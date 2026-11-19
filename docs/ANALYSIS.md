@@ -29948,6 +29948,111 @@ checked by read/grep (the method signatures the tests call, the
 `World::new`/`Player::spawn`/`UnifiedRandom::new` shapes, the wire-id
 collision scan). The 8 `s1_f_13d_*` tests are WRITTEN, NOT RUN — **no
 compiler invoked**.
+## The projectile sound wave (S1-E-21h, 2026-11-19)
+
+**Code-only mode**: this wave was implemented without invoking any compiler —
+no cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The `s1_e_21h_*` witness tests are WRITTEN, NOT RUN; the branch
+`task/S1-E-21h-proj-sounds` is pushed unmerged for a verification pass.
+
+### Census (437 `PlaySound` sites in `Projectile.cs`)
+
+The projectile-owned scope after the landed waves (item-use A, tile-place B,
+NPC-hit playback C, footsteps D, fighter ambience E, world-sounds i) and the
+sibling scopes (player E21f, NPC E21g, world E21i). The 437 sites split into:
+the per-kind first-tick latch chains (`AI_001` `:55209-55365`, the inline
+aiStyle arms 8/27/28/50), the `soundDelay` cooldown families (the boomerang
+whoosh `AI_003` `:38868-38891`, the Magic Missile hum `AI_009`
+`:43361-43367`, the Light's Bane slash `AI_188` `:42231-42239`), the
+`Kill()`/`Kill_Bombs_DoUsualKillCode` explosion tail (`:70642-78533`, ~200
+sites), the fishing-bobber splash family (legacy id 19), the trackable
+`Sounds/Custom/` families (case 42) and the zombie-voice legacy ids (14/26/
+29/66 — the E21e ambience table's projectile callers).
+
+**This wave ports 24 sites** — every site whose ported Rust arm exists and
+whose cue is a plain `SoundID.ItemN` legacy id-2 style play:
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:24238`/`:24243` (aiStyle 8, kinds 258/96) | Item20 | `ai_ball_of_fire`'s `localAI[0]` latch |
+| `:26534`/`:26538` (aiStyle 27 shared latch) | Item60 (132) / Item8 | `ai_unholy_trident` |
+| `:26661`/`:26673` (aiStyle 28 latch) | Item60 (967) / Item28 | `ai_frost_bolt` |
+| `:28363` (aiStyle 50 latch) | Item74 | `ai_inferno_fork` |
+| `:28421` (aiStyle 51, hostile 293) | Item8 | `ai_spectre_shot` |
+| `:38889` (`AI_003` whoosh, delay 8 × (extraUpdates+1)) | Item7 | `ai_boomerang` head |
+| `:43366` (`AI_009`, kind 16, delay 10, speed-sum > 2 gate) | Item9 | `ai_magic_missile` tail |
+| `:42234` (`AI_188`, delay −1, at Center) | Item60 | `ai_lights_bane` head |
+| `:55348`/`:55232`/`:55314`/`:55309`/`:55353`/`:55324`/`:55358`/`:55242`/`:55299`/`:54155`/`:55257` (`AI_001` slice-A latches, kinds 81/83/98/100/180/184/248/259/389/436/438) | Item5/33/17/33/11/17/17/33/12/12/12 | `projectile_ai001_a::latch_ai1` |
+| `:78331`/`:78386` (`Kill_Bombs_DoUsualKillCode`, kinds 28/37/516/519 + 29) | Item14 | `ai_bomb`'s detonation latch |
+
+### The stream argument (why the drain is safe)
+
+`Main.UpdateProjectiles` runs under the `Main.rand` swap
+(`Main.cs:17775-17777`): every `PlaySound` inside the projectile walk —
+the AI arms AND the `Kill()` tail — draws its case-2 pitch from the
+`UpdateProjectiles` stream. The port queues each play as a
+`(id, style, x, y, pitchOffset)` intent (`Projectile.wants_sound`, the
+`wants_mark_spawn` pattern; the pool forwards it into
+`pending_proj_sounds` right after the dispatch) and drains at the pass
+tail in `world_sim/projectiles.rs` — AFTER the wave-C NPC-hit drain, on
+the same named stream. `Audio::play_proj_sound` gates attenuation BEFORE
+any draw (`LegacySoundPlayer.cs:369-436` precedes the case switch), the
+E21e precedent; the `GetRandomPitch` NextFloat rides the audio-only
+`sound_style_random`. The C# plays mid-walk; the port's batch drain moves
+the draw to the pass tail — the same recorded deviation as wave C's
+strike plays (relative order among the tick's sound draws is preserved;
+the interleaving with gameplay draws is not). The witness tests pin the
+contract: muted/out-of-range plays draw NOTHING, an audible play draws
+exactly one `Next(-6, 7)` on `UpdateProjectiles`, every other stage
+stream stays pristine.
+
+### Deviations (deliberate, recorded)
+
+- **The Light's Bane post-gate volume scale** (`:42237`,
+  `Volume *= 0.15f * ai[0]` on the returned instance) is DEFERRED — the
+  queue→drain batch plays at the style's own volume. The cue, position
+  (Center) and −1 latch are ported.
+- **The bomb cue fires at the detonation latch** (`timeLeft <= 3`), not
+  inside `explode_bomb`: the position is the PRE-`PrepareBombToBlow`
+  `base.position` the C# reads (`:78331` precedes the `Resize`), and the
+  fuse-instance Stop (`:70675`) has no pool (the standing D4 deviation).
+  Gated to the five kinds `explode_bomb` accepts.
+- **The 301 Stacked Discs' −0.33-pitch whoosh arm** (`:38879`) has no
+  ported row — deferred; the generic 8-tick arm covers the ported
+  boomerangs. The Phaseblade family and 383 exclusions (`:38868`) name
+  unported kinds — the port's gate is unconditional over its own rows.
+- **The slice-A latch order**: the C# plays before the `ai[1]` latch on
+  81/180/248 and after it on the rest; the queue payload is identical
+  either way (the drain runs at the pass tail), so one helper keeps the
+  pair. The Flaming Wood 325's `SoundID.Item42` trackable (`:55194`) is
+  DEFERRED (the D3 trackable pool) — its latch rides cue-less.
+- **Deferred families** (no ported arm or a non-id-2 façade): the
+  aiStyle-1 slice-B latches (`projectile_ai001_b` — the 462 arm's
+  `Next(2)` cue pick + dust draws need the arm's RNG threading), the
+  fishing-bobber splash family (legacy 19), the gem-staff first-tick +
+  bounce cues (`:37864`/`:18050`), the DD2/Betsy trackables, the
+  zombie-voice legacy ids (the E21e table's projectile callers), the
+  `Kill()` tail's non-bomb arms (the rocket/grenade/boulder families —
+  `explode_bomb` ports the bomb family only), the `AI_016_Bombs`
+  sticky-grenade fuse loop (`:47131`, kind 102 unported) and the
+  `AI_189_Volcano` DD2 trackable (`:42269`).
+- **`soundDelay` is a new slot field** (`Projectile.cs:348`, reset 0
+  `:749`): the per-update decrement (`:16768-16771`, positive-only) runs
+  ahead of the AI sub-steps; the −1 latch stays down. No existing arm
+  read the field, so the addition is behaviour-neutral for every
+  pre-existing kind.
+
+Bank: `Item_14`/`Item_17`/`Item_33`/`Item_74` join `SFX_CUES` (all four
+`.xnb` assets verified on disk); every other style the wave names was
+already registered by wave A.
+
+**Verification.** Code-only: every edited arm was re-read against its C#
+block (the latch flags, the cooldown re-arms, the position reads —
+`base.position` vs `base.Center`), the queue/drain seam was checked
+against the `wants_mark_spawn` precedent and the wave-C drain order, and
+the four new bank assets were confirmed on disk. The 7 new `s1_e_21h_*`
+witness tests (5 pool/arm, 1 audio façade, 1 pass-stream) are WRITTEN,
+NOT RUN — **no compiler invoked**.
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch
@@ -30126,3 +30231,142 @@ Verification: C# re-reads (`WorldGen.cs:86693-86748`,
 fade-window arithmetic hand-computed at 500/525/550. 15 new/reworked
 witness tests WRITTEN NOT RUN — **no compiler invoked**.
 
+## The pillar shield loop (B-6b, 2026-11-19, code-only mode)
+
+Audit research/53 (`docs/audit-pillars-dd2lanes`, rows 1c/2b) found the
+pillar shield STATE faithful but unwired: `tower_shield_absorb` /
+`update_tower_shields` had test-only callers, the towers never read
+`tower_shield_*`, and no live code spawned the 629 TowerDamageBolt —
+pillars were killable by direct damage from tick 1 and no mob kill ever
+chipped a shield. This round wires the loop
+(`task/S1-D-3-pillar-shield-loop`).
+
+**The C# machine (read whole).**
+
+- **Spawn sites** — `NPC.cs:79279-79320`, inside `checkDead`'s
+  pre-death type switch: solar mobs 412-419+518 spawn a 629 while
+  `ShieldStrengthTowerSolar > 0` with `ai0 = FindFirstNPC(517)`;
+  vortex 425/426/427/429 → host 422; nebula 420/421/423/424 → host 507;
+  stardust 402/405/407/409/411 → host 493. Each call is
+  `NewProjectile(source, Center.X, Center.Y, 0f, 0f, 629, 0, 0f,
+  Main.myPlayer, FindFirstNPC(host))` — damage 0, velocity 0, knockback
+  0. `FindFirstNPC` (`NPC.cs:89885-89895`) returns the first active
+  slot of the type, **-1** on miss. NOT in the sets: 428
+  (VortexHeadcrab), 406 (StardustCellSmall), 410 (StardustSpiderSmall).
+  The `checkDead` carrier guard (`NPC.cs:78042`: `realLife >= 0 &&
+  realLife != whoAmI`) skips linked segments — the crawltipede
+  bodies/tails ride the carrier's death events.
+- **The spend** — `Projectile.cs:72944-72979` (the 629's `Kill` arm,
+  `netMode != 1`): switch on `Main.npc[(int)ai[0]].type` (the HOST
+  NPC's type — `ai[0]` is an NPC index, not a tower ordinal); if the
+  matching shield `!= 0` set the host's `ai[3] = 1` (the flash
+  trigger), then `Shield = (int)MathHelper.Clamp(Shield - 1, 0,
+  ShieldStrengthTowerMax)` — **−1 per bolt regardless of damage**.
+- **The gate** — `NPC.cs:39101-39115` (aiStyle 94, every tick):
+  `dontTakeDamage = ShieldStrengthTower<Kind> != 0` per type. While
+  the shield stands the tower refuses every hit; the shield falls ONLY
+  through 629 contacts. `downedTower*`/`TowerActive*` are written by
+  the tower's DEATH (`NPC.cs:79321-79345`), never by shield
+  exhaustion. The ai[3] flash cycle (`:39069-39100`: NPCDeath58 on
+  the shield-state flip, NPCDeath3 at ai[3]==1, the 120-wrap) reads the
+  trigger the spend writes.
+
+**The wiring (Rust).**
+
+| C# | Rust | position |
+| --- | --- | --- |
+| `NPC.cs:79279-79320` spawn cases | `world_sim/npcs.rs::spawn_tower_damage_bolts` | `update_npcs` death path, BEFORE the tower death arms (the C# switch's mob cases precede the pillar cases) |
+| `NPC.cs:89885-89895` FindFirstNPC | the `app.npcs.iter().position(kind && hp>0)` scan, -1.0 on miss | inside the spawn loop; the port's compacted vec index is the sim's current whoAmI (the saucer-deathray seam precedent) |
+| `NPC.cs:39101-39115` dontTakeDamage gate | `world_sim/npcs.rs::apply_tower_shield_gates` | `update_npcs` death-path tail (after the death arms, so cultist-spawned towers are gated the same tick) |
+| `Projectile.cs:72953` etc. −1 spend | `world_sim/npcs.rs::tower_shield_absorb` (RESHAPED: −1 clamp 0..max, returns the pre-spend `!= 0`) | the fn seam; the live 629 arm call site is R71's |
+| `NPC.cs:95247-95251` all-dead reset | `world_sim/npcs.rs::update_tower_shields` (was test-only) | `update_npcs` death-path tail |
+| the hurt/strike/PVE refusals | pre-existing gates: `npc.rs` hurt's `dont_take_damage` check, the strike gate, `projectile.rs` PVE walk's `!nPC.dontTakeDamage` (`Projectile.cs:12583`) | unchanged — the gate pass now feeds them live |
+
+The spawn rides `spawn_hostile_ai` (the `HostileShotAi` seam): kind
+629, the mob's CENTRE (the port's seam carries centres; the C#
+`NewProjectile` subtracts half the extent at `Projectile.cs:10876-
+10877` and the port's `ai_tower_damage_bolt` reads `pos` as the
+centre — the recorded arm deviation, research/53 §3.1), velocity 0,
+damage 0, knockback 0, `ai0` = host index, `ai1` = 0. The row's
+`SetDefaults` (`Projectile.cs:6754-6766`: 8×8, aiStyle 122, hostile,
+timeLeft 3600, penetrate −1, extraUpdates 2) already rides
+`projectile/data.rs`'s 629 row.
+
+**The absorb reshape (audit §2.2's fix spec).** The old
+`tower_shield_absorb(world, tower, dmg)` drained `dmg` per hit and
+flipped `downed_tower_*`/`tower_active_*` at zero — both wrong
+models. The new `tower_shield_absorb(world, tower) -> bool` chips −1
+(clamped `0..tower_shield_max`) and returns whether the shield stood
+(the C#'s `!= 0` gate on the ai[3] flash). The downed/active writes
+are RETIRED from the fn — the death arms (`npcs.rs`'s
+`NpcKind::SolarTower` etc.) already own them. The old test
+(`the_absorb_drains_and_flags_the_down`) is repointed to the faithful
+model (`the_absorb_chips_one_per_bolt_and_never_downs`).
+
+**RNG argument (by construction).** The spawn loop draws NOTHING: the
+C# cases contain no `Main.rand` call, and `NewProjectile` for type
+629 draws nothing either — aiStyle 122 is not the aiStyle-1 velocity
+damp (`Projectile.cs:10895-10902`), 629 is absent from the owner-rand
+spawn arms (`:10907-10919`: 206/335/358/406), the golf-ball and
+CD-copy sets (`ProjectileID.cs:191`), the timeLeft overrides and
+`FinalizeProjectile`'s 93/113/gem arms (`:22043-22061`). The gate
+pass and the reset are pure state writes. The all-streams census
+witness (`the_spawn_loop_draws_nothing`) pins every named stream
+byte-identical across a two-kill loop.
+
+**Boundaries / deliberate folds.**
+
+- **The 629 arm's spend call site** (`projectile.rs:13502-13521`:
+  drains `slot.damage`, selects by `ai[0] as usize` ordinal, never
+  sets ai[3]) is **R71** (`fix/lunar-dd2-small-wrongs`) — this branch
+  wires the SPAWN loop only and hands R71 the reshaped spend fn; the
+  merger reconciles (host-kind selection `Main.npc[ai[0]].type` +
+  the ai[3]=1 write + the −1 call).
+- **The pillar AI machine re-port is B-6a (queued)** — the stand-in
+  `update_ancient_cultist`'s 180-tick self-kill (ai[2] misused as a
+  timer; the C# ai[2] is the dissolve FLAG set by `checkDead`
+  `:78080-78086`) STAYS until B-6a. Consequence documented: a pillar
+  still self-destructs at tick 180 today, so the shield gate protects
+  it only within that window; the gate pass is positioned to fold into
+  B-6a's re-ported machine at the C# position (`:39101-39115`) with
+  no behaviour change. The ai[3] flash cycle (`:39069-39100`) and its
+  NPCDeath58/NPCDeath3 cues ride B-6a too (they read R71's ai[3]
+  trigger).
+- **Gate/reset position fold**: the C# runs the gate inside the pillar
+  machine every tick and owns the reset in the static state; the port's
+  death-batched pass runs both at the `update_npcs` death-path tail
+  (once per NPC pass). Same-tick semantics for the shielded→bare
+  transition: the last bolt's spend lands in the projectile pass
+  (AFTER the NPC pass), so the gate opens on the NEXT tick's pass —
+  the C#'s per-tick machine order within one `UpdateWorld` frame.
+- **`lunar.rs:136`** (the duplicate NebulaTower slot arm) is R71's
+  one-liner — untouched. **Portals** (the crystal's 549 spawns) are
+  R73 — untouched.
+- **Owner fold**: the C# passes `Main.myPlayer`; the port's hostile
+  seam folds it to 255 (the established `spawn_hostile` fold). The
+  spend gates on `netMode != 1`, not the owner, so the chip is
+  unaffected; the port is single-player (netMode 0).
+- **R71 handoff resolutions** (LEAD-R71-HANDOFF, consumed): (1) the
+  580 bolt's `ai1 = Next(80)` (`Projectile.cs:33841`) spawns from the
+  578 ritual marker's OWN aiStyle-108 arm (`:33838-33842`,
+  `ai[0] == 90`), NOT from a mob-kill site — B-6b's spawn loop covers
+  only the 629 mob-kill cases, so the draw is NOT consumed here; it
+  rides the ritual-arm re-port (B-6a's vortex attack arms / the
+  578/579 family). (2) R71's spend landed INLINE in `projectile.rs`'s
+  629 Kill-tail block (host-kind switch + −1 clamp + ai[3] flash),
+  semantically identical to this branch's reshaped
+  `tower_shield_absorb`; R71 did not edit the npcs.rs fn, so the two
+  are conflict-free — the merger may point R71's arm at the fn or
+  keep the inline form (identical behaviour). (3) R71's 579 payload
+  fix (Option→Vec `wants_mark_spawn` + `Next(4,9)`) sits in the
+  mark-drain/test regions of npcs.rs, disjoint from this branch's
+  shield-loop hunks — keep-both at merge.
+
+**Verification.** Code-only: the C# blocks re-read whole (the spawn
+switch, FindFirstNPC, the Kill spend, the aiStyle-94 gate, the
+NewProjectile body for the RNG census); every Rust call site checked
+against the actual signatures by read/grep (`spawn_hostile_ai`,
+`Npc::center`/`has_carrier`, the `Projectile` pub fields, the
+`RngKey::ALL` census shape). 7 new witnesses
+(`pillar_shield_loop_tests`) + the reshaped absorb test WRITTEN, NOT
+RUN — **no compiler invoked**.
