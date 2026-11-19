@@ -3122,11 +3122,15 @@ rand, generating_or_loading)`:
 - `490` (`:4742`): the bob needs `InAPlaceWithWind` + `Main.WindForVisuals` +
   `Main.weatherVaneBobframe`; outside wind C# yields addFrY 0 — the same 0
   the port produces at t=0. Top 2 ported.
-- `529` (`:4827-4849`): the `addFrY += 34 * <biome/beach pick> - tileFrameY`
-  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band;
-  32 px tall / top −14 / flip are ported.
-- `530` (`:4705-4722`): the `addFrY += 36 * <biome pick>` rewrite needs
-  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750); top 2 ported.
+- `529` (`:4827-4849`): ~~the `addFrY += 34 * <biome/beach pick> - tileFrameY`
+  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band~~ —
+  **S1-F-9d slice A (2026-11-18)**: ported in the delegated pass
+  (`tr-app/src/drawdata_cases_a.rs::sea_oats_add_fr_y`); 32 px tall /
+  top −14 / flip stay in `drawdata.rs`.
+- `530` (`:4705-4722`): ~~the `addFrY += 36 * <biome pick>` rewrite needs
+  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750)~~ — **S1-F-9d slice A
+  (2026-11-18)**: ported (`drawdata_cases_a.rs::oasis_plants_add_fr_y`);
+  top 2 stays in `drawdata.rs`.
 - `485` (`:4727-4730`): the `tileFrameCounter`-driven addFrY is not ported;
   top 2 is.
 - `428` (`:5605`): a pressed `PressurePlateHelper` plate adds addFrX 18; the
@@ -3174,7 +3178,11 @@ rand, generating_or_loading)`:
   before `draw_data`, so the table arm remains dead in the app but complete.
   Out: the canopy style's per-region `TreeTops.GetTreeStyle` randomisation
   (`tree.rs::Foliage::for_ground` deviation stands).
-- `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
+- ~~`518` (`:4604-4630`)~~ — **S1-F-9d slice A (2026-11-18)**: the LilyPad
+  liquid float (needs `tile.liquid` + the block type below) is ported in
+  the delegated pass (`tr-app/src/drawdata_cases_a.rs::lily_pad_top_delta`,
+  `WorldGen.SolidTile` + `Tile.blockType` verbatim); the static table arm
+  stays default 16×16.
 - `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
 - `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
 - `453|456` (`:5412-5417`), `507|508` (`:6007-6013`): `Main.tileFrameCounter`
@@ -3189,8 +3197,11 @@ rand, generating_or_loading)`:
   generated and untouched): `addFrY = tileFrame*36` below frameY 36, else
   252; top 2.
 - The halfBrick epilogue (`:6045-6048`) is the tile pass's separate
-  half-brick draw path, not `draw_data`. The glow switch (`:6049-`) is
-  TILE-DRAW-2, except 564's addFrY reset (`:6105-6113`) noted above.
+  half-brick draw path, not `draw_data`. ~~The glow switch (`:6049-`) is
+  TILE-DRAW-2~~ — **S1-F-9d slice A (2026-11-18)** ports its data side (see
+  "S1-F-9d cases A" below); only the glow TEXTURE binding stays TILE-DRAW-2.
+  564's addFrY reset (`:6105-6113`) is folded into `drawdata.rs`'s arm, noted
+  above.
 - The caller-side source-rect corrections of `DrawSingleTile` (`:1125-1150`)
   are ported as `TileDrawData::apply_world_corrections`: palm 323
   `frameY = 22 * GetPalmTreeBiome` (`:1726`, `:4670`), dye plants 227 with
@@ -3241,6 +3252,57 @@ rand, generating_or_loading)`:
   from `TileDrawing.DrawTrees`, so the single-tile pass must not draw it too). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
+
+### S1-F-9d cases A (2026-11-18, branch `task/S1-F-9d-cases-a` — code-only mode)
+
+Written in **code-only mode** (user directive: no cargo/rustc/rustfmt/test
+runs): the module, the dispatch seam and the 13 `test_DW_F9d_*` per-case
+coverage tests are written but NOT compiled or run; verification is pending
+a build-capable session.
+
+`crates/tr-app/src/drawdata_cases_a.rs` ports the remaining STATIC
+`GetTileDrawData` case ids as a delegated pass after `draw_data` +
+`apply_world_corrections` (`render/tiles.rs` dispatch site), matching the C#
+order (the glow switch runs after the main switch and the campfire/half-brick
+epilogue, `TileDrawing.cs:6033-6049`). `drawdata.rs` is untouched — waves B
+(animator) / C (furniture) own it.
+
+- First-switch world probes: **518** LilyPad (`:4604-4630` — the liquid
+  float, `WorldGen.SolidTile` clamp `WorldGen.cs:70111-70132`,
+  `Tile.blockType` below `Tile.cs:202-214`), **530** OasisPlants / **529**
+  SeaOats biome rows (`:4705-4722` / `:4827-4849`,
+  `WorldGen.GetBiomeInfluence` `WorldGen.cs:47750-47777` over the generated
+  `SET_CORRUPT`/`SET_CRIMSON`/`SET_HALLOW` tables; the beach band rides the
+  380 `WorldGen.beachDistance` constant `WorldGen.cs:86914`).
+- Second switch: ALL 38 case ids (`:6049-6507`) — the glow-mask index, source
+  rect and colour, the unconditional 1998/2016/2040/2014 style-stride
+  unwinds (88/87/89/101/104/42/93/15/497/172) and the two `tileTop` rewrites
+  (93 `+= 2`, 104 `= 2`). The glow gates read the RAW `tileFrameX/Y` (the C#
+  locals are never rewritten by this switch): a style-block-1 dresser
+  (`fx = 1998 + 24*54`) unwinds its frame but does NOT glow — its raw column
+  is 61, not 24. Source rects stay on the 16 px / 18 px sheet grid (2 px
+  padding); the candle case's 22 px row stride is the sheet's own grid.
+
+Deviations (all parked data, no pixel change until the glow pass lands):
+
+- The glow TEXTURE binding (GlowMask sheet indices) is the renderer's glow
+  pass (TILE-DRAW-2); until it lands the `GlowData` record rides unused
+  (`let _glow` at the dispatch site).
+- Case **637**'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
+  painted sheet) is not routed — `mask 0` placeholder; its rect + 75% lerp
+  port. Case **184** column 220's `Main.DiscoR/G/B` colour is engine state
+  the port does not route — parked `[0,0,0,255]`; its rect ports.
+- Case **564**'s unconditional `addFrY = 0` (`:6112`) is already folded into
+  `drawdata.rs`'s 564 arm — the pass must not (and does not) apply it twice.
+- `Main.mouseTextColor` (656/701/564): the dispatch site passes 255 (the
+  steady full-bright value) until the UI text pulse rides in; the functions
+  take the value so it can be fed later.
+- `Main.martianLight` is 0 outside the (unported) Martian Madness event;
+  `martian_glow(light)` takes the value (`:498-499`, the truncating byte
+  cast) so the event can feed it.
+- The cell colour for the 637/638 lerps converts `LightMap::get`'s f32
+  channels to XNA bytes (`×255`, clamp, alpha 255 — `Lighting.GetColor`
+  has no alpha).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
