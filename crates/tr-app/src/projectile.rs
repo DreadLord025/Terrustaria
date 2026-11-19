@@ -13061,6 +13061,14 @@ impl ProjectilePool {
                 // their dispatch call sites.
                 // The ported arms above keep their exact signatures.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
+                    // The Frost Moon bosses' hostile shots (S1-F-13c wiring):
+                    // the seven kinds the Everscream/IceQueen/SantaNK1 machines
+                    // queue ride their own per-type AI_001/14/58 arms
+                    // (`projectile_frost_shots.rs`) — the generic aiStyle-1
+                    // flight / `_ => {}` no-op would mis-fly every one of them.
+                    if crate::projectile_frost_shots::handles(self.slots[i].kind) {
+                        crate::projectile_frost_shots::frost_shot_step(&mut self.slots[i], world);
+                    } else {
                     match data.ai_style {
                         // The aiStyle-1 riders of M4-PROJ-6 Phase 3 gate
                         // ahead of the generic arm: the Book of Skulls and
@@ -15107,10 +15115,12 @@ impl ProjectilePool {
                         }
                         _ => {}
                     }
+                    }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
                     // ported arrow/bomb/shuriken arms keep their pre-existing
                     // no-wind behaviour — a recorded deviation, not a fix).
+                    // The frost-shot kinds (1/14/58) are not wind-eligible.
                     if uses_wind_physics(data.ai_style) {
                         self.slots[i].wind_tail(world, self.wind_speed);
                     }

@@ -21630,6 +21630,97 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## Frost Moon boss wiring (S1-F-13c, W1-1 resolved, code-only mode, 2026-11-19)
+
+`task/S1-F-13c-wire-bosses` wires the three Frost Moon bosses — **Everscream
+(344, aiStyle 57)**, **IceQueen (345, aiStyle 60)** and **SantaNK1 (346,
+aiStyle 61)** — onto their faithful named machines. The verifier finding
+**W1-1** was that the live bosses still routed to the `update_hover`
+stand-ins (`npc.rs`'s kind arms), so the slice-C machines
+(`npc_ai_frost_boss.rs` 3ce99f36, `npc_ai_frost_boss_b.rs` 8e216a35) were
+DEAD CODE: the bosses never attacked and the RNG stream desynced ~4-15
+draws/tick. **Code-only mode**: no compiler invoked; the wiring witnesses
+are WRITTEN, NOT RUN.
+
+- **The style-axis claim** (`npc.rs::update_rng_dust`): the aiStyle match
+  gains three kind-gated arms — `57 if kind == Everscream`, `60 if kind ==
+  IceQueen`, `61 if kind == SantaNK1` — mirroring the MourningWood/Pumpking
+  precedent (`57 if kind == MourningWood`). aiStyle 57 is SHARED (325/344),
+  so the Everscream claim is kind-gated; 60/61 are each their style's only
+  user. The kind-match (`update_kind_ai`) arms for the three bosses are now
+  `unreachable!("… rides the style axis (S1-F-13c wiring)")` guards — the
+  hover stand-ins retired.
+- **The dust seam** (`Npc::update_rng_dust`): the Everscream's per-tick dust
+  arm (`NPC.cs:32821-32825`) rolls `Main.rand` through the verbatim
+  `DustPool::new_dust`, which needs the live `Main.dust` pool + the
+  `SpawnCtx` statics. `update_rng` now delegates to `update_rng_dust` with a
+  scratch pool + a permissive ctx (the tests' path — the AI-level draws
+  still ride the caller's stream); the live sim
+  (`world_sim/npcs.rs::update_npcs`) threads `app.dust` + the frame's
+  `spawn_ctx()` into the tick closure on the SAME `UpdateNPCs` stream
+  (`Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` wraps `NPC.UpdateNPC`,
+  dust included). The draw census is unchanged: `Next(5)` every phase-1
+  tick, then on 0 the `NextVector2Square` pair + the pool's own rolls — all
+  on the one stream, in the C#'s order.
+- **The wrappers** (`npc_ai_frost_boss_b.rs::frost_boss_b_step`,
+  `npc_ai_frost_boss.rs::ice_queen_step`): copy the AI-visible `Npc` fields
+  into `FrostBossBState`/`FrostBossState`, run `npc_target::target_closest`
+  where the C# arms call `TargetClosest()` (Everscream `:32768` night; Santa
+  `:33688` night + `:33725` the idle→volley flip; IceQueen `:33393`/`:33403`/
+  `:33518`/`:33622`/`:33670` — one pre-pass retarget covers them, the single
+  session player makes every call resolve to the same box and
+  `TargetClosest` draws no rand), run the dispatch (`frost_boss_b_ai_step` /
+  `frost_boss_ai_step`) on the caller's stream, copy the state back, drain
+  the shot requests into `wants_hostile_shot` (zero ai0/ai1) /
+  `wants_hostile_shot_ai` (the needle's `ai0 = Next(0,31)`, the ornament's
+  `ai1 = Next(2)`, the shard-drop's `ai0 = Next(5)`), and integrate the raw
+  velocity (all three set `noGravity`/`noTileCollide` — `NPC.cs:90495-90498`).
+  The day flee's `EncourageDespawn(10)` maps onto `despawn_timer` (the
+  `encourage_despawn` helper, the MourningWood precedent); `despawnEncouraged`
+  has no port field (no rand impact). The IceQueen's `time_left` is unread by
+  its arm (no `EncourageDespawn` in aiStyle 60).
+- **The shot rows + flight** (`projectile/data.rs`, `projectile_frost_shots.rs`):
+  the drained requests need `proj_data` rows to spawn — the seven kinds
+  (345 PineNeedle, 346 Ornament, 348 FrostWave, 349 FrostShard, 350 Missile,
+  351 Present, 352 Spike; `Projectile.cs:4353-4429`) were UNROWED, so the
+  requests silently dropped (W1-1's second half). The rows land verbatim;
+  the per-type flight arms ride a new gated module (`frost_shot_step`, the
+  dispatch claims ONLY these seven, every other kind byte-identical): the
+  needle's 50/0.5 gravity (`:57116-57128`, NOT the generic 15/0.1), the
+  wave/shard/missile resting counters (`flag3` false, `:55985-55987`) + their
+  alpha/scale pulses (`:56246-56273`/`:56221-56245`/`:55130-55163`), the
+  ornament/spike aiStyle-14 spear hooks (`:24867-24897`/`:24848-24866`), and
+  the whole rand-free aiStyle-58 Present arm (`:28906-28937`).
+- **Deliberate deferrals (no UpdateNPCs-stream impact)**: the 350 Missile's
+  two dust rolls (`Projectile.cs:55141-55156`, the `Next(3)`/`Next(10)`/
+  `Next(4)`/`Next(5)` draws) are skipped — the FLAMING_WOOD 325 precedent
+  (`projectile_ai001_a.rs`, the identical `:55175-55189` arm); they ride the
+  `UpdateProjectiles` stream, NOT the `UpdateNPCs` census this wiring pins.
+  The 346 Ornament's `timeLeft == 1` death burst (`:24883-24896`, five 347
+  Shrapnel spawns + rand) needs a pool-side spawn seam + the 347 row —
+  deferred. The `Lighting.AddLight` lines and sound cues are skipped
+  pool-wide (no such layers). These are projectile-side, not the boss AI's
+  `UpdateNPCs` draws — the W1-1 census (the boss machines' own rolls) is
+  fully consumed.
+- **Boundary**: R52 (`task/S1-F-13c-wire-mobs`, TR-wire12) owns the frost
+  MOBS 338-352 minus the bosses; this wiring owns ONLY 344/345/346. The
+  non-boss flyers 347/352 keep their hover stand-ins (their aiStyle-62/63
+  machines wire with R52); the walkers 348/349/350/351 keep the walker
+  family. The `projectile_frost_shots` module claims only the seven BOSS
+  shot kinds — the mobs' shots (e.g. the ElfArcher's 82 FlamingArrow) are
+  untouched.
+- **Witnesses (written, NOT run)**: `npc.rs::s1_f_13c_wire_tests` pins the
+  seam — the axis claims the three bosses (the machines' own state writes,
+  not the hover family's), the bosses attack through the shot lanes (the
+  needle/ornament ai payloads, the FrostWave + BulletDeadeye plain shots),
+  the RNG stream advances per the census (the Everscream idle pick's one
+  `Next(1,3)` at tick 300, the Santa idle's three unconditional rolls), the
+  stand-ins are retired (`should_panic` on `update_kind_ai`), and the seven
+  shot rows resolve. `projectile_frost_shots.rs`'s tests pin each flight arm
+  by hand arithmetic. The per-machine draw-order witnesses stay in the
+  modules' own tests (slice C). The full gate must run before this branch
+  merges.
+
 ## Everscream + SantaNK1 core AI (S1-F-13c slice C part 2, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_frost_boss_b.rs` ports the two remaining Frost
