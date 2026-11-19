@@ -1764,6 +1764,7 @@ mod tests {
             "liquids_phase",
             "growth_phase",
             "waterfalls_phase",
+            "animate_tiles_phase",
             "weather_cluster",
             "windy_day_phase",
             "ambience_phase",
@@ -1823,6 +1824,12 @@ mod tests {
                 "liquids_phase",
                 "growth_phase",
                 "waterfalls_phase",
+                // `Main.AnimateTiles` (`Main.cs:17150`, after
+                // `DoUpdate_AnimateWalls` `:17149`): the pre-gate Animate
+                // cluster's tile animator — S1-G-1f wiring adds the phase
+                // at the C#'s position (the waterfall pass stands in for
+                // the walls animator's slot).
+                "animate_tiles_phase",
                 "weather_cluster",
                 "windy_day_phase",
                 "ambience_phase",
