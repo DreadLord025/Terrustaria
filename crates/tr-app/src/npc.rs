@@ -961,6 +961,29 @@ pub enum NpcKind {
     /// (`NPC.cs:13355-13368`). The true machine lands with the bespoke
     /// slice — slice A routes it to the Mourning Wood hover stand-in.
     Everscream,
+    /// `NPCID.DukeFishron` (370, `NPCID.cs:11417`) — the ocean boss
+    /// (`NPC.cs:13701-13718`): 150x100, aiStyle 69, dmg 100, def 50,
+    /// 60000 HP, kb 0, noTileCollide + noGravity, npcSlots 10,
+    /// value 25 gold, boss, netAlways. S1-D-3 W-9 wiring: the faithful
+    /// `npc_ai_fishron::fishron_ai_step` machine claims the aiStyle-69
+    /// axis arm (`AI_069_DukeFishron`, `NPC.cs:48774-49754`).
+    DukeFishron,
+    /// `NPCID.DetonatingBubble` (371, `NPCID.cs:11419`) — Fishron's
+    /// hazard (`NPC.cs:13719-13733`): 36x36, aiStyle 70, dmg 100, def 0,
+    /// 1 HP, kb 0, noGravity + noTileCollide, alpha 255. The faithful
+    /// `npc_ai_style70::ai_style70` arm claims aiStyle 70
+    /// (`NPC.cs:34884-34957`).
+    DetonatingBubble,
+    /// `NPCID.Sharkron` (372, `NPCID.cs:11421`) — the Sharknado bolt's
+    /// shark (`NPC.cs:13734-13747`): 120x24, aiStyle 71, dmg 100,
+    /// def 100, 100 HP, kb 0, noGravity, alpha 255. The faithful
+    /// `npc_ai_style71::ai_style71` arm claims aiStyle 71
+    /// (`NPC.cs:34958-35079`).
+    Sharkron,
+    /// `NPCID.Sharkron2` (373, `NPCID.cs:11423`) — the Greater
+    /// Sharknado's rising, swaying shark (`NPC.cs:13748-13761`):
+    /// 100x24, dmg 120, the rest of the 372 row.
+    Sharkron2,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1433,6 +1456,38 @@ pub struct Npc {
     /// centre (the documented stand-in until kind 263 lands; the C# has
     /// no zero-hook tick — `NewNPC` activates synchronously).
     pub plantera_hook_anchor: Option<(f32, f32)>,
+    /// Duke Fishron's bubble volley requests (S1-D-3 W-9 wiring,
+    /// `AI_069`'s phase-1 volley `NPC.NewNPC(..., (int)p.X, (int)p.Y + 45,
+    /// 371)` — `NPC.cs:49246`). The payload is the NewNPC bottom-centre
+    /// point; the sim drains it into live DetonatingBubbles (the
+    /// `wants_sphere` shape). The volley bubbles spawn with the stock
+    /// `target = 255`, so their own aiStyle-70 init draws the four RNG
+    /// values (`npc_ai_style70`'s documented census).
+    pub wants_fishron_bubbles: Vec<(f32, f32)>,
+    /// Fishron's phase-2 Cthulunado trail bubbles (`NPC.cs:49476-49481`):
+    /// (x, y, vx, vy, target, ai3-scale). The spawned 371 inherits the
+    /// boss's target + the rotated 6-speed velocity AT THE SPAWN SITE, and
+    /// the adapter draws `ai[3] = Main.rand.Next(80, 121) / 100f`
+    /// (`:49481`) on the UpdateNPCs stream AT REQUEST TIME — the C# draws
+    /// it inside the boss's own AI tick, so the draw order is preserved
+    /// (a post-pass drain would reorder it against the other NPCs' draws).
+    /// The preset target short-circuits the bubble's own four-draw init
+    /// (the style70 census).
+    pub wants_fishron_trail: Vec<(f32, f32, f32, f32, i32, f32)>,
+    /// Fishron's sharknado bolt requests (`Projectile.NewProjectile(...,
+    /// 385)` — phase 1's pair `NPC.cs:49279-49280`, phase 2's aimed bolt
+    /// `:49505`): (x, y, vx, vy, ai0, ai1, localAI0-enrage). The sim
+    /// spawns them through `spawn_hostile_ai` (the `wants_hostile_shot_ai`
+    /// shape); the aiStyle-64 bolt arm (`Projectile.cs:29419-29533`) is
+    /// the projectile family's wiring wave — until it lands the bolts
+    /// ride the generic flight and the 372/373 sharks spawn only through
+    /// that arm's future drain (documented remainder, ANALYSIS).
+    pub wants_fishron_bolts: Vec<(f32, f32, f32, f32, f32, f32, f32)>,
+    /// `Main.windSpeedCurrent` pre-stamped by the sim before the update
+    /// (the `plantera_hook_anchor` pre-pass convention) — the Detonating
+    /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
+    /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
+    pub wind_speed_current: f32,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -2403,7 +2458,10 @@ impl Npc {
             old_direction: facing,
             old_direction_y: 1,
             net_update: false,
-            boss: false,
+            // S1-D-3 W-9: Duke Fishron's `boss = true` row
+            // (`NPC.cs:13716`) — the target-facing inheritance gate
+            // (`npc_target.rs`'s `!npc.boss` term) reads it.
+            boss: kind == NpcKind::DukeFishron,
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -2474,6 +2532,10 @@ impl Npc {
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
             plantera_hook_anchor: None,
+            wants_fishron_bubbles: Vec::new(),
+            wants_fishron_trail: Vec::new(),
+            wants_fishron_bolts: Vec::new(),
+            wind_speed_current: 0.0,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -2486,8 +2548,11 @@ impl Npc {
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
-            // S1-D-3-wire-destroyer); 0 for every other kind (the Frost
-            // family writes no alpha row, `NPC.cs:13281-13487`).
+            // S1-D-3-wire-destroyer); the fishron hazards' 255 rows
+            // (`NPC.cs:13732`/`:13746`/`:13760`, S1-D-3 W-9 - the
+            // bubble's arm pins 50 on its first tick, the sharks fade
+            // in); 0 for every other kind (the Frost family writes no
+            // alpha row, `NPC.cs:13281-13487`).
             alpha: kind
                 .pumpkin_moon_defaults()
                 .map(|d| d.alpha)
@@ -2495,7 +2560,10 @@ impl Npc {
                 .unwrap_or(if crate::npc_ai_style37::is_destroyer_family(kind) {
                     255
                 } else {
-                    0
+                    match kind {
+                        NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => 255,
+                        _ => 0,
+                    }
                 }),
             head_turn: 0,
             wet: false,
@@ -2812,6 +2880,13 @@ impl Npc {
             // SetDefaults head's default applies.
             NpcKind::EyeOfCthulhu => 1.0,
             NpcKind::ServantOfCthulhu => 1.0,
+            // S1-D-3 W-9 fishron wiring — all four rows write
+            // `knockBackResist = 0f` (`NPC.cs:13708`/`:13731`/`:13744`/
+            // `:13758`).
+            NpcKind::DukeFishron
+            | NpcKind::DetonatingBubble
+            | NpcKind::Sharkron
+            | NpcKind::Sharkron2 => 0.0,
             NpcKind::Slime => unreachable!(),
             // The pillar worms: kb 0 across the chain (`NPC.cs`'s rows
             // 412-414) and the stardust worm head.
@@ -3226,6 +3301,12 @@ impl Npc {
             NpcKind::GingerbreadMan => 26,
             NpcKind::Yeti => 50,
             NpcKind::Everscream => 38,
+            // S1-D-3 W-9 fishron wiring — 370 def 50 (`NPC.cs:13707` —
+            // the AI's per-tick rewrite rides `defense_override`), 371
+            // def 0 (`:13725`), 372/373 def 100 (`:13740`/`:13754`).
+            NpcKind::DukeFishron => 50,
+            NpcKind::DetonatingBubble => 0,
+            NpcKind::Sharkron | NpcKind::Sharkron2 => 100,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3562,6 +3643,11 @@ impl Npc {
             NpcKind::GingerbreadMan => 1800.0,
             NpcKind::Yeti => 3000.0,
             NpcKind::Everscream => 10000.0,
+            // S1-D-3 W-9 fishron wiring — 370 value 25 gold
+            // (`NPC.cs:13715`); 371/372/373 write no value row (the
+            // `SetDefaults` stock 0, `NPC.cs:8544`).
+            NpcKind::DukeFishron => 250000.0,
+            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3672,6 +3758,13 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        // S1-D-3 W-9 fishron wiring — `NPC.checkDead`'s 371 arm
+        // (`NPC.cs:78046-78051`): a struck Detonating Bubble does NOT
+        // die — the strike arms the 4-tick detonation and restores full
+        // life (`PrepareForDeathAnimation`, `:78032-78038`). RNG-free.
+        if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
+            crate::npc_ai_style70::bubble_check_dead(self);
+        }
         true
     }
 
@@ -3714,6 +3807,10 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        // S1-D-3 W-9: the checkDead 371 re-arm (the `hurt` twin above).
+        if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
+            crate::npc_ai_style70::bubble_check_dead(self);
+        }
         true
     }
 
@@ -3817,6 +3914,14 @@ impl Npc {
         n.vx = vx;
         n.vy = vy;
         n.on_ground = false;
+        // S1-D-3 W-9 fishron wiring — `NPC.checkDead`'s 371 arm
+        // (`NPC.cs:78046-78051`, reached from `StrikeNPC`'s `:81561`):
+        // a struck Detonating Bubble does NOT die — the strike arms the
+        // 4-tick detonation and restores full life
+        // (`PrepareForDeathAnimation`, `:78032-78038`). RNG-free.
+        if n.kind == NpcKind::DetonatingBubble && n.hp <= 0 {
+            crate::npc_ai_style70::bubble_check_dead(n);
+        }
         true
     }
 
@@ -4041,6 +4146,23 @@ impl Npc {
             61 if self.kind == NpcKind::SantaNK1 => {
                 crate::npc_ai_frost_boss_b::frost_boss_b_step(self, world, player, rng, dust, dust_ctx)
             }
+            // S1-D-3 W-9 fishron wiring — `else if (this.aiStyle == 69)
+            // { this.AI_069_DukeFishron(); }` (`NPC.cs:34880-34883`;
+            // the machine `:48774-49754`). Duke Fishron
+            // 370 is the style's only user; the faithful pure core
+            // (`npc_ai_fishron`, ad41a646) claims the arm. The one draw
+            // the boss's tick makes is the trail bubble's scale
+            // (`Main.rand.Next(80, 121)`, `NPC.cs:49481`) — the adapter
+            // draws it at request time on the caller's stream.
+            69 => self.ai_069_fishron(world, player, rng),
+            // `else if (this.aiStyle == 70)` (`NPC.cs:34884-34957`) —
+            // the Detonating Bubble 371, the style's only user. The
+            // faithful `npc_ai_style70::ai_style70` arm (456a2366).
+            70 => self.ai_070_bubble(world, player, rng),
+            // `else if (this.aiStyle == 71)` (`NPC.cs:34958-35079`) —
+            // the Sharkron pair 372/373. The faithful
+            // `npc_ai_style71::ai_style71` arm (80fcb43b).
+            71 => self.ai_071_sharkron(world, player),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -4389,6 +4511,215 @@ impl Npc {
             } else {
                 self.y = ny;
             }
+        }
+    }
+
+    /// S1-D-3 W-9 wiring — the aiStyle-69 adapter: the live `Npc` fields
+    /// ride into the faithful pure core (`npc_ai_fishron::fishron_ai_step`,
+    /// `AI_069_DukeFishron`, `NPC.cs:48774-49754`) and back. RNG by
+    /// construction: AI_069 draws ZERO `Main.rand` (the charge dust loops
+    /// are the documented skip), so no stream parameter. The
+    /// `TargetClosest` request is resolved by re-running the core with the
+    /// fresh target (the C# re-reads the player after `:48850`'s call); the
+    /// bubble/sharknado spawns are REQUESTS the sim drains (`wants_sphere`
+    /// shape). The `EncourageDespawn(10)` rides the port's despawn window.
+    /// The trail bubble's scale draw (`:49481`) happens HERE, at request
+    /// time — the C# draws inside the boss's own tick.
+    fn ai_069_fishron(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        use crate::npc_ai_fishron::{fishron_ai_step, FishronEnv, FishronRequest, FishronState};
+        let cand = crate::npc_target::session_candidate(player);
+        let (pcx, pcy) = player.center();
+        // The target re-pick gate (`:48848-48853`) resolved AHEAD of the
+        // step: the C# calls `TargetClosest()` mid-tick and re-reads the
+        // player; the pick and the gate are RNG-free and read nothing the
+        // pre-gate stat block writes, so the pre-resolution is
+        // behaviour-identical (one step per tick, no double advance).
+        let (cx0, cy0) = (
+            self.x + crate::npc_ai_fishron::FISHRON_WIDTH / 2.0,
+            self.y + crate::npc_ai_fishron::FISHRON_HEIGHT / 2.0,
+        );
+        let dist0 = ((pcx - cx0).powi(2) + (pcy - cy0).powi(2)).sqrt();
+        if self.target < 0 || self.target == 255 || player.dead || dist0 > 5600.0 {
+            crate::npc_target::target_closest(self, world, &[cand], true, 69, 0);
+            self.net_update = true;
+        }
+        let env = FishronEnv {
+            // The port's expert flag rides the player buff (the style31
+            // wiring's convention); single-difficulty normal until the
+            // difficulty system lands.
+            expert: player.buffs.expert_mode,
+            player_cx: pcx,
+            player_cy: pcy,
+            player_x: player.x,
+            player_y: player.y,
+            player_dead: player.dead,
+            target: self.target,
+            player_active: true,
+            world_surface: world.world_surface,
+            max_tiles_x: world.width,
+            solid_collision: Player::solid_collision(
+                world,
+                self.x,
+                self.y,
+                crate::npc_ai_fishron::FISHRON_WIDTH,
+                crate::npc_ai_fishron::FISHRON_HEIGHT,
+            ),
+        };
+        let mut s = FishronState {
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+            ai3: self.ai[3],
+            local_ai0: self.local_ai[0],
+            x: self.x,
+            y: self.y,
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            sprite_direction: self.sprite_dir,
+            rotation: self.rotation,
+            alpha: self.alpha as i32,
+            chaseable: self.chaseable,
+            damage: self.damage_override.unwrap_or(self.kind.contact_damage()),
+            defense: self.defense(),
+            life: self.hp,
+            life_max: self.max_hp,
+            def_damage: crate::npc_ai_fishron::FISHRON_DEF_DAMAGE,
+            def_defense: crate::npc_ai_fishron::FISHRON_DEF_DEFENSE,
+        };
+        let out = fishron_ai_step(&mut s, &env);
+        // The state writes back (the C#'s field writes, `:48774-49754`).
+        self.ai = [s.ai0, s.ai1, s.ai2, s.ai3];
+        self.local_ai[0] = s.local_ai0;
+        // `NPC.UpdateNPC`'s noTileCollide integration (`NPC.cs:90490-90498`):
+        // the AI writes velocity; the position add is the movement step's.
+        // The port's flyers integrate in their machine (the hover family's
+        // convention) — Fishron flies through tiles (noTileCollide row,
+        // `NPC.cs:13709`), so the direct add lands here.
+        self.x = s.x + s.vx;
+        self.y = s.y + s.vy;
+        self.vx = s.vx;
+        self.vy = s.vy;
+        self.facing = s.direction;
+        self.sprite_dir = s.sprite_direction;
+        self.rotation = s.rotation;
+        self.alpha = s.alpha.clamp(0, 255) as u8;
+        self.chaseable = s.chaseable;
+        // The per-tick damage/defense rewrites ride the override seams
+        // (`damage_override`/`defense_override` — the golem family's
+        // convention).
+        self.damage_override = Some(s.damage);
+        self.defense_override = Some(s.defense);
+        self.dont_take_damage = out.dont_take_damage;
+        if out.net_update {
+            self.net_update = true;
+        }
+        // The spawn/despawn requests → the sim's drain fields.
+        for req in out.requests {
+            match req {
+                FishronRequest::Bubble { x, y } => {
+                    self.wants_fishron_bubbles.push((x as f32, y as f32));
+                }
+                FishronRequest::TrailBubble { x, y, vx, vy, target } => {
+                    // `NPC.cs:49481` — `Main.npc[num35].ai[3] =
+                    // (float)Main.rand.Next(80, 121) / 100f`, drawn
+                    // inside this tick, after the NewNPC + the preset
+                    // writes (the RNG order cite).
+                    let scale = rng.next_range(80, 121) as f32 / 100.0;
+                    self.wants_fishron_trail
+                        .push((x as f32, y as f32, vx, vy, target, scale));
+                }
+                FishronRequest::Sharknado { x, y, vx, vy, ai0, ai1, local_ai0 } => {
+                    self.wants_fishron_bolts.push((x, y, vx, vy, ai0, ai1, local_ai0));
+                }
+                // Resolved ahead of the step (the gate pre-pass above).
+                FishronRequest::TargetClosest => {}
+                FishronRequest::EncourageDespawn(t) => self.encourage_despawn(t),
+            }
+        }
+    }
+
+    /// S1-D-3 W-9 wiring — the aiStyle-70 adapter: the Detonating Bubble's
+    /// faithful arm (`npc_ai_style70::ai_style70`, `NPC.cs:34884-34957`).
+    /// RNG census (the module's, preserved): the `target == 255` init draws
+    /// FOUR (`Next(80,121)`, `Next(165,265)`, two `Next(-100,101)` —
+    /// `:34889-34891`) and EVERY tick draws TWO wind jitters
+    /// (`Next(-10,11)` X then Y, `:34903-34904`, the detonation tick
+    /// included — the draws precede the fuse's early return). All on the
+    /// caller's UpdateNPCs stream. The phase-7 trail presets short-circuit
+    /// the init (the spawn site seeds target/velocity/ai[3], `:49477-49481`).
+    fn ai_070_bubble(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        // `Main.windSpeedCurrent` — the sim pre-stamps it onto the bubble
+        // before the update (the plantera_hook_anchor pre-pass
+        // convention); the field defaults 0 until then. `this.justHit`
+        // rides the port's established `hurt_cd > 0` stand-in (`npc.rs`'s
+        // fighter_idle_counter convention). Locals ahead of the call —
+        // the arm takes `&mut Npc`.
+        let wind = self.wind_speed_current;
+        let just_hit = self.hurt_cd > 0.0;
+        let out = crate::npc_ai_style70::ai_style70(self, world, &[cand], wind, just_hit, 0, rng);
+        if out.detonated {
+            // `:34943-34946` — life = 0 (the arm wrote it), HitEffect()
+            // (the documented dust skip; its sound 4 style 3 IS the
+            // NPCDeath3 cue the death pass plays), active = false +
+            // return: NO checkDead, NO loot (value 0). The port's death
+            // retain (`world_sim/npcs.rs`'s `hp > 0` filter) drops the
+            // slot and plays the same cue; the C# deactivates mid-update
+            // so the detonation tick deals no contact damage — the
+            // damage zero mirrors that (the contact pass runs at this
+            // update's tail).
+            self.damage_override = Some(0);
+        }
+    }
+
+    /// S1-D-3 W-9 wiring — the aiStyle-71 adapter: the Sharkron pair's
+    /// faithful arm (`npc_ai_style71::ai_style71`, `NPC.cs:34958-35079`).
+    /// RNG census (the module's, preserved): ZERO draws — the arm has no
+    /// `Next`/`NextFloat` and `TargetClosest` is RNG-free, so no stream
+    /// parameter. The noGravity/noTileCollide writes ride the outcome; the
+    /// movement integration mirrors the C#'s UpdateNPC tail: noTileCollide
+    /// is always true (`:34960`) so the direct add runs, with the gravity
+    /// term (`NPC.cs:90465-90471` + `UpdateNPC_UpdateGravity`
+    /// `:90877-90881`: the DEFAULT 0.3 / maxFallSpeed 10 — the pair has
+    /// no per-type gravity arm) when the arm returns gravity at
+    /// `ai[1] >= 60` (`:35069-35072`).
+    fn ai_071_sharkron(&mut self, world: &World, player: &Player) {
+        let cand = crate::npc_target::session_candidate(player);
+        // The vanilla type for the 373-only sway gate — NOT `cs_id()`
+        // (the bestiary fallback folds Sharkron2 onto the Sharkron row).
+        let npc_type = match self.kind {
+            NpcKind::Sharkron2 => 373,
+            _ => 372,
+        };
+        let out = crate::npc_ai_style71::ai_style71(self, world, &[cand], npc_type, 0);
+        if out.died_in_tiles {
+            // `:35057-35066` — DeathSound + life = 0 + HitEffect +
+            // active = false, return (no checkDead, no loot — value 0).
+            // The death retain drops the slot and plays the NPCDeath1
+            // cue (the same sound the C# plays here); the dust/gore arm
+            // is the documented visual skip. The damage zero mirrors the
+            // mid-update deactivation (no contact on the death tick).
+            self.damage_override = Some(0);
+            return;
+        }
+        // `NPC.UpdateNPC_UpdateGravity` (`NPC.cs:90877-90881`): the
+        // DEFAULT gravity 0.3 / maxFallSpeed 10 — the 372/373 types have
+        // no per-type arm (the port's walker GRAVITY 0.4 / MAX_FALL 8
+        // constants are the fighter rows, NOT these). The arm's
+        // noGravity outcome gates the term.
+        if !out.no_gravity {
+            self.vy = (self.vy + 0.3).min(10.0);
+        }
+        // The noTileCollide integration (`NPC.cs:90490-90498`): the arm
+        // sets noTileCollide = true every tick (`:34960`), so the direct
+        // position add — no UpdateCollision.
+        self.x += self.vx;
+        self.y += self.vy;
+        if out.play_dash_sound {
+            // `:35012` — SoundEngine.PlaySound(4, cx, cy, 19): the roar
+            // is the tracked-sound seam; the port's NPC sound table has
+            // no style-19 row, so it stays a documented skip (ANALYSIS).
         }
     }
 
@@ -4927,6 +5258,13 @@ impl Npc {
                     rotation: HoverRotation::Velocity,
                 },
             ),
+            // S1-D-3 W-9 fishron wiring: the boss + its three hazards are
+            // claimed by the aiStyle-69/70/71 axis above (the Spazmatism
+            // precedent — this arm keeps the kind match exhaustive and
+            // routes to the same machines for direct-kind callers).
+            NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
+            NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
+            NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
 
@@ -7425,6 +7763,81 @@ impl Npc {
                 }
                 if self.frame > 5 {
                     self.frame = 0;
+                }
+            }
+            // S1-D-3 W-9 fishron wiring — `case 371 : case 372 : case 373`
+            // (`NPC.cs:72137-72141`): `frame.Y = num` — the SECOND row,
+            // pinned forever (the style70/71 modules' FRAME_ROW consts).
+            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
+                self.frame = 1;
+            }
+            // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
+            // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
+            // The hover cycle animates rows 0..5 (the >5 / >4 counters);
+            // the charge/volley/spin states pin rows 6/7 off the ai[2]
+            // windows; the materialize/bolt states flap with the 60/80
+            // window; the transform pause flaps with the 120/160 window.
+            // States 10..13 (phase 3) have NO arm — the frame holds.
+            NpcKind::DukeFishron => {
+                if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
+                    // `:72144-72160` — num45 = 5 (state 0) / 4 (state 5).
+                    let num45 = if self.ai[0] == 5.0 { 4.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num45 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame >= 6 {
+                        self.frame = 0;
+                    }
+                }
+                if self.ai[0] == 1.0 || self.ai[0] == 6.0 {
+                    // `:72161-72172`.
+                    self.frame = if self.ai[2] < 10.0 { 6 } else { 7 };
+                }
+                if self.ai[0] == 2.0 || self.ai[0] == 7.0 {
+                    // `:72173-72184` — the same pair.
+                    self.frame = if self.ai[2] < 10.0 { 6 } else { 7 };
+                }
+                if self.ai[0] == 3.0 || self.ai[0] == 8.0 || self.ai[0] == -1.0 {
+                    // `:72185-72207` — num46 = 90: outside [60, 80] the
+                    // >5 flap over rows 0..5; inside, row 6 with the
+                    // (70, 75) window on row 7.
+                    if self.ai[2] < 60.0 || self.ai[2] > 80.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 5.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame >= 6 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame = 6;
+                        if self.ai[2] > 70.0 && self.ai[2] < 75.0 {
+                            self.frame = 7;
+                        }
+                    }
+                }
+                if self.ai[0] == 4.0 || self.ai[0] == 9.0 {
+                    // `:72208-72234` — num47 = 180: outside [120, 160]
+                    // the >5 flap; inside, row 6 with the (130, 155)
+                    // window on row 7.
+                    if self.ai[2] < 120.0 || self.ai[2] > 160.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 5.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame >= 6 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame = 6;
+                        if self.ai[2] > 130.0 && self.ai[2] < 155.0 {
+                            self.frame = 7;
+                        }
+                    }
                 }
             }
         }
@@ -15916,6 +16329,12 @@ impl Npc {
             // injective (the protocol ids ride the gate-reassigned 149/152 holes).
             NpcKind::Bee => 210,
             NpcKind::BeeSmall => 211,
+            // S1-D-3 W-9 fishron wiring — the vanilla ids 370-373, unused
+            // by every arm above (the G6 key stays injective).
+            NpcKind::DukeFishron => 370,
+            NpcKind::DetonatingBubble => 371,
+            NpcKind::Sharkron => 372,
+            NpcKind::Sharkron2 => 373,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -20192,7 +20611,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 247] = [
+    pub(super) const ALL_KINDS: [NpcKind; 251] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -20442,6 +20861,11 @@ mod tests {
         NpcKind::PlanterasHook,
         NpcKind::PlanterasTentacle,
         NpcKind::Spore,
+        // S1-D-3 W-9 fishron wiring.
+        NpcKind::DukeFishron,
+        NpcKind::DetonatingBubble,
+        NpcKind::Sharkron,
+        NpcKind::Sharkron2,
     ];
 
     #[test]
@@ -23944,8 +24368,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            247,
-            "every decodable kind resolves (the wire roster's size - 247 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three)"
+            251,
+            "every decodable kind resolves (the wire roster's size - 251 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four)"
         );
         assert!(
             covered > 43,

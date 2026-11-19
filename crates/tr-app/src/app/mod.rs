@@ -2922,6 +2922,11 @@ impl App {
                         "wofeye" => NpcKind::WallOfFleshEye,
                         "hungry" => NpcKind::Hungry,
                         "skeletronhead" => NpcKind::SkeletronHead,
+                        // S1-D-3 W-9 fishron wiring — the boss + hazards.
+                        "fishron" => NpcKind::DukeFishron,
+                        "bubble" => NpcKind::DetonatingBubble,
+                        "sharkron" => NpcKind::Sharkron,
+                        "sharkron2" => NpcKind::Sharkron2,
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();

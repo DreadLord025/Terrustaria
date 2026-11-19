@@ -52,7 +52,9 @@
 //!   the wiring spawns them through `NPC.NewNPC`'s bottom-centre
 //!   convention (the S1-D-3k servant precedent).
 
-#![allow(dead_code)] // wiring deferred (S1-D-3 fishron, code-only mode)
+// S1-D-3 W-9: WIRED — the aiStyle-69 axis arm (`npc.rs::ai_069_fishron`)
+// claims the machine; the plan structs stay read by the witness tests.
+#![allow(dead_code)] // the FishronState/Env field set is the pure-core seam; the wiring reads a subset
 
 use std::f32::consts::PI;
 

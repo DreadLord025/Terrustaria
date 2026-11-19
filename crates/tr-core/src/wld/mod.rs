@@ -1626,6 +1626,8 @@ mod tests {
         world.downed_pirates = true;
         world.downed_martians = true;
         world.downed_deerclops = true;
+        // S1-D-3 W-9: the fishron flag round-trips too.
+        world.downed_fishron = true;
         world.shadow_orb_smashed = true;
         world.spawn_meteor = true;
         world.shadow_orb_count = 7;
@@ -1737,6 +1739,7 @@ mod tests {
             "{context}: plant boss"
         );
         assert_eq!(got.downed_golem, want.downed_golem, "{context}: golem");
+        assert_eq!(got.downed_fishron, want.downed_fishron, "{context}: fishron");
         assert_eq!(
             got.downed_slime_king, want.downed_slime_king,
             "{context}: slime king"
@@ -2016,6 +2019,8 @@ mod tests {
         tail[1891] = u8::from(world.downed_ancient_cultist); // downedAncientCultist (`:1345`)
         tail[1892] = u8::from(world.downed_moon_lord); // downedMoonlord (`:1346`)
         tail[1888] = u8::from(world.fast_forward_to_dawn); // fastForwardTimeToDawn (`:1342`)
+        // S1-D-3 W-9: downedFishron is World-owned now (`:1343`).
+        tail[1889] = u8::from(world.downed_fishron); // downedFishron
         tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.

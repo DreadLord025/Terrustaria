@@ -270,6 +270,49 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             0.0,
         );
     }
+    // S1-D-3 W-9 fishron wiring — the aiStyle-64 cloud's next segment
+    // (`Projectile.cs:29496`): the same kind, ai0 = 10, ai1 - 1, at the
+    // segment point (the C#'s NewProjectile centre convention re-centred
+    // to the port's top-left spawn).
+    for (owner, kind, damage, kb, x, y, vx, vy, ai1) in app.projectiles.drain_cloud_segments() {
+        if let Some(row) = crate::projectile::proj_data(kind) {
+            app.projectiles.spawn_with_data_ai_owned(
+                kind,
+                owner,
+                x - row.w * 0.5,
+                y - row.h * 0.5,
+                // The segment inherits the parent's velocity
+                // (`:29496`'s `base.velocity.X/Y`).
+                vx,
+                vy,
+                damage,
+                kb,
+                10.0,
+                ai1,
+            );
+        }
+    }
+    // The aiStyle-64 cloud's shark spawn (`Projectile.cs:29509-29516`):
+    // `NPC.NewNPC`'s Bottom = (X, Y) (`NPC.cs:80771`), the velocity
+    // inherited, the 386's ai[2]/ai[3] presets AT THE SPAWN SITE — the
+    // style71 machine reads them on its first tick (the sway amplitude
+    // and the rise speed).
+    for (npc_type, x, y, vx, vy, ai2, ai3) in app.projectiles.drain_shark_spawns() {
+        let kind = match npc_type {
+            372 => crate::npc::NpcKind::Sharkron,
+            373 => crate::npc::NpcKind::Sharkron2,
+            _ => continue,
+        };
+        let (w, h) = kind.size();
+        let mut n = crate::npc::Npc::new(kind, x - w * 0.5, y - h, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vx = vx;
+        n.vy = vy;
+        n.ai[2] = ai2;
+        n.ai[3] = ai3;
+        n.net_update = true;
+        app.npcs.push(n);
+    }
 }
 
 #[cfg(test)]

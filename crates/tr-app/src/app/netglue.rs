@@ -3385,6 +3385,17 @@ fn npc_seed(
         | crate::npc::NpcKind::PlanterasHook
         | crate::npc::NpcKind::PlanterasTentacle
         | crate::npc::NpcKind::Spore => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // S1-D-3 W-9 fishron wiring — the boss + its hazards fly through
+        // tiles (the noTileCollide/noGravity rows); the hover ctor's
+        // open-air seed is the join shape (the machine takes over on the
+        // first tick).
+        crate::npc::NpcKind::DukeFishron
+        | crate::npc::NpcKind::DetonatingBubble
+        | crate::npc::NpcKind::Sharkron
+        | crate::npc::NpcKind::Sharkron2 => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 
