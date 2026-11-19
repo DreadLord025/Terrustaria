@@ -1,32 +1,32 @@
-crates/tr-app/src/player.rs|fn wing_slot|M3-EQUIP-8 пїЅ?" the wings grant flight (wingSlot -> wingsLogic + wingTimeMax)
-crates/tr-app/src/player.rs|mana_cost|M3-EQUIP-9 пїЅ?" Player.manaCost folds the robe/accessory/set rows
-crates/tr-app/src/player.rs|the_damage_accessories_raise_their_class|M3-EQUIP-10 пїЅ?" the class emblems and crit accessories
-crates/tr-app/src/player.rs|endurance|M3-EQUIP-11 пїЅ?" Player.endurance (Worm Scarf, Turtle set, buff 114, Ice Barrier)
-crates/tr-app/src/player.rs|BUFF_IMMUNITY_ROWS|M3-EQUIP-12 пїЅ?" the buff-immunity rows (Ankh Shield, its parts, sets)
-crates/tr-core/src/armor_sets.rs|ARMOR_STATS|M3-EQUIP-13 пїЅ?" the 109 generated armor-piece stat rows
-crates/tr-app/src/player.rs|the_sky_stones_add_their_bundle|M3-EQUIP-14 пїЅ?" the Celestial/Sun/Moon stone bundle
-crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 пїЅ?" thorns: the reflection arithmetic and the contact bounce
-crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 пїЅ?" lavaTime/lavaMax and the 80-damage lava hit
-crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 пїЅ?" the armor/buff/stone life-regen rows
-crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 пїЅ?" Item.lifeRegen provisioned in the generated item table
-crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 пїЅ?" armorPenetration rows and the melee-hit consumer
-crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 пїЅ?" the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
-crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 пїЅ?" the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
-crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 пїЅ?" item pickup transfers the stack once (Player.cs:39330)
-crates/tr-app/src/app/clicks.rs|fn right_click_split|S1-C-10 пїЅ?" the paced one-item right-click transfer (ItemSlot.cs:1700-1784)
-crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 пїЅ?" the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
-crates/tr-app/src/projectile.rs|Projectile.cs:12938 вЂ” pre-defense variance on the hit damage.|S1-C-2 - projectile->NPC damage applies DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)
-crates/tr-app/src/npc.rs|contact_damage_applies_damage_var_with_negative_luck_s1_c_5|S1-C-5 пїЅ?" NPCпїЅпїЅ'player contact damage applies DamageVar(..., -luck) (Player.cs:31387)
-crates/tr-app/src/npc.rs|behind_tiles_field_matches_csharp_defaults_s1_c_6|S1-C-6 пїЅ?" NPC behindTiles field and behind-tiles draw pass (NPC.cs:6517,8520,10355; Main.cs:22320,22336)
-crates/tr-app/src/settings.rs|tr_zoom_clamp_stays_in_vanilla_range_s1_b_5|S1-B-5 пїЅ?" view zoom keys and vanilla 1.0-2.0 clamp (Main.cs:16801-16815)
-crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 пїЅ?" the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
-crates/tr-app/src/prefix.rs|pub trait PrefixRandom|S1-A-5 пїЅ?" prefix rolls draw from UnifiedRandom (App::prefix_rng) with a dotnet-oracle golden + 40k-roll histogram
-crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 100)|S1-A-6 пїЅ?" water blur jitter uses FastRandom.WithModifier(i).Next(98,100) (LightMap.cs:219)
-crates/tr-app/src/app/rng.rs|struct NamedRngs|S1-A-2 пїЅ?" Main.SwapRandom named-stream registry (Main.cs:3204-3215): all 17 keys, per-world UnifiedRandom(worldSeed) reset, UpdateTime wired
-crates/tr-app/src/npc.rs|can_hit_line(world, cx, cy, 0.0, 0.0|S1-D-7 пїЅ?" the NPC AI line-of-sight sites use Collision.CanHit/CanHitLine/SolidCollision (the npc_ai.rs::line_clear stand-in is gone)
-crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 пїЅ?" the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
-crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 пїЅ?" the world sort's active-player Journey key (UIWorldSelect.cs:179, Main.ActivePlayerFileData)
-# Landed-feature anchors вЂ” the tripwire against lossy merges.
+crates/tr-app/src/player.rs|fn wing_slot|M3-EQUIP-8 �?" the wings grant flight (wingSlot -> wingsLogic + wingTimeMax)
+crates/tr-app/src/player.rs|mana_cost|M3-EQUIP-9 �?" Player.manaCost folds the robe/accessory/set rows
+crates/tr-app/src/player.rs|the_damage_accessories_raise_their_class|M3-EQUIP-10 �?" the class emblems and crit accessories
+crates/tr-app/src/player.rs|endurance|M3-EQUIP-11 �?" Player.endurance (Worm Scarf, Turtle set, buff 114, Ice Barrier)
+crates/tr-app/src/player.rs|BUFF_IMMUNITY_ROWS|M3-EQUIP-12 �?" the buff-immunity rows (Ankh Shield, its parts, sets)
+crates/tr-core/src/armor_sets.rs|ARMOR_STATS|M3-EQUIP-13 �?" the 109 generated armor-piece stat rows
+crates/tr-app/src/player.rs|the_sky_stones_add_their_bundle|M3-EQUIP-14 �?" the Celestial/Sun/Moon stone bundle
+crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 �?" thorns: the reflection arithmetic and the contact bounce
+crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 �?" lavaTime/lavaMax and the 80-damage lava hit
+crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 �?" the armor/buff/stone life-regen rows
+crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 �?" Item.lifeRegen provisioned in the generated item table
+crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 �?" armorPenetration rows and the melee-hit consumer
+crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 �?" the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
+crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 �?" the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
+crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 �?" item pickup transfers the stack once (Player.cs:39330)
+crates/tr-app/src/app/clicks.rs|fn right_click_split|S1-C-10 �?" the paced one-item right-click transfer (ItemSlot.cs:1700-1784)
+crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 �?" the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
+crates/tr-app/src/projectile.rs|Projectile.cs:12938 — pre-defense variance on the hit damage.|S1-C-2 - projectile->NPC damage applies DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)
+crates/tr-app/src/npc.rs|contact_damage_applies_damage_var_with_negative_luck_s1_c_5|S1-C-5 �?" NPC��'player contact damage applies DamageVar(..., -luck) (Player.cs:31387)
+crates/tr-app/src/npc.rs|behind_tiles_field_matches_csharp_defaults_s1_c_6|S1-C-6 �?" NPC behindTiles field and behind-tiles draw pass (NPC.cs:6517,8520,10355; Main.cs:22320,22336)
+crates/tr-app/src/settings.rs|tr_zoom_clamp_stays_in_vanilla_range_s1_b_5|S1-B-5 �?" view zoom keys and vanilla 1.0-2.0 clamp (Main.cs:16801-16815)
+crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 �?" the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
+crates/tr-app/src/prefix.rs|pub trait PrefixRandom|S1-A-5 �?" prefix rolls draw from UnifiedRandom (App::prefix_rng) with a dotnet-oracle golden + 40k-roll histogram
+crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 100)|S1-A-6 �?" water blur jitter uses FastRandom.WithModifier(i).Next(98,100) (LightMap.cs:219)
+crates/tr-app/src/app/rng.rs|struct NamedRngs|S1-A-2 �?" Main.SwapRandom named-stream registry (Main.cs:3204-3215): all 17 keys, per-world UnifiedRandom(worldSeed) reset, UpdateTime wired
+crates/tr-app/src/npc.rs|can_hit_line(world, cx, cy, 0.0, 0.0|S1-D-7 �?" the NPC AI line-of-sight sites use Collision.CanHit/CanHitLine/SolidCollision (the npc_ai.rs::line_clear stand-in is gone)
+crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 �?" the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
+crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 �?" the world sort's active-player Journey key (UIWorldSelect.cs:179, Main.ActivePlayerFileData)
+# Landed-feature anchors — the tripwire against lossy merges.
 #
 # This repo is worked on by several agents at once, and some merges are
 # wholesale (`git commit-tree` over a tree built from one side), so a merge can
@@ -37,75 +37,75 @@ crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 пїЅ?" the wo
 # Format:  <path relative to the repo root>|<marker>|<feature name>
 # The marker must be a string that only exists while the feature does.
 # Checked twice:
-#   * `crates/tr-core/build.rs` вЂ” at build time, so a merge that drops work
+#   * `crates/tr-core/build.rs` — at build time, so a merge that drops work
 #     stops compiling instead of shipping, and
-#   * `crates/tr-app/tests/main_anchors.rs` вЂ” at test time, with the same
+#   * `crates/tr-app/tests/main_anchors.rs` — at test time, with the same
 #     message.
 # Add a row whenever you land a feature (one per major module/entry point).
 # When a refactor legitimately renames something, update the marker in the same
-# commit. Never delete a row to make a build pass вЂ” that is exactly the failure
+# commit. Never delete a row to make a build pass — that is exactly the failure
 # this file exists to catch.
-crates/tr-app/src/app/mod.rs|fn enter_loaded_world|BUG-21 вЂ” single-player world entry (Play must leave the lobby)
-crates/tr-app/src/app/mod.rs|static_sheets|BUG-21 вЂ” the cached world-independent atlas half
-crates/tr-app/src/npc.rs|fn walker_frame|BUG-22/24 вЂ” the walker NPC row band
-crates/tr-app/src/town_arrival.rs|fn update_time_spawn_town_npcs|M4-TOWN-1b вЂ” the town NPC arrival gates
-crates/tr-app/src/touch_damage.rs|fn apply_touch_damage|M4-HAZARD-1 вЂ” tile contact damage (dungeon spikes)
-crates/tr-app/src/touch_damage.rs|TOUCH_DAMAGE_IMMEDIATE|M4-HAZARD-1 вЂ” the TileID.Sets.TouchDamageImmediate table
-crates/tr-core/src/liquid.rs|cur_max_liquid: usize|S1-A-8 вЂ” the C# liquid pass window (curMaxLiquid/cycles stride)
-crates/tr-core/src/worldgen/dungeon_features.rs|fn place_spikes|M5-DUNGEON вЂ” the DungeonGlobalSpikes pass
-crates/tr-core/src/worldgen/dungeon_features.rs|fn place_lights|M5-DUNGEON вЂ” the DungeonGlobalLights pass
-crates/tr-core/src/worldgen/dungeon_features.rs|fn wall_variants|M5-DUNGEON вЂ” the DungeonGlobalWallVariants pass
-crates/tr-core/src/worldgen/dungeon_features.rs|fn place_traps|M5-DUNGEON вЂ” the DungeonGlobalTraps pass
-crates/tr-core/src/worldgen/dungeon_features.rs|fn place_banners|M5-DUNGEON вЂ” the DungeonGlobalBanners pass
-crates/tr-core/src/worldgen/dungeon.rs|fn generate_dungeon|M5-DUNGEON вЂ” the faithful dungeon crawler
+crates/tr-app/src/app/mod.rs|fn enter_loaded_world|BUG-21 — single-player world entry (Play must leave the lobby)
+crates/tr-app/src/app/mod.rs|static_sheets|BUG-21 — the cached world-independent atlas half
+crates/tr-app/src/npc.rs|fn walker_frame|BUG-22/24 — the walker NPC row band
+crates/tr-app/src/town_arrival.rs|fn update_time_spawn_town_npcs|M4-TOWN-1b — the town NPC arrival gates
+crates/tr-app/src/touch_damage.rs|fn apply_touch_damage|M4-HAZARD-1 — tile contact damage (dungeon spikes)
+crates/tr-app/src/touch_damage.rs|TOUCH_DAMAGE_IMMEDIATE|M4-HAZARD-1 — the TileID.Sets.TouchDamageImmediate table
+crates/tr-core/src/liquid.rs|cur_max_liquid: usize|S1-A-8 — the C# liquid pass window (curMaxLiquid/cycles stride)
+crates/tr-core/src/worldgen/dungeon_features.rs|fn place_spikes|M5-DUNGEON — the DungeonGlobalSpikes pass
+crates/tr-core/src/worldgen/dungeon_features.rs|fn place_lights|M5-DUNGEON — the DungeonGlobalLights pass
+crates/tr-core/src/worldgen/dungeon_features.rs|fn wall_variants|M5-DUNGEON — the DungeonGlobalWallVariants pass
+crates/tr-core/src/worldgen/dungeon_features.rs|fn place_traps|M5-DUNGEON — the DungeonGlobalTraps pass
+crates/tr-core/src/worldgen/dungeon_features.rs|fn place_banners|M5-DUNGEON — the DungeonGlobalBanners pass
+crates/tr-core/src/worldgen/dungeon.rs|fn generate_dungeon|M5-DUNGEON — the faithful dungeon crawler
 crates/tr-core/src/worldgen/world_hash.rs|fn world_hash|the world-gen determinism pins
-crates/tr-app/src/ui/housing.rs|fn |M7-UI-3c вЂ” the housing hover UI module
-docs/MAIN-RULES.md|The only merge procedure|infra вЂ” the multi-agent main rules every agent must read
-crates/tr-core/build.rs|a merge dropped landed work|infra вЂ” the build-time anchor tripwire
-crates/tr-app/src/player.rs|fn stat_defense|M3-EQUIP-5 вЂ” statDefense derived inside the tick (piece defense + set bonus + buffs, floored)
-crates/tr-core/src/armor_sets.rs|SET_STATS|M3-EQUIP-6 вЂ” the scalar set-bonus rows
-crates/tr-app/src/player.rs|the_movement_accessories_grant_their_flags|M3-EQUIP-7 вЂ” the accessory movement flags (bottles, balloons, boots, glove)
-crates/tr-app/src/player.rs|fn wing_slot|M3-EQUIP-8 вЂ” the wings grant flight (wingSlot -> wingsLogic + wingTimeMax)
-crates/tr-app/src/player.rs|mana_cost|M3-EQUIP-9 вЂ” Player.manaCost folds the robe/accessory/set rows
-crates/tr-app/src/player.rs|the_damage_accessories_raise_their_class|M3-EQUIP-10 вЂ” the class emblems and crit accessories
-crates/tr-app/src/player.rs|endurance|M3-EQUIP-11 вЂ” Player.endurance (Worm Scarf, Turtle set, buff 114, Ice Barrier)
-crates/tr-app/src/player.rs|BUFF_IMMUNITY_ROWS|M3-EQUIP-12 вЂ” the buff-immunity rows (Ankh Shield, its parts, sets)
-crates/tr-core/src/armor_sets.rs|ARMOR_STATS|M3-EQUIP-13 вЂ” the 109 generated armor-piece stat rows
-crates/tr-app/src/player.rs|the_sky_stones_add_their_bundle|M3-EQUIP-14 вЂ” the Celestial/Sun/Moon stone bundle
-crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 вЂ” thorns: the reflection arithmetic and the contact bounce
-crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 вЂ” lavaTime/lavaMax and the 80-damage lava hit
-crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 вЂ” the armor/buff/stone life-regen rows
-crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 вЂ” Item.lifeRegen provisioned in the generated item table
-crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 вЂ” armorPenetration rows and the melee-hit consumer
-crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 вЂ” the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
-crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 вЂ” the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
-crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 вЂ” item pickup transfers the stack once (Player.cs:39330)
-crates/tr-app/src/app/clicks.rs|fn right_click_split|S1-C-10 вЂ” the paced one-item right-click transfer (ItemSlot.cs:1700-1784)
-crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 вЂ” the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
-crates/tr-app/src/projectile.rs|Projectile.cs:12938 вЂ” pre-defense variance on the hit damage.|S1-C-2 вЂ” projectileв†’NPC damage applies DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)
-crates/tr-app/src/npc.rs|contact_damage_applies_damage_var_with_negative_luck_s1_c_5|S1-C-5 вЂ” NPCв†’player contact damage applies DamageVar(..., -luck) (Player.cs:31387)
-crates/tr-app/src/npc.rs|behind_tiles_field_matches_csharp_defaults_s1_c_6|S1-C-6 вЂ” NPC behindTiles field and behind-tiles draw pass (NPC.cs:6517,8520,10355; Main.cs:22320,22336)
-crates/tr-app/src/settings.rs|tr_zoom_clamp_stays_in_vanilla_range_s1_b_5|S1-B-5 вЂ” view zoom keys and vanilla 1.0-2.0 clamp (Main.cs:16801-16815)
-crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 вЂ” the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
-crates/tr-app/src/prefix.rs|pub trait PrefixRandom|S1-A-5 вЂ” prefix rolls draw from UnifiedRandom (App::prefix_rng) with a dotnet-oracle golden + 40k-roll histogram
-crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 100)|S1-A-6 вЂ” water blur jitter uses FastRandom.WithModifier(i).Next(98,100) (LightMap.cs:219)
-crates/tr-app/src/app/rng.rs|struct NamedRngs|S1-A-2 вЂ” Main.SwapRandom named-stream registry (Main.cs:3204-3215): all 17 keys, per-world UnifiedRandom(worldSeed) reset, UpdateTime wired
-crates/tr-app/src/npc.rs|can_hit_line(world, cx, cy, 0.0, 0.0|S1-D-7 вЂ” the NPC AI line-of-sight sites use Collision.CanHit/CanHitLine/SolidCollision (the npc_ai.rs::line_clear stand-in is gone)
-crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 вЂ” the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
-crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 вЂ” the world sort's active-player Journey key (UIWorldSelect.cs:179, Main.ActivePlayerFileData)
-crates/tr-app/src/settings.rs|fn ui_scale_max|S1-H-3 вЂ” the vanilla UI-scale factor: Main.UIScaleMax (Main.cs:2576-2583) + the setter's applied clamp (Main.cs:2563-2572), driving Settings::ui_scale and the ingame-options GameUI.UIScale bar
-crates/tr-app/src/ui/ingame_options.rs|the_left_column_matches_the_c_sharp_num7_without_the_invite_row|S1-H-14 вЂ” the 8-row left column matches the C# num7 without the flag5 invite row (IngameOptions.cs:178-179)
-crates/tr-app/src/ui/pointer.rs|fn scroll_wheel|S1-H-4 вЂ” the scroll wheel lives in the pointer machine: ScrollWheelDeltaForUI accumulated + consumed once against the element under the pointer (UserInterface.cs:219-223, UIScrollWheelEvent.cs:7)
-crates/tr-app/src/ui/world_select.rs|fn rejection_key|S1-H-10 вЂ” the world select Play gate: IsValid + TryMovingToRejectionMenuIfNeeded (UIWorldListItem.cs:362,387-410) rejects invalid game modes and Journey mismatches via App::front_hint
+crates/tr-app/src/ui/housing.rs|fn |M7-UI-3c — the housing hover UI module
+docs/MAIN-RULES.md|The only merge procedure|infra — the multi-agent main rules every agent must read
+crates/tr-core/build.rs|a merge dropped landed work|infra — the build-time anchor tripwire
+crates/tr-app/src/player.rs|fn stat_defense|M3-EQUIP-5 — statDefense derived inside the tick (piece defense + set bonus + buffs, floored)
+crates/tr-core/src/armor_sets.rs|SET_STATS|M3-EQUIP-6 — the scalar set-bonus rows
+crates/tr-app/src/player.rs|the_movement_accessories_grant_their_flags|M3-EQUIP-7 — the accessory movement flags (bottles, balloons, boots, glove)
+crates/tr-app/src/player.rs|fn wing_slot|M3-EQUIP-8 — the wings grant flight (wingSlot -> wingsLogic + wingTimeMax)
+crates/tr-app/src/player.rs|mana_cost|M3-EQUIP-9 — Player.manaCost folds the robe/accessory/set rows
+crates/tr-app/src/player.rs|the_damage_accessories_raise_their_class|M3-EQUIP-10 — the class emblems and crit accessories
+crates/tr-app/src/player.rs|endurance|M3-EQUIP-11 — Player.endurance (Worm Scarf, Turtle set, buff 114, Ice Barrier)
+crates/tr-app/src/player.rs|BUFF_IMMUNITY_ROWS|M3-EQUIP-12 — the buff-immunity rows (Ankh Shield, its parts, sets)
+crates/tr-core/src/armor_sets.rs|ARMOR_STATS|M3-EQUIP-13 — the 109 generated armor-piece stat rows
+crates/tr-app/src/player.rs|the_sky_stones_add_their_bundle|M3-EQUIP-14 — the Celestial/Sun/Moon stone bundle
+crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 — thorns: the reflection arithmetic and the contact bounce
+crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 — lavaTime/lavaMax and the 80-damage lava hit
+crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 — the armor/buff/stone life-regen rows
+crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 — Item.lifeRegen provisioned in the generated item table
+crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 — armorPenetration rows and the melee-hit consumer
+crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 — the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
+crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 — the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
+crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 — item pickup transfers the stack once (Player.cs:39330)
+crates/tr-app/src/app/clicks.rs|fn right_click_split|S1-C-10 — the paced one-item right-click transfer (ItemSlot.cs:1700-1784)
+crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 — the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
+crates/tr-app/src/projectile.rs|Projectile.cs:12938 — pre-defense variance on the hit damage.|S1-C-2 — projectile→NPC damage applies DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)
+crates/tr-app/src/npc.rs|contact_damage_applies_damage_var_with_negative_luck_s1_c_5|S1-C-5 — NPC→player contact damage applies DamageVar(..., -luck) (Player.cs:31387)
+crates/tr-app/src/npc.rs|behind_tiles_field_matches_csharp_defaults_s1_c_6|S1-C-6 — NPC behindTiles field and behind-tiles draw pass (NPC.cs:6517,8520,10355; Main.cs:22320,22336)
+crates/tr-app/src/settings.rs|tr_zoom_clamp_stays_in_vanilla_range_s1_b_5|S1-B-5 — view zoom keys and vanilla 1.0-2.0 clamp (Main.cs:16801-16815)
+crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 — the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
+crates/tr-app/src/prefix.rs|pub trait PrefixRandom|S1-A-5 — prefix rolls draw from UnifiedRandom (App::prefix_rng) with a dotnet-oracle golden + 40k-roll histogram
+crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 100)|S1-A-6 — water blur jitter uses FastRandom.WithModifier(i).Next(98,100) (LightMap.cs:219)
+crates/tr-app/src/app/rng.rs|struct NamedRngs|S1-A-2 — Main.SwapRandom named-stream registry (Main.cs:3204-3215): all 17 keys, per-world UnifiedRandom(worldSeed) reset, UpdateTime wired
+crates/tr-app/src/npc.rs|can_hit_line(world, cx, cy, 0.0, 0.0|S1-D-7 — the NPC AI line-of-sight sites use Collision.CanHit/CanHitLine/SolidCollision (the npc_ai.rs::line_clear stand-in is gone)
+crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 — the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
+crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 — the world sort's active-player Journey key (UIWorldSelect.cs:179, Main.ActivePlayerFileData)
+crates/tr-app/src/settings.rs|fn ui_scale_max|S1-H-3 — the vanilla UI-scale factor: Main.UIScaleMax (Main.cs:2576-2583) + the setter's applied clamp (Main.cs:2563-2572), driving Settings::ui_scale and the ingame-options GameUI.UIScale bar
+crates/tr-app/src/ui/ingame_options.rs|the_left_column_matches_the_c_sharp_num7_without_the_invite_row|S1-H-14 — the 8-row left column matches the C# num7 without the flag5 invite row (IngameOptions.cs:178-179)
+crates/tr-app/src/ui/pointer.rs|fn scroll_wheel|S1-H-4 — the scroll wheel lives in the pointer machine: ScrollWheelDeltaForUI accumulated + consumed once against the element under the pointer (UserInterface.cs:219-223, UIScrollWheelEvent.cs:7)
+crates/tr-app/src/ui/world_select.rs|fn rejection_key|S1-H-10 — the world select Play gate: IsValid + TryMovingToRejectionMenuIfNeeded (UIWorldListItem.cs:362,387-410) rejects invalid game modes and Journey mismatches via App::front_hint
 crates/tr-app/src/achievements.rs|fn notify_with|S1-E-18 - achievement notify wrappers/save wiring (Value-setter semantics, completion persistence hook)
-crates/tr-app/src/app/frame/world.rs|self.phase("projectiles");|S1-B-1 пїЅ?" the world branch follows Main.DoUpdateInWorld_Inner (Main.cs:17745-17822): projectiles before items, UpdateTime after dust, WorldGen wiring/TE/liquid/growth after time; pinned by app::frame::tests::the_world_branch_runs_in_the_csharp_update_order
-crates/tr-app/src/app/frame.rs|the_clock_only_advances_inside_the_world_branch|S1-B-2 пїЅ?" the front end never reaches Main.UpdateTime (Main.cs:17166-17175): the clock advance lives inside the in-world branch (landed with S1-B-1)
+crates/tr-app/src/app/frame/world.rs|self.phase("projectiles");|S1-B-1 �?" the world branch follows Main.DoUpdateInWorld_Inner (Main.cs:17745-17822): projectiles before items, UpdateTime after dust, WorldGen wiring/TE/liquid/growth after time; pinned by app::frame::tests::the_world_branch_runs_in_the_csharp_update_order
+crates/tr-app/src/app/frame.rs|the_clock_only_advances_inside_the_world_branch|S1-B-2 �?" the front end never reaches Main.UpdateTime (Main.cs:17166-17175): the clock advance lives inside the in-world branch (landed with S1-B-1)
 crates/tr-app/src/projectile.rs|pub fn drain_ritual_bolts|S1-D-4c - vortex ritual aiStyle 88/108 dispatched and bolt intent drained (Projectile.cs:32145-32249,:33679-33988)
 crates/tr-app/src/craft.rs|fn the_station_reach_region_matches_the_csharp_xna_rect|S1-L-11b refuted - the AdjTiles region is LX..=HX because XNA Rectangle.Right == X + Width (TileReachCheckSettings.cs:45-60, Player.cs:35671-35674)
 crates/tr-core/src/lighting/blur.rs|fn non_visible_padding_is_fixed_18_s1_g_10|S1-G-10 - NON_VISIBLE_PADDING is fixed 18 (LightMap.cs:99-108) not min(w,h)/3
 crates/tr-app/src/npc.rs|fn update_goblin_summoner|S1-D-3b GoblinSummoner routed off aiStyle 8 caster to shadowflame machine
 crates/tr-app/src/npc.rs|fn update_lunatic_cultist|S1-D-3b AncientCultist uses aiStyle 84 cultist row not pillar aiStyle 94
-crates/tr-core/src/worldgen/world_hash.rs|the_fnv_constants_are_frozen_by_a_fixed_input|S1-K-5 вЂ” the FNV fold constants frozen against a fixed-input golden vector (independent derivation; mutation-checked)
+crates/tr-core/src/worldgen/world_hash.rs|the_fnv_constants_are_frozen_by_a_fixed_input|S1-K-5 — the FNV fold constants frozen against a fixed-input golden vector (independent derivation; mutation-checked)
 crates/tr-app/src/world_sim/weather.rs|fn the_world_tick_writes_any_player_120_life_into_wind|S1-L-2 - update_world_tick writes Wind.any_player_120_life (Main.cs:58863-58871) for the 0.35 cap
 crates/tr-app/src/rain.rs|Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2)|S1-L-2 - MakeRain/NewRain spawn gates (ZoneRain/shimmer/atmo/snow/cloudAlpha budget)
 crates/tr-core/src/bestiary.rs|pub fn kills_to_banner_item|S1-F-15 - bestiary kill thresholds via KillsToBanner overrides (CommonEnemyUICollectionInfoProvider.cs:21-34, ItemID.cs:1303-1304)
@@ -126,7 +126,7 @@ crates/tr-app/src/ui/char_creation.rs|pub fn randomize_player|S1-H-11 - characte
 docs/ANALYSIS.md|## The RNG-order contract (S1-A-10)|S1-A-10 - the RNG-order contract and its review checklist (the four C# RNG sources, stream identity + draw order)
 crates/tr-core/src/wld/mod.rs|fn s1_j_2_world_header_identity_roundtrips_in_wld|S1-J-2 - world header identity fields (generator version, GUID, world id, LastPlayed) persisted and roundtripped (WorldFile.cs:1225-1227,1251,1756)
 crates/tr-core/src/world.rs|pub generator_version|S1-J-2 - world identity fields stored on World for .wld header/footer/flags
-crates/tr-app/src/ui/framework.rs|pub fn bubble_chain|S1-H-1 - the UIElement childв†’parent event bubble (UIElement.cs:414-547) as a parent-chain walk over Element.parent
+crates/tr-app/src/ui/framework.rs|pub fn bubble_chain|S1-H-1 - the UIElement child→parent event bubble (UIElement.cs:414-547) as a parent-chain walk over Element.parent
 crates/tr-render/src/clip.rs|pub struct ClipStack|S1-H-2 - the OverflowHidden scissor (UIElement.cs:199-238/252-269) as a per-instance clip rect, nested pushes intersected
 crates/tr-render/src/sprite.rs|pub fn push_clip|S1-H-2 - SpriteRenderer stamps the clip stack onto every instance (sprite.wgsl discards outside), replacing the list break-gates
 crates/tr-app/src/ui/uistate.rs|pub fn resolve_in_list|S1-H-2 - the UIList infinite-height parent (UIElement.cs:288-291) for percent-height children
@@ -162,7 +162,7 @@ crates/tr-app/src/npc.rs|fn update_frost_legion|R-25-1 - the Frost Legion trio r
 crates/tr-app/src/render/player_layers.rs|s1_g_15_the_back_arm_keeps_the_under_skin_layer_under_a_chest_armor|S1-G-15 - the composite arm stacks follow the C#'s armor paths (PlayerDrawLayers.cs:1294-1302 the Players[5] under-skin layer under a chest armor, :3600-3661 the front arm's shoulder skin only in the no-armor branch, PlayerDrawSet.cs:1984-1987 hideCompositeShoulders on body row 5)
 crates/tr-app/src/world_sim/gfx_quality.rs|fn apply|S1-B-6 - the gfxQuality budgets: the adaptive loop (Main.cs:16960-17001), the qaStyle overrides (:17056-17065), maxDustToDraw/Gore.goreTime/the Liquid.cycles+curMaxLiquid pair (:17077-17091)/RenderPhases (:17085-17101) and the snow-dust budget (:13057)
 crates/tr-app/src/ui/coin_slot.rs|ForceSlotState|S1-H-9 - the CoinSlot display-state machine (CoinSlot.cs verbatim) wired at the transfer tails + UpdateSlotAnims per frame
-crates/tr-app/src/app/mod.rs|fn can_pause_game|S1-B-3 вЂ” the pause gates (CanPauseGame, the focus pause, the stepper gate)
+crates/tr-app/src/app/mod.rs|fn can_pause_game|S1-B-3 — the pause gates (CanPauseGame, the focus pause, the stepper gate)
 crates/tr-app/src/player.rs|fn brain_of_confusion_dodge|S1-C-1 - the dodge family: Player.Hurt's roll block (Player.cs:38214-38241) sash->belt->brain->shadow with the SetImmuneTimeForAllTypes 120/80 pair, the fold arms (963/984/6189/3223 + buff 59) and the reset/decay sites
 crates/tr-app/src/npc.rs|fn is_damage_dodgeable|S1-C-1 - the contact path's no-dodge gate: NPC.IsDamageDodgeable (NPC.cs:78744-78753) keyed on the SkeletronHead(35)/SkeletronPrime(127) kinds reading ai[1] != 2f, and the contact block restructured to Update_NPCCollision's order (Player.cs:31387-31426) - DamageVar(-luck) -> thorns on the PRE-hit !immune gate -> Hurt(dodgeable), so a dodged contact still reflects
 crates/tr-app/src/projectile.rs|fn is_damage_dodgeable|S1-C-1 - Projectile.IsDamageDodgeable (Projectile.cs:15064-15071): the Moon Lord exactly-9999 shots (871-874/919/923-924) are not dodgeable; damage_player passes it to Player.hurt with the single-hit kill firing regardless of the dodge
@@ -186,8 +186,8 @@ crates/tr-app/src/world_events.rs|struct WorldEvents|S1-F-14 - the missing world
 crates/tr-app/src/render/tiles.rs|fn sliced_light|S1-G-9 - the per-slice GetFinalLight chain of DrawSingleTile_SlicedBlock: average the neighbourhood slice with the tile's RAW light then tint + actuation x0.4 (TileDrawing.cs:3578-3581, :3634-3637, :4391-4402; :3528's vector is unghosted because :4358 takes tileLight by value)
 crates/tr-app/src/render/tiles.rs|fn push_sliced|S1-G-9 - the sliced block draws both arms through sliced_light with the Glow-coating all-One _glowPaintColorSlices replacement (:3530-3533, :3611-3614) and the paint byte, reading the raw light itself so the actuation ghost cannot apply twice
 crates/tr-app/src/map_layers.rs|pub(crate) fn map_layers_draw|S1-L-4 - the map icon overlay layers ride Main.cs:66551 registration (MapIconOverlay.cs + Map/*Layer*.cs) over MapOverlayDrawContext: the spawn/bed markers, the BossBag set (ItemID.cs:1383), the ping pool (100-cap, 15 s, 5-row 10 Hz), the gated digtoise/team-spawn/pylon bodies
-crates/tr-core/src/particles.rs|pub fn new_dust|S1-E-1 вЂ” the shared DustPool: the verbatim NewDust family, the pressure bands, the ChildSafety gate
-crates/tr-core/src/particles.rs|pub fn update_dust|S1-E-3 вЂ” the shared UpdateDust loop (the verbatim skeleton, the double-armed chain reading)
+crates/tr-core/src/particles.rs|pub fn new_dust|S1-E-1 — the shared DustPool: the verbatim NewDust family, the pressure bands, the ChildSafety gate
+crates/tr-core/src/particles.rs|pub fn update_dust|S1-E-3 — the shared UpdateDust loop (the verbatim skeleton, the double-armed chain reading)
 crates/tr-app/src/npc.rs|pub fn carrier_index|S1-D-6 - the realLife carrier pool: the strike lands on the carrier's life (NPC.cs:81374-81378), the segments mirror it and die with it (checkDead's carrier guard :78040-78042 - no segment loot); the classic families' links die with their leader (:51425-51433), the Transform(13)/(15) split stays the EoW's rule (:51498-51519); the Destroyer's 80000 pool (:10667) and the crawltipede tail's x10 damage (:15316)
 crates/tr-app/src/projectile.rs|fn ai_flairon_bubble|S1-D-4b-1 - the missing projectile AI arms: the aiStyle-70 Flairon Bubble (Projectile.cs:30304-30354), the aiStyle-133 Dark Mage raise marker (:36435-36453, the Opacity ramp), the aiStyle-187 Insanity shadow (:42502-42634) and the aiStyle-189 Volcano/Cascade Explosion (:42264-42371); the four proj_data rows gain the C# alpha = 255 + the 1125 local-immunity pair
 crates/tr-app/src/ambient_sound.rs|pub fn critter_legacy_voice|S1-E-25 - the orphaned ambience emitters wired: the critter table's caller rides the NPC loop (NPC.cs:90323) with the legacy zombie-family voice table (LegacySoundPlayer.cs:1051-1076/:1099-1213), the liquid-merge cues ride LiquidSystem::drain_merge_events into Audio::play_liquid_change (Liquid.cs:1345-1347, the trackable Style-getter variation pick + case 19's Splash_4), and the thunder strike models case 43's re-roll-on-playing slot loop over tracked SoundInstanceThunder sinks plus the 2^pitch rate resample (LegacySoundPlayer.cs:454-476)
@@ -288,10 +288,10 @@ crates/tr-app/src/projectile.rs|fn ai_baby_bird|S1-D-4b-5c - the aiStyle-158 Bab
 crates/tr-app/src/projectile.rs|fn ai_twins_minion|S1-D-4b-6 - the aiStyle-66 minion arm (Projectile.cs:29604-30161): the 387 Retanimini / 388 Spazmamini / 533 Deadly Sphere parameter ladder, the summon-flag keep-alive pin, the twins_separation push, the whip-then-scan target search, the num524 leash, the ai[0] state machine (follow/return/388 charge/533 spin+dash ladders), the 387's 389 bolt at damage*1.15 with timeLeft 300, the 388/533 intercept (AI_066_TryInterceptingTarget :42372-42406 + Utils.GetChaseResults/SolveQuadratic Utils.cs:645-728)
 crates/tr-app/src/map.rs|pub fn unlock_map|S1-L-3 second pass - the map reveal driver: UnlockMapSection's 200x150 section clamped into the 40 inset (WorldMap.cs:109-138, both DebugOptions.unlockMap modes via /map, ToolkitDebugCommands.cs:480-494) walked over every section by unlock_map, plus the Main.mapTime/mapTimeMax export throttle (Main.cs:801-803, :61818-61821, LegacyLighting.cs:349-373) fed by gfx_quality.map_time_max
 crates/tr-app/src/app/equip_swap.rs|fn swap_equip_target|S1-H-5 - ItemSlot's right-click equip ladder: SwapEquip's dye/grapple/mount/minecart/light-pet/vanity-pet/armour arms (ItemSlot.cs:3291-3358), ArmorSwap's duplicate guards and first-unlocked-empty scan (:3569-3638), DyeSwap's round-robin counter (:3540-3567) and SwapVanityEquip's guard chain (:1874-1877)
-crates/tr-app/src/app/netglue.rs|fn send_chest_contents_to|S1-E-27 вЂ” the chest/sign/wiring/buff message families: 31 RequestChestOpen answers SendChestContentsTo (155 + one 32 per slot, NetMessage.cs:1873-1880) plus 33 to the asker and 80 to the others, the rigged chest (tile 467, frameX / 36 == 4) also firing Wiring.HitSwitch + 59 (MessageBuffer.cs:1868-1895); 32/47/59 relay to the other clients, 33's rename pushes 69, 53 pushes the full 54 list; the client's 33 places the slot's tile, 69/155/32 maintain the lazy world_chests through App::materialise_chest_slot and 54 replaces an NPC's buff list
-crates/tr-app/src/net.rs|pub const CHEST_OPEN_REQUEST|S1-E-27 вЂ” the twelve missing message ids with bodies and C2s/S2c codecs: 31/32/33 (MessageBuffer.cs:1868-1982, the name gated by the length byte and written as BinaryWriter.Write(string)), 46/47 (:2366-2405), 50/53/54 (:2454-2480/:2565-2593), 59 (:2682-2693), 69 (:3059-3078), 80 (:3216-3227) and 155 (:4429-4438)
-crates/tr-app/src/signs.rs|pub(crate) fn find_or_create|S1-E-27 вЂ” Sign.ReadSign/FindOrCreateSign (Sign.cs:27-58) and TextSign (:77-80) over World.signs: the 2-wide sign's origin resolved from frameX, a missing record created at the origin, and a dead tile killing the record
-crates/tr-app/src/chest.rs|pub(crate) const fn unplaced_tile|S1-E-27 вЂ” the lazy chest array's materialised-but-unplaced slot marker: distinct from removed_tile so net writes land, unreachable by find_chest so no lookup matches it before the 33/69 body assigns the real tile
+crates/tr-app/src/app/netglue.rs|fn send_chest_contents_to|S1-E-27 — the chest/sign/wiring/buff message families: 31 RequestChestOpen answers SendChestContentsTo (155 + one 32 per slot, NetMessage.cs:1873-1880) plus 33 to the asker and 80 to the others, the rigged chest (tile 467, frameX / 36 == 4) also firing Wiring.HitSwitch + 59 (MessageBuffer.cs:1868-1895); 32/47/59 relay to the other clients, 33's rename pushes 69, 53 pushes the full 54 list; the client's 33 places the slot's tile, 69/155/32 maintain the lazy world_chests through App::materialise_chest_slot and 54 replaces an NPC's buff list
+crates/tr-app/src/net.rs|pub const CHEST_OPEN_REQUEST|S1-E-27 — the twelve missing message ids with bodies and C2s/S2c codecs: 31/32/33 (MessageBuffer.cs:1868-1982, the name gated by the length byte and written as BinaryWriter.Write(string)), 46/47 (:2366-2405), 50/53/54 (:2454-2480/:2565-2593), 59 (:2682-2693), 69 (:3059-3078), 80 (:3216-3227) and 155 (:4429-4438)
+crates/tr-app/src/signs.rs|pub(crate) fn find_or_create|S1-E-27 — Sign.ReadSign/FindOrCreateSign (Sign.cs:27-58) and TextSign (:77-80) over World.signs: the 2-wide sign's origin resolved from frameX, a missing record created at the origin, and a dead tile killing the record
+crates/tr-app/src/chest.rs|pub(crate) const fn unplaced_tile|S1-E-27 — the lazy chest array's materialised-but-unplaced slot marker: distinct from removed_tile so net writes land, unreachable by find_chest so no lookup matches it before the 33/69 body assigns the real tile
 crates/tr-app/src/collision.rs|pub fn no_slope_collision|S1-E-13d - Collision.noSlopeCollision (Collision.cs:2033-2133): TileCollision without the slope gates (:2059 has no slope() arm), the +0.01f up nudge kept (:2124) and the down arm's bare `ry - (y + Height)` (:2088)
 crates/tr-app/src/collision.rs|pub fn advanced_tile_collision|S1-E-13d - Collision.AdvancedTileCollision (Collision.cs:4422-4566): the forcedIgnoredTiles conjunct (:4449, SET_FOR_SANDSHARK), the neighbour-slope side exemptions (:4514-4518 / :4534-4538) and the gravDir-dependent -0.01f/+0.01f nudges (:4507 / :4557)
 crates/tr-app/src/collision.rs|pub fn hit_tiles|S1-E-13d - Collision.HitTiles (Collision.cs:3063-3108): the inclusive swept-box overlap (:3101), the maxTilesX clamp (:3027) and the effectOnly-only semantics (WorldGen.cs:63704-63707 returns before any removal)
@@ -343,14 +343,14 @@ crates/tr-app/src/debug_panel.rs|fn world_rows|S1-E-35 - the F3 World tab weathe
 crates/tr-core/src/edit.rs|pub fn kill_tile_sound|S1-E-21c - the WorldGen.KillTile_PlaySounds table (WorldGen.cs:66427-66575): the per-type tile-break cue family + style and the !fail shatter tail, played once per break from break_tile
 crates/tr-core/src/dd2.rs|pub fn monster_points_worth|S1-E-12 - the Old One's Army's per-tier kill worth: the GetMonsterPointsWorth dispatch (DD2Event.cs:546-554) to the three tier bodies (:1106-1130 / :1199-1223 / :1509-1528) with the 551-565 / 568-578 id bands, the wave-5 139 / wave-7 219 boss gates and the _downedDarkMageT1/_downedOgreT2 latches that lift the wave-5/-7 kill caps (:993, :1181)
 crates/tr-core/src/world.rs|pub fn report_pumpkin_moon_kill|S1-F-13b - the Pumpkin Moon family: the 16 NpcKind variants with the verbatim SetDefaults rows (NPC.cs:12929-13100, :13115-13197), the kind-type map (pumpkin_moon_type) feeding the boss cap and the kill points
-crates/tr-app/src/npc_chat.rs|fn get_chat|S1-E-10 вЂ” town NPC chatter/dialogue selection (NPC.GetChat port)
-crates/tr-app/src/npc_chat.rs|struct ChatContext|S1-E-10 вЂ” town NPC chatter/dialogue selection (state passed to chat ladder)
-crates/tr-app/src/npc_chat.rs|struct Flags|S1-E-10 вЂ” town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
-crates/tr-app/src/lang.rs|fn dialog|S1-E-10 вЂ” town NPC chatter/dialogue selection (LegacyDialog lookup)
-crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 вЂ” town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
+crates/tr-app/src/npc_chat.rs|fn get_chat|S1-E-10 — town NPC chatter/dialogue selection (NPC.GetChat port)
+crates/tr-app/src/npc_chat.rs|struct ChatContext|S1-E-10 — town NPC chatter/dialogue selection (state passed to chat ladder)
+crates/tr-app/src/npc_chat.rs|struct Flags|S1-E-10 — town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
+crates/tr-app/src/lang.rs|fn dialog|S1-E-10 — town NPC chatter/dialogue selection (LegacyDialog lookup)
+crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 — town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
 crates/tr-core/src/gore.rs|pub struct Gore|S1-E-4 - gore particle system port
 crates/tr-core/src/gore_id.rs|pub const GORE_COUNT|S1-E-4 - GoreID.Sets tables port
-crates/tr-core/src/loot.rs|pub struct SlimeBodyItemDropRule|S1-E-14 вЂ” the skipped loot rule classes and conditions (the four rules, NamedNPC, RedHatSkeletron)
+crates/tr-core/src/loot.rs|pub struct SlimeBodyItemDropRule|S1-E-14 — the skipped loot rule classes and conditions (the four rules, NamedNPC, RedHatSkeletron)
 crates/tr-app/src/loot_db.rs|mod s1_e_14a_tests|S1-E-14a - the whole RegisterBoss subtree spliced (gen_loot.py rule-local reference model, OneFromRulesRule chance ctor, DropOneByOne.Parameters); per-boss registration tests
 crates/tr-app/src/app/rng.rs|pub(crate) fn global(&mut self) -> &mut UnifiedRandom|S1-A-11 - NamedRngs::global stands in for the bare Main.rand draws outside every swap (Main.cs:1291-1292, vanilla seeds it DateTime.Now.Ticks at :6462-6464 - the port's world-seed deviation is recorded in ANALYSIS S1-A-10 "The S1-A-11 runtime migration"); every runtime stage body draws its named UnifiedRandom stream and the splitmix bridge fields are gone
 crates/tr-app/src/app/frame.rs|self.update_world_frame(dt, screen);|S1-B-8 - the frame orchestrator is a phase list: the in-world branch delegates to frame::world::update_world_frame (one fn per phase site, Main.cs:17745-17822), the draw region lives in frame::draw::draw_region (Main.DoDraw verbatim with its destructure), and the order pins + the 27 s1_b_3_* gate pins guard the split
@@ -424,18 +424,17 @@ crates/tr-app/src/player.rs|the_movement_speed_accessories_stack_their_rows|S1-C
 crates/tr-app/src/buff_effects.rs|pub fn apply_debuff_effect_arm|S1-E-7 wave B - the UpdateBuffs DEBUFF block (Player.cs:10049-10317, 47 arms): control debuffs 46/47/156/36, ichor 69 -15 def, honey 48, shadow dodge 59, palladium 58, titanium storm 306, chaos 88, lightning 399/400, whip rows 311/308/314/312/365, utility potions 104-112/119/121-124/366, caps 110/150/348, lifeforce 113 (statLifeMax/5/20*20), endurance 114, rage 115, inferno 116 (light + 60-tick cadence; NPC scan deferred), wrath 117, stinky 120 (talkNPC reset), lucky 257 tiers, dryad ward 165, electrified 144; pure DebuffEffects accumulator, player.rs wiring owned by wave A merge
 crates/tr-app/src/npc_target.rs|pub fn target_closest|S1-D-3p - the shared NPC target selection (NPC.cs:77652-77781): TargetClosest/TryTrackingTarget/SetTargetTrackingValues - the Manhattan-minus-aggro scan, the npcTypeNoAggro +1000 penalty, the tank-pet CanHit steal, the int-truncated targetRect, the aiStyle-3 bottom-edge directionY, the oldTarget facing-inheritance gate, the confused flip, the collide-gated netUpdate; update_zombie is the wired caller
 crates/tr-core/src/edit/wall.rs|pub fn break_wall|S1-K-4b - the wall edit family split out of edit.rs: WorldGen.KillWall/PlaceWall (break_wall/place_wall) + after_wall_edit (touch + framing::reframe_area 5x5), moved verbatim, re-exported from edit
-crates/tr-app/src/npc/data.rs|fn extra_frames_count|BUG-22 вЂ” NPCID.Sets.ExtraFramesCount
+crates/tr-app/src/npc/data.rs|fn extra_frames_count|BUG-22 — NPCID.Sets.ExtraFramesCount
 crates/tr-app/src/npc/data.rs|182 => NpcKind::PirateDeckhand|S1-F-1 - the NPC protocol id bijection: the pirate/probe/drone band off the 78..84 Deerclops/Skeletron-Prime ids, 85..88 decodable, #[deny(unreachable_patterns)] on both tables
 crates/tr-app/src/npc/data.rs|fn ai3_walk_speed|S1-D-3c - the aiStyle-3 walk-speed table: AI_003_Fighters per-type velocity caps (the num107 default 1f, the num83 group 1.5f with its rows, the cap-2/cap-3 groups, the shooters group and the Martian engineer own arm) - NPC.cs:57403-59800
 crates/tr-app/src/npc/data.rs|pub fn hit_sound|S1-E-21a - the NPC hit and death sounds: the per-kind NPC.HitSound/NPC.DeathSound table (NPC.cs:6475-6477, the null guard included) with the NPC_Hit_N/NPC_Killed_N cue families (the sound ids 3/4) and the DD2/Deerclops trackables; the strike plays the kind own hit cue (NPC.StrikeNPC, :81544-81553) and the death its death cue (NPC.checkDead, :91852)
 crates/tr-app/src/npc/data.rs|fn moon_wave_kind|S1-F-13b - the wave roster spawns: the moon arms map the ladder's vanilla picks through moon_wave_kind and spawn the ported kinds at the found tile (NewNPC Bottom), the 11 walkers on the C#'s per-type speed rows (AI_003's scarecrow arm), the render sheets resolving
 crates/tr-app/src/npc/data.rs|pub fn to_u16|S1-G-1 npc data split - the static NPC data tables (SlimeVariant/SlimeStats, PumpkinDefaults, the NpcKind lookup impl: protocol ids, sounds, sizes, frames, stats; the net-id resolvers) moved verbatim out of npc.rs into npc/data.rs, re-exported from npc
+crates/tr-app/src/drawdata_cases_a.rs|pub fn apply_cases_a|S1-F-9d slice A - the static GetTileDrawData cases: LilyPad 518 liquid float + oasis 530/sea-oats 529 biome rows + ALL 38 glow-switch case ids (TileDrawing.cs:6049-6507) with the 1998/2016/2040/2014 stride unwinds and the 93/104 tileTop rewrites; delegated after draw_data + apply_world_corrections
 crates/tr-core/src/dd2_victory.rs|pub fn should_drop_crystals|S1-E-12b - the Old One's Army's victory slice: WinInvasionInternal's 3/15/60 medals + >=n downed latches (DD2Event.cs:314-342), CheckProgress's wave-complete medal rows (:405-449), StartVictoryScene's won/crystal(2,2)/portal(0,1) plan with the no-crystal early return (:481-505), the wave-break skip >60->60 + the 36px stand check (:1765-1801) and ShouldDropCrystals's per-wave crystal budget (:815-912, the OLD-budget subtraction + no-default tier tables); decisions draw no RNG (the drops' rolls ride Item.NewItem on the caller's stream)
 crates/tr-app/src/npc_spatial.rs|fn nearest_living_kind|S1-D-8b - the NPC spatial hash (cell buckets over NpcSnapshot, carrier family reads NpcSpatial)
 crates/tr-app/src/world_sim/npcs.rs|fn carrier_link_pre_pass|S1-D-8b - the migrated saucer/scutlix/dutchman carrier pre-pass (spatial scans, kill mirror)
 crates/tr-app/src/app/netglue.rs|fn item_state_of|S1-I-4a - the world-item send cadence (wave A of S1-I-4): the join burst (one 21 ItemDrop + one 22 ItemOwner per live slot to the joining client, MessageBuffer.cs:843-850, the 22 body carrying the C# field defaults - 255 unreserved WorldItem.cs:139, grab-delay ints 0 :22-26) and the 1 Hz round-robin heartbeat (every 60th UpdateServer tick one slot gets an unconditional 21, Main.cs:64570-64580; the port walks the live Vec on net_play_counter/last_item_update, batching 6 ticks per 10 Hz cadence call); the 10 Hz change-diff is the recorded stand-in for the event-driven SyncItem fan-out (WorldItem.cs:612-615), deviations in ANALYSIS.md "The item send cadence"
-crates/tr-app/src/npc/data.rs|fn frost_moon_defaults|S1-F-13c slice A - the Frost Moon family's first 7 kinds (338-344): the verbatim SetDefaults rows (NPC.cs:13281-13368), the net ids/sounds/debuffs/points tables, frost_moon_type feeding the kill points + the boss cap, the walkers' AI_003 speed rows (:57554/:57606), the FindFrame arms + the SNOW_SHEETS render rows; the PresentMimic/Everscream ride documented AI stand-ins, code-only mode (tests written not run) - ANALYSIS "The Frost Moon family, slice A"
-crates/tr-app/src/render/entities.rs|const SNOW_SHEETS|S1-F-13c slice A - the frost wave kinds' draw sheets (NPC_338..344) resolving at the C#'s Main.npcFrameCount rows (Main.cs:67117-67118: the trio 15, PresentMimic 6, GingerbreadMan 3, Yeti/Everscream 10), the draw arm + the bestiary portraits rest the SetDefaults boxes
 crates/tr-app/src/test_world_helpers.rs|pub fn test_scratch|fix/test-temp-path-isolation - the shared per-test scratch-dir helper (tr-test-<pid>-<name> under the system temp dir): every fixed-name test scratch output moved into a unique dir so concurrent gates in sibling worktrees never race on %TEMP%; census + deferred parallel verification in ANALYSIS.md "Test temp-path isolation"
 crates/tr-app/src/app/net_npc_sync.rs|pub(crate) fn update_network_code|S1-I-4b -- NPC.cs:90583-90631: the per-NPC 23 SendData cadence gate (netSpam 3*30 / bosses 3*5, town clamp, pending-cooldown retry, recheck+stream+town-60 tail order)
 crates/tr-app/src/app/net_npc_sync.rs|fn send_state|S1-I-4b -- NetMessage.cs:1719-1749/1814-1825: the 23 fan-out (priority clears all counters; 4-skip per-client section cull; targeted send resets the slot state)
@@ -457,9 +456,9 @@ crates/tr-app/src/eoc_fight.rs|pub fn dash_velocity|EOC-FIGHT-2 -- NPC.cs:20140-
 crates/tr-app/src/eoc_fight.rs|pub fn servant_due|EOC-FIGHT-3 -- NPC.cs:20128-20138: the servant burst cadence (110 classic / 44 expert)
 crates/tr-app/src/eoc_fight.rs|pub fn flees_at_dawn|EOC-FIGHT-4 -- NPC.cs:20066-20073: Main.IsItDay() | dead -> the climb-away and EncourageDespawn(10)
 crates/tr-app/src/world_sim/editing.rs|use_suspicious_looking_eye|EOC-FIGHT-5 -- Player.cs:43759-43771: the Suspicious Looking Eye's night + SummonItemCheck gates and NPC.SpawnOnPlayer(4)
-crates/tr-app/src/world_sim/items.rs|pending -= take|ITEMS-2 РІР‚вЂќ Player.GetItem's slot walk fills to Item.CommonMaxStack (9999) and leaves the surplus in the world (Player.cs:39493-39518, Player.cs:35085-35087)
-crates/tr-app/src/item.rs|const FRICTION_X: f32 = 0.95|ITEMS-4 РІР‚вЂќ WorldItem.MoveInWorld's air physics: gravity 0.1/maxFall 7 (WorldItem.cs:363-364), velocity.X *= 0.95 + the <0.1 snap (:854-860), the flush stop of Collision.TileCollision (Collision.cs:2446-2451)
-crates/tr-app/src/world_sim/editing.rs|mod item_mechanics|ITEMS-1/3 РІР‚вЂќ the item-mechanics slice: KillTileРІвЂ вЂ™drop (WorldGen.cs:64057-64062, :63947-63958), pickupРІвЂ вЂ™stack, torch placement (Player.cs:39580)
+crates/tr-app/src/world_sim/items.rs|pending -= take|ITEMS-2 вЂ” Player.GetItem's slot walk fills to Item.CommonMaxStack (9999) and leaves the surplus in the world (Player.cs:39493-39518, Player.cs:35085-35087)
+crates/tr-app/src/item.rs|const FRICTION_X: f32 = 0.95|ITEMS-4 вЂ” WorldItem.MoveInWorld's air physics: gravity 0.1/maxFall 7 (WorldItem.cs:363-364), velocity.X *= 0.95 + the <0.1 snap (:854-860), the flush stop of Collision.TileCollision (Collision.cs:2446-2451)
+crates/tr-app/src/world_sim/editing.rs|mod item_mechanics|ITEMS-1/3 вЂ” the item-mechanics slice: KillTileв†’drop (WorldGen.cs:64057-64062, :63947-63958), pickupв†’stack, torch placement (Player.cs:39580)
 crates/tr-core/src/liquid.rs|set_skip|liquids - the Tile.skipLiquid port (Liquid.cs:586-587/:1083-1105/:1173)
 crates/tr-core/src/liquid.rs|liquid_sim|liquids - the flow verification suite (fall/spread/obsidian/mass)
 crates/tr-app/src/render/entities.rs|fn generic_anchor_shift_y|offsets - the NPC and boss draw anchors follow the C# collapse (Main.cs:25511-25512: the Draw origin cancels halfSize, pivot-only) and the Zombie NPCAddHeight misattribution is removed (Main.cs:22037-22039 is the Devourer's 7/8/9)
@@ -469,24 +468,24 @@ crates/tr-app/src/render/player_layers.rs|fn t1_player_arm_layer_order_matches_c
 crates/tr-app/src/render/player_layers.rs|fn t2_player_frame_offsets_match_csharp|player-draw: headgear shift pinned per walk row (Main.cs:66638-66662)
 crates/tr-app/src/render/player_layers.rs|fn t3_no_head_torso_gap|player-draw: head-torso offset pinned gapless across the walk band
 crates/tr-app/src/render/player_layers.rs|fn t4_player_sleeve_sheets_are_packed|player-draw: sleeve/under-arm sheets pinned packed (C# :1346-1362/:3698-3705)
-crates/tr-app/src/ui/char_select.rs|fn inner_list|WAVE2/F1 РІР‚вЂќ the select screens' UIList scroll offset: `_innerList.Top = -GetValue()` (UIList.cs:181) applied to the rows, the viewport left fixed
-crates/tr-app/src/ui/char_select.rs|pub fn scroll_wheel(scroll: f32, delta: i32|WAVE2/F1 РІР‚вЂќ the list wheel: `ViewPosition -= ScrollWheelValue` at 120 px/notch, clamped by SetView (UIList.cs:107-114, UIScrollbar.cs:45/75)
-crates/tr-app/src/ui/char_select.rs|fn scrollbar_press|WAVE2/F1 РІР‚вЂќ the UIScrollbar drag latch and track jump (UIScrollbar.cs:126-143)
-crates/tr-app/src/ui/panel.rs|fn scrollbar_handle_at|WAVE2/F1 РІР‚вЂќ GetHandleRectangle at an arbitrary view position (UIScrollbar.cs:85-94), feeding both the draw and the drag hit-test
-crates/tr-app/src/app/flow.rs|fn front_wheel|WAVE2/F1 РІР‚вЂќ the front screens' wheel route into the live UIList (UIList.cs:107-114 via UserInterface.cs:219-222)
-crates/tr-app/src/app/flow.rs|fn select_layout|WAVE2/F1 РІР‚вЂќ one scrolled layout for front_hit, the click tables and the draw (Review Focus 2)
-crates/tr-app/src/ui/char_select.rs|fn f1_the_last_cards_delete_hits_delete_not_new|WAVE2/F1 РІР‚вЂќ the A6 numeric pin: the last card's Delete is Delete, never New
-crates/tr-app/src/app/flow.rs|fn f1_delete_on_a_card_without_a_save_file_explains_instead_of_dropping_the_click|WAVE2/F1 РІР‚вЂќ the dead-delete notice (front_hint) instead of a silent drop
-crates/tr-app/src/player_file.rs|fn favorite_marker_path|WAVE2/F3 РІР‚вЂќ the character favourite is the `<stem>.trfav` sidecar beside the `.plr` (the FavoritesFile stand-in), never the re-writable file's metadata bit
-crates/tr-app/src/player_file.rs|fn set_favorite_marker|WAVE2/F3 РІР‚вЂќ the star click's store write/remove: `FileData.SetFavorite` -> `FavoritesFile.SaveFavorite` (IO/FileData.cs:48-54, IO/FavoritesFile.cs:27-36) applied to the character marker
-crates/tr-app/src/app/flow.rs|set_favorite_marker(|WAVE2/F3 РІР‚вЂќ `CardAction::ToggleFavorite` saves the character star immediately (was in-memory only, A8)
-crates/tr-app/src/ui/save_list.rs|is_favorite_marker|WAVE2/F3 РІР‚вЂќ the `.plr` listing reads the favourite sidecar back into the card (`list_players`), ORing a legacy header bit
-crates/tr-app/src/app/flow.rs|fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it|WAVE2/F3 РІР‚вЂќ the star-click pin: click -> `.trfav` on disk -> re-list shows the star -> second click removes it
-crates/tr-app/src/ui/save_list.rs|fn the_player_favourite_marker_survives_a_resave_and_reads_back|WAVE2/F3 РІР‚вЂќ the re-save pin: rewriting the `.plr` keeps the star, un-favouriting clears it, the favourite sorts first
-crates/tr-app/src/ui/world_creation.rs|fn evil_row_label|ui-texts - the world-evil row reads `Lang.misc[103]/[101]/[102]` (`LegacyMisc.103` Random, `.101` Corruption, `.102` Crimson РІР‚вЂќ UIWorldCreation.cs:454-464, Lang.cs:484) instead of `Lang.menu[101..103]`, which are the language options "Background Off"/"Select language"/"Language"; row order Random/Corruption/Crimson (and the size/difficulty enum order) is unchanged
+crates/tr-app/src/ui/char_select.rs|fn inner_list|WAVE2/F1 вЂ” the select screens' UIList scroll offset: `_innerList.Top = -GetValue()` (UIList.cs:181) applied to the rows, the viewport left fixed
+crates/tr-app/src/ui/char_select.rs|pub fn scroll_wheel(scroll: f32, delta: i32|WAVE2/F1 вЂ” the list wheel: `ViewPosition -= ScrollWheelValue` at 120 px/notch, clamped by SetView (UIList.cs:107-114, UIScrollbar.cs:45/75)
+crates/tr-app/src/ui/char_select.rs|fn scrollbar_press|WAVE2/F1 вЂ” the UIScrollbar drag latch and track jump (UIScrollbar.cs:126-143)
+crates/tr-app/src/ui/panel.rs|fn scrollbar_handle_at|WAVE2/F1 вЂ” GetHandleRectangle at an arbitrary view position (UIScrollbar.cs:85-94), feeding both the draw and the drag hit-test
+crates/tr-app/src/app/flow.rs|fn front_wheel|WAVE2/F1 вЂ” the front screens' wheel route into the live UIList (UIList.cs:107-114 via UserInterface.cs:219-222)
+crates/tr-app/src/app/flow.rs|fn select_layout|WAVE2/F1 вЂ” one scrolled layout for front_hit, the click tables and the draw (Review Focus 2)
+crates/tr-app/src/ui/char_select.rs|fn f1_the_last_cards_delete_hits_delete_not_new|WAVE2/F1 вЂ” the A6 numeric pin: the last card's Delete is Delete, never New
+crates/tr-app/src/app/flow.rs|fn f1_delete_on_a_card_without_a_save_file_explains_instead_of_dropping_the_click|WAVE2/F1 вЂ” the dead-delete notice (front_hint) instead of a silent drop
+crates/tr-app/src/player_file.rs|fn favorite_marker_path|WAVE2/F3 вЂ” the character favourite is the `<stem>.trfav` sidecar beside the `.plr` (the FavoritesFile stand-in), never the re-writable file's metadata bit
+crates/tr-app/src/player_file.rs|fn set_favorite_marker|WAVE2/F3 вЂ” the star click's store write/remove: `FileData.SetFavorite` -> `FavoritesFile.SaveFavorite` (IO/FileData.cs:48-54, IO/FavoritesFile.cs:27-36) applied to the character marker
+crates/tr-app/src/app/flow.rs|set_favorite_marker(|WAVE2/F3 вЂ” `CardAction::ToggleFavorite` saves the character star immediately (was in-memory only, A8)
+crates/tr-app/src/ui/save_list.rs|is_favorite_marker|WAVE2/F3 вЂ” the `.plr` listing reads the favourite sidecar back into the card (`list_players`), ORing a legacy header bit
+crates/tr-app/src/app/flow.rs|fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it|WAVE2/F3 вЂ” the star-click pin: click -> `.trfav` on disk -> re-list shows the star -> second click removes it
+crates/tr-app/src/ui/save_list.rs|fn the_player_favourite_marker_survives_a_resave_and_reads_back|WAVE2/F3 вЂ” the re-save pin: rewriting the `.plr` keeps the star, un-favouriting clears it, the favourite sorts first
+crates/tr-app/src/ui/world_creation.rs|fn evil_row_label|ui-texts - the world-evil row reads `Lang.misc[103]/[101]/[102]` (`LegacyMisc.103` Random, `.101` Corruption, `.102` Crimson вЂ” UIWorldCreation.cs:454-464, Lang.cs:484) instead of `Lang.menu[101..103]`, which are the language options "Background Off"/"Select language"/"Language"; row order Random/Corruption/Crimson (and the size/difficulty enum order) is unchanged
 crates/tr-app/src/ui/world_creation.rs|fn back_label|ui-texts - the world-creation Back/Create fat buttons resolve `UI.Back`/`UI.Create` (UIWorldCreation.cs:637/:650) through the new `back_label`/`create_label` helpers instead of the "Back"/"Create" literals
 crates/tr-app/src/menu/pages.rs|fn confirm_delete_player_items|ui-texts - the menuMode 5 and 9 delete confirms read `Lang.menu[46]` + " " + name + "?" and the `Lang.menu[104]`/`[105]` Yes/No rows (Main.cs:49422-49425, :49676-49679) instead of literals; the per-function C# comments were un-rotated
-crates/tr-app/src/menu/pages.rs|fn confirm_discard_items|ui-texts - the menuMode 40 discard confirm reads `UI.PlayerCreateDiscardWarningWithName` (`{0}`), `РІР‚В¦NoName`, `РІР‚В¦Yes`, `РІР‚В¦No` (Main.cs:49441-49452) instead of literals
+crates/tr-app/src/menu/pages.rs|fn confirm_discard_items|ui-texts - the menuMode 40 discard confirm reads `UI.PlayerCreateDiscardWarningWithName` (`{0}`), `вЂ¦NoName`, `вЂ¦Yes`, `вЂ¦No` (Main.cs:49441-49452) instead of literals
 crates/tr-app/src/ui/housing.rs|fn label|ui-texts - the housing-query tooltip reads `Lang.inter[8]` (`LegacyInterface.8` = "Housing Query", Main.cs:42053) instead of the unresolved `Inter.8` key that printed itself
 crates/tr-app/src/app/flow.rs|fn apply_front_flow|ui-texts - the seed keyboard title reads `UI.EnterSeed` (UIWorldCreation.cs:706) through `ui::keyboard::enter_seed` instead of the literal "Enter Seed (Leave Blank For Random)"
 crates/tr-app/src/world_sim/npcs.rs|talk_to_npc|wire-npc-chat - the right-click talk action (Main.cs:42993-43083 + Player.cs:27494-27503)
@@ -509,3 +508,5 @@ crates/tr-app/src/npc_ai_style21.rs|pub fn ai_style21|S1-D-3 aiStyle-21 - the Bl
 crates/tr-app/src/npc_ai_style24.rs|pub fn ai_style_24|S1-D-3 aiStyle-24 - the bird family arm of NPC.AI (NPC.cs:25313-25537): the poop gate (BirdThatCanPoop NPCID.cs:10435, the column/LoS/RollOnlyBadLuckExtreme(50)-or-Cenx test, the 1080 BirdDroppings request), the owl init/night-roost scan, the OwlMimic Transform(317) core (NPC.cs:81084-81110), the perch/startle/flutter states, the roost descent, the flight (3f/4f macaw speeds, oldVelocity bounces, the 15-row ground probe) and the wet tail; Player.FindClosest + Luck.RollOnlyBadLuckExtreme ported with the RNG short-circuit pinned; UNWIRED code-only module, wiring is the merge step
 crates/tr-app/src/npc_ai_style28.rs|pub fn style28_step|S1-D-3 aiStyle-28 - the WoF Eye arm (NPC.AI's aiStyle==28 block, NPC.cs:26053-26208): the life/X/direction mirrors, the int-divided band midpoint with the +/-1 snap, the distance-scaled aim rotation, the localAI[1]/[2] 600-idle/45-shot pacing with the f64 hp ladder + expert arms, the CanHit gate before the counter reset, the 83 laser's 9/11 base + ladder and the one-step-ahead spawn; pure fn + Style28Context seam, wiring deferred (code-only mode), 9 witness tests written not run
 crates/tr-app/src/npc_ai_style29.rs|pub fn style29_step|S1-D-3 aiStyle-29 - the Hungry arm (NPC.cs:26209-26404) re-ported 1:1 as a pure step fn + Style29Context seam (the f64 hp ladder, the wall-half-width anchor, the dive truncation, the recoil third arm, the sprite/3.14f aim writes, the expert arms verbatim); UNWIRED code-only round - the live update_hungry keeps running, 12 witness tests written not run
+crates/tr-app/src/npc/data.rs|fn frost_moon_defaults|S1-F-13c slice A - the Frost Moon family's first 7 kinds (338-344): the verbatim SetDefaults rows (NPC.cs:13281-13368), the net ids/sounds/debuffs/points tables, frost_moon_type feeding the kill points + the boss cap, the walkers' AI_003 speed rows (:57554/:57606), the FindFrame arms + the SNOW_SHEETS render rows; the PresentMimic/Everscream ride documented AI stand-ins, code-only mode (tests written not run) - ANALYSIS "The Frost Moon family, slice A"
+crates/tr-app/src/render/entities.rs|const SNOW_SHEETS|S1-F-13c slice A - the frost wave kinds' draw sheets (NPC_338..344) resolving at the C#'s Main.npcFrameCount rows (Main.cs:67117-67118: the trio 15, PresentMimic 6, GingerbreadMan 3, Yeti/Everscream 10), the draw arm + the bestiary portraits rest the SetDefaults boxes
