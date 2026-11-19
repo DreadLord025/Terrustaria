@@ -1662,6 +1662,9 @@ pub(crate) fn draw_player(
         swing_anim_ticks: player.frame_inputs.swing_anim * 60.0,
         swing_max_ticks: player.frame_inputs.swing_anim_max * 60.0,
         use_animation: player.frame_inputs.use_animation,
+        // `sItem.type` — the useStyle-1 arm's per-item specials (the claw,
+        // the nudges, the BetterMeleeItemLocation set — S1-P-i04).
+        item_type: player.frame_inputs.item_type,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)

@@ -2182,6 +2182,19 @@ impl MountState {
         self.kind
     }
 
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-640`): the Scutlix
+    /// (type 9) locks the facing while its ability cooldown is at least half
+    /// the max (`_abilityCooldown < _data.abilityCooldown / 2`); every other
+    /// mount (and none) allows it.
+    pub(crate) fn allow_direction_change(&self) -> bool {
+        if self.kind == 9 {
+            return self
+                .data()
+                .map_or(true, |d| self.ability_cooldown < d.ability_cooldown / 2);
+        }
+        true
+    }
+
     pub(crate) fn frame(&self) -> i32 {
         self.frame
     }
@@ -2896,6 +2909,30 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    /// S1-P-i04 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): only
+    /// the Scutlix (9) gates on the ability cooldown's half-max window
+    /// (`abilityCooldown = 20`, `Mount.cs:1343-1421` — the row's
+    /// `ability_cooldown`); every other mount allows the turn.
+    #[test]
+    fn s1_p_i04_only_the_scutlix_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the turn");
+        m.set_mount(10, false); // the Unicorn
+        assert!(m.allow_direction_change(), "the Unicorn allows it");
+        m.set_mount(9, false); // the Scutlix
+        // `SetMount` floors the Scutlix cooldown at 20 (`Mount.cs:6236-
+        // 6243`, the port's `set_mount`): 20 >= 20/2 → LOCKED on equip.
+        assert!(!m.allow_direction_change(), "the equip floor locks it");
+        m.ability_cooldown = 11;
+        assert!(!m.allow_direction_change(), "11 >= 10 stays locked");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 >= 10 locks");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "9 < 10 opens the window");
+        m.ability_cooldown = 0;
+        assert!(m.allow_direction_change());
+    }
+
     #[test]
     fn the_cart_rows_carry_the_setas_minecart_body() {
         // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus

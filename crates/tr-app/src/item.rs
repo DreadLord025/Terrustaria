@@ -63,6 +63,12 @@ pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
 }
 
+/// `Item.useTurn` of the kind (`Item.SetDefaults`), false when unregistered
+/// — the swing direction gate's second term (`Player.cs:19837`, S1-P-i04).
+pub(crate) fn use_turn(kind: u16) -> bool {
+    registry::get(kind).map_or(false, |d| d.use_turn)
+}
+
 /// `Player.ItemCheck_StartActualUse`'s sound gate (`Player.cs:51681-51682`):
 /// `sItem.UseSound != null && !ItemID.Sets.SkipsInitialUseSound[sItem.type]`
 /// — the set is `{2350, 4870}` (`ItemID.cs:408`, the Recall Potion / Potion
