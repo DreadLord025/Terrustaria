@@ -1254,6 +1254,43 @@ fn portrait_data(
         (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
+        // The Frost Moon family, slice A (`S1-F-13c`): the same shape as
+        // the pumpkin arms above — the portrait rests the kind's
+        // `SetDefaults` box (`NPC.cs:13281-13368`): the trio + the
+        // Gingerbread Man the 18x40 humanoid box, the Present Mimic the
+        // 24x24 chest box, the Yeti the 38x78 box and the Everscream the
+        // 172x130 box.
+        (NpcKind::ZombieElf, _)
+        | (NpcKind::ZombieElfBeard, _)
+        | (NpcKind::ZombieElfGirl, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::PresentMimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        (NpcKind::GingerbreadMan, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Yeti, _) => (sheet_i, 78.0, 38.0, 78.0, white),
+        (NpcKind::Everscream, _) => (sheet_i, 130.0, 172.0, 130.0, white),
+        // S1-D-3ff wave A: the portrait rests the kind's `SetDefaults` box
+        // (`npc/data.rs::size`, the C# rows cited there) — the pumpkin/frost
+        // arms' shape.
+        (NpcKind::MotherSlime | NpcKind::DungeonSlime, _) => (sheet_i, 24.0, 36.0, 24.0, white),
+        (NpcKind::LavaSlime | NpcKind::IlluminantSlime | NpcKind::IceSlime | NpcKind::SpikedIceSlime, _) => {
+            (sheet_i, 18.0, 24.0, 18.0, white)
+        }
+        (NpcKind::CorruptSlime | NpcKind::Crimslime, _) => (sheet_i, 30.0, 40.0, 30.0, white),
+        (NpcKind::UmbrellaSlime, _) => (sheet_i, 26.0, 38.0, 26.0, white),
+        (NpcKind::CataractEye
+        | NpcKind::SleepyEye
+        | NpcKind::DialatedEye
+        | NpcKind::GreenEye
+        | NpcKind::PurpleEye, _) => (sheet_i, 32.0, 30.0, 32.0, white),
+        (NpcKind::DoctorBones
+        | NpcKind::TheGroom
+        | NpcKind::BaldZombie
+        | NpcKind::ZombieEskimo
+        | NpcKind::PincushionZombie
+        | NpcKind::SlimedZombie
+        | NpcKind::SwampZombie
+        | NpcKind::TwiggyZombie
+        | NpcKind::FemaleZombie
+        | NpcKind::ZombieRaincoat, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 

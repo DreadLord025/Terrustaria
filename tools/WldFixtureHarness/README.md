@@ -30,7 +30,10 @@ decompile is the source, only the global lookups become shim state).
   bodies in the C#'s own call shape (`SetTempToOngoing` →
   `SaveWorld_Version2` into a `MemoryStream`; version 326 + `FileMetadata.Write`
   + `Player.Serialize`, then the real AES-CBC envelope, key = IV =
-  UTF-16LE `"h3y_gUyZ"`, zero pad to 16).
+  UTF-16LE `"h3y_gUyZ"`, **PKCS7** padding — the bare `new RijndaelManaged()`
+  of `InternalSavePlayerFile`, `Player.cs:54734-54742`; S1-J-5c fixed the
+  harness's earlier zero-pad, which had mirrored the *read* path's
+  `PaddingMode.None` at `:55074`).
 * `Main.tileFrameImportant` is parsed from the **real** `decompiled/Terraria/
   Main.cs` at runtime (direct assignments, for-loop ranges,
   `AddEchoFurnitureTile` calls) — the fixture's importance bitmap is the game's
