@@ -463,13 +463,47 @@ pub(crate) struct App {
     /// store — the C#'s `Main.npc[]` on a client). Rebuilt into `npcs` in
     /// slot order for the render.
     pub(crate) net_npcs: HashMap<u32, crate::npc::Npc>,
-    /// The slots seen in the current `poll_net` batch: the `23` despawn diff.
-    pub(crate) net_npc_seen: Vec<u32>,
-    /// When each `23` slot was last heard from — a slot silent past
-    /// `NPC_STALE` is despawned (the host sends nothing when an NPC dies).
-    pub(crate) net_npcs_seen_at: HashMap<u32, Instant>,
     /// Set when the npc store changed and `self.npcs` must be rebuilt.
     pub(crate) net_npcs_dirty: bool,
+    /// S1-I-4d: the per-NPC `netSpam` throttle state keyed by the stable
+    /// `Npc.uid` (`NPC.cs:6133-6149`). The C# keeps it on the NPC; the port's
+    /// Vec compacts on death, so the state rides the uid, not the index.
+    pub(crate) net_npc_states: HashMap<u32, crate::app::net_npc_sync::NpcNetState>,
+    /// S1-I-4d: the `NpcSend` outbox the 60 Hz NPC cadence fills
+    /// (`net_npc_sync::update_network_code`), tagged with the sender's uid so
+    /// the 10 Hz drain resolves it to the current (post-compaction) slot.
+    /// Replaces the old whole-set 10 Hz broadcast.
+    pub(crate) net_npc_outbox: Vec<(u32, crate::app::net_npc_sync::NpcSend)>,
+    /// S1-I-4d: despawn `23` bodies the cadence queues when a uid it knew is no
+    /// longer in `npcs` (`NPC.cs:90385-90392`'s `life <= 0` arm, `:77991-77998`'s
+    /// timeLeft arm). The host's Vec compacts on death, so the cadence — not the
+    /// removed slot — emits the priority despawn.
+    pub(crate) net_npc_despawns: Vec<net::NpcInfo>,
+    /// S1-I-4d: uid → the wire slot index it last occupied (the despawn body's
+    /// `slot`, resolved before compaction shifts the Vec).
+    pub(crate) net_npc_uid_slot: HashMap<u32, u32>,
+    /// S1-I-4d: uid → the last `23` body the cadence saw (the change-detect
+    /// producer's reference + the despawn body's kind/position source).
+    pub(crate) net_npc_last_info: HashMap<u32, net::NpcInfo>,
+    /// S1-I-4d: the projectile cadence engine (`net_proj_sync::ProjSync`),
+    /// replacing `netglue::projectile_sync_plan`'s 10 Hz diff. Its per-slot
+    /// `netSpam` budget is the C#'s (`Projectile.cs:17210-17244`).
+    pub(crate) proj_sync: crate::app::net_proj_sync::ProjSync,
+    /// S1-I-4d: the `ProjSend` outbox the 60 Hz projectile cadence fills;
+    /// `net_tick` drains it through the existing `27`/`29` wires.
+    pub(crate) net_proj_outbox: Vec<crate::app::net_proj_sync::ProjSend>,
+    /// S1-I-4d interim producer: the last `27` body per local key. The C#'s
+    /// `netUpdate = true` comes from 337 AI sites (unwired); until they land,
+    /// a state change vs this reference arms `ProjSync::mark_dirty`, and a
+    /// vanished key emits the `29` kill. The send BUDGET is the faithful
+    /// `ProjSync` (`Projectile.cs:17210-17244`), not this diff.
+    pub(crate) net_proj_prev: HashMap<i32, net::ProjectileState>,
+    /// S1-I-4d: the NPC/projectile cadence's 60 Hz accumulator. The C# runs
+    /// `UpdateNetworkCode` per `UpdateNPC` (`NPC.cs:90513`) and the projectile
+    /// budget per `Projectile.Update` (`Projectile.cs:17210`); the port steps
+    /// both decision layers once per fixed step here, then drains the outboxes
+    /// on the 10 Hz `net_tick` below.
+    pub(crate) net_sync_cadence_timer: f32,
     /// The host's per-slot NPC bookkeeping: `(kind, generation)` — the
     /// generation bumps on a kind change so the client recreates the slot
     /// (`MessageBuffer.cs:1602-1613`'s test).
@@ -492,11 +526,6 @@ pub(crate) struct App {
     /// `Main.lastItemUpdate` (`Main.cs:64572-64576`): the round-robin slot the
     /// 1 Hz `21` heartbeat walks.
     pub(crate) last_item_update: usize,
-    /// The `27` projectile sync: the last-sent state per key (the
-    /// change-detection diff) and the per-projectile send budget in ticks
-    /// (`Projectile.cs:17210-17244`'s 60/5/1 gate).
-    pub(crate) net_proj_last: HashMap<i32, net::ProjectileState>,
-    pub(crate) net_proj_spam: HashMap<i32, i32>,
     /// The host slot id per client-npc index (the `28 NPCStrike` target and
     /// the `23` order), parallel to `npcs` on a joining client.
     pub(crate) net_npc_slots: Vec<u32>,
@@ -3395,9 +3424,16 @@ impl App {
             net_last_recv: Instant::now(),
             net_dropped: false,
             net_npcs: HashMap::new(),
-            net_npc_seen: Vec::new(),
-            net_npcs_seen_at: HashMap::new(),
             net_npcs_dirty: false,
+            net_npc_states: HashMap::new(),
+            net_npc_outbox: Vec::new(),
+            net_npc_despawns: Vec::new(),
+            net_npc_uid_slot: HashMap::new(),
+            net_npc_last_info: HashMap::new(),
+            proj_sync: crate::app::net_proj_sync::ProjSync::default(),
+            net_proj_outbox: Vec::new(),
+            net_proj_prev: HashMap::new(),
+            net_sync_cadence_timer: 0.0,
             net_npc_gen: HashMap::new(),
             net_items: HashMap::new(),
             net_items_dirty: false,
@@ -3407,8 +3443,6 @@ impl App {
             net_beat: 0,
             net_play_counter: 0,
             last_item_update: 0,
-            net_proj_last: HashMap::new(),
-            net_proj_spam: HashMap::new(),
             net_npc_slots: Vec::new(),
             net_ping_at: None,
             net_ping_waiting: false,

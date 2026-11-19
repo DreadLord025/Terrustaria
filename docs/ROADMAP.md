@@ -1024,3 +1024,41 @@ sibling note) at the wave merge:
   dead-code parity until the waves merge вЂ” swapping both would double-send),
   the 337 `netUpdate = true` AI-arm producers, and waves A (world-item) /
   B (NPC). The message-id table (S1-I-1) is untouched.
+
+<!-- Wave D swap note (S1-I-4d, task/S1-I-4d-net-swap, 2026-11-19, code-only) -->
+- **Wave D — the SWAP landed (task/S1-I-4d-net-swap, code-only mode):** the two
+  inert decision layers are now the LIVE send paths; the old duplicate sends are
+  REMOVED (wiring both would double-send — the swap is the whole point).
+  - **NPC:** `netglue.rs::npc_sync_cadence` steps `net_npc_sync::update_network_code`
+    per NPC per fixed step (host-only, `NPC.cs:90513` → `:90583-90631`), keyed by
+    the stable `Npc.uid` (the port's Vec compacts on death). The old whole-set
+    10 Hz `23` broadcast in `net_tick` is DELETED; `flush_npc_outbox` drains the
+    `NpcSend` outbox through the existing `23`/`60`/`54` wires. The despawn feed
+    changes from "absence from the whole-set stream" (the `net_npc_seen` /
+    `NPC_STALE` prune, both removed) to an explicit life-0 `23` queued by the uid
+    gone-diff (`NPC.cs:90385-90392` / `:77991-77998`), removed client-side per
+    `MessageBuffer.cs:1661-1664` with a generation guard.
+  - **Projectile:** `netglue.rs::proj_sync_cadence` steps `net_proj_sync::ProjSync`
+    per fixed step (`Projectile.cs:17210-17244`); `projectile_sync_plan` (the 10 Hz
+    diff + `net_proj_last`/`net_proj_spam`) is DELETED. Spawn `27`
+    (`Projectile.cs:11096`), kill `29` with the entry position (`:77254-77257`,
+    `:70648`), and the budget pass ride the faithful engine; `drain_proj_outbox`
+    sends through `27`/`29`.
+  - **Cadence:** both decision layers run on a 60 Hz accumulator inside `net_tick`
+    (the C# per-NPC/per-projectile cadence), the outboxes drain at 10 Hz. The
+    message-id table (S1-I-1) is UNCHANGED.
+  - **Producers:** the NPC AI arms already set `Npc.net_update`; the gem-staff
+    retarget producer is wired (`Projectile.net_update`, `Projectile.cs:37891`).
+    The remaining 336 projectile `netUpdate` sites are the follow-up census — an
+    interim change-detect producer arms `mark_dirty` until then (recorded in
+    ANALYSIS "The net sync swap").
+  - **Tests-as-code:** no-double-send (`the_npc_cadence_sends_once_then_throttles_not_every_tick`,
+    `the_proj_cadence_spawn_sends_one_27_not_two`), cadence parity
+    (`the_npc_cadence_throttles_a_moving_npc_to_the_netSpam_rate`), stream-order
+    (`the_npc_despawn_streams_one_life0_body_and_the_client_drops_it`). Code-only:
+    no compiler/test run this wave (verification by C# cross-read + the decision
+    layers' own landed per-site tests).
+  - **Still open for S1-I-4:** the 336 remaining projectile `netUpdate` producers,
+    the hostile-shot (owner 255) budget sync, the event-site helpers
+    (`sync_now`/`recheck_sections`/`despawn_mark_applies`) at their simulation
+    callers, and the player-state / tile-edit / container cadences.
