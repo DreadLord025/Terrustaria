@@ -1568,7 +1568,45 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
                 app.mine_hardness = hardness;
                 if app.mine_timer >= hardness {
-                    break_tile(app, tx, ty);
+                    if axe_tile {
+                        // `Player.cs:45721-45724` — the Don't Starve cactus
+                        // chop hurts the chopper: `Main.DamageVar(6f, 0f -
+                        // this.luck)`, no knockback (hitDirection 0),
+                        // dodgeable, not quiet, no crit, the TileContactDamage
+                        // cooldown. The port's hurt lane collapses the
+                        // cooldown counters onto `hurt_cd` (the M4-HAZARD-1
+                        // admission, `touch_damage.rs`'s precedent). The
+                        // damage draw rides the `UpdatePlayers` stream (the
+                        // ItemCheck swap, `Main.cs:17754`), before the kill's
+                        // own drop draws — the C# order.
+                        if tile.kind == 80
+                            && app
+                                .world
+                                .seeds
+                                .contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+                        {
+                            let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
+                            if let Some(p) = app.player.as_mut() {
+                                let (cx, _) = p.center();
+                                let _ = p.hurt(dmg, cx, rng, true);
+                            }
+                        }
+                        // `Player.cs:45744` — `IsBottomOfTreeTrunkNoRoots(x, y)`
+                        // read BEFORE the kill (the Acorn Axe's replant gate).
+                        let replant_base = held.kind == 5295
+                            && is_bottom_of_tree_trunk_no_roots(&app.world, tx, ty);
+                        break_tile(app, tx, ty);
+                        // `Player.cs:45750-45753` — the Staff of Regrowth's
+                        // twin, the Acorn Axe (5295), replants an acorn
+                        // sapling into the felled base cell.
+                        if replant_base {
+                            try_replanting_tree(app, tx, ty);
+                        }
+                    } else {
+                        break_tile(app, tx, ty);
+                    }
                     app.mine_target = None;
                     app.mine_timer = 0.0;
                 }
@@ -2239,6 +2277,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_x = frame_x;
         }
     }
+    // `TileFrameImportant`'s `case 72` canopy re-roll (`WorldGen.cs:
+    // 85855-85873`): the mushroom-tree top cell takes `genRand.Next(3)` →
+    // frame (18, 0/18/36). Same seam as the palm roll above.
+    for (mx, my) in &kill.mushroom_frame_rolls {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        let frame_y = (gen_stream.next(3) * 18) as i16;
+        if let Some(cell) = app.world.tile_mut(*mx, *my) {
+            cell.frame_x = 18;
+            cell.frame_y = frame_y;
+        }
+    }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
     // still returns like the C# (recorded deviation, phase 5).
@@ -2460,6 +2513,29 @@ fn break_drop_events(
                     events.push((id, count, *x, *y));
                 }
             }
+            edit::TreeDropEvent::Gem {
+                x,
+                y,
+                frame_x,
+                frame_y,
+                gem,
+                seed,
+            } => {
+                for (id, count) in
+                    gem_tree_drops(*gem, *seed, *frame_x, *frame_y, main_rng)
+                {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Mushroom { x, y } => {
+                for (id, count) in mushroom_tree_drops(main_rng) {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Cactus { x, y } => {
+                // `case 80: dropItem = 276;` (`WorldGen.cs:64717-64719`).
+                events.push((276, 1, *x, *y));
+            }
         }
     }
     // `SpawnThingsFromPot` per pot event: one `UpdatePlayers` throw seeds the
@@ -2591,6 +2667,53 @@ fn trunk_tree_drops(
     drops
 }
 
+/// `KillTile_GetItemDrops`'s gem-tree cases (`WorldGen.cs:65699-65746`)
+/// through `SetGemTreeDrops` (`:66094-66108`), all `Main.rand`: the
+/// `Next(10) == 0` gem-or-stone roll, then the canopy marker's
+/// (`frameX >= 22 && frameY >= 198`) `Next(2) == 0` gemcorn roll, then — in
+/// the case body AFTER `SetGemTreeDrops` returns — the stone's
+/// `Next(1, 3)` stack. The seed roll runs even when the gem roll landed
+/// stone (it sits after the gem/stone choice, before the stack roll).
+fn gem_tree_drops(
+    gem: u16,
+    seed: u16,
+    frame_x: i16,
+    frame_y: i16,
+    main_rng: &mut UnifiedRandom,
+) -> Vec<(u16, u32)> {
+    let drop_item = if main_rng.next_max(10) == 0 { gem } else { 3 };
+    let mut secondary_item = 0u16;
+    if frame_x >= 22 && frame_y >= 198 && main_rng.next_max(2) == 0 {
+        secondary_item = seed;
+    }
+    let mut stack = 1u32;
+    if drop_item == 3 {
+        stack = main_rng.next_range(1, 3) as u32;
+    }
+    let mut drops = Vec::new();
+    if drop_item != 0 {
+        drops.push((drop_item, stack));
+    }
+    if secondary_item != 0 {
+        drops.push((secondary_item, 1));
+    }
+    drops
+}
+
+/// `KillTile_GetItemDrops`'s `case 71: case 72:` (`WorldGen.cs:65642-65652`),
+/// `Main.rand` only: `Next(40) == 0` → the Mushroom Grass Seeds 194, else
+/// `Next(2) == 0` → the Glowing Mushroom 183, else nothing. The second roll
+/// runs whenever the first misses (the C# `else if`).
+fn mushroom_tree_drops(main_rng: &mut UnifiedRandom) -> Vec<(u16, u32)> {
+    if main_rng.next_max(40) == 0 {
+        vec![(194, 1)]
+    } else if main_rng.next_max(2) == 0 {
+        vec![(183, 1)]
+    } else {
+        Vec::new()
+    }
+}
+
 /// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
 /// sword-in-stone styles (origin `frameX` 918..=970) drop anything —
 /// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
@@ -2625,6 +2748,14 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
+        // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
+        // hit cell included — so the generic per-cell arm must not double
+        // them. The trunk/palm kinds already resolve to `None` through
+        // `registry::tile_drop`; the gem trees 583-589, the mushroom tree 72
+        // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
+        // lanes) are suppressed here (the records carry their drops).
+        5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -3591,6 +3722,66 @@ fn try_replanting_herbs(app: &mut App, tx: i32, ty: i32, herb_style: i32) {
     }
 }
 
+/// `Player.IsBottomOfTreeTrunkNoRoots` (`Player.cs:45784-45802`): the cell is
+/// an active trunk (`TileID.Sets.IsATreeTrunk` or the palm 323) and NOT a
+/// root-row cell (frameY 132-176 with frameX 22/44 — the palm exempt). The
+/// Acorn Axe's replant gate reads it before the kill.
+fn is_bottom_of_tree_trunk_no_roots(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    if !td::SET_IS_A_TREE_TRUNK.has(t.kind) && t.kind != 323 {
+        return false;
+    }
+    if t.kind != 323
+        && (132..=176).contains(&t.frame_y)
+        && (t.frame_x == 22 || t.frame_x == 44)
+    {
+        return false;
+    }
+    true
+}
+
+/// `Player.TryReplantingTree` (`Player.cs:45804-45822`): the Acorn Axe's
+/// felled-base replant — `TileObject.CanPlace(tileTargetX, tileTargetY, 20,
+/// 0, direction)` then `TileObject.Place` + `SquareTileFrame`. No item is
+/// consumed (the axe is a tool, not the acorn); the placement rolls ride the
+/// world's placement stream (the `place_item_tile` seam, S1-F-7b).
+fn try_replanting_tree(app: &mut App, tx: i32, ty: i32) {
+    let Some(def) = tr_core::tileobject::def_for_tile(20) else {
+        return;
+    };
+    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+    let mut rand = std::mem::take(&mut app.world.place_rng);
+    let instance = tr_core::tileobject::can_place(
+        &app.world,
+        tx,
+        ty,
+        def,
+        0,
+        dir,
+        None,
+        &mut rand,
+        app.world.tile_object_random_cache,
+    );
+    app.world.place_rng = rand;
+    let Some(instance) = instance else {
+        return;
+    };
+    let placed = tr_core::tileobject::place(&mut app.world, &instance);
+    // `WorldGen.SquareTileFrame(tileTargetX, tileTargetY)` (:45813) runs
+    // unconditionally after the Place attempt (the C# calls it before the
+    // `if (flag)` net/placement-hook tail).
+    tr_core::framing::reframe_area(&mut app.world, tx, ty, 2, true);
+    if placed {
+        app.request_edit(tx, ty, 1, 20);
+        app.world_key = None;
+    }
+}
+
 /// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`)
 /// is `tr_core::edit::place_tile_sound` (the `SoundCue` pair); the play
 /// itself — the case-0 `Next(3)` variation + pitch jitter included — rides
@@ -3788,6 +3979,84 @@ mod tests {
             }
         }
         assert_eq!(jungle_acorns, 0, "the jungle tree never drops acorns");
+    }
+
+    /// S1-P-i30: the gem-tree drop order (`SetGemTreeDrops`,
+    /// `WorldGen.cs:66094-66108` + the case bodies `:65699-65746`): the
+    /// `Next(10)` gem-or-stone roll, the canopy marker's `Next(2)` gemcorn
+    /// roll, then the stone's `Next(1, 3)` stack — all `Main.rand`, in that
+    /// order. A non-marker stone cell spends exactly TWO draws (the gem roll
+    /// and the stack roll); the seed roll never runs off the marker.
+    #[test]
+    fn s1_p_i30_the_gem_drop_rolls_in_the_csharp_order() {
+        // Scan for a seed whose first Next(10) is NOT the gem (9 in 10 do).
+        let mut stone_seed = 0i32;
+        while tr_core::UnifiedRandom::new(stone_seed).next_max(10) == 0 {
+            stone_seed += 1;
+        }
+        // The real resolver on that stream: stone 3, then the stack draw.
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 0, 0, &mut rng);
+        assert_eq!(drops.len(), 1, "a plain gem cell drops only the stone");
+        assert_eq!(drops[0].0, 3, "the non-gem roll drops Stone");
+        assert!((1..=2).contains(&drops[0].1), "the stone stack is Next(1,3)");
+        // The stream spent exactly the gem roll + the stack roll (no seed
+        // roll off the marker): a fresh clone advanced by those two draws
+        // matches the resolver's stream state.
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let _ = mirror.next_max(10);
+        let _ = mirror.next_range(1, 3);
+        assert_eq!(rng, mirror, "two draws, in the C# order");
+        // The canopy marker spends the seed roll BETWEEN the gem and stack
+        // rolls (`:66104` sits inside `SetGemTreeDrops`, before the case
+        // body's stack roll).
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 22, 198, &mut rng);
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let gem_roll = mirror.next_max(10);
+        let seed_roll = mirror.next_max(2);
+        let stack = if gem_roll != 0 { mirror.next_range(1, 3) } else { 1 };
+        assert_eq!(rng, mirror, "the marker spends gem, seed, then stack");
+        assert_eq!(drops[0].0, if gem_roll == 0 { 180 } else { 3 });
+        assert_eq!(drops[0].1, stack as u32);
+        if seed_roll == 0 {
+            assert!(drops.iter().any(|(id, _)| *id == 4851), "the gemcorn");
+        } else {
+            assert!(!drops.iter().any(|(id, _)| *id == 4851));
+        }
+    }
+
+    /// S1-P-i30: the mushroom-tree drop (`case 71/72`,
+    /// `WorldGen.cs:65642-65652`): `Next(40) == 0` → the seeds 194, else
+    /// `Next(2) == 0` → the mushroom 183, else nothing. The second roll runs
+    /// only when the first misses (the `else if`).
+    #[test]
+    fn s1_p_i30_the_mushroom_drop_is_the_two_stage_roll() {
+        // Scan seeds for each outcome and mirror the draw count.
+        let mut saw_seeds = false;
+        let mut saw_shroom = false;
+        let mut saw_none = false;
+        for seed in 0..200i32 {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let drops = mushroom_tree_drops(&mut rng);
+            let mut mirror = tr_core::UnifiedRandom::new(seed);
+            let r40 = mirror.next_max(40);
+            if r40 == 0 {
+                assert_eq!(drops, vec![(194, 1)], "the 1-in-40 seeds");
+                saw_seeds = true;
+            } else {
+                let r2 = mirror.next_max(2);
+                if r2 == 0 {
+                    assert_eq!(drops, vec![(183, 1)], "the 1-in-2 mushroom");
+                    saw_shroom = true;
+                } else {
+                    assert!(drops.is_empty(), "nothing");
+                    saw_none = true;
+                }
+            }
+            assert_eq!(rng, mirror, "the draw count matches the C# else-if");
+        }
+        assert!(saw_seeds && saw_shroom && saw_none, "all three arms reachable");
     }
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
@@ -5378,6 +5647,176 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// S1-P-i30: a tree column at x = 30 over a ground row at y = 261, the
+    /// base cell (30, 260) the mining cursor targets. The canopy marker sits
+    /// on top; every other cell is a plain trunk frame.
+    fn axe_tree_world(kind: u16, ground: u16, height: i32) -> World {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.frame_important[kind as usize] = true;
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, ground);
+        }
+        for dy in 0..height {
+            let i = w.index(30, 260 - dy);
+            let (fx, fy) = if dy == height - 1 { (22, 198) } else { (0, 0) };
+            w.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-P-i30: the axe arm chops the gem tree (583) — the `Main.tileAxe`
+    /// family was missing 583-589, so the pick gate refused them. With the
+    /// Iron Axe (axe 9) the whole trunk collapses and every cell drops
+    /// through the gem record (`WorldGen.cs:65713-65719`).
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_gem_tree() {
+        // Stone ground (the gem ground test, `:30304-30315`).
+        let mut app = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // A pick alone never chops an axe tile (`Player.cs:45656`).
+        let mut pick = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        pick.inventory[pick.selected].kind = 1; // the Iron Pickaxe
+        mine_frames(&mut pick, 60);
+        assert!(
+            pick.world.tile(30, 260).unwrap().active(),
+            "the pick cannot chop the gem tree"
+        );
+        mine_frames(&mut app, 60);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the gem cell at dy {dy} survived the axe"
+            );
+        }
+        // One gem/stone drop per cell (4); the canopy marker MAY add a
+        // gemcorn (4851) on its `Next(2)` roll, so the count is 4 or 5.
+        assert!(
+            app.items.len() == 4 || app.items.len() == 5,
+            "one gem-record drop per cell (+ the canopy gemcorn), got {}",
+            app.items.len()
+        );
+        // Every drop is the gem (180), the stone (3) or the gemcorn (4851) —
+        // never the wood 9.
+        for item in app.items.iter() {
+            assert!(
+                item.kind == 180 || item.kind == 3 || item.kind == 4851,
+                "the gem cell drops gem/stone/gemcorn, got {}",
+                item.kind
+            );
+        }
+    }
+
+    /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
+    /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
+    /// `:54116-54158`; the drop `case 80`, `:64717-64719`).
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_cactus_whole() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, 53); // the sand
+        }
+        for dy in 0..4 {
+            set_tile(&mut w, 30, 260 - dy, 80);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe
+        mine_frames(&mut app, 60);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the cactus segment at dy {dy} survived"
+            );
+        }
+        assert_eq!(app.items.len(), 4, "one cactus drop per segment");
+        assert!(app.items.iter().all(|i| i.kind == 276), "the Cactus item");
+    }
+
+    /// S1-P-i30: the Don't Starve cactus chop hurts the chopper
+    /// (`Player.cs:45721-45724`): `DamageVar(6, -luck)` on the chop tick,
+    /// only when the world carries the seed. A classic world chops free.
+    #[test]
+    fn s1_p_i30_the_dont_starve_cactus_chop_hurts() {
+        let cactus_world = || {
+            let mut w = World::new("t".into(), 64, 800);
+            w.frame_important = vec![false; td::TILE_COUNT];
+            for x in 0..64 {
+                set_tile(&mut w, x, 261, 53);
+            }
+            set_tile(&mut w, 30, 260, 80);
+            w.compute_column_surface();
+            w.compute_chunks();
+            w
+        };
+        // The classic world: no hurt.
+        let mut classic = mining_app(cactus_world(), 30, 260);
+        classic.inventory[classic.selected].kind = 10;
+        let hp_classic = classic.player.as_ref().unwrap().hp;
+        mine_frames(&mut classic, 60);
+        assert!(
+            !classic.world.tile(30, 260).unwrap().active(),
+            "the cactus fell"
+        );
+        assert_eq!(
+            classic.player.as_ref().unwrap().hp,
+            hp_classic,
+            "the classic chop is free"
+        );
+        // The Don't Starve world: the chop hurts.
+        let mut ds = mining_app(cactus_world(), 30, 260);
+        ds.inventory[ds.selected].kind = 10;
+        ds.world.seeds.insert(tr_core::seeds::SeedFlags::DONT_STARVE);
+        let hp_ds = ds.player.as_ref().unwrap().hp;
+        mine_frames(&mut ds, 60);
+        assert!(!ds.world.tile(30, 260).unwrap().active(), "the cactus fell");
+        assert!(
+            ds.player.as_ref().unwrap().hp < hp_ds,
+            "the Don't Starve chop hurts the chopper"
+        );
+    }
+
+    /// S1-P-i30: the Acorn Axe (5295) replants a sapling into the felled base
+    /// cell (`Player.cs:45744-45753` → `TryReplantingTree` `:45804-45822`);
+    /// a plain axe leaves the cell empty.
+    #[test]
+    fn s1_p_i30_the_acorn_axe_replants_the_felled_base() {
+        // A forest tree over dirt (the sapling's anchor tiles, D_20).
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 5295; // the Acorn Axe
+        mine_frames(&mut app, 90);
+        assert!(
+            !app.world.tile(30, 259).unwrap().active(),
+            "the trunk above the base fell"
+        );
+        // The base cell now holds the replanted sapling (tile 20, 1x2 with
+        // origin (0,1) — the anchor row is the cursor cell).
+        let base = app.world.tile(30, 260).unwrap();
+        assert!(base.active() && base.kind == 20, "the sapling replanted");
+        // The plain Iron Axe fells the same tree but replants nothing.
+        let mut plain = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        plain.inventory[plain.selected].kind = 10;
+        mine_frames(&mut plain, 90);
+        assert!(
+            !plain.world.tile(30, 259).unwrap().active(),
+            "the trunk fell"
+        );
+        assert!(
+            !plain.world.tile(30, 260).unwrap().active(),
+            "the plain axe leaves the base empty"
+        );
     }
 
     /// DW-1.1: with `frame_important` set — the exact condition the removed

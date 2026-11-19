@@ -178,6 +178,12 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // `WorldGen.cs:66189-66261`), which the kill cascade emits per cell;
         // the generic `by_tile` fallback finds no placing item for them.
         5 | 323 | 596 | 616 | 634 => None,
+        // The gem trees (583-589) and the mushroom tree (72) drop through
+        // their own per-cell RNG records (`KillTile_GetItemDrops`'s gem
+        // cases `WorldGen.cs:65699-65746` and `case 71/72` `:65642-65652`,
+        // resolved app-side as `TreeDropEvent::Gem`/`Mushroom`) — never the
+        // `by_tile` fallback (S1-P-i30).
+        72 | 583..=589 => None,
         // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
         // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
         // dropped — the `by_tile` fallback would leak the Journey-mode item

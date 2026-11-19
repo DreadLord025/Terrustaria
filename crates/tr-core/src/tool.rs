@@ -9,9 +9,12 @@
 //! `baseline * 35 / pick` (35 = the copper pick the baseline timings were
 //! tuned against).
 
-/// `Main.tileAxe` (`Main.cs:7208-7213`) — the tiles an axe chops.
+/// `Main.tileAxe` (`Main.cs:7208-7223`) — the tiles an axe chops: the forest
+/// tree 5, the mushroom tree 72, the cactus 80, the fallen logs 488/704, the
+/// palm 323, the vanity trees 596/616, the ash tree 634 and the seven gem
+/// trees 583-589 (S1-P-i30: the gem family was missing).
 pub fn is_axe_tile(kind: u16) -> bool {
-    matches!(kind, 5 | 72 | 80 | 323 | 488 | 596 | 616 | 704)
+    matches!(kind, 5 | 72 | 80 | 323 | 488 | 583..=589 | 596 | 616 | 634 | 704)
 }
 
 /// `Main.tileDungeon` (`Main.cs:7992-7997`) — the bricks the dungeon gate
@@ -90,5 +93,21 @@ mod tests {
         // The baseline: the copper pick's 35 scales to 1.0.
         assert!((pick_speed_scale(35) - 1.0).abs() < 1e-6);
         assert!((pick_speed_scale(70) - 0.5).abs() < 1e-6);
+    }
+
+    /// S1-P-i30: `Main.tileAxe` (`Main.cs:7208-7223`) — the full 16-kind set,
+    /// the gem trees 583-589 included (the pre-fix list dropped them, so the
+    /// mining gate refused an axe on a gem tree).
+    #[test]
+    fn s1_p_i30_the_axe_set_is_the_full_vanilla_table() {
+        for kind in [5u16, 72, 80, 488, 704, 323, 596, 616, 634, 589, 584, 588, 586, 587, 585, 583]
+        {
+            assert!(is_axe_tile(kind), "Main.tileAxe[{kind}]");
+        }
+        // The non-axe kinds stay out (the mushroom plants 71 are not the
+        // mushroom tree 72; the dirt/stone are pick tiles).
+        for kind in [0u16, 1, 2, 71, 53, 590] {
+            assert!(!is_axe_tile(kind), "not tileAxe[{kind}]");
+        }
     }
 }

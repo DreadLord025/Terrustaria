@@ -420,7 +420,75 @@ the `FastRandom` that stands in for the C#'s `genRand` stream and the
 `Main.rand` roll spends the item stream directly. Note that in the C#
 `WorldGen.genRand` **is** `Main.rand` (a property, `WorldGen.cs:4445`), so the
 C# draws its four tree-drop rolls from one stream and the port draws them from
-two вЂ” the same approximation the pot and pile loot already use.
+two — the same approximation the pot and pile loot already use.
+
+### The axe arm census (S1-P-i30, 2026-11-20, code-only — tests written NOT run)
+
+The C# axe arm is `Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool`'s
+`Main.tileAxe` branch (`Player.cs:45706-45771`): the chop damage is
+`(int)(axe * 1.2f)` (the cactus 80 triples the axe first, `:45708`), the
+`getGoodWorld` seed multiplies it by 1.3 (`:45709-45712`), `hitTile.AddDamage`
+accumulates to 100 and `WorldGen.KillTile` fells the cell — the whole-tree fall
+is the `CheckTree`/`CheckCactus` cascade, not the axe arm itself. Census
+verdicts against the port:
+
+- **WRONG (fixed): the gem trees were not axe tiles.** `tr_core::tool::is_axe_tile`
+  listed only 5/72/80/323/488/596/616/704 — the seven gem trees 583-589
+  (`Main.tileAxe`, `Main.cs:7217-7223`) were missing, so the mining gate refused
+  an axe on a gem tree and the pick gate mined it instead. The set is now the
+  full 16-kind table.
+- **WRONG (fixed): the gem-tree drops were unported.** `KillTile_GetItemDrops`'s
+  gem cases (`WorldGen.cs:65699-65746`) roll `SetGemTreeDrops` (`:66094-66108`):
+  `Main.rand.Next(10) == 0` → the gem, else Stone 3; the canopy marker
+  (`frameX >= 22 && frameY >= 198`) rolls `Next(2) == 0` → the gemcorn seed; the
+  case body then rolls the stone's `Next(1, 3)` stack. All `Main.rand`, in that
+  order (gem, seed, stack). The port now records `TreeDropEvent::Gem` per cell
+  and resolves the rolls app-side (`gem_tree_drops`).
+- **WRONG (fixed): the mushroom tree (72) had no support check or drops.**
+  `TileFrameImportant`'s `case 72` (`WorldGen.cs:85837-85874`) kills a cell whose
+  below is neither 72 nor the mushroom grass 70, and re-rolls the top cell's
+  canopy (`genRand.Next(3)` → frame (18, 0/18/36)). The drop is `case 71/72`
+  (`:65642-65652`): `Next(40) == 0` → the seeds 194, else `Next(2) == 0` → the
+  mushroom 183, else nothing. The port now runs `check_mushroom_tree` and
+  records `TreeDropEvent::Mushroom` + `mushroom_frame_rolls`.
+- **WRONG (fixed): the cactus (80) had no cascade.** `WorldGen.CheckCactus`
+  (`:54116-54158`, reached through `TileFrame`'s non-solid arm `:81368-81373`,
+  NOT the frame-important dispatch) walks the cactus column down to its sand
+  base and kills the cells that lost support — the whole plant collapses. The
+  port now runs `check_cactus` in the kill cascade and records
+  `TreeDropEvent::Cactus` (the flat Cactus 276, `case 80` `:64717-64719`) per
+  cell; the app's `cell_drops` suppresses 80 so the hit cell is not doubled.
+- **WRONG (fixed): the Don't Starve cactus chop did not hurt.** `Player.cs:45721-
+  45724` hurts the chopper `DamageVar(6, -luck)` when the world carries the seed
+  and the chop damage is positive. The port now lands it on the chop tick
+  (before the kill's drop draws, the C# order).
+- **WRONG (fixed): the Acorn Axe (5295) did not replant.** `Player.cs:45744-
+  45753` reads `IsBottomOfTreeTrunkNoRoots` (`:45784-45802`) before the kill and
+  calls `TryReplantingTree` (`:45804-45822`) — a sapling 20 through
+  `TileObject.CanPlace`/`Place`. The port now does both (`try_replanting_tree`).
+- **UNCHANGED (verified): the trunk/palm drop order.** `trunk_tree_drops`
+  already mirrors `KillTile_GetTreeDrops` (`:66189-66261`): the canopy acorn
+  `Next(2)`, the mushroom `Next(2)`, the bonus wood `Next(35) <= axe` with the
+  `Main.rand.Next(3)` second chance (short-circuited). The palm `case 323`
+  (`:65232-65266`) wood + the `88..=132` acorn marker match.
+- **MISSING (documented, out of scope): the chainsaw channel projectile.** The
+  chainsaws (383/384/387/1190/1197/1204/1232/3098) carry `channel: true` and a
+  `shoot` (57/58/61/214/217/220/224/509) whose `DefaultToDrillOrChainsaw`
+  (`Projectile.cs:10732-10742`) sets aiStyle 20. The port has no `proj_data` row
+  for those kinds and no aiStyle-20 arm (`AI_020`, `Projectile.cs:25481-25584` —
+  the channel-held blade that follows the cursor, kills on release, and chops
+  through the owner's `ItemCheck_UseMiningTools`). The axe ARM itself works for
+  a held chainsaw (the `axe` power gates the chop); the channel blade is the
+  projectile-family follow-up, not the axe arm.
+- **MISSING (documented): Lucy the Axe's messages** (`Player.cs:45727-45742`,
+  `LucyAxeMessage`) and the `IntentionGuesser` tracking (`:45715`/`:45754`) —
+  cosmetic/AI layers with no port seam.
+
+The chop PACING stays the port's documented time-per-tile stand-in
+(`base * 7.0 / axe`, the M3-TOOL admission) — the C#'s exact `hitTile`
+damage-accumulator model (the per-tile HP table) is the M3-ITEM follow-up. The
+`getGoodWorld` 1.3× chop multiplier (`:45709-45712`) folds into that pacing
+follow-up, not the drop RNG.
 
 ## Lighting
 
