@@ -3410,6 +3410,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut limbs);
+    // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
+    // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
+    // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
+    // port kinds/arms yet — the machine's core writes the requests and
+    // this pass drains them so they never go stale; the actual spawns
+    // land with the three minion machines (ANALYSIS "The Plantera
+    // machine", the documented follow-up). The hook-anchor average
+    // therefore reads Plantera's own centre until then.
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::Plantera {
+            continue;
+        }
+        n.wants_plantera_hooks = 0;
+        n.wants_plantera_tentacles = 0;
+        n.wants_plantera_spore = None;
+    }
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -3620,11 +3636,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         );
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
-        // (`NPC.cs:49891`) and the Frost Legion throws'
-        // (`NPC.cs:29022`/`:29084`).
+        // (`NPC.cs:49891`), the Frost Legion throws'
+        // (`NPC.cs:29022`/`:29084`) and Plantera's seeds
+        // (`NPC.cs:31966-31969` — every volley kind except the 277 thorn
+        // ball).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
+            || kind == crate::projectile::SEED_PLANTERA
+            || kind == crate::projectile::POISON_SEED_PLANTERA
         {
             300
         } else {
