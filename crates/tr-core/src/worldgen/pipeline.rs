@@ -1316,6 +1316,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
     step!("cave houses", "Buried Chests", step_cave_houses),
+    // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
+    // pass's thin-ice block runs FIRST among the port's grouped micro
+    // steps — after the dead-man's-chest block (`:20922`, unported) and
+    // before the sword shrines (`:20979`) — S1-K-2 wave C's
+    // `ThinIceBiome` port.
+    step!("thin ice", "Micro Biomes", step_thin_ice),
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
@@ -2314,6 +2320,33 @@ fn step_campsites(
     mini_biomes::pass_campsites(world, &mut streams.srng);
 }
 
+fn step_thin_ice(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `WorldGen.cs:20945`: the ThinIcePatchCount config roll (Min 3 /
+    // Max 5 / WorldWidth). The view keys on the vanilla pass name
+    // ("Micro Biomes") — `apply_step` hands the display-name view, so
+    // the step reads its own section, the `step_mahogany_trees`
+    // precedent. The count and the placement draws share one fresh
+    // per-pass stream — `pass_rng` returns a NEW `Rng(seed ^ fnv(name))`
+    // per call (the port's per-pass re-seed model), so the mahogany
+    // step's own fresh copy of the same key replays its wave-A ledger
+    // untouched by this insertion.
+    let pass_config = super::config::WorldGenConfig::parse().pass("Micro Biomes");
+    let mut rng = streams.pass_rng("Micro Biomes");
+    let count = pass_config
+        .get_range("ThinIcePatchCount")
+        .map(|r| r.get_random(&mut rng, world.width, world.height))
+        .unwrap_or(0);
+    let world_surface = gv.layers().world_surface;
+    mini_biomes::pass_thin_ice(world, world_surface, count, &mut rng);
+}
+
 fn step_spike_pits(
     world: &mut World,
     gv: &mut GenVars,
@@ -3045,7 +3078,9 @@ mod tests {
         // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
         // S1-K-2 wave A: + `mahogany trees` (vanilla "Micro Biomes",
         // `WorldGen.cs:21105`) after `sword shrines`.
-        assert_eq!(names.len(), 64);
+        // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
+        // `WorldGen.cs:20941`) before `campsites`.
+        assert_eq!(names.len(), 65);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3120,6 +3155,7 @@ mod tests {
                 "lihzahrd temple",
                 "temple part 2",
                 "cave houses",
+                "thin ice",
                 "campsites",
                 "spike pits",
                 "sword shrines",
@@ -3323,6 +3359,21 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mahogany trees"), pos("sword shrines") + 1);
         assert_eq!(pos("mahogany trees") + 1, pos("webs and honey"));
+    }
+
+    /// S1-K-2 wave C: `thin ice` sits in the Micro Biomes pass's vanilla
+    /// slot — the thin-ice block (`WorldGen.cs:20941`) runs before the
+    /// sword shrines (`:20979`), the campsites (`:21031`) and the
+    /// mahogany block (`:21105`); the port groups it right after the
+    /// cave houses, ahead of `campsites`.
+    #[test]
+    fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("thin ice"), pos("cave houses") + 1);
+        assert_eq!(pos("thin ice") + 1, pos("campsites"));
+        assert!(pos("thin ice") < pos("sword shrines"));
+        assert!(pos("thin ice") < pos("mahogany trees"));
     }
 
     #[test]

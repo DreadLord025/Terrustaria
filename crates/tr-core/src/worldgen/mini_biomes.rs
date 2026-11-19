@@ -26,6 +26,16 @@
 //!   sine-swayed trunk, the `ShapeBranch`/`ShapeRoot` walks, the blotched
 //!   leaf canopies and the style-10 jungle chest; the pass block is
 //!   `WorldGen.cs:21105-21123` (the `LivingTreeCount` config roll)
+//! - `ThinIceBiome.Place` (`:9-34`, S1-K-2 wave C): the faithful port —
+//!   the 50×50 tile-scan gate (snow 147 must outnumber mud 59 and
+//!   dirt+stone {0,1} — active cells only — hive 225 vetoes), the
+//!   shrinking blotched 162
+//!   (`BreakableIce`) circles stepping down, the liquid-pocket clear;
+//!   the pass block is `WorldGen.cs:20941-20973` (the `ThinIcePatchCount`
+//!   config roll, the 1000-failure give-up). The snow-dominance gate is
+//!   dead in the port's compact terrain (the snow band is one 147 row +
+//!   the 161 ice shell — ANALYSIS), so the pass places nothing on a
+//!   generated world until the faithful `Generate Ice Biome` pass lands.
 //!
 //! Deviations (ANALYSIS "Micro-biomes (M1.4-WGEN-8)"): the C#'s
 //! `HouseBuilder` room variants (the granite/marble/mushroom/ice/jungle
@@ -1185,6 +1195,208 @@ pub(crate) fn pass_mahogany_trees(
     placed
 }
 
+/// `Shapes.Circle(r).Perform` (`Shapes.cs:33-49`), the square-radius
+/// specialisation (`hr == vr`): **y-major** — rows `oy-r..=oy+r`, each row
+/// spanning `ox ± min(r, (int)sqrt((r+1)² - dy²))`. The row-major cell
+/// order is load-bearing for the per-cell `Blotches` draws.
+fn circle_gen(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    r: i32,
+    mut apply: impl FnMut(&mut World, i32, i32),
+) {
+    let sq = (r + 1) * (r + 1);
+    for y in oy - r..=oy + r {
+        let dy = y - oy;
+        let half = r.min(((sq - dy * dy) as f64).sqrt() as i32);
+        for x in ox - half..=ox + half {
+            apply(world, x, y);
+        }
+    }
+}
+
+/// `Modifiers.Blotches(scale)` (`Modifiers.cs:99-106,126-146`) at the
+/// default 0.3 chance: two `NextDouble` draws per cell (the first
+/// discarded), then the chain either spreads over a
+/// `Next(1-scale, 1)..Next(0, scale)` × `Next(1-scale, 1)..Next(0, scale)`
+/// box or applies to the plain cell. `apply` is the remaining chain.
+fn blotched_gen(
+    world: &mut World,
+    rng: &mut super::Rng,
+    cx: i32,
+    cy: i32,
+    scale: i32,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    let _ = rng.next_f64();
+    let (x0, x1, y0, y1) = if rng.next_f64() < 0.3 {
+        (
+            cx + rng.range(1 - scale, 1),
+            cx + rng.range(0, scale),
+            cy + rng.range(1 - scale, 1),
+            cy + rng.range(0, scale),
+        )
+    } else {
+        (cx, cx, cy, cy)
+    };
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            apply(world, x, y);
+        }
+    }
+}
+
+/// `Modifiers.OnlyTiles` (`Modifiers.cs:233-257`): the cell must be
+/// active AND of a listed kind (unlike `SkipTiles`, inactive cells FAIL).
+fn only_tiles(world: &World, x: i32, y: i32, kinds: &[u16]) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && kinds.contains(&t.kind))
+}
+
+/// `ThinIceBiome.Place` (`ThinIceBiome.cs:9-34`, S1-K-2 wave C): the thin
+/// ice sheet over the snow biome's underground pockets — the 50×50
+/// `TileScanner(0, 59, 147, 1, 225)` gate (`:12-23`: hive 225 vetoes; the
+/// snow 147 must strictly outnumber the mud 59 AND the dirt+stone {0,1}
+/// — active cells only, air never counts),
+/// then the shrinking blotched circles (`:24-31`): the radius rolls
+/// `Next(10, 15)` once and steps down while > 5, each circle's x-offset
+/// rolls `Next(-5, 5)`, the centre walks down by `radius - 2`; the first
+/// chain (`Blotches(4)` + `OnlyTiles(147, 161, 224, 0, 1)` +
+/// `SetTile(162, setSelfFrames: true)`) freezes the snow/ice/slush/air/
+/// dirt into `BreakableIce` 162, the second (`Blotches(4)` + `HasLiquid()`
+/// + `SkipTiles(21, 467, 226, 237)` + `SetTile(162)` + `SetLiquid(0, 0)`)
+/// freezes and drains the liquid cells. `:32`: `AddStructure` of the
+/// 50×50 box inflated by 8 — the *non-protected* list, which no vanilla
+/// `CanPlace` reads (`StructureMap.cs:19-52,68-85`), so the port does not
+/// register it (the mahogany/honey passes register PROTECTED rects).
+///
+/// Deviations (ANALYSIS "Micro-biomes"): the `setSelfFrames` framing rides
+/// the post-pipeline `frame_world` seam (the 162 `IcesSnow` merge arm,
+/// `WorldGen.cs:82040-82042`); the `dualDungeons` origin veto is deferred
+/// with the seed; the snow-dominance gate is dead in the compact terrain
+/// (one 147 row over the 161 shell — `terrain.rs:320-330`), so the pass
+/// places nothing on a generated world until the faithful `Generate Ice
+/// Biome` pass lands — the port still runs the exact searches/gates.
+pub(crate) fn place_thin_ice(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    rng: &mut super::Rng,
+) -> bool {
+    // `:11-15`: the TileScanner over the 50×50 box at (ox-25, oy-25) —
+    // `Actions.TileScanner` (`Actions.cs:60-97`) counts active cells of
+    // the listed kinds only; `Shapes.Rectangle` (`Shapes.cs:165-178`)
+    // walks x-major, which the RNG-free scan does not observe.
+    let mut counts = [0i32; 5];
+    const KINDS: [u16; 5] = [0, 59, 147, 1, 225];
+    for x in ox - 25..ox + 25 {
+        for y in oy - 25..oy + 25 {
+            if let Some(t) = world.tile(x, y) {
+                if t.active() {
+                    if let Some(idx) = KINDS.iter().position(|&k| k == t.kind) {
+                        counts[idx] += 1;
+                    }
+                }
+            }
+        }
+    }
+    let dirt_stone = counts[0] + counts[3];
+    let mud = counts[1];
+    let snow = counts[2];
+    // `:16-19`: any hive tile vetoes the spot.
+    if counts[4] > 0 {
+        return false;
+    }
+    // `:20-23`: snow must dominate BOTH the mud and the dirt+stone
+    // (`dictionary[0] + dictionary[1]` — the ACTIVE dirt 0 and stone 1;
+    // air is inactive and never counted).
+    if snow <= mud || snow <= dirt_stone {
+        return false;
+    }
+    // `:24-31`: the shrinking circles, stepping down.
+    let mut y_off = 0i32;
+    let mut r = rng.range(10, 15);
+    while r > 5 {
+        let x_off = rng.range(-5, 5);
+        let (cx, cy) = (ox + x_off, oy + y_off);
+        // `:28`: Blotches(4) + OnlyTiles(147, 161, 224, 0, 1) + SetTile(162).
+        circle_gen(world, cx, cy, r, |w, x, y| {
+            blotched_gen(w, rng, x, y, 4, &mut |w, bx, by| {
+                if only_tiles(w, bx, by, &[147, 161, 224, 0, 1]) {
+                    set_tile_clear(w, bx, by, 162);
+                }
+            });
+        });
+        // `:29`: Blotches(4) + HasLiquid() + SkipTiles(21, 467, 226, 237)
+        // + SetTile(162) + SetLiquid(0, 0). `Modifiers.HasLiquid()`
+        // (`Modifiers.cs:434-448`): any nonzero liquid, any type.
+        circle_gen(world, cx, cy, r, |w, x, y| {
+            blotched_gen(w, rng, x, y, 4, &mut |w, bx, by| {
+                let Some(t) = w.tile(bx, by) else { return };
+                if t.liquid == 0 || !skip_tiles(w, bx, by, &[21, 467, 226, 237]) {
+                    return;
+                }
+                set_tile_clear(w, bx, by, 162);
+                // Actions.SetLiquid(0, 0) (`Actions.cs:563-568`): water
+                // type, level 0.
+                if let Some(t) = w.tile_mut(bx, by) {
+                    t.liquid = 0;
+                    t.clear_liquid_kind();
+                }
+            });
+        });
+        y_off += r - 2;
+        r -= 1;
+    }
+    // `:32-33`: AddStructure(50×50, padding 8) — the non-protected list
+    // no CanPlace reads; return true.
+    true
+}
+
+/// The Micro Biomes pass's thin-ice block (`WorldGen.cs:20941-20973`,
+/// S1-K-2 wave C): the `ThinIcePatchCount` config roll (Min 3, Max 5,
+/// WorldWidth — `worldgen_configuration.json:205-209`), then
+/// `RandomWorldPoint(worldSurface + 20, 50, 200, 50)`
+/// (`WorldGen.cs:27111-27114`: x = Next(50, maxX-50), y = Next(top,
+/// maxY-200)) attempts until the count is met — a failure streak over
+/// 1000 burns one wanted patch (`:20963-20970`, the vanilla give-up).
+pub(crate) fn pass_thin_ice(
+    world: &mut World,
+    world_surface: f64,
+    count: i32,
+    rng: &mut super::Rng,
+) -> u32 {
+    let y_lo = world_surface as i32 + 20;
+    let y_hi = world.height - 200;
+    // The sub-vanilla guard: the C#'s Next(top, maxY-200) throws on a
+    // collapsed band; the port's small test worlds skip the block (the
+    // same idiom the mahogany pass carries).
+    if y_hi <= y_lo || world.width <= 100 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    let mut done = 0i32;
+    let mut fails = 0i32;
+    while done < count {
+        let x = rng.range(50, world.width - 50);
+        let y = rng.range(y_lo, y_hi);
+        if place_thin_ice(world, x, y, rng) {
+            done += 1;
+            placed += 1;
+            fails = 0;
+        } else {
+            fails += 1;
+            if fails > 1000 {
+                done += 1;
+                fails = 0;
+            }
+        }
+    }
+    placed
+}
+
 /// The hive pass's honey patches (`WorldGen.cs:15946-15968`): each placed
 /// hive rolls `Next(5)` patches on the angle/radius ring around its centre
 /// (the 30-90 px ring, the bounds gate, the `extraLiquid` seed's zero).
@@ -1528,6 +1740,149 @@ mod tests {
             super::super::world_hash::world_hash(&w)
         };
         assert_eq!(run(), run());
+    }
+
+    /// A snow-dominant world for the placed tests: solid 147 everywhere
+    /// below y=40, with a small 10×8 air pocket at (195..205, 166..174)
+    /// — inside the 50×50 scan box at origin (200, 170). The pocket is
+    /// inactive air, which the TileScanner never counts, so snow (~2500
+    /// active cells) trivially dominates dirt+stone (0) and mud (0).
+    fn snow_pocket_world() -> World {
+        let mut w = World::new("ti".into(), 400, 600);
+        for x in 0..400 {
+            for y in 40..600 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 147;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 195..205 {
+            for y in 166..174 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.world_surface = 100.0;
+        w.rock_layer = 300.0;
+        w
+    }
+
+    #[test]
+    fn the_thin_ice_freezes_the_snow_cavern_and_drains_the_pocket() {
+        // `ThinIceBiome.Place` (`ThinIceBiome.cs:9-34`): the snow-
+        // dominant 50×50 box passes the gate, the shrinking blotched
+        // circles leave 162 (BreakableIce) behind, and a liquid cell
+        // inside the first circle freezes AND drains (`:29`).
+        let mut w = snow_pocket_world();
+        // A water pocket cell inside the scan box (and the first circle).
+        let i = w.index(200, 172);
+        w.tiles[i].liquid = 255;
+        let mut rng = Rng::from_seed(7);
+        assert!(place_thin_ice(&mut w, 200, 170, &mut rng));
+        let ice = w.tiles.iter().filter(|t| t.active() && t.kind == 162).count();
+        assert!(ice > 100, "the thin ice sheet ({ice})");
+        // The liquid chain drains the pocket (`SetLiquid(0,0)`): no liquid
+        // survives in the pocket region (the blotched circles cover it).
+        let pocket_liquid = (195..205)
+            .flat_map(|x| (166..174).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.liquid > 0))
+            .count();
+        assert_eq!(pocket_liquid, 0, "the pocket drained");
+        // The freeze reaches the pocket region; the exact cell is
+        // RNG-dependent, so assert the neighbourhood.
+        let pocket_ice = (195..205)
+            .flat_map(|x| (166..174).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 162))
+            .count();
+        assert!(pocket_ice > 0, "the freeze reached the pocket ({pocket_ice})");
+    }
+
+    #[test]
+    fn the_thin_ice_rejects_the_hive_the_stone_and_the_mud() {
+        // `:16-19`: one hive tile vetoes. `:20-23`: snow must strictly
+        // outnumber the mud AND the dirt+stone (active cells only — air
+        // is inactive and never counted): a stone cavern (0 snow), a mud
+        // cavern (mud >= snow) and a dirt-dominant box all fail.
+        let mut w = snow_pocket_world();
+        let i = w.index(210, 160);
+        w.tiles[i].kind = 225;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = Rng::from_seed(7);
+        assert!(!place_thin_ice(&mut w, 200, 170, &mut rng));
+
+        let mut stone = snow_pocket_world();
+        for t in stone.tiles.iter_mut() {
+            if t.active() {
+                t.kind = 1;
+            }
+        }
+        assert!(!place_thin_ice(&mut stone, 200, 170, &mut rng));
+
+        let mut mud = snow_pocket_world();
+        for t in mud.tiles.iter_mut() {
+            if t.active() {
+                t.kind = 59;
+            }
+        }
+        assert!(!place_thin_ice(&mut mud, 200, 170, &mut rng));
+
+        // A dirt-dominant box: the upper 26 rows of the 50×50 scan box
+        // are active dirt 0, the lower 24 stay snow — dirt (1300) beats
+        // snow (1200), so the strict `snow > dirt+stone` gate rejects.
+        let mut dirty = snow_pocket_world();
+        for x in 175..225 {
+            for y in 145..171 {
+                let i = dirty.index(x, y);
+                dirty.tiles[i].kind = 0;
+                dirty.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(!place_thin_ice(&mut dirty, 200, 170, &mut rng));
+
+        // The gates draw nothing before the radius roll — the stream is
+        // untouched on every reject.
+        let mut a = Rng::from_seed(11);
+        let mut b = Rng::from_seed(11);
+        place_thin_ice(&mut stone, 200, 170, &mut a);
+        assert_eq!(a.next_u32(), b.next_u32());
+    }
+
+    #[test]
+    fn the_thin_ice_keeps_the_chests_and_the_hive_walls() {
+        // `:29`'s SkipTiles(21, 467, 226, 237): a chest inside the
+        // liquid chain's circle keeps its kind (the chain 1 OnlyTiles
+        // list excludes 21 too).
+        let mut w = snow_pocket_world();
+        let i = w.index(200, 172);
+        w.tiles[i].kind = 21;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].liquid = 255;
+        let mut rng = Rng::from_seed(7);
+        assert!(place_thin_ice(&mut w, 200, 170, &mut rng));
+        let t = w.tile(200, 172).unwrap();
+        assert_eq!(t.kind, 21, "the chest survives the freeze");
+    }
+
+    #[test]
+    fn the_thin_ice_pass_is_deterministic_and_gives_up_on_dry_worlds() {
+        // The pass replays bit-exact for a seed; on a world where every
+        // gate rejects (the stone cavern), the 1000-failure streak burns
+        // the wanted patches (`WorldGen.cs:20963-20970`) and the pass
+        // terminates with zero placed — no 162 anywhere.
+        let run = || {
+            let mut w = snow_pocket_world();
+            pass_thin_ice(&mut w, 100.0, 3, &mut Rng::from_seed(31));
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run());
+        let mut dry = World::new("ti".into(), 600, 800);
+        for t in dry.tiles.iter_mut() {
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+        }
+        let placed = pass_thin_ice(&mut dry, 100.0, 3, &mut Rng::from_seed(31));
+        assert_eq!(placed, 0);
+        assert!(!dry.tiles.iter().any(|t| t.active() && t.kind == 162));
     }
 
 }

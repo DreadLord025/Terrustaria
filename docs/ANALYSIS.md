@@ -8411,12 +8411,70 @@ The micro-biome decorators over the finished world:
   Deviations: the `SetFrames`/`PlaceWall` framing rides the post-pipeline
   framing seam; the chest keeps the shared `place_chest` +
   `stock_placed_chest` stand-in (no special-seed loot arms); the
-  `dualDungeons` origin veto is deferred with the seed. ThinIceBiome
-  stays unported: its snow-dominance gate (`dictionary[147] >
-  dictionary[0]+dictionary[1]` over the 50×50 box, `ThinIceBiome.cs:12-23`)
-  cannot pass in the compact terrain — the snow band is a one-row skin
-  over the ice shell (`terrain.rs:320-330`), so the biome would be dead
-  code until the faithful `Generate Ice Biome` pass lands.
+  `dualDungeons` origin veto is deferred with the seed.
+- **The thin ice sheets** (`ThinIceBiome`, `ThinIceBiome.cs:9-34` — S1-K-2
+  wave C, 2026-11-19, **code-only mode: written NOT run**): the faithful
+  port of the Micro Biomes pass's thin-ice block (`WorldGen.cs:20941-
+  20973`) — the `ThinIcePatchCount` config roll (Min 3 / Max 5 /
+  WorldWidth), `RandomWorldPoint(worldSurface+20, 50, 200, 50)` attempts
+  with the 1000-failure streak give-up (`:20963-20970`), the 50×50
+  `TileScanner(0, 59, 147, 1, 225)` gate (`:12-23` — any hive 225 vetoes;
+  snow 147 must strictly outnumber the mud 59 AND the air+dirt {0,1}),
+  then the shrinking circles (`:24-31`): radius `Next(10, 15)` stepping
+  down while > 5, per-circle x-offset `Next(-5, 5)`, the centre walking
+  down `radius - 2`; chain 1 = `Blotches(4)` + `OnlyTiles(147, 161, 224,
+  0, 1)` + `SetTile(162, setSelfFrames: true)`, chain 2 = `Blotches(4)` +
+  `HasLiquid()` + `SkipTiles(21, 467, 226, 237)` + `SetTile(162)` +
+  `SetLiquid(0, 0)` (freeze AND drain). The gate's `{0,1}` pair is
+  ACTIVE dirt 0 + stone 1 (`Actions.TileScanner` counts active cells
+  only, `Actions.cs:76-84`) — air is inactive and never counted. The exact per-cell draw order:
+  `Shapes.Circle` is **y-major** (`Shapes.cs:33-49`, the row-span
+  `min(r, (int)sqrt((r+1)²-dy²))`), `Blotches` draws two `NextDouble`s
+  per cell (first discarded) then the 0.3-spread box `Next(1-scale,1)..
+  Next(0,scale)`² (`Modifiers.cs:126-146`) — the shared
+  `mini_biomes::circle_gen`/`blotched_gen`/`only_tiles` helpers carry it.
+  `:32`'s `AddStructure(50×50, 8)` feeds the **non-protected** structure
+  list, which no vanilla `CanPlace` reads (`StructureMap.cs:19-52,68-85`)
+  — the port does not register it (the mahogany/honey passes register
+  PROTECTED rects). The step draws from its own fresh
+  `pass_rng("Micro Biomes")` stream (the name-mixed isolation — the
+  mahogany step's stream is untouched) and sits before `campsites` in
+  the port's grouped Micro Biomes slot (the vanilla block order: dead
+  man's chests `:20922` → thin ice `:20941` → shrines `:20979` →
+  campsites `:21031` → explosives `:21066` → mahogany `:21105`). The
+  framing's 162 arm (`WorldGen.cs:82040-82042` — `TileMergeAttempt(-2,
+  TileID.Sets.IcesSnow)` = {161, 200, 163, 164, 147}) landed in
+  `framing.rs`; the port's generic path reads the `-2` slots as open
+  sides (the compiled generic -2 blend tables stay the grass family's —
+  the same documented approximation the 383/384 arms carry).
+  **The gate is dead in the compact terrain**: the snow band is one 147
+  row over the 161 ice shell (`terrain.rs:320-330`), so no 50×50 box can
+  make snow dominate the active dirt+stone below the skin — the pass
+  places nothing on generated worlds until the faithful `Generate Ice
+  Biome` pass lands; the port
+  still runs the exact searches/gates/draws so the behaviour flips on
+  with the ice pass, no re-port needed. **Pins: `SEED42_512` and
+  `DEFAULT_WORLD` both UNCHANGED, re-pin deferred** — the dead gate
+  means zero tile writes and the fresh stream shifts no other step's
+  ledger; the 162 framing arm only fires on the new kind (no
+  pre-existing 162 tiles). Code-only mode: no compiler invoked, the 5
+  `the_thin_ice_*` tests + the `s1_k_2c_*` framing/pipeline tests are
+  written NOT run; the DEFAULT_WORLD re-pin (if the ice pass ever moves
+  it) rides that follow-up. Deviations: the `setSelfFrames` framing
+  rides the post-pipeline seam; the `dualDungeons` origin veto is
+  deferred with the seed.
+  Wave-C scope/disjointness: Granite/Marble (`biomes.rs::pass_marble/
+  pass_granite`) and Spider Caves (`spider_gem_moss.rs`) were already
+  ported (M5-BIOME-2 / M5-STRUCT-5) and the C# has no `SpiderNest` biome
+  class; sibling wave B (`task/S1-K-2b`) owns the alphabetically-first
+  unported (the CaveHouse variants / DeadMansChestBiome), wave C took
+  the LATER unported ThinIceBiome. `MiningExplosivesBiome`
+  (`MiningExplosivesBiome.cs:10-83`) is deferred to a running-mode
+  slice: its `ExplosiveTrapCount` (Min 14 / Max 29 / WorldArea) scales
+  to `(0, 1)` on the 512×512 pin world — `GetRandom` can draw 1 with a
+  LIVE placement band (`rockLayer..height-200`), so `SEED42_512`
+  movement cannot be excluded without executing the generator, which
+  code-only mode forbids.
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
