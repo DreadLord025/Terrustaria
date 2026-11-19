@@ -199,12 +199,15 @@ pub(crate) fn unicorn_step(
         && npc.vy == 0.0
         && num8 < 100.0
         && npc.vx.abs() > 3.0
-        && ((npc.x + (w as i32 / 2) as f32 < p.x + (crate::player::WIDTH as i32 / 2) as f32
-            && npc.vx > 0.0)
-            || (npc.x + (w as i32 / 2) as f32 > p.x + (crate::player::WIDTH as i32 / 2) as f32
-                && npc.vx < 0.0))
     {
-        npc.vy -= 4.0;
+        // The integer-half centres (`width / 2`, `:62560`); the two
+        // one-sided tests live in a block so the `<`/`>` comparisons
+        // never parse as const generics.
+        let ncx = npc.x + (w as i32 / 2) as f32;
+        let pcx_int = p.x + (crate::player::WIDTH as i32 / 2) as f32;
+        if (ncx < pcx_int && npc.vx > 0.0) || (ncx > pcx_int && npc.vx < 0.0) {
+            npc.vy -= 4.0;
+        }
     }
     // `:62581-62616` — the chase vs wander split. Outside the pumpkin
     // moon both kinds encourage despawn instead of retargeting
