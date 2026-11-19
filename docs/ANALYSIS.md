@@ -25971,6 +25971,85 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
   aiStyle-39 only (`:77292`) вЂ” single frame,
   `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
   entry).
+## The Martian Turret (S1-D-3 aiStyle-73, code-only)
+
+`crates/tr-app/src/npc_ai_style73.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 73)` arm (`NPC.cs:35102-35217`) — the
+MartianTurret 387 (`SetDefaults` `:13922-13934`, `ID/NPCID.cs:11451`),
+the Martian Madness gun emplacement. CODE-ONLY MODE: no
+cargo/rustc/rustfmt invoked; the 14 witness tests are written, not run.
+Wiring deferred (the ForceBubble `npc_ai_style72.rs` / BlazingWheel
+precedent): no `NpcKind::MartianTurret` exists (the saucer's
+`MartianSaucerTurret` 393 is a different kind), so the style axis has no
+arm to claim; only the one-line `mod npc_ai_style73;` seam landed.
+
+- **Census — exactly one NPC kind**: the whole-tree `aiStyle = 73;`
+  census returns two hits: `NPC.cs:13926` (the `type == 387` branch) and
+  `Projectile.cs:4955` (the fountain projectiles 419-422 — projectile
+  space, out of NPC scope; the wiring engine's dropped fountain
+  requests ride that style, "Wiring engine (M7-WIRE-2)"). No dynamic
+  reassignment to 73 exists. The port had NO style-73 trace before this
+  round (no kind, no axis arm, no module).
+- **The machine** (in C# order): `TargetClosest(faceTarget: false)`
+  (`:35104`, the shared `npc_target.rs` — track without facing),
+  `spriteDirection = direction` (`:35105`), the X decay ×0.93 with the
+  STRICT ±0.1 snap (`:35106-35110` — the decay runs FIRST, so an input
+  of exactly 0.1 decays to 0.093 and snaps), the `flag74` firing gate
+  (`:35112`, `AI_GlobalFiringDistanceCheck` `:55835-55841` through the
+  `npc_ai_caster.rs` port — the 1920×1200 Point-centred rect inflated
+  −50).
+- **The materialize block** (`:35113-35178`, the 387-only branch): while
+  `ai[1] < 120` — `ai[1]++` FIRST, the alpha ramp
+  `(int)((1 - (ai[1]-60)/60) * 255)` above 60 / flat 255 at ≤60,
+  `dontTakeDamage = true`, `frameCounter = 0` / `frame.Y = 0`, the
+  four-pair dust-226 ring, the num1019-scaled blue light at
+  `((int)Center.X/16, (int)(Center.Y-10)/16)`, and the early `return`
+  (`:35168` — exits `AI()` only; the caller's gravity/integration tail
+  still runs). The 120 → 121 one-shot latch arms `netUpdate`
+  (`:35170-35174`); from then on the constant (0.1, 0.5, 0.7) light,
+  `dontTakeDamage = false`, `alpha = 0` (`:35175-35177`).
+- **The shot cycle** (`:35179-35216`): the `ai[0] == 0 && !flag74`
+  re-arm to −120, the `< 60` increment, the `justHit` reset to −30 +
+  `netUpdate` (AFTER the increment), and at `ai[0] == 60 && netMode != 1`
+  the type-435 `MartianTurretBolt` (`ID/ProjectileID.cs:1424`) from
+  `Center - (0, 10)` — the aim jittered by four `Main.rand` draws,
+  `Normalize()` with the NaN → −UnitY fallback, ×14 speed, damage
+  `GetAttackDamage_ForProjectiles(35, 35*0.8)` (the `381..=392` Martian
+  band `:35211-35214` — classic 35, expert/master 28 through the
+  `npc_ai_style37.rs` Remap port), kb 0. The bolt request rides the
+  `Style73Outcome.shot` seam; the type-435 `SetDefaults` row is the
+  projectile family's wiring obligation.
+- **RNG by construction**: the arm's ONLY arm-level draws are the
+  shot's four `Next` calls in the fixed order X jitter `Next(-100,101)`,
+  Y jitter `Next(-100,101)`, X scale `Next(70,131)*0.01`, Y scale
+  `Next(70,131)*0.01` (`:35199-35202`) — the witness
+  `the_shot_consumes_the_four_draws_in_order` replays them against a
+  mirrored oracle stream and pins the aim bit-for-bit. The fade's eight
+  `Dust.NewDust` calls per tick (`:35157`/`:35162`) draw only INSIDE
+  `Dust.NewDust` (`Dust.cs:170-175`/`:190`); the dust system is unported
+  (S1-E-2/S1-E-3), so the ring is skipped wholesale — the
+  `npc_lights.rs` precedent, stream untouched.
+  `turret_materialize_dust_plan` ports the ring geometry (the
+  `(0,-30).RotatedBy(ai[1]/60 * 1.5 * 2π) * (1, 0.4)` spin through the
+  style-37 `rotated_by`, the four offsets/scales −15/0.15, −5/0.3,
+  +5/0.6, +20/0.45, the per-pair `*= -1` mirror) count-only, no RNG
+  parameter. `TargetClosest`/`AI_GlobalFiringDistanceCheck`/
+  `Lighting.AddLight` draw nothing; the non-shot witness pins 130
+  fade/idle ticks + the hold/client paths at zero draws.
+- **FindFrame case 387** (`:71663-71696`) ports as the pure pair
+  function `turret_find_frame` (the `blazing_wheel_frame` precedent —
+  `Npc::frame_counter` is private): `ai[0] > 0` advances 1/tick +1 at
+  `>= 20` +1 at `>= 40`, flipping the 2-row strip every 10; else the
+  flat 15-tick flip. `Main.npcFrameCount[387] = 2` (`Main.cs:67122`, the
+  380-389 row's 8th entry). The fade pins the counter/row to 0 every
+  tick, so the strip only runs once solid.
+- **Deviations / seams**: `justHit` is a caller parameter (`Npc` has no
+  such field — the style-10/16 convention); the player slice `.get()`s
+  the target slot (the C# indexes without a bounds check; an absent
+  slot reads inactive — defensive, unreachable from vanilla writes);
+  the shot's player re-read uses the same captured slot (nothing moves
+  it between `:35111` and `:35196` within one tick); the dust ring and
+  the bolt's own projectile machine are the documented skips/requests.
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
@@ -27548,3 +27627,191 @@ Clone+PartialEq+`next_range`, `World::new`/`tile`/`tile_mut`/
 **no compiler invoked**; the witness arithmetic was additionally
 hand-checked (the top-margin pin-then-blend, the per-hit damps, the
 conditional-draw stream lengths, the truncated-vs-floored coords).
+## The snail wall-crawler family (aiStyle-67)
+
+S1-D-3 (aiStyle-67), code-only mode, 2026-11-19.
+`crates/tr-app/src/npc_ai_style67.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 67)` inline arm (`NPC.cs:34348-34622`; the family
+has NO `AI_067_*` method) as pure functions over a single `Npc`.
+**NPC aiStyle 67 is NOT projectile aiStyle 67** (the pirate shots,
+`AI_067_FreakingPirates`, siblings S1-D-4b7/12) — a different dispatch in
+`Projectile.cs`, untouched here.
+
+**Census.** The only three `this.aiStyle = 67;` rows in `SetDefaults`:
+Snail 359 (`NPC.cs:13573-13586`, `NPCID.cs:11395`, 12×12, dmg 0 / def 0 /
+lifeMax 5, npcSlots 0.5, noGravity, catchItem 2006), GlowingSnail 360
+(`:13587-13600`, `NPCID.cs:11397`, 14×14, catchItem 2007) and MagmaSnail 655
+(`:17280-17294`, `NPCID.cs:11987`, 14×14 + lavaImmune, catchItem 4849).
+None has an `NpcKind` — the module is UNWIRED (`#![allow(dead_code)]`); the
+machine is type-parameterised (`SnailCtx::npc_type`) and activates
+unchanged when the kinds land.
+
+**Fidelity notes (the quirks kept 1:1).**
+- The shimmer probe's clamp upper is `Main.maxTilesX`/`maxTilesY`
+  INCLUSIVE (`:34352-34353`) — an edge index reads a null tile and skips;
+  the port's `World::tile` returns `None` out of bounds. The cast is
+  `(int)(Center.X / 16f)` (AFTER the divide) here, but
+  `(int)Center.X / 16` (BEFORE) for the lights (`:34387`/`:34391`) — both
+  orders preserved.
+- The 359 resize reads the OLD box once before either axis resizes
+  (`:34368-34377`), uses the INTEGER `width / 2` half and the `-2f` X
+  quirk; Y uses the FULL old height. `size_override` carries
+  `base.width/height`. The scale roll runs AFTER the resize block, so the
+  roll tick never resizes (the witness pins it).
+- `GetShimmered` (`NPC.cs:91548-91565`): the statue arm despawns
+  (`SpawnedFromStatue`), else all three types `Transform(677 Shimmerfly)`
+  (`NPCID.cs:10470`'s `359,677`/`360,677`/`655,677` rows, `NPCID.cs:12031`).
+  The 677 kind is unported, so both arms ride `SnailEvents` intents; the
+  early return writes no `noGravity` (`None`). The `liquid > 30` gate is
+  strict (30 does not shimmer).
+- The fall roll `Next(7200)` rides the RIGHT `&&` operand (`:34411`):
+  drawn only while `ai[2] == 0`, a gate-FAIL draw is still consumed.
+- The fall block's ground probe is
+  `(int)(Center.X + width/2 * -direction) / 16` — integer half-width,
+  cast AFTER the add (`:34446-34453`); a non-topSlope tile + collideY
+  decrements the timer, a bottomSlope ahead flips direction.
+- The flag70 wall latch (`:34458-34464`) skips the whole rotation ease;
+  the stuck detector (`:34465-34482`) forces direction +1 after 11 ticks
+  at the same X (`localAI[2] > 10`).
+- The rotation ease captures the target, restores the current rotation
+  (`:34577-34578`), wraps at the strict `> 6.28` / `< 0` with the
+  `(double)` compare kept as an f64 promotion, then runs TWO separate
+  `if`s (not else-if) with the `> 3.14` long-way branch and the
+  clamp-to-target.
+- `Collision_MoveSnailOnSlopes` (`:92704-92721`, dispatched at
+  `:92568-92571` in place of the normal slope pass) keeps the vanilla
+  `direction *= -direction` quirk (`:92711`) — for ±1 that is always −1.
+  The C#'s `NPC.gravity` argument to `Collision.SlopeCollision` is UNUSED
+  in the body (`Collision.cs:1791-2031`; only `WalkDownSlope` reads it,
+  `:1688`), so the port's gravity-free `slope_collision` signature is
+  faithful.
+- `snail_find_frame` is the pure twin
+  `(vx, vy, frame, counter) -> (frame, counter)` (the
+  `npc_ai_style49.rs::nimbus_find_frame` convention —
+  `Npc::frame_counter` is private to `npc.rs`); the wiring drives both
+  fields from `find_frame`. Fall rows 4/5 at the 6-tick phase (reset at
+  `6*2-1 = 11`), walk rows 0/1/2/3/2/1 at the 10-tick phases (reset at
+  `10*6-1 = 59`), zero velocity freezes both (`:72258-72261`).
+
+**RNG by construction.** Exactly TWO `Main.rand` sites in the arm, in
+source order, both on the caller's `UnifiedRandom` (the exact `Main.rand`
+stream):
+1. `Next(80, 111)` (`:34381`) — type 359 ONLY, once, when `ai[3] == 0`
+   AND `netMode != 1`; zero draws once `ai[3]` is set (the resize never
+   re-rolls).
+2. `Next(7200)` (`:34411`) — when `ai[2] == 0` AND `netMode != 1`,
+   gate-fail draw consumed; zero draws once the fall timer is armed.
+Nothing else draws: the lights, speed split, tile probes, state machine,
+rotation ease and velocity tail are RNG-free; `TargetClosest`
+(`NPC.cs:77652-77781`) and `SlopeCollision` (`Collision.cs:1791-2031`)
+were re-read — no `Main.rand` in either body. The witness tests replay
+the stream draw-for-draw against a clone (`assert_eq!(rng, witness)`);
+the client path (`netMode == 1`) draws nothing at all.
+
+**Seams.** `SnailEvents::no_gravity` (the arm's `noGravity` writes, last
+write wins — `Npc` carries no gravity flag), `SnailEvents::light`
+(`(tile_x, tile_y, [r,g,b])` for the `EntityLights` feed,
+`npc_lights.rs`'s vocabulary), `shimmer_statue_despawn` /
+`shimmer_transform` (the `GetShimmered` intents).
+
+**Documented skips (outside the AI arm).**
+- `Collision_WaterCollision` (`NPC.cs:93055-93060`): aiStyle 67 never
+  wets (`wetCount = 0`, `lava = false`); `Npc` has no `wetCount` — the
+  wiring keeps the family dry.
+- `HitEffect` dust/gore (`:85253-85314`): 359 dust 201 + gore 547/548,
+  360 dust 202 + gore 549/550, 655 dust 174 + gore 1256, each death a
+  6-dust burst with a `Next(2)` roll — the hit-path RNG/particles ride
+  the caller's strike seam (the style52 dust skips' convention).
+- `GetAlpha` light floors (`:93555-93591`): 360 min RGB (75,175,255),
+  655 min (255,100,50), alpha 255 — render-side tint, unported.
+
+**Verification.** Code-only: the arm, `GetShimmered`,
+`Collision_MoveSnailOnSlopes`, FindFrame case 359/360/655 and the three
+`SetDefaults` rows were re-read line-by-line against the decompilation;
+every Rust API call site checked by read/grep
+(`npc_target::target_closest`'s 6-arg shape,
+`collision::slope_collision`'s `SlopeCollision{pos,vel}`,
+`Npc::center/size/size_override`, `Tile::top_slope/bottom_slope/
+liquid_kind`, `UnifiedRandom::next_range/next_max`, `World::tile`'s
+`Option`). The `frame_counter` privacy forced the pure-twin frame
+signature (the style49/21 precedent). The stale `no_slope_collision`
+comment in `collision.rs` (which misattributed the caller to the snail)
+was repointed to the Blazing Wheel (`NPC.cs:92775-92783`, ported by
+`npc_ai_style21.rs`). 17 `s1_d_3_s67_*` witness tests WRITTEN, NOT RUN —
+## The Martian Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)
+
+`crates/tr-app/src/npc_ai_style74.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 74)` arm (`NPC.cs:35218-35500`) — the census's
+exactly TWO `aiStyle = 74` kinds: the MartianDrone 388 (`:13939`, row
+`:13935-13951`) and the SolarCorite 418 (`:15372`, row `:15368-15381`).
+CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 18 witness tests are
+written, not run. Wiring deferred (the `npc_ai_style56.rs` precedent):
+both kinds exist in the roster (`npc/data.rs:1992`) but the live routing
+still runs the kind-keyed stand-ins — only the `mod npc_ai_style74;`
+seam landed.
+
+- **Defect catalogue against the live stand-ins** (the f1701eb0 classes):
+  * `update_martian_drone` (`npc.rs:8700`): no `TargetClosest` at all
+    (the C# `:35220` scans every tick); the jitter fold
+    `next_range(-50,51) * jitter * 0.04` multiplies the roll by 50 THEN
+    0.04 where the C# (`:35378`) multiplies by 0.04 only — a 50× aim
+    error; the charge sparkle `Next(4)` (`:35382`) is never drawn; the
+    trail dust (`:35276-35290`) and the implosion bursts
+    (`:35463-35491`) are skipped wholesale (their `NewDust` internals +
+    the `NextDouble` pairs + the `Next(2)`/`Next(4)` gates are stream
+    draws, not cosmetic — the shared `Main.rand` desynchronises); the
+    `ai[3] == 120` netUpdate (`:35340`) is missing; the implosion keeps
+    the kind box (the C# swells to 192×192 about the old centre,
+    `:35455-35458`); `alpha = 255` (`:35461`) and the `AddLight(0.2,
+    0.7, 1.1)` (`:35462`) are missing; the contact gate invents a
+    `player.hp > 0` term the C# (`:35443`) does not have.
+  * `update_solar_corite` (`npc.rs:11597`): a wholly invented machine —
+    the approach uses a 0.075 accel blend instead of the 60-tick damp
+    (`:35330-35331`), the 175-above/175-beside hover vector is absent,
+    the near-80 band is used as a charge TRIGGER (`ai[1] >= 20 && dist
+    < 80`) where the C# charges on sight+cone, the charge aims at the
+    player's CURRENT centre instead of the stored `ai[2]`/`ai[3]` aim
+    (`:35378`), the ×0.75 decay and the stalled-lerp (`:35360-35371`)
+    are missing, the dash has no homing term (the `(4/15)*60` fold,
+    `:35271`/`:35275`), the exit uses `dist > 60` where the C# uses 150
+    (`:35269`), the rotation is `atan2 + π/2` where the C# folds
+    `ToRotation()` into ±π/2 (`:35221-35229`), the ember dust gates
+    (`:35291-35307`, two `Next(3)` per tick) are never drawn, and
+    `wants_blast` (`npc.rs:11611`) is an invention — the C# arm has NO
+    blast projectile: the implosion is the 192-box contact damage +
+    self-death only (`:35455-35499`).
+- **RNG order**: every draw is cited in the module header — the 388
+  trail `NewDust` 226, the 418's two `Next(3)` ember gates (every tick,
+  all states), the release jitter pair (the 418's `Next(0, 1)` still
+  consumes `Sample()` — `UnifiedRandom.cs:126-130`), the 388 state-1
+  `Next(4)` sparkle gate (drawn on the release tick too), and the
+  implosion's 10×2 + 40×(2 + `Next(2)` [+2] + `Next(4)` [+2])
+  `NextDouble`/gate ladder. The dust internals roll inside
+  `DustPool::new_dust` (S1-E-1). The `Item14` sound request and the
+  `HitEffect` dust/gore plans are seams (the audio/death passes own
+  their draws — `LegacySoundPlayer.cs:631-633`, `NPC.cs:84470-84501` /
+  `:82959-82993`); the 388's ambient `Next(700)` cry (`:90171`) is the
+  `UpdateNPC` caller's obligation.
+- **The difficulty curves are ported verbatim** (`LinearCurve.Sample`,
+  `GameDifficultyData.cs:35-55`/`:84`/`:86`) — unlike the stand-ins'
+  classic-only constants; `env.difficulty` defaults 1.0 until the
+  difficulty system lands. The kb writes ride the
+  `Style74Outcome.knock_back_resist` seam (`Npc` has no mutable kb
+  field, the `Style39Context` precedent).
+- **The implosion box maths**: `position = Center` reads the OLD box's
+  FLOAT halves (`Entity.cs:50-55`), then `-= width/2` is INTEGER 192/2
+  = 96 — the new centre equals the old exactly; the `AddLight` tile is
+  the truncated new centre (`CenterTruncated`).
+- **FindFrame twins**: `case 388` (`:71731-71742`, 2 frames / 6 ticks,
+  `npcFrameCount[388] = 2`, `Main.cs:67122`) and `case 418`
+  (`:70758-70800`, the state rows with the STRICT `> 6`/`> 12` counters,
+  `npcFrameCount[418] = 8`, `Main.cs:67125`); states 3/4 hold the frame.
+
+**Verification.** Code-only: the seam call sites were checked against
+the actual signatures by read/grep (`npc_target::target_closest`'s
+6-arg shape, `projectile::can_hit`'s 9-arg shape,
+`player::solid_collision`, `DustPool::new_dust`'s 13-arg shape,
+`entity_lights::tile_x/tile_y`, `Npc::new`/`size_override`); the C# arm
+was re-read line-by-line (the parameter table, the state nesting, the
+dust gate order, the fuse). The 18 witness tests are WRITTEN, NOT RUN —
+**no compiler invoked**.

@@ -1977,8 +1977,9 @@ pub fn step_conveyor_belt_player(
 /// with the slope gates removed — the caller is on a slope and must not have
 /// the ramp refuse the wall. The up arm keeps the `+0.01`, the down arm has no
 /// `gravDir` nudge (`:2088` vs `:2124`).
-// ponytail: its only caller is `NPC.Collision_MoveSnailOnSlopes`
-// (`NPC.cs:92782`), and the snail family is not ported yet.
+// ponytail: its caller is `NPC.Collision_MoveBlazingWheel`
+// (`NPC.cs:92775-92783`), ported by `npc_ai_style21.rs` (the snail family's
+// `Collision_MoveSnailOnSlopes` uses `SlopeCollision` instead, `:92704-92721`).
 #[allow(dead_code)]
 pub fn no_slope_collision(
     world: &World,
