@@ -405,6 +405,27 @@ pub struct World {
     /// start clears them (`:268-269`); the C# never saves them (`Save`
     /// writes only the three tier flags, `:151-156`), so neither do we.
     pub dd2_latches: crate::dd2::DownedLatches,
+    /// `DD2Event.WonThisRun` (`DD2Event.cs:57`) — `StartVictoryScene`
+    /// (`:483`) latches it; `StartInvasion` clears it (`:272`). The win
+    /// sentinel's `CheckProgress` refusal (`:364`) and the scene-end
+    /// `StopInvasion(win: true)` read it.
+    pub dd2_won: bool,
+    /// `DD2Event.DownedInvasionT1/2/3` (`DD2Event.cs:49-53`) — the tier
+    /// victory latches (`WinInvasionInternal`, `:316-327`), persisted by
+    /// `DD2Event.Save` (`:151-156`). Distinct from `dd2_latches` (the
+    /// per-run wave-boss deaths, never saved).
+    pub dd2_downed_t1: bool,
+    pub dd2_downed_t2: bool,
+    pub dd2_downed_t3: bool,
+    /// `DD2Event._crystalsDropping_lastWave/_toDrop/_alreadyDropped`
+    /// (`DD2Event.cs:79-83`) — the per-kill energy-crystal budget
+    /// (`ShouldDropCrystals`, `:815-912`); `StartInvasion` zeroes it
+    /// (`:257-259`).
+    pub dd2_crystal_drops: crate::dd2_victory::CrystalDropState,
+    /// `DD2Event._spawnedBetsyT3` (`DD2Event.cs:65`) — the tier-3 wave-7
+    /// Betsy summon latch (`SummonBetsy`, `:916`); `StartInvasion` clears
+    /// it (`:270`).
+    pub dd2_betsy_spawned: bool,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -677,6 +698,12 @@ impl World {
             dd2_lane_rate: crate::dd2::LANE_SPAWN_RATE,
             dd2_crystal_alive: false,
             dd2_latches: crate::dd2::DownedLatches::default(),
+            dd2_won: false,
+            dd2_downed_t1: false,
+            dd2_downed_t2: false,
+            dd2_downed_t3: false,
+            dd2_crystal_drops: crate::dd2_victory::CrystalDropState::default(),
+            dd2_betsy_spawned: false,
             tower_shield_solar: 0,
             tower_shield_vortex: 0,
             tower_shield_nebula: 0,
