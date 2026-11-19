@@ -1369,6 +1369,13 @@ fn update_worms_ctx(
         {
             continue;
         }
+        // W-A2-3's Destroyer-laser kind gate (NPC.cs:49856 `type == 135`)
+        // had its target DELETED by R55 on main: the family's laser runs
+        // in `npc_ai_style37::destroyer_family_step`'s own `npc_type ==
+        // 135` arm (`update_destroyers`), and `is_worm()` excludes the
+        // family — no self-mapping classic tail can reach a laser block
+        // in this pass. The deletion is kept; the gate lives in the
+        // wired machine (the leech draw-census witness pins the result).
         let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
         let Some(leader) = npcs
             .iter()
@@ -1381,7 +1388,29 @@ fn update_worms_ctx(
             // `checkDead`), and so does the Destroyer's (`AI_037`'s
             // `NPC.cs:49820-49828`).
             if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                // W-A2-3 (T3b): the FULL `Transform(13, ai[0])` semantics
+                // (`NPC.cs:81084-81145`), not a bare kind swap: the
+                // bottom-anchored reposition (`:81092-81100`:
+                // `position.Y += height` before `SetDefaults`, `-= height`
+                // after) and the life rescale (`:81106-81110`:
+                // `life = oldLife * newLifeMax / oldLifeMax`, min 1, the
+                // integer multiply-then-divide order). The kind-keyed
+                // tables refresh defense/damage/size; the chain links
+                // (`worm_id`/`seg_index`) ride on — the new head keeps the
+                // old follower link (`ai[0]`), and `ai[2] = 0` means a
+                // split head never re-spawns a chain (the port's
+                // `seg_index > 0` budget gate holds that by construction).
+                let old_h = npcs[i].size().1;
+                let (old_life, old_max) = (npcs[i].hp, npcs[i].max_hp);
+                npcs[i].y += old_h;
                 npcs[i].kind = NpcKind::EaterOfWorldsHead;
+                npcs[i].y -= npcs[i].size().1;
+                npcs[i].max_hp = NpcKind::EaterOfWorldsHead.max_hp();
+                npcs[i].hp = if old_max > 0 {
+                    (old_life * npcs[i].max_hp / old_max).max(1)
+                } else {
+                    1
+                };
             } else {
                 npcs[i].hp = 0;
             }
@@ -1416,7 +1445,21 @@ fn update_worms_ctx(
             .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
         if !follower_alive {
             if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                // W-A2-3 (T3b): `Transform(15, 0f, ai[1])` — the same
+                // reposition + life rescale as the head split above
+                // (`NPC.cs:81092-81110`); the new tail keeps its leader
+                // link (`ai[1]` = the port's `seg_index - 1`).
+                let old_h = npcs[i].size().1;
+                let (old_life, old_max) = (npcs[i].hp, npcs[i].max_hp);
+                npcs[i].y += old_h;
                 npcs[i].kind = NpcKind::EaterOfWorldsTail;
+                npcs[i].y -= npcs[i].size().1;
+                npcs[i].max_hp = NpcKind::EaterOfWorldsTail.max_hp();
+                npcs[i].hp = if old_max > 0 {
+                    (old_life * npcs[i].max_hp / old_max).max(1)
+                } else {
+                    1
+                };
             } else {
                 npcs[i].hp = 0;
             }
@@ -3655,6 +3698,50 @@ fn carrier_link_pre_pass_linear(npcs: &mut [Npc]) {
     }
 }
 
+/// The King Slime's minion burst (`AI_015_KingSlime`, `NPC.cs:43394-43413`):
+/// `count` Blue Slimes spawned INSIDE the King's body. Per minion the C#
+/// draws `Next(width-32)` / `Next(height-32)` for the spawn point
+/// (`NewNPC`'s X/Y anchor the minion's BOTTOM, `NPC.cs:80770`), then
+/// `Next(-15,16)*0.1` / `Next(-30,1)*0.1` velocity and `-1000*Next(3)` for
+/// `ai[0]`, with `ai[1] = -1`. FIVE draws per minion on the caller's
+/// `UpdateNPCs` stream (K-2 census, S1-A-10); the expert `Next(4)==0` →
+/// SpikedSlime 535 roll (`:43399`) is constants-off (the classic solo env —
+/// ANALYSIS "The King Slime's machine"). The C# has NO minion cap and NO
+/// placement/collision gate (`NewNPC` takes any free slot), so the port
+/// spawns every drawn minion at its drawn point.
+fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> Vec<Npc> {
+    let (kw, kh) = king.size();
+    // The Blue Slime's `SetDefaults` box (`NPC.cs:8574-8575`): 24x18.
+    let (sw, sh) = NpcKind::Slime.size();
+    let mut out = Vec::new();
+    for _ in 0..count {
+        // `:43396-43397` — `(int)(position + (float)Next(size - 32))`.
+        let x = (king.x + rng.next_max(kw as i32 - 32) as f32) as i32;
+        let y = (king.y + rng.next_max(kh as i32 - 32) as f32) as i32;
+        // `:43403` + `NPC.cs:80770` — `NewNPC`'s X/Y anchor the BOTTOM;
+        // `direction` stays the ctor's 0 (`NPC.cs:8354`) until the AI writes.
+        let mut m = Npc::new(
+            NpcKind::Slime,
+            x as f32 - sw * 0.5,
+            y as f32 - sh,
+            0,
+            0.0,
+        );
+        m.hp = m.max_hp;
+        // `:43405-43406` — the velocity draws.
+        m.vx = rng.next_range(-15, 16) as f32 * 0.1;
+        m.vy = rng.next_range(-30, 1) as f32 * 0.1;
+        // `:43407-43408` — the AI seed (`ai[1] = -1` gates the slime-body
+        // item roll, `AI_001` `:60356`). The port's stand-in slime machine
+        // (`update_slime`) reads `hop_timer`, not `ai[0]`, so the jump-delay
+        // seed is carried as data until the A1-4 whole-arm port consumes it.
+        m.ai[0] = -1000.0 * rng.next_max(3) as f32;
+        m.ai[1] = -1.0;
+        out.push(m);
+    }
+    out
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -3996,6 +4083,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if n.kind == NpcKind::DetonatingBubble {
                 n.wind_speed_current = wind;
             }
+        }
+    }
+    // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
+    // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
+    // scan over the other ACTIVE type-125/126 slots, feeding
+    // `DiscourageDespawn(timeLeft - 1)`): `Npc::update_rng` cannot see
+    // its siblings, so the pre-pass stamps each eye's
+    // `twin_time_lefts` in slot order (the Plantera hook-anchor carrier
+    // precedent, `npc_ai_plantera_anchor.rs`).
+    {
+        let is_twin = |n: &Npc| {
+            (n.kind == NpcKind::Retinazer || n.kind == NpcKind::Spazmatism) && n.hp > 0
+        };
+        for i in 0..app.npcs.len() {
+            if !is_twin(&app.npcs[i]) {
+                continue;
+            }
+            app.npcs[i].twin_time_lefts =
+                crate::npc_ai_style30::twin_time_left_scan(&app.npcs, i, is_twin);
         }
     }
     let player = &mut app.player;
@@ -5209,10 +5315,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
                 let mut hands = Vec::new();
                 for (side, ai3) in [(-1.0f32, 0.0f32), (1.0, 150.0)] {
+                    // `NPC.NewNPC(X: headCX, Y: headTop + height/2)`
+                    // (`:21930`/`:21935`) sets the hand's BOTTOM at the
+                    // head's vertical centre (`NPC.cs:80770`) — the
+                    // 52×52 hand box centres on (headCX, headCY − 26).
+                    // The old invented −75/−75 offset is gone (B-1 §3).
                     let mut hand = Npc::new(
                         NpcKind::SkeletronHand,
-                        head.x + hw * 0.5 - 75.0,
-                        head.y + hh * 0.5 - 75.0,
+                        head.x + hw * 0.5 - 26.0,
+                        head.y + hh * 0.5 - 52.0,
                         0,
                         0.0,
                     );
@@ -5224,24 +5335,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs.append(&mut hands);
             }
         }
-        // The live hand count (the C#'s `num168`): the expert mode's spin
-        // shot and the charge's speed scale with it.
+        // The live hand count (the C#'s LOCAL `num168`, `NPC.cs:21963-
+        // 21972`): B-1 S3 — it rides a World mirror, NOT `head.ai[3]`.
+        // The C# head's `ai[3]` is the RED-HAT LATCH
+        // (`RedHatSkeletronAdjustmentsEnabled`, `NPC.cs:66673` reads
+        // `type == 35 && ai[3] == 1`); writing the hands count there made
+        // every fight's last-hand phase (count == 1) spuriously activate
+        // red-hat mode for the head, the hands' `localAI[3]` mirror and
+        // the Dark Caster latch.
         let hands_alive = app
             .npcs
             .iter()
             .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
             .count() as f32;
+        app.world.skeletron_hands_alive = hands_alive;
         if let Some(head) = app
             .npcs
-            .iter_mut()
+            .iter()
             .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
-            head.ai[3] = hands_alive;
-            // S1-E-14b: the `FindFirstNPC(35)` mirror the hand's
-            // `localAI[3]` copy (`NPC.cs:22315`) and the Dark Caster's
-            // `aiStyle 8` latch (`NPC.cs:20820-20827`) read — the head's
-            // live `ai[3]` (the port's hands-count stand-in; the red-hat
-            // head model deviation is recorded in ANALYSIS).
+            // B-1 H1/H2/H11: the head-present check, the `ai[1]` state
+            // and the RAW `ai[3]` slot the hand's machine reads
+            // (`NPC.cs:22303`/`:22324-22328`/`:22315`).
+            app.world.skeletron_head_present = true;
+            app.world.skeletron_head_state = head.ai[1];
+            app.world.skeletron_head_ai3 = head.ai[3];
+            // S1-E-14b: the `FindFirstNPC(35)` mirror the Dark Caster's
+            // `aiStyle 8` latch (`NPC.cs:20820-20827`) reads — the head's
+            // RAW red-hat slot. The trigger itself (`SpawnSkeletron(
+            // redHatMode)`, `NPC.cs:80394-80470`) is unported, so the
+            // slot stays 0 in live play — red-hat mode never activates
+            // spuriously.
             app.world.skeletron_red_hat = head.ai[3] == 1.0;
         }
         if !app
@@ -5250,6 +5374,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
         {
             app.world.skeletron_red_hat = false;
+            app.world.skeletron_head_present = false;
+            app.world.skeletron_head_state = 0.0;
+            app.world.skeletron_head_ai3 = 0.0;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -5258,7 +5385,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // nearest player; the port polls the count delta (the flag edge is
     // the edge — the sim resets it to 0 on the summon, exactly like the
     // vanilla's `shadowOrbCount = 0`).
-    if app.world.shadow_orb_count >= 3 && !app.world.downed_eow {
+    // W-A2-3 (T3c): the gate is the C#'s LIVING-BOSS check
+    // (`WorldGen.cs:54296`: `!(AnyNPCs(266) & flag) && (!AnyNPCs(13) ||
+    // flag)` — the corruption arm reduces to `!AnyNPCs(13)`), NOT
+    // `downed_eow`: once the EoW is killed the orbs summon it again
+    // freely while none lives. The crimson-Brain arm still rides the
+    // heart-detection wave.
+    if app.world.shadow_orb_count >= 3
+        && !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+    {
         app.world.shadow_orb_count = 0;
         if let Some(p) = app.player.as_ref() {
             let (px, py) = p.center();
@@ -5445,9 +5583,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
         // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3) and
+        // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
-        // reconcile's `bat_ai` shot drain).
+        // reconcile's `bat_ai` shot drain) and the Skeletron head's
+        // spin-shot Skull (`NPC.cs:22013` - B-1).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
@@ -5456,6 +5595,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::DEMON_SICKLE
+            || kind == crate::projectile::SKULL
         {
             300
         } else {
@@ -5879,29 +6019,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.extend(dutch_drops);
 
-    let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
+    // The King Slime's minion batch (`AI_015_KingSlime`, `NPC.cs:43394-43413`):
+    // the 5 %-damage arm's `rand(1, 4)` count was drawn by the AI tick; THIS
+    // drain resolves the burst at the same `UpdateNPCs` stream position
+    // (K-2, 54-audit): every minion draws position x/y, velocity x/y and
+    // `ai[0]` — 5 draws per minion after the one batch draw (the expert
+    // `Next(4)` kind roll `:43399` is constants-off, the classic solo env —
+    // ANALYSIS "The King Slime's machine"). No minion cap: the C# has none
+    // (the old invented 8-minion ceiling dropped draws and spawns alike).
     let mut spawned = Vec::new();
+    let batch_rng = app.rngs.stream(RngKey::UpdateNpcs);
     for n in app.npcs.iter_mut() {
         if !n.wants_minion {
             continue;
         }
         n.wants_minion = false;
-        // The King Slime's batch (`AI_015` `:44233-44247`): the 5 %-damage
-        // arm spawns `rand(1, 4)` (1-3) Blue Slimes, the death arm 4-7; the
-        // port's `wants_minion_batch` carries the count for the resolution.
         let batch = n.wants_minion_batch.max(1);
         n.wants_minion_batch = 0;
-        for k in 0..batch {
-            if minions >= 8 {
-                break;
-            }
-            let xt =
-                ((n.x / TILE_PX) as i32 + n.facing * (2 + k as i32)).clamp(2, app.world.width - 3);
-            if let Some(m) = Npc::spawn_slime(&app.world, xt) {
-                spawned.push(m);
-                minions += 1;
-            }
-        }
+        spawned.extend(king_slime_minion_batch(n, batch, batch_rng));
     }
     app.npcs.extend(spawned);
     if let Some(player) = app.player.as_mut() {
@@ -8876,6 +9011,34 @@ mod probe_tests {
         player.y = 118.0 * TILE_PX;
         app.player = Some(player.clone());
         (app, player)
+    }
+
+    /// S1-D-3 wire-retinazer: the twin-despawn feed through the LIVE sim
+    /// pass (`NPC.cs:26468-26474`). The pre-pass stamps each eye's
+    /// `twin_time_lefts` from the other active 125/126 slot; the
+    /// aiStyle-30 axis consumes it — the Retinazer's 5-tick timer is
+    /// raised to the Spazmatism's 300 - 1, then the pass-tail
+    /// `tick_despawn` (`NPC.cs:77986`) decrements both once.
+    #[test]
+    fn s1_d_3_wire_the_sim_feeds_the_twin_time_lefts() {
+        let (mut app, _player) = app_with_player();
+        app.world.day_time = false;
+        let mut ret = Npc::new(NpcKind::Retinazer, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        ret.hp = ret.max_hp;
+        ret.despawn_timer = 5;
+        let mut spaz = Npc::new(NpcKind::Spazmatism, 70.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        spaz.hp = spaz.max_hp;
+        spaz.despawn_timer = 300;
+        app.npcs.push(ret);
+        app.npcs.push(spaz);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let ret = &app.npcs[0];
+        let spaz = &app.npcs[1];
+        assert_eq!(ret.twin_time_lefts, vec![300], "the pre-pass fed the sibling's timeLeft");
+        assert_eq!(spaz.twin_time_lefts, vec![5], "the feed is symmetric (slot order)");
+        // 300 - 1 = 299 raised the 5, then the tail tick decremented it.
+        assert_eq!(ret.despawn_timer, 298, "the discourage raise ran through the axis");
+        assert_eq!(spaz.despawn_timer, 299, "the healthy timer only ticks down");
     }
 
     #[test]
@@ -13450,6 +13613,257 @@ mod worm_tests {
             "same-tick spacing: {dist} vs {bw}"
         );
     }
+
+    // ---- W-A2-3 witnesses (audit 55, fix/eow-leech-worm-defects) ----
+
+    #[test]
+    fn the_stardust_worm_head_joins_the_worm_pass_without_a_chain() {
+        // W-A2-3 (T3f): kind 144 rides `is_worm` now (`NPC.cs:51564-51567`
+        // — 402 IS an AI_006 kind, `flag3 = true` always), but it is a
+        // MINION: type 402 sits outside the `:51301` chain-spawn lists,
+        // so the pass never grows links and its own machine keeps the
+        // steering (`npc.rs::update_stardust_worm_head`).
+        assert!(NpcKind::StardustWormHead.is_worm());
+        assert!(!NpcKind::StardustWormHead.is_worm_head());
+        assert!(!NpcKind::StardustWormHead.is_worm_mid());
+        assert!(!NpcKind::StardustWormHead.shares_carrier_life());
+        assert_eq!(NpcKind::StardustWormHead.worm_tunables(), (9.0, 0.3));
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::StardustWormHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        let mut npcs = vec![n];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        for _ in 0..8 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some((160.0 * TILE_PX, 116.0 * TILE_PX)),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert_eq!(npcs.len(), 1, "the lone minion grows no chain");
+        assert!(npcs[0].worm_inited, "the pass claims it (is_worm)");
+        // The pass's head machine never touches it (not is_worm_head):
+        // the velocity stays whatever its own machine wrote (zero here).
+        assert_eq!((npcs[0].vx, npcs[0].vy), (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_leech_chain_grows_a_tail_when_the_budget_runs_out() {
+        // W-A2-3 (T3e) witness: `AI_006`'s chain (`NPC.cs:51339-51366`) —
+        // the 117 head rolls `Next(3, 6)`, spawns 118; each 118 with
+        // `ai[2] > 0` spawns another 118 (`:51350-51353`); the exhausted
+        // body spawns `type + 1` = the 119 tail (`:51357`). The old
+        // `worm_next(LeechBody) == LeechBody` ended the chain tailless.
+        let world = fixture();
+        let mut head = Npc::new(
+            NpcKind::LeechHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(7);
+        // The draw census: the whole assembly consumes EXACTLY the
+        // head's budget ledger — W-A2-1's discarded `Next(8, 13)` FIRST
+        // (`NPC.cs:51310`) then the `Next(3, 6)` override (`:51341`);
+        // the tail spawn and every link after it draw nothing (the
+        // Destroyer laser's `type == 135` gate lives in the wired
+        // family machine `npc_ai_style37` — R55 deleted this pass's
+        // laser block, so no self-mapping tail can draw here).
+        let mut census = UnifiedRandom::new(7);
+        let _discarded = census.next_range(8, 13);
+        let budget = census.next_range(3, 6) as usize;
+        let mut next_id = 1u32;
+        for _ in 0..16 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some((160.0 * TILE_PX, 116.0 * TILE_PX)),
+                &mut npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert_eq!(rng, census, "the budget ledger (discarded + override), no other draw");
+        let tails = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::LeechTail)
+            .count();
+        let bodies = npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::LeechBody)
+            .count();
+        assert_eq!(tails, 1, "the chain closes with exactly one 119 tail");
+        assert_eq!(bodies, budget, "the Next(3,6) budget: {bodies}");
+        assert_eq!(npcs.len(), 1 + bodies + 1, "head + bodies + tail");
+        assert_eq!(npcs[npcs.len() - 1].kind, NpcKind::LeechTail);
+        // The tail shares the head's pool (`realLife`, `:51360-51363`)
+        // and its strike lands on the carrier.
+        let pool = npcs[0].max_hp;
+        let tail = npcs.len() - 1;
+        let tail_x = npcs[tail].x;
+        assert!(Npc::strike_melee(
+            &mut npcs, tail, 9, tail_x, 0.0, false, None
+        ));
+        assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
+        assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
+    }
+
+    #[test]
+    fn the_eow_split_rescales_life_and_repositions_like_transform() {
+        // W-A2-3 (T3b) witness: `Transform` (`NPC.cs:81084-81145`) — the
+        // orphaned 14 becomes 13 (`:51513`), the followerless 14 becomes
+        // 15 (`:51517`); both carry the bottom-anchored Y reposition
+        // (`:81092-81100`) and `life = oldLife * newLifeMax / oldLifeMax`
+        // (min 1, `:81106-81110`). The port's EoW rows share lifeMax 150
+        // (`NPC.cs:8912`/`:8931`/`:8951`) so the ratio is 1:1 — the
+        // rescale must still run (a wounded body keeps its wound) and a
+        // zero-life edge floors at 1.
+        let world = fixture();
+        // A three-link EoW: head (seg 0), body (seg 1), tail (seg 2).
+        let mut head = Npc::new(
+            NpcKind::EaterOfWorldsHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.worm_id = 1;
+        head.worm_inited = true;
+        head.hp = head.max_hp;
+        let mut body = Npc::new(
+            NpcKind::EaterOfWorldsBody,
+            150.0 * TILE_PX,
+            113.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        body.worm_id = 1;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        body.hp = 75; // half life — the rescale keeps the ratio
+        let mut tail = Npc::new(
+            NpcKind::EaterOfWorldsTail,
+            150.0 * TILE_PX,
+            114.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        tail.worm_id = 1;
+        tail.seg_index = 2;
+        tail.worm_inited = true;
+        tail.hp = tail.max_hp;
+        let body_y = body.y;
+        let body_h = body.size().1;
+        let mut npcs = vec![head, body, tail];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 2u32;
+        // Kill the head: the body is orphaned → Transform(13). The
+        // player is None so the head machine does not integrate after
+        // the transform — the reposition assertion reads the split site
+        // alone (the C#'s new head steps AI_006 the same tick; that is
+        // the head machine's own hunk, R77's wave).
+        npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(npcs[1].kind, NpcKind::EaterOfWorldsHead, "the orphan became a head");
+        assert_eq!(npcs[1].hp, 75, "the life ratio rides the transform (150/150)");
+        assert_eq!(npcs[1].max_hp, 150);
+        // The 38x38 → 38x38 swap repositions by old_h - new_h = 0; the
+        // bottom anchor held (`y += old_h; y -= new_h`).
+        assert_eq!(npcs[1].y, body_y + body_h - npcs[1].size().1);
+        // The new head keeps its follower link — the tail survives.
+        assert!(npcs[2].hp > 0, "the tail keeps its leader (the new head)");
+        // Now kill the new head's follower (the tail): the head dies
+        // (`:51501-51509`) — and a followerless BODY would Transform(15).
+        // Direct witness of the tail arm: a fresh body with no follower.
+        let mut lone = Npc::new(
+            NpcKind::EaterOfWorldsBody,
+            150.0 * TILE_PX,
+            113.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        lone.worm_id = 2;
+        lone.seg_index = 1;
+        lone.worm_inited = true;
+        lone.hp = 1; // the min-1 floor arm
+        let mut leader = Npc::new(
+            NpcKind::EaterOfWorldsHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        leader.worm_id = 2;
+        leader.worm_inited = true;
+        leader.hp = leader.max_hp;
+        let mut pool = vec![leader, lone];
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            None,
+            &mut pool,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(pool[1].kind, NpcKind::EaterOfWorldsTail, "the followerless body became a tail");
+        assert_eq!(pool[1].hp, 1, "1 * 150 / 150 = 1 (the min-1 floor holds)");
+        assert_eq!(pool[1].max_hp, 150);
+    }
+
+    #[test]
+    fn the_orbs_resummon_the_eow_after_the_first_kill() {
+        // W-A2-3 (T3c) witness: `WorldGen.cs:54296` — the third-orb gate
+        // is `!AnyNPCs(13)` (a LIVING-head scan), NOT `downedBoss2`. Once
+        // the EoW is killed the counter's next third break summons it
+        // again; while a head lives the gate holds (the count is NOT
+        // reset — the C# leaves `shadowOrbCount` at 3 until a summon).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        // The first kill already happened: downed_eow is set.
+        app.world.downed_eow = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0),
+            "the orbs re-summon after the kill (the old !downed_eow gate blocked this)"
+        );
+        assert_eq!(app.world.shadow_orb_count, 0, "the summon resets the counter");
+        // While the head lives, the next third break does NOT summon.
+        app.world.shadow_orb_count = 3;
+        let heads_before = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+            .count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let heads_after = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+            .count();
+        assert_eq!(heads_after, heads_before, "AnyNPCs(13) blocks the second summon");
+        assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate leaves the count");
+    }
 }
 
 #[cfg(test)]
@@ -16720,5 +17134,410 @@ mod fishron_wiring_tests {
         let s = sharks[0];
         assert_eq!(s.ai[3], -1.5, "the rise preset");
         assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
+    }
+}
+
+/// B-1 audit witnesses — the sim-side seams (research/51 §3: the S3
+/// slot split, the hands' init position, the kill cascade through the
+/// live pass). WRITTEN NOT RUN in the code-only wave — no compiler
+/// invoked.
+#[cfg(test)]
+mod b1_skeletron_sim_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.day_time = false;
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    fn skeletron_head(x: f32, y: f32) -> Npc {
+        let mut head = Npc::new(NpcKind::SkeletronHead, x, y, 1, 0.0);
+        head.hp = head.max_hp;
+        head
+    }
+
+    /// S3 regression — the live pass NEVER writes the hands count into
+    /// `head.ai[3]`: with two hands spawned the slot stays 0 and the
+    /// red-hat mirror stays false through the whole 2 → 1 → 0 countdown
+    /// (the old port activated fake red-hat mode at count == 1).
+    #[test]
+    fn b1_the_sim_keeps_the_hands_count_out_of_the_red_hat_slot() {
+        let (mut app, _player) = app_with_player();
+        app.npcs
+            .push(skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX));
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The init spawned the two hands (`NPC.cs:21930-21940`).
+        let hands: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand)
+            .collect();
+        assert_eq!(hands.len(), 2, "the two hands spawn");
+        assert_eq!(app.world.skeletron_hands_alive, 2.0);
+        assert!(!app.world.skeletron_red_hat);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        assert_eq!(head.ai[3], 0.0, "ai[3] is the latch slot, not the count");
+        // Kill one hand: the last-hand phase — count 1, still no latch.
+        let hand_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::SkeletronHand)
+            .unwrap();
+        app.npcs[hand_idx].hp = 0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.skeletron_hands_alive, 1.0);
+        assert!(
+            !app.world.skeletron_red_hat,
+            "one hand alive must not read RED-HAT MODE"
+        );
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        assert_eq!(head.ai[3], 0.0);
+        assert!(!head.red_hat_skeletron_adjustments_enabled());
+        // The Dark Caster latch never fires either (the aiStyle-8 step
+        // through the public dispatch).
+        let mut dc = Npc::new(NpcKind::DarkCaster, 140.0 * TILE_PX, 110.0 * TILE_PX, 2, 0.0);
+        dc.hp = dc.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut player = app.player.clone().unwrap();
+        dc.update_rng(&app.world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(dc.local_ai[3], 0.0, "no spurious caster latch");
+    }
+
+    /// H1 through the live pass — the head's death drops BOTH hands on
+    /// the next tick (the head-gone cascade, `NPC.cs:22303-22312`).
+    #[test]
+    fn b1_the_hands_die_with_the_head_through_the_live_pass() {
+        let (mut app, _player) = app_with_player();
+        app.npcs
+            .push(skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX));
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::SkeletronHand)
+                .count(),
+            2
+        );
+        // Kill the head.
+        let head_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        app.npcs[head_idx].hp = 0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.world.skeletron_head_present,
+            "the head-gone mirror clears"
+        );
+        // One more pass: the hands' machine sees the cleared mirror
+        // (the mirror pass runs after the update loop — the same
+        // one-tick lag the prime limbs have) and the cascade kills them.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
+                .count(),
+            0,
+            "the hands never keep slamming a dead head's anchor"
+        );
+    }
+
+    /// The hands' init position (`NPC.cs:21930`/`:80770`): NewNPC sets
+    /// the hand's BOTTOM at (headCX, headTop + headHeight/2) — the
+    /// 52×52 box centres on (headCX, headCY − 26), not the invented
+    /// −75/−75 offset.
+    #[test]
+    fn b1_the_hands_spawn_at_the_csharp_bottom_anchor() {
+        let (mut app, _player) = app_with_player();
+        let hx = 150.0 * TILE_PX;
+        let hy = 100.0 * TILE_PX;
+        app.npcs.push(skeletron_head(hx, hy));
+        update_npcs(&mut app, 1.0 / 60.0);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::SkeletronHead)
+            .unwrap();
+        let (hw, hh) = head.size();
+        for hand in app.npcs.iter().filter(|n| n.kind == NpcKind::SkeletronHand) {
+            let (w, h) = hand.size();
+            assert_eq!((w, h), (52.0, 52.0));
+            // The spawn seats (the head has moved only fractionally on
+            // its init tick — the sim's spawn pass runs after the
+            // update loop and reads the same live position).
+            assert!(
+                (hand.x + w * 0.5 - (head.x + hw * 0.5)).abs() < 1e-2,
+                "the centre X"
+            );
+            assert!(
+                (hand.y + h - (head.y + hh * 0.5)).abs() < 1e-2,
+                "the Bottom anchor"
+            );
+        }
+        // The seat signs and the +1 hand's 150 timer head start.
+        let mut seats: Vec<(f32, f32)> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand)
+            .map(|n| (n.ai[0], n.ai[3]))
+            .collect();
+        seats.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        assert_eq!(seats, vec![(-1.0, 0.0), (1.0, 150.0)]);
+    }
+
+    /// The Skull's `timeLeft = 300` override (`NPC.cs:22013`) rides the
+    /// shot drain.
+    #[test]
+    fn b1_the_skull_shot_drains_with_the_300_tick_lifetime() {
+        let (mut app, _player) = app_with_player();
+        let mut head = skeletron_head(150.0 * TILE_PX, 100.0 * TILE_PX);
+        head.ai[0] = 1.0;
+        head.wants_hostile_shot.push((
+            crate::projectile::SKULL,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            3.0,
+            1.0,
+            17,
+        ));
+        app.npcs.push(head);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let skull = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::SKULL)
+            .expect("the skull spawned");
+        // The projectile pass may have ticked it once already; the
+        // override is 300, never the default lifetime.
+        assert!(
+            skull.time_left >= 298 && skull.time_left <= 300,
+            "the 300-tick override ({})",
+            skull.time_left
+        );
+    }
+}
+
+/// A-1 audit (54-audit-slime-eye) K-1/K-2/K-3 — the King Slime fixes.
+/// Stream-parity witnesses: WRITTEN, NOT RUN (code-only mode, no compiler).
+/// Each pins the exact `Main.rand` draw order the C# arm consumes
+/// (`AI_015_KingSlime`, `NPC.cs:43121-43414`), per the S1-A-10 contract.
+#[cfg(test)]
+mod king_slime_audit_tests {
+    use super::*;
+    use tr_core::UnifiedRandom;
+
+    /// K-2 census (`NPC.cs:43394-43413`): the batch drain consumes EXACTLY
+    /// five draws per minion, in the C# order — position x (`Next(width-32)`),
+    /// position y (`Next(height-32)`), velocity x (`Next(-15,16)`), velocity y
+    /// (`Next(-30,1)`), `ai[0]` (`Next(3)`). The expert `Next(4)` kind roll
+    /// (`:43399`) is constants-off (classic solo). The witness replays the
+    /// draws on a clone and asserts both the stream state AND every spawned
+    /// minion's position/velocity/ai match the drawn values.
+    #[test]
+    fn k2_the_minion_batch_consumes_five_draws_per_minion_in_csharp_order() {
+        let mut king = Npc::new(NpcKind::KingSlime, 1000.0, 500.0, 1, 0.0);
+        king.hp = king.max_hp;
+        // A known body box so the `Next(size-32)` ranges are pinned.
+        king.size_override = Some((122.0, 115.0));
+        let (kw, kh) = king.size();
+        let count = 3u32;
+        let mut rng = UnifiedRandom::new(777);
+        let mut witness = rng.clone();
+        let batch = king_slime_minion_batch(&king, count, &mut rng);
+        assert_eq!(batch.len(), count as usize, "no cap: every drawn minion spawns");
+        let (sw, sh) = NpcKind::Slime.size();
+        for m in &batch {
+            // The C# draw order, replayed on the witness.
+            let dx = witness.next_max(kw as i32 - 32);
+            let dy = witness.next_max(kh as i32 - 32);
+            let vx = witness.next_range(-15, 16) as f32 * 0.1;
+            let vy = witness.next_range(-30, 1) as f32 * 0.1;
+            let ai0 = -1000.0 * witness.next_max(3) as f32;
+            let x = (king.x + dx as f32) as i32;
+            let y = (king.y + dy as f32) as i32;
+            assert_eq!(m.kind, NpcKind::Slime, "classic: always the Blue Slime (1)");
+            assert_eq!(m.x, x as f32 - sw * 0.5, "NewNPC anchors the BOTTOM (x centre)");
+            assert_eq!(m.y, y as f32 - sh, "NewNPC anchors the BOTTOM (y)");
+            assert_eq!(m.vx, vx, "velocity x draw");
+            assert_eq!(m.vy, vy, "velocity y draw");
+            assert_eq!(m.ai[0], ai0, "ai[0] = -1000*Next(3)");
+            assert_eq!(m.ai[1], -1.0, "ai[1] = -1");
+            assert_eq!(m.hp, m.max_hp, "full hp on spawn");
+        }
+        assert_eq!(rng, witness, "the drain spends exactly 5 draws per minion");
+    }
+
+    /// K-2 full census: the AI tick draws the ONE batch count (`Next(1,4)`,
+    /// `:43393`), then the drain draws 5×count. Together the burst spends
+    /// `1 + 5*count` draws on the `UpdateNPCs` stream — the witness replays
+    /// the whole sequence and pins the final stream state.
+    #[test]
+    fn k2_the_full_burst_spends_one_plus_five_times_count_draws() {
+        let mut king = Npc::new(NpcKind::KingSlime, 1000.0, 500.0, 1, 0.0);
+        king.hp = king.max_hp;
+        king.size_override = Some((122.0, 115.0));
+        let (kw, kh) = king.size();
+        let mut rng = UnifiedRandom::new(4242);
+        let mut witness = rng.clone();
+        // The AI's batch-count draw (`:43393`).
+        let count = rng.next_range(1, 4);
+        let _ = witness.next_range(1, 4);
+        assert!((1..=3).contains(&count), "Next(1,4) is 1-3");
+        // The drain's per-minion draws.
+        let _ = king_slime_minion_batch(&king, count as u32, &mut rng);
+        for _ in 0..count {
+            let _ = witness.next_max(kw as i32 - 32);
+            let _ = witness.next_max(kh as i32 - 32);
+            let _ = witness.next_range(-15, 16);
+            let _ = witness.next_range(-30, 1);
+            let _ = witness.next_max(3);
+        }
+        assert_eq!(rng, witness, "1 + 5*count draws, no more, no less");
+    }
+
+    /// K-3 lava gate (`NPC.cs:43066` `!tile.lava()`): a lava-covered
+    /// candidate tile is rejected. The fixture is a flat ground row with the
+    /// player standing above it; the ground tiles are the ring's candidates.
+    /// Covering them ALL in lava empties the cache — the finder falls through
+    /// to the player's bottom and consumes ZERO draws; clearing the lava
+    /// restores the candidates and the pick consumes ONE `Next(0, size)` draw.
+    #[test]
+    fn k3_the_finder_rejects_lava_covered_candidates() {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        // Flat ground at row 40, air above.
+        for x in 0..64 {
+            for y in 40..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut player = crate::player::Player::spawn(&w);
+        // Stand the player ON the ground (bottom at row 40's top edge).
+        player.x = 32.0 * 16.0;
+        player.y = 40.0 * 16.0 - player.height;
+        let (pcx, _) = player.center();
+        let height = 115.0; // the King's body height (full-hp scale)
+        // Cover the whole ground surface row in lava.
+        for x in 0..64 {
+            let i = w.index(x, 40);
+            w.tiles[i].liquid = 255;
+            w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        let mut rng = UnifiedRandom::new(5);
+        let before = rng.clone();
+        let (lx, ly) = crate::npc::king_slime_find_teleport_spot(&w, &player, false, height, &mut rng);
+        assert_eq!(
+            (lx, ly),
+            (pcx, player.y + player.height),
+            "every candidate lava-covered -> the player-bottom fallback"
+        );
+        assert_eq!(rng, before, "the empty cache consumes no draw");
+        // Clear the lava: candidates return, the pick draws once.
+        for x in 0..64 {
+            let i = w.index(x, 40);
+            w.tiles[i].liquid = 0;
+            w.tiles[i].clear_liquid_kind();
+        }
+        let mut rng2 = UnifiedRandom::new(5);
+        let (sx, sy) = crate::npc::king_slime_find_teleport_spot(&w, &player, false, height, &mut rng2);
+        // The picked spot is a surface tile: y = 40*16, x on the 16-px grid.
+        assert_eq!(sy, 40.0 * 16.0, "the spot sits on the ground row");
+        assert_eq!(sx % 16.0, 8.0, "the spot's x is tile*16 + 8");
+        // Stream parity: replicate the finder's 10/7 cache scan to count the
+        // candidates, then replay the ONE `Next(0, size)` pick on a witness.
+        let (pcx2, pcy2) = player.center();
+        let tx = (pcx2 as i32) / 16;
+        let ty = (pcy2 as i32) / 16;
+        const PLATFORMS: [u16; 7] = [19, 427, 435, 436, 437, 438, 439];
+        let mut cache: Vec<(i32, i32)> = Vec::new();
+        for (x0, x1, y0, y1) in [
+            (tx - 10, tx - 7, ty - 10, ty + 10),
+            (tx + 7, tx + 10, ty - 10, ty + 10),
+            (tx - 7, tx + 7, ty - 10, ty - 7),
+            (tx - 7, tx + 7, ty + 7, ty + 10),
+        ] {
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    let Some(t) = w.tile(x, y) else { continue };
+                    if !t.active() || t.inactive() || cache.len() >= 50 {
+                        continue;
+                    }
+                    let solid = tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                    let platform = PLATFORMS.contains(&t.kind);
+                    let below_solid = w.tile(x, y - 1).is_some_and(|b| {
+                        b.active()
+                            && !b.inactive()
+                            && tr_core::tiledata::TILE_SOLID.has(b.kind)
+                            && !tr_core::tiledata::TILE_SOLID_TOP.has(b.kind)
+                            && !b.half_brick()
+                            && b.slope() == 0
+                    });
+                    if !(solid || platform) || below_solid {
+                        continue;
+                    }
+                    let pos = glam::Vec2::new(
+                        x as f32 * 16.0 + 8.0,
+                        y as f32 * 16.0 - height / 2.0,
+                    );
+                    if t.liquid_kind() != tr_core::tile::LiquidKind::Lava
+                        && crate::projectile::can_hit_line(
+                            &w, pos.x, pos.y, 0.0, 0.0, pcx2, pcy2, 0.0, 0.0,
+                        )
+                    {
+                        cache.push((x, y));
+                    }
+                }
+            }
+        }
+        assert!(!cache.is_empty(), "the clear ground yields candidates");
+        let mut witness = UnifiedRandom::new(5);
+        let pick = witness.next_range(0, cache.len() as i32) as usize;
+        let (wx, wy) = cache[pick];
+        assert_eq!(
+            (sx, sy),
+            (wx as f32 * 16.0 + 8.0, wy as f32 * 16.0),
+            "the finder picks the witnessed candidate"
+        );
+        assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
     }
 }

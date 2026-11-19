@@ -2234,6 +2234,9 @@ pub fn try_entry_for_npc(
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold like every other worm family (the
+        // vanilla credits the whole leech to 117).
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The wyvern segments fold onto the head's entry (`NPCID.cs`:
         // 1821-1856's `Hide = true` draw modifiers — the whole serpent is
         // one bestiary credit, the Devourer precedent).
@@ -2277,6 +2280,8 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
             NpcKind::TheDestroyer
         }
+        // W-A2-3: the leech links fold onto 117 like every other worm.
+        NpcKind::LeechBody | NpcKind::LeechTail => NpcKind::LeechHead,
         // The wyvern segments fold onto the head's entry (`NPCID.cs`:
         // 1821-1856's `Hide = true` draw modifiers — one credit for the
         // whole serpent).

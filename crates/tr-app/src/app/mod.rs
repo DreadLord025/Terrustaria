@@ -2758,8 +2758,9 @@ impl App {
                         0.0,
                     );
                     g.hp = g.max_hp;
-                    // The port's Npc carries no `alpha` field — the fade
-                    // rides the machines' spawn shield instead.
+                    // R22 G3: the ctor carries `SetDefaults`' alpha = 255
+                    // (`NPC.cs:12175`) — the fade rides the machine's
+                    // `alpha -= 10` (`:19535-19543`).
                     npcs.push(g);
                 } else if let Some(state) = boss.strip_prefix("deerclops") {
                     // The Deerclops' box is 60x154 (`SetDefaults` 668,
