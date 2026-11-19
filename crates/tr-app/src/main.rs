@@ -32,6 +32,7 @@ mod dye;
 mod emotes;
 mod env;
 mod entity_lights;
+mod item_lights;
 mod npc_lights;
 mod player_lights;
 mod proj_lights;
