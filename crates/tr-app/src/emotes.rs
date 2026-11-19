@@ -300,6 +300,42 @@ impl EmoteSystem {
     }
 }
 
+impl EmoteBubble {
+    /// `EmoteBubble.Draw`'s pop gate (`EmoteBubble.cs:204`): the first and
+    /// last 6 ticks of the lifetime draw the closed shell only —
+    /// `lifeTime < 6 || lifeTimeStart - lifeTime < 6`. S1-E-26 wave B:
+    /// extracted from the draw closure so the gate is unit-testable
+    /// without a renderer.
+    pub fn popping(&self) -> bool {
+        self.life_time < 6 || self.life_time_start - self.life_time < 6
+    }
+
+    /// The shell frame's column (`EmoteBubble.cs:205`): column 0 while
+    /// popping, column 1 (the open bubble) otherwise — always row 0.
+    pub fn shell_column(&self) -> i32 {
+        i32::from(!self.popping())
+    }
+
+    /// The emote sprite's sheet cell (`EmoteBubble.cs:225`):
+    /// `Frame(8, EMOTE_SHEET_VERTICAL_FRAMES, emote*2%8 + frame,
+    /// 1 + emote/4)` — each emote owns two adjacent columns (its two
+    /// animation frames) in row `1 + emote/4`. Only meaningful for
+    /// `emote >= 0` (`:218`); the `-1` NPC-head arm (`:227-240`) is
+    /// deferred with the NPC anchors.
+    pub fn emote_frame(&self) -> (i32, i32) {
+        ((self.emote * 2) % 8 + self.frame, 1 + self.emote / 4)
+    }
+}
+
+/// `EmoteBubble.Draw`'s 87/89 un-flip (`EmoteBubble.cs:220-224`): the
+/// confused (87) and sleep (89) emotes keep their orientation when the
+/// anchor faces right — the horizontal flip is cleared and the sprite
+/// shifts 4 px right instead. Applies to the emote sprite only, after
+/// the shell drew with the original flip (`:213`).
+pub fn bubble_unflips(emote: i32, flip: bool) -> bool {
+    flip && (emote == 87 || emote == 89)
+}
+
 /// The emote id from the `/emoji` argument — the numeric form or the
 /// `EmoteID` const name (`EmojiCommand.ProcessOutgoingMessage`
 /// `:44-72`: the int parse first, then the name table).
@@ -427,5 +463,107 @@ mod tests {
         assert_eq!(resolve("EmotionLove"), Some(0));
         assert_eq!(resolve("emotionlove"), Some(0));
         assert_eq!(resolve("nope"), None);
+    }
+
+    // S1-E-26 wave B — the bubble frame-selection math, verified against
+    // `EmoteBubble.Draw` (`EmoteBubble.cs:199-241`) line by line. Tests
+    // written, not run (code-only mode).
+
+    #[test]
+    fn the_pop_gate_is_the_first_and_last_6_ticks() {
+        // `EmoteBubble.cs:204`: `lifeTime < 6 || lifeTimeStart - lifeTime < 6`.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(0); // lifeTime = lifeTimeStart = 360 (`:284`).
+        let b = &sys.bubbles[0];
+        assert!(b.popping(), "age 0 < 6: the opening pop");
+        assert_eq!(b.shell_column(), 0, "`:205`'s flag arm draws column 0");
+        // Age 5 is still popping; age 6 is the first open tick.
+        let mut open = sys.bubbles[0].clone();
+        open.life_time = 355; // age 5
+        assert!(open.popping());
+        open.life_time = 354; // age 6
+        assert!(!open.popping());
+        assert_eq!(open.shell_column(), 1, "the open shell is column 1");
+        // The closing pop: lifeTime 6..1 pops, 0 is already cleaned up
+        // (`UpdateAll` `:54`).
+        for lt in (1..=5).rev() {
+            open.life_time = lt;
+            assert!(open.popping(), "lifeTime {lt} < 6");
+            assert_eq!(open.shell_column(), 0);
+        }
+        open.life_time = 6;
+        assert!(!open.popping(), "lifeTime 6 is the last open tick");
+        assert_eq!(open.shell_column(), 1);
+    }
+
+    #[test]
+    fn the_pop_gate_runs_through_the_lifetime() {
+        // Drive the real update: the gate flips at age 6 and back at
+        // lifeTime 5, exactly once each over the 360-tick life.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(3);
+        let mut open_ticks = 0;
+        for _ in 0..360 {
+            if let Some(b) = sys.bubbles.first() {
+                if !b.popping() {
+                    open_ticks += 1;
+                }
+            }
+            sys.update_all();
+        }
+        // 360 ticks − 6 opening − 5 closing (lifeTime 5..1) = 349 open.
+        assert_eq!(open_ticks, 349);
+    }
+
+    #[test]
+    fn the_emote_frame_is_the_c_sharp_cell_formula() {
+        // `EmoteBubble.cs:225`: column `emote*2%8 + frame`, row
+        // `1 + emote/4`. Emote 0 → cols 0/1 row 1; emote 3 → cols 6/7
+        // row 1; emote 4 wraps to cols 0/1 row 2; emote 87 → col 6 row 22;
+        // emote 150 (the last, `EmoteID.cs:311`) → col 4 row 38.
+        let mut sys = EmoteSystem::default();
+        sys.new_bubble(0);
+        let mut b = sys.bubbles[0].clone();
+        assert_eq!(b.emote_frame(), (0, 1));
+        b.frame = 1;
+        assert_eq!(b.emote_frame(), (1, 1));
+        b.emote = 3;
+        b.frame = 0;
+        assert_eq!(b.emote_frame(), (6, 1));
+        b.emote = 4;
+        assert_eq!(b.emote_frame(), (0, 2));
+        b.emote = 87;
+        assert_eq!(b.emote_frame(), (6, 22));
+        b.emote = 150;
+        assert_eq!(b.emote_frame(), (4, 38));
+        // The last row fits the sheet: SHEET_ROWS = 2 + (151-1)/4 = 39
+        // (`EmoteBubble.cs:1071`), rows 1..38 hold the emotes.
+        assert_eq!(SHEET_ROWS, 39);
+        assert!(b.emote_frame().1 < SHEET_ROWS);
+    }
+
+    #[test]
+    fn only_87_and_89_unflip_when_facing_right() {
+        // `EmoteBubble.cs:220-224`: `(emote == 87 || emote == 89) &&
+        // FlipHorizontally` — every other emote keeps the anchor's flip.
+        assert!(bubble_unflips(87, true));
+        assert!(bubble_unflips(89, true));
+        assert!(!bubble_unflips(87, false), "no flip to clear");
+        assert!(!bubble_unflips(88, true), "the kiss emote flips normally");
+        assert!(!bubble_unflips(0, true));
+        assert!(!bubble_unflips(150, true));
+    }
+
+    #[test]
+    fn the_sheet_geometry_matches_the_frame_division() {
+        // `Utils.Frame` is integer division: Extra_48 is 272x1092, so
+        // 272/8 = 34 wide and 1092/39 = 28 tall — the frame size the
+        // `EmoteButton` ctor reads (`EmoteButton.cs:27-29`).
+        let (sheet_w, sheet_h) = (272u32, 1092u32);
+        assert_eq!(sheet_w / 8, 34);
+        assert_eq!(sheet_h / SHEET_ROWS as u32, 28);
+        // `EMOTE_SHEET_EMOTES_PER_ROW = 4` (`EmoteBubble.cs:40`): four
+        // emotes per row, two columns each — 8 columns total (`:38`).
+        assert_eq!(4 * 2, 8);
     }
 }

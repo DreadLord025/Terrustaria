@@ -30,7 +30,10 @@ decompile is the source, only the global lookups become shim state).
   bodies in the C#'s own call shape (`SetTempToOngoing` →
   `SaveWorld_Version2` into a `MemoryStream`; version 326 + `FileMetadata.Write`
   + `Player.Serialize`, then the real AES-CBC envelope, key = IV =
-  UTF-16LE `"h3y_gUyZ"`, zero pad to 16).
+  UTF-16LE `"h3y_gUyZ"`, **PKCS7** padding — the bare `new RijndaelManaged()`
+  of `InternalSavePlayerFile`, `Player.cs:54734-54742`; S1-J-5c fixed the
+  harness's earlier zero-pad, which had mirrored the *read* path's
+  `PaddingMode.None` at `:55074`).
 * `Main.tileFrameImportant` is parsed from the **real** `decompiled/Terraria/
   Main.cs` at runtime (direct assignments, for-loop ranges,
   `AddEchoFurnitureTile` calls) — the fixture's importance bitmap is the game's
@@ -72,8 +75,23 @@ tests `s1_j_3_*` in `crates/tr-core/src/wld/mod.rs` and
 ## Known divergences (documented, not faked)
 
 The port's `.wld` re-write of the fixture is byte-identical for sections 2..10
-and the footer; the header/flags block differs in exactly the unowned fields
-(`CreationTime`, derived `spawnTileY`, the seven ore tiers, banner counts,
-tree-top variations, the manifest JSON) — pinned field-by-field by
+and the footer; the header/flags block differs in exactly four unowned spots —
+the banner kill/claimable counts (`killCount[1]`/`claimable[1]`, no `.wld`
+store), the tree-top variations (`treeTop[0]`, no store) and the world-gen
+manifest JSON (`manifest`, the port writes the empty string) — pinned
+field-by-field by
 `s1_j_3_the_header_flags_divergences_are_exactly_the_unowned_fields`.
+
+S1-J-3b closed the rest of the header/flags remainder: `CreationTime`, the
+file-faithful `spawnTileY` (the old derived-spawn override removed), the seven
+ore tiers (+ the post-load `CheckSavedOreTiers` re-derivation), the saved-NPC
+flags (wizard/mech/angler/stylist/taxCollector/golfer), the angler quest index,
+the cultist/Moon Lord/Queen Slime kills, the four tower downeds/actives + the
+apocalypse phase (with the load-time shield restore, `LoadWorldFlags:2235-2250`),
+and the party-girl/princess spawn unlocks. The fixture keeps all of those at
+their C# defaults (`Shims/Globals.cs`), so the wiring is byte-identity-preserving
+and **`golden.wld` needs no regeneration**. The `.plr` AES-envelope change
+(PKCS7) belongs to the sibling `task/S1-J-5c-plr-crypto`; its `golden.plr` regen
+is that task's, not this one's.
+
 See ANALYSIS.md "The C#-written golden fixture (S1-J-3)".

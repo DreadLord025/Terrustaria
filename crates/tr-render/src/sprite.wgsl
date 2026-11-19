@@ -50,6 +50,11 @@ struct Instance {
     /// pipeline has one draw call, so XNA's device scissor becomes a per-instance
     /// pixel mask.
     @location(9) clip: vec4<f32>,
+    /// The blend batch tag (`sprite.rs`'s `BlendMode`, S1-G-3): consumed on
+    /// the CPU by `draw_blend_runs` to pick the pipeline per contiguous run
+    /// — the shader itself is blend-agnostic, exactly like XNA's SpriteBatch
+    /// shader under different `Begin` blend states (`Main.cs:27457-27494`).
+    @location(10) blend: u32,
 };
 
 struct VsOut {
