@@ -421,6 +421,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_49",
         "Extra_98",
         "FlameRing",
+        // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
+        // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
+        // `:8612`) and the void lens's selection mask (`Extra[93]`,
+        // `VoidLensHelper.cs:101`). The lens sprite itself is
+        // `Projectile_734`, packed by `load_static_sheets`' projectile loop.
+        "Extra_181",
+        "Extra_198",
+        "Extra_93",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1107,6 +1115,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_327",
         "NPC_329",
         "NPC_330",
+        // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per
+        // kind — the Zombie Elf trio (338-340), the Present Mimic (341),
+        // the Gingerbread Man (342), the Yeti (343) and the Everscream
+        // (344) — keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SNOW_SHEETS).
+        "NPC_338",
+        "NPC_339",
+        "NPC_340",
+        "NPC_341",
+        "NPC_342",
+        "NPC_343",
+        "NPC_344",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1132,6 +1152,14 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match load_png(dir, &name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => { /* the shuriken fallback covers it */ }
+        }
+    }
+    // S1-G-1 wave D: the void lens draws `TextureAssets.Projectile[734]`
+    // (`VoidLensHelper.cs:79-80`) even though the projectile itself is
+    // unspawnable — pack its sheet outside `spawnable_kinds`.
+    if !crate::projectile::spawnable_kinds().contains(&734) {
+        if let Ok(img) = load_png(dir, "Projectile_734", SheetLayout::Raw) {
+            images.push(img);
         }
     }
 
@@ -1250,7 +1278,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
     // and `TextureAssets.Actuator` the actuator plate drawn on every
     // actuator-carrying tile.
-    for name in ["WiresNew", "Actuator"] {
+    // `TextureAssets.TileCrack` (`Images/TileCracks`, the mining-progress
+    // crack overlay — `Main.DrawTileCracks`, `Main.cs:61533-61626`,
+    // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
+    for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
             images.push(img);
         }
@@ -1543,6 +1574,10 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_299",
     "Glow_300",
     "Glow_325",
+    // The shimmer-vine glowmask (`GetTileDrawData` case 638,
+    // `TileDrawing.cs:6080-6084`) — the vine strip pass draws it over the
+    // segment (`DrawVineStrip`, `:9125-9128`, S1-G-1).
+    "Glow_327",
     "Glow_334",
     "Glow_335",
     // The named single-sheet textures.

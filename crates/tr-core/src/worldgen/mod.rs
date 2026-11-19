@@ -560,6 +560,32 @@ mod tests {
         );
     }
 
+    /// S1-K-2 wave A: the per-biome presence test for the
+    /// `MahoganyTreeBiome` port (`MahoganyTreeBiome.cs:11-92`, the Micro
+    /// Biomes block `WorldGen.cs:21105-21123`) — a default world carries
+    /// the living mahogany (383), its leaves (384) and the wall-78 hollow
+    /// interiors, in the jungle's mud band.
+    #[test]
+    fn the_mahogany_trees_generate_in_the_jungle() {
+        let w = generate(&GenOptions {
+            seed: 77,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(383) > 100, "the living mahogany ({})", count(383));
+        assert!(count(384) > 20, "the mahogany leaves ({})", count(384));
+        assert!(
+            w.tiles.iter().filter(|t| t.wall == 78).count() > 20,
+            "the living-wood walls ({})",
+            w.tiles.iter().filter(|t| t.wall == 78).count()
+        );
+    }
+
     /// DW-6.1: the M5-DESERT-structures passes place their content — the
     /// dunes' sand crests above the surface and the underground desert's
     /// shells (the sandstone 396 / hardened-sand 397 strata and their 187/216
