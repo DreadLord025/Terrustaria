@@ -11255,9 +11255,14 @@ mod worm_tests {
         // bottom, X/Y int-truncated, X offset by the INT `width / 2`.
         // The Giant Worm head/body/tail are all 14x14, so the child's
         // top-left equals the parent's — the pre-fix port placed it one
-        // child-height lower (`y + h`).
+        // child-height lower (`y + h`). The head sits at INTEGER coords:
+        // the Bottom-placed child then exactly overlaps the head, so the
+        // same-tick follower trail's delta is (0,0) and the spawn
+        // coordinate survives the pass (a fractional head position makes
+        // the trail's (len-lw)/len snap explode on the ~0-length delta —
+        // the C#'s NaN corner, the port's len-guard — and moves the child).
         let world = World::new("t".into(), 64, 800);
-        let mut head = Npc::new(NpcKind::GiantWormHead, 160.7, 160.9, 1, 0.0);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
         head.hp = head.max_hp;
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(3);
@@ -11267,9 +11272,9 @@ mod worm_tests {
         // pass; `last()` is the tail, not the head's direct child).
         let child = &npcs[1];
         assert_eq!(child.kind, NpcKind::GiantWormBody);
-        // X = (int)(160.7 + 14/2) - 14/2 = 167 - 7 = 160
+        // X = (int)(160 + 14/2) - 14/2 = 167 - 7 = 160
         assert_eq!(child.x, 160.0, "int-truncated bottom-centre X");
-        // Y = (int)(160.9 + 14) - 14 = 174 - 14 = 160
+        // Y = (int)(160 + 14) - 14 = 174 - 14 = 160
         assert_eq!(child.y, 160.0, "child bottom at the parent bottom");
     }
 
@@ -11329,7 +11334,7 @@ mod worm_tests {
         // consumes it too (it just never crumbles).
         let mut world = World::new("t".into(), 64, 800);
         for x in 0..64 {
-            for y in 10..800 {
+            for y in 9..800 {
                 let i = world.index(x, y);
                 world.tiles[i] = tr_core::Tile {
                     kind: 1,
