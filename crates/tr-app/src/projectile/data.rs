@@ -193,6 +193,21 @@ pub const PHANTASMAL_BOLT: u16 = 462;
 /// smoke (`Projectile.cs:6691-6698`: 10x10, aiStyle 1, extraUpdates
 /// 2, timeLeft 3600).
 pub const BLOWUP_SMOKE_MOONLORD: u16 = 622;
+/// `ProjectileID.MoonlordBullet` (638) — the S.D.M.G.'s bullet
+/// (`Projectile.cs:6858-6872`: 4x4, aiStyle 1, extraUpdates 5, timeLeft 600,
+/// penetrate -1, ignoreWater, the local-immunity −1 pair). The AI_001 arm
+/// rides `projectile_ai_moonlord` (S1-D-4).
+pub const MOONLORD_BULLET: u16 = 638;
+/// `ProjectileID.MoonlordArrow` (639) — the Phantasm's arrow
+/// (`Projectile.cs:6873-6888`: 10x10, aiStyle 1, arrow, `MaxUpdates = 2`,
+/// `timeLeft = MaxUpdates * 45` = 90, penetrate 4, the local-immunity −1
+/// pair). Its `Kill()` spawns the 640 trail (`:73431-73452`).
+pub const MOONLORD_ARROW: u16 = 639;
+/// `ProjectileID.MoonlordArrowTrail` (640) — the arrow's ghost
+/// (`Projectile.cs:6889-6903`: 10x10, aiStyle 1, `MaxUpdates = 3`,
+/// timeLeft 90, penetrate 4, the local-immunity −1 pair). The `ai[1]`
+/// spawn-delay countdown (`:16679-16683`) is pool-side.
+pub const MOONLORD_ARROW_TRAIL: u16 = 640;
 pub const PIRATE_ARROW: u16 = 180;
 /// `ProjectileID.DD2JavelinHostile` (662) — the javelin throwers' spear
 /// (`Projectile.cs:7122-7130`: 16x16, aiStyle 1, hostile, penetrate -1;
@@ -411,11 +426,21 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
-/// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
 
+/// The Lunar Flare's shot (645, `ProjectileID.LunarFlare`,
+/// `ProjectileID.cs:1844`) — the moon-lord drop spell
+/// (`Projectile.cs:6953-6965`: 10x10, aiStyle 1, magic, tileCollide false,
+/// extraUpdates 5, penetrate −1, the local-immunity −1 pair).
+/// NAME DEVIATION (recorded, S1-D-4 census): the constant was ported as
+/// `POISON_DART` citing `:6953-6966` as "the Blowgun's dart" — but the C#
+/// `ProjectileID.PoisonDart` is **98** (`ProjectileID.cs:750`, the Dart
+/// Trap's shot, already rowed as `TRAP_DART`); `:6953-6965` is the 645
+/// LunarFlare block. The value 645 and the row are correct for the
+/// LunarFlare; the rename is deferred to the in-flight ai001-C slice
+/// (`task/S1-D-5-aistyle1-types-c` owns the 645 arm under this name).
 pub const POISON_DART: u16 = 645;
 /// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
 pub const ENCHANTED_BOOMERANG: u16 = 6;
@@ -1431,8 +1456,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // when `lastVelocity.Y > 1f`) — unported; the port's `ai_spear`
             // kills on the tile scan instead (same ANALYSIS section).
             TRAP_SPIKY_BALL => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
-            // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
-            // `extraUpdates = 5`, the local immunity cooldown −1.
+            // `:6953-6965`: the Lunar Flare (645 — the `POISON_DART`
+            // constant's name deviation is documented at its definition,
+            // S1-D-4 doc-fix; the arm is ai001 slice C's) —
+            // `tileCollide = false`, `extraUpdates = 5`, the local immunity
+            // cooldown −1.
             // `Projectile.cs:2937-2945` — the Leaf Blower petal: 14x14,
             // aiStyle 40, penetrate 1, `alpha = 255` (the AI fades it in) and
             // the 360-tick lifetime.
@@ -2462,6 +2490,27 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             MOONLORD_TURRET_LASER => {
                 (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 10, false, -1, 255, 1.0))
             }
+            // `Projectile.cs:6858-6872` — the S.D.M.G.'s bullet (638,
+            // S1-D-4): 4x4, aiStyle 1, `alpha = 255`, `extraUpdates = 5`,
+            // `timeLeft = 600`, `penetrate = -1`, the local-immunity −1
+            // pair; `ignoreWater` rides the tail below.
+            MOONLORD_BULLET => {
+                (4.0, 4.0, 1, -1, 600, 5, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6873-6888` — the Phantasm's arrow (639):
+            // `arrow = true`, 10x10, aiStyle 1, `MaxUpdates = 2` (the
+            // setter `:560-563` → extraUpdates 1), `timeLeft = MaxUpdates
+            // * 45` = 90, `penetrate = 4`, `alpha = 255`, the local −1 pair.
+            MOONLORD_ARROW => {
+                (10.0, 10.0, 1, 4, 90, 1, true, true, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // `Projectile.cs:6889-6903` — the arrow's ghost trail (640):
+            // 10x10, aiStyle 1, `MaxUpdates = 3` → extraUpdates 2,
+            // `timeLeft = 90`, `penetrate = 4`, `alpha = 255`, the local −1
+            // pair; NOT an arrow (no `this.arrow` line in the C# block).
+            MOONLORD_ARROW_TRAIL => {
+                (10.0, 10.0, 1, 4, 90, 2, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             // `Projectile.cs:6941-6952` — the crystal's shard (644): 14x14,
             // aiStyle 112, `penetrate = 1`, `timeLeft = 900`,
             // `tileCollide = false`, `ignoreWater`, `alpha = 255`, the
@@ -2832,7 +2881,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | HALLOW_BOSS_DEATH_AURORA
                     | FAIRY_QUEEN_LANCE
                     | FAIRY_QUEEN_SUN_DANCE
-            ),
+            )
+            // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
+            // shots' `ignoreWater = true` (S1-D-4).
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
