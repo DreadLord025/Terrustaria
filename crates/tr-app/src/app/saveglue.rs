@@ -103,6 +103,12 @@ impl App {
         self.world.sandstorm_time_left = self.sandstorm.time_left;
         self.world.sandstorm_severity = self.sandstorm.severity;
         self.world.sandstorm_intended_severity = self.sandstorm.intended_severity;
+        // `WorldGen.SavedOreTiers` (`WorldFile.cs:1315-1317` + `:1388-1391`):
+        // the altar smash advances the App's runtime copy (`editing.rs`'s
+        // `smash_altar`), so the save snapshots it into the world payload —
+        // the `.trwld` v11 section and the `.wld` flags block both read it
+        // from `World.ore_tiers` (S1-J-3b).
+        self.world.ore_tiers = self.ore_tiers;
         // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
         // world file, captured before the write — the `.bak` source and the
         // failed-write restore source (S1-J-4).
