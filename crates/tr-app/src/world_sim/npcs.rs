@@ -2904,6 +2904,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
     // (`NPC.cs:60302`) the fighter-moan gate reads.
     let zone_graveyard = app.scene_metrics.zone_graveyard;
+    // S1-F-13c wiring — the Everscream's per-tick dust arm (`NPC.cs:32821-
+    // 32825`) rolls `Main.rand` through the verbatim `DustPool::new_dust` on
+    // the SAME `UpdateNPCs` stream the AI draws ride (`Main.cs:17767-17769`'s
+    // `SwapRandom("UpdateNPCs")` wraps `NPC.UpdateNPC`, dust included). The
+    // frame's spawn ctx is captured HERE, before the `npcs_rng` mutable
+    // borrow (the helper borrows `app` immutably); the live pool is threaded
+    // into the tick closure below. Every other kind ignores them.
+    let dust_spawn_ctx = app.spawn_ctx();
     // The AI group's stream: `Main.SwapRandom("UpdateNPCs")` wraps
     // `NPC.UpdateNPC` (`Main.cs:17767-17769`) — the AI draws ride it in
     // slot order, one shared stream across the tick closure (the
@@ -2964,6 +2972,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let world = &mut app.world;
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
+        let dust = &mut app.dust;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
                 for (i, n) in npcs.iter_mut().enumerate() {
@@ -3009,7 +3018,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             player_intersects,
                         );
                     }
-                    n.update_rng(world, player, step, npcs_rng);
+                    n.update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
                     // S1-D-3 W-1 — the WoF statics write-back, right after
                     // the wall's own update (the C# mutates the statics
                     // inside the arm, `NPC.cs:25724`/`:25758-25842`, so

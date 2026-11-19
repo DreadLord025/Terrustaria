@@ -3669,7 +3669,48 @@ impl Npc {
 
     /// The real step with the caller's RNG stream — the caster teleport
     /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
+    /// The Everscream's dust arm needs the live `Main.dust` pool + the
+    /// `SpawnCtx` statics; this entry (the tests' and the dust-free kinds')
+    /// runs it on a scratch pool with a permissive ctx — the AI-level draws
+    /// (`Next(5)` + the square pair) still ride the caller's stream, the
+    /// pool's own rolls land on the scratch pool (the live sim threads the
+    /// real pool through [`Npc::update_rng_dust`], S1-F-13c wiring).
         pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+            let mut dust = tr_core::particles::DustPool::new();
+            // A permissive ctx: the whole world on-screen, the full dust
+            // budget — the pool never culls, so the scratch spawn always
+            // lands (the draw count matches the live empty-pool path).
+            let ctx = tr_core::particles::SpawnCtx {
+                game_menu: false,
+                game_paused: false,
+                generating: false,
+                screen_position: Vec2::ZERO,
+                screen_size: Vec2::new(
+                    world.width as f32 * TILE_PX,
+                    world.height as f32 * TILE_PX,
+                ),
+                max_dust_to_draw: 6000,
+            };
+            self.update_rng_dust(world, player, dt, rng, &mut dust, &ctx);
+        }
+
+    /// The full step with the caller's RNG stream AND the live dust pool +
+    /// spawn ctx (S1-F-13c wiring): the Everscream's per-tick dust arm
+    /// (`NPC.cs:32821-32825`) rolls `Main.rand` through the verbatim
+    /// `DustPool::new_dust` on the SAME `UpdateNPCs` stream the AI draws
+    /// ride (`Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` wraps
+    /// `NPC.UpdateNPC`, dust included). The live sim
+    /// (`world_sim/npcs.rs::update_npcs`) threads `app.dust` + the frame's
+    /// `spawn_ctx` here; every other kind ignores the pool.
+    pub fn update_rng_dust(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        dt: f32,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
             // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
             // position integration) — the switch-tile bridge reads it.
             self.old_x = self.x;
@@ -3759,8 +3800,26 @@ impl Npc {
             57 if self.kind == NpcKind::MourningWood => {
                 crate::npc_ai_pumpkin_boss::mourning_wood_step(self, world, player, rng)
             }
+            // S1-F-13c wiring: the Everscream (344) rides the SAME aiStyle-57
+            // arm's type-344 branches (`npc_ai_frost_boss_b.rs`,
+            // `NPC.cs:32761-33043`) — the kind-gated claim mirrors the
+            // MourningWood's. Its per-tick dust arm rolls the live pool on
+            // this stream (`NPC.cs:32821-32825`).
+            57 if self.kind == NpcKind::Everscream => {
+                crate::npc_ai_frost_boss_b::frost_boss_b_step(self, world, player, rng, dust, dust_ctx)
+            }
             58 if self.kind == NpcKind::Pumpking => {
                 crate::npc_ai_pumpkin_boss::pumpking_step(self, world, player, rng)
+            }
+            // S1-F-13c wiring: the IceQueen (345, aiStyle 60) and the SantaNK1
+            // (346, aiStyle 61) — the whole arms (`NPC.cs:33374-33680` /
+            // `:33681-33921`), each its style's only user. Neither draws dust
+            // (the IceQueen arm has none; Santa's are all shot-side).
+            60 if self.kind == NpcKind::IceQueen => {
+                crate::npc_ai_frost_boss::ice_queen_step(self, world, player, rng)
+            }
+            61 if self.kind == NpcKind::SantaNK1 => {
+                crate::npc_ai_frost_boss_b::frost_boss_b_step(self, world, player, rng, dust, dust_ctx)
             }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
@@ -4481,26 +4540,14 @@ impl Npc {
             // documented stand-in is the walker family at the hop launch's
             // 3.5f cap (`:25617` — `ai3_walk_speed`'s frost row).
             NpcKind::PresentMimic => self.update_skeleton(world, player, dt),
-            // The Everscream (344, aiStyle 57): the walking boss. Its named
-            // machine rides the bespoke slice; until then the documented
-            // stand-in mirrors the Mourning Wood's — aiStyle-57's
-            // `num836 = 2f` base speed (`NPC.cs:32762`) with its
-            // `(num836 − vx)/21` approach (`:32983`, accel 0.1). The C#'s
-            // HP-tier speeds (3f/4f) and the day-8 despawn ride the bespoke
-            // slice too (the Mourning Wood precedent).
-            NpcKind::Everscream => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 2.0,
-                    accel: 0.1,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
+            // The Everscream (344, aiStyle 57): S1-F-13c wiring landed its
+            // named machine (`npc_ai_frost_boss_b.rs`, the type-344 branches
+            // of `NPC.cs:32761-33043`) — the style axis claims it, so this
+            // arm is unreachable through `update_rng` (the S1-F-13c slice-A
+            // hover stand-in is retired, the MourningWood/Pumpking precedent).
+            NpcKind::Everscream => {
+                unreachable!("aiStyle 57's Everscream rides the style axis (S1-F-13c wiring)")
+            }
             // ---- The Frost Moon wave family (`S1-F-13c` slice B): the wave
             // roster rides alive on documented stand-ins (ANALYSIS) until the
             // aiStyle-60/61/62/63 machines land on a later row. The four
@@ -4512,41 +4559,21 @@ impl Npc {
             | NpcKind::NutcrackerSpinning
             | NpcKind::ElfArcher
             | NpcKind::Krampus => self.update_skeleton(world, player, dt),
-            // The flyers: the hover family at each named machine's own base
-            // speed/approach — 345: aiStyle-60's ai[0]==0 pair `num900 = 7f` /
-            // `num899 = 0.45f` (`NPC.cs:33414-33415`); 346: aiStyle-61's
-            // `num921 = 2f` (`:33683`) with its `/21` approach (`:33864`,
-            // accel 0.1); 347: aiStyle-62's `num945 = 7f` (`:33927`) with its
-            // `/60` lerp (`:33947`, accel 0.12); 352: aiStyle-63's
-            // `num953 = 11f` (`:33974`) with its `/51` lerp (`:34005`, accel
-            // 0.21). All fly through the tiles (their noTileCollide rows —
-            // 346's AI sets it every tick, `:33685`).
-            NpcKind::IceQueen => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 7.0,
-                    accel: 0.45,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
-            NpcKind::SantaNK1 => self.update_hover(
-                world,
-                player,
-                HoverParams {
-                    max_speed: 2.0,
-                    accel: 0.1,
-                    surface_damped: false,
-                    double_add: true,
-                    no_tile_collide: true,
-                    bounce: 0.7,
-                    rotation: HoverRotation::Velocity,
-                },
-            ),
+            // The flyers: 347/352 keep the hover family at each named
+            // machine's own base speed/approach until the aiStyle-62/63
+            // machines wire (R52, `npc_ai_frost_mob.rs`) — 347: aiStyle-62's
+            // `num945 = 7f` (`NPC.cs:33927`) with its `/60` lerp (`:33947`,
+            // accel 0.12); 352: aiStyle-63's `num953 = 11f` (`:33974`) with
+            // its `/51` lerp (`:34005`, accel 0.21). Both fly through the
+            // tiles (their noTileCollide rows). The bosses 345/346 are WIRED
+            // (S1-F-13c) — the style axis claims them, so their kind arms are
+            // unreachable through `update_rng` (the hover stand-ins retired).
+            NpcKind::IceQueen => {
+                unreachable!("aiStyle 60 rides the style axis (S1-F-13c wiring)")
+            }
+            NpcKind::SantaNK1 => {
+                unreachable!("aiStyle 61 rides the style axis (S1-F-13c wiring)")
+            }
             NpcKind::ElfCopter => self.update_hover(
                 world,
                 player,
@@ -25962,10 +25989,12 @@ mod s1_f_13c2_tests {
         }
     }
 
-    /// DW-2.5's routing: the wave roster rides live on the documented
-    /// stand-ins (ANALYSIS) — the four aiStyle-3 walkers walk on the walker
-    /// family at their C# speed rows, the four flyers hover toward the
-    /// player through the tiles.
+    /// DW-2.5's routing: the wave roster rides live — the four aiStyle-3
+    /// walkers walk on the walker family at their C# speed rows, the two
+    /// non-boss flyers (347/352) hover toward the player through the tiles
+    /// (their named machines wire with R52), and the bosses (344/345/346)
+    /// ride their WIRED named machines on the style axis (S1-F-13c wiring —
+    /// the hover stand-ins retired).
     #[test]
     fn s1_f_13c_the_family_machines_route_to_their_stand_ins() {
         let mut w = tr_core::World::new("t".into(), 200, 120);
@@ -26008,9 +26037,9 @@ mod s1_f_13c2_tests {
                 "{kind:?} never closed the gap"
             );
         }
-        // The flyers: the hover stand-in flies toward the player (the
-        // gravity-off approach), each at its named machine's base speed.
-        for kind in [NpcKind::IceQueen, NpcKind::SantaNK1, NpcKind::ElfCopter, NpcKind::Flocko] {
+        // The non-boss flyers: the hover stand-in flies toward the player
+        // (the gravity-off approach), each at its named machine's base speed.
+        for kind in [NpcKind::ElfCopter, NpcKind::Flocko] {
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
             let (dx0, dy0) = {
@@ -26027,6 +26056,38 @@ mod s1_f_13c2_tests {
                 "{kind:?} never flew toward the player"
             );
         }
+        // The bosses ride their named machines on the style axis (S1-F-13c
+        // wiring). At NIGHT the IceQueen's side charge and the SantaNK1's
+        // floater approach close the gap; the Everscream's idle counts toward
+        // its first attack pick. (The day-flee / attack-stream witnesses live
+        // in the modules' own tests + `s1_f_13c_wire_tests` below.)
+        w.day_time = false;
+        for kind in [NpcKind::IceQueen, NpcKind::SantaNK1] {
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (dx0, dy0) = {
+                let (pcx, pcy) = player.center();
+                (pcx - n.center().0, pcy - n.center().1)
+            };
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            let (pcx, pcy) = player.center();
+            let (dx1, dy1) = (pcx - n.center().0, pcy - n.center().1);
+            assert!(
+                (dx1 * dx1 + dy1 * dy1) < (dx0 * dx0 + dy0 * dy0),
+                "{kind:?} never flew toward the player"
+            );
+        }
+        // The Everscream: the idle counter advances (the named machine, not
+        // the hover stand-in) and the boss stays airborne (noGravity).
+        let mut ever = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ever.hp = ever.max_hp;
+        for _ in 0..30 {
+            ever.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(ever.ai[1], 30.0, "the idle counter runs 1/tick at full hp");
+        assert_eq!(ever.ai[0], 0.0, "no attack pick before 300");
     }
 
     /// DW-2.6: the flyer strips — `case 347` (`NPC.cs:72357-72368`) advances
@@ -27004,4 +27065,242 @@ mod s1_d_2_tests {
         }
     }
 
+}
+
+// =====================================================================
+// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no
+// cargo/rustc). These pin the LIVE routing: the style axis claims the
+// three Frost Moon bosses (344/345/346) onto their named machines, the
+// hover stand-ins are retired, the bosses attack (the shot lanes fill),
+// and the RNG stream advances per the C# census on the UpdateNPCs stream.
+// The per-machine draw-order witnesses live in the modules' own tests
+// (`npc_ai_frost_boss*.rs`); these pin the SEAM (dispatch + drain + stream).
+// =====================================================================
+#[cfg(test)]
+mod s1_f_13c_wire_tests {
+    use super::*;
+    use tr_core::particles::{DustPool, SpawnCtx};
+
+    /// A night world with a ground band — the bosses' solid-probe / tile
+    /// gates read it; the player stands on the ground at (120, 95) tiles.
+    fn night_world() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        w.day_time = false;
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    fn night_player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 120.0 * TILE_PX;
+        p.y = 95.0 * TILE_PX;
+        p
+    }
+
+    /// A permissive dust ctx (the whole world on-screen, full budget) — the
+    /// pool never culls, so the Everscream's scratch spawn always lands and
+    /// the draw count matches the live empty-pool path.
+    fn dust_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// The style axis claims the three bosses: a full `update_rng_dust` tick
+    /// routes each onto its named machine (NOT the retired hover stand-in).
+    /// The Everscream's idle counter, the IceQueen's side-charge accel and
+    /// the SantaNK1's idle counter are the machines' own state writes — the
+    /// hover family writes none of them.
+    #[test]
+    fn the_axis_claims_the_three_bosses() {
+        let w = night_world();
+        let mut p = night_player(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let mut dust = DustPool::new();
+        let ctx = dust_ctx(&w);
+
+        let mut ever = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ever.hp = ever.max_hp;
+        let mut queen = Npc::new(NpcKind::IceQueen, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        queen.hp = queen.max_hp;
+        let mut santa = Npc::new(NpcKind::SantaNK1, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        santa.hp = santa.max_hp;
+
+        for _ in 0..10 {
+            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+            santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        }
+        // The Everscream's idle counter runs 1/tick at full hp (`:32794`).
+        assert_eq!(ever.ai[1], 10.0, "the Everscream idle machine ran");
+        // The IceQueen's phase-0 side charge accelerates (`:33431`): the
+        // side pick (`ai[2]`) is ±1 and vx moved off zero.
+        assert!(queen.ai[2] == 1.0 || queen.ai[2] == -1.0, "the side pick ran");
+        assert_ne!(queen.vx, 0.0, "the side charge accelerated");
+        // The SantaNK1's idle counter runs 1/tick (`:33722`).
+        assert_eq!(santa.ai[1], 10.0, "the SantaNK1 idle machine ran");
+    }
+
+    /// The bosses ATTACK: forced into their attack states, a full tick fills
+    /// the hostile-shot lanes (the drain seam). The Everscream's pine-needle
+    /// spray (345, ai0 payload) and ornament lob (346, ai1 payload) ride the
+    /// ai lane; the IceQueen's FrostWave (348) and the SantaNK1's volley
+    /// (180) ride the plain lane.
+    #[test]
+    fn the_bosses_attack_through_the_shot_lanes() {
+        let w = night_world();
+        let mut p = night_player(&w);
+        let mut rng = UnifiedRandom::new(3);
+        let mut dust = DustPool::new();
+        let ctx = dust_ctx(&w);
+
+        // The Everscream's pine-needle spray: ai[0]=1, ai[1]=4 → tick 5 fires
+        // (`:32828`), the needle (345) carries ai0 = Next(0,31). The drain
+        // routes a zero-ai0 needle to the plain lane (semantically identical
+        // — ai0=0/ai1=0), so count across BOTH lanes.
+        let mut ever = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ever.hp = ever.max_hp;
+        ever.ai[0] = 1.0;
+        ever.ai[1] = 4.0;
+        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        let needles_plain = ever.wants_hostile_shot.iter().filter(|s| s.0 == 345).count();
+        let needles_ai = ever.wants_hostile_shot_ai.iter().filter(|s| s.kind == 345).count();
+        assert_eq!(needles_plain + needles_ai, 1, "the needle drained");
+        if let Some(s) = ever.wants_hostile_shot_ai.iter().find(|s| s.kind == 345) {
+            assert_eq!(s.damage, 43);
+            assert!((0.0..31.0).contains(&s.ai0));
+        } else {
+            let s = ever.wants_hostile_shot.iter().find(|s| s.0 == 345).unwrap();
+            assert_eq!(s.5, 43);
+        }
+
+        // The Everscream's ornament lob: ai[0]=2, ai[1]=74 → tick 75 fires
+        // (`:32873`), the ornament (346) carries ai1 = Next(2) (0 or 1).
+        let mut ever2 = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ever2.hp = ever2.max_hp;
+        ever2.ai[0] = 2.0;
+        ever2.ai[1] = 74.0;
+        ever2.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        let orn_plain = ever2.wants_hostile_shot.iter().filter(|s| s.0 == 346).count();
+        let orn_ai = ever2.wants_hostile_shot_ai.iter().filter(|s| s.kind == 346).count();
+        assert_eq!(orn_plain + orn_ai, 1, "the ornament drained");
+        if let Some(s) = ever2.wants_hostile_shot_ai.iter().find(|s| s.kind == 346) {
+            assert_eq!(s.damage, 57);
+            assert!((0.0..2.0).contains(&s.ai1));
+        } else {
+            let s = ever2.wants_hostile_shot.iter().find(|s| s.0 == 346).unwrap();
+            assert_eq!(s.5, 57);
+        }
+
+        // The IceQueen's FrostWave: phase 0, above the player and inside
+        // 500px, ai[3] counts to the cadence → the wave (348) drains plain.
+        let mut queen = Npc::new(NpcKind::IceQueen, 118.0 * TILE_PX, 80.0 * TILE_PX, 1, 0.0);
+        queen.hp = queen.max_hp;
+        queen.ai[0] = 0.0;
+        queen.ai[2] = 1.0;
+        let mut fired = false;
+        for _ in 0..40 {
+            queen.wants_hostile_shot.clear();
+            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+            if queen.wants_hostile_shot.iter().any(|s| s.0 == 348) {
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "the IceQueen fired a FrostWave");
+
+        // The SantaNK1's bullet volley: ai[0]=1, ai[1]=15 → tick 16 fires
+        // (`:33750`, full-hp cadence 16), the bullet (180) drains plain.
+        let mut santa = Npc::new(NpcKind::SantaNK1, 118.0 * TILE_PX, 80.0 * TILE_PX, 1, 0.0);
+        santa.hp = santa.max_hp;
+        santa.ai[0] = 1.0;
+        santa.ai[1] = 15.0;
+        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert!(
+            santa.wants_hostile_shot.iter().any(|s| s.0 == 180 && s.5 == 36),
+            "the SantaNK1 fired a BulletDeadeye"
+        );
+    }
+
+    /// The RNG stream advances per the C# census on the UpdateNPCs stream:
+    /// the Everscream's idle pick consumes exactly one `Next(1,3)` at tick
+    /// 300 and nothing before; the SantaNK1's three unconditional attack
+    /// rolls (`Next(600)`/`Next(1200)`/`Next(2700)`) fire every idle tick.
+    #[test]
+    fn the_stream_advances_per_the_census() {
+        let w = night_world();
+        let mut p = night_player(&w);
+        let ctx = dust_ctx(&w);
+
+        // The Everscream idle pick: 299 ticks draw nothing, tick 300 draws
+        // exactly one Next(1,3) (`:32812`).
+        let mut ever = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ever.hp = ever.max_hp;
+        let mut rng2 = UnifiedRandom::new(5);
+        let mut dust2 = DustPool::new();
+        for _ in 0..299 {
+            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        }
+        assert_eq!(rng2, UnifiedRandom::new(5), "no draws before the 300th tick");
+        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        let mut witness = UnifiedRandom::new(5);
+        let pick = witness.next_range(1, 3);
+        assert_eq!(ever.ai[0], pick as f32, "the state is the drawn pick");
+        assert_eq!(rng2, witness, "exactly the one witnessed draw");
+
+        // The SantaNK1 idle: the three unconditional rolls per tick. A
+        // single idle tick consumes at least the three trigger rolls; the
+        // module witness pins the full window order. Here we assert the
+        // stream moved (the rolls fired) and the idle counter advanced.
+        let mut santa = Npc::new(NpcKind::SantaNK1, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        santa.hp = santa.max_hp;
+        let mut rng3 = UnifiedRandom::new(11);
+        let mut dust3 = DustPool::new();
+        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng3, &mut dust3, &ctx);
+        assert_ne!(rng3, UnifiedRandom::new(11), "the attack rolls drew");
+        assert_eq!(santa.ai[1], 1.0, "the idle counter advanced");
+    }
+
+    /// The hover stand-ins are retired: the kind-match arms are unreachable
+    /// through `update_rng` (the style axis claims them). Calling
+    /// `update_kind_ai` directly on a boss panics — the MourningWood/Pumpking
+    /// precedent's guard.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn the_everscream_stand_in_is_retired() {
+        let w = night_world();
+        let mut p = night_player(&w);
+        let mut n = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// The shot rows exist: the drained kinds resolve through `proj_data`
+    /// (the data-carrying spawn lands them; without the rows the requests
+    /// silently dropped — the W1-1 finding's second half).
+    #[test]
+    fn the_boss_shot_rows_resolve() {
+        for kind in [345u16, 346, 348, 349, 350, 351, 352] {
+            assert!(
+                crate::projectile::proj_data(kind).is_some(),
+                "the {kind} shot row exists"
+            );
+        }
+        // The SantaNK1's volley bullet (180) already had a row.
+        assert!(crate::projectile::proj_data(180).is_some());
+    }
 }
