@@ -7171,6 +7171,73 @@ families land; the arrow item recovery on kill does not exist in 1.4.4
 pre-roll vs the C#'s post-cap roll) differs by one stream draw and is
 MP-invisible.
 
+### The spiky ball's row fix + the dead-arm purge (S1-D-4c, census P-1)
+
+Code-only mode 2026-11-19 (`task/S1-D-4c-dead-arm-purge`, no compiler
+invoked — tests written not run). Per-arm verdicts (each pair read whole
+at `c7fe175d`; the FIRST arm wins in a Rust match, later duplicates are
+unreachable — the compiler only warns):
+
+| dead arm (pre-purge line) | live arm | verdict |
+| --- | --- | --- |
+| proj style 1 :13433 (`ai_arrow`) | :13075-13099 (kind-gated `AI_001` slices A/B + generic `ai_arrow` fall-through) | SUPERSEDED — the live arm's `_` keeps the same generic flight; removed |
+| proj style 3 :13434 | :13100 `ai_boomerang(world, owner)` | byte-identical one-liner; removed |
+| proj style 14 :13435 | :13196 `ai_spear(world)` | byte-identical one-liner; removed |
+| proj style 16 :13436 | :13197 `ai_bomb(world)` | byte-identical one-liner; removed |
+| proj style 115 :14918 | :13437 `ai_yoyo_beam(world)` | byte-identical one-liner; removed |
+| proj style 99 :15032-15074 (43-line yoyo machine: flag/sweep/beam) | :13536-13578 | byte-identical block (case-sensitive line-join compare); removed |
+| npc `DD2Bartender` :4033 (`update_guide`) | :3773 (town group → `update_guide`) | same target, dead; removed |
+| npc saucer trio :4036-4038 (`update_saucer_mount`) | :3888-3890 | same target, dead; removed |
+
+Guards: `#[deny(unreachable_patterns)]` now sits on the projectile
+`match data.ai_style`, `update_kind_ai` and the `update_rng` style axis
+(the `NpcKind::to_u16`/`from_u16` S1-F-1 precedent) — a future appended
+duplicate fails the compile instead of silently no-opping a wiring edit.
+Coverage pins (tests-as-code, written NOT run):
+`s1_d_4c_every_rowed_style_has_exactly_one_live_arm` (65 armed styles;
+the 6 rowed-but-unarmed census §3c styles 31/120/147/181/193/194 are the
+documented exceptions), `s1_d_4c_every_kind_has_exactly_one_arm_in_update_kind_ai`
+(238 kinds, single arm each), `s1_d_4c_the_spiky_ball_row_matches_set_defaults_and_rides_style_14`.
+
+**proj-185**: the data row said aiStyle 1 (the WIRE-1 legacy lumped it
+with the trap darts); the C# `SetDefaults` (`Projectile.cs:2717-2727`)
+says 14×14, **aiStyle 14**, penetrate −1, `timeLeft` 900, trap — the row
+now carries those values verbatim and 185 rides the live style-14
+`ai_spear` arm. AI_014's body (`:24830-25307`) has **no 185-specific
+branch** — the generic default arm (`:25142-25160`: the `ai[0]` 5-cap,
+the 0.97 ground friction, the +0.2 gravity, the ×0.1 spin) serves it, so
+no per-type port was needed. The 185 gap that remains: the C# bounce is
+in `HandleMovement`'s collision block (`:19703-19713` — X reverses at
+×−0.9, Y at ×−0.9 when the incoming Y > 1), while the port's `ai_spear`
+keeps the documented tile-kill scan stand-in (`:25726-25737`'s probe,
+which in the C# belongs to the aiStyle-22 ice block, not AI_014) — the
+ball dies on a tile instead of bouncing. Porting the style-14 movement
+half (the `HandleMovement` bounce family) is the follow-up; the whole 14
+family was NOT ported here (scope: row fix + purge).
+
+**Overlap with R20 (`task/S1-D-5-projdata-deviations`, `6c221ac4`,
+pushed, NOT merged)**: that branch independently landed the same
+projectile-side P-1 work (the 6 dead style arms, the deny guard, the 185
+row split with the same C# values). This branch was cut from `origin/main`
+before R20 merged, so it carries its own copy of the projectile purge —
+the merger must dedupe the overlapping hunks (both sides delete the same
+dead arms and add the same guard/row; the resolutions are
+behaviour-identical). UNIQUE to this branch: the npc.rs 4 dead kind arms
++ the `update_kind_ai`/style-axis guards + the kind coverage pin (R20 did
+not touch npc.rs), and the 185 dispatch-probe pin. The proj-1001
+HorsemanPumpkin style-194 gap stays documented-unarmed (census §3c, the
+W-10 wiring slice) — NOT ported here.
+
+**The 186 SpearTrap row stays legacy (deliberate)**: the C#
+`SetDefaults` (`:2728-2740`) gives 186 aiStyle **37**, 10×14,
+`tileCollide = false`, `ignoreWater`, `timeLeft = 300` — the port's row
+carries the C# 185's values (the historical WIRE-1 185/186 swap). Fixing
+it needs the aiStyle-37 arm (unported), so the row keeps its current
+behaviour-frozen values with a corrected citation; the faithful row +
+`AI_037` port are a follow-up. The wiring drain (`world_sim/wiring.rs`)
+is untouched: the floor/ceiling spiky-ball traps spawn 185 (now correctly
+style 14) and the spear traps' 186 keeps the legacy ride.
+
 ## Boomerangs (M4-PROJ-3, the boomerang half)
 
 `AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
@@ -24742,26 +24809,44 @@ takes no RNG parameter and cannot perturb any stream; the witness
 of every kind (including the bomb's full fuse) to identical state
 and an untouched same-seed stream. When the dust/gore/audio feeds
 land, the draws must be re-armed in the C# order above.
-## The Queen Bee's aiStyle-43 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
+## The Queen Bee's aiStyle-43 machine (S1-D-3, WIRED via W-3, code-only mode, 2026-11-19)
 
 `NPC.AI()`'s `else if (this.aiStyle == 43)` arm (`NPC.cs:30190-30860`) is
 ported 1:1 into `crates/tr-app/src/npc_ai_style43.rs` (`queen_bee_ai`) -
 the ONLY style-43 user is the Queen Bee (type 222, `SetDefaults`
 `NPC.cs:11855-11871`: 66x66, dmg 30, def 8, 3400 HP, kb 0, value 50000,
-boss, noGravity + noTileCollide, npcSlots 7; `NPCID.cs:11121`). The port's
-`NpcKind::QueenBee` already carries `ai_style() == 43` but runs the
-`update_queen_bee` v1 stand-in (an EoC-shaped cycle with the bee's numbers,
-`npc.rs`) - no enrage term, no state machine, no bees/stingers.
+boss, noGravity + noTileCollide, npcSlots 7; `NPCID.cs:11121`).
 
-**UNWIRED (the 8ac80b4e LostGirl precedent).** The hot `npc.rs` kind tables
-and the `update_rng` style axis are contested by the in-flight S1-D-3
-sibling branches, so this slice lands as pure functions. The merge step adds
-the `43 => crate::npc_ai_style43::queen_bee_ai(...)` axis arm, removes the
-v1 kind arm, and drains the `QueenBeeOut` payloads (the bee 210/211
-`NpcKind` rows + the 719 stinger `proj_data` row do not exist yet). The
-module writes velocity only - the C# `AI()` never integrates the position
-(`UpdateNPC`, `NPC.cs:90274`, does); the wiring keeps the sim's
-integration.
+**WIRED (S1-D-3 W-3, the census slice).** The `43 =>` arm of `update_rng`'s
+`match self.kind.ai_style()` axis (`npc.rs`) now calls `queen_bee_ai` with
+`player.zones.jungle` (the Golem's live-zone precedent) and `expert = false`
+(the single-difficulty fold). The `update_queen_bee` v1 stand-in (the
+EoC-shaped cycle with the bee's numbers - no enrage term, no state machine,
+no bees/stingers) is RETIRED: the kind arm in `update_kind_ai` is an
+`unreachable!` guard (the MourningWood precedent), and the v1 body + its
+`the_queen_bee_cycles_and_flees` test are removed. The axis arm ends with
+`integrate_no_tile_collide` (the C#'s `UpdateNPC` noTileCollide path,
+`NPC.cs:90495-90498`); the module itself writes velocity only.
+
+**The spawn drains.** The `QueenBeeOut` payloads resolve in the sim's spawn
+pass (`world_sim/npcs.rs`):
+- The state-1 bee (`wants_bee`) spawns `NpcKind::Bee` (210) / `BeeSmall`
+  (211) at `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`) with the payload's
+  normalized x5 velocity and `localAI[0] = 60` (`:30633`), `netUpdate` set.
+  The two new kinds carry the verbatim `SetDefaults` rows
+  (`NPC.cs:11696-11721`: 12x12/8x8, aiStyle 5, dmg 20/15, def 5/2, 20/10 HP,
+  kb 0.5, noGravity, value 0), the protocol ids gate-reassigned to the free 149/152 holes (353 stays R54c smallkinds; L-B merge)
+  (the vanilla 210/211 slots ride the wave-A Twiggy/Female zombies), the
+  `NPC_Hit_1`/`NPC_Killed_1` cues, the `{20, 31}` debuff immunity
+  (`NPCID.cs:7312-7325`), the bestiary `Enemy(210/211)` entries and the
+  `NPC_210`/`NPC_211` 4-row sheets. The bees ride the aiStyle-5 axis
+  (`ai_005_hover_family`'s type-210/211 branch -> `update_bee_hover`, the
+  `NPC.cs:50384-50413` num3 ramp + the flag4 +/-0.023 ai[0] drift).
+- The state-3 stinger (`wants_hostile_shot`) spawns the hostile 719
+  (`projectile::QUEEN_BEE_STINGER`, the new `proj_data` row:
+  `Projectile.cs:7608-7616` 10x10, aiStyle 1, penetrate -1, tileCollide)
+  with the `timeLeft = 300` override (`NPC.cs:30743`) added to the sim
+  drain's timed list.
 
 **RNG argument (the arm is NOT draw-free).** Every `Main.rand` draw is
 cited and threaded through the caller's `UnifiedRandom` in C# order:
@@ -24797,7 +24882,7 @@ cross-seed divergence of the volley.
   layer for this kind yet.
 - The bee's `CanBeReplacedByOtherNPCs = true` (`:30632`) has no port
   field - dropped; `localAI[0] = 60` (`:30633`) and the `netUpdate`
-  ride the spawn payload for the wiring step.
+  ride the spawn payload into the sim drain (S1-D-3 W-3).
 - The expert state-1 player count (`:30590-30598`) loops the 255 slots;
   the port's one session player makes `num641 / 2` = 0 (INTEGER division)
   - kept verbatim over the one candidate.
@@ -24808,9 +24893,9 @@ cross-seed divergence of the volley.
   `num646` are kept `_`-named for the citations.
 - The `timeLeft < 60 -> 60` floor (`:30218-30221`) is verbatim over the
   port's `despawn_timer` (the -1 never-despawn default clamps to 60 here
-  exactly as the C#'s default 600 would); the wiring step's boss-despawn
-  gate owns the survival semantics. `EncourageDespawn(10)` (`:30269`)
-  rides `Npc::encourage_despawn` (only ever lowers).
+  exactly as the C#'s default 600 would); the sim's `tick_despawn` pass
+  owns the survival semantics (S1-D-3 W-3). `EncourageDespawn(10)`
+  (`:30269`) rides `Npc::encourage_despawn` (only ever lowers).
 - `Collision.CanHit` rides `projectile::can_hit` (`Collision.cs:381-479`
   Bresenham walk); the vector77/79 spawn points use the C#'s INTEGER
   `(width / 2)` half-width while the vector75..81 centres use the FLOAT
@@ -24828,6 +24913,37 @@ hand-off, the climb's strict 200 hand-off + the reversal double-add gate,
 the volley period/truncation/exit, the barrage period/bottom-edge gate/
 719-11-300 payload/expert ladder, the per-branch reversal boosts, the
 return steer + 2000 hand-off, the RNG witness, the bee line-of-sight gate.
+
+**W-3 wiring witnesses (WRITTEN NOT RUN, code-only mode):** the axis
+routing + UpdateNPCs stream parity (`npc.rs`
+`s1_d_3_w3_the_axis_routes_the_queen_bee_and_keeps_the_stream` — the
+state -1 `Next(3)` do-while replays draw-for-draw against a witness
+stream, the v1 counters stay untouched), the volley/barrage request
+payloads + RNG order (`s1_d_3_w3_the_volley_and_barrage_requests_fire` —
+`Next(20)` then `Next(210,212)`; `Next(20)` then the X-before-Y
+`Next(-2,3)` jitter pair at enrage 2), the bee kinds' SetDefaults rows +
+protocol round-trip + bestiary entries
+(`s1_d_3_w3_the_bee_kinds_carry_their_set_defaults_rows`), the bee hover's
+ai[1]/ai[0] counters + the 200 wrap
+(`s1_d_3_w3_the_bee_hover_ticks_its_ramp_and_drift`), and the sim-level
+drain (`world_sim/npcs.rs`
+`s1_d_3_w3_the_sim_drains_the_bee_volley_and_the_stinger` — the bee spawns
+at `Bottom` with `localAI[0]=60`/`netUpdate`/the x5 velocity, the request
+drains, the stinger lands as a hostile 719 dmg 11 `timeLeft=300`, and the
+UpdateNPCs stream replays both ticks' draws in C# order).
+
+**W-3 deliberate folds (the bee hover):** `update_bee_hover` runs the
+flag4 +/-0.023 ai[0] drift BEFORE `hover_step`'s aim normalize (the C#
+normalizes at `:50427-50444` then drifts at `:50446-50471`); the only
+velocity read of the normalize is the degenerate `num6 == 0` fallback, so
+the reorder deviates only at exact zero distance. The bee's
+`TargetClosestNonBees` (`:50246-50249`, the NPC-target search) folds to the
+single session player (the port has no NPC targets — the `npc_target`
+convention). The bee's death dust (`:85063-85075`, six `Next(2)` draws)
+and the bee-vs-bee friendly fire (`:90485-90489`'s `GetHurtByOtherNPCs`)
+are unported — no dust layer / NPC-vs-NPC damage pass yet; recorded here
+so the RNG census stays honest (those draws do not ride the UpdateNPCs
+stream in the port until the layers land).
 ## The Golem head's aiStyle-46 machine (S1-D-3, UNWIRED, code-only mode, 2026-11-18)
 
 `crates/tr-app/src/npc_ai_style46.rs` ports `NPC.AI()`'s aiStyle-46 arm

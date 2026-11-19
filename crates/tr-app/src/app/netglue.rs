@@ -3150,7 +3150,11 @@ fn npc_seed(
         }
         crate::npc::NpcKind::EaterOfSouls
         | crate::npc::NpcKind::Hornet
-        | crate::npc::NpcKind::MeteorHead => {
+        | crate::npc::NpcKind::MeteorHead
+        // The Queen Bee's volley bees (S1-D-3 W-3) ride the same hover
+        // ctor — the net state overwrites the position below.
+        | crate::npc::NpcKind::Bee
+        | crate::npc::NpcKind::BeeSmall => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

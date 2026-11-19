@@ -53,8 +53,8 @@ use crate::projectile::{
 /// The slice-A kind set — slice B must take ids ≥ 449 disjointly
 /// (ROADMAP S1-D-5). 185 (TrapSpikyBall) is deliberately NOT here: the
 /// C# `SetDefaults` gives it aiStyle **14** (`Projectile.cs:2717-2727`);
-/// its row carried aiStyle 1 until the S1-D-5 data-row fix
-/// (`task/S1-D-5-projdata-deviations`) split it onto its own arm.
+/// its row carried aiStyle 1 until the S1-D-5/S1-D-4c data-row fix split it
+/// onto its own style-14 arm.
 pub(crate) const SLICE_A_KINDS: [u16; 14] = [
     MUSKET_BALL,          // 14
     WOODEN_ARROW_HOSTILE, // 81

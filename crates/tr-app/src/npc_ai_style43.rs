@@ -11,23 +11,26 @@
 //! weighted steer) and the state 5 dead-player flee (the world-edge
 //! drift + `EncourageDespawn(10)`).
 //!
-//! **UNWIRED module (code-only mode, 2026-11-18).** The port's
-//! `NpcKind::QueenBee` already carries `ai_style() == 43`
-//! (`npc.rs`'s style table) but runs the `update_queen_bee` v1 stand-in
-//! (the EoC cycle shape with the bee's numbers — no enrage term, no
-//! state machine, no bees/stingers). The kind tables and the hot
-//! `npc.rs` dispatch are contested by the in-flight S1-D-3 sibling
-//! branches, so this slice lands as pure functions; the `43 =>` axis
-//! arm + the v1 removal + the spawn drains are the family's merge step
-//! (the `npc_ai_style42.rs` UNWIRED pattern). Intended
-//! call site: `update_rng`'s `match self.kind.ai_style()` axis
-//! (`npc.rs`), a `43 => crate::npc_ai_style43::queen_bee_ai(...)` arm.
+//! **WIRED (S1-D-3 W-3, code-only mode, 2026-11-19).** The `43 =>` arm
+//! of `update_rng`'s `match self.kind.ai_style()` axis (`npc.rs`) calls
+//! `queen_bee_ai` with `player.zones.jungle` (the Golem's live-zone
+//! precedent) and `expert = false` (the single-difficulty fold); the
+//! `update_queen_bee` v1 stand-in is retired (the kind arm is an
+//! `unreachable!` guard, the MourningWood precedent). The `QueenBeeOut`
+//! payloads drain in the sim: `wants_bee` → the `NpcKind::Bee`/`BeeSmall`
+//! rows (the gate-reassigned 149/152 protocol holes — the vanilla 210/211 slots ride
+//! the wave-A zombies) at `NewNPC`'s `Bottom` placement, the stinger →
+//! `wants_hostile_shot` + the `QUEEN_BEE_STINGER` (719) `proj_data` row
+//! with the `timeLeft = 300` override. The bees ride the aiStyle-5 axis
+//! (`ai_005_hover_family`'s type-210/211 branch, `npc.rs`'s
+//! `update_bee_hover`).
 //!
 //! The arm writes velocity only — the C#'s `AI()` never integrates the
-//! position; `UpdateNPC` does (`NPC.cs:90274`, the `noTileCollide`
-//! path adds velocity directly). The wiring step keeps the sim's
-//! integration; this module must NOT add `x += vx` (the v1 did — that
-//! was part of the stand-in, not the C# arm).
+//! position; `UpdateNPC` does (`NPC.cs:90495-90498`, the `noTileCollide`
+//! path adds velocity directly). The axis arm ends with the port's
+//! `integrate_no_tile_collide` (the pumpkin bosses' precedent); this
+//! module must NOT add `x += vx` (the v1 did — that was part of the
+//! stand-in, not the C# arm).
 //!
 //! RNG argument — every `Main.rand` draw in the arm is cited and
 //! threaded through the caller's `UnifiedRandom` in C# order:
@@ -60,7 +63,7 @@
 //!   tracked sound layer for this kind yet.
 //! * The bee's `CanBeReplacedByOtherNPCs = true` (`:30632`) has no port
 //!   field — dropped; `localAI[0] = 60` (`:30633`) rides the spawn
-//!   payload for the wiring step.
+//!   payload into the sim drain (S1-D-3 W-3).
 //! * The expert state-1 player count (`:30590-30598`) loops the 255
 //!   slots; the port's single session player makes `num641 / 2` = 0
 //!   (integer division) — kept verbatim over the one candidate.
@@ -70,7 +73,6 @@
 //!   (`:30544`), `num640 = num644/...` (`:30644`), `num650 =
 //!   num646/num650` (`:30795`) are computed-then-unread in the C# —
 //!   dropped with this note (no side effects).
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-D-3 merge step.
 
 use crate::npc::Npc;
 use crate::player::Player;
@@ -115,21 +117,23 @@ pub const QUEEN_BEE: KindDefaults = KindDefaults {
 
 /// `NPCID.Bee` (210) / `NPCID.BeeSmall` (211) (`NPCID.cs:11097-11099`)
 /// — the state-1 volley's `Main.rand.Next(210, 212)` picks
-/// (`NPC.cs:30628`). Neither has an `NpcKind` yet; the wiring step
-/// adds the rows + the spawn drain.
+/// (`NPC.cs:30628`). Both ride `NpcKind::Bee`/`BeeSmall` (S1-D-3 W-3);
+/// the sim's spawn drain maps these ids onto the kinds.
 pub const BEE: i32 = 210;
 pub const BEE_SMALL: i32 = 211;
 
 /// `ProjectileID.QueenBeeStinger` (719, `ProjectileID.cs:1992`) — the
 /// state-3 barrage's shot (`NPC.cs:30742`), damage 11, knockback 0,
-/// `timeLeft = 300` (`:30743`). No `proj_data` row yet; the payload
-/// carries the lifetime for the wiring step's spawn drain.
+/// `timeLeft = 300` (`:30743`). Rides `projectile::QUEEN_BEE_STINGER`
+/// (the `proj_data` row, S1-D-3 W-3); the payload carries the lifetime
+/// for the sim drain's timed list.
 pub const QUEEN_BEE_STINGER: u16 = 719;
 
 /// The state-1 bee spawn request (`NPC.cs:30628-30634`): the type draw,
 /// the `(int)vector77` truncation, the normalized ×5 velocity toward
-/// the player and the `localAI[0] = 60` payload. The wiring step
-/// spawns the NPC and sets `CanBeReplacedByOtherNPCs`/`netUpdate`.
+/// the player and the `localAI[0] = 60` payload. The sim drain (S1-D-3
+/// W-3) spawns the NPC at `NewNPC`'s `Bottom` and sets `netUpdate`
+/// (`CanBeReplacedByOtherNPCs` has no port field — dropped).
 #[derive(Clone, Copy, Debug)]
 pub struct BeeSpawn {
     /// `Main.rand.Next(210, 212)` — [`BEE`] or [`BEE_SMALL`].
@@ -226,14 +230,15 @@ fn normalize(x: f32, y: f32) -> (f32, f32) {
 }
 
 /// One fixed step of the aiStyle-43 arm (`NPC.cs:30190-30860`).
-/// `zone_jungle` is `Main.player[target].ZoneJungle` (the wiring step
-/// feeds the biome scan, the `ambience.rs` field); `expert` is
+/// `zone_jungle` is `Main.player[target].ZoneJungle` (the axis arm feeds
+/// `player.zones.jungle`, the Golem precedent); `expert` is
 /// `Main.expertMode` (false until the difficulty system lands — see
 /// the module doc); `rng` is the caller's `Main.rand` stream (the
 /// draw sites are enumerated in the module doc). Returns the tick's
 /// bee/stinger spawn requests; writes velocity, ai/localAI, facing,
 /// defense and the despawn window in place. Does NOT integrate the
-/// position (the C# `AI()` doesn't — `UpdateNPC` does).
+/// position (the C# `AI()` doesn't — `UpdateNPC` does; the axis arm
+/// runs `integrate_no_tile_collide` after the step).
 pub fn queen_bee_ai(
     npc: &mut Npc,
     world: &World,
@@ -273,8 +278,8 @@ pub fn queen_bee_ai(
     // `:30216-30227` — outside the flee state: the timeLeft floor and
     // the 3000-px leash. The C# `timeLeft < 60 → 60` is verbatim (the
     // port's -1 "never despawn" default becomes 60 here exactly as the
-    // C#'s default 600 would clamp — the wiring step's boss-despawn
-    // gate owns the survival semantics).
+    // C#'s default 600 would clamp — the sim's `tick_despawn` pass owns
+    // the survival semantics, S1-D-3 W-3).
     if npc.ai[0] != 5.0 {
         if npc.despawn_timer < 60 {
             npc.despawn_timer = 60;
@@ -955,7 +960,7 @@ mod tests {
     }
 
     /// The cited SetDefaults row (`NPC.cs:11855-11871`) matches the
-    /// port's kind tables — the wiring step's defaults pin.
+    /// port's kind tables — the wiring's defaults pin (S1-D-3 W-3).
     #[test]
     fn s1_d_3_s43_the_defaults_row_matches_the_kind_tables() {
         assert_eq!(QUEEN_BEE.ai_style, NpcKind::QueenBee.ai_style() as i32);
