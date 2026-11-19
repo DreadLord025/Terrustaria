@@ -26103,6 +26103,108 @@ is already recorded (ANALYSIS "The Golem family (S1-D-3)" вЂ” axis 47
 delegates, style46/47 stay unwired references); the discarded TR-D3s48
 partial adds nothing the landed arm lacks except the G1 field sketch.
 Docs-only round — **no compiler invoked**.
+
+## The projectile data-row deviations (S1-D-5, 2026-11-19, code-only mode)
+
+Branch `task/S1-D-5-projdata-deviations` (worktree TR-D5fix). **CODE-ONLY
+mode**: file reads/writes + git only — no cargo/rustc/rustfmt/tests, **no
+compiler invoked**. The slice A/B audits' four data-row deviations were
+re-censused after merging `origin/main` (~150 commits ahead, incl. the
+P-split and the ai001 slice A/B landings); per-fix verdicts:
+
+1. **Spiky ball 185 rode aiStyle 1 — FIXED.** The C# `SetDefaults`
+   (`Projectile.cs:2717-2727`) gives `SpikyBallTrap` (185,
+   `ProjectileID.cs:924`) 14x14, **aiStyle 14**, `penetrate = -1`,
+   `timeLeft = 900`, `trap = true`, friendly AND hostile. The port's row
+   sat inside the dart group (`TRAP_DART | TRAP_SUPERDART |
+   TRAP_SPIKY_BALL | TRAP_VENOM_DART` → 10x10 aiStyle 1). 185 now has its
+   own arm with the C# values; the 14 dispatch arm (`ai_spear`,
+   `:25143-25158` + the tile-kill scan `:25726-25737`) handles it — the
+   counter/gravity/rotation are the right family. **Documented gaps that
+   remain**: (a) the tile BOUNCE — `HandleMovement`'s aiStyle-14 block
+   `:19626` reaches the `type == 185` arm `:19703-19713` (the changed
+   axis flips to `lastVelocity * -0.9f`, the Y only when
+   `lastVelocity.Y > 1f`); the port's `ai_spear` kills on the tile scan
+   instead, so a trapped spiky ball dies on first contact rather than
+   bouncing (M4-PROJ follow-up). (b) The row shape carries neither
+   `friendly` nor `hostile`; the trap spawn sites set the flags (the
+   wiring drain spawns via `spawn_device_kind`), same convention as the
+   dart rows. The spear trap's spear (186) is really 10x14 **aiStyle 37**
+   (`:2728-2740`, tileCollide false, ignoreWater, timeLeft 300); aiStyle
+   37 (`AI()` `:27472`) has no ported dispatch arm, so the 186 row keeps
+   the old shared stand-in values (14x14/14/900) — correcting it to 37
+   would park the spear in `_ => {}` forever. The aiStyle-37 port is the
+   follow-up; the stand-in is pinned by the family test.
+2. **The duplicate unreachable `MUSKET_BALL` arm — VERIFIED DEAD,
+   REMOVED.** The real row (`:950-961`: 4x4, aiStyle 1, penetrate 1,
+   light 0.5, alpha 255, scale 1.2, timeLeft 600, extraUpdates 1) sits at
+   the family head; the pirate merge appended a second `MUSKET_BALL =>`
+   (10x10, timeLeft 3600, extraUpdates 0) near the pirate rows —
+   unreachable behind the first (Rust only warns:
+   `unreachable_patterns`). The old comment called it "the Corsair's
+   musket ball 82" — wrong twice: `MUSKET_BALL` = 14, and the Corsair's
+   shot is kind **82 FlamingArrow** (`ProjectileID.cs:718`,
+   `Projectile.cs:1625-1631`: 10x10, aiStyle 1, hostile) which has **no
+   row yet** — the Corsair shooter (`npc.rs` `shooter_params`) requests
+   it and `spawn_hostile` drops it at `proj_data(82) == None`. That
+   missing row is a separate census gap (the 82 row + its hostile spawn
+   path), recorded here, not fixed in this task.
+3. **The alias rows — C# verdict per pair.** 436/438 are NOT aliases of
+   each other: `BrainScramblerBolt` = 436 (`ProjectileID.cs:1426`) and
+   `RayGunnerLaser` = 438 (`:1430`) are distinct ids with distinct
+   `SetDefaults` arms (`:5064-5071` / `:5081-5090`) — both rows stay.
+   The duplicates were the SAME-id Rust aliases `SCRAMBLER_SHOT` = 436
+   and `MARTIAN_RAY` = 438 appended by the martian merge — unreachable,
+   deleted (the alias consts stay for their callers). Likewise 462/622
+   are distinct (`PhantasmalBolt` = 462 `:1478`, `BlowupSmokeMoonlord` =
+   622 `:1798`): the moon-lord merge appended byte-identical second arms
+   for PHANTASMAL_BOLT/BLOWUP_SMOKE_MOONLORD (plus STARDUST_MARK,
+   NEBULA_EYE, TOWER_DAMAGE_BOLT, VORTEX_LIGHTNING|VORTEX_PORTAL,
+   VORTEX_RITUAL_BOLT, PHANTASMAL_EYE/SPHERE/DEATHRAY, MOON_LEECH) — all
+   unreachable, deleted. A NEW duplicate the re-census caught: `LEAF` =
+   206 = `LEAF_BLOWER` (`ProjectileID.cs:966` Leaf) — the melee-family
+   arm was value-identical to the live `:2937-2945` row; deleted.
+   **Alpha fix carried with the census**: the C# sets `alpha = 255` on
+   438 (`:5087`), 462 (`:5335`) and 622 (`:6696`); the rows had kept the
+   reset 0. 438/462 fade IN via the speed-scaled fade (`:55660-55671`,
+   ported in both ai001 slices) — the reset 0 lost the fade-in state.
+   622 never fades: the smoke is invisible for its whole 69-tick life
+   (`:56165-56183`), the visible effect is the dust 229 (a documented
+   skip) — carrying 255 keeps the state faithful for the draw's
+   `GetAlpha` path when it lands. The rows now carry 255; 438 left the
+   `BASELINE_ROWS` reset sweep (like the shadow hand/Dutchman shell).
+   The generic sprite draw does not read `alpha` yet (only
+   `frame_quad`'s fade does) — the visible change today is nil, the
+   state change is the fix. `ignoreWater` on 436/438/462/629 still has
+   no row slot (the resolver derives it for summons/Vilethorn only) —
+   unchanged gap, recorded.
+4. **The ROADMAP S1-D-4 six dead dispatch arms — re-censused post-merge,
+   all six removed.** The P-split moved the dispatch into
+   `ProjectilePool::update`'s `match data.ai_style`; the ai001 slice A/B
+   landings replaced the plain `1 =>` arm with the kind-gated ladder
+   (riders → slice A → slice B → generic `ai_arrow`). Census result: the
+   dead `1/3/14/16` quartet sat after the 129 arm (the dead `1` was NOT
+   byte-identical — it lacked the rider/slice gates, which is exactly
+   why a silent shadow was dangerous); the dead `115` sat before the 62
+   arm; the dead `99` (byte-identical to the live one, verified by
+   line-range comparison) survived after the 66 arm — deleted in this
+   pass. The live arms are untouched; the nested kind/tower/frame
+   matches were censused clean (distinct const arms + `_` tails, no
+   alias collisions, no range overlaps with the const arms). Both the
+   dispatch fn and `proj_data` now carry `#[deny(unreachable_patterns)]`
+   (the `npc/data.rs` `to_u16`/`from_u16` precedent) so a future appended
+   duplicate is a hard error, not a warning.
+
+**Verification.** Code-only: every row re-read against the C# lines
+cited; the alias/duplicate census ran as a scripted const-value walk
+over both matches (263 distinct kinds in `proj_data` after the fixes,
+zero duplicates, zero range overlaps); the dispatch census enumerated
+every top-level arm (one per style) and every nested match. The pinning
+tests `s1_d_5_data_row_tests` (7) + the updated
+`the_family_data_map_is_verbatim` / `BASELINE_ROWS` sweep are WRITTEN,
+NOT RUN — **no compiler invoked**. Follow-ups recorded: the 185 tile
+bounce, the aiStyle-37 spear port, the missing 82 FlamingArrow row, the
+row-slot `ignoreWater` flag.
 ### The slime family's aiStyle-1 re-port (S1-D-3, audit A1-4, code-only mode)
 
 The A-1 audit (`docs/research/54-audit-slime-eye.md` §1, branch
