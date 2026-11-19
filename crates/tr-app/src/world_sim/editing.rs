@@ -2255,6 +2255,22 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
+    // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
+    // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
+    // its switch once so the device releases. The pick break runs in
+    // `Player.ItemCheck` under the `UpdatePlayers` swap (`Main.cs:17754`), so
+    // the click's pitch draw rides that stream (the `HitSwitch` precedent,
+    // `doors.rs`). An unpressed plate is a no-op.
+    if hit.as_ref().is_some_and(|h| h.kind == 428) {
+        app.wiring.destroy_plate(&mut app.world, tx, ty);
+        for (px, py) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+    }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
     // above the break loses its support and the falling kind spawns the
     // sandfall projectile (`SpawnFallingBlockProjectile`, `:86039-86090`).

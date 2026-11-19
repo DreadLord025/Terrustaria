@@ -694,11 +694,35 @@ pub struct Player {
     pub prev_x: f32,
     pub prev_y: f32,
     /// `Player.ActuationRodLock` / `ActuationRodLockSetting`
-    /// (`Player.cs:2616-2618`): the Actuation Rod acts once per tick — the
-    /// lock and the tile state it saw (`ResetEffects` clears the lock,
-    /// `:18804`).
+    /// (`Player.cs:2616-2618`): the Actuation Rod acts once per HOLD — the
+    /// lock and the tile state it saw. `ResetEffects` clears the lock only
+    /// while `releaseUseItem` rides (`:18802-18804`), so a held button keeps
+    /// the lock across ticks and a fresh press re-arms it.
     pub actuation_rod_lock: bool,
     pub actuation_rod_lock_setting: bool,
+    /// `Player.InfoAccMechShowWires` (`Player.cs:2620`): the Mechanical Lens
+    /// (3619) / Wire Kite (3611) show the wires without a mech tool held.
+    /// Cleared in `ResetEffects` (`:18524`), re-granted by
+    /// `RefreshMechanicalAccsFromItemType` (`:12801-12804`).
+    pub info_acc_mech_show_wires: bool,
+    /// `Player.autoActuator` (`Player.cs:2474`): the Actuation Accessory
+    /// (3624) auto-places actuators on solid tiles while building. Cleared
+    /// in `ResetEffects` (`:18534`), re-granted by
+    /// `RefreshMechanicalAccsFromItemType` (`:12817-12820`) and the held-item
+    /// arm (`:15295-15298`). The placement consumer
+    /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
+    /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
+    pub auto_actuator: bool,
+    /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
+    /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
+    /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
+    /// (`Main.DrawWires`, `Main.cs:58237-58242`); slot 8 gates the lens'
+    /// wire overlay (`WiresUI.Settings.DrawWires`, `WiresUI.cs:39`). The
+    /// per-slot 0=Bright/1=Normal/2=Faded cycle is UI-driven
+    /// (`Main.cs:47549-47555`, wraps at 3 — the 3=Hidden arm is unreachable
+    /// through the click). The C# field initialises to all-zero (`:814`);
+    /// the port's spawn mirrors the player reset's `[0] = 1` (`:56092`).
+    pub builder_acc_status: [i32; 12],
     /// `Entity.oldPosition` (`Player.cs:28071`): the position before this
     /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
     /// `Player.cs:28274-28275`) reads it to tell "the entity moved onto the
@@ -1951,6 +1975,11 @@ impl Player {
             old_y: sy,
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
+            info_acc_mech_show_wires: false,
+            auto_actuator: false,
+            // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
+            // (`:56092`): the ruler-line toggle starts off, the rest on.
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -4428,9 +4457,17 @@ impl Player {
         // clear per tick; the Amphibian Boots re-grant them below.
         self.jump_speed_boost = 0.0;
         self.extra_fall = 0;
-        // `Player.cs:18804`: the Actuation Rod's per-tick lock clears with
-        // the rest of `ResetEffects`.
-        self.actuation_rod_lock = false;
+        // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
+        // lock ONLY while `releaseUseItem` rides. The port runs the clear at
+        // the fixed-step seam (`world_sim/player.rs`, the `mine_released`
+        // latch = the use button's release state), NOT unconditionally here:
+        // a held button keeps the lock across ticks (one actuation per hold).
+        // `Player.cs:18524`/`:18534`: the mechanical-accessory flags clear
+        // with the rest of `ResetEffects`; `UpdateEquips`' 58-slot scan and
+        // the armor/held grants re-set them per tick
+        // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
+        self.info_acc_mech_show_wires = false;
+        self.auto_actuator = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()

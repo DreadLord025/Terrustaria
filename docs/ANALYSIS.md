@@ -18034,9 +18034,14 @@ into the port's colour-parameterised side table) and
 family (509 red, 850 blue, 851 green, 3612 yellow) places its wire and
 burns one **Wire item (530)** from the inventory вЂ” the tool itself is never
 consumed вЂ” the wire cutter (510) takes the wire off in the C#'s order
-(yellow, green, blue, red) and drops the Wire item back into the world, and
-the Actuator (849) marks the tile without consuming a stack
-(`Player.cs:46878-46883`). `Player.CanDoWireStuffHere`
+(yellow, green, blue, red) and drops the Wire item back into the world.
+(S1-P-i34 corrected three claims this section made: the cutter's FIRST arm
+is `KillActuator` (`Player.cs:46857`), dropping item 849
+(`WorldGen.cs:58030`), not a wire; the Actuator (849) **consumes one** from
+the stack via the generic consumable block (`Player.cs:43280-43325`) вЂ” the
+"consumes no stack" claim read the placement branch alone; and the rod lock
+clears per HOLD, not per tick. See "The wiring-tools census and fixes
+(S1-P-i34)" below.) `Player.CanDoWireStuffHere`
 (`Player.cs:46920-46943`) refuses the unbreakable wall (350) and the temple
 wall (87).
 
@@ -18047,9 +18052,12 @@ Deliberate deviations:
    multi-tool the `WiresUI` tool modes (`Player.cs:46903-46918`) вЂ” both ride
    the S1-L-6b2 row with the switch bridge.
 2. `NPC.downedGolemBoss` (the C#'s gate on the temple wall,
-   `Player.cs:46927`) has no ported world flag, so the temple wall refuses
-   the wires exactly as it does before the Golem dies; the dual-dungeons
-   temple check of the same gate needs a seed the port does not carry.
+   `Player.cs:46927`) had no ported world flag when this row landed, so the
+   temple wall refused the wires exactly as it does before the Golem dies.
+   S1-D-3 wired the placement gate to `world.downed_golem`; S1-P-i34 wired
+   the draw-side `CanShowWireStuffHere` (`render/wires.rs`) the same way. The
+   dual-dungeons temple check of the same gate still needs a seed the port
+   does not carry.
 3. The C#'s wire-removal dust (five dust-50 particles,
    `WorldGen.cs:58133-58135`) and the net messages are out вЂ” the port's dust
    pool has no per-wire removal cue and the local wire state is the truth.
@@ -18059,6 +18067,104 @@ Deliberate deviations:
 Out (the rest of S1-L-6b): the playerв†’switch bridge
 (`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
 helper and `Wiring.running`'s production readers.
+
+## The wiring-tools census and fixes (S1-P-i34, 2026-11-20)
+
+A code-only census of `Player.ItemCheck_UseWiringTools` (`Player.cs:46749-46944`)
+and the `WorldGen` place/kill helpers against the port found three WRONGs and
+three MISSING behaviours; all six are fixed, ported verbatim with cites. The
+wire signal machinery itself (S1-L-6b2/b3) is untouched — this wave is the
+TOOLS use only.
+
+**WRONG 1 — the cutter skipped its first arm.** The C#'s cutter runs
+`KillActuator` FIRST (`Player.cs:46857`), then yellow → green → blue → red
+(`:46862-46880`). The v1 port started at the yellow wire, so a tile carrying
+both an actuator and a wire lost the wire and kept the actuator. The new arm
+calls `edit::kill_actuator` and drops **item 849** (`Item.NewItem(..., 849)`,
+`WorldGen.KillActuator`, `WorldGen.cs:58030`) — the drop rides the
+`UpdatePlayers` stream like the wire drops (the cutter runs in
+`Player.ItemCheck`).
+
+**WRONG 2 — the Actuator (849) DOES consume one.** The placement branch
+(`Player.cs:46883-46886`) decrements nothing itself, which is where the v1
+"consumes no stack" claim came from — but the Actuator is `consumable`
+(`Item.cs:11331`), `ApplyItemTime` (`:46885`) sets `itemTime == itemTimeMax`,
+`CanConsumeConsumableItem` is true (`Player.cs:5496`), there is no
+`ForceConsumption` override (`ID/ItemID.cs:413`), and the item is neither
+ranged nor coin — so the generic consumable block (`Player.cs:43280-43325`,
+same tick, after `ItemCheck_OwnerOnlyCode`) burns one and empties the slot to
+air at zero (`:43321-43324`). The port now decrements the held stack and
+empties the slot, matching the block.
+
+**WRONG 3 — the rod lock is per HOLD, not per tick.** `ResetEffects` clears
+`ActuationRodLock` only while `releaseUseItem` rides
+(`Player.cs:18802-18804`); the v1 port cleared it unconditionally every tick,
+letting a held rod re-flip each tick. The clear now runs at the
+`update_player` seam gated on `app.mine_released` (the port's release latch),
+so a held button keeps the lock and a fresh press re-arms it. Frame order
+verified: `update_player` → `update_wiring` → `update_editing`
+(`app/frame/world.rs:107/371/496`).
+
+**MISSING 1 — wire visibility.** `WiresUI.Settings.DrawWires`
+(`WiresUI.cs:27-45`) gates the whole overlay: a held mech tool draws it;
+otherwise the Mechanical Lens (3619) / Wire Kite (3611)
+(`InfoAccMechShowWires`, `Player.cs:12801-12804`) draw it while
+`builderAccStatus[8] == 0`; the no-traps seed hides it until Skeletron falls
+(`:31-34`). `HideWires` (`:47-57`, the Actuation Rod 3620 in hand) suppresses
+the wire colours and halves the actuator plate (`Main.cs:58224-58229`). The
+`builderAccStatus` channels (`Main.cs:58235-58243`) pick each colour's tint:
+0 = White, 1 = light colour, 2 = ×0.5, 3 = Transparent. Ported as
+`render/wires.rs::wire_view`/`channel_tint` + the gated `draw_wires` call in
+`app/frame/draw.rs`; the flags ride the new
+`world_sim/player.rs::grant_mechanical_accs` seam
+(`RefreshMechanicalAccsFromItemType`, `Player.cs:12799-12820`) with the
+`ResetEffects` clears (`:18524`/`:18534`). The new Player fields
+(`info_acc_mech_show_wires`, `auto_actuator`, `builder_acc_status`) initialise
+at spawn with `[1,0,0,…]`, mirroring the field init (`Player.cs:814`) plus the
+player reset's `[0] = 1` (`:56092`). The draw-side `CanShowWireStuffHere`
+(`Player.cs:46946-46961`) now honours `world.downed_golem` for wall 87 (the
+placement gate already did since S1-D-3).
+
+**MISSING 2 — the plates drop by frame row.** `KillTile_GetItemDrops`' case
+135 (`WorldGen.cs:65569-65599`) drops the item of `frameY / 18`:
+0→529, 1→541, 2→542, 3→543, 4→852, 5→853, 6→1151; row 7 (the orange plate
+4261 places it) has NO C# drop arm — the port returns `None`. Case 428
+(`:65311-65328`): 0→3630, 1→3632, 2→3631, 3→3626. The v1 `by_tile` fallback
+returned the first placing item regardless of style. Both arms are in
+`registry::tile_drop`.
+
+**MISSING 3 — `DestroyPlate` on breaking a pressed weighted plate.** Case 428
+calls `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`,
+`PressurePlateHelper.cs:94-101`): the pressed entry is removed and the switch
+fires once (`PokeLocation`, `:157-165`) so the device releases; an unpressed
+plate is a no-op. Ported as `tr-core/src/wiring.rs::destroy_plate`, called
+from `world_sim/editing.rs::break_tile`; the switch-click pitch draw rides
+`UpdatePlayers` (the pick break runs in `Player.ItemCheck`, `Main.cs:17754`).
+
+**RNG:** no new streams. The new actuator drop and the plate-break switch
+click draw `RngKey::UpdatePlayers`; the existing weighted-plate press/release
+clicks stay on `RngKey::UpdatePressurePlates`; the wire drops keep their
+existing stream.
+
+Deferred (recorded follow-ups, NOT ported):
+
+1. The Multicolor Wrench (3625) / `Wiring.MassWireOperation`
+   (`Player.cs:46903-46918`, `Wiring.cs:419-453`) — needs the `WiresUI`
+   ToolMode UI state the port does not carry.
+2. The `autoActuator` placement consumer
+   (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `Player.cs:40594`) — the
+   flag is granted and read by the visibility gate, but the auto-place-on-build
+   pass is out of this wave.
+3. The wire-removal dust (five dust-50 particles, `WorldGen.cs:58133-58135`,
+   and the actuator twin `:58032-58035`) and the net messages — the port has
+   no dust engine on this path and the local wire state is the truth.
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked.** The witnesses (cutter actuator-first / yellow-first, actuator
+consumes-one / empties-slot, rod held-vs-release, mech-accessory grants/clear,
+the four wire-visibility tests, plate drop rows, `destroy_plate`) are WRITTEN,
+NOT RUN. The old `the_actuator_item_marks_the_tile` test is renamed
+`the_actuator_item_marks_the_tile_and_consumes_one`.
 
 
 ## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
@@ -18176,10 +18282,12 @@ The rest of the wiring row landed with S1-L-6b3:
   set of the held plates in the port (one player).
 - **The Actuation Rod (3620)** is `Wiring.Actuate` (`Wiring.cs:390-405`),
   now `Wiring::actuate`: the tile must carry the actuator bit and the flip
-  runs the de-activate/re-activate cascade. The player's per-tick lock
-  (`Player.ActuationRodLock`/`ActuationRodLockSetting`, `Player.cs:2616-2618`,
-  cleared by `ResetEffects` at `:18804`) keeps one tile from flipping twice
-  (`:46894-46897`).
+  runs the de-activate/re-activate cascade. The player's lock
+  (`Player.ActuationRodLock`/`ActuationRodLockSetting`, `Player.cs:2616-2618`)
+  keeps one tile from flipping twice (`:46894-46897`). (S1-P-i34 corrected
+  the cadence: `ResetEffects` clears the lock only while `releaseUseItem`
+  rides (`:18802-18804`) — one actuation per HOLD, not per tick; the port's
+  clear now runs at the `update_player` seam gated on `mine_released`.)
 
 Deliberate deviations:
 

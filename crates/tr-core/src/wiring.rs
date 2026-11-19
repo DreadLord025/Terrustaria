@@ -572,6 +572,17 @@ impl Wiring {
         self.pressure_plates_pressed.contains(&(x, y))
     }
 
+    /// `PressurePlateHelper.DestroyPlate` (`PressurePlateHelper.cs:94-101`):
+    /// the weighted plate (428) is broken while pressed — the entry is removed
+    /// and the switch fires once (`PokeLocation`, `:157-165`) so the device
+    /// releases. An unpressed plate is a no-op (the `TryGetValue` gate). Called
+    /// from `KillTile_GetItemDrops`' case 428 (`WorldGen.cs:65327`).
+    pub fn destroy_plate(&mut self, world: &mut World, i: i32, j: i32) {
+        if self.pressure_plates_pressed.remove(&(i, j)) {
+            self.poke_location(world, i, j);
+        }
+    }
+
     /// `PressurePlateHelper.PokeLocation` (`PressurePlateHelper.cs:157-165`):
     /// the teleport block for one iteration, then the switch fires.
     fn poke_location(&mut self, world: &mut World, i: i32, j: i32) {
@@ -3139,6 +3150,29 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// S1-P-i34 — `PressurePlateHelper.DestroyPlate`
+    /// (`PressurePlateHelper.cs:94-101`): a pressed weighted plate that is
+    /// broken releases (the entry removed, the switch fires once via
+    /// `PokeLocation`); an unpressed plate is a no-op.
+    #[test]
+    fn destroy_plate_releases_a_pressed_plate_and_pokes_the_switch() {
+        let mut w = world();
+        // A weighted plate (428) wired to a lamp so the poke has a device.
+        put_device(&mut w, 10, 20, 428, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.press_plate(&mut w, 10, 20);
+        assert!(wiring.plate_is_pressed(10, 20), "the plate is held");
+        // Breaking it releases the plate and fires the switch (the teleport
+        // block arms for one iteration, `PokeLocation` `:160`).
+        wiring.destroy_plate(&mut w, 10, 20);
+        assert!(!wiring.plate_is_pressed(10, 20), "the plate released");
+        assert!(wiring.block_player_teleportation(), "the poke armed the block");
+        // An unpressed plate is a no-op (the `TryGetValue` gate).
+        wiring.set_block_player_teleportation(false);
+        wiring.destroy_plate(&mut w, 10, 20);
+        assert!(!wiring.block_player_teleportation(), "no poke on an unpressed plate");
     }
 
     #[test]
