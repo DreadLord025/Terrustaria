@@ -5618,6 +5618,98 @@ round must also supply `player_velocities` (the telefrag union) and the
 `any_skeletron`/`any_npcs_113`/`get_good_world` flags. The live
 `caster_cycle` keeps running byte-identical until then.
 
+### The eye aiStyle-2 re-port (S1-D-3, code-only mode)
+
+The A-1 audit (`docs/research/54-audit-slime-eye.md` §2, branch
+`docs/audit-slime-eye`, seed A1-3) found the LIVE eye family
+(`npc.rs::update_eye` `:6733-6772`, seven kinds 2/133/190-194) is a
+stand-in with a **FALSE citation**: `FlyerParams::FLOATING_EYE
+{accel: 0.12, max_speed: 3.0}` (`npc_ai.rs:59-62`) claims `AI_002`, but
+0.12/3.0 appear NOWHERE in `NPC.cs:52274-52731`. The re-port lands
+`crates/tr-app/src/npc_ai_eye.rs` (`floating_eye_ai` + the `EyeEnv`/
+`EyeOut` seams + the pure `despawn_discouraged` predicate), UNWIRED —
+the live arm keeps running byte-identical until the wiring round (the
+caster/style10 precedent). **Code-only mode: no compiler invoked; the
+15 witness tests are written, not run.**
+
+The defect catalogue the port corrects (audit §2a-c, verified against
+the C# this round):
+
+* **The movement core** — the live normalized-aim `dx/d*0.12` ±3 clamp
+  plus the invented `sin(anim*3)*0.4` position bob vs the C#'s
+  axis-separated direction-driven steering (`:52639-52708`):
+  `num2 = 4f`, `num3 = 1.5f`, both `*= 1f + (1f - scale)`; X −0.1 /
+  extra −0.1 over-cap / +0.05 wrong-sign / clamp ±num2; Y −0.04 /
+  −0.05 / +0.03 / ±num3. No sqrt, no normalization, no bob.
+* **The bounce kicks** (`:52283-52306`) — `oldVelocity × −0.5` (LAST
+  tick's velocity, not the current one the live arm reflects), with
+  the direction-gated floors: |vx| ≥ 2 away from the wall, |vy| ≥ 1
+  both signs. The floors are what keeps eyes off ceilings.
+* **The dawn flee** (`:52308-52325` + the predicate `:52752-52763`) —
+  day && `position.Y <= worldSurface * 16` && !target-graveyard for
+  types 2/133/190-194/317/318 → `EncourageDespawn(10)` (`:7249-7256`,
+  the port's `despawn_timer` seam), `directionY = -1`, and the C#'s own
+  dead-store quirk (`:52312-52320`: the `vy > 0 → direction = 1` write
+  is immediately overwritten by `direction = -1`) ported VERBATIM.
+  Else `TargetClosest()` — the live arm's ad-hoc `sign(dx)` facing and
+  its aiStyle-13-cited sprite-dir keep are gone (the wiring drops them;
+  `npc_target.rs` is the S1-D-3p core).
+* **The 133 half-life enrage** (`:52502-52637`) — the f64
+  `life < lifeMax * 0.5` compare flips the caps 4/1.5 → 6/4 and the
+  accel 0.1/0.04 → 0.1/0.1; the live arm routed 133 through the same
+  stand-in, so the enrage never happened.
+* **The wet tail** (`:52718-52730`) — falling drag ×0.95, −0.5/tick
+  buoyancy, the −4 rise cap, one more `TargetClosest`; Pigrons exempt.
+* **The unported branches ported in full** — The Hungry II 116
+  (`:52425-52500`: the integer-division centre light (0.3, 0.2, 0.1),
+  the ASYMMETRIC Y gates −2.5 rise / 1.5 fall, its own `Next(40)` dust
+  gate) and the Pigron trio 170/171/180 (`:52326-52423`: the
+  `Collision.CanHit` sight counter, the 300-tick phase → alpha 200 +
+  noTileCollide + wet-clear, the re-sight reset behind
+  `!SolidCollision`, the `vy * 0.1 * direction` tilt, the ±4/±2.5
+  player-box-gated steering). The machine keys on the vanilla
+  `npc_type` (the style10 convention) — the wiring only needs the kind
+  rows; 317/318 (DemonEyeOwl/Spaceship) ride the default arm when their
+  kinds land.
+
+Census (SetDefaults `aiStyle = 2`, 13 kinds): 2 (`NPC.cs:8590`), 116
+(`:10397`), 133 (`:10650`), 170/171/180 (`:11132`/`:11145`/`:11283`),
+190-194 (`:11431`-`:11483`), 317/318 (`:13011`/`:13024`); ids
+`ID/NPCID.cs:10681`/`:10909`/`:10943`/`:11017-11037`/`:11057-11065`/
+`:11311-11313`. The port's seven eye kinds are exactly the default/133
+group.
+
+RNG by construction (the module header enumerates every draw): the
+Pigron moan gate `Next(1000)` (`:52276`) runs FIRST for 170/171/180
+only; the 116 dust gate `Next(40)` (`:52493`) inside its branch; the
+family dust gate `Next(40)` (`:52710`) for 2/133/190-194 ONLY (the C#
+`&&` short-circuits the type list — 116/Pigrons/317/318 draw nothing
+there). The dawn-flee predicate, `EncourageDespawn`, `TargetClosest`
+and every steering branch are RNG-free: **one draw per tick per ported
+eye kind, one per Pigron, zero for 317/318**. The `Dust.NewDust`
+internal draws (`Dust.cs:114-148`) are the dust-feed task's documented
+skip — the burst request rides `EyeOut::dust` with the C#'s exact
+arguments (the netOffset bracket, the quarter-height offset, the
+integer half-height box, type 5, (vx, 2) speeds, ×0.5/×0.1 scales);
+the moan cue rides `EyeOut::pigron_moan`, the 116 light
+`EyeOut::light`, the phase's noTileCollide write
+`EyeOut::no_tile_collide`. The witnesses pin the counts with the
+mirrored-oracle stream-position method (written, NOT run).
+
+Folds: `noGravity = true` (`:52280`) — no `Npc` field, the flyer
+integration tail never applies gravity; `noTileCollide` — no field,
+the bounce gate reads `EyeEnv::no_tile_collide` (false for the ported
+kinds) and the Pigron write rides `EyeOut`; `Main.IsItDay()`
+(`Main.cs:62825-62832`) — the remix fold reads `world.day_time`;
+`ZoneGraveyard` — no player field, the parallel
+`EyeEnv::player_graveyards` slice (the style14 convention), wiring
+passes false; slot 255 folds to false (inactive player). The arm does
+NOT integrate position — `NPC.Update`'s generic tail is the caller's
+(the style31 precedent). The lens drops are FAITHFUL already
+(`loot_db_gen.rs:540`, audit §2d) — untouched. The wiring round must
+also delete the false-cited `FlyerParams::FLOATING_EYE` (or repoint it
+at whatever still uses it) and the aiStyle-13-cited sprite-dir keep.
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
