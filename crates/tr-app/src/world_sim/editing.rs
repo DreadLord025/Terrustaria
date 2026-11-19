@@ -1924,7 +1924,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let Some((damage, speed, knock_back, crit)) = fused else {
             return;
         };
-        if gun_proj.is_none() && crate::bow_launch::is_arrow_shooter(held_use_ammo) {
+        if crate::bow_launch::is_arrow_shooter(held_use_ammo) {
             // S1-P-i13 — the bow launch: the post-pick `projToShoot` overrides
             // (`Player.cs:47157-47176`), the `RotatedRelativePoint(MountedCenter)`
             // spawn anchor + facing flip (`:47196-47224`), the aim normalized to
@@ -1932,10 +1932,23 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // fan, the Stormbow/Blood Rain rain, the Chlorophyte spread, the
             // Betsy fan, the Fairy Queen aimed shot, the Hellwing dual spin, the
             // generic single tail). The module owns the spawn + the audio cue.
+            //
+            // The two `gunProj` BOWS (the Phantasm 3540, the DD2 Phoenix Bow
+            // 3854) ride the SAME launch geometry — `ItemCheck_Shoot` runs the
+            // shared anchor/facing/aim (`:47196-47307`) for EVERY shooter before
+            // the per-item arms, then their arms fire the fixed bolt at that
+            // anchor with the aim velocity (`:48996-48999` the Phantasm → 630,
+            // `:49014-49017` the Phoenix → 705). The fixed-projectile reset is
+            // carried by passing `g.projectile` (not the resolved arrow): the
+            // post-pick overrides are all non-matching for 3540/3854 and neither
+            // has a per-bow arm, so they take the generic single tail at the
+            // rotated anchor — the C#'s shape, with the pre-i13 invented
+            // centre + 10 px offset and the missing facing flip corrected.
+            let proj = gun_proj.map_or(resolved.projectile, |g| g.projectile);
             crate::bow_launch::fire(
                 app,
                 held.kind,
-                resolved.projectile,
+                proj,
                 speed,
                 damage as i32,
                 knock_back,
@@ -1945,11 +1958,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 remaining_anim_ticks,
             );
         } else {
-            // The gunProj four keep their fixed-projectile reset; the non-arrow
-            // shooters (bullets/rockets/solutions) keep the generic spawn. The
-            // pre-i13 centre + 10 px anchor stands for them (the bow geometry is
-            // the arrow half's; the bullet/rocket launch arms are their own
-            // tasks).
+            // The non-arrow shooters (the bullet/rocket `gunProj` two — the
+            // Vortex Beater 3475, the Celebration Mk2 3930 — and the
+            // bullets/rockets/solutions) keep the generic spawn. The pre-i13
+            // centre + 10 px anchor stands for them (the bow geometry is the
+            // arrow half's; the bullet/rocket launch arms are their own tasks).
             let Some(p) = app.player.as_ref() else {
                 return;
             };
@@ -4833,6 +4846,72 @@ mod tests {
             hold(&mut app, screen, 30, &mut log);
             assert!(log.is_empty(), "{name}: dry — nothing fired");
             assert_eq!(shots(&app), 0, "{name}: nothing spawned");
+        }
+    }
+
+    /// S1-P-i13 retry — the two `gunProj` BOWS take the bow launch geometry.
+    /// `ItemCheck_Shoot` runs the shared `RotatedRelativePoint(MountedCenter)`
+    /// anchor (`Player.cs:47196`) + the `ChangeDir` aim-dot flip
+    /// (`:47202-47224`) + the aim normalized from the ANCHOR (`:47277-47307`)
+    /// for EVERY shooter before the per-item arms; the Phantasm 3540's arm
+    /// fires the fixed 630 at that anchor with `num4/num5` (`:48996-48999`),
+    /// the DD2 Phoenix Bow 3854's the fixed 705 (`:49014-49017`). The
+    /// pre-i13 wire spawned them at the invented `center + dir*10` with no
+    /// facing flip (the i01 census U24/U25) — the retry routes them through
+    /// `bow_launch::fire`'s generic single tail instead. For the rig's
+    /// stationary unmounted player the rotated anchor == `center()`
+    /// (`fullRotation = 0`, `gfxOffY = 0`, `mount.PlayerOffset = 0`), so the
+    /// shot sits AT the centre — not +10 px along the aim — and the facing
+    /// flips toward the cursor.
+    #[test]
+    fn s1_p_i13_the_gun_prog_bows_fire_from_the_rotated_anchor_with_the_facing_flip() {
+        for (kind, name, bolt) in [
+            (3540u16, "Phantasm", 630u16),
+            (3854, "DD2 Phoenix Bow", 705),
+        ] {
+            // Cursor LEFT of the player: the aim dot is negative, so
+            // `ChangeDir(-1)` (`Player.cs:47216-47223`). −40 px keeps the
+            // cursor tile inside the rig's 6-tile reach gate (the player
+            // centre sits 50 px right of the camera).
+            let mut app = shooter_rig(kind, name, &[(0, 40, 99)]);
+            app.player.as_mut().unwrap().facing = 1;
+            let (sw, sh) = app.screen_size();
+            app.mouse_pos = Vec2::new(sw * 0.5 - 40.0, sh * 0.5);
+            let screen = Vec2::new(sw, sh);
+            let mut log = Vec::new();
+            hold(&mut app, screen, 30, &mut log);
+            let fired: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(fired.len(), 1, "{name}: one fixed bolt per swing");
+            assert_eq!(fired[0].kind, bolt, "{name}: the fixed gun projectile");
+            assert_eq!(
+                app.player.as_ref().unwrap().facing,
+                -1,
+                "{name}: the launch flips the facing toward the cursor (`:47214-47224`)"
+            );
+            // The anchor: `RotatedRelativePoint(MountedCenter)` folds to the
+            // body centre for the rig's player — the invented +10 px offset
+            // is gone. The pre-shot centre is captured from the rig (the
+            // player never moves in the shooter wire).
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            assert!(
+                (fired[0].pos.x - cx).abs() < 1e-3 && (fired[0].pos.y - cy).abs() < 1e-3,
+                "{name}: the bolt spawns at the rotated anchor, not centre+10 ({:?} vs ({cx},{cy}))",
+                fired[0].pos
+            );
+            assert!(fired[0].vel.x < 0.0, "{name}: the aim flies left");
+            assert!(
+                (fired[0].vel.length() - 20.0).abs() < 1e-3,
+                "{name}: the gunProj reset's raw shootSpeed (`:47077-47082`)"
+            );
+            assert_eq!(
+                app.equip.ammo[0].count, 99,
+                "{name}: `dontConsume` — the fixed reset drains nothing"
+            );
         }
     }
 

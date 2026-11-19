@@ -32967,14 +32967,37 @@ per-kind gravity/rotation hooks (`AI_001`'s 142 per-type arms) are the
 S1-D-5 slices; the new rows ride the generic `ai_arrow` arm until those
 land. The 4058 Skeleton Bow is `ItemID.Sets.Deprecated` (`ItemID.cs:1316`),
 so its id-0 registry row is correct and the `resolve_projectile` 4058 arm
-(`Player.cs:53511-53514`) is dead-but-faithful — no correction. The two
-`gunProj` BOWS (the Phantasm 3540 → 630, the DD2 Phoenix Bow 3854 → 705)
-keep the M3-ITEM-6 fixed-projectile reset and the wire's pre-existing
-centre + 10 px anchor: their C# launch is a single fixed shot
-(`:48996-48999`/`:49014-49017`), the Phantasm's multi-arrow is the 630
-projectile's own `AI_075` (the 631 spawn, arrow flight — out of scope), and
-the geometry deviation is shared with the bullet/rocket `gunProj` items, so
-it stays the ammo-resolution task's recorded path rather than this one's.
+(`Player.cs:53511-53514`) is dead-but-faithful — no correction.
+
+**Retry correction (the `gunProj` BOWS' launch geometry).** The first pass
+left the two `gunProj` BOWS — the Phantasm 3540 (→ 630) and the DD2 Phoenix
+Bow 3854 (→ 705) — on the wire's pre-i13 generic spawn (`center + dir*10`,
+no facing flip), reasoning the deviation was shared with the bullet/rocket
+`gunProj` items. That is the i01 census's U24 (invented +10 px offset) and
+U25 (no `ChangeDir`) WRONG, and these two are BOWS (`useAmmo Arrow`), so the
+bow-launch scope owns their geometry. `ItemCheck_Shoot` runs the shared
+`RotatedRelativePoint(MountedCenter)` anchor + the `ChangeDir` aim-dot flip
++ the aim normalized from the anchor (`:47196-47307`) for EVERY shooter
+before the per-item arms; the Phantasm's arm then fires the fixed 630 at
+that anchor with `num4/num5` (`:48996-48999`), the Phoenix's the fixed 705
+(`:49014-49017`). The retry routes the arrow `gunProj` two through
+`bow_launch::fire`'s generic single tail, passing `g.projectile` (the
+fixed-projectile reset) instead of the resolved arrow — the post-pick
+overrides are all non-matching for 3540/3854 and neither has a per-bow arm,
+so the generic tail IS their C# launch. For a stationary unmounted player
+the rotated anchor folds to `center()`, so the bolt spawns AT the centre
+(the +10 px is gone) and the facing flips toward the cursor. The
+bullet/rocket `gunProj` two (the Vortex Beater 3475, the Celebration Mk2
+3930) and the non-arrow shooters keep the generic spawn — their launch
+arms are the i14/i16 tasks'. The Phantasm's multi-arrow volley is the 630
+holder bolt's own `AI_075` (`Projectile.cs:67142-67233`: the charge-gated
+24/22/20/18-tick cadence, the four-arrow `NextFloat` speed + `RandomVector2`
+jitter fan, the `phantasmTime` latch) — the projectile's flight AI, out of
+the bow-LAUNCH scope (recorded for the aiStyle-75 holder task; the 630 row
+already exists, `projectile/data.rs`). Witness
+`s1_p_i13_the_gun_prog_bows_fire_from_the_rotated_anchor_with_the_facing_flip`
+pins the anchor, the facing flip, the fixed bolt and the raw shootSpeed for
+both. WRITTEN, NOT RUN.
 
 **Verification.** Code-only: every bow arm re-read whole against
 `Player.cs:47424-47957`/`:48278-48308`/`:48748-48760`/`:49437`, the shared

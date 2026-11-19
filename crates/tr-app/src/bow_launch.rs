@@ -7,9 +7,15 @@
 //! the wire fused the damage/speed/knockback.
 //!
 //! Scope: the bow LAUNCH only. The arrow flight (aiStyle 1, `AI_001`) is the
-//! projectile-AI task's; the ammo consumption is the ammo task's. The
-//! `gunProj` four (`ItemID.cs:1327`) keep the wire's fixed-projectile reset
-//! and never reach here.
+//! projectile-AI task's; the ammo consumption is the ammo task's. The two
+//! arrow `gunProj` BOWS (the Phantasm 3540 → 630, the DD2 Phoenix Bow 3854 →
+//! 705) DO reach here: the wire passes their fixed bolt id (`g.projectile`,
+//! the M3-ITEM-6 reset) and they take the generic single tail at the rotated
+//! anchor — `ItemCheck_Shoot`'s shared geometry (`:47196-47307`) runs for
+//! every shooter, then their arms fire the fixed bolt (`:48996-48999` /
+//! `:49014-49017`). The bullet/rocket `gunProj` two (the Vortex Beater 3475,
+//! the Celebration Mk2 3930) keep the wire's generic spawn (their launch
+//! arms are the bullet/rocket tasks').
 //!
 //! ## The shared geometry (`Player.cs:47151-47307`)
 //!
@@ -181,8 +187,13 @@ struct Frame {
 /// The bow launch entry — `Player.ItemCheck_Shoot`'s bow half. The wire
 /// calls it for arrow/stake shooters AFTER the stat fuse and the crit roll;
 /// it applies the post-pick overrides, builds the launch frame (flipping the
-/// facing), dispatches the per-bow arm and spawns the arrows. The
-/// `gunProj` four never reach here (the wire keeps their fixed reset).
+/// facing), dispatches the per-bow arm and spawns the arrows. The two arrow
+/// `gunProj` BOWS (the Phantasm 3540, the DD2 Phoenix Bow 3854) reach here
+/// with their fixed bolt id (`proj = g.projectile`, the M3-ITEM-6 reset):
+/// the overrides are non-matching for them and neither has a per-bow arm, so
+/// they take the generic single tail at the rotated anchor — their C# launch
+/// (`:48996-48999` / `:49014-49017`). The bullet/rocket `gunProj` two keep
+/// the wire's generic spawn.
 ///
 /// `anim_max_ticks`/`remaining_anim_ticks` are the integer `itemAnimationMax`
 /// / `itemAnimation` the Fairy Queen's fan index reads (`Player.cs:47918`).
@@ -299,7 +310,12 @@ pub(crate) fn fire(
             // The generic single-shot tail (`:49437`): the plain bows and
             // repeaters, the Marrow/Ice Bow/Pulse Bow (their overrides already
             // applied), the Bees' Knees, the Shadowflame Bow, the Stake
-            // Launcher. `ai7/ai8/ai9` are 0 for the arrow kinds (the
+            // Launcher, and the two arrow `gunProj` BOWS — the Phantasm 3540
+            // (`:48996-48999`, the fixed 630) and the DD2 Phoenix Bow 3854
+            // (`:49014-49017`, the fixed 705): their C# arms fire the fixed
+            // bolt at `pointPosition` with `num4/num5`, which IS this tail
+            // (the wire passes `g.projectile`, the overrides are non-matching
+            // for them). `ai7/ai8/ai9` are 0 for the arrow kinds (the
             // `:49379-49435` arms key on non-arrow proj ids).
             _ => vec![Shot {
                 kind: proj,
