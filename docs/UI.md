@@ -626,6 +626,16 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   the chest/bank integration has its own entry → "Chest/bank integration
   (M3-CHEST-INT)" (the two-panel ownership, the Alt+left-click favorite binding,
   the retain semantics …).
+* Town-NPC chatter UI (S1-E-10b): `ui::npc_chat` draws the hover bubble
+  (`Main.DrawNPCChatBubble`, `Main.cs:43135-43161`) under the emote world→UI
+  transform and the dialogue panel (`NPCChatPanel.cs`) — the `ChatBack`
+  splices, the 460 px/10-line wrapped text at `+(20,20)` stepping 30 px and
+  the always-present Close button (`Lang.inter[52]`, hover scale 1.2, sound
+  12 on the hover edge, sound 11 + `talkNPC = -1` on the click). The
+  right-click open rides `world_sim::npcs::talk_to_npc`. Deferred: the other
+  interaction buttons, the portrait, the corner item, the sign/IME blinker,
+  the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
+  "Town chatter UI (S1-E-10b)".
 
 ## Dev hooks and verification
 

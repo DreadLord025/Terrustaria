@@ -2186,6 +2186,7 @@ pub(crate) mod front_flow_tests {
             npcs: Vec::new(),
             talk_npc: None,
             npc_chat_text: String::new(),
+            npc_chat_last_hovered: -1,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
