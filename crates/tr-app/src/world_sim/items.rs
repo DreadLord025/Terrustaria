@@ -174,8 +174,18 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                         drop.count -= share;
                     }
                     if picked > 0 {
-                        let c = drop.center();
-                        audio.play_at("Coin_0", c.x, c.y, 1.0);
+                        // S1-E-21f — `NPC.moneyPing` (`NPC.cs:90052-90054`,
+                        // called from `WorldItem.cs:1189`): `PlaySound(38,
+                        // base.position)` at the DROP's top-left. Case 38's
+                        // two draws (slot, then pitch) ride the `UpdateItems`
+                        // stream — the revenge arm runs inside
+                        // `WorldItem.UpdateItem` under the `Main.cs:17779`
+                        // swap, right after the share draws above.
+                        audio.play_coin_ping(
+                            drop.pos.x,
+                            drop.pos.y,
+                            app.rngs.stream(crate::app::RngKey::UpdateItems),
+                        );
                     }
                     if drop.count == 0 {
                         items.swap_remove(i);
@@ -183,8 +193,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     }
                     *coins = (*coins)
                         .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
-                    let c = drop.center();
-                    audio.play_at("Coin_0", c.x, c.y, 1.0);
+                    // S1-E-21f — the coin pickup chime (`Player.cs:39444`:
+                    // `PlaySound(newItem.IsACoin ? 38 : 7)` — UNPOSITIONED).
+                    // The C# site runs in `Player.GrabItems` under the
+                    // `UpdatePlayers` swap (`Main.cs:17754`); the port's
+                    // pickup lives in the items pass, so the drain point
+                    // differs but the named stream is the source's.
+                    audio.play_pickup_sound(
+                        true,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                     items.swap_remove(i);
                     continue;
                 }
@@ -217,8 +235,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     }
                 }
                 if into_vault {
-                    let c = drop.center();
-                    audio.play_at("Item_1", c.x, c.y, 1.0);
+                    // S1-E-21f — `GetItem_VoidVault`'s fills play the same
+                    // `IsACoin ? 38 : 7` chime (`Player.cs:39444`'s void-bag
+                    // twins `GetItem_FillIntoOccupiedSlot_VoidBag`), unpositioned,
+                    // on the `UpdatePlayers` stream (the GrabItems caller).
+                    audio.play_pickup_sound(
+                        false,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                     items.swap_remove(i);
                     continue;
                 }
@@ -251,8 +275,17 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     moved += take;
                 }
                 if moved > 0 {
-                    let c = drop.center();
-                    audio.play_at("Item_1", c.x, c.y, 1.0);
+                    // S1-E-21f — `Player.GetItem`'s occupied/empty fill chime
+                    // (`Player.cs:39444`/`:39491`/`:39534`/`:39559`:
+                    // `PlaySound(newItem.IsACoin ? 38 : 7)` — UNPOSITIONED,
+                    // once per accepted slot; the port's slot walk is one
+                    // merged fill, so one chime per pickup event). The Grab
+                    // pitch draw rides `UpdatePlayers` (the `GrabItems`
+                    // caller, `Player.cs:27428` under the `Main.cs:17754` swap).
+                    audio.play_pickup_sound(
+                        false,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                     // `AchievementsHelper.NotifyItemPickup` — the pickup
                     // feeds the ItemPickupCondition rows (TIMBER).
                     if let Some(_done) =
@@ -804,14 +837,22 @@ mod spawn_rng_tests {
         let sucked = app.npcs[0].extra_value;
         assert!(sucked > 0, "the revenge share ran");
         assert!(sucked <= 10 * registry::coin_value(71), "at most the stack");
-        // The twin: the same two draws (Next(50,76), then copper's Next(51)).
+        // The twin: the share draws (Next(50,76), then copper's Next(51)),
+        // then S1-E-21f's moneyPing case-38 pair (Next(5) slot, Next(-40,41)
+        // pitch — `NPC.cs:90054`, the same UpdateItems stream) when the
+        // revenge arm ran.
+        let sucked = app.npcs[0].extra_value;
         let mut expect = UnifiedRandom::new(4242);
-        expect.next_range(50, 76);
-        expect.next_max(51);
+        if sucked > 0 {
+            expect.next_range(50, 76);
+            expect.next_max(51);
+            expect.next_range(0, 5);
+            expect.next_range(-40, 41);
+        }
         assert_eq!(
             *app.rngs.stream(RngKey::UpdateItems),
             expect,
-            "copper spends exactly the pair of draws"
+            "the share pair + the ping pair when sucked, else draw-free"
         );
     }
 }

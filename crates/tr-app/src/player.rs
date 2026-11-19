@@ -1291,6 +1291,46 @@ pub struct Player {
     /// `(SoundType, SoundStyle, position.X, position.Y)` — the caller owns
     /// the audio device and the `UpdatePlayers` stream.
     pending_step_sound: Option<(u16, i16, f32, f32)>,
+    /// S1-E-21f — the extra-jump chain's `PlaySound(16)` play
+    /// (`Player.cs:20793`/`:20803`/`:20815`/`:20871`/`:20899`/`:20927`/
+    /// `:20957`/`:21004`): `(position.X, position.Y)` — the top-left, NOT the
+    /// centre. The caller owns the audio device and the `UpdatePlayers`
+    /// stream (the `pending_step_sound` convention). The Fart's `SoundID.Item16`
+    /// play (`:20846`) is a style façade — a separate queue below.
+    pending_double_jump_sound: Option<(f32, f32)>,
+    /// S1-E-21f — the Fart-in-a-Jar's `PlaySound(SoundID.Item16, position)`
+    /// (`Player.cs:20846`): `(style_index, position.X, position.Y)` — the
+    /// wave-A style façade draws its `GetRandomPitch` NextFloat on the
+    /// audio-only stream, the case-2 pitch on `UpdatePlayers`.
+    pending_fart_sound: Option<(u16, f32, f32)>,
+    /// S1-E-21f — the liquid entry/exit splash play (`Player.cs:27806`/
+    /// `:27819`/`:27832`/`:27846` entry, `:27900`/`:27913`/`:27926`/`:27940`
+    /// exit): `(Style, position.X, position.Y)`. The style is the C#'s third
+    /// argument — shimmer 2 entry / 3 exit, water 0, honey/lava the default 1.
+    pending_splash_sound: Option<(i32, f32, f32)>,
+    /// `Entity.wetCount` (`Entity.cs`): the splash cooldown — set to 10 on
+    /// the entry/exit play (`Player.cs:27776`/`:27870`), decremented at the
+    /// wet block's tail (`:27959-27961`), zeroed on spawn (`:37636`).
+    wet_count: i32,
+    /// S1-E-21f — the drowning gasp (`Player.CheckDrowning`'s breath-zero
+    /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
+    /// the case draws nothing, the drain plays `Drown` on no stream.
+    pending_drown_sound: bool,
+    /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
+    /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
+    /// the off-frame clears it (`:26856`). The port's flap cadence is the
+    /// default arm's `wingFrameCounter` machine (`Player.cs:30466-30479`) —
+    /// the hover/special wings' own frame tables are visual seams.
+    flap_sound: bool,
+    /// `Player.wingFrame` (`Player.cs:1340`) / `wingFrameCounter` (`:1342`):
+    /// the default flap machine's state (the `flap_sound` latch above).
+    wing_frame: i32,
+    wing_frame_counter: i32,
+    /// S1-E-21f — the wing flap's `PlaySound(SoundID.Item32, position)`
+    /// (`Player.cs:26850`): `(style_index, position.X, position.Y)` — the
+    /// wave-A façade (the `GetRandomPitch` NextFloat rides the audio-only
+    /// stream; `Item32`'s variance is 0, the draw is still consumed).
+    pending_flap_sound: Option<(u16, f32, f32)>,
     /// `Player.ManaEffect` (`Player.cs:4531-4538`): the mana-restore combat
     /// text the cuffs arm queues from `Hurt` (`:38291-38303`) — the caller
     /// owns `Main.combatText`, so the Player hands the amount over (the
@@ -2087,6 +2127,15 @@ impl Player {
             // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
             hermes_step_sound: (17, -1, 9),
             pending_step_sound: None,
+            pending_double_jump_sound: None,
+            pending_fart_sound: None,
+            pending_splash_sound: None,
+            wet_count: 0,
+            pending_drown_sound: false,
+            flap_sound: false,
+            wing_frame: 0,
+            wing_frame_counter: 0,
+            pending_flap_sound: None,
             pending_mana_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
@@ -2484,6 +2533,37 @@ impl Player {
         self.pending_step_sound.take()
     }
 
+    /// S1-E-21f — takes the extra-jump `PlaySound(16)` play (the
+    /// `Player.cs:20698-21022` chain's eight sites) — `(position.X,
+    /// position.Y)`, the top-left.
+    pub(crate) fn take_double_jump_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_double_jump_sound.take()
+    }
+
+    /// S1-E-21f — takes the Fart's `SoundID.Item16` play (`Player.cs:20846`)
+    /// — `(style_index, position.X, position.Y)` for the wave-A façade.
+    pub(crate) fn take_fart_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_fart_sound.take()
+    }
+
+    /// S1-E-21f — takes the liquid entry/exit splash play
+    /// (`Player.cs:27774-27944`) — `(Style, position.X, position.Y)`.
+    pub(crate) fn take_splash_sound(&mut self) -> Option<(i32, f32, f32)> {
+        self.pending_splash_sound.take()
+    }
+
+    /// S1-E-21f — takes the drowning gasp flag (`Player.cs:23257`,
+    /// `PlaySound(23)` — unpositioned, no draws).
+    pub(crate) fn take_drown_sound(&mut self) -> bool {
+        std::mem::take(&mut self.pending_drown_sound)
+    }
+
+    /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
+    /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
+    pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_flap_sound.take()
+    }
+
     /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
     /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
     pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
@@ -2653,6 +2733,8 @@ impl Player {
         self.lava_wet = false;
         self.honey_wet = false;
         self.shimmer_wet = false;
+        // `Player.Spawn` (`Player.cs:37636`): `base.wetCount = 0`.
+        self.wet_count = 0;
         self.in_lava = false;
         // `Player.UpdateDead` (`Player.cs:16929`): death zeroes the special.
         self.mount_fishron_special_counter = 0.0;
@@ -2677,6 +2759,11 @@ impl Player {
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_retaliate = None;
+        self.pending_double_jump_sound = None;
+        self.pending_fart_sound = None;
+        self.pending_splash_sound = None;
+        self.pending_drown_sound = false;
+        self.pending_flap_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
@@ -4185,12 +4272,65 @@ impl Player {
         // `Collision.WetCollision` / `LavaCollision` set the four wet flags
         // (`Player.cs:27728-27910`); the mid-tile liquid kind picks them.
         let liquid = mid.filter(|t| t.liquid > 0).map(|t| t.liquid_kind());
-        self.wet = liquid == Some(tr_core::tile::LiquidKind::Water);
-        self.lava_wet = liquid == Some(tr_core::tile::LiquidKind::Lava);
-        self.honey_wet = liquid == Some(tr_core::tile::LiquidKind::Honey);
-        self.shimmer_wet = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
+        // S1-E-21f — the entry/exit splash plays (`Player.cs:27772-27944`).
+        // The C#'s `base.wet` is WetCollision (ANY liquid); the port's four
+        // flags split the kinds, so the edge is the any-liquid union. The
+        // `wetCount == 0` gate (`:27774`/`:27868`) arms the 10-tick cooldown
+        // (`:27776`/`:27870`) and suppresses re-entry churn; the tail
+        // decrement is `:27959-27961`. Styles: entry shimmer 2 (`:27806`),
+        // honey/lava the default 1 (`:27819`/`:27846`), water 0 (`:27832`);
+        // exit shimmer 3 (`:27900`), honey 1 (`:27913`), water 0 (`:27926`),
+        // the old-lava arm 1 (`:27940`). The dust bursts are visual seams.
+        let was_any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let now_wet = liquid == Some(tr_core::tile::LiquidKind::Water);
+        let now_lava = liquid == Some(tr_core::tile::LiquidKind::Lava);
+        let now_honey = liquid == Some(tr_core::tile::LiquidKind::Honey);
+        let now_shimmer = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
+        let now_any_wet = now_wet || now_lava || now_honey || now_shimmer;
+        if now_any_wet && !was_any_wet && self.wet_count == 0 {
+            self.wet_count = 10;
+            // `:27777` — the shimmering (absorbed) state suppresses the play;
+            // the port has no absorbed state (S1-E-16), so the guard is vacuous.
+            // `:27779` — `flag25` is the NEW `Collision.LavaCollision`
+            // (`:27671`): a lava entry plays the `:27846` default-1 arm;
+            // the dry arms read the freshly-set shimmer/honey flags.
+            let style = if now_lava {
+                1 // `:27846` — the lava arm, default Style 1
+            } else if now_shimmer {
+                2 // `:27806`
+            } else if now_honey {
+                1 // `:27819`
+            } else {
+                0 // `:27832`
+            };
+            self.pending_splash_sound = Some((style, self.x, self.y));
+        } else if !now_any_wet && was_any_wet {
+            // `:27864` — the exit jump clamp (`jump > jumpHeight/5`) is a
+            // movement seam, not a sound one; the splash gate stands alone.
+            if self.wet_count == 0 {
+                self.wet_count = 10;
+                let style = if self.lava_wet {
+                    1 // `:27940` — flag24, the OLD lava flag
+                } else if self.shimmer_wet {
+                    3 // `:27900`
+                } else if self.honey_wet {
+                    1 // `:27913`
+                } else {
+                    0 // `:27926`
+                };
+                self.pending_splash_sound = Some((style, self.x, self.y));
+            }
+        }
+        self.wet = now_wet;
+        self.lava_wet = now_lava;
+        self.honey_wet = now_honey;
+        self.shimmer_wet = now_shimmer;
         self.in_water = self.wet || self.honey_wet;
         self.in_lava = self.lava_wet;
+        // `:27959-27961` — the splash cooldown ticks at the wet block's tail.
+        if self.wet_count > 0 {
+            self.wet_count -= 1;
+        }
 
         // The fall origin is only reset post-movement now: the landing/rest
         // block (`velocity.Y == 0`, `Player.cs:25383`) and the continuous
@@ -5175,6 +5315,25 @@ impl Player {
                     // `:20678`: only a grounded trigger counts as justJumped.
                     if self.vy == 0.0 {
                         self.just_jumped = true;
+                    }
+                    // S1-E-21f — the chain's sound plays (S1-E-21f): every
+                    // arm but the Fart plays `PlaySound(16, (int)position.X,
+                    // (int)position.Y)` (`:20793` Sandstorm, `:20803`
+                    // Blizzard, `:20815` Sail, `:20871` Unicorn, `:20899`
+                    // WallOfFleshGoat, `:20927` Basilisk, `:20957` Santank,
+                    // `:21004` Cloud) BEFORE the velocity/jump writes; the
+                    // Fart plays `SoundID.Item16` at `position` (`:20846`).
+                    // The int overload draws no GetRandomPitch; the case-16
+                    // pitch roll rides the drain's `UpdatePlayers` stream.
+                    if j == ExtraJump::Fart {
+                        if let Some(idx) = crate::soundid::SOUND_STYLES
+                            .iter()
+                            .position(|s| s.name == "Item16")
+                        {
+                            self.pending_fart_sound = Some((idx as u16, self.x, self.y));
+                        }
+                    } else {
+                        self.pending_double_jump_sound = Some((self.x, self.y));
                     }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
@@ -7277,6 +7436,53 @@ impl Player {
         if flag19 {
             self.wing_movement(input);
         }
+        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`) + the flap-sound
+        // edge (`:26835-26858`). The port runs the DEFAULT arm's frame machine
+        // (`Player.cs:30447-30526`: num35 = 4, num36 = 4, num37 = 0, num38 = 0,
+        // num39 = 1 — the wings-43/48/32 constants and the hover wings' own
+        // tables are visual seams): counter > 4 wraps the frame 0..3, the
+        // airborne rest frame 1, the grounded 0. Both the machine and the
+        // sound sit behind the C#'s exclusion gate (`:26835`: wings
+        // 4/22/0/24/28/30/33/45 — the early-return arms own their frames);
+        // wings 43/44 read frame 4 and 49 reads frame 5 — their frame tables
+        // are unported, so their flap arms stay silent (the documented
+        // deviation). The `wingFrame == 3` edge plays `SoundID.Item32` once
+        // through the `flapSound` latch (`:26848-26856`); the façade draw
+        // rides the drain.
+        if !matches!(self.wings_logic, 4 | 22 | 0 | 24 | 28 | 30 | 33 | 45) {
+            if flag19 || self.jump > 0 {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter > 4 {
+                    self.wing_frame += 1;
+                    self.wing_frame_counter = 0;
+                    if self.wing_frame >= 4 {
+                        self.wing_frame = 0;
+                    }
+                }
+            } else if self.vy != 0.0 {
+                // `:30480-30481` — the airborne rest frame (num39 = 1).
+                self.wing_frame = 1;
+            } else {
+                // `:30522-30525` — the grounded rest frame (num38 = 0).
+                self.wing_frame = 0;
+            }
+            if flag19 {
+                // `:26837` — the plain wings read `wingFrame == 3`.
+                if self.wing_frame == 3 {
+                    if !self.flap_sound {
+                        if let Some(idx) = crate::soundid::SOUND_STYLES
+                            .iter()
+                            .position(|s| s.name == "Item32")
+                        {
+                            self.pending_flap_sound = Some((idx as u16, self.x, self.y));
+                        }
+                    }
+                    self.flap_sound = true;
+                } else {
+                    self.flap_sound = false;
+                }
+            }
+        }
         // `:26867-26902`: the rocket trigger — only once the wing budget is
         // spent (or absent); the arming needs a midair jump release.
         if (self.wing_time == 0.0 || self.wings_logic == 0)
@@ -8090,6 +8296,12 @@ impl Player {
             if self.breath_cd >= BREATH_CD {
                 self.breath_cd = 0;
                 self.breath -= 1;
+                // `Player.cs:23255-23258`: the breath-zero gasp —
+                // `PlaySound(23)` unpositioned, ONCE on the 1→0 edge (the
+                // `<= 0` damage arm below keeps firing every drain).
+                if self.breath == 0 {
+                    self.pending_drown_sound = true;
+                }
                 if self.breath <= 0 {
                     self.breath = 0;
                     self.lose_health(2);
@@ -16071,5 +16283,215 @@ mod s1_player_composite_tests {
         // `tile.x * 16 = 160 < centre 174` picks the left arm (`:23034`).
         assert_eq!(p0.pos.x, p.x - 4.0);
         assert!(puffs.iter().any(|d| d.pos.y == 21.0 * 16.0) || puffs.len() >= 1);
+    }
+
+    /// S1-E-21f — the extra-jump chain queues the case-16 play at the
+    /// top-left (`Player.cs:20793` et al.); the Fart queues the Item-16
+    /// style façade instead (`:20846`). The unarmed Cloud fall-through
+    /// (`:20746`) stays silent — it clears the flag without a jump.
+    #[test]
+    fn s1_e_21f_the_extra_jump_queues_the_double_jump_play() {
+        let w = ground_world();
+        // The air-tap preamble (the `tap_air` shape) with the position
+        // captured before the triggering tick — the queue stores the
+        // probe-time top-left, the tick's integration moves the body after.
+        let air_tap = |w: &World, p: &mut Player| -> (f32, f32) {
+            p.update(w, PlayerInput { jump: true, ..Default::default() });
+            p.update(w, PlayerInput::default());
+            for _ in 0..3 {
+                p.update(w, PlayerInput::default());
+            }
+            let pos = (p.x, p.y);
+            p.update(w, PlayerInput { jump: true, ..Default::default() });
+            pos
+        };
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Cloud]);
+        // The ground jump re-arms the chain; no extra-jump play yet.
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert!(p.take_double_jump_sound().is_none(), "the ground jump is silent");
+        let pos = air_tap(&w, &mut p);
+        assert_eq!(
+            p.take_double_jump_sound(),
+            Some(pos),
+            "the Cloud arm queues the top-left position"
+        );
+        assert!(p.take_double_jump_sound().is_none(), "one-shot");
+        assert!(p.take_fart_sound().is_none(), "the Cloud is not the Fart");
+        // The Fart arm queues the Item-16 façade, not the case-16 play.
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Fart]);
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        let pos = air_tap(&w, &mut p);
+        let (idx, fx, fy) = p.take_fart_sound().expect("the Fart queues Item16");
+        assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item16");
+        assert_eq!((fx, fy), pos);
+        assert!(p.take_double_jump_sound().is_none());
+        // Unarmed: no option means the chain gate never opens — silent.
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        let _ = air_tap(&w, &mut p);
+        assert!(p.take_double_jump_sound().is_none(), "no option, no play");
+        assert!(p.take_fart_sound().is_none());
+    }
+
+    /// S1-E-21f — the liquid entry/exit splash queue (`Player.cs:27772-27944`):
+    /// the wet edge plays once per `wetCount` cycle (10 ticks), water style 0
+    /// entry / 0 exit, honey 1, shimmer 2 entry / 3 exit, lava 1. The tail
+    /// decrement re-arms the gate after the cooldown.
+    #[test]
+    fn s1_e_21f_the_wet_edges_queue_the_splash_styles() {
+        let pool = |kind: tr_core::tile::LiquidKind| {
+            let mut w = ground_world();
+            for x in 0..64 {
+                for y in 40..60 {
+                    let i = w.index(x, y);
+                    w.tiles[i].liquid = 255;
+                    w.tiles[i].set_liquid_kind(kind);
+                }
+            }
+            w.spawn_y = 44;
+            w
+        };
+        use tr_core::tile::LiquidKind;
+        // Water: entry style 0, and after leaving (teleport to dry air above
+        // the pool) the exit style 0. The queue stores the probe-time
+        // top-left — capture before the tick's integration moves the body.
+        let w = pool(LiquidKind::Water);
+        let mut p = Player::spawn(&w);
+        let spawn_pos = (p.x, p.y);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(
+            p.take_splash_sound(),
+            Some((0, spawn_pos.0, spawn_pos.1)),
+            "the water entry plays style 0 at the top-left"
+        );
+        // The cooldown suppresses re-entry churn: hop out and back within
+        // the window — no second play until wetCount runs out.
+        let dry_y = 20.0 * 16.0;
+        let wet_y = p.y;
+        p.y = dry_y;
+        p.update(&w, PlayerInput::default());
+        assert!(p.take_splash_sound().is_none(), "wetCount still armed");
+        p.y = wet_y;
+        p.update(&w, PlayerInput::default());
+        assert!(p.take_splash_sound().is_none(), "the cooldown holds");
+        // Run the cooldown out in the dry, then the exit edge fired earlier
+        // is gone — a fresh entry plays again.
+        p.y = dry_y;
+        for _ in 0..12 {
+            p.update(&w, PlayerInput::default());
+            p.y = dry_y; // hold above the pool against gravity
+        }
+        let _ = p.take_splash_sound();
+        p.y = wet_y;
+        p.vy = 0.0;
+        let reentry_pos = (p.x, p.y);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(
+            p.take_splash_sound(),
+            Some((0, reentry_pos.0, reentry_pos.1)),
+            "re-entry after the cooldown"
+        );
+        // Honey: style 1 entry. Shimmer: style 2 entry / style 3 exit.
+        for (kind, style) in [(LiquidKind::Honey, 1), (LiquidKind::Shimmer, 2), (LiquidKind::Lava, 1)] {
+            let w = pool(kind);
+            let mut p = Player::spawn(&w);
+            p.update(&w, PlayerInput::default());
+            assert_eq!(
+                p.take_splash_sound().map(|(s, ..)| s),
+                Some(style),
+                "{kind:?} entry style"
+            );
+        }
+        // The shimmer exit reads the OLD shimmerWet flag — style 3. The
+        // exit edge needs wetCount == 0: enter, wait the cooldown out UNDER
+        // water (the counter ticks regardless), then leave.
+        let w = pool(LiquidKind::Shimmer);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let _ = p.take_splash_sound(); // entry, style 2
+        for _ in 0..12 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.y = dry_y;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(
+            p.take_splash_sound().map(|(s, ..)| s),
+            Some(3),
+            "the shimmer exit plays style 3"
+        );
+    }
+
+    /// S1-E-21f — the drowning gasp fires ONCE on the breath 1→0 edge
+    /// (`Player.cs:23255-23258`), not on every subsequent drain tick.
+    #[test]
+    fn s1_e_21f_the_drown_gasp_fires_once_on_the_zero_edge() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        let mut gasps = 0;
+        for _ in 0..1600 {
+            p.update(&w, PlayerInput::default());
+            if p.take_drown_sound() {
+                gasps += 1;
+            }
+        }
+        assert_eq!(p.breath, 0);
+        assert_eq!(gasps, 1, "the gasp is the 1->0 edge, not the damage loop");
+    }
+
+    /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):
+    /// the default frame machine (`:30466-30479`) wraps 0..3 every 5 flying
+    /// ticks; the frame-3 edge plays ONCE through the `flapSound` latch.
+    /// The excluded wings (4/22/24/28/30/33/45) never play.
+    #[test]
+    fn s1_e_21f_the_wing_flap_plays_once_per_frame_three_edge() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[3] = 492; // Demon Wings — wings_logic 1, the plain machine
+        p.wing_time = 100.0;
+        let held = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, held); // the ground jump
+        let mut flaps = 0;
+        // The machine ticks through the 15-tick jump phase too (the C#'s
+        // `wingFlap || jump > 0`), so the frame-3 edges land every 20 held
+        // ticks — the audible ones need flag19 (the jump drained).
+        for _ in 0..80 {
+            p.update(&w, held);
+            if let Some((idx, _, _)) = p.take_flap_sound() {
+                assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, "Item32");
+                flaps += 1;
+            }
+        }
+        // 80 held ticks: the frame-3 edges at ~35/55/75 — each played
+        // exactly once (the latch).
+        assert!(flaps >= 2, "the flap edges played: {flaps}");
+        assert!(flaps <= 4, "the latch holds one play per edge: {flaps}");
+        // The excluded wings stay silent through the same flight. Item 1866
+        // (the Festive Wings row) grants wings_logic 22 — excluded (`:26835`).
+        let mut q = Player::spawn(&w);
+        for _ in 0..120 {
+            q.update(&w, PlayerInput::default());
+        }
+        q.equipped[3] = 1866;
+        q.wing_time = 100.0;
+        q.update(&w, held);
+        assert_eq!(q.wings_logic, 22, "the wing row grants wings 22");
+        for _ in 0..50 {
+            q.wing_time = 100.0;
+            q.update(&w, held);
+            assert!(q.take_flap_sound().is_none(), "wings 22 never flap-play");
+        }
     }
 }
