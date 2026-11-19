@@ -27,6 +27,86 @@ pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
 const ONE_TICK_SECS: f32 = 1.0 / 60.0;
 
+// ---------------------------------------------------------------------------
+// S1-P-i22 — the magic guns + tomes' use arms (`Player.ItemCheck_Shoot`,
+// `Player.cs:47056-49468`). The census + verdicts live in
+// `docs/research/56-magic-guns-tomes-census.md`; every arm below cites its
+// C# block and keeps the `Main.rand` draw order on the `UpdatePlayers`
+// stream (the use pass's `loot_rng`).
+// ---------------------------------------------------------------------------
+
+/// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
+/// — `Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue, clamped:
+/// true))`. The harp's note-speed curve (`Player.cs:47407`) uses the clamped
+/// default; the descending-range branches are [`crate::projectile::get_lerp_value`]'s.
+fn remap_clamped(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (to_max - to_min) * crate::projectile::get_lerp_value(from_min, from_max, value)
+}
+
+/// `Camera.SmallerScaledAxis` (`Graphics/Camera.cs:29-40`): the smaller of
+/// `ScaledSize`'s axes, `ScaledSize = UnscaledSize - GameViewMatrix.Translation
+/// * 2` (`Camera.cs:14`). The translation is the zoom frame's offset
+/// (`SpriteViewMatrix.cs:149-153`, the `app/frame/draw.rs:735-746` formula:
+/// `Round(screen/2 - (screen/2) / Round(zoom/(1/128))*(1/128))`, banker's
+/// rounding). The Magical Harp's distance scale reads it (`Player.cs:47395`).
+/// Takes the screen + zoom by value — the use pass calls it under the live
+/// `app.player`/`app.rngs` borrows (the disjoint-field convention).
+fn smaller_scaled_axis(screen: Vec2, zoom: f32) -> f32 {
+    let (sw, sh) = (screen.x, screen.y);
+    let q = (zoom / (1.0 / 128.0)).round_ties_even() * (1.0 / 128.0);
+    let tx = (sw * 0.5 - sw * 0.5 / q).round_ties_even();
+    let ty = (sh * 0.5 - sh * 0.5 / q).round_ties_even();
+    (sw - tx * 2.0).min(sh - ty * 2.0)
+}
+
+/// `Player.tileTargetX/Y` (`Player.cs:25389-25410`): the cursor tile clamped
+/// to `[5, maxTiles-5]` per axis (the gravDir −1 mirror has no port). The
+/// Electrosphere Launcher's missile anchors on it (`Player.cs:49388-49392`).
+fn tile_target(world: &World, world_pos: Vec2) -> (i32, i32) {
+    let tx = ((world_pos.x / TILE_PX) as i32).clamp(5, world.width - 5);
+    let ty = ((world_pos.y / TILE_PX) as i32).clamp(5, world.height - 5);
+    (tx, ty)
+}
+
+/// `Utils.NextVector2Circular(halfWidth, halfHeight)` (`Utils.cs:1266-1269`):
+/// `NextVector2Unit() * (halfWidth, halfHeight) * NextFloat()` — one angle
+/// draw then one radial draw, in that order.
+fn next_vector2_circular(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+    let angle = rng.next_float() * std::f32::consts::TAU;
+    Vec2::from_angle(angle) * Vec2::new(hw, hh) * rng.next_float()
+}
+
+/// `Utils.NextVector2CircularEdge(halfWidth, halfHeight)` (`Utils.cs:1271-1274`):
+/// `NextVector2Unit() * (halfWidth, halfHeight)` — one angle draw, no radial.
+fn next_vector2_circular_edge(rng: &mut UnifiedRandom, hw: f32, hh: f32) -> Vec2 {
+    let angle = rng.next_float() * std::f32::consts::TAU;
+    Vec2::from_angle(angle) * Vec2::new(hw, hh)
+}
+
+/// `Player.GetSparkleGuitarTarget` (`Player.cs:46626-46643`): the chaseable
+/// NPCs whose hitbox intersects the 1000×800 box centred on the player
+/// (`Utils.CenteredRectangle(Center, (1000, 800))`). Returns the indices into
+/// `npcs` in scan order (the C#'s `validTargets` list order — the
+/// `Main.rand.Next(Count)` pick reads it). Takes the player centre + the NPC
+/// slice — the use pass calls it under the live `app.player`/`app.rngs`
+/// borrows (the disjoint-field convention).
+fn sparkle_guitar_targets(center: Vec2, npcs: &[Npc]) -> Vec<usize> {
+    let (cx, cy) = (center.x, center.y);
+    let (bx0, by0, bx1, by1) = (cx - 500.0, cy - 400.0, cx + 500.0, cy + 400.0);
+    let mut out = Vec::new();
+    for (i, n) in npcs.iter().enumerate() {
+        if !n.can_be_chased_by() {
+            continue;
+        }
+        let (w, h) = n.size();
+        // `Rectangle.Intersects`: the strict-overlap test on both axes.
+        if n.x < bx1 && n.x + w > bx0 && n.y < by1 && n.y + h > by0 {
+            out.push(i);
+        }
+    }
+    out
+}
+
 /// `AmmoID.Arrow` (40) and `AmmoID.Stake` (1836) (`ID/AmmoID.cs:161`, `:174`) —
 /// the two categories `AmmoID.Sets.IsArrow` covers (`:115`), the gate the
 /// `magicQuiver` knockback arm reads (`Player.cs:53547`).
@@ -921,7 +1001,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         let mut angle = loot_rng.next_float() * std::f32::consts::TAU;
                         for _ in 0..10 {
                             let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
-                            if crate::projectile::can_hit_line(
+                            // `:48798` — `Collision.CanHit` (the Manhattan
+                            // walk, NOT CanHitLine).
+                            if crate::projectile::can_hit(
                                 &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
                             ) {
                                 break;
@@ -948,25 +1030,198 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         // `Player.cs:48808-48827` - the Sky Fracture's spawn:
                         // a ring point 20-60 px out (up to 50 retries with an
                         // 8 px line probe), the velocity lerped 25% toward the
-                        // cursor direction.
+                        // cursor direction. The C# draws the angle AND a radial
+                        // ONCE before the loop (`:48810` + `:48813` — the
+                        // pre-loop ring value is overwritten by the loop's
+                        // first iteration, but its radial DRAW is spent), then
+                        // per iteration: radial draw → probe → angle re-roll.
                         let mut face = loot_rng.next_float() * std::f32::consts::TAU;
+                        // `:48813` — the pre-loop radial draw (result discarded).
+                        let _pre = 20.0 + (60.0 - 20.0) * loot_rng.next_float();
                         let mut ring = spawn;
                         for _ in 0..50 {
                             let radius = 20.0 + (60.0 - 20.0) * loot_rng.next_float();
                             ring = spawn + Vec2::from_angle(face) * radius;
-                            let probe = ring + (ring - spawn).normalize_or_zero() * 8.0;
-                            if crate::projectile::can_hit_line(
+                            // `:48817` — `SafeNormalize(Vector2.UnitX)`: the
+                            // zero-delta fallback is +X, not zero.
+                            let outward = (ring - spawn).normalize_or(Vec2::X);
+                            let probe = ring + outward * 8.0;
+                            // `:48817` — `Collision.CanHit` (NOT CanHitLine).
+                            if crate::projectile::can_hit(
                                 &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
                             ) {
                                 break;
                             }
                             face = loot_rng.next_float() * std::f32::consts::TAU;
                         }
-                        let toward = (world_pos - ring).normalize_or_zero() * fx_spd;
-                        let along = shot.normalize_or_zero() * fx_spd;
+                        // `:48823-48825` — `vector61 = (num4,num5).SafeNormalize
+                        // (UnitY) * speed`; `Lerp(v4.SafeNormalize(vector61) *
+                        // speed, vector61, 0.25)`. The along fallback is UnitY
+                        // and the toward fallback is vector61 itself.
+                        let along = shot.normalize_or(Vec2::Y) * fx_spd;
+                        let toward = (world_pos - ring).normalize_or(along) * fx_spd;
                         let v = toward + (along - toward) * 0.25;
                         let slot = app.projectiles.spawn_with_data_ai(
                             proj, ring.x, ring.y, v.x, v.y, raw as i32, fx_kb, 0.0, 0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
+                    } else if held.kind == 494 {
+                        // `Player.cs:47392-47423` - the Magical Harp's note:
+                        // the kind rolls 76 + Next(3), the velocity scales by
+                        // the cursor distance over the camera's smaller scaled
+                        // axis, and the note's ai0 is the clamped pitch.
+                        let note = proj + loot_rng.next_range(0, 3) as u16;
+                        // `:47395-47399` - num7 = cursor distance / (axis/2),
+                        // clamped to 1. The distance is the PRE-scale aim length
+                        // (`num7` at `:47290`, before the speed normalization).
+                        let mut dist = (world_pos - spawn).length() / (smaller_scaled_axis(screen, app.zoom) / 2.0);
+                        if dist > 1.0 {
+                            dist = 1.0;
+                        }
+                        // `:47400-47404` - the spread + the distance scale.
+                        // The C# computes num10/num11 here but the spawn at
+                        // `:47410` uses vector9 (not them) — the two spread
+                        // DRAWS are still spent, the values discarded.
+                        let mut nx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.01;
+                        let mut ny = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.01;
+                        dist *= 1.75;
+                        nx *= dist + 0.1;
+                        ny *= dist + 0.1;
+                        let _ = (nx, ny);
+                        // `:47405-47409` - the target offset: MouseWorld -
+                        // Center + NextVector2Circular(40,40), remapped to the
+                        // 20-60 speed divisor.
+                        let (pcx, pcy) = p.center();
+                        let mut off = world_pos - Vec2::new(pcx, pcy);
+                        off += next_vector2_circular(loot_rng, 40.0, 40.0);
+                        let divisor = remap_clamped(off.length(), 540.0, 960.0, 20.0, 60.0);
+                        let v9 = off / divisor * 2.0;
+                        // `:47410` - ai2 = vector9.Length() / num12.
+                        let ai2 = v9.length() / divisor;
+                        // The notes' ×0.95 (`Projectile.cs:13432-13436`) is a
+                        // HIT-time fold — out of the use-path scope (census).
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            note, spawn.x, spawn.y, v9.x, v9.y, raw as i32, fx_kb, 0.0, 1.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                            app.projectiles.set_ai2(slot, ai2);
+                            // `:47411-47420` - num7 = clamp(num7*2-1, -1, 1)
+                            // overrides ai0 (the pitch the note's AI reads).
+                            let pitch = (dist * 2.0 - 1.0).clamp(-1.0, 1.0);
+                            app.projectiles.set_ai0(slot, pitch);
+                        }
+                    } else if held.kind == 4715 {
+                        // `Player.cs:47994-48025` - the Sparkle Guitar's note:
+                        // a chaseable target (or the cursor), the arc's control
+                        // point in ai0/ai1, the launch velocity an upward edge
+                        // vector scaled by twice the control distance.
+                        let (pcx, pcy) = p.center();
+                        let center = Vec2::new(pcx, pcy);
+                        let targets = sparkle_guitar_targets(center, &app.npcs);
+                        let mut target = world_pos;
+                        let has_target = !targets.is_empty();
+                        if has_target {
+                            let pick = targets[loot_rng.next_range(0, targets.len() as i32) as usize];
+                            let n = &app.npcs[pick];
+                            let (ncx, ncy) = n.center();
+                            target = Vec2::new(ncx + n.vx * 20.0, ncy + n.vy * 20.0);
+                        }
+                        let mut ctrl = target - center;
+                        if !has_target {
+                            target += next_vector2_circular(loot_rng, 24.0, 24.0);
+                            if ctrl.length() > 700.0 {
+                                ctrl *= 700.0 / ctrl.length();
+                                target = center + ctrl;
+                            }
+                        }
+                        // `:48013-48022` - the edge vector, forced upward.
+                        let mut edge = next_vector2_circular_edge(loot_rng, 1.0, 1.0);
+                        if edge.y > 0.0 {
+                            edge *= -1.0;
+                        }
+                        if edge.y.abs() < 0.5 {
+                            edge.y = (0.0 - loot_rng.next_float()) * 0.5 - 0.5;
+                        }
+                        edge *= ctrl.length() * 2.0;
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, spawn.x, spawn.y, edge.x, edge.y, raw as i32, fx_kb,
+                            target.x, target.y,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
+                    } else if held.kind == 1308 {
+                        // `Player.cs:48115-48134` - the Poison Staff's volley:
+                        // 3 fangs, 4 on a Next(3)==0 roll; each spreads by
+                        // 0.05·index and re-normalizes to shootSpeed. The
+                        // index-0 fang still spends its two draws (×0).
+                        let mut count = 3;
+                        if loot_rng.next_range(0, 3) == 0 {
+                            count += 1;
+                        }
+                        for i in 0..count {
+                            let spread = 0.05 * i as f32;
+                            let fx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+                            let fy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+                            let len = (fx * fx + fy * fy).sqrt();
+                            let scale = if len > 0.0 { fx_spd / len } else { 0.0 };
+                            // The fang's ×0.75 (`Projectile.cs:13414-13416`) is
+                            // a HIT-time fold in `Damage_PVE_Inner` (it compounds
+                            // per hit) — out of the use-path scope, recorded in
+                            // the census; the spawn carries the raw damage.
+                            let slot = app.projectiles.spawn_with_data_ai(
+                                proj, spawn.x, spawn.y, fx * scale, fy * scale,
+                                raw as i32, fx_kb, 0.0, 0.0,
+                            );
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                            }
+                        }
+                    } else if held.kind == 65 {
+                        // `Player.cs:47251-47266` (the projToShoot==9 block) +
+                        // `:49095-49108` (the type-65 arm) - the Starfury star:
+                        // the spawn point rides the cursor X with a random
+                        // lateral offset, 600 px above the mounted centre; the
+                        // damage ×1.5, knockback 0; ai1 is the SolidTile-walked
+                        // cursor Y the star falls to.
+                        let (_pcx, pcy) = p.center();
+                        let mouse_x = world_pos.x;
+                        let left = p.x;
+                        let right = p.x + crate::player::WIDTH;
+                        let mut side = -1.0f32;
+                        if mouse_x < left {
+                            side = 1.0;
+                        } else if mouse_x <= right && loot_rng.next_range(0, 2) == 0 {
+                            side = 1.0;
+                        }
+                        let star_x = p.x + crate::player::WIDTH * 0.5
+                            + loot_rng.next_range(0, 201) as f32 * side
+                            + (mouse_x - p.x);
+                        let star_spawn = Vec2::new(star_x, pcy - 600.0);
+                        // `:47265` — the use-time ×1.5 (the int truncation).
+                        // The star's hit-time ×0.75 (`Projectile.cs:14502-14504`)
+                        // is out of the use-path scope (census).
+                        let star_damage = (raw * 1.5) as i32;
+                        // `:49099-49105` - vec walks from MouseWorld toward the
+                        // spawn while its tile is solid and it sits below the
+                        // spawn point.
+                        let step = (star_spawn - world_pos).normalize_or(Vec2::new(0.0, -1.0));
+                        let mut vec = world_pos;
+                        while vec.y > star_spawn.y
+                            && crate::projectile::solid_tile(
+                                &app.world,
+                                (vec.x / TILE_PX) as i32,
+                                (vec.y / TILE_PX) as i32,
+                            )
+                        {
+                            vec += step * 16.0;
+                        }
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, star_spawn.x, star_spawn.y, shot.x, shot.y,
+                            star_damage, 0.0, 0.0, vec.y,
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
@@ -1016,6 +1271,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 (world_pos.x / 16.0) as i32 as f32,
                                 (world_pos.y / 16.0) as i32 as f32,
                             )
+                        } else if proj == crate::projectile::PURPLE_LASER {
+                            // `Player.cs:49379-49382` - the Laser Rifle's
+                            // PurpleLaser rides `ai0 = Main.rand.Next(3, 6)`
+                            // (the extraUpdates remap the rider reads).
+                            (loot_rng.next_range(3, 6) as f32, 0.0)
                         } else {
                             (0.0, 0.0)
                         };
@@ -1924,8 +2184,24 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // the weapon is one of the four, and the fused knockback (the
             // weapon’s own + the ammo’s + the magicQuiver scale), which
             // supersedes the pre-fuse `w_kb` read.
+            let mut shot_kind = gun_proj.map_or(resolved.projectile, |g| g.projectile);
+            // `Player.cs:47169-47172` — the Electrosphere Launcher (2796)
+            // forces `projToShoot = 442` AFTER PickAmmo (the additive rocket
+            // arm would otherwise carry Rocket II's own shoot 3 → 445).
+            if held.kind == 2796 {
+                shot_kind = crate::projectile::ELECTROSPHERE_MISSILE as i32;
+            }
+            // `Player.cs:49388-49392` - the Electrosphere Missile (442) anchors
+            // on the cursor tile (`ai0 = tileTargetX, ai1 = tileTargetY`); the
+            // generic tail's ai0/ai1 are 0 for every other ammo shot.
+            let (ai0, ai1) = if shot_kind == crate::projectile::ELECTROSPHERE_MISSILE as i32 {
+                let (ttx, tty) = tile_target(&app.world, world_pos);
+                (ttx as f32, tty as f32)
+            } else {
+                (0.0, 0.0)
+            };
             let slot = app.projectiles.spawn_with_data_owned(
-                gun_proj.map_or(resolved.projectile, |g| g.projectile),
+                shot_kind,
                 app.local_id as u8,
                 spawn.x,
                 spawn.y,
@@ -1933,8 +2209,8 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 dir.y * speed,
                 damage as i32,
                 knock_back,
-                0.0,
-                0.0,
+                ai0,
+                ai1,
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
@@ -7312,6 +7588,176 @@ mod tests {
             draws_after(seed, 1),
             "the crit's draw only"
         );
+    }
+
+    // --- S1-P-i22: the magic guns + tomes' use arms ------------------------
+    // Witnesses WRITTEN, NOT RUN (code-only mode). Every expected value is
+    // hand-derived from the cited C# lines; the RNG-order argument replays
+    // the draws on a clone of the seeded stream.
+
+    /// The Laser Rifle's PurpleLaser carries `ai0 = Next(3, 6)`
+    /// (`Player.cs:49379-49382`) — the stream spends the crit + that one draw.
+    #[test]
+    fn s1_p_i22_the_laser_rifle_laser_carries_the_ai0_roll() {
+        let mut app = staff_app(514, "Laser Rifle");
+        let seed = 0x1A5E;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let bolts: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(bolts.len(), 1, "one laser");
+        assert_eq!(bolts[0].kind, crate::projectile::PURPLE_LASER);
+        // The replay: draw 1 crit, draw 2 the ai0 roll.
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let ai0 = state.next_range(3, 6);
+        assert_eq!(bolts[0].ai[0], ai0 as f32, "ai0 = Next(3,6)");
+        assert!((3.0..6.0).contains(&bolts[0].ai[0]), "the roll range");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 2), "crit + ai0");
+    }
+
+    /// The Poison Staff fires 3 fangs, 4 on a `Next(3) == 0` roll
+    /// (`Player.cs:48115-48134`); the index-0 fang still spends its two draws.
+    #[test]
+    fn s1_p_i22_the_poison_staff_volley_count_and_draws() {
+        let mut saw3 = false;
+        let mut saw4 = false;
+        for seed in 0..40u64 {
+            let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
+            let mut state = tr_core::UnifiedRandom::new(s);
+            let _crit = state.next_range(1, 101);
+            let extra = state.next_range(0, 3) == 0;
+            let count = if extra { 4 } else { 3 };
+            let mut app = staff_app(1308, "Poison Staff");
+            // The staff costs 22 mana — above the rig's stock 20.
+            app.player.as_mut().unwrap().mana = 100;
+            seed_stream(&mut app, s);
+            fire_once(&mut app);
+            let fangs: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+            assert_eq!(fangs.len(), count, "seed {seed}: the volley count");
+            assert!(fangs.iter().all(|p| p.kind == crate::projectile::POISON_FANG));
+            // Each fang re-normalizes to shootSpeed 13.5.
+            for f in &fangs {
+                assert!(
+                    (f.vel.length() - 13.5).abs() < 1e-3,
+                    "seed {seed}: |v| = {}",
+                    f.vel.length()
+                );
+            }
+            // The draws: crit + the count roll + 2·count spread draws.
+            assert_eq!(
+                stream_of(&mut app),
+                draws_after(s, 2 + 2 * count),
+                "seed {seed}: the draw count"
+            );
+            if extra { saw4 = true; } else { saw3 = true; }
+        }
+        assert!(saw3 && saw4, "both volley sizes across seeds");
+    }
+
+    /// The Magical Harp rolls the note kind `76 + Next(3)` and spends exactly
+    /// crit + Next(3) + two Next(-40,41) + the circular pair
+    /// (`Player.cs:47392-47423`).
+    #[test]
+    fn s1_p_i22_the_magical_harp_note_kind_and_draws() {
+        let mut app = staff_app(494, "Magical Harp");
+        let seed = 0x4A7Bu32 as i32;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let notes: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(notes.len(), 1, "one note");
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let kind = 76 + state.next_range(0, 3);
+        assert_eq!(notes[0].kind, kind as u16, "the note kind roll");
+        assert!([76u16, 77, 78].contains(&notes[0].kind));
+        // The note's ai1 is 1 (`:47410`), ai0 the clamped pitch (`:47420`).
+        assert_eq!(notes[0].ai[1], 1.0, "ai1 = 1");
+        assert!((-1.0..=1.0).contains(&notes[0].ai[0]), "the pitch clamp");
+        // crit + Next(3) + Next(-40,41)×2 + circular(angle,radial) = 6 draws.
+        assert_eq!(stream_of(&mut app), draws_after(seed, 6), "the draw count");
+    }
+
+    /// The Sky Fracture's ring spends the pre-loop angle + radial draws, then
+    /// per-iteration radial → probe → angle (`Player.cs:48808-48827`). In open
+    /// air the first probe passes, so the run is crit + angle + pre-radial +
+    /// loop-radial = 4 draws.
+    #[test]
+    fn s1_p_i22_the_sky_fracture_ring_draw_order() {
+        let mut app = staff_app(3787, "Sky Fracture");
+        let seed = 0x5CF7;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let bolts: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(bolts.len(), 1, "one fracture");
+        assert_eq!(bolts[0].kind, crate::projectile::SKY_FRACTURE);
+        // The replay: crit, angle, pre-loop radial (discarded), loop radial.
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let face = state.next_float() * std::f32::consts::TAU;
+        let _pre = state.next_float();
+        let radius = 20.0 + 40.0 * state.next_float();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let aim = staff_aim(&app);
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        let spawn = Vec2::new(cx, cy) + dir * 10.0;
+        let ring = spawn + Vec2::from_angle(face) * radius;
+        assert!(
+            (bolts[0].pos - ring).length() < 1e-3,
+            "the ring point follows the draw order (pos {:?}, ring {:?})",
+            bolts[0].pos,
+            ring
+        );
+        assert_eq!(stream_of(&mut app), draws_after(seed, 4), "the four draws");
+    }
+
+    /// The Starfury star spawns 600 px above the mounted centre with damage
+    /// ×1.5 and knockback 0 (`Player.cs:47251-47266` + `:49095-49108`). The
+    /// cursor sits right of the player (outside [Left, Right]), so the side
+    /// is −1 and NO Next(2) is spent — only the Next(201) offset. The sword
+    /// is non-autoReuse, so the use needs a press edge (the Last Prism
+    /// witness's released-then-press shape).
+    #[test]
+    fn s1_p_i22_the_starfury_star_spawn_and_damage() {
+        let mut app = staff_app(65, "Starfury");
+        let seed = 0x57A7;
+        seed_stream(&mut app, seed);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // The press edge: one released tick, then the press.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let stars: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(stars.len(), 1, "one star");
+        assert_eq!(stars[0].kind, crate::projectile::STARFURY);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        assert!((stars[0].pos.y - (cy - 600.0)).abs() < 1e-3, "600 px above");
+        // Damage 25 × 1.5 = 37 (the melee class multiplier is 1).
+        assert_eq!(stars[0].damage, 37, "damage ×1.5");
+        assert_eq!(stars[0].knock_back, 0.0, "knockback 0");
+        // crit + Next(201) — the cursor is outside [Left, Right], no Next(2).
+        assert_eq!(stream_of(&mut app), draws_after(seed, 2), "crit + Next(201)");
+    }
+
+    /// The Sparkle Guitar with no chaseable target spends crit + the circular
+    /// pair (24) + the edge angle + (maybe) the Y-fix draw
+    /// (`Player.cs:47994-48025`); the note's ai0/ai1 carry the control point.
+    #[test]
+    fn s1_p_i22_the_sparkle_guitar_no_target_arc() {
+        let mut app = staff_app(4715, "Sparkle Guitar");
+        let seed = 0x6A7A;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let notes: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(notes.len(), 1, "one note");
+        assert_eq!(notes[0].kind, crate::projectile::SPARKLE_GUITAR);
+        // The launch velocity points upward (the edge vector is forced up).
+        assert!(notes[0].vel.y < 0.0, "the edge vector is upward");
+        // The control point (ai0/ai1) is near the cursor (no target).
+        let aim = staff_aim(&app);
+        let ctrl = Vec2::new(notes[0].ai[0], notes[0].ai[1]);
+        assert!((ctrl - aim).length() <= 24.0 + 1e-3, "the control point jitter");
     }
 }
 

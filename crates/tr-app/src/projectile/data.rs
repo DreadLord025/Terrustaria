@@ -697,6 +697,56 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+// S1-P-i22 — the magic guns + tomes' shots (`Player.ItemCheck_Shoot` census,
+// `Player.cs:47056-49468`). Every id is the verbatim `ProjectileID` value;
+// the `SetDefaults` arms are cited per row in [`proj_data`].
+/// `ProjectileID.Starfury` (9, `ProjectileID.cs:572`) — the falling star the
+/// Starfury sword (65) and the Star Cannon's fallback share (aiStyle 5).
+pub const STARFURY: u16 = 9;
+/// `ProjectileID.QuarterNote` (76, `ProjectileID.cs:706`) — the Magical
+/// Harp's first note kind; the shoot rolls `76 + Next(3)` (`Player.cs:47394`).
+pub const QUARTER_NOTE: u16 = 76;
+/// `ProjectileID.EighthNote` (77, `ProjectileID.cs:708`) — the harp's second.
+pub const EIGHTH_NOTE: u16 = 77;
+/// `ProjectileID.TiedEighthNote` (78, `ProjectileID.cs:710`) — the harp's third.
+pub const TIED_EIGHTH_NOTE: u16 = 78;
+/// `ProjectileID.NettleBurstRight` (150, `ProjectileID.cs:854`) — the Nettle
+/// Burst's head segment (aiStyle 4, the Vilethorn family's chain).
+pub const NETTLE_BURST_RIGHT: u16 = 150;
+/// `ProjectileID.NettleBurstLeft` (151, `ProjectileID.cs:856`).
+pub const NETTLE_BURST_LEFT: u16 = 151;
+/// `ProjectileID.NettleBurstEnd` (152, `ProjectileID.cs:858`) — the chain's tip.
+pub const NETTLE_BURST_END: u16 = 152;
+/// `ProjectileID.HeatRay` (260, `ProjectileID.cs:1074`) — the Heat Ray's beam
+/// (aiStyle 48, `extraUpdates = 100`).
+pub const HEAT_RAY: u16 = 260;
+/// `ProjectileID.PoisonFang` (265, `ProjectileID.cs:1084`) — the Poison
+/// Staff's fang (aiStyle 1, `timeLeft = 37`, local immunity 10).
+pub const POISON_FANG: u16 = 265;
+/// `ProjectileID.ElectrosphereMissile` (442, `ProjectileID.cs:1438`) — the
+/// Electrosphere Launcher's rocket; `Kill()` spawns the sphere 443.
+pub const ELECTROSPHERE_MISSILE: u16 = 442;
+/// `ProjectileID.Electrosphere` (443, `ProjectileID.cs:1440`) — the sphere the
+/// missile's death spawns (aiStyle 77).
+pub const ELECTROSPHERE: u16 = 443;
+/// `ProjectileID.ChargedBlasterOrb` (459, `ProjectileID.cs:1472`) — the
+/// cannon's charge orb (aiStyle 1, `extraUpdates = 1`).
+pub const CHARGED_BLASTER_ORB: u16 = 459;
+/// `ProjectileID.ChargedBlasterCannon` (460, `ProjectileID.cs:1474`) — the
+/// channel holder (aiStyle 75, 14x18, `penetrate = -1`, `tileCollide = false`).
+pub const CHARGED_BLASTER_CANNON: u16 = 460;
+/// `ProjectileID.ChargedBlasterLaser` (461, `ProjectileID.cs:1476`) — the
+/// holder's full-charge beam (aiStyle 84, the key-linked 460 rider).
+pub const CHARGED_BLASTER_BEAM: u16 = 461;
+/// `ProjectileID.CrystalPulse` (521, `ProjectileID.cs:1596`) — the Crystal
+/// Serpent's pulse (aiStyle 29's own 521 arm, `extraUpdates = 1`).
+pub const CRYSTAL_PULSE: u16 = 521;
+/// `ProjectileID.SparkleGuitar` (856, `ProjectileID.cs:2266`) — the Sparkle
+/// Guitar's note (aiStyle 167, the CatmullRom arc).
+pub const SPARKLE_GUITAR: u16 = 856;
+/// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
+/// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
+pub const STAR_CANNON_STAR: u16 = 955;
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -2759,6 +2809,63 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i22 — the magic guns + tomes' shots. The verbatim
+            // `SetDefaults` arms, in `ProjectileID` order; `light`/`magic`/
+            // `melee`/`ranged`/`ignoreWater`/`drawLayer`/`armorPenetration`
+            // have no `ProjData` consumer (dropped, as the Phase-1 rows note).
+            // `Projectile.cs:886-896` — the Starfury star (9): 24x24, aiStyle 5,
+            // `penetrate = 2`, `scale = 0.8f`, `tileCollide = false`, melee.
+            STARFURY => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `Projectile.cs:1556-1593` — the harp notes (76/77/78): aiStyle 21,
+            // `alpha = 100`, `penetrate = 5`, `timeLeft = 180`, ignoreWater; the
+            // per-kind box (76: 10x22, 77: 18x24, 78: 22x24). The `switch (2)`
+            // local-immunity arm (`:1588-1591`) sets `localNPCHitCooldown = 30`.
+            QUARTER_NOTE => (10.0, 22.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            EIGHTH_NOTE => (18.0, 24.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            TIED_EIGHTH_NOTE => (22.0, 24.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            // `Projectile.cs:2398-2410` — the Nettle Burst segments (150-152):
+            // 28x28, aiStyle 4, `penetrate = -1`, `tileCollide = false`,
+            // `alpha = 255`, ignoreWater (`armorPenetration = 10` dropped).
+            NETTLE_BURST_RIGHT | NETTLE_BURST_LEFT | NETTLE_BURST_END => (
+                28.0, 28.0, 4, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3441-3451` — the Heat Ray (260): 8x8, aiStyle 48,
+            // `extraUpdates = 100`, `timeLeft = 200`, `penetrate = 1`.
+            HEAT_RAY => (8.0, 8.0, 48, 1, 200, 100, true, false, false, RESET_STATE),
+            // `Projectile.cs:3503-3515` — the Poison Fang (265): 12x12,
+            // aiStyle 1, `alpha = 255`, `penetrate = 3`, local immunity 10,
+            // `timeLeft = 37`.
+            POISON_FANG => (12.0, 12.0, 1, 3, 37, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `Projectile.cs:5126-5136` — the Electrosphere Missile (442):
+            // 14x14, aiStyle 1, `alpha = 255`, `timeLeft = 600`, ranged.
+            ELECTROSPHERE_MISSILE => (14.0, 14.0, 1, 1, 600, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5137-5149` — the Electrosphere (443): 80x80,
+            // aiStyle 77, `alpha = 255`, `penetrate = -1`, `tileCollide =
+            // false`, ignoreWater, ranged.
+            ELECTROSPHERE => (80.0, 80.0, 77, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5292-5303` — the Charged Blaster Orb (459): 22x22,
+            // aiStyle 1, `alpha = 255`, `extraUpdates = 1`, ignoreWater, magic.
+            CHARGED_BLASTER_ORB => (22.0, 22.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5304-5316` — the Charged Blaster Cannon holder
+            // (460): 14x18, aiStyle 75, `penetrate = -1`, `tileCollide = false`,
+            // ignoreWater, magic (`drawLayer = 8`/`usesOwnerLight` dropped).
+            CHARGED_BLASTER_CANNON => (14.0, 18.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5317-5328` — the Charged Blaster Laser (461):
+            // 18x18, aiStyle 84, `penetrate = -1`, `alpha = 255`,
+            // `tileCollide = false`, magic (`hide = true` dropped).
+            CHARGED_BLASTER_BEAM => (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5908-5918` — the Crystal Pulse (521): 14x14,
+            // aiStyle 29, `alpha = 255`, `penetrate = 1`, `extraUpdates = 1`.
+            CRYSTAL_PULSE => (14.0, 14.0, 29, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:8206-8219` — the Sparkle Guitar note (856): 32x32,
+            // aiStyle 167, `alpha = 255`, `tileCollide = false`,
+            // `extraUpdates = 2`, local immunity −1, ignoreWater, magic.
+            SPARKLE_GUITAR => (32.0, 32.0, 167, 1, TIME_LEFT_DEFAULT, 2, false, false, false, (true, -1, false, -1, 255, 1.0)),
+            // `Projectile.cs:9013-9023` — the Star Cannon star (955): 18x18,
+            // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
+            // dropped).
+            STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

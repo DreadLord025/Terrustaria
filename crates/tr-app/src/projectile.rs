@@ -2479,15 +2479,26 @@ impl Projectile {
     /// resolves through `Projectile.NewProjectile`'s seam, or `None`.
     /// `tileCollide = false` (`:874-884`) is the row's own field: the vine
     /// grows straight through walls.
-    fn ai_style4(&mut self) -> Option<(u16, f32, f32, f32)> {
+    fn ai_style4(&mut self, rng: &mut dyn tr_core::loot::DropRng) -> Option<(u16, f32, f32, f32)> {
         // `:23706` — the orientation.
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        let nettle = matches!(self.kind, NETTLE_BURST_RIGHT | NETTLE_BURST_LEFT | NETTLE_BURST_END);
         let mut spawn = None;
         if self.ai[0] == 0.0 {
-            // `:23714` — the fade-in (the 150-152/493-494 variants' extra
-            // steps at `:23716-23721` are
-            // not ported kinds).
+            // S1-P-i22 — `:23709-23713`: the Nettle Burst head's first-tick
+            // type flip (`150 → 151` on `Next(2) == 0`, only while `ai[1] == 0`
+            // and `alpha == 255`). The draw is spent ONLY for the 150/151/152
+            // kinds at that state — the Vilethorn pair never reaches it.
+            if nettle && self.ai[1] == 0.0 && self.alpha == 255 && rng.next_range(0, 2) == 0 {
+                self.kind += 1;
+                self.net_update = true;
+            }
+            // `:23714` — the fade-in; `:23715-23718` the Nettle Burst's extra
+            // −25 (the 493/494 variant's −50 at `:23719-23721` is unported).
             self.alpha -= 50;
+            if nettle {
+                self.alpha -= 25;
+            }
             if self.alpha <= 0 {
                 self.alpha = 0;
                 self.ai[0] = 1.0;
@@ -2504,11 +2515,33 @@ impl Projectile {
                         self.pos.y + self.vel.y + self.h * 0.5,
                         self.ai[1] + 1.0,
                     ));
+                } else if (self.kind == NETTLE_BURST_RIGHT || self.kind == NETTLE_BURST_LEFT)
+                    && self.owner == 0
+                {
+                    // S1-P-i22 — `:23762-23781`: the Nettle Burst chain. The
+                    // child alternates 150↔151; the 151 at depth ≥ 10 spawns
+                    // the tip 152. The child's `ai[1]` is the depth + 1.
+                    let mut child = if self.kind == NETTLE_BURST_RIGHT {
+                        NETTLE_BURST_LEFT
+                    } else {
+                        NETTLE_BURST_RIGHT
+                    };
+                    if self.ai[1] >= 10.0 && self.kind == NETTLE_BURST_LEFT {
+                        child = NETTLE_BURST_END;
+                    }
+                    spawn = Some((
+                        child,
+                        self.pos.x + self.vel.x + self.w * 0.5,
+                        self.pos.y + self.vel.y + self.h * 0.5,
+                        self.ai[1] + 1.0,
+                    ));
                 }
             }
         } else {
-            // `:23823-23828` — the fade-out and the `alpha >= 255` kill.
-            self.alpha += 5;
+            // `:23813-23824` — the fade-out: the Nettle Burst +3, the
+            // Vilethorn +5 (the 493/494 +4 is unported); `:23825-23828` the
+            // `alpha >= 255` kill.
+            self.alpha += if nettle { 3 } else { 5 };
             if self.alpha >= 255 {
                 self.active = false;
                 self.time_left = 0;
@@ -5667,6 +5700,368 @@ impl Projectile {
         }
     }
 
+    // --- S1-P-i22: the magic guns + tomes' projectile AI arms --------------
+    // Every arm cites its `Projectile.cs` block. The dust/gore/sound rolls
+    // are SKIPPED pool-wide (no RNG in the pool — the S1-D-5 slice-A
+    // precedent, `projectile_ai001_a.rs` module doc), so the
+    // `UpdateProjectiles` stream stays untouched BY CONSTRUCTION.
+
+    /// `AI()`'s aiStyle-5 falling-star arm (`Projectile.cs:23830-24099`): the
+    /// Starfury star 9 and the Star Cannon star 955. The 9's `tileCollide`
+    /// rides `Bottom.Y >= ai[1]` (`:23865-23868`); the 955 takes the generic
+    /// `ai[1]` latch (`:23871-23879`: the first non-solid tick arms
+    /// `tileCollide`). The 9's alpha ramps −15 to the 150/0 floor
+    /// (`:23900-23913`); the 955's generic alpha bounce (`:23928-23945`).
+    /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
+    /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
+    fn ai_falling_star(&mut self, world: &World) {
+        if self.kind == STARFURY {
+            // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
+            self.tile_collide = self.pos.y + self.h >= self.ai[1];
+        } else {
+            // `:23871-23879` — the generic latch: the first tick whose box is
+            // not in a solid tile arms `ai[1] = 1` and `tileCollide`.
+            if self.ai[1] == 0.0 && !solid_collision(world, self.pos, self.w, self.h) {
+                self.ai[1] = 1.0;
+                self.net_update = true;
+            }
+            if self.ai[1] != 0.0 {
+                self.tile_collide = true;
+            }
+        }
+        // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG).
+        if self.kind == STARFURY {
+            // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
+            self.alpha -= 15;
+            let floor = if self.pos.y + self.h * 0.5 >= self.ai[1] { 0 } else { 150 };
+            if self.alpha < floor {
+                self.alpha = floor;
+            }
+            self.local_ai[0] +=
+                (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        } else {
+            // `:23928-23945` — the generic alpha bounce (the 955's arm).
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = 1.0;
+            }
+            self.alpha += (25.0 * self.local_ai[0]) as i32;
+            if self.alpha > 200 {
+                self.alpha = 200;
+                self.local_ai[0] = -1.0;
+            }
+            if self.alpha < 0 {
+                self.alpha = 0;
+                self.local_ai[0] = 1.0;
+            }
+        }
+        // `:23950-23953` — the spin (the 503/1037/1049 rotation arm is not
+        // these kinds). `base.direction` is the velocity-sign stand-in (the
+        // C# updates it after movement, `:17016-17026` +
+        // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
+        // — the blocked hit kills. The 9's `tileCollide` is the latch above.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
+    /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
+    /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
+    /// (`:25589-25593`). The dust roll (`:25594`) and the sound latch
+    /// (`:25600-25605`) are SKIPPED. The bounce is the movement chain's
+    /// aiStyle-21 arm (`:19299-19309`: the blocked axis reverses).
+    fn ai_music_note(&mut self, world: &World) {
+        // `base.direction` is the velocity-sign stand-in (`:17016-17026`,
+        // `AutomaticallyChangesDirection` true for aiStyle 21).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        // `:25587` — `rotation = Clamp(velocity.X, -6, 6) * 0.1`.
+        self.rot = self.vel.x.clamp(-6.0, 6.0) * 0.1;
+        // `:25588` — `spriteDirection = -base.direction`.
+        self.sprite_direction = -self.direction;
+        // `:25589-25593` — the decel toward the pitch-scaled floor.
+        let floor = 3.0 * (self.ai[0] / 2.0 + 0.5).abs();
+        let speed = self.vel.length();
+        if speed > floor {
+            let angle = self.vel.y.atan2(self.vel.x);
+            self.vel = Vec2::from_angle(angle) * (speed - self.ai[2]);
+        }
+        // The movement: the aiStyle-21 bounce (`:19299-19309`) — the blocked
+        // axis reverses at full speed (the port's per-axis probe stand-in).
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.vel.x = -self.vel.x;
+            }
+            if hit_y {
+                self.vel.y = -self.vel.y;
+            }
+            if !hit_x && !hit_y {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+    }
+
+    /// `AI()`'s aiStyle-77 Electrosphere arm (`Projectile.cs:30671-30761`):
+    /// the 443's pulse. `ai[1] == 1` (a missile death nearby) fades it out
+    /// (+51 to 255, then Kill); else it fades in (−50 to 0). The box pulses
+    /// at `80·max(0.75+sin·0.25, 0.8−sin·0.2)` over the 30-tick cycle
+    /// (`ai[0]` wraps at 120). The sound/dust rolls are SKIPPED.
+    fn ai_electrosphere(&mut self) {
+        // `:30673-30686` — the active-sound volume decay is SKIPPED (sound).
+        if self.ai[1] == 1.0 {
+            // `:30687-30700` — the fade-out + Kill.
+            self.friendly = false;
+            if self.alpha < 255 {
+                self.alpha += 51;
+            }
+            if self.alpha >= 255 {
+                self.alpha = 255;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        } else {
+            // `:30701-30711` — the fade-in.
+            if self.alpha > 0 {
+                self.alpha -= 50;
+            }
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+        }
+        // `:30712-30723` — the pulse box.
+        self.ai[0] += 1.0;
+        if self.ai[0] > 120.0 {
+            self.ai[0] = 0.0;
+        }
+        let phase = std::f32::consts::TAU * self.ai[0] / 30.0;
+        let up = Vec2::new(0.0, -1.0).rotate(Vec2::from_angle(phase));
+        let scale = (0.75 + up.y * 0.25).max(0.8 - up.y * 0.2);
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let size = (80.0 * scale) as i32 as f32;
+        self.w = size;
+        self.h = size;
+        self.pos = center - Vec2::new(size * 0.5, size * 0.5);
+        // `:30724-30733` — the 3-tick frame machine.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 4 {
+                self.frame = 0;
+            }
+        }
+        // `:30734-30760` — the dust rolls are SKIPPED (no pool RNG).
+        // The movement: `tileCollide = false` (`:5146`) — UpdatePosition.
+        self.pos += self.vel;
+    }
+
+    /// `AI_167_SparkleGuitar` (`Projectile.cs:46573-46591`): the 856's note
+    /// arcs from the owner to the control point (`ai[0]/ai[1]`) over 90
+    /// ticks via CatmullRom, then dies. The light write (`:46588`) is
+    /// SKIPPED; the rotation spins `2π·progress` (`:46589`).
+    fn ai_sparkle_guitar(&mut self, owner: Option<(f32, f32)>) {
+        // `:46575-46580` — `++localAI[0] >= 89` kills.
+        self.local_ai[0] += 1.0;
+        if self.local_ai[0] >= 89.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        let t = self.local_ai[0] / 90.0;
+        // `:46582-46585` — the CatmullRom arc. `center` is the owner's centre
+        // (the pool's `Main.player[owner]` stand-in); no owner → the note's
+        // own spawn centre is the anchor's stand-in (recorded).
+        let center = owner
+            .map(|(x, y)| Vec2::new(x, y))
+            .unwrap_or_else(|| Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5));
+        let ctrl = Vec2::new(self.ai[0], self.ai[1]);
+        let back = -self.vel;
+        let p0 = center + back * 2.0;
+        let p1 = center;
+        let p2 = ctrl;
+        let p3 = ctrl + back * (1.0 - t * 3.0);
+        let new_center = catmull_rom(p0, p1, p2, p3, t);
+        self.pos = new_center - Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:46589` — `rotation = 2π·num2·1`.
+        self.rot = std::f32::consts::TAU * t;
+        // NO movement integration: the 856 is on `UpdatePosition`'s skip list
+        // (`:20435`) — the CatmullRom arc IS the position.
+    }
+
+    /// `AI_001`'s Electrosphere Missile 442 arm (`Projectile.cs:54726-54771`):
+    /// the fade-in (alpha −90 every 4 ticks), the fly-to-the-tile-target kill
+    /// (`Distance(Center, (ai0,ai1)·16+8) <= 16` → Kill), and the 120-tick
+    /// post-fade life. The light/dust writes are SKIPPED. The death spawns
+    /// the sphere 443 (the pool's `spawn_electrosphere` hook).
+    fn ai_electrosphere_missile(&mut self, world: &World) {
+        // `:54728` — `frame = 0`.
+        self.frame = 0;
+        // `:54729-54741` — the fade-in.
+        if self.alpha != 0 {
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] >= 4.0 {
+                self.alpha -= 90;
+                if self.alpha < 0 {
+                    self.alpha = 0;
+                    self.local_ai[0] = 2.0;
+                }
+            }
+        }
+        // `:54742-54746` — the arrival kill.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let target = Vec2::new(self.ai[0], self.ai[1]) * 16.0 + Vec2::splat(8.0);
+        if center.distance(target) <= 16.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:54747-54770` — the post-fade life + the dust (SKIPPED).
+        if self.alpha == 0 {
+            self.local_ai[1] += 1.0;
+            if self.local_ai[1] >= 120.0 {
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] == 3.0 {
+                self.local_ai[0] = 0.0;
+            }
+        }
+        // The generic AI_001 flight: 442 is on the `flag3 = false` skip list
+        // (`:55996`), so the counter rests and the flight is straight. The
+        // rotation tail is the default `atan2 + 1.57` (`:57748-57751`).
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI_001`'s Charged Blaster Orb 459 arm (`Projectile.cs:54651-54695`):
+    /// the alpha fade (−30), the 3-tick frame machine, the scale latch
+    /// (`ai[1]` clamped 0.7..1.6 → the 22·scale box), the penetrate flip at
+    /// scale ≥ 0.85. The light/dust writes are SKIPPED (the `:54678`
+    /// `Main.rand.Next(3)` dust gate is dust-only). The rotation tail is
+    /// `:57642-57648` (`ToRotation()`, +π when direction −1).
+    fn ai_charged_blaster_orb(&mut self, world: &World) {
+        // `base.direction` is the velocity-sign stand-in (`:17016-17026`,
+        // `AutomaticallyChangesDirection` true for aiStyle 1).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        // `:54653-54657` — the alpha fade.
+        self.alpha -= 30;
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:54658` — `spriteDirection = base.direction`.
+        self.sprite_direction = self.direction;
+        // `:54659-54668` — the 3-tick frame machine (wrap at 3).
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+            if self.frame >= 3 {
+                self.frame = 0;
+            }
+        }
+        // `:54669-54673` — the scale latch + the recentred box.
+        self.ai[1] = self.ai[1].clamp(0.7, 1.6);
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        self.scale = self.ai[1];
+        let size = (22.0 * self.scale) as i32 as f32;
+        self.w = size;
+        self.h = size;
+        self.pos = center - Vec2::new(size * 0.5, size * 0.5);
+        // `:54674-54685` — the light (SKIPPED) + the penetrate flip.
+        if self.scale >= 0.85 {
+            self.penetrate = -1;
+            self.max_penetrate = -1;
+        }
+        // `:54686-54694` — the dust (SKIPPED, the Next(3) gate is dust-only).
+        // The generic flight: 459 is on the `flag3 = false` skip list
+        // (`:55998`) — straight. The rotation tail `:57642-57648`.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        if self.direction == -1 {
+            self.rot += std::f32::consts::PI;
+        }
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI_029_GemStaffs`'s Crystal Pulse 521 arm (`Projectile.cs:37705-37741`):
+    /// the alpha fade-in (−50 to 0) — the dust spawns at alpha 0 are SKIPPED.
+    /// The 521 has NO homing (the `ActuallyGemStaffs` tail is the `else`
+    /// branch, `:37823-37826`). The movement is the gem branch's
+    /// (`HandleMovement` `:17996-18056`); the 521 carries no gem features, so
+    /// it falls to the default tile arm (`:19849-19853`).
+    fn ai_crystal_pulse(&mut self, world: &World) {
+        // `:37707-37732` — the alpha-0 dust spawns are SKIPPED.
+        // `:37733-37740` — the fade.
+        if self.alpha >= 0 {
+            self.alpha -= 50;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // The movement: no gem features → the default tile arm.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-84 Charged Blaster Laser 461 arm
+    /// (`Projectile.cs:31405-31410` + `:31486-31499` + `:31553-31618`): the
+    /// key-linked 460 rider. The beam hangs 16 px ahead of the holder along
+    /// its heading (`:31407-31409`), the sin scale ramp over 300 ticks
+    /// (`:31488-31498`), the rotation re-normalise (`:31553-31559`) and the
+    /// LaserScan length at the 0.5 lerp (`:31572-31618`). A missing holder
+    /// kills (`:31424-31427`). The dust/light writes are SKIPPED.
+    fn ai_charged_blaster_beam(&mut self, world: &World, parent: Option<(Vec2, Vec2)>) {
+        // `:31380-31383` — the NaN/zero guard.
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        let Some((par_center, par_vel)) = parent else {
+            // `:31424-31427` — `TryGetActive(460)` failing kills.
+            self.active = false;
+            self.time_left = 0;
+            return;
+        };
+        // `:31407-31409` — the position 16 px ahead of the holder + the unit
+        // heading.
+        let dir = safe_normalize(par_vel);
+        self.pos = par_center + dir * 16.0 - Vec2::new(self.w * 0.5, self.h * 0.5);
+        self.vel = dir;
+        // `:31486-31499` — the 300-tick sin scale ramp.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 300.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        self.scale = ((self.ai[0] * std::f32::consts::PI / 300.0).sin() * 10.0).min(1.0);
+        // `:31553-31559` — the rotation re-normalise.
+        let heading = self.vel.y.atan2(self.vel.x);
+        self.rot = heading - std::f32::consts::FRAC_PI_2;
+        self.vel = Vec2::from_angle(heading);
+        // `:31572-31618` — the LaserScan length (the width-0 fold, one tile
+        // ray) at the 0.5 lerp (the 461's `amount` stays 0.5, `:31600`).
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let len = laser_ray_len(world, center, self.vel, 2400.0);
+        self.local_ai[1] += (len - self.local_ai[1]) * 0.5;
+        // `:31661-31681` — the dust/light writes are SKIPPED.
+        // NO movement integration: aiStyle 84 is on `UpdatePosition`'s skip
+        // list (`:20435`) — the position is AI-set every tick (`:31408`).
+    }
+
     /// `AI_010`'s SnowBallHostile 109 slice (S1-D-3q, the Frost Legion
     /// Balla's aimed throw — `Projectile.cs:57826-58100`). The type-109
     /// path through the arm: the generic dust roll excludes 109 (`:57938`
@@ -6918,8 +7313,11 @@ impl Projectile {
             return;
         }
         // `:28212-28214`: the snapshot at the delay tick.
+        // `AI_048_GetStartPositionSettingDelay` (`:53986-54000`): 260 (the
+        // Heat Ray) and 290 delay 3, 255 delays 4, 294 delays 9, else 0.
         let delay = match self.kind {
             MAGNET_SPHERE_BOLT => 4,
+            HEAT_RAY => 3,
             _ => 0,
         };
         if self.local_ai[0] == delay as f32 {
@@ -11856,6 +12254,60 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
     }
 }
 
+/// S1-P-i22 — `Collision.SolidCollision(Position, Width, Height)`
+/// (`Collision.cs:2700-2733`): the box-overlap scan over the clamped tile
+/// range (`[x/16−1, (x+w)/16+2)` × `[y/16−1, (y+h)/16+2)`, clamped to
+/// `[0, maxTilesX−1]` / `[0, maxTilesY−40]`), testing each active,
+/// non-actuated, solid, non-solidTop tile for a strict box overlap (the
+/// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
+/// reads it (`Projectile.cs:23871`).
+fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+    let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
+    let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
+    let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
+    let y1 = (((pos.y + h) / 16.0) as i32 + 2).clamp(0, (world.height - 40).max(0));
+    for ty in y0..y1 {
+        for tx in x0..x1 {
+            let Some(t) = world.tile(tx, ty) else {
+                continue;
+            };
+            if !t.active()
+                || t.inactive()
+                || !tr_core::tiledata::TILE_SOLID.has(t.kind)
+                || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            {
+                continue;
+            }
+            let mut tile_y = ty as f32 * 16.0;
+            let mut tile_h = 16.0;
+            if t.half_brick() {
+                tile_y += 8.0;
+                tile_h -= 8.0;
+            }
+            let tile_x = tx as f32 * 16.0;
+            if pos.x + w > tile_x && pos.x < tile_x + 16.0 && pos.y + h > tile_y && pos.y < tile_y + tile_h
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// S1-P-i22 — XNA's `Vector2.CatmullRom(p0, p1, p2, p3, t)` (the
+/// `Microsoft.Xna.Framework.Vector2` body): the cubic Hermite spline the
+/// Sparkle Guitar note's arc rides (`Projectile.cs:46585`). The coefficients
+/// are XNA's verbatim (`0.5·((2·p1) + (−p0+p2)·t + (2·p0−5·p1+4·p2−p3)·t² +
+/// (−p0+3·p1−3·p2+p3)·t³)`).
+fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    0.5 * ((2.0 * p1)
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+}
+
 /// `Utils.AngleLerp(curAngle, targetAngle, amount)` (`Utils.cs:2033-2051`):
 /// the short-way angular lerp the Ballista's aim rides (`Projectile.cs:68583`/
 /// `:68607`). The result wraps through [`wrap_angle`] — XNA's
@@ -12590,6 +13042,24 @@ impl ProjectilePool {
     pub fn set_ai1(&mut self, slot: usize, value: f32) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.ai[1] = value;
+        }
+    }
+
+    /// S1-P-i22 — the spawn-site `ai[0]` payload setter: the Magical Harp's
+    /// note pitch overrides `ai[0]` after the spawn (`Player.cs:47420`,
+    /// `Main.projectile[num13].ai[0] = num7`; the `set_ai1` convention).
+    pub fn set_ai0(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[0] = value;
+        }
+    }
+
+    /// S1-P-i22 — the spawn-site `ai[2]` payload setter: the Magical Harp's
+    /// note carries `ai2 = vector9.Length() / num12` (`Player.cs:47410`'s
+    /// third `NewProjectile` ai arg; the `set_ai1` convention).
+    pub fn set_ai2(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[2] = value;
         }
     }
 
@@ -13710,6 +14180,14 @@ impl ProjectilePool {
                         // other kind keeps the generic flight untouched.
                         1 => match self.slots[i].kind {
                             BOOK_OF_SKULLS => self.slots[i].ai_book_of_skulls(world, npcs),
+                            // S1-P-i22 — the magic guns' aiStyle-1 riders with
+                            // their own per-type hooks: the Electrosphere
+                            // Missile 442 (`:54726-54771`), the Charged Blaster
+                            // Orb 459 (`:54651-54695`) and the Poison Fang 265
+                            // (the straight flight, `flag3 = false` `:55973`).
+                            ELECTROSPHERE_MISSILE => self.slots[i].ai_electrosphere_missile(world),
+                            CHARGED_BLASTER_ORB => self.slots[i].ai_charged_blaster_orb(world),
+                            POISON_FANG => self.slots[i].ai_style1_rider(world),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
                                 self.slots[i].ai_style1_rider(world)
                             }
@@ -14049,7 +14527,26 @@ impl ProjectilePool {
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
                         // pool-side step like the magnet sphere's.
-                        4 => self.vilethorn_step(i),
+                        4 => self.vilethorn_step(i, rng),
+                        // S1-P-i22 — `:23830-24099` the falling stars (aiStyle
+                        // 5): the Starfury star 9 and the Star Cannon star 955.
+                        // The dust/gore rolls are SKIPPED (no pool RNG — the
+                        // S1-D-5 precedent); the tileCollide latch + the alpha
+                        // ramp + the rotation ride.
+                        5 => self.slots[i].ai_falling_star(world),
+                        // S1-P-i22 — `:25585-25606` the music notes (aiStyle
+                        // 21): the Magical Harp's 76/77/78. The decel toward
+                        // the ai0-scaled floor; the bounce is the movement
+                        // chain's (`:19299-19309`), the dust roll SKIPPED.
+                        21 => self.slots[i].ai_music_note(world),
+                        // S1-P-i22 — `:30671-30761` the Electrosphere (aiStyle
+                        // 77): the 443's pulse box + the 120-tick life. The
+                        // sound/dust rolls SKIPPED (no pool RNG).
+                        77 => self.slots[i].ai_electrosphere(),
+                        // S1-P-i22 — `:46573-46591` the Sparkle Guitar note
+                        // (aiStyle 167): the 856's CatmullRom arc back to the
+                        // owner. The light write SKIPPED (no pool layer).
+                        167 => self.slots[i].ai_sparkle_guitar(owner),
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
@@ -14183,25 +14680,33 @@ impl ProjectilePool {
                         // back out (the 118 shape) with `ai0 = m` and `ai1 =
                         // this.key`'s raw bits (`:66622-66626`).
                         75 => {
-                            let spawn =
-                                self.slots[i]
-                                    .ai_last_prism(owner, player.as_deref_mut());
-                            if let Some(s) = spawn {
-                                let owner_id = self.slots[i].owner;
-                                let key = self.key_of(i) as u32;
-                                for m in 0..6u32 {
-                                    self.spawn_with_data_ai_owned(
-                                        LAST_PRISM_LASER,
-                                        owner_id,
-                                        s.x,
-                                        s.y,
-                                        s.vx,
-                                        s.vy,
-                                        s.damage,
-                                        s.knock_back,
-                                        m as f32,
-                                        f32::from_bits(key),
-                                    );
+                            // S1-P-i22 — the Charged Blaster Cannon holder 460
+                            // (`:66360-66538`) shares the style with the Last
+                            // Prism 633; its charge machine spawns the orb 459
+                            // and the beam 461 (the pool-side step).
+                            if self.slots[i].kind == CHARGED_BLASTER_CANNON {
+                                self.charged_blaster_step(i, owner, player.as_deref_mut());
+                            } else {
+                                let spawn =
+                                    self.slots[i]
+                                        .ai_last_prism(owner, player.as_deref_mut());
+                                if let Some(s) = spawn {
+                                    let owner_id = self.slots[i].owner;
+                                    let key = self.key_of(i) as u32;
+                                    for m in 0..6u32 {
+                                        self.spawn_with_data_ai_owned(
+                                            LAST_PRISM_LASER,
+                                            owner_id,
+                                            s.x,
+                                            s.y,
+                                            s.vx,
+                                            s.vy,
+                                            s.damage,
+                                            s.knock_back,
+                                            m as f32,
+                                            f32::from_bits(key),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -14210,7 +14715,15 @@ impl ProjectilePool {
                         // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
                         // and the owner centre / the player ride along.
                         29 => {
-                            self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
+                            // S1-P-i22 — the Crystal Pulse 521 has its OWN
+                            // AI_029 arm (`:37705-37741`): the alpha fade-in,
+                            // no homing (the gem-staff `ActuallyGemStaffs` tail
+                            // is the `else` branch, `:37823-37826`).
+                            if self.slots[i].kind == CRYSTAL_PULSE {
+                                self.slots[i].ai_crystal_pulse(world);
+                            } else {
+                                self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
+                            }
                         }
                         // The aiStyle-9 aimed spells (`:43195-43425`): the
                         // owner channel block reads the player's channel
@@ -14261,6 +14774,22 @@ impl ProjectilePool {
                                 let origin = owner.unwrap_or((0.0, 0.0));
                                 self.slots[i]
                                     .ai_last_prism_laser(&*world, origin, parent);
+                            }
+                            // S1-P-i22 — the Charged Blaster Laser 461
+                            // (`:31405-31410` + `:31486-31499` + `:31572-31618`):
+                            // the key-linked 460 rider — the beam hangs 16 px
+                            // ahead of the holder, the sin scale ramp over 300
+                            // ticks, the LaserScan length at the 0.5 lerp.
+                            CHARGED_BLASTER_BEAM => {
+                                let parent = self
+                                    .key_parent(self.slots[i].ai[1], CHARGED_BLASTER_CANNON)
+                                    .map(|p| {
+                                        (
+                                            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                                            p.vel,
+                                        )
+                                    });
+                                self.slots[i].ai_charged_blaster_beam(&*world, parent);
                             }
                             // The Moon Lord turret's beam (642, S1-D-4b-3):
                             // the `:31411-31421` key-linked arm — the
@@ -16100,6 +16629,11 @@ impl ProjectilePool {
             // kind (so the blast cannot chain a second spawn).
             if !self.slots[i].active {
                 self.spawn_inferno_blast(i);
+                // S1-P-i22 — `Kill()`'s 442 arm (`:73528-73552`): the
+                // Electrosphere Missile's death spawns the sphere 443 and
+                // pulls the nearby spheres (the `spawn_inferno_blast`
+                // death-hook precedent).
+                self.spawn_electrosphere(i);
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
@@ -16584,6 +17118,240 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i22 — `Kill()`'s Electrosphere Missile 442 arm
+    /// (`Projectile.cs:73528-73552`): the missile's death spawns the sphere
+    /// 443 at its centre (damage = the missile's, knockback 0, owner) and
+    /// pulls any nearby friendly sphere (within the 80×80 box) toward it
+    /// (`ai[1] = 1`, `velocity = (center − sphere.center)/5`). The sound +
+    /// the `Next(3,7)` dust burst are SKIPPED (no pool RNG — the dust gates
+    /// nothing but the dust count). Kind-gated to the 442; a dead slot never
+    /// returns to `active`, so the spawn fires at most once per death (the
+    /// `spawn_inferno_blast` precedent). The `Main.myPlayer == owner` gate
+    /// folds to the simulated-slot set.
+    fn spawn_electrosphere(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        if p.kind != ELECTROSPHERE_MISSILE {
+            return;
+        }
+        let (cx, cy, damage, owner) = (
+            p.pos.x + p.w * 0.5,
+            p.pos.y + p.h * 0.5,
+            p.damage,
+            p.owner,
+        );
+        // `:73540-73549` — the nearby-sphere pull (the 80×80 box centred on
+        // the missile). The C# scans every slot; the port walks the pool.
+        let center = Vec2::new(cx, cy);
+        for j in 0..MAX_PROJECTILES {
+            if j == slot {
+                continue;
+            }
+            let s = &self.slots[j];
+            if !s.active || s.owner != owner || s.kind != ELECTROSPHERE {
+                continue;
+            }
+            let (sx, sy, sw, sh) = (s.pos.x, s.pos.y, s.w, s.h);
+            // `getRect().Intersects(value7)` — the strict box overlap.
+            if sx < cx + 40.0 && sx + sw > cx - 40.0 && sy < cy + 40.0 && sy + sh > cy - 40.0 {
+                let sc = Vec2::new(sx + sw * 0.5, sy + sh * 0.5);
+                let s = &mut self.slots[j];
+                s.ai[1] = 1.0;
+                s.vel = (center - sc) / 5.0;
+                s.net_update = true;
+            }
+        }
+        // `:73550` — the sphere spawn at the missile's centre. The corpse
+        // flag is lifted for the scan so the sphere takes the next free slot
+        // (the `moonlord_arrow_kill` convention), then restored.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            ELECTROSPHERE, owner, cx, cy, 0.0, 0.0, damage, 0.0, 0.0, 0.0,
+        );
+        self.slots[slot].active = false;
+        let _ = spawned;
+    }
+
+    /// S1-P-i22 — `AI_075`'s Charged Blaster Cannon holder 460 arm
+    /// (`Projectile.cs:66360-66538`): the channel charge machine. `ai[0]`
+    /// counts the charge (the slow-magic rate is 1 — no ManaV2); the orb 459
+    /// fires at charge 1 / every 10 to 50 / every 30 from 80 to 180, the beam
+    /// 461 at charge 180 (damage ×1.5, `ai1 = this.key`), and the holder dies
+    /// when the channel releases or the beam is gone past 180. The mana pays
+    /// only on the 80/180/every-20-past-180 ticks (`flag3`). The dust/sound/
+    /// light writes are SKIPPED (no pool RNG). The pool-side step spawns the
+    /// orb/beam (the slot arm cannot see the slot array).
+    fn charged_blaster_step(
+        &mut self,
+        slot: usize,
+        owner: Option<(f32, f32)>,
+        mut player: Option<&mut crate::player::Player>,
+    ) {
+        // `:66362` — `ai[0] += GetSlowMagicUseRate()` (1f, no ManaV2).
+        self.slots[slot].ai[0] += 1.0;
+        let charge = self.slots[slot].ai[0];
+        // `:66363-66371` — the stage counter (0/1/2 at 80/180).
+        let mut stage = 0;
+        if charge >= 80.0 {
+            stage += 1;
+        }
+        if charge >= 180.0 {
+            stage += 1;
+        }
+        // `:66374-66377` — `flag3`: the mana-pay ticks (80, 180, every 20
+        // past 180).
+        let mana_tick = (charge as i32) == 80
+            || (charge as i32) == 180
+            || (charge > 180.0 && (charge as i32) % 20 == 0);
+        // `:66378` — `flag4`: past full charge.
+        let full = charge >= 180.0;
+        // `:66379-66383` — `ai[1]` counts the pre-full ticks.
+        if !full {
+            self.slots[slot].ai[1] += 1.0;
+        }
+        // `:66384-66392` — `flag5`: the fire ticks (charge 1, every 20 past
+        // full).
+        let mut fire = charge == 1.0;
+        if full && charge % 20.0 == 0.0 {
+            fire = true;
+        }
+        // `:66393-66421` — the aim refresh (every 5 pre-full ticks / every 5
+        // past full): the velocity points at the cursor at shootSpeed·scale.
+        if (!full && self.slots[slot].ai[1] >= 5.0) || (full && (charge as i32) % 5 == 0) {
+            if !full {
+                self.slots[slot].ai[1] = 0.0;
+            }
+            fire = true;
+            if self.slots[slot].owner == 0 {
+                if let Some(p) = player.as_deref() {
+                    let item = crate::registry::item(p.channel_item);
+                    if let Some(item) = item {
+                        let speed = item.shoot_speed * self.slots[slot].scale;
+                        let hand = owner.unwrap_or_else(|| p.center());
+                        let aim = safe_normalize(Vec2::new(
+                            p.channel_target.x - hand.0,
+                            p.channel_target.y - hand.1,
+                        ));
+                        let aim = if aim == Vec2::ZERO { Vec2::new(0.0, -1.0) } else { aim };
+                        let v = aim * speed;
+                        if v != self.slots[slot].vel {
+                            self.slots[slot].net_update = true;
+                        }
+                        self.slots[slot].vel = v;
+                    }
+                }
+            }
+        }
+        // `:66422-66475` — the sound + dust writes are SKIPPED.
+        // `:66476-66537` — the fire window: the channel gate + the mana pay.
+        if fire && self.slots[slot].owner == 0 {
+            let mut kill = false;
+            let mut spawn_beam = false;
+            let mut spawn_orb = false;
+            let mut orb_ai1 = 0.7f32;
+            if let Some(p) = player.as_deref_mut() {
+                // `:66478-66479` — `flag6 = !flag3 || CheckMana(mana, pay)`.
+                let mana_ok = !mana_tick
+                    || match crate::registry::item(p.channel_item) {
+                        Some(item) => {
+                            if p.mana >= item.mana {
+                                p.mana -= item.mana;
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        None => true,
+                    };
+                if p.channel && mana_ok && !p.cced() {
+                    if (charge as i32) == 180 {
+                        // `:66482-66493` — the beam spawn (damage ×1.5).
+                        spawn_beam = true;
+                    } else if full {
+                        // `:66494-66501` — past full, the beam must still live.
+                        let beam_key = self.slots[slot].ai[1];
+                        if self.key_parent(beam_key, CHARGED_BLASTER_BEAM).is_none() {
+                            kill = true;
+                        }
+                    } else {
+                        // `:66502-66530` — the orb fire ticks.
+                        let mut orb_tick = charge == 1.0;
+                        if charge <= 50.0 && (charge as i32) % 10 == 0 {
+                            orb_tick = true;
+                        }
+                        if charge >= 80.0 && charge < 180.0 && (charge as i32) % 30 == 0 {
+                            orb_tick = true;
+                        }
+                        if orb_tick {
+                            spawn_orb = true;
+                            orb_ai1 = 0.7 + stage as f32 * 0.3;
+                        }
+                    }
+                } else {
+                    // `:66533-66536` — the channel release / failed mana kills.
+                    kill = true;
+                }
+            }
+            if kill {
+                self.slots[slot].active = false;
+                self.slots[slot].time_left = 0;
+                return;
+            }
+            let (cx, cy, damage, kb, owner_id, vel) = {
+                let p = &self.slots[slot];
+                (
+                    p.pos.x + p.w * 0.5,
+                    p.pos.y + p.h * 0.5,
+                    p.damage,
+                    p.knock_back,
+                    p.owner,
+                    p.vel,
+                )
+            };
+            if spawn_beam {
+                // `:66490-66491` — the beam at the holder's centre, the unit
+                // heading, damage ×1.5, `ai1 = this.key`; the holder's `ai[1]`
+                // latches the beam's key.
+                let dir = safe_normalize(vel);
+                let dir = if dir == Vec2::ZERO { Vec2::new(0.0, -1.0) } else { dir };
+                let key = self.key_of(slot) as u32;
+                if let Some(bs) = self.spawn_with_data_ai_owned(
+                    CHARGED_BLASTER_BEAM,
+                    owner_id,
+                    cx,
+                    cy,
+                    dir.x,
+                    dir.y,
+                    (damage as f32 * 1.5) as i32,
+                    kb,
+                    0.0,
+                    f32::from_bits(key),
+                ) {
+                    self.slots[slot].ai[1] = f32::from_bits(self.key_of(bs) as u32);
+                    self.slots[slot].net_update = true;
+                }
+            } else if spawn_orb {
+                // `:66519-66529` — the orb at the holder's centre, the unit
+                // heading ×10, `ai1 = 0.7 + stage·0.3`; the damage ternary
+                // `(num34 < 1f) ? this.damage : (int)(this.damage * 2.5f)`.
+                let dir = safe_normalize(vel);
+                let dir = if dir == Vec2::ZERO { Vec2::new(0.0, -1.0) } else { dir };
+                let v = dir * 10.0;
+                let orb_damage = if orb_ai1 < 1.0 {
+                    damage
+                } else {
+                    (damage as f32 * 2.5) as i32
+                };
+                self.spawn_with_data_ai_owned(
+                    CHARGED_BLASTER_ORB, owner_id, cx, cy, v.x, v.y, orb_damage, kb, 0.0, orb_ai1,
+                );
+            }
+        }
+        // The movement: `tileCollide = false` (`:5311`) — UpdatePosition
+        // (`ai_last_prism`'s tail convention, `:20433-20438`).
+        let vel = self.slots[slot].vel;
+        self.slots[slot].pos += vel;
+    }
+
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
     /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
     /// dust layer in the pool), and the `AoeExplosion` feature's damage half
@@ -16697,8 +17465,8 @@ impl ProjectilePool {
     /// hands back rides `Projectile.NewProjectile`'s seam
     /// (`:23737-23741`) — the child kind, its one-velocity-step-ahead centre
     /// and its `ai[1] + 1f` depth.
-    fn vilethorn_step(&mut self, slot: usize) {
-        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4() else {
+    fn vilethorn_step(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng) {
+        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4(rng) else {
             return;
         };
         let (owner, damage, knock_back, vel) = {
@@ -33872,5 +34640,238 @@ mod s1_d_5_data_row_tests {
         step(&mut pool, &mut w);
         assert_eq!(pool.slots()[slot].local_ai[0], 2.0);
         assert!(pool.slots()[slot].active, "the keep-alive pins timeLeft 6");
+    }
+}
+
+/// S1-P-i22 — the magic guns + tomes' projectile rows + AI arms (code-only
+/// mode: tests WRITTEN NOT RUN). Every expected value is hand-derived from
+/// the cited `Projectile.cs` lines; the dust/sound RNG is skipped pool-wide
+/// (the S1-D-5 precedent), so the AI witnesses run on a fixed seed and the
+/// only RNG draw is the Nettle Burst head's `Next(2)` flip.
+#[cfg(test)]
+mod s1_p_i22_magic_guns_tomes_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 128, 128)
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut World) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    /// The 14 new rows carry their verbatim `SetDefaults` slices.
+    #[test]
+    fn s1_p_i22_the_rows_carry_the_csharp_set_defaults() {
+        // 9 Starfury (`:886-896`): 24x24, aiStyle 5, pen 2, scale 0.8,
+        // tileCollide false.
+        let d = proj_data(STARFURY).expect("the 9 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (24.0, 24.0, 5, 2));
+        assert!(!d.tile_collide);
+        assert_eq!(d.scale, 0.8);
+        // 76/77/78 notes (`:1556-1593`): aiStyle 21, pen 5, timeLeft 180,
+        // alpha 100, local immunity 30; the per-kind box.
+        for (k, w, h) in [(QUARTER_NOTE, 10.0, 22.0), (EIGHTH_NOTE, 18.0, 24.0), (TIED_EIGHTH_NOTE, 22.0, 24.0)] {
+            let d = proj_data(k).expect("the note row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.time_left), (w, h, 21, 5, 180));
+            assert_eq!(d.alpha, 100);
+            assert!(d.uses_local_immunity);
+            assert_eq!(d.local_hit_cooldown, 30);
+        }
+        // 150-152 nettle (`:2398-2410`): 28x28, aiStyle 4, pen -1,
+        // tileCollide false, alpha 255.
+        for k in [NETTLE_BURST_RIGHT, NETTLE_BURST_LEFT, NETTLE_BURST_END] {
+            let d = proj_data(k).expect("the nettle row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (28.0, 28.0, 4, -1));
+            assert!(!d.tile_collide);
+            assert_eq!(d.alpha, 255);
+        }
+        // 260 HeatRay (`:3441-3451`): 8x8, aiStyle 48, extraUpdates 100,
+        // timeLeft 200, pen 1.
+        let d = proj_data(HEAT_RAY).expect("the 260 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.extra_updates, d.time_left, d.penetrate), (8.0, 8.0, 48, 100, 200, 1));
+        // 265 PoisonFang (`:3503-3515`): 12x12, aiStyle 1, alpha 255, pen 3,
+        // local immunity 10, timeLeft 37.
+        let d = proj_data(POISON_FANG).expect("the 265 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.time_left), (12.0, 12.0, 1, 3, 37));
+        assert_eq!(d.alpha, 255);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, 10);
+        // 442 missile (`:5126-5136`): 14x14, aiStyle 1, alpha 255, timeLeft 600.
+        let d = proj_data(ELECTROSPHERE_MISSILE).expect("the 442 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.time_left), (14.0, 14.0, 1, 600));
+        assert_eq!(d.alpha, 255);
+        // 443 sphere (`:5137-5149`): 80x80, aiStyle 77, pen -1, tileCollide
+        // false, alpha 255.
+        let d = proj_data(ELECTROSPHERE).expect("the 443 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (80.0, 80.0, 77, -1));
+        assert!(!d.tile_collide);
+        // 459 orb (`:5292-5303`): 22x22, aiStyle 1, alpha 255, extraUpdates 1.
+        let d = proj_data(CHARGED_BLASTER_ORB).expect("the 459 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.extra_updates), (22.0, 22.0, 1, 1));
+        // 460 holder (`:5304-5316`): 14x18, aiStyle 75, pen -1, tileCollide false.
+        let d = proj_data(CHARGED_BLASTER_CANNON).expect("the 460 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (14.0, 18.0, 75, -1));
+        assert!(!d.tile_collide);
+        // 461 beam (`:5317-5328`): 18x18, aiStyle 84, pen -1, alpha 255,
+        // tileCollide false.
+        let d = proj_data(CHARGED_BLASTER_BEAM).expect("the 461 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (18.0, 18.0, 84, -1));
+        assert!(!d.tile_collide);
+        // 521 CrystalPulse (`:5908-5918`): 14x14, aiStyle 29, alpha 255,
+        // pen 1, extraUpdates 1.
+        let d = proj_data(CRYSTAL_PULSE).expect("the 521 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.extra_updates), (14.0, 14.0, 29, 1, 1));
+        // 856 SparkleGuitar (`:8206-8219`): 32x32, aiStyle 167, alpha 255,
+        // tileCollide false, extraUpdates 2, local immunity -1.
+        let d = proj_data(SPARKLE_GUITAR).expect("the 856 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.extra_updates), (32.0, 32.0, 167, 2));
+        assert!(!d.tile_collide);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -1);
+        // 955 StarCannonStar (`:9013-9023`): 18x18, aiStyle 5, pen -1, alpha 50.
+        let d = proj_data(STAR_CANNON_STAR).expect("the 955 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (18.0, 18.0, 5, -1));
+        assert_eq!(d.alpha, 50);
+    }
+
+    /// The Crystal Pulse fades in at −50/sub-step (`:37733-37740`); with
+    /// extraUpdates 1 that is 2 sub-steps per update: 255 → 155 after one.
+    #[test]
+    fn s1_p_i22_the_crystal_pulse_fades_in() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_PULSE, 0, 160.0, 160.0, 8.5, 0.0, 40, 4.4, 0.0, 0.0)
+            .expect("the 521 row spawns");
+        assert_eq!(pool.slots()[slot].alpha, 255, "the spawn copies `:5913`");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].alpha, 155, "2 sub-steps × 50 off 255");
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].alpha, 55);
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].alpha, 0, "clamped at 0");
+    }
+
+    /// The Electrosphere Missile kills when it reaches the tile target
+    /// (`:54742-54746`: Distance(Center, (ai0,ai1)·16+8) <= 16) and its death
+    /// spawns the sphere 443 (`:73550`). The missile fades in over the first
+    /// 4 sub-steps (`:54729-54741`), so the witness places the target ~7
+    /// sub-steps out (the arrival lands after the fade).
+    #[test]
+    fn s1_p_i22_the_electrosphere_missile_arrival_spawns_the_sphere() {
+        let mut pool = ProjectilePool::new();
+        // The target tile (14, 10) → world (232, 168). The missile spawns at
+        // x=169 (centre 176) flying +8/sub-step: the centre reaches 232 on
+        // sub-step 7 (176 + 7·8 = 232), after the 4-sub-step fade-in.
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                ELECTROSPHERE_MISSILE, 0, 169.0, 161.0, 8.0, 0.0, 40, 2.0, 14.0, 10.0,
+            )
+            .expect("the 442 row spawns");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "the arrival kill");
+        let sphere = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == ELECTROSPHERE)
+            .expect("the death spawns the sphere");
+        assert_eq!(sphere.damage, 40, "the missile's damage");
+        assert_eq!(sphere.knock_back, 0.0, "knockback 0 (`:73550`)");
+    }
+
+    /// The Nettle Burst head chains 150↔151 and tips to 152 at depth ≥ 10
+    /// (`:23762-23781`); the fade-in is −75 (−50 −25, `:23714-23718`). The
+    /// head's first-tick `Next(2)` flip (`:23709-23713`) makes the exact child
+    /// kind RNG-dependent, so the witness asserts the chain DEPTH (robust to
+    /// the flip) — the kind alternation is pinned by the C# cite.
+    #[test]
+    fn s1_p_i22_the_nettle_burst_chain_and_fade() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(NETTLE_BURST_RIGHT, 0, 160.0, 160.0, 32.0, 0.0, 35, 1.0, 0.0, 0.0)
+            .expect("the 150 row spawns");
+        let mut w = world();
+        // The head's first tick: alpha 255 − 75 = 180 (still fading).
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].alpha, 180, "the −75 fade-in");
+        // Run to the chain: the head reaches alpha 0 at tick 4 (255−75·4<0),
+        // flips ai0=1 and spawns the child.
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        let child = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.ai[1] == 2.0 && matches!(p.kind, NETTLE_BURST_LEFT | NETTLE_BURST_RIGHT | NETTLE_BURST_END))
+            .expect("the chain child");
+        assert_eq!(child.ai[1], 2.0, "the depth counter");
+    }
+
+    /// The Sparkle Guitar note dies at localAI[0] ≥ 89 (`:46576-46580`); with
+    /// extraUpdates 2 that is 3 sub-steps per update, so it dies on update 30.
+    #[test]
+    fn s1_p_i22_the_sparkle_guitar_note_arc_lifetime() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(SPARKLE_GUITAR, 0, 160.0, 160.0, 0.0, -20.0, 85, 1.5, 300.0, 160.0)
+            .expect("the 856 row spawns");
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        assert!(pool.slots()[slot].active, "still alive at 87 sub-steps");
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "dies at localAI[0] >= 89");
+    }
+
+    /// The Charged Blaster Orb latches its scale to clamp(ai1, 0.7, 1.6) and
+    /// resizes the box to 22·scale (`:54669-54673`); at scale ≥ 0.85 the
+    /// penetrate flips to −1 (`:54680-54685`).
+    #[test]
+    fn s1_p_i22_the_charged_blaster_orb_scale_latch() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHARGED_BLASTER_ORB, 0, 160.0, 160.0, 10.0, 0.0, 100, 2.0, 0.0, 1.3)
+            .expect("the 459 row spawns");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.scale, 1.3, "ai1 clamped 0.7..1.6");
+        assert_eq!((p.w, p.h), (28.0, 28.0), "22·1.3 = 28 (int trunc)");
+        assert_eq!(p.penetrate, -1, "scale >= 0.85 flips penetrate");
+    }
+
+    /// The Heat Ray snapshots its start position at the delay tick 3
+    /// (`AI_048_GetStartPositionSettingDelay` `:53990-53992`); with
+    /// extraUpdates 100 the localAI[0] counter races, so the snapshot lands
+    /// on the first update.
+    #[test]
+    fn s1_p_i22_the_heat_ray_snapshots_at_the_delay() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(HEAT_RAY, 0, 160.0, 160.0, 15.0, 0.0, 90, 3.0, 0.0, 0.0)
+            .expect("the 260 row spawns");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        // The snapshot writes localAI[1]/[2] = the centre at the delay tick.
+        assert!(p.local_ai[1] > 0.0, "the start X snapshot");
+        assert!(p.local_ai[2] > 0.0, "the start Y snapshot");
+        assert_eq!(p.alpha, 255, "the aiStyle-48 alpha write (`:28240`)");
     }
 }
