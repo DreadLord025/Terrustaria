@@ -604,13 +604,14 @@ mod tests {
         style29_step(&mut n, &w, &c, &[cand(1200.0, 1279.0)]);
         assert_eq!(n.sprite_dir, 1);
         assert_eq!(n.rotation, (-15.0f64).atan2(145.0) as f32);
-        // Target left: player at (900, 1279) → delta (-145, -15).
+        // Target left: player at (900, 1279) -> delta (-155, -15)
+        // (900 + 10 - 15 - 1050 = -155).
         let mut n2 = hungry(1050.0, 1300.0);
         style29_step(&mut n2, &w, &c, &[cand(900.0, 1279.0)]);
         assert_eq!(n2.sprite_dir, -1);
-        assert_eq!(n2.rotation, (-15.0f64).atan2(-145.0) as f32 + 3.14);
-        // Dead centre: player x + 10 - 15 = 1050 → x = 1055; the aim
-        // delta X is 0 → neither if fires.
+        assert_eq!(n2.rotation, (-15.0f64).atan2(-155.0) as f32 + 3.14);
+        // Dead centre: player x + 10 - 15 - 1050 = 0 -> x = 1055; the
+        // aim delta X is 0 -> neither if fires.
         let mut n3 = hungry(1050.0, 1300.0);
         n3.sprite_dir = -1;
         n3.rotation = 1.234;
