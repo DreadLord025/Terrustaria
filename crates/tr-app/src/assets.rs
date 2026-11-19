@@ -1095,6 +1095,33 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_117",
+        // S1-D-3ff wave A — the 24 LOW-id kinds' sheets, one per kind,
+        // keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s WAVE_A_SHEETS).
+        "NPC_16",
+        "NPC_52",
+        "NPC_53",
+        "NPC_59",
+        "NPC_71",
+        "NPC_81",
+        "NPC_132",
+        "NPC_138",
+        "NPC_147",
+        "NPC_161",
+        "NPC_183",
+        "NPC_184",
+        "NPC_186",
+        "NPC_187",
+        "NPC_188",
+        "NPC_189",
+        "NPC_190",
+        "NPC_191",
+        "NPC_192",
+        "NPC_193",
+        "NPC_194",
+        "NPC_200",
+        "NPC_223",
+        "NPC_225",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in
@@ -1115,6 +1142,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_327",
         "NPC_329",
         "NPC_330",
+        // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per
+        // kind — the Zombie Elf trio (338-340), the Present Mimic (341),
+        // the Gingerbread Man (342), the Yeti (343) and the Everscream
+        // (344) — keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s SNOW_SHEETS).
+        "NPC_338",
+        "NPC_339",
+        "NPC_340",
+        "NPC_341",
+        "NPC_342",
+        "NPC_343",
+        "NPC_344",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
