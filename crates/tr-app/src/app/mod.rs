@@ -13,8 +13,10 @@ pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
+pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
+pub(crate) mod net_proj_sync;
 pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
@@ -161,6 +163,10 @@ pub(crate) struct App {
     pub(crate) talk_npc: Option<usize>,
     /// `Main.npcChatText` (`Main.cs:1755`) — the chat dialog's line.
     pub(crate) npc_chat_text: String,
+    /// `NPCChatPanel._lastHovered` (`NPCChatPanel.cs:32`) — the hovered
+    /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
+    /// and `Close` resets it to −1 (`:267`).
+    pub(crate) npc_chat_last_hovered: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -598,6 +604,20 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
+    /// The current dig's break interval in seconds — the `mine_timer`
+    /// denominator the tile-crack overlay maps onto the C# `HitTile`
+    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    pub(crate) mine_hardness: f32,
+    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
+    /// rolled crack style the no-repeat reroll compares against.
+    pub(crate) mine_crack_style: i32,
+    /// The dig target the current crack style was rolled for (the C# rolls
+    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
+    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
+    /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
+    /// (determinism rule, ANALYSIS "The tile-crack overlay").
+    pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -808,6 +828,11 @@ pub(crate) struct App {
     /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
     /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
     pub(crate) sunflower_wind_step: FixedStepper,
+    /// `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
+    /// strips' own sway counter (`DrawVineStrip` reads it, `:9041`). C#
+    /// advances it in the same `TileDrawing.Update` as the sunflower's, so
+    /// it rides the same 60 Hz accumulator (S1-G-1).
+    pub(crate) vine_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
@@ -820,6 +845,12 @@ pub(crate) struct App {
     /// previous frame's list (`LightingEngine.cs:210-214`), so `end_frame` must
     /// run once per frame after every source has contributed.
     pub(crate) entity_lights: crate::entity_lights::EntityLights,
+    /// `Main.essScale` / `Main.essDir` (`Main.cs:544-545`): the essence
+    /// flicker scale, seeded 1.0 / -1 (`Main.cs:66673-66674`), drifting
+    /// 0.7..1.0 once per draw pass (`:62264-62277`,
+    /// `item_lights::update_ess_scale`). The step-time light arms read it.
+    pub(crate) ess_scale: f32,
+    pub(crate) ess_dir: i32,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -1850,6 +1881,12 @@ impl App {
         // world never enters paused. (`GameUpdateCount` resets through the
         // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
         self.game_paused = false;
+        // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
+        // the legacy engine owns the counter in the port (S1-E-19 wave B,
+        // `LegacyLighting.cs:345-348`).
+        if let Some(engine) = self.legacy_light.as_mut() {
+            engine.reset_map_delay();
+        }
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -3068,6 +3105,7 @@ impl App {
             window: None,
             talk_npc: None,
             npc_chat_text: String::new(),
+            npc_chat_last_hovered: -1,
             gpu: None,
             renderer: None,
             post: None,
@@ -3418,6 +3456,10 @@ impl App {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
+            mine_hardness: 0.0,
+            mine_crack_style: 0,
+            mine_crack_target: None,
+            mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
@@ -3523,12 +3565,16 @@ impl App {
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
+            vine_wind_counter: 0.0,
             leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
             // (`Gore.cs:1507-1510`).
             gore: tr_core::gore::GorePool::new(),
             entity_lights: crate::entity_lights::EntityLights::default(),
+            // `Main.cs:66673-66674` — `essScale = 1f; essDir = -1;`.
+            ess_scale: 1.0,
+            ess_dir: -1,
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed
@@ -4547,14 +4593,14 @@ pub(crate) fn spawn_ctx_from(
 }
 
 #[cfg(test)]
-mod tr_hooks {
+pub(crate) mod tr_hooks {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// Serializes env-var mutation across the binary's parallel test threads:
     /// `load_world`'s pins are process-global reads, so any test that sets or
     /// removes a `TR_*` variable must hold this lock for the whole call.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Runs `f` with `name` set to `value`, then removes it — the `TR_PLACE`/
     /// `TR_TOGGLE`/`TR_TILES` parsers moved into `crate::env` as env-reading
@@ -4952,7 +4998,8 @@ mod tr_hooks {
 
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
-        let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-pins");
+        let path = dir.join("tr-dw-1-6-pins.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -4967,7 +5014,7 @@ mod tr_hooks {
         let (world, sections) = load_world(&path).expect("scratch world loads");
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(
             world.fast_forward_to_dawn,
@@ -5001,7 +5048,8 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_SUNDIAL") };
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
-        let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
+        let dir = crate::test_world_helpers::test_scratch("dw-1-6-clear");
+        let path = dir.join("tr-dw-1-6-clear.trwld");
         save::save(
             &path,
             &World::new("pins".into(), 32, 32),
@@ -5009,7 +5057,7 @@ mod tr_hooks {
         )
         .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
-        let _ = std::fs::remove_file(&path);
+        crate::test_world_helpers::remove_scratch(&dir);
 
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
         assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));

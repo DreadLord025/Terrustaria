@@ -1,7 +1,8 @@
 //! The micro-biomes — the shape-level ports of the `GameContent/Biomes`
 //! micro classes: `CaveHouseBiome` (the underground cabins), `CampsiteBiome`
-//! (the desert campsites), `SpikePitBiome` (the jungle spike pits) and
-//! `EnchantedSwordBiome` (the sword shrines).
+//! (the desert campsites), `SpikePitBiome` (the jungle spike pits),
+//! `EnchantedSwordBiome` (the sword shrines) and `MahoganyTreeBiome` (the
+//! jungle's living mahogany trees — S1-K-2 wave A, the faithful port).
 //!
 //! Source map (line numbers into `decompiled/Terraria/GameContent/Biomes/`):
 //! - `CaveHouseBiome.Place` (`:34-92`): the 25-tile wire/chest exclusion,
@@ -20,6 +21,11 @@
 //!   no-sand check, the 1-wide shaft down to the shrine chamber; the port
 //!   places the shaft + the chamber with the sword item tile 197 (the C#'s
 //!   sword sprite tile — the breakable item drop = the follow-up)
+//! - `MahoganyTreeBiome.Place` (`:11-92`, S1-K-2 wave A): the faithful
+//!   port — the floor/ceiling finds, the mud-dominance scanner gate, the
+//!   sine-swayed trunk, the `ShapeBranch`/`ShapeRoot` walks, the blotched
+//!   leaf canopies and the style-10 jungle chest; the pass block is
+//!   `WorldGen.cs:21105-21123` (the `LivingTreeCount` config roll)
 //!
 //! Deviations (ANALYSIS "Micro-biomes (M1.4-WGEN-8)"): the C#'s
 //! `HouseBuilder` room variants (the granite/marble/mushroom/ice/jungle
@@ -612,6 +618,573 @@ pub(crate) fn place_honey_patch(
     true
 }
 
+// --- the living mahogany trees (S1-K-2 wave A) -------------------------------
+
+/// `StructureMap.CanPlace(area, padding: 0)` (`StructureMap.cs:19-52`): the
+/// world-bounds gate, the protected-rect intersection scan and the
+/// active-tile validity sweep over `TileID.Sets.GeneralPlacementTiles`
+/// (`TileID.cs:568`, the generated `SET_GENERAL_PLACEMENT_TILES`). The
+/// port's `protected` vec is the structure-map stand-in (the same
+/// neighbour-rect idiom the honey patches document).
+fn can_place_rect(
+    world: &World,
+    protected: &[(i32, i32, i32, i32)],
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> bool {
+    if x < 0 || y < 0 || x + w > world.width - 1 || y + h > world.height - 1 {
+        return false;
+    }
+    for &(rx, ry, rw, rh) in protected {
+        if x < rx + rw && x + w > rx && y < ry + rh && y + h > ry {
+            return false;
+        }
+    }
+    for px in x..x + w {
+        for py in y..y + h {
+            if let Some(t) = world.tile(px, py) {
+                if t.active() && !crate::tiledata::SET_GENERAL_PLACEMENT_TILES.has(t.kind) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `Conditions.IsSolid` (`Conditions.cs:84-98`): `InWorld(x, y, 10)` then
+/// active + `Main.tileSolid`.
+fn is_solid_cond(world: &World, x: i32, y: i32) -> bool {
+    if x < 10 || y < 10 || x >= world.width - 10 || y >= world.height - 10 {
+        return false;
+    }
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && crate::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `Actions.SetTile(383/384)` (`Actions.cs:203-236`) with the default
+/// `clearTile: true`: `Tile.Clear(~(Wiring | Actuator))` (`Tile.cs:744-790`)
+/// wipes everything but the wiring/actuator state, then the kind is set
+/// active. The port's `Tile` carries no wiring bits; the actuator/inactive
+/// flags survive. The `setSelfFrames`/`SetFrames` framing is deferred to the
+/// post-pipeline `frame_world`/`frame_walls` (the port's framing seam — the
+/// same deferral every micro pass documents).
+fn set_tile_clear(world: &mut World, x: i32, y: i32, kind: u16) {
+    let Some(t) = world.tile_mut(x, y) else {
+        return;
+    };
+    let keep = t.flags & (crate::tile::FLAG_ACTUATOR | crate::tile::FLAG_INACTIVE);
+    *t = Tile::default();
+    t.kind = kind;
+    t.flags = FLAG_ACTIVE | keep;
+}
+
+/// `WorldUtils.ClearTile` (`WorldUtils.cs:53-63` → `Tile.ClearTile`,
+/// `Tile.cs:123-128`): slope/half-brick cleared, active + inactive off —
+/// the kind, wall, frames and liquid survive (unlike the micro passes'
+/// whole-tile `clear`). The `frameNeighbors` re-framing rides the deferred
+/// framing seam.
+fn clear_tile_keep(world: &mut World, x: i32, y: i32) {
+    let Some(t) = world.tile_mut(x, y) else {
+        return;
+    };
+    t.flags &= !(FLAG_ACTIVE | crate::tile::FLAG_INACTIVE | crate::tile::FLAG_HALF_BRICK);
+    t.set_slope(0);
+}
+
+/// `Modifiers.SkipTiles` (`Modifiers.cs:402-426`): an active tile of a
+/// listed kind fails the cell; inactive cells pass through.
+fn skip_tiles(world: &World, x: i32, y: i32, kinds: &[u16]) -> bool {
+    match world.tile(x, y) {
+        Some(t) if t.active() && kinds.contains(&t.kind) => false,
+        _ => true,
+    }
+}
+
+/// `Modifiers.SkipWalls` (`Modifiers.cs:471-491`).
+fn skip_walls(world: &World, x: i32, y: i32, walls: &[u16]) -> bool {
+    !world.tile(x, y).is_some_and(|t| walls.contains(&t.wall))
+}
+
+/// The mahogany trunk/branch/root tile chain's shared guards:
+/// `SkipTiles(21, 467, 226, 237)` + `SkipWalls(87)`
+/// (`MahoganyTreeBiome.cs:55-57,75,79-80,87`).
+fn mahogany_guard(world: &World, x: i32, y: i32) -> bool {
+    skip_tiles(world, x, y, &[21, 467, 226, 237]) && skip_walls(world, x, y, &[87])
+}
+
+/// `Shapes.Rectangle(w, h)` (`Shapes.cs:146-179`): x-major over
+/// `[origin.X, origin.X + w)` × `[origin.Y, origin.Y + h)`.
+fn rect_gen(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    w: i32,
+    h: i32,
+    mut apply: impl FnMut(&mut World, i32, i32),
+) {
+    for x in ox..ox + w {
+        for y in oy..oy + h {
+            apply(world, x, y);
+        }
+    }
+}
+
+/// `ShapeBranch.PerformSegment` (`ShapeBranch.cs:30-44`): the size×size
+/// grid of start offsets, each a `PlotLine(jump: false)` (`Utils.cs:2238-
+/// 2292`, the shared `desert_entrances::plot_line`) to the shared end.
+fn branch_segment(
+    world: &mut World,
+    start: (i32, i32),
+    end: (i32, i32),
+    size: i32,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    let size = size.max(1);
+    let half = size >> 1;
+    for i in -half..size - half {
+        for j in -half..size - half {
+            let (sx, sy) = (start.0 + i, start.1 + j);
+            super::desert_entrances::plot_line(
+                |x, y| apply(world, x, y),
+                sx,
+                sy,
+                end.0,
+                end.1,
+                false,
+            );
+        }
+    }
+}
+
+/// `ShapeBranch(angle, distance)` (`ShapeBranch.cs:25-75`): the offset
+/// `(int)(cos·d), (int)(sin·d)`, the main segment of width `(int)(len/6)`,
+/// then `(int)(len/8)` side twigs — each the remainder vector rotated by
+/// `(NextDouble·0.5 + 1) · ±1` (the `NextDouble` draws before the `Next(2)`,
+/// `:63`) and scaled 0.75. The endpoints feed the leaf canopies
+/// (`OutputEndpoints`, `:52`/`:67`). `Utils.RotatedBy` (`Utils.cs:1686-1695`).
+fn shape_branch(
+    world: &mut World,
+    origin: (i32, i32),
+    angle: f64,
+    distance: f64,
+    rng: &mut super::Rng,
+    endpoints: &mut Vec<(i32, i32)>,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    let off = (
+        (angle.cos() * distance) as i32,
+        (angle.sin() * distance) as i32,
+    );
+    let len = ((off.0 as f64) * (off.0 as f64) + (off.1 as f64) * (off.1 as f64)).sqrt();
+    let size = (len / 6.0) as i32;
+    let end = (origin.0 + off.0, origin.1 + off.1);
+    endpoints.push(end);
+    branch_segment(world, origin, end, size, apply);
+    let twigs = (len / 8.0) as i32;
+    for i in 0..twigs {
+        let t = (i as f64 + 1.0) / (twigs as f64 + 1.0);
+        let point = ((t * off.0 as f64) as i32, (t * off.1 as f64) as i32);
+        let (rx, ry) = ((off.0 - point.0) as f64, (off.1 - point.1) as f64);
+        let rot = (rng.next_f64() * 0.5 + 1.0) * if rng.range(0, 2) != 0 { 1.0 } else { -1.0 };
+        let (c, s) = (rot.cos(), rot.sin());
+        let vx = (rx * c - ry * s) * 0.75;
+        let vy = (rx * s + ry * c) * 0.75;
+        let point2 = (vx as i32 + point.0, vy as i32 + point.1);
+        endpoints.push((point2.0 + origin.0, point2.1 + origin.1));
+        branch_segment(
+            world,
+            (point.0 + origin.0, point.1 + origin.1),
+            (point2.0 + origin.0, point2.1 + origin.1),
+            size - 1,
+            apply,
+        );
+    }
+}
+
+/// `ShapeRoot(angle, distance)` (`ShapeRoot.cs:17-54`): the tapering root
+/// walk — `distance·0.85` steps, the size lerped 4→1, the angle jittered by
+/// two `NextFloat` draws per step (`:35`, `(float)NextDouble`,
+/// `Utils.cs:1198-1201`) and folded toward straight-down (`:36`).
+fn shape_root(
+    world: &mut World,
+    origin: (i32, i32),
+    base_angle: f64,
+    distance: f64,
+    rng: &mut super::Rng,
+    apply: &mut impl FnMut(&mut World, i32, i32),
+) {
+    const HALF_PI_F32: f64 = 1.5707963705062866;
+    let mut x = origin.0 as f64;
+    let mut y = origin.1 as f64;
+    let mut angle = base_angle;
+    let mut step = 0.0;
+    while step < distance * 0.85 {
+        let t = step / distance;
+        let size = 4.0 + (1.0 - 4.0) * t; // Utils.Lerp(4, 1, t)
+        x += angle.cos();
+        y += angle.sin();
+        let f1 = rng.next_f64() as f32 as f64;
+        let f2 = rng.next_f64() as f32 as f64;
+        angle += f1 - 0.5 + f2 * (base_angle - HALF_PI_F32) * 0.1 * (1.0 - t);
+        let bound = 2.0 * (1.0 - 0.5 * t);
+        angle = angle * 0.4
+            + 0.45 * angle.clamp(base_angle - bound, base_angle + bound)
+            + (base_angle + (HALF_PI_F32 - base_angle) * t) * 0.15;
+        let n = size as i32;
+        for i in 0..n {
+            for j in 0..n {
+                apply(world, x as i32 + i, y as i32 + j);
+            }
+        }
+        step += 1.0;
+    }
+}
+
+/// `MahoganyTreeBiome.Place` (`MahoganyTreeBiome.cs:11-92`): the living
+/// mahogany tree of the underground jungle — the 6-wide solid floor find
+/// (`Down(200)` + `IsSolid.AreaAnd(6, 1)`, `:13`), the ceiling find
+/// (`Up(120)` + `AreaOr(6, 1)`, `:17`) with the 30..65-tile headroom gates,
+/// the 60×90 `CanPlace` box (`:25`), the mud-dominance scanner gate (`:31-40`,
+/// skipped on the drunk seed's 1-in-50 roll, `:29`), the sine-swayed trunk
+/// of 5-tile segments (`:42-59`), the two side branches + the two top
+/// branches (`:60-80`), the blotched leaf canopies at every branch endpoint
+/// (`:81-84`), the four roots (`:85-88`) and the style-10 jungle chest
+/// (`AddBuriedChest(result.X + 3, result.Y - 1, GetNextJungleChestItem(),
+/// false, 10, false, 0)`, `:89`).
+///
+/// Deviations (ANALYSIS "Micro-biomes"): the `SetFrames`/`PlaceWall`
+/// framing rides the post-pipeline framing seam; the `AddBuriedChest`
+/// down-scan keeps the solid-floor search and the boulder/altar exclusion
+/// but not the special-seed loot arms (the port's chest sites share the
+/// `place_chest` + `stock_placed_chest` stand-in); the `dualDungeons`
+/// origin veto is not modelled (the seed is deferred).
+pub(crate) fn place_mahogany_tree(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    world_surface: f64,
+    rock_layer: f64,
+    protected: &mut Vec<(i32, i32, i32, i32)>,
+    rng: &mut super::Rng,
+    jungle_cycle: &mut u32,
+    stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> bool {
+    // `:13`: the floor — Down(200) from (ox-3, oy), every row's 6 cells solid.
+    let mut result = None;
+    for i in 0..200 {
+        let y = oy + i;
+        if y >= world.height {
+            break;
+        }
+        if (0..6).all(|k| is_solid_cond(world, ox - 3 + k, y)) {
+            result = Some((ox - 3, y));
+            break;
+        }
+    }
+    let (rx, ry) = match result {
+        Some(p) => p,
+        None => return false,
+    };
+    // `:17`: the ceiling — Up(120) from (rx, ry-5), any of the 6 cells solid.
+    let mut ceiling = None;
+    for i in 0..120 {
+        let y = ry - 5 - i;
+        if (0..6).any(|k| is_solid_cond(world, rx + k, y)) {
+            ceiling = Some(y);
+            break;
+        }
+    }
+    let cy = match ceiling {
+        Some(y) if ry - 5 - y <= 60 => y,
+        _ => return false,
+    };
+    // `:21`: the headroom floor.
+    if ry - cy < 30 {
+        return false;
+    }
+    // `:25`: the 60×90 placement box.
+    if !can_place_rect(world, protected, rx - 30, ry - 60, 60, 90) {
+        return false;
+    }
+    // `:29-41`: the mud-dominance gate — the drunk seed rolls Next(50) and
+    // a 0 skips the scan; a classic world draws nothing here.
+    let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+    if !drunk || rng.range(0, 50) > 0 {
+        // `Actions.TileScanner` (`Actions.cs:60-112`) over the 50×50 box.
+        let mut counts = [0i32; 12];
+        const KINDS: [u16; 12] = [0, 59, 60, 147, 161, 163, 200, 164, 1, 25, 203, 117];
+        for x in rx - 25..rx + 25 {
+            for y in ry - 25..ry + 25 {
+                if let Some(t) = world.tile(x, y) {
+                    if t.active() {
+                        if let Some(idx) = KINDS.iter().position(|&k| k == t.kind) {
+                            counts[idx] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let stone_evil = counts[8] + counts[9] + counts[10] + counts[11];
+        let dirt_stone = counts[0] + stone_evil;
+        let mud = counts[1] + counts[2];
+        let ice = counts[4] + counts[5] + counts[6] + counts[7];
+        // `:37`: snow+ice may not outnumber the mud, dirt+stone may not
+        // outnumber the mud, and the mud needs 50+ cells.
+        if counts[3] + ice > mud || dirt_stone > mud || mud < 50 {
+            return false;
+        }
+    }
+    // `:42-50`: the trunk height and the sway rolls.
+    let segments = (ry - cy - 9) / 5;
+    let trunk_h = segments * 5;
+    let pi = std::f32::consts::PI as f64; // the C#'s 3.1415927410125732 literal
+    let sway_freq = rng.next_f64() + 1.0;
+    let mut sway_amp = rng.next_f64() + 2.0;
+    if rng.range(0, 2) == 0 {
+        sway_amp = -sway_amp;
+    }
+    // `:51-59`: the trunk — three rectangle chains per 5-tile segment.
+    let mut prev = 0i32;
+    for i in 0..segments {
+        let off = (((i + 1) as f64 / 12.0 * sway_freq * pi).sin() * sway_amp) as i32;
+        let shift = if off < prev { off - prev } else { 0 };
+        let sx = rx + prev + shift;
+        let sy = ry - (i + 1) * 5;
+        // `:55`: the wood shell — RemoveWall + SetTile(383).
+        rect_gen(world, sx, sy, 6 + (off - prev).abs(), 7, |w, x, y| {
+            if mahogany_guard(w, x, y) {
+                if let Some(t) = w.tile_mut(x, y) {
+                    t.wall = 0; // Actions.RemoveWall (`Actions.cs:515-522`)
+                }
+                set_tile_clear(w, x, y, 383);
+            }
+        });
+        // `:56`: the hollow interior — ClearTile + PlaceWall(78).
+        rect_gen(world, sx + 2, sy, 2 + (off - prev).abs(), 5, |w, x, y| {
+            if mahogany_guard(w, x, y) {
+                clear_tile_keep(w, x, y);
+                if let Some(t) = w.tile_mut(x, y) {
+                    t.wall = 78; // Actions.PlaceWall (`Actions.cs:524-549`)
+                }
+            }
+        });
+        // `:57`: the 2×2 joint below the segment.
+        rect_gen(world, rx + prev + 2, ry - i * 5, 2, 2, |w, x, y| {
+            if mahogany_guard(w, x, y) {
+                clear_tile_keep(w, x, y);
+                if let Some(t) = w.tile_mut(x, y) {
+                    t.wall = 78;
+                }
+            }
+        });
+        prev = off;
+    }
+    // `:60-77`: the two side branches at 1/3 and 2/3 of the trunk height.
+    let mut endpoints: Vec<(i32, i32)> = Vec::new();
+    let mut side = if sway_amp < 0.0 { 0 } else { 6 };
+    for j in 0..2 {
+        let frac = (j as f64 + 1.0) / 3.0;
+        let bx = side + ((segments as f64 * frac / 12.0 * sway_freq * pi).sin() * sway_amp) as i32;
+        let mut angle = rng.next_f64() * 0.7853981852531433 - 0.7853981852531433 - 0.2;
+        if side == 0 {
+            angle -= 1.5707963705062866;
+        }
+        let dist = rng.range(12, 16) as f64;
+        shape_branch(
+            world,
+            (rx + bx, ry - (trunk_h as f64 * frac) as i32),
+            angle,
+            dist,
+            rng,
+            &mut endpoints,
+            &mut |w, x, y| {
+                if mahogany_guard(w, x, y) {
+                    set_tile_clear(w, x, y, 383);
+                }
+            },
+        );
+        side = 6 - side;
+    }
+    // `:78-80`: the two top branches.
+    let top = ((segments as f64 / 12.0 * sway_freq * pi).sin() * sway_amp) as i32;
+    for (dx, angle) in [(6, -0.6853981852531433), (0, -2.45619455575943)] {
+        let dist = rng.range(16, 22) as f64;
+        shape_branch(
+            world,
+            (rx + dx + top, ry - trunk_h),
+            angle,
+            dist,
+            rng,
+            &mut endpoints,
+            &mut |w, x, y| {
+                if mahogany_guard(w, x, y) {
+                    set_tile_clear(w, x, y, 383);
+                }
+            },
+        );
+    }
+    // `:81-84`: the leaf canopies — Circle(4) + Blotches(4, 2) at every
+    // endpoint. `Modifiers.Blotches` (`Modifiers.cs:87-146`): two
+    // NextDouble draws per cell (the first discarded), the 0.3 blotch
+    // spreads the chain over a Next(-3,1)..Next(0,4) × Next(-1,1)..Next(0,2)
+    // box; the plain cell otherwise.
+    for &(ex, ey) in &endpoints {
+        let r = 4i32;
+        let sq = (r + 1) * (r + 1);
+        for dy in -r..=r {
+            let half = r.min(((sq - dy * dy) as f64).sqrt() as i32);
+            for dx in -half..=half {
+                let (cx, cy) = (ex + dx, ey + dy);
+                let _ = rng.next_f64();
+                let (x0, x1, y0, y1) = if rng.next_f64() < 0.3 {
+                    (
+                        cx + rng.range(-3, 1),
+                        cx + rng.range(0, 4),
+                        cy + rng.range(-1, 1),
+                        cy + rng.range(0, 2),
+                    )
+                } else {
+                    (cx, cx, cy, cy)
+                };
+                for x in x0..=x1 {
+                    for y in y0..=y1 {
+                        if skip_tiles(world, x, y, &[383, 21, 467, 226, 237])
+                            && skip_walls(world, x, y, &[78, 87])
+                        {
+                            set_tile_clear(world, x, y, 384);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // `:85-88`: the four roots.
+    for k in 0..4 {
+        let angle = k as f64 / 3.0 * 2.0 + 0.57075;
+        let dist = rng.range(40, 60) as f64;
+        shape_root(world, (rx, ry), angle, dist, rng, &mut |w, x, y| {
+            if mahogany_guard(w, x, y) {
+                set_tile_clear(w, x, y, 383);
+            }
+        });
+    }
+    // `:89`: the jungle chest — the item draws at the call site (the C#
+    // evaluates the argument before AddBuriedChest), then the down-scan
+    // for the solid floor (`WorldGen.cs:35889-35963`) and the style-10
+    // placement at (i-1, k-1) (`:36206-36209`).
+    let main = super::structures::get_next_jungle_chest_item(jungle_cycle, rng);
+    let ci = rx + 3;
+    let mut floor = None;
+    'chest_scan: for k in ry - 1..world.height - 10 {
+        // `:35906-35913`: a shimmer cell or the planter's bulb 231 in the
+        // chest column aborts AddBuriedChest (the port generates no shimmer
+        // and no 231 yet — the checks stay 1:1 with the source). The C#
+        // ignores the return value (`:89`), so the tree still places.
+        if world.tile(ci, k).is_some_and(|t| {
+            (t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer)
+                || (t.active() && t.kind == 231)
+        }) {
+            break 'chest_scan;
+        }
+        // `:35950-35959`: the 5×5 boulder/altar exclusion (InWorld fluff 100).
+        for n in ci - 2..=ci + 2 {
+            for m in k - 2..=k + 2 {
+                if n >= 100
+                    && m >= 100
+                    && n < world.width - 100
+                    && m < world.height - 100
+                    && world.tile(n, m).is_some_and(|t| {
+                        t.active()
+                            && (crate::tiledata::SET_BOULDERS.has(t.kind)
+                                || t.kind == 26
+                                || t.kind == 237)
+                    })
+                {
+                    break 'chest_scan;
+                }
+            }
+        }
+        if solid_tile(world, ci, k) {
+            floor = Some(k);
+            break;
+        }
+    }
+    if let Some(k) = floor {
+        // `PlaceChest(i-1, num7-1)` (`:36206`) anchors the chest's
+        // bottom-left at (ci-1, k-1) (`TileObjectData` origin (0,1)), so
+        // the 2×2 occupies rows k-2..k-1 above the floor — the port's
+        // `place_chest` takes the top-left cell.
+        if super::structures::place_chest(world, ci - 1, k - 2, 10) {
+            // The stocking's band/context reads ride the pass's layer
+            // anchors — `world.world_surface` is only published by the
+            // world tail, after this step.
+            let saved_surface = world.world_surface;
+            let saved_rock = world.rock_layer;
+            world.world_surface = world_surface;
+            world.rock_layer = rock_layer;
+            super::chest_stock::stock_placed_chest(
+                world, stock, rng, ci - 1, k - 2, 10, 21, main, false,
+            );
+            world.world_surface = saved_surface;
+            world.rock_layer = saved_rock;
+        }
+    }
+    // `:90`: the protected 60×60 box.
+    protected.push((rx - 30, ry - 30, 60, 60));
+    true
+}
+
+/// The Micro Biomes pass's mahogany block (`WorldGen.cs:21105-21123`): the
+/// `LivingTreeCount` config roll (Min 6, Max 11, WorldWidth —
+/// `worldgen_configuration.json:223-227`), then up to 20000 attempts at
+/// `RandomWorldPoint(worldSurface + 50, 50, 500, 50)`
+/// (`WorldGen.cs:27111-27114`: x = Next(50, maxX-50), y = Next(top,
+/// maxY-500)) until the count is met.
+pub(crate) fn pass_mahogany_trees(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    count: i32,
+    rng: &mut super::Rng,
+    jungle_cycle: &mut u32,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
+    let y_lo = world_surface as i32 + 50;
+    let y_hi = world.height - 500;
+    // The sub-vanilla guard: the C#'s Next(top, maxY-500) throws on a
+    // collapsed band; the port's 512-tall test worlds skip the block (the
+    // same idiom the cave-house/spike-pit passes carry).
+    if y_hi <= y_lo || world.width <= 100 {
+        return 0;
+    }
+    let mut protected: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let mut placed = 0u32;
+    let mut attempts = 0;
+    while (placed as i32) < count && attempts < 20000 {
+        let x = rng.range(50, world.width - 50);
+        let y = rng.range(y_lo, y_hi);
+        if place_mahogany_tree(
+            world,
+            x,
+            y,
+            world_surface,
+            rock_layer,
+            &mut protected,
+            rng,
+            jungle_cycle,
+            stock.as_deref_mut(),
+        ) {
+            placed += 1;
+        }
+        attempts += 1;
+    }
+    placed
+}
+
 /// The hive pass's honey patches (`WorldGen.cs:15946-15968`): each placed
 /// hive rolls `Next(5)` patches on the angle/radius ring around its centre
 /// (the 30-90 px ring, the bounds gate, the `extraLiquid` seed's zero).
@@ -872,6 +1445,89 @@ mod tests {
         let after = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
         assert!(placed >= 1, "the hive placed: {placed}");
         assert!(after > before, "the hive's patches hold honey: {before} -> {after}");
+    }
+
+    // --- the living mahogany trees (S1-K-2 wave A) ---------------------------
+
+    /// A mud cavern: the solid mud floor at `floor`, the mud ceiling at
+    /// `ceil`, air between — the geometry the mahogany finds key on.
+    fn mud_cavern(width: i32, height: i32, ceil: i32, floor: i32) -> World {
+        let mut w = World::new("mt".into(), width, height);
+        for x in 0..width {
+            for y in 0..height {
+                if y <= ceil || y >= floor {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = 59;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+        }
+        w.world_surface = 100.0;
+        w.rock_layer = 300.0;
+        w
+    }
+
+    #[test]
+    fn the_mahogany_tree_grows_trunk_branches_leaves_and_roots() {
+        // `MahoganyTreeBiome.Place` (`MahoganyTreeBiome.cs:11-92`): a
+        // 45-tile mud cavern (the 30..65 headroom gates) grows the 383
+        // trunk/branches/roots, the 384 leaf canopies and the wall-78
+        // hollow interior; the style-10 chest sits on the floor.
+        let mut w = mud_cavern(400, 600, 150, 200);
+        let mut protected = Vec::new();
+        let mut cycle = 0u32;
+        let mut rng = Rng::from_seed(5);
+        // The origin scans down from y=170 (air) to the floor at 200.
+        assert!(place_mahogany_tree(
+            &mut w, 200, 170, 100.0, 300.0, &mut protected, &mut rng, &mut cycle, None
+        ));
+        let count = |kind: u16| w.tiles.iter().filter(|t| t.active() && t.kind == kind).count();
+        assert!(count(383) > 100, "the living mahogany ({})", count(383));
+        assert!(count(384) > 20, "the mahogany leaves ({})", count(384));
+        assert!(
+            w.tiles.iter().any(|t| t.wall == 78),
+            "the hollow interior carries the living-wood wall"
+        );
+        assert!(
+            w.tiles.iter().any(|t| t.active() && t.kind == 21 && t.frame_x == 180),
+            "the style-10 jungle chest"
+        );
+        assert_eq!(protected.len(), 1, "the 60x60 rect is registered");
+        assert_eq!(cycle, 1, "the jungle chest item cycle advanced");
+    }
+
+    #[test]
+    fn the_mahogany_tree_rejects_the_stone_cavern_and_the_low_ceiling() {
+        // `:37`: the mud-dominance gate — a stone cavern fails it.
+        let mut w = mud_cavern(400, 600, 150, 200);
+        for t in w.tiles.iter_mut() {
+            if t.active() {
+                t.kind = 1;
+            }
+        }
+        let mut protected = Vec::new();
+        let mut cycle = 0u32;
+        let mut rng = Rng::from_seed(5);
+        assert!(!place_mahogany_tree(
+            &mut w, 200, 170, 100.0, 300.0, &mut protected, &mut rng, &mut cycle, None
+        ));
+        // `:17-23`: a ceiling 70 tiles up fails the 60-tile headroom gate.
+        let mut w2 = mud_cavern(400, 600, 125, 200);
+        let mut rng2 = Rng::from_seed(5);
+        assert!(!place_mahogany_tree(
+            &mut w2, 200, 170, 100.0, 300.0, &mut protected, &mut rng2, &mut cycle, None
+        ));
+    }
+
+    #[test]
+    fn the_mahogany_pass_is_deterministic_for_a_seed() {
+        let run = || {
+            let mut w = mud_cavern(600, 800, 250, 300);
+            let mut cycle = 0u32;
+            pass_mahogany_trees(&mut w, 100.0, 300.0, 3, &mut Rng::from_seed(21), &mut cycle, None);
+            super::super::world_hash::world_hash(&w)
+        };
+        assert_eq!(run(), run());
     }
 
 }

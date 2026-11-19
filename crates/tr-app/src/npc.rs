@@ -742,17 +742,185 @@ pub enum NpcKind {
     /// `NPCID.Hellhound` (329) — the wave's flyer (`aiStyle 26`): 46x30,
     /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000.
     Hellhound,
-    /// `NPCID.Poltergeist` (330) — the wave's caster (`aiStyle 22`): 24x44,
-    /// dmg 90, def 44, 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4,
-    /// value 4500.
+    /// `NPCID.Poltergeist` (330) — the wave's ghost (`aiStyle 22`, the
+    /// dwell/dash machine — S1-F-13b2 slice C): 24x44, dmg 90, def 44,
+    /// 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4, value 4500.
     Poltergeist,
+    // ---- The Frost Moon wave family (`S1-F-13c` slice B): the eight kinds
+    // 345-352 (`NPCID.IceQueen` … `NPCID.Flocko`). Their SetDefaults arms are
+    // `NPC.cs:13369-13487`; their `to_u16`/`from_u16` ride the VANILLA ids
+    // (345-352) — the frost wave rosters (`spawner.rs`'s `frost_moon_ladder`),
+    // `MOON_BOSS_SLOTS` and `CheckProgressFrostMoon`'s kill points all key on
+    // the vanilla `NPC.type`, and these ids sit clear of the 0..188
+    // port-local space (the 78..84 Deerclops/Prime band, `S1-F-1`). The
+    // 338-344 band lands on a separate task row. None of the eight writes a
+    // `scale`/`alpha`/`boss` row (`NPC.cs:13369-13487`), so they spawn at
+    // 1.0/0/false; the aiStyle-60/61/62/63 machines' stand-in routing is the
+    // wave arm's documented deviation (ANALYSIS).
+    /// `NPCID.IceQueen` (345) — the wave's flying boss (`aiStyle 60`):
+    /// 130x140, dmg 120, def 38, 34000 HP, kb 0, value 50000, noGravity +
+    /// noTileCollide, npcSlots 5 (`NPC.cs:13369-13385`).
+    IceQueen,
+    /// `NPCID.SantaNK1` (346) — the wave's other boss (`aiStyle 61`):
+    /// 112x140, dmg 120, def 56, 18000 HP, kb 0, value 10000, npcSlots 4;
+    /// the AI itself sets noGravity + noTileCollide (`NPC.cs:33684-33685`),
+    /// so `SetDefaults` carries neither (`:13386-13399`).
+    SantaNK1,
+    /// `NPCID.ElfCopter` (347) — the wave's flyer (`aiStyle 62`): 50x50,
+    /// dmg 60, def 28, 1200 HP, kb 0.4, value 1000, noGravity +
+    /// noTileCollide, npcSlots 1.5 (`NPC.cs:13400-13415`).
+    ElfCopter,
+    /// `NPCID.Nutcracker` (348) — the wave's aiStyle-3 walker: 28x76,
+    /// dmg 80, def 26, 1800 HP, kb 0.4, value 1500, npcSlots 1.5
+    /// (`NPC.cs:13416-13429`).
+    Nutcracker,
+    /// `NPCID.NutcrackerSpinning` (349) — the walker's spinning twin
+    /// (`aiStyle 3`): 28x76, dmg 100, def 42, 1800 HP, kb 0.1, value 1500,
+    /// npcSlots 1.5 (`NPC.cs:13430-13443`).
+    NutcrackerSpinning,
+    /// `NPCID.ElfArcher` (350) — the wave's aiStyle-3 shooter: 18x40,
+    /// dmg 70, def 30, 900 HP, kb 0.45, value 900; npcSlots rides the class
+    /// default 1f (`NPC.cs:13444-13456`).
+    ElfArcher,
+    /// `NPCID.Krampus` (351) — the wave's aiStyle-3 walker: 18x90, dmg 100,
+    /// def 40, 2500 HP, kb 0.1, value 3000, npcSlots 1.75
+    /// (`NPC.cs:13457-13470`).
+    Krampus,
+    /// `NPCID.Flocko` (352) — the wave's flyer (`aiStyle 63`): 54x54,
+    /// dmg 75, def 8, 450 HP, kb 0.4, value 500, noGravity + noTileCollide,
+    /// npcSlots 2 (`NPC.cs:13471-13487`).
+    Flocko,
+    // ---- S1-D-3ff FindFrame coverage wave A (24 LOW-id kinds) ----
+    // The slime group (`FindFrame`'s case 1/16/59/71/81/138/147/183/184/225
+    // arm, `NPC.cs:70801-70846`): aiStyle 1, the 8-tick 2-row hop strip.
+    /// `NPCID.MotherSlime` (16, `NPCID.cs:10709`) — the jungle slime
+    /// (`SetDefaults` `NPC.cs:8963-8979`): 36x24, dmg 20, def 7, 90 HP,
+    /// kb 0.6, value 75, alpha 120, scale 1.25, npcSlots 2.
+    MotherSlime,
+    /// `NPCID.LavaSlime` (59, `NPCID.cs:10795`) — the underworld slime
+    /// (`NPC.cs:9516-9537`): 24x18, dmg 15, def 10, 50 HP, value 120,
+    /// scale 1.1, alpha 50, lavaImmune (the remixWorld override is
+    /// unported — the port has no remix flag).
+    LavaSlime,
+    /// `NPCID.DungeonSlime` (71, `NPCID.cs:10819`) — the dungeon slime
+    /// (`NPC.cs:9697-9713`): 36x24, dmg 30, def 7, 150 HP, kb 0.6,
+    /// value 150, alpha 60, scale 1.25, rarity 1, npcSlots 2.
+    DungeonSlime,
+    /// `NPCID.CorruptSlime` (81, `NPCID.cs:10839`) — the corruption slime
+    /// (`NPC.cs:9838-9851`): 40x30, dmg 55, def 20, 170 HP, value 400,
+    /// alpha 55, scale 1.1.
+    CorruptSlime,
+    /// `NPCID.IlluminantSlime` (138, `NPCID.cs:10953`) — the hallow slime
+    /// (`NPC.cs:10748-10762`): 24x18, dmg 70, def 30, 180 HP, kb 0.85,
+    /// value 400, alpha 100, scale 1.05, DeathSound 6.
+    IlluminantSlime,
+    /// `NPCID.IceSlime` (147, `NPCID.cs:10971`) — the snow slime
+    /// (`NPC.cs:10847+`): 24x18, dmg 8, def 4, 30 HP, value 50, alpha 50,
+    /// coldDamage.
+    IceSlime,
+    /// `NPCID.Crimslime` (183, `NPCID.cs:11043`) — the crimson slime
+    /// (`NPC.cs:11332+`): 40x30, dmg 60, def 26, 200 HP, value 400,
+    /// alpha 55, scale 1.1.
+    Crimslime,
+    /// `NPCID.SpikedIceSlime` (184, `NPCID.cs:11045`) — the spiked snow
+    /// slime (`NPC.cs:11346+`): 24x18, dmg 12, def 8, 60 HP, value 200,
+    /// scale 1.1, alpha 50, coldDamage.
+    SpikedIceSlime,
+    /// `NPCID.UmbrellaSlime` (225, `NPCID.cs:11127`) — the umbrella slime
+    /// (`NPC.cs:11898+`): 38x26, dmg 10, def 5, 35 HP, kb 0.75, value 200.
+    UmbrellaSlime,
+    // The eye group (`FindFrame`'s case 2/190-194 arm, `NPC.cs:73994-74059`):
+    // aiStyle 2, the 8-tick 2-row strip with the atan2 aim + sprite flip.
+    /// `NPCID.CataractEye` (190, `NPCID.cs:11057`) — the demon-eye variant
+    /// (`NPC.cs:11427-11439`): 30x32, dmg 18, def 4, 65 HP, kb 0.7,
+    /// value 75.
+    CataractEye,
+    /// `NPCID.SleepyEye` (191, `NPCID.cs:11059`) — (`NPC.cs:11440-11452`):
+    /// 30x32, dmg 16, def 2, 60 HP, kb 0.85, value 75.
+    SleepyEye,
+    /// `NPCID.DialatedEye` (192, `NPCID.cs:11061`) — (`NPC.cs:11453-11465`):
+    /// 30x32, dmg 18, def 2, 50 HP, kb 0.8, value 75.
+    DialatedEye,
+    /// `NPCID.GreenEye` (193, `NPCID.cs:11063`) — (`NPC.cs:11466-11478`):
+    /// 30x32, dmg 20, def 0, 60 HP, kb 0.8, value 75.
+    GreenEye,
+    /// `NPCID.PurpleEye` (194, `NPCID.cs:11065`) — (`NPC.cs:11479-11491`):
+    /// 30x32, dmg 14, def 4, 60 HP, kb 0.8, value 75.
+    PurpleEye,
+    // The walker group (`FindFrame`'s case 3/52/53/132/161/186-189/200/223
+    // arm, `NPC.cs:76324-76391`): aiStyle 3, the 3-row walk strip.
+    /// `NPCID.DoctorBones` (52, `NPCID.cs:10781`) — the jungle rare walker
+    /// (`NPC.cs:9418-9431`): 18x40, dmg 20, def 10, 500 HP, kb 0.5,
+    /// value 1000, rarity 2.
+    DoctorBones,
+    /// `NPCID.TheGroom` (53, `NPCID.cs:10783`) — the blood-moon rare walker
+    /// (`NPC.cs:9432-9445`): 18x40, dmg 14, def 8, 200 HP, kb 0.5,
+    /// value 1000, rarity 2.
+    TheGroom,
+    /// `NPCID.BaldZombie` (132, `NPCID.cs:10941`) — (`NPC.cs:10633-10645`):
+    /// 18x40, dmg 15, def 5, 40 HP, kb 0.5, value 65.
+    BaldZombie,
+    /// `NPCID.ZombieEskimo` (161, `NPCID.cs:10999`) — the snow zombie
+    /// (`NPC.cs:11017-11029`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
+    /// value 80.
+    ZombieEskimo,
+    /// `NPCID.PincushionZombie` (186, `NPCID.cs:11049`) —
+    /// (`NPC.cs:11375-11387`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
+    /// value 65.
+    PincushionZombie,
+    /// `NPCID.SlimedZombie` (187, `NPCID.cs:11051`) —
+    /// (`NPC.cs:11388-11400`): 18x40, dmg 13, def 6, 40 HP, kb 0.55,
+    /// value 55.
+    SlimedZombie,
+    /// `NPCID.SwampZombie` (188, `NPCID.cs:11053`) —
+    /// (`NPC.cs:11401-11413`): 18x40, dmg 13, def 8, 45 HP, kb 0.45,
+    /// value 80.
+    SwampZombie,
+    /// `NPCID.TwiggyZombie` (189, `NPCID.cs:11055`) —
+    /// (`NPC.cs:11414-11426`): 18x40, dmg 16, def 4, 45 HP, kb 0.55,
+    /// value 70.
+    TwiggyZombie,
+    /// `NPCID.FemaleZombie` (200, `NPCID.cs:11077`) —
+    /// (`NPC.cs:11559+`): 18x40, dmg 12, def 4, 38 HP, kb 0.6, value 65.
+    FemaleZombie,
+    /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) — the rain zombie
+    /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70.
+    ZombieRaincoat,
+    /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
+    /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
+    /// (`NPC.cs:13281-13296`).
+    ZombieElf,
+    /// `NPCID.ZombieElfBeard` (339) — the 338 sibling: dmg 52, def 24,
+    /// 700 HP, kb 0.2, scale 1.05 (`NPC.cs:13297-13304`).
+    ZombieElfBeard,
+    /// `NPCID.ZombieElfGirl` (340) — the 338 sibling: dmg 78, def 14,
+    /// 500 HP, kb 0.25, scale 0.9 (`NPC.cs:13305-13312`).
+    ZombieElfGirl,
+    /// `NPCID.PresentMimic` (341) — the wave's chest machine (`aiStyle 25`):
+    /// 24x24, dmg 100, def 32, 900 HP, kb 0.25, value 2000
+    /// (`Item.buyPrice(0, 0, 20)`, `NPC.cs:13314-13326`). The true machine
+    /// lands with the bespoke slice — slice A routes it to the walker
+    /// stand-in (ANALYSIS records it).
+    PresentMimic,
+    /// `NPCID.GingerbreadMan` (342) — the wave walker (`aiStyle 3`): 18x40,
+    /// dmg 90, def 26, 750 HP, kb 0.2, value 1800 (`NPC.cs:13327-13339`).
+    GingerbreadMan,
+    /// `NPCID.Yeti` (343) — the wave's heavy walker (`aiStyle 3`): 38x78,
+    /// dmg 140, def 50, 3500 HP, kb 0, value 3000, npcSlots 2, coldDamage
+    /// (`NPC.cs:13340-13354`).
+    Yeti,
+    /// `NPCID.Everscream` (344) — the Frost Moon boss (`aiStyle 57`):
+    /// 172x130, dmg 110, def 38, 13000 HP, kb 0, value 10000, npcSlots 3
+    /// (`NPC.cs:13355-13368`). The true machine lands with the bespoke
+    /// slice — slice A routes it to the Mourning Wood hover stand-in.
+    Everscream,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
 // re-exports keep every `crate::npc::*` path unchanged.
 mod data;
 pub use data::{
-    EntryStats, PumpkinDefaults, SlimeStats, SlimeVariant, kind_from_legacy_name,
+    EntryStats, FrostDefaults, PumpkinDefaults, SlimeStats, SlimeVariant, kind_from_legacy_name,
     kind_from_net_id,
 };
 pub(crate) use data::entry_stats;
@@ -833,9 +1001,10 @@ pub struct Npc {
     pub frame: u32,
     /// `NPC.frameCounter`: the per-kind accumulator `FindFrame` checks.
     frame_counter: f32,
-    /// `NPC.rotation`: the aim tilt. Only the demon eye sets it
+    /// `NPC.rotation`: the aim tilt. The demon eye sets it
     /// (`NPC.cs:74019-74031`: `atan2(velocity.Y, velocity.X)`, `+ π` when
-    /// `velocity.X < 0`).
+    /// `velocity.X < 0`); the Poltergeist tilts at `velocity.X * 0.15`
+    /// (`NPC.cs:74895`).
     pub rotation: f32,
     /// `NPC.scale` (`NPC.cs:6171`) — the draw/hitbox multiplier: the
     /// slime variants ride their `SetDefaults` scale, the Stardust
@@ -889,6 +1058,13 @@ pub struct Npc {
     /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
     /// `num88` after a teleport; the shoot fires at the params' tick).
     pub cast_windup: i32,
+    /// `NPC.aiAction` (`NPC.cs:6449`, the int default 0): the AI's frame
+    /// hint — `FindFrame`'s default row picks frame 4 while it holds 1
+    /// (`NPC.cs:66697-66704`). The aiStyle-41 hop family writes 1 on the
+    /// grounded windup ticks (`NPC.cs:30112`) and never clears it inside
+    /// the arm (the C# quirk is kept).
+    #[allow(dead_code)] // the FindFrame row reader lands with the style-41 wiring
+    pub ai_action: i32,
     /// `NPC.directionY` (`NPC.cs:6441`, the default 1): the vertical facing.
     /// `FaceTarget` writes it (`:77649`) and the steering tails read it
     /// (`AI_109`'s `:66154-66185`).
@@ -945,6 +1121,22 @@ pub struct Npc {
     /// the previous tick's `position.X` — equality flips the direction and
     /// arms the 60-tick no-retarget cooldown.
     pub frost_stuck_x: f32,
+    /// The `oldPosition.X` the aiStyle-26 machine reads (`NPC.cs:62441`'s
+    /// `position.X == oldPosition.X`): the C# latches `oldPosition` AFTER
+    /// the AI (`Collision_MoveWhileDry`, `NPC.cs:92605`), so the equality
+    /// means "did not move last tick". The port's `update_rng` latches
+    /// `old_x` BEFORE the AI, so `unicorn_step` carries its own end-of-tick
+    /// latch — the `frost_stuck_x` precedent above (S1-F-13b2 slice A).
+    pub unicorn_stuck_x: f32,
+    /// `NPC.gfxOffY` (`NPC.cs:6095`): the render-side step-up lift
+    /// accumulator — `AI_026_Unicorns`' inline step-up adds the lift here
+    /// (`NPC.cs:62792`); the `UpdateNPC` head decays it by
+    /// `(1 + |vx|/3) * stepSpeed` per tick, clamped ±16 (`:90397-90420`).
+    /// Slice A records the writes; the decay/render arms ride slice B.
+    pub gfx_off_y: f32,
+    /// `NPC.stepSpeed` (`NPC.cs:6097`): the step-up lift's decay rate —
+    /// 1 for lifts under 9 px, 2 above (`NPC.cs:62794-62801`).
+    pub step_speed: f32,
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
@@ -1101,6 +1293,26 @@ pub struct Npc {
     /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
     /// (`NPC.cs:44394`).
     pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
+    /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
+    /// 263/264/265 have no port arms yet, so the sim records the request
+    /// and the hook-anchor average falls back to Plantera's own centre
+    /// (S1-D-3-plantera, ANALYSIS "The Plantera machine").
+    pub wants_plantera_hooks: u8,
+    /// Plantera's phase-2 tentacle batch (`NPC.cs:31983-31994` — the
+    /// one-shot 8 `NewNPC(..., 264)` calls; getGood +6 and the expert
+    /// per-hook extras are constants-off).
+    pub wants_plantera_tentacles: u8,
+    /// Plantera's spore launch (`NPC.cs:32054-32073` — the 350-tick
+    /// cadence's `NewNPC(..., 265)` with the jittered 8-px velocity).
+    pub wants_plantera_spore: Option<(f32, f32)>,
+    /// Plantera's hook-centroid leash anchor, pre-computed by the sim's
+    /// pre-pass (`npc_ai_plantera_anchor::hook_anchor`, `NPC.cs:31743-31762`
+    /// — the first three live aiStyle-52 hooks' slot-order f32 average).
+    /// `None` = no hook lives: the machine falls back to Plantera's own
+    /// centre (the documented stand-in until kind 263 lands; the C# has
+    /// no zero-hook tick — `NewNPC` activates synchronously).
+    pub plantera_hook_anchor: Option<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -1978,6 +2190,23 @@ impl Npc {
         Some(Self::new(NpcKind::DemonEye, x, y, 1, 0.0))
     }
 
+    /// S1-D-3ff wave A: the demon-eye variants' spawn — the same
+    /// a-few-tiles-above-the-surface placement as [`Self::spawn_eye`],
+    /// on the kind's own box (the five share the 30x32 hitbox).
+    pub fn spawn_eye_variant(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h - 4.0 * TILE_PX;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, 1, 0.0))
+    }
+
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
@@ -2009,9 +2238,14 @@ impl Npc {
             frame_counter: 0.0,
             rotation: 0.0,
             // `NPC.scale`'s `SetDefaults` row — the kind-level default (the
-            // Pumpkin family's scaling rows, `S1-F-13b`); 1.0 for every
-            // other kind (their C# scale rows ride `size()`).
-            scale: kind.pumpkin_moon_defaults().map_or(1.0, |d| d.scale),
+            // Pumpkin family's scaling rows, `S1-F-13b`; the Frost trio's
+            // 339/340 rows, `S1-F-13c` slice A; slice B writes none); 1.0
+            // for every other kind (their C# scale rows ride `size()`).
+            scale: kind
+                .pumpkin_moon_defaults()
+                .map(|d| d.scale)
+                .or_else(|| kind.frost_moon_defaults().map(|d| d.scale))
+                .unwrap_or(1.0),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -2023,6 +2257,7 @@ impl Npc {
             despawn_timer: -1,
             caster_counter: 0,
             cast_windup: 0,
+            ai_action: 0,
             direction_y: 1,
             // `SetDefaults`' `ClearTarget()` (`NPC.cs:8539`,
             // `:42924-42927`): the fresh NPC targets the 255 sentinel.
@@ -2041,6 +2276,13 @@ impl Npc {
             old_vy: 0.0,
             dark_mage_local: [0.0; 3],
             frost_stuck_x: 0.0,
+            // `Entity.oldPosition`'s field default (0,0) (`Entity.cs:14`):
+            // the C# leaves it zero until the first `UpdateCollision`
+            // latches it (`NPC.cs:92605`), so a fresh NPC at x != 0 reads
+            // "moved" on its first aiStyle-26 tick — verbatim.
+            unicorn_stuck_x: 0.0,
+            gfx_off_y: 0.0,
+            step_speed: 0.0,
             wants_sphere: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
@@ -2083,6 +2325,10 @@ impl Npc {
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
+            wants_plantera_hooks: 0,
+            wants_plantera_tentacles: 0,
+            wants_plantera_spore: None,
+            plantera_hook_anchor: None,
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -2093,8 +2339,13 @@ impl Npc {
             carrier_uid: 0,
             wants_saucer_crew: false,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
-            // Poltergeist's 100, `NPC.cs:13202`); 0 for every other kind.
-            alpha: kind.pumpkin_moon_defaults().map_or(0, |d| d.alpha),
+            // Poltergeist's 100, `NPC.cs:13202`); 0 for every other kind
+            // (the Frost family writes no alpha row, `NPC.cs:13281-13487`).
+            alpha: kind
+                .pumpkin_moon_defaults()
+                .map(|d| d.alpha)
+                .or_else(|| kind.frost_moon_defaults().map(|d| d.alpha))
+                .unwrap_or(0),
             head_turn: 0,
             wet: false,
             carrier_timer: -1.0,
@@ -2417,6 +2668,52 @@ impl Npc {
             NpcKind::Pumpking => 0.0,
             NpcKind::Hellhound => 0.3,
             NpcKind::Poltergeist => 0.4,
+            // The Frost Moon family (`S1-F-13c` slice B): 345/346's 0
+            // (`NPC.cs:13379`/`:13396`), 347/348/352's 0.4
+            // (`:13411`/`:13426`/`:13481` — the class default, written
+            // outright), 349/351's 0.1 (`:13440`/`:13467`), 350's 0.45
+            // (`:13454`).
+            NpcKind::IceQueen | NpcKind::SantaNK1 => 0.0,
+            NpcKind::ElfCopter | NpcKind::Nutcracker | NpcKind::Flocko => 0.4,
+            NpcKind::NutcrackerSpinning | NpcKind::Krampus => 0.1,
+            NpcKind::ElfArcher => 0.45,
+            // S1-D-3ff wave A — the `SetDefaults` knockBackResist rows
+            // (the unlisted kinds keep the C# class default 1f,
+            // `NPC.cs:8533`): 16/71 0.6 (`:8978`/`:9711`), 138 0.85
+            // (`:10760`), 225 0.75 (`:11906` region), 190 0.7
+            // (`:11436`), 191 0.85 (`:11449`), 192/193/194 0.8
+            // (`:11462`/`:11475`/`:11488`), 52/53/132 0.5
+            // (`:9428`/`:9442`/`:10643`), 161/186/188/223 0.45
+            // (`:11027`/`:11385`/`:11411` region), 187/189 0.55
+            // (`:11398`/`:11424` region), 200 0.6 (`:11567` region).
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 0.6,
+            NpcKind::LavaSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime => 1.0,
+            NpcKind::IlluminantSlime => 0.85,
+            NpcKind::UmbrellaSlime => 0.75,
+            NpcKind::CataractEye => 0.7,
+            NpcKind::SleepyEye => 0.85,
+            NpcKind::DialatedEye | NpcKind::GreenEye | NpcKind::PurpleEye => 0.8,
+            NpcKind::DoctorBones | NpcKind::TheGroom | NpcKind::BaldZombie => 0.5,
+            NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SwampZombie
+            | NpcKind::ZombieRaincoat => 0.45,
+            NpcKind::SlimedZombie | NpcKind::TwiggyZombie => 0.55,
+            NpcKind::FemaleZombie => 0.6,
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
+            // group's three rows (`NPC.cs:13295`/`:13302`/`:13310` —
+            // 0.4/0.2/0.25), 341 0.25 (`:13325`), 342 0.2 (`:13337`),
+            // 343 and 344 0 (`:13350`/`:13365`).
+            NpcKind::ZombieElf => 0.4,
+            NpcKind::ZombieElfBeard => 0.2,
+            NpcKind::ZombieElfGirl => 0.25,
+            NpcKind::PresentMimic => 0.25,
+            NpcKind::GingerbreadMan => 0.2,
+            NpcKind::Yeti | NpcKind::Everscream => 0.0,
             _ => 0.4,
         }
     }
@@ -2693,6 +2990,58 @@ impl Npc {
             NpcKind::Pumpking => 40,
             NpcKind::Hellhound => 38,
             NpcKind::Poltergeist => 44,
+            // The Frost Moon family (`S1-F-13c` slice B): 345 38
+            // (`NPC.cs:13375`), 346 56 (`:13392`), 347 28 (`:13406`),
+            // 348 26 (`:13422`), 349 42 (`:13436`), 350 30 (`:13450`),
+            // 351 40 (`:13463`), 352 8 (`:13477`).
+            NpcKind::IceQueen => 38,
+            NpcKind::SantaNK1 => 56,
+            NpcKind::ElfCopter => 28,
+            NpcKind::Nutcracker => 26,
+            NpcKind::NutcrackerSpinning => 42,
+            NpcKind::ElfArcher => 30,
+            NpcKind::Krampus => 40,
+            NpcKind::Flocko => 8,
+            // S1-D-3ff wave A — the `SetDefaults` defense rows: 16/71 7
+            // (`NPC.cs:8970`/`:9704`), 59 10 (`:9522`), 81 20 (`:9844`),
+            // 138 30 (`:10754`), 147 4 (`:10853` region), 183 26
+            // (`:11338` region), 184 8 (`:11352` region), 225 5
+            // (`:11904` region); 190/194 4 (`:11433`/`:11485`), 191/192 2
+            // (`:11446`/`:11459`), 193 0 (`:11472`); 52 10 (`:9424`),
+            // 53/161/186/188/223 8 (`:9438`/`:11023`/`:11381`/`:11407`
+            // region/`:11878` region), 132 5 (`:10639`), 187 6
+            // (`:11394`), 189/200 4 (`:11420` region/`:11565` region).
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 7,
+            NpcKind::LavaSlime => 10,
+            NpcKind::CorruptSlime => 20,
+            NpcKind::IlluminantSlime => 30,
+            NpcKind::IceSlime => 4,
+            NpcKind::Crimslime => 26,
+            NpcKind::SpikedIceSlime => 8,
+            NpcKind::UmbrellaSlime => 5,
+            NpcKind::CataractEye | NpcKind::PurpleEye => 4,
+            NpcKind::SleepyEye | NpcKind::DialatedEye => 2,
+            NpcKind::GreenEye => 0,
+            NpcKind::DoctorBones => 10,
+            NpcKind::TheGroom
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SwampZombie
+            | NpcKind::ZombieRaincoat => 8,
+            NpcKind::BaldZombie => 5,
+            NpcKind::SlimedZombie => 6,
+            NpcKind::TwiggyZombie | NpcKind::FemaleZombie => 4,
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
+            // group's three rows (`NPC.cs:13293`/`:13300`/`:13308` —
+            // 18/24/14), 341 32 (`:13320`), 342 26 (`:13333`), 343 50
+            // (`:13346`), 344 38 (`:13361`).
+            NpcKind::ZombieElf => 18,
+            NpcKind::ZombieElfBeard => 24,
+            NpcKind::ZombieElfGirl => 14,
+            NpcKind::PresentMimic => 32,
+            NpcKind::GingerbreadMan => 26,
+            NpcKind::Yeti => 50,
+            NpcKind::Everscream => 38,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -2970,6 +3319,53 @@ impl Npc {
             NpcKind::Pumpking => 50000.0,
             NpcKind::Hellhound => 3000.0,
             NpcKind::Poltergeist => 4500.0,
+            // The Frost Moon family (`S1-F-13c` slice B): 345 50000
+            // (`NPC.cs:13380`), 346 10000 (`:13397`), 347 1000 (`:13414`),
+            // the nutcracker pair 1500 (`:13427`/`:13441`), 350 900
+            // (`:13455`), 351 3000 (`:13468`), 352 500 (`:13482`).
+            NpcKind::IceQueen => 50000.0,
+            NpcKind::SantaNK1 => 10000.0,
+            NpcKind::ElfCopter => 1000.0,
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => 1500.0,
+            NpcKind::ElfArcher => 900.0,
+            NpcKind::Krampus => 3000.0,
+            NpcKind::Flocko => 500.0,
+            // S1-D-3ff wave A — the `SetDefaults` value rows (copper):
+            // 16 75 (`NPC.cs:8976`), 59 120 (`:9529` — the remixWorld
+            // override 25 at `:9535` is unported, no remix flag), 71 150
+            // (`:9709`), 81/138/183 400 (`:9849`/`:10759`/`:11340`
+            // region), 147 50 (`:10855` region), 184/225 200
+            // (`:11354` region/`:11908` region); the five eyes 75
+            // (`:11438`/`:11451`/`:11464`/`:11477`/`:11490`); 52/53 1000
+            // (`:9429`/`:9443`), 132/186/200 65 (`:10644`/`:11386`/
+            // `:11569` region), 161/188 80 (`:11028`/`:11412` region),
+            // 187 55 (`:11399`), 189/223 70 (`:11425` region/`:11882`
+            // region).
+            NpcKind::MotherSlime => 75.0,
+            NpcKind::LavaSlime => 120.0,
+            NpcKind::DungeonSlime => 150.0,
+            NpcKind::CorruptSlime | NpcKind::IlluminantSlime | NpcKind::Crimslime => 400.0,
+            NpcKind::IceSlime => 50.0,
+            NpcKind::SpikedIceSlime | NpcKind::UmbrellaSlime => 200.0,
+            NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => 75.0,
+            NpcKind::DoctorBones | NpcKind::TheGroom => 1000.0,
+            NpcKind::BaldZombie | NpcKind::PincushionZombie | NpcKind::FemaleZombie => 65.0,
+            NpcKind::ZombieEskimo | NpcKind::SwampZombie => 80.0,
+            NpcKind::SlimedZombie => 55.0,
+            NpcKind::TwiggyZombie | NpcKind::ZombieRaincoat => 70.0,
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
+            // group's 1200 (`NPC.cs:13288`), 341 2000 (`Item.buyPrice(0, 0,
+            // 20)` = 20 silver, `:13324`), 342 1800 (`:13338`), 343 3000
+            // (`:13351`), 344 10000 (`:13366`).
+            NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 1200.0,
+            NpcKind::PresentMimic => 2000.0,
+            NpcKind::GingerbreadMan => 1800.0,
+            NpcKind::Yeti => 3000.0,
+            NpcKind::Everscream => 10000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3256,11 +3652,20 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
-            // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) —
+            // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
+            // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
+            // two kinds only (the aiStyle-26/22 kinds ride another slice).
+            57 if self.kind == NpcKind::MourningWood => {
+                crate::npc_ai_pumpkin_boss::mourning_wood_step(self, world, player, rng)
+            }
+            58 if self.kind == NpcKind::Pumpking => {
+                crate::npc_ai_pumpkin_boss::pumpking_step(self, world, player, rng)
+            }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         self.find_frame();
@@ -3311,9 +3716,40 @@ impl Npc {
     /// at a time into the axis above; this match shrinks as they land.
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
-            NpcKind::Slime => self.update_slime(world, player, dt),
-            NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
-            NpcKind::Zombie => self.update_zombie(world, player, dt),
+            // S1-D-3ff wave A: the nine LOW-id slimes ride the same
+            // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
+            // for every slime type — the per-type rows are stats only),
+            // the five demon-eye variants the aiStyle-2 chase, and the
+            // ten zombie variants the aiStyle-3 walker (the documented
+            // stand-in routing, the pumpkin wave's precedent).
+            NpcKind::Slime
+            | NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => self.update_eye(world, player, dt),
+            NpcKind::Zombie
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => self.update_zombie(world, player, dt),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -3348,11 +3784,15 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            // The Retinazer (325) rides the aiStyle-57 machine; the
-            // Spazmatism (326) is an aiStyle-3 fighter (the walker).
+            // The Retinazer (C# type 125) rides its own machine
+            // (`update_retinazer`, the S1-D-3i port of the shared aiStyle-57
+            // block shape); the Spazmatism (126) is an aiStyle-31 fighter —
+            // the SetDefaults rows (`NPC.cs:10526`/`:10543`, the S1-D-2
+            // extraction's doc-drift correction). The Pumpkin bosses'
+            // aiStyles 57/58 ride the style axis above (S1-F-13b2 slice B).
             NpcKind::Retinazer => self.update_retinazer(world, player, rng),
             NpcKind::Spazmatism => self.update_spazmatism(world, player),
-            NpcKind::Plantera => self.update_plantera(world, player),
+            NpcKind::Plantera => self.update_plantera(world, player, rng),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
@@ -3483,7 +3923,8 @@ impl Npc {
             NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
             NpcKind::SolarSpearman => {
                 let (pcx, pcy) = player.center();
-                crate::npc_ai::walker_step(
+                // S1-D-3: the 518 carrier row (`NPC.cs:58226-58231`).
+                crate::npc_ai::walker_step_ladder(
                     self,
                     world,
                     pcx,
@@ -3496,6 +3937,7 @@ impl Npc {
                     },
                     GRAVITY,
                     MAX_FALL,
+                    player.dead,
                 );
             }
             // The stardust/solar tower mobs: the spider pair, the soldier,
@@ -3531,7 +3973,8 @@ impl Npc {
             // `:57681`: the soldier's walk speed is the 4-px cap.
             NpcKind::VortexSoldier => {
                 let (pcx, pcy) = player.center();
-                crate::npc_ai::walker_step(
+                // S1-D-3: the 429 num83 row (`NPC.cs:57681-57684`).
+                crate::npc_ai::walker_step_ladder(
                     self,
                     world,
                     pcx,
@@ -3544,6 +3987,7 @@ impl Npc {
                     },
                     GRAVITY,
                     MAX_FALL,
+                    player.dead,
                 );
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
@@ -3633,26 +4077,59 @@ impl Npc {
             | NpcKind::Scarecrow10
             | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
             // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
-            // (`AI_026_Unicorns`, `NPC.cs:62366+`) — their named machines ride
-            // the S1-F-13b2 row; until it lands the wave arm's documented
-            // stand-in is the walker family at the C#'s own chase cap
-            // (`num10 = 6f`, `:62622` — `ai3_walk_speed`'s family row).
+            // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
+            // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
+            // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
+            // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
+            // other aiStyle-26 kinds keep their own routings below — this
+            // arm is kind-scoped, not a style-axis claim. The gallop dust
+            // (with its draws), the FindFrame 315/329 arms and the
+            // AddLight ride slice B (module docs + ANALYSIS).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                self.update_skeleton(world, player, dt)
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             }
-            // The Poltergeist (330): aiStyle 22 — the port's own caster
-            // machine (the Fire Imp family; `update_caster`'s shot arm's
-            // `_ => return` leaves it shotless until the named machine lands).
-            NpcKind::Poltergeist => self.update_caster(world, player, rng),
+            // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
+            // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
+            // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
+            // is the 90-damage contact body.
+            NpcKind::Poltergeist => {
+                crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+            }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
-            // aiStyle 58): the gravity-off floaters. Their named machines ride
-            // the S1-F-13b2 row; until then the wave arm's documented
-            // stand-ins are the hover family at each machine's own base
-            // speed/approach — 325: aiStyle-57's `num836 = 2f` (`:32762`) with
-            // its `(num836 − vx)/21` approach (`:32983`, accel 0.1); 327:
-            // aiStyle-58's `num875 = 6` (`:33087`) with its `/15` lerp (accel
-            // 0.4). Both fly through the tiles (their `noTileCollide` rows).
-            NpcKind::MourningWood => self.update_hover(
+            // aiStyle 58): S1-F-13b2 slice B landed their named machines
+            // (`npc_ai_pumpkin_boss.rs`, `NPC.cs:32761-33043` /
+            // `:33044-33197`) — the style axis claims them, so these arms
+            // are unreachable through `update_rng` (the S1-F-13b hover
+            // stand-ins are retired).
+            NpcKind::MourningWood | NpcKind::Pumpking => {
+                unreachable!("aiStyles 57/58 ride the style axis (S1-F-13b2)")
+            }
+            // ---- the Frost Moon family (`S1-F-13c` slice A): the first 7
+            // wave kinds ride alive. The five aiStyle-3 walkers ride the
+            // walker family on the C#'s per-type speed rows
+            // (`AI_003_Fighters`'s num83 group `NPC.cs:57606` — 338 1.75 /
+            // 339 1.25 / 340 2 / 342 the 1.5 base — plus the Yeti's cap-2
+            // group `:57554-57578`; `ai3_walk_speed`'s frost arm).
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::GingerbreadMan
+            | NpcKind::Yeti => self.update_skeleton(world, player, dt),
+            // The Present Mimic (341): aiStyle 25 (`AI_025`, the chest
+            // machine `NPC.cs:25538-25630` — the 100px wake radius, the
+            // 12/20-tick hop cadence, the alternating -4/-8 hops). Its named
+            // machine rides the bespoke slice; until it lands the wave arm's
+            // documented stand-in is the walker family at the hop launch's
+            // 3.5f cap (`:25617` — `ai3_walk_speed`'s frost row).
+            NpcKind::PresentMimic => self.update_skeleton(world, player, dt),
+            // The Everscream (344, aiStyle 57): the walking boss. Its named
+            // machine rides the bespoke slice; until then the documented
+            // stand-in mirrors the Mourning Wood's — aiStyle-57's
+            // `num836 = 2f` base speed (`NPC.cs:32762`) with its
+            // `(num836 − vx)/21` approach (`:32983`, accel 0.1). The C#'s
+            // HP-tier speeds (3f/4f) and the day-8 despawn ride the bespoke
+            // slice too (the Mourning Wood precedent).
+            NpcKind::Everscream => self.update_hover(
                 world,
                 player,
                 HoverParams {
@@ -3665,12 +4142,71 @@ impl Npc {
                     rotation: HoverRotation::Velocity,
                 },
             ),
-            NpcKind::Pumpking => self.update_hover(
+            // ---- The Frost Moon wave family (`S1-F-13c` slice B): the wave
+            // roster rides alive on documented stand-ins (ANALYSIS) until the
+            // aiStyle-60/61/62/63 machines land on a later row. The four
+            // aiStyle-3 walkers ride the walker family on the C#'s own
+            // per-type speed rows (`ai3_walk_speed`: 348/351 the cap-2 group
+            // `NPC.cs:57554-57578`, 349 the cap-6 group `:57403-57427`, 350
+            // the shooters' 1f default `:59717`).
+            NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus => self.update_skeleton(world, player, dt),
+            // The flyers: the hover family at each named machine's own base
+            // speed/approach — 345: aiStyle-60's ai[0]==0 pair `num900 = 7f` /
+            // `num899 = 0.45f` (`NPC.cs:33414-33415`); 346: aiStyle-61's
+            // `num921 = 2f` (`:33683`) with its `/21` approach (`:33864`,
+            // accel 0.1); 347: aiStyle-62's `num945 = 7f` (`:33927`) with its
+            // `/60` lerp (`:33947`, accel 0.12); 352: aiStyle-63's
+            // `num953 = 11f` (`:33974`) with its `/51` lerp (`:34005`, accel
+            // 0.21). All fly through the tiles (their noTileCollide rows —
+            // 346's AI sets it every tick, `:33685`).
+            NpcKind::IceQueen => self.update_hover(
                 world,
                 player,
                 HoverParams {
-                    max_speed: 6.0,
-                    accel: 0.4,
+                    max_speed: 7.0,
+                    accel: 0.45,
+                    surface_damped: false,
+                    double_add: true,
+                    no_tile_collide: true,
+                    bounce: 0.7,
+                    rotation: HoverRotation::Velocity,
+                },
+            ),
+            NpcKind::SantaNK1 => self.update_hover(
+                world,
+                player,
+                HoverParams {
+                    max_speed: 2.0,
+                    accel: 0.1,
+                    surface_damped: false,
+                    double_add: true,
+                    no_tile_collide: true,
+                    bounce: 0.7,
+                    rotation: HoverRotation::Velocity,
+                },
+            ),
+            NpcKind::ElfCopter => self.update_hover(
+                world,
+                player,
+                HoverParams {
+                    max_speed: 7.0,
+                    accel: 0.12,
+                    surface_damped: false,
+                    double_add: true,
+                    no_tile_collide: true,
+                    bounce: 0.7,
+                    rotation: HoverRotation::Velocity,
+                },
+            ),
+            NpcKind::Flocko => self.update_hover(
+                world,
+                player,
+                HoverParams {
+                    max_speed: 11.0,
+                    accel: 0.21,
                     surface_damped: false,
                     double_add: true,
                     no_tile_collide: true,
@@ -3771,6 +4307,31 @@ impl Npc {
         }
     }
 
+    /// `FindFrame`'s `case 330` arm (`NPC.cs:74886-74906`), S1-F-13b2 slice
+    /// C: `spriteDirection` follows the velocity's sign, the ghost tilts at
+    /// `velocity.X * 0.15`, and the strip steps one row every 8 ticks,
+    /// wrapping over `npcFrameCount[330]` = 8 (`Main.cs:67082`).
+    fn poltergeist_frame(&mut self) {
+        // `:74887-74894`.
+        if self.vx > 0.0 {
+            self.sprite_dir = 1;
+        }
+        if self.vx < 0.0 {
+            self.sprite_dir = -1;
+        }
+        // `:74895`.
+        self.rotation = self.vx * 0.15;
+        // `:74896-74905`.
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame += 1;
+            self.frame_counter = 0.0;
+        }
+        if self.frame >= crate::render::entities::npc_rows(330) {
+            self.frame = 0;
+        }
+    }
+
     /// The shared `case 266`/`case 262` machine (the Brain of Cthulhu and
     /// Plantera, `NPC.cs`'s two identical arms): the frame advances every
     /// 6 ticks; `first_phase` (the shield-down / above-half-life gate) wraps
@@ -3862,6 +4423,33 @@ impl Npc {
             self.frame_counter = 0.0;
             self.frame = 1;
         }
+    }
+
+    /// S1-D-3ff wave A — the bridge into `npc_findframe_a`'s pure
+    /// machines: copy the four `FindFrame` fields out, run one tick,
+    /// copy them back. `ai_action` is 0 — the port carries no `aiAction`
+    /// field (the base Slime arm's `num2 == 4` attack class never fires
+    /// for these kinds either; the module's `FrameInput` keeps the row
+    /// for the later AI migration). `direction` is `facing` (the C#'s
+    /// `Entity.direction`).
+    fn find_frame_wave_a(&mut self, kind: crate::npc_findframe_a::FindFrameKind) {
+        let mut s = crate::npc_findframe_a::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_a::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai_action: 0,
+        };
+        crate::npc_findframe_a::find_frame_a(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
     }
 
     fn find_frame(&mut self) {
@@ -4968,6 +5556,11 @@ impl Npc {
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
             // per step, again when moving and a third time while attacking; at
             // 8.0 the frame advances and wraps over the 2-frame strip.
+            // S1-D-3ff wave A: the C#'s case list carries 16/59/71/81/
+            // 138/147/183/184/225 in the SAME arm (`NPC.cs:70801-70823`)
+            // — every one wraps over `Main.npcFrameCount[type]` = 2
+            // (`Main.cs:67082`). The 302/304 `spriteDirection` quirk
+            // (`:70824-70827`) belongs to kinds outside this wave.
             NpcKind::Slime => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
@@ -4978,6 +5571,20 @@ impl Npc {
                         self.frame + 1
                     };
                 }
+            }
+            NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
             }
             // Case 4/5 — the eye and the servant (`NPC.cs:67247-67256`): the
             // counter ticks with the motion class, the frame wraps over the
@@ -5076,6 +5683,31 @@ impl Npc {
                     self.rotation = self.vy.atan2(self.vx) + 3.14;
                 }
             }
+            // S1-D-3ff wave A — the five demon-eye variants ride the
+            // FIRST rotation branch of the case 2/190-194 arm
+            // (`NPC.cs:73994-74059`): `spriteDirection` AND `rotation`
+            // off the velocity (`:74019-74031`) — `atan2(vy, vx)`, the
+            // literal `3.14f` added when moving left; both freeze while
+            // `velocity.X == 0` (neither `if` fires). Then the 8-tick
+            // counter (`num142 = 8f`, `:74045` — the 6f row is type 660
+            // only) wrapping over `Main.npcFrameCount[type]` = 2
+            // (`Main.cs:67082`). The existing DemonEye arm omits the
+            // `spriteDirection` writes; this arm carries them verbatim.
+            NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
+            }
+            // S1-D-3ff wave A: the C#'s walker case list carries 52/53/
+            // 132/161/186-189/200/223 in the SAME arm as type 3
+            // (`NPC.cs:76324-76346`) — all ten wrap over
+            // `Main.npcFrameCount[type]` = 3 (`Main.cs:67082`), the same
+            // three 48-px-row strip shape as NPC_3.
             NpcKind::Zombie => {
                 // `FindFrame`'s walker arm (`case 3` — a member of the
                 // `case 3/52/53/132/161/186-189/200/223/251/254/255/319-321/
@@ -5087,6 +5719,21 @@ impl Npc {
                 // night enemy never animated; and the draw divided the sheet
                 // by 1, so all three rows were squeezed into one 48-px quad.
                 self.walker_frame();
+            }
+            NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat => {
+                self.find_frame_wave_a(
+                    crate::npc_findframe_a::find_frame_kind(self.kind)
+                        .expect("a wave-A kind"),
+                );
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
@@ -5616,14 +6263,13 @@ impl Npc {
                 let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
                 self.frame = if mouth { 1 } else { 0 };
             }
-            // The Pumpkin Moon family (`S1-F-13b` Phase 2): all 16 kinds ride
+            // The Pumpkin Moon family (`S1-F-13b` Phase 2): the walkers ride
             // `FindFrame`'s plain walker strip. `FindFrame`'s humanoid-group
             // case list carries 310-314 and 326 (`NPC.cs:68543-68600`) and its
             // default arm (`:69481+`, the `|vx| * 2` accumulator, row 0 idle
             // / rows 2..count-1 walk) carries every other kind — 305-309 and
-            // the five named kinds included — so the walker frame stands for
-            // the whole family, each wrapping over its own `npcFrameCount`
-            // row (`Main.cs:67082`).
+            // the named kinds — so the walker frame stands for them, each
+            // wrapping over its own `npcFrameCount` row (`Main.cs:67082`).
             NpcKind::Scarecrow1
             | NpcKind::Scarecrow2
             | NpcKind::Scarecrow3
@@ -5638,13 +6284,344 @@ impl Npc {
             | NpcKind::MourningWood
             | NpcKind::Splinterling
             | NpcKind::Pumpking
-            | NpcKind::Hellhound
-            | NpcKind::Poltergeist => self.walker_frame(),
+            | NpcKind::Hellhound => self.walker_frame(),
+            // The Poltergeist rides its own `FindFrame` arm (S1-F-13b2 slice
+            // C) — the case-330 strip, not the walker stand-in.
+            NpcKind::Poltergeist => self.poltergeist_frame(),
+            // The Frost Moon family (`S1-F-13c` slice A). The Zombie Elf
+            // trio rides `FindFrame`'s humanoid-group case list
+            // (`NPC.cs:68603-68605`) — the same arm the cave walkers ride,
+            // wrapping over their own 15-frame strips
+            // (`Main.npcFrameCount[338..340]`).
+            NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => {
+                self.humanoid_town_frame()
+            }
+            // The Gingerbread Man (342) is a member of `FindFrame`'s plain
+            // walker case list (`NPC.cs:76343`, the `case 3` group
+            // `:76324-76391`) — the exact 8/16/24/32 bands `walker_frame`
+            // carries.
+            NpcKind::GingerbreadMan => self.walker_frame(),
+            // The Present Mimic (341): `FindFrame`'s chest arm (`case 85 :
+            // case 341 : case 629`, `NPC.cs:73444-73515`). Closed (ai[0] ==
+            // 0) is row 0; awake, the num189 = 3 counter steps down while
+            // grounded and up in the air, clamped 0..12, and the bands walk
+            // rows 1-5 then back 4/3/2 (the >= 24 lap resets to 3). The
+            // ai[3] 2/3 colour offsets (+6/+12 rows) never fire for 341 —
+            // `AI_025` pins `ai[3] = 1f` (`:25558-25561`) — but the arm is
+            // carried verbatim.
+            NpcKind::PresentMimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    let num189 = 3.0;
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > num189 * 4.0 {
+                        self.frame_counter = num189 * 4.0;
+                    }
+                    self.frame = if self.frame_counter < num189 {
+                        1
+                    } else if self.frame_counter < num189 * 2.0 {
+                        2
+                    } else if self.frame_counter < num189 * 3.0 {
+                        3
+                    } else if self.frame_counter < num189 * 4.0 {
+                        4
+                    } else if self.frame_counter < num189 * 5.0 {
+                        5
+                    } else if self.frame_counter < num189 * 6.0 {
+                        4
+                    } else if self.frame_counter < num189 * 7.0 {
+                        3
+                    } else {
+                        if self.frame_counter >= num189 * 8.0 {
+                            self.frame_counter = num189;
+                        }
+                        2
+                    };
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
+                }
+            }
+            // The Yeti (343): `FindFrame`'s own arm (`NPC.cs:75779-75824`).
+            // Grounded: the sprite flip, row 2 standing, the walk rides rows
+            // 2..count-1 on the `|vx| + 1` accumulator advancing every 6,
+            // wrapping to row 2. Airborne: row 0 rising, row 1 falling.
+            NpcKind::Yeti => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 2;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame = if self.vy < 0.0 { 0 } else { 1 };
+                    self.frame_counter = 0.0;
+                }
+            }
+            // The Everscream (344): `FindFrame`'s own arm
+            // (`NPC.cs:72463-72490`) — the 10-frame loop; standing ticks the
+            // counter by 1, moving by `max(1, |vx| * 0.75)`, advancing the
+            // row every >5 and wrapping past row 9.
+            NpcKind::Everscream => {
+                if self.vx == 0.0 {
+                    self.frame_counter += 1.0;
+                } else {
+                    self.frame_counter += (self.vx.abs() * 0.75).max(1.0);
+                }
+                if self.frame_counter > 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                }
+                if self.frame > 9 {
+                    self.frame = 0;
+                }
+            }
+            // ---- The Frost Moon family (`S1-F-13c` slice B): unlike the
+            // pumpkin stand-in, every kind carries its OWN FindFrame case
+            // here, ported faithfully (the frame machines are pure row
+            // arithmetic — no AI dependency the stand-ins break).
+            // `case 345` (`NPC.cs:72425-72462`): the ai[0]==0 hover pose —
+            // ai[3] >= 0 holds row 0, else the vx sign picks rows 1/2; the
+            // ai[0]==1 cast animates rows 3..4 on the >5 counter (BOTH
+            // clamps run, `:72449-72456`); ai[0]==2 holds row 5.
+            NpcKind::IceQueen => {
+                if self.ai[0] == 0.0 {
+                    if self.ai[3] >= 0.0 {
+                        self.frame = 0;
+                    } else if self.vx < 0.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame = 2;
+                    }
+                } else if self.ai[0] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 4 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                } else if self.ai[0] == 2.0 {
+                    self.frame = 5;
+                }
+            }
+            // `case 346` (`NPC.cs:72369-72412`): the ai[0]==1 gift-throw
+            // animates rows 6..8 on the >2 counter (both clamps, `:72379-
+            // :72386`) and breaks; the vx==0 stand leaves the frame UNTOUCHED
+            // (`:72389-72394`'s no-op `y2 = y2`) with the counter zeroed;
+            // else the walk runs rows 1..5 on the `1 + |vx|/2` accumulator
+            // (`:72397-72398`, the ++ THEN the add), >4 advances, both clamps.
+            NpcKind::SantaNK1 => {
+                if self.ai[0] == 1.0 {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 2.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 8 {
+                        self.frame = 6;
+                    }
+                    if self.frame < 6 {
+                        self.frame = 6;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                } else {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += 1.0;
+                    self.frame_counter += self.vx.abs() / 2.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 5 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // `case 347` (`NPC.cs:72357-72368`): the rotor strip — the >1
+            // counter advances every 2 ticks, the row wraps past 3 to 0
+            // (rows 0..3 of the 8-row sheet).
+            NpcKind::ElfCopter => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 1.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame > 3 {
+                    self.frame = 0;
+                }
+            }
+            // `case 348` (`NPC.cs:76276-76311`): grounded latches the sprite
+            // direction (±1 only), the air holds row 8, the idle row 0, the
+            // walk runs the `|vx| + 1` accumulator, >6 advances and the row
+            // wraps past 7 to 1 (the UPPER clamp only — no lower bound).
+            NpcKind::Nutcracker => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 8;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 7 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // `case 349` (`NPC.cs:76312-76323`): the spin strip — the >3
+            // counter advances every 4 ticks, the row wraps past 7 to 0.
+            NpcKind::NutcrackerSpinning => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 3.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame > 7 {
+                    self.frame = 0;
+                }
+            }
+            // `case 350` (`NPC.cs:76099-76137`): grounded latches the sprite
+            // direction (±1 only); the ai[2]>0 draw pose snaps to row
+            // `(int)ai[2] − 1` and breaks; else the walk climbs from row 7 on
+            // the `|vx| * 3.3` accumulator, >4 advances and the row wraps at
+            // the sheet's count (20) back to 7; the air holds row 5.
+            NpcKind::ElfArcher => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        // The C# writes `(int)ai[2] - 1` outright (`:76113`);
+                        // the draw AI only ever sets whole 1..=13 poses, so
+                        // the saturate guards the fractional-edge negative
+                        // row the row-index port cannot carry.
+                        self.frame = ((self.ai[2] as i32) - 1).max(0) as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 7 {
+                            self.frame = 7;
+                        }
+                        self.frame_counter += self.vx.abs() * 3.3;
+                        if self.frame_counter > 4.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 7;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 5;
+                }
+            }
+            // `case 351` (`NPC.cs:75733-75778`): grounded latches the sprite
+            // direction (±1 only); the idle row 0 zeroes the counter; the
+            // walk climbs from row 2 on the `|vx| + 1` accumulator, >8
+            // advances and the row wraps at the sheet's count (10) back to
+            // 2; the air holds row 1 (the C#'s two vy-sign arms both write
+            // it, `:75768-75775`).
+            NpcKind::Krampus => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // `case 352` (`NPC.cs:72413-72424`): the snowflake strip — the >3
+            // counter advances every 4 ticks, the row wraps past 5 to 0.
+            NpcKind::Flocko => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 3.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame > 5 {
+                    self.frame = 0;
+                }
+            }
         }
     }
 
     fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::Slime.size();
+        // S1-D-3ff: the wave-A slimes ride this machine on their OWN
+        // `SetDefaults` boxes (the C# arm reads `base.width/height`).
+        // `kind.size()` — NOT `self.size()` — keeps the base Slime's
+        // unscaled 24x18 box (the variant scale rides the draw only).
+        let (w, h) = self.kind.size();
         let (pcx, _) = player.center();
         let (cx, _) = self.center();
         self.hop_timer -= 1.0 / 60.0;
@@ -5721,7 +6698,10 @@ impl Npc {
     }
 
     fn update_eye(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::DemonEye.size();
+        // S1-D-3ff: the five eye variants share the 30x32 box, but read
+        // it off the kind like the C# arm does (`kind.size()` keeps the
+        // base DemonEye's behaviour byte-identical).
+        let (w, h) = self.kind.size();
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
         let dx = pcx - cx;
@@ -5760,7 +6740,10 @@ impl Npc {
 
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
     fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (w, h) = NpcKind::Zombie.size();
+        // S1-D-3ff: the ten zombie variants share the 18x40 box; read it
+        // off the kind like the C# arm does (`kind.size()` keeps the
+        // base Zombie's behaviour byte-identical).
+        let (w, h) = self.kind.size();
         // S1-D-3p — the shared selection (`NPC.TargetClosest`,
         // `NPC.cs:77652-77781`, `npc_target.rs`) replaces the ad-hoc
         // dx-sign facing and the invented 80×40-tile aggro window:
@@ -5799,12 +6782,18 @@ impl Npc {
             crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
             self.sprite_dir = self.facing;
             if !player.dead {
-                // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
-                // default group, `NPC.cs:58322-58374`): 1f. The port keeps
-                // its direct velocity write (the C#'s 0.07 approach lands
-                // with the full AI_003 migration — ANALYSIS, S1-D-3p).
-                self.vx =
-                    self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+                // S1-D-3 (speed table): the C#'s `num107` default arm
+                // (`NPC.cs:58322-58401`) — the 1f cap with the scale row,
+                // the 0.07 accel and the grounded over-cap ×0.8 brake —
+                // replaces the direct velocity write at the C#'s ladder
+                // position (after the target core, before integration).
+                // The fallback keeps the S1-D-3ff kind-row cap (the zombie
+                // 1f default, the variants their own rows).
+                let (pcx, pcy) = player.center();
+                if !crate::npc_ai::run_ai3_ladder(self, world, pcx, pcy, GRAVITY, false) {
+                    self.vx =
+                        self.facing as f32 * self.kind.ai3_walk_speed().unwrap_or(1.0);
+                }
             } else {
                 self.vx *= 0.9;
             }
@@ -6493,7 +7482,10 @@ impl Npc {
     /// `Main.cs:67082`).
     fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3 (speed table): the ladder variant — the aiStyle-3 kinds
+        // ride the C#'s per-type accel/brake (`NPC.cs:57403-58401`); the
+        // direct-write kinds keep the old step byte-for-byte.
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -6514,6 +7506,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // The frame: the same accumulator as the zombie's, wrapping over
         // the 15-frame strip.
@@ -8152,7 +9145,8 @@ impl Npc {
         {
             self.ai[2] = 1.0;
         }
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 391 carrier row (`NPC.cs:58205-58207`'s 5/0.25/0.7).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -8165,6 +9159,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
         if self.ai[2] > 0.0 && self.on_ground {
@@ -9285,14 +10280,58 @@ impl Npc {
     /// 60-tick self-heal (`lifeMax / 20` capped to the missing hp); the
     /// wave ramp rides `localAI[3]` (the port's `caster_counter`); the
     /// 683 crystal shots ride the shooter block (the follow-up).
-    /// `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`) — the Etherian
-    /// Crystal's machine. The spawn-in shield: `localAI[0]` counts to 180
-    /// (the port's `caster_counter`) while `dontTakeDamage` holds; the
-    /// count's expiry makes the crystal vulnerable. The hp's tier is baked
-    /// by the `SetDefaults` row (the 1000/3000/5000 difficulty arms ride
-    /// the difficulty system); the lane spawning + the 600-tick win-death
-    /// (`DD2Event.StopInvasion`) = the follow-ups.
+    /// `AI()`'s aiStyle-105 block (`NPC.cs:40728-40968`) — the Etherian
+    /// Crystal's machine. The spawn-in shield (`ai[1] == 0`): `localAI[0]`
+    /// counts to 180 (the port's `caster_counter`) while `dontTakeDamage`
+    /// holds; the count's expiry makes the crystal vulnerable. The loss
+    /// scene (`ai[1] == 1`, `:40862-40967`): the rise + fade + the 600-tick
+    /// `StopInvasion` end. The hp's tier is baked by the `SetDefaults` row
+    /// (the 1000/3000/5000 difficulty arms ride the difficulty system);
+    /// the lane spawning + the win scene (`ai[1] == 2`) = the follow-ups.
     fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+        // `AI()`'s aiStyle-105 loss-scene arm (`NPC.cs:40862-40967`,
+        // `ai[1] == 1`): the crystal floats up and fades over 600 ticks,
+        // then `DD2Event.StopInvasion()` + the real death (`:40954-40967`).
+        // The scene's entry (the `checkDead` intercept `:78087-78095` and
+        // the `ai[0] == 0` arm's `ReportLoss` + portal marks, `:40868-40885`)
+        // rides `update_dd2_event` — the machine holds no `App`.
+        if self.ai[1] == 1.0 {
+            // `:40866-40867`: `dontTakeDamageFromHostiles = true;
+            // life = lifeMax` every scene tick. The port folds the
+            // hostile-only shield into the full `dont_take_damage`
+            // (ANALYSIS: the mid-scene player re-kill edge is unmodelled).
+            self.dont_take_damage = true;
+            self.hp = self.max_hp;
+            // `:40886`: `ai[0]++` (the `ai[0] == 0` first-tick arm ran at
+            // the sim's intercept).
+            self.ai[0] += 1.0;
+            // `:40892-40896`: the 96-tick rise — `velocity.Y =
+            // Lerp(0, -1, ai[0]/96)` while under 96.
+            if self.ai[0] < 96.0 {
+                self.vy = -1.0 * (self.ai[0] / 96.0);
+            }
+            // `:40897-40904`: at 96+ the fade — `alpha += 50` capped 255.
+            if self.ai[0] >= 96.0 {
+                self.alpha = (i32::from(self.alpha) + 50).min(255) as u8;
+            }
+            // `:40954-40967`: the 600-tick end — `StopInvasion()`,
+            // `dontTakeDamage = false`, `life = 0`, `checkDead` (the
+            // intercept no longer fires: `ai[1] == 1`). The filters'
+            // deactivation (`:40959-40961`) is unmodelled (no scene
+            // filters yet — ANALYSIS).
+            if self.ai[0] >= 600.0 {
+                self.wants_event_stop = true;
+                self.dont_take_damage = false;
+                self.hp = 0;
+            }
+            // The scene flight (the velocity the arm wrote; the dust
+            // `:40941-40952` and the `MoonlordDeathDrama.RequestLight`
+            // `:40887-40891` are unmodelled — they draw the C#'s dust RNG,
+            // the port draws nothing here).
+            self.y += self.vy;
+            let _ = (world, player);
+            return;
+        }
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
         // The 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
@@ -9663,8 +10702,9 @@ impl Npc {
                 self.wants_hostile_shot.push((577u16, mx, my, vx, vy, 75));
             }
         }
-        // `:57677`: the rifleman's walk speed is 6.
-        crate::npc_ai::walker_step(
+        // `:57677`: the rifleman's walk speed is 6 — S1-D-3: the num83
+        // row's 0.07 accel rides the ladder (`NPC.cs:57677-57680`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -9677,6 +10717,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
@@ -10430,7 +11471,8 @@ impl Npc {
     /// with the mob-specific speed, hidden while a 416 rides it.
     fn update_solar_drakomire(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 415 carrier row (`NPC.cs:58214-58219`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -10443,6 +11485,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // `:58426-58430`'s hide: the mount hides while a rider links to it —
         // the vanilla's `hide` has no port field (the pre-pass owns the
@@ -10634,7 +11677,8 @@ impl Npc {
     /// speed and the roller's drag.
     fn update_solar_selenian(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 419 carrier row (`NPC.cs:58220-58225`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -10647,6 +11691,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
@@ -11087,7 +12132,8 @@ impl Npc {
     /// on the 300-tick counter behind the empty 3x2 box above its centre.
     fn update_vortex_headcrab(&mut self, world: &World, player: &Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the 428 slow arm (`NPC.cs:57881-57906`'s 0.5/0.03/0.7).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -11100,6 +12146,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
         // `:58834-58841`'s rotation: grounded flat, rolling in the air.
         if self.vy == 0.0 {
@@ -12374,61 +13421,27 @@ impl Npc {
         }
     }
 
-    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
-    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
-    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
-    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
-    /// rage = the follow-ups.
-    fn update_plantera(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        let hover_y = pcy - 250.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.1;
-            if self.vx.abs() > 8.0 {
-                self.vx = 8.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.1;
-            if self.vy.abs() > 8.0 {
-                self.vy = 8.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 7.5;
-            self.vy = dy / d * 7.5;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
-            }
-        }
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.x += self.vx;
-        self.y += self.vy;
+    /// Plantera (262) — the `aiStyle == 51` machine (`NPC.cs:31717-32075`),
+    /// S1-D-3-plantera. The pre-port arm was an EoC-shaped stand-in (the
+    /// 480-tick hover→charge→decel cycle with invented numbers); the real
+    /// machine is the hook-anchor leash movement + the seed volleys + the
+    /// phase-2 tentacle/spore transition, ported in `npc_ai_plantera`.
+    /// The seam is kind-262-specific: the hook average (`:31743-31762`)
+    /// reads the live aiStyle-52 hooks — kinds 263/264/265 have no port
+    /// arms yet, so the anchor falls back to Plantera's own centre (the
+    /// documented seam; the C# would divide by a zero hook count there).
+    /// The C# arm writes neither `direction` nor `spriteDirection` — the
+    /// stand-in's per-tick facing write is dropped (the boss head rolls
+    /// via `rotation`, `GetBossHeadRotation` `:7613-7616`).
+    fn update_plantera(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // The sim's pre-pass writes the hook centroid (`NPC.cs:31743-31762`,
+        // `npc_ai_plantera_anchor::hook_anchor`); no hook live = the own
+        // centre stand-in (the documented seam until kind 263 lands).
+        let anchor = self.plantera_hook_anchor.unwrap_or_else(|| self.center());
+        crate::npc_ai_plantera::step(self, world, player, rng, anchor);
+        // The stand-in's world-bottom despawn tail is kept (the C# arm
+        // has no such kill — the generic despawn pass owns it; recorded
+        // in ANALYSIS "The Plantera machine").
         if self.y > world.height as f32 * TILE_PX + 400.0 {
             self.hp = 0;
         }
@@ -13510,6 +14523,14 @@ impl Npc {
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
+        // `:32387-32399` — the distance despawn: beyond 6000 px of
+        // MANHATTAN centre distance (`Math.Abs(dx) + Math.Abs(dy)`) the
+        // Brain deactivates (`active = false`, `life = 0` — the port's
+        // `hp = 0`). The S1-D-3e audit (2026-11-18) found the gate missing.
+        if (cx - pcx).abs() + (cy - pcy).abs() > 6000.0 {
+            self.hp = 0;
+            return;
+        }
         // The `WorldGen.SolidTile` analog (the active + the solid set).
         let solid_tile = |x: i32, y: i32| -> bool {
             world
@@ -13592,8 +14613,12 @@ impl Npc {
                 self.vx = dx;
                 self.vy = dy;
             } else {
-                self.vx = dx / d * speed;
-                self.vy = dy / d * speed;
+                // `:32549-32551` — the C# scales by the reciprocal
+                // (`num816 = num817 / num816` FIRST, then `delta * num816`);
+                // the f32 order matters (the S1-D-3e audit).
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
             }
             match self.ai[0] as i32 {
                 0 => {
@@ -13811,7 +14836,9 @@ impl Npc {
     /// player and jump the obstacles (the same machine as the zombie).
     fn update_goblin(&mut self, world: &World, player: &mut Player) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::walker_step(
+        // S1-D-3: the ladder variant (the goblin rows: 26 num83 1.5,
+        // 27 cap-2, 28 num107 1 — `NPC.cs:57606`/`:57554`/`:58322`).
+        crate::npc_ai::walker_step_ladder(
             self,
             world,
             pcx,
@@ -13824,6 +14851,7 @@ impl Npc {
             },
             GRAVITY,
             MAX_FALL,
+            player.dead,
         );
     }
 
@@ -14256,6 +15284,52 @@ impl Npc {
             NpcKind::Pumpking => 327,
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
+            // The Frost Moon family (`S1-F-13c` slice B): the vanilla type
+            // ids (the same values `to_u16` rides for these kinds) — unused
+            // by every arm above, so the G6 key stays injective.
+            NpcKind::IceQueen => 345,
+            NpcKind::SantaNK1 => 346,
+            NpcKind::ElfCopter => 347,
+            NpcKind::Nutcracker => 348,
+            NpcKind::NutcrackerSpinning => 349,
+            NpcKind::ElfArcher => 350,
+            NpcKind::Krampus => 351,
+            NpcKind::Flocko => 352,
+            // S1-D-3ff wave A — the vanilla `NPCID` per kind.
+            NpcKind::MotherSlime => 16,
+            NpcKind::LavaSlime => 59,
+            NpcKind::DungeonSlime => 71,
+            NpcKind::CorruptSlime => 81,
+            NpcKind::IlluminantSlime => 138,
+            NpcKind::IceSlime => 147,
+            NpcKind::Crimslime => 183,
+            NpcKind::SpikedIceSlime => 184,
+            NpcKind::UmbrellaSlime => 225,
+            NpcKind::CataractEye => 190,
+            NpcKind::SleepyEye => 191,
+            NpcKind::DialatedEye => 192,
+            NpcKind::GreenEye => 193,
+            NpcKind::PurpleEye => 194,
+            NpcKind::DoctorBones => 52,
+            NpcKind::TheGroom => 53,
+            NpcKind::BaldZombie => 132,
+            NpcKind::ZombieEskimo => 161,
+            NpcKind::PincushionZombie => 186,
+            NpcKind::SlimedZombie => 187,
+            NpcKind::SwampZombie => 188,
+            NpcKind::TwiggyZombie => 189,
+            NpcKind::FemaleZombie => 200,
+            NpcKind::ZombieRaincoat => 223,
+            // The Frost Moon family, slice A (`S1-F-13c`): the vanilla type
+            // ids (the same values `to_u16` rides) — unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::ZombieElf => 338,
+            NpcKind::ZombieElfBeard => 339,
+            NpcKind::ZombieElfGirl => 340,
+            NpcKind::PresentMimic => 341,
+            NpcKind::GingerbreadMan => 342,
+            NpcKind::Yeti => 343,
+            NpcKind::Everscream => 344,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -15181,7 +16255,7 @@ mod tests {
         p
     }
 
-    fn ground() -> World {
+    pub(super) fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
         for x in 0..64 {
             for y in 30..64 {
@@ -15542,7 +16616,7 @@ mod tests {
         }
     }
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
@@ -17438,8 +18512,11 @@ mod tests {
 
     #[test]
     fn the_plantera_cycles_and_maps() {
-        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 7.5) → the decel.
+        // S1-D-3-plantera: the aiStyle-51 machine (`NPC.cs:31717-32075`)
+        // replaced the EoC-shaped stand-in — the first tick latches the
+        // hook spawn and the phase-1 stats, and the movement rides the
+        // hook-anchor leash (the full behaviour tests live in
+        // `npc_ai_plantera::tests`).
         let mut w = ground_air();
         w.day_time = false;
         let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -17447,13 +18524,11 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        }
-        assert!(pl.cast_windup == 1, "the charge phase armed");
         pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
-        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
-        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        assert_eq!(pl.local_ai[0], 1.0, "the hook init latch");
+        assert_eq!(pl.wants_plantera_hooks, 3);
+        assert!(pl.defense_override.is_some(), "the phase stats write");
+        assert!(pl.damage_override.is_some());
         // The stats round-trip.
         assert_eq!(pl.size(), (86.0, 86.0));
         assert_eq!(pl.max_hp, 30000);
@@ -17889,12 +18964,12 @@ mod tests {
     }
 
     /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 199 kinds — the 8 slime colours are `SlimeVariant`,
+    /// `npc.rs:31-686`: 214 kinds - the 8 slime colours are `SlimeVariant`,
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    const ALL_KINDS: [NpcKind; 199] = [
+    pub(super) const ALL_KINDS: [NpcKind; 238] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -18094,6 +19169,46 @@ mod tests {
         NpcKind::Pumpking,
         NpcKind::Hellhound,
         NpcKind::Poltergeist,
+        // The Frost Moon wave family (`S1-F-13c` slice B).
+        NpcKind::IceQueen,
+        NpcKind::SantaNK1,
+        NpcKind::ElfCopter,
+        NpcKind::Nutcracker,
+        NpcKind::NutcrackerSpinning,
+        NpcKind::ElfArcher,
+        NpcKind::Krampus,
+        NpcKind::Flocko,
+        NpcKind::MotherSlime,
+        NpcKind::LavaSlime,
+        NpcKind::DungeonSlime,
+        NpcKind::CorruptSlime,
+        NpcKind::IlluminantSlime,
+        NpcKind::IceSlime,
+        NpcKind::Crimslime,
+        NpcKind::SpikedIceSlime,
+        NpcKind::UmbrellaSlime,
+        NpcKind::CataractEye,
+        NpcKind::SleepyEye,
+        NpcKind::DialatedEye,
+        NpcKind::GreenEye,
+        NpcKind::PurpleEye,
+        NpcKind::DoctorBones,
+        NpcKind::TheGroom,
+        NpcKind::BaldZombie,
+        NpcKind::ZombieEskimo,
+        NpcKind::PincushionZombie,
+        NpcKind::SlimedZombie,
+        NpcKind::SwampZombie,
+        NpcKind::TwiggyZombie,
+        NpcKind::FemaleZombie,
+        NpcKind::ZombieRaincoat,
+        NpcKind::ZombieElf,
+        NpcKind::ZombieElfBeard,
+        NpcKind::ZombieElfGirl,
+        NpcKind::PresentMimic,
+        NpcKind::GingerbreadMan,
+        NpcKind::Yeti,
+        NpcKind::Everscream,
     ];
 
     #[test]
@@ -18760,6 +19875,13 @@ mod tests {
             let rows = match kind {
                 NpcKind::MoonLordHead => 9,
                 NpcKind::Deerclops => 25,
+                // The Present Mimic's sheet stacks three 6-row colour
+                // variants (`Main.npcFrameCount[341] = 6` per variant):
+                // `AI_025` pins `ai[3] = 1` for type 341 every tick
+                // (`NPC.cs:25556-25561`), so the FindFrame chest arm's
+                // +6/+12 colour offsets (`:73499-73507`) are unreachable
+                // for this kind — the grid/cell bound precedent.
+                NpcKind::PresentMimic => 18,
                 _ => npc_rows(texture_net_id(kind)),
             };
             let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -21083,7 +22205,7 @@ mod s1_d_3b_tests {
     use super::*;
     use tr_core::world::World;
 
-    fn bare(kind: NpcKind) -> Npc {
+    pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
@@ -21359,8 +22481,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            199,
-            "every decodable kind resolves (the wire roster's size — 199 after S1-E-5's DesertDjinn)"
+            238,
+            "every decodable kind resolves (the wire roster's size - 238 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen)"
         );
         assert!(
             covered > 43,
@@ -21583,6 +22705,59 @@ mod s1_d_3e_tests {
         }
         assert_eq!(b.ai[0], -3.0, "the retreat faded the Brain in");
         assert_eq!(b.alpha, 255, "the retreat's fade-in is full");
+    }
+
+    /// S1-D-3e audit (2026-11-18, code-only mode) — the distance despawn
+    /// (`NPC.cs:32387-32399`): beyond 6000 px of MANHATTAN centre distance
+    /// the Brain deactivates (`active = false`, `life = 0` — the port's
+    /// `hp = 0`) before any machine tick; exactly 6000 is still alive
+    /// (the C#'s strict `>`).
+    #[test]
+    fn s1_d_3e_audit_the_brain_despawns_beyond_6000_manhattan_px() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.zones.crimson = true;
+        // The brain's centre: (200 + 80, 100 + 55) = (280, 155).
+        // The player's centre y = 134 + 21 = 155 (dy = 0).
+        player.y = 134.0;
+        // Far: centre x = 7010 → |dx| + |dy| = 6730 > 6000.
+        player.x = 7000.0;
+        let mut b = brain();
+        b.brain_local[2] = 1.0;
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert_eq!(b.hp, 0, "the far Brain deactivates (life = 0)");
+        assert_eq!(b.vx, 0.0, "no machine tick ran");
+        assert_eq!(b.ai[0], 0.0, "the state is untouched");
+        // The boundary: centre x = 6280 → |dx| + |dy| = 6000 exactly —
+        // the C#'s `> 6000f` refuses, so the Brain lives and drifts.
+        player.x = 6270.0;
+        let mut near = brain();
+        near.brain_local[2] = 1.0;
+        near.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(near.hp > 0, "exactly 6000 px is still alive");
+        assert!(near.vx > 0.0, "the normal drift ran");
+    }
+
+    /// S1-D-3e audit (2026-11-18, code-only mode) — the normal drift's f32
+    /// order (`NPC.cs:32549-32551`): the C# computes the reciprocal FIRST
+    /// (`num816 = num817 / num816`) and then multiplies (`delta * num816`).
+    /// Witness: dx = 100, dy = 72 → d = sqrt(15184); the reciprocal-first
+    /// product rounds to 0.8115344 while `(dx / d) * 1` rounds to
+    /// 0.81153435 — one ulp apart, so the order is observable.
+    #[test]
+    fn s1_d_3e_audit_the_normal_drift_scales_by_the_reciprocal() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.zones.crimson = true;
+        // The brain's centre (280, 155); the player's centre (380, 227)
+        // → dx = 100, dy = 72.
+        player.x = 370.0;
+        player.y = 206.0;
+        let mut b = brain();
+        b.brain_local[2] = 1.0;
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert_eq!(b.vx, 0.8115344f32, "the reciprocal-first product");
+        assert_ne!(b.vx, 0.81153435f32, "the divide-first order differs");
     }
 }
 
@@ -22642,15 +23817,17 @@ mod s1_f_13b_tests {
     #[test]
     fn s1_f_13b_the_moon_wave_kind_map_round_trips_and_stays_family_scoped() {
         // DW-2.1's seam: the ladder's vanilla pick ↔ the kind, both ways, and
-        // every id outside the 16 stays unported — the frost-moon picks, the
-        // wave-20 unported bosses, and the port-local id space must not leak
-        // through the family filter.
+        // every id outside the ported families stays unported — the 338-344
+        // frost band (slice A), the wave-20 unported bosses, and the
+        // port-local id space must not leak through the family filter.
+        // `S1-F-13c` slice B lands 345-352: they decode now (the frost rows'
+        // round-trip rides `s1_f_13c_the_frost_net_ids_round_trip`).
         for r in rows().iter() {
             assert_eq!(NpcKind::moon_wave_kind(r.ty), Some(r.kind), "{:?}", r.kind);
             assert_eq!(r.kind.pumpkin_moon_type(), Some(r.ty));
         }
         for ty in [
-            0u16, 3, 133, 188, 304, 320, 322, 328, 341, 343, 344, 345, 346, 471,
+            0u16, 3, 133, 188, 304, 320, 322, 328, 471,
         ] {
             assert_eq!(
                 NpcKind::moon_wave_kind(ty),
@@ -22658,6 +23835,9 @@ mod s1_f_13b_tests {
                 "vanilla id {ty} is outside the family"
             );
         }
+        // `S1-F-13c` slice A moved 341/343/344 into the frost family — they
+        // decode now (the frost test pins them); the still-unported
+        // 345/346/347-352 stay `None` above and below.
         for kind in [
             NpcKind::Zombie,
             NpcKind::Deerclops,
@@ -22678,8 +23858,9 @@ mod s1_f_13b_tests {
         // the five stat pairs' `num85` caps (305/310 → 2f, 306/311 → 1.25f,
         // 307/312 → 2.25f, 308/313 → 1.5f, 309/314 → 1f) — plus Splinterling
         // in the cap-2 group (`:57554-57578`). The Headless Horseman (315) and
-        // the Hellhound (329) ride their aiStyle-26 stand-in cap
-        // (`num10 = 6f`, `:62622`) while their named machine rides S1-F-13b2.
+        // the Hellhound (329) ride the named aiStyle-26 machine
+        // (`npc_ai_unicorn.rs`, S1-F-13b2 slice A); this row pins its chase
+        // cap — the machine's own `num10 = 6f` (`NPC.cs:62617`).
         let expected: [(NpcKind, f32); 13] = [
             (NpcKind::Scarecrow1, 2.0),
             (NpcKind::Scarecrow2, 1.25),
@@ -22766,10 +23947,13 @@ mod s1_f_13b_tests {
     #[test]
     fn s1_f_13b_the_family_machines_route_to_their_stand_ins() {
         // DW-2.5's routing: the wave roster rides live — the 11 aiStyle-3
-        // walkers and the two aiStyle-26 kinds walk on the walker family (the
-        // speed rows pin their caps), the Mourning Wood and the Pumpking
-        // hover, and the Poltergeist rides the caster stand (it holds still —
-        // its shot arm returns until the named machine lands with S1-F-13b2).
+        // walkers walk on the walker family (the speed rows pin their
+        // caps); the Headless Horseman and the Hellhound ride the named
+        // aiStyle-26 machine (`npc_ai_unicorn.rs`, S1-F-13b2 slice A —
+        // same 6f cap, its own `num10`); the Mourning Wood and the
+        // Pumpking fly their named machines (slice B retired the hover
+        // stand-ins), and the Poltergeist rides its named aiStyle-22
+        // machine (`npc_ai_poltergeist.rs`, slice C).
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -22781,6 +23965,9 @@ mod s1_f_13b_tests {
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
+        // The aiStyle-26 machine only retargets inside the pumpkin moon
+        // (`NPC.cs:62583-62590`) — outside it, it encourages despawn.
+        w.pumpkin_moon = true;
         let mut player = crate::player::Player::spawn(&w);
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;
@@ -22810,8 +23997,9 @@ mod s1_f_13b_tests {
                 "{kind:?} never closed the gap"
             );
         }
-        // The floaters: the Mourning Wood and the Pumpking hold the hover (the
-        // gravity-off fly toward the player), the Poltergeist stands.
+        // The bosses: the Mourning Wood's approach/hover and the Pumpking's
+        // /15 lerp (their named machines, `npc_ai_pumpkin_boss.rs`) close the
+        // gap.
         for kind in [NpcKind::MourningWood, NpcKind::Pumpking] {
             let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
@@ -22829,38 +24017,235 @@ mod s1_f_13b_tests {
                 "{kind:?} never flew toward the player"
             );
         }
+        // The Poltergeist routes to its named aiStyle-22 machine — the
+        // module's own tests (`npc_ai_poltergeist.rs`) pin the maths; this
+        // seam check only proves the dispatch. Outside the Pumpkin Moon the
+        // machine's flee row arms the 10-tick despawn encouragement
+        // (`NPC.cs:25158`) and zeroes the SetDefaults alpha 100 every tick
+        // (`:25150`) — neither happens on the old caster stand. The walkers
+        // above ran on-moon (slice A's retarget gate); flip off for the flee
+        // witness.
+        w.pumpkin_moon = false;
         let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         ghost.hp = ghost.max_hp;
         ghost.vx = 2.0;
-        // The stand's park is the C#'s own decay — `velocity.X *= 0.93f`
-        // snapped to 0 inside ±0.1 (`NPC.cs:20831-20835`): from vx 2.0 the
-        // curve reads 0.227 at frame 30 and crosses the snap at frame 42,
-        // where it parks at exact 0.0. (The first draft of this assert
-        // expected 0.0 at frame 30 — under the C#'s curve that frame-30
-        // value is 0.2267, so the test was wrong, not the port.)
-        for _ in 0..30 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-        }
-        let mut expect = 2.0f32;
-        for _ in 0..30 {
-            expect *= 0.93;
-        }
-        assert_eq!(
-            ghost.vx, expect,
-            "the caster stand rides the C#'s 0.93 decay"
+        assert_eq!(ghost.alpha, 100, "the SetDefaults row spawns at 100");
+        assert!(
+            !w.pumpkin_moon,
+            "the test world is off-moon — the flee path"
         );
-        for _ in 0..30 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            expect *= 0.93;
-            if expect > -0.1 && expect < 0.1 {
-                expect = 0.0;
+        ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(ghost.alpha, 0, "the machine's 330 row zeroes the alpha");
+        assert_eq!(
+            ghost.despawn_timer, 10,
+            "EncourageDespawn(10), the flee row"
+        );
+        // On-moon the machine latches the dwell anchor instead (`:24756-24762`)
+        // — ai[0..1] take the pre-integration position, ai[2] rests at 0.
+        w.pumpkin_moon = true;
+        let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ghost.hp = ghost.max_hp;
+        ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(ghost.ai[0], 60.0 * TILE_PX);
+        assert_eq!(ghost.ai[1], 60.0 * TILE_PX);
+        assert_eq!(ghost.ai[2], 0.0);
+        assert!(ghost.net_update, "the anchor latch arms netUpdate");
+        assert_eq!(ghost.facing, 1, "TargetClosest faces the player (right)");
+    }
+
+    /// S1-F-13b2 slice C: the Poltergeist's `FindFrame` arm is its own
+    /// `case 330` strip (`NPC.cs:74886-74906`) — the velocity-sign sprite
+    /// flip, the `vx * 0.15` tilt and the 8-tick row step wrapping over the
+    /// 8-row sheet, not the walker stand-in.
+    #[test]
+    fn s1_f_13b2c_the_poltergeist_frame_rides_the_case_330_strip() {
+        let mut n = Npc::new(NpcKind::Poltergeist, 0.0, 0.0, 1, 0.0);
+        n.vx = 2.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, 1, "vx > 0 flips the sprite right (:74887)");
+        assert_eq!(n.rotation, 2.0f32 * 0.15, "the tilt is vx * 0.15 (:74895)");
+        assert_eq!(n.frame, 0, "the row steps only every 8 ticks");
+        for _ in 0..7 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 1, "the 8th tick steps the row (:74897-74901)");
+        // 7 more rows × 8 ticks wrap the 8-row sheet back to row 0.
+        for _ in 0..56 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0, "frame.Y >= num * npcFrameCount[330] wraps");
+        // vx < 0 mirrors; vx == 0 leaves the sprite direction alone
+        // (:74891-74894 writes only on a non-zero velocity).
+        n.vx = -2.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1);
+        assert_eq!(n.rotation, -2.0f32 * 0.15);
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1, "a parked ghost keeps its last flip");
+        assert_eq!(n.rotation, 0.0);
+    }
+
+    /// S1-F-13b2 slice C's A/B pin (the `s1_d_2_the_style_axis_keeps_the_
+    /// hover_behaviour` pattern): the aiStyle-22 machine is gated to the
+    /// Poltergeist kind ALONE — every other kind's dispatch arm must stay
+    /// byte-identical to its pre-slice body. The B run replays the pre-slice
+    /// arms verbatim (the walker stand for the 11 aiStyle-3 walkers, the
+    /// caster machine for the five casters the
+    /// Poltergeist used to share) behind the same
+    /// `update_rng` prelude; every tick's kinematics, ai[], frame state and
+    /// the RNG stream position must be bit-equal. The 325/327 hover stands
+    /// left this pin when slice B landed their named machines
+    /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now);
+    /// the 315/329 walker stands left with slice A (`npc_ai_unicorn.rs`'s
+    /// witnesses cover them).
+    /// The closing witness runs
+    /// one Poltergeist tick both ways and asserts the runs DIVERGE (the
+    /// machine's alpha-0 row vs the stand's untouched SetDefaults 100) —
+    /// proving the comparison has teeth and the gate is real.
+    #[test]
+    fn s1_f_13b2c_the_generic_arms_stay_byte_identical() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
-        assert_eq!(ghost.vx, 0.0, "the caster stand parks the Poltergeist");
-        for _ in 0..10 {
-            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        w.pumpkin_moon = true;
+        let mut kinds = vec![
+            NpcKind::Scarecrow1,
+            NpcKind::Scarecrow2,
+            NpcKind::Scarecrow3,
+            NpcKind::Scarecrow4,
+            NpcKind::Scarecrow5,
+            NpcKind::Scarecrow6,
+            NpcKind::Scarecrow7,
+            NpcKind::Scarecrow8,
+            NpcKind::Scarecrow9,
+            NpcKind::Scarecrow10,
+            NpcKind::Splinterling,
+        ];
+        // The casters: the Poltergeist's OLD stand-in family — their shared
+        // `update_caster` arm must not have moved either.
+        kinds.extend([
+            NpcKind::GoblinSorcerer,
+            NpcKind::Tim,
+            NpcKind::DarkCaster,
+            NpcKind::FireImp,
+            NpcKind::DesertDjinn,
+        ]);
+        for kind in kinds {
+            let mut player_a = crate::player::Player::spawn(&w);
+            player_a.x = 120.0 * TILE_PX;
+            player_a.y = 95.0 * TILE_PX;
+            let mut player_b = player_a.clone();
+            let mut axis = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(31);
+            let mut rng_b = UnifiedRandom::new(31);
+            for tick in 0..180 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-slice `update_rng` prelude, verbatim.
+                legacy.old_x = legacy.x;
+                legacy.old_y = legacy.y;
+                legacy.buffs.update_buffs_tick(&mut legacy.hp, legacy.max_hp);
+                legacy.hurt_cd = (legacy.hurt_cd - 1.0 / 60.0).max(0.0);
+                for v in legacy.immune.iter_mut() {
+                    *v = v.saturating_sub(1);
+                }
+                legacy.anim += 1.0 / 60.0;
+                // The pre-slice kind-match arms, verbatim.
+                match kind {
+                    NpcKind::Scarecrow1
+                    | NpcKind::Scarecrow2
+                    | NpcKind::Scarecrow3
+                    | NpcKind::Scarecrow4
+                    | NpcKind::Scarecrow5
+                    | NpcKind::Scarecrow6
+                    | NpcKind::Scarecrow7
+                    | NpcKind::Scarecrow8
+                    | NpcKind::Scarecrow9
+                    | NpcKind::Scarecrow10
+                    | NpcKind::Splinterling => {
+                        legacy.update_skeleton(&w, &mut player_b, 1.0 / 60.0)
+                    }
+                    NpcKind::GoblinSorcerer
+                    | NpcKind::Tim
+                    | NpcKind::DarkCaster
+                    | NpcKind::FireImp
+                    | NpcKind::DesertDjinn => legacy.update_caster(&w, &player_b, &mut rng_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for slot in 0..4 {
+                    assert_eq!(
+                        axis.ai[slot].to_bits(),
+                        legacy.ai[slot].to_bits(),
+                        "{kind:?} ai[{slot}] @{tick}"
+                    );
+                }
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(
+                    axis.frame_counter.to_bits(),
+                    legacy.frame_counter.to_bits(),
+                    "{kind:?} frame_counter @{tick}"
+                );
+                assert_eq!(
+                    axis.rotation.to_bits(),
+                    legacy.rotation.to_bits(),
+                    "{kind:?} rot @{tick}"
+                );
+                assert_eq!(axis.sprite_dir, legacy.sprite_dir, "{kind:?} dir @{tick}");
+                assert_eq!(axis.facing, legacy.facing, "{kind:?} facing @{tick}");
+                assert_eq!(axis.on_ground, legacy.on_ground, "{kind:?} ground @{tick}");
+                assert_eq!(axis.alpha, legacy.alpha, "{kind:?} alpha @{tick}");
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(player_a.hp, player_b.hp, "{kind:?} player hp @{tick}");
+                assert_eq!(
+                    rng_a.peek(),
+                    rng_b.peek(),
+                    "{kind:?} the RNG stream must not move @{tick}"
+                );
+            }
         }
-        assert_eq!(ghost.vx, 0.0, "the parked ghost stays parked");
+        // The divergence witness: the SAME harness on the Poltergeist must
+        // NOT be equal — the gate changed exactly one kind. One off-moon
+        // tick: the named machine zeroes the alpha (`NPC.cs:25150`) and
+        // arms EncourageDespawn(10) (`:25158`); the old caster stand does
+        // neither.
+        w.pumpkin_moon = false;
+        let mut player_a = crate::player::Player::spawn(&w);
+        player_a.x = 120.0 * TILE_PX;
+        player_a.y = 95.0 * TILE_PX;
+        let mut player_b = player_a.clone();
+        let mut named = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        named.hp = named.max_hp;
+        let mut stand = named.clone();
+        let mut rng_a = UnifiedRandom::new(31);
+        let mut rng_b = UnifiedRandom::new(31);
+        named.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+        stand.update_caster(&w, &player_b, &mut rng_b);
+        stand.find_frame();
+        stand.contact(&mut player_b, &mut rng_b);
+        assert_eq!(named.alpha, 0, "the named machine's 330 row");
+        assert_eq!(stand.alpha, 100, "the old stand leaves SetDefaults alone");
+        assert_ne!(
+            named.alpha, stand.alpha,
+            "the witness must diverge — a vacuous A/B proves nothing"
+        );
+        assert_eq!(named.despawn_timer, 10);
+        assert_eq!(stand.despawn_timer, -1);
     }
 
     #[test]
@@ -22913,8 +24298,1625 @@ mod s1_f_13b_tests {
 }
 
 #[cfg(test)]
+mod s1_f_13c_tests {
+    use super::*;
+
+    /// The 7 Frost Moon slice-A kinds with the C#'s verbatim `SetDefaults`
+    /// rows (`NPC.cs:13281-13313` the 338-340 group, `:13314-13326` 341,
+    /// `:13327-13339` 342, `:13340-13354` 343, `:13355-13368` 344): the
+    /// vanilla type, `aiStyle`, the box, damage/defense/lifeMax,
+    /// knockBackResist, scale, alpha, the noGravity/noTileCollide flags,
+    /// value, the hit/death cues, and `CheckProgressFrostMoon`'s per-type
+    /// kill points (`NPC.cs:78517-78549` — the port's `frost_moon_points`
+    /// table, `world.rs`).
+    struct FrostRow {
+        kind: NpcKind,
+        ty: u16,
+        ai: i32,
+        w: f32,
+        h: f32,
+        dmg: i32,
+        def: i32,
+        life: i32,
+        kb: f32,
+        scale: f32,
+        value: f32,
+        hit: &'static str,
+        death: &'static str,
+        points: f32,
+    }
+
+    fn frost_rows() -> Vec<FrostRow> {
+        vec![
+            FrostRow {
+                kind: NpcKind::ZombieElf,
+                ty: 338,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg: 65,
+                def: 18,
+                life: 600,
+                kb: 0.4,
+                scale: 1.0,
+                value: 1200.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 1.0,
+            },
+            FrostRow {
+                kind: NpcKind::ZombieElfBeard,
+                ty: 339,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg: 52,
+                def: 24,
+                life: 700,
+                kb: 0.2,
+                scale: 1.05,
+                value: 1200.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 1.0,
+            },
+            FrostRow {
+                kind: NpcKind::ZombieElfGirl,
+                ty: 340,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg: 78,
+                def: 14,
+                life: 500,
+                kb: 0.25,
+                scale: 0.9,
+                value: 1200.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 1.0,
+            },
+            FrostRow {
+                kind: NpcKind::PresentMimic,
+                ty: 341,
+                ai: 25,
+                w: 24.0,
+                h: 24.0,
+                dmg: 100,
+                def: 32,
+                life: 900,
+                kb: 0.25,
+                scale: 1.0,
+                // `Item.buyPrice(0, 0, 20)` = 20 silver (`NPC.cs:13324`).
+                value: 2000.0,
+                hit: "NPC_Hit_4",
+                death: "NPC_Killed_6",
+                points: 20.0,
+            },
+            FrostRow {
+                kind: NpcKind::GingerbreadMan,
+                ty: 342,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg: 90,
+                def: 26,
+                life: 750,
+                kb: 0.2,
+                scale: 1.0,
+                value: 1800.0,
+                hit: "NPC_Hit_7",
+                death: "NPC_Killed_6",
+                points: 2.0,
+            },
+            FrostRow {
+                kind: NpcKind::Yeti,
+                ty: 343,
+                ai: 3,
+                w: 38.0,
+                h: 78.0,
+                dmg: 140,
+                def: 50,
+                life: 3500,
+                kb: 0.0,
+                scale: 1.0,
+                value: 3000.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 18.0,
+            },
+            FrostRow {
+                kind: NpcKind::Everscream,
+                ty: 344,
+                ai: 57,
+                w: 172.0,
+                h: 130.0,
+                dmg: 110,
+                def: 38,
+                life: 13000,
+                kb: 0.0,
+                scale: 1.0,
+                value: 10000.0,
+                hit: "NPC_Hit_7",
+                death: "NPC_Killed_5",
+                points: 50.0,
+            },
+        ]
+    }
+
+    /// DW-1.1: every kind's stats pin against the C#'s rows — sizes, aiStyle,
+    /// damage/defense/life, knockBackResist, scale, alpha, the flags and the
+    /// value, through the port's tables.
+    #[test]
+    fn s1_f_13c_the_frost_defaults_match_the_csharp_rows() {
+        let all = frost_rows();
+        assert_eq!(all.len(), 7, "slice A is 7 kinds");
+        for r in all.iter() {
+            let shell = Npc::new(r.kind, 0.0, 0.0, 1, 0.0);
+            let d = r.kind.frost_moon_defaults().expect("a family kind");
+            assert_eq!(d.vanilla_type, r.ty, "{:?} type", r.kind);
+            assert_eq!(d.ai_style, r.ai, "{:?} aiStyle", r.kind);
+            assert_eq!(r.kind.ai_style() as i32, r.ai, "{:?} ai_style table", r.kind);
+            assert_eq!(r.kind.size(), (r.w, r.h), "{:?} size", r.kind);
+            assert_eq!(shell.size(), (r.w, r.h), "{:?} npc size", r.kind);
+            assert_eq!(r.kind.contact_damage(), r.dmg, "{:?} damage", r.kind);
+            assert_eq!(shell.defense(), r.def, "{:?} defense", r.kind);
+            assert_eq!(r.kind.max_hp(), r.life, "{:?} lifeMax", r.kind);
+            assert_eq!(shell.knock_back_resist(), r.kb, "{:?} kb", r.kind);
+            assert_eq!(d.scale, r.scale, "{:?} scale", r.kind);
+            // No frost kind writes an alpha / noGravity / noTileCollide row
+            // (`NPC.cs:13281-13368`) — the head's 0/false/false defaults.
+            assert_eq!(d.alpha, 0, "{:?} alpha", r.kind);
+            assert!(!d.no_gravity, "{:?} noGravity", r.kind);
+            assert!(!d.no_tile_collide, "{:?} noTileCollide", r.kind);
+            assert_eq!(shell.value(), r.value, "{:?} value", r.kind);
+            assert_eq!(r.kind.hit_sound(), Some(r.hit), "{:?} hit", r.kind);
+            assert_eq!(r.kind.death_sound(), Some(r.death), "{:?} death", r.kind);
+        }
+    }
+
+    /// DW-1.1: the kind-level defaults ride the spawn — the 339/340 scale
+    /// rows, and no drift for the existing kinds (1.0 / 0 stay).
+    #[test]
+    fn s1_f_13c_the_kind_level_defaults_ride_the_spawn() {
+        let beard = Npc::new(NpcKind::ZombieElfBeard, 0.0, 0.0, 1, 0.0);
+        assert_eq!(beard.scale, 1.05);
+        assert_eq!(beard.alpha, 0);
+        let girl = Npc::new(NpcKind::ZombieElfGirl, 0.0, 0.0, 1, 0.0);
+        assert_eq!(girl.scale, 0.9);
+        // The kinds with no scale row ride the `SetDefaults` 1f.
+        for kind in [
+            NpcKind::ZombieElf,
+            NpcKind::PresentMimic,
+            NpcKind::GingerbreadMan,
+            NpcKind::Yeti,
+            NpcKind::Everscream,
+        ] {
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.scale, 1.0, "{kind:?} scale");
+            assert_eq!(n.alpha, 0, "{kind:?} alpha");
+        }
+        // No drift: the pre-existing kinds keep their hardcoded start state.
+        for kind in [
+            NpcKind::Slime,
+            NpcKind::Zombie,
+            NpcKind::Golem,
+            NpcKind::Scarecrow3,
+        ] {
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            let expect = if kind == NpcKind::Scarecrow3 { 0.9 } else { 1.0 };
+            assert_eq!(n.scale, expect, "{kind:?} scale drifted");
+            assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
+        }
+    }
+
+    /// DW-1.2: the net-id round-trips are injective over the 7 vanilla ids
+    /// and stay above the whole port-local space.
+    #[test]
+    fn s1_f_13c_the_frost_net_ids_round_trip() {
+        let mut ids: Vec<u16> = Vec::new();
+        for r in frost_rows().iter() {
+            let id = r.kind.to_u16();
+            assert_eq!(id, r.ty, "{:?} rides its vanilla type", r.kind);
+            assert_eq!(NpcKind::from_u16(id), Some(r.kind), "{:?} round-trip", r.kind);
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 7, "two frost kinds share a net id");
+        assert!(ids.iter().all(|&id| id > 330), "the ids sit above the pumpkin band");
+    }
+
+    /// DW-1.4: the kind→type map round-trips and feeds the boss cap — the
+    /// Everscream's `npcSlots = 3f` (`NPC.cs:13367`) is the family's only
+    /// `MOON_BOSS_SLOTS` row.
+    #[test]
+    fn s1_f_13c_the_kind_type_map_round_trips_and_feeds_the_cap() {
+        for r in frost_rows().iter() {
+            let ty = r.kind.frost_moon_type().expect("a family kind");
+            assert_eq!(ty, r.ty, "{:?} type", r.kind);
+            assert_eq!(NpcKind::from_u16(ty), Some(r.kind), "{:?} map round-trip", r.kind);
+            assert_eq!(Some(r.kind.to_u16()), r.kind.frost_moon_type());
+            assert_eq!(NpcKind::moon_wave_kind(ty), Some(r.kind), "{:?} wave map", r.kind);
+            let slots = crate::spawner::moon_boss_slots(ty);
+            match r.kind {
+                NpcKind::Everscream => assert_eq!(slots, Some(3.0)),
+                _ => assert_eq!(slots, None, "{:?} carries no boss slot", r.kind),
+            }
+        }
+        // The cap counts the LIVE boss kinds only: two live Everscreams and
+        // a dead one read 3 + 3.
+        let mut live1 = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        let mut live2 = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        let mut dead = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        live1.hp = 100;
+        live2.hp = 100;
+        dead.hp = 0;
+        assert_eq!(
+            crate::spawner::moon_boss_cap_count(&[live1, live2, dead]),
+            6.0
+        );
+        // A wave-kind that is not a boss contributes nothing.
+        let mut walker = Npc::new(NpcKind::Yeti, 0.0, 0.0, 1, 0.0);
+        walker.hp = 100;
+        assert_eq!(crate::spawner::moon_boss_cap_count(&[walker]), 0.0);
+    }
+
+    /// DW-1.4: the kind→type map feeds the kill points — a frost-moon kill
+    /// credits `CheckProgressFrostMoon`'s per-type row (1/20/2/18/50).
+    #[test]
+    fn s1_f_13c_the_kind_type_map_feeds_the_kill_points() {
+        for r in frost_rows().iter() {
+            let mut world = tr_core::World::new("t".into(), 40, 40);
+            world.snow_moon = true;
+            let before = world.total_invasion_points;
+            world.report_frost_moon_kill(r.kind.frost_moon_type().unwrap());
+            assert_eq!(
+                world.total_invasion_points - before,
+                r.points,
+                "{:?} kills for the wrong points",
+                r.kind
+            );
+        }
+    }
+
+    /// DW-2.3: a wave-kind kill credits its points through the kind→type map
+    /// and advances the event — `report_frost_moon_kill(kind.to_u16())`
+    /// drives `CheckProgressFrostMoon`'s walk (the shared
+    /// `MOON_WAVE_REQUIREMENTS`: wave 1 is 25, wave 2 is 40).
+    #[test]
+    fn s1_f_13c_the_wave_kind_kill_advances_the_wave_through_the_type_map() {
+        for r in frost_rows().iter() {
+            let p = r.points;
+            let n = (25.0 / p).ceil() as u32;
+            let mut w = tr_core::World::new("t".into(), 40, 40);
+            w.start_snow_moon();
+            assert_eq!((w.wave_number, w.wave_kills), (1, 0.0));
+            for _ in 0..(n - 1) {
+                w.report_frost_moon_kill(r.kind.to_u16());
+            }
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (1, p * (n as f32 - 1.0)),
+                "{:?} holds wave 1 under the requirement",
+                r.kind
+            );
+            w.report_frost_moon_kill(r.kind.to_u16());
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (2, 0.0),
+                "{:?} crosses wave 1 on kill {n}",
+                r.kind
+            );
+            assert_eq!(
+                w.total_invasion_points,
+                p * n as f32,
+                "{:?}: the run's points accrue across the advance",
+                r.kind
+            );
+            w.report_frost_moon_kill(r.kind.to_u16());
+            if p < 40.0 {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (2, p),
+                    "{:?} holds wave 2",
+                    r.kind
+                );
+            } else {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (3, 0.0),
+                    "{:?} clears wave 2's 40 in one kill too",
+                    r.kind
+                );
+            }
+        }
+    }
+
+    /// The map is family-scoped: every kind outside the 7 reads `None`, and
+    /// the pumpkin family keeps its own map untouched.
+    #[test]
+    fn s1_f_13c_the_type_map_is_none_outside_the_family() {
+        for kind in [
+            NpcKind::Slime,
+            NpcKind::Zombie,
+            NpcKind::Deerclops,
+            NpcKind::PirateCaptain,
+            NpcKind::Scarecrow1,
+            NpcKind::Pumpking,
+        ] {
+            assert!(kind.frost_moon_type().is_none(), "{kind:?} outside the family");
+            assert!(kind.frost_moon_defaults().is_none());
+        }
+        for r in frost_rows().iter() {
+            assert!(r.kind.pumpkin_moon_type().is_none(), "{:?} not a pumpkin kind", r.kind);
+        }
+        // The still-unported frost id stays undecodable (345-352 landed
+        // with slice B - its module pins those rows).
+        for ty in [337u16] {
+            assert_eq!(NpcKind::moon_wave_kind(ty), None, "vanilla id {ty}");
+        }
+    }
+
+    /// DW-2.2: `AI_003_Fighters`'s frost rows — the num83 group's per-type
+    /// caps (338 1.75 / 339 1.25 / 340 2 / 342 the 1.5 base) and the Yeti's
+    /// cap-2 group; the Present Mimic's stand-in rides its hop launch's 3.5f.
+    #[test]
+    fn s1_f_13c_the_walkers_ride_the_csharp_speed_rows() {
+        let expected: [(NpcKind, f32); 6] = [
+            (NpcKind::ZombieElf, 1.75),
+            (NpcKind::ZombieElfBeard, 1.25),
+            (NpcKind::ZombieElfGirl, 2.0),
+            (NpcKind::GingerbreadMan, 1.5),
+            (NpcKind::Yeti, 2.0),
+            (NpcKind::PresentMimic, 3.5),
+        ];
+        for (kind, speed) in expected {
+            assert_eq!(
+                kind.ai3_walk_speed(),
+                Some(speed),
+                "{kind:?} walks at the wrong cap"
+            );
+        }
+        // The Everscream hovers — it reads no walker row.
+        assert_eq!(NpcKind::Everscream.ai3_walk_speed(), None);
+        // The rows a family kind shares are only the ones the C#'s groups
+        // share: the Yeti's cap-2 2f rides the GoblinThief/Splinterling
+        // group, the Gingerbread Man's 1.5 is the num83 group base.
+        assert_eq!(
+            NpcKind::Yeti.ai3_walk_speed(),
+            NpcKind::Splinterling.ai3_walk_speed(),
+            "the Yeti and the cap-2 group share the C#'s 2f row"
+        );
+        assert_eq!(
+            NpcKind::GingerbreadMan.ai3_walk_speed(),
+            NpcKind::Skeleton.ai3_walk_speed(),
+            "342's cap is the num83 group's base"
+        );
+        // The trio's three caps are pairwise distinct (the C# writes a
+        // distinct num83 per type).
+        let caps = [
+            NpcKind::ZombieElf,
+            NpcKind::ZombieElfBeard,
+            NpcKind::ZombieElfGirl,
+        ]
+        .map(|k| k.ai3_walk_speed().unwrap());
+        for i in 0..caps.len() {
+            for j in 0..caps.len() {
+                if i != j {
+                    assert_ne!(caps[i], caps[j], "the C# sets a distinct num83 per type");
+                }
+            }
+        }
+    }
+
+    /// DW-2.5's routing: the six walkers (the five aiStyle-3 kinds + the
+    /// Present Mimic stand-in) close the gap on the walker family and never
+    /// exceed their row's cap; the Everscream holds the hover stand-in.
+    #[test]
+    fn s1_f_13c_the_family_machines_route_to_their_stand_ins() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [
+            NpcKind::ZombieElf,
+            NpcKind::ZombieElfBeard,
+            NpcKind::ZombieElfGirl,
+            NpcKind::GingerbreadMan,
+            NpcKind::Yeti,
+            NpcKind::PresentMimic,
+        ] {
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 95.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let dx0 = player.center().0 - n.center().0;
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(
+                    n.vx.abs() <= kind.ai3_walk_speed().unwrap() + 0.001,
+                    "{kind:?} walks past its cap"
+                );
+            }
+            assert!(
+                player.center().0 - n.center().0 < dx0,
+                "{kind:?} never closed the gap"
+            );
+        }
+        // The Everscream: the Mourning Wood hover stand-in — it flies toward
+        // the player through the air.
+        let mut boss = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        boss.hp = boss.max_hp;
+        let (dx0, dy0) = {
+            let (pcx, pcy) = player.center();
+            (pcx - boss.center().0, pcy - boss.center().1)
+        };
+        for _ in 0..30 {
+            boss.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let (pcx, pcy) = player.center();
+        let (dx1, dy1) = (pcx - boss.center().0, pcy - boss.center().1);
+        assert!(
+            (dx1 * dx1 + dy1 * dy1) < (dx0 * dx0 + dy0 * dy0),
+            "the Everscream never flew toward the player"
+        );
+    }
+
+    /// DW-2.6: each kind's render sheet row resolves — the atlas pack list,
+    /// the by-net-id sheet map (`SNOW_SHEETS`), the frame count the C#'s
+    /// `Main.npcFrameCount[type]` gives and the bestiary entry the `net_id`
+    /// fallback rides.
+    #[test]
+    fn s1_f_13c_the_frost_sheets_resolve_with_the_csharp_frame_counts() {
+        for (ty, rows) in [
+            (338u16, 15u32),
+            (339, 15),
+            (340, 15),
+            (341, 6),
+            (342, 3),
+            (343, 10),
+            (344, 10),
+        ] {
+            let kind = NpcKind::moon_wave_kind(ty).expect("a family kind");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&format!("NPC_{ty}").as_str()),
+                "NPC_{ty} is never packed into the atlas"
+            );
+            assert!(
+                crate::render::entities::SNOW_SHEETS.contains(&(ty as u32)),
+                "NPC_{ty} has no by-net-id sheet row"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(ty),
+                rows,
+                "NPC_{ty} rides the wrong frame count"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                ty,
+                "{kind:?} draws the wrong sheet"
+            );
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} has the wrong net id");
+        }
+    }
+
+    /// The FindFrame arms stay inside each kind's own vanilla strip across
+    /// the motion/AI states the machines branch on.
+    #[test]
+    fn s1_f_13c_the_find_frame_arms_stay_inside_the_vanilla_strips() {
+        for (kind, rows) in [
+            (NpcKind::ZombieElf, 15u32),
+            (NpcKind::ZombieElfBeard, 15),
+            (NpcKind::ZombieElfGirl, 15),
+            (NpcKind::PresentMimic, 6),
+            (NpcKind::GingerbreadMan, 3),
+            (NpcKind::Yeti, 10),
+            (NpcKind::Everscream, 10),
+        ] {
+            let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for (vx, vy) in [(0.0, 0.0), (2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)] {
+                for ai0 in [0.0, 1.0, 2.0] {
+                    n.vx = vx;
+                    n.vy = vy;
+                    n.ai = [ai0, 0.0, 0.0, 0.0];
+                    n.frame = 0;
+                    n.frame_counter = 0.0;
+                    for _ in 0..60 {
+                        n.find_frame();
+                        assert!(
+                            n.frame < rows,
+                            "{kind:?}: row {} left the {rows}-row strip (vx {vx}, vy {vy}, ai0 {ai0})",
+                            n.frame
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Present Mimic's chest arm (`NPC.cs:73444-73515`): closed is row
+    /// 0; awake grounded the counter laps 3..12 through rows 2..5..2; awake
+    /// airborne it climbs 1→5 and clamps.
+    #[test]
+    fn s1_f_13c_the_present_mimic_chest_frames_replay_the_csharp_bands() {
+        let mut n = Npc::new(NpcKind::PresentMimic, 0.0, 0.0, 1, 0.0);
+        // Closed: row 0, counter parked.
+        n.ai[0] = 0.0;
+        n.frame_counter = 9.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Awake, airborne from a zero counter: +1 per tick, the bands are
+        // `< 3 → 1`, `< 6 → 2`, `< 9 → 3`, `< 12 → 4`, `== 12 → 5` (the
+        // counter clamps at num189 * 4 = 12) — rows 1,1 then 2,2,2 then
+        // 3,3,3 then 4,4,4 then 5 forever.
+        n.ai[0] = 1.0;
+        n.vy = 2.0;
+        let mut seen = Vec::new();
+        for _ in 0..18 {
+            n.find_frame();
+            seen.push(n.frame);
+        }
+        assert_eq!(
+            seen,
+            vec![1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5],
+            "the airborne climb"
+        );
+        assert_eq!(n.frame_counter, 12.0, "the num189 * 4 clamp");
+        // Grounded from the clamp: -1 per tick — 4,4,4 (11/10/9) then 3,3,3
+        // (8/7/6) then 2,2,2 (5/4/3) then 1,1,1,1,1 (2/1/0, the counter
+        // parks at 0).
+        n.vy = 0.0;
+        let mut seen = Vec::new();
+        for _ in 0..14 {
+            n.find_frame();
+            seen.push(n.frame);
+        }
+        assert_eq!(
+            seen,
+            vec![4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1],
+            "the grounded descent"
+        );
+    }
+
+    /// The Yeti's own arm (`NPC.cs:75779-75824`): air rows 0/1, grounded
+    /// idle row 2, the walk wrapping rows 2..9 on the `|vx| + 1` accumulator.
+    #[test]
+    fn s1_f_13c_the_yeti_frames_ride_their_own_arm() {
+        let mut n = Npc::new(NpcKind::Yeti, 0.0, 0.0, 1, 0.0);
+        n.vy = -2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "rising");
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "falling");
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2, "grounded idle");
+        // Walking at vx 2: the counter advances 3/tick, the row every third
+        // tick, wrapping 9 → 2.
+        n.vx = 2.0;
+        let mut seen = Vec::new();
+        for _ in 0..27 {
+            n.find_frame();
+            seen.push(n.frame);
+        }
+        assert_eq!(
+            seen,
+            vec![
+                2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9, 2, 2, 2,
+                3
+            ],
+            "the walk band wraps at the strip's end back to row 2"
+        );
+    }
+
+    /// The Everscream's 10-frame loop (`NPC.cs:72463-72490`): standing ticks
+    /// by 1 (a row every 6), moving by `max(1, |vx| * 0.75)`.
+    #[test]
+    fn s1_f_13c_the_everscream_frames_loop_the_ten_row_strip() {
+        let mut n = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        let mut seen = Vec::new();
+        for _ in 0..60 {
+            n.find_frame();
+            seen.push(n.frame);
+        }
+        // Standing: the counter advances 1/tick, `> 5` steps the row — the
+        // first row shows five ticks (the counter starts at 0), then six
+        // per row; tick 60 steps past row 9 and wraps to 0
+        // (`frame.Y > num * 9 → 0`, NPC.cs:72471-72474).
+        assert_eq!(&seen[..12], &[0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
+        assert!(seen.iter().all(|&f| f < 10));
+        assert_eq!(seen[53], 9, "row 9 lands on tick 54");
+        assert_eq!(seen[59], 0, "tick 60 wraps past row 9 back to 0");
+        // Moving at vx 4: the counter advances 3/tick — a row every two
+        // ticks.
+        let mut m = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
+        m.vx = 4.0;
+        let mut seen = Vec::new();
+        for _ in 0..8 {
+            m.find_frame();
+            seen.push(m.frame);
+        }
+        assert_eq!(seen, vec![0, 1, 1, 2, 2, 3, 3, 4]);
+    }
+}
+
+#[cfg(test)]
+mod s1_f_13c2_tests {
+    use super::*;
+
+    /// The 8 Frost Moon kinds of slice B with the C#'s verbatim `SetDefaults`
+    /// rows (`NPC.cs:13369-13385` 345, `:13386-13399` 346, `:13400-13415` 347,
+    /// `:13416-13429` 348, `:13430-13443` 349, `:13444-13456` 350,
+    /// `:13457-13470` 351, `:13471-13487` 352): the vanilla type, `aiStyle`,
+    /// the box, damage/defense/lifeMax, knockBackResist, scale, alpha, the
+    /// noGravity/noTileCollide flags, value, the hit/death cues, and
+    /// `CheckProgressFrostMoon`'s per-type kill points (`NPC.cs:78518-78549`,
+    /// the port's `frost_moon_points` table, `world.rs`). None of the eight
+    /// writes a scale/alpha row — every row carries the class defaults 1.0/0.
+    /// 346's SetDefaults writes NEITHER flag: its AI sets noGravity +
+    /// noTileCollide every tick (`NPC.cs:33684-33685`).
+    struct Row {
+        kind: NpcKind,
+        ty: u16,
+        ai: i32,
+        w: f32,
+        h: f32,
+        dmg: i32,
+        def: i32,
+        life: i32,
+        kb: f32,
+        scale: f32,
+        alpha: u8,
+        no_gravity: bool,
+        no_tile_collide: bool,
+        value: f32,
+        hit: &'static str,
+        death: &'static str,
+        points: f32,
+    }
+
+    fn rows() -> Vec<Row> {
+        vec![
+            Row {
+                kind: NpcKind::IceQueen,
+                ty: 345,
+                ai: 60,
+                w: 130.0,
+                h: 140.0,
+                dmg: 120,
+                def: 38,
+                life: 34000,
+                kb: 0.0,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+                value: 50000.0,
+                hit: "NPC_Hit_7",
+                death: "NPC_Killed_5",
+                points: 150.0,
+            },
+            Row {
+                kind: NpcKind::SantaNK1,
+                ty: 346,
+                ai: 61,
+                w: 112.0,
+                h: 140.0,
+                dmg: 120,
+                def: 56,
+                life: 18000,
+                kb: 0.0,
+                scale: 1.0,
+                alpha: 0,
+                // The AI's every-tick writes (`NPC.cs:33684-33685`), not
+                // SetDefaults rows.
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 10000.0,
+                hit: "NPC_Hit_4",
+                death: "NPC_Killed_14",
+                points: 100.0,
+            },
+            Row {
+                kind: NpcKind::ElfCopter,
+                ty: 347,
+                ai: 62,
+                w: 50.0,
+                h: 50.0,
+                dmg: 60,
+                def: 28,
+                life: 1200,
+                kb: 0.4,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+                value: 1000.0,
+                hit: "NPC_Hit_4",
+                death: "NPC_Killed_14",
+                points: 8.0,
+            },
+            Row {
+                kind: NpcKind::Nutcracker,
+                ty: 348,
+                ai: 3,
+                w: 28.0,
+                h: 76.0,
+                dmg: 80,
+                def: 26,
+                life: 1800,
+                kb: 0.4,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 1500.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 4.0,
+            },
+            Row {
+                kind: NpcKind::NutcrackerSpinning,
+                ty: 349,
+                ai: 3,
+                w: 28.0,
+                h: 76.0,
+                dmg: 100,
+                def: 42,
+                life: 1800,
+                kb: 0.1,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 1500.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 4.0,
+            },
+            Row {
+                kind: NpcKind::ElfArcher,
+                ty: 350,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg: 70,
+                def: 30,
+                life: 900,
+                kb: 0.45,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 900.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 3.0,
+            },
+            Row {
+                kind: NpcKind::Krampus,
+                ty: 351,
+                ai: 3,
+                w: 18.0,
+                h: 90.0,
+                dmg: 100,
+                def: 40,
+                life: 2500,
+                kb: 0.1,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 3000.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_1",
+                points: 10.0,
+            },
+            Row {
+                kind: NpcKind::Flocko,
+                ty: 352,
+                ai: 63,
+                w: 54.0,
+                h: 54.0,
+                dmg: 75,
+                def: 8,
+                life: 450,
+                kb: 0.4,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+                value: 500.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_6",
+                points: 5.0,
+            },
+        ]
+    }
+
+    /// DW-1.1: every kind's stats pin against the C#'s rows — sizes, aiStyle,
+    /// damage/defense/life, knockBackResist, scale, alpha, the flags and the
+    /// value, through the port's tables.
+    #[test]
+    fn s1_f_13c_the_frost_defaults_match_the_csharp_rows() {
+        let all = rows();
+        assert_eq!(all.len(), 8, "slice B is 8 kinds");
+        for r in all.iter() {
+            let shell = Npc::new(r.kind, 0.0, 0.0, 1, 0.0);
+            let d = r.kind.frost_moon_defaults().expect("a family kind");
+            assert_eq!(d.vanilla_type, r.ty, "{:?} type", r.kind);
+            assert_eq!(d.ai_style, r.ai, "{:?} aiStyle", r.kind);
+            assert_eq!(r.kind.ai_style() as i32, r.ai, "{:?} ai_style axis", r.kind);
+            assert_eq!(r.kind.size(), (r.w, r.h), "{:?} size", r.kind);
+            assert_eq!(shell.size(), (r.w, r.h), "{:?} npc size", r.kind);
+            assert_eq!(r.kind.contact_damage(), r.dmg, "{:?} damage", r.kind);
+            assert_eq!(shell.defense(), r.def, "{:?} defense", r.kind);
+            assert_eq!(r.kind.max_hp(), r.life, "{:?} lifeMax", r.kind);
+            assert_eq!(shell.knock_back_resist(), r.kb, "{:?} kb", r.kind);
+            assert_eq!(d.scale, r.scale, "{:?} scale", r.kind);
+            assert_eq!(d.alpha, r.alpha, "{:?} alpha", r.kind);
+            assert_eq!(d.no_gravity, r.no_gravity, "{:?} noGravity", r.kind);
+            assert_eq!(
+                d.no_tile_collide, r.no_tile_collide,
+                "{:?} noTileCollide",
+                r.kind
+            );
+            assert_eq!(shell.value(), r.value, "{:?} value", r.kind);
+            assert_eq!(r.kind.hit_sound(), Some(r.hit), "{:?} hit", r.kind);
+            assert_eq!(r.kind.death_sound(), Some(r.death), "{:?} death", r.kind);
+        }
+        // The Nutcracker twins share the C#'s box/life/value but NOT the
+        // damage/defense/kb rows (`NPC.cs:13416-13443` writes them apart).
+        let nut = Npc::new(NpcKind::Nutcracker, 0.0, 0.0, 1, 0.0);
+        let spin = Npc::new(NpcKind::NutcrackerSpinning, 0.0, 0.0, 1, 0.0);
+        assert_eq!(nut.size(), spin.size());
+        assert_eq!(nut.max_hp, spin.max_hp);
+        assert_eq!(nut.value(), spin.value());
+        assert_ne!(NpcKind::Nutcracker.contact_damage(), NpcKind::NutcrackerSpinning.contact_damage());
+        assert_ne!(nut.defense(), spin.defense());
+        assert_ne!(nut.knock_back_resist(), spin.knock_back_resist());
+    }
+
+    /// DW-1.1: the kind-level defaults ride the spawn — no frost kind writes
+    /// a scale/alpha row, so every spawn carries the class defaults 1.0/0,
+    /// with no drift for the existing kinds.
+    #[test]
+    fn s1_f_13c_the_kind_level_defaults_ride_the_spawn() {
+        for r in rows().iter() {
+            let n = Npc::new(r.kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.scale, 1.0, "{:?} scale", r.kind);
+            assert_eq!(n.alpha, 0, "{:?} alpha", r.kind);
+            assert_eq!(n.hp, r.life, "{:?} spawns at lifeMax", r.kind);
+        }
+        // No drift: the pre-existing kinds keep their hardcoded start state
+        // (the Poltergeist's pumpkin alpha row stays).
+        for kind in [NpcKind::Slime, NpcKind::Zombie, NpcKind::Golem] {
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.scale, 1.0, "{kind:?} scale drifted");
+            assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
+        }
+        assert_eq!(Npc::new(NpcKind::Poltergeist, 0.0, 0.0, 1, 0.0).alpha, 100);
+    }
+
+    /// DW-1.2: the net-id round-trips are injective over the 8 vanilla ids,
+    /// sit above the whole port-local space (0..188) and never touch the
+    /// 78..84 Deerclops/Skeletron-Prime band.
+    #[test]
+    fn s1_f_13c_the_frost_net_ids_round_trip() {
+        let mut ids: Vec<u16> = Vec::new();
+        for r in rows().iter() {
+            let id = r.kind.to_u16();
+            assert_eq!(id, r.ty, "{:?} rides its vanilla type", r.kind);
+            assert_eq!(NpcKind::from_u16(id), Some(r.kind), "{:?} round-trip", r.kind);
+            assert!(
+                !(78..=84).contains(&id),
+                "{:?} collides with the Deerclops band",
+                r.kind
+            );
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 8, "two frost kinds share a net id");
+        assert!(ids.iter().all(|&id| id > 188));
+    }
+
+    /// DW-1.3: the sound tables resolve the per-kind hit/death cues — the
+    /// bosses' NPCHit7/NPCHit4 rows, the walkers' NPCHit1 group, Flocko's
+    /// NPCDeath6 (`NPC.cs:13377-13378`/`:13394-13395`/`:13408-13410`/
+    /// `:13424-13425`/`:13438-13439`/`:13452-13453`/`:13465-13466`/
+    /// `:13479-13480`).
+    #[test]
+    fn s1_f_13c_the_frost_sounds_resolve_per_kind() {
+        for r in rows().iter() {
+            assert_eq!(r.kind.hit_sound(), Some(r.hit), "{:?} hit cue", r.kind);
+            assert_eq!(r.kind.death_sound(), Some(r.death), "{:?} death cue", r.kind);
+        }
+        assert_eq!(NpcKind::IceQueen.hit_sound(), Some("NPC_Hit_7"));
+        assert_eq!(NpcKind::IceQueen.death_sound(), Some("NPC_Killed_5"));
+        assert_eq!(NpcKind::SantaNK1.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::SantaNK1.death_sound(), Some("NPC_Killed_14"));
+        assert_eq!(NpcKind::ElfCopter.death_sound(), Some("NPC_Killed_14"));
+        assert_eq!(NpcKind::Flocko.death_sound(), Some("NPC_Killed_6"));
+    }
+
+    /// DW-1.4: the kind→type map round-trips (kind → vanilla id → kind) and
+    /// feeds the boss-cap counts — 345/346's `npcSlots` rows (5/4,
+    /// `NPC.cs:13383`/`:13398`), `None` for every other frost kind (the
+    /// walkers' 1.5/1.75/2 rows and 350's class default are NOT boss slots —
+    /// the ctor's switch lists only the seven wave-20 bosses).
+    #[test]
+    fn s1_f_13c_the_kind_type_map_round_trips_and_feeds_the_cap() {
+        for r in rows().iter() {
+            let ty = r.kind.frost_moon_type().expect("a family kind");
+            assert_eq!(ty, r.ty, "{:?} type", r.kind);
+            assert_eq!(
+                NpcKind::from_u16(ty),
+                Some(r.kind),
+                "{:?} map round-trip",
+                r.kind
+            );
+            // The map agrees with the kind's net id (both ride the vanilla).
+            assert_eq!(Some(r.kind.to_u16()), r.kind.frost_moon_type());
+            let slots = crate::spawner::moon_boss_slots(ty);
+            match r.kind {
+                NpcKind::IceQueen => assert_eq!(slots, Some(5.0)),
+                NpcKind::SantaNK1 => assert_eq!(slots, Some(4.0)),
+                _ => assert_eq!(slots, None, "{:?} carries no boss slot", r.kind),
+            }
+        }
+        // The cap counts the LIVE boss kinds only: a live Ice Queen + a live
+        // Santa-NK1 + a dead Ice Queen reads 5 + 4.
+        let mut queen = Npc::new(NpcKind::IceQueen, 0.0, 0.0, 1, 0.0);
+        let mut santa = Npc::new(NpcKind::SantaNK1, 0.0, 0.0, 1, 0.0);
+        let mut dead = Npc::new(NpcKind::IceQueen, 0.0, 0.0, 1, 0.0);
+        queen.hp = queen.max_hp;
+        santa.hp = santa.max_hp;
+        dead.hp = 0;
+        assert_eq!(crate::spawner::moon_boss_cap_count(&[queen, santa, dead]), 9.0);
+        // A frost walker contributes nothing.
+        let mut walker = Npc::new(NpcKind::Krampus, 0.0, 0.0, 1, 0.0);
+        walker.hp = walker.max_hp;
+        assert_eq!(crate::spawner::moon_boss_cap_count(&[walker]), 0.0);
+    }
+
+    /// DW-1.4: the kind→type map feeds the kill points — a frost-moon kill
+    /// credits `CheckProgressFrostMoon`'s per-type row (150/100/8/4/4/3/10/5,
+    /// `NPC.cs:78518-78549`) through the map.
+    #[test]
+    fn s1_f_13c_the_kind_type_map_feeds_the_kill_points() {
+        for r in rows().iter() {
+            let mut world = tr_core::World::new("t".into(), 40, 40);
+            world.snow_moon = true;
+            let before = world.total_invasion_points;
+            world.report_frost_moon_kill(r.kind.frost_moon_type().unwrap());
+            assert_eq!(
+                world.total_invasion_points - before,
+                r.points,
+                "{:?} kills for the wrong points",
+                r.kind
+            );
+            // The pumpkin twin's walk scores nothing for a frost kind.
+            let mut p = tr_core::World::new("t".into(), 40, 40);
+            p.pumpkin_moon = true;
+            p.report_pumpkin_moon_kill(r.kind.to_u16());
+            assert_eq!(p.total_invasion_points, 0.0, "{:?} is not a pumpkin kind", r.kind);
+        }
+    }
+
+    /// DW-2.3: a wave-kind kill credits its points through the kind→type map
+    /// and advances the event — `report_frost_moon_kill(kind.to_u16())`
+    /// drives `CheckProgressFrostMoon`'s walk (`NPC.cs:78472-78586`): the
+    /// requirement read at the kill's wave (`NPC.cs:95289-95300` — wave 1 is
+    /// 25, wave 2 is 40), the points into `waveKills`, the advance with
+    /// `waveKills` zeroed, the run's `totalInvasionPoints` accruing across
+    /// the advance (the C# resets `waveKills` only).
+    #[test]
+    fn s1_f_13c_the_wave_kind_kill_advances_the_wave_through_the_type_map() {
+        for r in rows().iter() {
+            let p = r.points;
+            // The kills wave 1's 25-point requirement needs of this kind.
+            let n = (25.0 / p).ceil() as u32;
+            let mut w = tr_core::World::new("t".into(), 40, 40);
+            w.start_snow_moon();
+            assert_eq!((w.wave_number, w.wave_kills), (1, 0.0));
+            for _ in 0..(n - 1) {
+                w.report_frost_moon_kill(r.kind.to_u16());
+            }
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (1, p * (n as f32 - 1.0)),
+                "{:?} holds wave 1 under the requirement",
+                r.kind
+            );
+            // The crossing kill advances the wave and zeroes the wave's
+            // points.
+            w.report_frost_moon_kill(r.kind.to_u16());
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (2, 0.0),
+                "{:?} crosses wave 1 on kill {n}",
+                r.kind
+            );
+            assert_eq!(
+                w.total_invasion_points,
+                p * n as f32,
+                "{:?}: the run's points accrue across the advance",
+                r.kind
+            );
+            // The next wave reads its own (40) requirement: a boss kind's
+            // per-kill points clear it in one kill, a small kind holds.
+            w.report_frost_moon_kill(r.kind.to_u16());
+            if p < 40.0 {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (2, p),
+                    "{:?} holds wave 2",
+                    r.kind
+                );
+            } else {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (3, 0.0),
+                    "{:?} clears wave 2's 40 in one kill too",
+                    r.kind
+                );
+            }
+        }
+    }
+
+    /// The defaults are family-scoped: every kind outside the 8 reads
+    /// `None` — including the pumpkin family and the slice-A frost band's
+    /// future kinds (unported on this branch).
+    #[test]
+    fn s1_f_13c_the_frost_defaults_are_none_outside_the_family() {
+        for kind in [
+            NpcKind::Slime,
+            NpcKind::Zombie,
+            NpcKind::Deerclops,
+            NpcKind::PirateCaptain,
+            NpcKind::Pumpking,
+            NpcKind::Scarecrow1,
+        ] {
+            assert!(kind.frost_moon_defaults().is_none(), "{kind:?}");
+            assert!(kind.frost_moon_type().is_none(), "{kind:?}");
+        }
+    }
+
+    /// DW-2.1's seam: the frost ladder's vanilla picks 345-352 decode through
+    /// `moon_wave_kind` both ways; the port-local id space stays `None`
+    /// (the 338-344 band is slice A's, pinned in its own module).
+    #[test]
+    fn s1_f_13c_the_moon_wave_kind_map_decodes_the_frost_band() {
+        for r in rows().iter() {
+            assert_eq!(NpcKind::moon_wave_kind(r.ty), Some(r.kind), "{:?}", r.kind);
+            assert_eq!(r.kind.frost_moon_type(), Some(r.ty));
+            // The frost kinds are not pumpkin kinds — the two family maps
+            // never overlap.
+            assert_eq!(r.kind.pumpkin_moon_type(), None, "{:?}", r.kind);
+        }
+        // The 338-344 band (slice A) is ported now - it decodes through the
+        // same map; the slice-A module pins those rows.
+        for kind in [NpcKind::Zombie, NpcKind::Deerclops, NpcKind::MartianWalker] {
+            assert_eq!(
+                NpcKind::moon_wave_kind(kind.to_u16()),
+                None,
+                "{kind:?} rides a port-local id and must not decode as a wave kind"
+            );
+        }
+    }
+
+    /// DW-2.2: `AI_003_Fighters`'s per-type walk-speed caps — 348/351 in the
+    /// cap-2 group (`NPC.cs:57554-57578`), 349 in the cap-6 group
+    /// (`:57403-57427`, shared with the unported 159), 350 the shooters'
+    /// `num180 = 1f` default (`:59717` — no type-350 override exists). The
+    /// four flyers carry no walker row.
+    #[test]
+    fn s1_f_13c_the_walkers_ride_the_csharp_speed_rows() {
+        let expected: [(NpcKind, f32); 4] = [
+            (NpcKind::Nutcracker, 2.0),
+            (NpcKind::NutcrackerSpinning, 6.0),
+            (NpcKind::ElfArcher, 1.0),
+            (NpcKind::Krampus, 2.0),
+        ];
+        for (kind, speed) in expected {
+            assert_eq!(
+                kind.ai3_walk_speed(),
+                Some(speed),
+                "{kind:?} walks at the wrong cap"
+            );
+        }
+        for kind in [NpcKind::IceQueen, NpcKind::SantaNK1, NpcKind::ElfCopter, NpcKind::Flocko] {
+            assert_eq!(kind.ai3_walk_speed(), None, "{kind:?} is a flyer");
+        }
+        // The rows a family kind shares are only the ones the C#'s groups
+        // share: 348/351's cap-2 2f rides the GoblinThief group, 350's 1f
+        // rides the shooters' default (the PirateCaptain/MartianOfficer
+        // row). The cap-6 group's other member (159) is unported.
+        assert_eq!(
+            NpcKind::Nutcracker.ai3_walk_speed(),
+            NpcKind::GoblinThief.ai3_walk_speed(),
+            "348/351 ride the cap-2 group's 2f row"
+        );
+        assert_eq!(
+            NpcKind::Krampus.ai3_walk_speed(),
+            NpcKind::Nutcracker.ai3_walk_speed(),
+            "348 and 351 share the C#'s cap-2 group"
+        );
+        assert_eq!(
+            NpcKind::ElfArcher.ai3_walk_speed(),
+            NpcKind::PirateCaptain.ai3_walk_speed(),
+            "350 rides the shooters' num180 default"
+        );
+    }
+
+    /// DW-1.1: the debuff immunities ride `NPCID.DebuffImmunitySets`
+    /// (`NPCID.cs:8104-8141`): 345/346/352 [20, 31, 44, 324], 347 [31],
+    /// 348/349/350 null (no immunities), 351 [44, 324] — plus the derived
+    /// 20 ⇒ 30 + 375 rule (`NPC.cs:17828-17833`).
+    #[test]
+    fn s1_f_13c_the_debuff_immunities_match_the_csharp_sets() {
+        for kind in [NpcKind::IceQueen, NpcKind::SantaNK1, NpcKind::Flocko] {
+            let b = NpcBuffs::for_kind(kind);
+            for id in [20, 31, 44, 324] {
+                assert!(b.buff_immune[id], "{kind:?} immune to {id}");
+            }
+            assert!(b.buff_immune[30] && b.buff_immune[375], "{kind:?} derived from 20");
+            assert!(!b.buff_immune[24], "{kind:?} not immune to 24");
+        }
+        let copter = NpcBuffs::for_kind(NpcKind::ElfCopter);
+        assert!(copter.buff_immune[31]);
+        assert!(!copter.buff_immune[20] && !copter.buff_immune[44]);
+        for kind in [NpcKind::Nutcracker, NpcKind::NutcrackerSpinning, NpcKind::ElfArcher] {
+            let b = NpcBuffs::for_kind(kind);
+            assert!(
+                b.buff_immune.iter().all(|&i| !i),
+                "{kind:?} carries the null dictionary entry"
+            );
+        }
+        let krampus = NpcBuffs::for_kind(NpcKind::Krampus);
+        assert!(krampus.buff_immune[44] && krampus.buff_immune[324]);
+        assert!(!krampus.buff_immune[20] && !krampus.buff_immune[31]);
+        // The spawn carries the same immunities (`Npc::new`'s buffs field).
+        let queen = Npc::new(NpcKind::IceQueen, 0.0, 0.0, 1, 0.0);
+        assert!(queen.buffs.buff_immune[20] && queen.buffs.buff_immune[324]);
+    }
+
+    /// The slice-B rows agree with the mob-AI worker's `ai_defaults`
+    /// (`frost_mob_ai.rs`, commit `5ef9b24b` on
+    /// `task/S1-F-13c-mob-ai`): the `(width, height, scale, lifeMax)` tuple
+    /// the machines read must equal this branch's tables for the six kinds
+    /// the module covers (347-352), and the aiStyle rows must agree too.
+    /// The module itself lands on the sibling branch — the pin is the
+    /// verbatim tuple so a merge-time drift fails here.
+    #[test]
+    fn s1_f_13c_the_frost_defaults_agree_with_the_mob_ai_rows() {
+        // (kind, width, height, scale, lifeMax, aiStyle) — the mob-AI
+        // module's `ai_defaults` + `ai_style` rows for 347-352.
+        let agreed: [(NpcKind, f32, f32, f32, i32, u8); 6] = [
+            (NpcKind::ElfCopter, 50.0, 50.0, 1.0, 1200, 62),
+            (NpcKind::Nutcracker, 28.0, 76.0, 1.0, 1800, 3),
+            (NpcKind::NutcrackerSpinning, 28.0, 76.0, 1.0, 1800, 3),
+            (NpcKind::ElfArcher, 18.0, 40.0, 1.0, 900, 3),
+            (NpcKind::Krampus, 18.0, 90.0, 1.0, 2500, 3),
+            (NpcKind::Flocko, 54.0, 54.0, 1.0, 450, 63),
+        ];
+        for (kind, w, h, scale, life, style) in agreed {
+            assert_eq!(kind.size(), (w, h), "{kind:?} box vs mob-AI");
+            let d = kind.frost_moon_defaults().expect("a family kind");
+            assert_eq!(d.scale, scale, "{kind:?} scale vs mob-AI");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax vs mob-AI");
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle vs mob-AI");
+        }
+    }
+
+    /// DW-2.5's routing: the wave roster rides live on the documented
+    /// stand-ins (ANALYSIS) — the four aiStyle-3 walkers walk on the walker
+    /// family at their C# speed rows, the four flyers hover toward the
+    /// player through the tiles.
+    #[test]
+    fn s1_f_13c_the_family_machines_route_to_their_stand_ins() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [
+            NpcKind::Nutcracker,
+            NpcKind::NutcrackerSpinning,
+            NpcKind::ElfArcher,
+            NpcKind::Krampus,
+        ] {
+            // The walkers: spawned left of the player and ABOVE the ground
+            // (the tallest box, Krampus's 90 px, must not start embedded),
+            // they fall onto it, close the gap and never exceed their row's
+            // cap.
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let dx0 = player.center().0 - n.center().0;
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(
+                    n.vx.abs() <= kind.ai3_walk_speed().unwrap() + 0.001,
+                    "{kind:?} walks past its cap"
+                );
+            }
+            assert!(
+                player.center().0 - n.center().0 < dx0,
+                "{kind:?} never closed the gap"
+            );
+        }
+        // The flyers: the hover stand-in flies toward the player (the
+        // gravity-off approach), each at its named machine's base speed.
+        for kind in [NpcKind::IceQueen, NpcKind::SantaNK1, NpcKind::ElfCopter, NpcKind::Flocko] {
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (dx0, dy0) = {
+                let (pcx, pcy) = player.center();
+                (pcx - n.center().0, pcy - n.center().1)
+            };
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            let (pcx, pcy) = player.center();
+            let (dx1, dy1) = (pcx - n.center().0, pcy - n.center().1);
+            assert!(
+                (dx1 * dx1 + dy1 * dy1) < (dx0 * dx0 + dy0 * dy0),
+                "{kind:?} never flew toward the player"
+            );
+        }
+    }
+
+    /// DW-2.6: the flyer strips — `case 347` (`NPC.cs:72357-72368`) advances
+    /// every 2 ticks over rows 0..3, `case 349` (`:76312-76323`) and
+    /// `case 352` (`:72413-72424`) every 4 ticks over rows 0..7 / 0..5.
+    #[test]
+    fn s1_f_13c_the_flyer_strips_advance_on_their_vanilla_counters() {
+        // The Elf Copter's rotor: >1 counter, wrap past 3 to 0.
+        let mut copter = Npc::new(NpcKind::ElfCopter, 0.0, 0.0, 1, 0.0);
+        for k in 1..=12u32 {
+            copter.find_frame();
+            copter.find_frame();
+            assert_eq!(copter.frame, k % 4, "the rotor advances every 2 ticks");
+        }
+        // The spinning Nutcracker: >3 counter, wrap past 7 to 0.
+        let mut spin = Npc::new(NpcKind::NutcrackerSpinning, 0.0, 0.0, 1, 0.0);
+        for k in 1..=16u32 {
+            for _ in 0..4 {
+                spin.find_frame();
+            }
+            assert_eq!(spin.frame, k % 8, "the spin advances every 4 ticks");
+        }
+        // Flocko's snowflake: >3 counter, wrap past 5 to 0.
+        let mut flocko = Npc::new(NpcKind::Flocko, 0.0, 0.0, 1, 0.0);
+        for k in 1..=12u32 {
+            for _ in 0..4 {
+                flocko.find_frame();
+            }
+            assert_eq!(flocko.frame, k % 6, "the snowflake advances every 4 ticks");
+        }
+    }
+
+    /// DW-2.6: the bosses' pose bands — `case 345` (`NPC.cs:72425-72462`):
+    /// the ai[0]==0 hover pose (ai[3] >= 0 holds row 0, else the vx sign
+    /// picks 1/2), the ai[0]==1 cast animates rows 3..4 on the >5 counter
+    /// (both clamps), ai[0]==2 holds row 5. `case 346` (`:72369-72412`):
+    /// the ai[0]==1 gift-throw rows 6..8 on the >2 counter, the vx==0 stand
+    /// leaves the frame UNTOUCHED with the counter zeroed, the walk rows
+    /// 1..5 on the `1 + |vx|/2` accumulator (>4 advances).
+    #[test]
+    fn s1_f_13c_the_bosses_find_frame_walk_their_pose_bands() {
+        let mut queen = Npc::new(NpcKind::IceQueen, 0.0, 0.0, 1, 0.0);
+        // The hover pose.
+        queen.ai = [0.0, 0.0, 0.0, 0.0];
+        queen.frame = 5;
+        queen.find_frame();
+        assert_eq!(queen.frame, 0, "ai[3] >= 0 holds row 0");
+        queen.ai[3] = -1.0;
+        queen.vx = -2.0;
+        queen.find_frame();
+        assert_eq!(queen.frame, 1, "the left drift");
+        queen.vx = 2.0;
+        queen.find_frame();
+        assert_eq!(queen.frame, 2, "the right drift");
+        queen.vx = 0.0;
+        queen.find_frame();
+        assert_eq!(queen.frame, 2, "the vx==0 else arm rides row 2");
+        // The cast: the first call snaps to row 3, the >5 counter advances
+        // to 4 and back (both clamps run).
+        queen.ai = [1.0, 0.0, 0.0, 0.0];
+        queen.frame = 0;
+        queen.frame_counter = 0.0;
+        queen.find_frame();
+        assert_eq!(queen.frame, 3, "the lower clamp snaps the cast to row 3");
+        for _ in 0..4 {
+            queen.find_frame();
+        }
+        assert_eq!(queen.frame, 3, "the counter holds under 6");
+        queen.find_frame();
+        assert_eq!(queen.frame, 4, "the >5 counter advances");
+        for _ in 0..5 {
+            queen.find_frame();
+        }
+        assert_eq!(queen.frame, 4);
+        queen.find_frame();
+        assert_eq!(queen.frame, 3, "the upper clamp wraps 5 back to 3");
+        // The third pose and the untouched else.
+        queen.ai = [2.0, 0.0, 0.0, 0.0];
+        queen.find_frame();
+        assert_eq!(queen.frame, 5, "ai[0]==2 holds row 5");
+        queen.ai = [3.0, 0.0, 0.0, 0.0];
+        queen.frame = 4;
+        queen.find_frame();
+        assert_eq!(queen.frame, 4, "the other ai[0] values leave the frame");
+        // The Santa-NK1's gift throw: rows 6..8 on the >2 counter.
+        let mut santa = Npc::new(NpcKind::SantaNK1, 0.0, 0.0, 1, 0.0);
+        santa.ai = [1.0, 0.0, 0.0, 0.0];
+        santa.find_frame();
+        assert_eq!(santa.frame, 6, "the lower clamp snaps the throw to row 6");
+        assert_eq!(santa.sprite_dir, santa.facing, "the throw latches the sprite");
+        for _ in 0..2 {
+            santa.find_frame();
+        }
+        assert_eq!(santa.frame, 7);
+        for _ in 0..3 {
+            santa.find_frame();
+        }
+        assert_eq!(santa.frame, 8);
+        for _ in 0..3 {
+            santa.find_frame();
+        }
+        assert_eq!(santa.frame, 6, "the upper clamp wraps 9 back to 6");
+        // The vx==0 stand: the frame stays, the counter zeroes.
+        santa.ai = [0.0, 0.0, 0.0, 0.0];
+        santa.vx = 0.0;
+        santa.frame = 4;
+        santa.frame_counter = 3.0;
+        santa.find_frame();
+        assert_eq!(santa.frame, 4, "the stand leaves the frame untouched");
+        assert_eq!(santa.frame_counter, 0.0, "the stand zeroes the counter");
+        // The walk: rows 1..5 on the 1 + |vx|/2 accumulator — at vx 4 the
+        // counter adds 3 per tick, so the row advances every 2 ticks.
+        santa.vx = 4.0;
+        santa.frame = 0;
+        santa.frame_counter = 0.0;
+        for k in 1..=10u32 {
+            santa.find_frame();
+            santa.find_frame();
+            assert_eq!(santa.frame, 1 + k % 5, "the walk wraps past 5 to 1");
+        }
+    }
+
+    /// DW-2.6: the walkers' rows — `case 348` (`NPC.cs:76276-76311`): the
+    /// air holds row 8, the idle row 0, the walk's `|vx| + 1` accumulator
+    /// (>6 advances) wraps past 7 to 1 with the UPPER clamp only.
+    /// `case 350` (`:76099-76137`): the ai[2]>0 draw pose snaps to
+    /// `(int)ai[2] - 1` (the port's saturate guard covers the fractional
+    /// edge), the walk climbs from row 7 on `|vx| * 3.3` (>4 advances) and
+    /// wraps at the sheet's 20 rows back to 7, the air holds row 5.
+    /// `case 351` (`:75733-75778`): the idle row 0, the walk climbs from
+    /// row 2 on `|vx| + 1` (>8 advances) and wraps at the sheet's 10 rows
+    /// back to 2, the air holds row 1.
+    #[test]
+    fn s1_f_13c_the_walkers_find_frame_walk_their_vanilla_rows() {
+        // The Nutcracker.
+        let mut nut = Npc::new(NpcKind::Nutcracker, 0.0, 0.0, 1, 0.0);
+        nut.vy = 3.0;
+        nut.frame_counter = 5.0;
+        nut.find_frame();
+        assert_eq!(nut.frame, 8, "the air holds row 8");
+        assert_eq!(nut.frame_counter, 0.0);
+        nut.vy = 0.0;
+        nut.vx = 0.0;
+        nut.facing = -1;
+        nut.find_frame();
+        assert_eq!(nut.frame, 0, "the idle holds row 0");
+        assert_eq!(nut.sprite_dir, -1, "the grounded latch");
+        nut.facing = 1;
+        nut.find_frame();
+        assert_eq!(nut.sprite_dir, 1);
+        // The walk at vx 2: the counter adds 3 per tick, >6 advances every
+        // 3 ticks; the upper clamp only — row 0 stays until the advance.
+        nut.vx = 2.0;
+        nut.frame = 0;
+        nut.frame_counter = 0.0;
+        nut.find_frame();
+        assert_eq!(nut.frame, 0, "no lower clamp — the C# writes none");
+        nut.find_frame();
+        nut.find_frame();
+        assert_eq!(nut.frame, 1, "the >6 counter advances");
+        nut.frame = 7;
+        nut.frame_counter = 0.0;
+        for _ in 0..3 {
+            nut.find_frame();
+        }
+        assert_eq!(nut.frame, 1, "the wrap past 7 goes to 1, not 0");
+        // The Elf Archer.
+        let mut archer = Npc::new(NpcKind::ElfArcher, 0.0, 0.0, 1, 0.0);
+        archer.vy = -2.0;
+        archer.find_frame();
+        assert_eq!(archer.frame, 5, "the air holds row 5");
+        archer.vy = 0.0;
+        archer.ai[2] = 5.0;
+        archer.facing = -1;
+        archer.find_frame();
+        assert_eq!(archer.frame, 4, "the draw pose is (int)ai[2] - 1");
+        assert_eq!(archer.sprite_dir, -1);
+        assert_eq!(archer.frame_counter, 0.0);
+        // The saturate guard: a fractional ai[2] under 1 would write a
+        // negative row in the C#; the port clamps to 0 (documented).
+        archer.ai[2] = 0.5;
+        archer.find_frame();
+        assert_eq!(archer.frame, 0, "the fractional-edge saturate guard");
+        // The walk at vx 1: the counter adds 3.3 per tick, >4 advances
+        // every 2 ticks from row 7; the wrap rides the sheet's 20 rows.
+        archer.ai[2] = 0.0;
+        archer.vx = 1.0;
+        archer.frame = 0;
+        archer.frame_counter = 0.0;
+        archer.find_frame();
+        assert_eq!(archer.frame, 7, "the walk snaps up to row 7");
+        archer.find_frame();
+        assert_eq!(archer.frame, 8, "the >4 counter advances");
+        archer.frame = 19;
+        archer.frame_counter = 0.0;
+        archer.find_frame();
+        archer.find_frame();
+        assert_eq!(archer.frame, 7, "the wrap at rows() = 20 goes back to 7");
+        // Krampus.
+        let mut krampus = Npc::new(NpcKind::Krampus, 0.0, 0.0, 1, 0.0);
+        krampus.vy = 2.0;
+        krampus.find_frame();
+        assert_eq!(krampus.frame, 1, "the air holds row 1");
+        krampus.vy = 0.0;
+        krampus.vx = 0.0;
+        krampus.frame_counter = 4.0;
+        krampus.find_frame();
+        assert_eq!(krampus.frame, 0, "the idle holds row 0");
+        assert_eq!(krampus.frame_counter, 0.0);
+        // The walk at vx 2: the counter adds 3 per tick, >8 advances every
+        // 3 ticks from row 2; the wrap rides the sheet's 10 rows.
+        krampus.vx = 2.0;
+        krampus.frame = 0;
+        krampus.frame_counter = 0.0;
+        krampus.find_frame();
+        assert_eq!(krampus.frame, 2, "the walk snaps up to row 2");
+        krampus.find_frame();
+        krampus.find_frame();
+        assert_eq!(krampus.frame, 3, "the >8 counter advances");
+        krampus.frame = 9;
+        krampus.frame_counter = 0.0;
+        for _ in 0..3 {
+            krampus.find_frame();
+        }
+        assert_eq!(krampus.frame, 2, "the wrap at rows() = 10 goes back to 2");
+    }
+
+    /// The G6 `render_key`'s kind term stays injective over the frost band:
+    /// the eight vanilla ids (345-352) are unused by every other arm, so
+    /// same-state NPCs of different kinds never share a key.
+    #[test]
+    fn s1_f_13c_the_render_key_stays_injective_over_the_frost_band() {
+        let mut keys: Vec<u32> = Vec::new();
+        for r in rows().iter() {
+            // Same state for every kind (the hp term normalised) — only the
+            // kind term may differ.
+            let mut n = Npc::new(r.kind, 100.0, 200.0, 1, 0.0);
+            n.hp = 100;
+            keys.push(n.render_key());
+        }
+        // Two pre-existing kinds at the same state must not collide either.
+        let mut zombie = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        zombie.hp = 100;
+        keys.push(zombie.render_key());
+        let mut polt = Npc::new(NpcKind::Poltergeist, 100.0, 200.0, 1, 0.0);
+        polt.hp = 100;
+        keys.push(polt.render_key());
+        let n = keys.len();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), n, "two kinds share a G6 render key");
+    }
+
+    /// DW-2.6: each kind's render sheet row resolves — the atlas pack list
+    /// (`STATIC_SHEET_NAMES`), the by-net-id sheet map (`FROST_SHEETS`), the
+    /// frame count the C#'s `Main.npcFrameCount[type]` gives (`Main.cs:67082`
+    /// — 345→6, 346→9, 347→8, 348→9, 349→8, 350→20, 351→10, 352→6) and the
+    /// bestiary entry the `net_id` fallback rides.
+    #[test]
+    fn s1_f_13c_the_frost_sheets_resolve_with_the_csharp_frame_counts() {
+        for (ty, rows) in [
+            (345u16, 6u32),
+            (346, 9),
+            (347, 8),
+            (348, 9),
+            (349, 8),
+            (350, 20),
+            (351, 10),
+            (352, 6),
+        ] {
+            let kind = NpcKind::moon_wave_kind(ty).expect("a family kind");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&format!("NPC_{ty}").as_str()),
+                "NPC_{ty} is never packed into the atlas"
+            );
+            assert!(
+                crate::render::entities::FROST_SHEETS.contains(&(ty as u32)),
+                "NPC_{ty} has no by-net-id sheet row"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(ty),
+                rows,
+                "NPC_{ty} rides the wrong frame count"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                ty,
+                "{kind:?} draws the wrong sheet"
+            );
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} has the wrong net id");
+        }
+    }
+
+    /// The bestiary rows: eight entries with the persistent credit names,
+    /// the vanilla net ids, no quick-unlock (the event bosses ride the
+    /// normal kill ladder, `BestiaryDatabaseNPCsPopulator.cs:683-701`), and
+    /// the Nutcracker twins' DISTINCT credits under the shared display name
+    /// (`NPCs.json`'s 349 row).
+    #[test]
+    fn s1_f_13c_the_bestiary_entries_carry_distinct_credits() {
+        for r in rows().iter() {
+            let e = crate::bestiary::entry_for_npc(r.kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, r.ty as i32, "{:?} net id", r.kind);
+            assert_eq!(e.kind, r.kind);
+            assert!(!e.quick_unlock, "{:?} rides the kill ladder", r.kind);
+        }
+        let nut = crate::bestiary::entry_for_npc(NpcKind::Nutcracker, SlimeVariant::Blue);
+        let spin = crate::bestiary::entry_for_npc(NpcKind::NutcrackerSpinning, SlimeVariant::Blue);
+        assert_eq!(nut.credit_id, "Nutcracker");
+        assert_eq!(spin.credit_id, "NutcrackerSpinning");
+        assert_ne!(nut.credit_id, spin.credit_id, "the twins keep distinct credits");
+        assert_eq!(nut.name, spin.name, "the twins share the display name");
+        // Every credit in the family is unique (the credit-uniqueness
+        // invariant the kill tracker keys on).
+        let mut credits: Vec<&str> = rows()
+            .iter()
+            .map(|r| crate::bestiary::entry_for_npc(r.kind, SlimeVariant::Blue).credit_id)
+            .collect();
+        credits.sort_unstable();
+        credits.dedup();
+        assert_eq!(credits.len(), 8);
+    }
+}
+
+#[cfg(test)]
 mod s1_d_2_tests {
     use super::*;
+    // The S1-D-3ff wave-A witnesses below reuse the main tests module's
+    // scratch helpers (MERGER-P6 first-compile fix).
+    use super::tests::{bare, ground, ALL_KINDS};
     use tr_core::world::World;
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
@@ -23008,6 +26010,13 @@ mod s1_d_2_tests {
         (NpcKind::MourningWood, 57),
         (NpcKind::Pumpking, 58),
         (NpcKind::Poltergeist, 22),
+        (NpcKind::ZombieElf, 3),
+        (NpcKind::ZombieElfBeard, 3),
+        (NpcKind::ZombieElfGirl, 3),
+        (NpcKind::PresentMimic, 25),
+        (NpcKind::GingerbreadMan, 3),
+        (NpcKind::Yeti, 3),
+        (NpcKind::Everscream, 57),
     ];
 
     #[test]
@@ -23108,4 +26117,451 @@ mod s1_d_2_tests {
             }
         }
     }
+
+    // ---- S1-D-3ff wave A — the `find_frame` wiring into `npc_findframe_a` ----
+    // The pure machines carry their own 11 pinned tests in
+    // `npc_findframe_a.rs`; these pin the NPC-side bridge: the arms route
+    // the 24 kinds through `find_frame_wave_a`, the four fields copy
+    // both ways, and the per-kind `SetDefaults`/`num107`/immunity rows
+    // land on the kind. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The nine wave-A slimes ride the case-1 hop strip through the
+    /// bridge (`NPC.cs:70801-70846`): idle +1 a tick over the 2 rows,
+    /// moving/airborne +2 (`num2 > 0`), and neither `spriteDirection`
+    /// nor `rotation` is written (the 302/304 snap is not this wave's).
+    #[test]
+    fn s1_d_3ff_the_wave_a_slimes_hop_the_two_row_strip() {
+        for kind in [
+            NpcKind::MotherSlime,
+            NpcKind::LavaSlime,
+            NpcKind::DungeonSlime,
+            NpcKind::CorruptSlime,
+            NpcKind::IlluminantSlime,
+            NpcKind::IceSlime,
+            NpcKind::Crimslime,
+            NpcKind::SpikedIceSlime,
+            NpcKind::UmbrellaSlime,
+        ] {
+            let mut n = bare(kind);
+            n.sprite_dir = -1;
+            n.rotation = 0.5;
+            // Idle: the row steps at the 8th tick and wraps at 16.
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "{kind:?} idle hop"
+            );
+            // Moving (num2 = 1) doubles the clock: the step at tick 4.
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            n.vx = 1.0;
+            n.vy = 0.0;
+            let mut rows = Vec::new();
+            for _ in 0..8 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(rows, [0, 0, 0, 1, 1, 1, 1, 0], "{kind:?} moving hop");
+            // Rising (num2 = 2) and falling (num2 = 3) ride the same
+            // doubled clock.
+            for vy in [-2.0, 2.0] {
+                n.frame = 0;
+                n.frame_counter = 0.0;
+                n.vx = 0.0;
+                n.vy = vy;
+                let mut rows = Vec::new();
+                for _ in 0..8 {
+                    n.find_frame();
+                    rows.push(n.frame);
+                }
+                assert_eq!(rows, [0, 0, 0, 1, 1, 1, 1, 0], "{kind:?} vy {vy}");
+            }
+            // The arm writes neither the flip nor the rotation.
+            assert_eq!(n.sprite_dir, -1, "{kind:?} no flip write");
+            assert_eq!(n.rotation, 0.5, "{kind:?} no rotation write");
+        }
+    }
+
+    /// The five wave-A eyes ride the case-2 FIRST aim branch
+    /// (`NPC.cs:74019-74031`): the flip AND the rotation off the
+    /// velocity, the `3.14f` literal (not PI) on the left, both frozen
+    /// at `vx == 0`; then the 8-tick 2-row strip (`:74044-74058`).
+    #[test]
+    fn s1_d_3ff_the_wave_a_eyes_aim_and_cycle() {
+        for kind in [
+            NpcKind::CataractEye,
+            NpcKind::SleepyEye,
+            NpcKind::DialatedEye,
+            NpcKind::GreenEye,
+            NpcKind::PurpleEye,
+        ] {
+            let mut n = bare(kind);
+            n.sprite_dir = -1;
+            n.rotation = 0.5;
+            // vx == 0 freezes both (neither `if` fires).
+            n.vx = 0.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5), "{kind:?} freeze");
+            // Right: +1 and atan2(vy, vx).
+            n.vx = 1.0;
+            n.vy = 1.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, 1, "{kind:?} right flip");
+            assert!(
+                (n.rotation - std::f32::consts::FRAC_PI_4).abs() < 1e-6,
+                "{kind:?} right aim"
+            );
+            // Left: -1 and atan2 + the 3.14f literal.
+            n.vx = -1.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, -1, "{kind:?} left flip");
+            assert!(
+                (n.rotation - (std::f32::consts::PI + 3.14)).abs() < 1e-5,
+                "{kind:?} the 3.14f literal, not PI"
+            );
+            // The strip: +1 a tick regardless of motion, 8 ticks a row.
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            n.vx = 2.0;
+            n.vy = -1.0;
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "{kind:?} eye strip"
+            );
+        }
+    }
+
+    /// The ten wave-A walkers ride the case-3 arm (`NPC.cs:76324-76391`)
+    /// through the bridge: the stand row 0, the |vx| bands 8/16/24/32
+    /// stepping rows 0/1/2/1, the reset-tick row-hold quirk, the air/turn
+    /// pin to row 2, and the grounded ±1-only flip.
+    #[test]
+    fn s1_d_3ff_the_wave_a_walkers_walk_the_three_rows() {
+        for kind in [
+            NpcKind::DoctorBones,
+            NpcKind::TheGroom,
+            NpcKind::BaldZombie,
+            NpcKind::ZombieEskimo,
+            NpcKind::PincushionZombie,
+            NpcKind::SlimedZombie,
+            NpcKind::SwampZombie,
+            NpcKind::TwiggyZombie,
+            NpcKind::FemaleZombie,
+            NpcKind::ZombieRaincoat,
+        ] {
+            let mut n = bare(kind);
+            // Stand: row 0, the accumulator reset.
+            n.frame = 2;
+            n.frame_counter = 12.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 0.0), "{kind:?} stand");
+            // The bands at vx 2: the 32-tick zeroes the counter and
+            // HOLDS row 1 (the vanilla no-write quirk, `:76387-76390`).
+            n.vx = 2.0;
+            let mut rows = Vec::new();
+            for _ in 0..16 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1],
+                "{kind:?} walk bands"
+            );
+            assert_eq!(n.frame_counter, 0.0, "{kind:?} the reset tick");
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 2.0), "{kind:?} next lap");
+            // Airborne pins row 2 and never writes the flip.
+            n.sprite_dir = 1;
+            n.facing = -1;
+            n.vx = 0.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 0.0, 1), "{kind:?} air");
+            // Turning in place (direction against the motion) pins row 2.
+            n.vy = 0.0;
+            n.vx = 0.5;
+            n.find_frame();
+            assert_eq!((n.frame, n.sprite_dir), (2, -1), "{kind:?} turn");
+            // Grounded on the motion: the flip follows the facing.
+            n.facing = 1;
+            n.vx = 0.5;
+            n.find_frame();
+            assert_eq!(n.sprite_dir, 1, "{kind:?} ground flip");
+        }
+    }
+
+    /// The bridge copies all four `FindFrame` fields both ways and the
+    /// `NpcKind` → `FindFrameKind` mapping is the 24-kind bijection.
+    #[test]
+    fn s1_d_3ff_the_bridge_maps_the_24_kinds_and_copies_the_fields() {
+        use crate::npc_findframe_a::{find_frame_kind, FindFrameKind};
+        let table = [
+            (NpcKind::MotherSlime, FindFrameKind::MotherSlime),
+            (NpcKind::LavaSlime, FindFrameKind::LavaSlime),
+            (NpcKind::DungeonSlime, FindFrameKind::DungeonSlime),
+            (NpcKind::CorruptSlime, FindFrameKind::CorruptSlime),
+            (NpcKind::IlluminantSlime, FindFrameKind::IlluminantSlime),
+            (NpcKind::IceSlime, FindFrameKind::IceSlime),
+            (NpcKind::Crimslime, FindFrameKind::Crimslime),
+            (NpcKind::SpikedIceSlime, FindFrameKind::SpikedIceSlime),
+            (NpcKind::UmbrellaSlime, FindFrameKind::UmbrellaSlime),
+            (NpcKind::CataractEye, FindFrameKind::CataractEye),
+            (NpcKind::SleepyEye, FindFrameKind::SleepyEye),
+            (NpcKind::DialatedEye, FindFrameKind::DialatedEye),
+            (NpcKind::GreenEye, FindFrameKind::GreenEye),
+            (NpcKind::PurpleEye, FindFrameKind::PurpleEye),
+            (NpcKind::DoctorBones, FindFrameKind::DoctorBones),
+            (NpcKind::TheGroom, FindFrameKind::TheGroom),
+            (NpcKind::BaldZombie, FindFrameKind::BaldZombie),
+            (NpcKind::ZombieEskimo, FindFrameKind::ZombieEskimo),
+            (NpcKind::PincushionZombie, FindFrameKind::PincushionZombie),
+            (NpcKind::SlimedZombie, FindFrameKind::SlimedZombie),
+            (NpcKind::SwampZombie, FindFrameKind::SwampZombie),
+            (NpcKind::TwiggyZombie, FindFrameKind::TwiggyZombie),
+            (NpcKind::FemaleZombie, FindFrameKind::FemaleZombie),
+            (NpcKind::ZombieRaincoat, FindFrameKind::ZombieRaincoat),
+        ];
+        for (kind, ff) in table {
+            assert_eq!(find_frame_kind(kind), Some(ff), "{kind:?} mapping");
+            assert_eq!(ff.vanilla_type() as i32, kind.net_id(), "{kind:?} net id");
+        }
+        // The base kinds keep their own `npc.rs` arms (no mapping).
+        assert_eq!(find_frame_kind(NpcKind::Slime), None);
+        assert_eq!(find_frame_kind(NpcKind::DemonEye), None);
+        assert_eq!(find_frame_kind(NpcKind::Zombie), None);
+        // The field copy: a mid-strip state survives the round trip.
+        let mut n = bare(NpcKind::MotherSlime);
+        n.frame = 1;
+        n.frame_counter = 7.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.25;
+        n.find_frame();
+        // The 8th tick steps the row and wraps to 0, counter reset.
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.25), "untouched fields ride back");
+    }
+
+    /// The 24 `SetDefaults` stat rows land on the kind (`NPC.cs`'s
+    /// per-type blocks — the cites in the enum): size, aiStyle, HP,
+    /// damage, defense, value, knockBackResist.
+    #[test]
+    fn s1_d_3ff_the_wave_a_setdefaults_rows() {
+        // (kind, w, h, ai, hp, dmg, def, value, kb, NPC.cs block)
+        let table = [
+            (NpcKind::MotherSlime, 36.0, 24.0, 1, 90, 20, 7, 75.0, 0.6),
+            (NpcKind::LavaSlime, 24.0, 18.0, 1, 50, 15, 10, 120.0, 1.0),
+            (NpcKind::DungeonSlime, 36.0, 24.0, 1, 150, 30, 7, 150.0, 0.6),
+            (NpcKind::CorruptSlime, 40.0, 30.0, 1, 170, 55, 20, 400.0, 1.0),
+            (NpcKind::IlluminantSlime, 24.0, 18.0, 1, 180, 70, 30, 400.0, 0.85),
+            (NpcKind::IceSlime, 24.0, 18.0, 1, 30, 8, 4, 50.0, 1.0),
+            (NpcKind::Crimslime, 40.0, 30.0, 1, 200, 60, 26, 400.0, 1.0),
+            (NpcKind::SpikedIceSlime, 24.0, 18.0, 1, 60, 12, 8, 200.0, 1.0),
+            (NpcKind::UmbrellaSlime, 38.0, 26.0, 1, 35, 10, 5, 200.0, 0.75),
+            (NpcKind::CataractEye, 30.0, 32.0, 2, 65, 18, 4, 75.0, 0.7),
+            (NpcKind::SleepyEye, 30.0, 32.0, 2, 60, 16, 2, 75.0, 0.85),
+            (NpcKind::DialatedEye, 30.0, 32.0, 2, 50, 18, 2, 75.0, 0.8),
+            (NpcKind::GreenEye, 30.0, 32.0, 2, 60, 20, 0, 75.0, 0.8),
+            (NpcKind::PurpleEye, 30.0, 32.0, 2, 60, 14, 4, 75.0, 0.8),
+            (NpcKind::DoctorBones, 18.0, 40.0, 3, 500, 20, 10, 1000.0, 0.5),
+            (NpcKind::TheGroom, 18.0, 40.0, 3, 200, 14, 8, 1000.0, 0.5),
+            (NpcKind::BaldZombie, 18.0, 40.0, 3, 40, 15, 5, 65.0, 0.5),
+            (NpcKind::ZombieEskimo, 18.0, 40.0, 3, 50, 16, 8, 80.0, 0.45),
+            (NpcKind::PincushionZombie, 18.0, 40.0, 3, 50, 16, 8, 65.0, 0.45),
+            (NpcKind::SlimedZombie, 18.0, 40.0, 3, 40, 13, 6, 55.0, 0.55),
+            (NpcKind::SwampZombie, 18.0, 40.0, 3, 45, 13, 8, 80.0, 0.45),
+            (NpcKind::TwiggyZombie, 18.0, 40.0, 3, 45, 16, 4, 70.0, 0.55),
+            (NpcKind::FemaleZombie, 18.0, 40.0, 3, 38, 12, 4, 65.0, 0.6),
+            (NpcKind::ZombieRaincoat, 18.0, 40.0, 3, 50, 16, 8, 70.0, 0.45),
+        ];
+        for (kind, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            // Every kind's HitSound is NPCHit1; the death cue splits
+            // slimes/eyes 1, IlluminantSlime 6, walkers 2.
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            let death = if kind == NpcKind::IlluminantSlime {
+                "NPC_Killed_6"
+            } else if ai == 3 {
+                "NPC_Killed_2"
+            } else {
+                "NPC_Killed_1"
+            };
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+        }
+    }
+
+    /// The `num107` walk caps (`AI_003_Fighters`, `NPC.cs:58324-58376`):
+    /// the per-type rows for the ten walkers, the 1f default for
+    /// 52/53/161, and the machine rides the KIND's row.
+    #[test]
+    fn s1_d_3ff_the_wave_a_walk_caps() {
+        let table = [
+            (NpcKind::DoctorBones, 1.0),
+            (NpcKind::TheGroom, 1.0),
+            (NpcKind::ZombieEskimo, 1.0),
+            (NpcKind::BaldZombie, 0.95),
+            (NpcKind::PincushionZombie, 1.1),
+            (NpcKind::SlimedZombie, 0.9),
+            (NpcKind::SwampZombie, 1.2),
+            (NpcKind::TwiggyZombie, 0.8),
+            (NpcKind::FemaleZombie, 0.87),
+            (NpcKind::ZombieRaincoat, 1.05),
+        ];
+        for (kind, cap) in table {
+            assert_eq!(kind.ai3_walk_speed(), Some(cap), "{kind:?} num107");
+        }
+        // The slimes and eyes carry no aiStyle-3 row.
+        assert_eq!(NpcKind::MotherSlime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::CataractEye.ai3_walk_speed(), None);
+    }
+
+    /// The `DebuffImmunitySets` rows (`NPCID.cs`) through
+    /// `NpcBuffs::for_kind`: the slimes' poison family (20 also grants
+    /// 30/375 — the C#'s poison-chain), the lava/ice extras,
+    /// ZombieEskimo's frost pair, and the null rows for the eyes and the
+    /// other walkers.
+    #[test]
+    fn s1_d_3ff_the_wave_a_immunities() {
+        fn immune(kind: NpcKind, id: usize) -> bool {
+            crate::npc_buffs::NpcBuffs::for_kind(kind).buff_immune[id]
+        }
+        for kind in [
+            NpcKind::MotherSlime,
+            NpcKind::DungeonSlime,
+            NpcKind::CorruptSlime,
+            NpcKind::IlluminantSlime,
+            NpcKind::Crimslime,
+            NpcKind::UmbrellaSlime,
+        ] {
+            assert!(immune(kind, 20), "{kind:?} poison");
+            assert!(immune(kind, 30) && immune(kind, 375), "{kind:?} poison chain");
+            assert!(!immune(kind, 24) && !immune(kind, 44), "{kind:?} no extras");
+        }
+        let lava = NpcKind::LavaSlime;
+        assert!(immune(lava, 20) && immune(lava, 24) && immune(lava, 323));
+        for kind in [NpcKind::IceSlime, NpcKind::SpikedIceSlime] {
+            assert!(immune(kind, 20) && immune(kind, 44) && immune(kind, 324), "{kind:?}");
+            assert!(!immune(kind, 24), "{kind:?} not lava-immune");
+        }
+        let esk = NpcKind::ZombieEskimo;
+        assert!(immune(esk, 44) && immune(esk, 324));
+        assert!(!immune(esk, 20), "the frost pair carries no poison row");
+        for kind in [
+            NpcKind::CataractEye,
+            NpcKind::SleepyEye,
+            NpcKind::DialatedEye,
+            NpcKind::GreenEye,
+            NpcKind::PurpleEye,
+            NpcKind::DoctorBones,
+            NpcKind::TheGroom,
+            NpcKind::BaldZombie,
+            NpcKind::PincushionZombie,
+            NpcKind::SlimedZombie,
+            NpcKind::SwampZombie,
+            NpcKind::TwiggyZombie,
+            NpcKind::FemaleZombie,
+            NpcKind::ZombieRaincoat,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(
+                !b.buff_immune.iter().any(|x| *x),
+                "{kind:?} null row — no immunity"
+            );
+        }
+    }
+
+    /// The bestiary rows: every wave-A kind resolves its own entry with
+    /// the vanilla net id, the NPCID credit name and the en-US display
+    /// name; `quick_unlock` is false (the boss-only rule,
+    /// `BestiaryEntry.cs:37-41`).
+    #[test]
+    fn s1_d_3ff_the_wave_a_bestiary_entries() {
+        let table = [
+            (NpcKind::MotherSlime, 16, "MotherSlime", "Mother Slime"),
+            (NpcKind::LavaSlime, 59, "LavaSlime", "Lava Slime"),
+            (NpcKind::DungeonSlime, 71, "DungeonSlime", "Dungeon Slime"),
+            (NpcKind::CorruptSlime, 81, "CorruptSlime", "Corrupt Slime"),
+            (NpcKind::IlluminantSlime, 138, "IlluminantSlime", "Illuminant Slime"),
+            (NpcKind::IceSlime, 147, "IceSlime", "Ice Slime"),
+            (NpcKind::Crimslime, 183, "Crimslime", "Crimslime"),
+            (NpcKind::SpikedIceSlime, 184, "SpikedIceSlime", "Spiked Ice Slime"),
+            (NpcKind::UmbrellaSlime, 225, "UmbrellaSlime", "Umbrella Slime"),
+            (NpcKind::CataractEye, 190, "CataractEye", "Demon Eye"),
+            (NpcKind::SleepyEye, 191, "SleepyEye", "Demon Eye"),
+            (NpcKind::DialatedEye, 192, "DialatedEye", "Demon Eye"),
+            (NpcKind::GreenEye, 193, "GreenEye", "Demon Eye"),
+            (NpcKind::PurpleEye, 194, "PurpleEye", "Demon Eye"),
+            (NpcKind::DoctorBones, 52, "DoctorBones", "Doctor Bones"),
+            (NpcKind::TheGroom, 53, "TheGroom", "The Groom"),
+            (NpcKind::BaldZombie, 132, "BaldZombie", "Zombie"),
+            (NpcKind::ZombieEskimo, 161, "ZombieEskimo", "Frozen Zombie"),
+            (NpcKind::PincushionZombie, 186, "PincushionZombie", "Zombie"),
+            (NpcKind::SlimedZombie, 187, "SlimedZombie", "Zombie"),
+            (NpcKind::SwampZombie, 188, "SwampZombie", "Zombie"),
+            (NpcKind::TwiggyZombie, 189, "TwiggyZombie", "Zombie"),
+            (NpcKind::FemaleZombie, 200, "FemaleZombie", "Zombie"),
+            (NpcKind::ZombieRaincoat, 223, "ZombieRaincoat", "Raincoat Zombie"),
+        ];
+        for (kind, net, credit, name) in table {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.kind, kind, "{kind:?} entry kind");
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} display name");
+            assert_eq!(e.variant, None, "{kind:?} no variant");
+            assert!(!e.quick_unlock, "{kind:?} not a boss");
+            assert_eq!(kind.net_id(), net, "{kind:?} net_id reads the entry");
+        }
+    }
+
+
+    /// The AI routing: the 24 kinds ride their family machines through a
+    /// full `update` tick (the documented stand-in routing — the C#'s
+    /// `AI_001_Slimes`/`AI_002`/`AI_003_Fighters` are one arm per style,
+    /// the per-type rows are stats). Each kind steps without panicking,
+    /// stays inside its own strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn s1_d_3ff_the_wave_a_kinds_step_their_family_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in ALL_KINDS {
+            if crate::npc_findframe_a::find_frame_kind(kind).is_none() {
+                continue;
+            }
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
 }
