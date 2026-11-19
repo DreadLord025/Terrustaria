@@ -16169,6 +16169,9 @@ phase of the fixed step вЂ” between `npcs` and `projectiles`, the C# order a
 toggle drives the same `ChildSafety.Disabled` static for both pools
 (`ChildSafety.cs:15` вЂ” one static in the C#, so `sync_child_safety` sets both).
 The draw pass stays unported, which is why no gore is visible yet.
+(`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
+The front draw pass landed with S1-E-4b (below); `DrawGoreBehind` stays
+unported.
 
 Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
 velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
@@ -16177,6 +16180,121 @@ gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
 `:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
 App's phase-order golden test now pins `gores` between `npcs` and
 `projectiles`.
+
+## The gore draw pass (S1-E-4b, 2026-11-18)
+
+`crates/tr-app/src/render/gore.rs` ports `Main.DrawGore`
+(`Main.cs:21873-21907`) read-only over `App.gore`: the 600-slot walk, the
+inactive/`type <= 0` skip (`:21879-21882`), the drip gate (`:21883-21887` —
+`GoreID.Sets.IsDrip` rows outside frames 7..=9 belong to `DrawGoreBehind`
+and latch `Main.drawBackGore`), the framed/unframed source split
+(`:21889`/`:21900`) and the `SpriteBatch.Draw` call's integer-half origins,
+the framed path's `- 2f` Y lift and the type-1217 `+ 4f` nudge
+(`:21892-21898`). The seam sits between the rain and the dust draws in
+`app/frame/draw.rs` — the C# order `DrawRain` (`Main.cs:62279`) → `DrawGore`
+(`:62282`) → `DrawDust` (`:62293`) — in the same world-effect (fx) range the
+rain/sand/leaf draws use. No kill-at-draw arm exists in `DrawGore` (unlike
+`DrawDust`'s black-death), and none was added: the pool update is untouched.
+
+The tint is `Gore.GetAlpha` (`Gore.cs:1464-1505`) verbatim — the 16/17,
+716/1383, 570-572 (`b/2` integer), 331 and 1225 (float ctor) arms, the
+default path's `(int)(byte * num)` truncating multiplies, the alpha clamp
+(`:1491-1499`) and the 1202-1204 cap at 20. The light input is
+`Lighting.GetColor(int, int)` (`Lighting.cs:216-242`) through the active
+`LightStyle::shade` (the wires-pass convention), byte-truncated at 255 with
+alpha 255. The source cell is `SpriteFrame.GetSourceRectangle`
+(`SpriteFrame.cs:72-77`): `texture / count` integer cells, the 2 px padding
+subtracted only on multi-cell axes. The light-sample tile keeps both C#
+cast orders (`Main.cs:21897`/`:21902`): X casts the sum before the integer
+`/ 16`, Y divides before the cast. The rotation emulation is the
+`push_sprite_origin_rot` top-left shift with `origin · scale · zoom`, in the
+fx range (no world-range cache key change — the fx range rebuilds per frame
+like the rain).
+
+Asset loading: `LoadGore` (`Main.cs:59100-59106`) is a lazy texture request;
+the port packs every `Images/Gore_<id>.xnb` up front beside the item/buff
+icons (`assets.rs::load_static_sheets`, `enumerate_gore_sheet_ids` — the
+same file-scan shape, ~1 400 small sheets, ~0.7 MB compressed), exposed as
+`Lookups.gore_sheets` keyed by the parsed id. The leaf gores 910/911 keep
+their existing `STATIC_SHEET_NAMES` slot (the enumeration excludes them so
+nothing double-packs) and appear in both maps.
+
+Atlas packing (**re-sync 2026-11-19**): this branch originally carried its own
+first-fit decreasing-height shelf experiment in `tr-render/src/atlas.rs`; the
+M8 merge wave SKIP-blocked the branch on the atlas bound (first-fit measured
+8 305 px > 8 192 with the gore sheets) and the experiment was reverted —
+`atlas.rs` on this branch now equals **main's P4 best-fit decreasing-height
+shelves** (`2795277e`, the frost-wave fix, 8 416 → 8 121 px on main's set).
+The overflow was re-measured on the synced branch in code-only mode: a JS
+simulation (`Temp/opencode/e4b-atlas-sim.js` — the LZX/XNB header decode
+translated from `tr-content/src/lzx.rs`/`xnb.rs`, the sheet enumeration
+mirroring `assets.rs::tests::content_lookups` with `World::new` 8×8 and empty
+tile/wall sets, and the packer translated arm-for-arm from main's `build_ref`)
+reads every sheet's real dimensions from the retail `.xnb` headers:
+
+* main's set (no gore): **7 779 sheets, 42 shelves, 8 117 px** (the ~4 px
+  delta to the recorded 8 121 is the 5 file-less `Minecart*`/`Mount_*` names
+  in `STATIC_SHEET_NAMES` whose retail files carry different names — they
+  never decode at startup either);
+* with the branch's **1 402 gore sheets** (1 404 files minus the 910/911
+  leaf gores that keep their `STATIC_SHEET_NAMES` slot): **9 181 sheets,
+  49 shelves, 8 489 px — 297 px over the 8 192 strict-GPU bound**;
+* the gore band's ideal area is only ~374 px of shelf height
+  (Σ(w+2)(h+2) = 3 066 912 px² / 8 192), but the height-descending sort
+  interleaves the 6..300 px gore strips with the item/icon band, so seven
+  extra shelves open (the marginal band: 24/24/24/22/22/20/18… px rows of
+  ~300 items+gores each) and the pack ends 372 px taller than main's;
+* cross-check of the packer translations on the same input: next-fit
+  8 763 px, first-fit 8 489 px, best-fit 8 489 px (with gore); next-fit
+  8 410 px vs best-fit 8 117 px (without) — consistent with the recorded
+  8 416 → 8 121 main fix and the 8 305 first-fit SKIP measurement (that
+  number was taken on the pre-frost/pre-chat sheet set).
+
+**The branch stays MERGE-BLOCKED on `task/S1-G-12-atlas-packer` (R1)** — the
+packing algorithm is R1-owned; this branch makes no packer change. Any repack
+moves every sheet's atlas position, so all UVs shift and the golden screenshot
+SHA256s change by construction — re-take owed when a build is next allowed
+(no pixel-behaviour change — the same texels, new addresses).
+
+Documented drops: **`DrawGoreBehind`** (`Main.cs:21842-21871`, the
+behind-tiles drip rows at `:56937`/`:63424`) is not ported — it needs a
+draw seam inside the tile batch, and the `drawBackGore` latch is therefore
+not carried; hanging drips simply do not draw until that seam lands. A
+gore type whose sheet file is absent stays undrawn (the lazy `LoadGore`
+never resolving). Six tests (`s1_e_4b_*`) pin the source-rect maths, every
+`GetAlpha` arm, the byte multiplies, the light-tile cast orders, the quad
+geometry (lift/nudge/scaled origin/rotation) and the drip gate.
+
+**Code-only mode (user directive, 2026-11-18):** this pass was written and
+committed without invoking any compiler — no cargo/rustc/rustfmt/test
+runs. The six tests are written NOT run; the tint's TWO-step truncation
+(the light byte `(int)(c·255)` first, then `GetAlpha`'s `(int)(byte·num)`
+— never fused into one multiply, the G-3 verifier finding on fused
+tints) was hand-checked against the C# literals, as was every test's
+expected value. Compilation, the test run and the re-taken screenshots
+are owed before this branch merges.
+
+**Re-sync verification (2026-11-19, code-only mode):** after merging main
+(K-4 splits, G-1 passes, the P4 best-fit packer, the E-5 light feeds, the
+D-3 AI families) the draw pass was re-read line-for-line against the C#:
+`Main.DrawGore` (`Main.cs:21873-21907` — the walk/gates/source split/integer
+halves/−2f lift/1217 nudge/both light-tile cast orders), `Gore.GetAlpha`
+(`Gore.cs:1464-1505` — every arm, the `(byte)(255-alpha)` wrap, the float
+ctor's ×255-then-truncate, the default path's `(int)(byte·num)` products and
+the alpha clamp/cap) and `SpriteFrame.GetSourceRectangle`
+(`DataStructures/SpriteFrame.cs:72-77` — the port's `max(1)` guards only
+diverge on a zero-count frame the pool never constructs). The TWO-step byte
+truncation is intact: `light_color` truncates `(int)(c·255)` per channel
+first (the `Lighting.GetColor` byte, `Lighting.cs:216-242`, alpha 255 via
+`-16777216`), then `get_alpha` multiplies that byte by `num` and truncates
+again — never fused. The draw seam still sits between `rain.draw` and
+`crate::sand::draw` in `app/frame/draw.rs`'s fx range (the C# order
+`Main.cs:62279`→`:62282`→`:62293`), and the G-3 blend-batch landing did not
+disturb it (`push_fx_sprite_rot` writes `blend: 0`, the alpha-blend default
+`SpriteBatch.Begin()` uses for `DrawGore`). The rotation fold matches
+`push_sprite_origin_rot`'s convention with the origin pre-scaled by
+`scale·zoom` (XNA scales the origin with the sprite). No compiler invoked.
+
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
