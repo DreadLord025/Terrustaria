@@ -13437,7 +13437,7 @@ impl Npc {
                 // the eyelid pulse the death hover keeps riding) were
                 // missing — `checkDead`'s 397 arm zeroes `ai[1]` on entry
                 // (`:78065`) and the wrap keeps the corpse animating.
-                self.damage = 0;
+                self.damage_override = Some(0);
                 self.dont_take_damage = true;
                 self.ai[1] += 1.0;
                 if self.ai[1] >= 32.0 {
@@ -13502,6 +13502,7 @@ impl Npc {
                             damage: 30,
                             ai0: 0.0,
                             ai1,
+                            scale: None,
                         });
                     }
                 } else {
@@ -13722,7 +13723,7 @@ impl Npc {
                 // by the shared -1 (the C#'s net-zero hold; at 14 the
                 // arm skips the +1 and the shared -1 drops it to 13 —
                 // the 13/14 oscillation is the vanilla's).
-                self.damage = 0;
+                self.damage_override = Some(0);
                 self.dont_take_damage = true;
                 self.rotation += (std::f32::consts::PI / 12.0 - self.rotation) * 0.07;
                 self.ai[2] += 1.0;
@@ -13746,7 +13747,7 @@ impl Npc {
                     self.ai[0] = -3.0;
                     return;
                 }
-                self.damage = 0;
+                self.damage_override = Some(0);
                 self.dont_take_damage = true;
                 self.ai[2] += 1.0;
                 if self.ai[2] >= 32.0 {
@@ -13805,6 +13806,7 @@ impl Npc {
                             damage: 75,
                             ai0: sign * std::f32::consts::TAU / 540.0,
                             ai1: 0.0,
+                            scale: None,
                         });
                         self.ai[2] = (uy.atan2(ux) + std::f32::consts::PI * 3.0) * sign;
                     }
@@ -14144,6 +14146,7 @@ impl Npc {
                             damage: 35,
                             ai0: 0.0,
                             ai1,
+                            scale: None,
                         });
                     }
                 } else {
@@ -14192,6 +14195,7 @@ impl Npc {
                             damage: 50,
                             ai0: sign * std::f32::consts::TAU / 540.0,
                             ai1: 0.0,
+                            scale: None,
                         });
                         self.ai[2] = (uy.atan2(ux) + std::f32::consts::PI * 3.0) * sign;
                     }
