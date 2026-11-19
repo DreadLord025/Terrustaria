@@ -91,6 +91,10 @@ mod npc_ai_style39;
 mod npc_ai_unicorn_b;
 mod npc_ai_style27;
 mod npc_ai_fishron;
+// S1-D-3 empress: UNWIRED Empress of Light machine (aiStyle 120, kind
+// 636) - the NpcKind row + dispatch arm are the wiring follow-up (see
+// the module doc + docs/ANALYSIS.md "Empress of Light's machine").
+mod npc_ai_empress;
 mod npc_ai_plantera;
 // S1-D-3-plantera-minions (rescoped): the hook-centroid anchor seam
 // (NPC.cs:31743-31762), UNWIRED - the merge union feeds it into
