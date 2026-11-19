@@ -31186,8 +31186,12 @@ The holiday zombies — the C# night-spawn ladder's halloween/xmas arms
 | 331 ZombieXmas | `NpcKind::ZombieXmas` | 224 | 14/6/45/0.5/60 | — | `NPC.cs:13204-13216` |
 | 332 ZombieSweater | `NpcKind::ZombieSweater` | 225 | 14/6/45/0.5/60 | — | `NPC.cs:13217-13229` |
 
-Protocol ids 221-225 verified free in `npc/data.rs::to_u16` (the taken
-bands: 213-220 entirely, 148, 353/354 — none touched). All five: aiStyle
+Protocol ids 221-225 verified free in `npc/data.rs::to_u16` at branch
+time (the taken bands then: 213-220 entirely, 148, 353/354 — none
+touched). **GATE REASSIGN (L-I, final): 230-234** — the fishron 219-222
+and wyvern 223-228 bands landed before this merge; the to_u16 re-scan of
+the merged lane tree put the five on the next-free 230-234 (229 stays
+free). All five: aiStyle
 3 (`:13037`/`:13051`/`:13065`/`:13208`/`:13221`), 18×40 box (the scale
 rows ride `Npc::scale`, NOT the hitbox), `NPC_Hit_1`/`NPC_Killed_2`,
 `npcFrameCount` 3 (`Main.cs:67115` for 319, `:67116` for 320-321,
@@ -31392,9 +31396,12 @@ The C# night-spawn ladder's blood-moon arm (`NPC.cs:4638-4648`:
 | 489 BloodZombie | `NpcKind::BloodZombie` | 226 | 3 | 20/8/75/0.4/150 | 18×40 | `NPC.cs:14605-14617` |
 | 490 Drippler | `NpcKind::Drippler` | 227 | 22 | 28/14/50/0.6/150 | 28×30 | `NPC.cs:14618-14631` |
 
-Protocol ids 226/227 verified free in `npc/data.rs::to_u16` (the taken
-bands: 213-225, 148, 353/354 — none touched; the first round's "213-220
-taken" comment was stale, no arm encoded them). Both: `NPC_Hit_18`/
+Protocol ids 226/227 verified free in `npc/data.rs::to_u16` at branch
+time (the taken bands then: 213-225, 148, 353/354 — none touched; the
+first round's "213-220 taken" comment was stale, no arm encoded them).
+**GATE REASSIGN (L-I, final): 235/236** — the fishron 219-222 + wyvern
+223-228 bands and the holiday five (230-234) landed first; the to_u16
+re-scan put the pair on the next-free 235/236. Both: `NPC_Hit_18`/
 `NPC_Killed_21` (489) and `NPC_Hit_19`/`NPC_Killed_22` (490) — the cues
 registered in `audio.rs`'s `SFX_CUES` (the assets exist in
 `assets/Content/Sounds`), null debuff-immunity rows (`NPCID.cs:8892-8893`),
