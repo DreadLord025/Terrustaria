@@ -24765,6 +24765,23 @@ tests). The EyeBeam's `timeLeft = 300` override (`:31307`/`:31333`/
 comment claimed the flag did not exist and kept the wall-87 arm closed
 forever; the flag exists (the death chain writes it).
 
+**The three-way merge reconcile (MERGER-L7, 2026-11-19, TR-D3s48 note).**
+The golem family was covered three ways: this audit (the wired 4-arm
+rewrite), `npc_ai_style46` (the UNWIRED head reference) and
+`npc_ai_style47` (the fists axis port, landed first). Per the note's
+"prefer the most complete faithful version per arm": the fists' axis
+arm 47 now delegates to `update_golem_rng`'s faithful fists arm
+(`ai_047_golem_fist_family`) - this audit's fists carry the full-velocity
+anchor (the Y term via `golem_vy`), the balance-scaled ladders, the real
+`collideX/collideY` dash exit (the seam's tile-collision pass) and the
+state-3 hover, superseding `npc_ai_style47`'s documented fold-outs (the
+dropped anchor Y, the never-set collide flags, the solo-only balance).
+The `npc_ai_style47` module + its witnesses stay as the unwired audit
+cross-check (its npc.rs tests call it directly); `npc_ai_style46` stays
+the unwired head reference. The temple wire gate re-applied onto the
+K-4 split's `world_sim/editing/wiring.rs` home (the `downed_golem` read
++ the gate-open witness).
+
 **Deliberate deviations / skips.**
 
 - **getGoodWorld** has no port field — the enrage bonus and the charge
