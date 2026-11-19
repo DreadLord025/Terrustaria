@@ -774,6 +774,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Everscream",
+    },
     // The Frost Moon wave family (`S1-F-13c` slice B): the credit ids are
     // `NPCID.Search.GetName`'s persistent names (`ContentSamples.cs:868-870`;
     // `NPCID.cs:11367-11381`) — 348/349 carry DISTINCT credits despite the

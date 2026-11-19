@@ -2878,6 +2878,9 @@ pub(crate) fn draw_npcs(
             | NpcKind::ElfArcher
             | NpcKind::Krampus
             | NpcKind::Flocko => {
+                let ty = n.kind.frost_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
             // The Frost Moon family (`S1-F-13c` slice A): each kind draws
             // its own sheet (the `SNOW_SHEETS` rows) at `SetFrameSize`'s row
             // height over the C#'s `Main.npcFrameCount[type]`
