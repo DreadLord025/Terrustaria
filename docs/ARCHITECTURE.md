@@ -150,9 +150,9 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
-- `growth.rs` + `growth/trees.rs` + `growth/grass.rs` + `growth/decorations.rs` — the
-  `WorldGen.UpdateWorld` runtime growth ticks
-  (herbs, vines/moss, shells, pumpkins, the dispatchers).
+- `growth.rs` + `growth/trees.rs` + `growth/grass.rs` + `growth/decorations.rs`
+  + `growth/herbs.rs` + `growth/pumpkins.rs` — the `WorldGen.UpdateWorld` runtime
+  growth ticks (vines/moss, shells, the dispatchers).
   S1-K-3 split out the tree-growth family into `growth/trees.rs` (`grow_tree`,
   `attempt_grow_tree_from_sapling`, the `GrowTreeSettings` profiles +
   `try_growing_tree_by_type`/`grow_tree_with_settings`, `grow_palm_tree`,
@@ -163,12 +163,21 @@ an agent needs before touching code.
   `convert_wall_by_case`, `spread_grass_walls`, `spread_desert_walls`) —
   verbatim move, public seams re-exported from `growth` (code-only mode,
   byte-proof, cargo gate deferred — ANALYSIS "S1-K-3b").
-  re-exported from `growth`. S1-K-3c split out the decorations family into
+  S1-K-3c split out the decorations family into
   `growth/decorations.rs` (`check_cat_tail`/`grow_cat_tail`,
   `grow_check_seaweed`, `grow_web`, `plant_dye`/`place_dye`,
   `try_growing_abigails_flower` + helpers and their 12 tests) — verbatim
   move, public seams re-exported from `growth` (ANALYSIS "The decorations
   split (S1-K-3c)").
+  S1-K-3d split out the herbs family into
+  `growth/herbs.rs` (`TILE_ALCH`, `alch_seed_skips`, `grow_alch`, `WeatherCtx`,
+  `is_alchemy_plant_harvestable`/`is_harvestable_herb_with_seed` + their 5 tests) —
+  verbatim move, public seams re-exported from `growth`, no visibility seam
+  (ANALYSIS "S1-K-3d").
+  S1-K-3e split out the pumpkin family into
+  `growth/pumpkins.rs` (`place_pumpkin`, `grow_pumpkin`, `halloween_pumpkins`
+  — the M5-SEED-2 holiday sweep + its two helpers) — verbatim move, public
+  seams re-exported from `growth` (code-only mode, byte-proof — ANALYSIS "S1-K-3e").
 - `tileobject.rs` — the `TileObjectData` placement machinery: `TileObject.CanPlace`/
   `Place` (`can_place`/`place`), the `CustomPlace` routing gate
   (`custom_place`/`routes_through_tile_object`), and the shared tile sets
@@ -196,6 +205,17 @@ an agent needs before touching code.
   + `framing::reframe_area(_, _, 2, true)` — no column-surface recompute). Both fns
   are re-exported from `edit`, so `edit::break_wall`/`edit::place_wall` callers are
   unchanged; behaviour frozen (world-hash pins + edit tests green).
+- `edit/kill.rs` (S1-K-4 round 3) — the KillTile destruction cascade moved verbatim
+  out of `edit.rs`: `kill_tile`/`square_tile_frame*`/`actuation_square_frame`, every
+  `check_*` arm, `solid_tile`/`solid_tile2`/`remove_tile`, `can_kill_tile`, the event
+  records (`TileKill`/`ObjectDrop`/`PotEvent`/`HerbEvent`/`PileLootEvent`/`TreeDropEvent`)
+  and the `KillTile_PlaySounds` table (`kill_tile_sound`/`KillSounds`/`SoundCue`/
+  `pot_break_sound`), plus 65 tests. All pub seams re-exported at `edit::` (the
+  `pub(crate)` helpers via `pub(crate) use`), so every caller is unchanged; the shared
+  helpers (`touch`/`after_edit`/`liquid_flags`/`is_locked_door`/`ALCH_SOILS`) stay in
+  the parent. Byte-proven against `origin/main` in code-only mode (no compiler
+  invoked); build/test verification deferred to the merge gate — ANALYSIS "The
+  kill-cascade module split (S1-K-4 round 3)".
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
