@@ -3683,6 +3683,14 @@ impl Npc {
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
+            // `else if (this.aiStyle == 34/35/36)` (`NPC.cs:28245-28521` /
+            // `:28522-28756` / `:28757-28990`) — the Prime Vice (130),
+            // Cannon (128) and Laser (131). S1-D-3 prime wiring: the
+            // faithful `npc_ai_prime_limbs.rs` arms claim these styles
+            // (each style's ONLY user in `SetDefaults` is its limb —
+            // `npc/data.rs`'s ai_style rows); the saw (129, style 33)
+            // and the head (127, style 32) keep their kind-match arms.
+            34 | 35 | 36 => self.ai_prime_limb_family(world, player, rng),
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
@@ -3804,6 +3812,72 @@ impl Npc {
         }
     }
 
+    /// S1-D-3 prime wiring: the aiStyle-34/35/36 family arm — `NPC.AI()`'s
+    /// inline Vice/Cannon/Laser blocks (`NPC.cs:28245-28521` /
+    /// `:28522-28756` / `:28757-28990`). The faithful machines live in
+    /// `npc_ai_prime_limbs.rs` (`prime_limb_step`); this wrapper fills the
+    /// `PrimeLimbContext` seam from the sim's head write-through
+    /// (`world_sim/npcs.rs`'s `prime_*` pass — the `Style33Context` feed
+    /// shape) and owns the post-AI integration the pure fns leave to the
+    /// caller (`UpdateNPC`, `NPC.cs:90498` — all three limbs are
+    /// noGravity/noTileCollide, `SetDefaults` `:10573-10632`).
+    fn ai_prime_limb_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let ctx = crate::npc_ai_prime_limbs::PrimeLimbContext {
+            head_active: world.prime_present,
+            // The write-through only ever anchors a live SkeletronPrime
+            // (aiStyle 32, `npc/data.rs`'s row) — a missing head reads the
+            // C#'s `!active || aiStyle != 32` despawn gate (`:28263`).
+            head_ai_style: if world.prime_present { 32 } else { -1 },
+            head_x: world.prime_head_x,
+            head_y: world.prime_y,
+            head_width: world.prime_head_width,
+            head_vx: world.prime_head_vx,
+            head_vy: world.prime_head_vy,
+            head_ai1: world.prime_head_ai1,
+            // The port is single-player (`Main.netMode == 0`): the shot
+            // gates (`!= 1`) pass, the despawn's `!= 2` kills on the
+            // first head-gone tick — the C# single-player behaviour.
+            net_mode: 0,
+            // `EverLastingTicker` is not plumbed into `Npc::update` yet
+            // (the zombie arm's stand-in, `npc.rs`'s update_zombie note).
+            ticker: 0,
+        };
+        // The session player is slot 0 (the `TargetCandidate` shape the
+        // zombie/spaz arms feed `npc_target::target_closest`).
+        let cand = crate::npc_target::TargetCandidate {
+            active: true,
+            dead: player.dead,
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        // The kind-keyed dispatch: 128 → style35_step, 130 → style34_step,
+        // 131 → style36_step. RNG: only the cannon/laser draw, exactly two
+        // `Next(-40, 41)` (X then Y) per FIRED shot (`:28669-28670` /
+        // `:28748-28749` / `:28904-28905` / `:28982-28983`); the vice
+        // provably draws nothing (the module's witness tests).
+        // The C#'s `Main.player` is a 255-slot array — an unacquired
+        // target (the ClearTarget 255, e.g. a TR_NPC debug spawn before
+        // the head's `target` copy, `:27642`) indexes an INACTIVE slot,
+        // not a crash. The port's slice has one slot: stand the
+        // unacquired target in as slot 0 (the module fixture's mapping).
+        if self.target as usize >= 1 {
+            self.target = 0;
+        }
+        let claimed = crate::npc_ai_prime_limbs::prime_limb_step(self, world, &ctx, &[cand], rng);
+        debug_assert!(claimed, "only the three limb kinds ride this axis arm");
+        // `NPC.UpdateNPC`'s integration after `AI()` (`NPC.cs:90498`):
+        // noTileCollide + noGravity — the raw `position += velocity`.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -3869,8 +3943,13 @@ impl Npc {
             NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
             NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
-            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
-                self.update_prime_limb(world, player)
+            // S1-D-3 prime wiring: the cannon/vice/laser (aiStyles
+            // 35/34/36) ride the style axis (`ai_prime_limb_family`) —
+            // only the saw (129, aiStyle 33) still rides the v1 shared
+            // stand-in until its own wiring round claims style 33.
+            NpcKind::PrimeSaw => self.update_prime_limb(world, player),
+            NpcKind::PrimeCannon | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
+                unreachable!("aiStyles 34/35/36 ride the style axis (S1-D-3 prime wiring)")
             }
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
@@ -16514,6 +16593,221 @@ mod tests {
         assert_eq!(beam.5, 25, "the laser damage");
         let sp3 = (beam.3 * beam.3 + beam.4 * beam.4).sqrt();
         assert!((sp3 - 10.0).abs() < 0.5, "the 10 speed ({sp3})");
+    }
+
+    // ---- S1-D-3 prime wiring: the dispatch claim's witnesses ----
+    // (code-only mode: WRITTEN NOT RUN — no compiler invoked this round.)
+
+    /// The head write-through the axis arm's seam reads: head at
+    /// (1600, 800), width 80, hovering — the module fixtures' shape on
+    /// the 200x200 `ground_air` world.
+    fn prime_wired_world() -> World {
+        let mut w = ground_air();
+        w.prime_present = true;
+        w.prime_x = 1640.0; // the FLOAT centre (the v1 saw arm's read)
+        w.prime_y = 800.0;
+        w.prime_head_x = 1600.0;
+        w.prime_head_width = 80;
+        w.prime_head_vx = 0.0;
+        w.prime_head_vy = 0.0;
+        w.prime_head_ai1 = 0.0;
+        w
+    }
+
+    /// The cannon (128, aiStyle 35) is RETIRED from the stand-in: the
+    /// axis arm fires the 140-tick REVERSED-dock bomb on `local_ai[0]`
+    /// (`NPC.cs:28657-28675`) — a counter the v1 `update_prime_limb`
+    /// never touches (it ran `ai[3]`'s 40-tick player bomb). RNG parity:
+    /// exactly TWO `Next(-40, 41)` draws (X then Y, `:28669-28670`) on
+    /// the firing tick, ZERO on a non-firing tick.
+    #[test]
+    fn the_wired_cannon_fires_the_reversed_dock_bomb_with_two_draws() {
+        let w = prime_wired_world();
+        let mut player = surface_player(&w);
+        player.x = 300.0; // far from the limb — no contact draws
+        player.y = 300.0;
+        // The +1 seat's dock: centre (1640 - 200, 800 + 230) = (1440,
+        // 1030). The limb sits 30 px RIGHT of it (centre (1470, 1030))
+        // — exactly ON the dock the no-epsilon normaliser is the C#'s
+        // NaN (the module's documented verbatim behaviour), so the
+        // fixture keeps a nonzero dock vector (-30, 0).
+        let mut cannon = Npc::new(NpcKind::PrimeCannon, 1444.0, 1004.0, 1, 0.0);
+        cannon.hp = cannon.max_hp;
+        cannon.ai[0] = 1.0;
+        cannon.target = 0;
+        cannon.local_ai[0] = 140.0; // 141 > 140 fires (`:28660`)
+        let mut rng = tr_core::UnifiedRandom::new(77);
+        cannon.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(cannon.local_ai[0], 0.0, "the faithful cadence ran, not the stand-in");
+        assert_eq!(cannon.sprite_dir, -1, "-(int)ai[0] (:28524)");
+        assert_eq!(cannon.wants_hostile_shot.len(), 1, "the bomb fires");
+        let (ty, _sx, _sy, vx, vy, dmg) = cannon.wants_hostile_shot[0];
+        assert_eq!(ty, crate::projectile::BOMB_SKELETRON);
+        assert_eq!(dmg, 0);
+        // The REVERSED dock vector `(0f - num) * (12/dist)` (`:28666-
+        // 28668`): (-30, 0) reverses to +12 X, 0 Y — AWAY from the dock,
+        // not at the player (the stand-in aimed at the player).
+        // RNG parity: the caller's stream advanced EXACTLY two draws.
+        let mut expect = tr_core::UnifiedRandom::new(77);
+        let jx = expect.next_range(-40, 41) as f32 * 0.01;
+        let jy = expect.next_range(-40, 41) as f32 * 0.01;
+        assert_eq!(rng, expect, "two Next(-40,41) draws, X then Y (:28669-28670)");
+        assert!((vx - (12.0 + jx)).abs() < 0.001, "the reversed dock + the X draw");
+        assert!((vy - jy).abs() < 0.001, "the Y draw");
+        // A non-firing tick draws NOTHING.
+        let mut idle = Npc::new(NpcKind::PrimeCannon, 1444.0, 1004.0, 1, 0.0);
+        idle.hp = idle.max_hp;
+        idle.ai[0] = 1.0;
+        idle.target = 0;
+        idle.local_ai[0] = 50.0;
+        let mut rng2 = tr_core::UnifiedRandom::new(77);
+        let before = rng2.clone();
+        idle.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(idle.wants_hostile_shot.is_empty());
+        assert_eq!(idle.local_ai[0], 51.0);
+        assert_eq!(rng2, before, "a non-firing tick draws zero");
+    }
+
+    /// The vice (130, aiStyle 34) is RETIRED from the stand-in: the
+    /// STRICT >800 desync arms state 99 (`NPC.cs:28252-28262`) — the v1
+    /// had no state machine at all. RNG parity: the vice draws NOTHING
+    /// (the arm takes no RNG parameter; the whole tick's stream is
+    /// untouched with the player out of contact range).
+    #[test]
+    fn the_wired_vice_arms_the_desync_and_draws_nothing() {
+        let w = prime_wired_world();
+        let mut player = surface_player(&w);
+        player.x = 300.0;
+        player.y = 300.0;
+        // 801 px right of the -1 seat's dock centre (1840, 1030).
+        let mut vice = Npc::new(NpcKind::PrimeVice, 1814.0 + 801.0, 1004.0, 1, 0.0);
+        vice.hp = vice.max_hp;
+        vice.ai[0] = -1.0;
+        vice.target = 0;
+        let mut rng = tr_core::UnifiedRandom::new(77);
+        let before = rng.clone();
+        vice.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(vice.ai[2], 99.0, "the desync hysteresis ran, not the stand-in");
+        assert_eq!(vice.sprite_dir, 1, "-(int)ai[0] (:28247)");
+        assert_eq!(rng, before, "the vice provably draws zero");
+    }
+
+    /// The laser (131, aiStyle 36) is RETIRED from the stand-in: the
+    /// 200-tick volley (`NPC.cs:28892-28910`) fires type 100 at 25 with
+    /// the 8-unit lead — the v1 ran an 80-tick zero-lead volley. RNG
+    /// parity: two `Next(-40, 41)` draws ×0.05 per fired shot only
+    /// (`:28904-28905`).
+    #[test]
+    fn the_wired_laser_volleys_at_200_with_two_draws() {
+        let w = prime_wired_world();
+        let mut player = surface_player(&w);
+        player.x = 1700.0; // near the dock for a clean aim, no overlap
+        player.y = 1100.0;
+        let mut laser = Npc::new(NpcKind::PrimeLaser, 1414.0, 1004.0, 1, 0.0);
+        laser.hp = laser.max_hp;
+        laser.ai[0] = 1.0;
+        laser.target = 0;
+        laser.local_ai[0] = 200.0; // 201 > 200 fires (`:28895`)
+        let mut rng = tr_core::UnifiedRandom::new(77);
+        laser.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(laser.local_ai[0], 0.0, "the faithful cadence ran, not the stand-in");
+        assert_eq!(laser.wants_hostile_shot.len(), 1);
+        let (ty, sx, sy, vx, vy, dmg) = laser.wants_hostile_shot[0];
+        assert_eq!(ty, crate::projectile::DESTROYER_LASER);
+        assert_eq!(dmg, 25);
+        // The spawn point steps EIGHT velocity units ahead (`:28906-28907`).
+        let (cx, cy) = (1414.0 + 26.0, 1004.0 + 26.0);
+        assert!((sx - (cx + vx * 8.0)).abs() < 0.01, "the 8-unit lead");
+        assert!((sy - (cy + vy * 8.0)).abs() < 0.01);
+        let mut expect = tr_core::UnifiedRandom::new(77);
+        expect.next_range(-40, 41);
+        expect.next_range(-40, 41);
+        assert_eq!(rng, expect, "two draws, X then Y (:28904-28905)");
+        // A non-firing tick draws NOTHING.
+        let mut idle = Npc::new(NpcKind::PrimeLaser, 1414.0, 1004.0, 1, 0.0);
+        idle.hp = idle.max_hp;
+        idle.ai[0] = 1.0;
+        idle.target = 0;
+        idle.local_ai[0] = 50.0;
+        let mut rng2 = tr_core::UnifiedRandom::new(77);
+        let before = rng2.clone();
+        idle.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(idle.wants_hostile_shot.is_empty());
+        assert_eq!(rng2, before);
+    }
+
+    /// The head-gone despawn through the axis: single-player
+    /// (`net_mode != 2`) kills on the FIRST tick (`NPC.cs:28263-28272`)
+    /// — the stand-in also killed at once, but via `prime_present`
+    /// alone; the faithful gate is `!active || aiStyle != 32`.
+    #[test]
+    fn the_wired_limbs_despawn_when_the_head_is_gone() {
+        let mut w = prime_wired_world();
+        w.prime_present = false;
+        let mut player = surface_player(&w);
+        player.x = 300.0;
+        player.y = 300.0;
+        for kind in [NpcKind::PrimeCannon, NpcKind::PrimeVice, NpcKind::PrimeLaser] {
+            let mut n = Npc::new(kind, 1414.0, 1004.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.ai[0] = 1.0;
+            n.target = 0;
+            let mut rng = tr_core::UnifiedRandom::new(77);
+            let before = rng.clone();
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.hp, 0, "{kind:?} dies on the first head-gone tick");
+            assert_eq!(n.ai[2], 10.0, "ai[2] += 10 (:28265)");
+            assert_eq!(rng, before, "the despawn's gore is the cosmetic skip");
+        }
+    }
+
+    /// The saw (129, aiStyle 33) is UNTOUCHED: its dispatch still rides
+    /// the v1 `update_prime_limb` byte-identical — the direct call and
+    /// the `update_rng` route agree on every field the stand-in writes.
+    #[test]
+    fn the_saw_still_rides_the_stand_in_byte_identical() {
+        let w = prime_wired_world();
+        let mut player = surface_player(&w);
+        player.x = 300.0;
+        player.y = 300.0;
+        let mut direct = Npc::new(NpcKind::PrimeSaw, 1600.0, 1280.0, 1, 0.0);
+        direct.hp = direct.max_hp;
+        direct.ai[0] = 1.0;
+        direct.ai[2] = 1.0; // the rise state
+        direct.update_prime_limb(&w, &player);
+        let mut routed = Npc::new(NpcKind::PrimeSaw, 1600.0, 1280.0, 1, 0.0);
+        routed.hp = routed.max_hp;
+        routed.ai[0] = 1.0;
+        routed.ai[2] = 1.0;
+        let mut rng = tr_core::UnifiedRandom::new(77);
+        let before = rng.clone();
+        routed.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(routed.x, direct.x);
+        assert_eq!(routed.y, direct.y);
+        assert_eq!(routed.vx, direct.vx);
+        assert_eq!(routed.vy, direct.vy);
+        assert_eq!(routed.ai, direct.ai);
+        assert_eq!(routed.rotation, direct.rotation);
+        assert_eq!(routed.sprite_dir, direct.sprite_dir);
+        assert_eq!(routed.wants_hostile_shot, direct.wants_hostile_shot);
+        assert_eq!(rng, before, "the saw arm draws zero");
+    }
+
+    /// The head (127, aiStyle 32) is UNTOUCHED: `update_prime` still
+    /// owns it — the first tick's limb-spawn latch fires through the
+    /// kind match, not the axis.
+    #[test]
+    fn the_head_still_rides_update_prime() {
+        let w = prime_wired_world();
+        let mut player = surface_player(&w);
+        player.x = 1600.0;
+        player.y = 700.0;
+        let mut head = Npc::new(NpcKind::SkeletronPrime, 1600.0, 800.0, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut rng = tr_core::UnifiedRandom::new(77);
+        head.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(head.wants_limbs, "the AI_032 init latch (:27635-27661)");
+        assert_eq!(head.caster_counter, 1);
     }
 
     fn the_wof_eye_mirrors_and_volleys() {
