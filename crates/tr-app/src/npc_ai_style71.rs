@@ -81,7 +81,8 @@
 //!
 //! Wiring deferred (the `npc_ai_style50.rs` precedent, commit
 //! 613aac92): the roster has no `NpcKind::Sharkron`/`Sharkron2` yet,
-//! so `update_rng`'s aiStyle axis (`npc.rs:3255`) has no style-71 arm
+//! so `update_rng`'s aiStyle axis (`npc.rs`, the `match self.kind.ai_style()`
+//! block) has no style-71 arm
 //! to claim. This module is the pure port + the minimal seams:
 //! * `Npc` has no `no_tile_collide`/`no_gravity` fields — the arm's
 //!   per-tick writes are RETURNED in [`Style71Outcome`] for the wiring
@@ -96,8 +97,8 @@
 //!   `frame.Y = num` — the SECOND frame, forever (`num` = sheet
 //!   height / frameCount, `:66694`). The port's `frame` is the row
 //!   index, so the const is 1. `Main.npcFrameCount[372] = [373] = 2`
-//!   (`Main.cs:67121`, the 370-379 row `12, 9, 9, 9, 1, 9, 11, 2, 2,
-//!   9` of the `:67082` array).
+//!   (`Main.cs:67121`, the 370-379 row `8, 2, 4, 4, 4, 4, 2, 2, 4,
+//!   12` of the `:67082` array).
 //! * The expert/master stat tweaks (`ScaleStats_ByDifficulty_Tweaks`,
 //!   `NPC.cs:18417-18424`: the 371/372/373 group — damage ×0.75 for
 //!   372/373, knockback ×0.75 for all three) ride the difficulty
@@ -321,7 +322,10 @@ pub fn ai_style71(
             npc.net_update = true;
         }
     } else {
-        // `:35028-35031` — any phase other than 1 returns.
+        // `:35028-35031` — any phase other than 1 returns. The C#
+        // performs NO noGravity write on this path; the outcome's
+        // default true matches both SetDefaults rows (noGravity=true)
+        // — unreachable through this arm, which only writes ai[0] 0/1.
         if npc.ai[0] != 1.0 {
             return out;
         }
@@ -481,7 +485,7 @@ mod tests {
         assert!(t.no_gravity);
         assert_eq!(t.knock_back_resist, 0.0);
         assert_eq!(t.alpha, 255);
-        // Main.cs:67121 — the 370-379 row `12,9,9,9,1,9,11,2,2,9`.
+        // Main.cs:67121 — the 370-379 row `8,2,4,4,4,4,2,2,4,12`.
         assert_eq!(SHARKRON_FRAME_COUNT, 2);
         assert_eq!(SHARKRON2_FRAME_COUNT, 2);
         // NPC.cs:72138-72142 — frame.Y = num: the second row, pinned.
