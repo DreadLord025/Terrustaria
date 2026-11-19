@@ -768,9 +768,17 @@ mod tests {
         b.extend_from_slice(&900i32.to_le_bytes()); // bottom
         b.extend_from_slice(&6i32.to_le_bytes()); // maxTilesY
         b.extend_from_slice(&8i32.to_le_bytes()); // maxTilesX
-                                                  // flags: GameMode (+9 bools when >= 209), creation time, last played.
+        // flags: GameMode (i32 from 209) + the nine seed bools, EACH gated on
+        // its own introduction version (`LoadWorldFlags:1983-2024`: 222/227/
+        // 238/239/241/249/266/267/302 — not all nine from 209), creation
+        // time, last played.
         if version >= 209 {
-            b.extend_from_slice(&[0u8; 13]);
+            b.extend_from_slice(&[0u8; 4]); // GameMode i32
+            for min_version in [222, 227, 238, 239, 241, 249, 266, 267, 302] {
+                if version >= min_version {
+                    b.push(0);
+                }
+            }
         } else {
             if version >= 112 {
                 b.push(0); // GameMode as bool (absent below 112 — C#-faithful)
@@ -1945,6 +1953,56 @@ mod tests {
         // run that starts at 22 (2+8+1+11): goblin@22, wizard@23, mech@24.
         tail[23] = u8::from(world.saved_wizard); // savedWizard (`:1294`)
         tail[24] = u8::from(world.saved_mech); // savedMech (`:1295`)
+        // The OLDER owned flags the writer also emits (DW-2.2's set) — the
+        // table must carry the world's values for every owned field, not
+        // just the S1-J-3b close set.
+        // The 11-byte downed run at 11 (`SaveWorldFlags:1283-1293`), incl.
+        // the derived downedMechBossAny (`:1290`).
+        for (i, v) in [
+            world.downed_eoc,
+            world.downed_eow,
+            world.downed_skeletron,
+            world.downed_queen_bee,
+            world.downed_mech_boss1,
+            world.downed_mech_boss2,
+            world.downed_mech_boss3,
+            world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3,
+            world.downed_plant_boss,
+            world.downed_golem,
+            world.downed_slime_king,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            tail[11 + i] = u8::from(v);
+        }
+        tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
+        tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
+        tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
+        tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
+        // The orbs/meteor/counts/hardmode block at 29..36 (`:1299-1305`).
+        tail[29] = u8::from(world.shadow_orb_smashed);
+        tail[30] = u8::from(world.spawn_meteor);
+        tail[31] = world.shadow_orb_count as u8; // C# truncates to a byte
+        tail[32..36].copy_from_slice(&world.altars_smashed.to_le_bytes());
+        tail[36] = u8::from(world.hard_mode);
+        // The invasion block at 38..57 + slime rain + sundial (`:1306-1312`).
+        tail[38..42].copy_from_slice(&world.invasion_delay.to_le_bytes());
+        tail[42..46].copy_from_slice(&world.invasion_size.to_le_bytes());
+        tail[46..50].copy_from_slice(&world.invasion_type.to_le_bytes());
+        tail[50..58].copy_from_slice(&world.invasion_x.to_le_bytes());
+        tail[58..66].copy_from_slice(&world.slime_rain_time.to_le_bytes());
+        tail[66] = world.sundial_cooldown;
+        // The rain snapshot at 67..75 (`SetTempToOngoing:1057-1059`).
+        tail[67] = u8::from(world.raining);
+        tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
+        tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
+        // The owned background styles inside setBG 0..7 at 88..95
+        // (`:1318-1325`): corrupt@89, jungle@90, hallow@92, crimson@93.
+        tail[89] = world.corrupt_bg_style;
+        tail[90] = world.jungle_bg_style;
+        tail[92] = world.hallow_bg_style;
+        tail[93] = world.crimson_bg_style;
         // savedAngler..savedGolfer follow the 4-byte angler-list count at
         // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
         tail[110] = u8::from(world.saved_angler); // savedAngler (`:1334`)
@@ -1952,10 +2010,13 @@ mod tests {
         tail[115] = u8::from(world.saved_stylist); // savedStylist (`:1336`)
         tail[116] = u8::from(world.saved_tax_collector); // savedTaxCollector (`:1337`)
         tail[117] = u8::from(world.saved_golfer); // savedGolfer (`:1338`)
+        tail[118..122].copy_from_slice(&world.invasion_size_start.to_le_bytes()); // (`:1339`)
         // The event bosses past the banner arrays (which end at 1888):
         // dawn@1888, fishron@1889, martians@1890, cultist@1891, moonlord@1892.
         tail[1891] = u8::from(world.downed_ancient_cultist); // downedAncientCultist (`:1345`)
         tail[1892] = u8::from(world.downed_moon_lord); // downedMoonlord (`:1346`)
+        tail[1888] = u8::from(world.fast_forward_to_dawn); // fastForwardTimeToDawn (`:1342`)
+        tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.
         tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
@@ -1973,6 +2034,12 @@ mod tests {
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
+        tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
+        // green/old/purple, then rainbow@2041.
+        tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
+        tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
+        tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
         b
     }
@@ -3369,7 +3436,11 @@ mod tests {
     /// the block ends the section, so the tail is its last `flags_tail(v)`
     /// bytes — independent of the world-head width.
     fn tail_offset_in_synthetic(data: &[u8], version: i32) -> usize {
-        let ptr1 = i32::from_le_bytes(data[30..34].try_into().unwrap()) as usize;
+        // The pointer table starts after the version i32 (+ the 20-byte
+        // FileMetadata from v135) + the i16 section count; pointer 1 is the
+        // second entry (`SaveFileFormatHeader:1174-1180`).
+        let ptr_at = 4 + if version >= 135 { 20 } else { 0 } + 2;
+        let ptr1 = i32::from_le_bytes(data[ptr_at + 4..ptr_at + 8].try_into().unwrap()) as usize;
         ptr1 - flags_tail(version).len()
     }
 
