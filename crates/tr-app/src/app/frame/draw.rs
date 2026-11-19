@@ -668,6 +668,26 @@ impl App {
                             blackout: false,
                             headcovered: false,
                             game_paused: self.game_paused,
+                            // `GameViewMatrix.Translation`
+                            // (`SpriteViewMatrix.cs:149-153`): the zoom
+                            // frame's offset — `Round(screen/2 - (screen/2)
+                            // / Round(zoom/(1/128))*(1/128))`, banker's
+                            // rounding (`Utils.Round`, `Utils.cs:112-115`).
+                            // The minimap export reads it (`:375-382`).
+                            view_translation: {
+                                let q = [
+                                    (world_zoom / (1.0 / 128.0)).round_ties_even()
+                                        * (1.0 / 128.0),
+                                    (world_zoom / (1.0 / 128.0)).round_ties_even()
+                                        * (1.0 / 128.0),
+                                ];
+                                [
+                                    (screen.x * 0.5 - screen.x * 0.5 / q[0]).round_ties_even(),
+                                    (screen.y * 0.5 - screen.y * 0.5 / q[1]).round_ties_even(),
+                                ]
+                            },
+                            // `Netplay.Connection.StatusMax > 0` (`:341`).
+                            net_connecting: self.net_status_max > 0,
                         };
                         let engine = legacy_light.get_or_insert_with(|| {
                             tr_core::lighting::legacy::LegacyLighting::new(*light_mode)
@@ -681,6 +701,17 @@ impl App {
                         if engine.mode() != want_mode {
                             engine.set_mode(*light_mode);
                         }
+                        // S1-E-19 wave B: the minimap light export
+                        // (`TryUpdatingMapWithLight`, `LegacyLighting.cs:371-433`)
+                        // rides the engine's `ProcessArea` gate block
+                        // (`:341-358`). The `Main.Map` seam borrows the
+                        // WorldMap's tiles + `mapTime`; `map_enabled` is
+                        // `Main.mapEnabled` (`Main.cs:813`). The changed tiles
+                        // come back through the seam and queue for re-upload
+                        // (`MapRenderer.QueueChange`'s analog).
+                        let mut export = map
+                            .as_mut()
+                            .map(|m| m.legacy_light_export(settings.map_enabled));
                         engine.process_area(
                             world,
                             [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
@@ -688,7 +719,16 @@ impl App {
                             &params,
                             &legacy_inputs,
                             &scratch.all_lights,
+                            export.as_mut(),
                         );
+                        // Consume the seam (ending its tile/counter borrows)
+                        // before re-borrowing the map for the dirty push.
+                        let changed = export.map(|e| e.changed);
+                        if let Some(changed) = changed {
+                            if let Some(m) = map.as_mut() {
+                                m.push_dirty(changed);
+                            }
+                        }
                         engine.present_into(light);
                     }
 
