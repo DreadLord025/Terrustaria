@@ -701,8 +701,10 @@ mod tests {
             "449 rides slice B's resting counter (flag3, :55997)"
         );
         assert_eq!(
-            saucer.slots()[0].local_ai[0], 60.0,
-            "slice B's +3/tick flight-time ramp: 20 ticks = 60 (:54794)"
+            saucer.slots()[0].local_ai[0], 100.0,
+            "slice B's +3/tick flight-time ramp saturates at the 100 cap \
+             (20 ticks x 2 sub-steps x 3 = 120 -> 100, :54794-54795; the \
+             row's extraUpdates = 1)"
         );
         assert!(!handles(SAUCER_LASER), "the kind sets are disjoint");
     }
