@@ -14219,39 +14219,35 @@ impl ProjectilePool {
                                 // `NPC.cs:79290`).
                                 let host_idx = self.slots[i].ai[0] as usize;
                                 let host_kind = npcs.get(host_idx).map(|h| h.kind);
-                                // `:72953`'s clamp max is `ShieldStrengthTowerMax`
-                                // (`NPC.cs:6795-6806`, the port's
-                                // `tower_shield_max`) — read before the mutable
-                                // shield borrow below.
-                                let max = crate::world_sim::npcs::tower_shield_max(world);
-                                let shield = match host_kind {
-                                    Some(NpcKind::SolarTower) => {
-                                        Some(&mut world.tower_shield_solar)
-                                    }
-                                    Some(NpcKind::VortexTower) => {
-                                        Some(&mut world.tower_shield_vortex)
-                                    }
-                                    Some(NpcKind::NebulaTower) => {
-                                        Some(&mut world.tower_shield_nebula)
-                                    }
-                                    Some(NpcKind::StardustTower) => {
-                                        Some(&mut world.tower_shield_stardust)
-                                    }
+                                // B-6b/B-6d reconciliation (gate L-F): ONE spend
+                                // path — R71's host-kind selection here delegates
+                                // to R72's reshaped `tower_shield_absorb` (the
+                                // `:72953` `Clamp(strength - 1, 0, Max)` seam,
+                                // max = `ShieldStrengthTowerMax`, `NPC.cs:
+                                // 6795-6806`). The ordinal is the fn's tower
+                                // slot (0 solar / 1 vortex / 2 nebula /
+                                // 3 stardust — the lunar.rs slot order).
+                                let tower = match host_kind {
+                                    Some(NpcKind::SolarTower) => Some(0),
+                                    Some(NpcKind::VortexTower) => Some(1),
+                                    Some(NpcKind::NebulaTower) => Some(2),
+                                    Some(NpcKind::StardustTower) => Some(3),
                                     // `:72946-72976`'s switch has no default:
                                     // a non-tower host spends nothing.
                                     _ => None,
                                 };
-                                if let Some(shield) = shield {
+                                if let Some(tower) = tower {
+                                    // The fn returns the pre-spend `!= 0` —
                                     // `:72949-72951`: the shield-flash trigger
                                     // `ai[3] = 1f` fires only while the shield
                                     // still stands.
-                                    if *shield != 0 {
+                                    let stood =
+                                        crate::world_sim::npcs::tower_shield_absorb(world, tower);
+                                    if stood {
                                         if let Some(h) = npcs.get_mut(host_idx) {
                                             h.ai[3] = 1.0;
                                         }
                                     }
-                                    // `:72953`'s `Clamp(strength - 1, 0, Max)`.
-                                    *shield = (*shield - 1).clamp(0, max);
                                 }
                                 // `:72977-72978`'s netUpdate + SendData(101)
                                 // are unmodelled (single-player port).
