@@ -97,9 +97,23 @@ pub(crate) struct MountData {
     /// draws the back and front strips only (draw types 0 and 2); the field
     /// carries the row's data like `front_extra_sheet` does.
     pub back_extra_sheet: &'static str,
+    /// `MountData.backTextureGlow` (`Mount.cs:133`) — the glow strip over the
+    /// back texture. S1-L-8b: the data field exists; the draw pass that
+    /// consumes it is still unported (the renderer draws back/front only).
     pub back_glow_sheet: &'static str,
+    /// `MountData.backTextureExtraGlow` (`Mount.cs:137`) — no row sets it
+    /// (the Drill's Initialize writes `Asset<Texture2D>.Empty`, `:1325`);
+    /// carried so the slot mapping stays complete.
+    pub back_extra_glow_sheet: &'static str,
     pub front_sheet: &'static str,
+    /// `MountData.frontTextureGlow` (`Mount.cs:141`) — the glow strip over
+    /// the front texture (the Drill seat, the mech cart, the Bat, the shroom
+    /// cart). Data only until the glow draw pass lands (S1-L-8b).
+    pub front_glow_sheet: &'static str,
     pub front_extra_sheet: &'static str,
+    /// `MountData.frontTextureExtraGlow` (`Mount.cs:145`) — the Drill diode's
+    /// glow (`Mount.cs:1329`). Data only (S1-L-8b).
+    pub front_extra_glow_sheet: &'static str,
     pub x_offset: i32,
     pub y_offset: i32,
     /// `playerYOffsets[totalFrames]` (:155) — per-frame player draw offset.
@@ -118,7 +132,10 @@ const BASE: MountData = MountData {
     flight_time_max: 0,
     uses_hover: false,
     emits_light: false,
-    light_color: (0.0, 0.0, 0.0),
+    // `MountData.lightColor = Vector3.One` (`Mount.cs:259`) — the C# default
+    // is white, not zero (S1-L-8b). Only the three `emitsLight` rows override
+    // it (Drill `:1290`, SpookyWood `:1952`, LavaShark `:2160`).
+    light_color: (1.0, 1.0, 1.0),
     run_speed: 0.0,
     dash_speed: 0.0,
     swim_speed: 0.0,
@@ -187,8 +204,11 @@ const BASE: MountData = MountData {
     back_sheet: "",
     back_extra_sheet: "",
     back_glow_sheet: "",
+    back_extra_glow_sheet: "",
     front_sheet: "",
+    front_glow_sheet: "",
     front_extra_sheet: "",
+    front_extra_glow_sheet: "",
     x_offset: 0,
     y_offset: 0,
     player_y_offsets: &[],
@@ -293,6 +313,13 @@ const BUNNY: MountData = MountData {
         loops: false,
     },
     in_air: FrameSet {
+        start: 5,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    // `swimFrame* = inAirFrame*` (`Mount.cs:848-850`) — S1-L-8b.
+    swim: FrameSet {
         start: 5,
         count: 1,
         delay: 12,
@@ -466,6 +493,13 @@ const UNICORN: MountData = MountData {
         delay: 12,
         loops: false,
     },
+    // `swimFrame* = inAirFrame*` (`Mount.cs:1471-1473`) — S1-L-8b.
+    swim: FrameSet {
+        start: 15,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Mount_Unicorn",
     x_offset: 5,
     y_offset: 1,
@@ -502,6 +536,13 @@ const BASILISK: MountData = MountData {
         loops: false,
     },
     in_air: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    // `swimFrame* = inAirFrame*` (`Mount.cs:1681-1683`) — S1-L-8b.
+    swim: FrameSet {
         start: 1,
         count: 1,
         delay: 12,
@@ -559,6 +600,13 @@ const fn horse(id: i32, buff: i32, back_sheet: &'static str) -> MountData {
             loops: false,
         },
         in_air: FrameSet {
+            start: 15,
+            count: 1,
+            delay: 12,
+            loops: false,
+        },
+        // `swimFrame* = inAirFrame*` (`Mount.cs:2656-2658`) — S1-L-8b.
+        swim: FrameSet {
             start: 15,
             count: 1,
             delay: 12,
@@ -672,10 +720,19 @@ const WOF_GOAT: MountData = MountData {
         delay: 12,
         loops: false,
     },
+    // `swimFrame* = inAirFrame*` (`Mount.cs:2089-2091`) — S1-L-8b.
+    swim: FrameSet {
+        start: 15,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Extra_169",
-    // `TextureAssets.GlowMask[284]` — the port's glow sheet name is verified in
-    // the draw phase (the content dir has no GlowMask_284 file).
-    back_glow_sheet: "GlowMask_284",
+    // `TextureAssets.GlowMask[284]` (`Mount.cs:2095`) loads as `Images/Glow_284`
+    // (`AssetInitializer.cs:352-354`) — S1-L-8b fixes the sheet name (the old
+    // `GlowMask_284` matches no content file). Data only: the glow draw pass
+    // is still unported.
+    back_glow_sheet: "Glow_284",
     x_offset: 5,
     y_offset: -1,
     player_y_offsets: &WOF_GOAT_Y_OFFSETS,
@@ -765,10 +822,10 @@ const PIGRON: MountData = MountData {
     ..BASE
 };
 
-/// 5 Bee (`Mount.cs:1163-1217`): hover, 320 fuel + 320 fatigue, wings. The
-/// C# `backTextureExtra` (the animated wing strip, `Mount_BeeWings`) rides no
-/// back-extra draw slot yet (only the glow slots exist) — a documented
-/// deviation until the mount layers grow one.
+/// 5 Bee (`Mount.cs:1163-1217`): hover, 320 fuel + 320 fatigue, wings. S1-L-8b
+/// fills the C# `backTextureExtra` (`Mount_BeeWings`, `:1212`) into the row;
+/// the animated wing draw (the `UpdateFrame` bee arm) still waits for
+/// M2-MOUNT-2 — the field carries the data only.
 static BEE_Y_OFFSETS: [i32; 12] = [16, 16, 16, 16, 16, 16, 16, 16, 18, 16, 16, 16];
 const BEE: MountData = MountData {
     id: 5,
@@ -793,6 +850,9 @@ const BEE: MountData = MountData {
     idle: FrameSet { start: 8, count: 4, delay: 12, loops: true },
     swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
     back_sheet: "Mount_Bee",
+    // `backTextureExtra = BeeMount[1]` (`Mount.cs:1212`) — `Mount_BeeWings`
+    // (`AssetInitializer.cs:443`). Data only (S1-L-8b).
+    back_extra_sheet: "Mount_BeeWings",
     x_offset: 1,
     y_offset: 4,
     player_y_offsets: &BEE_Y_OFFSETS,
@@ -835,7 +895,11 @@ const UFO: MountData = MountData {
     ..BASE
 };
 
-/// 8 Drill (`Mount.cs:1273-1341`): swim 4, hover, light-emitting.
+/// 8 Drill (`Mount.cs:1273-1341`): swim 4, hover, light-emitting (`:1289-1290`,
+/// added by S1-L-8b). The idle band's `start` is 8 (`:1316`) even though the
+/// count is 0 — the drill rotation arm of `UpdateFrame` reads it. The three
+/// glow strips (`DrillMount[3..5]`, `:1323`/`:1327`/`:1329`) are data-only
+/// until the glow draw pass lands.
 const DRILL: MountData = MountData {
     id: 8,
     buff: 142,
@@ -851,17 +915,29 @@ const DRILL: MountData = MountData {
     jump_height: 10,
     jump_speed: 4.0,
     block_extra_jumps: true,
+    emits_light: true,
+    light_color: (0.3, 0.3, 0.4),
     spawn_dust: 226,
     total_frames: 1,
     standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
     running: FrameSet { start: 0, count: 1, delay: 12, loops: false },
     flying: FrameSet { start: 0, count: 1, delay: 12, loops: false },
     in_air: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    idle: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    // `idleFrameStart = 8` (`Mount.cs:1316`); count/delay stay 0/12.
+    idle: FrameSet { start: 8, count: 0, delay: 12, loops: false },
     swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
     back_sheet: "Mount_DrillRing",
+    // `backTextureGlow = DrillMount[3]` (`:1323`) = `Mount_Glow_DrillRing`
+    // (`AssetInitializer.cs:449`).
+    back_glow_sheet: "Mount_Glow_DrillRing",
     front_sheet: "Mount_DrillSeat",
+    // `frontTextureGlow = DrillMount[4]` (`:1327`) = `Mount_Glow_DrillSeat`
+    // (`AssetInitializer.cs:450`).
+    front_glow_sheet: "Mount_Glow_DrillSeat",
     front_extra_sheet: "Mount_DrillDiode",
+    // `frontTextureExtraGlow = DrillMount[5]` (`:1329`) =
+    // `Mount_Glow_DrillDiode` (`AssetInitializer.cs:451`).
+    front_extra_glow_sheet: "Mount_Glow_DrillDiode",
     x_offset: 1,
     y_offset: 4,
     player_y_offsets: &[4; 1],
@@ -871,9 +947,9 @@ const DRILL: MountData = MountData {
 };
 
 /// 12 CuteFishron (`Mount.cs:1536-1590`): swim 16, swim frames, hover with the
-/// half speed multiplier (`MountFishronSpecial` — not ported). The back-glow
-/// strip `Mount_CuteFishron2` also rides no slot yet (same deviation as the
-/// Bee's back-extra).
+/// half speed multiplier (`MountFishronSpecial` — not ported). S1-L-8b fills
+/// the `backTextureGlow` strip `Mount_CuteFishron2` (`:1585`); the glow draw
+/// pass is still unported — data only.
 static FISHRON_Y_OFFSETS: [i32; 23] = [12; 23];
 const CUTE_FISHRON: MountData = MountData {
     id: 12,
@@ -899,6 +975,9 @@ const CUTE_FISHRON: MountData = MountData {
     idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
     swim: FrameSet { start: 15, count: 8, delay: 4, loops: false },
     back_sheet: "Mount_CuteFishron1",
+    // `backTextureGlow = CuteFishronMount[1]` (`Mount.cs:1585`) =
+    // `Mount_CuteFishron2` (`AssetInitializer.cs:438`). Data only (S1-L-8b).
+    back_glow_sheet: "Mount_CuteFishron2",
     x_offset: 2,
     y_offset: 16,
     player_y_offsets: &FISHRON_Y_OFFSETS,
@@ -999,7 +1078,9 @@ const DARK_MAGE_BOOK: MountData = MountData {
 };
 
 /// 49 LavaShark (`Mount.cs:2144-2192`): `CanHover` only in the swim state,
-/// `flightTimeMax` 0, `fatigueMax` 320.
+/// `flightTimeMax` 0, `fatigueMax` 320. S1-L-8b adds the light
+/// (`emitsLight`/`lightColor`, `:2159-2160`) and the `backTextureGlow`
+/// `GlowMask[285]` = `Glow_285` (`:2187`, `AssetInitializer.cs:352-354`).
 static LAVA_SHARK_Y_OFFSETS: [i32; 8] = [10; 8];
 const LAVA_SHARK: MountData = MountData {
     id: 49,
@@ -1015,6 +1096,8 @@ const LAVA_SHARK: MountData = MountData {
     flight_time_max: 0,
     fatigue_max: 320,
     uses_hover: true,
+    emits_light: true,
+    light_color: (0.3, 0.15, 0.1),
     spawn_dust: 35,
     total_frames: 8,
     standing: FrameSet { start: 4, count: 1, delay: 12, loops: false },
@@ -1022,6 +1105,8 @@ const LAVA_SHARK: MountData = MountData {
     in_air: FrameSet { start: 4, count: 1, delay: 6, loops: false },
     swim: FrameSet { start: 0, count: 4, delay: 16, loops: false },
     back_sheet: "Extra_172",
+    // `backTextureGlow = GlowMask[285]` (`Mount.cs:2187`). Data only (S1-L-8b).
+    back_glow_sheet: "Glow_285",
     x_offset: 2,
     y_offset: 1,
     player_y_offsets: &LAVA_SHARK_Y_OFFSETS,
@@ -1031,11 +1116,14 @@ const LAVA_SHARK: MountData = MountData {
 };
 
 /// 56 Bat (`Mount.cs:2416-2478`): dismounts on item use, no fuel, hover with
-/// the dash-speed rise cap.
+/// the dash-speed rise cap. S1-L-8b: `fatigueMax` 320 (`:2426`) and the
+/// `frontTextureGlow` `GlowMask[370]` = `Glow_370` (`:2474`,
+/// `AssetInitializer.cs:352-354`) — data only.
 const BAT: MountData = MountData {
     id: 56,
     buff: 377,
     flight_time_max: 320,
+    fatigue_max: 320,
     fall_damage: 0.0,
     uses_hover: true,
     dismounts_on_item_use: true,
@@ -1055,6 +1143,8 @@ const BAT: MountData = MountData {
     in_air: FrameSet { start: 1, count: 8, delay: 5, loops: false },
     swim: FrameSet { start: 1, count: 8, delay: 5, loops: false },
     front_sheet: "Extra_274",
+    // `frontTextureGlow = GlowMask[370]` (`Mount.cs:2474`). Data only (S1-L-8b).
+    front_glow_sheet: "Glow_370",
     x_offset: -4,
     y_offset: -1,
     player_y_offsets: &[0; 16],
@@ -1063,11 +1153,13 @@ const BAT: MountData = MountData {
     ..BASE
 };
 
-/// 61 Pixie (`Mount.cs:2479-2542`): same flight shape as the Bat.
+/// 61 Pixie (`Mount.cs:2479-2542`): same flight shape as the Bat. S1-L-8b:
+/// `fatigueMax` 320 (`:2490`); `frontTextureGlow` stays Empty (`:2538`).
 const PIXIE: MountData = MountData {
     id: 61,
     buff: 384,
     flight_time_max: 320,
+    fatigue_max: 320,
     fall_damage: 0.0,
     uses_hover: true,
     dismounts_on_item_use: true,
@@ -1165,10 +1257,12 @@ const fn cart(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
 }
 
 /// `SetAsMinecart` with the vertical offsets (`Mount.cs:1097` Fart, `:1105`
-/// Terra-Fart): `yOffset = 13 + verticalOffset` (= 3), the y-offsets
-/// `8 - verticalOffset + playerVerticalOffset` (= 0). The shared offsets are
-/// STATIC so the row stays a promoted `const` (`'static` borrow).
-const CART_VO_Y_OFFSETS: [i32; 3] = [0, 0, 0];
+/// Terra-Fart, both `(-10, -8)`): `yOffset = 13 + verticalOffset` (= 3,
+/// `:2772`), the y-offsets `8 - verticalOffset + playerVerticalOffset`
+/// (= `8 + 10 - 8` = **10**, `:2767` — S1-L-8b fixes the port's old 0). The
+/// shared offsets are STATIC so the row stays a promoted `const` (`'static`
+/// borrow).
+const CART_VO_Y_OFFSETS: [i32; 3] = [10, 10, 10];
 
 const fn cart_vo(id: i32, buff: i32, front_sheet: &'static str) -> MountData {
     MountData {
@@ -1191,11 +1285,16 @@ const MINECART: MountData = MountData {
 
 /// 11 MinecartMech (`Mount.cs:1483-1535`, hand-written): heightBoost 12,
 /// playerYOffsets 9, xOffset -1, yOffset 11, the mech body + glow textures.
+/// S1-L-8b: `spawnDust` is 213 (`:1488` — the port had 0), and the glow strip
+/// is `frontTextureGlow` (`:1531`), not a front-extra. The sheet names are the
+/// content files `Mount_MinecartMech`/`Mount_MinecartMechGlow`
+/// (`AssetInitializer.cs:435-436`); the old `MinecartMechMount*` names match
+/// no file.
 const MINECART_MECH: MountData = MountData {
     id: 11,
     buff: 166,
     minecart: true,
-    spawn_dust: 0,
+    spawn_dust: 213,
     height_boost: 12,
     flight_time_max: 0,
     fall_damage: 1.0,
@@ -1218,8 +1317,10 @@ const MINECART_MECH: MountData = MountData {
         delay: 12,
         loops: false,
     },
-    front_sheet: "MinecartMechMount",
-    front_extra_sheet: "MinecartMechMountGlow",
+    front_sheet: "Mount_MinecartMech",
+    // `frontTextureGlow = MinecartMechMount[1]` (`Mount.cs:1531`). Data only
+    // until the glow draw pass lands (S1-L-8b).
+    front_glow_sheet: "Mount_MinecartMechGlow",
     x_offset: -1,
     y_offset: 11,
     player_y_offsets: &[9; 3],
@@ -1229,7 +1330,8 @@ const MINECART_MECH: MountData = MountData {
 };
 
 /// 13 MinecartWood (`Mount.cs:1591-1641`, hand-written): run/dash 10, accel
-/// 0.03, jump 12, buff 184, `MinecartWoodMount`.
+/// 0.03, jump 12, buff 184; the sheet is the content file `Mount_MinecartWood`
+/// (`AssetInitializer.cs:439` — S1-L-8b name fix).
 const MINECART_WOOD: MountData = MountData {
     id: 13,
     buff: 184,
@@ -1257,7 +1359,7 @@ const MINECART_WOOD: MountData = MountData {
         delay: 12,
         loops: false,
     },
-    front_sheet: "MinecartWoodMount",
+    front_sheet: "Mount_MinecartWood",
     x_offset: 1,
     y_offset: 13,
     player_y_offsets: &[8; 3],
@@ -1267,11 +1369,12 @@ const MINECART_WOOD: MountData = MountData {
 };
 
 /// 16 FishMinecart (`Mount.cs:1044-1086`, hand-written; identical to the
-/// `SetAsMinecart` body), buff 210, `FishMinecartMount`.
+/// `SetAsMinecart` body), buff 210; the sheet is the content file
+/// `Mount_MinecartMineCarp` (`AssetInitializer.cs:441` — S1-L-8b name fix).
 const FISH_MINECART: MountData = MountData {
     id: 16,
     buff: 210,
-    ..cart(16, 210, "Mount_FishMinecart")
+    ..cart(16, 210, "Mount_MinecartMineCarp")
 };
 
 /// 39 DiggingMoleMinecart (`Mount.cs:1027-1042`): `SetAsMinecart` +
@@ -1289,15 +1392,19 @@ const MOLE_MINECART: MountData = MountData {
     }
 };
 
-// The plain `SetAsMinecart` cosmetic rows (`Mount.cs:966-1024`).
-const DESERT_MINECART: MountData = cart(15, 208, "Mount_DesertMinecart");
+// The plain `SetAsMinecart` cosmetic rows (`Mount.cs:966-1024`). The desert
+// cart's sheet is the content file `Mount_MinecartDesert`
+// (`AssetInitializer.cs:440` — S1-L-8b name fix).
+const DESERT_MINECART: MountData = cart(15, 208, "Mount_MinecartDesert");
 const BEE_MINECART: MountData = cart(18, 220, "Extra_108");
 const LADYBUG_MINECART: MountData = cart(19, 222, "Extra_109");
 const PIGRON_MINECART: MountData = cart(20, 224, "Extra_110");
 const SUNFLOWER_MINECART: MountData = cart(21, 226, "Extra_111");
 const HELL_MINECART: MountData = cart(22, 228, "Extra_112");
+// 24 Shroom (`Mount.cs:983-985`): `Extra_116` is `frontTextureGlow` (`:985`),
+// NOT a front-extra — S1-L-8b moves it to the glow slot (data only).
 const SHROOM_MINECART: MountData = MountData {
-    front_extra_sheet: "Extra_116",
+    front_glow_sheet: "Extra_116",
     ..cart(24, 231, "Extra_115")
 };
 const AMETHYST_MINECART: MountData = cart(25, 233, "Extra_117");
@@ -1312,9 +1419,23 @@ const MEOWMERE_MINECART: MountData = cart(33, 249, "Extra_125");
 const PARTY_MINECART: MountData = cart(34, 251, "Extra_126");
 const PIRATE_MINECART: MountData = cart(35, 253, "Extra_127");
 const STEAMPUNK_MINECART: MountData = cart(36, 255, "Extra_128");
-const HELLWIZARD_MINECART: MountData = cart(38, 269, "Extra_150");
-const FART_MINECART: MountData = cart_vo(51, 338, "Extra_246");
-const TERRA_FART_MINECART: MountData = cart_vo(53, 346, "Extra_251");
+// 38 Coffin/Hellwizard (`Mount.cs:1026-1031`): `backTexture = frontTexture`
+// (`:1030`) — the cart draws behind the player too (S1-L-8b fills the slot).
+const HELLWIZARD_MINECART: MountData = MountData {
+    back_sheet: "Extra_150",
+    ..cart(38, 269, "Extra_150")
+};
+// 51/53 the fart carts (`Mount.cs:1096-1110`): `SetAsMinecart(..., -10, -8)`
+// plus `spawnDust = 211` (`:1098`/`:1106` — S1-L-8b; the shared body's 213 is
+// overwritten).
+const FART_MINECART: MountData = MountData {
+    spawn_dust: 211,
+    ..cart_vo(51, 338, "Extra_246")
+};
+const TERRA_FART_MINECART: MountData = MountData {
+    spawn_dust: 211,
+    ..cart_vo(53, 346, "Extra_251")
+};
 // -- S1-L-9: the sixteen rows `Mount.Initialize` never ported -----------------
 
 /// 4 Turtle (`Mount.cs:1112-1162`): the reef rider — buff 131, heightBoost
@@ -1412,8 +1533,9 @@ const FLAMINGO: MountData = MountData {
 };
 
 /// 45 SpookyWood (`Mount.cs:1940-1985`): buff 280, heightBoost 25, fallDamage
-/// 0.1, run 12 / dash 16, accel 0.5, jump 14/7 — the only row that emits
-/// light (`:1951-1952`).
+/// 0.1, run 12 / dash 16, accel 0.5, jump 14/7 — one of the three rows that
+/// emit light (`:1951-1952`; the Drill `:1289-1290` and the LavaShark
+/// `:2159-2160` are the others).
 const SPOOKY_WOOD: MountData = MountData {
     id: 45,
     buff: 280,
@@ -1436,7 +1558,9 @@ const SPOOKY_WOOD: MountData = MountData {
     idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
     swim: FrameSet { start: 2, count: 6, delay: 20, loops: false },
     back_sheet: "Extra_167",
-    back_glow_sheet: "GlowMask_283",
+    // `GlowMask[283]` (`Mount.cs:1980`) = `Images/Glow_283`
+    // (`AssetInitializer.cs:352-354`) — S1-L-8b name fix; data only.
+    back_glow_sheet: "Glow_283",
     x_offset: 2, // `:1962` — the second write wins
     y_offset: 1,
     player_y_offsets: &[30; 8],
@@ -2805,15 +2929,21 @@ mod tests {
         assert_eq!(mech.height_boost, 12);
         assert_eq!(mech.x_offset, -1);
         assert_eq!((mech.y_offset, mech.player_head_offset), (11, 14));
+        assert_eq!(mech.spawn_dust, 213, "S1-L-8b: `Mount.cs:1488` (was 0)");
         let wood = mount_data(13).unwrap();
         assert_eq!((wood.run_speed, wood.acceleration), (10.0, 0.03));
         let mole = mount_data(39).unwrap();
         assert_eq!((mole.run_speed, mole.acceleration), (6.0, 0.02));
         assert_eq!(mole.y_offset, 13 - 2);
-        // The fart carts' vertical offsets (`Mount.cs:1097`, `:1105`).
+        // The fart carts' vertical offsets (`Mount.cs:1097`, `:1105`, both
+        // `SetAsMinecart(..., -10, -8)`): `yOffset = 13 + (-10)` (`:2772`) and
+        // `playerYOffsets = 8 - (-10) + (-8) = 10` (`:2767` — S1-L-8b fixes
+        // the port's old 0).
         let fart = mount_data(51).unwrap();
         assert_eq!(fart.y_offset, 13 - 10);
-        assert_eq!(fart.player_y_offsets[0], 0);
+        assert_eq!(fart.player_y_offsets[0], 10);
+        assert_eq!(fart.spawn_dust, 211, "`Mount.cs:1098` overwrites the 213");
+        assert_eq!(mount_data(53).unwrap().spawn_dust, 211, ":1106");
     }
 
     #[test]
@@ -3149,7 +3279,9 @@ mod tests {
         assert_eq!(spooky.light_color, (0.6, 0.4, 0.35), ":1952");
         assert_eq!(
             (spooky.back_sheet, spooky.back_glow_sheet),
-            ("Extra_167", "GlowMask_283")
+            // S1-L-8b: `GlowMask[283]` loads as `Glow_283`
+            // (`AssetInitializer.cs:352-354`), not `GlowMask_283`.
+            ("Extra_167", "Glow_283")
         );
 
         // 46 Santank (`Mount.cs:1987-2039`).
@@ -3413,5 +3545,198 @@ mod tests {
         m.frame = 3;
         assert_eq!(m.player_offset(), 30);
         assert_eq!(m.player_offset_hitbox(), -30 + 34);
+    }
+
+    // -- S1-L-8b: the field-level fidelity pass over the 66-row table --------
+    // WRITTEN, NOT RUN (code-only mode): every pin below is read off
+    // `Mount.Initialize` / the `SetAs*` helpers in `Mount.cs`.
+
+    #[test]
+    fn s1_l_8b_the_light_color_default_is_white() {
+        // `MountData.lightColor = Vector3.One` (`Mount.cs:259`) — the BASE
+        // default, not zero. Only the three `emitsLight` rows override it.
+        assert_eq!(BASE.light_color, (1.0, 1.0, 1.0));
+        assert!(!BASE.emits_light, "`Mount.cs:261` defaults false");
+        // The Drill (`:1289-1290`).
+        let drill = mount_data(8).unwrap();
+        assert!(drill.emits_light, ":1289");
+        assert_eq!(drill.light_color, (0.3, 0.3, 0.4), ":1290");
+        // The Spooky Wood (`:1951-1952`).
+        let spooky = mount_data(45).unwrap();
+        assert!(spooky.emits_light, ":1951");
+        assert_eq!(spooky.light_color, (0.6, 0.4, 0.35), ":1952");
+        // The Lava Shark (`:2159-2160`).
+        let shark = mount_data(49).unwrap();
+        assert!(shark.emits_light, ":2159");
+        assert_eq!(shark.light_color, (0.3, 0.15, 0.1), ":2160");
+        // Every other row keeps the white default and emits nothing.
+        for row in MOUNTS {
+            if !matches!(row.id, 8 | 45 | 49) {
+                assert!(!row.emits_light, "row {} emits no light", row.id);
+                assert_eq!(row.light_color, (1.0, 1.0, 1.0), "row {}", row.id);
+            }
+        }
+    }
+
+    #[test]
+    fn s1_l_8b_the_drill_row_carries_its_idle_start_and_glow_slots() {
+        // 8 Drill (`Mount.cs:1273-1341`).
+        let d = mount_data(8).unwrap();
+        // `idleFrameStart = 8` (`:1316`) with count 0 / delay 12 (`:1314-1315`).
+        assert_eq!((d.idle.start, d.idle.count, d.idle.delay), (8, 0, 12));
+        // The six texture slots (`:1322-1329`), named by their content files
+        // (`AssetInitializer.cs:446-451`).
+        assert_eq!(d.back_sheet, "Mount_DrillRing", "DrillMount[0], :1322");
+        assert_eq!(d.back_glow_sheet, "Mount_Glow_DrillRing", "DrillMount[3], :1323");
+        assert_eq!(d.front_sheet, "Mount_DrillSeat", "DrillMount[1], :1326");
+        assert_eq!(d.front_glow_sheet, "Mount_Glow_DrillSeat", "DrillMount[4], :1327");
+        assert_eq!(d.front_extra_sheet, "Mount_DrillDiode", "DrillMount[2], :1328");
+        assert_eq!(
+            d.front_extra_glow_sheet, "Mount_Glow_DrillDiode",
+            "DrillMount[5], :1329"
+        );
+        // `backTextureExtraGlow` stays Empty (`:1325`).
+        assert_eq!(d.back_extra_glow_sheet, "");
+    }
+
+    #[test]
+    fn s1_l_8b_the_glow_and_extra_slots_match_the_c_assignments() {
+        // 5 Bee: `backTextureExtra = BeeMount[1]` (`Mount.cs:1212`).
+        let bee = mount_data(5).unwrap();
+        assert_eq!(bee.back_sheet, "Mount_Bee", ":1211");
+        assert_eq!(bee.back_extra_sheet, "Mount_BeeWings", ":1212");
+        // 12 CuteFishron: `backTextureGlow = CuteFishronMount[1]` (`:1585`).
+        let fishron = mount_data(12).unwrap();
+        assert_eq!(fishron.back_sheet, "Mount_CuteFishron1", ":1584");
+        assert_eq!(fishron.back_glow_sheet, "Mount_CuteFishron2", ":1585");
+        // 7 UFO: the glow is `frontTextureExtra = UfoMount[1]` (`:1269`) —
+        // the C# puts it in the EXTRA slot, not a glow slot.
+        let ufo = mount_data(7).unwrap();
+        assert_eq!(ufo.front_sheet, "Mount_UFO", ":1268");
+        assert_eq!(ufo.front_extra_sheet, "Mount_UFOGlow", ":1269");
+        assert_eq!(ufo.front_glow_sheet, "", "the UFO has no frontTextureGlow");
+        // 9 Scutlix: `frontTextureExtra = ScutlixMount[2]` (`:1394`).
+        let scutlix = mount_data(9).unwrap();
+        assert_eq!(scutlix.front_extra_sheet, "Mount_ScutlixEyeGlow", ":1394");
+        // 11 mech cart: `frontTextureGlow = MinecartMechMount[1]` (`:1531`).
+        let mech = mount_data(11).unwrap();
+        assert_eq!(mech.front_sheet, "Mount_MinecartMech", ":1530");
+        assert_eq!(mech.front_glow_sheet, "Mount_MinecartMechGlow", ":1531");
+        assert_eq!(mech.front_extra_sheet, "", ":1532 Empty");
+        // 24 shroom cart: `frontTextureGlow = Extra[116]` (`:985`).
+        let shroom = mount_data(24).unwrap();
+        assert_eq!(shroom.front_sheet, "Extra_115", ":984");
+        assert_eq!(shroom.front_glow_sheet, "Extra_116", ":985");
+        assert_eq!(shroom.front_extra_sheet, "", "SetAsMinecart :2795 Empty");
+        // 38 coffin cart: `backTexture = frontTexture` (`:1030`).
+        let coffin = mount_data(38).unwrap();
+        assert_eq!(coffin.front_sheet, "Extra_150", ":1027");
+        assert_eq!(coffin.back_sheet, "Extra_150", ":1030");
+        // 45 SpookyWood / 47 WoF goat / 49 LavaShark: the GlowMask strips load
+        // as `Glow_{id}` (`AssetInitializer.cs:352-354`).
+        assert_eq!(mount_data(45).unwrap().back_glow_sheet, "Glow_283", ":1980");
+        assert_eq!(mount_data(47).unwrap().back_glow_sheet, "Glow_284", ":2095");
+        assert_eq!(mount_data(49).unwrap().back_glow_sheet, "Glow_285", ":2187");
+        // 56 Bat: `frontTextureGlow = GlowMask[370]` (`:2474`); 61 Pixie's
+        // stays Empty (`:2538`).
+        assert_eq!(mount_data(56).unwrap().front_glow_sheet, "Glow_370", ":2474");
+        assert_eq!(mount_data(61).unwrap().front_glow_sheet, "", ":2538");
+        assert_eq!(mount_data(61).unwrap().front_extra_sheet, "Extra_291", ":2539");
+    }
+
+    #[test]
+    fn s1_l_8b_the_swim_bands_copy_their_source_bands() {
+        // The rows whose `swimFrame*` reads another band in Initialize.
+        // 1 Bunny = inAir (`Mount.cs:848-850`).
+        let bunny = mount_data(1).unwrap();
+        assert_eq!(bunny.swim, bunny.in_air, ":848-850");
+        assert_eq!((bunny.swim.start, bunny.swim.count, bunny.swim.delay), (5, 1, 12));
+        // 10 Unicorn = inAir (`:1471-1473`).
+        let unicorn = mount_data(10).unwrap();
+        assert_eq!(unicorn.swim, unicorn.in_air, ":1471-1473");
+        assert_eq!((unicorn.swim.start, unicorn.swim.count), (15, 1));
+        // 14 Basilisk = inAir (`:1681-1683`).
+        let basilisk = mount_data(14).unwrap();
+        assert_eq!(basilisk.swim, basilisk.in_air, ":1681-1683");
+        // 40-42 horses = inAir (`SetAsHorse` `:2656-2658`).
+        for id in [40, 41, 42] {
+            let horse = mount_data(id).unwrap();
+            assert_eq!(horse.swim, horse.in_air, "row {id}, :2656-2658");
+            assert_eq!((horse.swim.start, horse.swim.count), (15, 1));
+        }
+        // 47 WoF goat = inAir (`:2089-2091`).
+        let goat = mount_data(47).unwrap();
+        assert_eq!(goat.swim, goat.in_air, ":2089-2091");
+        // 37 Flamingo = running count/start with its OWN 10-tick delay
+        // (`:1830-1832`).
+        let flamingo = mount_data(37).unwrap();
+        assert_eq!(
+            (flamingo.swim.start, flamingo.swim.count, flamingo.swim.delay),
+            (2, 7, 10),
+            ":1830-1832"
+        );
+        // 45 SpookyWood = running count/start, delay 20 (`:1974-1976`).
+        let spooky = mount_data(45).unwrap();
+        assert_eq!((spooky.swim.start, spooky.swim.count, spooky.swim.delay), (2, 6, 20));
+        // 46 Santank = running (`:2027-2029`).
+        let santank = mount_data(46).unwrap();
+        assert_eq!(santank.swim, santank.running, ":2027-2029");
+        // 52 Wolf / 54 Velociraptor / 55 Rat = inAir (`:2297-2299`,
+        // `:2349-2351`, `:2404-2406`).
+        for id in [52, 54, 55] {
+            let row = mount_data(id).unwrap();
+            assert_eq!(row.swim, row.in_air, "row {id}");
+        }
+        // 62-65 Chillemts = inAir (`SetAsChillet` `:2733-2735`).
+        for id in [62, 63, 64, 65] {
+            let row = mount_data(id).unwrap();
+            assert_eq!(row.swim, row.in_air, "row {id}, :2733-2735");
+        }
+    }
+
+    #[test]
+    fn s1_l_8b_the_bat_and_pixie_carry_their_fatigue_max() {
+        // `fatigueMax = 320` (`Mount.cs:2426` Bat, `:2490` Pixie) — the port
+        // rows left it at the 0 default.
+        assert_eq!(mount_data(56).unwrap().fatigue_max, 320, ":2426");
+        assert_eq!(mount_data(61).unwrap().fatigue_max, 320, ":2490");
+    }
+
+    #[test]
+    fn s1_l_8b_the_cart_sheet_names_are_the_content_files() {
+        // `AssetInitializer.cs:424-441` — the port's old `MinecartMechMount*`/
+        // `MinecartWoodMount`/`Mount_FishMinecart`/`Mount_DesertMinecart`
+        // spellings matched no `.xnb` in `assets/Content/Images`.
+        assert_eq!(mount_data(6).unwrap().front_sheet, "Mount_Minecart", ":959");
+        assert_eq!(mount_data(11).unwrap().front_sheet, "Mount_MinecartMech", ":1530");
+        assert_eq!(mount_data(13).unwrap().front_sheet, "Mount_MinecartWood", ":1638");
+        assert_eq!(mount_data(15).unwrap().front_sheet, "Mount_MinecartDesert", ":966");
+        assert_eq!(mount_data(16).unwrap().front_sheet, "Mount_MinecartMineCarp", ":1090");
+    }
+
+    #[test]
+    fn s1_l_8b_every_named_mount_sheet_is_packed() {
+        // The rows name content files; the atlas packing list must carry each
+        // one or the draw silently falls through (`sky_tex` → None). The glow
+        // slots are data-only today but their sheets are packed for the draw
+        // pass that lands with M2-MOUNT.
+        use crate::assets::STATIC_SHEET_NAMES;
+        let packed = |name: &str| STATIC_SHEET_NAMES.contains(&name);
+        for row in MOUNTS {
+            for name in [
+                row.back_sheet,
+                row.back_extra_sheet,
+                row.back_glow_sheet,
+                row.back_extra_glow_sheet,
+                row.front_sheet,
+                row.front_glow_sheet,
+                row.front_extra_sheet,
+                row.front_extra_glow_sheet,
+            ] {
+                if !name.is_empty() {
+                    assert!(packed(name), "row {} names {name}, never packed", row.id);
+                }
+            }
+        }
     }
 }
