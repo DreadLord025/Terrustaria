@@ -13498,6 +13498,14 @@ impl Npc {
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
+        // `:32387-32399` — the distance despawn: beyond 6000 px of
+        // MANHATTAN centre distance (`Math.Abs(dx) + Math.Abs(dy)`) the
+        // Brain deactivates (`active = false`, `life = 0` — the port's
+        // `hp = 0`). The S1-D-3e audit (2026-11-18) found the gate missing.
+        if (cx - pcx).abs() + (cy - pcy).abs() > 6000.0 {
+            self.hp = 0;
+            return;
+        }
         // The `WorldGen.SolidTile` analog (the active + the solid set).
         let solid_tile = |x: i32, y: i32| -> bool {
             world
@@ -13580,8 +13588,12 @@ impl Npc {
                 self.vx = dx;
                 self.vy = dy;
             } else {
-                self.vx = dx / d * speed;
-                self.vy = dy / d * speed;
+                // `:32549-32551` — the C# scales by the reciprocal
+                // (`num816 = num817 / num816` FIRST, then `delta * num816`);
+                // the f32 order matters (the S1-D-3e audit).
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
             }
             match self.ai[0] as i32 {
                 0 => {
@@ -21579,6 +21591,59 @@ mod s1_d_3e_tests {
         }
         assert_eq!(b.ai[0], -3.0, "the retreat faded the Brain in");
         assert_eq!(b.alpha, 255, "the retreat's fade-in is full");
+    }
+
+    /// S1-D-3e audit (2026-11-18, code-only mode) — the distance despawn
+    /// (`NPC.cs:32387-32399`): beyond 6000 px of MANHATTAN centre distance
+    /// the Brain deactivates (`active = false`, `life = 0` — the port's
+    /// `hp = 0`) before any machine tick; exactly 6000 is still alive
+    /// (the C#'s strict `>`).
+    #[test]
+    fn s1_d_3e_audit_the_brain_despawns_beyond_6000_manhattan_px() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.zones.crimson = true;
+        // The brain's centre: (200 + 80, 100 + 55) = (280, 155).
+        // The player's centre y = 134 + 21 = 155 (dy = 0).
+        player.y = 134.0;
+        // Far: centre x = 7010 → |dx| + |dy| = 6730 > 6000.
+        player.x = 7000.0;
+        let mut b = brain();
+        b.brain_local[2] = 1.0;
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert_eq!(b.hp, 0, "the far Brain deactivates (life = 0)");
+        assert_eq!(b.vx, 0.0, "no machine tick ran");
+        assert_eq!(b.ai[0], 0.0, "the state is untouched");
+        // The boundary: centre x = 6280 → |dx| + |dy| = 6000 exactly —
+        // the C#'s `> 6000f` refuses, so the Brain lives and drifts.
+        player.x = 6270.0;
+        let mut near = brain();
+        near.brain_local[2] = 1.0;
+        near.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert!(near.hp > 0, "exactly 6000 px is still alive");
+        assert!(near.vx > 0.0, "the normal drift ran");
+    }
+
+    /// S1-D-3e audit (2026-11-18, code-only mode) — the normal drift's f32
+    /// order (`NPC.cs:32549-32551`): the C# computes the reciprocal FIRST
+    /// (`num816 = num817 / num816`) and then multiplies (`delta * num816`).
+    /// Witness: dx = 100, dy = 72 → d = sqrt(15184); the reciprocal-first
+    /// product rounds to 0.8115344 while `(dx / d) * 1` rounds to
+    /// 0.81153435 — one ulp apart, so the order is observable.
+    #[test]
+    fn s1_d_3e_audit_the_normal_drift_scales_by_the_reciprocal() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.zones.crimson = true;
+        // The brain's centre (280, 155); the player's centre (380, 227)
+        // → dx = 100, dy = 72.
+        player.x = 370.0;
+        player.y = 206.0;
+        let mut b = brain();
+        b.brain_local[2] = 1.0;
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(7));
+        assert_eq!(b.vx, 0.8115344f32, "the reciprocal-first product");
+        assert_ne!(b.vx, 0.81153435f32, "the divide-first order differs");
     }
 }
 
