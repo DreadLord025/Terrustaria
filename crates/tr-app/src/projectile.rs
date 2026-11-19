@@ -526,6 +526,12 @@ pub struct Projectile {
     /// `local_ai` — the leaf's C# arm owns all three `localAI` slots (the age,
     /// the tick counter, the spin-sign latch).
     pub frame_counter: i32,
+    /// `Entity.oldPosition` (`Projectile.cs:17013`) — the position
+    /// latch taken between the AI and `HandleMovement` every sub-step:
+    /// the ground machine's `flag32` stall test (`:62318`) reads it.
+    /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
+    /// the stock ZERO until their movement ports land.
+    pub old_position: Vec2,
     /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
@@ -661,6 +667,7 @@ impl Default for Projectile {
             light: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
@@ -11001,7 +11008,8 @@ pub(crate) fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32
 /// NPC is chaseable and hostile and none is immortal), so the three fields the
 /// pool can observe carry the gate. The C#'s `ignoreDontTakeDamage: true` form
 /// plus its separate `!dontTakeDamage` test lands on the same predicate.
-fn chaseable(n: &Npc) -> bool {
+/// `pub(crate)`: AI_026 slice C's ground-machine scans share it.
+pub(crate) fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
 }
 
@@ -15074,19 +15082,25 @@ impl ProjectilePool {
                         }
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
-                        // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
-                        // 14 early-return flyer pets
-                        // (`projectile_ai026_a::AI_026_A_KINDS`) gate
-                        // first; on its false return B's two spinning
-                        // boss-head pets 885/889
+                        // SLICE A + SLICE B + SLICE C chained
+                        // (S1-D-4b-10/-11/-16): A's 14 early-return
+                        // flyer pets (`projectile_ai026_a::AI_026_A_KINDS`)
+                        // gate first; on its false return B's two
+                        // spinning boss-head pets 885/889
                         // (`projectile_ai026_b::AI_026_B_KINDS`, the
-                        // shared arm `:60092-60253`) run. The kind sets
-                        // are disjoint, so either order is
-                        // behaviour-identical (ANALYSIS "AI_026 slice
-                        // B"). Every other aiStyle-26 kind (the 266
-                        // slime minion today) keeps the pre-existing
-                        // `_ => {}` fall-through, byte-identical: both
-                        // gates return false and nothing mutates.
+                        // shared arm `:60092-60253`) run; on B's false
+                        // return C's ground machine takes the 266
+                        // slime minion
+                        // (`projectile_ai026_c::AI_026_C_KINDS`, the
+                        // idle/walk/jump machine `:60254-65015` +
+                        // `HandleMovement`). The kind sets are
+                        // disjoint, so any order is behaviour-identical
+                        // (ANALYSIS "AI_026 slice C"). Every other
+                        // aiStyle-26 kind (the row-less ground pets,
+                        // pygmies/spiders, Pal summons) keeps the
+                        // pre-existing `_ => {}` fall-through,
+                        // byte-identical: all three gates return false
+                        // and nothing mutates.
                         26 => {
                             // The gates' false returns are the no-op: the
                             // non-slice kind keeps the old no-arm state.
@@ -15097,12 +15111,21 @@ impl ProjectilePool {
                                 rng,
                             );
                             if !handled {
-                                let _ = crate::projectile_ai026_b::ai026_b_tick(
+                                let handled_b = crate::projectile_ai026_b::ai026_b_tick(
                                     &mut self.slots[i],
                                     world,
                                     player.as_deref_mut(),
                                     rng,
                                 );
+                                if !handled_b {
+                                    let _ = crate::projectile_ai026_c::ai026_c_tick(
+                                        &mut self.slots[i],
+                                        world,
+                                        npcs,
+                                        player.as_deref_mut(),
+                                        rng,
+                                    );
+                                }
                             }
                         }
                         _ => {}
@@ -15141,10 +15164,16 @@ impl ProjectilePool {
                 // `hostile = false` (`:764`) makes `Damage_EVP` refuse
                 // (`:14775`), and the port's `!friendly` proxy would
                 // otherwise hurt the player (the trio holds
-                // `friendly = false` for the PVE refusal).
+                // `friendly = false` for the PVE refusal). The 266
+                // slime minion is exempt the same way (AI_026 slice
+                // C): its idle machine holds `friendly = false`
+                // (`Projectile.cs:61999-62002`) while the stock
+                // `hostile` stays false — an idle minion never hurts
+                // its owner.
                 if self.slots[i].active
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
+                    && self.slots[i].kind != SLIME_MINION
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -15953,6 +15982,14 @@ impl ProjectilePool {
             // for it alone — the other arms keep their pre-existing
             // behaviour (the no-behaviour-change freeze).
             if p.kind == RAINBOW_CRYSTAL_EXPLOSION && !p.friendly {
+                continue;
+            }
+            // The 266 slime minion carries the same gate (AI_026 slice
+            // C): its idle machine holds `friendly = false`
+            // (`Projectile.cs:61999-62002`) — `Damage_PVE_Inner`'s
+            // `!friendly` refusal (`:12611`) means an idle minion hits
+            // no NPC; the attack window (`:61949`) flips it true.
+            if p.kind == SLIME_MINION && !p.friendly {
                 continue;
             }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
@@ -20551,6 +20588,7 @@ mod phasmal_projectile_tests {
             knock_back: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
             time_left: 600,
@@ -20791,6 +20829,7 @@ mod ritual_projectile_tests {
             knock_back: 0.0,
             frame: 0,
             frame_counter: 0,
+            old_position: Vec2::ZERO,
             crit: false,
             friendly: false,
             time_left: 600,
