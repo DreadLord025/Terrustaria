@@ -27345,4 +27345,80 @@ signature (the style49/21 precedent). The stale `no_slope_collision`
 comment in `collision.rs` (which misattributed the caller to the snail)
 was repointed to the Blazing Wheel (`NPC.cs:92775-92783`, ported by
 `npc_ai_style21.rs`). 17 `s1_d_3_s67_*` witness tests WRITTEN, NOT RUN —
+## The Martian Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)
+
+`crates/tr-app/src/npc_ai_style74.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 74)` arm (`NPC.cs:35218-35500`) — the census's
+exactly TWO `aiStyle = 74` kinds: the MartianDrone 388 (`:13939`, row
+`:13935-13951`) and the SolarCorite 418 (`:15372`, row `:15368-15381`).
+CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 18 witness tests are
+written, not run. Wiring deferred (the `npc_ai_style56.rs` precedent):
+both kinds exist in the roster (`npc/data.rs:1992`) but the live routing
+still runs the kind-keyed stand-ins — only the `mod npc_ai_style74;`
+seam landed.
+
+- **Defect catalogue against the live stand-ins** (the f1701eb0 classes):
+  * `update_martian_drone` (`npc.rs:8700`): no `TargetClosest` at all
+    (the C# `:35220` scans every tick); the jitter fold
+    `next_range(-50,51) * jitter * 0.04` multiplies the roll by 50 THEN
+    0.04 where the C# (`:35378`) multiplies by 0.04 only — a 50× aim
+    error; the charge sparkle `Next(4)` (`:35382`) is never drawn; the
+    trail dust (`:35276-35290`) and the implosion bursts
+    (`:35463-35491`) are skipped wholesale (their `NewDust` internals +
+    the `NextDouble` pairs + the `Next(2)`/`Next(4)` gates are stream
+    draws, not cosmetic — the shared `Main.rand` desynchronises); the
+    `ai[3] == 120` netUpdate (`:35340`) is missing; the implosion keeps
+    the kind box (the C# swells to 192×192 about the old centre,
+    `:35455-35458`); `alpha = 255` (`:35461`) and the `AddLight(0.2,
+    0.7, 1.1)` (`:35462`) are missing; the contact gate invents a
+    `player.hp > 0` term the C# (`:35443`) does not have.
+  * `update_solar_corite` (`npc.rs:11597`): a wholly invented machine —
+    the approach uses a 0.075 accel blend instead of the 60-tick damp
+    (`:35330-35331`), the 175-above/175-beside hover vector is absent,
+    the near-80 band is used as a charge TRIGGER (`ai[1] >= 20 && dist
+    < 80`) where the C# charges on sight+cone, the charge aims at the
+    player's CURRENT centre instead of the stored `ai[2]`/`ai[3]` aim
+    (`:35378`), the ×0.75 decay and the stalled-lerp (`:35360-35371`)
+    are missing, the dash has no homing term (the `(4/15)*60` fold,
+    `:35271`/`:35275`), the exit uses `dist > 60` where the C# uses 150
+    (`:35269`), the rotation is `atan2 + π/2` where the C# folds
+    `ToRotation()` into ±π/2 (`:35221-35229`), the ember dust gates
+    (`:35291-35307`, two `Next(3)` per tick) are never drawn, and
+    `wants_blast` (`npc.rs:11611`) is an invention — the C# arm has NO
+    blast projectile: the implosion is the 192-box contact damage +
+    self-death only (`:35455-35499`).
+- **RNG order**: every draw is cited in the module header — the 388
+  trail `NewDust` 226, the 418's two `Next(3)` ember gates (every tick,
+  all states), the release jitter pair (the 418's `Next(0, 1)` still
+  consumes `Sample()` — `UnifiedRandom.cs:126-130`), the 388 state-1
+  `Next(4)` sparkle gate (drawn on the release tick too), and the
+  implosion's 10×2 + 40×(2 + `Next(2)` [+2] + `Next(4)` [+2])
+  `NextDouble`/gate ladder. The dust internals roll inside
+  `DustPool::new_dust` (S1-E-1). The `Item14` sound request and the
+  `HitEffect` dust/gore plans are seams (the audio/death passes own
+  their draws — `LegacySoundPlayer.cs:631-633`, `NPC.cs:84470-84501` /
+  `:82959-82993`); the 388's ambient `Next(700)` cry (`:90171`) is the
+  `UpdateNPC` caller's obligation.
+- **The difficulty curves are ported verbatim** (`LinearCurve.Sample`,
+  `GameDifficultyData.cs:35-55`/`:84`/`:86`) — unlike the stand-ins'
+  classic-only constants; `env.difficulty` defaults 1.0 until the
+  difficulty system lands. The kb writes ride the
+  `Style74Outcome.knock_back_resist` seam (`Npc` has no mutable kb
+  field, the `Style39Context` precedent).
+- **The implosion box maths**: `position = Center` reads the OLD box's
+  FLOAT halves (`Entity.cs:50-55`), then `-= width/2` is INTEGER 192/2
+  = 96 — the new centre equals the old exactly; the `AddLight` tile is
+  the truncated new centre (`CenterTruncated`).
+- **FindFrame twins**: `case 388` (`:71731-71742`, 2 frames / 6 ticks,
+  `npcFrameCount[388] = 2`, `Main.cs:67122`) and `case 418`
+  (`:70758-70800`, the state rows with the STRICT `> 6`/`> 12` counters,
+  `npcFrameCount[418] = 8`, `Main.cs:67125`); states 3/4 hold the frame.
+
+**Verification.** Code-only: the seam call sites were checked against
+the actual signatures by read/grep (`npc_target::target_closest`'s
+6-arg shape, `projectile::can_hit`'s 9-arg shape,
+`player::solid_collision`, `DustPool::new_dust`'s 13-arg shape,
+`entity_lights::tile_x/tile_y`, `Npc::new`/`size_override`); the C# arm
+was re-read line-by-line (the parameter table, the state nesting, the
+dust gate order, the fuse). The 18 witness tests are WRITTEN, NOT RUN —
 **no compiler invoked**.
