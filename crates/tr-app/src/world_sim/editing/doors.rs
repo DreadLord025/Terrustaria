@@ -252,10 +252,36 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // `Player.cs:32669-32677`: the 96-px snap gate wraps
             // `sleeping.StartSleeping`; a refused snap still consumes the
             // click.
-            if let Some(p) = app.player.as_mut() {
+            let slept = if let Some(p) = app.player.as_mut() {
                 if within_snapping_range(p, tx, ty, 96.0) {
                     p.sleep_down(&app.world, *anchor_x, *anchor_y, *direction, *bed_style);
+                    p.sleeping
+                } else {
+                    false
                 }
+            } else {
+                false
+            };
+            // S1-P-i35 — `PlayerSleepingHelper.StartSleeping`'s
+            // `RemoveAllFishingBobbers` (`PlayerSleepingHelper.cs:174`): the
+            // sleep teardown kills the owner's bobbers (a reeled catch still
+            // rides home through the kill hook).
+            if slept {
+                let owner = app.local_id as u8;
+                let level = app.player.as_ref().map_or(0, |p| {
+                    p.fishing_conditions(
+                        &app.inventory,
+                        &app.equip.coins,
+                        &app.equip.ammo,
+                        app.selected,
+                        &app.world,
+                        app.rain.is_raining(),
+                        app.rain.cloud_bg(),
+                    )
+                    .4
+                });
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                app.projectiles.remove_all_fishing_bobbers(owner, level, rng);
             }
             app.world_key = None;
             return true;

@@ -598,6 +598,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
     }
+    // S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse`
+    // → `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399`, then
+    // `ItemCheck_Shoot`'s bobber spawn `:47181-47184`/`:49437`). A live
+    // bobber makes the use a REEL (the pull), never a cast; the cast fires
+    // only when no bobber is out. The pulley gate (`:52055-52058`) blocks
+    // the whole use while roped.
+    let held_pole = registry::get(held.kind).map_or(0, |d| d.fishing_pole);
+    if held_pole > 0 && app.mine_down && !app.inventory_open {
+        let pulley = app.player.as_ref().is_some_and(|p| p.pulley);
+        if !pulley && fishing_use(app, held, world_pos, prev_mine_released && !prev_mine_down) {
+            return;
+        }
+    }
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
@@ -1090,6 +1103,162 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
+/// S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse` →
+/// `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399` → `ItemCheck_Shoot`
+/// `:47056+`). Returns `true` when the use is consumed (a reel OR a cast), so
+/// the caller skips the generic weapon/mining arms. The press edge gates the
+/// cast (the pole is not `autoReuse`, `Item.cs`'s row); a live bobber makes
+/// every press a reel.
+fn fishing_use(app: &mut App, held: ItemSlot, world_pos: Vec2, press_edge: bool) -> bool {
+    let owner = app.local_id as u8;
+    // `ConsumeBait`'s bait scan (`Player.cs:52452-52470`): the ammo slots
+    // 54-57 first, then the grid 0-49, matching `localAI[2]` — but the pull
+    // needs the bait BEFORE it knows which bobber bites, so resolve the best
+    // bait the same way `Fishing_GetBait` does (`:42254-42280`).
+    let bait = {
+        let Some(p) = app.player.as_ref() else { return false };
+        let cond = p.fishing_conditions(
+            &app.inventory,
+            &app.equip.coins,
+            &app.equip.ammo,
+            app.selected,
+            &app.world,
+            app.rain.is_raining(),
+            app.rain.cloud_bg(),
+        );
+        if cond.2 > 0 { Some((cond.3, cond.2)) } else { None }
+    };
+    let (acc_tackle_box, acc_fishing_line) = app
+        .player
+        .as_ref()
+        .map(|p| (p.acc_tackle_box, p.acc_fishing_line))
+        .unwrap_or((false, false));
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let (no_bobber, bait_use) = app.projectiles.pull_fishing_bobbers(
+        owner,
+        bait,
+        acc_tackle_box,
+        acc_fishing_line,
+        |kind| registry::get(kind).map_or(0, |d| d.rare),
+        rng,
+    );
+    // The bait drain + the ladybug luck (`ConsumeBait` `:52513-52524`).
+    if let Some(use_bait) = bait_use {
+        if use_bait.consumed {
+            // Find the slot the scan would pick (ammo first, then grid).
+            let mut drained = false;
+            for sl in app.equip.ammo.iter_mut() {
+                if sl.count > 0 && sl.kind == use_bait.bait_type {
+                    sl.count -= 1;
+                    if sl.count == 0 {
+                        sl.kind = 0;
+                    }
+                    drained = true;
+                    break;
+                }
+            }
+            if !drained {
+                for sl in app.inventory.iter_mut() {
+                    if sl.count > 0 && sl.kind == use_bait.bait_type {
+                        sl.count -= 1;
+                        if sl.count == 0 {
+                            sl.kind = 0;
+                        }
+                        break;
+                    }
+                }
+            }
+            // `:52515-52518` — the ladybug baits 4361/4362 run LadyBugKilled.
+            if use_bait.bait_type == 4361 || use_bait.bait_type == 4362 {
+                let center = app.player.as_ref().map(|p| p.center());
+                if let (Some(p), Some(pos)) = (app.player.as_mut(), center) {
+                    let add = p.on_lady_bug_killed(pos, use_bait.bait_type == 4362);
+                    app.rain.add_lady_bug_rain_boost(add);
+                }
+            }
+        }
+    }
+    // The pull's NPC spawns (`PullBobber` `:52403-52437`): the Duke Fishron
+    // (370) at the player, the blood-moon enemy at the bobber. The unported
+    // enemy kinds (586/587/618/620/621/682) skip the spawn but the 682 still
+    // raises `unlockedSlimeRedSpawn` (`:52429-52432`).
+    for owner_id in app.projectiles.drain_duke_spawns() {
+        if owner_id == owner {
+            let center = app.player.as_ref().map(|p| p.center());
+            if let Some((cx, cy)) = center {
+                let (w, h) = NpcKind::DukeFishron.size();
+                let mut n = Npc::new(NpcKind::DukeFishron, cx - w * 0.5, cy - h, 1, 0.0);
+                n.hp = n.max_hp;
+                app.npcs.push(n);
+            }
+        }
+    }
+    for (npc_type, x, y) in app.projectiles.drain_fishing_enemies() {
+        if npc_type == 682 {
+            app.world.unlocked_slime_red_spawn = true;
+        }
+        // The blood-moon fish enemies have no NpcKind rows (module doc) —
+        // the roll ran verbatim, the spawn is the documented skip.
+        let _ = (x, y);
+    }
+    if !no_bobber {
+        // A live bobber: the use is a reel, consumed (no cast).
+        return true;
+    }
+    // No bobber out: the cast fires on the press edge (`ItemCheck_Shoot`).
+    if !press_edge || app.attack_cd > 0.0 || app.reuse_delay > 0.0 {
+        // The use still consumes (the pole swings) but no cast this tick.
+        return true;
+    }
+    // The player reads are snapshotted before the pool/rng borrows (the
+    // disjoint-field capture the shoot path uses).
+    let Some((override_bobber, pcx, pcy, facing, class_crit)) = app.player.as_ref().map(|p| {
+        let class = registry::get(held.kind).map_or(registry::DamageClass::None, |d| d.class);
+        (p.override_fishing_bobber, p.mounted_center().0, p.mounted_center().1, p.facing, p.class_crit(class))
+    }) else { return true };
+    // `ItemCheck_Shoot`'s bobber override (`Player.cs:47181-47184`): the
+    // glow-bobber accessory replaces the pole's own shoot.
+    let mut proj = registry::projectile(held.kind).unwrap_or(0);
+    if override_bobber > -1 {
+        proj = override_bobber as u16;
+    }
+    if proj == 0 {
+        return true;
+    }
+    let def = registry::get(held.kind);
+    let fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    let speed = fx.map_or(def.map_or(0.0, |d| d.shoot_speed), |s| s.shoot_speed);
+    let damage = fx.map_or(def.map_or(0, |d| d.damage), |s| s.damage);
+    let kb = fx.map_or(def.map_or(0.0, |d| d.knock_back), |s| s.knock_back);
+    // The spawn point + aim (`:47196`/`:47277-47307`): the mounted centre,
+    // the aim normalized to shootSpeed (the degenerate aim → facing).
+    let spawn = Vec2::new(pcx, pcy);
+    let dir = world_pos - spawn;
+    let vel = if dir == Vec2::ZERO || dir.is_nan() {
+        Vec2::new(facing as f32 * speed, 0.0)
+    } else {
+        dir.normalize() * speed
+    };
+    // The crit roll rides the `UpdatePlayers` stream (`:49437`'s spawn; the
+    // bobber's damage is -1 so the PVE walk refuses, but the roll still draws
+    // — the port's generic throw order, `editing.rs`'s shoot path).
+    let item_crit = fx.map_or(0, |s| s.crit);
+    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+    let slot = app.projectiles.spawn_with_data_ai_owned(
+        proj, owner, spawn.x, spawn.y, vel.x, vel.y, damage, kb, 0.0, 0.0,
+    );
+    if let Some(slot) = slot {
+        app.projectiles.set_crit(slot, crit);
+    }
+    // The swing (`ApplyItemAnimation` `:4449-4451`).
+    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+    app.swing = app.swing_max;
+    start_swing_extras(app, held.kind);
+    app.attack_cd = app.swing_max;
+    true
+}
+
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
 /// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`

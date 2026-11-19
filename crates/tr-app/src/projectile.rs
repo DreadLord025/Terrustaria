@@ -680,6 +680,30 @@ pub struct Projectile {
     /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
     /// that played nothing this sub-step.
     pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
+    // reset false `:756-760`). The generic `Update` wet block
+    // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
+    // probes them at the tick head (the one-tick-lag deviation, ANALYSIS
+    // "Fishing rod (S1-P-i35)"). Only the aiStyle-61 arm reads them today.
+    /// `Projectile.wet` — any liquid overlaps the inset probe.
+    pub wet: bool,
+    /// `Projectile.lavaWet` — the FULL box overlaps lava (`LavaCollision`).
+    pub lava_wet: bool,
+    /// `Projectile.honeyWet` — the wet probe hit honey.
+    pub honey_wet: bool,
+    /// `Projectile.shimmerWet` — the wet probe hit shimmer.
+    pub shimmer_wet: bool,
+    /// S1-P-i35 — the bobber's `DoASplash` intent (`Projectile.cs:53893-
+    /// 53905`): `(style, x, y)` the pool drains into the audio's splash play
+    /// on the `UpdateProjectiles` stream (the `wants_sound` pattern).
+    pub(crate) wants_splash: Option<(i32, f32, f32)>,
+    /// S1-P-i35 — the pull's enemy spawn (`Player.cs:52415-52437`):
+    /// `(npc_type, x, y)` the world sim resolves into the NPC vec (the
+    /// `wants_mark_spawn` pattern). The Blood Nautilus 618 drops 64 px lower.
+    pub wants_fishing_enemy: Option<(i32, f32, f32)>,
+    /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
+    /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
+    pub wants_duke_spawn: bool,
 }
 
 impl Default for Projectile {
@@ -750,6 +774,13 @@ impl Default for Projectile {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 }
@@ -12033,6 +12064,16 @@ fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
     Vec2::new(angle.cos(), angle.sin()) * len
 }
 
+/// S1-P-i35 — `ItemCheck_CheckFishingBobber_ConsumeBait`'s result
+/// (`Player.cs:52449-52526`): the bait the pull found and whether its stack
+/// decrements. The caller drains the matching inventory slot and runs the
+/// ladybug luck (`:52515-52518`) on a consumed 4361/4362.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BaitUse {
+    pub bait_type: u16,
+    pub consumed: bool,
+}
+
 /// The 1000-slot pool with the shared immunity state.
 #[derive(Debug)]
 pub struct ProjectilePool {
@@ -12087,6 +12128,19 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
+    /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
+    /// feeds it through [`ProjectilePool::set_bobber_inputs`] before the pass
+    /// (the `set_disco` precedent); `None` = no player link.
+    bobber_inputs: Option<crate::projectile_bobber::BobberInputs>,
+    /// S1-P-i35 — the bobber `DoASplash` intents (`Projectile.cs:53893-53905`):
+    /// `(style, x, y)` drained by the world sim into the audio's splash play
+    /// on the `UpdateProjectiles` stream.
+    pending_splashes: Vec<(i32, f32, f32)>,
+    /// S1-P-i35 — the bobber death hook's catch hand-offs
+    /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
+    /// stack)` the world sim resolves into the inventory/drop.
+    pending_catches: Vec<(u8, u16, i32)>,
 }
 
 impl Default for ProjectilePool {
@@ -12366,6 +12420,9 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            bobber_inputs: None,
+            pending_splashes: Vec::new(),
+            pending_catches: Vec::new(),
         }
     }
 
@@ -12407,6 +12464,151 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
+    /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
+    /// builds it from the live player/world/scene state before the pass.
+    pub fn set_bobber_inputs(&mut self, inputs: Option<crate::projectile_bobber::BobberInputs>) {
+        self.bobber_inputs = inputs;
+    }
+
+    /// S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
+    /// the world sim plays each on the `UpdateProjectiles` stream.
+    pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
+        std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// S1-P-i35 — the bobber death hook's catch drain
+    /// (`Projectile.cs:71986-71994`): `(owner, item, stack)` the world sim
+    /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
+    pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
+        std::mem::take(&mut self.pending_catches)
+    }
+
+    /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
+    /// kill every active bobber this owner controls (the sleep teardown,
+    /// `PlayerSleepingHelper.cs:174`). The C# `Kill()`'s bobber arm
+    /// (`Projectile.cs:71986-71994`) still gives a reeled catch, so the port
+    /// rolls the stack on `final_level` and queues it for the world sim.
+    pub fn remove_all_fishing_bobbers(
+        &mut self,
+        owner: u8,
+        final_level: i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        for i in 0..self.slots.len() {
+            let p = &self.slots[i];
+            if p.active && p.owner == owner && crate::projectile_bobber::handles(p.kind) {
+                if let Some((item, stack)) =
+                    crate::projectile_bobber::kill_hook(&mut self.slots[i], final_level, rng)
+                {
+                    self.pending_catches.push((owner, item, stack));
+                }
+                self.kill(i);
+            }
+        }
+    }
+
+    /// S1-P-i35 — `Player.ItemCheck_PullFishingBobbers` (`Player.cs:52368-
+    /// 52399`): the use-start pull. Returns `false` when a live bobber exists
+    /// (the use is a reel, NOT a cast — `ItemCheck_TryStartUse`'s gate
+    /// `:52034-52037`). For each cast-state bobber (`ai[0] == 0`) it sets
+    /// `ai[0] = 1`, clamps a wet bobber's `velocity.Y` to -10, and — when a
+    /// bite is running (`ai[1] < 0 && localAI[1] != 0`) — runs the bait
+    /// consumption + the pull decision. `bait` is the resolved bait slot
+    /// `(type, power)` the caller found (`ConsumeBait`'s scan); `None` = no
+    /// bait (the consume fails, the pull skips). The consumed bait's stack
+    /// decrement and the ladybug luck ride the caller (the pool cannot reach
+    /// the inventory); the returned `BaitUse` names what to drain.
+    pub fn pull_fishing_bobbers(
+        &mut self,
+        owner: u8,
+        bait: Option<(u16, i32)>,
+        acc_tackle_box: bool,
+        acc_fishing_line: bool,
+        caught_rare: impl Fn(u16) -> i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> (bool, Option<BaitUse>) {
+        let mut any = false;
+        let mut bait_use = None;
+        for i in 0..self.slots.len() {
+            let p = &self.slots[i];
+            if !p.active || p.owner != owner || !crate::projectile_bobber::handles(p.kind) {
+                continue;
+            }
+            any = true;
+            if p.ai[0] != 0.0 {
+                continue;
+            }
+            // `:52385-52391` — the reel start.
+            let p = &mut self.slots[i];
+            p.ai[0] = 1.0;
+            if p.wet && p.vel.y > -10.0 {
+                p.vel.y = -10.0;
+            }
+            p.net_update = true;
+            // `:52392-52395` — the bite pull (ConsumeBait then PullBobber).
+            if p.ai[1] < 0.0 && p.local_ai[1] != 0.0 {
+                let Some((bait_type, bait_power)) = bait else { continue };
+                let local_ai1 = p.local_ai[1];
+                let rare = if local_ai1 > 0.0 { caught_rare(local_ai1 as u16) } else { 0 };
+                let consumed = tr_core::fishing::bait_consumed(
+                    bait_type, bait_power, acc_tackle_box, local_ai1, rare, rng,
+                );
+                // `ConsumeBait` returns true once a bait slot was found (the
+                // stack decrements only on `consumed`); the pull runs either
+                // way (`:52392`'s gate is the find, not the consume).
+                bait_use = Some(BaitUse { bait_type, consumed });
+                let outcome = tr_core::fishing::pull_bobber_decision(
+                    bait_type as i32, local_ai1, acc_fishing_line, rng,
+                );
+                match outcome {
+                    tr_core::fishing::PullOutcome::SpawnDuke => {
+                        p.wants_duke_spawn = true;
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::SpawnEnemy { npc, y_offset } => {
+                        let (cx, cy) = p.center();
+                        p.wants_fishing_enemy = Some((npc, cx, cy + y_offset as f32));
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::LineSnap => {
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::ReelIn => {
+                        p.ai[1] = p.local_ai[1];
+                    }
+                }
+                p.net_update = true;
+            }
+        }
+        (!any, bait_use)
+    }
+
+    /// S1-P-i35 — the pull's enemy spawn drain (`Player.cs:52415-52437`):
+    /// `(npc_type, x, y)` the world sim resolves into the NPC vec.
+    pub fn drain_fishing_enemies(&mut self) -> Vec<(i32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_fishing_enemy.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
+    /// S1-P-i35 — the pull's Duke Fishron spawn drain (`Player.cs:52403-
+    /// 52414`): the owner ids that requested `SpawnOnPlayer(plr, 370)`.
+    pub fn drain_duke_spawns(&mut self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if p.wants_duke_spawn {
+                p.wants_duke_spawn = false;
+                out.push(p.owner);
+            }
+        }
+        out
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -15975,6 +16177,35 @@ impl ProjectilePool {
                                 rng,
                             );
                         }
+                        // S1-P-i35 — `AI()`'s `else if (this.aiStyle == 61)`
+                        // (`Projectile.cs:29310-29313` → `AI_061_FishingBobber`
+                        // `:53658-53861`): the fishing bobbers (360-366/381/
+                        // 382/760/775/986-993). The flight/bite machine lives
+                        // in `projectile_bobber.rs`; the player/world reads
+                        // ride the per-tick `bobber_inputs` snapshot. The arm
+                        // computes the wet/dry velocity; the `kill_step` below
+                        // integrates it (the `HandleMovement` default arm,
+                        // `:19851` — tileCollide true in cast, false in reel).
+                        61 => {
+                            let inputs = self.bobber_inputs.unwrap_or_default();
+                            let alive = crate::projectile_bobber::bobber_step(
+                                &mut self.slots[i],
+                                world,
+                                owner,
+                                &inputs,
+                                rng,
+                            );
+                            if alive {
+                                // `HandleMovement`'s default integrate
+                                // (`Projectile.cs:19851`): the bobber's
+                                // tileCollide is true in the cast state, false
+                                // in the reel state — the kill-on-tile probe.
+                                self.slots[i].kill_step(world);
+                                if let Some(req) = self.slots[i].wants_splash.take() {
+                                    self.pending_splashes.push(req);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                     }
@@ -16142,6 +16373,21 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
+                // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
+                // home to the owner (`GiveItemToPlayer`), the stack rolled on
+                // the owner's fishing level. The local-owner gate is the C#'s
+                // `Main.myPlayer == this.owner`.
+                if crate::projectile_bobber::handles(self.slots[i].kind)
+                    && self.slots[i].owner == local_owner
+                {
+                    let level = self.bobber_inputs.map(|b| b.final_level).unwrap_or(0);
+                    if let Some((item, stack)) =
+                        crate::projectile_bobber::kill_hook(&mut self.slots[i], level, rng)
+                    {
+                        self.pending_catches.push((self.slots[i].owner, item, stack));
+                    }
+                }
             }
         }
     }
@@ -22579,6 +22825,13 @@ mod phasmal_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 
@@ -22972,6 +23225,13 @@ mod ritual_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 

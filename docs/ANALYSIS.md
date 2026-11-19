@@ -8054,26 +8054,119 @@ without the content (the tables, the bobber flight, the rods):
   down to the floor; the honey pond counts Г—1.5; the lava/honey flags
   ride the tiles.
 - **The attempt gates** (`FishingCheck`/`TryBuildFishingContext`,
-  `:20583-20760`): the hard 75-tile floor, the chum bonuses (+11/+6/+3
-  for 1/2/3+ chums), `waterNeededToFish = 300 Г— atmo` with the
-  atmosphere `(y - (60 + 10В·numВІ)) / (worldSurface / 6)` (`num =
+  `:20597-20737`): the submerged-player gate (`:20599` — wet player +
+  bobber above the mounted line), the bees-world honey nullification
+  (`:20610-20613`, one `Next(2)` BEFORE the 75 floor), the hard 75-tile
+  floor, the Truffle Worm duke arm (`:20620-20631` — the ocean edge
+  `<380 || >maxTilesX-380`, `>1000` water, no living Duke → `ai[1] =
+  Next(-180,-60) - 100`), the chum bonuses (+11/+6/+3 for 1/2/3+ chums),
+  `waterNeededToFish = 300 × atmo` with the atmosphere
+  `(position.Y/16 - (60 + 10·num²)) / (worldSurface / 6)` (`num =
   maxTilesX / 4200`) clamped 0.25..1, the quality scaling
-  (`level Г— quality` when the pond is short) and the depth ladder
-  (0 space / 1 surface / 3 underground / 2 cavern with the 50 % re-roll
-  to the surface / 4 underworld). The junk roll: both `Next(50) > level`
-  and the pond below the need (`:20743`).
-- **The rolls**: the bite accumulator (`AI_061` `:53821-53847` вЂ”
+  (`level × quality` when the pond is short), the **luck rolls**
+  (`:20673-20683` — one `NextFloat` gate, a second `NextFloat` scale on a
+  hit: negative luck ×(0.9 − rand·0.3), positive ×(1.1 + rand·0.3), zero
+  luck draws NOTHING) and the depth ladder. **The vanilla ladder**
+  (`:20712-20731`): `< surface·0.5 → 0`, `< surface → 1`, `< rockLayer →
+  2`, `< maxTilesY−300 → 3`, else 4 — NO re-roll. **The REMIX world**
+  (`:20685-20710`) swaps 2/3 (underground → 3, cavern → 2) and re-rolls
+  the cavern to 1 at 50 %. The junk roll (`:20732`) sits AFTER the ladder:
+  both `Next(50) > level` (short-circuit) and the pond below the need.
+- **The rolls**: the bite accumulator (`AI_061` `:53827-53836` —
   `Next(300) < level` adds `Next(1,3)`, `+= level/30`, `+= Next(1,3)`,
   `Next(60)==0` adds 60; past 660 the `FishingCheck` fires), the hit roll
-  `(level + 75) / 2` of 100 (`:20587-20591`) and the drop levels
-  (`:21512-21574` вЂ” the 150/300/1050/2250/4500 Г· level windows with the
+  `(level + 75) / 2` of 100 (`:20589-20591`) and the drop levels
+  (`:21512-21574` — the 150/300/1050/2250/4500 ÷ level windows with the
   mins 2/3/4/5/6 and the crate percentage `Next(100) < 10 [+15 potion]`).
 
-Deviations: the drop tables (`GameContent/FishDropRules/*` вЂ” the 10-file
-populator), the bobber projectile's flight (`AI_061`'s water-line states),
-the rod/bait items (`Item.fishingPole`/`bait` вЂ” the registry growth) and
-the quest fish are M7-FISH-2; the chum bonuses take the count from the
-caller (the chum projectile book is FISH-2); the RNG rides `FastRandom`.
+### S1-P-i35 census fixes (the engine re-port)
+
+The M7-FISH-1 engine had five WRONGs the i35 census caught against the
+verbatim C# (all fixed in `tr-core/src/fishing.rs`):
+
+1. **The height ladder was inverted** below the surface (the old port
+   mapped surface→3 / rock→2 and used a `(height−42)·0.99895` underworld
+   edge). The C# vanilla ladder is `< surface·0.5 → 0`, `< surface → 1`,
+   `< rockLayer → 2`, `< maxTilesY−300 → 3`, else 4 (`:20712-20731`); the
+   REMIX branch (`:20685-20710`) was missing entirely.
+2. **The luck rolls were missing** (`:20673-20683`) and the junk roll sat
+   BEFORE the ladder. The C# order is luck → ladder → junk → drop levels
+   → quest probe → prepare; the port now matches it exactly.
+3. **The drop-level mins** clamped only common/uncommon (2/3); the C#
+   clamps ALL five windows (2/3/4/5/6, `:21524-21543`).
+4. **The pond width was off by one**: `GetFishingPondWidth`
+   (`:21612-21619`) tests the CURRENT cell before stepping; the old port
+   probed the neighbour and slid into an adjacent pond from a dry cell.
+5. **`final_fishing_level` missed the Truffle Worm early return**
+   (`:42181-42184` — bait 2673 returns 0 BEFORE the zero-check) and the
+   pole/bait type outputs; the signature now carries `bait_type`.
+
+The bees-world honey coin (`:20610`), the Truffle Worm duke arm
+(`:20620-20631`), the submerged-player gate (`:20599`), the quest probe
+(`ProbeForQuestFish` `:21495-21510`), the full `SetFishingCheckResults`
+(`:20739-20802` — the enemy-arm-overwrites-item-arm quirk), the bite kick
+(`:53843-53860`), the pull decision (`Player.cs:52401-52447` — the
+`Next(7)` draws BEFORE the `!accFishingLine` check), the bait roll
+(`:52449-52526`) and the catch stacks (`Projectile.cs:53907-53958`) were
+MISSING and are now ported. The engine's RNG is `DropRng`-generic (the
+app passes its `UpdateProjectiles`/`UpdatePlayers` `UnifiedRandom`, the
+tests a `FastRandom`).
+
+### The fishing rod use chain + bobber AI (S1-P-i35, WIRED)
+
+The Player-side use chain and the aiStyle-61 bobber are now wired:
+
+- **The use chain** (`world_sim/editing.rs::fishing_use`): the pole's
+  `ItemCheck_TryStartUse` → `ItemCheck_PullFishingBobbers`
+  (`Player.cs:52368-52399`) — a live bobber makes the use a REEL (the
+  pool's `pull_fishing_bobbers` runs `ConsumeBait` + `PullBobber`), no
+  bobber casts on the press edge (`ItemCheck_Shoot`'s override
+  `:47181-47184`, the glow-bobber accessory replaces the pole's shoot).
+  The pulley gate (`:52055-52058`) blocks the use while roped. The bait
+  drain + the ladybug luck (`:52515-52518`, `Rain.add_lady_bug_rain_boost`)
+  ride the caller.
+- **The bobber AI** (`projectile_bobber.rs::bobber_step`,
+  `Projectile.cs:53658-53861`): the kill gates (held pole / CC / shoot
+  mismatch unless glow / pulley / dead), the `timeLeft = 60` refresh, the
+  reel state (`ai[0] >= 1` — the Item17 cue, the velocity lerp
+  `(v·9 + dir·15.9/dist)/10`, the >3000 kill, the owner-hitbox intersect
+  kill), the cast state (the >900 snap, the wet physics 0.9×/0.5y / the
+  water-line buoyancy −0.1 clamp −8, the dry 0.95/0.98 friction + 0.2
+  gravity cap 15.9), the bite accumulator and the negative-countdown
+  kick. The `FishingCheck` orchestration (`:20583-20595`) drives the
+  engine on the `UpdateProjectiles` stream.
+- **The death hook** (`Projectile.cs:71986-71994`): a reeled catch
+  (`0 < ai[1] < ItemID.Count`) rolls its stack (`catch_stack`) and rides
+  home to the owner's inventory (the overflow drops at the player centre).
+- **The player grants**: `fishing_skill`/`crate_potion`/`sonar_potion`/
+  `acc_tackle_box`/`acc_fishing_bobber`/`acc_fishing_line`/
+  `acc_lava_fishing`/`override_fishing_bobber`/`used_gummy_worm`/
+  `can_float_in_water`/`no_items` fields; the `ResetEffects` clears
+  (`:18507-18513`, `:18332`, `:18687`), the buff arms 121/122/123
+  (`:10146-10157`) + the Merman 265 (`:9895-9898`) + the Cursed 23
+  (`:11731-11734`), the Angler armor +5 (`:13447-13450`), the accessory
+  rows 2373/2374/5139-5146/2375/4881/3721/5064 (`:14651-14683`), the
+  Gummy Worm +3 (`:12857-12860`) and the bobber accessory +10
+  (`:12985-12988`).
+- **The sleep teardown** (`PlayerSleepingHelper.cs:174`): the BedSleep
+  interaction kills the owner's bobbers (`remove_all_fishing_bobbers`).
+- **The world flags**: `unlocked_slime_red_spawn` + `combat_book_was_used`
+  (the `.wld` flags bytes, the `unlocked_slime_rainbow_spawn` precedent).
+
+Deviations (i35): the wet/lava/honey/shimmer flags are probed at the arm head
+(the C# `Update` sets them AFTER the AI, `:16790-17007` — a one-tick lag, the
+standing projectile-liquid deviation); `SpawnFakeFishInWater`
+(`:20477-20581`) and its sparkle draws are SKIPPED (the dust/particle
+convention — a recorded RNG-order deviation on `UpdateProjectiles`); the
+sonar popup + `SoundID.SonarPotion` trackable cue are draw/audio seams
+with no port consumer (the flag rides); the chum-bucket book is unported
+(`chumsInWater = 0`, `ReduceRemainingChumsInPool` a no-op); the blood-moon
+fish enemies (586/587/618/620/621) and the red town slime (682) have no
+`NpcKind` rows — the enemy ROLL runs verbatim (RNG order) but the spawn is
+skipped for the unported kinds (the 682 pull still raises
+`unlockedSlimeRedSpawn`); the Duke Fishron (370) IS ported and spawns. The
+catch fill uses the port's `slot_for_pickup` seam and the overflow drop
+rides the pinned velocity-triplet-then-prefix order (`spawn_item_drop_px`).
 
 ## Growth ticks (M7-GROWTH-1)
 

@@ -194,6 +194,73 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
+    // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).
+    // Built from the live player/world/scene state before the pass (the
+    // `set_disco` precedent); `None` when no player exists.
+    let bobber_inputs = app.player.as_ref().map(|p| {
+        let held = app.inventory[app.selected];
+        let held_def = crate::registry::get(held.kind);
+        let (_, mounted_y) = p.mounted_center();
+        let cond = p.fishing_conditions(
+            &app.inventory,
+            &app.equip.coins,
+            &app.equip.ammo,
+            app.selected,
+            &app.world,
+            app.rain.is_raining(),
+            app.rain.cloud_bg(),
+        );
+        let quest_item = crate::angler::QUEST_POOL
+            .get(app.world.angler_quest as usize)
+            .copied()
+            .unwrap_or(0) as i32;
+        let player_has_quest_item = quest_item > 0
+            && app.inventory.iter().any(|sl| sl.count > 0 && sl.kind as i32 == quest_item);
+        let m = &app.scene_metrics;
+        crate::projectile_bobber::BobberInputs {
+            held_pole_power: held_def.map_or(0, |d| d.fishing_pole),
+            held_shoot: held_def.and_then(|d| d.projectile).unwrap_or(0),
+            cced: p.cced(),
+            no_items: p.no_items,
+            pulley: p.pulley,
+            dead: p.dead,
+            final_level: cond.4,
+            bait_type: cond.3,
+            pole_type: cond.1,
+            player_wet: p.wet,
+            player_mounted_y: mounted_y,
+            luck: p.luck(),
+            crate_potion: p.crate_potion,
+            sonar_potion: p.sonar_potion,
+            acc_lava_fishing: p.acc_lava_fishing,
+            not_the_bees: app.world.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+            remix: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            blood_moon: app.world.blood_moon,
+            day_time: app.world.day_time,
+            hard_mode: app.world.hard_mode,
+            unlocked_slime_red_spawn: app.world.unlocked_slime_red_spawn,
+            duke_alive: app.npcs.iter().any(|n| n.kind == crate::npc::NpcKind::DukeFishron && n.hp > 0),
+            quest_item,
+            player_has_quest_item,
+            angler_alive: app.npcs.iter().any(|n| n.kind == crate::npc::NpcKind::Angler && n.hp > 0),
+            angler_quest_finished: app.world.angler_quest_finished,
+            zone_corrupt: m.zone_corrupt,
+            zone_crimson: m.zone_crimson,
+            zone_jungle: m.zone_jungle,
+            zone_snow: m.zone_snow,
+            zone_dungeon: m.zone_dungeon,
+            zone_desert: m.zone_desert,
+            zone_hallow: m.zone_hallow,
+            // `ZoneGlowshroom` has no port metric (the editing DropCtx
+            // precedent, false — ANALYSIS).
+            zone_glowshroom: false,
+            zone_beach: m.zone_beach,
+            downed_boss3: app.world.downed_skeletron,
+            combat_book_was_used: app.world.combat_book_was_used,
+        }
+    });
+    app.projectiles.set_bobber_inputs(bobber_inputs);
     // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
@@ -322,6 +389,53 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.ai[3] = ai3;
         n.net_update = true;
         app.npcs.push(n);
+    }
+    // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
+    // case 19's playing guard refuses BEFORE the one pitch draw, on the
+    // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
+    // drains at the pass tail, the S1-E-21c convention).
+    for (style, x, y) in app.projectiles.drain_splashes() {
+        app.audio.play_splash_sound(style, x, y, rng);
+    }
+    // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
+    // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
+    // item fills the owner's inventory first (`Player.GetItem`'s slot walk),
+    // the overflow drops at the player centre. The stack roll already ran on
+    // the `UpdateProjectiles` stream (the kill hook); the drop's velocity/
+    // prefix draws ride the `UpdateItems` stream (`Item.NewItem` under
+    // `Main.cs:17779`). The prefix rides the port's pinned velocity-triplet-
+    // then-prefix order (`spawn_item_drop_px`), drawn ONLY for the overflow
+    // (the C# `GetItem` keeps the rolled prefix, a recorded order deviation).
+    for (owner, item, stack) in app.projectiles.drain_catches() {
+        if owner != app.local_id as u8 || stack <= 0 {
+            continue;
+        }
+        let max_stack = crate::registry::max_stack(item);
+        let mut pending = stack as u32;
+        while pending > 0 {
+            let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, item, 0) else {
+                break;
+            };
+            let room = max_stack.saturating_sub(app.inventory[slot].count);
+            if room == 0 {
+                break;
+            }
+            let take = pending.min(room);
+            app.inventory[slot].count += take;
+            pending -= take;
+        }
+        if pending > 0 {
+            if let Some(p) = app.player.as_ref() {
+                let (cx, cy) = p.center();
+                crate::world_sim::items::spawn_item_drop_px(
+                    &mut app.items,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    item,
+                    pending,
+                    glam::Vec2::new(cx, cy),
+                );
+            }
+        }
     }
 }
 
