@@ -16066,6 +16066,17 @@ impl ProjectilePool {
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
+            // Destroyer body's probe launch gate (`:89266-89285`) — the
+            // Next(25) roll rides the strike's stream (the C# HitEffect runs
+            // inside StrikeNPC, under this pass's Main.rand swap).
+            if landed {
+                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                    &mut npcs[idx], rng, false,
+                ) {
+                    npcs[idx].wants_probe = Some(anchor);
+                }
+            }
             // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
             // wave C): the landed strike queues the kind's `HitSound` at
             // `base.position` — the world sim plays it on the
@@ -16193,6 +16204,15 @@ impl ProjectilePool {
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
+            // Destroyer body's probe gate rides the strike's stream.
+            if landed {
+                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                    &mut npcs[idx], rng, false,
+                ) {
+                    npcs[idx].wants_probe = Some(anchor);
+                }
+            }
             // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
             // wave C) — the boxed walk queues it like the plain PVE pass.
             if landed {

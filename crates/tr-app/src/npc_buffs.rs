@@ -202,6 +202,8 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::SkeletronHead => &[],
         NpcKind::WallOfFlesh => &[],
         NpcKind::TheDestroyer => &[],
+        // 135/136/139 have no DebuffImmunitySets rows (`NPCID.cs:6075+`).
+        NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => &[],
         NpcKind::SkeletronPrime => &[],
         NpcKind::Retinazer => &[],
         NpcKind::Spazmatism => &[],

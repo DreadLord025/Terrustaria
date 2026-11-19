@@ -481,6 +481,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_35",
         "NPC_113",
         "NPC_134",
+        // The Destroyer's segments + the Probe (S1-D-3-wire-destroyer).
+        "NPC_135",
+        "NPC_136",
+        "NPC_139",
         "NPC_127",
         "NPC_125",
         "NPC_126",

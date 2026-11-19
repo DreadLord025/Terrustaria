@@ -2047,6 +2047,12 @@ pub fn try_entry_for_npc(
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // The Destroyer's segments + the Probe fold onto the head
+        // (`BestiaryDatabaseNPCsPopulator.cs:688-690`: {135,134},{136,134},
+        // {139,134}).
+        NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
+            NpcKind::TheDestroyer
+        }
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2071,6 +2077,12 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // The Destroyer's segments (Hide=true, `NPCID.cs:2192-2205`) and
+        // the Probe (`BestiaryDatabaseNPCsPopulator.cs:690`: {139,134})
+        // fold onto the head's entry.
+        NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => {
+            NpcKind::TheDestroyer
+        }
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

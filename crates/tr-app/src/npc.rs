@@ -621,9 +621,22 @@ pub enum NpcKind {
     /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
     /// aiStyle 6, dmg 22, def 6, 60 HP).
     LeechBody,
-    /// `NPCID.TheDestroyer` (134) — the mech worm (`NPC.cs:10659+`,
-    /// the same-kind chain; M4-BOSS-7).
+    /// `NPCID.TheDestroyer` (134) — the mech worm's head (`NPC.cs:10659-10679`:
+    /// 38×38 scale 1.25, aiStyle 37, dmg 70, def 0, 80000 HP the whole chain
+    /// shares via realLife, alpha 255 fade-in; S1-D-3-wire-destroyer).
     TheDestroyer,
+    /// `NPCID.TheDestroyerBody` (135) — the mech worm's link (`NPC.cs:10680-10699`:
+    /// dmg 55, def 30, dontCountMe; the laser cadence `AI_037` `:49856-49882`
+    /// and the probe launch `HitEffect` `:89266-89285`).
+    TheDestroyerBody,
+    /// `NPCID.TheDestroyerTail` (136) — the mech worm's last link
+    /// (`NPC.cs:10700-10719`: dmg 40, def 35, dontCountMe; never fires).
+    TheDestroyerTail,
+    /// `NPCID.Probe` (139) — the Destroyer body's launched drone
+    /// (`NPC.cs:10720-10734`: 30×30, aiStyle **5**, dmg 50, def 20, 200 HP,
+    /// noGravity/noTileCollide, kb 0.8; the 120-tick laser `AI_005`'s
+    /// type-139 arm `:50593-50641`).
+    Probe,
     /// `NPCID.SkeletronPrime` (127) — the mech skull (`NPC.cs:10556+`,
     /// M4-BOSS-8).
     SkeletronPrime,
@@ -1045,6 +1058,15 @@ pub struct Npc {
     /// idle (never armed), 0 = expired (the sim's retain drops the NPC), > 0 =
     /// the ticks left. `EncourageDespawn(10)` is the only writer so far.
     pub despawn_timer: i32,
+    /// `NPC.soundDelay` (`NPC.cs:6440`): the AI sound cooldown, decremented
+    /// once per update BEFORE the AI runs (`NPC.cs:90381-90383`). The
+    /// Destroyer's burrow roar arms it (`AI_037`, `:50081-50094`).
+    pub sound_delay: i32,
+    /// The Destroyer body's probe launch (`HitEffect`, `NPC.cs:89266-89285`):
+    /// the strike path rolls the gate and parks the bottom-centre anchor;
+    /// the sim's NPC pass drains it into a `NpcKind::Probe` spawn (the
+    /// `wants_limbs` convention — the strike fns have no allocation seam).
+    pub wants_probe: Option<(f32, f32)>,
     /// `NPC.lookForHomeTimeout` (`NPC.cs:6547`): ticks left before a
     /// kicked-out NPC looks for a new room again. Decays 1/tick
     /// (`NPC.cs:90324-90327`); `kickOut` arms it to 3600
@@ -2255,6 +2277,8 @@ impl Npc {
             homeless_despawn: false,
             look_for_home_timeout: 0,
             despawn_timer: -1,
+            sound_delay: 0,
+            wants_probe: None,
             caster_counter: 0,
             cast_windup: 0,
             ai_action: 0,
@@ -2339,13 +2363,19 @@ impl Npc {
             carrier_uid: 0,
             wants_saucer_crew: false,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
-            // Poltergeist's 100, `NPC.cs:13202`); 0 for every other kind
-            // (the Frost family writes no alpha row, `NPC.cs:13281-13487`).
+            // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
+            // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
+            // S1-D-3-wire-destroyer); 0 for every other kind (the Frost
+            // family writes no alpha row, `NPC.cs:13281-13487`).
             alpha: kind
                 .pumpkin_moon_defaults()
                 .map(|d| d.alpha)
                 .or_else(|| kind.frost_moon_defaults().map(|d| d.alpha))
-                .unwrap_or(0),
+                .unwrap_or(if crate::npc_ai_style37::is_destroyer_family(kind) {
+                    255
+                } else {
+                    0
+                }),
             head_turn: 0,
             wet: false,
             carrier_timer: -1.0,
@@ -2626,6 +2656,10 @@ impl Npc {
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
             NpcKind::TheDestroyer => 0.0,
+            // `SetDefaults` 135/136 (`NPC.cs:10692`/`:10712`): kb 0.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail => 0.0,
+            // `SetDefaults` 139 (`NPC.cs:10732`): kb 0.8.
+            NpcKind::Probe => 0.8,
             // `SetDefaults` case 127: knockBackResist 0.
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
@@ -2951,6 +2985,11 @@ impl Npc {
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
             NpcKind::TheDestroyer => 0,
+            // `SetDefaults` 135/136 (`NPC.cs:10687`/`:10707`): def 30/35.
+            NpcKind::TheDestroyerBody => 30,
+            NpcKind::TheDestroyerTail => 35,
+            // `SetDefaults` 139 (`NPC.cs:10727`): def 20.
+            NpcKind::Probe => 20,
             NpcKind::SkeletronPrime => 24,
             NpcKind::Retinazer => 10,
             NpcKind::Spazmatism => 10,
@@ -3285,6 +3324,10 @@ impl Npc {
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
             NpcKind::TheDestroyer => 120000.0,
+            // `SetDefaults` 135/136 write no value row (the base 0) and the
+            // segments' checkDead drops no coins anyway (the realLife guard,
+            // `NPC.cs:78040-78042`); the probe (139) likewise writes none.
+            NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail | NpcKind::Probe => 0.0,
             NpcKind::SkeletronPrime => 120000.0,
             NpcKind::Retinazer => 120000.0,
             NpcKind::Spazmatism => 120000.0,
@@ -3704,6 +3747,11 @@ impl Npc {
             NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            // The Probe (139): its laser/rotation arm runs in the sim's
+            // `update_destroyers` pass (`npc_ai_style37::probe_step` — the
+            // shot needs the hostile-shot seam); the per-NPC step is the
+            // family no-op (the Destroyer precedent).
+            NpcKind::Probe => {}
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -3800,8 +3848,18 @@ impl Npc {
             }
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
-            // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::TheDestroyer => {}
+            // S1-D-3-wire-destroyer: the family rides its OWN machine
+            // (`AI_037`, `npc_ai_style37.rs`), driven by the sim's
+            // `update_destroyers` pass (the chain needs the sibling slots —
+            // the `AI_006` precedent). The per-NPC step only stamps
+            // `soundDelay--` (`NPC.cs:90381-90383`); the worm pass no longer
+            // claims the family (`is_worm()` excludes it).
+            NpcKind::TheDestroyer | NpcKind::TheDestroyerBody | NpcKind::TheDestroyerTail => {}
+            // The Probe (aiStyle 5) is claimed by the style axis above
+            // (`ai_005_hover_family`'s no-op — its machine runs in the
+            // sim's `update_destroyers`); this arm keeps the kind match
+            // exhaustive.
+            NpcKind::Probe => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
             // The Retinazer (C# type 125) rides its own machine
             // (`update_retinazer`, the S1-D-3i port of the shared aiStyle-57
@@ -6146,6 +6204,14 @@ impl Npc {
             NpcKind::TheDestroyer => {
                 // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
             }
+            // `FindFrame` case 135 (`NPC.cs:73433-73442`): row 0 while the
+            // probe is still aboard (`ai[2] == 0`), row 1 after the launch
+            // (`Main.npcFrameCount[135]` = 2). The tail (136) and the probe
+            // (139) are single-frame (`Main.cs:67082`).
+            NpcKind::TheDestroyerBody => {
+                self.frame = if self.ai[2] == 0.0 { 0 } else { 1 };
+            }
+            NpcKind::TheDestroyerTail | NpcKind::Probe => {}
             // `case 113/114` (`NPC.cs:73516-73537`): the Wall of Flesh and
             // its mirror eye share the machine — the plain phase
             // (`ai[2] == 0`) cycles the 2-row strip
@@ -15355,6 +15421,12 @@ impl Npc {
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
             NpcKind::TheDestroyer => 50,
+            // S1-D-3-wire-destroyer: the family's render-key rows — the
+            // vanilla type ids (135/136/139) are unused by every arm above
+            // (the G6 key stays injective; the protocol ids ride to_u16).
+            NpcKind::TheDestroyerBody => 135,
+            NpcKind::TheDestroyerTail => 136,
+            NpcKind::Probe => 139,
             NpcKind::SkeletronPrime => 51,
             NpcKind::Retinazer => 52,
             NpcKind::Spazmatism => 53,
@@ -16010,6 +16082,8 @@ mod tests {
             NpcKind::LeechHead,
             NpcKind::LeechBody,
             NpcKind::TheDestroyer,
+            NpcKind::TheDestroyerBody,
+            NpcKind::TheDestroyerTail,
         ] {
             assert!(
                 Npc::new(kind, 0.0, 0.0, 1, 0.0).behind_tiles,
@@ -18469,27 +18543,54 @@ mod tests {
     }
 
     fn the_destroyer_chain_assembles_same_kind() {
-        // `AI_037`: the all-same-type chain — the head spawns the
-        // Destroyer segments through the worm pass (the 80 budget).
+        // `AI_037` (`NPC.cs:49833-49855`): the head's first tick spawns
+        // j 0..=80 — 80 bodies (135) then the tail (136) — through the
+        // family driver (S1-D-3-wire-destroyer; the worm-pass stand-in
+        // retired). WRITTEN NOT RUN (code-only mode).
         let w = ground_air();
         let mut head = Npc::spawn_worm_head(&w, 100, 130, NpcKind::TheDestroyer);
         head.hp = head.max_hp;
-        head.worm_left = 80;
         let mut npcs = vec![head];
+        let players = [crate::npc_target::TargetCandidate {
+            active: true,
+            dead: false,
+            ghost: false,
+            x: 1600.0,
+            y: 2000.0,
+            width: 20,
+            height: 42,
+            aggro: 0,
+            item_animation: 0,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        }];
         let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
-        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        // The chain: the head + 80 segments = 81 (the same-kind stop).
-        assert_eq!(npcs.len(), 81, "the destroyer chain length {}", npcs.len());
-        for seg in &npcs {
-            assert_eq!(seg.kind, NpcKind::TheDestroyer);
+        crate::npc_ai_style37::destroyer_family_step(
+            &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
+        );
+        // The chain: the head + 81 links = 82 (`j <= count`, `:49840`).
+        assert_eq!(npcs.len(), 82, "the destroyer chain length {}", npcs.len());
+        assert_eq!(npcs[0].kind, NpcKind::TheDestroyer);
+        for seg in &npcs[1..81] {
+            assert_eq!(seg.kind, NpcKind::TheDestroyerBody);
         }
-        // The trail: the second segment trails the head.
+        assert_eq!(npcs[81].kind, NpcKind::TheDestroyerTail);
+        // The carrier identity: one worm_id, the seg ladder 0..=81.
+        for (j, seg) in npcs.iter().enumerate() {
+            assert_eq!(seg.worm_id, npcs[0].worm_id);
+            assert_eq!(seg.seg_index, j as u32);
+        }
+        // The first-tick gate closed (`parent.ai[0] = child`, `:49851`).
+        assert_ne!(npcs[0].ai[0], 0.0);
+        // The follower spacing: `(int)(44 * scale)` — the port's family
+        // scale rides 1.0 (the size box carries the 1.25), so 44 px from
+        // the parent's centre after the snap (`:50021-50033`).
         let (lw, lh) = npcs[1].size();
         let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + lw * 0.5);
         let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
         let dist = (dx * dx + dy * dy).sqrt();
-        assert!((dist - lw).abs() < 0.5, "the rigid trail ({dist})");
+        assert!((dist - 44.0).abs() < 0.5, "the 44*scale spacing ({dist})");
     }
 
     #[test]
@@ -19116,7 +19217,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 238] = [
+    pub(super) const ALL_KINDS: [NpcKind; 241] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19280,6 +19381,9 @@ mod tests {
         NpcKind::LeechHead,
         NpcKind::LeechBody,
         NpcKind::TheDestroyer,
+        NpcKind::TheDestroyerBody,
+        NpcKind::TheDestroyerTail,
+        NpcKind::Probe,
         NpcKind::SkeletronPrime,
         NpcKind::Retinazer,
         NpcKind::Spazmatism,
@@ -26136,6 +26240,9 @@ mod s1_d_2_tests {
         (NpcKind::Deerclops, 123),
         (NpcKind::WallOfFlesh, 27),
         (NpcKind::TheDestroyer, 37),
+        (NpcKind::TheDestroyerBody, 37),
+        (NpcKind::TheDestroyerTail, 37),
+        (NpcKind::Probe, 5),
         (NpcKind::MartianProbe, 80),
         (NpcKind::MartianDrone, 74),
         (NpcKind::ScutlixRider, 75),
@@ -26196,8 +26303,9 @@ mod s1_d_2_tests {
         for &(kind, style) in CS_STYLES {
             assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
         }
-        // The style-5 family is exactly the four ported kinds (the C#'s 18
-        // style-5 types minus the 14 unported ones).
+        // The style-5 family is the five ported kinds (the C#'s 18
+        // style-5 types minus the 13 unported ones; the Probe joined with
+        // S1-D-3-wire-destroyer — its row sits after the Destroyer's).
         let five: Vec<_> = CS_STYLES
             .iter()
             .filter(|&&(_, s)| s == 5)
@@ -26209,7 +26317,8 @@ mod s1_d_2_tests {
                 NpcKind::EaterOfSouls,
                 NpcKind::Hornet,
                 NpcKind::MeteorHead,
-                NpcKind::ServantOfCthulhu
+                NpcKind::ServantOfCthulhu,
+                NpcKind::Probe
             ]
         );
     }
