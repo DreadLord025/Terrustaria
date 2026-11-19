@@ -19459,6 +19459,60 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## S1-G-1e special tiles (code-only mode, 2026-11-18)
+
+`crates/tr-app/src/render/special_tiles.rs` ports the S1-G-1 special/chest/
+platform slice: `DrawSpecialTilesLegacy` (`TileDrawing.cs:7893-8024`), the
+chest frame offsets (`CacheSpecialDraws_Part2` `:4287-4330`) and the
+platform slope side-fills (`DrawBasicTile` `:1515-1545`, glow arm
+`:1367-1401`). **Code-only mode**: no cargo/rustc/rustfmt/test runs, no
+graphify — the 18 unit tests are written as code, NOT run; verification is
+the C# line-by-line citations plus the source-rect/offset maths pinned in
+the tests. Deliberate deviations:
+
+- **UNWIRED module**: the `render/tiles.rs::draw_tiles` +
+  `tr_core::drawdata` seam is contested by the in-flight S1-G-1 siblings
+  (G-1a vines, G-1b ropes, G-1c cracks, G-1d pylons), so the slice lands as
+  pure draw/decision functions (the `drawdata_anim.rs` S1-F-9b pattern).
+  Intended call sites are documented in the module header: the chest adjust
+  after `draw_data` in `resolve_tile_frame` keyed on
+  `chest::find_chest(chest_anchor(...))`; the side-fill BEFORE the generic
+  `push_slope` column path (the C# returns early, `:1544`); the legacy arms
+  in the non-solid-layer special pass fed by `CacheSpecialDraws_Part1`
+  (`:4152-4255`).
+- **Tile-entity arms deferred**: 395 (item frame), 520 (food platter) and
+  471's entity lookup need the `TileEntity` store the port does not have;
+  only the 334 weapon-rack DISPLAY decode (`frameX % 5000 - 100`, the
+  5000-chunk style count, the right-neighbour prefix
+  `< 25000 ? -10000 : -25000`, the 40 px clamp with the `width <= height`
+  tie, the `num4 >= 3` flip) is ported. The 334 item-texture resolve
+  (`netDefaults`/`Prefix`/`itemAnimations`) and the `item.color` second
+  pass ride the wiring step.
+- **Cage frame input**: the 620 arm reads
+  `Main.butterflyCageFrame[8, GetWaterAnimalCageFrame(...)]` — animated by
+  `AnimateTiles_CritterCages`, the S1-F-9b deferred animator half; the
+  caller passes the frame row. `GetWaterAnimalCageFrame` itself is ported
+  verbatim (C# truncating integer division, `% Main.cageFrames` = 25).
+- **Two-step XNA truncations** (the G-3 verifier finding): the cage halo is
+  `Color(127,127,127,0).MultiplyRGBA(hsl)` (per-channel `(a*b) >> 8`) THEN
+  `*= 0.5f` (`(int)(byte * 0.5)`) — two separate byte quantisations, never
+  one combined float multiply; the final overlay is
+  `Color(255,255,255,0) * 0.1f` → (25,25,25,0). `xna_multiply_rgba` /
+  `xna_scale_color` are the reusable helpers.
+- **invisibleBlock bit unported**: the side-fill gates read
+  `Tile.invisibleBlock()` (`Tile.cs:528-531`, `bTileHeader3 & 0x20`); the
+  port's `Tile` has no `bTileHeader3`, so `FillNeighbor.invisible` reads
+  `false` (the vanilla default for non-echo-coated tiles). The
+  `shouldShowInvisibleBlocks` flag is threaded through the decision fn.
+- **Behind-tiles layer**: `SetLayer(Layer_BehindTiles, …)` has no port
+  analogue yet (the S1-G-13 target family is unwired);
+  `PlatformSideFill.behind_tiles` records the decision and the push draws
+  into the world range until the wiring step routes it.
+- **Sun orb / weapon-rack draws**: the anchor/origin/scale maths are exact
+  (integer `Width()/2` origins, `pos - origin*scale` top-left); the texture
+  decodes (`TextureAssets.SunOrb`, the item sheets) and
+  `Main.sunCircle`/`mouseTextColor` are caller inputs. The additive alpha-0
+  tints ride the port's existing blend deviation (S1-G-3).
 ## Test temp-path isolation (fix/test-temp-path-isolation, 2026-11-18)
 
 **The race.** Disk-writing tests joined CONSTANT names onto
