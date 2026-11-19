@@ -660,6 +660,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            last_saved_binary: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -724,6 +725,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            last_saved_binary: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -990,6 +992,7 @@ mod tests {
                 inventory: [(0, 0, 0); 58],
                 // Slots 0 and 4 starred — the BUG-03 half of the card.
                 inv_favorites: 1 << 0 | 1 << 4,
+                last_saved_binary: 0,
             },
         )
         .unwrap();

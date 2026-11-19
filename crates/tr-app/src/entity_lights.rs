@@ -8,16 +8,20 @@
 //! (`LightingEngine.cs:208-235`), one frame late. [`EntityLights`] is that pair
 //! of lists.
 //!
-//! Ported here: `WorldItem.UpdateItem_VisualEffects`'s `AddLight` arms
-//! (`WorldItem.cs:1204-1649`). Arms that draw `Main.rand` are **not** ported —
-//! they belong to the item-visual dust pass, which needs the dust system
-//! (S1-E-2/S1-E-3, other branches). Skipping an arm wholesale leaves the
-//! `Main.rand` stream untouched, so the fixed-step order stays exact.
+//! Ported here: `WorldItem.UpdateItem_VisualEffects`'s RNG-free `AddLight`
+//! arms (`WorldItem.cs:1295-1648`). The `Main.rand`-drawing flicker arms and
+//! the `Main.essScale` fragment arms (`:1206-1293`) live in
+//! [`crate::item_lights`] and feed the same list from the fixed step (their
+//! draws ride the `UpdateItems` stream); the dust-gated arms (116, 501 and
+//! the `% 12` halves of 75/`BossBag`) stay skipped wholesale — see that
+//! module's docs for the exact draw-free skips.
 //!
 //! The NPC family (`npc_lights.rs::npc_light`, `NPC.AI`'s aiStyle-8 light
-//! tail) feeds the **same** [`EntityLights`] pair — there is one list pair
-//! per engine in the C#, not one per source family. Both feeds run in the
-//! frame pass (`app/frame/draw.rs`) and share the tile-anchor helpers below.
+//! tail) and the Player family (`player_lights.rs::player_lights`, the
+//! buff/accessory/held-item arms) feed the **same** [`EntityLights`] pair —
+//! there is one list pair per engine in the C#, not one per source family.
+//! All feeds run in the frame pass (`app/frame/draw.rs`) and share the
+//! tile-anchor helpers below.
 
 use glam::Vec2;
 use tr_core::lighting::{DynamicLight, LightParams};
@@ -158,10 +162,9 @@ pub(crate) fn item_light(
     let mut y = XAnchor::Center;
     let rgb: [f32; 3];
 
-    // The arm order is `WorldItem.cs:1206-1648`, verbatim; the arms that draw
-    // `Main.rand` (5043, 116, 3191, 520/3454, 521/3455, 547/3453, 548, 575,
-    // 549, 58/1734/1867, 184/1735/1868/4143, 522, 1332, 501) and the four
-    // `Main.essScale` arms (3456-3459) are absent — see the module docs.
+    // The arm order is `WorldItem.cs:1295-1648`, verbatim; the rand/essScale
+    // head (`:1206-1293`) is `crate::item_lights::rand_light`, fed from the
+    // fixed step so its draws ride the `UpdateItems` stream.
     if kind == 3822 {
         // `:1306` — `AddLight(base.Center, 0.1f, 0.3f, 0.1f)`.
         rgb = [0.1, 0.3, 0.1];

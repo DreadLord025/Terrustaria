@@ -265,10 +265,28 @@ pub struct World {
     pub unlocked_slime_rainbow_spawn: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
-    /// (0, -9 * scale)`, `NPC.cs:19261-19265`) — the WoF write-through
+    /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
     /// shape. The head's tether (`aiStyle 46`, `:31148-31160`) does NOT
     /// carry the term.
     pub golem_vx: f32,
+    /// The body's `velocity.Y` — the SAME anchor's Y term (S1-D-3: the
+    /// v1 folded only X; `nPC.velocity` is the full vector,
+    /// `NPC.cs:19258`).
+    pub golem_vy: f32,
+    /// The body's `life` / `lifeMax` — the free head's cadence ladders
+    /// mix DOUBLE (`lifeMax * 0.8`, `:31420`) and INTEGER (`lifeMax / 2`,
+    /// `:31477`) comparisons, so the ratio alone cannot carry them
+    /// (S1-D-3). The sim's anchor pass writes both.
+    pub golem_hp: i32,
+    pub golem_max_hp: i32,
+    /// The body's part scan (`AI_045`'s `flag`/`flag2`/`flag3`,
+    /// `NPC.cs:19544-19566`): the attached head 246 / left fist 247 /
+    /// right fist 248 alive — the charge ladder's +2-per-dead-part
+    /// inputs (`:19646-19657`) and the shield's `dontTakeDamage = flag`
+    /// (`:19567`). The sim's anchor pass scans the pool (S1-D-3).
+    pub golem_head_alive: bool,
+    pub golem_fist_left_alive: bool,
+    pub golem_fist_right_alive: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -490,6 +508,10 @@ pub struct World {
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
+    /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
+    /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
+    /// the port stamps no wall clock; a loaded file's value round-trips.
+    pub creation_time: i64,
 }
 
 impl World {
@@ -554,6 +576,12 @@ impl World {
             skeletron_y: 0.0,
             skeletron_red_hat: false,
             golem_y: 0.0,
+            golem_vy: 0.0,
+            golem_hp: 0,
+            golem_max_hp: 0,
+            golem_head_alive: false,
+            golem_fist_left_alive: false,
+            golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             golem_vx: 0.0,
             slime_rain: false,
@@ -663,6 +691,7 @@ impl World {
             unique_id: [0u8; 16],
             world_id: 0,
             last_played: 0,
+            creation_time: 0,
         }
     }
 
@@ -1219,17 +1248,6 @@ impl World {
     #[inline]
     pub fn is_active(&self, x: i32, y: i32) -> bool {
         self.tile(x, y).is_some_and(|t| t.active())
-    }
-
-    /// Approximate surface (first active tile scanning down the middle column).
-    pub fn compute_spawn_y(&mut self) {
-        let x = self.width / 2;
-        for y in 0..self.height {
-            if self.is_active(x, y) {
-                self.spawn_y = (y - 6).max(0);
-                return;
-            }
-        }
     }
 
     pub fn memory_bytes(&self) -> usize {
