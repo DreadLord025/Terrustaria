@@ -18,7 +18,7 @@
 //! `update_queen_bee` v1 stand-in is retired (the kind arm is an
 //! `unreachable!` guard, the MourningWood precedent). The `QueenBeeOut`
 //! payloads drain in the sim: `wants_bee` → the `NpcKind::Bee`/`BeeSmall`
-//! rows (the free 353/354 protocol band — the vanilla 210/211 slots ride
+//! rows (the gate-reassigned 149/152 protocol holes — the vanilla 210/211 slots ride
 //! the wave-A zombies) at `NewNPC`'s `Bottom` placement, the stinger →
 //! `wants_hostile_shot` + the `QUEEN_BEE_STINGER` (719) `proj_data` row
 //! with the `timeLeft = 300` override. The bees ride the aiStyle-5 axis

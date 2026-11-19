@@ -24686,7 +24686,7 @@ pass (`world_sim/npcs.rs`):
   normalized x5 velocity and `localAI[0] = 60` (`:30633`), `netUpdate` set.
   The two new kinds carry the verbatim `SetDefaults` rows
   (`NPC.cs:11696-11721`: 12x12/8x8, aiStyle 5, dmg 20/15, def 5/2, 20/10 HP,
-  kb 0.5, noGravity, value 0), the protocol ids on the free 353/354 band
+  kb 0.5, noGravity, value 0), the protocol ids gate-reassigned to the free 149/152 holes (353 stays R54c smallkinds; L-B merge)
   (the vanilla 210/211 slots ride the wave-A Twiggy/Female zombies), the
   `NPC_Hit_1`/`NPC_Killed_1` cues, the `{20, 31}` debuff immunity
   (`NPCID.cs:7312-7325`), the bestiary `Enemy(210/211)` entries and the

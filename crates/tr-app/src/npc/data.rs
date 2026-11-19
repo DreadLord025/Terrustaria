@@ -494,10 +494,13 @@ impl NpcKind {
             // The Queen Bee's volley minions (S1-D-3 W-3): the vanilla
             // type ids (`NPCID.Bee` 210 / `BeeSmall` 211, `NPCID.cs:11097-11099`).
             // The vanilla 210/211 protocol slots ride the wave-A Twiggy/
-            // Female zombies (`S1-D-3ff`), so the pair takes the free
-            // 353/354 band above the frost block (the moon kinds' convention).
-            NpcKind::Bee => 353,
-            NpcKind::BeeSmall => 354,
+            // Female zombies (`S1-D-3ff`). GATE REASSIGN (L-B): the branch's
+            // 353/354 collide with R54c smallkinds' BlazingWheel 353 band —
+            // R54c keeps 353; the bees take the next-free 149/152 holes
+            // (148 reserved for R78 LeechTail). Save-compat safe: neither
+            // branch had merged when the ids moved.
+            NpcKind::Bee => 149,
+            NpcKind::BeeSmall => 152,
         }
     }
 
@@ -773,11 +776,11 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
-            // The Queen Bee's volley minions (S1-D-3 W-3) — the free
-            // 353/354 band (`to_u16` above; the vanilla 210/211 slots ride
-            // the wave-A Twiggy/Female zombies).
-            353 => NpcKind::Bee,
-            354 => NpcKind::BeeSmall,
+            // The Queen Bee's volley minions (S1-D-3 W-3) — the gate-
+            // reassigned 149/152 holes (`to_u16` above; the vanilla 210/211
+            // slots ride the wave-A Twiggy/Female zombies; 353 stays R54c's).
+            149 => NpcKind::Bee,
+            152 => NpcKind::BeeSmall,
             _ => return None,
         })
     }
