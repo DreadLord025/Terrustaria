@@ -415,6 +415,18 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // S1-D-4 W-10: the Horseman's unconditional
+                        // `Lighting.AddLight(Center, 0.4, 0.36, 0.2)`
+                        // (`NPC.cs:62420`) — slice B's pure fn, no RNG
+                        // (the npc_lights precedent above).
+                        if let Some((x, y, rgb)) = crate::npc_ai_unicorn_b::horseman_light(
+                            n.kind,
+                            Vec2::new(n.x, n.y) + n.net_offset,
+                            w,
+                            h,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                     }
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,
                     // S1-E-7 wave A): the 0.8/0.95/1.0 light at the player's

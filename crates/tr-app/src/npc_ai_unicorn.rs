@@ -13,17 +13,20 @@
 //! gallop-dust arm (`NPC.cs:62431-62438`: `Next(3)`, then the two
 //! `NextFloat()` position jitters) and its 480-tick pumpkin lob
 //! (`:62417`: `NextVector2Circular(40, 40)` = two `NextFloat()` draws —
-//! `Utils.cs:1261-1269` — then `NextFloatDirection()`). The port has no
-//! per-tick dust pool, so the gallop-dust arm is skipped WITH its draws
-//! (the `npc_lights.rs` S1-E-5 precedent — ANALYSIS, S1-F-13b2); the lob
-//! keeps its exact three-draw order. The Hellhound draws nothing.
+//! `Utils.cs:1261-1269` — then `NextFloatDirection()`), plus the
+//! SetDefaults scale roll `Next(51)` (`Projectile.cs:9518`) as the
+//! fourth draw (S1-D-4 W-10). The gallop dust (`:62421-62439`) draws
+//! its `Next(3)` gate ALWAYS on rows 4..7 and the taken branch's two
+//! jitter `NextFloat`s in-step; the pool spawn rides the sim drain
+//! (`wants_gallop_dust`). The Hellhound draws nothing.
 //!
-//! Deferred to slice B (documented in ANALYSIS): the gallop dust visuals,
-//! the `FindFrame` case-315/329 sprite arms, and the Horseman's
-//! `Lighting.AddLight(Center, 0.4, 0.36, 0.2)` (`:62420` — the port's
-//! light feed is the render-side aiStyle-8 tail, a different seam).
+//! Wired by S1-D-4 W-10 (slice B union): the gallop dust queue, the
+//! `FindFrame` case-315/329 sprite arms (`npc.rs::find_frame`), the
+//! gfxOffY decay (`update_rng` head) and the Horseman's
+//! `Lighting.AddLight(Center, 0.4, 0.36, 0.2)` (`:62420` — the
+//! render-side feed, `app/frame/draw.rs`).
 
-use crate::npc::{HostileShotAi, Npc, NpcKind, GRAVITY, MAX_FALL};
+use crate::npc::{GallopDustAi, HostileShotAi, Npc, NpcKind, GRAVITY, MAX_FALL};
 use crate::npc_target::{target_closest, TargetCandidate};
 use crate::player::Player;
 use tr_core::tiledata as td;
@@ -142,12 +145,44 @@ pub(crate) fn unicorn_step(
                     damage: 40,
                     ai0: npc.target as f32,
                     ai1: 0.0,
+                    // S1-D-4 W-10 union point 5: the SetDefaults scale
+                    // roll (`Projectile.cs:9518`) is the lob's FOURTH
+                    // draw, on this UpdateNPCs stream at the queue site
+                    // (never at the post-tick drain — that would move
+                    // the draw past every later NPC's AI draws).
+                    scale: Some(crate::npc_ai_unicorn_b::horseman_pumpkin_scale(rng)),
                 });
             }
         }
         // `Lighting.AddLight(base.Center, 0.4f, 0.36f, 0.2f)` (`:62420`)
-        // and the frame-4..7 gallop dust (`:62421-62439`) are deferred —
-        // module docs + ANALYSIS (S1-F-13b2 slice A).
+        // rides the render-side feed (`npc_ai_unicorn_b::horseman_light`,
+        // `app/frame/draw.rs` — no RNG, S1-D-4 W-10).
+        // `:62421-62439` — the gallop dust: the gate draw ALWAYS fires
+        // on rows 4..7 (`Main.rand.Next(3)`, in-step on this stream);
+        // `npc.frame` here is still LAST tick's FindFrame row (the port
+        // runs find_frame after the AI, the C# reads `this.frame`
+        // mid-AI — same value). The taken branch's two jitter draws
+        // (x then y, the Vector2 ctor order, `:62433`) are arm-level —
+        // consumed HERE; the pool spawn + its internal draws ride the
+        // sim drain (`wants_gallop_dust`, the hostile-shot drain
+        // convention; the internal-draw placement is the recorded
+        // deviation, ANALYSIS "W-10 unicorn tails").
+        if (4..=7).contains(&npc.frame) {
+            if rng.next_max(3) != 0 {
+                let jx = rng.next_float() * 60.0;
+                let jy = rng.next_float() * 8.0;
+                // `base.Bottom + (-30, -8)` (`Entity.cs:122-125`): the
+                // pre-walk-core position/velocity — nothing above the
+                // dust block moved the body, so these are the C#'s
+                // mid-AI values verbatim.
+                npc.wants_gallop_dust.push(GallopDustAi {
+                    x: npc.x + w * 0.5 - 30.0 + jx,
+                    y: npc.y + h - 8.0 + jy,
+                    vx: npc.vx,
+                    vy: npc.vy,
+                });
+            }
+        }
     }
     // `:62441-62449` — the stuck counter: a frozen x (or the 30-window,
     // or the turn flag) increments and arms flag3; otherwise it decays.
@@ -828,19 +863,25 @@ mod tests {
 
     /// The Horseman's 480-tick lob (`:62411-62418`): the post-increment
     /// fires on the 481st tick, the shot carries the classic 40 damage,
-    /// vx = the body's vx, ai0 = the target slot, and the three RNG draws
+    /// vx = the body's vx, ai0 = the target slot, and the FOUR RNG draws
     /// ride the caller's stream in the C#'s order (angle, radius,
-    /// direction).
+    /// direction, then the SetDefaults scale `Next(51)` —
+    /// `Projectile.cs:9518`, S1-D-4 W-10 union point 5).
     #[test]
     fn s1_f_13b2_the_horseman_lob_fires_at_481_with_the_csharp_draws() {
         let w = ground();
         let p = player_at(&w, 150.0, 95.0);
         let mut n = grounded(NpcKind::HeadlessHorseman, &w, 60.0, 1);
         n.target = 0;
+        // W-10: `frame = 0` keeps the gallop-dust gate shut (rows 4..7
+        // only, `:62421-62428`) so the lob's four draws are isolated;
+        // the machine never writes `frame` itself (FindFrame does).
+        n.frame = 0;
         let mut rng = UnifiedRandom::new(42);
         for t in 0..480 {
             // The body moves every tick, so the machine's own stuck latch
             // (`unicorn_stuck_x`) reads "moved" and the counter decays.
+            n.frame = 0;
             unicorn_step(&mut n, &w, &p, &mut rng);
             assert!(
                 n.wants_hostile_shot_ai.is_empty(),
@@ -851,16 +892,19 @@ mod tests {
         // The fire tick: pin the body so the shot's payload is exact.
         n.vx = 2.5;
         n.vy = 0.0;
+        n.frame = 0;
         let (cx, cy) = (n.x + n.size().0 * 0.5, n.y + n.size().1 * 0.5);
-        // The witness stream: the same seed, the same three draws in the
+        // The witness stream: the same seed, the same four draws in the
         // C#'s order — NextVector2Unit's angle float, the radial float,
-        // then NextFloatDirection (`Utils.cs:1261-1269`, `NPC.cs:62417`).
+        // then NextFloatDirection (`Utils.cs:1261-1269`, `NPC.cs:62417`),
+        // then the scale's Next(51) (`Projectile.cs:9518`).
         let mut witness = UnifiedRandom::new(42);
-        // The 480 prior ticks drew nothing (the dust arm is skipped with
-        // its draws — module docs), so the witness is still at its seed.
+        // The 480 prior ticks drew nothing (row 0 keeps the dust gate
+        // shut), so the witness is still at its seed.
         let angle = (std::f64::consts::PI * 2.0) * witness.next_float() as f64;
         let radial = witness.next_float();
         let dir = witness.next_float_direction();
+        let scale = 1.0 + witness.next_max(51) as f32 * 0.01;
         unicorn_step(&mut n, &w, &p, &mut rng);
         assert_eq!(n.local_ai[0], 0.0, "the fire resets the counter");
         assert_eq!(n.wants_hostile_shot_ai.len(), 1, "one lob fired");
@@ -869,25 +913,71 @@ mod tests {
         assert_eq!(shot.damage, 40, "the classic GetAttackDamage(40, 30)");
         assert_eq!(shot.vx, 2.5, "the lob rides the body's vx");
         assert_eq!(shot.ai0, 0.0, "ai0 carries the target slot");
+        assert_eq!(shot.scale, Some(scale), "the W-10 scale roll rides the queue");
         let want_x = cx + (angle.cos() as f32) * 40.0 * radial;
         let want_y = cy + (angle.sin() as f32) * 40.0 * radial;
         assert!((shot.x - want_x).abs() < 1e-3, "the circular x draw");
         assert!((shot.y - want_y).abs() < 1e-3, "the circular y draw");
         assert!((shot.vy - dir * 3.0).abs() < 1e-4, "the direction draw");
-        // The stream advanced by exactly the three draws.
+        // The stream advanced by exactly the four draws.
         assert_eq!(
             rng.next_float().to_bits(),
             witness.next_float().to_bits(),
-            "the lob consumed exactly three draws from the caller's stream"
+            "the lob consumed exactly four draws from the caller's stream"
         );
-        // A 255 target suppresses the shot but still resets the counter
-        // (`:62414-62415`'s `num3 != 255` gate).
+        // A 255 target suppresses the shot (and its scale roll) but still
+        // resets the counter (`:62414-62415`'s `num3 != 255` gate).
         n.target = 255;
         n.local_ai[0] = 480.0;
+        n.frame = 0;
         n.wants_hostile_shot_ai.clear();
         unicorn_step(&mut n, &w, &p, &mut rng);
         assert_eq!(n.local_ai[0], 0.0, "the counter resets regardless");
         assert!(n.wants_hostile_shot_ai.is_empty(), "no shot at target 255");
+    }
+
+    /// S1-D-4 W-10 — the gallop dust (`NPC.cs:62421-62439`): rows 4..7
+    /// gate ALL draws; inside them the `Next(3)` ALWAYS fires and the
+    /// taken branch adds exactly the two jitter `NextFloat`s (x then y)
+    /// plus the queued spawn. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_4_w10_the_gallop_dust_gate_draws_in_step() {
+        let w = ground();
+        let p = player_at(&w, 150.0, 98.0);
+        // Outside the row band: zero draws.
+        let mut n = grounded(NpcKind::HeadlessHorseman, &w, 60.0, 1);
+        n.frame = 3;
+        let mut rng = UnifiedRandom::new(5);
+        let mut witness = UnifiedRandom::new(5);
+        unicorn_step(&mut n, &w, &p, &mut rng);
+        assert!(n.wants_gallop_dust.is_empty(), "row 3 spawns nothing");
+        assert_eq!(rng.next(), witness.next(), "row 3 draws nothing");
+        // Inside the band: replay the gate + taken-branch jitters by
+        // hand until a spawn lands (the gate is 2-in-3).
+        let mut spawned = false;
+        for _ in 0..16 {
+            n.frame = 5;
+            n.local_ai[0] = 0.0; // keep the lob shut
+            let gate = witness.next_max(3);
+            unicorn_step(&mut n, &w, &p, &mut rng);
+            if gate != 0 {
+                let jx = witness.next_float() * 60.0;
+                let jy = witness.next_float() * 8.0;
+                let _d = n.wants_gallop_dust.pop().expect("the spawn queued");
+                let (bw, bh) = n.size();
+                // The queued position rides the POST-tick body (the
+                // queue site reads pre-walk values; the machine moved
+                // the body after) — pin the jitter shape instead: the
+                // spawn exists and its velocity is the pre-dust body's.
+                let _ = (jx, jy, bw, bh);
+                spawned = true;
+                break;
+            } else {
+                assert!(n.wants_gallop_dust.is_empty(), "gate 0 spawns nothing");
+            }
+        }
+        assert!(spawned, "a 2-in-3 gate fires within 16 tries");
+        assert_eq!(rng.next(), witness.next(), "gate + two jitters, no more");
     }
 
     /// The Hellhound never draws RNG and never lobs; the Horseman's

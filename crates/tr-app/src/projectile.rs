@@ -8499,6 +8499,83 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_194_HorsemanPumpkin` (`Projectile.cs:41293-41336`) — the
+    /// Headless Horseman's pumpkin lob (1001, the style's only
+    /// SetDefaults row `:9511-9522`). S1-D-4 census slice W-10: the row
+    /// existed but the style had NO dispatch arm (census §3c) — the
+    /// WIRED unicorn machine's lobbed pumpkins never homed.
+    ///
+    /// RNG: exactly ONE draw per tick — `Main.rand.Next(3)` (`:41326`,
+    /// the dust gate), ALWAYS consumed on the threaded
+    /// `UpdateProjectiles` stream. The taken branch's `NewDustDirect`
+    /// internals ride the DustRng seam (the leaf-blower precedent: the
+    /// dust layer is unmodelled in the pool, the arm-level draw stays).
+    /// The scale roll (`Next(51)`, `SetDefaults :9518`) is NOT here — it
+    /// is a spawn-time `UpdateNPCs` draw at the lob's queue site
+    /// (`npc_ai_unicorn_b::horseman_pumpkin_scale`, union point 5).
+    fn ai_horseman_pumpkin(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:41295-41304` — the aim point: `ai[0]` is the target player
+        // slot (the lob passes `num3 = this.target`, `NPC.cs:62414`);
+        // `IndexInRange` + active + !dead, else keep the own centre. The
+        // port's single player rides slot 0 (`spawn_hostile_ai`'s
+        // local-player convention); any other slot = out of range.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let num = self.ai[0] as i32;
+        let target = if num == 0 {
+            player.filter(|p| !p.dead).map(|p| {
+                let (cx, cy) = p.center();
+                Vec2::new(cx, cy)
+            })
+        } else {
+            None
+        }
+        .unwrap_or(center);
+        let vector = target - center;
+        // `:41306-41310` — num2 = 30 (the vertical dead-band), num3 = 4
+        // (the x cap), num4 = 5 (the y cap), num5/num6 = 0.4 (the accels).
+        let num2 = 30.0f32;
+        let num3 = 4.0f32;
+        let num4 = 5.0f32;
+        let num5 = 0.4f32;
+        let num6 = 0.4f32;
+        // `:41311-41315` — the y steer only OUTSIDE the ±30 band
+        // (`!(vector.Y < num2) || !(vector.Y > -num2)` = `|dy| >= 30`),
+        // clamped ±5; `Math.Sign` yields 0 for 0 (`csign`).
+        if !(vector.y < num2) || !(vector.y > -num2) {
+            let num7 = csign(vector.y) * num6;
+            self.vel.y = (self.vel.y + num7).clamp(0.0 - num4, num4);
+        }
+        // `:41316` — the x steer, clamped ±4.
+        self.vel.x = (self.vel.x + csign(vector.x) * num5).clamp(0.0 - num3, num3);
+        // `:41317-41318` — the sprite rides the flight angle and side.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        self.sprite_direction = if !(self.vel.x < 0.0) { 1 } else { -1 };
+        // `:41319-41326` — the fade: the last 6 ticks fade out 0.1/tick,
+        // otherwise fade in 1/30 per tick. `Opacity` is the alpha view
+        // (`Projectile.cs:540-549` — the `opacity_of`/`alpha_of` pair).
+        let opacity = if self.time_left < 6 {
+            opacity_of(self.alpha) - 0.1
+        } else {
+            opacity_of(self.alpha) + 1.0 / 30.0
+        };
+        self.alpha = alpha_of(opacity);
+        // `:41327-41334` — the dust gate: `Next(3)` ALWAYS drawn; the
+        // taken branch spawns dust 6 (scale 0.6, fadeIn 1.1, noGravity,
+        // noLight) — unmodelled here, its internal draws ride the
+        // DustRng seam (the leaf-blower precedent).
+        if rng.next_range(0, 3) != 0 {
+            // Dust.NewDustDirect(position, w, h, 6, vx, vy) — skipped.
+        }
+        // `HandleMovement`: the row keeps `tileCollide = false`
+        // (`Projectile.cs:9516`), so the position follows the velocity.
+        self.kill_step(world);
+    }
+
     /// `AI_189_Volcano` (`Projectile.cs:42264-42371`) — the Volcano (978) and
     /// the Cascade Explosion (1125).
     ///
@@ -12296,6 +12373,13 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// The spawn-time scale override (`SetDefaults`'s per-spawn rolls):
+    /// the Horseman's pumpkin lob carries `1f + Next(51) * 0.01f`
+    /// (`Projectile.cs:9518`) from the lob's queue site (S1-D-4 W-10).
+    pub fn set_scale(&mut self, slot: usize, scale: f32) {
+        self.slots[slot].scale = scale;
+    }
+
     /// Configure the immunity system of a just-spawned slot (the C# sets these
     /// in the per-type `SetDefaults`).
     pub fn set_immunity(
@@ -15072,6 +15156,17 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // `AI()`'s `else if (this.aiStyle == 194)`
+                        // (`Projectile.cs:36739-36742`) ->
+                        // `AI_194_HorsemanPumpkin` — S1-D-4 census slice
+                        // W-10: the Horseman's pumpkin lob (1001), spawned
+                        // by the WIRED unicorn machine
+                        // (`npc_ai_unicorn.rs`'s 480-tick lob). 1001 is the
+                        // style's ONLY SetDefaults row (`:9515`), so no
+                        // kind gate. FIRST arm wins: no other 194 arm
+                        // exists anywhere in this match (census §3c — the
+                        // row was data-rowed but AI-INERT until this arm).
+                        194 => self.slots[i].ai_horseman_pumpkin(world, player.as_deref(), rng),
                         // `AI()`'s `else if (this.aiStyle == 26)`
                         // (`Projectile.cs:26416-26419`) → `AI_026` —
                         // SLICE A + SLICE B chained (S1-D-4b-10/-11): A's
@@ -16291,6 +16386,86 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    /// S1-D-4 census slice W-10 — `AI_194_HorsemanPumpkin`
+    /// (`Projectile.cs:41293-41336`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_4_w10_the_pumpkin_homes_clamps_and_fades() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        // The pumpkin sits 200 px right of and level with the player.
+        let (pcx, pcy) = player.center();
+        let mut p = Projectile {
+            active: true,
+            kind: crate::projectile::HORSEMAN_PUMPKIN,
+            owner: 255,
+            ai: [0.0, 0.0, 0.0, 0.0],
+            w: 26.0,
+            h: 26.0,
+            pos: Vec2::new(pcx + 200.0 - 13.0, pcy - 13.0),
+            alpha: 255,
+            time_left: 360,
+            ..Default::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        p.ai_horseman_pumpkin(&w, Some(&player), &mut rng);
+        // `:41316` — dx < 0 → vx -= 0.4 (the first tick from rest).
+        assert!((p.vel.x + 0.4).abs() < 1e-5, "vx steers left: {}", p.vel.x);
+        // |dy| < 30 → the y steer stays off (`:41311`).
+        assert_eq!(p.vel.y, 0.0, "the dead-band holds vy");
+        // `:41317-41318` — the rotation is the flight angle, dir -1.
+        assert_eq!(p.sprite_direction, -1);
+        // The fade-in: alpha 255 → (1 - (0 + 1/30)) * 255 = 246.
+        assert_eq!(p.alpha, 246, "the 1/30 fade-in");
+        // 30 more ticks: vx saturates at the -4 cap (`num3`).
+        for _ in 0..30 {
+            p.ai_horseman_pumpkin(&w, Some(&player), &mut rng);
+        }
+        assert_eq!(p.vel.x, -4.0, "the ±4 x cap");
+        assert_eq!(p.alpha, 0, "the fade-in completes");
+        // The last-6-tick fade-out arm (`:41321`): opacity drops 0.1.
+        p.alpha = 0;
+        p.time_left = 5;
+        p.ai_horseman_pumpkin(&w, Some(&player), &mut rng);
+        assert_eq!(p.alpha, alpha_of(1.0 - 0.1), "the fade-out");
+        // A dead player falls back to the own centre (`:41300`): zero
+        // vector → no steering (Math.Sign(0) = 0).
+        player.dead = true;
+        p.vel = Vec2::ZERO;
+        let before = p.pos;
+        p.ai_horseman_pumpkin(&w, Some(&player), &mut rng);
+        assert_eq!(p.vel, Vec2::ZERO, "the dead-target fallback holds");
+        assert_eq!(p.pos, before, "no velocity, no motion");
+    }
+
+    /// W-10 RNG witness: exactly ONE `Next(3)` per tick
+    /// (`Projectile.cs:41327`), on the threaded stream, whatever the
+    /// gate rolls. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_d_4_w10_the_pumpkin_draws_one_next3_per_tick() {
+        let w = ground();
+        let player = crate::player::Player::spawn(&w);
+        let mut p = Projectile {
+            active: true,
+            kind: crate::projectile::HORSEMAN_PUMPKIN,
+            owner: 255,
+            w: 26.0,
+            h: 26.0,
+            pos: Vec2::new(400.0, 300.0),
+            alpha: 255,
+            time_left: 360,
+            ..Default::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::new(99);
+        let mut witness = tr_core::UnifiedRandom::new(99);
+        for _ in 0..12 {
+            p.ai_horseman_pumpkin(&w, Some(&player), &mut rng);
+            let _gate = witness.next_range(0, 3);
+        }
+        // The two streams advanced identically — the arm consumed
+        // exactly the gate draws, nothing else.
+        assert_eq!(rng.next_range(0, 1000), witness.next_range(0, 1000));
     }
 
     /// S1-L-10a — the latch rebuilds the owner's refused-tile set

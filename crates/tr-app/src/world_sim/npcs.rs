@@ -3873,12 +3873,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // sim's current one).
     let mut shots = Vec::new();
     let mut ai_shots = Vec::new();
+    let mut gallop_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
         }
         for shot in n.wants_hostile_shot_ai.drain(..) {
             ai_shots.push(shot);
+        }
+        for d in n.wants_gallop_dust.drain(..) {
+            gallop_dust.push(d);
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -3930,7 +3934,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
-        app.projectiles.spawn_hostile_ai(
+        let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
             Vec2::new(shot.x, shot.y),
             Vec2::new(shot.vx, shot.vy),
@@ -3939,6 +3943,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             shot.ai0,
             shot.ai1,
         );
+        // S1-D-4 W-10: the Horseman's pumpkin scale roll
+        // (`Projectile.cs:9518`) was consumed at the lob's QUEUE site
+        // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
+        if let (Some(slot), Some(scale)) = (slot, shot.scale) {
+            app.projectiles.set_scale(slot, scale);
+        }
+    }
+    // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
+    // the arm-level gate + jitter draws already rode the UpdateNPCs
+    // stream in-step; `Dust.NewDustPerfect(pos, 6, velocity)` and its
+    // post-spawn writes run here on the SAME stream (the pool-internal
+    // draw placement after the tick's AI is the recorded deviation,
+    // ANALYSIS "W-10 unicorn tails").
+    if !gallop_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(RngKey::UpdateNpcs);
+        for d in gallop_dust {
+            let idx = app.dust.new_dust_perfect(
+                rng,
+                &ctx,
+                &app.world,
+                Vec2::new(d.x, d.y),
+                6,
+                Some(Vec2::new(d.vx, d.vy)),
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            // `:62434-62437` — the post-spawn writes, sentinel included.
+            let slot = app.dust.slot_mut(idx);
+            slot.scale = 0.6;
+            slot.fade_in = 1.1;
+            slot.no_gravity = true;
+            slot.no_light = true;
+        }
     }
     // The WoF's spawn requests + the World state the Hungry reads
     // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
