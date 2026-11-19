@@ -2265,17 +2265,18 @@ fn invasion_spawn_pick(
     progress_frac: f32,
 ) -> NpcKind {
     let _hard_type = if invasion_type == 1 { Some(1) } else { None };
-    // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the gates are the
-    // vanilla's sequential `Next(n) == 0` chain — `Next(7)` the Gangsta,
-    // `Next(3)` the Balla, else the MysterySnowman.
+    // `invasionType == 2`'s table (`NPC.cs:1453-1466`): the gates are the
+    // vanilla's sequential `Next(n) == 0` chain — `Next(7)` → net 145
+    // (the port's `MysterySnowman`), `Next(3)` → net 143 (the Gangsta),
+    // else net 144 (the port's `SnowBalla`).
     if invasion_type == 2 {
         if rng.next_max(7) == 0 {
-            return NpcKind::SnowmanGangsta;
+            return NpcKind::MysterySnowman; // 145
         }
         if rng.next_max(3) == 0 {
-            return NpcKind::SnowBalla;
+            return NpcKind::SnowmanGangsta; // 143
         }
-        return NpcKind::MysterySnowman;
+        return NpcKind::SnowBalla; // 144
     }
     // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the roll ORDER is
     // vanilla — num6 (`Next(7)`), the Saucer gate (`Next(45)` + the 30%
@@ -4032,6 +4033,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         } else {
             0
         };
+        // The Frost throws' `ai[0] = 2f` post-spawn writes
+        // (`NPC.cs:29025`/`:29087`): for 109 the value keeps tile collision
+        // on while both `AI_010` gravity arms exclude the kind (the ball
+        // flies straight); for 110 it is inert (`AI_001`'s `flag3 = false`
+        // list holds the counter, `Projectile.cs:55962`). The laser keeps
+        // its `NewProjectile` default 0 (`NPC.cs:49877`).
+        let ai0 = if kind == crate::projectile::BULLET_SNOWMAN
+            || kind == crate::projectile::SNOW_BALL_HOSTILE
+        {
+            2.0
+        } else {
+            0.0
+        };
         if time_left > 0 {
             app.projectiles.spawn_hostile_timed(
                 kind,
@@ -4040,6 +4054,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dmg,
                 0.0,
                 time_left,
+                ai0,
             );
         } else {
             app.projectiles
@@ -6772,8 +6787,10 @@ mod invasion_tests {
 
         #[test]
         fn the_frost_spawn_table_picks_the_trio() {
-            // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
-            // 1/3, else the MysterySnowman — always the frost trio.
+            // `invasionType == 2`'s table (`NPC.cs:1453-1466`): the 1/7
+            // arm is net 145 (the port's MysterySnowman), the 1/3 arm net
+            // 143 (the Gangsta), else net 144 (the port's SnowBalla) —
+            // always the frost trio.
             let mut rng = UnifiedRandom::new(9);
             for _ in 0..60 {
                 assert!(matches!(
@@ -6781,6 +6798,12 @@ mod invasion_tests {
                     NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
                 ));
             }
+            // The per-arm net-id mapping: the 1/7 arm's kind carries net
+            // 145's stats (22 def), the 1/3 arm's net 143's (20), the
+            // else's net 144's (26) — `NPC.cs:10805-10846`.
+            assert_eq!(Npc::new(NpcKind::MysterySnowman, 0.0, 0.0, 1, 0.0).defense(), 22);
+            assert_eq!(Npc::new(NpcKind::SnowmanGangsta, 0.0, 0.0, 1, 0.0).defense(), 20);
+            assert_eq!(Npc::new(NpcKind::SnowBalla, 0.0, 0.0, 1, 0.0).defense(), 26);
             // The goblin table stays on type 1.
             let mut rng = UnifiedRandom::new(9);
             for _ in 0..40 {
