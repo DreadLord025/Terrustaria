@@ -833,6 +833,15 @@ fn portrait_data(
         (NpcKind::VoodooDemon, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::EaterOfSouls, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::Hornet, _) => (sheet_i, 32.0, 34.0, 32.0, white),
+        // The volley bees (S1-D-3 W-3): the 4-row strips
+        // (`Main.npcFrameCount[210/211] = 4`, `Main.cs:67082`); the frame
+        // height rides the sheet itself (`draw_npcs`'s generic anchor).
+        (NpcKind::Bee | NpcKind::BeeSmall, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, h, h, white)
+        }
         (NpcKind::MeteorHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         // The casters ride the 38x48 humanoid frame box; the spheres the
         // 16x16 sheet.

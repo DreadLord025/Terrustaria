@@ -112,6 +112,10 @@ pub const GOLEM_FIREBALL: u16 = 258;
 /// `ProjectileID.EyeBeam` (259) — the Golem's eye beams
 /// (`NPC.cs:31282`'s `num698`, `:31565`'s `num729`).
 pub const GOLEM_EYE_BEAM: u16 = 259;
+/// `ProjectileID.QueenBeeStinger` (719, `ProjectileID.cs:1992`) — the
+/// Queen Bee's state-3 barrage (`NPC.cs:30742`'s shot, dmg 11, the
+/// post-spawn `timeLeft = 300` `:30743`).
+pub const QUEEN_BEE_STINGER: u16 = 719;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
@@ -2531,6 +2535,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // melee/armorPenetration/stopsDealingDamageAfterPenetrateHits
             // fields are damage-side and stay with the melee port.
             LIGHTS_BANE => (20.0, 20.0, 188, 2, 30, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // `Projectile.cs:7608-7616` — the Queen Bee's stinger (719):
+            // 10x10, hostile, `penetrate = -1`, aiStyle 1 (the plain
+            // flight), `tileCollide = true`; the stock 3600 life (the
+            // AI_043 arm overrides to 300 post-spawn, `NPC.cs:30743`).
+            QUEEN_BEE_STINGER => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

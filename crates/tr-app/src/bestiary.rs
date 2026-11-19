@@ -308,6 +308,27 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Hornet",
     },
+    // The Queen Bee's volley minions (S1-D-3 W-3) — the automated
+    // `BestiaryEntry.Enemy(210/211)` populator
+    // (`BestiaryDatabaseNPCsPopulator.cs:851-868`); the credit ids ride
+    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` (the persistent
+    // names). Both display "Bee" (`en-US NPCs.json`'s Bee/BeeSmall rows).
+    BestiaryEntryDef {
+        credit_id: "Bee",
+        net_id: 210,
+        kind: NpcKind::Bee,
+        variant: None,
+        quick_unlock: false,
+        name: "Bee",
+    },
+    BestiaryEntryDef {
+        credit_id: "BeeSmall",
+        net_id: 211,
+        kind: NpcKind::BeeSmall,
+        variant: None,
+        quick_unlock: false,
+        name: "Bee",
+    },
     BestiaryEntryDef {
         credit_id: "MeteorHead",
         net_id: 23,

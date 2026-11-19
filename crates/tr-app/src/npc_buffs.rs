@@ -221,6 +221,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // venom-immunity rides the hornet projectile set — folded out).
         NpcKind::EaterOfSouls | NpcKind::MeteorHead => &[],
         NpcKind::Hornet => &[20],
+        // The volley bees: `NPCID.Sets.DebuffImmunitySets` rows 210/211
+        // — `SpecificallyImmuneTo = { 20, 31 }` (`NPCID.cs:7312-7325`).
+        NpcKind::Bee | NpcKind::BeeSmall => &[20, 31],
         // The casters/spheres: no debuff-immunity rows in the data (the
         // Fire Imp's `lavaImmune` rides the liquid system).
         NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => &[],
