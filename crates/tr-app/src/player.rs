@@ -722,6 +722,12 @@ pub struct Player {
     /// `Player.miscDyes[0..5]`'s kinds (`Player.cs:1494`; pet/light/cart/
     /// mount/hook). Filled from `App.equip` per tick.
     pub misc_dye_slots: [u16; 5],
+    /// `Player.hideMisc` (`Player.cs:1710` — a `BitsByte`; only bits 0/1
+    /// have writers, the pet/light-pet hides `:17344`/`:17353` and the
+    /// buff-bar cancel `Main.cs:43401`). The port models the two live bits
+    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`) are unported,
+    /// so no consumer re-shows the visual yet (ANALYSIS).
+    pub hide_misc: [bool; 2],
     /// `UpdateDyes`' `c*` cache (`Player.cs:9587-9757`) — the dye pass each
     /// draw layer applies (the `DrawData.shader` source, 0 = plain). The port
     /// fills the fields with draw consumers: the armor trio reads its dye
@@ -1995,6 +2001,7 @@ impl Player {
             equipped: [0; 20],
             dye_slots: [0; 10],
             misc_dye_slots: [0; 5],
+            hide_misc: [false; 2],
             c_head: 0,
             c_body: 0,
             c_legs: 0,
@@ -2947,22 +2954,64 @@ impl Player {
     /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
     /// right-click removal — non-debuffs only, and not Petrified 60 /
     /// Webbed 151; the mount's own buff dismounts instead of removing the
-    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
-    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
-    /// misc-equips pets (unported). Returns whether the arm entered (the
-    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
-    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+    /// buff (`Mount.CheckBuff`, `Mount.cs:2933-2936` — `data.buff == b`).
+    /// The dismount is `mount.TryDismount` (`:43377` → `Mount.cs:6137-6140`
+    /// → `CanDismountWithResult` `:6611-6624`): a refused dismount (CCed on
+    /// 55/56/61, or no room for the 20×42 shrink) keeps the buff — the C#
+    /// sets `flag = true` regardless of the `TryDismount` result
+    /// (`:43378`), so `DelBuff` never runs on the mount arm. The cart ride
+    /// hosts its own state (`cart_mounted`), so the cart rows route through
+    /// `try_cart_dismount` — the same `TryDismount` gates plus the ride
+    /// flags. `misc_buffs` carries `miscEquips[0..2].buffType` (the App
+    /// owns the arrays) for the `TryRemovingBuff_CheckBuffHideMisc` arms
+    /// (`:43380-43381`). Returns whether the arm entered (the caller plays
+    /// `SoundEngine.PlaySound(12)`'s MenuTick cue, `:43382`).
+    pub fn try_removing_buff(
+        &mut self,
+        world: &World,
+        i: usize,
+        b: i32,
+        misc_buffs: [i32; 2],
+    ) -> bool {
         if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            // `:43375-43379` — the mount arm; `flag` latches on the
+            // CheckBuff match, not on the dismount's success.
+            let mut mount_arm = false;
             if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
-                if let Some(buff) = self.mount.dismount() {
-                    self.clear_buff_type(buff);
+                if self.cart_mounted {
+                    self.try_cart_dismount(world);
+                } else {
+                    self.try_dismount(world);
                 }
-            } else {
-                self.buffs.del_buff(i);
+                mount_arm = true;
+            }
+            // `:43380-43381` — the pet / light-pet hide arms.
+            self.check_buff_hide_misc(0, b, misc_buffs[0]);
+            self.check_buff_hide_misc(1, b, misc_buffs[1]);
+            if !mount_arm {
+                self.buffs.del_buff(i); // `:43385`
             }
             return true;
         }
         false
+    }
+
+    /// `Main.TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
+    /// cancelling the equipped pet's / light pet's buff hides the misc
+    /// slot's visual (`hideMisc[slot] = true`) — but only while it is not
+    /// already hidden. The 101/102 light-pet buffs also match the Fairy
+    /// Bell's legacy `buffType == 27` (`:43395-43398`; item 425,
+    /// `Item.cs:6342`).
+    fn check_buff_hide_misc(&mut self, slot: usize, buff_id: i32, misc_buff: i32) {
+        if !self.hide_misc[slot] {
+            let mut matches = misc_buff == buff_id;
+            if !matches && (buff_id == 102 || buff_id == 101) {
+                matches = misc_buff == 27;
+            }
+            if matches {
+                self.hide_misc[slot] = true;
+            }
+        }
     }
 
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
@@ -7068,12 +7117,12 @@ impl Player {
         self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
     }
 
-    /// `Player.ClearBuff` (`Player.cs:5242-5256`): every slot carrying the
-    /// buff type.
+    /// `Player.ClearBuff` (`Player.cs:5472-5481`): every slot whose
+    /// `buffType == type` dels — NO `buffImmune` or `buffTime >= 1` gate
+    /// (those are `FindBuffIndex`'s, `:5249-5255`; the old port looped
+    /// `find_buff_index`, which skipped immune/expired slots the C# clears).
     fn clear_buff_type(&mut self, bt: i32) {
-        while let Some(i) = self.buffs.find_buff_index(bt) {
-            self.buffs.del_buff(i);
-        }
+        self.buffs.clear_buff(bt);
     }
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
@@ -7127,16 +7176,26 @@ impl Player {
     }
 
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear,
-    /// the full-rotation reset (`:6161-6162`) and the hitbox restore.
-    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet); the `noItems` restore (`:6152-6155`) needs the `noItems` /
-    /// `cursed` pair the port does not carry — constants-off.
+    /// the cart ride reset (`:6156-6160` — `cartFlip`/`lastBoost` on the
+    /// `Mount.Cart` rows), the full-rotation reset (`:6161-6162`) and the
+    /// hitbox restore. `ignore_effect` stands in for the spawn dust
+    /// (`:6167-6170` — no dust system yet); the `noItems` restore
+    /// (`:6152-6155`) needs the `noItems` / `cursed` pair the port does not
+    /// carry — constants-off.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
+        // `Mount.Cart` (`Mount.cs:530-539`) reads the row BEFORE the reset
+        // clears `_type` — `is_cart` over the live kind.
+        let cart = self.mount.is_active() && crate::mount::is_cart(self.mount.kind());
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
         let _ = ignore_effect;
         self.clear_buff_type(buff);
+        // `:6156-6160` — a cart dismount clears the ride flip and the boost.
+        if cart {
+            self.cart_flip = false;
+            self.last_boost = (0, 0);
+        }
         // `:6161-6162` — the dismount clears the full rotation.
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
@@ -7160,11 +7219,25 @@ impl Player {
         true
     }
 
-    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) with `CanDismountWithResult`
-    /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
-    /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
-    /// dismount runs; Phase 3's quick-mount counts the failures.
+    /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
+    /// `:6127-6135` → `CanDismountWithResult` `:6611-6624`): the CC gate
+    /// (`DontDismountWhenCCed` 55/56/61, `MountID.cs:47`) refuses while the
+    /// rider is frozen/webbed/stoned, and the 20×42 bottom-anchored shrink
+    /// must fit (`FailedNoSpace`); only a `Succeeded` dismounts.
     pub fn try_dismount(&mut self, world: &World) -> bool {
+        if crate::mount::dont_dismount_when_cced(self.mount.kind()) && self.cced() {
+            return false; // `:6615-6618` — FailedCCed
+        }
+        if collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [WIDTH, self.height],
+            [WIDTH, HEIGHT],
+        )
+        .is_none()
+        {
+            return false; // `:6619-6622` — FailedNoSpace
+        }
         self.dismount(world, false)
     }
 
@@ -10378,8 +10451,8 @@ mod tests {
         p.buffs.add_buff(20, 3600); // Poisoned — a debuff
         let poison = p.buffs.find_buff_index(20).unwrap();
         let iron = p.buffs.find_buff_index(5).unwrap();
-        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
-        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert!(!p.try_removing_buff(&w, poison, 20, [0, 0]), "a debuff refuses");
+        assert!(p.try_removing_buff(&w, iron, 5, [0, 0]), "the non-debuff removes");
         assert_eq!(p.buffs.find_buff_index(5), None);
     }
 
@@ -10393,8 +10466,140 @@ mod tests {
         let mount_buff = p.mount.data().unwrap().buff;
         p.buffs.add_buff(mount_buff, 3600);
         let slot = p.buffs.find_buff_index(mount_buff).unwrap();
-        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(
+            p.try_removing_buff(&w, slot, mount_buff, [0, 0]),
+            "the arm entered"
+        );
         assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// S1-P-i53 — `TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
+    /// cancelling the equipped pet's buff hides the misc visual; the 101/102
+    /// light buffs also match the Fairy Bell's legacy `buffType 27`
+    /// (`:43395-43398`); an already-hidden slot stays hidden (no flip), an
+    /// unrelated buff never hides.
+    #[test]
+    fn s1_p_i53_the_buff_cancel_hides_the_matching_misc_pet() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(40, 3600); // a vanity pet buff
+        let slot = p.buffs.find_buff_index(40).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 40, [40, 0]));
+        assert!(p.hide_misc[0], "the pet visual hid (`:43401`)");
+        assert!(!p.hide_misc[1], "the light slot untouched");
+        assert_eq!(p.buffs.find_buff_index(40), None, "the pet buff del'd");
+        // The light-pet 101 cancel matches a `buffType == 27` equip.
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(101, 3600);
+        let slot = p.buffs.find_buff_index(101).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 101, [0, 27]));
+        assert!(p.hide_misc[1], "the 27 legacy alias matched (`:43397`)");
+        // A non-matching buff leaves both flags down; the buff still dels.
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(5, 3600);
+        let slot = p.buffs.find_buff_index(5).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 5, [40, 27]));
+        assert_eq!(p.hide_misc, [false, false]);
+    }
+
+    /// S1-P-i53 — the mount arm latches `flag = true` on the CheckBuff match
+    /// even when `TryDismount` refuses (`Main.cs:43377-43378`): a CCed rider
+    /// on the Bat (56, `DontDismountWhenCCed`, `MountID.cs:47`) keeps the
+    /// mount AND the buff — no `DelBuff` (`:43383-43386`).
+    #[test]
+    fn s1_p_i53_a_refused_dismount_keeps_the_mount_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(56, false)); // the Bat — buff 377
+        p.frozen = true; // CCed (`Player.cs:3377-3385`)
+        let slot = p.buffs.find_buff_index(377).unwrap();
+        assert!(
+            p.try_removing_buff(&w, slot, 377, [0, 0]),
+            "the arm entered — the sound plays (`:43382`)"
+        );
+        assert!(p.mount.is_active(), "the CC gate refused the dismount");
+        assert!(
+            p.buffs.find_buff_index(377).is_some(),
+            "flag=true keeps DelBuff out (`:43383`)"
+        );
+        // Un-CCed, the same cancel dismounts and clears.
+        p.frozen = false;
+        let slot = p.buffs.find_buff_index(377).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 377, [0, 0]));
+        assert!(!p.mount.is_active());
+        assert_eq!(p.buffs.find_buff_index(377), None);
+    }
+
+    /// S1-P-i53 — the cart ride's cancel routes through `try_cart_dismount`
+    /// (the ride flags live outside `MountState`): `cart_mounted`, the ride
+    /// flip/boost and `on_track` all reset, and the buff clears
+    /// (`Mount.cs:6150-6162`).
+    #[test]
+    fn s1_p_i53_the_cart_cancel_resets_the_ride_flags() {
+        let w = cart_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        p.cart_flip = true;
+        p.last_boost = (2, 3);
+        p.on_track = true;
+        let mount_buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(mount_buff).unwrap();
+        assert!(p.try_removing_buff(&w, slot, mount_buff, [0, 0]));
+        assert!(!p.cart_mounted, "the ride state cleared");
+        assert!(!p.mount.is_active());
+        assert!(!p.cart_flip);
+        assert_eq!(p.last_boost, (0, 0));
+        assert!(!p.on_track);
+        assert_eq!(p.buffs.find_buff_index(mount_buff), None);
+    }
+
+    /// S1-P-i53 — `Player.ClearBuff` (`Player.cs:5472-5481`) walks the raw
+    /// `buffType` slots: an IMMUNE type's live slot still clears (the
+    /// `FindBuffIndex` gate `:5249` must not leak into it), and a slot whose
+    /// timer already expired (`buffTime == 0`) clears too.
+    #[test]
+    fn s1_p_i53_clear_buff_type_ignores_the_immune_and_time_gates() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false)); // the pirate ship grants its buff
+        let buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(buff).unwrap();
+        // The immunity lands AFTER the grant — `find_buff_index` now blinds.
+        p.buffs.buff_immune[buff as usize] = true;
+        assert_eq!(p.buffs.find_buff_index(buff), None, "the gate blinding");
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.buffs.buff_type[slot], 0, "ClearBuff walked the raw slot");
+        // The expired-timer slot: type set, time 0 — still cleared.
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false));
+        let buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(buff).unwrap();
+        p.buffs.buff_time[slot] = 0;
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.buffs.buff_type[slot], 0);
+    }
+
+    /// S1-P-i53 — `Mount.Dismount`'s cart arm (`Mount.cs:6156-6160`): the
+    /// framework dismount clears `cartFlip`/`lastBoost` on the Cart rows —
+    /// the port used to reset them only in the ride-only `cart_dismount`.
+    #[test]
+    fn s1_p_i53_the_framework_dismount_clears_the_cart_ride_state() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart(); // SetMount(6) — a Cart row
+        p.cart_flip = true;
+        p.last_boost = (7, 9);
+        assert!(p.dismount(&w, true));
+        assert!(!p.cart_flip, "`:6158`");
+        assert_eq!(p.last_boost, (0, 0), "`:6159`");
+        // A non-cart mount leaves the ride fields alone (`:6156` gate).
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false)); // the pirate ship
+        p.cart_flip = true;
+        p.last_boost = (7, 9);
+        assert!(p.dismount(&w, true));
+        assert!(p.cart_flip);
+        assert_eq!(p.last_boost, (7, 9));
     }
 
     #[test]

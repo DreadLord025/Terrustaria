@@ -320,6 +320,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // the set bonus + the buff arms, M3-EQUIP-5). Assigning it here used to
         // overwrite the buff and prefix arms the tick had just added, so an
         // Ironskin potion or a Warding accessory changed nothing.
+        // The buff bar's removal requests (`Main.TryRemovingBuff`,
+        // `Main.cs:43348`'s draw-pass mutation — the draw pushed the slots,
+        // the tick applies them): non-debuffs only, the mount's own buff
+        // dismounts through `TryDismount`'s gates, the pet/light hide arms
+        // read `miscEquips[0..2].buffType`, and `SoundEngine.PlaySound(12)`
+        // (`:43382`) is the MenuTick cue. The C# draw runs alive or dead
+        // (`DrawInterface_Resources_Buffs` has no dead gate), so the drain
+        // sits BEFORE the dead branch — it used to live inside it, which
+        // made every living player's cancel requests pile up unapplied.
+        {
+            let misc_buffs = [
+                app.equip
+                    .misc_equips
+                    .first()
+                    .filter(|s| s.count > 0)
+                    .and_then(|s| crate::registry::get(s.kind))
+                    .map_or(0, |d| d.buff_type),
+                app.equip
+                    .misc_equips
+                    .get(1)
+                    .filter(|s| s.count > 0)
+                    .and_then(|s| crate::registry::get(s.kind))
+                    .map_or(0, |d| d.buff_type),
+            ];
+            for slot in std::mem::take(&mut app.buff_removals) {
+                let bt = p.buffs.buff_type[slot];
+                if p.try_removing_buff(&app.world, slot, bt, misc_buffs) {
+                    app.audio.play("Menu_Tick");
+                }
+            }
+        }
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
@@ -345,17 +376,6 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
-            // The buff bar's removal requests (`Main.TryRemovingBuff`,
-            // `Main.cs:43348`'s draw-pass mutation — the draw pushed the
-            // slots, the tick applies them): non-debuffs only, the mount's
-            // own buff dismounts, and `SoundEngine.PlaySound(12)` is the
-            // MenuTick cue.
-            for slot in std::mem::take(&mut app.buff_removals) {
-                let bt = p.buffs.buff_type[slot];
-                if p.try_removing_buff(slot, bt) {
-                    app.audio.play("Menu_Tick");
-                }
-            }
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
                 // a broken bed or an invalid room reverts the spawn to the
@@ -1271,6 +1291,86 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
+    /// used to sit inside the `p.dead` branch, so an alive player's removal
+    /// requests were never applied (`Main.DrawBuffIcon`'s cancel,
+    /// `Main.cs:43346-43349`, has no dead gate). A queued non-debuff slot
+    /// dels on the tick; a queued debuff refuses and stays.
+    #[test]
+    fn s1_p_i53_the_alive_player_drains_the_buff_cancel_requests() {
+        let mut app = ammo_app();
+        let p = app.player.as_mut().unwrap();
+        assert!(!p.dead);
+        p.buffs.add_buff(5, 3600); // Ironskin — removable
+        p.buffs.add_buff(20, 3600); // Poisoned — a debuff
+        let iron = p.buffs.find_buff_index(5).unwrap();
+        let poison = p.buffs.find_buff_index(20).unwrap();
+        app.buff_removals.push(poison);
+        app.buff_removals.push(iron);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(5), None, "the alive cancel landed");
+        assert!(
+            p.buffs.find_buff_index(20).is_some(),
+            "the debuff refusal (`Main.cs:43373`)"
+        );
+        assert!(app.buff_removals.is_empty(), "the queue drained");
+    }
+
+    /// S1-P-i53 — the drain feeds `miscEquips[0..2].buffType` into the
+    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`Main.cs:43380-43381`,
+    /// `:43390-43404`): cancelling the equipped vanity pet's buff sets
+    /// `hideMisc[0]`. The pet item 603 (Carrot) grants buff 40 (the registry
+    /// row's `buff_type`; `Item.cs`'s case 603).
+    #[test]
+    fn s1_p_i53_the_drain_hides_the_equipped_pet_on_cancel() {
+        let mut app = ammo_app();
+        let pet_buff = crate::registry::get(603).unwrap().buff_type;
+        assert!(pet_buff > 0, "the registry carries the pet's buff");
+        app.equip.misc_equips[0] = ItemSlot {
+            kind: 603,
+            name: crate::registry::name(603),
+            count: 1,
+            prefix: 0,
+        };
+        let p = app.player.as_mut().unwrap();
+        p.buffs.add_buff(pet_buff, 3600);
+        let slot = p.buffs.find_buff_index(pet_buff).unwrap();
+        app.buff_removals.push(slot);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hide_misc[0], "the pet visual hid (`:43401`)");
+        assert!(!p.hide_misc[1]);
+        assert_eq!(p.buffs.find_buff_index(pet_buff), None);
+    }
+
+    /// S1-P-i53 — the cancel draws NO RNG: every arm is state-only
+    /// (`TryRemovingBuff`, `DelBuff`, `CheckBuffHideMisc` — none draws), so
+    /// a tick with a queued Ironskin cancel leaves every stage stream at
+    /// the same position as the twin tick with no queue (Ironskin grants
+    /// defense only — no draw-bearing behaviour differs between the twins).
+    #[test]
+    fn s1_p_i53_the_buff_cancel_draws_no_rng() {
+        let mut app = ammo_app();
+        let mut twin = ammo_app();
+        for a in [&mut app, &mut twin] {
+            a.player.as_mut().unwrap().buffs.add_buff(5, 3600);
+        }
+        let slot = app.player.as_ref().unwrap().buffs.find_buff_index(5).unwrap();
+        app.buff_removals.push(slot);
+        tick_ammo(&mut app);
+        update_player(&mut twin, 1.0 / 60.0);
+        assert_eq!(app.player.as_ref().unwrap().buffs.find_buff_index(5), None);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                *twin.rngs.stream(key),
+                "{} — the cancel added no draws",
+                key.name()
+            );
+        }
     }
 
     /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick
