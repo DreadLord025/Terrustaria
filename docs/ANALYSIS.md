@@ -18493,3 +18493,60 @@ runs were made — the 15 witness tests are WRITTEN NOT RUN; verification
 is the C# re-read (the whole arm `:21572-21918` re-compared line by
 line) plus hand-traced test arithmetic (the wobble-on-flee-tick
 nudge, the dash-chase drift re-parks, the oracle-gated RNG witness).
+## The aiStyle-14 flyer family (S1-D-3 aiStyle-14 slice, 2026-11-18, code-only mode)
+
+`npc_ai_style14.rs::bat_ai` ports `NPC.AI()`'s `if (this.aiStyle == 14)`
+arm (`NPC.cs:22849-23486`) with the branches the port's four style-14 kinds
+take (CaveBat 49, JungleBat 51, Hellbat 60, VoodooDemon 66 — the
+`SetDefaults` rows `:9378`/`:9409`/`:9543`/`:9629`; the C# arm serves
+17 types). **Code-only mode**: no cargo/rustc/rustfmt/test runs were made
+(user directive); verification = re-reading the C# arm line by line, the 14
+`s1_d_3_s14_*` witness tests are WRITTEN NOT RUN. The module is UNWIRED —
+the live dispatch still routes the four kinds through `update_cave_bat`'s
+hash-jitter stand-in (research/25 finding 25-6); every other file is
+byte-identical except the `mod` declaration and the docs.
+
+Faithful details worth pinning:
+
+- **The generic approach runs twice** for the water-group types
+  (`:23183`'s list): the second pass (`:23265-23331`) sits OUTSIDE the
+  `base.wet` gate, so a dry bat accelerates at 0.2/tick X, not 0.1 — the
+  stand-in's single pass was a real behavioural delta, not just an RNG one.
+  The Hellbat (60) instead follows the first pass with its own arm
+  (`:23198-23263`: X 0.07 double-add / 0.03 brake, Y 0.02 brake).
+- **The bounce clamps are direction-aware** (`:22855-22862`): the ±2 X
+  minimum applies only when the bounce pushes AGAINST `direction`; the
+  ±1 Y minimum (`:22867-22874`) is unconditional on sign.
+- **The drift reset gate** (`:23363`) needs `!player.wet` AND the
+  entity-box `Collision.CanHit`; `Player.wet` is not on
+  `TargetCandidate` (the target scan never reads it), so it rides the
+  module's parallel `players_wet` slice — the minimal seam.
+- **The shot is a request, not a spawn**: `DemonSickleShot` carries the
+  centre + the 0.2-normalised jittered velocity; `NewProjectile(44, 21,
+  0f)` and the `timeLeft = 300` write (`:23449-23450`) belong to the
+  wiring step's pool drain.
+- **`noGravity`** (`:22851`) is structural: `Npc` has no field; the
+  flyer callers integrate without gravity (the `update_hover`
+  convention). `spriteDirection` is not written by this arm — the C#
+  `TargetClosest` writes `direction`/`directionY` only; the renderer
+  sync lands with the wiring.
+
+**RNG argument (by construction)**: the arm's only `Main.rand` sites on
+the ported paths are the 62/66 shot arm's — `Next(-100, 101)` for the X
+aim jitter then the Y (`:23446-23447`, in that order, only on
+`ai[0] == 20/40/60/80` with `CanHit`), and `Next(300)` inside the
+reset threshold `(float)(300 + Main.rand.Next(300))` (`:23453`), drawn
+only when the `flag24 &&` short-circuit passes AND the tick is not a
+shot-value tick (the else-if). `TargetClosest` (`NPC.cs:77652-77781`)
+is RNG-free. The bat kinds 49/51/60 therefore draw NOTHING — the witness
+tests pin the stream position (`UnifiedRandom::peek`) for: two ordered
+draws on a shot tick, one draw on an in-view reset tick, zero draws
+out-of-view, zero draws on a blocked shot tick (the else-if is not
+evaluated), and 600 draw-free ticks per bat kind incl. the wet arm.
+
+**Cited skips** (unported types, land with their kinds): 226's
+velocity-sign facing + 4/2.5 approach (`:22876-22894`, `:22971-23037`),
+158's surface flee + 7-cap approach + Transform(159) + double `ai[1]++`
+(`:22899-22970`, `:23346-23360`), 660's 0.35/0.3/6/5 approach
+(`:23038-23115`), 48's wet arm + HarpyFeather shot (`:23333-23345`,
+`:23416-23436`), 156's UnholyTrident shot (`:23458-23484`).
