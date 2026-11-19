@@ -71,6 +71,23 @@ fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
         && !t.half_brick()
 }
 
+/// `WorldGen.BottomEdgeCanBeAttachedTo` (`WorldGen.cs:70440-70458`): active,
+/// solid, NOT solidTop, no bottom slope, not actuated off, not `tileNoAttach`.
+/// Unlike the top edge there is NO half-brick check. An out-of-world cell
+/// reads as attachable (the `tile == null` arm, `:70445-70448`).
+/// `pub`: the vine-strip root crawl reads it (`TileDrawing.cs:750`, S1-G-1).
+pub fn bottom_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && is_solid(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.bottom_slope()
+        && !t.inactive()
+        && !no_attach(t.kind)
+}
+
 /// `WorldGen.CheckTorch`: sets `frameX` from the attachment and kills the torch when
 /// nothing holds it. Returns `false` when the torch was removed.
 pub fn check_torch(world: &mut World, x: i32, y: i32) -> bool {
