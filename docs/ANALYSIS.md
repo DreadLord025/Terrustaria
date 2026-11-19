@@ -19075,6 +19075,146 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The Frost Moon mob AI (S1-F-13c slice D, 2026-11-17)
+
+The non-boss Snow Moon machines land on `task/S1-F-13c-mob-ai` as a NEW
+disjoint module, `crates/tr-app/src/npc_ai_frost_mob.rs` — pure AI fns over
+`FrostMobState` (the AI-visible subset of `NPC`'s fields) with a dispatch
+seam `frost_mob_ai_step` keyed on the vanilla type id + the C# `aiStyle`:
+
+- **Flocko (352, aiStyle 63)** — `NPC.cs:33971-34018` verbatim: the 11f
+  aim from `Center + (direction*20, +6)`, the day reversal, the `ai[0]`
+  spin latch (20 ticks inside 200px), the 50/51 → 10/11 → 7/8 chase lerps
+  by distance tier and the `velocity.X*0.15` tilt. No RNG draws.
+- **ElfCopter (347, aiStyle 62)** — `NPC.cs:33922-33969` verbatim: the
+  chase aim uses the player's `position.Y` (`:33930`) while the shot aim
+  re-derives from `Center.Y` (`:33959`); the day flee's 59/60 lerp +
+  `EncourageDespawn(10)` (`:33936-33943`); the >600px / no-LOS approach
+  (`:33944-33950`, LOS rides the shared `projectile::can_hit`); the 0.98
+  hover decay + the 15-tick `localAI[0]` cadence. **RNG order pinned**:
+  the shot's six `Main.rand` draws (`:33960-33967`) — `Next(-35,36)` ×2,
+  `Next(-20,21)` ×2 (aim scale ×0.015), `Next(-20,21)` ×2 (speed scale
+  ×0.0125, inside the `NewProjectile` SpeedX/SpeedY arguments) — ride the
+  caller's stream in that order; witness tests replay the draws manually
+  and prove (a) the shot velocity's exact composition + stream alignment,
+  (b) zero draws on every non-firing path, (c) the mixed-mob seam
+  consuming exactly the copter's six draws. Shot: Type 180, Damage 32,
+  KnockBack 0f, from the muzzle (`:33967`).
+- **PresentMimic (341, aiStyle 25)** — `NPC.cs:25538-25630` with the
+  type-341 terms kept: `flag40 = type==341 && !Main.snowMoon` (`:25540`),
+  the one-time `position.X += 8f` nudge + layer pick (`:25541-25557`,
+  `Main.UnderworldLayer = maxTilesY-200`, `Main.cs:2790`), the forced
+  `ai[3]=1` (`:25558-25561`), the disguised-idle wake conditions
+  (movement / the ±100px int-truncated inflated overlap / damage,
+  `:25562-25584`), the 12-then-20-tick grounded hop cycle with the
+  alternating (3.5,-4)/(2.5,-8) hops (`:25585-25619`) and the airborne
+  ±0.1 drift capped at ±1 (`:25622-25629`).
+- **The aiStyle-3 walkers** (338/339/340/342/343/348/349/351) — the
+  `AI_003_Fighters` per-type velocity arms only, in the C#'s branch order:
+  the 349 cap-6 spin arm with the grounded counter-drift ×0.99 brake
+  (`:57403-57440`; the type-159-only 0.95 brake does not fire for 349),
+  the cap-2 group 343/348/351 (`:57554-57578`), the num83 group —
+  338→1.75, 339→1.25, 340→2f, 342→1.5×(1+(1−scale)) (`:57606-57740`) —
+  plus the Nutcracker's 55%-hp `Transform(349)` gate (`:57031-57034`,
+  the `(double)` compare kept).
+
+Documented deviations / deferrals, all deliberate:
+- **Disjoint module, no kind-table edits**: the `NpcKind` variants + the
+  full `SetDefaults` rows are workers A (338-344) and B (345-352) on
+  `task/S1-F-13c-defaults-a/-b`; the bosses 344/345/346 are worker C
+  (`task/S1-F-13c-boss-ai`) and are NOT claimed by this module's dispatch.
+  Until the defaults land, the machines run on `FrostMobState` and the
+  wiring worker copies `Npc`'s fields in/out, calling
+  `npc_target::target_closest` at each machine's cited `TargetClosest()`
+  sites (Flocko `:33973`, ElfCopter `:33924`, PresentMimic
+  `:25550`/`:25566`/`:25601` under `!flag40`). The module's `ai_defaults`
+  carries only the AI-relevant inputs (width/height/scale/lifeMax, cited
+  per SetDefaults row) — they must agree with A/B's tables.
+- **ElfArcher (350) deferred**: its stop-and-fire machine is the shared
+  shooter block `NPC.cs:59069-59629` (the same block the martian shooters
+  ride; the 350 terms: num162=110 `:59111-59114`, damage 45 `:59416-59419`,
+  the `:58322` exclusion from the generic walker). The dispatch claims
+  the kind but its step is a no-op until that block lands.
+- **The AI_003 shared core deferred**: the stuck-counter/jump logic
+  (`:57035-57149`) and the collision/movement tail are the full AI_003
+  migration's scope (S1-D-3p); `fighter_walk_velocity` is the per-type
+  velocity delta only — the part that differs between the frost mobs.
+  The flyers (347/352, `noGravity`+`noTileCollide`) integrate their
+  velocity directly; the walkers/mimic ride the caller's collision pass.
+- **The FindFrame animation arms deferred** (Krampus/Yeti `:75733-75824`,
+  ElfArcher `:76099+`, Nutcracker/GingerbreadMan `:76276-76380`, ElfCopter
+  `:72357+`, Flocko `:72413+`, PresentMimic `:73444+`) — they land with
+  the render/sprite wiring, not the AI slice.
+- **`netUpdate`/`Main.netMode` gates**: the port is the always-server/local
+  path (`netMode != 1`), so the copter's shot gate (`:33952`) and the
+  mimic's `netMode == 1` early return (`:25568-25571`) fold to their
+  server arms; `netUpdate` stamps are netcode, unmodelled.
+
+19 tests (`npc_ai_frost_mob::tests`) cover the three machines' math, the
+hop cadence, the walk caps/brakes/scale term, the transform gate, the
+dispatch's claim set (bosses excluded) and the RNG-order witnesses.
+## The Frost Moon family, slice B (S1-F-13c, 2026-11-18) — CODE-ONLY MODE
+
+The 8 boss/mob kinds 345-352 (`IceQueen`, `SantaNK1`, `ElfCopter`,
+`Nutcracker`, `NutcrackerSpinning`, `ElfArcher`, `Krampus`, `Flocko`) land on
+`task/S1-F-13c-defaults-b` with the verbatim `SetDefaults` rows
+(`NPC.cs:13369-13487`), the net ids, the sounds, the debuff rows, the
+kind→type map (`frost_moon_type`, riding `moon_wave_kind`), the FindFrame
+arms for all 8, the render sheets with the C#'s `npcFrameCount`
+(6/9/8/9/8/20/10/6, `Main.cs:67082`) and the bestiary entries. Slice A
+(338-344) is worker A's row and stays unported on this branch — the
+338-344 ladder picks keep consuming without spawning.
+
+**Code-only mode (user directive)**: this slice was finished WITHOUT
+invoking the compiler — no `cargo`/`rustc`/`rustfmt`/test runs, no graphify,
+no sync with origin/main. The 19 `s1_f_13c_*` tests in `npc.rs` and the
+`the_frost_rows_match_between_the_draw_and_the_machine` test in
+`render/entities.rs` are written as code and were NOT run; every API they
+call and every counter/clamp sequence they assert was verified by reading
+the landed arms and the C# source. The branch is pushed for the normal
+build/test gate to run at merge time.
+
+Documented deviations, all deliberate:
+- **The eight machines ride stand-ins** until the sibling AI branches land
+  (the F-13b precedent): the four aiStyle-3 walkers (348/349/350/351) walk
+  on the walker family (`update_skeleton`) at the C#'s own per-type caps —
+  348/351 the cap-2 group's 2f (`NPC.cs:57554-57578`), 349 the cap-6 group's
+  6f (`:57403-57427`, shared with the unported 159), 350 the shooters'
+  `num180 = 1f` default (`:59717` — no type-350 override exists). The four
+  flyers hover toward the player through the tiles at their named
+  machines' base speeds/approaches: 345 aiStyle-60's `num900 = 7f` /
+  `num899 = 0.45f` (`:33414-33415`), 346 aiStyle-61's `num921 = 2f`
+  (`:33683`) with the `/21` approach (`:33864`, accel 0.1), 347 aiStyle-62's
+  `num945 = 7f` (`:33927`) with the `/60` lerp (`:33947`, accel 0.12), 352
+  aiStyle-63's `num953 = 11f` (`:33974`) with the `/51` lerp (`:34005`,
+  accel 0.21). The mob machines land on `task/S1-F-13c-mob-ai`
+  (`frost_mob_ai.rs`, `5ef9b24b`) and the bosses on
+  `task/S1-F-13c-boss-ai`; this branch's rows agree with the mob module's
+  `ai_defaults` (pinned as literals in
+  `s1_f_13c_the_frost_defaults_agree_with_the_mob_ai_rows` so a merge-time
+  drift fails there).
+- **346's flags are AI writes, not SetDefaults rows**: `SantaNK1`'s
+  `SetDefaults` (`NPC.cs:13386-13399`) writes NEITHER `noGravity` nor
+  `noTileCollide` — its AI sets both every tick (`:33684-33685`). The
+  `FrostDefaults` row carries false/false and the hover stand-in passes
+  `no_tile_collide: true` (the AI's live state).
+- **`coldDamage` (345/352) and the `npcSlots` rows have no port consumer**:
+  the C#'s `coldDamage` flag (`:13384`/`:13486`) gates the frost-burn
+  contact debuff, which the port's contact pass does not model; the
+  non-boss `npcSlots` rows (347/348/349 → 1.5f `:13414`/`:13428`/`:13442`,
+  351 → 1.75f `:13469`, 352 → 2f `:13485`; 350 writes none and rides the
+  class 1f) feed `CountNPCS`' nearby-spawn weight, not the boss cap — only
+  345/346's 5/4 rows ride `MOON_BOSS_SLOTS`. Both are parked with the
+  machines.
+- **The SantaTank/IceQueen-face overlay sheets are parked**: the C# draws
+  the Santa-NK1's tank treads and the Ice Queen's face as extra overlay
+  sheets (`Main.cs`'s draw arms); the port draws the base `NPC_346`/
+  `NPC_345` strips only until the boss-AI branch lands the overlays.
+- **The ElfArcher draw pose's saturate guard**: the C# writes
+  `(int)ai[2] - 1` outright (`NPC.cs:76113`); the draw AI only ever sets
+  whole 1..=13 poses, so the port's `.max(0)` guards the fractional-edge
+  negative row the row-index port cannot carry (documented at the arm).
 ## The Frost Moon family, slice A (S1-F-13c, 2026-11-18)
 
 The first 7 wave kinds (338 `ZombieElf`, 339 `ZombieElfBeard`, 340
