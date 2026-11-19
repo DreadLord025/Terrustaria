@@ -105,6 +105,7 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod rain;

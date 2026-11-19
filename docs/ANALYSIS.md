@@ -19914,6 +19914,7 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+
 ## The pylon/trophy/void-lens passes (S1-G-1 wave D, 2026-11-18)
 
 `crates/tr-app/src/render/pylons.rs` ports three of
@@ -20533,6 +20534,151 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+## The pirate family, first slice (S1-D-4b-7)
+
+`AI_067_FreakingPirates` (`Projectile.cs:49121-51201`, dispatch `:30162`) is
+one 2 081-line arm over 16 types. This round lands the shared skeleton plus
+the two smallest coherent branches — the Pirate Staff trio (393/394/395,
+`flag`) and the Vampire Frog (758, `flag2`) — as `ai_freaking_pirates`, with
+`pirates_try_jumping_to_target` (`:51203-51256`) and `pirate_movement`
+(`HandleMovement`'s half). The dispatch gates the kind list, so the other
+12 types' rows stay inert until their arms land: the Storm Tigers 833-835
+(the `AI_067_TigerSpecialAttack` chain `:49034-49119` + the 818 pounces),
+Flinx 951, Mushroom Boi 1022 (the 1044 spore + `GetChaseResults` leap), Cob
+Whip 1036, Cattiva 1093/1112 (`TryAssigningHelp`'s smart-cursor mining), Clay
+Pot 1118 and the five pets 500/653/1018/1056/1090.
+
+Ported verbatim: the keep-alive pins (`:49248-49259`/`:49316-49327`), the
+home-spot ladder (`:49416-49440`), the state machine (1 fly-home
+`:49742-49953`, 2 bite `:49954-50057` — the frog's 20-tick bite / 60-tick
+cooldown and middle-half friendly window, the pirates' 15-tick bite; 5
+teleport strike `:50058-50098` with the ring point and the C#'s
+abs-then-−3 double Y write), the pursuit (`:50103-50270` — the pirates'
+high leap / far-boss teleport, the frog's 20-px stand-off), the ground walk
+(`:50301-51149` — the 20-row ground drop, the owner-tile clamp, the 0.05
+line-walk trim, the parameter ladder, the three-column jump ladder with
+the try/catch's −9.1 and `SolidTile`'s null-as-solid
+(`WorldGen.cs:70115-70117`), the height ladder, `Collision.StepUp`, the
+frame machines and the `num + num56` gravity).
+
+New slot fields: `should_fall_through`/`step_speed`/`gfx_off_y`
+(`Projectile.cs:462`/`:342`), the rows' `decides_manual_fall_through`
+(`:460`). `HandleMovement`'s `flag6` rides `shouldFallThrough`
+(`:17583-17586`); the >16 px/tick hoik step loop (`:17711-17846`) keeps its
+0.0001 last-velocity snap; the `gfxOffY` decay (`:16740-16764`) rides the
+movement step.
+
+**RNG proof.** The arm-level draws are mirrored in count and order on the
+pool's `Main.rand` analogue: the state-5 arrival's
+`NextVector2CircularEdge(4,4)` = ONE `NextFloat` (`Utils.cs:1261-1274`), the
+high-jump's `NextFloatDirection()*NextFloat()` pair + the `Next(4)` burst
+pick + the taken branch's gore-type roll (`Next(580,583)` or two
+`Next(11,14)`), the frog blink's `Next(50)` ONLY when the frame counter
+reaches 28 (the `&&` short-circuit of `:51037`), and the pirate idle burst's
+per-tick `Next(900,1200)` comparison + its reset gore roll. Two census tests
+record the stream (`s1_d_4b_7_the_idle_pirate_draws_one_burst_comparison_per_tick`,
+`s1_d_4b_7_the_frog_blink_draws_only_at_the_28th_tick`); the arrival test
+pins the single float draw.
+
+Deviations (the standing precedents): the dust/gore spawns are skipped (no
+dust/gore pool — their `NewDust`/`NewGore` internal rolls belong to those
+pools; the arm-level gates/type rolls above stay), `base.wet` folds to
+false (no liquid-wet slot flags — the sentry precedent), the slope passes
+fold out (`correctSlopeCollision = Main.projPet[type]` is true for these
+kinds, `:707`, so every inner `SlopeCollision` is gated off; the
+`UpdatePosition` slope correction stays unported — the twins precedent),
+`SwitchTiles`/plate presses and the `ignoreDoors`/`hoik` collision
+parameters have no port layer, and the blocked-move chain
+(`:17904-19854`) is skipped including its `Next(3)` tile-cut draw (the
+`dd2_sentry_step` precedent) — the pirates/frog match no type arm before
+the `!correctSlopeCollision` gate at `:18398`, so a blocked move only stops
+them. `flag10` (petting) folds to false; `NPC.boss` rides the
+`revenge::BOSS_KINDS` proxy (the target scan's precedent). Tests
+`s1_d_4b_7_tests::*` (7).
+
+## The pirate family, slice B (S1-D-4b-12)
+
+**Code-only mode**: this slice was written under a no-compiler constraint —
+no `cargo`/`rustc`/`rustfmt`/test invocation ran at any point; the tests below
+are written, not executed. Verification is by construction (the C# citations)
+plus the witness tests-as-code; the first build/test run belongs to the
+integrating merge.
+
+Slice B lands the three RNG-light pets of `AI_067_FreakingPirates`
+(`Projectile.cs:49121-51201`) in the new module
+`crates/tr-app/src/projectile_ai067_b.rs` (`ai_freaking_pirates_pets` +
+the pure `pet_home_spot`/`pet_fall_through` helpers): the **Crimson Heart
+(500)**, the **Dirtiest Block (1018)** and the **Boulder Pet (1056)**. The
+dispatch's 67 arm gains an `else if` branch gated to exactly these three
+kinds; the sibling slice's 393/394/395/758 arm is byte-identical. The pets
+set `flag13 = false` (`:49556-49560`), so the target scan, the pursuit and
+the states 2/5 are unreachable — the port omits them structurally (no `npcs`
+parameter). Ported verbatim: the keep-alive pins with `num3 = 200`
+(`:49328-49375`, the flags ride `Player.pet_flags`), the home-spot ladder
+(`:49441-49453`), the per-tick blocks (the 500's 6/12-tick 4-frame pulse +
+`rotation += velX/20`, `:49462-49485`; the 1018's `/20`, `:49486-49489`; the
+1056's `/16`, `:49490-49493`), the state-1 fly-home (`:49742-49953` — the
+2000-px teleport, the landing with the −6 clamp, the 60-px orbit bleed, the
+0.2/0.3 accel ladder, the 1056's `+0.5*spriteDirection` spin `:49942-49945`,
+the 1018's `miscCounter % 3` flight dust `:49946-49952`), the 200-px fly-home
+trigger (`:50271-50300`), and the ground walk (`:50301-51149`) with the pets'
+own arms: the 1018's owner-speed cap (`:50423-50434`), the 1056's near-home
+settle with the `WrapAngle`→`AngleLerp(0, 0.1)` slow spin (`:50444-50464`),
+the 1018's `AngleTowards(0, 0.2)` settle (`:50465-50473`), the jump-intent
+clears (`:50530-50537`), the motion intents (`:50585-50600` — the 500 jumps
+on any sideways motion, the 1018 above 3, the 1056 above 5), the 1018's
+landing burst latch (`localAI[2]`, `:50717-50732`), and the shared skeleton
+(the ground drop, the owner-tile clamp, the line-walk trim, the wall probe,
+`StepUp`, the three-column + height jump ladders, the facing, the gravity).
+The pets have NO walk frame machine (`:50768-51143` has no pet arm) — their
+frames ride the per-tick blocks only.
+
+**Fall-through**: the pets keep `decidesManualFallThrough = false`, so the
+arm's `shouldFallThrough` write (`:49561`) is dead and `HandleMovement`'s own
+rules decide (`:17478-17503`): the 500 (`:17488-17495`) and the 1018
+(`:17496-17503`, shared with the 653) fall through when the owner's bottom is
+4+ px below theirs; the 1056 rides the generic `projPet` −12 rule
+(`:17480-17487`, `Main.projPet[1056] = true`, `Main.cs:8846`).
+`pet_fall_through` computes the effective value into `should_fall_through`
+for the shared `pirate_movement`. Note `Main.projPet[500]` is **never set**
+(`Main.cs:8728-8846` sets 492/499 but not 500), so the 500's
+`correctSlopeCollision` is false (`Projectile.cs:707`) — unlike the sibling's
+kinds. The port's `tile_collision` has no `correctSlopeCollision` parameter
+layer; the extra `SlopeCollision` passes the C# would run for the 500 fold
+into the port's single slope-aware pass (a documented approximation, the
+twins/sentry slope precedent).
+
+**RNG proof (by construction).** The only arm-level draws on these three
+types are the dust-velocity `RotatedByRandom` pairs — TWO `NextDouble` draws
+each (`Utils.cs:1697-1700`, left operand first): the 500's per-tick pair
+(`:49482`, unconditional — the velocity write targets `Main.dust[6000]` even
+when `NewDust` bails), the 1018's state-1 pair gated on
+`Main.LocalPlayer.miscCounter % 3 == 0` (`:49946-49952`), and the 1018's
+six-pair landing burst gated on the `localAI[2]` latch (`:50717-50727`). The
+`NewDust` internal rolls belong to the dust pool and are skipped (the
+S1-D-4b-7 precedent); the arm-level pairs stay on the stream as two
+`next_float` calls each — `UnifiedRandom.next_float` IS `next_double`
+(`unified_random.rs:209-211`), so the stream advances identically and the
+discarded values make the f32 cast unobservable. No other draw exists: no
+scan, no bite, no burst, no blink. Witness tests
+(`s1_d_4b_12_tests::*`, 9, written not run): the per-tick pair census, the
+`miscCounter` gate census, the landing-burst 12-draw latch census, the
+1056's zero-draw census, the rows/frames, the home spots, the fall-through
+split, the keep-alive pins, the 200-px trigger and the landing clamp.
+
+**Deferred (still gated)**: the 653 Companion Cube and the 1090 Rainbow
+Boulder Pet — their draws steer observable state (the 653's scream
+`Next(10)` + the darkness `Next(30,120)`/`Next(5)`/`Next(30)` chain with the
+`Player.Hurt`, `:49494-49554`; the 1090's `NextVector2CircularEdge` particle
++ `RotatedByRandom` velocity steering, `:49744-49818`), so they need the
+sound/lighting/particle layers or an explicit stream-fidelity decision
+first. The 8 minion types (the Tigers 833-835, Flinx 951, Mushroom Boi 1022,
+Cob Whip 1036, Cattiva 1093/1112, Clay Pot 1118) stay deferred per the first
+slice's list. Other deviations: the 500's `Lighting.AddLight` (`:49464`) has
+no port layer; `flag10` (petting) folds to false; `base.wet` folds to false;
+the blocked-move chain (`:17904-19854`) has no 500/1018/1056 type arm, so a
+blocked move only stops them.
+
 
 ## AI_026 slice B (S1-D-4b-11, task/S1-D-4b-11-melee-b, 2026-11-18)
 
