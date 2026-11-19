@@ -4245,6 +4245,10 @@ mod tests {
             let c = ctx(&w, 25.0 * 16.0, false);
             for seed in 1..=100u64 {
                 let mut rng = UnifiedRandom::new(seed as i32);
+                // `GetZombieSettings`' style draw sits ahead of every arm
+                // (`NPC.cs:1284`) — `spawn_npc_at` consumes it too, so the
+                // ladder replay must draw it first to stay stream-aligned.
+                let _style = rng.next_max(7);
                 let picked = frost_moon_ladder(&c, &mut rng);
                 if let Some(kind) = picked {
                     assert!(

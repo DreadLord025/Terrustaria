@@ -18960,6 +18960,13 @@ mod tests {
             let rows = match kind {
                 NpcKind::MoonLordHead => 9,
                 NpcKind::Deerclops => 25,
+                // The Present Mimic's sheet stacks three 6-row colour
+                // variants (`Main.npcFrameCount[341] = 6` per variant):
+                // `AI_025` pins `ai[3] = 1` for type 341 every tick
+                // (`NPC.cs:25556-25561`), so the FindFrame chest arm's
+                // +6/+12 colour offsets (`:73499-73507`) are unreachable
+                // for this kind — the grid/cell bound precedent.
+                NpcKind::PresentMimic => 18,
                 _ => npc_rows(texture_net_id(kind)),
             };
             let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -21559,8 +21566,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            199,
-            "every decodable kind resolves (the wire roster's size — 199 after S1-E-5's DesertDjinn)"
+            206,
+            "every decodable kind resolves (the wire roster's size — 206 after S1-F-13c slice A's frost seven)"
         );
         assert!(
             covered > 43,
@@ -23675,8 +23682,10 @@ mod s1_f_13c_tests {
         n.frame_counter = 9.0;
         n.find_frame();
         assert_eq!((n.frame, n.frame_counter), (0, 0.0));
-        // Awake, airborne from a zero counter: +1 per tick — rows 1,1,1 then
-        // 2,2,2 then 3,3,3 then 4,4,4 then 5,5,5 (the counter clamps at 12).
+        // Awake, airborne from a zero counter: +1 per tick, the bands are
+        // `< 3 → 1`, `< 6 → 2`, `< 9 → 3`, `< 12 → 4`, `== 12 → 5` (the
+        // counter clamps at num189 * 4 = 12) — rows 1,1 then 2,2,2 then
+        // 3,3,3 then 4,4,4 then 5 forever.
         n.ai[0] = 1.0;
         n.vy = 2.0;
         let mut seen = Vec::new();
@@ -23686,12 +23695,13 @@ mod s1_f_13c_tests {
         }
         assert_eq!(
             seen,
-            vec![1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 5],
+            vec![1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5],
             "the airborne climb"
         );
         assert_eq!(n.frame_counter, 12.0, "the num189 * 4 clamp");
-        // Grounded from the clamp: -1 per tick — 4,4 then 3,3,3 then 2,2,2
-        // then 1,1,1 then 1,1 (the counter parks at 0).
+        // Grounded from the clamp: -1 per tick — 4,4,4 (11/10/9) then 3,3,3
+        // (8/7/6) then 2,2,2 (5/4/3) then 1,1,1,1,1 (2/1/0, the counter
+        // parks at 0).
         n.vy = 0.0;
         let mut seen = Vec::new();
         for _ in 0..14 {
@@ -23700,7 +23710,7 @@ mod s1_f_13c_tests {
         }
         assert_eq!(
             seen,
-            vec![4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1],
+            vec![4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1],
             "the grounded descent"
         );
     }
@@ -23748,10 +23758,13 @@ mod s1_f_13c_tests {
             n.find_frame();
             seen.push(n.frame);
         }
-        // Standing: row 0 for six ticks, then 1..9, wrapping past row 9.
-        assert_eq!(&seen[..12], &[0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
+        // Standing: the counter advances 1/tick, `> 5` steps the row — six
+        // ticks per row, rows 0..9; tick 60 steps past row 9 and wraps to 0
+        // (`frame.Y > num * 9 → 0`, NPC.cs:72471-72474).
+        assert_eq!(&seen[..12], &[0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]);
         assert!(seen.iter().all(|&f| f < 10));
-        assert_eq!(seen[59], 9, "ten rows at six ticks each");
+        assert_eq!(seen[53], 9, "row 9 lands on tick 54");
+        assert_eq!(seen[59], 0, "tick 60 wraps past row 9 back to 0");
         // Moving at vx 4: the counter advances 3/tick — a row every two
         // ticks.
         let mut m = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
