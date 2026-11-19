@@ -310,6 +310,13 @@ pub(crate) fn draw_tiles(
     // `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
     // strips' own sway counter (S1-G-1).
     vine_wind_counter: f32,
+    // S1-F-9 slice B: the `GetTileDrawData` engine-driven case arm's extra
+    // inputs — `PressurePlateHelper.PressurePlatesPressed` (case 428),
+    // `BirthdayParty.PartyIsUp` (case 455) and
+    // `TileDrawing._shouldShowInvisibleBlocks` (case 541).
+    wiring: &tr_core::wiring::Wiring,
+    party_is_up: bool,
+    show_invisible_blocks: bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -324,6 +331,25 @@ pub(crate) fn draw_tiles(
     let x1 = ((max.x / TILE_PX).ceil() as i32 + 1).clamp(0, world.width - 1);
     let y0 = ((min.y / TILE_PX).floor() as i32 - 1).clamp(0, world.height - 1);
     let y1 = ((max.y / TILE_PX).ceil() as i32 + 1).clamp(0, world.height - 1);
+
+    // S1-F-9 slice B: the engine-driven `GetTileDrawData` cases' per-frame
+    // environment (`drawdata_cases_b.rs`). `tile_frame`/`counter` and the
+    // weather-vane bob stay 0 until the animator (wave B, `drawdata_anim.rs`)
+    // is wired — the vanilla t=0 state; the clock is
+    // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`
+    // (`Main.cs:16836`).
+    let case_env = crate::drawdata_cases_b::CaseEnv {
+        world,
+        wind,
+        wiring,
+        inputs: crate::drawdata_cases_b::CaseInputs {
+            weather_vane_bobframe: 0,
+            player_center_x: player.map(|p| p.center().0),
+            show_invisible_blocks,
+            party_is_up,
+            global_time_wrapped_hourly: anim_time % 3600.0,
+        },
+    };
 
     // `Main.waterStyle` is a single biome value for the whole frame, exactly like
     // `Main.CalculateWaterStyle` (the original evaluates it from the player's biome).
@@ -641,6 +667,27 @@ pub(crate) fn draw_tiles(
                         tile.frame_y,
                         0,
                     );
+                    // S1-F-9 slice B: the engine-driven special-tile cases
+                    // (wind, the player, the party, pressed plates, echo
+                    // sight, the clock) applied onto the static table's
+                    // output — the delegated dispatch arm of
+                    // `GetTileDrawData` (`drawdata_cases_b.rs`). The C#
+                    // FIRST switch runs before the second (glow) switch;
+                    // slice A's 518/529/530/441/468 ids are deduped out of
+                    // slice B (A owns them), so the two passes are disjoint.
+                    if let Some(cased) = crate::drawdata_cases_b::case_draw_data(
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                        0,
+                        dd,
+                        &case_env,
+                    ) {
+                        dd = cased;
+                    }
                     // S1-F-9d slice A: the delegated static-case pass —
                     // LilyPad's liquid float (518), the oasis/sea-oats
                     // biome rows (530/529) and the SECOND GetTileDrawData
