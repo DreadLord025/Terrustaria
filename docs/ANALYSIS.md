@@ -29602,3 +29602,106 @@ hook chain nesting, the flag3 switch membership, the HandleMovement stick
 arm + its `:17590` gate, the Kill() arm order + GetNextSlot timing, the
 Update countdown position). The 10 witness tests in
 `projectile_ai_moonlord.rs` are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The Martian Madness defaults completion (S1-F-13d, code-only mode, 2026-11-19)
+
+**Census first.** The martian family's 17 vanilla ids (`NPCID.cs`):
+381 BrainScrambler, 382 RayGunner, 383 MartianOfficer, **384 ForceBubble**,
+385 GrayGrunt, 386 MartianEngineer, **387 MartianTurret** ("Tesla Turret",
+`NPCID.cs:12449`), 388 MartianDrone, 389 GigaZapper, 390 ScutlixRider,
+391 Scutlix, 392-395 the Saucer family, 399 MartianProbe, 520 MartianWalker.
+Against the post-sync roster (origin/main + S1-D-3ff wave A + the frost
+slices): **15 of 17 already ported**; only the ForceBubble 384 and the
+Tesla Turret 387 were missing. Two census corrections: "Scutlix 380" is
+wrong — the carrier is **391** (`NPCID.cs`; 380 is not a martian id), and
+"StormDiver" is **`VortexRifleman` 425** (`NPCID.cs:11525`, the display
+name row `:12478` `{ "Storm Diver", 425 }`) — a Vortex-pillar kind, already
+on the roster, not a Martian Madness member.
+
+**What landed (defaults + frames only).** The two `NpcKind` variants with
+the verbatim `SetDefaults` rows — the bubble (`NPC.cs:13882-13894`:
+18x40, aiStyle 72, def 20, 1000 HP, NPCHit43/NPCDeath45, npcSlots 0,
+noTileCollide, canGhostHeal false; NO damage/kb/value rows — the head
+defaults 0/1f/0f `NPC.cs:8563`/`:8533`/`:8544` stand) and the turret
+(`NPC.cs:13922-13934`: 20x50, aiStyle 73, dmg 10, def 40, 200 HP, kb 0,
+NPCHit53/NPCDeath56, canGhostHeal false, no value row). FindFrame: the
+turret's case 387 verbatim (`NPC.cs:71663-71696` — idle every 15; firing
+`ai[0] > 0` steps every 10 with +1 at `ai[0] >= 20` and +1 at `>= 40`);
+the bubble has NO case 384 — the single-frame strip rests row 0
+(`Main.npcFrameCount[384]` = 1, `[387]` = 2, hand-counted from the
+`Main.cs:67082` 697-entry initializer). Sounds: `SoundID.cs`'s
+`NPCHit43/53 = LegacySoundStyle(3, …)`, `NPCDeath45/56 = (4, …)` → the
+`NPC_Hit_43/53` + `NPC_Killed_45/56` cues. Debuffs
+(`NPCID.Sets.DebuffImmunitySets`): turret [20, 31] (`NPCID.cs:8356-8361`);
+the family audit corrected the existing rows — Scrambler [31]
+(`:8339-8343`), drone/probe [20, 31] (`:8363-8368`/`:8423-8428`), walker
+[20, 24, 31, 323] (`:9032-9037`); the Officer/Grunt/Engineer/Zapper/
+rider/carrier/RayGunner rows are null. Bestiary: the turret carries its
+own entry (draw mods Position(2,0)/Velocity 3, `NPCID.cs:3788-3794`);
+the bubble is hidden (`Hide = true`, `NPCID.cs:3766-3770`) and folds onto
+the Officer's credit (the Sleeping Angler precedent; the banner fold
+agrees — 383/384 share 141, 387 owns 144, `BannerSystem.cs:777-785`).
+Invasion: the turret joins the group-4 list (`NPC.cs:78327-78340`, case
+387 at `:78332`) as a **0-point kill** (`NPC.cs:78256-78257`); the port's
+`report_invasion_kill` now honours the `if (num9 > 0)` gate
+(`NPC.cs:78260`) — a 0-point kill neither drains the size nor refreshes
+the report. The group-4 list stays six kinds + the turret: the C#'s 13
+cases include the Scrambler/RayGunner/drone/rider/Scutlix/saucer parts
+whose kill wiring rides their spawn/AI waves (documented in
+`world_sim/npcs.rs::npc_invasion_group`).
+
+**Wire ids.** The pre-sync draft used 189/190; origin/main's S1-D-3ff
+wave A had claimed 189..212 (TwiggyZombie 189 … ZombieRaincoat 212), so
+the keep-both merge moved the pair to **213/214** (`to_u16`/`from_u16`).
+The render-key (G6) values ride the **vanilla type ids 384/387** (the
+Pumpkin/Frost Moon convention — unused by every other arm, injective);
+the draft's 189/190 render keys would have collided with TwiggyZombie/
+FemaleZombie. `ALL_KINDS` 238 → 240; the wire-roster pin 238 → 240.
+
+**Stand-in routing (AI arms = later wave).** Both kinds hold still in
+`update_kind_ai` (`NpcKind::ForceBubble => {}` / `MartianTurret => {}`):
+the bubble's AI_072 owner-pin (`NPC.cs:35081-35101`) already has its pure
+machine in `npc_ai_style72.rs` (S1-D-3-aistyle72, unwired — its header
+note updated: the kind now exists, the axis claim is the wiring wave);
+the turret's AI_073 warp-in (`NPC.cs:35102-35216`) is unported. The
+Officer's spawn/shield block (`NPC.cs:56222-56249`) and the Engineer's
+placement (`NPC.cs:59004-59030`, the `NewNPC(..., 387)` + feet plant at
+`:59029-59030`) ride those waves. Draw: the bubble draws NOTHING on its
+own path — the C#'s `if (type == 384) break` (`Main.cs:25041-25044`); the
+Officer's arm draws NPC_384 as its shield overlay (`Main.cs:25773-25777`,
+gated on `ai[2]`) — the overlay lands with the Officer's draw wave. The
+turret draws its 2-frame strip; the GlowMask[32] overlay
+(`Main.cs:25961-25972`) is unmodelled like every glow mask.
+
+**Deliberate gaps.** The `ImmuneToAllBuffsThatAreNotWhips` mask (the
+bubble `NPCID.cs:8347-8353`, the saucer family `:8373-8401`) has no slot
+field in `NpcBuffs` — those kinds ride `&[]` (the Poltergeist precedent;
+the saucer's `ImmuneToWhips` rides the separate `whip_immune` gate).
+
+**Atlas status.** `NPC_384` (18x40, 1 frame) and `NPC_387` (20x100, 2
+frames) join `STATIC_SHEET_NAMES` — ~1800 px² + padding against the
+8192-px shelf bound (main reportedly within ~71 px of it at the last
+pack). Code-only mode cannot run the packer to measure the new height;
+the `item_icon_uvs_are_normalized_and_atlas_fits` test asserts
+`atlas.height <= 8192` and runs in the lead's compile window. **If it
+trips, the sheet enumeration defers to the atlas-packer task** (drop the
+two names + the `npc_tex` lookups; the defaults data stands alone — the
+draw arms already tolerate `None` sheets). Dependency documented here
+and on the ROADMAP row.
+
+**Match audit.** A scripted scan over every `match` whose arms enumerate
+`NpcKind` variants (11 exhaustive sites: `npc.rs` kb/def/value/render_key,
+`npc/data.rs` to_u16/ai_style/size/max_hp/contact_damage, `npc_buffs.rs`
+debuff_immune_ids, `netglue.rs` npc_seed) — every site carries both new
+arms; the wildcard-carrying matches (find_frame dispatch, cs_id,
+texture_net_id, hit/death sounds' fallbacks) resolve the pair through
+their explicit arms or the bestiary-backed fallbacks.
+
+**Verification.** Code-only: the C# rows re-read line-by-line (the two
+SetDefaults cases, FindFrame 387 + the absent 384, the frame-count
+initializer hand-count, the debuff sets, the banner/hide rows, the
+invasion points/group cases, the draw break/overlay); every Rust seam
+checked by read/grep (the method signatures the tests call, the
+`World::new`/`Player::spawn`/`UnifiedRandom::new` shapes, the wire-id
+collision scan). The 8 `s1_f_13d_*` tests are WRITTEN, NOT RUN — **no
+compiler invoked**.

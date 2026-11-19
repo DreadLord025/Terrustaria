@@ -120,6 +120,17 @@ pub enum NpcKind {
     /// 40×30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
     /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal false).
     MartianDrone,
+    /// `NPCID.ForceBubble` (384) — the Officer's shield bubble
+    /// (`NPC.cs:13882-13894`: 18×40, aiStyle 72, def 20, 1000 HP; no
+    /// damage/kb/value rows — the head defaults 0/1f/0f
+    /// (`NPC.cs:8563`/`:8533`/`:8544`); npcSlots 0, noTileCollide,
+    /// canGhostHeal false; `AI_072` pins it to the Officer's centre).
+    ForceBubble,
+    /// `NPCID.MartianTurret` (387, the "Tesla Turret" — `NPCID.cs:12449`)
+    /// — the Engineer's placed turret (`NPC.cs:13922-13934`: 20×50,
+    /// aiStyle 73, dmg 10, def 40, 200 HP, kb 0, canGhostHeal false;
+    /// `AI_073` warps it in over 120 ticks).
+    MartianTurret,
     /// `NPCID.BrainScrambler` (381) — the martian ground shooter (`NPC.cs`:
     /// 18×40, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the
     /// stop-and-fire cycle fires the projectile 436).
@@ -2730,6 +2741,10 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The bubble: no kb row — the head default 1 (`NPC.cs:8533`).
+            NpcKind::ForceBubble => 1.0,
+            // The Tesla Turret: kb 0 (`NPC.cs:13932`).
+            NpcKind::MartianTurret => 0.0,
             // The Dutchman family: kb 0 (cases 491/492).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
@@ -3089,6 +3104,10 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 20,
             NpcKind::MartianSaucerCannon => 20,
             NpcKind::MartianSaucerCore => 0,
+            // The bubble: def 20 (`NPC.cs:13886`); the turret: def 40
+            // (`NPC.cs:13928`).
+            NpcKind::ForceBubble => 20,
+            NpcKind::MartianTurret => 40,
             // The Dutchman def 100, its cannons def 20.
             NpcKind::FlyingDutchman => 100,
             NpcKind::FlyingDutchmanCannon => 20,
@@ -3496,6 +3515,10 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 0.0,
             NpcKind::MartianSaucerCannon => 0.0,
             NpcKind::MartianSaucerCore => 0.0,
+            // The bubble + the turret: no value rows — the head default 0f
+            // (`NPC.cs:8544`; the cases `:13882-13894`/`:13922-13934`).
+            NpcKind::ForceBubble => 0.0,
+            NpcKind::MartianTurret => 0.0,
             // The Dutchman family: value 0 (the loot rides the guns).
             NpcKind::FlyingDutchman => 0.0,
             NpcKind::FlyingDutchmanCannon => 0.0,
@@ -5004,6 +5027,17 @@ impl Npc {
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
+            // The bubble: aiStyle 72's owner-pin machine (`NPC.cs:35081-35101`
+            // — `ai[0]` is the Officer's whoAmI; the bubble rides its centre
+            // and dies with it). The Officer's spawn arm (`NPC.cs:56222-56249`)
+            // and the owner-pin ride a LATER wave — the stand-in holds still.
+            NpcKind::ForceBubble => {}
+            // The Tesla Turret: aiStyle 73's warp-in machine
+            // (`NPC.cs:35102-35216` — the 120-tick teleport-in alpha ramp,
+            // then the aim/fire cycle). The Engineer's placement arm
+            // (`NPC.cs:59004-59030`) and the machine ride a LATER wave —
+            // the stand-in holds still.
+            NpcKind::MartianTurret => {}
             // The pirate ship: aiStyle 93's crew-carrier machine + its
             // cannons' aiStyle-75 ride.
             NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
@@ -5764,6 +5798,37 @@ impl Npc {
                 if self.frame_counter >= 6.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 2;
+                }
+            }
+            // The bubble: `FindFrame` carries NO case 384 — the single-frame
+            // strip (`Main.npcFrameCount[384]` = 1, `Main.cs:67082`) rests
+            // row 0.
+            NpcKind::ForceBubble => {
+                self.frame = 0;
+            }
+            // The Tesla Turret: `case 387` (`NPC.cs:71663-71696`) — the
+            // firing machine (`ai[0] > 0`) accelerates the accumulator
+            // (+1 more at ai[0] >= 20, +1 at >= 40) and steps the 2-row
+            // strip every 10; idle steps every 15.
+            NpcKind::MartianTurret => {
+                if self.ai[0] > 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.ai[0] >= 20.0 {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.ai[0] >= 40.0 {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter >= 10.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = (self.frame + 1) % 2;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 15.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = (self.frame + 1) % 2;
+                    }
                 }
             }
             // The rider: `case 390` (`NPC.cs:71779-71805`) — the row is
@@ -16364,6 +16429,11 @@ impl Npc {
             NpcKind::MartianSaucerTurret => 90,
             NpcKind::MartianSaucerCannon => 91,
             NpcKind::MartianSaucerCore => 92,
+            // The bubble/turret pair (`S1-F-13d`): the vanilla type ids
+            // (unused by every arm above, so the G6 key stays injective —
+            // the Pumpkin/Frost Moon convention; the wire ids ride 213/214).
+            NpcKind::ForceBubble => 384,
+            NpcKind::MartianTurret => 387,
             NpcKind::FlyingDutchman => 93,
             NpcKind::FlyingDutchmanCannon => 94,
             NpcKind::DD2GoblinT1 => 95,
@@ -20820,12 +20890,12 @@ mod tests {
     }
 
     /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 214 kinds - the 8 slime colours are `SlimeVariant`,
+    /// `npc.rs:31-686`: 240 kinds - the 8 slime colours are `SlimeVariant`,
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 251] = [
+    pub(super) const ALL_KINDS: [NpcKind; 253] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -20856,6 +20926,8 @@ mod tests {
         NpcKind::MartianWalker,
         NpcKind::MartianProbe,
         NpcKind::MartianDrone,
+        NpcKind::ForceBubble,
+        NpcKind::MartianTurret,
         NpcKind::BrainScrambler,
         NpcKind::RayGunner,
         NpcKind::ScutlixRider,
@@ -24557,7 +24629,7 @@ mod s1_f_3_tests {
         let mut sentinel = 0;
         let mut bad: Vec<String> = Vec::new();
         // The kind roster walks the wire-id space (the round-trip test pins
-        // exactly 199 decodable ids).
+        // exactly 201 decodable ids).
         for wire in 0..=u16::MAX {
             let Some(kind) = NpcKind::from_u16(wire) else {
                 continue;
@@ -24582,8 +24654,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            251,
-            "every decodable kind resolves (the wire roster's size - 251 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four)"
+            253,
+            "every decodable kind resolves (the wire roster's size - 253 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + S1-F-13d's ForceBubble/MartianTurret)"
         );
         assert!(
             covered > 43,
@@ -28711,7 +28783,8 @@ mod s1_d_2_tests {
 
 }
 
-// ==============================================================// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no
+// =====================================================================
+// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no
 // cargo/rustc). These pin the LIVE routing: the style axis claims the
 // three Frost Moon bosses (344/345/346) onto their named machines, the
 // hover stand-ins are retired, the bosses attack (the shot lanes fill),
@@ -29164,3 +29237,254 @@ mod s1_d_3_wire_plantera_minions_tests {
     }
 }
 
+
+/// S1-F-13d — the Martian Madness defaults completion: the census found 15
+/// of the 17 martian kinds already ported; the two missing — the Force
+/// Bubble (384) and the Tesla Turret (387) — get their full `SetDefaults`
+/// rows, `FindFrame` machines and wire ids here. The AI machines (AI_072's
+/// owner-pin `NPC.cs:35081-35101`, AI_073's warp-in `:35102-35216`) ride a
+/// LATER wave; the stand-ins hold still. Tests written, not run (code-only
+/// mode).
+#[cfg(test)]
+mod s1_f_13d_tests {
+    use super::*;
+
+    /// The two kinds' verbatim `SetDefaults` rows: the bubble
+    /// (`NPC.cs:13882-13894`) and the turret (`:13922-13934`). The bubble
+    /// carries no damage/kb/value rows — the head defaults 0 (`:8563`),
+    /// 1f (`:8533`) and 0f (`:8544`) stand.
+    #[test]
+    fn s1_f_13d_the_bubble_and_turret_defaults_match_the_csharp_rows() {
+        let bubble = Npc::new(NpcKind::ForceBubble, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::ForceBubble.size(), (18.0, 40.0), "NPC.cs:13885/:13887");
+        assert_eq!(bubble.size(), (18.0, 40.0));
+        assert_eq!(NpcKind::ForceBubble.max_hp(), 1000, "NPC.cs:13884");
+        assert_eq!(bubble.max_hp, 1000);
+        assert_eq!(bubble.defense(), 20, "NPC.cs:13886");
+        assert_eq!(NpcKind::ForceBubble.ai_style(), 72, "NPC.cs:13888");
+        assert_eq!(NpcKind::ForceBubble.contact_damage(), 0, "the head default :8563");
+        assert_eq!(bubble.knock_back_resist(), 1.0, "the head default :8533");
+        assert_eq!(bubble.value(), 0.0, "the head default :8544");
+        assert_eq!(NpcKind::ForceBubble.hit_sound(), Some("NPC_Hit_43"), "NPCHit43 :13889");
+        assert_eq!(NpcKind::ForceBubble.death_sound(), Some("NPC_Killed_45"), "NPCDeath45 :13890");
+
+        let turret = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::MartianTurret.size(), (20.0, 50.0), "NPC.cs:13924-13925");
+        assert_eq!(turret.size(), (20.0, 50.0));
+        assert_eq!(NpcKind::MartianTurret.max_hp(), 200, "NPC.cs:13929");
+        assert_eq!(turret.max_hp, 200);
+        assert_eq!(turret.defense(), 40, "NPC.cs:13928");
+        assert_eq!(NpcKind::MartianTurret.ai_style(), 73, "NPC.cs:13926");
+        assert_eq!(NpcKind::MartianTurret.contact_damage(), 10, "NPC.cs:13927");
+        assert_eq!(turret.knock_back_resist(), 0.0, "NPC.cs:13932");
+        assert_eq!(turret.value(), 0.0, "no value row — the head default :8544");
+        assert_eq!(NpcKind::MartianTurret.hit_sound(), Some("NPC_Hit_53"), "NPCHit53 :13930");
+        assert_eq!(NpcKind::MartianTurret.death_sound(), Some("NPC_Killed_56"), "NPCDeath56 :13931");
+        // Both are martians (the display family's rotation/direction ride).
+        assert!(NpcKind::ForceBubble.is_martian());
+        assert!(NpcKind::MartianTurret.is_martian());
+    }
+
+    /// The wire ids: port-local 213/214 above S1-D-3ff wave A's 189..212 —
+    /// NOT the vanilla 384/387 (the martian family's convention). The free
+    /// holes 148/149/152-155 stay undecodable and the pair never touches
+    /// the 78..84 Deerclops/Skeletron-Prime band.
+    #[test]
+    fn s1_f_13d_the_wire_ids_round_trip_on_the_port_local_band() {
+        assert_eq!(NpcKind::ForceBubble.to_u16(), 213);
+        assert_eq!(NpcKind::MartianTurret.to_u16(), 214);
+        assert_eq!(NpcKind::from_u16(213), Some(NpcKind::ForceBubble));
+        assert_eq!(NpcKind::from_u16(214), Some(NpcKind::MartianTurret));
+        // The vanilla ids are NOT wire ids here (384/387 decode to nothing).
+        assert_eq!(NpcKind::from_u16(384), None);
+        assert_eq!(NpcKind::from_u16(387), None);
+        // GATE UPDATE (L-B): the branch's free holes 149/152-155 were taken
+        // by the landed queenbee bees (149/152) + plantera minions
+        // (153/154/155); 148 stays reserved (R78 LeechTail, L-G lane).
+        assert_eq!(NpcKind::from_u16(148), None, "hole 148 stays free");
+        assert!(!(78..=84).contains(&213));
+        assert!(!(78..=84).contains(&214));
+        // Wave A's band stays untouched (189 TwiggyZombie, 212 ZombieRaincoat).
+        assert_eq!(NpcKind::from_u16(189), Some(NpcKind::TwiggyZombie));
+        assert_eq!(NpcKind::from_u16(212), Some(NpcKind::ZombieRaincoat));
+        // The render key rides the vanilla type ids (384/387, unused above).
+        let bubble = Npc::new(NpcKind::ForceBubble, 0.0, 0.0, 1, 0.0);
+        let turret = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        assert_ne!(bubble.render_key(), turret.render_key());
+    }
+
+    /// The Tesla Turret's `FindFrame` case 387 (`NPC.cs:71663-71696`),
+    /// verbatim: idle steps every 15; the firing machine (`ai[0] > 0`)
+    /// adds +1 more at `ai[0] >= 20` and +1 at `>= 40`, stepping every 10.
+    #[test]
+    fn s1_f_13d_the_turret_frame_machine_walks_the_csharp_thresholds() {
+        // Idle: 14 ticks hold row 0; the 15th steps to row 1; the 30th
+        // wraps back to row 0 (frame.Y >= num * 2).
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        for _ in 0..14 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0);
+        n.find_frame();
+        assert_eq!(n.frame, 1, "the 15th idle tick steps");
+        for _ in 0..15 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0, "the 30th idle tick wraps");
+        // Firing below 20: one increment per tick — the 10th steps.
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        n.ai[0] = 1.0;
+        for _ in 0..9 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0);
+        n.find_frame();
+        assert_eq!(n.frame, 1, "the 10th firing tick steps");
+        // ai[0] = 20: +2 per tick — the 5th steps.
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        n.ai[0] = 20.0;
+        for _ in 0..4 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0);
+        n.find_frame();
+        assert_eq!(n.frame, 1, "ai[0] >= 20 doubles the accumulator");
+        // ai[0] = 40: +3 per tick — the 4th steps (3+3+3+3 = 12 >= 10).
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        n.ai[0] = 40.0;
+        for _ in 0..3 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 0);
+        n.find_frame();
+        assert_eq!(n.frame, 1, "ai[0] >= 40 triples the accumulator");
+    }
+
+    /// The bubble: `FindFrame` carries NO case 384 — the single-frame
+    /// strip (`Main.npcFrameCount[384]` = 1, `Main.cs:67082`) rests row 0.
+    #[test]
+    fn s1_f_13d_the_bubble_frame_pins_zero() {
+        let mut n = Npc::new(NpcKind::ForceBubble, 0.0, 0.0, 1, 0.0);
+        n.frame = 3;
+        for _ in 0..60 {
+            n.find_frame();
+            assert_eq!(n.frame, 0, "no case 384 — the row rests at 0");
+        }
+    }
+
+    /// The frame-count table + the sheet wiring: NPC_384 is 1 row, NPC_387
+    /// is 2 (`Main.cs:67082`'s initializer — the port's verbatim
+    /// `NPC_FRAME_COUNT`), both sheets are packed and the bestiary order
+    /// table carries the turret's NPC_387 slot.
+    #[test]
+    fn s1_f_13d_the_sheets_resolve_with_the_csharp_frame_counts() {
+        assert_eq!(crate::render::entities::npc_rows(384), 1);
+        assert_eq!(crate::render::entities::npc_rows(387), 2);
+        assert_eq!(
+            crate::render::entities::texture_net_id(NpcKind::ForceBubble),
+            384
+        );
+        assert_eq!(
+            crate::render::entities::texture_net_id(NpcKind::MartianTurret),
+            387
+        );
+        for name in ["NPC_384", "NPC_387"] {
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name),
+                "{name} is never packed into the atlas"
+            );
+        }
+        assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&387));
+        // The bubble has no bestiary sheet row (its entry is hidden).
+        assert!(!crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&384));
+    }
+
+    /// The bestiary credits: the turret carries its own entry ("Tesla
+    /// Turret", `NPCID.cs:12449`'s name row); the bubble is hidden
+    /// (`NPCID.cs:3766-3770`'s `Hide = true` — `GetExclusions`
+    /// `BestiaryDatabaseNPCsPopulator.cs:870-886` skips it) and folds onto
+    /// the Officer's credit, the Sleeping Angler precedent. The banners
+    /// agree: 383/384 share 141, 387 owns 144 (`BannerSystem.cs:777-785`).
+    #[test]
+    fn s1_f_13d_the_bestiary_credits_and_banners_follow_the_hide_fold() {
+        let turret = crate::bestiary::entry_for_npc(NpcKind::MartianTurret, SlimeVariant::Blue);
+        assert_eq!(turret.credit_id, "MartianTurret");
+        assert_eq!(turret.net_id, 387);
+        assert_eq!(turret.name, "Tesla Turret");
+        let bubble = crate::bestiary::entry_for_npc(NpcKind::ForceBubble, SlimeVariant::Blue);
+        assert_eq!(bubble.credit_id, "MartianOfficer", "the hidden kind folds");
+        assert_eq!(bubble.net_id, 383);
+        assert_eq!(NpcKind::MartianTurret.net_id(), 387);
+        assert_eq!(tr_core::bestiary::npc_to_banner(384), 141);
+        assert_eq!(tr_core::bestiary::npc_to_banner(383), 141);
+        assert_eq!(tr_core::bestiary::npc_to_banner(387), 144);
+    }
+
+    /// The debuff rows (`NPCID.Sets.DebuffImmunitySets`,
+    /// `NPCID.cs:8339-8401`/`:8423-8428`/`:9032-9037`): the turret joins
+    /// the drone/probe's [20, 31]; the bubble's
+    /// `ImmuneToAllBuffsThatAreNotWhips` mask is unmodelled — the
+    /// documented gap rides `&[]` (the Poltergeist precedent).
+    #[test]
+    fn s1_f_13d_the_debuff_rows_match_the_csharp_sets() {
+        let turret = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::MartianTurret);
+        assert!(turret.buff_immune[20], "NPCID.cs:8356-8361");
+        assert!(turret.buff_immune[31]);
+        // The derived rule: immune 20 => immune 30 + 375 (NPC.cs:17828-17833).
+        assert!(turret.buff_immune[30]);
+        assert!(turret.buff_immune[375]);
+        let bubble = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::ForceBubble);
+        assert!(!bubble.buff_immune[20], "the NotWhips mask is unmodelled (&[])");
+        // The audit's corrected rows for the existing family.
+        let scrambler = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::BrainScrambler);
+        assert!(scrambler.buff_immune[31], "NPCID.cs:8339-8343");
+        assert!(!scrambler.buff_immune[20]);
+        let walker = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::MartianWalker);
+        for id in [20, 24, 31, 323] {
+            assert!(walker.buff_immune[id], "NPCID.cs:9032-9037");
+        }
+        let drone = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::MartianDrone);
+        assert!(drone.buff_immune[20] && drone.buff_immune[31], "NPCID.cs:8363-8368");
+        let officer = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::MartianOfficer);
+        assert!(!officer.buff_immune[20] && !officer.buff_immune[31], "the null row");
+        // The saucer's ImmuneToWhips rides the separate gate.
+        assert!(crate::npc_buffs::whip_immune(NpcKind::MartianSaucer));
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::MartianTurret));
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::ForceBubble));
+    }
+
+    /// The AI stand-ins hold still: neither kind moves nor fires until
+    /// its machine lands with the AI wave (the Officer's spawn arm
+    /// `NPC.cs:56222-56249` / the Engineer's placement `:59004-59030`).
+    #[test]
+    fn s1_f_13d_the_stand_ins_hold_still() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [NpcKind::ForceBubble, NpcKind::MartianTurret] {
+            let mut n = Npc::new(kind, 100.0 * TILE_PX, 99.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (x0, y0) = (n.x, n.y);
+            for _ in 0..120 {
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
+            assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");
+            assert_eq!(n.vx, 0.0);
+            assert_eq!(n.vy, 0.0);
+            assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
+        }
+    }
+}
