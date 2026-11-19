@@ -11001,7 +11001,7 @@ pub(crate) fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32
 /// NPC is chaseable and hostile and none is immortal), so the three fields the
 /// pool can observe carry the gate. The C#'s `ignoreDontTakeDamage: true` form
 /// plus its separate `!dontTakeDamage` test lands on the same predicate.
-fn chaseable(n: &Npc) -> bool {
+pub(crate) fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
 }
 
@@ -13094,6 +13094,25 @@ impl ProjectilePool {
                             // byte-identical.
                             kind if crate::projectile_ai001_b::covers(kind) => {
                                 crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
+                            }
+                            // S1-D-5 slice C — the mid-range rowed kinds'
+                            // per-type `AI_001` arms (`Projectile.cs:54002-
+                            // 57798`), chained AFTER A and B and gated to
+                            // `projectile_ai001_c`'s own kind list (9 kinds:
+                            // 110/275/276/634/635/645/662/675/685 — the three
+                            // gates are kind-disjoint). `sub_steps - 2 - sub`
+                            // is the C# `numUpdates` the sub-step body sees:
+                            // the decrement at `Projectile.cs:16678` runs
+                            // BEFORE `AI()` (`:16775`), so `numUpdates == 0`
+                            // is the second-to-last sub-step (the 645 dart's
+                            // placed-cloud scan gate, `:57002`).
+                            kind if crate::projectile_ai001_c::covers(kind) => {
+                                crate::projectile_ai001_c::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    sub_steps as i32 - 2 - sub as i32,
+                                )
                             }
                             _ => self.slots[i].ai_arrow(world),
                         },
