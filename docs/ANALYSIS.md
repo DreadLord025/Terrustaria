@@ -5629,6 +5629,16 @@ module IS registered (`mod npc_ai_town;` beside `mod npc_ai_caster;` in
 `main.rs`) so the witnesses compile with the crate, but no live dispatch
 calls it.
 
+**Reconcile (2026-11-19, second commit)**: a line-by-line re-read of the
+whole arm against the port fixed the door seam (the `TownDoorOps` trait
+is called INLINE — the C#'s attempt order and the all-fail direction
+flip are tick-visible), the stuck counter's post-increment semantics,
+the post-teleport centre re-read, the homeless/breath/shimmering seam
+flags, the full-hitbox melee/heal sight tests, the shot variation
+payload, the safe-rect int truncation and the Skeletons set; the
+witness tests now account for the social ladder's seven gates drawing
+after the state arms. The folds below reflect the reconciled state.
+
 Census of the port's town routing (2026-11-19): the live town walk is
 `npc.rs::update_guide` (`:7471`) — a 240-tick fixed flip at a constant
 0.5 px/tick with an invented −6.2 jump; a STAND-IN, not the C# arm
@@ -5639,8 +5649,10 @@ falls through to the kind match). Housing (`town.rs`,
 landed and UNTOUCHED; the caster sibling (`npc_ai_caster.rs`, aiStyle 8)
 is untouched. The contested hot files (`npc.rs`, `world_sim/npcs.rs`)
 were not edited — the wiring round replaces `update_guide`, drains
-`TownShot`/`TownStrike`/`TownDoorRequest`/`TownPartnerWrite`/
-`HomeTileUpdate` through the spawn/strike/edit/housing seams, adds the
+`TownShot`/`TownStrike`/`TownPartnerWrite`/
+`HomeTileUpdate` through the spawn/strike/housing seams, implements the
+inline `TownDoorOps` trait over `tr_core::edit::{open_door, close_door}`
+(+ `ShiftTallGate` when it lands), adds the
 `closeDoor`/`doorX`/`doorY` latch to `Npc` (`NPC.cs:6511-6513`) and
 supplies the `TownKindStats` defLifeMax/defDefense rows.
 
@@ -5684,12 +5696,17 @@ scans and `UpdateHomeTileState` are RNG-free. The witnesses pin the
 stream position per case with fresh-stream mirrors (written, NOT run).
 
 Deliberate folds (code-only remainders for the wiring round):
-* **The door drain is optimistic** — the arm pushes the three open
-  attempts in C# order and arms the latch + `ai[1] += 80` immediately;
-  the C# latches only on the FIRST success and flips direction only
-  when ALL THREE fail (`:54047-54078`). The caller's drain must stop at
-  the first `open_door`/`ShiftTallGate` success and apply the all-fail
-  flip + latch correction.
+* **The door seam is INLINE** (the 2026-11-19 reconcile) — `TownDoorOps`
+  (`open_door`/`close_door`/`shift_tall_gate`) is called at the C#'s
+  call sites, so the three ordered open attempts, the first-success
+  latch + `ai[1] += 80` and the all-fail direction flip (`:54047-54078`)
+  are tick-exact (the flip feeds the social ladder later in the same
+  tick). The wiring implements the trait over
+  `tr_core::edit::{open_door, close_door}`; `ShiftTallGate` is UNPORTED
+  in tr-core — the impl returns false until it lands (tall gates
+  388/389 never open/close, the arm takes the all-fail flip). The
+  close pass clears the latch only on success (`:53838-53846`), the
+  ±4 far-arm clear is unconditional.
 * **StepUp mode-1 wrapper** — `Collision.StepUp(..., specialChecksMode:
   1)`'s `IgnoredByNpcStepUp` gate (`Collision.cs:3694-3697`) folds into
   the shared mode-0 `holds_matching` argument; for genuinely-solid
@@ -5703,8 +5720,22 @@ Deliberate folds (code-only remainders for the wiring round):
   state 25 + teleport scan (`:53187-53277`, `:55563-55641`), the
   bound-NPC Transform rows / Mechanic owned-proj latch, and
   lighting/dust/particles/sound (the render/audio tasks'). The Andrew/
-  Slimefors easter eggs ride `defense_override` (the C# writes
-  `defDefense` — the seam's defaults are read-only).
+  Slimefors easter eggs adjust the seam's `def_defense` copy BEFORE the
+  stat ladder (the C# writes `defDefense`, which the ladder reads); the
+  infected-seed Dryad's persistent `defDefense = 99999` is a kind-table
+  write the read-only seam cannot carry — the wiring applies it.
+* **The reconcile's fidelity fixes** (2026-11-19, second commit): the
+  stuck counter's POST-increment semantics (`localAI[2]++ >= 30f` reads
+  the OLD value — the pre-increment form fired one tick early), the
+  post-teleport centre re-read (the danger scan reads the moved
+  position), the homeless/breath/shimmering seam flags replace the
+  `home == None` proxies, `townNPC` = `is_town_npc_like` (the sellers
+  are townNPC=true in SetDefaults), the melee sweep + nurse heal scan
+  use the FULL-hitbox CanHit/CanHitLine, `TownShot` carries the trailing
+  `townNpcVariationIndex`, the teleport safe-rect origins truncate to
+  int, the Skeletons set matches `ID/NPCID.cs:10478`, and the witness
+  tests account for the social ladder's seven gates drawing after the
+  state arms.
 
 ## Buff slots (M2-BUFF-1)
 

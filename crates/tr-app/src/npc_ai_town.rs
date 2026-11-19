@@ -11,13 +11,15 @@
 //!
 //! UNWIRED (code-only mode, the `npc_ai_caster.rs` precedent): the live
 //! dispatch still routes the town kinds through `update_guide`. The
-//! migration replaces that call with [`town_npc_ai`] and drains
-//! [`TownShot`]/[`TownStrike`] through the NPC spawn seams, registers the
-//! door latch fields on `Npc` (the C#'s `closeDoor`/`doorX`/`doorY`,
-//! `NPC.cs:6511-6513`) and applies [`HomeTileUpdate`] through
-//! `TownRooms` + message 60. The contested pieces stay untouched: the
-//! housing validation (`town.rs`), the chat selection (`npc_chat`), and
-//! the caster aiStyle-8 arm.
+//! migration replaces that call with [`town_npc_ai`], drains
+//! [`TownShot`]/[`TownStrike`]/[`TownPartnerWrite`] through the NPC
+//! spawn/strike seams, implements the inline [`TownDoorOps`] trait over
+//! `tr_core::edit::{open_door, close_door}` (+ `ShiftTallGate` when it
+//! lands), registers the door latch fields on `Npc` (the C#'s
+//! `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`) and applies
+//! [`HomeTileUpdate`] through `TownRooms` + message 60. The contested
+//! pieces stay untouched: the housing validation (`town.rs`), the chat
+//! selection (`npc_chat`), and the caster aiStyle-8 arm.
 //!
 //! SCOPE — the whole arm's STRUCTURE with the branches the port's town
 //! kinds take (the ten housed kinds + the eleven town-like sellers,
@@ -2149,7 +2151,12 @@ pub fn town_npc_ai(
         }
     }
 
-    // `:55197-55545` — the social + attack-trigger ladder.
+    // `:55197-55545` — the social + attack-trigger ladder. The C#
+    // re-reads base.Center at every use site; the state machine above
+    // may have moved the NPC (StepUp/StepDown, the sit snap), so the
+    // ladder reads the POST-state centre.
+    let cx = npc.x + w / 2.0;
+    let cy = npc.y + h / 2.0;
     if env.net_mode != 1 && npc.kind.is_town_npc_like() && (!flag5 | flag17) {
         let mut num3 = num3;
         let mut num14 = num14;
