@@ -5,12 +5,13 @@
 //!
 //! The static layer in `drawdata.rs` already carries every case's
 //! unconditional part; this module completes the engine-driven remainder for
-//! 21 case ids (disjoint from slice A's static blocks/ores, wave B's animator
-//! `drawdata_anim.rs` and wave C's cages/chests `drawdata_furniture.rs`):
+//! 16 case ids (disjoint from slice A `drawdata_cases_a.rs` — the merge
+//! dedupe: A owns 518/529/530's first-switch world probes and 441/468's
+//! second-switch glow rows, so B skips those five ids — and from wave B's
+//! animator `drawdata_anim.rs` and wave C's cages/chests
+//! `drawdata_furniture.rs`):
 //!
 //! - `719` RainbowCloud      — `Main.GlobalTimeWrappedHourly` (TileDrawing.cs:4562-4570)
-//! - `518` LilyPad           — `tile.liquid` + `WorldGen.SolidTile` + the block
-//!   below (TileDrawing.cs:4604-4630, WorldGen.cs:70111-70131)
 //! - `579` RockGolemHead     — `Main.LocalPlayer.Center.X` (TileDrawing.cs:5104-5130)
 //! - `453` SillyBalloonTile / `456` PartyBundleOfBalloonTile —
 //!   `Main.tileFrameCounter` hard cycles (TileDrawing.cs:5412-5417)
@@ -20,13 +21,11 @@
 //! - `489` PinWheel          — `InAPlaceWithWind` + counter (TileDrawing.cs:4731-4741)
 //! - `490` WeatherVane       — wind + `Main.weatherVaneBobframe` (TileDrawing.cs:4742-4818)
 //! - `493` GolfCupFlag       — wind tiers + counter (TileDrawing.cs:5231-5257)
-//! - `529` SeaOats / `530` OasisPlants — `WorldGen.GetBiomeInfluence`
-//!   (TileDrawing.cs:4827-4849 / 4705-4723, WorldGen.cs:47750-47777)
 //! - `428` WeightedPressurePlate — `PressurePlateHelper.PressurePlatesPressed`
 //!   (TileDrawing.cs:5605-5611)
 //! - `455` PartyMonolith     — `BirthdayParty.PartyIsUp` (TileDrawing.cs:5397-5408)
-//! - `349` MushroomStatue, `441|468` FakeContainers, `593|594` Volcanoes —
-//!   the `Animation.GetTemporaryFrame` probe (TileDrawing.cs:5332-5356,
+//! - `349` MushroomStatue, `593|594` Volcanoes —
+//!   the `Animation.GetTemporaryFrame` probe (TileDrawing.cs:5332-5341,
 //!   5445-5487; Animation.cs:186-196).
 //!
 //! Seam: [`case_draw_data`] takes the static table's output as `base` and
@@ -47,19 +46,21 @@
 //! - `Animation.GetTemporaryFrame` reads `Animation._temporaryAnimations`
 //!   (Animation.cs:186-196); the port has no temporary-animation registry
 //!   yet, so [`temporary_frame`] returns `None` — the C# `false` path. The
-//!   349/441/468/593/594 bodies are ported in full around that probe.
+//!   349/593/594 bodies are ported in full around that probe (441/468's
+//!   first-switch half is static-only with the registry empty — slice A
+//!   owns those ids' second-switch glow rows).
 //! - `579` with no local player (`player_center_x = None`, menu frames)
 //!   takes `flag2 = false`; in-game the caller always passes the player's
 //!   center (`Main.LocalPlayer` always exists in C#).
 
 use tr_core::drawdata::TileDrawData;
-use tr_core::tiledata::{SET_CORRUPT, SET_CRIMSON, SET_HALLOW, TILE_SOLID, TILE_SOLID_TOP};
 use tr_core::wind::Wind;
 use tr_core::wiring::Wiring;
 use tr_core::world::World;
 
-/// `WorldGen.beachDistance` (WorldGen.cs:86914) — the 529 beach band.
-const BEACH_DISTANCE: i32 = 380;
+// The 518/529/530 probes (`WorldGen.SolidTile`, `Tile.blockType`,
+// `WorldGen.GetBiomeInfluence`, `WorldGen.beachDistance`) moved to slice A
+// (`drawdata_cases_a.rs`) in the merge dedupe — A owns those ids.
 
 /// The per-frame scalar engine inputs (everything that is not a world/wind/
 /// wiring reference). `Default` is the neutral vanilla t=0 state.
@@ -95,67 +96,7 @@ fn temporary_frame(_x: i32, _y: i32) -> Option<i32> {
     None
 }
 
-/// `WorldGen.SolidTile(i, j)` (WorldGen.cs:70111-70131): active, solid,
-/// not solid-top, not half-brick, no slope, not actuated. The C# `null`
-/// arm returns true and the out-of-bounds indexer throws into the `catch`
-/// (false); the port's tiles are never null in-world, so out-of-world
-/// (`None`) maps to the catch path's `false`.
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
-    let Some(t) = world.tile(x, y) else {
-        return false;
-    };
-    t.active()
-        && TILE_SOLID.has(t.kind)
-        && !TILE_SOLID_TOP.has(t.kind)
-        && !t.half_brick()
-        && t.slope() == 0
-        && !t.inactive()
-}
-
-/// `Tile.blockType()` (Tile.cs): half-brick → 1, slope → slope+1, else 0.
-fn block_type(t: &tr_core::tile::Tile) -> i32 {
-    if t.half_brick() {
-        return 1;
-    }
-    let slope = t.slope() as i32;
-    if slope > 0 {
-        slope + 1
-    } else {
-        0
-    }
-}
-
-/// `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750-47777): counts the
-/// corrupt/crimson/hallow tiles in the inclusive rectangle — by `tile.type`
-/// alone, the C# does NOT check `active()`. Out-of-world cells count nothing
-/// (the C# null skip; the port's `World::tile` is `None` only out of bounds).
-fn biome_influence(
-    world: &World,
-    start_x: i32,
-    end_x: i32,
-    start_y: i32,
-    end_y: i32,
-) -> (i32, i32, i32) {
-    let (mut corrupt, mut crimson, mut hallow) = (0, 0, 0);
-    for i in start_x..=end_x {
-        for j in start_y..=end_y {
-            if let Some(t) = world.tile(i, j) {
-                if SET_CORRUPT.has(t.kind) {
-                    corrupt += 1;
-                }
-                if SET_CRIMSON.has(t.kind) {
-                    crimson += 1;
-                }
-                if SET_HALLOW.has(t.kind) {
-                    hallow += 1;
-                }
-            }
-        }
-    }
-    (corrupt, crimson, hallow)
-}
-
-/// The slice-B dispatch arm: `Some` for the 21 owned kinds (the C# case body
+/// The slice-B dispatch arm: `Some` for the 16 owned kinds (the C# case body
 /// applied onto the static table's `base`), `None` for everything else.
 ///
 /// `tile_frame` is `Main.tileFrame[kind]`, `counter` is
@@ -185,29 +126,6 @@ pub fn case_draw_data(
             let n26 = n24 % 4;
             data.add_fr_x = (data.add_fr_x as i32 + 288 * n25) as i16;
             data.add_fr_y = (data.add_fr_y as i32 + 270 * n26) as i16;
-        }
-        // `case 518` — LilyPad: the pad rides the liquid surface
-        // (TileDrawing.cs:4604-4630).
-        518 => {
-            let liquid = env.world.tile(x, y).map_or(0, |t| t.liquid as i32);
-            let mut n19 = liquid / 16 - 3;
-            if solid_tile(env.world, x, y - 1) && n19 > 8 {
-                n19 = 8;
-            }
-            if liquid == 0 {
-                // `Framing.GetTileSafely(x, y + 1)`: out-of-world is an empty
-                // (inactive) tile — the `nactive()` gate fails.
-                if let Some(below) = env.world.tile(x, y + 1) {
-                    if below.active() && !below.inactive() {
-                        match block_type(below) {
-                            1 => n19 = -16 + (8).max(below.liquid as i32 / 16),
-                            2 | 3 => n19 -= 4,
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            data.top = (data.top as i32 - n19) as i16;
         }
         // `case 579` — RockGolemHead: 20x20, raised 2 px; the eye row flips
         // to face the player (TileDrawing.cs:5104-5130).
@@ -355,63 +273,6 @@ pub fn case_draw_data(
             }
             data.top = 2;
         }
-        // `case 529` — SeaOats: the biome/beach sheet row
-        // (TileDrawing.cs:4827-4849). `addFrY += 34 * pick - tileFrameY`.
-        529 => {
-            let (corrupt, crimson, hallow) = biome_influence(env.world, x, x, y + 1, y + 1);
-            let mut n29 = corrupt;
-            if n29 < crimson {
-                n29 = crimson;
-            }
-            if n29 < hallow {
-                n29 = hallow;
-            }
-            let pick = if corrupt == 0 && crimson == 0 && hallow == 0 {
-                if x < BEACH_DISTANCE || x > env.world.width - BEACH_DISTANCE {
-                    1
-                } else {
-                    0
-                }
-            } else if hallow == n29 {
-                2
-            } else if crimson != n29 {
-                4
-            } else {
-                3
-            };
-            data.add_fr_y = (data.add_fr_y as i32 + 34 * pick - fy) as i16;
-            data.height = 32;
-            data.top = -14;
-            data.flip = x % 2 == 0;
-        }
-        // `case 530` — OasisPlants: the 4-wide biome probe two rows under
-        // the plant's top-left (TileDrawing.cs:4705-4723).
-        530 => {
-            let n35 = y - fy % 36 / 18 + 2;
-            let n36 = x - fx % 54 / 18;
-            let (corrupt, crimson, hallow) =
-                biome_influence(env.world, n36, n36 + 3, n35, n35);
-            let mut n37 = corrupt;
-            if n37 < crimson {
-                n37 = crimson;
-            }
-            if n37 < hallow {
-                n37 = hallow;
-            }
-            let pick = if corrupt != 0 || crimson != 0 || hallow != 0 {
-                if hallow == n37 {
-                    1
-                } else if crimson != n37 {
-                    3
-                } else {
-                    2
-                }
-            } else {
-                0
-            };
-            data.add_fr_y = (data.add_fr_y as i32 + 36 * pick) as i16;
-            data.top = 2;
-        }
         // `case 428` — WeightedPressurePlate: top += 4 is the static arm's;
         // a pressed plate shifts one 18 px column (TileDrawing.cs:5605-5611).
         428 => {
@@ -436,19 +297,6 @@ pub fn case_draw_data(
             let n45 = fx % 36;
             if let Some(f) = temporary_frame(x - n45 / 18, y - fy % 54 / 18) {
                 data.frame_x_override = Some((36 * f + n45) as i16);
-            }
-        }
-        // `case 441 / 468` — FakeContainers: 18 px on the seam row (static
-        // arm); the temporary-animation frame rewrites tileFrameY
-        // (TileDrawing.cs:5342-5356).
-        441 | 468 => {
-            if fy == 18 {
-                data.height = 18;
-            }
-            let n43 = fx % 36;
-            let n44 = fy % 38;
-            if let Some(f) = temporary_frame(x - n43 / 18, y - n44 / 18) {
-                data.frame_y_override = Some((38 * f + n44) as i16);
             }
         }
         // `case 593` — VolcanoSmall (TileDrawing.cs:5445-5465).
@@ -487,16 +335,17 @@ pub fn case_draw_data(
 
 /// The case ids slice B owns (the coverage test pins the dispatch). Kept
 /// visible outside tests so the sibling slices can check disjointness.
+/// The merge dedupe removed A's five ids (518/529/530 first-switch probes,
+/// 441/468 second-switch glow rows) — `drawdata_cases_a.rs` owns them.
 #[allow(dead_code)]
-pub const OWNED_KINDS: [u16; 21] = [
-    349, 428, 441, 453, 455, 456, 468, 485, 489, 490, 493, 507, 508, 518, 529, 530, 541, 579, 593,
-    594, 719,
+pub const OWNED_KINDS: [u16; 16] = [
+    349, 428, 453, 455, 456, 485, 489, 490, 493, 507, 508, 541, 579, 593, 594, 719,
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK};
+    use tr_core::tile::FLAG_ACTIVE;
     use tr_core::tiledata::TILE_COUNT;
 
     fn world() -> World {
@@ -607,39 +456,8 @@ mod tests {
         assert_eq!((d.add_fr_x, d.add_fr_y), (0, 76));
     }
 
-    #[test]
-    fn case_518_lily_pad_liquid_and_ground() {
-        // TileDrawing.cs:4604-4630.
-        let mut w = world();
-        let wind = wind();
-        let wiring = Wiring::new();
-        // Dry pad over air: num19 = 0/16-3 = -3 -> top = 3.
-        set_tile(&mut w, 5, 5, 518, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(518, 5, 5, 0, 0, 0, 0, &e).top, 3);
-        // Liquid 255: 255/16-3 = 12; no solid above -> top = -12.
-        set_tile(&mut w, 5, 5, 518, 255);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(518, 5, 5, 0, 0, 0, 0, &e).top, -12);
-        // Solid above caps num19 at 8 -> top = -8.
-        set_tile(&mut w, 5, 4, 1, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(518, 5, 5, 0, 0, 0, 0, &e).top, -8);
-        // Dry pad over a half-brick stone with liquid 128:
-        // num19 = -16 + max(8, 128/16) = -8 -> top = 8.
-        set_tile(&mut w, 5, 5, 518, 0);
-        set_tile(&mut w, 5, 6, 1, 128);
-        let i = w.index(5, 6);
-        w.tiles[i].flags |= FLAG_HALF_BRICK;
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(518, 5, 5, 0, 0, 0, 0, &e).top, 8);
-        // Dry pad over a sloped block (blockType 2..5): num19 -= 4 -> top 7.
-        let i = w.index(5, 6);
-        w.tiles[i].flags = FLAG_ACTIVE;
-        w.tiles[i].set_slope(1); // blockType 2
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(518, 5, 5, 0, 0, 0, 0, &e).top, 7);
-    }
+    // case_518_lily_pad_liquid_and_ground moved to slice A's tests in the
+    // merge dedupe (drawdata_cases_a.rs pins the same C# body).
 
     #[test]
     fn case_579_golem_head_faces_the_player() {
@@ -811,69 +629,9 @@ mod tests {
         assert_eq!(dd(493, 3, 40, 18, 0, 0, 30, &e).add_fr_y, 0);
     }
 
-    #[test]
-    fn case_529_sea_oats_biome_and_beach() {
-        // TileDrawing.cs:4827-4849. Probe: the single tile at (x, y+1).
-        let w = world();
-        let wind = wind();
-        let wiring = Wiring::new();
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        // Neutral ground, inland (x=400 needs a wide world; use x=40 < 380
-        // -> beach pick 1): addFrY = tf*38 + 34 - fy.
-        let d = dd(529, 40, 7, 0, 18, 0, 0, &e);
-        assert_eq!((d.height, d.top, d.add_fr_y), (32, -14, 34 - 18));
-        assert!(d.flip); // x even
-        // Inland neutral (x >= 380): pick 0 -> addFrY = -fy.
-        let mut wide = World::new("t".into(), 800, 60);
-        let e = env(&wide, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(529, 400, 7, 0, 0, 0, 0, &e).add_fr_y, 0);
-        // Corrupt ground (23): pick 4 -> 136.
-        set_tile(&mut wide, 400, 8, 23, 0);
-        let e = env(&wide, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(529, 400, 7, 0, 0, 0, 0, &e).add_fr_y, 136);
-        // Crimson ground (199): pick 3 -> 102.
-        set_tile(&mut wide, 400, 8, 199, 0);
-        let e = env(&wide, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(529, 400, 7, 0, 0, 0, 0, &e).add_fr_y, 102);
-        // Hallow ground (109): pick 2 -> 68.
-        set_tile(&mut wide, 400, 8, 109, 0);
-        let e = env(&wide, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(529, 400, 7, 0, 0, 0, 0, &e).add_fr_y, 68);
-    }
-
-    #[test]
-    fn case_530_oasis_plant_biome_row() {
-        // TileDrawing.cs:4705-4723: probe row y - fy%36/18 + 2, columns
-        // x - fx%54/18 .. +3. fy 18 keeps the probe one row under the
-        // plant's top-left (fy 36 would fold %36 to 0 -> row y+2).
-        let mut w = world();
-        let wind = wind();
-        let wiring = Wiring::new();
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        // Neutral: top 2, addFrY keeps tf*38.
-        let d = dd(530, 6, 4, 18, 18, 2, 0, &e);
-        assert_eq!((d.top, d.add_fr_y), (2, 76));
-        // fx 18, fy 18 -> n36 = 6-1 = 5, n35 = 4-1+2 = 5. Hallow at (7,5):
-        // pick 1 -> +36.
-        set_tile(&mut w, 7, 5, 109, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(530, 6, 4, 18, 18, 0, 0, &e).add_fr_y, 36);
-        // Crimson at (5,5) too: corrupt 0, crimson 1, hallow 1 -> max 1,
-        // hallow == max -> pick 1 still.
-        set_tile(&mut w, 5, 5, 199, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(530, 6, 4, 18, 18, 0, 0, &e).add_fr_y, 36);
-        // Two crimson vs one hallow: max 2, crimson == max -> pick 2 -> 72.
-        set_tile(&mut w, 6, 5, 199, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(530, 6, 4, 18, 18, 0, 0, &e).add_fr_y, 72);
-        // Corrupt wins: pick 3 -> 108.
-        set_tile(&mut w, 5, 5, 23, 0);
-        set_tile(&mut w, 6, 5, 23, 0);
-        set_tile(&mut w, 7, 5, 23, 0);
-        let e = env(&w, &wind, &wiring, CaseInputs::default());
-        assert_eq!(dd(530, 6, 4, 18, 18, 0, 0, &e).add_fr_y, 108);
-    }
+    // case_529_sea_oats_biome_and_beach / case_530_oasis_plant_biome_row
+    // moved to slice A's tests in the merge dedupe (drawdata_cases_a.rs
+    // pins the same C# bodies).
 
     #[test]
     fn case_428_pressed_plate_shifts_a_column() {
@@ -911,14 +669,15 @@ mod tests {
 
     #[test]
     fn temp_animation_cases_match_the_static_fallback() {
-        // 349/441/468/593/594: the Animation registry is empty (the C#
+        // 349/593/594: the Animation registry is empty (the C#
         // `GetTemporaryFrame == false` path), so the full bodies reproduce
-        // the static arms byte-for-byte at any tile_frame.
+        // the static arms byte-for-byte at any tile_frame. (441/468 moved
+        // to slice A in the merge dedupe.)
         let w = world();
         let wind = wind();
         let wiring = Wiring::new();
         let e = env(&w, &wind, &wiring, CaseInputs::default());
-        for kind in [349u16, 441, 468, 593, 594] {
+        for kind in [349u16, 593, 594] {
             for (fx, fy) in [(0i16, 0i16), (18, 18), (36, 36), (54, 72)] {
                 for tf in [0, 2, 7] {
                     assert_eq!(
@@ -936,14 +695,14 @@ mod tests {
         // With counter 0, no wind, no party, no plates, time 0 and no
         // player, the wind/party/plate/temp-animation cases equal the
         // static table; the position-driven cycles (453/456/485/507/508/
-        // 518/541/579/719) intentionally differ — they are the ported
+        // 541/579/719) intentionally differ — they are the ported
         // engine parts (per-case tests above pin their exact values).
         let w = world();
         let mut wind = wind();
         wind.world_surface = 0.0; // nothing blows -> 489/490/493 take the calm path
         let wiring = Wiring::new();
         let e = env(&w, &wind, &wiring, CaseInputs::default());
-        for kind in [489u16, 490, 493, 428, 455, 349, 441, 468, 593, 594] {
+        for kind in [489u16, 490, 493, 428, 455, 349, 593, 594] {
             assert_eq!(
                 dd(kind, 3, 7, 18, 36, 0, 0, &e),
                 base(kind, 3, 7, 18, 36, 0),

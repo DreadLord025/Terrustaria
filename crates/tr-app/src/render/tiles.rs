@@ -148,7 +148,7 @@ fn merge_dark_row(
 /// tile write and `SquareTileFrame`; the old seed bug wrote it permanently,
 /// `PlaceAlch` fixes it) draws nothing instead of sampling sheet-corner
 /// garbage: vanilla never draws one, because framing runs before the draw.
-fn resolve_tile_frame(
+pub(crate) fn resolve_tile_frame(
     lookups: &mut assets::Lookups,
     atlas: Option<&Atlas>,
     is_tree: bool,
@@ -307,6 +307,9 @@ pub(crate) fn draw_tiles(
     // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
     // caller into the leaf particle list.
     leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
+    // `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
+    // strips' own sway counter (S1-G-1).
+    vine_wind_counter: f32,
     // S1-F-9 slice B: the `GetTileDrawData` engine-driven case arm's extra
     // inputs — `PressurePlateHelper.PressurePlatesPressed` (case 428),
     // `BirthdayParty.PartyIsUp` (case 455) and
@@ -568,6 +571,13 @@ pub(crate) fn draw_tiles(
     );
 
     scratch.open.clear();
+    // `TileDrawing._vineRootsPositions` / the `TileCounterType.Vine` special
+    // points (`TileDrawing.cs:120`, `:744-762`): rebuilt per draw in
+    // row-major draw-area order, cleared like `ClearSpecialBlockCounts`
+    // (`:390-395`).
+    let mut vine_roots: Vec<(i32, i32)> = Vec::new();
+    let mut vine_roots_seen: std::collections::HashSet<(i32, i32)> =
+        std::collections::HashSet::new();
     for ty in y0..=y1 {
         scratch.cur.clear();
         let mut run_start = -1i32;
@@ -600,6 +610,26 @@ pub(crate) fn draw_tiles(
                     l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
                 }
                 let active = tile.active();
+                // `TileDrawing.Draw`'s vine arm (`TileDrawing.cs:536-545`):
+                // a `VineThreads` cell never draws through `DrawSingleTile`
+                // — the crawl registers the strip's root as a special point
+                // and `PostDrawTiles` draws the whole strip after the trees
+                // (`DrawVines`, `:429`, S1-G-1). The root list is rebuilt in
+                // draw-area row-major order, deduplicated like
+                // `_vineRootsPositions` (`:757-760`). The crawl runs for
+                // every active vine cell regardless of light (the C#
+                // switch precedes any draw/black test); the dark-cell merge
+                // below still covers unlit vine cells exactly as before.
+                let vine_cell = active && crate::render::vines::is_vine_thread(tile.kind);
+                if vine_cell {
+                    crate::render::vines::collect_vine_root(
+                        world,
+                        tx,
+                        ty,
+                        &mut vine_roots_seen,
+                        &mut vine_roots,
+                    );
+                }
                 let is_tree = active && tree::is_tree(tile.kind);
                 let marker = if is_tree {
                     tree::TreePart::marker(tile.frame_x, tile.frame_y)
@@ -638,10 +668,13 @@ pub(crate) fn draw_tiles(
                         0,
                     );
                     // S1-F-9 slice B: the engine-driven special-tile cases
-                    // (liquids, biome influence, wind, the player, the party,
-                    // pressed plates, echo sight, the clock) applied onto the
-                    // static table's output — the delegated dispatch arm of
-                    // `GetTileDrawData` (`drawdata_cases_b.rs`).
+                    // (wind, the player, the party, pressed plates, echo
+                    // sight, the clock) applied onto the static table's
+                    // output — the delegated dispatch arm of
+                    // `GetTileDrawData` (`drawdata_cases_b.rs`). The C#
+                    // FIRST switch runs before the second (glow) switch;
+                    // slice A's 518/529/530/441/468 ids are deduped out of
+                    // slice B (A owns them), so the two passes are disjoint.
                     if let Some(cased) = crate::drawdata_cases_b::case_draw_data(
                         tile.kind,
                         tx,
@@ -655,6 +688,27 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
+                    // S1-F-9d slice A: the delegated static-case pass —
+                    // LilyPad's liquid float (518), the oasis/sea-oats
+                    // biome rows (530/529) and the SECOND GetTileDrawData
+                    // switch's frame/top maths + glow pick
+                    // (TileDrawing.cs:6049-6507), applied after the main
+                    // switch like the C#. The glow record rides unused
+                    // until the glow pass binds it (TILE-DRAW-2); the
+                    // cell light converts to XNA bytes (alpha 255, the
+                    // `Lighting.GetColor` colour has no alpha), the UI
+                    // text pulse is steady 255 and martianLight 0 outside
+                    // the (unported) event — documented deviations.
+                    let cell = raw_l;
+                    let cell_bytes = [
+                        (cell[0] * 255.0).min(255.0) as u8,
+                        (cell[1] * 255.0).min(255.0) as u8,
+                        (cell[2] * 255.0).min(255.0) as u8,
+                        255,
+                    ];
+                    let _glow = crate::drawdata_cases_a::apply_cases_a(
+                        &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
+                    );
                     dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
@@ -753,6 +807,11 @@ pub(crate) fn draw_tiles(
                 // The switch's early `return` arms (751/752 off their (0,0)
                 // frame, the palm's frond columns 323): no sprite at all.
                 if dd.skip_draw {
+                    continue;
+                }
+                // The vine cells draw in the deferred strip pass below
+                // (`DrawVines`, `TileDrawing.cs:429`) — never inline.
+                if vine_cell {
                     continue;
                 }
                 let Some(tf) = tile_frame else {
@@ -1067,6 +1126,24 @@ pub(crate) fn draw_tiles(
             y0,
             x1,
             y1,
+        );
+    }
+    // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` order
+    // (`TileDrawing.cs:428-429`): the vine strips draw right after the tree
+    // canopies (S1-G-1). `DrawReverseVines` (`:430`) and the multi-tile-vine
+    // pass (`:421`) are separate passes, still unported.
+    if !vine_roots.is_empty() {
+        stats.quads += crate::render::vines::draw_vines(
+            r,
+            world,
+            lookups,
+            atlas,
+            light,
+            style,
+            anim_time,
+            wind,
+            vine_wind_counter,
+            &vine_roots,
         );
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
