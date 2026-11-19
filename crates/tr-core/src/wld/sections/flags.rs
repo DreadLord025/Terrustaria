@@ -172,12 +172,14 @@ pub fn write(w: &mut Writer, world: &World) {
     w.f32(world.sandstorm_severity); // _tempSandstormSeverity
     w.f32(world.sandstorm_intended_severity); // _tempSandstormIntendedSeverity
     // WorldFile.cs:1373-1375: `NPC.savedBartender` + `DD2Event.Save`'s three
-    // tier flags (`DD2Event.cs:151-156`). No World store: `dd2_latches` is the
-    // wave-boss death latches (never saved by the C# either), NOT the tiers.
+    // tier flags (`DD2Event.cs:151-156`). The tiers are `World::dd2_downed_t*`
+    // (S1-E-12c: the victory latches persist); `savedBartender` stays unowned
+    // and `dd2_latches` is the wave-boss death latches (never saved by the C#
+    // either), NOT the tiers.
     w.boolean(false); // savedBartender
-    w.boolean(false); // DownedInvasionT1
-    w.boolean(false); // DownedInvasionT2
-    w.boolean(false); // DownedInvasionT3
+    w.boolean(world.dd2_downed_t1); // DownedInvasionT1
+    w.boolean(world.dd2_downed_t2); // DownedInvasionT2
+    w.boolean(world.dd2_downed_t3); // DownedInvasionT3
                       // WorldFile.cs:1376-1379: the remaining background styles and the
                       // combat book. `setBG(8) mushroomBG` is port-owned; the rest are
                       // defaults.
@@ -547,10 +549,14 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.sandstorm_severity = r.f32()?; // severity
         world.sandstorm_intended_severity = r.f32()?; // intendedSeverity
     }
-    // WorldFile.cs:2214-2218 — `DD2Event.Load`: below 178 nothing is read at all.
+    // WorldFile.cs:2214-2218 — `DD2Event.Load`: below 178 nothing is read at all
+    // (the C# clears the tiers below the gate, `DD2Event.cs:174` — the World
+    // defaults already false).
     if version >= 178 {
         r.skip(1)?; // savedBartender
-        r.skip(3)?; // DownedInvasionT1..T3
+        world.dd2_downed_t1 = r.bool()?; // DownedInvasionT1
+        world.dd2_downed_t2 = r.bool()?; // DownedInvasionT2
+        world.dd2_downed_t3 = r.bool()?; // DownedInvasionT3
     }
     // WorldFile.cs:2219-2233 — the remaining background styles.
     if version > 194 {

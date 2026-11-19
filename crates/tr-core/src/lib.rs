@@ -47,6 +47,7 @@ pub mod whip;
 pub mod fishing;
 pub mod ores;
 pub mod spread;
+pub mod stray;
 pub mod growth;
 pub mod pylons;
 pub mod rng;

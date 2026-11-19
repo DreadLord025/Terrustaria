@@ -57,6 +57,7 @@ use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
     ANTI_GRAVITY_HOOK, BALL_OF_FIRE, BALL_OF_FROST, BULLET_SNOWMAN, CHRISTMAS_HOOK,
     CRYSTAL_SHARD_MELEE, CRYSTAL_STORM, CURSED_FLAME, CURSED_FLAME_FRIENDLY, DEMON_SCYTHE,
+    DEMON_SICKLE,
     DESTROYER_LASER, DUAL_HOOK_BLUE, DUAL_HOOK_RED, ENCHANTED_BEAM, EYE_LASER, FLAMELASH,
     FLAME_ARROW, FROST_HYDRA, GOLEM_EYE_BEAM, GREEN_LASER, ICE_BLOCK, ICE_BOOMERANG,
     ILLUMINANT_HOOK, LIGHT_BEAM, MAGIC_MISSILE, MAGNET_SPHERE_BALL, MINI_RETINA_LASER,
@@ -175,9 +176,8 @@ pub(crate) fn proj_light(
         // `:16386-16390` — 34: `num2 *= 0.1f; num3 *= 0.1f;`.
         g *= 0.1;
         b *= 0.1;
-    } else if kind == DEMON_SCYTHE {
-        // `:16402-16407` — 44/45 (44 has no row): `num3 = 1f; num *= 0.6f;
-        // num2 *= 0.1f;`.
+    } else if kind == DEMON_SICKLE || kind == DEMON_SCYTHE {
+        // `:16402-16407` — 44/45: `num3 = 1f; num *= 0.6f; num2 *= 0.1f;`.
         b = 1.0;
         r *= 0.6;
         g *= 0.1;
