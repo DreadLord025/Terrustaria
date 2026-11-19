@@ -499,6 +499,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .iter()
             .chain(PUMPKIN_SHEETS)
             .chain(WAVE_A_SHEETS)
+            .chain(SNOW_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1122,6 +1123,20 @@ pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     327, // the Pumpking
     329, // the Hellhound
     330, // the Poltergeist
+];
+
+/// The Frost Moon wave family's sheets (`S1-F-13c` slice A): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the Zombie Elf
+/// trio (338-340), the Present Mimic (341), the Gingerbread Man (342), the
+/// Yeti (343) and the Everscream (344) each draw their own `NPC_<id>` art.
+/// Keyed by the vanilla net id ([`NpcKind::frost_moon_type`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const SNOW_SHEETS: &[u32] = &[
+    338, 339, 340, // the Zombie Elf trio
+    341, // the Present Mimic
+    342, // the Gingerbread Man
+    343, // the Yeti
+    344, // the Everscream
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2878,6 +2893,22 @@ pub(crate) fn draw_npcs(
             | NpcKind::FemaleZombie
             | NpcKind::ZombieRaincoat => {
                 let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
+            // The Frost Moon family (`S1-F-13c` slice A): each kind draws
+            // its own sheet (the `SNOW_SHEETS` rows) at `SetFrameSize`'s row
+            // height over the C#'s `Main.npcFrameCount[type]`
+            // (`Main.cs:67082`: 338-340 fifteen frames, 341 six, 342 three,
+            // 343 ten, 344 ten) with the generic centred anchor
+            // (`Main.cs:25511-25516`) — the same shape as the pumpkin arm.
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::PresentMimic
+            | NpcKind::GingerbreadMan
+            | NpcKind::Yeti
+            | NpcKind::Everscream => {
+                let ty = n.kind.frost_moon_type().expect("a family kind");
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             },
         };
