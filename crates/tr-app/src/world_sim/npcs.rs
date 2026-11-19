@@ -1752,12 +1752,20 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::PirateArcher
         | NpcKind::PirateCorsair
         | NpcKind::PirateCaptain => 3,
-        // `NPC.cs:78327-78336`+: the martians (the group 4).
+        // `NPC.cs:78327-78340`: the martians (the group 4). The C#'s case
+        // list is 13 kinds (381/382/383/385/386/387/388/389/390/391/394/
+        // 395/520) — the port lists the six whose AI wave is wired (the
+        // S1-F-13d audit finding: the Brain Scrambler 381, the Ray Gunner
+        // 382, the drone 388, the rider 390, the Scutlix 391 and the
+        // saucer parts 394/395 stay off the list until their spawn wiring
+        // lands). The Tesla Turret 387 (`:78332`) joins here — a 0-point
+        // kill.
         NpcKind::MartianOfficer
         | NpcKind::GrayGrunt
         | NpcKind::MartianEngineer
         | NpcKind::GigaZapper
-        | NpcKind::MartianWalker => 4,
+        | NpcKind::MartianWalker
+        | NpcKind::MartianTurret => 4,
         _ => 0,
     }
 }
@@ -2115,8 +2123,16 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
     let num9 = match kind {
         NpcKind::PirateCaptain => 5,
         NpcKind::GoblinSummoner => 10,
+        // The Tesla Turret: `case 387` (`NPC.cs:78256-78257`) — 0 kill
+        // points.
+        NpcKind::MartianTurret => 0,
         _ => 1,
     };
+    // `if (num9 > 0)` (`NPC.cs:78260`): the 0-point kill neither drains the
+    // size nor refreshes the report.
+    if num9 <= 0 {
+        return;
+    }
     app.world.invasion_size = (app.world.invasion_size - num9).max(0);
     // `Main.ReportInvasionProgress` (`Main.cs:47687-47694`): the points,
     // the max, the icon (the group + 3) and the 160-tick display timer.

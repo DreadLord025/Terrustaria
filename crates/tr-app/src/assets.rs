@@ -522,6 +522,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_381",
         "NPC_382",
         "NPC_383",
+        // The bubble 384 + the Tesla Turret 387 (S1-F-13d): the Officer's
+        // shield overlay (`Main.cs:25773-25777` draws NPC_384 from the 383
+        // arm) and the turret's own 2-frame strip.
+        "NPC_384",
+        "NPC_387",
         "NPC_385",
         "NPC_386",
         "NPC_388",
@@ -1662,7 +1667,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 175] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 176] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1689,6 +1694,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 175] = [
         // The Desert Djinn (S1-E-5) — appended last so the earlier slots
         // keep their indexes.
         533,
+        // The Tesla Turret (S1-F-13d) — appended last for the same reason.
+        387,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2414,6 +2421,8 @@ impl Lookups {
                 atlas.sheet("NPC_577").copied(),
                 // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
                 atlas.sheet("NPC_533").copied(),
+                // The Tesla Turret (S1-F-13d) — the 2-frame NPC_387 strip.
+                atlas.sheet("NPC_387").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

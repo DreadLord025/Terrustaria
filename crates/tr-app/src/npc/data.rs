@@ -225,6 +225,11 @@ impl NpcKind {
             NpcKind::PirateCaptain => 186,
             NpcKind::MartianProbe => 187,
             NpcKind::MartianDrone => 188,
+            // The bubble/turret pair (`S1-F-13d`): the next free band above
+            // the probe/drone 187/188 — port-local like the rest of the
+            // martian family (the vanilla 384/387 are NOT the wire ids).
+            NpcKind::ForceBubble => 189,
+            NpcKind::MartianTurret => 190,
             NpcKind::BrainScrambler => 85,
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
@@ -383,6 +388,8 @@ impl NpcKind {
             // included) so nothing collides. The port's other kinds keep
             // their port-local ids; `NpcKind::pumpkin_moon_type` is the
             // named kind→type seam the spawn wiring and the kill walk use.
+            // (`S1-F-13d` extended the port-local band to 0..190 with the
+            // ForceBubble/MartianTurret 189/190 pair.)
             // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
             // (325), `:13129` (326), `:13142` (327), `:13175` (329),
             // `:13188` (330).
@@ -605,6 +612,10 @@ impl NpcKind {
             186 => NpcKind::PirateCaptain,
             187 => NpcKind::MartianProbe,
             188 => NpcKind::MartianDrone,
+            // The bubble/turret pair (`S1-F-13d`) — `NPC.cs:13882` (384)
+            // and `:13922` (387) ride the port-local 189/190.
+            189 => NpcKind::ForceBubble,
+            190 => NpcKind::MartianTurret,
             // The Pumpkin Moon family (`S1-F-13b`): the vanilla ids
             // 305-314/315/325/326/327/329/330 decode here (the same ids
             // `to_u16` encodes above) — they sit above the whole port-local
@@ -1129,6 +1140,10 @@ impl NpcKind {
             NpcKind::MartianWalker => "NPC_Hit_4",
             NpcKind::MartianProbe => "NPC_Hit_4",
             NpcKind::MartianDrone => "NPC_Hit_42",
+            // The bubble: NPCHit43 (`NPC.cs:13889`); the turret: NPCHit53
+            // (`NPC.cs:13930`).
+            NpcKind::ForceBubble => "NPC_Hit_43",
+            NpcKind::MartianTurret => "NPC_Hit_53",
             NpcKind::ScutlixRider => "NPC_Hit_39",
             NpcKind::Scutlix => "NPC_Hit_51",
             NpcKind::MartianSaucer => "NPC_Hit_4",
@@ -1339,6 +1354,10 @@ impl NpcKind {
             NpcKind::MartianWalker => "NPC_Killed_14",
             NpcKind::MartianProbe => "NPC_Killed_14",
             NpcKind::MartianDrone => "NPC_Killed_44",
+            // The bubble: NPCDeath45 (`NPC.cs:13890`); the turret:
+            // NPCDeath56 (`NPC.cs:13931`).
+            NpcKind::ForceBubble => "NPC_Killed_45",
+            NpcKind::MartianTurret => "NPC_Killed_56",
             NpcKind::ScutlixRider => "NPC_Killed_57",
             NpcKind::Scutlix => "NPC_Killed_54",
             NpcKind::MartianSaucer => "NPC_Killed_14",
@@ -1569,6 +1588,10 @@ impl NpcKind {
             NpcKind::MourningWood => 57,
             // aiStyle 58 - NPC.cs:13146
             NpcKind::Pumpking => 58,
+            // aiStyle 72 - NPC.cs:13888 (the Officer's shield bubble)
+            NpcKind::ForceBubble => 72,
+            // aiStyle 73 - NPC.cs:13926 (the Engineer's Tesla Turret)
+            NpcKind::MartianTurret => 73,
             // aiStyle 74 - NPC.cs:13939, :15372
             NpcKind::MartianDrone | NpcKind::SolarCorite => 74,
             // aiStyle 75 - NPC.cs:13973, :14000, :14018, :14035, :14655, :15338
@@ -1754,6 +1777,10 @@ impl NpcKind {
             NpcKind::MartianProbe => (42.0, 72.0),
             // The drone: 40x30 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => (40.0, 30.0),
+            // The bubble: 18x40 (`NPC.cs:13885`/`:13887`); the turret:
+            // 20x50 (`NPC.cs:13924-13925`).
+            NpcKind::ForceBubble => (18.0, 40.0),
+            NpcKind::MartianTurret => (20.0, 50.0),
             // The shooters: 18x40 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => (18.0, 40.0),
             // The rider + its carrier: 18x40 / 60x40 (`NPC.cs`'s cases
@@ -2152,6 +2179,8 @@ impl NpcKind {
                 | NpcKind::MartianWalker
                 | NpcKind::MartianProbe
                 | NpcKind::MartianDrone
+                | NpcKind::ForceBubble
+                | NpcKind::MartianTurret
                 | NpcKind::BrainScrambler
                 | NpcKind::RayGunner
                 | NpcKind::ScutlixRider
@@ -2268,6 +2297,10 @@ impl NpcKind {
             NpcKind::MartianProbe => 500,
             // The drone: 300 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => 300,
+            // The bubble: 1000 (`NPC.cs:13884`); the turret: 200
+            // (`NPC.cs:13929`).
+            NpcKind::ForceBubble => 1000,
+            NpcKind::MartianTurret => 200,
             // The shooters: 350/350 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => 350,
             // The rider 350, the carrier 600 (`NPC.cs`'s cases 390/391).
@@ -2534,6 +2567,11 @@ impl NpcKind {
             // The drone: 60 (`NPC.cs`'s case 388 — the explode arm's 80
             // rides damage_override).
             NpcKind::MartianDrone => 60,
+            // The bubble: no damage row — the head default 0
+            // (`NPC.cs:8563`; case 384 `:13882-13894`); the turret: 10
+            // (`NPC.cs:13927`).
+            NpcKind::ForceBubble => 0,
+            NpcKind::MartianTurret => 10,
             // The shooters: 50/50 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => 50,
             // The rider 65, the carrier 85 (`NPC.cs`'s cases 390/391).
