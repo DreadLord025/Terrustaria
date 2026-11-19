@@ -174,6 +174,16 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
             // the click is consumed.
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
+            // the pitch draw rides the `UpdatePlayers` stream — the tile
+            // use runs in `Player.ItemCheck` (`Main.cs:17754`).
+            for (px, py) in app.wiring.take_switch_clicks() {
+                app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
@@ -279,8 +289,27 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         return false;
     };
     if let Some(cue) = cue {
-        app.audio
-            .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+        // S1-E-21i — the door open/close plays upgrade to the faithful
+        // case-8/9 pitched path (`WorldGen.OpenDoor` `WorldGen.cs:37727` /
+        // `CloseDoor` `:31908`; `LegacySoundPlayer.cs:728-749`'s one
+        // `Next(-20, 21) * 0.01` draw). The interaction runs in
+        // `Player.ItemCheck` — the `UpdatePlayers` stream (`Main.cs:17754`).
+        // The other cues (the dial's Item_4) keep the plain play.
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        match cue {
+            "Door_Opened" => {
+                app.audio
+                    .play_door_sound(true, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            "Door_Closed" => {
+                app.audio
+                    .play_door_sound(false, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            _ => {
+                app.audio
+                    .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+            }
+        }
     }
     for (id, x, y) in drops {
         // The tile-interaction drops ride the `UpdatePlayers` stream (the
