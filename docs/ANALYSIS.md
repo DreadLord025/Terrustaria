@@ -12587,6 +12587,48 @@ Deliberate deviations (the pool-wide conventions, same as M4-PROJ-6):
   `num281 < num277` closest-wins loop, `:27382`), not the magnet sphere's
   first-candidate stand-in — the bat's C# has no RNG pick, so it is faithful.
 
+### The i01 non-ammo volley `ItemTimeIsZero` tick (the retry round)
+
+The census above fixed the SPAWN half (the six row-less kinds). The second
+half — the fire CADENCE — was still WRONG for the non-ammo path: it fired once
+per swing (`attack_cd <= 0`) and never armed `item_time`, while the C# fires
+`ItemCheck_Shoot` at EVERY `itemAnimation > 0 && ItemTimeIsZero` tick
+(`Player.cs:43544`'s `flag4` → `:43568-43570`), `ApplyItemTime` re-arming
+`itemTime = useTime` after each shot (`:47185-47194` → `SetItemTime(useTime)`,
+`:4416-4418`). A `useTime < useAnimation` staff therefore volleys inside ONE
+swing; the ammo shooters already had this seam (`held_use_ammo > 0`,
+`editing.rs`'s `ItemTimeIsZero` block), the non-ammo half was missing.
+
+Of the 12 staves only TWO have `useTime < useAnimation` (the rest pace
+`useTime == useAnimation`, one shot per swing, already correct):
+- **GoldenShower 1336**: `useTime 6 < useAnimation 18` (`Item.cs:16545-16546`)
+  → THREE streams per swing (ticks 1, 7, 13).
+- **BlizzardStaff 1931**: `useTime 5 < useAnimation 10` (`Item.cs:20976-20977`)
+  → TWO icicle pairs per swing (four icicles, ticks 1 and 6).
+
+The fix (`world_sim/editing.rs`): the first-shot block now arms
+`app.item_time = shooter_use_time_secs(...)` after the swing start (the
+`ApplyItemTime` tail), and a new mid-swing re-fire block — gated on
+`HARDMODE_MAGIC_STAVES.contains(&held.kind) && ticks_of(app.swing) > 0 &&
+ticks_of(app.item_time) <= 0` — re-runs the SAME per-staff spawn chain (the
+Razorpine volley, the Blizzard sky icicles, the Nimbus cursor cloud, the Bat
+flock, the generic/Crystal-Storm tail) and re-arms `item_time`. The block pays
+NO mana: the C# pays ONCE per swing at `ItemCheck_TryStartUse`
+(`Player.cs:52026` → `ActuallyPayMana` `:52638`); the mid-swing `flag4` re-fire
+calls `ItemCheck_Shoot` directly with no mana gate, so the whole volley is free
+after the one pay. The crit rolls per shot on the `UpdatePlayers` stream and
+the multi-shot spreads re-roll in the C#'s argument order (the re-fire is the
+same `ItemCheck_Shoot` body, not a cached first shot).
+
+Scope discipline: the re-fire is gated to the 12-staff list, so the melee
+weapons, the gem staves, the Spirit Flame / Sky Fracture / Nebula Blaze and the
+`useTime == useAnimation` staves keep their one-shot-per-swing cadence
+unchanged (their `item_time` re-arm equals `useAnimation`, so the block never
+fires mid-swing). Witnesses `s1_p_i21_the_golden_shower_volleys_three_streams_per_swing`,
+`s1_p_i21_the_blizzard_volleys_two_icicle_pairs_per_swing`,
+`s1_p_i21_the_crystal_storm_stays_one_shard_per_swing`,
+`s1_p_i21_the_razorpine_volley_draw_order_is_per_shot` (WRITTEN NOT RUN).
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler

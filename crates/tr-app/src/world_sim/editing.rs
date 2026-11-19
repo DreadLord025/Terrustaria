@@ -241,6 +241,19 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
 /// gate): 121-126 plus the amber bolt 597.
 const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
 
+/// S1-P-i21 — the 12 hardmode magic staves of the `ItemCheck_Shoot` census
+/// (`ItemID.cs`: RainbowRod 495, CrystalStorm 518, CursedFlames 519, NimbusRod
+/// 1244, MagnetSphere 1266, GoldenShower 1336, ShadowbeamStaff 1444,
+/// InfernoFork 1445, SpectreStaff 1446, BatScepter 1801, Razorpine 1930,
+/// BlizzardStaff 1931). The non-ammo `ItemTimeIsZero` volley re-fire is scoped
+/// to this list: only the GoldenShower (`useTime 6 < useAnimation 18`,
+/// `Item.cs:16545-16546`) and the BlizzardStaff (`5 < 10`, `:20976-20977`)
+/// actually volley mid-swing; the other ten pace `useTime == useAnimation`
+/// (one shot per swing) and the re-arm keeps their cadence unchanged.
+const HARDMODE_MAGIC_STAVES: [u16; 12] = [
+    495, 518, 519, 1244, 1266, 1336, 1444, 1445, 1446, 1801, 1930, 1931,
+];
+
 use crate::projectile::GemStaffFeatures;
 
 /// `Utils.Remap` (`Utils.cs`): the value's position in [from_min, from_max]
@@ -1169,8 +1182,169 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
+                    // `Player.ItemCheck_Shoot`'s `ApplyItemTime` tail
+                    // (`Player.cs:47185-47194` → `SetItemTime(useTime)`,
+                    // `:4416-4418`): the shot re-arms the action cadence to
+                    // `useTime`, so a `useTime < useAnimation` staff fires its
+                    // whole volley inside the one swing (the Golden Shower
+                    // 6<18 → three streams, the Blizzard Staff 5<10 → two
+                    // icicle pairs) instead of one shot per swing. The
+                    // mid-swing re-fire is the `ItemTimeIsZero` block below.
+                    app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
                 }
             }
+        }
+
+        // S1-P-i21 (the i01 non-ammo volley tick) — `ItemCheck_Shoot`'s
+        // mid-swing re-fire. The C# fires at `itemAnimation > 0 &&
+        // ItemTimeIsZero` (`Player.cs:43544`'s flag4 → `:43568-43570`), and
+        // `ApplyItemTime` (`:47193`) re-arms `itemTime = useTime` after every
+        // shot — so a `useTime < useAnimation` staff volleys inside the one
+        // swing. The non-ammo path above fires the FIRST shot at the swing
+        // start (`attack_cd <= 0`) and arms `item_time`; this block fires the
+        // REST at `item_time == 0` while the swing still runs. The ammo
+        // shooters already do this at their own `ItemTimeIsZero` seam below
+        // (`held_use_ammo > 0`); the non-ammo volley was the missing half.
+        // Scoped to the 12 hardmode magic staves — the only non-ammo
+        // `useTime < useAnimation` shooters in the census; the melee weapons
+        // and the `useTime == useAnimation` staves fire once per swing and
+        // never reach this block mid-swing.
+        if app.mine_down
+            && held_weapon
+            && held_use_ammo == 0
+            && !app.inventory_open
+            && HARDMODE_MAGIC_STAVES.contains(&held.kind)
+            && ticks_of(app.swing) > 0
+            && ticks_of(app.item_time) <= 0
+        {
+            let Some(p) = app.player.as_mut() else {
+                unreachable!()
+            };
+            // No mana pay here: the C# pays ONCE per swing at
+            // `ItemCheck_TryStartUse` (`Player.cs:52026` → `ActuallyPayMana`
+            // `:52638`), and the mid-swing `flag4` re-fire (`:43568-43570`)
+            // calls `ItemCheck_Shoot` directly with no mana gate — the whole
+            // volley is free after the one pay. The first-shot block above
+            // already paid; this block only re-fires the spawn.
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), registry::get(held.kind)) {
+                    let (pcx, pcy) = p.center();
+                    let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+                    if dir != Vec2::ZERO {
+                        let class = def.class;
+                        let (fx_dmg, fx_spd, fx_kb) = held_fx
+                            .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
+                                (s.damage, s.shoot_speed, s.knock_back)
+                            });
+                        let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                        let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+                        // The crit rolls per shot on the `UpdatePlayers` stream
+                        // (`Player.ItemCheck` under the `Main.cs:17754` swap).
+                        let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        let crit =
+                            tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
+                        let shot = Vec2::new(dir.x * fx_spd, dir.y * fx_spd);
+                        // The per-staff spawn arms — the SAME bodies the first
+                        // shot runs above (the C#'s one `ItemCheck_Shoot` chain
+                        // fires on every volley tick). The Blizzard re-derives
+                        // its sky point per shot; the Razorpine/Bat re-roll
+                        // their counts and spreads; the rest fire the generic
+                        // shot (the Crystal Storm's ±0.04 spread included).
+                        if held.kind == 1930 {
+                            // `Player.cs:47647-47662` — the Razorpine volley.
+                            let count = 2 + loot_rng.next_range(0, 3);
+                            for n in 0..count {
+                                let spread = 0.025 * n as f32;
+                                let mut vx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+                                let mut vy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+                                let k = fx_spd / (vx * vx + vy * vy).sqrt();
+                                vx *= k;
+                                vy *= k;
+                                let lead = 1.75 * (count - n) as f32;
+                                let ai0 = loot_rng.next_range(0, 10 * (n + 1)) as f32;
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    proj, spawn.x + shot.x * lead, spawn.y + shot.y * lead,
+                                    vx, vy, raw as i32, fx_kb, ai0, 0.0,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        } else if held.kind == 1931 {
+                            // `Player.cs:47663-47692` — the Blizzard sky icicles.
+                            let (cx, cy) = p.center();
+                            for n in 0..2 {
+                                let sky_x = p.x + crate::player::WIDTH * 0.5
+                                    + loot_rng.next_range(0, 201) as f32 * -(p.facing as f32)
+                                    + (world_pos.x - p.x);
+                                let sx = (sky_x + cx) / 2.0 + loot_rng.next_range(-200, 201) as f32;
+                                let sy = cy - 600.0 - 100.0 * n as f32;
+                                let mut dx = world_pos.x - sx;
+                                let mut dy = world_pos.y - sy;
+                                if dy < 0.0 {
+                                    dy = -dy;
+                                }
+                                if dy < 20.0 {
+                                    dy = 20.0;
+                                }
+                                let k = fx_spd / (dx * dx + dy * dy).sqrt();
+                                dx *= k;
+                                dy *= k;
+                                let vx = dx + loot_rng.next_range(-40, 41) as f32 * 0.02;
+                                let vy = dy + loot_rng.next_range(-40, 41) as f32 * 0.02;
+                                let ai1 = loot_rng.next_range(0, 5) as f32;
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    proj, sx, sy, vx, vy, raw as i32, fx_kb, 0.0, ai1,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        } else if held.kind == 1244 {
+                            // `Player.cs:48271-48277` — the Nimbus cursor cloud.
+                            let slot = app.projectiles.spawn_with_data_ai(
+                                proj, spawn.x, spawn.y, shot.x, shot.y, raw as i32, fx_kb,
+                                world_pos.x, world_pos.y,
+                            );
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                            }
+                        } else if held.kind == 1801 {
+                            // `Player.cs:48344-48354` — the Bat Scepter flock.
+                            let count = loot_rng.next_range(2, 4);
+                            for _ in 0..count {
+                                let vx = shot.x + loot_rng.next_range(-35, 36) as f32 * 0.05;
+                                let vy = shot.y + loot_rng.next_range(-35, 36) as f32 * 0.05;
+                                let slot = app.projectiles.spawn_with_data_ai(
+                                    proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+                                );
+                                if let Some(slot) = slot {
+                                    app.projectiles.set_crit(slot, crit);
+                                }
+                            }
+                        } else {
+                            // The generic tail (`Player.cs:49437`) — the Crystal
+                            // Storm's ±0.04 spread (`:47820-47826`); the other
+                            // staves fire the plain aim shot.
+                            let (mut vx, mut vy) = (shot.x, shot.y);
+                            if held.kind == 518 {
+                                vx += loot_rng.next_range(-40, 41) as f32 * 0.04;
+                                vy += loot_rng.next_range(-40, 41) as f32 * 0.04;
+                            }
+                            let slot = app.projectiles.spawn_with_data_ai(
+                                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+                            );
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                            }
+                        }
+                    }
+                }
+            // `ApplyItemTime` (`Player.cs:47185-47194` → `SetItemTime(useTime)`,
+            // `:4416-4418`): the shot re-arms the action cadence, so the next
+            // volley shot fires `useTime` ticks later — for as long as the swing
+            // still runs (the gate above). This is the non-ammo twin of the
+            // ammo shooters' re-arm below.
+            app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
         }
 
         // The vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
@@ -7394,6 +7568,114 @@ mod tests {
             stream_of(&mut app),
             draws_after(seed, (2 + 2 * count) as usize),
             "crit + count + 2 draws per bat"
+        );
+    }
+
+    // ---- S1-P-i21 (the i01 non-ammo volley tick): the ItemTimeIsZero re-fire ----
+    // WRITTEN, NOT RUN (code-only mode). The C# fires `ItemCheck_Shoot` at every
+    // `itemAnimation > 0 && ItemTimeIsZero` tick (`Player.cs:43544` → `:43568`),
+    // `ApplyItemTime` re-arming `itemTime = useTime` after each shot (`:47193`).
+    // A `useTime < useAnimation` staff therefore volleys inside ONE swing; the
+    // pre-fix non-ammo path fired once per swing and never armed `item_time`.
+
+    /// `Item.cs:16545-16546` (useAnimation 18, useTime 6) + `Player.cs:43544`/
+    /// `:47193` — the Golden Shower fires THREE streams per swing (the shot at
+    /// the swing start, then the `ItemTimeIsZero` re-fires 6 and 12 ticks later),
+    /// not one. The mana pays ONCE per swing (`ItemCheck_TryStartUse`,
+    /// `Player.cs:52026`), so the whole volley costs the single 7-mana pay.
+    #[test]
+    fn s1_p_i21_the_golden_shower_volleys_three_streams_per_swing() {
+        let mut app = staff_app(1336, "Golden Shower");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0x601D);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 18 ticks = one full swing. The streams spawn at ticks 1, 7, 13.
+        for _ in 0..18 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let streams: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 280)
+            .collect();
+        assert_eq!(streams.len(), 3, "three streams per swing (useTime 6 < useAnimation 18)");
+        // The single mana pay: 100 − 7 = 93 (the volley re-fires pay nothing).
+        assert_eq!(app.player.as_ref().unwrap().mana, 93, "one 7-mana pay per swing");
+    }
+
+    /// `Item.cs:20976-20977` (useAnimation 10, useTime 5) + `Player.cs:47663-
+    /// 47692` — the Blizzard Staff fires TWO icicle pairs per swing (four
+    /// icicles): the pair at the swing start and the `ItemTimeIsZero` re-fire 5
+    /// ticks later. Each pair re-derives its sky point and re-rolls `ai1`.
+    #[test]
+    fn s1_p_i21_the_blizzard_volleys_two_icicle_pairs_per_swing() {
+        let mut app = staff_app(1931, "Blizzard Staff");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0xB112);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 10 ticks = one full swing. The pairs spawn at ticks 1 and 6.
+        for _ in 0..10 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let icicles: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 337)
+            .collect();
+        assert_eq!(icicles.len(), 4, "two pairs per swing (useTime 5 < useAnimation 10)");
+        // The single mana pay: 100 − 9 = 91.
+        assert_eq!(app.player.as_ref().unwrap().mana, 91, "one 9-mana pay per swing");
+    }
+
+    /// `Item.cs:7578-7579` (useAnimation 7 == useTime 7) — the Crystal Storm
+    /// fires ONE shard per swing: the `ItemTimeIsZero` re-arm keeps the cadence
+    /// at `useTime`, so the next shot lands only when the swing restarts. The
+    /// volley fix must not turn the `useTime == useAnimation` staves into
+    /// multi-shot weapons.
+    #[test]
+    fn s1_p_i21_the_crystal_storm_stays_one_shard_per_swing() {
+        let mut app = staff_app(518, "Crystal Storm");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0xC57);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 7 ticks = one full swing; only the swing-start shot fires.
+        for _ in 0..7 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let shards: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 94)
+            .collect();
+        assert_eq!(shards.len(), 1, "one shard per swing (useTime == useAnimation)");
+    }
+
+    /// `Player.cs:47647-47662` + `:43544`/`:47193` — the Razorpine's volley
+    /// re-fire rolls a FRESH count and spreads on the `UpdatePlayers` stream
+    /// (the C#'s one `ItemCheck_Shoot` chain runs per shot). The draw chain per
+    /// shot is crit + count + 3·count; two shots in one swing spend the sum.
+    /// (Razorpine useTime 8 == useAnimation 8 → one volley per swing; this
+    /// pins the per-shot draw order the re-fire inherits.)
+    #[test]
+    fn s1_p_i21_the_razorpine_volley_draw_order_is_per_shot() {
+        let seed = 0x51A2_0004;
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let count = 2 + state.next_range(0, 3);
+        let mut app = staff_app(1930, "Razorpine");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, (2 + 3 * count) as usize),
+            "crit + count + 3 draws per needle (the re-fire re-rolls the same chain)"
         );
     }
 
