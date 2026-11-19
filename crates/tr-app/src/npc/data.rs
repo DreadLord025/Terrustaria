@@ -2697,14 +2697,16 @@ impl NpcKind {
             NpcKind::PlanterasHook => 263,
             NpcKind::PlanterasTentacle => 264,
             NpcKind::Spore => 265,
-            // S1-D-3 W-9 fishron wiring — the hand rows: the hazards'
-            // bestiary entries fold (371→370, 373→372), so the fallback
-            // would misreport their vanilla type (the 373-only sway gate
-            // and the MechSpawn caps read THIS).
+            // S1-D-3 W-9 fishron wiring — the hand rows for the kinds with
+            // their OWN bestiary entries. GATE FIX (L-B): the Hide=true
+            // hazards (Bubble 371 / Sharkron2 373) fold onto the boss in
+            // `try_entry_for_npc` — like every folded segment family they
+            // keep NO hand row and fall through to the folded net id
+            // (s1_f_3's cs_id==net_id invariant; the destroyer precedent).
+            // The 373-only sway gate reads a KIND match in ai_071_sharkron,
+            // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
-            NpcKind::DetonatingBubble => 371,
             NpcKind::Sharkron => 372,
-            NpcKind::Sharkron2 => 373,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative

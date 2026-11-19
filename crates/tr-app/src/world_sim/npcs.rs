@@ -13630,7 +13630,10 @@ mod fishron_wiring_tests {
         assert_eq!(NpcKind::DetonatingBubble.size(), (36.0, 36.0));
         assert_eq!(NpcKind::DetonatingBubble.ai_style(), 70);
         assert_eq!(NpcKind::DetonatingBubble.max_hp(), 1);
-        assert_eq!(NpcKind::DetonatingBubble.cs_id(), 371);
+        // The folded hazards ride the boss's net id (the gate fix: no
+        // hand row — s1_f_3's cs_id==net_id invariant; the sway gate and
+        // the render sheets read the kind/render_key, not cs_id).
+        assert_eq!(NpcKind::DetonatingBubble.cs_id(), 370);
         assert_eq!(NpcKind::Sharkron.size(), (120.0, 24.0));
         assert_eq!(NpcKind::Sharkron.ai_style(), 71);
         assert_eq!(NpcKind::Sharkron.max_hp(), 100);
@@ -13639,7 +13642,7 @@ mod fishron_wiring_tests {
         assert_eq!(NpcKind::Sharkron2.size(), (100.0, 24.0));
         assert_eq!(NpcKind::Sharkron2.ai_style(), 71);
         assert_eq!(NpcKind::Sharkron2.contact_damage(), 120);
-        assert_eq!(NpcKind::Sharkron2.cs_id(), 373);
+        assert_eq!(NpcKind::Sharkron2.cs_id(), 370);
         for (kind, id) in [
             (NpcKind::DukeFishron, 219u16),
             (NpcKind::DetonatingBubble, 220),
