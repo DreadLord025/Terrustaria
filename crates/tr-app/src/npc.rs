@@ -2095,27 +2095,53 @@ fn king_slime_find_teleport_spot(
     player_bottom
 }
 
-/// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
-/// tile column (`NPC.cs:36161-36178`'s shape — the first non-`solidTop`
-/// solid tile within 150 tiles).
+/// `AI`'s aiStyle-76 ground scan (`NPC.cs:36244-36263`, replicated at
+/// `:36288-36307`/`:36325-36344`/`:36459-36478`; the same probe shape in
+/// `AI_093`, `:38905-38924`): the air-row count under the given tile
+/// column — the feet row itself counts 1 when solid, otherwise the scan
+/// walks down at most 150 rows and lands ONE ROW ABOVE the first solid
+/// (the `count--` before the break). The predicate is
+/// `nactive() && tileSolid[type] && !tileSolidTop[type]` — platforms and
+/// other solid-tops do NOT stop the scan (S1-D-3 aiStyle-76 audit: the
+/// v1 dropped the `!tileSolidTop` term and clamped the row-0 landing).
 pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
+    // The C#'s predicate over one tile (`NPC.cs:36247`/`:36256`).
+    let stops_scan = |t: &tr_core::tile::Tile| {
+        t.active()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+    };
     let mut count = 0;
-    if world
-        .tile(tile_x, tile_y)
-        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
-    {
+    // `:36247-36250` — the feet row itself: solid → the count is 1.
+    if world.tile(tile_x, tile_y).is_some_and(stops_scan) {
         return 16.0;
     }
-    while (count as usize) < 150 && tile_y + count < world.height {
-        let solid = world
-            .tile(tile_x, tile_y + count)
-            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
-        if solid {
-            return (count - 1).max(0) as f32 * TILE_PX;
+    // `:36253-36261` — the down-scan (`num1108 < 150 && num1107 + num1108
+    // < Main.maxTilesY`), stopping one row above the first solid.
+    while count < 150 && tile_y + count < world.height {
+        if world.tile(tile_x, tile_y + count).is_some_and(stops_scan) {
+            // The C#'s `num1108--; break;` — the row-0 landing yields the
+            // literal -1 → -16 px (only reachable when the feet-row check
+            // above missed, i.e. never with identical predicates; kept
+            // verbatim as the scan's shape).
+            return (count - 1) as f32 * TILE_PX;
         }
         count += 1;
     }
     count as f32 * TILE_PX
+}
+
+/// `Math.Sign(float)` as f32 — -1/0/+1, the 0-on-tie that the aiStyle-76
+/// side picks multiply into `ai[2]` (`NPC.cs:36229`/`:36285`). Rust's
+/// `f32::signum` returns +1 on +0.0 — NOT the C# tie behaviour.
+fn math_sign(v: f32) -> f32 {
+    if v > 0.0 {
+        1.0
+    } else if v < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
 }
 
 impl Npc {
@@ -2591,11 +2617,17 @@ impl Npc {
             wants_servant: None,
             wants_bee: None,
             defense_override: None,
-            // `SetDefaults` case 263's `dontTakeDamage = true` (`NPC.cs:
-            // 12406`) - the hook is unkillable by damage; only the orphan
-            // strike (the aiStyle-52 arm) ends it. Every other kind keeps
+            // `SetDefaults`' `dontTakeDamage = true` rows the port models
+            // at construction: the Plantera hook 263 (`NPC.cs:12406` —
+            // unkillable by damage, only the orphan strike ends it) and
+            // the saucer CORE 395 (`NPC.cs:14060`, S1-D-3 aiStyle-76 audit
+            // — the shield holds until the vulnerable wobble's
+            // `dontTakeDamage = false`, `:36383`). The shell 392's row
+            // (`:14008`) rides the aiStyle-75 family slice; the Brain's
+            // Creeper shield is written by the sim. Every other kind keeps
             // the false default (`NPC.cs:8507`, the SetDefaults reset).
-            dont_take_damage: kind == NpcKind::PlanterasHook,
+            dont_take_damage: kind == NpcKind::PlanterasHook
+                || kind == NpcKind::MartianSaucerCore,
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
@@ -10440,22 +10472,40 @@ impl Npc {
     // chains (M2), the phase bridge (M3), the difficulty ladders, the
     // mirrors + the orphan death — routed through the aiStyle-75 axis.
 
-    /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36520`) — the Martian
-    /// Saucer Core's machine. The init spawns the four guns (2 turrets
-    /// 393, 2 cannons 394) and the shell 392 (all `ai[0]`-linked to the
-    /// core). `ai[0]` - 1/-2 = the despawn ride (the player out of the
-    /// 5600-px window), 0 = the 600-tick SCAN cycle (the six step bands:
-    /// the approach, the 250-px dive windows, the ground-clearance reads),
-    /// 1 = the vulnerable wobble (the rotation ramp, 150 ticks), 2 = the
-    /// GUN (the 3600-tick cycle: the 60-tick firing window fires the
-    /// projectile 447 at 80 damage, the 8·direction dash in the window,
-    /// the 16-lerp outside), 3 = the death ride (`StrikeNPCNoInteraction
-    /// (9999)`).
+    /// `AI()`'s aiStyle-76 block (`NPC.cs:36071-36519`) — the Martian
+    /// Saucer Core's machine (M4-EVENT-4e; the S1-D-3 aiStyle-76 audit
+    /// re-read the whole arm and fixed the deltas below). The init
+    /// spawns the four guns (2 turrets 393, 2 cannons 394) and the shell
+    /// 392 (all `ai[0]`-linked to the core). `ai[0]` -1/-2 = the despawn
+    /// ride (the player out of the 5600-px window — its OWN if-chain,
+    /// not gated on `far`: the ride keeps climbing after the player
+    /// returns; the living-player restore pins `timeLeft = 300` and
+    /// keeps -1 climbing, -2 → 2), 0 = the 600-tick SCAN cycle (the six
+    /// step bands: the approach, the 250-px dive windows, the
+    /// ground-clearance reads), 1 = the vulnerable wobble (the shield
+    /// drops, `:36383`; the rotation ramp, 150 ticks), 2 = the GUN (the
+    /// 3600-tick cycle: the 60-tick firing window fires the projectile
+    /// 447 at 80 damage with the `ai0 = whoAmI + 1` owner payload, the
+    /// 8·direction dash in the window, the 16-lerp outside), 3 = the
+    /// death ride (`StrikeNPCNoInteraction(9999)`).
     ///
-    /// Deviations: `StrikeNPCNoInteraction`/`GetAttackDamage_ScaledBy
-    /// Difficulty` run as the classic constants; `TargetClosest` folds to
-    /// the single player; the off-world clamp keeps the position in the
-    /// world box.
+    /// The audit's fixes: the despawn ride left the `far` nest (the v1
+    /// froze the negative phases whenever the player was near), the
+    /// living-player -1 restore (the v1 reset to 0, killing the climb),
+    /// `EncourageDespawn(10)` + the direct `timeLeft = 300` latch, the
+    /// wobble's `dontTakeDamage = false`, the 447's owner payload (the
+    /// plain shot list dropped it), the `Math.Sign` 0-on-tie side picks
+    /// (`:36229`/`:36285`), the clearance probe's `!tileSolidTop` term +
+    /// the cast-then-divide columns, the -4 target's clearance cap, the
+    /// wobble's f64-cos TAU rotation (`RotatedBy`, `Utils.cs:1675-1684`)
+    /// and the chase's unguarded Normalize.
+    ///
+    /// Deviations: `StrikeNPCNoInteraction` runs as the instant-kill
+    /// hp=0 (the `Damage >= 9999 && owner == 255` arm, `:81237` — no
+    /// loot/dust, the C# flag path skips them); `TargetClosest` folds to
+    /// the single player through `npc_target` (S1-D-3p); the off-world
+    /// `active = false` folds to hp=0; the arm draws NO `Main.rand` (see
+    /// the tail note).
     /// `AI`'s aiStyle-93 block (`NPC.cs:38858-38956`) — the Flying
     /// Dutchman's machine: the crew carrier. The init spawns 4 cannons
     /// 492 at `Centre + seat*40 - 150` (the seat `ai[1]`, the 60*seat
@@ -13877,49 +13927,87 @@ impl Npc {
     }
 
     fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // The init (`:36071-36092`): the guns + the shell, the seat links.
+        // The init (`:36073-36103`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
         // forced phases stand (the debug spawn / the table arm set them).
+        // The C# gates on `localAI[3] == 0 && netMode != 1 && type == 395`;
+        // the port is single-player and only the core routes here, so the
+        // `wants_scutlix` one-shot stands in for the `localAI[3]` latch.
         if !self.wants_scutlix {
             self.wants_scutlix = true; // the init latch (a one-shot)
             self.wants_saucer_crew = true;
         }
         if self.ai[0] == 3.0 {
-            // The death ride.
+            // The death ride (`:36104-36108`): `StrikeNPCNoInteraction
+            // (9999, 0f, 0)` — the `Damage >= 9999 && owner == 255` instant
+            // kill (`:81203`/`:81237`), then the AI `return`s.
             self.hp = 0;
             return;
         }
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
+        // The target ride (`:36109-36117`): the 255/negative sentinel OR
+        // a dead/inactive player OR `Vector2.Distance(player.Center,
+        // Center) > 5600` re-picks via `TargetClosest`. The port folds
+        // the single-player selection to the `npc_target` helper
+        // (S1-D-3p), the zombie convention.
         let dist = (pcx - cx).hypot(pcy - cy);
-        let far = dist > 5600.0 || player.hp <= 0;
+        if self.target < 0 || self.target == 255 || player.dead || dist > 5600.0 {
+            let cand = crate::npc_target::session_candidate(player);
+            crate::npc_target::target_closest(self, world, &[cand], true, 76, 0);
+            self.net_update = true;
+        }
+        // The far test (`:36118`) runs on the PRE-retarget centre
+        // (`center23` was captured at `:36109`) — the same values here.
+        let far = player.dead || dist > 5600.0;
         if far && self.ai[0] != 1.0 {
-            // The despawn ride (`:36130-36148`): the negative phases hold
-            // the state, the climb-away runs, the return restores it.
+            // `:36119-36129` — the two SEPARATE ifs: 0 → -1, 2 → -2 (the
+            // C# checks both against the just-written value; -1 is neither
+            // 0 nor 2, so the pair behaves as if/else-if).
             if self.ai[0] == 0.0 {
                 self.ai[0] = -1.0;
-            } else if self.ai[0] == 2.0 {
+            }
+            if self.ai[0] == 2.0 {
                 self.ai[0] = -2.0;
             }
-            if self.ai[0] == -1.0 || self.ai[0] == -2.0 {
-                self.vy -= 0.4;
-                if player.hp > 0 {
-                    self.ai[0] = if self.ai[0] == -2.0 { 2.0 } else { 0.0 };
-                    self.ai[1] = 0.0;
-                    self.ai[2] = 0.0;
-                    self.ai[3] = 0.0;
-                } else {
-                    // The dead player: the ride climbs out (the port has
-                    // no `timeLeft` latch — the position fallthrough
-                    // despawns it).
-                    self.ai[0] = -1.0;
+            self.net_update = true;
+        }
+        // The despawn ride (`:36130-36150`) is its OWN `if`/`else if`
+        // chain — NOT gated on `far` (the v1 nested it under the far
+        // gate): a negative phase entered on an earlier tick keeps
+        // climbing even after the player comes back inside the window,
+        // and the living-player restore runs on that later tick. The
+        // phase dispatch below chains off THIS if exactly as the C#.
+        if self.ai[0] == -1.0 || self.ai[0] == -2.0 {
+            self.vy -= 0.4;
+            // `EncourageDespawn(10)` (`:36133`, `:7249-7256`) — the
+            // only-lowering window write.
+            self.encourage_despawn(10);
+            if !player.dead {
+                // `:36136` — `timeLeft = 300` (a DIRECT set, not the
+                // only-lowering EncourageDespawn).
+                self.despawn_timer = 300;
+                if self.ai[0] == -2.0 {
+                    self.ai[0] = 2.0;
                 }
+                // The C#'s dead `if (ai[0] == 0) ai[0] = 0;` (`:36141-36144`)
+                // folds out — the -1 phase STAYS -1 while the player is
+                // alive-but-far (the v1 restored 0 here, killing the ride).
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+                self.net_update = true;
             }
+            // The dead player: no restore, no timer writes — the climb
+            // runs until the despawn window expires (`:36134`'s gate).
         } else if self.ai[0] == 0.0 {
-            // The scan cycle (`:36149-36372`): `ai[3]` counts 0..600, the
+            // The scan cycle (`:36151-36380`): `ai[3]` counts 0..600, the
             // step `num1104` selects the band (0 below 20, 1 in 20-260,
             // 2 at 260-280, 3 at 280-420, 4 at 420-440, 5 at 440-580).
+            // The band-change side writes (`:36209-36224`): 0/2 clear
+            // ai[2], 1 picks the player side (`Sign == 1 ? 1 : -1`, the
+            // tie folds to -1 — NOT Math.Sign's 0).
             let step = |t: f32| -> u32 {
                 if t >= 580.0 {
                     0
@@ -13950,30 +14038,44 @@ impl Npc {
                     2 => self.ai[2] = 0.0,
                     _ => {}
                 }
+                self.net_update = true; // `:36223`
             }
-            // The ground clearance under the core.
-            let tile_y = ((self.y + h as f32) / TILE_PX) as i32;
-            let tile_x = (cx / TILE_PX) as i32;
-            let ground_clear = ground_clearance(world, tile_x, tile_y);
+            // The ground-clearance probe columns (`:36244-36245`): the
+            // truncation is `(int)Center.X / 16` and `(int)(position.Y +
+            // height) / 16` — cast FIRST, then divide (int division).
+            let tile_x = cx as i32 / TILE_PX as i32;
+            let tile_y = (self.y + h) as i32 / TILE_PX as i32;
             match now {
                 0 => {
                     // The approach: hover 250 px above the player ±ai[2].
+                    // `Math.Sign` returns 0 on an exact tie (`:36229`).
                     if self.ai[2] == 0.0 {
-                        self.ai[2] = -600.0 * (cx - pcx).signum();
+                        self.ai[2] = -600.0 * math_sign(cx - pcx);
                     }
                     let (tx, ty) = (pcx + self.ai[2], pcy - 250.0);
-                    if (tx - cx).hypot(ty - cy) < 50.0 {
+                    let (dx, dy) = (tx - cx, ty - cy);
+                    if dx.hypot(dy) < 50.0 {
                         self.ai[3] = 19.0;
                     } else {
-                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
-                        self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
-                        self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+                        // The C#'s `Vector2.Normalize` + `Lerp(v, n*16,
+                        // 0.1)` — divide-first, no zero guard (the <50
+                        // gate above never fires on a zero vector).
+                        let len = dx.hypot(dy);
+                        let (nx, ny) = (dx / len, dy / len);
+                        self.vx += (nx * 16.0 - self.vx) * 0.1;
+                        self.vy += (ny * 16.0 - self.vy) * 0.1;
                     }
                 }
                 1 => {
-                    // The dive: the X drifts 3.5·ai[2], the Y eases.
+                    // The dive (`:36242-36278`): the X drifts 3.5·ai[2],
+                    // the Y eases toward -4 (never steeper than the
+                    // clearance: `0f - num1111 > num1110` → `-clearance`).
+                    let ground_clear = ground_clearance(world, tile_x, tile_y);
                     if ground_clear < 250.0 {
-                        let target = -(ground_clear.max(-4.0));
+                        let mut target = -4.0f32;
+                        if 0.0 - target > ground_clear {
+                            target = 0.0 - ground_clear;
+                        }
                         self.vy += (target - self.vy) * 0.05;
                     } else {
                         self.vy *= 0.95;
@@ -13981,28 +14083,34 @@ impl Npc {
                     self.vx = 3.5 * self.ai[2];
                 }
                 2 => {
-                    // The approach at 170 px above.
+                    // The approach at 170 px above (`:36281-36321`).
                     if self.ai[2] == 0.0 {
-                        self.ai[2] = 300.0 * (cx - pcx).signum();
+                        self.ai[2] = 300.0 * math_sign(cx - pcx);
                     }
-                    let (mut tx, mut ty) = (pcx + self.ai[2], pcy - 170.0);
-                    let clear = ground_clear;
-                    if clear < 170.0 {
-                        ty -= 170.0 - clear;
+                    let ground_clear = ground_clearance(world, tile_x, tile_y);
+                    let (tx, mut ty) = (pcx + self.ai[2], pcy - 170.0);
+                    if ground_clear < 170.0 {
+                        ty -= 170.0 - ground_clear;
                     }
-                    if (tx - cx).hypot(ty - cy) < 70.0 {
+                    let (dx, dy) = (tx - cx, ty - cy);
+                    if dx.hypot(dy) < 70.0 {
                         self.ai[3] = 279.0;
                     } else {
-                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
-                        self.vx += ((tx - cx) * inv * 20.0 - self.vx) * 0.1;
-                        self.vy += ((ty - cy) * inv * 20.0 - self.vy) * 0.1;
+                        let len = dx.hypot(dy);
+                        let (nx, ny) = (dx / len, dy / len);
+                        self.vx += (nx * 20.0 - self.vx) * 0.1;
+                        self.vy += (ny * 20.0 - self.vy) * 0.1;
                     }
-                    let _ = (&mut tx, &mut ty);
                 }
                 3 => {
-                    // The park: both damp.
+                    // The park (`:36322-36360`): the Y eases toward -4
+                    // under the 170 clearance, else ×0.85; the X ×0.85.
+                    let ground_clear = ground_clearance(world, tile_x, tile_y);
                     if ground_clear < 170.0 {
-                        let target = -(ground_clear.max(-4.0));
+                        let mut target = -4.0f32;
+                        if 0.0 - target > ground_clear {
+                            target = 0.0 - ground_clear;
+                        }
                         self.vy += (target - self.vy) * 0.05;
                     } else {
                         self.vy *= 0.85;
@@ -14010,14 +14118,18 @@ impl Npc {
                     self.vx *= 0.85;
                 }
                 4 => {
-                    // The approach straight above the player.
+                    // The approach straight above the player
+                    // (`:36364-36375`): the <50 snap to 439, else the
+                    // 16-lerp — divide-first Normalize, no zero guard.
                     let (tx, ty) = (pcx, pcy - 250.0);
-                    if (tx - cx).hypot(ty - cy) < 50.0 {
+                    let (dx, dy) = (tx - cx, ty - cy);
+                    if dx.hypot(dy) < 50.0 {
                         self.ai[3] = 439.0;
                     } else {
-                        let inv = 1.0 / (tx - cx).hypot(ty - cy);
-                        self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
-                        self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+                        let len = dx.hypot(dy);
+                        let (nx, ny) = (dx / len, dy / len);
+                        self.vx += (nx * 16.0 - self.vx) * 0.1;
+                        self.vy += (ny * 16.0 - self.vy) * 0.1;
                     }
                 }
                 _ => {
@@ -14027,8 +14139,12 @@ impl Npc {
                 }
             }
         } else if self.ai[0] == 1.0 {
-            // The vulnerable wobble (`:36373-36407`): 150 ticks, the
-            // rotation ramps by the phase.
+            // The vulnerable wobble (`:36381-36410`, the else-if chain's
+            // third arm): 150 ticks, the
+            // rotation ramps by the phase. `:36383` — the shield DROPS
+            // for the whole vulnerable phase (the SetDefaults
+            // `dontTakeDamage = true`, `:14060`, holds until here).
+            self.dont_take_damage = false;
             self.vx *= 0.96;
             self.vy *= 0.96;
             self.ai[1] += 1.0;
@@ -14036,20 +14152,27 @@ impl Npc {
                 self.ai[0] = 2.0;
                 self.ai[1] = 0.0;
                 self.rotation = 0.0;
+                self.net_update = true;
             } else if self.ai[1] < 40.0 {
                 // `Vector2.UnitY.RotatedBy(t).Y` is the COSINE of the
                 // angle (UnitY = (0, 1) rotates to (-sin t, cos t), and
-                // the C# reads its Y) — the v1 ran sin.
-                self.rotation = (self.ai[1] / 40.0 * 6.283).cos() * 0.2;
+                // the C# reads its Y). `RotatedBy` takes a DOUBLE and
+                // runs `(float)Math.Cos(radians)` (`Utils.cs:1675-1684`)
+                // — the f32 angle promotes, the cos runs in f64. The
+                // angle literal is `(float)Math.PI * 2f` = TAU, not 6.283.
+                self.rotation =
+                    ((self.ai[1] / 40.0 * std::f32::consts::TAU) as f64).cos() as f32 * 0.2;
             } else if self.ai[1] < 80.0 {
-                self.rotation = (self.ai[1] / 20.0 * 6.283).cos() * 0.3;
+                self.rotation =
+                    ((self.ai[1] / 20.0 * std::f32::consts::TAU) as f64).cos() as f32 * 0.3;
             } else if self.ai[1] < 120.0 {
-                self.rotation = (self.ai[1] / 10.0 * 6.283).cos() * 0.4;
+                self.rotation =
+                    ((self.ai[1] / 10.0 * std::f32::consts::TAU) as f64).cos() as f32 * 0.4;
             } else {
-                self.rotation = (self.ai[1] - 120.0) / 30.0 * 6.283;
+                self.rotation = (self.ai[1] - 120.0) / 30.0 * std::f32::consts::TAU;
             }
         } else if self.ai[0] == 2.0 {
-            // The gun (`:36408-36500`): the 3600-tick cycle; the firing
+            // The gun (`:36411-36495`): the 3600-tick cycle; the firing
             // window opens for 60 ticks of each 120; the projectile 447
             // (the classic 80) at the window's rising edge.
             // The vanilla's `num1131`/`num1130` pair: the check before and
@@ -14059,30 +14182,54 @@ impl Npc {
             let window_now = self.ai[3] % 120.0 >= 60.0;
             if window_now != prev_window {
                 if window_now {
+                    // `:36433` — the ternary `Sign(...) == 1 ? 1 : -1`
+                    // (the tie folds to -1, NOT Math.Sign's 0).
                     self.ai[2] = if pcx > cx { 1.0 } else { -1.0 };
                     // The 447 projectile at (center, center) with the
-                    // owner stub (whoAmI + 1) — the port's hostile pool.
-                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 80));
+                    // owner payload `ai0 = whoAmI + 1` (`:36437`) — the
+                    // deathray arm reads it to find its owner; the plain
+                    // shot list drops the payload (the v1's defect).
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 447u16,
+                        x: cx,
+                        y: cy,
+                        vx: 0.0,
+                        vy: 0.0,
+                        damage: 80,
+                        ai0: self.slot as f32 + 1.0,
+                        ai1: 0.0,
+                    });
                 }
+                self.net_update = true;
             }
             if self.ai[3] >= 3600.0 {
+                // `:36443-36450` — the cycle reset (the `ai[0] = 2`
+                // self-write is a no-op).
                 self.ai[1] = 0.0;
                 self.ai[2] = 0.0;
                 self.ai[3] = 0.0;
+                self.net_update = true;
             } else if !window_now {
-                // The chase: the 16-lerp to the player + 350·ai[2], -250.
+                // The chase: the 16-lerp to the player + 350·ai[2], -250
+                // (`:36453-36455`) — the C#'s Normalize has NO zero guard
+                // (the v1's `.max(0.001)` floor is gone).
                 let (tx, ty) = (pcx + self.ai[2] * 350.0, pcy - 250.0);
-                let d = (tx - cx).hypot(ty - cy).max(0.001);
-                let inv = 1.0 / d;
-                self.vx += ((tx - cx) * inv * 16.0 - self.vx) * 0.1;
-                self.vy += ((ty - cy) * inv * 16.0 - self.vy) * 0.1;
+                let (dx, dy) = (tx - cx, ty - cy);
+                let len = dx.hypot(dy);
+                let (nx, ny) = (dx / len, dy / len);
+                self.vx += (nx * 16.0 - self.vx) * 0.1;
+                self.vy += (ny * 16.0 - self.vy) * 0.1;
             } else {
-                // The firing dash: the X at 8·ai[2], the Y eases.
-                let tile_y = ((self.y + h as f32) / TILE_PX) as i32;
-                let tile_x = (cx / TILE_PX) as i32;
+                // The firing dash (`:36459-36492`): the X at 8·ai[2], the
+                // Y eases toward -4 (the clearance caps the steepness).
+                let tile_x = cx as i32 / TILE_PX as i32;
+                let tile_y = (self.y + h) as i32 / TILE_PX as i32;
                 let clear = ground_clearance(world, tile_x, tile_y);
                 if clear < 250.0 {
-                    let target = -(clear.max(-4.0));
+                    let mut target = -4.0f32;
+                    if 0.0 - target > clear {
+                        target = 0.0 - clear;
+                    }
                     self.vy += (target - self.vy) * 0.05;
                 } else {
                     self.vy *= 0.95;
@@ -14091,17 +14238,24 @@ impl Npc {
             }
             self.rotation = 0.0;
         }
-        // The off-world clamp (`:36502-36520`).
+        // The off-world clamp (`:36496-36518`).
         let max_x = world.width as f32 * TILE_PX;
         let max_y = world.height as f32 * TILE_PX;
         if self.y < -100.0 || self.x < -100.0 || self.y > max_y + 100.0 || self.x > max_x + 100.0 {
             self.x = self.x.clamp(-100.0, 100.0 + max_x);
             self.y = self.y.clamp(-100.0, 100.0 + max_y);
             self.hp = 0; // `active = false` — the death pass removes it.
+            self.net_update = true;
         }
         // The flight integration (noGravity + noTileCollide).
         self.x += self.vx;
         self.y += self.vy;
+        // The arm draws NO `Main.rand` (`NPC.cs:36071-36519` has no
+        // Next/NextFloat; NewNPC's only draw is the getGoodWorld gate
+        // `:80752`, constants-off; TargetClosest/EncourageDespawn/
+        // StrikeNPCNoInteraction(9999) draw nothing) — the RNG parameter
+        // stays for the dispatch signature, untouched by construction.
+        let _ = rng;
     }
 
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
@@ -29211,3 +29365,299 @@ mod s1_d_3_wire_plantera_minions_tests {
     }
 }
 
+/// S1-D-3 aiStyle-76 audit — the Martian Saucer Core's machine
+/// (`NPC.AI()`'s `else if (this.aiStyle == 76)` arm, `NPC.cs:36071-36519`,
+/// the sole kind 395, `SetDefaults` `:14045-14062`). CODE-ONLY MODE: the
+/// witnesses below are WRITTEN NOT RUN (no compiler invoked); each pins
+/// one of the audit's fixes against the C# line cited.
+#[cfg(test)]
+mod s1_d_3_s76_audit_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// A 400x200 air world (the saucer flies at (2400, 1600); the box's
+    /// right edge is 400*16 + 100 = 6500, so even the +7000-px far-player
+    /// rigs never trip the off-world clamp; the ground probes get their
+    /// own tiles per test).
+    fn air() -> World {
+        let mut w = World::new("t".into(), 400, 200);
+        w.compute_column_surface();
+        w
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The core parked mid-air with the player nearby (inside the
+    /// 5600-px window).
+    fn rig(w: &World) -> (Npc, Player) {
+        let mut n = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_scutlix = true; // the init latch already spent (no crew request)
+        let mut p = Player::spawn(w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 1600.0;
+        // The fresh NPC carries the 255 sentinel (`ClearTarget`,
+        // `NPC.cs:8539`) — the first tick's TargetClosest gate
+        // (`:36112`) resolves it, exactly as the C#'s NewNPC spawn.
+        (n, p)
+    }
+
+    /// The audit fix 1 — the despawn ride is its OWN if-chain
+    /// (`NPC.cs:36130`), NOT nested under the far gate (`:36118`): a
+    /// core already in -1 keeps climbing after the player returns
+    /// inside the window, and the living-player restore (`:36134-36148`)
+    /// pins `timeLeft = 300` while KEEPING -1 (the C#'s `if (ai[0] == 0)
+    /// ai[0] = 0;` at `:36141-36144` is dead code — the v1 restored 0
+    /// here and killed the ride).
+    #[test]
+    fn s1_d_3_s76_audit_the_despawn_ride_runs_outside_the_far_gate() {
+        let w = air();
+        let (mut n, p) = rig(&w);
+        n.ai[0] = -1.0;
+        n.despawn_timer = 937; // NewNPC's stock window
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[0], -1.0, "the -1 phase stays -1 (:36141 dead if)");
+        assert_eq!(n.despawn_timer, 300, "the direct timeLeft = 300 (:36136)");
+        assert!(n.vy < 0.0, "the climb ran: vy {}", n.vy);
+        assert_eq!(n.ai[1], 0.0);
+        assert_eq!(n.ai[2], 0.0);
+        assert_eq!(n.ai[3], 0.0);
+        // The EncourageDespawn(10) (:36133) ran BEFORE the 300 pin — the
+        // only-lowering write cannot raise the 937 window, the direct
+        // 300 set can lower it.
+    }
+
+    /// The audit fix 1b — the far entry: 0 → -1 (`:36120-36123`), then
+    /// the SAME tick's ride restores the counters but not the phase.
+    #[test]
+    fn s1_d_3_s76_audit_the_living_far_player_keeps_minus_one_climbing() {
+        let w = air();
+        let (mut n, mut p) = rig(&w);
+        p.x += 7000.0; // outside the 5600-px window, alive
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[0], -1.0, "0 → -1 then the ride keeps -1");
+        assert_eq!(n.despawn_timer, 300);
+        assert!(n.vy <= -0.4, "the -0.4 climb (:36132): {}", n.vy);
+    }
+
+    /// The audit fix 1c — the -2 restore hands the GUN back (`:36137-
+    /// 36140`): 2 → -2 on the far tick, then -2 → 2 with the counters
+    /// zeroed, all inside the one ride.
+    #[test]
+    fn s1_d_3_s76_audit_the_minus_two_restore_hands_back_the_gun() {
+        let w = air();
+        let (mut n, mut p) = rig(&w);
+        n.ai[0] = 2.0;
+        n.ai[3] = 500.0;
+        p.x += 7000.0;
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[0], 2.0, "2 → -2 → 2 in the one ride (:36139)");
+        assert_eq!(n.ai[3], 0.0, "the counters reset (:36145-36147)");
+        assert_eq!(n.despawn_timer, 300);
+    }
+
+    /// The audit fix 1d — the dead player: the climb runs, the
+    /// EncourageDespawn(10) lowers the window, but NO restore and NO
+    /// timeLeft pin (`:36134`'s `!player19.dead` gate).
+    #[test]
+    fn s1_d_3_s76_audit_the_dead_player_climb_holds_the_phase() {
+        let w = air();
+        let (mut n, mut p) = rig(&w);
+        p.dead = true;
+        n.ai[0] = -1.0;
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[0], -1.0);
+        assert_eq!(n.despawn_timer, 10, "only the EncourageDespawn(10)");
+        assert!(n.vy <= -0.4);
+    }
+
+    /// The audit fix 2 — the wobble drops the SetDefaults shield
+    /// (`dontTakeDamage = true`, `:14060` → `false` at `:36383`) and the
+    /// rotation is the f64 cosine of the TAU angle (`RotatedBy`,
+    /// `Utils.cs:1675-1684`: `(float)Math.Cos(radians)` on the promoted
+    /// f32 angle; `Vector2.UnitY.RotatedBy(t).Y` = cos t).
+    #[test]
+    fn s1_d_3_s76_audit_the_wobble_drops_the_shield_and_ramps_the_f64_cos() {
+        let w = air();
+        let (mut n, p) = rig(&w);
+        assert!(n.dont_take_damage, "the SetDefaults shield (:14060)");
+        assert!(!n.hurt(10, 0.0, 0.0, false), "the shielded core takes nothing");
+        n.ai[0] = 1.0;
+        n.ai[1] = 19.0; // ++ → 20, the <40 band
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert!(!n.dont_take_damage, "the vulnerable phase (:36383)");
+        // cos((20/40)*TAU) = cos(pi) = -1 → rotation = -0.2.
+        assert!(
+            (n.rotation - (-0.2)).abs() < 1e-6,
+            "the f64-cos TAU ramp: {}",
+            n.rotation
+        );
+        // The 120+ band: the raw angle, no cosine (:36408).
+        n.ai[1] = 129.0; // ++ → 130
+        n.update_saucer_core(&w, &p, &mut rng);
+        let expect = (130.0f32 - 120.0) / 30.0 * std::f32::consts::TAU;
+        assert!((n.rotation - expect).abs() < 1e-6, "{}", n.rotation);
+        // The 150-tick hand-off to the gun (:36387-36393).
+        n.ai[1] = 149.0;
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[0], 2.0);
+        assert_eq!(n.rotation, 0.0);
+    }
+
+    /// The audit fix 3 — the gun's 447 carries the owner payload
+    /// `ai0 = whoAmI + 1` (`:36437`), the rising-edge fire at
+    /// `ai[3] % 120 >= 60` (`:36418-36441`).
+    #[test]
+    fn s1_d_3_s76_audit_the_gun_shot_carries_the_owner_payload() {
+        let w = air();
+        let (mut n, p) = rig(&w);
+        n.slot = 5;
+        n.ai[0] = 2.0;
+        n.ai[3] = 59.0; // ++ → 60: the window's rising edge
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.wants_hostile_shot_ai.len(), 1);
+        let s = n.wants_hostile_shot_ai[0];
+        assert_eq!(s.kind, 447);
+        assert_eq!(s.damage, 80);
+        assert_eq!(s.ai0, 6.0, "whoAmI + 1 (:36437)");
+        assert_eq!((s.vx, s.vy), (0.0, 0.0));
+        assert!(n.wants_hostile_shot.is_empty(), "the payload list, not the plain one");
+        // The dash in the window: vx = 8·ai[2] (:36492).
+        assert_eq!(n.vx.abs(), 8.0);
+    }
+
+    /// The audit fix 4 — the clearance probe's `!tileSolidTop` term
+    /// (`:36247`/`:36256`): platforms do NOT stop the scan; the landing
+    /// is ONE ROW ABOVE the first real solid (the `count--`, `:36258`).
+    #[test]
+    fn s1_d_3_s76_audit_the_clearance_probe_skips_solid_tops() {
+        let mut w = air();
+        put(&mut w, 10, 25, 19); // platform (solidTop)
+        put(&mut w, 10, 28, 1); // stone
+        // Feet row 24 (air): the scan walks 24(air) 25(platform, skipped)
+        // 26 27 then hits 28 at count 4 → (4-1)*16 = 48.
+        assert_eq!(ground_clearance(&w, 10, 24), 48.0);
+        // The feet row itself solid → the count is 1 (:36247-36250).
+        assert_eq!(ground_clearance(&w, 10, 28), 16.0);
+        // No solid within 150 rows → the full 150*16.
+        assert_eq!(ground_clearance(&w, 12, 0), 150.0 * 16.0);
+    }
+
+    /// The audit fix 4b — the dive's -4 target caps at the clearance
+    /// (`:36266-36270`: `0f - num1111 > num1110` → `-clearance`): a
+    /// 0-px clearance (solid one row below the feet) eases toward 0,
+    /// not -4.
+    #[test]
+    fn s1_d_3_s76_audit_the_dive_target_caps_at_the_clearance() {
+        let mut w = air();
+        put(&mut w, 10, 31, 1); // the solid one row below the feet row 30
+        let (mut n, mut p) = rig(&w);
+        // Feet row = (y + 90)/16 = 30 → y = 390; column (x+60)/16 = 10 → x = 100.
+        n.x = 100.0;
+        n.y = 390.0;
+        // Keep the player beside the moved core (inside the 5600-px
+        // window — a far player would take the despawn ride instead).
+        p.x = 100.0;
+        p.y = 390.0;
+        n.ai[0] = 0.0;
+        n.ai[3] = 25.0; // band 1 before AND after the ++ (no band-change side write)
+        n.ai[2] = 1.0;
+        n.vy = -8.0;
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        // clearance 0 → target 0 → vy = -8 + (0 - (-8))*0.05 = -7.6.
+        assert!((n.vy - (-7.6)).abs() < 1e-5, "the capped ease: {}", n.vy);
+        assert_eq!(n.vx, 3.5, "the dive's X drift (:36277)");
+    }
+
+    /// The audit fix 5 — the side picks: the band-change write uses the
+    /// `Sign == 1 ? 1 : -1` ternary (the tie folds to -1, `:36217`),
+    /// while the band-0 approach's -600 offset uses `Math.Sign` (0 on
+    /// the tie, `:36229`).
+    #[test]
+    fn s1_d_3_s76_audit_the_side_picks_split_ternary_and_math_sign() {
+        let w = air();
+        let (mut n, mut p) = rig(&w);
+        // Exact centre tie: the player centre == the core centre.
+        let (ccx, ccy) = n.center();
+        p.x = ccx - crate::player::WIDTH * 0.5;
+        p.y = ccy - p.height * 0.5;
+        n.ai[0] = 0.0;
+        n.ai[3] = 19.0; // ++ → 20: the 0 → 1 band change
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[2], -1.0, "the ternary tie folds to -1 (:36217)");
+        // The band-0 approach on the tie: -600 * Math.Sign(0) = 0.
+        // The dive tick moved the core 3.5 px left — re-park it on the
+        // exact tie first.
+        n.x = 150.0 * TILE_PX;
+        n.ai[2] = 0.0;
+        n.ai[3] = 0.0; // band 0, no change
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "Math.Sign's 0 tie (:36229) — not -600");
+    }
+
+    /// The audit fix 6 — the death ride is the instant kill + return
+    /// (`:36104-36108`, the `Damage >= 9999 && owner == 255` flag path
+    /// `:81237`): no integration, no clamp on that tick.
+    #[test]
+    fn s1_d_3_s76_audit_the_death_ride_is_the_instant_kill() {
+        let w = air();
+        let (mut n, p) = rig(&w);
+        n.ai[0] = 3.0;
+        n.vx = 5.0;
+        let (x0, y0) = (n.x, n.y);
+        let mut rng = UnifiedRandom::new(7);
+        n.update_saucer_core(&w, &p, &mut rng);
+        assert_eq!(n.hp, 0);
+        assert_eq!((n.x, n.y), (x0, y0), "the AI returned before the move");
+    }
+
+    /// RNG by construction — the whole arm (`NPC.cs:36071-36519`) draws
+    /// NO `Main.rand`: no Next/NextFloat in the block; `NewNPC`'s only
+    /// draw is the getGoodWorld gate (`:80752`, constants-off);
+    /// `TargetClosest` (`:77652-77781`) is the deterministic scan;
+    /// `EncourageDespawn` (`:7249-7256`) and the 9999 instant-kill
+    /// StrikeNPC path draw nothing. Pin a `UnifiedRandom` state across
+    /// every phase so no stream can shift when the wiring lands.
+    #[test]
+    fn s1_d_3_s76_audit_the_arm_draws_no_rng() {
+        let w = air();
+        let (mut n, mut p) = rig(&w);
+        let mut rng = UnifiedRandom::new(12345);
+        let witness = rng.clone();
+        // The scan (all six bands), the wobble, the gun, the rides.
+        for _ in 0..700 {
+            n.update_saucer_core(&w, &p, &mut rng);
+        }
+        n.ai[0] = 1.0;
+        n.ai[1] = 0.0;
+        for _ in 0..160 {
+            n.update_saucer_core(&w, &p, &mut rng);
+        }
+        n.ai[0] = 2.0;
+        n.ai[3] = 0.0;
+        for _ in 0..200 {
+            n.update_saucer_core(&w, &p, &mut rng);
+        }
+        p.x += 7000.0;
+        for _ in 0..20 {
+            n.update_saucer_core(&w, &p, &mut rng);
+        }
+        p.dead = true;
+        for _ in 0..20 {
+            n.update_saucer_core(&w, &p, &mut rng);
+        }
+        assert_eq!(rng, witness, "no Next/NextFloat anywhere in the arm");
+    }
+}
