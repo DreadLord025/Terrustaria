@@ -1290,6 +1290,22 @@ pub struct Npc {
     /// core `2`). The flag keeps the death pass from re-crediting the
     /// restored NPC.
     pub moon_dying: bool,
+    /// S1-D-3: the core's current `ai[0]` mirrored by the carrier pre-pass —
+    /// the head's `-2` death arm reads `Main.npc[ai[3]].ai[0] == 2`
+    /// (`NPC.cs:42155-42159`) to hand itself the `-3` corpse tilt.
+    pub moon_core_phase: f32,
+    /// S1-D-3: the core's drama/despawn sweep request (`NPC.cs:41316-41335`
+    /// at `ai[1] == 60`, `:41455-41488` at `ai[1] == 40`): the five Moon-Lord
+    /// projectile kinds (456/462/455/452/454) die and every True Eye (400)
+    /// falls. The sim resolves the pools (the AI holds no projectile/NPC
+    /// list); the gore sweep (`:41481-41488`) is unmodelled.
+    pub wants_moon_sweep: u8,
+    /// S1-D-3: the enrage hop's ride-along delta (`NPC.cs:41549-41574`): the
+    /// core teleports to the player and the three parts + every True Eye
+    /// take the SAME delta on the SAME tick. The sim applies it after the
+    /// AI pass (the C# applies it inside the core's AI; the parts' own AI
+    /// already ran — the position ride is same-tick either way).
+    pub moon_hop: Option<(f32, f32)>,
     pub rifleman_rearmed: bool,
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
@@ -2489,6 +2505,9 @@ impl Npc {
             moon_spawn_latch: false,
             moon_despawn_kill: false,
             moon_dying: false,
+            moon_core_phase: 0.0,
+            wants_moon_sweep: 0,
+            moon_hop: None,
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
@@ -10950,70 +10969,136 @@ impl Npc {
     ///
     /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
     /// is unmodelled — the port's drama is the timer + the 622 smoke; the
-    /// `Main.rand.Next(200)` roar (`:41159-41162`) and the death/despawn
-    /// sound cues are unmodelled (no draws); the phase-2 dust storm
-    /// (`:41309-41404`) is unmodelled, so its `Main.rand` draws are absent;
-    /// the despawn's 40-tick projectile/400/gore sweeps (`:41455-41488`)
-    /// fold into the sim's `wants_moon_parts_clear` resolve; the enrage
-    /// hop's same-tick part/400 ride (`:41551-41574`) rides the pre-pass
-    /// anchor one tick later (documented, S1-D-3).
+    /// death/despawn sound cues are unmodelled (their RNG draws are still
+    /// consumed); the phase-2 dust storm's DUST-INTERNAL draws (the
+    /// `Dust.NewDust` streams, `:41365-41403`) are unmodelled — the
+    /// unconditional top-level draws are consumed, the dust-gated ones
+    /// deferred; the enrage hop's same-tick part/400 ride
+    /// (`:41551-41574`) rides the pre-pass anchor one tick later
+    /// (documented, S1-D-3).
     fn update_moon_lord_core(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:41163-41168`'s init: the first tick arms the spawn phase. The
-        // C#'s latch is `localAI[3]` (0 → 1) — a one-shot; the port's
-        // `ai[0] == 0` test alone re-armed the phase on every return to
-        // the zero state (a second hands+head every 60 ticks).
-        if self.ai[0] == 0.0 && !self.moon_spawn_latch {
+        // `:41159-41162`'s roar: the gate excludes the spawn-in and the
+        // drama; the sound is unmodelled but BOTH draws ride the stream
+        // (S1-D-3: the port omitted them).
+        if self.ai[0] != -1.0 && self.ai[0] != 2.0 && rng.next_max(200) == 0 {
+            let _ = rng.next_range(93, 100);
+        }
+        // `:41163-41168`'s init: the FIRST tick arms the spawn phase,
+        // whatever `ai[0]` holds. The C#'s latch is `localAI[3]` (0 → 1) —
+        // a one-shot; the port's `ai[0] == 0` test alone re-armed the phase
+        // on every return to the zero state (a second hands+head every 60
+        // ticks).
+        if !self.moon_spawn_latch {
             self.ai[0] = -1.0;
             self.moon_spawn_latch = true;
-        }
-        // `:41251-41272`'s lost-part gate (S1-D-3): inside the cruise's
-        // `ai[0] == 0` phase, a part slot that points at no living part
-        // takes the core down — `life = 0; active = false`, which bypasses
-        // `checkDead` (no drama, no downed flag). The pre-pass computes the
-        // flag; the death pass owns the kill.
-        if self.ai[0] == 0.0 && self.moon_parts_lost {
-            self.hp = 0;
-            self.moon_despawn_kill = true;
-            return;
         }
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        match self.ai[0] as i32 {
-            -2 => {
-                // `:41169-41192`'s teleport re-entry: the 60-tick windup,
-                // then back to the cruise.
-                self.dont_take_damage = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 {
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
-                    // `:41187-41188`: `ai[2] = Main.rand.Next(3)` then the
-                    // immediate overwrite to 0 — a dead draw the vanilla's
-                    // stream still takes (S1-D-3: the port omitted it).
-                    let _ = rng.next_max(3);
-                    self.ai[2] = 0.0;
+        // S1-D-3: the C# is a SEQUENCE of ifs, not a switch — the `-2`/`-1`
+        // windups hand `ai[0] = 0` at the 60th tick and the cruise block
+        // runs on the SAME tick (the fall-through the port's match missed).
+        if self.ai[0] == -2.0 {
+            // `:41169-41192`'s teleport re-entry: the 60-tick windup,
+            // then back to the cruise.
+            self.dont_take_damage = true;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 60.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                // `:41187-41188`: `ai[2] = Main.rand.Next(3)` then the
+                // immediate overwrite to 0 — a dead draw the vanilla's
+                // stream still takes (S1-D-3: the port omitted it).
+                let _ = rng.next_max(3);
+                self.ai[2] = 0.0;
+            }
+        }
+        if self.ai[0] == -1.0 {
+            // `:41193-41235`'s spawn-in: the two hands + the head ride
+            // `wants_moon_parts` on the 60th tick.
+            self.dont_take_damage = true;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 60.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                self.ai[2] = 0.0;
+                self.wants_moon_parts = true;
+            }
+        }
+        if self.ai[0] == 0.0 || self.ai[0] == 1.0 {
+            // `:41236-41306`'s cruise: the 130-px-above hover —
+            // `Normalize(vector - velocity) * 8`, the 0.5
+            // `SimpleFlyMovement` step, the midpoint lerp (S1-D-3).
+            self.dont_take_damage = self.ai[0] != 1.0;
+            let (dx, dy) = (pcx - cx, pcy - cy + 130.0);
+            let d = (dx * dx + dy * dy).sqrt();
+            moon_cruise_fly(&mut self.vx, &mut self.vy, dx, dy, d);
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.ai[0] == 0.0 {
+                // `:41251-41272`'s lost-part gate (S1-D-3): AFTER the
+                // cruise's move, a part slot that points at no living part
+                // takes the core down — `life = 0; active = false`, which
+                // bypasses `checkDead` (no drama, no downed flag). The
+                // pre-pass computes the flag; the death pass owns the kill.
+                // The empty-slot guard: the C# spawns the parts
+                // SYNCHRONOUSLY inside the `-1` arm (`:41217-41231`), so
+                // its same-tick fall-through reads populated slots; the
+                // port's spawn resolve runs after the AI pass, so the
+                // spawn tick's pre-pass flag is stale-true — the gate
+                // only applies once the slots hold ids.
+                if self.moon_parts_lost && self.moon_parts.iter().any(|&u| u > 0) {
+                    self.hp = 0;
+                    self.moon_despawn_kill = true;
+                    return;
+                }
+                // `:41273-41291`'s flag2: all three parts in their death
+                // state hand the core its vulnerable phase.
+                if self.moon_parts_dead {
+                    self.ai[0] = 1.0;
+                    self.dont_take_damage = false;
                 }
             }
-            -1 => {
-                // `:41193-41235`'s spawn-in: the two hands + the head ride
-                // `wants_moon_parts` on the 60th tick.
-                self.dont_take_damage = true;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 && !self.wants_moon_parts {
-                    self.wants_moon_parts = true;
-                    self.ai[1] = 0.0;
-                    self.ai[0] = 0.0;
+        } else if self.ai[0] == 2.0 {
+            // `:41307-41445`'s crash drama: the slow rise, the 622
+            // smoke every 15 ticks inside [90, 480), the 600-tick end.
+            self.dont_take_damage = true;
+            self.vx += (0.0 - self.vx) * 0.98;
+            self.vy += (-0.5 - self.vy) * 0.98;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 60.0 {
+                // `:41316-41335`'s sweep: the five Moon-Lord projectile
+                // kinds die and every True Eye (400) falls — the sim's
+                // resolve owns the pools (S1-D-3: the port never swept, so
+                // the eyes kept attacking through the whole drama).
+                self.wants_moon_sweep = 1;
+            }
+            if (self.ai[1] as i64) % 3 == 0 && self.ai[1] < 580.0 && self.ai[1] > 60.0 {
+                // `:41336-41403`'s dust storm: the dust is unmodelled, but
+                // the UNCONDITIONAL top-level draws ride the stream in the
+                // C#'s order (S1-D-3): RandomVector2 (two NextDouble), the
+                // radius NextFloat, Next(6, 19), four NextFloats (the
+                // angle/speed/scale/fadeIn), the SelectRandom pick, then
+                // per inner-loop iteration another RandomVector2 + radius.
+                // The dust-GATED draws (the `num4 * 2` fan + the inner
+                // Dust.NewDust streams) are deferred with the dust engine.
+                let _ = rng.next_double();
+                let _ = rng.next_double();
+                let _ = rng.next_float();
+                let _ = rng.next_range(6, 19);
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_max(2); // Utils.SelectRandom(31, 229)
+                let inner = (self.ai[1] / 60.0).ceil() as i32;
+                for _ in 0..inner {
+                    let _ = rng.next_double();
+                    let _ = rng.next_double();
+                    let _ = rng.next_float();
                 }
             }
-            2 => {
-                // `:41307-41445`'s crash drama: the slow rise, the 622
-                // smoke every 15 ticks inside [90, 480), the 600-tick end.
-                self.dont_take_damage = true;
-                self.vx += (0.0 - self.vx) * 0.98;
-                self.vy += (-0.5 - self.vy) * 0.98;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
+            if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
                     // `:41405-41428`'s smoke: the C#'s draw order is the
                     // offset pair (`RandomVector2(-1,1)`, two NextDouble),
                     // the radius NextFloat, then — only when the spot is
@@ -11039,7 +11124,10 @@ impl Npc {
                     if in_world && !solid {
                         // `(0 - NextFloat()) * 0.5f - 0.5f` rotated by
                         // `±(π/8 + π/4·NextFloat())`, BOTH components ×6.
-                        let sign = if rng.next_max(4) < 2 { -1.0 } else { 1.0 };
+                        // `(Next(4) < 2).ToDirectionInt()` is +1 when TRUE
+                        // (`Utils.cs:2010-2017`) — S1-D-3: the partial had
+                        // the sign inverted.
+                        let sign = if rng.next_max(4) < 2 { 1.0 } else { -1.0 };
                         let rot = sign
                             * (std::f32::consts::FRAC_PI_8
                                 + std::f32::consts::FRAC_PI_4 * rng.next_float());
@@ -11050,58 +11138,44 @@ impl Npc {
                         self.wants_hostile_shot.push((622u16, sx, sy, vx, vy, 0));
                     }
                 }
-                self.x += self.vx;
-                self.y += self.vy;
-                if self.ai[1] >= 600.0 {
-                    // `:41439-41442`'s end: `life = 0` → the death pass
-                    // raises `downed_moon_lord`.
-                    self.hp = 0;
-                }
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.ai[1] >= 600.0 {
+                // `:41439-41442`'s end: `life = 0` → the death pass
+                // raises `downed_moon_lord` (the `HitEffect(0, 1337)`
+                // drama is the unmodelled gore ride).
+                self.hp = 0;
+                return;
             }
-            3 => {
-                // `:41446-41515`'s despawn ride.
-                self.dont_take_damage = true;
-                self.vx += (self.facing as f32 - self.vx) * 0.98;
-                self.vy += (-0.5 - self.vy) * 0.98;
-                self.ai[1] += 1.0;
-                if self.ai[1] >= 60.0 {
-                    // `:41490-41514`: the parts + the 400s drop, then
-                    // `active = false` DIRECTLY — no `checkDead`, so no
-                    // downed flag — and `LunarApocalypseIsUp = false`.
-                    self.wants_moon_parts_clear = true;
-                    self.hp = 0;
-                    self.moon_despawn_kill = true;
-                    return;
-                }
-                self.x += self.vx;
-                self.y += self.vy;
+        } else if self.ai[0] == 3.0 {
+            // `:41446-41515`'s despawn ride.
+            self.dont_take_damage = true;
+            self.vx += (self.facing as f32 - self.vx) * 0.98;
+            self.vy += (-0.5 - self.vy) * 0.98;
+            self.ai[1] += 1.0;
+            if self.ai[1] == 40.0 {
+                // `:41455-41488`'s sweep: the five projectile kinds + the
+                // 400s drop (the gore sweep is unmodelled — the port has
+                // no gore pool).
+                self.wants_moon_sweep = 1;
             }
-            _ => {
-                // `:41236-41306`'s cruise: the 130-px-above hover —
-                // `Normalize(vector - velocity) * 8`, the 0.5
-                // `SimpleFlyMovement` step, the midpoint lerp (S1-D-3).
-                self.dont_take_damage = self.ai[0] != 1.0;
-                let (dx, dy) = (pcx - cx, pcy - cy + 130.0);
-                let d = (dx * dx + dy * dy).sqrt();
-                moon_cruise_fly(&mut self.vx, &mut self.vy, dx, dy, d);
-                self.x += self.vx;
-                self.y += self.vy;
-                // `:41251-41291`'s part bookkeeping: all three parts in
-                // their death state hand the core its vulnerable phase
-                // (`ai[0] = 1`, `dontTakeDamage = false`). The check runs
-                // in the C#'s `ai[0] == 0` phase only — the vulnerable
-                // phase is past it.
-                if self.ai[0] == 0.0 && self.moon_parts_dead {
-                    self.ai[0] = 1.0;
-                    self.dont_take_damage = false;
-                }
+            if self.ai[1] >= 60.0 {
+                // `:41490-41514`: the parts + the 400s drop, then
+                // `active = false` DIRECTLY — no `checkDead`, so no
+                // downed flag — and `LunarApocalypseIsUp = false`.
+                self.wants_moon_parts_clear = true;
+                self.hp = 0;
+                self.moon_despawn_kill = true;
+                return;
             }
+            self.x += self.vx;
+            self.y += self.vy;
         }
         // `:41517-41542`'s player guard (S1-D-3: it runs AFTER every
         // phase, not just the cruise): the -2/-1/2/3 phases are immune;
         // otherwise a dead player arms the despawn ride.
         let mut keep = matches!(self.ai[0] as i32, -2 | -1 | 2 | 3);
-        if player.hp > 0 {
+        if player.hp > 0 && !player.dead {
             keep = true;
         }
         if !keep {
@@ -11110,14 +11184,28 @@ impl Npc {
         }
         // `:41543-41574`'s enrage hop past 2400 px: the core rides to the
         // player lifted 150 px AND enters the 60-tick teleport re-entry
-        // (`ai[0] = -2`) — the port skipped the phase hand-off (the parts
-        // ride it in the pre-pass, one tick later — documented).
-        if (self.ai[0] == 0.0 || self.ai[0] == 1.0)
+        // (`ai[0] = -2`) — the port skipped the phase hand-off. S1-D-3:
+        // `base.Distance` (`:41543`, `Entity.cs:195-198`) reads
+        // `base.Center` BEFORE the tick's integration (`position +=
+        // velocity` rides `UpdateNPC`'s tail, `:90498`, after the whole
+        // AI) — the distance and the ride delta both use the tick's
+        // START centre `(cx, cy)`; the port's inline integration already
+        // added this tick's velocity, so applying the pre-move delta to
+        // the moved position lands exactly where the C# lands
+        // (`(pre + delta) + velocity`).
+        if self.ai[0] >= 0.0
+            && self.ai[0] < 2.0
             && (pcx - cx).hypot(pcy - cy) > 2400.0
         {
             self.ai[0] = -2.0;
-            self.x += pcx - cx;
-            self.y += pcy - cy - 150.0;
+            // `:41549`'s delta: player centre − UnitY·150 − core centre.
+            let (hx, hy) = (pcx - cx, pcy - cy - 150.0);
+            self.x += hx;
+            self.y += hy;
+            // `:41551-41574`: the three parts + every True Eye take the
+            // SAME delta on the SAME tick — the sim's resolve owns the
+            // pool walk (`moon_hop`).
+            self.moon_hop = Some((hx, hy));
         }
     }
 
@@ -11153,16 +11241,19 @@ impl Npc {
     /// Deviations: the 452/454 projectile engines (the vanilla's aiStyle
     /// 82/83) are unmodelled; the release wave fires the wave projectile
     /// through `wants_hostile_shot` instead of rewriting the owned 454s
-    /// (`:41787-41797`); the `-2` death phase's 32-tick `ai[1]` wrap
-    /// (`:41633-41641`) is unmodelled (the death gate that feeds it —
-    /// `checkDead`'s 397 arm — is deferred, S1-D-3); the
-    /// `frameCounter == 19` attached-projectile pop (`:41588-41591`) is
-    /// unmodelled; the flood's 454 `ai0 = whoAmI` owner tag rides the
-    /// plain shot list (no owner).
+    /// (`:41787-41797`); the `frameCounter == 19` attached-projectile pop
+    /// (`:41588-41591`) is unmodelled; the flood's 454 `ai0 = whoAmI`
+    /// owner tag rides the plain shot list (no owner). S1-D-3: the `-2`
+    /// death phase's `damage = 0` + 32-tick `ai[1]` wrap (`:41630-41641`)
+    /// now ride the arm; `checkDead`'s 397 entry (`:78060-78072` — the
+    /// life restore + the True Eye spawn) rides the sim's death pass.
     fn update_moon_lord_hand(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:41579-41583`'s orphan guard (the pre-pass owns the link).
+        // `:41579-41583`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead — S1-D-3: the flag keeps
+        // the death pass from restoring the death hover.
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
         let row: [(u32, i32); 5] = if self.ai[2] == 0.0 {
@@ -11195,8 +11286,20 @@ impl Npc {
         match self.ai[0] as i32 {
             -2 => {
                 // `:41628-41653`'s death hover: the side slot at the 6-px
-                // cap over the 0.3 step + the midpoint lerp.
+                // cap over the 0.3 step + the midpoint lerp. S1-D-3: the
+                // `damage = 0` + the `ai[1]` 32-tick wrap (`:41630-41641`,
+                // the eyelid pulse the death hover keeps riding) were
+                // missing — `checkDead`'s 397 arm zeroes `ai[1]` on entry
+                // (`:78065`) and the wrap keeps the corpse animating.
+                self.damage = 0;
                 self.dont_take_damage = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 32.0 {
+                    self.ai[1] = 0.0;
+                }
+                if self.ai[1] < 0.0 {
+                    self.ai[1] = 0.0;
+                }
                 let (dx, dy) = (ax - cx, ay - cy);
                 let d = (dx * dx + dy * dy).sqrt();
                 moon_hover_fly(&mut self.vx, &mut self.vy, dx, dy, d);
@@ -11432,9 +11535,11 @@ impl Npc {
     /// phantom deathray (455), the Moon Leech summon (456) and the
     /// retargeting laser (462).
     fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:42086-42091`'s orphan guard (the pre-pass owns the link).
+        // `:42086-42091`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead (the flag, S1-D-3).
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
         // `:42096-42097`: the iris frame gates the damage; the head never
@@ -11453,11 +11558,57 @@ impl Npc {
         if self.ai[0] >= 0.0 {
             self.ai[0] = row[pick].0 as f32;
         }
-        // `:42172-42346`'s frame drivers: num3 = the iris target ×5,
-        // num4 = the lid target ×7 (the -3 arm's lid rides its own).
+        // `:42172-42346`'s frame drivers: num3 = the iris driver (×7,
+        // `:42347`), num4 = the lid driver (×5, `:42364`) — S1-D-3: the
+        // port had the two multipliers swapped (the iris reached 10
+        // instead of the C#'s 14).
         let mut num3 = 0i32;
         let mut num4 = 0i32;
         match self.ai[0] as i32 {
+            -3 => {
+                // `:42134-42152`'s corpse tilt (S1-D-3: the whole arm was
+                // missing — the head fell into the laser `_` arm): the
+                // rotation eases toward π/12 at 0.07, the `ai[2]` 32-tick
+                // wrap, and the iris (`localAI[2]`) takes its own +1.
+                // NO early return — the shared counters below still run
+                // with num3 = num4 = 0, so the iris's +1 here is undone
+                // by the shared -1 (the C#'s net-zero hold; at 14 the
+                // arm skips the +1 and the shared -1 drops it to 13 —
+                // the 13/14 oscillation is the vanilla's).
+                self.damage = 0;
+                self.dont_take_damage = true;
+                self.rotation += (std::f32::consts::PI / 12.0 - self.rotation) * 0.07;
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 32.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.moon_local[2] < 14.0 {
+                    self.moon_local[2] += 1.0;
+                }
+            }
+            -2 => {
+                // `:42153-42171`'s death hover (S1-D-3: the whole arm was
+                // missing): the core's drama phase (`Main.npc[ai[3]].ai[0]
+                // == 2`, the pre-pass mirror `moon_core_phase`) hands the
+                // corpse tilt with an EARLY RETURN — the frame counters
+                // do not run on that tick.
+                if self.moon_core_phase == 2.0 {
+                    self.ai[0] = -3.0;
+                    return;
+                }
+                self.damage = 0;
+                self.dont_take_damage = true;
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 32.0 {
+                    self.ai[2] = 0.0;
+                }
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+            }
             0 => {
                 // `:42172-42190`'s open/close factor: `1 - |aim| / 500`,
                 // doubled and clamped — the aim leads 22 px DOWN.
@@ -11529,9 +11680,12 @@ impl Npc {
                 // per leeched player at 120/180/240 — the sim's resolve.
                 num3 = 2;
                 num4 = 3;
-                if num == 0.0 {
-                    let (dx, dy) = (pcx - cx, pcy - (cy + 216.0));
-                    let d = (dx * dx + dy * dy).sqrt();
+                // S1-D-3: the ≤3000-px gate (`:42292`) was missing — the
+                // C# only launches the leech at a player within 3000 px
+                // of the launch point (216 px below the head).
+                let (dx, dy) = (pcx - cx, pcy - (cy + 216.0));
+                let d = (dx * dx + dy * dy).sqrt();
+                if num == 0.0 && !player.dead && d <= 3000.0 {
                     let (nx, ny) = if d > 0.0 { (dx / d, dy / d) } else { (0.0, 0.0) };
                     self.wants_hostile_shot.push((
                         456u16,
@@ -11566,8 +11720,8 @@ impl Npc {
                 );
             }
         }
-        // `:42347-42363`'s iris counter: `num3 * 5`, clamped [0, 14].
-        let target = (num3 * 5) as f32;
+        // `:42347-42363`'s iris counter: `num3 * 7`, clamped [0, 14].
+        let target = (num3 * 7) as f32;
         if target > self.moon_local[2] {
             self.moon_local[2] += 1.0;
         }
@@ -11575,17 +11729,24 @@ impl Npc {
             self.moon_local[2] -= 1.0;
         }
         self.moon_local[2] = self.moon_local[2].clamp(0.0, 14.0);
-        // `:42364-42380`'s lid counter: `num4 * 7`, clamped [0, 15] — the
-        // C#'s two clamp arms write `localAI[2]` (a decompilation quirk);
-        // the port clamps the lid itself (documented, S1-D-3).
-        let target = (num4 * 7) as f32;
+        // `:42364-42380`'s lid counter: `num4 * 5`, clamped [0, 15] — the
+        // C#'s two clamp arms write `localAI[2]` (the IRIS — a vanilla
+        // quirk, not a decompilation artifact); the port keeps them
+        // verbatim (S1-D-3: clamping the lid itself diverged whenever the
+        // lid crossed 15).
+        let target = (num4 * 5) as f32;
         if target > self.moon_local[3] {
             self.moon_local[3] += 1.0;
         }
         if target < self.moon_local[3] {
             self.moon_local[3] -= 1.0;
         }
-        self.moon_local[3] = self.moon_local[3].clamp(0.0, 15.0);
+        if self.moon_local[3] < 0.0 {
+            self.moon_local[2] = 0.0;
+        }
+        if self.moon_local[3] > 15.0 {
+            self.moon_local[2] = 15.0;
+        }
         let _ = rng;
     }
 
@@ -11602,9 +11763,18 @@ impl Npc {
     /// render-only and unmodelled; the drift's 100-px sibling separation
     /// (`:42556-42577`) needs the sibling list and is deferred (S1-D-3).
     fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // `:42466-42470`'s orphan guard (the pre-pass owns the link).
+        // `:42461-42464`'s roar (S1-D-3: both draws were missing — they
+        // ride the stream BEFORE the orphan guard, every tick the eye
+        // lives): `Next(420) == 0` gates the `Next(100, 101)` pitch draw
+        // (the sound itself is unmodelled; the draw is not).
+        if rng.next_max(420) == 0 {
+            let _ = rng.next_range(100, 101);
+        }
+        // `:42466-42470`'s orphan guard (the pre-pass owns the link): the
+        // `active = false` bypasses checkDead (the flag, S1-D-3).
         if !self.moon_core_alive {
             self.hp = 0;
+            self.moon_despawn_kill = true;
             return;
         }
         let (w, h) = self.size();
@@ -16215,6 +16385,260 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod s1_d_3_moonlord_rng_witnesses {
+    //! S1-D-3 (code-only): the Moon Lord family's RNG census, WRITTEN NOT
+    //! RUN. Every `Main.rand` draw the ported arms consume is cited and
+    //! replayed against a mirrored `UnifiedRandom` (the stream-state
+    //! comparison — the `golden` pattern in `unified_random.rs`). The
+    //! dust-gated draws (the drama fan `NPC.cs:41365-41373`, the head's
+    //! 229 fan `:42221`, the eye's dust pairs) stay deferred with the dust
+    //! engine — their absence is the documented deviation, not a stream
+    //! drift inside the ported blocks.
+    use super::*;
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        w.compute_column_surface();
+        w
+    }
+
+    fn player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 118.0 * TILE_PX;
+        p
+    }
+
+    #[test]
+    fn the_core_roar_draws_every_tick_except_spawn_and_drama() {
+        // `NPC.cs:41159-41162`: `Next(200)` EVERY tick while ai[0] is not
+        // -1/2; the `Next(93, 100)` pitch draw rides only on the hit.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 0.0;
+        core.moon_spawn_latch = true;
+        core.moon_parts = [1, 2, 3];
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        for _ in 0..30 {
+            core.update_moon_lord_core(&w, &p, &mut rng);
+            if mirror.next_max(200) == 0 {
+                let _ = mirror.next_range(93, 100);
+            }
+            assert_eq!(rng.peek(), mirror.peek(), "the roar census");
+        }
+        // The -1 spawn-in and the 2 drama draw NOTHING at the roar gate.
+        for phase in [-1.0f32, 2.0] {
+            core.ai[0] = phase;
+            core.ai[1] = 0.0;
+            let before = rng.peek();
+            core.update_moon_lord_core(&w, &p, &mut rng);
+            // The drama's first tick: ai[1] = 1 — no storm (needs >60),
+            // no smoke (needs >=90), so the whole tick is draw-free.
+            assert_eq!(rng.peek(), before, "phase {phase} draws no roar");
+        }
+    }
+
+    #[test]
+    fn the_drama_storm_draws_the_unconditional_nine_plus_three_per_iteration() {
+        // `NPC.cs:41336-41403` at ai[1] % 3 == 0, 60 < ai[1] < 580:
+        // RandomVector2 (2 NextDouble), radius NextFloat, Next(6,19),
+        // four NextFloats, SelectRandom's Next(2), then per inner
+        // iteration (ceil(ai[1]/60)) another 2 NextDouble + NextFloat.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 122.0; // -> 123: %3 == 0, inner = ceil(123/60) = 3
+        core.moon_spawn_latch = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+        }
+        let _ = mirror.next_float();
+        let _ = mirror.next_range(6, 19);
+        for _ in 0..4 {
+            let _ = mirror.next_float();
+        }
+        let _ = mirror.next_max(2);
+        for _ in 0..3 {
+            let _ = mirror.next_double();
+            let _ = mirror.next_double();
+            let _ = mirror.next_float();
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the storm census at 123");
+    }
+
+    #[test]
+    fn the_drama_smoke_draws_the_offset_then_the_gated_triple() {
+        // `NPC.cs:41405-41428` at ai[1] % 15 == 0, 90 <= ai[1] < 480:
+        // RandomVector2 (2 NextDouble) + radius NextFloat always; the
+        // Next(4) + angle NextFloat + point NextFloat only when the spot
+        // is in-world and not solid. The sign is +1 when Next(4) < 2
+        // (`Utils.cs:2010-2017`'s ToDirectionInt).
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 89.0; // -> 90: the smoke gate, no storm (90 % 3 == 0
+        // but the storm gate needs > 60 AND %3 — 90 qualifies for BOTH;
+        // use the storm census too).
+        core.moon_spawn_latch = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        // The storm at 90: inner = ceil(90/60) = 2.
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+        }
+        let _ = mirror.next_float();
+        let _ = mirror.next_range(6, 19);
+        for _ in 0..4 {
+            let _ = mirror.next_float();
+        }
+        let _ = mirror.next_max(2);
+        for _ in 0..2 {
+            let _ = mirror.next_double();
+            let _ = mirror.next_double();
+            let _ = mirror.next_float();
+        }
+        // The smoke: the offset pair + radius, then the gated triple.
+        let ox = (mirror.next_double() as f32) * 2.0 - 1.0;
+        let oy = (mirror.next_double() as f32) * 2.0 - 1.0;
+        let r = 20.0 + mirror.next_float() * 400.0;
+        let ol = (ox * ox + oy * oy).sqrt();
+        let (ux, uy) = if ol != 0.0 { (ox / ol, oy / ol) } else { (ox, oy) };
+        let (cw, ch) = core.size();
+        let sx = core.x - core.vx + cw * 0.5 + ux * r;
+        let sy = core.y - core.vy + ch * 0.5 + uy * r;
+        let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+        let in_world = tx >= 0 && ty >= 0 && tx < w.width && ty < w.height;
+        let solid = in_world
+            && w.tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+        if in_world && !solid {
+            let d4 = mirror.next_max(4);
+            let _ = mirror.next_float();
+            let _ = mirror.next_float();
+            assert_eq!(core.wants_hostile_shot.len(), 1, "the 622 smoke");
+            let shot = core.wants_hostile_shot[0];
+            assert_eq!(shot.0, 622);
+            // The sign witness: +1 exactly when the draw is < 2.
+            let sign = if d4 < 2 { 1.0 } else { -1.0 };
+            // vy's sign follows the rotation of the downward point by
+            // ±(π/8..3π/8): both signs keep vy < 0 — the ×6 scale pins.
+            assert!(shot.4 < 0.0, "the smoke rises");
+            assert!(shot.3.abs() <= 6.0 && shot.4.abs() <= 6.0, "the ×6 cap");
+            let _ = sign;
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "the smoke census at 90");
+    }
+
+    #[test]
+    fn the_teleport_reentry_takes_the_dead_next3_draw() {
+        // `NPC.cs:41185-41189`: the 60th tick draws `Next(3)` then
+        // overwrites ai[2] = 0 — the dead draw still rides the stream.
+        let w = world();
+        let p = player(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = -2.0;
+        core.ai[1] = 59.0;
+        core.moon_spawn_latch = true;
+        core.moon_parts = [1, 2, 3];
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        core.update_moon_lord_core(&w, &p, &mut rng);
+        // The roar gate excludes only -1/2 (`:41159`), so the -2 tick
+        // draws Next(200) too, then the dead Next(3) at the 60th.
+        if mirror.next_max(200) == 0 {
+            let _ = mirror.next_range(93, 100);
+        }
+        let _ = mirror.next_max(3);
+        assert_eq!(rng.peek(), mirror.peek(), "the dead Next(3) rides");
+        assert_eq!(core.ai[0], 0.0, "the re-entry hands the cruise");
+        assert_eq!(core.ai[2], 0.0, "the overwrite");
+    }
+
+    #[test]
+    fn the_true_eye_roar_draws_before_the_orphan_guard() {
+        // `NPC.cs:42461-42464`: Next(420) EVERY tick, the Next(100,101)
+        // pitch on the hit — before the orphan guard.
+        let w = world();
+        let p = player(&w);
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.moon_core_alive = true;
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        for _ in 0..50 {
+            // The sequencer overwrites ai[0] from the table every tick
+            // (`:42495`); row 0 is the drift (53 ticks) — reset the timer
+            // each tick to stay inside it (the attack arms' draws are
+            // their own witnesses).
+            eye.ai[0] = 0.0;
+            eye.ai[1] = 0.0;
+            eye.update_true_eye(&w, &p, &mut rng);
+            if mirror.next_max(420) == 0 {
+                let _ = mirror.next_range(100, 101);
+            }
+            assert_eq!(rng.peek(), mirror.peek(), "the eye roar census");
+        }
+    }
+
+    #[test]
+    fn the_hand_eye_volley_draws_one_nextdouble_per_shot() {
+        // `NPC.cs:41704`: the 452's ai1 = (2π·NextDouble − π)/30 +
+        // π/180·num — ONE draw per shot tick.
+        let w = world();
+        let p = player(&w);
+        let mut hand = Npc::new(NpcKind::MoonLordHand, 110.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        hand.hp = hand.max_hp;
+        hand.moon_core_alive = true;
+        hand.carrier_x = 150.0 * TILE_PX;
+        hand.carrier_y = 100.0 * TILE_PX;
+        hand.ai[2] = 0.0;
+        hand.ai[1] = 77.0; // -> 78: attack 1, num2 = 28 — the volley gate
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = UnifiedRandom::new(42);
+        hand.update_moon_lord_hand(&w, &p, &mut rng);
+        assert_eq!(hand.wants_hostile_shot_ai.len(), 1, "the 28th tick fires");
+        // The muzzle rides the pre-move centre (the C# fires before
+        // `UpdateNPC`'s integration, `:90498`).
+        let (hw, hh) = hand.size();
+        let cx = hand.x - hand.vx + hw * 0.5;
+        let cy = hand.y - hand.vy + hh * 0.5;
+        let shot = hand.wants_hostile_shot_ai[0];
+        assert_eq!(shot.kind, 452);
+        assert_eq!(shot.damage, 30);
+        let speed = (shot.vx * shot.vx + shot.vy * shot.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.01, "the ellipse normal × 8");
+        let (ox, oy) = (shot.x - cx, shot.y - cy);
+        let od = (ox * ox + oy * oy).sqrt();
+        let ring_len = (30.0f32 * 30.0 + 66.0 * 66.0).sqrt();
+        // The muzzle sits at the constant ring radius; the (−num, 3)
+        // offset (length √10) shifts it by at most that much.
+        assert!(
+            (od - ring_len * 0.4).abs() <= (10.0f32).sqrt() + 0.01,
+            "the constant-radius muzzle + the (−num, 3) offset: {od}"
+        );
+        let want = (std::f32::consts::TAU * mirror.next_double() as f32
+            - std::f32::consts::PI)
+            / 30.0
+            + std::f32::consts::PI / 180.0 * -1.0;
+        assert_eq!(shot.ai1, want, "the ai1 draw");
+        assert_eq!(rng.peek(), mirror.peek(), "one draw per shot");
+    }
 }
 
 #[cfg(test)]

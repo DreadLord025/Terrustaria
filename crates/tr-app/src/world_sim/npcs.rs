@@ -2650,6 +2650,112 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
+    // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
+    // at STRIKE time (before `UpdateNPCs`), so the restore rides ahead of
+    // the carrier pre-pass: a struck part/core does not die — it takes
+    // its death phase with `life = lifeMax` + `dontTakeDamage` restored.
+    // The `moon_despawn_kill` flag marks the `active = false` kills that
+    // BYPASS checkDead (the orphan guards `:41579-41583`/`:42086-42091`,
+    // the lost-part gate `:41267-41272`, the despawn ride `:41504`, the
+    // drama/despawn sweeps) — those stay dead.
+    // RNG: the whole pass is draw-free by construction —
+    // `MoonLord_SpawnTrueEyeOfCthulhu` (`:41134-41154`) only counts and
+    // computes; `NewNPC`'s one draw (`:80752`) short-circuits on
+    // `Main.getGoodWorld` (false in the port, the aiStyle-9 precedent);
+    // `SetDefaults` case 400 (`:14141-14158`) draws nothing.
+    {
+        let mut eyes: Vec<Npc> = Vec::new();
+        let mut next_uid = app.next_npc_uid;
+        for i in 0..app.npcs.len() {
+            if app.npcs[i].hp > 0 || app.npcs[i].moon_despawn_kill {
+                continue;
+            }
+            match app.npcs[i].kind {
+                NpcKind::MoonLordHand | NpcKind::MoonLordHead => {
+                    // `:78060-78072`: the `-2` latch — a part already in
+                    // its death hover stays dead only if something else
+                    // killed it (the flag above); a fresh strike-death
+                    // arms the hover once.
+                    if app.npcs[i].ai[0] == -2.0 {
+                        continue;
+                    }
+                    // `:41136-41153`'s True Eye phase: the head's attack
+                    // timer leads (the hand reads the FIRST living head,
+                    // `FindFirstNPC(396)` `:41143-41147`), the eye count
+                    // offsets it by 400 each, the 1200-tick loop wraps.
+                    let count = app
+                        .npcs
+                        .iter()
+                        .filter(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0)
+                        .count()
+                        + eyes.len();
+                    let timer = if app.npcs[i].kind == NpcKind::MoonLordHand {
+                        app.npcs
+                            .iter()
+                            .find(|n| n.kind == NpcKind::MoonLordHead && n.hp > 0)
+                            .map(|n| n.ai[1])
+                            .unwrap_or(app.npcs[i].ai[1])
+                    } else {
+                        app.npcs[i].ai[1]
+                    };
+                    let mut phase = (timer - (588.0 + 400.0 * count as f32)) % 1200.0;
+                    if phase < 0.0 {
+                        phase += 1200.0;
+                    }
+                    let (ecx, ecy) = app.npcs[i].center();
+                    let carrier = app.npcs[i].carrier_uid;
+                    // `:41154`'s `(int)base.Center.X/Y` truncation.
+                    let (ecx, ecy) = ((ecx as i32) as f32, (ecy as i32) as f32);
+                    let mut eye =
+                        Npc::new(NpcKind::MoonLordFreeEye, ecx - 30.0, ecy - 60.0, 1, 0.0);
+                    eye.hp = eye.max_hp;
+                    // `NewNPC`'s `Bottom = (X, Y)` (`:80770`): the 60×60
+                    // eye's bottom-centre sits on the part's centre.
+                    eye.ai[0] = -2.0;
+                    eye.ai[1] = phase;
+                    eye.ai[3] = carrier as f32;
+                    eye.uid = next_uid;
+                    next_uid += 1;
+                    eye.carrier_uid = carrier;
+                    eye.carrier_timer = 1.0;
+                    eye.moon_core_alive = true;
+                    // `SetDefaults` case 400 (`:14155`).
+                    eye.dont_take_damage = true;
+                    eyes.push(eye);
+                    let n = &mut app.npcs[i];
+                    n.ai[0] = -2.0;
+                    // `:78065`: `ai[(type != 396) ? 1 : 2] = 0` — the
+                    // hand's pulse rides ai[1], the head's ai[2].
+                    if n.kind == NpcKind::MoonLordHand {
+                        n.ai[1] = 0.0;
+                    } else {
+                        n.ai[2] = 0.0;
+                    }
+                    n.hp = n.max_hp;
+                    n.dont_take_damage = true;
+                    n.moon_dying = true;
+                }
+                NpcKind::MoonLordCore => {
+                    // `:78074-78078`: the drama latch — the core enters
+                    // its 600-tick crash drama ONCE; the drama's own
+                    // `life = 0` end (`:41438-41443`, ai[0] already 2)
+                    // passes through to the death events.
+                    if app.npcs[i].ai[0] == 2.0 {
+                        continue;
+                    }
+                    let n = &mut app.npcs[i];
+                    n.ai[0] = 2.0;
+                    n.hp = n.max_hp;
+                    n.dont_take_damage = true;
+                    n.moon_dying = true;
+                }
+                _ => {}
+            }
+        }
+        app.next_npc_uid = next_uid;
+        app.npcs.extend(eyes);
+    }
     // S1-D-8 (research/39 "Phase A"): the read-only snapshot seam. The
     // carrier-link scan family below (the parts' core lookup + the core's
     // part check) reads this per-tick view instead of re-borrowing
@@ -2697,11 +2803,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.npcs[i].carrier_y = ccy;
                 app.npcs[i].carrier_timer = 1.0;
                 app.npcs[i].moon_core_alive = true;
+                // S1-D-3: the core's phase mirror — the head's `-2` arm
+                // reads `Main.npc[ai[3]].ai[0] == 2` (`NPC.cs:42155`) to
+                // hand itself the `-3` corpse tilt. The snapshot does not
+                // carry ai[0]; read the live core once per linked part
+                // (the same row the centre came from).
+                app.npcs[i].moon_core_phase = app.npcs[ci].ai[0];
             }
             None => {
                 app.npcs[i].moon_core_alive = false;
                 app.npcs[i].carrier_timer = 0.0;
                 app.npcs[i].hp = 0;
+                // S1-D-3: the orphan kill is the AI's `active = false`
+                // (`:41579-41583`/`:42086-42091`/`:42466-42470`) — it
+                // bypasses checkDead, so the death pass must not restore
+                // the part's death hover.
+                app.npcs[i].moon_despawn_kill = true;
                 // Mirror the kill into the read-only view: a later part's
                 // fallback find / the core's alive check must not see it
                 // (the live `hp > 0` reads didn't either).
@@ -3372,9 +3489,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
             // `DoDeathEvents`'s 398 row (`NPC.cs:79397-79404`): the core's
             // death clears the lunar apocalypse (the vanilla's
-            // `SetEventFlagCleared(ref downedMoonlord, 10)`).
+            // `SetEventFlagCleared(ref downedMoonlord, 10)` +
+            // `LunarApocalypseIsUp = false`). S1-D-3: the flag rides the
+            // drama's `checkDead` ONLY — the `active = false` kills that
+            // bypass it (the lost-part gate `:41267-41272`, the despawn
+            // ride `:41504`) carry `moon_despawn_kill` and never raise
+            // the downed flag. The despawn ride's parts-clear
+            // (`:41490-41514`) rides HERE: the core deactivates on the
+            // same tick it requests the clear, so the resolve reads the
+            // dead clone (the post-AI pass would never see it).
             NpcKind::MoonLordCore => {
-                app.world.downed_moon_lord = true;
+                if npc.wants_moon_parts_clear {
+                    for n in app.npcs.iter_mut() {
+                        if matches!(
+                            n.kind,
+                            NpcKind::MoonLordHand | NpcKind::MoonLordHead | NpcKind::MoonLordFreeEye
+                        ) && n.hp > 0
+                        {
+                            n.hp = 0;
+                            n.moon_despawn_kill = true;
+                        }
+                    }
+                    app.world.lunar_apocalypse_is_up = false;
+                } else if !npc.moon_despawn_kill {
+                    app.world.downed_moon_lord = true;
+                    app.world.lunar_apocalypse_is_up = false;
+                }
             }
             NpcKind::NebulaTower => {
                 app.world.downed_tower_nebula = true;
@@ -4259,6 +4399,75 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next_uid;
         app.npcs.extend(clots);
+    }
+    // S1-D-3: the core's drama/despawn sweeps (`AI_077`'s `:41316-41335`
+    // at the drama's 60th tick / `:41455-41488` at the despawn's 40th):
+    // the five Moon-Lord projectile kinds die and every True Eye falls.
+    // The drama's eye kill rides `HitEffect(0, 9999)` + `active = false`
+    // (`:41331-41332`) — a direct deactivation, no checkDead, so the
+    // `moon_despawn_kill` flag keeps the death pass from restoring it.
+    // The gore sweep (`:41481-41488`) is unmodelled (no gore pool).
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind != NpcKind::MoonLordCore || app.npcs[i].wants_moon_sweep == 0 {
+            continue;
+        }
+        app.npcs[i].wants_moon_sweep = 0;
+        let kinds = [456u16, 462, 455, 452, 454];
+        let victims: Vec<usize> = app
+            .projectiles
+            .slots()
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.active && kinds.contains(&p.kind))
+            .map(|(j, _)| j)
+            .collect();
+        for j in victims {
+            app.projectiles.kill(j);
+        }
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MoonLordFreeEye && n.hp > 0 {
+                n.hp = 0;
+                n.moon_despawn_kill = true;
+            }
+        }
+    }
+    // S1-D-3: the despawn ride's parts-clear (`AI_077`'s `:41490-41514`)
+    // rides the DEATH-EVENTS loop above — the core deactivates on the
+    // same tick it requests the clear, so a post-AI resolve would never
+    // see the flag.
+    // S1-D-3: the enrage hop's same-tick ride (`AI_077`'s `:41551-41574`):
+    // the three linked parts + every True Eye take the core's teleport
+    // delta on the SAME tick (the C# walks them inside the core's AI;
+    // the port resolves it right after the AI pass — the parts' own AI
+    // already ran with the pre-hop anchor, the C#'s slot order decides
+    // that per part; the position result is identical).
+    {
+        let mut rides: Vec<(u32, f32, f32)> = Vec::new();
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MoonLordCore {
+                if let Some((hx, hy)) = n.moon_hop.take() {
+                    rides.push((n.uid, hx, hy));
+                }
+            }
+        }
+        for (core_uid, hx, hy) in rides {
+            for n in app.npcs.iter_mut() {
+                if n.hp <= 0 {
+                    continue;
+                }
+                if n.kind == NpcKind::MoonLordFreeEye
+                    || ((n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead)
+                        && n.carrier_uid == core_uid)
+                {
+                    n.x += hx;
+                    n.y += hy;
+                    // The pre-pass mirrors refresh next tick; keep this
+                    // tick's carrier centre coherent for the render.
+                    n.carrier_x += hx;
+                    n.carrier_y += hy;
+                }
+            }
+        }
     }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
     // the payload's pirate spawns with the drop velocity (the vanilla's
@@ -10959,6 +11168,11 @@ mod moon_lord_tests {
             .position(|n| n.kind == NpcKind::MoonLordCore && n.uid == core_uid)
             .expect("the first core");
         app.npcs[core_idx].hp = 0;
+        // S1-D-3: a STRIKE death restores the core into its drama
+        // (`checkDead` `:78074-78078`); the parts fall with a core that
+        // is REMOVED — the `active = false` bypass (`moon_despawn_kill`,
+        // the despawn ride `:41504` / the lost-part gate `:41267-41272`).
+        app.npcs[core_idx].moon_despawn_kill = true;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         let alive_parts = app
             .npcs
@@ -11030,9 +11244,11 @@ mod moon_lord_tests {
         // The pre-pass mirrors the anchor's centre BEFORE the step moves it.
         assert_eq!(app.npcs[clot_i].carrier_x, ax, "the clot mirrors ITS head");
         assert_eq!(app.npcs[clot_i].carrier_y, ay);
-        // The first head dies; the second family lives on.
+        // The first head is REMOVED (the bypass flag — a strike death
+        // would restore its `-2` hover, S1-D-3); the second family lives.
         let head_i = app.npcs.iter().position(|n| n.uid == head_a_uid).expect("the head");
         app.npcs[head_i].hp = 0;
+        app.npcs[head_i].moon_despawn_kill = true;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         let clot_alive = app
             .npcs
@@ -11089,17 +11305,21 @@ mod moon_lord_tests {
         assert!(app.npcs[eye_i].hp > 0);
         assert_eq!(app.npcs[eye_i].carrier_x, bx, "the eye mirrors ITS core");
         assert_eq!(app.npcs[eye_i].carrier_y, by);
-        // The FIRST core dies — the eye's link is explicit, so it lives.
+        // The FIRST core is REMOVED (the bypass flag — a strike death
+        // would restore its drama, S1-D-3) — the eye's link is explicit,
+        // so it lives.
         let core_i = app.npcs.iter().position(|n| n.uid == uid_a).expect("the first core");
         app.npcs[core_i].hp = 0;
+        app.npcs[core_i].moon_despawn_kill = true;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(
             app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0),
             "the eye does not fall with another family's core"
         );
-        // Its OWN core dies — the eye falls (`:42466-42470`).
+        // Its OWN core is REMOVED — the eye falls (`:42466-42470`).
         let core_i = app.npcs.iter().position(|n| n.uid == uid_b).expect("the second core");
         app.npcs[core_i].hp = 0;
+        app.npcs[core_i].moon_despawn_kill = true;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(
             !app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0),
@@ -11169,10 +11389,21 @@ mod moon_lord_tests {
             app.npcs[core_idx].dont_take_damage,
             "the core is shielded while its parts live"
         );
-        // The parts die: the core's bookkeeping sees all three gone.
+        // S1-D-3: the parts take their DEATH STATE (`ai[0] = -2`, the
+        // `checkDead` restore `NPC.cs:78060-78072`) — the C#'s flag2
+        // reads the parts' phase, not their absence; a part removed
+        // outright trips the lost-part gate instead (`:41251-41272`).
         for n in app.npcs.iter_mut() {
             if n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead {
                 n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        // The strike-deaths restored the parts into their death hovers.
+        for n in app.npcs.iter() {
+            if n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead {
+                assert!(n.hp > 0, "the part lives in its death hover");
+                assert_eq!(n.ai[0], -2.0, "the part's death state");
             }
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -11294,6 +11525,10 @@ mod moon_lord_tests {
         );
         core.hp = core.max_hp;
         core.ai[0] = 2.0;
+        // S1-D-3: a core mid-drama has its init latch already spent (the
+        // C#'s `localAI[3] == 1` — the unconditional latch re-arms `-1`
+        // on a fresh core whatever `ai[0]` holds, `:41163-41168`).
+        core.moon_spawn_latch = true;
         let mut rng = UnifiedRandom::new(7);
         let mut smoke = 0usize;
         let mut dead = false;
@@ -11319,6 +11554,9 @@ mod moon_lord_tests {
             0.0,
         );
         c.hp = 0;
+        // The drama's own end (`:41438-41443`): ai[0] is ALREADY 2, so
+        // checkDead's latch passes through to the death events (S1-D-3).
+        c.ai[0] = 2.0;
         app.npcs.push(c);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_moon_lord, "the downed flag");
@@ -11405,6 +11643,261 @@ mod moon_lord_tests {
         let s = shot.expect("the eye's volley fires");
         assert_eq!(s.0, 452, "the PhantasmalEye");
         assert_eq!(s.5, 35, "the eye's classic damage constant");
+    }
+
+    #[test]
+    fn the_part_death_restores_the_hover_and_spawns_a_true_eye() {
+        // S1-D-3: `checkDead`'s 396/397 arm (`NPC.cs:78060-78072`) +
+        // `PrepareForDeathAnimation` (`:78032-78038`): a struck part does
+        // not die — `ai[0] = -2`, the pulse timer zeroed (`ai[1]` hand /
+        // `ai[2]` head), `life = lifeMax`, `dontTakeDamage`, and ONE True
+        // Eye per fresh death (`MoonLord_SpawnTrueEyeOfCthulhu`
+        // `:41134-41154`) with the phase offset on `ai[1]`.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let head_i = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordHead)
+            .expect("the head");
+        let head_uid = app.npcs[head_i].uid;
+        let timer = app.npcs[head_i].ai[1];
+        app.npcs[head_i].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let head_i = app
+            .npcs
+            .iter()
+            .position(|n| n.uid == head_uid)
+            .expect("the restored head");
+        let head = &app.npcs[head_i];
+        assert!(head.hp > 0, "the restore rides lifeMax");
+        assert_eq!(head.ai[0], -2.0, "the death hover");
+        // The restore zeroes ai[2] at strike time; the same tick's `-2`
+        // arm (`:42162`) already incremented it — the C#'s order.
+        assert_eq!(head.ai[2], 1.0, "the head's pulse timer zeroed + first tick");
+        assert!(head.dont_take_damage, "the death hover is shielded");
+        assert!(head.moon_dying, "the restore flag");
+        let eyes: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordFreeEye)
+            .collect();
+        assert_eq!(eyes.len(), 1, "one True Eye per fresh death");
+        let eye = eyes[0];
+        // The `-2` hold releases on the eye's first AI tick (`:42495`:
+        // the table entry overwrites -2) — whichever attack the phase
+        // lands in.
+        assert!(eye.ai[0] >= 0.0, "the spawn-in hold releases");
+        assert_eq!(eye.carrier_uid, head.carrier_uid, "the eye rides the core link");
+        // The phase (`:41149-41153`): timer − 588 (count 0), wrapped; the
+        // eye's own first tick already incremented it (`:42473`).
+        let mut want = (timer - 588.0) % 1200.0;
+        if want < 0.0 {
+            want += 1200.0;
+        }
+        assert_eq!(eye.ai[1], want + 1.0, "the phase offset + first tick");
+        assert!(eye.dont_take_damage, "case 400's shield (`:14155`)");
+    }
+
+    #[test]
+    fn the_core_strike_death_enters_the_drama_once() {
+        // S1-D-3: `checkDead`'s 398 arm (`NPC.cs:78074-78078`): the strike
+        // death arms the 600-tick drama with the life restore — NOT the
+        // downed flag. The drama's own end (`ai[0]` already 2) passes
+        // through to the death events; the bypass kill never does.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        // The spawn-in completes first (ai[1] reset to 0 at the 60th
+        // tick) so the drama's counter starts clean.
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let core_i = app.npcs.iter().position(|n| n.kind == NpcKind::MoonLordCore).unwrap();
+        app.npcs[core_i].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MoonLordCore).expect("the drama core");
+        assert!(core.hp > 0, "the restore");
+        assert_eq!(core.ai[0], 2.0, "the drama phase");
+        // The restore zeroes nothing — the drama's first tick already
+        // ran (ai[1] = 1, the C#'s strike-then-UpdateNPCs order).
+        assert_eq!(core.ai[1], 1.0, "the drama's first tick");
+        assert!(!app.world.downed_moon_lord, "no downed flag from the strike");
+        // The bypass kill (the despawn ride's shape) stays dead, no flag.
+        let core_i = app.npcs.iter().position(|n| n.kind == NpcKind::MoonLordCore).unwrap();
+        app.npcs[core_i].hp = 0;
+        app.npcs[core_i].moon_despawn_kill = true;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordCore),
+            "the bypass kill is not restored"
+        );
+        assert!(!app.world.downed_moon_lord, "the bypass never raises the flag");
+    }
+
+    #[test]
+    fn the_drama_sweep_kills_the_eyes_and_the_five_kinds() {
+        // S1-D-3: the drama's 60th-tick sweep (`NPC.cs:41316-41335`): the
+        // five Moon-Lord projectile kinds die and every True Eye falls
+        // (the direct deactivation — no checkDead restore).
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 59.0;
+        core.moon_spawn_latch = true;
+        app.npcs.push(core);
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        app.npcs.push(eye);
+        // Kind 100 (the Destroyer laser) is the non-moon survivor — the
+        // sweep's five-kind list must not touch it.
+        for kind in [456u16, 462, 455, 452, 454, 100] {
+            app.projectiles.spawn_hostile(
+                kind,
+                Vec2::new(140.0 * TILE_PX, 90.0 * TILE_PX),
+                Vec2::new(1.0, 0.0),
+                10,
+                0.0,
+            );
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let alive_kinds: Vec<u16> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .map(|p| p.kind)
+            .collect();
+        assert_eq!(alive_kinds, vec![100u16], "only the non-moon kind survives");
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0),
+            "the eyes fall — and stay fallen (no restore)"
+        );
+    }
+
+    #[test]
+    fn the_despawn_ride_clears_the_parts_and_the_apocalypse() {
+        // S1-D-3: the despawn ride's end (`NPC.cs:41490-41514`): the parts
+        // + the eyes deactivate DIRECTLY and `LunarApocalypseIsUp = false`
+        // — no downed flag.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 3.0;
+        core.ai[1] = 59.0;
+        core.moon_spawn_latch = true;
+        app.npcs.push(core);
+        let mut hand = linked(NpcKind::MoonLordHand, 100.0 * TILE_PX, 90.0 * TILE_PX, 0);
+        hand.ai[0] = -2.0;
+        app.npcs.push(hand);
+        app.world.lunar_apocalypse_is_up = true;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.hp > 0
+                && matches!(n.kind, NpcKind::MoonLordCore | NpcKind::MoonLordHand)),
+            "the ride ends the family"
+        );
+        assert!(!app.world.lunar_apocalypse_is_up, "the apocalypse clears");
+        assert!(!app.world.downed_moon_lord, "the despawn is not a kill");
+    }
+
+    #[test]
+    fn the_enrage_hop_rides_the_parts_and_the_eyes() {
+        // S1-D-3: the >2400-px hop (`NPC.cs:41543-41574`): the core enters
+        // `-2`, teleports to the player lifted 150 px, and the parts +
+        // every True Eye take the SAME delta on the SAME tick.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.moon_spawn_latch = true;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        // Fling the player 3000 px away — past the hop gate.
+        app.player.as_mut().unwrap().x += 3000.0;
+        let before: Vec<(u32, f32, f32)> = app
+            .npcs
+            .iter()
+            .filter(|n| matches!(n.kind, NpcKind::MoonLordHand | NpcKind::MoonLordHead))
+            .map(|n| (n.uid, n.x, n.y))
+            .collect();
+        let head_before = before
+            .iter()
+            .find(|(uid, _, _)| {
+                app.npcs.iter().find(|n| n.uid == *uid).unwrap().kind == NpcKind::MoonLordHead
+            })
+            .copied()
+            .expect("the head");
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        let core_uid = app.npcs.iter().find(|n| n.kind == NpcKind::MoonLordCore).unwrap().uid;
+        eye.carrier_uid = core_uid;
+        let (ex, ey) = (eye.x, eye.y);
+        app.npcs.push(eye);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core = app.npcs.iter().find(|n| n.kind == NpcKind::MoonLordCore).expect("the core");
+        assert_eq!(core.ai[0], -2.0, "the hop arms the teleport re-entry");
+        // The head is velocity-zero (its slot owns its position), so its
+        // move IS the hop delta exactly.
+        let head = app.npcs.iter().find(|n| n.uid == head_before.0).expect("the head");
+        let (hx, hy) = (head.x - head_before.1, head.y - head_before.2);
+        assert!(hx.abs() > 2000.0, "the ride is the teleport delta");
+        for (uid, x0, y0) in &before {
+            let n = app.npcs.iter().find(|n| n.uid == *uid).expect("the part");
+            // The hands' own hover step is ≤6 px on top of the delta.
+            assert!((n.x - (x0 + hx)).abs() <= 7.0, "the part rode the delta");
+            assert!((n.y - (y0 + hy)).abs() <= 7.0);
+        }
+        let eye = app.npcs.iter().find(|n| n.kind == NpcKind::MoonLordFreeEye).expect("the eye");
+        // The eye's drift step rides up to 24 px on top of the delta.
+        assert!((eye.x - (ex + hx)).abs() <= 25.0, "the eye rode the delta");
+        assert!((eye.y - (ey + hy)).abs() <= 25.0);
+    }
+
+    #[test]
+    fn the_head_corpse_tilts_when_the_core_dramas() {
+        // S1-D-3: the head's `-2` arm reads the core's phase
+        // (`NPC.cs:42155-42159`, the pre-pass mirror): the core's drama
+        // hands the head the `-3` corpse tilt, which eases the rotation
+        // toward π/12 (`:42138`).
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 2.0;
+        core.ai[1] = 100.0;
+        core.moon_spawn_latch = true;
+        app.npcs.push(core);
+        let mut head = linked(NpcKind::MoonLordHead, 150.0 * TILE_PX, 100.0 * TILE_PX - 400.0, 0);
+        head.ai[0] = -2.0;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let head_uid = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordHead)
+            .expect("the head")
+            .uid;
+        let head = app.npcs.iter().find(|n| n.uid == head_uid).expect("the head");
+        assert_eq!(head.moon_core_phase, 2.0, "the phase mirror");
+        assert_eq!(head.ai[0], -3.0, "the corpse tilt hand-off");
+        for _ in 0..60 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let head = app.npcs.iter().find(|n| n.uid == head_uid).expect("the head");
+        assert_eq!(head.ai[0], -3.0, "the tilt holds");
+        assert!(
+            (head.rotation - std::f32::consts::PI / 12.0).abs() < 0.01,
+            "the rotation eases to π/12: {}",
+            head.rotation
+        );
     }
 }
 #[cfg(test)]

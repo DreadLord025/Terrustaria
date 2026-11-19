@@ -11001,6 +11001,79 @@ loot rows stay open. The `FindFrame` cases port their counters (the
 frameCounter/7, the 398's 30/6, the 400's 16/4) — the 398's gore burst
 on its first frame is unmodelled.
 
+## The Moon Lord audit (S1-D-3, code-only mode)
+
+`task/S1-D-3-moonlord-audit` — a line-by-line re-read of `AI_077_MoonLordCore`
+(`NPC.cs:41157-41575`), `AI_078_MoonLordHands` (`:41577-42082`),
+`AI_079_MoonLordHead` (`:42084-42457`), `AI_081_TrueEyeOfCthulhu`
+(`:42459-42922`), `checkDead`'s moon arms (`:78060-78078`) +
+`PrepareForDeathAnimation` (`:78032-78038`) + `MoonLord_SpawnTrueEyeOfCthulhu`
+(`:41134-41154`), against the f1701eb0 defect catalogue (missing gates, f32
+op order, int-vs-float division, strict bounds, draw-before-early-return,
+invented constants). **No compiler invoked; the witness tests are WRITTEN
+NOT RUN.** The ids are confirmed `NPCID.cs:11469-11479` (396 head / 397 hand
+/ 398 core / 400 free eye / 401 leech blob; 399 is the Martian Probe, NOT a
+Moon Lord part).
+
+### Verdict per block
+
+| Block (C# cite) | Verdict | Fix |
+| --- | --- | --- |
+| Core roar gate `:41159-41162` | **FIXED** | both draws (`Next(200)`, gated `Next(93,100)`) were absent; now consumed every tick except -1/2 |
+| Core init latch `:41163-41168` | **FIXED** | the latch is unconditional on the first tick (not `ai[0]==0`); `lunar.rs` no longer pre-arms `-1`+latch, so the spawn tick's roar draw rides the stream |
+| `-2`/`-1` windups `:41169-41235` | **FIXED** | the C# is an if-SEQUENCE, not a switch — the 60th tick hands `ai[0]=0` and the cruise runs the SAME tick; `== 60` (strict), the dead `Next(3)` at `:41187` consumed |
+| Cruise fly `:41240-41247`/`:41298-41305` | **VERIFIED** | `moon_cruise_fly` = `Normalize(vector−velocity)*8`, `SimpleFlyMovement(0.5)`, midpoint `Lerp` — matches |
+| Lost-part gate `:41251-41272` | **FIXED** | runs AFTER the cruise move; the kill bypasses `checkDead` (`moon_despawn_kill`); an empty-slot guard skips the spawn tick (the C# spawns synchronously, the port defers one pass) |
+| flag2 vulnerable `:41273-41291` | **VERIFIED** | the pre-pass reads the parts' `-2` death STATE (not mere absence) |
+| Drama sweep `:41316-41335` | **FIXED (was unwired)** | `wants_moon_sweep` at `ai[1]==60`; the sim kills the five projectile kinds + every True Eye |
+| Drama dust storm `:41336-41403` | **FIXED (draws)** | the 9 unconditional top-level draws + 3 per inner iteration (`ceil(ai[1]/60)`) consumed in C# order; the dust-GATED fan draws stay deferred with the dust engine |
+| Drama smoke `:41405-41428` | **FIXED** | draw order (offset pair → radius → gated `Next(4)`/angle/point), the sign is **+1 when `Next(4)<2`** (`Utils.cs:2010-2017`, the partial inverted it), both components ×6 |
+| Drama end `:41438-41443` | **FIXED** | early `return` at 600; `life=0` → the death pass raises the flag |
+| Despawn sweep `:41455-41488` | **FIXED (was unwired)** | `wants_moon_sweep` at `ai[1]==40` |
+| Despawn end `:41490-41514` | **FIXED** | the parts-clear rides the DEATH-EVENTS loop (the core deactivates the same tick it requests the clear); `LunarApocalypseIsUp=false`; no downed flag |
+| Player guard `:41517-41542` | **FIXED** | runs AFTER every phase; the `!dead` term added |
+| Enrage hop `:41543-41574` | **FIXED** | the distance + delta read the PRE-integration centre (`base.Distance`, `Entity.cs:195-198`; integration is `UpdateNPC`'s tail `:90498`); the parts + eyes ride the SAME delta via `moon_hop` |
+| Hand sequencer/rows `:41600-41626` | **VERIFIED** | rows match `InitializeMoonLordAttacks` `:6935-6954` |
+| Hand `-2` death `:41628-41653` | **FIXED** | `damage=0` + the `ai[1]` 32-tick wrap were missing |
+| Hand volley/flood/laser | **VERIFIED** | the partial's 56-tick cycle, `%4` cadence, ellipse muzzle, SmoothStep rides match; the release-wave deviation stands |
+| Head `-2`/`-3` death `:42134-42171` | **FIXED (were absent)** | the head fell into the laser `_` arm; now the corpse tilt (π/12 at 0.07) + the core-phase hand-off (`moon_core_phase` mirror) |
+| Head iris/lid counters `:42347-42380` | **FIXED** | the ×5/×7 multipliers were SWAPPED (iris is ×7, lid ×5); the lid's two clamp arms write `localAI[2]` (a vanilla quirk) — kept verbatim |
+| Head leech gate `:42286-42302` | **FIXED** | the ≤3000-px launch gate was missing |
+| Eye roar `:42461-42464` | **FIXED** | both draws (`Next(420)`, gated `Next(100,101)`) were absent; consumed before the orphan guard |
+| Eye sequencer/rows `:42476-42499` | **VERIFIED** | rows match `InitializeMoonLordAttacks2` `:6987-7003`; the `-2` hold releases on the table's 0 entry |
+| `checkDead` 396/397/398 `:78060-78078` | **FIXED (were unwired)** | the sim restores `life=lifeMax`+`dontTakeDamage`, arms the death phase, spawns ONE True Eye per fresh part death with the phase offset; the `-2`/`2` latches prevent re-restore |
+| Death events 398 `:79397-79404` | **FIXED** | the downed flag rides the drama's `checkDead` ONLY (`!moon_despawn_kill`); the apocalypse clears |
+| `lunar.rs` tower slot | **FIXED** | slot 2 was a second `NebulaTower` (unreachable) — now `VortexTower` |
+
+### RNG by construction
+
+Every `Main.rand` draw the ported arms consume is cited and replayed against
+a mirrored `UnifiedRandom` (the `golden` stream-state pattern). Consumed:
+the core roar (`:41159-41161`), the dead `Next(3)` (`:41187`), the drama
+storm's 9 + 3·inner (`:41338-41382`), the drama smoke's offset/radius + gated
+triple (`:41407-41426`), the hand volley's one `NextDouble` per shot
+(`:41704`), the eye roar (`:42461-42463`), the eye ring's spin `Next(2)` +
+per-shot `NextDouble` (`:42768`/`:42785`). The `checkDead`/True-Eye-spawn pass
+is **draw-free**: `MoonLord_SpawnTrueEyeOfCthulhu` only counts/computes,
+`NewNPC`'s one draw (`:80752`) short-circuits on `Main.getGoodWorld` (false in
+the port), `SetDefaults` case 400 (`:14141-14158`) draws nothing.
+
+### Deferred (documented, not stream drift inside the ported blocks)
+
+The dust-GATED draws (the drama fan `:41365-41373` + inner `Dust.NewDust`
+`:41396-41401`, the head's 229 fan `:42221`, the eye's dust pairs) ride the
+unmodelled dust engine; the `getGoodWorld` 1021 fan (`:42267-42276`) needs the
+runtime seed flag; the attached-projectile pops (`:41588-41591`/`:42092-42095`),
+the 454 owner tag + the release-wave rewrite (`:41787-41797`), the eye's
+100-px sibling separation (`:42556-42577`), the gore sweep (`:41481-41488`),
+the sound cues and `MoonlordDeathDrama.RequestLight`/`AddExplosion` stay open.
+The head's `FindFrame` rand boost (`:71955`) keeps its pre-existing hash
+stand-in. The True Eye's permanent `dontTakeDamage` (`SetDefaults` `:14155`,
+never cleared by `AI_081`) is set at the `checkDead` spawn; the generic
+`Npc::new` default (false) is a pre-existing table gap, not this audit's scope.
+The enrage-hop parts' own AI runs against the pre-hop anchor then takes the
+delta (the C#'s slot order decides per part) — the position result matches.
+
 ## The Vortex hive trio (M4-EVENT-11)
 
 The Vortex pillar spawns 426/427/428 (`NPC.cs:1327`'s `SelectRandom(429,

@@ -212,12 +212,13 @@ pub fn update_moon_lord_countdown(app: &mut App) {
     ));
     let mut core = Npc::new(NpcKind::MoonLordCore, px, py - 150.0, 1, 0.0);
     core.hp = core.max_hp;
-    core.ai[0] = -1.0; // `AI_077`'s spawn-in phase.
-    // S1-D-3: the spawn-in is already armed — the C#'s `localAI[3]` latch
-    // (`NPC.cs:41163-41168`) only fires for a core that starts at `ai[0] ==
-    // 0`. Without the latch the first `ai[0] == 0` tick after the windup
-    // re-armed `-1` and spawned a SECOND hands+head set 60 ticks later.
-    core.moon_spawn_latch = true;
+    // S1-D-3: `SpawnOnPlayer` → `NewNPC` leaves `ai[0] = 0`
+    // (`NPC.cs:80777`); the C#'s `localAI[3]` latch (`:41163-41168`) arms
+    // `-1` on the FIRST AI tick — AFTER the roar's `Next(200)` draw
+    // (`:41159`, the gate excludes only -1/2, so the spawn tick draws).
+    // The port pre-armed `-1` + the latch, which skipped that draw and
+    // desynced the stream from tick one. Both stay unset: the AI's own
+    // latch arms the phase in the C#'s order.
     app.npcs.push(core);
 }
 
