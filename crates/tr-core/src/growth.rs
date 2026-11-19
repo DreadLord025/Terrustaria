@@ -46,6 +46,7 @@ use crate::world::World;
 
 mod decorations;
 mod grass;
+mod herbs;
 mod trees;
 
 // S1-K-3: the tree family lives in `growth/trees.rs`; the public seams
@@ -70,8 +71,12 @@ use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
 pub use decorations::{check_cat_tail, grow_cat_tail, grow_check_seaweed, place_dye, plant_dye};
 use decorations::{grow_web, try_growing_abigails_flower};
 
-/// `TileID.Sets.tileAlch` (`TileID.cs`) — the herb tiles GrowAlch runs on.
-pub const TILE_ALCH: [u16; 3] = [82, 83, 84];
+// S1-K-3d: the herbs family lives in `growth/herbs.rs`; the public seams
+// stay on `growth` (verbatim move, behaviour frozen).
+pub use herbs::{
+    alch_seed_skips, grow_alch, is_alchemy_plant_harvestable,
+    is_harvestable_herb_with_seed, WeatherCtx, TILE_ALCH,
+};
 
 /// `TileID.Sets.CanGrowCrystalShards` (`TileID.cs:585`).
 pub const CAN_GROW_CRYSTAL_SHARDS: [u16; 5] = [117, 116, 164, 402, 403];
@@ -83,143 +88,6 @@ pub fn world_update_rate(day_rate: i32, freeze_time: bool) -> i32 {
         return 0;
     }
     day_rate.min(24)
-}
-
-/// The alch-seed gate (`:71606-71614`): `Next(num7·100) == 0` skips the
-/// pick; `num7 = Lerp(151, 151·2.8, clamp(maxTilesX/4200 − 1, 0, 1))`.
-pub fn alch_seed_skips(world: &World, rng: &mut UnifiedRandom) -> bool {
-    let t = ((world.width as f64 / 4200.0 - 1.0).clamp(0.0, 1.0));
-    let num7 = 151.0 + (151.0 * 2.8 - 151.0) * t;
-    rng.next_max((num7 * 100.0) as i32) == 0
-}
-
-/// `GrowAlch` (`WorldGen.cs:45777-45890`): the herb lifecycle. The stages
-/// ride `frameX` (0/18/36/72/90/108) and the bloom target 83; the mature 84
-/// blooms back; the liquid kill keeps only the matching stage.
-pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: bool, rng: &mut UnifiedRandom) {
-    let Some(t) = world.tile(x, y) else {
-        return;
-    };
-    if !t.active() {
-        return;
-    }
-    // `:45784-45796`: the liquid kill — the wrong liquid for the stage
-    // destroys the herb (the lava keeps only the stage-5 cactus-stem shape).
-    if t.liquid > 0 {
-        let stage = t.frame_x / 18;
-        let lava = t.flags & crate::tile::FLAG_LIQUID_LAVA != 0;
-        let water = t.liquid_kind() == crate::tile::LiquidKind::Water;
-        let keep = (lava && stage == 5) || (water && (stage == 1 || stage == 4));
-        if !keep {
-            crate::edit::kill_tile(world, x, y, false);
-            return;
-        }
-    }
-    if t.kind == 82 {
-        // The sprout matures: the special cues bloom straight into 83.
-        let frame_x = world.tile(x, y).map(|t| t.frame_x).unwrap_or(0);
-        let below_surface = y as f64 > world.world_surface;
-        let near_underworld = y > world.height - 200;
-        let bloom = if rng.next_max(50) == 0 && (frame_x == 108 || rng.next_max(2) == 0) {
-            true
-        } else if day_time && frame_x == 0 && rng.next_max(50) == 0 {
-            true
-        } else if !day_time && frame_x == 18 && rng.next_max(50) == 0 {
-            true
-        } else if raining && frame_x == 72 && rng.next_max(50) == 0 {
-            true
-        } else if below_surface && frame_x == 36 && rng.next_max(50) == 0 {
-            true
-        } else if near_underworld && frame_x == 90 && rng.next_max(50) == 0 {
-            true
-        } else {
-            false
-        };
-        if bloom {
-            if let Some(t) = world.tile_mut(x, y) {
-                t.kind = 83;
-            }
-        }
-        return;
-    }
-    // `:45862-45883`: the stage-3 flash (`frameX == 36`, 2 of 3 rolls skip).
-    if world.tile(x, y).is_some_and(|t| t.frame_x == 36) && rng.next_max(3) != 0 {
-        let kind = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
-        if kind == 83 {
-            if rng.next_max(2) == 0 {
-                if let Some(t) = world.tile_mut(x, y) {
-                    t.kind = 84;
-                }
-            }
-        } else if kind == 84 || rng.next_max(5) == 0 {
-            if let Some(t) = world.tile_mut(x, y) {
-                t.kind = 83;
-            }
-        }
-    }
-}
-
-
-/// `Main`'s weather/seed state `IsAlchemyPlantHarvestable` reads
-/// (`WorldGen.cs:66148-66175`) beyond the `World`'s saved fields: the
-/// app's weather clock passes the live values.
-#[derive(Clone, Copy, Default)]
-pub struct WeatherCtx {
-    /// `Main.raining`.
-    pub raining: bool,
-    /// `Main.cloudAlpha`.
-    pub cloud_alpha: f32,
-    /// `Main.remixWorld`.
-    pub remix_world: bool,
-}
-
-/// `WorldGen.IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
-/// per-style condition an herb may be harvested with a seed in hand —
-/// style 0 daybloom (day), 1 moonglow (night), 3 deathweed (night +
-/// blood moon / full moon), 4 waterleaf (rain or any cloud), 5 fireblossom
-/// (dry or below the surface, late afternoon).
-pub fn is_alchemy_plant_harvestable(world: &World, style: i32, y: i32, wx: &WeatherCtx) -> bool {
-    if style == 0 && world.day_time {
-        return true;
-    }
-    if style == 1 && !world.day_time {
-        return true;
-    }
-    if style == 3 && !world.day_time && (world.blood_moon || world.moon_phase == 0) {
-        return true;
-    }
-    if style == 4 && (wx.raining || wx.cloud_alpha > 0.0) {
-        return true;
-    }
-    if style == 5 {
-        let mut flag = y as f64 > world.world_surface;
-        if wx.remix_world {
-            flag = y < world.height - 350;
-        }
-        // The C# `(!Main.raining | flag)` is the bitwise bool `|` — both
-        // operands are pure, so `||` is equivalent.
-        if ((!wx.raining || flag) && world.time > 40500.0) {
-            return true;
-        }
-    }
-    false
-}
-
-/// `WorldGen.IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
-/// the grown herbs 83/84 carry the seed-harvest arm — 84 always is, and
-/// 83 when its style's condition holds (the plain herb 82 never is).
-pub fn is_harvestable_herb_with_seed(
-    world: &World,
-    kind: u16,
-    style: i32,
-    y: i32,
-    wx: &WeatherCtx,
-) -> bool {
-    match kind {
-        82 => false,
-        83 | 84 => kind == 84 || is_alchemy_plant_harvestable(world, style, y, wx),
-        _ => false,
-    }
 }
 
 /// `WorldGen.GrowCactus` (:56575-56815). The water box
@@ -1760,78 +1628,6 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn the_alch_gate_uses_the_world_size_lerp() {
-        // `:71606-71614`: `num7 = Lerp(151, 422.8, maxTilesX/4200 − 1)` —
-        // the 4200-wide world sits at t = 0 → 151; a 8400-wide world at
-        // t = 1 → 422.8. The gate skips on `Next(num7·100) == 0`.
-        let w = world();
-        let mut rng = UnifiedRandom::new(5);
-        let skips = (0..1000).filter(|_| alch_seed_skips(&w, &mut rng)).count();
-        // The skip chance = 1/(151·100) ≈ 1/15100 → ~0.07/1000 rolls; the
-        // 4200-world roll is nearly never skipped.
-        assert!(skips <= 2, "skips {skips}");
-    }
-
-    #[test]
-    fn the_herb_lifecycle_blooms_by_the_cues() {
-        // The sprout 82 (the stage-0 frame) blooms in the daylight.
-        let mut w = world();
-        put(&mut w, 30, 90, 82, 0);
-        let mut rng = UnifiedRandom::new(1);
-        let mut bloomed = false;
-        for _ in 0..4000 {
-            grow_alch(&mut w, 30, 90, true, false, &mut rng);
-            if w.tile(30, 90).unwrap().kind == 83 {
-                bloomed = true;
-                break;
-            }
-        }
-        assert!(bloomed, "the daylight cue blooms the stage-0 sprout");
-        // The rain cue drives the stage-72 frame.
-        let mut w = world();
-        put(&mut w, 30, 90, 82, 72);
-        let mut rng = UnifiedRandom::new(2);
-        let mut bloomed = false;
-        for _ in 0..4000 {
-            grow_alch(&mut w, 30, 90, false, true, &mut rng);
-            if w.tile(30, 90).unwrap().kind == 83 {
-                bloomed = true;
-                break;
-            }
-        }
-        assert!(bloomed, "the rain cue blooms the stage-72 frame");
-        // The generic arm (`:45785-45800`): every frame except 108 blooms on
-        // `Next(50) == 0` regardless of the cue — the cue arms are the
-        // chain's fallbacks.
-        let mut w = world();
-        put(&mut w, 30, 90, 82, 0);
-        let mut rng = UnifiedRandom::new(3);
-        let mut bloomed = false;
-        for _ in 0..400 {
-            grow_alch(&mut w, 30, 90, false, false, &mut rng);
-            if w.tile(30, 90).unwrap().kind == 83 {
-                bloomed = true;
-                break;
-            }
-        }
-        assert!(bloomed, "the generic 1/50 arm blooms any frame");
-    }
-
-    #[test]
-    fn the_wrong_liquid_kills_the_herb() {
-        let mut w = world();
-        put(&mut w, 30, 90, 82, 0);
-        let i = w.index(30, 90);
-        w.tiles[i].liquid = 200;
-        let mut rng = UnifiedRandom::new(1);
-        grow_alch(&mut w, 30, 90, true, false, &mut rng);
-        assert!(
-            w.tile(30, 90).unwrap().flags & FLAG_ACTIVE == 0,
-            "the water on the stage-0 herb kills it"
-        );
-    }
-
-    #[test]
     fn the_shards_grow_sparse_and_big_rarely() {
         let mut w = world();
         // The stone below the rock layer with an air pocket BELOW (the
@@ -2131,69 +1927,6 @@ pub(super) mod tests {
         // (`:71502-71507`).
         let picks = update_world(&mut w, 1, false, false, false, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 50 + 25);
-    }
-
-    #[test]
-    fn the_alch_harvest_matrix_runs_the_style_conditions() {
-        // `IsAlchemyPlantHarvestable` (`WorldGen.cs:66148-66175`): the
-        // per-style gates, against a daytime world under the surface
-        // (world_surface = 100 in the 4200×400 fixture).
-        let mut w = world();
-        let dry = WeatherCtx::default();
-        let rainy = WeatherCtx {
-            raining: true,
-            ..WeatherCtx::default()
-        };
-        // style 0 (daybloom): day only.
-        w.day_time = true;
-        assert!(is_alchemy_plant_harvestable(&w, 0, 120, &dry));
-        w.day_time = false;
-        assert!(!is_alchemy_plant_harvestable(&w, 0, 120, &dry));
-        // style 1 (moonglow): night only.
-        assert!(is_alchemy_plant_harvestable(&w, 1, 120, &dry));
-        // style 3 (deathweed): night + (blood moon or full moon) — the
-        // fixture's moon_phase 0 is the full moon.
-        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
-        w.moon_phase = 4;
-        assert!(!is_alchemy_plant_harvestable(&w, 3, 120, &dry));
-        w.blood_moon = true;
-        assert!(is_alchemy_plant_harvestable(&w, 3, 120, &dry));
-        w.blood_moon = false;
-        // style 4 (waterleaf): rain or any cloud.
-        assert!(!is_alchemy_plant_harvestable(&w, 4, 120, &dry));
-        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &rainy));
-        let cloudy = WeatherCtx {
-            cloud_alpha: 0.1,
-            ..WeatherCtx::default()
-        };
-        assert!(is_alchemy_plant_harvestable(&w, 4, 120, &cloudy));
-        // style 5 (fireblossom): late afternoon (the C#'s
-        // `Main.time > 40500.0` is strict) + the rain/height arm — the
-        // herb harvests when it is not raining, or when it sits BELOW the
-        // surface (`y > worldSurface`, the rows the rain does not reach).
-        w.time = 40501.0;
-        assert!(is_alchemy_plant_harvestable(&w, 5, 90, &dry));
-        assert!(is_alchemy_plant_harvestable(&w, 5, 120, &rainy));
-        assert!(!is_alchemy_plant_harvestable(&w, 5, 90, &rainy));
-        // An unknown style never harvests.
-        assert!(!is_alchemy_plant_harvestable(&w, 2, 90, &dry));
-    }
-
-    #[test]
-    fn the_seed_harvest_arm_covers_the_grown_herbs() {
-        // `IsHarvestableHerbWithSeed` (`WorldGen.cs:66118-66138`): only
-        // 83/84 — 84 always, 83 through its style, 82 never.
-        let mut w = world();
-        w.day_time = true;
-        let dry = WeatherCtx::default();
-        assert!(!is_harvestable_herb_with_seed(&w, 82, 0, 90, &dry));
-        assert!(is_harvestable_herb_with_seed(&w, 84, 0, 90, &dry));
-        assert!(is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
-        w.day_time = false;
-        assert!(!is_harvestable_herb_with_seed(&w, 83, 0, 90, &dry));
-        assert!(is_harvestable_herb_with_seed(&w, 83, 1, 90, &dry));
-        // A non-herb kind never harvests.
-        assert!(!is_harvestable_herb_with_seed(&w, 1, 0, 90, &dry));
     }
 
 }
