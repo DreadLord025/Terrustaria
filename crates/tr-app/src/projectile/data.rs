@@ -882,7 +882,7 @@ fn set_defaults_scale(kind: u16) -> f32 {
 /// `proj_data` row appear — a kind without a row never spawns through the
 /// data-carrying seam, so its light never reaches a slot. The unlisted
 /// kinds keep the stock `0f` reset (`:773`) and `ProjLight` early-returns.
-fn set_defaults_light(kind: u16) -> f32 {
+pub(crate) fn set_defaults_light(kind: u16) -> f32 {
     match kind {
         FLAME_ARROW => 1.0,                    // `:824`
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
