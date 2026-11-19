@@ -13070,6 +13070,16 @@ impl ProjectilePool {
                 // their dispatch call sites.
                 // The ported arms above keep their exact signatures.
                 else if let Some(data) = proj_data(self.slots[i].kind) {
+                    // S1-D-4c dead-arm purge (census §3b): appended duplicate
+                    // style arms never run — the FIRST arm wins and the
+                    // compiler only warns (`unreachable_patterns`), so wiring
+                    // edits to a dead arm silently no-op (six were purged:
+                    // styles 1/3/14/16/115 and the 43-line yoyo machine at
+                    // the old :15032-15074). A duplicate is a hard error here
+                    // — the `NpcKind::to_u16` guard's precedent (S1-F-1).
+                    // S1-D-5's fn-scoped `#[deny(unreachable_patterns)]` on
+                    // `update` already covers this match (deduped at merge —
+                    // one attribute per match, S1-D-4c's rule).
                     match data.ai_style {
                         // The aiStyle-1 riders of M4-PROJ-6 Phase 3 gate
                         // ahead of the generic arm: the Book of Skulls and
@@ -13448,6 +13458,9 @@ impl ProjectilePool {
                         // one (it lacked the rider gates), which is exactly
                         // why a silent shadow was dangerous; the census is
                         // in ANALYSIS "The projectile data-row deviations".
+                        // The aiStyle-115 Terrarian beams (the live arm of
+                        // the purged pair — the dead duplicate sat after the
+                        // 62 arm, S1-D-4c).
                         115 => self.slots[i].ai_yoyo_beam(world),
                         210 => self.slots[i].ai_yoyo_shot(world),
                         82 => {
@@ -13645,7 +13658,7 @@ impl ProjectilePool {
                                 }
                             }
                         }
-                                                53 => {
+                        53 => {
                             // `AI_053_FrostHydra` ported behavior (`Projectile.cs:37266-37490`):
                             // initialization, free fall, targeting, animations, firing mechanics, and tick handling.
                             // Extends Rust implementation to fully encompass the original C# behavior.
@@ -16252,6 +16265,115 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// S1-D-4c — the dispatch coverage pin (census §3b/§3c): every aiStyle
+    /// with a `proj_data` row has EXACTLY ONE live arm in the pool's
+    /// `match data.ai_style`, except the six documented unarmed styles
+    /// (census §3c — rows kept, arms are S1-D-4b follow-ups). The duplicate
+    /// half is compile-enforced by the dispatch's
+    /// `#[deny(unreachable_patterns)]`; this pin additionally guards the
+    /// coverage direction (a row whose arm was deleted) and the arm count
+    /// (a duplicate re-appended behind a rename the compiler cannot see).
+    #[test]
+    fn s1_d_4c_every_rowed_style_has_exactly_one_live_arm() {
+        // The runtime side: the rowed styles, straight from the data table
+        // (no parsing — the table itself is the witness).
+        let mut rowed = std::collections::BTreeSet::new();
+        for kind in 0..=2048u16 {
+            if let Some(d) = proj_data(kind) {
+                rowed.insert(d.ai_style);
+            }
+        }
+        // The source side: the dispatch's top-level arm labels. The block
+        // starts at the `match data.ai_style {` marker and its top-level
+        // arms sit at exactly 24 spaces (nested kind-matches sit deeper).
+        let src = include_str!("projectile.rs");
+        let start = src
+            .find("match data.ai_style {")
+            .expect("the aiStyle dispatch");
+        let body = &src[start..];
+        let mut counts = std::collections::BTreeMap::new();
+        for line in body.lines().skip(1) {
+            if line == "                        _ => {}" {
+                break; // the dispatch's fall-through closes the block
+            }
+            if let Some(rest) = line.strip_prefix("                        ") {
+                // Exactly-24-space lines only: a deeper indent means the
+                // line belongs to a nested match, not the style dispatch.
+                if rest.starts_with(' ') {
+                    continue;
+                }
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty()
+                    && rest[digits.len()..].trim_start().starts_with("=>")
+                {
+                    *counts.entry(digits.parse::<u8>().unwrap()).or_insert(0u32) += 1;
+                }
+            }
+        }
+        assert!(!counts.is_empty(), "the arm scan found nothing — the dispatch shape moved");
+        for (style, n) in &counts {
+            assert_eq!(*n, 1, "aiStyle {style} has {n} arms — the FIRST wins, the rest are dead");
+        }
+        // Census §3c: the documented rowed-but-unarmed styles (the wiring
+        // follow-ups). 185's old aiStyle-1 mislabel is fixed — style 14 is
+        // armed, so the spiky ball is NOT in this list.
+        const UNARMED_ROWED: [u8; 6] = [31, 120, 147, 181, 193, 194];
+        for style in &rowed {
+            assert!(
+                counts.contains_key(style) || UNARMED_ROWED.contains(style),
+                "aiStyle {style} has a data row but no dispatch arm and no census entry"
+            );
+        }
+    }
+
+    /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)
+    /// says 14×14, aiStyle **14**, penetrate −1, timeLeft 900, trap — the
+    /// spiky ball rides the style-14 `ai_spear` arm, not the plain-arrow
+    /// flight. The style-14 arm has NO 185-specific branch (the C# AI_014
+    /// body `:24830-25307` never names type 185 — the generic default arm
+    /// `:25142-25160` serves it); the bounce lives in `HandleMovement`
+    /// (`:19703-19713`) — the recorded stand-in deviation, ANALYSIS.
+    #[test]
+    fn s1_d_4c_the_spiky_ball_row_matches_set_defaults_and_rides_style_14() {
+        assert_eq!(TRAP_SPIKY_BALL, 185, "ProjectileID.SpikyBallTrap");
+        let d = proj_data(TRAP_SPIKY_BALL).expect("the 185 row");
+        assert_eq!((d.w, d.h), (14.0, 14.0), ":2719-2720");
+        assert_eq!(d.ai_style, 14, ":2721 — the census proj-185 fix");
+        assert_eq!(d.penetrate, -1, ":2724");
+        assert_eq!(d.time_left, 900, ":2725");
+        assert!(d.trap, ":2726");
+        // The dispatch probe: a spawned 185 runs the style-14 machine —
+        // `ai[0]` counts to the 5 cap and `rot` picks up the ×0.1 spin
+        // (`ai_spear`, `:25144-25159`), not the style-1 flight's
+        // atan2 + 1.57 rotation (`ai_style1_flight`).
+        let mut pool = ProjectilePool::new();
+        let mut w = ground();
+        let slot = pool
+            .spawn_with_data(TRAP_SPIKY_BALL, 320.0, 160.0, 4.0, 0.0, 40, 2.0)
+            .expect("a free slot");
+        for _ in 0..5 {
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                false,
+            );
+        }
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the ball flies in open air");
+        assert_eq!(p.ai[0], 5.0, "the style-14 counter reaches the 5 cap (:25145-25147)");
+        assert!(
+            (p.rot - 5.0 * (4.0 * 0.1)).abs() < 1e-5,
+            "the ×0.1 velocity spin (:25159), not the arrow's atan2 heading"
+        );
+    }
+
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
         for x in 0..64 {
@@ -17357,6 +17479,8 @@ mod arrow_tests {
         let poison = proj_data(POISON_DART).unwrap();
         assert!(!poison.tile_collide);
         assert_eq!(poison.extra_updates, 5);
+        // The spiky ball (185, `Projectile.cs:2717-2727` — aiStyle 14, the
+        // shared S1-D-5/S1-D-4c row fix) rides the ported style-14 family.
         // The spear trap's spear (186) keeps the 185 stand-in row until
         // aiStyle 37 is ported (`Projectile.cs:2728-2740`, the deviation in
         // ANALYSIS "The projectile data-row deviations (S1-D-5)").

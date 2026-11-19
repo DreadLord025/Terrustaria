@@ -7096,6 +7096,73 @@ families land; the arrow item recovery on kill does not exist in 1.4.4
 pre-roll vs the C#'s post-cap roll) differs by one stream draw and is
 MP-invisible.
 
+### The spiky ball's row fix + the dead-arm purge (S1-D-4c, census P-1)
+
+Code-only mode 2026-11-19 (`task/S1-D-4c-dead-arm-purge`, no compiler
+invoked — tests written not run). Per-arm verdicts (each pair read whole
+at `c7fe175d`; the FIRST arm wins in a Rust match, later duplicates are
+unreachable — the compiler only warns):
+
+| dead arm (pre-purge line) | live arm | verdict |
+| --- | --- | --- |
+| proj style 1 :13433 (`ai_arrow`) | :13075-13099 (kind-gated `AI_001` slices A/B + generic `ai_arrow` fall-through) | SUPERSEDED — the live arm's `_` keeps the same generic flight; removed |
+| proj style 3 :13434 | :13100 `ai_boomerang(world, owner)` | byte-identical one-liner; removed |
+| proj style 14 :13435 | :13196 `ai_spear(world)` | byte-identical one-liner; removed |
+| proj style 16 :13436 | :13197 `ai_bomb(world)` | byte-identical one-liner; removed |
+| proj style 115 :14918 | :13437 `ai_yoyo_beam(world)` | byte-identical one-liner; removed |
+| proj style 99 :15032-15074 (43-line yoyo machine: flag/sweep/beam) | :13536-13578 | byte-identical block (case-sensitive line-join compare); removed |
+| npc `DD2Bartender` :4033 (`update_guide`) | :3773 (town group → `update_guide`) | same target, dead; removed |
+| npc saucer trio :4036-4038 (`update_saucer_mount`) | :3888-3890 | same target, dead; removed |
+
+Guards: `#[deny(unreachable_patterns)]` now sits on the projectile
+`match data.ai_style`, `update_kind_ai` and the `update_rng` style axis
+(the `NpcKind::to_u16`/`from_u16` S1-F-1 precedent) — a future appended
+duplicate fails the compile instead of silently no-opping a wiring edit.
+Coverage pins (tests-as-code, written NOT run):
+`s1_d_4c_every_rowed_style_has_exactly_one_live_arm` (65 armed styles;
+the 6 rowed-but-unarmed census §3c styles 31/120/147/181/193/194 are the
+documented exceptions), `s1_d_4c_every_kind_has_exactly_one_arm_in_update_kind_ai`
+(238 kinds, single arm each), `s1_d_4c_the_spiky_ball_row_matches_set_defaults_and_rides_style_14`.
+
+**proj-185**: the data row said aiStyle 1 (the WIRE-1 legacy lumped it
+with the trap darts); the C# `SetDefaults` (`Projectile.cs:2717-2727`)
+says 14×14, **aiStyle 14**, penetrate −1, `timeLeft` 900, trap — the row
+now carries those values verbatim and 185 rides the live style-14
+`ai_spear` arm. AI_014's body (`:24830-25307`) has **no 185-specific
+branch** — the generic default arm (`:25142-25160`: the `ai[0]` 5-cap,
+the 0.97 ground friction, the +0.2 gravity, the ×0.1 spin) serves it, so
+no per-type port was needed. The 185 gap that remains: the C# bounce is
+in `HandleMovement`'s collision block (`:19703-19713` — X reverses at
+×−0.9, Y at ×−0.9 when the incoming Y > 1), while the port's `ai_spear`
+keeps the documented tile-kill scan stand-in (`:25726-25737`'s probe,
+which in the C# belongs to the aiStyle-22 ice block, not AI_014) — the
+ball dies on a tile instead of bouncing. Porting the style-14 movement
+half (the `HandleMovement` bounce family) is the follow-up; the whole 14
+family was NOT ported here (scope: row fix + purge).
+
+**Overlap with R20 (`task/S1-D-5-projdata-deviations`, `6c221ac4`,
+pushed, NOT merged)**: that branch independently landed the same
+projectile-side P-1 work (the 6 dead style arms, the deny guard, the 185
+row split with the same C# values). This branch was cut from `origin/main`
+before R20 merged, so it carries its own copy of the projectile purge —
+the merger must dedupe the overlapping hunks (both sides delete the same
+dead arms and add the same guard/row; the resolutions are
+behaviour-identical). UNIQUE to this branch: the npc.rs 4 dead kind arms
++ the `update_kind_ai`/style-axis guards + the kind coverage pin (R20 did
+not touch npc.rs), and the 185 dispatch-probe pin. The proj-1001
+HorsemanPumpkin style-194 gap stays documented-unarmed (census §3c, the
+W-10 wiring slice) — NOT ported here.
+
+**The 186 SpearTrap row stays legacy (deliberate)**: the C#
+`SetDefaults` (`:2728-2740`) gives 186 aiStyle **37**, 10×14,
+`tileCollide = false`, `ignoreWater`, `timeLeft = 300` — the port's row
+carries the C# 185's values (the historical WIRE-1 185/186 swap). Fixing
+it needs the aiStyle-37 arm (unported), so the row keeps its current
+behaviour-frozen values with a corrected citation; the faithful row +
+`AI_037` port are a follow-up. The wiring drain (`world_sim/wiring.rs`)
+is untouched: the floor/ceiling spiky-ball traps spawn 185 (now correctly
+style 14) and the spear traps' 186 keeps the legacy ride.
+
 ## Boomerangs (M4-PROJ-3, the boomerang half)
 
 `AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on

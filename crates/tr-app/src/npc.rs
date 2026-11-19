@@ -3662,6 +3662,10 @@ impl Npc {
         // then on the type inside the family arm. Migrated families claim
         // their style here; every other style falls through to the kind
         // match (`update_kind_ai`) unchanged, one family per D-3 round.
+        // One live arm per style (S1-D-4c): a duplicate is a hard error
+        // (the match is a statement — `find_frame` follows — so the lint
+        // attribute is stable here).
+        #[deny(unreachable_patterns)]
         match self.kind.ai_style() {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
@@ -3881,6 +3885,12 @@ impl Npc {
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
+    // S1-D-4c dead-arm purge (census §2d): a duplicate kind arm never runs —
+    // the FIRST arm wins and the compiler only warns, so a wiring edit to the
+    // dead arm silently no-ops (the DD2Bartender town-group duplicate and the
+    // saucer trio duplicate were purged here). One live arm per kind: a
+    // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
+    #[deny(unreachable_patterns)]
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
             // S1-D-3ff wave A: the nine LOW-id slimes ride the same
@@ -4188,13 +4198,8 @@ impl Npc {
             NpcKind::MoonLordHead => self.update_moon_lord_head(world, player, rng),
             NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng),
             NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
-            // The tavernkeeper: the town-NPC walker (aiStyle 7).
-            NpcKind::DD2Bartender => self.update_guide(world, dt),
             // The etherian crystal: aiStyle 105's machine.
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
-            NpcKind::MartianSaucer
-            | NpcKind::MartianSaucerTurret
-            | NpcKind::MartianSaucerCannon => self.update_saucer_mount(world, player, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -16432,6 +16437,52 @@ mod tests {
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// S1-D-4c — the kind-dispatch coverage pin (census §2d): every
+    /// `NpcKind` appears EXACTLY ONCE in `update_kind_ai`'s patterns. The
+    /// compiler enforces the same rule via the function's
+    /// `#[deny(unreachable_patterns)]`; this pin keeps the rule visible in
+    /// the test run and names the four purged duplicates (DD2Bartender's
+    /// town-group double and the MartianSaucer trio's second arm — wiring
+    /// edits to those dead arms silently no-opped).
+    #[test]
+    fn s1_d_4c_every_kind_has_exactly_one_arm_in_update_kind_ai() {
+        let src = include_str!("npc.rs");
+        let start = src
+            .find("fn update_kind_ai")
+            .expect("the kind dispatch");
+        // The function body ends at its own closing brace (4-space indent).
+        let rest = &src[start..];
+        let end = rest.find("\n    }").expect("the fn's closing brace");
+        let body = &rest[..end];
+        let mut counts = std::collections::BTreeMap::new();
+        for line in body.lines() {
+            let t = line.trim_start();
+            // Pattern lines only: the arms start with `NpcKind::` or the
+            // or-pattern continuation `| NpcKind::`.
+            if !(t.starts_with("NpcKind::") || t.starts_with("| NpcKind::")) {
+                continue;
+            }
+            let mut idx = 0;
+            while let Some(pos) = t[idx..].find("NpcKind::") {
+                let name_start = idx + pos + "NpcKind::".len();
+                let name: String = t[name_start..]
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                *counts.entry(name).or_insert(0u32) += 1;
+                idx = name_start;
+            }
+        }
+        assert!(counts.len() > 200, "the arm scan found only {} kinds — the dispatch shape moved", counts.len());
+        for (kind, n) in &counts {
+            assert_eq!(*n, 1, "{kind} has {n} arms — the FIRST wins, the rest are dead (census §2d)");
+        }
+        // The four purged duplicates are single-arm now.
+        for kind in ["DD2Bartender", "MartianSaucer", "MartianSaucerTurret", "MartianSaucerCannon"] {
+            assert_eq!(counts.get(kind), Some(&1), "{kind} keeps exactly one live arm");
+        }
+    }
 
     /// The test ground: dirt from y = 120 in a 200x200 world with a carved
     /// pit (x 60..140, y 125..134) — the caster tests' arena. The pit
