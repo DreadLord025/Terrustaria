@@ -17637,10 +17637,12 @@ feed cannot change the fixed-step order or any stream.
 * **Remaining source families.** Projectile (107 call sites — the `ProjLight`
   chain's common tail `:16659` landed 2026-11-18, see below), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
+* **Remaining source families.** Projectile (107 call sites), Player (46),
+  Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
   pool has no light sink, so they stay dropped. The NPC family is **started**
-  (2 of 80 call sites), see below.
+  (2 of 80 call sites) and the Dust family is **started** (42 of 94), see below.
 
 ### The NPC family (S1-E-5, 2026-11-18)
 
@@ -17872,6 +17874,81 @@ in `player_lights.rs` (18, incl. the biome-zone order, the unlock gate, the
 slot-range walk, the holdStyle-6 anchor and the negative-coordinate
 truncation) are written but **not run**; the first build after the merge
 must run `cargo test -p tr-app player_lights` plus the catalog command.
+### The Dust family (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/dust_lights.rs::dust_light` ports the RNG-free `AddLight`
+arms of `Dust.UpdateDust`'s FIRST ladder — the standalone per-type statements
+between the `:477` move and the `:822` torch-family chain, the torch/fire
+family itself (`Dust.cs:822-1023`) and the Sandnado arm (`:1037-1047`).
+**42 of the dust family's 94 call sites.** It feeds the **same**
+`EntityLights` pair as the item and NPC families, in `Main.dust` slot order
+(the `UpdateDust` walk order, `Dust.cs:431`), from the frame pass
+(`app/frame/draw.rs`) beside the other two feeds. Every dust arm anchors on
+the dust's own `position` — `(int)(position / 16f)` per axis, the
+`XAnchor::Center` form with a zero box (a dust has no width/height).
+
+What landed, by arm group:
+
+* **The torch/fire family chain (`:822-1023`, 20 sites)** — types 6 (Torch),
+  29 (WaterCandle), 59-65 (the seven basic torches), 75 (CursedTorch), 127
+  (Flare), 135 (IceTorch), 158 (OrangeTorch), 169 (IchorTorch), 187
+  (BlueFlare), 228 (GoldFlame), 229 (Vortex), 242 (PinkTorch), 279
+  (SilverFlame), 293-298 (Desert/Coral/Corrupt/Crimson/Hallowed/Jungle), 302
+  (Terragrim), 307 (Mushroom), 310 (Shimmer). The shared gate is
+  `!noLight && !noLightEmittance` (`:850`), `num30 = scale * 1.4f` (`:852`);
+  the caps are **not uniform**: 59-65 cap at 0.8 (`:942`), the else arm
+  (6/279/302) at 0.6 (`:1016`), the rest at 1; 127/187 multiply `*1.3`
+  **before** capping (`:950`/`:959`). The torch-id arms ride
+  `Lighting.AddLight(i, j, torchID, lightAmount)` (`Lighting.cs:145-149`) =
+  `TorchID.TorchColor(torchID)` per-channel scaled — the port reuses
+  `tile_light::torch_color`, so the demon (65 → id 7) and shimmer (310 → id
+  23) animations ride `LightParams` exactly like the item family's torch arm.
+* **The sparks 213/260 (`:737-757`)** — the port's live minecart wheel-spark
+  type now glows: `num20 = scale / 2.5 * 0.2`, base (255, 217, 48) for 213 /
+  (255, 48, 48) for 260, /255 then cap-1 then multiply.
+* **The gem dusts 86-92 + 286 (`:513-557`)** — the `type - 85` switch; cases
+  7 (the unnamed type 92 — GemDiamond is 91 = case 6) and 201 (286) do not
+  exist, so both keep the unmultiplied white `num5 * num5` (a real vanilla
+  quirk, pinned by test).
+* **The single-flag gates** — 262/263/264/182/269 gate `!noLight` only; 234
+  (BoneTorch) gates `!noLightEmittance` only (`:795`). The both-flag arms
+  (325, 86-92/286, 261, the family) gate both. The uncapped arms
+  (230/156/157/163/170/205/172/254/255/309) stay uncapped.
+
+**What stays dropped, exactly:**
+
+* **No arm draws RNG and none mutates the dust.** The `Main.rand` arms —
+  235's `Next(-100,101)` pair (`:817`), 159's `Next(2)` tail (`:1068`) — are
+  skipped wholesale, so the stream position is untouched (the item/NPC rule).
+  The witness test `the_feed_leaves_the_update_stream_untouched` runs two
+  identical pools through `DustPool::update_dust` with the ChildSafety
+  re-type rolls armed, feeds the lights on one between updates, and pins
+  32 subsequent draws byte-equal.
+* **The scale/velocity mutations that share an arm with a light are
+  S1-E-3's** (the `type_arm` hook of `DustPool::update_dust`): 206's
+  `scale -= 0.1f` (`:766`), 174's `scale -= 0.01f` (`:807`), the family's
+  `velocity.Y += 0.05f` (`:826`), 309's `scale *= 0.97f` (`:486`), 230's
+  `scale += 0.02f` (`:639`, runs AFTER the colour). Where the C# computes
+  the light from the POST-mutation scale (206, 174), `dust_light` applies
+  the same decrement to a local copy so the emitted colour matches; until
+  S1-E-3 lands the mutation, the live 213/268 dusts are unaffected (their
+  arms read the unmutated scale).
+* **`customData` is dropped** (the pool record has no field): the 75 arm's
+  `customData is float` branch (`:867-870`) cannot fire, so the arm always
+  takes its `else` (`:873`) — the common case. The follower halves
+  (325/86-92/263/264/182/261/230's `position += owner delta`) are position
+  mutations, not lights.
+* **The second chain's 52 lights (`Dust.cs:1099-2312`)** — the glow-stick /
+  boss / moon-lord dusts — interleave their `AddLight` with velocity/scale
+  mutations, `Main.rand` draws and `customData` reads; they land with
+  S1-E-3's chain port. (213/260's own light at `:757` is in the FIRST ladder
+  and IS ported.)
+
+Tests: `dust_lights.rs`'s 15 tests pin the family caps (0.8/0.6/1), the
+flare *1.3-before-cap order, the torch-table ids incl. the demon ramp, the
+per-arm gate differences, the gem-switch default white, the uncapped arms,
+the post-decrement reads, the spark colour + cap, negative-coordinate
+truncation, slot-order feeding and the RNG witness.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 

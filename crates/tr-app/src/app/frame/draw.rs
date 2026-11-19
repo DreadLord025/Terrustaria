@@ -478,6 +478,16 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The Dust `UpdateDust` lights (S1-E-5, dust family):
+                    // the RNG-free AddLight arms of the FIRST ladder
+                    // (`Dust.cs:483-1047`, `dust_lights.rs`) run per active
+                    // dust per update in `Main.dust` slot order; the port
+                    // collects the same sources here after the dust pass,
+                    // in the same slot order. No arm draws `Main.rand` and
+                    // none mutates the pool (the witness test in
+                    // `dust_lights.rs` pins the stream), so the placement
+                    // relative to the sim leaves the fixed-step order exact.
+                    crate::dust_lights::feed_dust_lights(dust, &params, &mut self.entity_lights);
                     let sky_uv = atlas
                         .as_ref()
                         .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));

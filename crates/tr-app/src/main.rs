@@ -27,6 +27,7 @@ mod debug_panel;
 mod death;
 mod drawdata_cases_a;
 mod drawdata_cases_b;
+mod dust_lights;
 mod dye;
 mod emotes;
 mod env;
