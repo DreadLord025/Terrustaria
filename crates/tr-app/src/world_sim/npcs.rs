@@ -15313,8 +15313,10 @@ mod moon_lord_tests {
         let mut saw = 0usize;
         for _ in 0..16 {
             hand.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if !hand.wants_hostile_shot.is_empty() {
-                saw = hand.wants_hostile_shot.len();
+            // S1-D-3: the 452 carries its rolled ai1 (`:41704`) — the
+            // shot rides the ai-payload seam (L-B fixture update).
+            if !hand.wants_hostile_shot_ai.is_empty() {
+                saw = hand.wants_hostile_shot_ai.len();
                 break;
             }
         }
@@ -15367,14 +15369,16 @@ mod moon_lord_tests {
         let mut shot = None;
         for _ in 0..4 {
             head.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if let Some(s) = head.wants_hostile_shot.last().copied() {
+            // S1-D-3: the 455 carries its sweep ai0 (`:42242`) — the
+            // ai-payload seam (L-B fixture update).
+            if let Some(s) = head.wants_hostile_shot_ai.last().copied() {
                 shot = Some(s);
                 break;
             }
         }
         let s = shot.expect("the deathray fires");
-        assert_eq!(s.0, 455, "the PhantasmalDeathray");
-        assert_eq!(s.5, 75, "the classic damage constant");
+        assert_eq!(s.kind, 455, "the PhantasmalDeathray");
+        assert_eq!(s.damage, 75, "the classic damage constant");
         let (w, h) = head.size();
         assert!(
             (head.y + h * 0.5 - (ccy - 400.0)).abs() < 1.0,
@@ -15508,14 +15512,16 @@ mod moon_lord_tests {
         let mut shot = None;
         for _ in 0..4 {
             eye.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if let Some(s) = eye.wants_hostile_shot.last().copied() {
+            // S1-D-3: the ring's 452 carries its rolled ai1 (`:42789`)
+            // — the ai-payload seam (L-B fixture update).
+            if let Some(s) = eye.wants_hostile_shot_ai.last().copied() {
                 shot = Some(s);
                 break;
             }
         }
         let s = shot.expect("the eye's volley fires");
-        assert_eq!(s.0, 452, "the PhantasmalEye");
-        assert_eq!(s.5, 35, "the eye's classic damage constant");
+        assert_eq!(s.kind, 452, "the PhantasmalEye");
+        assert_eq!(s.damage, 35, "the eye's classic damage constant");
     }
 
     #[test]
@@ -15689,7 +15695,10 @@ mod moon_lord_tests {
         let (mut app, _player) = app_player();
         let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
         core.hp = core.max_hp;
-        core.moon_spawn_latch = true;
+        // L-B fixture update: the audit's init latch (`NPC.cs:41163-41168`,
+        // `localAI[3]`) arms the spawn-in on the FIRST tick whatever
+        // ai[0] holds — a pre-set latch would SKIP the parts spawn (the
+        // old pre-armed `-1` convention). Let the latch run its course.
         app.npcs.push(core);
         for _ in 0..61 {
             crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);

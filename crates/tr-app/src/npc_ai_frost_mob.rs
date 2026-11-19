@@ -1818,8 +1818,32 @@ mod tests {
         let mut n = wired_npc(NpcKind::ElfArcher, 60.0, 95.0);
         n.vx = 1.0;
         let mut rng = UnifiedRandom::new(4242);
-        // The settle ticks land the archer (vy == 0), then the entry
-        // latches the cycle.
+        // L-B fix round: settle the archer ON the ground strip first.
+        // The stopped arm's wake gate (`NPC.cs:59619-59623`, flag17
+        // false → airborne wakes the cycle) fires one tick after an
+        // airborne entry — the C# only holds the stop for a grounded
+        // walker (the shared collision core zeroes vy on the landing
+        // tick). The old fixture entered mid-fall and never reached the
+        // fire tick.
+        for _ in 0..30 {
+            crate::npc_ai::walker_integrate(
+                &mut n,
+                &w,
+                crate::npc_ai::WalkerParams {
+                    speed: 1.0,
+                    jump: -6.2,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+            if n.on_ground {
+                break;
+            }
+        }
+        assert!(n.on_ground, "the archer settles on the strip");
+        // The entry latches the cycle on the next grounded tick.
         for _ in 0..30 {
             frost_mob_step(&mut n, &w, &mut p, &mut rng);
             if n.ai[1] == 110.0 {

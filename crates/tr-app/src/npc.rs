@@ -33415,7 +33415,11 @@ mod s1_f_13d_tests {
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
-        for kind in [NpcKind::ForceBubble, NpcKind::MartianTurret] {
+        // L-B fix round: the ForceBubble's aiStyle-72 machine is WIRED
+        // (S1-D-3-wire-smallkinds — the world-sim host pre-pass + the
+        // axis' 72 tail); its kind arm is an unreachable! marker, so the
+        // stand-in witness covers only the still-unwired Tesla Turret.
+        for kind in [NpcKind::MartianTurret] {
             let mut n = Npc::new(kind, 100.0 * TILE_PX, 99.0 * TILE_PX, 1, 0.0);
             n.hp = n.max_hp;
             let (x0, y0) = (n.x, n.y);
