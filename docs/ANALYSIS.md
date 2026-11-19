@@ -18572,3 +18572,49 @@ velocity-sign facing + 4/2.5 approach (`:22876-22894`, `:22971-23037`),
 (`:22899-22970`, `:23346-23360`), 660's 0.35/0.3/6/5 approach
 (`:23038-23115`), 48's wet arm + HarpyFeather shot (`:23333-23345`,
 `:23416-23436`), 156's UnholyTrident shot (`:23458-23484`).
+## The fish/swimmer family (S1-D-3 aiStyle-16, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style16.rs` ports `NPC.AI`'s whole
+`if (this.aiStyle == 16)` block (`NPC.cs:23492-24021`) as a PURE velocity
+machine — the family is the flopping fish, NOT the spiders: Goldfish 55,
+CorruptGoldfish 57, Piranha 58, Shark 65, AnglerFish 102, Arapaima 157,
+BloodFeeder 241, CrimsonGoldfish 465, GoldGoldfish 592, Pupfish 607,
+Dolphin 615, Pufferfish 688, Orca 692 (the `SetDefaults` rows
+`NPC.cs:9465`/`:9494`/`:9508`/`:9615`/`:10208`/`:10995`/`:12111`/`:14488`/
+`:16684`/`:16800`/`:16897`/`:17658`/`:17714`). The arm carries every branch:
+the head `TargetClosest` on direction 0, the Pufferfish puff latch + the
+water-line hover with its early return, the Dolphin leap/float machine
+(the per-tick `Next(300,1200)` threshold BEFORE `++ai[3]`, the `Next(1,3)`
+pick, the 128-px `CanHitLine` leap gate, the 300-tick dive, the `ai[3]==60`
+sound gate), the shared wet machine (the critter exclusion `flag25`, the
+feet-slope flips, the idle collide bounces, the Arapaima's asymmetric
+7/4 caps and its own 0.02 bob, the Shark group's 0.15/5/3, the generic
+0.1/3/2, the beach-avoid, the ±0.4 damp with the 157 exemption), the dry
+flop (the Shark/Orca 0.94 decay vs the cited rand triple) and the rotation
+tail (the Orca's `SafeNormalize`/`ToRotation`/`WrapAngle` aim with the π
+fold vs the generic ±0.2 tilt).
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
+witness tests in the module are WRITTEN, NOT RUN. The RNG witnesses mirror
+the cited `Next` calls on a cloned `UnifiedRandom` and compare the stream
+state, so a drifted draw order fails by construction once executed.
+
+**Wiring deferred** (the `buff_effects_misc.rs` precedent): the live
+routing keeps `update_swimmer` → `npc_ai::swim_step` untouched this round
+(the approximation with inline integration); the merge step swaps it onto
+`ai_016_step` and drops `swim_step`'s inline integration for the generic
+collision pass. Deliberate folds, all cited in the module:
+- `Main.netMode != 1` → true (single-player port).
+- `NetUpdateIgnoreSpamLimit` (`NPC.cs:90568-90576`) → `net_update = true`
+  (the `netSpam` counter is unported).
+- The Dolphin's `SoundEngine.PlaySound(45, ...)` (`:23680`) is SKIPPED but
+  its gating `Main.rand.Next(2)` draw is KEPT — the stream cannot drift.
+- The AnglerFish's `Lighting.AddLight` (`:23764`) leaves as an
+  `Ai16Effects::light` request (the `entity_lights` feed wires it later).
+- `NPC.justHit` has no port field — `Ai16Ctx::just_hit` carries it; the
+  strike path supplies it at the wiring step.
+- The C#'s null-tile guards (`new Tile()`, `:23934-23945`) read as the
+  default dry/inactive tile (`World::tile`'s `None`).
+- Position integration stays OUT of the arm (the C# AI ends before
+  `UpdateCollision`); `wet`/`collideX`/`collideY` are read a tick late,
+  exactly like the source.
