@@ -78,10 +78,11 @@
 //! living bubble shields.
 //!
 //! Wiring deferred (the BlazingWheel / `npc_ai_style21.rs` precedent,
-//! commit 901452bd; the spore pair 613aac92): the roster has no
-//! `NpcKind::ForceBubble` yet, so `update_rng`'s aiStyle axis
-//! (`npc.rs:3255`) has no style-72 arm to claim. This module is the pure
-//! port + the minimal seams:
+//! commit 901452bd; the spore pair 613aac92): `NpcKind::ForceBubble`
+//! landed with S1-F-13d (defaults + frames only), but `update_rng`'s
+//! aiStyle axis still has no style-72 arm — the kind's stand-in holds
+//! still until this machine is claimed (the wiring wave). This module
+//! is the pure port + the minimal seams:
 //! * `Npc` has no `gfx_off_y` field — the arm's per-tick copy is
 //!   RETURNED in [`Style72Outcome`] for the wiring caller's draw offset.
 //! * `Npc` has no `active` field — the pop sets `hp = 0` here (the C#

@@ -1358,6 +1358,21 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Martian Saucer Core",
     },
+    // The Tesla Turret (`S1-F-13d`): the Engineer's placed turret — the
+    // C#'s name row is "Tesla Turret" (`NPCID.cs:12449`'s `NameToIdMap`),
+    // the draw mods Position(2,0)/Velocity 3 (`NPCID.cs:3788-3794`). The
+    // Force Bubble 384 has NO entry: its draw modifiers hide it
+    // (`NPCID.cs:3766-3770`'s `Hide = true`) — it folds onto the Officer's
+    // credit in `entry_for_npc` (the banner fold's precedent,
+    // `BannerSystem.cs:777-779`: 383/384 share banner 141).
+    BestiaryEntryDef {
+        credit_id: "MartianTurret",
+        net_id: 387,
+        kind: NpcKind::MartianTurret,
+        variant: None,
+        quick_unlock: false,
+        name: "Tesla Turret",
+    },
     BestiaryEntryDef {
         credit_id: "FlyingDutchman",
         net_id: 491,
@@ -2207,6 +2222,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // `texture_net_id`'s own rows.
         NpcKind::DetonatingBubble => NpcKind::DukeFishron,
         NpcKind::Sharkron2 => NpcKind::Sharkron,
+        // The Force Bubble rides the Officer's row — the vanilla's bestiary
+        // draw modifiers hide it (`NPCID.cs:3766-3770`'s `Hide = true`), so
+        // it never has an entry of its own (the Sleeping Angler precedent;
+        // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
+        NpcKind::ForceBubble => NpcKind::MartianOfficer,
         other => other,
     };
     ENTRIES
