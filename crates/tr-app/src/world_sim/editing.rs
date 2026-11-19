@@ -6478,8 +6478,10 @@ mod tests {
 
     /// S1-P-i30: the axe arm chops the gem tree (583) — the `Main.tileAxe`
     /// family was missing 583-589, so the pick gate refused them. With the
-    /// Iron Axe (axe 9) the whole trunk collapses and every cell drops
-    /// through the gem record (`WorldGen.cs:65713-65719`).
+    /// Iron Axe (axe 9 → 10 damage/hit, useTime 19) ten hits reach 100 and
+    /// the whole trunk collapses; every cell drops through the gem record
+    /// (`WorldGen.cs:65713-65719`). The 200-frame window covers the
+    /// ~173-frame break.
     #[test]
     fn s1_p_i30_the_axe_chops_the_gem_tree() {
         // Stone ground (the gem ground test, `:30304-30315`).
@@ -6493,7 +6495,7 @@ mod tests {
             pick.world.tile(30, 260).unwrap().active(),
             "the pick cannot chop the gem tree"
         );
-        mine_frames(&mut app, 60);
+        mine_frames(&mut app, 200);
         for dy in 0..4 {
             assert!(
                 !app.world.tile(30, 260 - dy).unwrap().active(),
@@ -6520,7 +6522,10 @@ mod tests {
 
     /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
     /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
-    /// `:54116-54158`; the drop `case 80`, `:64717-64719`).
+    /// `:54116-54158`; the drop `case 80`, `:64717-64719`). The cactus takes
+    /// the TRIPLE axe damage (`Player.cs:45708`: `(int)(axe*3 * 1.2f)` = 32
+    /// for the Iron Axe), so four hits reach 128 — the 19-tick cadence puts
+    /// the break at frame ~60.
     #[test]
     fn s1_p_i30_the_axe_chops_the_cactus_whole() {
         let mut w = World::new("t".into(), 64, 800);
@@ -6562,11 +6567,13 @@ mod tests {
             w.compute_chunks();
             w
         };
-        // The classic world: no hurt.
+        // The classic world: no hurt. The cactus takes the triple axe
+        // damage (32/hit), four hits reach 128 — the break lands ~frame 59;
+        // the 80-frame window covers it.
         let mut classic = mining_app(cactus_world(), 30, 260);
         classic.inventory[classic.selected].kind = 10;
         let hp_classic = classic.player.as_ref().unwrap().hp;
-        mine_frames(&mut classic, 60);
+        mine_frames(&mut classic, 80);
         assert!(
             !classic.world.tile(30, 260).unwrap().active(),
             "the cactus fell"
@@ -6581,7 +6588,7 @@ mod tests {
         ds.inventory[ds.selected].kind = 10;
         ds.world.seeds.insert(tr_core::seeds::SeedFlags::DONT_STARVE);
         let hp_ds = ds.player.as_ref().unwrap().hp;
-        mine_frames(&mut ds, 60);
+        mine_frames(&mut ds, 80);
         assert!(!ds.world.tile(30, 260).unwrap().active(), "the cactus fell");
         assert!(
             ds.player.as_ref().unwrap().hp < hp_ds,
@@ -6594,22 +6601,34 @@ mod tests {
     /// a plain axe leaves the cell empty.
     #[test]
     fn s1_p_i30_the_acorn_axe_replants_the_felled_base() {
-        // A forest tree over dirt (the sapling's anchor tiles, D_20).
+        // A forest tree over dirt (the sapling's anchor tiles, D_20). The
+        // Acorn Axe (axe 25 → 30 damage/hit, useTime 12) breaks the base on
+        // the 4th hit (~frame 39); the 200-frame window covers it.
         let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
         app.inventory[app.selected].kind = 5295; // the Acorn Axe
-        mine_frames(&mut app, 90);
+        mine_frames(&mut app, 200);
+        // The trunk above the sapling fell: the sapling (tile 20, 1x2 with
+        // origin (0,1)) occupies the base cell (30,260) AND the cell above
+        // it (30,259), so the first free trunk cell is (30,258).
         assert!(
-            !app.world.tile(30, 259).unwrap().active(),
-            "the trunk above the base fell"
+            !app.world.tile(30, 258).unwrap().active(),
+            "the trunk above the sapling fell"
         );
         // The base cell now holds the replanted sapling (tile 20, 1x2 with
         // origin (0,1) — the anchor row is the cursor cell).
         let base = app.world.tile(30, 260).unwrap();
         assert!(base.active() && base.kind == 20, "the sapling replanted");
-        // The plain Iron Axe fells the same tree but replants nothing.
+        assert!(
+            app.world.tile(30, 259).unwrap().active()
+                && app.world.tile(30, 259).unwrap().kind == 20,
+            "the sapling's top cell"
+        );
+        // The plain Iron Axe fells the same tree but replants nothing. The
+        // Iron Axe (axe 9 → 10 damage/hit, useTime 19) needs ten hits to
+        // reach 100 — the 200-frame window covers the ~173-frame break.
         let mut plain = mining_app(axe_tree_world(5, 2, 4), 30, 260);
         plain.inventory[plain.selected].kind = 10;
-        mine_frames(&mut plain, 90);
+        mine_frames(&mut plain, 200);
         assert!(
             !plain.world.tile(30, 259).unwrap().active(),
             "the trunk fell"
@@ -6618,6 +6637,96 @@ mod tests {
             !plain.world.tile(30, 260).unwrap().active(),
             "the plain axe leaves the base empty"
         );
+    }
+
+    /// S1-P-i30: the axe hit-buffer model (`Player.cs:45706-45771`): the
+    /// chop damage accumulates in the shared `HitTile` book and the tile
+    /// breaks at 100 — NOT the old time-per-tile hardness. The Iron Axe
+    /// (axe 9) deals `(int)(9f * 1.2f) = 10` per hit (`:45708`), so the
+    /// forest trunk (kind 5) stands at 9 hits (90) and falls on the 10th.
+    /// The cadence is `ApplyItemTime(useTime)` = 19 ticks (`:45768`), so
+    /// the hits land at frames 2, 21, 40, … — frame 173 is the 10th.
+    #[test]
+    fn s1_p_i30_the_axe_damage_accumulates_in_the_hit_book() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // After the first hit the trunk stands and the book carries 10.
+        mine_frames(&mut app, 2);
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 10, "the first chop's 10");
+        // Nine hits accumulate to 90 — still standing. Hits 2..9 land at
+        // frames 21, 40, …, 154 (the 19-tick cadence); frame 154 is hit 9.
+        mine_frames(&mut app, 152); // frames 3..154
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands at 90");
+        assert_eq!(hit_damage(&app, 30, 260), 90, "nine chops accumulate to 90");
+        // The 10th hit (frame 173) reaches 100 and fells the whole tree.
+        mine_frames(&mut app, 30);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the 10th chop fells the base");
+        assert_eq!(hit_damage(&app, 30, 260), 0, "the break clears the book");
+        // The wood dropped (the forest family's Wood 9).
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+    }
+
+    /// S1-P-i30: the chainsaw channel — the Cobalt Chainsaw (383, channel
+    /// true, axe 14, useTime 7 after the `IsChainsaw` epilogue) spawns its
+    /// aiStyle-20 projectile (57) on the press and chops continuously while
+    /// held; the release clears the channel and the projectile's machine
+    /// kills itself (`Projectile.cs:25549`). The chop damage is
+    /// `(int)(14f * 1.2f) = 16` per hit (`Player.cs:45708`), so the forest
+    /// trunk falls on the 7th hit (112 ≥ 100) — the 7-tick channel cadence
+    /// (`Player.cs:43582-43586`) lands it far faster than the Iron Axe.
+    #[test]
+    fn s1_p_i30_the_chainsaw_channels_and_chops_continuously() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 383; // the Cobalt Chainsaw
+        // The press: the chainsaw projectile spawns (kind 57) and the
+        // channel latches.
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the chainsaw projectile spawned"
+        );
+        assert!(app.player.as_ref().unwrap().channel, "the channel latched");
+        // The chainsaw chops continuously: 16 damage/hit, 7-tick cadence →
+        // the 7th hit (112) fells the trunk well inside 60 frames.
+        mine_frames(&mut app, 60);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the chainsaw felled the trunk");
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+        // The release: the channel clears (the projectile's own Kill rides
+        // the aiStyle-20 machine on the next pool tick — asserted below
+        // through `update_projectiles`).
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert!(!app.player.as_ref().unwrap().channel, "the release clears the channel");
+        crate::world_sim::projectiles::update_projectiles(&mut app, ONE_TICK_SECS);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the release kills the chainsaw projectile"
+        );
+    }
+
+    /// S1-P-i30: the lunar chainsaws ride the `ITEM_CORRECTIONS` seam (the
+    /// GenItemData placeholder band left them zero rows): the Vortex
+    /// Chainsaw (2773) carries axe 27, channel true, useTime 4 (the
+    /// `IsChainsaw` epilogue's `(int)(7 * 0.6)`, `Item.cs:48899-48912`) and
+    /// shoot 427 — so it chops `(int)(27f * 1.2f) = 32` per hit and fells
+    /// the forest trunk on the 4th hit (128 ≥ 100).
+    #[test]
+    fn s1_p_i30_the_lunar_chainsaw_row_chops() {
+        let def = registry::get(2773).expect("the corrected Vortex Chainsaw row");
+        assert_eq!(def.axe, 27, "the corrected axe power");
+        assert!(def.channel, "the chainsaw channels");
+        assert_eq!(def.use_time, 4, "the IsChainsaw epilogue's useTime");
+        assert_eq!(def.projectile, Some(427), "the Vortex Chainsaw's shoot");
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 2773;
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 427),
+            "the Vortex Chainsaw projectile spawned"
+        );
+        mine_frames(&mut app, 40);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the lunar chainsaw felled the trunk");
     }
 
     /// DW-1.1: with `frame_important` set — the exact condition the removed
@@ -6770,7 +6879,10 @@ mod tests {
     /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
     /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
     /// drops per cell and runs no object cascade (`check_object`'s
-    /// `_ => None`).
+    /// `_ => None`). S1-P-i30: the chop now rides the `HitTile` book — the
+    /// cactus takes the TRIPLE axe damage (`Player.cs:45708`:
+    /// `(int)(9*3 * 1.2f) = 32`), so four hits reach 128; the 19-tick
+    /// cadence puts the break at frame ~59 (the 80-frame window covers it).
     #[test]
     fn test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop() {
         let mut w = object_world();
@@ -6778,7 +6890,7 @@ mod tests {
         set_tile(&mut w, 10, 19, 80);
         let mut app = mining_app(w, 10, 19);
         app.inventory[app.selected].kind = 10; // the Iron Axe (axe 9)
-        mine_frames(&mut app, 40);
+        mine_frames(&mut app, 80);
         assert!(!app.world.tile(10, 19).unwrap().active(), "cactus broke");
         assert!(
             app.world.tile(10, 20).unwrap().active(),

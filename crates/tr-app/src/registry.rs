@@ -20,6 +20,89 @@ pub enum DamageClass {
 pub use crate::itemdata::ItemDef;
 use crate::itemdata::ITEMS;
 
+/// The four lunar chainsaws' correction rows (S1-P-i30): the GenItemData
+/// placeholder band left 2773/2778/2783/3463 as zero rows (`axe: 0` — they
+/// could never chop). The C# rows are `SetDefaults3`'s `case 2773`
+/// (`Item.cs:26486-26506`, the Vortex Chainsaw) plus the `SetDefaults3(2773)`
+/// clones (`case 2778` `:26570-26575`, `case 2783` `:26597-26602`) and
+/// `SetDefaults4`'s `case 3463` (`:31060-31065`), each overriding only
+/// `shoot`/`glowMask`; then the `SetDefaults` epilogue's
+/// `IsDrill || IsChainsaw` block (`Item.cs:48899-48912`,
+/// `ItemID.Sets.IsChainsaw`, `ItemID.cs:495`): `useTime = (int)(7 * 0.6)
+/// = 4`, `useAnimation = (int)(25 * 0.6) = 15`, `tileBoost--` → `4 - 1 = 3`.
+/// `value = sellPrice(0, 6)` = 30000 (`sellPrice` = `(copper + silver*100
+/// + gold*10000 + platinum*1000000) * 5`). `UseSound = SoundID.Item23` —
+/// SOUND_STYLES index 148 (the generated Cobalt Chainsaw 383 row's
+/// mapping).
+const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16) -> ItemDef {
+    ItemDef {
+        id,
+        name,
+        max_stack: 9999,
+        tile: None,
+        place_style: 0,
+        wall: None,
+        projectile: Some(projectile),
+        damage: 80,
+        rare: 10,
+        use_time: 4,
+        use_animation: 15,
+        use_style: 5,
+        hold_style: 0,
+        auto_reuse: false,
+        head_slot: -1,
+        body_slot: -1,
+        leg_slot: -1,
+        defense: 0,
+        life_regen: 0,
+        class: DamageClass::Melee,
+        crit: 0,
+        value: 30000,
+        knock_back: 4.0,
+        mana: 0,
+        use_ammo: 0,
+        ammo: 0,
+        channel: true,
+        reuse_delay: 0,
+        consumable: false,
+        use_turn: false,
+        buff_type: 0,
+        buff_time: 0,
+        shoot_speed: 28.0,
+        width: 56,
+        height: 22,
+        material: false,
+        potion: false,
+        heal_life: 0,
+        heal_mana: 0,
+        scale: 1.0,
+        stack: 1,
+        bait: 0,
+        tile_boost: 3,
+        pick: 0,
+        axe: 27,
+        hammer: 0,
+        accessory: false,
+        melee: true,
+        ranged: false,
+        magic: false,
+        summon: false,
+        thrown: false,
+        vanity: false,
+        mech: false,
+        quest_item: false,
+        make_npc: 0,
+        fishing_pole: 0,
+        hair_dye: -1,
+        dye: 0,
+        mount_type: -1,
+        paint: 0,
+        paint_coating: 0,
+        use_sound: Some(148),
+        use_sound_pitch: 0.0,
+    }
+}
+
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 /// The hand-written corrections of the GenItemData placeholder band
@@ -30,8 +113,14 @@ pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 /// case (`Item.cs:47550-47555`) transcribed over the `ResetStats` stock -
 /// the item the gem-staff shoot's AllGems gate reads (`Player.cs:49262`,
 /// `PackGemStaffFeatures`'s `HeldItem.type == 6171`), so the branch is
-/// live in the game rather than a test shape.
-static ITEM_CORRECTIONS: [ItemDef; 1] = [
+/// live in the game rather than a test shape. S1-P-i30 adds the four lunar
+/// chainsaws (2773/2778/2783/3463 — the generator left them zero rows, so
+/// they could never chop; [`lunar_chainsaw`] transcribes the C# rows).
+static ITEM_CORRECTIONS: [ItemDef; 5] = [
+    lunar_chainsaw(2773, "Vortex Chainsaw", 427),
+    lunar_chainsaw(2778, "Nebula Chainsaw", 429),
+    lunar_chainsaw(2783, "Solar Flare Chainsaw", 431),
+    lunar_chainsaw(3463, "Stardust Chainsaw", 610),
     ItemDef {
         id: 6171,
             name: "Bejeweled Staff",
@@ -548,18 +637,19 @@ mod tests {
 
     #[test]
     fn test_DW_2_3_the_placeholder_band_neighbours_stay_untouched() {
-        // The correction is one seam over three ids: every other row of the
-        // 3263-3989 placeholder band still reads the generated row verbatim.
-        // The M6-SAVE-1 merge regenerated `itemdata.rs`, so the placeholder
-        // band reads its generated rows: the three staves answer their
-        // `Item.cs` values from the generated table (their own tests pin the
-        // values), and only 6171 rides the correction.
+        // The correction is one seam over the corrected ids: every other row
+        // of the 3263-3989 placeholder band still reads the generated row
+        // verbatim. The M6-SAVE-1 merge regenerated `itemdata.rs`, so the
+        // placeholder band reads its generated rows: the three staves answer
+        // their `Item.cs` values from the generated table (their own tests
+        // pin the values); 6171 and the four lunar chainsaws (S1-P-i30) ride
+        // the corrections.
         for id in [3376u16, 3378, 3778, 3780, 3786, 3788] {
             let got = item(id).unwrap();
             assert!(std::ptr::eq(got, &ITEMS[id as usize]), "id {id} must not be shadowed");
         }
-        // The full-table sweep: only 6171 rides the corrections, and the
-        // corrected row is not the generated one.
+        // The full-table sweep: exactly the ITEM_CORRECTIONS ids ride the
+        // corrections, and a corrected row is not the generated one.
         for id in 0..ITEMS.len() as u16 {
             let got = item(id).unwrap();
             match ITEM_CORRECTIONS.iter().find(|d| d.id == id) {

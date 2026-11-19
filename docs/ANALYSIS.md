@@ -460,8 +460,10 @@ verdicts against the port:
   cell; the app's `cell_drops` suppresses 80 so the hit cell is not doubled.
 - **WRONG (fixed): the Don't Starve cactus chop did not hurt.** `Player.cs:45721-
   45724` hurts the chopper `DamageVar(6, -luck)` when the world carries the seed
-  and the chop damage is positive. The port now lands it on the chop tick
-  (before the kill's drop draws, the C# order).
+  and the chop damage is positive — on EVERY damaging hit, not only the break
+  (the prior attempt landed it only at the break point). The port now lands it
+  inside `axe_tile_hit` before the accumulation (before the kill's drop draws,
+  the C# order).
 - **WRONG (fixed): the Acorn Axe (5295) did not replant.** `Player.cs:45744-
   45753` reads `IsBottomOfTreeTrunkNoRoots` (`:45784-45802`) before the kill and
   calls `TryReplantingTree` (`:45804-45822`) — a sapling 20 through
@@ -471,24 +473,41 @@ verdicts against the port:
   `Next(2)`, the mushroom `Next(2)`, the bonus wood `Next(35) <= axe` with the
   `Main.rand.Next(3)` second chance (short-circuited). The palm `case 323`
   (`:65232-65266`) wood + the `88..=132` acorn marker match.
-- **MISSING (documented, out of scope): the chainsaw channel projectile.** The
-  chainsaws (383/384/387/1190/1197/1204/1232/3098) carry `channel: true` and a
-  `shoot` (57/58/61/214/217/220/224/509) whose `DefaultToDrillOrChainsaw`
-  (`Projectile.cs:10732-10742`) sets aiStyle 20. The port has no `proj_data` row
-  for those kinds and no aiStyle-20 arm (`AI_020`, `Projectile.cs:25481-25584` —
-  the channel-held blade that follows the cursor, kills on release, and chops
-  through the owner's `ItemCheck_UseMiningTools`). The axe ARM itself works for
-  a held chainsaw (the `axe` power gates the chop); the channel blade is the
-  projectile-family follow-up, not the axe arm.
+- **WRONG (fixed): the chainsaw channel was unported.** The chainsaws
+  (383/384/387/1190/1197/1204/1232/2342/3098 + the lunar 2773/2778/2783/3463)
+  carry `channel: true` and a `shoot` whose `DefaultToDrillOrChainsaw`
+  (`Projectile.cs:10732-10742`) sets aiStyle 20 — the SAME machine as the drills.
+  The port now (a) adds the 13 chainsaw `proj_data` rows (57/58/61/214/217/220/
+  224/369/427/429/431/509/610, the per-type boxes/scales of `Projectile.cs`
+  `SetDefaults`; the Butcher's 509 carries idStatic-10, `:5793-5794`), (b) widens
+  the i29 drill channel gates (`drill_channel_start`/`drill_live`/the throw gate)
+  from `pick > 0` to `pick > 0 || axe > 0`, so a held chainsaw spawns its blade on
+  the press, latches `Player.channel` and chops on the `toolTime` channel
+  countdown (`Player.cs:43582-43586`), and (c) corrects the four lunar chainsaw
+  item rows through the `ITEM_CORRECTIONS` seam (the GenItemData placeholder band
+  left them `axe: 0`; `lunar_chainsaw` transcribes `Item.cs:26486-26506` +
+  the `IsChainsaw` epilogue `:48899-48912`). The aiStyle-20 dispatch arm
+  (`ai_drill`, i29) already serves both families.
 - **MISSING (documented): Lucy the Axe's messages** (`Player.cs:45727-45742`,
   `LucyAxeMessage`) and the `IntentionGuesser` tracking (`:45715`/`:45754`) —
   cosmetic/AI layers with no port seam.
 
-The chop PACING stays the port's documented time-per-tile stand-in
-(`base * 7.0 / axe`, the M3-TOOL admission) — the C#'s exact `hitTile`
-damage-accumulator model (the per-tile HP table) is the M3-ITEM follow-up. The
-`getGoodWorld` 1.3× chop multiplier (`:45709-45712`) folds into that pacing
-follow-up, not the drop RNG.
+The chop PACING is now the C#'s exact `hitTile` damage-accumulator model
+(S1-P-i30, stacked on the i29 `tr_core::hit_tile` book): `axe_tile_hit`
+(`world_sim/editing.rs`) runs `tr_core::tool::axe_damage` (the `:45708-45712`
+ladder — the f32 1.2 scale with int truncation, the cactus 80 integer triple
+FIRST, the `getGoodWorld` f64 1.3 on the sum), the `CanKillTile` refusal
+(`:45717-45720`), the Don't Starve hurt on EVERY damaging hit (`:45721-45724`),
+the `>= 100` break with the `IsBottomOfTreeTrunkNoRoots`-gated Acorn Axe replant
+(`:45744-45753`), the fail-tick prune (`:45758-45767`) and the `ApplyItemTime`
+cadence re-arm (`:45768` — `useTime` verbatim; `pickSpeed` only when the item also
+carries pick power, the Drax 579). The old time-per-tile stand-in
+(`base * 7.0 / axe`, the M3-TOOL admission) is GONE. The `getGoodWorld` 1.3× chop
+multiplier folds into the damage ladder, not the drop RNG. The per-tick
+`KillTile(fail: true)` sound/dust stays the recorded i29 deviation (the damage
+still accumulates). The axe/hammer arms share ONE `hitTile` book (`:45660`
+`HitObject(x, y, 1)` runs before the arm split); the hammer arms keep their
+pre-i29 pacing until i31.
 
 ## Lighting
 

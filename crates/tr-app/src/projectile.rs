@@ -14060,11 +14060,13 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
-                        // S1-P-i29 — the drill family's aiStyle 20
-                        // (`Projectile.cs:25481-25584`): the held drill tracks
-                        // the owner's hand and aims at the mouse while the
-                        // channel holds; the release kills it. The position
-                        // is AI-set (the hand pin), so no `kill_step` runs.
+                        // S1-P-i29/i30 — the drill AND chainsaw families'
+                        // aiStyle 20 (`Projectile.cs:25481-25584`,
+                        // `DefaultToDrillOrChainsaw` `:10732-10742`): the
+                        // held tool tracks the owner's hand and aims at the
+                        // mouse while the channel holds; the release kills
+                        // it. The position is AI-set (the hand pin), so no
+                        // `kill_step` runs.
                         20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),

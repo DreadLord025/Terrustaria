@@ -732,6 +732,29 @@ pub const DRILL_NEBULA: u16 = 430;
 pub const DRILL_SOLAR: u16 = 432;
 pub const DRILL_STARDUST: u16 = 609;
 pub const DRAX: u16 = 107;
+/// The chainsaw projectiles (S1-P-i30) — the SAME
+/// `DefaultToDrillOrChainsaw` family as the drills (`Projectile.cs:
+/// 10732-10742`): aiStyle 20, `penetrate = -1`, `tileCollide = false`,
+/// `melee = true`, `ownerHitCheck = true`. The per-kind boxes/scales ride
+/// the `SetDefaults` type arms (`:1394-1427`, `:3018-3024`, `:3038-3044`,
+/// `:3059-3065`, `:3093-3099`, `:3351-3357`, `:4530-4535`, `:4983-5036`,
+/// `:5787-5794`). The aiStyle-20 machine (`Projectile.cs:25481-25584`)
+/// holds the owner's item animation and kills itself on the channel
+/// release — the chainsaw's chop cadence is the item's `useTime` through
+/// the `toolTime` channel countdown (`Player.cs:43582-43586`).
+pub const CHAINSAW_COBALT: u16 = 57;
+pub const CHAINSAW_MYTHRIL: u16 = 58;
+pub const CHAINSAW_ADAMANTITE: u16 = 61;
+pub const CHAINSAW_PALLADIUM: u16 = 214;
+pub const CHAINSAW_ORICHALCUM: u16 = 217;
+pub const CHAINSAW_TITANIUM: u16 = 220;
+pub const CHAINSAW_CHLOROPHYTE: u16 = 224;
+pub const CHAINSAW_SAWTOOTH_SHARK: u16 = 369;
+pub const CHAINSAW_VORTEX: u16 = 427;
+pub const CHAINSAW_NEBULA: u16 = 429;
+pub const CHAINSAW_SOLAR: u16 = 431;
+pub const CHAINSAW_BUTCHERS: u16 = 509;
+pub const CHAINSAW_STARDUST: u16 = 610;
 /// `ProjectileID.LaserDrill` (445) — the Laser Drill's beam, aiStyle 75
 /// (`Projectile.cs:5162-5172`, `AI_075` `:66244-66358`), NOT a
 /// `DefaultToDrillOrChainsaw` row. The port holds its channel the same way
@@ -2801,6 +2824,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DRILL_SOLAR => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             DRILL_STARDUST => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             DRAX => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // S1-P-i30 — the chainsaw family (the same
+            // `DefaultToDrillOrChainsaw` group; the boxes/scales are the
+            // per-type `SetDefaults` arms cited on the constants). The
+            // Butcher's Chainsaw 509 carries `usesIDStaticNPCImmunity =
+            // true` + `idStaticNPCHitCooldown = 10` (`Projectile.cs:
+            // 5792-5793`).
+            CHAINSAW_COBALT => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_MYTHRIL => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.08)),
+            CHAINSAW_ADAMANTITE => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.16)),
+            CHAINSAW_PALLADIUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_ORICHALCUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.12)),
+            CHAINSAW_TITANIUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            CHAINSAW_CHLOROPHYTE => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            CHAINSAW_SAWTOOTH_SHARK => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_VORTEX => (22.0, 56.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_NEBULA => (18.0, 56.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_SOLAR => (28.0, 64.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_BUTCHERS => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 0, 1.2)),
+            CHAINSAW_STARDUST => (28.0, 64.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // The Laser Drill's beam (445): aiStyle 75, 10x10,
             // `penetrate = -1`, `tileCollide = false` (`Projectile.cs:5162-
             // 5172`). The port holds its channel like the drills; the full
@@ -3280,6 +3322,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // S1-P-i30 — the Butcher's Chainsaw (509): the 2-frame sheet
+        // (`Main.cs:8481`), the aiStyle-20 machine's `frameCounter >= 2`
+        // wrap (`Projectile.cs:25497-25509`).
+        CHAINSAW_BUTCHERS => 2,
         _ => 1,
     }
 }
