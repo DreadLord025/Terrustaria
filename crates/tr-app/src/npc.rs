@@ -1179,7 +1179,10 @@ pub struct Npc {
     pub despawn_timer: i32,
     /// `NPC.soundDelay` (`NPC.cs:6440`): the AI sound cooldown, decremented
     /// once per update BEFORE the AI runs (`NPC.cs:90381-90383`). The
-    /// Destroyer's burrow roar arms it (`AI_037`, `:50081-50094`).
+    /// Destroyer's burrow roar arms it (`AI_037`, `:50081-50094`);
+    /// S1-E-21g's roar/wing play sites re-arm it with the distance/40
+    /// clamp (10..20) (`:40580`/`:50092`/`:51987`) — one shared field
+    /// (the just_hit dedupe precedent).
     pub sound_delay: i32,
     /// The Destroyer body's probe launch (`HitEffect`, `NPC.cs:89266-89285`):
     /// the strike path rolls the gate and parks the bottom-centre anchor;
@@ -1477,11 +1480,6 @@ pub struct Npc {
     /// `wants_hostile_shot` shape). Empty for every kind whose machine
     /// has no wired cue.
     pub wants_sound: Vec<NpcSoundRequest>,
-    /// `NPC.soundDelay` (`NPC.cs:6435`): the roar/wing cooldown —
-    /// decremented once per tick BEFORE the AI (`NPC.cs:90381-90384`),
-    /// re-armed by the distance/40 clamp (10..20) at the play sites
-    /// (`:40580`/`:50092`/`:51987`). S1-E-21g.
-    pub sound_delay: i32,
     /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
     /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
     /// 263/264/265 have no port arms yet, so the sim records the request
@@ -2540,7 +2538,6 @@ impl Npc {
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
             wants_sound: Vec::new(),
-            sound_delay: 0,
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
