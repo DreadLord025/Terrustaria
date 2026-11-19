@@ -11225,20 +11225,34 @@ The envelope and the ported bodies are 1:1; the deviations:
   stretch in `Main.DrawProjDirect`, `Main.cs:28039`, the
   `stringColor`/29 rainbow variants) is the M4-PROJ-4c render row.
 - **The pose block's `direction` write is ported; the rest is stubbed.**
-  `:67838-67847` writes `this.direction = В±1` from the В±2 px X
-  comparison вЂ” the rotation (`:68096`) and the dropped twin's nudge
-  (`:68057-68066`) consume it, so it lands. `heldProj`,
-  `SetDummyItemTime(2)` and `player.ChangeDir` are cosmetic player-pose
-  state: stubbed until M3-ITEM-2d's dummy-time gadget.
-- **`meleeSpeed = 1.0` stays in the formulas.** The range/top-speed
-  division (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the
-  lifetime divisor (`:67750`) are neutral exactly at the default; the
-  terms stay so M3-EQUIP-3 only has to supply the accessories' values
-  (yoyoString: range x1.25 + 30, lifetime x1.5; magicString: the -2
-  dropped twin). The `CCed` release arm (`:67920`) is stubbed false (no
-  CC system ported). The Terrarian beam block's `ai[0] != 3f` gate
-  (`:67776`) is verbatim from the source вЂ” only an aim exactly at
-  x = 3 is excluded.
+  `:67838-67847` writes `this.direction = +/-1` from the +/-2 px X
+  comparison - the rotation (`:68096`) and the dropped twin's nudge
+  (`:68057-68066`) consume it, so it lands. **S1-P-i09 (2026-11-20)**:
+  the block's `!flag2 && !flag` gate is now carried (the double yoyo's
+  slot and the counterweight kinds skip the pose, exactly `:67829`),
+  and the `player.ChangeDir` facing rides the `YoyoTick.facing` seam
+  (the flail precedent) - the old port wrote the pose for EVERY yoyo
+  incl. the double, and never touched the player's facing. `heldProj`
+  and `SetDummyItemTime(2)` stay stubbed until M3-ITEM-2d's dummy-time
+  gadget; the `itemTime == 1 && num7 > 0` channel-clear (`:67831-
+  67835`) is dead code in the decompile (`num7 = 0` seeded, never
+  written).
+- **`meleeSpeed` is LIVE (S1-P-i09).** The range/top-speed division
+  (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the lifetime
+  divisor (`/ 60f / ((1 + meleeSpeed) / 2f)`, `:67750`) read the
+  snapshot's `melee_speed` (the ported `Player.melee_speed()` -
+  armor/accessory bonuses already feed it). The old port divided by 60
+  only and never divided range/speed, so every melee-speed bonus was a
+  no-op for yoyos. The `ai[0] <= -2f` no-timeout guard (`:67756-67759`)
+  is ported too - the dropped twin and the ghost never expire by age.
+  The yoyoString terms (range x1.25 + 30 `:67882-67885`, lifetime x1.5
+  `:67752-67755`) and magicString's -2 dropped twin (`:68023-68031`)
+  stay with M3-EQUIP-3's unported grants. The `CCed` release arm
+  (`:67920`) is LIVE - `Player.cced()` is ported (frozen/webbed/stoned),
+  the snapshot carries it and `ItemCheck` itself clears the channel on
+  a CC (`Player.cs:42598-42602`). The Terrarian beam block's
+  `ai[0] != 3f` gate (`:67776`) is verbatim from the source - only an
+  aim exactly at x = 3 is excluded.
 - **The rolls ride the app's item stream.** The jitter
   (`rand.Next(10, 31)`, `:67748`), the beam's three rolls (`:67786-67793`)
   and the dropped twin's `penetrate = rand.Next(3, 7)` (`:68041`) draw
@@ -11246,15 +11260,51 @@ The envelope and the ported bodies are 1:1; the deviations:
   `LootRng(&mut app.item_rng)` seam the throw's crit roll already uses,
   the port's `Main.rand` analogue (the C# `FastRandom` vs `rand01`
   difference follows the house's existing deviation record).
-- **The beam scan's `CanHit` is a segment walk.** The C#
-  `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381+`); the
-  port walks the two centers' segment against the solid non-platform
-  tiles. The Terrarian's beams can therefore target through partial
-  cover where the vanilla boxes would not.
+- **The beam scan's `CanHit` is the shared box walk (S1-P-i09).** The
+  C# `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381-479`);
+  the scan now rides the ported `can_hit` walk (the Book of Skulls'
+  targeting helper) with both boxes. The old port used the
+  `yoyo_can_hit` centre-segment approximation (it survives for the
+  aiStyle-15 petal scan, whose own row keeps the recorded deviation).
+  The retarget normalizes the EUCLIDEAN offset (`:67809`) - the
+  manhattan sum is the scan's gate only (`:67803-67804`); the old port
+  divided the direction by the manhattan sum, shrinking every diagonal
+  beam.
 - **The counterweights are the other family.** 556-561/1079 ride
-  `AI_099_1_Counterweights` (`:67380`, they fire musket balls) and stay
-  with M3-EQUIP-3's accessory grants; the yoyo arm's `flag2` guard
-  (`:67819-67823`) never sees them.
+  `AI_099_1_Counterweights` (`:67380-67731`) and stay with M3-EQUIP-3's
+  accessory grants (`Player.counterWeight`/`yoyoGlove` are unported -
+  `Player.cs:14714-14766`'s Yoyo Bag / Magic Yoyo Bag / Strung
+  Counterweight / counterweight rows, `:18434-18439`'s resets); the
+  yoyo arm's `flag2` guard (`:67819-67823`) is now carried verbatim
+  (S1-P-i09) but never sees them - no `proj_data` row exists for the
+  seven kinds. The on-hit `Player.Counterweight` call
+  (`Projectile.cs:13272` + the 604 beam's `:12826`,
+  `Player.cs:12356-12415` - the glove's second yoyo / the counterweight
+  spawn scan) folds out with the same unported grants (ANALYSIS "Yoyo
+  on-hit effects").
+- **The aiStyle-99 hit arm is ported (S1-P-i09).** `Damage_PVE_Inner`'s
+  `:13256-13300` block: the dropped twin squashes its velocity to
+  len/5 and takes the `Next(50, 81) * 0.1` lift clamped at -16
+  (`:13258-13267` - the draw lands AFTER the hit's DamageVar roll on
+  the same stream); the flying yoyo faces the hit side against the
+  owner's centre (`:13273-13280`), recoils `velocity * -0.5 + away *
+  16` (the Kraken's 4, `:13281-13291`), ages its lifetime clock 20
+  ticks, plus 40 more and a `(int)(dmg * 0.75)` cut when the owner has
+  no line of sight (`Collision.CanHit`, `:13294-13298`). The doubling
+  peeks now carry the `flag8 = !targetNPC.immortal` gate (`:12815`,
+  `:13389`/`:13393`). The recoil is why the M4-PROJ-4b on-hit fixtures
+  re-pin the yoyo on the NPC each tick (the vanilla's held channel
+  seeks it straight back). The lifetime sweep keys `aiStyle == 99`
+  (`:67766`), not a kind list - the dispatch now reads
+  `proj_data(...).ai_style`.
+- **The channel snapshot carries the `controlUseItem` gates
+  (S1-P-i09).** `Player.ItemCheck` clears the channel whenever the use
+  input is cleared (`Player.cs:42804-42807`): the inventory, the
+  fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+  (`MinimapFrame.cs:164`) all drop it - the snapshot mirrors the same
+  three gates `update_editing` applies, so the yoyo returns behind
+  them (the old snapshot read only `mine_down` + the held item). The
+  snapshot also carries `CCed` and `meleeSpeed` now.
 - **GenItemData's break-in-if fix (the 693-row regen).**
   `Item.cs:30037-30041`'s guard вЂ” `default: if (type < 3315 || type >
   3317) { break; } goto case 3262;` вЂ” was executed wrong: the
@@ -13936,11 +13986,20 @@ fade lifecycle of 1130/1135: the 0.92 velocity decay, the
 owner-local `Kill`.
 
 Deviations: the counterweight on-hit spawn path (`Player.Counterweight`,
-`Player.cs:12356-12415` вЂ” the yoyo-glove/counterweight scan) is a separate
-accessory arm and stays deferred; `AI_210`'s one-shot sound and frame cycle
-are the render row's (the port's cue table has no `Item20`); the spawned
-shots' own aiStyle-189 (1125) and aiStyle-24 (1134) families are their own
-tasks вЂ” the shots exist with their data, their children-AIs do not run.
+`Player.cs:12356-12415` - the yoyo-glove/counterweight scan) folds out
+with the unported `yoyoGlove`/`counterWeight` grants (S1-P-i09 re-read:
+the gate `!yoyoGlove && counterWeight <= 0` returns early, so the call
+is a no-op until M3-EQUIP-3 lands the accessory rows); the aiStyle-99
+hit arm AROUND that call (the recoil / facing / clock age / no-LOS cut
+/ the dropped twin's squash+lift, `Projectile.cs:13256-13300`) IS
+ported now (S1-P-i09, "The yoyo family" above); `AI_210`'s one-shot
+sound and frame cycle are the render row's (the port's cue table has
+no `Item20`); the spawned shots' own aiStyle-189 (1125) and aiStyle-24
+(1134) families are their own tasks - the shots exist with their data,
+their children-AIs do not run. The Hive-Five's bee arm
+(`Projectile.cs:13699-13706`, the 1/3 `Next(3)` gate + `beeType`/
+`beeDamage`/`beeKB`) stays deferred with the bee family's rows
+(181/566 have no `proj_data` row).
 ## The Old One's Army's lane spawn (M4-EVENT-18)
 
 The etherian portal (549) is the gate every lane's monster climbs out of,

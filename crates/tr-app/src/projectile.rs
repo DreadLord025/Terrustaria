@@ -194,12 +194,15 @@ pub(crate) struct YoyoBeamRequest {
 }
 
 /// What one yoyo AI tick hands back to the pool: the owner-wide lifetime
-/// sweep (`Projectile.cs:67764-67771`) and the Terrarian's beam request —
-/// both write across the pool's slot array.
+/// sweep (`Projectile.cs:67764-67771`), the Terrarian's beam request —
+/// both write across the pool's slot array — and the pose block's
+/// `player.ChangeDir` facing (`:67840`/`:67845`, the `FlailTick.facing`
+/// precedent).
 #[derive(Default)]
 struct YoyoTick {
     sweep: bool,
     beam: Option<YoyoBeamRequest>,
+    facing: Option<i32>,
 }
 
 /// One flail helper spawn — the family's `Projectile.NewProjectile` calls
@@ -2524,11 +2527,15 @@ impl Projectile {
     /// flight with the aim-seeking orbit, the return, the dropped and ghost
     /// states, the rotation) plus the generic tile slide, the double-yoyo
     /// `flag` arm, the lifetime sweep, the Terrarian's beam timer and the
-    /// per-type specials. The accessory terms (yoyoString/magicString/
-    /// meleeSpeed) stay at their base values until M3-EQUIP-3.
+    /// per-type specials. `meleeSpeed` is live (S1-P-i09 — the lifetime
+    /// divisor `:67750` and the range/speed division `:67886-67887`); the
+    /// yoyoString/magicString accessory terms stay with M3-EQUIP-3's
+    /// unported grants. The dust rolls (`:67868-67881`) and the
+    /// `AI_AdjustPlayerItemRotationToFaceProjectile` tail (`:68104`, the
+    /// held-item pose) are documented skips (ANALYSIS "The yoyo family").
     ///
     /// Returns the [`YoyoTick`] — the pool-side effects the arm cannot write
-    /// itself (the sweep and the beam spawn).
+    /// itself (the sweep, the beam spawn and the `ChangeDir` facing).
     #[allow(clippy::too_many_arguments)]
     fn ai_yoyo(
         &mut self,
@@ -2545,18 +2552,27 @@ impl Projectile {
 
         // `:67745-67774` — the lifetime clock: `localAI[0]++` (the double
         // yoyo's jitter draws from the seeded stream), the seconds
-        // (`/ 60f` — the division by `((1 + meleeSpeed) / 2)` is 1/1 at the
-        // port's default meleeSpeed) against the per-yoyo table.
+        // (`/ 60f / ((1 + meleeSpeed) / 2f)`, `:67750` — the meleeSpeed
+        // divisor is live, S1-P-i09; the yoyoString ×1.5 boost
+        // `:67752-67755` stays with M3-EQUIP-3's unported grant) against
+        // the per-yoyo table.
         self.local_ai[0] += 1.0;
         if flag {
             // `:67746-67749`.
             self.local_ai[0] += rng.next_range(10, 31) as f32 * 0.1;
         }
-        let lifetime = yoyo_lifetime(self.kind);
-        if lifetime != -1.0 && self.local_ai[0] / 60.0 > lifetime {
+        let mut lifetime = yoyo_lifetime(self.kind);
+        // `:67756-67759` — the dropped twin and the Magic String ghost
+        // never expire (`ai[0] <= -2f` forces the -1 no-timeout).
+        if self.ai[0] <= -2.0 {
+            lifetime = -1.0;
+        }
+        let seconds = self.local_ai[0] / 60.0 / ((1.0 + inputs.melee_speed) / 2.0);
+        if lifetime != -1.0 && seconds > lifetime {
             self.ai[0] = -1.0;
             // `:67764-67773` — the owner-wide sweep rides the tick out (this
-            // slot included; setting it here is idempotent).
+            // slot included; setting it here is idempotent). The sweep's
+            // per-slot `netUpdate = true` (`:67769`) lands in the dispatch.
             tick.sweep = true;
         }
 
@@ -2579,24 +2595,56 @@ impl Projectile {
                 if rng.next_range(0, 3) == 0 {
                     mag *= 2.0;
                 }
-                // `:67795-67796` — the quarter of the yoyo's own velocity.
-                let mut bx = self.vel.x * 0.25 + jx / jl * mag;
-                let mut by = self.vel.y * 0.25 + jy / jl * mag;
+                // `:67795-67796` — the quarter of the yoyo's own velocity
+                // (`vector *= 0.25f; vector += vector2` — the normalize
+                // then the magnitude multiply, in the C#'s order).
+                let mut bx = self.vel.x * 0.25;
+                let mut by = self.vel.y * 0.25;
+                bx += jx / jl * mag;
+                by += jy / jl * mag;
                 // `:67797-67813` — the closest chasable NPC within the 400 px
-                // manhattan distance behind the `CanHit` gate retargets the
-                // beam at 8 px/tick straight at it.
+                // manhattan distance behind the `CanBeChasedBy` + `CanHit`
+                // gates retargets the beam at 8 px/tick straight at it. The
+                // retarget normalizes the EUCLIDEAN offset (`:67809`'s
+                // `(vector - base.Center).SafeNormalize(Vector2.Zero)` — the
+                // manhattan value is the scan's gate only, S1-P-i09 fix);
+                // the box `CanHit` rides the shared walk (`can_hit`, the
+                // `Collision.CanHit` port). On a pick `vector` is OVERWRITTEN
+                // to the NPC centre (`:67807-67808`) before the normalize —
+                // the closest candidate's offset replaces the jittered one.
                 let mut closest = 400.0f32;
                 for n in npcs.iter() {
-                    if n.hp <= 0 {
+                    if !chaseable(n) {
                         continue;
                     }
                     let (nx, ny) = n.center();
                     let d = (cx - nx).abs() + (cy - ny).abs();
-                    if d < closest && yoyo_can_hit(world, cx, cy, nx, ny) {
+                    let (nw, nh) = n.size();
+                    if d < closest
+                        && can_hit(
+                            world,
+                            self.pos.x,
+                            self.pos.y,
+                            self.w,
+                            self.h,
+                            n.x,
+                            n.y,
+                            nw,
+                            nh,
+                        )
+                    {
                         closest = d;
-                        let l = d.max(f32::EPSILON);
-                        bx = (nx - cx) / l * 8.0;
-                        by = (ny - cy) / l * 8.0;
+                        let (dx, dy) = (nx - cx, ny - cy);
+                        let l = (dx * dx + dy * dy).sqrt();
+                        // `SafeNormalize(Vector2.Zero)` — the zero offset
+                        // stays zero (no epsilon-division blow-up).
+                        if l > 0.0 {
+                            bx = dx / l * 8.0;
+                            by = dy / l * 8.0;
+                        } else {
+                            bx = 0.0;
+                            by = 0.0;
+                        }
                     }
                 }
                 // `:67814` — the ×0.8 damp, the spawn at the center minus the
@@ -2615,6 +2663,12 @@ impl Projectile {
             }
         }
 
+        // `:67819-67823` — the counterweight kinds (556-561/1079) flag out
+        // of the pose block (they ride `AI_099_1_Counterweights`, the other
+        // arm — unported, no row). The yoyo arm itself never sees them, but
+        // the guard is carried verbatim for a future row.
+        let flag2 = matches!(self.kind, 556..=561 | 1079);
+
         // `:67824-67828` — the owner's death kills the string.
         if inputs.player_dead {
             self.active = false;
@@ -2622,16 +2676,24 @@ impl Projectile {
             return tick;
         }
 
-        // `:67829-67852` — the pose block's `direction` write (the ±2 px X
-        // comparison against the owner center). The heldProj /
-        // `SetDummyItemTime(2)` / `player.ChangeDir` player-side writes stay
-        // stubbed until M3-ITEM-2d; the counterweights (the other aiStyle-99
-        // arm) never reach here.
-        if self.ai[0] != -2.0 {
+        // `:67829-67852` — the pose block: only the LONE flying yoyo takes
+        // it (`!flag2 && !flag && ai[0] != -2f`, `:67829`); the double and
+        // the dropped twin take the `drawLayer = 0` else (a draw-layer
+        // write the port's counterweight-before-yoyo draw order already
+        // encodes — M4-PROJ-4c). The ±2 px X comparison writes the slot's
+        // `direction` AND the player's facing through `ChangeDir`
+        // (`:67840`/`:67845` — the facing rides the tick out, the flail
+        // precedent; S1-P-i09). The C#'s `itemTime == 1 && num7 > 0`
+        // channel-clear (`:67831-67835`) is dead code (`num7 = 0` seeded,
+        // never written). `heldProj` / `SetDummyItemTime(2)` stay stubbed
+        // until M3-ITEM-2d's dummy-time gadget.
+        if !flag2 && !flag && self.ai[0] != -2.0 {
             if let Some((ox, _)) = owner {
                 if cx > ox + 2.0 {
+                    tick.facing = Some(1);
                     self.direction = 1;
                 } else if cx < ox - 2.0 {
+                    tick.facing = Some(-1);
                     self.direction = -1;
                 }
             }
@@ -2654,14 +2716,17 @@ impl Projectile {
         let mut accel = 10.0f32;
         let mut speed = yoyo_top_speed(self.kind);
         let mut arrive = 3.0f32;
-        let range = yoyo_max_range(self.kind);
+        let mut range = yoyo_max_range(self.kind);
         // `:67864-67867` — the Kraken's ×0.75 top speed under the double.
         if self.kind == KRAKEN_YOYO && flag {
             speed *= 0.75;
         }
-        // The yoyoString range boost (`num11 * 1.25f + 30f`) and the
-        // meleeSpeed division (`(1 + meleeSpeed * 3f) / 4f`) are 1/1 at the
-        // defaults — M3-EQUIP-3 flips them.
+        // The yoyoString range boost (`num11 * 1.25f + 30f`, `:67882-67885`)
+        // stays with M3-EQUIP-3's unported grant. The meleeSpeed division
+        // (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) is live (S1-P-i09).
+        let melee_div = (1.0 + inputs.melee_speed * 3.0) / 4.0;
+        range /= melee_div;
+        speed /= melee_div;
         accel = (14.0 - speed / 2.0).max(1.0);
         arrive = 5.0 + speed / 2.0;
         // `:67894-67897` — the double yoyo's wider arrive radius.
@@ -2685,11 +2750,14 @@ impl Projectile {
             let flag4 = player_dist > range * 1.3;
             // The owner-only aim update (`:67918-67956`).
             if let Some((mut aim_x, mut aim_y)) = inputs.aim {
-                if !inputs.channel {
-                    // The release (`:67920-67925`; the `CCed` arm is stubbed
-                    // false — no CC system ported).
+                if !inputs.channel || inputs.player_cced {
+                    // The release (`:67920-67925`) — the `CCed` arm is live
+                    // (S1-P-i09): `Player.cced()` is ported (frozen / webbed
+                    // / stoned), and `ItemCheck` itself clears the channel
+                    // on a CC (`Player.cs:42598-42602`).
                     self.ai[0] = -1.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true; // `:67924`
                 } else {
                     // The aim clamped to the range (`:67932-67939`), then the
                     // `range - 1f` re-clamp (`:67943-67950`).
@@ -2713,12 +2781,14 @@ impl Projectile {
                     if self.ai[0] != aim_x || self.ai[1] != aim_y {
                         self.ai[0] = aim_x;
                         self.ai[1] = aim_y;
+                        self.net_update = true; // `:67953`
                     }
                 }
             }
             // The 1.3× forced return (`:67957-67961`).
             if flag4 && self.ai[0] >= 0.0 {
                 self.ai[0] = -1.0;
+                self.net_update = true; // `:67960`
             }
             if self.ai[0] >= 0.0 {
                 if flag3 {
@@ -2785,8 +2855,11 @@ impl Projectile {
             }
         }
 
-        // `:68032-68036` — the Magic String's ghost: no damage, full alpha.
-        // (Its spawn path rides M3-EQUIP-3's magicString flag.)
+        // `:68023-68031` — the Magic String's `-1 → -3` transition and the
+        // 0.75-damage dropped-twin spawn ride M3-EQUIP-3's magicString
+        // grant (the flag is never set in the port, so the arm is dead
+        // until then — the ghost STATE below is carried). `:68032-68036`
+        // — the ghost itself: no damage, full alpha.
         if self.ai[0] == -3.0 {
             self.damage = 0;
             self.alpha = 255;
@@ -12099,10 +12172,12 @@ impl Default for ProjectilePool {
 /// (`Projectile.cs:67733+`): the aim world point
 /// (`Main.ReverseGravitySupport(Main.MouseScreen) + Main.screenPosition`,
 /// `:67928`), the held-button channel state (`Player.channel` — the release
-/// arm `:67920-67925`) and the owner's death (`:67824`). The accessory flags
-/// (yoyoString / magicString) and `meleeSpeed` land with M3-EQUIP-3 — the AI's
-/// terms stay at their ported base values until then.
-#[derive(Clone, Copy, Debug, Default)]
+/// arm `:67920-67925`), the owner's death (`:67824`), `CCed` (the same release
+/// arm) and `meleeSpeed` (the lifetime divisor `:67750` and the range/top-speed
+/// division `:67886-67887` — S1-P-i09 wires the ported `Player.melee_speed()`).
+/// The accessory flags (yoyoString / magicString) stay with M3-EQUIP-3 — their
+/// terms (`:67752-67755`, `:67882-67885`, `:68023-68031`) are unported grants.
+#[derive(Clone, Copy, Debug)]
 pub struct YoyoInputs {
     /// The aim point in world pixels; `None` = no player link — the orphan
     /// guard, the slot holds position (unreachable in game: the pool only
@@ -12112,6 +12187,26 @@ pub struct YoyoInputs {
     pub channel: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
+    /// `Player.CCed` (`:67920`) — the release arm fires on a CC even while
+    /// the button is held (`Player.ItemCheck`'s `channel = false`,
+    /// `Player.cs:42598-42602`).
+    pub player_cced: bool,
+    /// `player.meleeSpeed` (`:67750`, `:67886-67887`).
+    pub melee_speed: f32,
+}
+
+impl Default for YoyoInputs {
+    /// `meleeSpeed = 1f` — the C# base; a 0 here would divide the lifetime
+    /// and range/speed scalings wrong (the `FlailInputs` precedent).
+    fn default() -> Self {
+        Self {
+            aim: None,
+            channel: false,
+            player_dead: false,
+            player_cced: false,
+            melee_speed: 1.0,
+        }
+    }
 }
 
 /// What `AI_015_Flails` reads off `Main.player[owner]` each tick — the
@@ -14385,15 +14480,17 @@ impl ProjectilePool {
                             let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
                             // `:67764-67771` — the sweep flips the whole
                             // owner's aiStyle-99 set with `ai[0] >= 0f` to the
-                            // return state.
+                            // return state (the C# gates on `aiStyle ==
+                            // this.aiStyle`, not a kind list — S1-P-i09).
                             if tick.sweep {
                                 for p in self.slots.iter_mut() {
                                     if p.active
                                         && p.owner == slot_owner
-                                        && YOYO_KINDS.contains(&p.kind)
+                                        && proj_data(p.kind).is_some_and(|d| d.ai_style == 99)
                                         && p.ai[0] >= 0.0
                                     {
                                         p.ai[0] = -1.0;
+                                        p.net_update = true; // `:67769`
                                     }
                                 }
                             }
@@ -14408,6 +14505,13 @@ impl ProjectilePool {
                                     b.damage,
                                     b.knock_back,
                                 );
+                            }
+                            // `:67840`/`:67845` — the pose block's
+                            // `player.ChangeDir` facing (the flail precedent).
+                            if let Some(dir) = tick.facing {
+                                if let Some(p) = player.as_deref_mut() {
+                                    p.facing = dir;
+                                }
                             }
                         }
                         165 => {
@@ -16013,7 +16117,7 @@ impl ProjectilePool {
                 // post-loop call made hit-killed shots survive one frame —
                 // S1-A-9). The immunity gates make the repeated calls
                 // idempotent, exactly like the C#'s.
-                self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
+                self.damage_pve(world, i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
                 // The hostile shots' player contact (`Damage_PVP`'s
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
@@ -16803,6 +16907,7 @@ impl ProjectilePool {
         p.detonated = false;
         // `Damage()` — the PVE walk through the resized box.
         self.damage_pve(
+            world,
             slot,
             npcs,
             None,
@@ -17040,6 +17145,7 @@ impl ProjectilePool {
     /// and run their on-hit arms (`:13579-13956`).
     fn damage_pve(
         &mut self,
+        world: &World,
         slot: usize,
         npcs: &mut [Npc],
         flail: Option<FlailInputs>,
@@ -17240,17 +17346,107 @@ impl ProjectilePool {
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
+            // 13300`, S1-P-i09): the dropped twin squashes its velocity to
+            // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
+            // at -16); the flying yoyo faces the hit side, recoils away
+            // from the NPC (`velocity = velocity * -0.5 + away * 16`, the
+            // Kraken's 4), ages its lifetime clock 20 ticks — plus 40 more
+            // and a ×0.75 damage cut when the owner has no line of sight
+            // (`Collision.CanHit` box walk). The `Player.Counterweight`
+            // call (`:13272`, `Player.cs:12356-12415`) is the accessory
+            // arm — yoyoGlove/counterWeight are unported grants
+            // (M3-EQUIP-3), so the call folds out (ANALYSIS).
+            if proj_data(p.kind).is_some_and(|d| d.ai_style == 99) {
+                // The slot scalars copied out before the mutations below
+                // (the `p` borrow stays live for the rest of the walk).
+                let (pkind, ppx, ppy, pw, ph) = (p.kind, p.pos.x, p.pos.y, p.w, p.h);
+                let (ncx, ncy) = n.center();
+                let dropped = self.slots[slot].ai[0] == -2.0;
+                if dropped {
+                    // `:13258-13262` — `num14 = velocity.Length();
+                    // velocity.Normalize(); velocity *= num14 / 5f`. The
+                    // zero-velocity Normalize is the port's safe no-op
+                    // (the house SafeNormalize convention; the C# XNA
+                    // Normalize NaNs and the AI's NaN-kill collects it
+                    // next tick).
+                    let len = self.slots[slot].vel.length();
+                    if len > 0.0 {
+                        self.slots[slot].vel /= len;
+                        self.slots[slot].vel *= len / 5.0;
+                    }
+                    // `:13263-13267` — the `Next(50, 81) * 0.1` lift,
+                    // clamped at -16.
+                    self.slots[slot].vel.y -= rng.next_range(50, 81) as f32 * 0.1;
+                    if self.slots[slot].vel.y < -16.0 {
+                        self.slots[slot].vel.y = -16.0;
+                    }
+                    self.slots[slot].net_update = true; // `:13268`
+                } else {
+                    // `:13273-13280` — the facing against the OWNER's
+                    // center (the orphan guard keeps the stock direction).
+                    if let Some((ox, _)) = owner {
+                        self.slots[slot].direction = if ncx < ox { -1 } else { 1 };
+                    }
+                    if self.slots[slot].ai[0] >= 0.0 {
+                        // `:13281-13298` — the recoil. The away vector
+                        // reads `base.Center` (the slot's true centre —
+                        // the walk's `center` local is the port's pos+3
+                        // hit-point convention, not the C# centre).
+                        let (bcx, bcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
+                        let (away_x, away_y) = (bcx - ncx, bcy - ncy);
+                        let l = (away_x * away_x + away_y * away_y).sqrt();
+                        let (ax, ay) = if l > 0.0 {
+                            (away_x / l, away_y / l)
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        let kick = if pkind == KRAKEN_YOYO { 4.0 } else { 16.0 };
+                        // `:13283-13291` — `vector4.Normalize(); velocity
+                        // *= -0.5f; velocity += vector4 * num15`.
+                        self.slots[slot].vel *= -0.5;
+                        self.slots[slot].vel.x += ax * kick;
+                        self.slots[slot].vel.y += ay * kick;
+                        self.slots[slot].net_update = true; // `:13292`
+                        self.slots[slot].local_ai[0] += 20.0;
+                        // The no-LOS penalty reads the owner's box; the
+                        // orphan (no player) skips it — the C# always has
+                        // Main.player[owner].
+                        if let Some(pl) = player.as_deref() {
+                            if !can_hit(
+                                world,
+                                ppx,
+                                ppy,
+                                pw,
+                                ph,
+                                pl.x,
+                                pl.y,
+                                crate::player::WIDTH,
+                                pl.height,
+                            ) {
+                                self.slots[slot].local_ai[0] += 40.0;
+                                dmg = (dmg as f64 * 0.75) as i32;
+                            }
+                        }
+                    }
+                }
+            }
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
             // (`countUp: false`) form, so the spawn arms below see the same
             // counter value on this hit. The counter starts at -1, so the
-            // effects land on hit #2 (M4-PROJ-4b).
-            if let Some(pl) = player.as_deref_mut() {
-                let kind = self.slots[slot].kind;
-                let doubled = (kind == THE_EYE_OF_CTHULHU_YOYO && pl.every_some_yoyo_hits(7, false))
-                    || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
-                if doubled {
-                    dmg = ((dmg as f32) * 2.0) as i32;
+            // effects land on hit #2 (M4-PROJ-4b). `flag8 = !targetNPC.
+            // immortal` (`:12815`) gates both — an immortal target (the
+            // dummy) never doubles AND never peeks (S1-P-i09).
+            if !n.immortal {
+                if let Some(pl) = player.as_deref_mut() {
+                    let kind = self.slots[slot].kind;
+                    let doubled =
+                        (kind == THE_EYE_OF_CTHULHU_YOYO && pl.every_some_yoyo_hits(7, false))
+                            || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
+                    if doubled {
+                        dmg = ((dmg as f32) * 2.0) as i32;
+                    }
                 }
             }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
@@ -18556,6 +18752,7 @@ mod tests {
         let before = npc.hp;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot,
             std::slice::from_mut(&mut npc),
             None,
@@ -18597,6 +18794,7 @@ mod tests {
         let before = npc.hp;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot,
             std::slice::from_mut(&mut npc),
             None,
@@ -20705,7 +20903,13 @@ mod yoyo_tests {
     }
 
     /// One tick with the NPC on the projectile's centre (the damage pass
-    /// runs), the player in the fifth slot like the pool's callers.
+    /// runs), the player in the fifth slot like the pool's callers. The
+    /// fixture RE-PINS the slot on the NPC centre and zeroes its velocity
+    /// each tick: the aiStyle-99 hit arm's recoil (`Projectile.cs:13281-
+    /// 13291`, S1-P-i09) kicks the yoyo away on every landed hit, and the
+    /// vanilla's held channel seeks it straight back into the NPC — the
+    /// re-pin is that press, so the touch test lands every tick like the
+    /// fixture's contract says.
     fn tick(
         world: &mut tr_core::World,
         pool: &mut ProjectilePool,
@@ -20713,7 +20917,11 @@ mod yoyo_tests {
         player: &mut Option<crate::player::Player>,
     ) {
         let (nw, nh) = npc.size();
-        let aim = Vec2::new(npc.x + nw * 0.5 + 8.0, npc.y + nh * 0.5);
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        let p = &mut pool.slots_mut()[0];
+        p.pos = Vec2::new(ncx - p.w * 0.5, ncy - p.h * 0.5);
+        p.vel = Vec2::ZERO;
+        let aim = Vec2::new(ncx + 8.0, ncy);
         pool.update(
             world,
             std::slice::from_mut(npc),
@@ -21026,7 +21234,7 @@ mod yoyo_tests {
         YoyoInputs {
             aim,
             channel,
-            player_dead: false,
+            ..YoyoInputs::default()
         }
     }
 
@@ -21307,6 +21515,7 @@ mod yoyo_tests {
                 aim: Some((380.0, 320.0)),
                 channel: true,
                 player_dead: true,
+                ..YoyoInputs::default()
             },
             FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
@@ -21688,6 +21897,508 @@ mod yoyo_tests {
         let b = roll_once();
         assert_eq!(a, b, "the seeded pair rolls identically");
         assert!((3..7).contains(&a), "the 3..7 roll: {a}");
+    }
+}
+
+// --- S1-P-i09: the yoyo channel variant's census fixes --------------------
+// Witnesses WRITTEN NOT RUN (code-only mode). Every assertion cites the C#
+// line it pins; the RNG-order witnesses mirror the draws on a clone of the
+// same seed (the S1-D-4b-8 counting-stream precedent).
+#[cfg(test)]
+mod s1_p_i09_yoyo_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    /// The 200×200 empty world the hit-arm witnesses use (no tiles — the
+    /// `can_hit` walk is open everywhere unless a column is planted).
+    fn big_world() -> tr_core::World {
+        tr_core::World::new("t".into(), 200, 200)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            flags: FLAG_ACTIVE,
+            ..Tile::default()
+        };
+    }
+
+    fn inputs(aim: Option<(f32, f32)>, channel: bool) -> YoyoInputs {
+        YoyoInputs {
+            aim,
+            channel,
+            ..YoyoInputs::default()
+        }
+    }
+
+    fn tick(
+        w: &mut tr_core::World,
+        pool: &mut ProjectilePool,
+        owner: Option<(f32, f32)>,
+        inputs: YoyoInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(w, &mut [], owner, None, None, inputs, FlailInputs::default(), rng, 0, true);
+    }
+
+    /// A recording stream — the beam-roll ORDER witness reads the exact
+    /// `(min, max)` sequence the arm draws (`Projectile.cs:67786-67793`).
+    struct RecordRng {
+        inner: tr_core::tile_light::FastRandom,
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl RecordRng {
+        fn new() -> Self {
+            Self {
+                inner: tr_core::tile_light::FastRandom::new(7),
+                ranges: Vec::new(),
+                floats: 0,
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for RecordRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            self.inner.next_float()
+        }
+    }
+
+    /// `:67750` — the lifetime seconds divide by `((1 + meleeSpeed) / 2f)`.
+    /// At meleeSpeed 3 the divisor is 2, so the Wood Yoyo's 3 s budget is
+    /// 360 ticks: tick 360 reads exactly 3.0 (not `> 3.0`, still out) and
+    /// tick 361 returns. The old port divided by 60 only and returned at
+    /// 181 regardless of meleeSpeed.
+    #[test]
+    fn s1_p_i09_the_lifetime_divisor_reads_melee_speed() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        pool.slots[slot].local_ai[0] = 359.0;
+        let mut w = world();
+        let ins = YoyoInputs {
+            melee_speed: 3.0,
+            ..inputs(Some((380.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].local_ai[0], 360.0);
+        assert!(pool.slots[slot].ai[0] >= 0.0, "360/60/2 == 3.0 is not > 3.0");
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].ai[0], -1.0, "tick 361 expires at meleeSpeed 3");
+    }
+
+    /// `:67756-67759` — `ai[0] <= -2f` forces the -1 no-timeout: the dropped
+    /// twin and the Magic String ghost never expire by age, however old
+    /// their clock. The old port aged them out like a flying yoyo.
+    #[test]
+    fn s1_p_i09_the_dropped_twin_and_ghost_never_expire() {
+        for state in [-2.0f32, -3.0] {
+            let mut pool = ProjectilePool::new();
+            // Away from the owner — the ghost's return seek (`:68078-
+            // 68095`) would catch it at the centre, exactly like the C#.
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 100.0, 100.0, 0.0, 0.0, 9, 2.5, state, 0.0)
+                .unwrap();
+            pool.slots[slot].local_ai[0] = 100_000.0;
+            let mut w = world();
+            tick(
+                &mut w,
+                &mut pool,
+                Some((320.0, 320.0)),
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert_eq!(pool.slots[slot].ai[0], state, "state {state} survives the age");
+            assert!(pool.slots[slot].active, "state {state} still live");
+        }
+    }
+
+    /// `:67886-67887` — the range AND top speed divide by
+    /// `(1 + meleeSpeed * 3f) / 4f`. At meleeSpeed 3 the Wood Yoyo's 130 px
+    /// range becomes 52: the aim 300 px out clamps to 52 then re-clamps to
+    /// 51 (`:67932-67950`), landing at owner + 51 (the base-speed pin is
+    /// `the_aim_clamps_to_the_range`'s 449 = 320 + 129).
+    #[test]
+    fn s1_p_i09_the_melee_speed_divides_the_range() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            melee_speed: 3.0,
+            ..inputs(Some((620.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert!(
+            (pool.slots[0].ai[0] - 371.0).abs() < 1e-3 && pool.slots[0].ai[1] == 320.0,
+            "the 52-px range's 51-px re-clamp: {:?}",
+            (pool.slots[0].ai[0], pool.slots[0].ai[1])
+        );
+    }
+
+    /// `:67920` — the release arm fires on `!channel || CCed`: a frozen
+    /// owner returns the yoyo even while the button is held (the C#
+    /// `ItemCheck` clears the channel on a CC too, `Player.cs:42598-42602`).
+    #[test]
+    fn s1_p_i09_the_cced_owner_releases_the_string() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            player_cced: true,
+            ..inputs(Some((380.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[0].ai[0], -1.0, "the CC releases");
+        assert_eq!(pool.slots[0].ai[1], 0.0, "the aim zeroes with the release");
+    }
+
+    /// `:67829` — the pose block runs only for the LONE flying yoyo
+    /// (`!flag2 && !flag && ai[0] != -2f`): the double's slot keeps its
+    /// stock direction while the first faces the string, and the facing
+    /// rides the owner's `ChangeDir` (`:67840`/`:67845`). The dropped twin
+    /// skips the pose too (its nudge is the only direction writer).
+    #[test]
+    fn s1_p_i09_the_pose_block_skips_the_double_and_the_twin() {
+        let mut pool = ProjectilePool::new();
+        let first = pool
+            .spawn_with_data(WOOD_YOYO, 300.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let second = pool
+            .spawn_with_data(WOOD_YOYO, 304.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.facing = 1;
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((400.0, 320.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[first].direction, -1, "the lone yoyo faces left");
+        assert_eq!(pool.slots[second].direction, 1, "the double keeps the stock direction");
+        assert_eq!(player.facing, -1, "the ChangeDir facing rides the tick out");
+        // The dropped twin: no pose write, and the nudge (`:68068-68071`,
+        // vx 5 inside the 9 cap) does not touch the direction either.
+        let mut pool = ProjectilePool::new();
+        let twin = pool
+            .spawn_with_data_ai(WOOD_YOYO, 300.0, 312.0, 5.0, 0.0, 9, 2.5, -2.0, 0.0)
+            .unwrap();
+        tick(
+            &mut w,
+            &mut pool,
+            Some((400.0, 320.0)),
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(pool.slots[twin].direction, 1, "the twin skips the pose block");
+    }
+
+    /// `:67809` — the beam retarget normalizes the EUCLIDEAN offset (the
+    /// manhattan value is the scan's gate only, `:67803-67804`), and the
+    /// `CanBeChasedBy` gate (`:67799`) refuses a `dontTakeDamage` NPC: the
+    /// shielded near slime is skipped for the chaseable far one straight
+    /// above, so the beam flies at (0, 8 × 0.8) — the old port divided by
+    /// the manhattan sum and took the shielded target.
+    #[test]
+    fn s1_p_i09_the_beam_retarget_is_euclidean_and_chaseable_gated() {
+        let mut pool = ProjectilePool::new();
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 312.0, 312.0, 0.0, 0.0, 190, 6.5)
+            .unwrap();
+        pool.slots[terrarian].local_ai[1] = 5.0; // the 6-tick timer fires this tick
+        let mut w = world();
+        // The near slime's centre (350, 360) — offset (30, 40), euclidean
+        // 50 / manhattan 70; shielded, so the scan must skip it.
+        let mut near = Npc::new(NpcKind::Slime, 338.0, 351.0, 1, 0.0);
+        near.dont_take_damage = true;
+        // The far slime's centre (320, 420) — straight above, manhattan
+        // 100 < 400, chaseable (25 HP > 5).
+        let far = Npc::new(NpcKind::Slime, 308.0, 411.0, 1, 0.0);
+        let mut npcs = vec![near, far];
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((320.0, 320.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        let beam = (0..MAX_PROJECTILES)
+            .find(|&i| pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM)
+            .expect("the timer fired");
+        let v = pool.slots[beam].vel;
+        // 6.4 px/tick (8 × 0.8), possibly one 0.985 beam-AI damp if the
+        // spawned slot rides the same pass — either way > 6.0 and vertical.
+        assert!(v.x.abs() < 1e-3, "the beam aims straight up: {v:?}");
+        assert!(v.y > 6.0, "the euclidean 8 px/tick aim after the damp: {v:?}");
+    }
+
+    /// `:67786-67793` — the beam's roll ORDER on the pass's stream: the
+    /// ±100 direction pair (the do/while redraws only on the zero vector),
+    /// then the `Next(10, 41)` magnitude, then the `Next(3)` doubling gate.
+    /// No floats. The mirror clone proves the seed's first pair is non-zero
+    /// (the loop runs once), so the recorded sequence is exactly four.
+    #[test]
+    fn s1_p_i09_the_beam_rolls_draw_in_the_csharp_order() {
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let (jx, jy) = (mirror.next_range(-100, 101), mirror.next_range(-100, 101));
+        assert!(jx != 0 || jy != 0, "the fixture seed draws a non-zero pair");
+        let mut pool = ProjectilePool::new();
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 312.0, 312.0, 0.0, 0.0, 190, 6.5)
+            .unwrap();
+        pool.slots[terrarian].local_ai[1] = 5.0;
+        let mut w = world();
+        let mut rng = RecordRng::new();
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), YoyoInputs::default(), &mut rng);
+        assert_eq!(
+            rng.ranges,
+            vec![(-100, 101), (-100, 101), (10, 41), (0, 3)],
+            "the direction pair, the magnitude, the doubling gate"
+        );
+        assert_eq!(rng.floats, 0, "the beam block draws no floats");
+    }
+
+    /// `Damage_PVE_Inner`'s aiStyle-99 arm (`:13273-13298`): the flying
+    /// yoyo faces the hit side against the OWNER's centre, recoils
+    /// (`velocity * -0.5 + away * 16`) and ages its clock 20 ticks; with
+    /// the owner's line of sight open (`Collision.CanHit`) that is all.
+    #[test]
+    fn s1_p_i09_the_hit_recoils_and_ages_the_clock() {
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        // The slime's centre (512, 509); the yoyo's centre (524, 509) —
+        // 12 px to the right, boxes overlapping.
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 4.0, 0.0, 20, 4.0, 0.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 300.0;
+        player.y = 490.0;
+        let before = npc.hp;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(npc.hp < before, "the hit landed");
+        let p = &pool.slots[slot];
+        assert_eq!(p.direction, 1, "the NPC right of the owner faces right");
+        assert!(
+            (p.vel - Vec2::new(14.0, 0.0)).length() < 1e-4,
+            "4 × -0.5 + 16 along the away axis: {:?}",
+            p.vel
+        );
+        assert_eq!(p.local_ai[0], 20.0, "the +20 clock age, no LOS penalty");
+    }
+
+    /// `:13294-13298` — the no-LOS arm: a solid column between the yoyo
+    /// and the owner adds 40 more clock ticks and cuts the hit damage to
+    /// `(int)(dmg * 0.75)` BEFORE the strike. Same seed both runs, so the
+    /// variance roll matches and the drop comparison isolates the cut.
+    #[test]
+    fn s1_p_i09_the_no_los_hit_ages_forty_more_and_cuts_the_damage() {
+        let run = |blocked: bool| {
+            let mut w = big_world();
+            if blocked {
+                // The column at tile x = 25 (400 px) sits between the
+                // player (x 300) and the yoyo (x 516).
+                for y in 0..200 {
+                    put_solid(&mut w, 25, y);
+                }
+            }
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 4.0, 0.0, 20, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 300.0;
+            player.y = 490.0;
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((400.0, 509.0)),
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            (before - npc.hp, pool.slots[slot].local_ai[0])
+        };
+        let (clear_drop, clear_age) = run(false);
+        let (blocked_drop, blocked_age) = run(true);
+        assert_eq!(clear_age, 20.0);
+        assert_eq!(blocked_age, 60.0, "the +20 then the +40");
+        assert!(
+            blocked_drop < clear_drop,
+            "the ×0.75 cut: {blocked_drop} vs {clear_drop}"
+        );
+    }
+
+    /// `:13258-13267` — the dropped twin's hit: the velocity squashes to
+    /// len/5 and takes the `Next(50, 81) * 0.1` lift (the draw lands AFTER
+    /// the hit's DamageVar roll on the same stream — the mirror clone
+    /// replays both), clamped at -16. No recoil, no clock age, no facing
+    /// write. The Kraken's recoil kick is 4, not 16 (`:13286-13289`).
+    #[test]
+    fn s1_p_i09_the_dropped_twins_hit_squashes_and_lifts() {
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let _var = mirror.next_range(-15, 16); // DamageVar's roll (:12938)
+        let lift = mirror.next_range(50, 81) as f32 * 0.1;
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 10.0, 0.0, 20, 4.0, -2.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let p = &pool.slots[slot];
+        assert!((p.vel.x - 2.0).abs() < 1e-4, "10 / 5 along the axis: {:?}", p.vel);
+        assert!((p.vel.y + lift).abs() < 1e-4, "the mirrored lift: {:?}", p.vel);
+        assert_eq!(p.local_ai[0], 0.0, "the twin's clock never ages on a hit");
+        assert_eq!(p.direction, 1, "no facing write in the dropped arm");
+        // The -16 clamp: a 100 px/tick downward twin squashes to 20 down,
+        // and the lift pushes it past the cap.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 0.0, -100.0, 20, 4.0, -2.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(pool.slots[slot].vel.y, -16.0, "the lift clamps at -16");
+    }
+
+    /// `:13286-13289` — the Kraken's recoil kick is 4 px/tick, not 16.
+    #[test]
+    fn s1_p_i09_the_krakens_recoil_kick_is_four() {
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(KRAKEN_YOYO, 516.0, 501.0, 4.0, 0.0, 120, 4.3, 0.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(
+            (pool.slots[slot].vel - Vec2::new(2.0, 0.0)).length() < 1e-4,
+            "4 × -0.5 + 4: {:?}",
+            pool.slots[slot].vel
+        );
+    }
+
+    /// `:13389`/`:13393` — `flag8 = !targetNPC.immortal` (`:12815`) gates
+    /// the doublings: an immortal target (the dummy) never doubles. The
+    /// counter is seeded at 0 so the very next peek WOULD fire; the
+    /// control run (mortal) doubles the same variance roll.
+    #[test]
+    fn s1_p_i09_the_immortal_target_never_doubles() {
+        let run = |immortal: bool| {
+            let w = big_world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    THE_EYE_OF_CTHULHU_YOYO,
+                    516.0,
+                    501.0,
+                    0.0,
+                    0.0,
+                    20,
+                    4.0,
+                    0.0,
+                    0.0,
+                )
+                .unwrap();
+            let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            npc.immortal = immortal;
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 400.0;
+            player.y = 490.0;
+            player.yoyo_hit_counter = 0; // the next peek fires (0 % 7 == 0)
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((400.0, 509.0)),
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            before - npc.hp
+        };
+        let immortal_drop = run(true);
+        let mortal_drop = run(false);
+        // DamageVar(20) ∈ 17..23, minus the Blue slime's defense/2 (1):
+        // 16..22; the doubling makes it 34..46 − 1 = 33..45. The owner at
+        // x 400 keeps the LOS open (no ×0.75 cut on either run).
+        assert!(immortal_drop < 30, "no doubling on the immortal: {immortal_drop}");
+        assert!(mortal_drop >= 33, "the mortal control doubles: {mortal_drop}");
     }
 }
 
