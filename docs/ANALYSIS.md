@@ -24893,3 +24893,115 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The Frost Moon projectile family (S1-D-4)
+
+**Code-only round** (`task/S1-D-4-santa-projectiles`, 2026-11-19): no
+cargo/rustc/rustfmt/tests invoked — file reads/writes + git only. The
+witness tests in `crates/tr-app/src/projectile_ai_frostmoon.rs::tests` are
+WRITTEN, NOT RUN; run `cargo test -p tr-app projectile_ai_frostmoon` when a
+compiler pass is allowed.
+
+### The census (present/missing on main before this round)
+
+R25's style-61 census documented the SantaNK1 rows 350/351/352 unported
+(`Projectile.cs:4400-4429`). This round extended the census to the whole
+Frost Moon projectile family — Everscream's needles/ornaments and
+IceQueen's wave/shards included. **All eight rows were missing** from
+`proj_data`, and no dispatch arm claimed any of the kinds (the only
+pre-existing hit was the aiStyle-2 ladder's 347 arm,
+`projectile.rs:2264` — the shrapnel's flight tail was already ported but
+the kind had no row, so it could never spawn). The task brief's id guesses
+(347/348/349 for ornaments/needles, 353/354/355 for the IceQueen pair) are
+corrected against `ProjectileID.cs:1244-1258`: 353 is BabyGrinch, 354
+CrimsandBallGun (rowed, the sand family), 355 VenomFang (rowed, the
+M4-PROJ-6 rider) — none is Frost Moon.
+
+| id | name (`ProjectileID.cs`) | style | SetDefaults (`Projectile.cs`) | row before | arm before | landed |
+| --- | --- | --- | --- | --- | --- | --- |
+| 345 | PineNeedleHostile `:1244` | 1 | `:4353-4360` (4x4, scale 0.8) | MISSING | generic `ai_arrow` (no 345 hook) | row + `step` (the `:57116-57128` 50-tick +0.5 drop, the counting flag3) |
+| 346 | OrnamentHostile `:1246` | 14 | `:4361-4369` (18x18, pen -1, life 300) | MISSING | `ai_spear` generic (no 346 block) | row + `ornament` head (frame pin, burst) ahead of `ai_spear` |
+| 347 | OrnamentHostileShrapnel `:1248` | 2 | `:4370-4377` (6x6, pen -1) | MISSING | the style-2 ladder's 347 arm existed (`:23503-23510`) | row only — the existing arm now reachable |
+| 348 | FrostWave `:1250` | 1 | `:4378-4389` (48x48, pen -1, no tile, extra 1, life 900) | MISSING | generic `ai_arrow` | row + `step` (the `:56246-56273` ai[0] pulse, flag3 rest) |
+| 349 | FrostShard `:1252` | 1 | `:4390-4399` (12x12, pen -1, life 900) | MISSING | generic `ai_arrow` | row + `step` (the `:56221-56245` frame pin + every-tick +0.2 + localAI[0] pulse) |
+| 350 | Missile `:1254` | 1 | `:4400-4410` (14x14, alpha 255, pen -1, no tile, life 300) | MISSING | generic `ai_arrow` | row + `step` (the `:55130-55163` fade-100 + ai[1] latch) |
+| 351 | Present `:1256` | 58 | `:4411-4420` (24x24, alpha 255, pen -1, no tile) | MISSING | NO style-58 dispatch arm | row + `present` + the new gated `58 =>` arm (`:28906-28937`) |
+| 352 | Spike `:1258` | 14 | `:4421-4429` (30x30, pen -1, life 1200) | MISSING | `ai_spear` generic (no 352 block) | row + `spike_pulse` head (`:24848-24866`) ahead of `ai_spear` |
+
+Frame sheets (`Main.cs`): 351→2 (`:8529`), 349→5 (`:8530`), 346→2
+(`:8565`), 347→2 (`:8566`); 345/348/350/352 keep the init 1.
+
+Boundary exclusions honoured: R62's empress kinds (872-874/919/923),
+R63's styles 31/147/181/193, R56's 194, R19b's ai001-C kinds
+(110/275/276/634/635/645/662/675/685 — verified against
+`origin/task/S1-D-5-aistyle1-types-c`'s `SLICE_C_KINDS`) are untouched; the
+new aiStyle-1 gate is kind-disjoint from slices A/B/C by construction.
+
+### Structure decisions
+
+- The four aiStyle-1 kinds ride the slice-A/B module shape
+  (`projectile_ai_frostmoon::step` + `finish_flight`, the verbatim
+  `ai_style1_flight` tail replication) — the C# block order preserved:
+  hook group → flag3 counter → below-counter hooks → the gravity else-if
+  chain → the shared tail. 345 counts (not on the flag3 list) and pins at
+  50 in its own arm; 348/349/350 rest (`:55985-55987`) so the generic
+  `ai[0] >= 15` gravity never opens for them — they fly straight (the
+  349's +0.2 is its own hook's, applied every tick).
+- The aiStyle-14 pair are HEADS only: the dispatch runs `ornament` /
+  `spike_pulse` and then the SAME generic `ai_spear` tail — no parallel
+  flight copy. The 346 burst's five spawns ride back to the pool
+  (`ShrapnelSpawn`, the nebula request shape) and drain through
+  `spawn_with_data_ai_owned` with the ornament's owner, Damage 40 / KB 0
+  (`:24894`), `ai1 = ornament.ai[1]` (the frame payload), the box centred
+  (`NewProjectile` `:10876-10877` — the spawn site subtracts the 6x6
+  half-box). The spawned shrapnel is flipped `friendly = false` (the
+  `spawn_hostile` convention — the row's stock friendly is false, the
+  pool's slot default true).
+- The style-58 arm is inline in the module (`present`) and gated to 351
+  in the dispatch — the style's only rowed kind, so no other kind's
+  behaviour changes. The C#'s two consecutive `if`s (`:28913`/`:28926`)
+  are kept: the tick that flips ai[0] to 1 runs BOTH blocks (frame 1, the
+  second +0.1, the drag) in the same tick — the witness pins it.
+- The 346 burst's `owner == Main.myPlayer` gate (`:24883`) folds to the
+  pool's `simulated` gate: the port models hostile shots as owner 255
+  (`spawn_hostile`) while the C# spawns with `Owner: Main.myPlayer`
+  (`NPC.cs:32885`); the arm only runs on locally-simulated slots
+  (`projectile.rs:12961-12965`), which IS the owner test in the
+  single-player port (the saucer precedent).
+
+### RNG by construction
+
+- **Zero-draw arms**: 345 (`:57116-57128` — the latch is sound-only), 348
+  (`:56246-56273` — sound-only latch), 349 (`:56221-56245`), 352
+  (`:24848-24866`), 351 (`:28906-28937`) contain no `Main.rand` call at
+  all. Their ports cannot drift any stream.
+- **350's dust window** (`:55138-55157`): `Next(3)` (+ inner `Next(10)`),
+  `Next(4)` (+ inner `Next(5)`) — every draw feeds `Main.dust` alone, no
+  observable state. The window is SKIPPED whole with its draws (the
+  aiStyle-1 pool's zero-RNG convention, the slice-A/B precedent — the
+  same documented stream-position deviation those slices carry). No
+  trajectory can change; the deviation is the convention, recorded here.
+- **346's burst** (`:24885-24894`): the draws FEED observable state (the
+  five shrapnel velocities) and are KEPT on the pass's threaded stream in
+  the C#'s exact order — per fragment `Next(-20,21)` → `Next(-20,0)` →
+  `Next(-30,31)` (SpeedX's jitter, named-argument evaluation order) →
+  `Next(-30,31)` (SpeedY's). The Y draw's range tops at −1, so the
+  `10/sqrt(dx²+dy²)` normalise never divides by zero. The recording-stream
+  witness (`the_ornament_bursts_five_shrapnel_in_draw_order`) pins the
+  20-draw sequence. The burst fires once per ornament (timeLeft == 1),
+  so the stream cost is deterministic per spawn.
+- The spawn-site draws (`NPC.cs:32838`'s `Next(0,31)` ai0 payload,
+  `:32885`'s `Next(2)` frame pick, `:33607`'s `Next(5)`, the velocity
+  jitters) belong to the NPC-side machines (the S1-F-13c frost-boss
+  slices own them — `npc_ai_frost_boss.rs`/`_b.rs` already carry them);
+  this round adds no spawn site, so no UpdateNPCs-stream position moves.
+
+### Deliberate skips
+
+Dust (350's window, 346/349's Kill bursts `:74171-74181`/`:74236-74249`,
+345's Kill burst `:74020-74028` — all dust/sound-only), light (346's
+per-frame `AddLight` `:24877`/`:24881`, 350's `:55137`), sound (345 Item1,
+346 Item1, 348 Item8, 350 Item42), `netUpdate`, `coldDamage` (348/349 —
+damage-side, no consumer). The `Kill()` dust arms need no port: the pool's
+death path carries no per-kind Kill hooks for these kinds and the C#
+blocks roll nothing observable.

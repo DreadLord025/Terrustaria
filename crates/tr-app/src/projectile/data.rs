@@ -256,6 +256,32 @@ pub const DUTCHMAN_SHELL: u16 = 240;
 /// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
 /// (`NPC.cs:44582`'s `TryMakingSpike`).
 pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// The Frost Moon projectile family (S1-D-4, `ProjectileID.cs:1244-1258`).
+/// `ProjectileID.PineNeedleHostile` (345) — Everscream's needle spray
+/// (`NPC.cs:32838`, `ai0 = Main.rand.Next(0, 31)`).
+pub const PINE_NEEDLE_HOSTILE: u16 = 345;
+/// `ProjectileID.OrnamentHostile` (346) — Everscream's ornament lob
+/// (`NPC.cs:32885`, `ai1 = Main.rand.Next(2)` picks the frame); on its last
+/// tick it bursts into five 347 shrapnel (`Projectile.cs:24883-24896`).
+pub const ORNAMENT_HOSTILE: u16 = 346;
+/// `ProjectileID.OrnamentHostileShrapnel` (347) — the ornament's burst
+/// fragment (the aiStyle-2 5-tick arm, `Projectile.cs:23503-23510`).
+pub const ORNAMENT_SHRAPNEL: u16 = 347;
+/// `ProjectileID.FrostWave` (348) — IceQueen's phase-0 side charge
+/// (`NPC.cs:33500`).
+pub const FROST_WAVE: u16 = 348;
+/// `ProjectileID.FrostShard` (349) — IceQueen's shard rain / spin barrage
+/// (`NPC.cs:33607`'s `ai0 = Main.rand.Next(5)` frame pick, `:33656`).
+pub const FROST_SHARD: u16 = 349;
+/// `ProjectileID.Missile` (350) — SantaNK1's missile salvo
+/// (`NPC.cs:33818`).
+pub const SANTA_MISSILE: u16 = 350;
+/// `ProjectileID.Present` (351) — SantaNK1's present rain
+/// (`NPC.cs:33840`, the aiStyle-58 drop).
+pub const SANTA_PRESENT: u16 = 351;
+/// `ProjectileID.Spike` (352) — SantaNK1's ornament spike
+/// (`NPC.cs:33798`, the aiStyle-14 alpha/scale pulse).
+pub const SANTA_SPIKE: u16 = 352;
 /// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
 /// Deerclops' rubble chunk (the aiStyle-1 flight).
 pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
@@ -2475,6 +2501,38 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // melee/armorPenetration/stopsDealingDamageAfterPenetrateHits
             // fields are damage-side and stay with the melee port.
             LIGHTS_BANE => (20.0, 20.0, 188, 2, 30, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`).
+            // `Projectile.cs:4353-4360` — Everscream's pine needle (345):
+            // 4x4, aiStyle 1, hostile, `scale = 0.8f`; the stock penetrate 1
+            // (`:774`), timeLeft 3600 (`:787`) and tileCollide (`:775`).
+            PINE_NEEDLE_HOSTILE => (4.0, 4.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `Projectile.cs:4361-4369` — Everscream's ornament (346):
+            // 18x18, aiStyle 14, hostile, `penetrate = -1`, `timeLeft = 300`.
+            ORNAMENT_HOSTILE => (18.0, 18.0, 14, -1, 300, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
+            // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
+            ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4378-4389` — IceQueen's frost wave (348): 48x48,
+            // aiStyle 1, hostile, `penetrate = -1`, `tileCollide = false`,
+            // `extraUpdates = 1`, `timeLeft = 900`. The `coldDamage = true`
+            // (`:4386`) is damage-side with no consumer — dropped (the
+            // knockBack-row precedent).
+            FROST_WAVE => (48.0, 48.0, 1, -1, 900, 1, false, false, false, RESET_STATE),
+            // `Projectile.cs:4390-4399` — IceQueen's frost shard (349):
+            // 12x12, aiStyle 1, hostile, `penetrate = -1`, `timeLeft = 900`;
+            // `coldDamage` dropped as above.
+            FROST_SHARD => (12.0, 12.0, 1, -1, 900, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4400-4410` — SantaNK1's missile (350): 14x14,
+            // aiStyle 1, hostile, `alpha = 255`, `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft = 300`.
+            SANTA_MISSILE => (14.0, 14.0, 1, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4411-4420` — SantaNK1's present (351): 24x24,
+            // aiStyle 58, hostile, `alpha = 255`, `penetrate = -1`,
+            // `tileCollide = false`; the stock timeLeft 3600.
+            SANTA_PRESENT => (24.0, 24.0, 58, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:4421-4429` — SantaNK1's spike (352): 30x30,
+            // aiStyle 14, hostile, `penetrate = -1`, `timeLeft = 1200`.
+            SANTA_SPIKE => (30.0, 30.0, 14, -1, 1200, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2890,6 +2948,19 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
         // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
         968 => 24,
+        // The Frost Moon family (S1-D-4): the present's 2-frame sheet
+        // (`Main.cs:8529`) — AI()'s aiStyle-58 arm pins frame 0/1
+        // (`Projectile.cs:28915`/`:28928`); the frost shard's 5-frame sheet
+        // (`Main.cs:8530`) — the 349 hook's `frame = (int)ai[0]` pin
+        // (`Projectile.cs:56223`); the ornament's 2-frame sheet
+        // (`Main.cs:8565`) — the 346 arm's `frame = (int)ai[1]` pin
+        // (`Projectile.cs:24874`, the `NPC.cs:32885` `Next(2)` payload); the
+        // shrapnel's 2-frame sheet (`Main.cs:8566`, no AI frame writer — the
+        // stock frame 0 reads the top row).
+        SANTA_PRESENT => 2,
+        FROST_SHARD => 5,
+        ORNAMENT_HOSTILE => 2,
+        ORNAMENT_SHRAPNEL => 2,
         _ => 1,
     }
 }
