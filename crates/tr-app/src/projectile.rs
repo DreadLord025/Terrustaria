@@ -6960,7 +6960,7 @@ impl Projectile {
             }
         }
         // `:69145-69158` — the Flame Burst Tower (aiStyle 130) arm (its own AI
-        // is unported, S1-D-4b-3; kept for the citation).
+        // landed with S1-D-4b-9).
         if ai_style == 130 {
             vector2 = Vec2::new(player.facing as f32 * 10.0, -11.0);
             if self.direction != player.facing {
@@ -7188,6 +7188,77 @@ impl Projectile {
             let dir = safe_normalize_or(nc - shooting_spot, Vec2::new(0.0, 1.0));
             let in_cone = dir.x.abs() < dir.y.abs() * dead_bottom_angle && dir.y > 0.0;
             if !in_cone
+                && (best == -1 || dist < shooting_spot.distance(npc_center(&npcs[best as usize])))
+                && can_hit_line(world, shooting_spot.x, shooting_spot.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+            {
+                best = j as i32;
+            }
+        }
+        best
+    }
+
+    /// `Projectile.AI_130_FlameBurstTower_FindTarget`
+    /// (`Projectile.cs:68362-68407`): the Flame Burst Tower's target pick —
+    /// the owner's whip target first (when chaseable, in range, outside the
+    /// angle cone, on the allowed side and behind line of sight), else the
+    /// nearest eligible NPC. Unlike the Ballista's dead-bottom cone
+    /// (`:68409-68454`), the cone here is symmetric — `|dir.X| < |dir.Y| *
+    /// angleRatioMax` rejects steep targets BOTH above and below (no
+    /// `dir.Y > 0` clause, `:68378`/`:68400`) — and the fire-state call passes
+    /// `canChangeDirection: false`, which additionally rejects targets behind
+    /// the tower's facing (`direction * dir.X < 0`). Returns the NPC index
+    /// or −1. S1-D-4b-9.
+    fn ai_130_flame_burst_find_target(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        shot_range: f32,
+        angle_ratio_max: f32,
+        shooting_spot: Vec2,
+        player_target: i32,
+        can_change_direction: bool,
+    ) -> i32 {
+        // `:68364-68388` — the whip-target arm. The C#'s `for (i < 1)` loop
+        // re-checks `CanBeChasedBy` with the same condition; it folds into
+        // the single gate here.
+        let mut best: i32 = -1;
+        if player_target >= 0 {
+            if let Some(n) = npcs.get(player_target as usize) {
+                if n.can_be_chased_by() {
+                    let nc = npc_center(n);
+                    let dist = shooting_spot.distance(nc);
+                    if dist <= shot_range {
+                        let dir = safe_normalize_or(nc - shooting_spot, Vec2::new(0.0, 1.0));
+                        let in_cone = dir.x.abs() < dir.y.abs() * angle_ratio_max;
+                        if !in_cone
+                            && (can_change_direction || !(self.direction as f32 * dir.x < 0.0))
+                            && (best == -1
+                                || dist < shooting_spot.distance(npc_center(&npcs[best as usize])))
+                            && can_hit_line(world, shooting_spot.x, shooting_spot.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
+                        {
+                            best = player_target;
+                        }
+                    }
+                }
+            }
+            if best != -1 {
+                return best;
+            }
+        }
+        // `:68389-68406` — the full scan.
+        for (j, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let nc = npc_center(n);
+            let dist = shooting_spot.distance(nc);
+            if dist > shot_range {
+                continue;
+            }
+            let dir = safe_normalize_or(nc - shooting_spot, Vec2::new(0.0, 1.0));
+            let in_cone = dir.x.abs() < dir.y.abs() * angle_ratio_max;
+            if !in_cone
+                && (can_change_direction || !(self.direction as f32 * dir.x < 0.0))
                 && (best == -1 || dist < shooting_spot.distance(npc_center(&npcs[best as usize])))
                 && can_hit_line(world, shooting_spot.x, shooting_spot.y, 0.0, 0.0, nc.x, nc.y, 0.0, 0.0)
             {
@@ -13666,6 +13737,322 @@ impl ProjectilePool {
                                 // `HitTiles` and the 1025 gore/dust burst (`:40248-40316`) are
                                 // SKIPPED - no sound, dust or gore layer in the pool.
                                 self.slots[i].sentry_turret_step(world);
+                        }
+                        130 => {
+                            // `AI_130_FlameBurstTower`
+                            // (`Projectile.cs:68107-68360`): the DD2 Flame
+                            // Burst Tower sentry (663/665/667), S1-D-4b-9.
+                            // The C# order: the constants + the per-kind arm
+                            // (the firing spot, the 300-wrap localAI[0], the
+                            // dust gates), the setApprenticeT2 buffs, the init
+                            // latch, the backpack gate + the sling reposition,
+                            // the ai[0]==1 reload/target state, the ai[0]==2
+                            // fire state, then the gravity tail.
+                            //
+                            // RNG (`Main.rand` draw order, per tick): the
+                            // per-kind arm draws the type-270 dust gate
+                            // `Next(2)` (`:68138`/`:68190`/`:68242`, only when
+                            // `ai[2] != 1`); on a 0 the two UNCONDITIONAL
+                            // `NextFloat`s follow (`fadeIn` `:68141` and
+                            // `velocity.X` `:68146` — `NewDustDirect` returns
+                            // the dummy slot 6000 when culled, so these draw
+                            // regardless of the dust pool). Then the smoke
+                            // gates `Next(5)` × 1/2/3 per tier
+                            // (`:68158`/`:68210`/`:68262`). The gate rolls and
+                            // the NextFloats run here in that exact order;
+                            // `Dust.NewDust`'s pool-occupancy-dependent
+                            // internal draws (`Dust.cs:116-146`, `:170-175`)
+                            // and the dust bodies are SKIPPED — no dust pool
+                            // (ANALYSIS, S1-D-4b-9). The targeting, the fire
+                            // and the shot spawn draw nothing.
+                            let (p_facing, p_apprentice_t2, p_minion_target) =
+                                player.as_deref().map_or((1, false, -1), |pl| {
+                                    (pl.facing, pl.set_apprentice_t2, pl.minion_attack_target_npc)
+                                });
+                            // `:68109-68118` — the stock constants: num = 900
+                            // (range), angleRatioMax = 1, num2 = 664 (shot),
+                            // num3 = 12 (the fire tick), num4 = 12 (speed),
+                            // num5 = 1 (frame base), num6 = 6 (cycle frames),
+                            // num7 = 4 (frame divisor), num8 = 80 (reload).
+                            let mut shot_range = 900.0f32;
+                            let mut angle_ratio_max = 1.0f32;
+                            let mut shot_kind = FLAME_BURST_SHOT_1;
+                            let fire_tick = 12.0f32;
+                            let mut shot_speed = 12.0f32;
+                            let frame_base = 1i32;
+                            let mut cycle_frames = 6i32;
+                            let frame_divisor = 4i32;
+                            let mut reload = 80.0f32;
+                            // `:68119` — the dust gate flag, captured BEFORE
+                            // the pickup latch below.
+                            let dust_flag = self.slots[i].ai[2] != 1.0;
+                            // `:68111` — the firing spot starts at the centre;
+                            // the per-kind arm drops it to the muzzle.
+                            let (ccx, ccy) = self.slots[i].center();
+                            let mut spot = Vec2::new(ccx, ccy);
+                            let smoke_gates;
+                            {
+                                let projectile = &mut self.slots[i];
+                                let bottom = Vec2::new(
+                                    projectile.pos.x + projectile.w * 0.5,
+                                    projectile.pos.y + projectile.h,
+                                );
+                                match projectile.kind {
+                                    // `:68122-68168` — T1 (663). The light
+                                    // casts (`:68124-68125`) are skipped.
+                                    FLAME_BURST_TOWER_1 => {
+                                        spot = bottom + Vec2::new(projectile.direction as f32 * 6.0, -40.0);
+                                        projectile.local_ai[0] += 1.0;
+                                        if projectile.local_ai[0] >= 300.0 {
+                                            projectile.local_ai[0] = 0.0;
+                                        }
+                                        smoke_gates = 1;
+                                    }
+                                    // `:68170-68220` — T2 (665): reload 70,
+                                    // speed +3, cycle 8, shot 666, muzzle −44.
+                                    FLAME_BURST_TOWER_2 => {
+                                        reload = 70.0;
+                                        shot_speed += 3.0;
+                                        cycle_frames = 8;
+                                        shot_kind = FLAME_BURST_SHOT_2;
+                                        spot = bottom + Vec2::new(projectile.direction as f32 * 6.0, -44.0);
+                                        projectile.local_ai[0] += 1.0;
+                                        if projectile.local_ai[0] >= 300.0 {
+                                            projectile.local_ai[0] = 0.0;
+                                        }
+                                        smoke_gates = 2;
+                                    }
+                                    // `:68222-68272` — T3 (667): reload 60,
+                                    // speed +6, cycle 8, shot 668, muzzle −46.
+                                    _ => {
+                                        reload = 60.0;
+                                        shot_speed += 6.0;
+                                        cycle_frames = 8;
+                                        shot_kind = FLAME_BURST_SHOT_3;
+                                        spot = bottom + Vec2::new(projectile.direction as f32 * 6.0, -46.0);
+                                        projectile.local_ai[0] += 1.0;
+                                        if projectile.local_ai[0] >= 300.0 {
+                                            projectile.local_ai[0] = 0.0;
+                                        }
+                                        smoke_gates = 3;
+                                    }
+                                }
+                            }
+                            // The dust gates, in the C#'s draw order (the
+                            // rectangles `:68131-68135`/`:68149-68155` etc.
+                            // feed only the skipped dust bodies).
+                            if dust_flag {
+                                // `:68138`/`:68190`/`:68242` — `Next(2)`.
+                                if rng.next_range(0, 2) == 0 {
+                                    // `:68141`/`:68146` — the fadeIn and
+                                    // velocity.X `NextFloat`s (the dust
+                                    // internals between them are skipped).
+                                    let _fade_in = 0.6 + rng.next_float() * 0.6;
+                                    let _vx = rng.next_float();
+                                }
+                            }
+                            for _ in 0..smoke_gates {
+                                // `:68158`/`:68210`/`:68262` — `Next(5)`.
+                                let _ = rng.next_range(0, 5);
+                            }
+                            // `:68275-68280` — the Apprentice T2 buffs: the
+                            // 0.1 angle cone, the 1.5× range, the 1.4× speed.
+                            if p_apprentice_t2 {
+                                angle_ratio_max = 0.1;
+                                shot_range *= 1.5;
+                                shot_speed *= 1.4;
+                            }
+                            // `:68281-68287` — the init latch (the C# runs it
+                            // AFTER the per-kind arm, so the muzzle above was
+                            // captured with the pre-latch direction).
+                            if self.slots[i].ai[0] == 0.0 {
+                                let projectile = &mut self.slots[i];
+                                projectile.direction = p_facing;
+                                projectile.sprite_direction = p_facing;
+                                projectile.ai[0] = 1.0;
+                                projectile.ai[1] = 0.0;
+                            }
+                            // `:68288-68292` — the backpack pickup gate.
+                            let pickup = self.slots[i].ai[2] == 0.0
+                                && self.slots[i].can_get_picked_up_by_sentry_backpack(player.as_deref(), local_owner);
+                            if pickup {
+                                self.slots[i].ai[2] = 1.0;
+                            }
+                            let flag2 = self.slots[i].ai[2] == 1.0;
+                            let mut shot: Option<(f32, f32, f32, f32)> = None;
+                            let mut killed = false;
+                            {
+                                let projectile = &mut self.slots[i];
+                                // `:68293-68304` — the backpack branch.
+                                if flag2 {
+                                    // `SetAsSelectedSentryBackpackTarget`
+                                    // (`:68296`, `:78807-78810`): re-armed
+                                    // every carried tick.
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        projectile.set_as_selected_sentry_backpack_target(pl);
+                                    }
+                                    projectile.vel = Vec2::ZERO;
+                                    if projectile.ai[0] == 1.0 && projectile.ai[1] == 0.0 {
+                                        projectile.direction = p_facing;
+                                        projectile.sprite_direction = p_facing;
+                                    }
+                                    if let Some(pl) = player.as_deref() {
+                                        if !projectile.ai_sentries_heavy_sling_reposition(pl, 130) {
+                                            killed = true;
+                                        }
+                                    } else {
+                                        projectile.kill();
+                                        killed = true;
+                                    }
+                                }
+                                if !killed {
+                                    if projectile.ai[0] == 1.0 {
+                                        // `:68305-68328` — the reload/target
+                                        // state.
+                                        projectile.frame = 0;
+                                        let mut flag3 = false;
+                                        if projectile.ai[1] > 0.0 {
+                                            projectile.ai[1] -= 1.0;
+                                        } else {
+                                            flag3 = true;
+                                        }
+                                        if flag3 && projectile.owner == local_owner {
+                                            let num9 = projectile.ai_130_flame_burst_find_target(
+                                                world, npcs, shot_range, angle_ratio_max, spot,
+                                                p_minion_target, true,
+                                            );
+                                            if num9 != -1 {
+                                                // `:68322` —
+                                                // `Math.Sign(DirectionTo(npc.Center).X)`;
+                                                // `DirectionTo` normalizes
+                                                // from the tower's CENTRE
+                                                // (`Entity.cs:205-208`), not
+                                                // the muzzle.
+                                                let (tcx, tcy) = projectile.center();
+                                                let delta = npc_center(&npcs[num9 as usize]) - Vec2::new(tcx, tcy);
+                                                let dir = delta.normalize_or_zero();
+                                                projectile.direction = csign(dir.x) as i32;
+                                                projectile.ai[0] = 2.0;
+                                                projectile.ai[1] = 0.0;
+                                            }
+                                        }
+                                    } else if projectile.ai[0] == 2.0 {
+                                        // `:68329-68351` — the fire state.
+                                        projectile.frame = frame_base + (projectile.ai[1] / frame_divisor as f32) as i32;
+                                        if projectile.ai[1] == fire_tick {
+                                            let mut vector2 = Vec2::new(projectile.direction as f32, 0.0);
+                                            // `:68335` — the fire-state scan
+                                            // keeps the facing
+                                            // (`canChangeDirection: false`).
+                                            let num10 = projectile.ai_130_flame_burst_find_target(
+                                                world, npcs, shot_range, angle_ratio_max, spot,
+                                                p_minion_target, false,
+                                            );
+                                            if num10 != -1 {
+                                                vector2 = safe_normalize_or(
+                                                    npc_center(&npcs[num10 as usize]) - spot,
+                                                    Vec2::new(projectile.direction as f32, 0.0),
+                                                );
+                                            }
+                                            let vector3 = vector2 * shot_speed;
+                                            if projectile.owner == local_owner {
+                                                // `:68343` — the shot from the
+                                                // captured muzzle. aiStyle
+                                                // 131 ≠ 1, so NO ±16 spawn
+                                                // clamp (`:10895`); the
+                                                // `NewProjectile` centring
+                                                // (`:10876-10877`) rides the
+                                                // spawn below (−8, −8).
+                                                shot = Some((spot.x, spot.y, vector3.x, vector3.y));
+                                            }
+                                        }
+                                        projectile.ai[1] += 1.0;
+                                        if projectile.ai[1] >= (cycle_frames * frame_divisor) as f32 {
+                                            projectile.ai[0] = 1.0;
+                                            projectile.ai[1] = reload;
+                                        }
+                                    }
+                                    // `:68352-68359` — the facing mirror and
+                                    // the gravity tail.
+                                    projectile.sprite_direction = projectile.direction;
+                                    if flag2 {
+                                        projectile.tile_collide = false;
+                                    } else {
+                                        projectile.tile_collide = true;
+                                        projectile.vel.y += 0.2;
+                                    }
+                                }
+                            }
+                            if let Some((x, y, vx, vy)) = shot {
+                                let (damage, kb, owner) = {
+                                    let p = &self.slots[i];
+                                    (p.damage, p.knock_back, p.owner)
+                                };
+                                let _ = self.spawn_with_data_ai_owned(
+                                    shot_kind, owner, x - 8.0, y - 8.0, vx, vy, damage, kb, 0.0, 0.0,
+                                );
+                            }
+                            // `HandleMovement`: the DD2 blocked-move arm
+                            // (`:17986-17990`), `flag6 = false` (`:17558-17560`).
+                            if !killed {
+                                self.slots[i].dd2_sentry_step(world);
+                            }
+                        }
+                        131 => {
+                            // `AI_131_FlameBurstShot`
+                            // (`Projectile.cs:68456-68508`): the Flame Burst
+                            // Tower's shot (664/666/668), S1-D-4b-9. The C#
+                            // order: the kind guard, the one-shot sound latch
+                            // (skipped — no sound layer), the 25/tick alpha
+                            // fade, the per-tier dust loop, then the rotation.
+                            //
+                            // RNG: the dust loop draws `Next(2)` per iteration
+                            // (`:68495`, 1/2/3 iterations per tier); on a
+                            // non-zero the `Next(1)` (`:68500`, always 0 but
+                            // it CONSUMES a draw) follows. Both run here in
+                            // order; the `NewDust` internals and the dust
+                            // bodies are SKIPPED (ANALYSIS, S1-D-4b-9).
+                            let projectile = &mut self.slots[i];
+                            // `:68458-68461` — the kind guard (the port's
+                            // aiStyle-131 rows are exactly these three).
+                            if matches!(projectile.kind, FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3) {
+                                // `:68462-68475` — the one-shot latch; the
+                                // tracked sound slot (`localAI[1]`) and its
+                                // position follow are skipped.
+                                if projectile.local_ai[0] == 0.0 {
+                                    projectile.local_ai[0] = 1.0;
+                                }
+                                // `:68476-68483` — the alpha fade.
+                                if projectile.alpha > 0 {
+                                    projectile.alpha -= 25;
+                                    if projectile.alpha < 0 {
+                                        projectile.alpha = 0;
+                                    }
+                                }
+                                // `:68484-68492` — the dust count per tier.
+                                let num = match projectile.kind {
+                                    FLAME_BURST_SHOT_2 => 2,
+                                    FLAME_BURST_SHOT_3 => 3,
+                                    _ => 1,
+                                };
+                                for _ in 0..num {
+                                    // `:68495` — `Next(2) != 0` gates the dust.
+                                    if rng.next_range(0, 2) != 0 {
+                                        // `:68500` — `Next(1)` (always 0; the
+                                        // dust-body tweaks are skipped).
+                                        let _ = rng.next_range(0, 1);
+                                    }
+                                }
+                                // `:68507` — `velocity.ToRotation() + π/2`
+                                // (a zero velocity reads `Atan2(0, 0) = 0`).
+                                projectile.rot = projectile.vel.y.atan2(projectile.vel.x)
+                                    + std::f32::consts::FRAC_PI_2;
+                            }
+                            // The generic tile-hit movement (the shot keeps
+                            // `tileCollide = true`, `:7153-7162` sets no
+                            // override) — the pool's generic `kill_step`
+                            // precedent (the aiStyle-28 frost bolt).
+                            self.slots[i].kill_step(world);
                         }
                         123 => {
                             // `AI_123_FloatingTurrets`
@@ -26891,6 +27278,378 @@ mod s1_d_4b_2_trap_tests {
         }
     }
 
+}
+
+#[cfg(test)]
+mod s1_d_4b_9_flame_burst_tests {
+    //! S1-D-4b-9 — the Flame Burst Tower slice: aiStyle 130
+    //! (`AI_130_FlameBurstTower`, `Projectile.cs:68107-68360`) + its target
+    //! pick (`AI_130_FlameBurstTower_FindTarget`, `:68362-68407`) and the
+    //! aiStyle-131 shot (`AI_131_FlameBurstShot`, `:68456-68508`, the
+    //! 664/666/668 rows `:7153-7162`), plus the Apprentice T2/T3 set flags
+    //! (`ArmorSetBonuses.cs:74-78`/`:99-104`). Code-only mode: written, not
+    //! run (no compiler invoked in this task).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_turrets = 4;
+        p.max_turrets_old = 4;
+        p
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player, npcs: &mut [Npc]) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// The 664/666/668 rows carry the C#'s `SetDefaults`
+    /// (`Projectile.cs:7153-7162`): 16x16, aiStyle 131, friendly, alpha 255,
+    /// the local-immunity pair with `localNPCHitCooldown = -1`, the stock
+    /// penetrate 1 / timeLeft 3600; the towers' `proj_frames` are 7/9/9
+    /// (`Main.cs:8458-8460`).
+    #[test]
+    fn s1_d_4b_9_the_shot_rows_carry_the_csharp_set_defaults() {
+        for kind in [FLAME_BURST_SHOT_1, FLAME_BURST_SHOT_2, FLAME_BURST_SHOT_3] {
+            let d = proj_data(kind).expect("the shot row");
+            assert_eq!((d.w, d.h), (16.0, 16.0), "kind {kind}");
+            assert_eq!(d.ai_style, 131, "kind {kind}");
+            assert_eq!(d.alpha, 255, "kind {kind}: :7159");
+            assert!(d.uses_local_immunity, "kind {kind}: :7160");
+            assert_eq!(d.local_hit_cooldown, -1, "kind {kind}: :7161");
+            assert_eq!(d.penetrate, 1, "kind {kind}: the stock :775");
+            assert_eq!(d.time_left, 3600, "kind {kind}: the stock :787");
+            assert!(d.tile_collide, "kind {kind}: no override");
+        }
+        assert_eq!(proj_frames(FLAME_BURST_TOWER_1), 7);
+        assert_eq!(proj_frames(FLAME_BURST_TOWER_2), 9);
+        assert_eq!(proj_frames(FLAME_BURST_TOWER_3), 9);
+    }
+
+    /// The 130 arm reaches its dispatch: the init latch (`:68281-68287`)
+    /// sets `ai[0] = 1`, `ai[1] = 0` and the owner's facing; the per-kind arm
+    /// advances the 300-wrap `localAI[0]` (`:68127-68130`); with no target
+    /// the reload state holds at `ai[1] = 0`; the gravity tail falls
+    /// (`:68358-68359`).
+    #[test]
+    fn s1_d_4b_9_the_flame_burst_dispatches_and_idles() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let tower = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tower].ai[0], 1.0, ":68284 — the init latch");
+        assert_eq!(pool.slots[tower].ai[1], 0.0, ":68285 — no reload armed");
+        assert_eq!(pool.slots[tower].local_ai[0], 1.0, ":68127 — the counter");
+        assert_eq!(pool.slots[tower].direction, p.facing, ":68283");
+        assert!(pool.slots[tower].tile_collide, ":68358");
+        assert_eq!(pool.slots[tower].vel.y, 0.2, ":68359 — the gravity tick");
+        assert_eq!(pool.slots[tower].frame, 0, ":68307 — the idle frame");
+        // The 300-wrap: pre-arm the counter at 299, one tick wraps it to 0.
+        pool.slots[tower].local_ai[0] = 299.0;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tower].local_ai[0], 0.0, ":68128-68129 — the wrap");
+    }
+
+    /// The fire state (`:68329-68351`): at `ai[1] == 12` the 664 shot spawns
+    /// from the captured muzzle (Bottom + (direction*6, −40), `:68126`) with
+    /// the 12-px speed — aiStyle 131 ≠ 1, so NO ±16 spawn clamp. The frame is
+    /// `1 + ai[1]/4` (`:68331`), the counter advances, and the cycle wraps at
+    /// `num6*num7` into the per-tier reload (80/70/60).
+    #[test]
+    fn s1_d_4b_9_the_flame_burst_fires_its_shot() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let tower = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        // Pre-arm the fire state at the shot tick. The T1 tower's box is
+        // 30x54 at (300, 300): Bottom = (315, 354), muzzle = (321, 314).
+        pool.slots[tower].ai[0] = 2.0;
+        pool.slots[tower].ai[1] = 12.0;
+        // A chaseable NPC level with the muzzle: the zombie's 18x40 box
+        // centres at (609, y + 20); y = 294 puts it at (609, 314) — the aim
+        // is the pure (1, 0) and the shot's vx is exactly 12 (no clamp).
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 600.0, 294.0)];
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        let shot = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == FLAME_BURST_SHOT_1)
+            .expect("the tower fires its 664 shot");
+        assert_eq!(shot.vel.x, 12.0, ":68340 — the unclamped 12-px shot");
+        assert_eq!(shot.vel.y, 0.0);
+        assert_eq!(shot.owner, 0);
+        assert_eq!(shot.damage, pool.slots[tower].damage, ":68343 — rides the tower");
+        // The spawn centring (`:10876-10877`): the muzzle (321, 314) minus
+        // half the 16x16 box, then the shot's own first-tick move (+12, 0).
+        assert_eq!(shot.pos.x, 321.0 - 8.0 + 12.0);
+        assert_eq!(shot.pos.y, 314.0 - 8.0);
+        // The shot's own arm ran the same tick (the pool loop reaches the
+        // fresh slot): the alpha faded 255 → 230 and the rotation is π/2.
+        assert_eq!(shot.alpha, 230, ":68478 — the fade");
+        assert!((shot.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-5, ":68507");
+        // The fire frame at ai[1] = 12: 1 + 12/4 = 4; the counter advanced.
+        assert_eq!(pool.slots[tower].frame, 4, ":68331");
+        assert_eq!(pool.slots[tower].ai[1], 13.0, ":68346 — the counter advances");
+    }
+
+    /// The cycle wrap (`:68346-68350`): `++ai[1] >= num6*num7` re-arms the
+    /// reload state with the per-tier delay — T1 6×4 → 80, T2 8×4 → 70,
+    /// T3 8×4 → 60 (`:68118`/`:68174`/`:68226`).
+    #[test]
+    fn s1_d_4b_9_the_cycle_wraps_into_the_tier_reload() {
+        for (kind, cycle, reload) in [
+            (FLAME_BURST_TOWER_1, 24.0, 80.0),
+            (FLAME_BURST_TOWER_2, 32.0, 70.0),
+            (FLAME_BURST_TOWER_3, 32.0, 60.0),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let tower = pool
+                .spawn_with_data_ai_owned(kind, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            pool.slots[tower].ai[0] = 2.0;
+            pool.slots[tower].ai[1] = cycle - 1.0;
+            let mut npcs: Vec<Npc> = Vec::new();
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            assert_eq!(pool.slots[tower].ai[0], 1.0, "kind {kind}: the wrap");
+            assert_eq!(pool.slots[tower].ai[1], reload, "kind {kind}: the tier delay");
+        }
+    }
+
+    /// The Apprentice T2 buffs (`:68275-68280`): the angle cone tightens to
+    /// 0.1 (a steep target the stock 1.0 cone rejects is now eligible), the
+    /// range grows ×1.5 and the shot speed ×1.4 (12 → 16.8).
+    #[test]
+    fn s1_d_4b_9_the_apprentice_set_tightens_the_cone_and_boosts_the_shot() {
+        for t2 in [false, true] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            p.set_apprentice_t2 = t2;
+            let tower = pool
+                .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            pool.slots[tower].ai[0] = 2.0;
+            pool.slots[tower].ai[1] = 12.0;
+            // A target 100 right / 200 above the muzzle (321, 314): the
+            // normalized dir ≈ (0.447, −0.894). The stock cone rejects it
+            // (0.447 < 0.894); the T2 cone accepts (0.447 ≥ 0.0894). The
+            // zombie's centre is (x + 9, y + 20) → (421, 114).
+            let mut npcs = vec![npc_at(NpcKind::Zombie, 412.0, 94.0)];
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            let shot = pool
+                .slots
+                .iter()
+                .find(|s| s.active && s.kind == FLAME_BURST_SHOT_1)
+                .expect("the tower fires even without a target (:68334)");
+            if t2 {
+                assert!(shot.vel.y < 0.0, "the T2 cone accepts the steep target");
+                let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+                assert!((len - 16.8).abs() < 0.01, "the 1.4× speed: {len}");
+            } else {
+                // No target: the facing fallback (1, 0) × 12.
+                assert_eq!(shot.vel.x, 12.0, "the stock cone rejects it");
+                assert_eq!(shot.vel.y, 0.0);
+            }
+        }
+    }
+
+    /// The reload state's facing flip (`:68322`): a target to the LEFT flips
+    /// `direction` to −1 via `Math.Sign(DirectionTo(center).X)` — measured
+    /// from the tower's centre, not the muzzle.
+    #[test]
+    fn s1_d_4b_9_the_reload_state_faces_the_target() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let tower = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        // A chaseable NPC to the left, level with the muzzle (321, 314):
+        // centre (109, 314) → the zombie at (100, 294).
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 100.0, 294.0)];
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tower].ai[0], 2.0, ":68323 — the fire state");
+        assert_eq!(pool.slots[tower].direction, -1, ":68322 — the facing flip");
+        assert_eq!(pool.slots[tower].sprite_direction, -1, ":68352");
+    }
+
+    /// The backpack branch (`:68288-68304`, `:68353-68356`): the pickup
+    /// latches `ai[2] = 1`, the grab lockout re-arms every carried tick, the
+    /// tower rides the owner (the aiStyle-130 sling anchor, `:69145-69158`)
+    /// and stops colliding/falling.
+    #[test]
+    fn s1_d_4b_9_the_flame_burst_rides_the_backpack() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.acc_sentry_backpack = true;
+        let (pcx, pcy) = p.center();
+        let tower = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, pcx - 15.0, pcy - 27.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tower].ai[2], 1.0, ":68290 — the pickup latches");
+        assert!(!pool.slots[tower].tile_collide, ":68355 — carried, no collide");
+        assert_eq!(pool.slots[tower].vel.y, 0.0, ":68298 — no gravity fall");
+        assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, ":68296 — the lockout");
+        let y_after = pool.slots[tower].pos.y;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!((pool.slots[tower].pos.y - y_after).abs() < 17.0, "no gravity fall");
+        assert_eq!(p.acc_sentry_backpack_grab_cooldown, 2, "the lockout re-arms");
+    }
+
+    /// The 131 shot arm (`AI_131_FlameBurstShot`, `:68456-68508`): the
+    /// one-shot latch, the 25/tick alpha fade from 255 (clamped at 0) and
+    /// the `velocity.ToRotation() + π/2` rotation.
+    #[test]
+    fn s1_d_4b_9_the_shot_fades_and_rotates() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let shot = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_SHOT_2, 0, 300.0, 300.0, 0.0, -15.0, 10, 0.5, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[shot].local_ai[0], 1.0, ":68462-68464 — the latch");
+        assert_eq!(pool.slots[shot].alpha, 230, ":68478 — the 25 fade");
+        // velocity (0, −15): ToRotation = −π/2, + π/2 → 0.
+        assert!(pool.slots[shot].rot.abs() < 1e-5, ":68507 — the rotation");
+        // The fade clamps at 0 after 11 ticks total (255 / 25 = 10.2).
+        for _ in 0..10 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[shot].alpha, 0, ":68479-68482 — the clamp");
+    }
+
+    /// RNG-order proof (code-only, by construction): the 130 arm draws the
+    /// type-270 gate `Next(2)` (only while `ai[2] != 1`), then — on a 0 — the
+    /// two unconditional `NextFloat`s (`:68141`/`:68146`), then the smoke
+    /// `Next(5)` × 1 (`:68158`); the targeting/fire/shot-spawn draw nothing.
+    /// A tick's stream state must equal a reference stream replaying exactly
+    /// those draws in that order. The carried tower (`ai[2] = 1`) skips the
+    /// `Next(2)` gate entirely (`:68119`/`:68136`).
+    #[test]
+    fn s1_d_4b_9_the_tower_dust_gates_draw_in_the_csharp_order() {
+        for carried in [false, true] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let tower = pool
+                .spawn_with_data_ai_owned(FLAME_BURST_TOWER_1, 0, 480.0, 480.0, 0.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            if carried {
+                // Pre-latch the carry WITHOUT the backpack accessory: the
+                // sling reposition kills the slot (`:69028-69032`), so keep
+                // the accessory on to let the arm run its carried tick.
+                p.acc_sentry_backpack = true;
+                pool.slots[tower].ai[2] = 1.0;
+            }
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            // The reference replay of the C#'s draw order.
+            let mut reference = tr_core::tile_light::FastRandom::new(7);
+            if !carried {
+                if reference.next_range(0, 2) == 0 {
+                    let _ = reference.next_float();
+                    let _ = reference.next_float();
+                }
+            }
+            let _ = reference.next_range(0, 5);
+            assert_eq!(rng.seed, reference.seed, "carried={carried}: the draw order");
+        }
+    }
+
+    /// RNG-order proof for the 131 shot: the dust loop draws `Next(2)` per
+    /// tier iteration (T1 ×1, T2 ×2, T3 ×3, `:68493-68495`); on a non-zero
+    /// the always-0 `Next(1)` (`:68500`) follows. The alpha fade, the latch
+    /// and the rotation draw nothing.
+    #[test]
+    fn s1_d_4b_9_the_shot_dust_gates_draw_in_the_csharp_order() {
+        for (kind, iterations) in [
+            (FLAME_BURST_SHOT_1, 1),
+            (FLAME_BURST_SHOT_2, 2),
+            (FLAME_BURST_SHOT_3, 3),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let _shot = pool
+                .spawn_with_data_ai_owned(kind, 0, 480.0, 480.0, 12.0, 0.0, 10, 0.5, 0.0, 0.0)
+                .unwrap();
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+            let mut reference = tr_core::tile_light::FastRandom::new(7);
+            for _ in 0..iterations {
+                if reference.next_range(0, 2) != 0 {
+                    let _ = reference.next_range(0, 1);
+                }
+            }
+            assert_eq!(rng.seed, reference.seed, "kind {kind}: the draw order");
+        }
+    }
 }
 
 #[cfg(test)]
