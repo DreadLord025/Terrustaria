@@ -6448,6 +6448,36 @@ animator arms wait for M2-MOUNT-2/3/4; filling the fields changes no pixels
 today (the renderer reads `back_sheet`/`front_sheet` only, and the renamed
 cart sheets fix rows whose textures never loaded).
 
+**Atlas overflow — measured 2026-11-19 re-sync (code-only mode, no compiler
+invoked).** The branch is re-synced onto main `c7fe175d` (the S1-F-13c slice-B
+best-fit shelf packer, `atlas.rs:98-105`, is in). The overflow persists WITH
+the mount sheets: a Python reimplementation of the exact pack (the
+`content_lookups` input set — `STATIC_SHEET_NAMES` + the 321 `spawnable_kinds`
+projectiles + all enumerated `Item_*`/`Buff_*` icons + trees/clouds/liquids/
+waterfalls/flames/glows + the `World::new` default-bg world half — sorted
+tallest-first, best-fit decreasing-height shelves, width 8192, PAD 2; sheet
+dimensions decoded from the retail `.xnb` headers via a transcription of
+`tr-content/src/lzx.rs`) measures:
+
+- **8361 px with all 20 branch-added sheets** (169 px over the 8192 strict-GPU
+  bound; 7856 sheets, 43 shelves) — `item_icon_uvs_are_normalized_and_atlas_fits`
+  still fails at merge verification.
+- 8321 px without the 7 glow strips; 8269 px without the 13 S1-L-9 catch-up
+  sheets; **8121 px without both** — exactly main's landed baseline (the
+  renamed cart sheets are swaps, zero height delta). The branch's own cost is
+  **+240 px**: the tall glow strips (`Glow_284` 94×1376, `Glow_370` 56×1088,
+  `Glow_283` 64×592, `Glow_285` 138×576) and the never-packed S1-L-9 body
+  strips (`Extra_168` 70×1296, `Extra_271/272` 90×1218, `Extra_301/302`
+  130×988, …).
+
+The old pre-best-fit measurement was 8311 px (`p1-l8b-gate2.log`, next-fit
+shelves); best-fit saves ~228 px on main's set but the mount additions still
+push past the bound. **Dependency: `task/S1-G-12-atlas-packer` (R1)** — a
+better packer (or a second atlas / sheet-split policy) must land before this
+branch can merge; the packing is NOT attempted here. The measurement scripts
+are session scratch (`Temp/opencode/l8b-atlas/{lzx_py,measure_atlas}.py`), not
+repo code.
+
 ## Projectile pool (M4-PROJ-1)
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
