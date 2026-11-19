@@ -19003,6 +19003,68 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+
+## The Frost Moon family, slice B (S1-F-13c, 2026-11-18) — CODE-ONLY MODE
+
+The 8 boss/mob kinds 345-352 (`IceQueen`, `SantaNK1`, `ElfCopter`,
+`Nutcracker`, `NutcrackerSpinning`, `ElfArcher`, `Krampus`, `Flocko`) land on
+`task/S1-F-13c-defaults-b` with the verbatim `SetDefaults` rows
+(`NPC.cs:13369-13487`), the net ids, the sounds, the debuff rows, the
+kind→type map (`frost_moon_type`, riding `moon_wave_kind`), the FindFrame
+arms for all 8, the render sheets with the C#'s `npcFrameCount`
+(6/9/8/9/8/20/10/6, `Main.cs:67082`) and the bestiary entries. Slice A
+(338-344) is worker A's row and stays unported on this branch — the
+338-344 ladder picks keep consuming without spawning.
+
+**Code-only mode (user directive)**: this slice was finished WITHOUT
+invoking the compiler — no `cargo`/`rustc`/`rustfmt`/test runs, no graphify,
+no sync with origin/main. The 19 `s1_f_13c_*` tests in `npc.rs` and the
+`the_frost_rows_match_between_the_draw_and_the_machine` test in
+`render/entities.rs` are written as code and were NOT run; every API they
+call and every counter/clamp sequence they assert was verified by reading
+the landed arms and the C# source. The branch is pushed for the normal
+build/test gate to run at merge time.
+
+Documented deviations, all deliberate:
+- **The eight machines ride stand-ins** until the sibling AI branches land
+  (the F-13b precedent): the four aiStyle-3 walkers (348/349/350/351) walk
+  on the walker family (`update_skeleton`) at the C#'s own per-type caps —
+  348/351 the cap-2 group's 2f (`NPC.cs:57554-57578`), 349 the cap-6 group's
+  6f (`:57403-57427`, shared with the unported 159), 350 the shooters'
+  `num180 = 1f` default (`:59717` — no type-350 override exists). The four
+  flyers hover toward the player through the tiles at their named
+  machines' base speeds/approaches: 345 aiStyle-60's `num900 = 7f` /
+  `num899 = 0.45f` (`:33414-33415`), 346 aiStyle-61's `num921 = 2f`
+  (`:33683`) with the `/21` approach (`:33864`, accel 0.1), 347 aiStyle-62's
+  `num945 = 7f` (`:33927`) with the `/60` lerp (`:33947`, accel 0.12), 352
+  aiStyle-63's `num953 = 11f` (`:33974`) with the `/51` lerp (`:34005`,
+  accel 0.21). The mob machines land on `task/S1-F-13c-mob-ai`
+  (`frost_mob_ai.rs`, `5ef9b24b`) and the bosses on
+  `task/S1-F-13c-boss-ai`; this branch's rows agree with the mob module's
+  `ai_defaults` (pinned as literals in
+  `s1_f_13c_the_frost_defaults_agree_with_the_mob_ai_rows` so a merge-time
+  drift fails there).
+- **346's flags are AI writes, not SetDefaults rows**: `SantaNK1`'s
+  `SetDefaults` (`NPC.cs:13386-13399`) writes NEITHER `noGravity` nor
+  `noTileCollide` — its AI sets both every tick (`:33684-33685`). The
+  `FrostDefaults` row carries false/false and the hover stand-in passes
+  `no_tile_collide: true` (the AI's live state).
+- **`coldDamage` (345/352) and the `npcSlots` rows have no port consumer**:
+  the C#'s `coldDamage` flag (`:13384`/`:13486`) gates the frost-burn
+  contact debuff, which the port's contact pass does not model; the
+  non-boss `npcSlots` rows (347/348/349 → 1.5f `:13414`/`:13428`/`:13442`,
+  351 → 1.75f `:13469`, 352 → 2f `:13485`; 350 writes none and rides the
+  class 1f) feed `CountNPCS`' nearby-spawn weight, not the boss cap — only
+  345/346's 5/4 rows ride `MOON_BOSS_SLOTS`. Both are parked with the
+  machines.
+- **The SantaTank/IceQueen-face overlay sheets are parked**: the C# draws
+  the Santa-NK1's tank treads and the Ice Queen's face as extra overlay
+  sheets (`Main.cs`'s draw arms); the port draws the base `NPC_346`/
+  `NPC_345` strips only until the boss-AI branch lands the overlays.
+- **The ElfArcher draw pose's saturate guard**: the C# writes
+  `(int)ai[2] - 1` outright (`NPC.cs:76113`); the draw AI only ever sets
+  whole 1..=13 poses, so the port's `.max(0)` guards the fractional-edge
+  negative row the row-index port cannot carry (documented at the arm).
 ## The Frost Moon family, slice A (S1-F-13c, 2026-11-18)
 
 The first 7 wave kinds (338 `ZombieElf`, 339 `ZombieElfBeard`, 340

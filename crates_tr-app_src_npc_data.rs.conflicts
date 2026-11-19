@@ -1,0 +1,394 @@
+=== HUNK at line 174-202 ===
+<<<<<<< HEAD
+/// The Frost Moon wave family's `SetDefaults` rows (`S1-F-13c` slice B) —
+/// the family-scoped defaults the kind-level spawn reads: the vanilla type
+/// the wire rides, the aiStyle, and the flags/scale/alpha rows. The
+/// per-kind stats (size/damage/defense/life/kb/value/sounds) live in the
+/// shared per-kind tables, exactly like [`PumpkinDefaults`]. None of the
+/// eight kinds writes a scale/alpha row (`NPC.cs:13369-13487`), so every
+/// row carries the `SetDefaults` class defaults 1.0/0.
+/// [`FrostDefaults::vanilla_type`] is the kind→type seam: the frost wave
+/// roster picks by it (`spawner.rs`'s `frost_moon_ladder`),
+/// `MOON_BOSS_SLOTS` (`spawner.rs:75`) weights by it and
+/// `CheckProgressFrostMoon`'s kill points (`world.rs:733`) key on it — it
+/// equals the kind's `to_u16` and round-trips through `from_u16`.
+=======
+/// The Frost Moon family's kind-level `SetDefaults` rows (`S1-F-13c` slice A:
+/// the first 7 kinds — 338-340 the Zombie Elf trio, 341 the Present Mimic,
+/// 342 the Gingerbread Man, 343 the Yeti, 344 the Everscream;
+/// `NPC.cs:13281-13368`). The same shape as [`PumpkinDefaults`]: the fields
+/// the port's tables carry piecewise for every other kind. None of the 7
+/// writes `noGravity`/`noTileCollide`/`alpha` (the `SetDefaults` head's
+/// false/false/0 defaults apply, `NPC.cs:8510-8537`); only 339 (1.05f,
+/// `:13303`) and 340 (0.9f, `:13311`) carry a scale row.
+///
+/// [`FrostDefaults::vanilla_type`] is the kind→type seam, exactly like the
+/// pumpkin family's: the frost ladder's picks decode through it
+/// (`spawner.rs`'s `frost_moon_ladder`), `MOON_BOSS_SLOTS` weights 344 by it
+/// (`npcSlots = 3f`, `NPC.cs:13367`) and `CheckProgressFrostMoon`'s kill
+/// points (`world.rs`'s `frost_moon_points`) key on it.
+>>>>>>> origin/main
+=== HUNK at line 207-233 ===
+<<<<<<< HEAD
+    /// `NPC.aiStyle` — 60 for 345, 61 for 346, 62 for 347, 3 for the four
+    /// walkers (348-351), 63 for 352 (`NPC.cs:13369-13487`).
+    pub ai_style: i32,
+    /// `NPC.scale` — no frost kind writes a scale row; every row is the
+    /// class default 1f (`NPC.cs:8510`'s reset).
+    pub scale: f32,
+    /// `NPC.alpha` — no frost kind writes an alpha row; every row is 0.
+    pub alpha: u8,
+    /// `NPC.noGravity` — 345/347/352 (`NPC.cs:13382`/`:13413`/`:13483`).
+    /// 346's AI sets it every tick (`:33684`) but `SetDefaults` does not.
+    pub no_gravity: bool,
+    /// `NPC.noTileCollide` — 345/347/352 (`NPC.cs:13381`/`:13412`/`:13484`);
+    /// 346's AI sets it (`:33685`) but `SetDefaults` does not.
+=======
+    /// `NPC.aiStyle` — 3 for the five walkers (`AI_003_Fighters`), 25 for
+    /// 341 (the chest machine), 57 for 344.
+    pub ai_style: i32,
+    /// `NPC.scale` — 339's 1.05f and 340's 0.9f (`NPC.cs:13303`/`:13311`);
+    /// every other kind rides the head's 1f.
+    pub scale: f32,
+    /// `NPC.alpha` — no kind writes a row; all spawn at 0.
+    pub alpha: u8,
+    /// `NPC.noGravity` — no kind writes a row (all false).
+    pub no_gravity: bool,
+    /// `NPC.noTileCollide` — no kind writes a row (all false).
+>>>>>>> origin/main
+=== HUNK at line 468-500 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
+            // 345-352 encode here (the same ids `from_u16` decodes below) —
+            // the frost wave roster, `MOON_BOSS_SLOTS` (`spawner.rs:75`) and
+            // `CheckProgressFrostMoon`'s kill points (`world.rs:733`) key on
+            // the vanilla `NPC.type`, and the ids sit above the whole
+            // port-local space so nothing collides. `NpcKind::frost_moon_type`
+            // is the named kind→type seam the spawn wiring and the kill walk
+            // use. `NPC.cs:13369` (345), `:13386` (346), `:13400` (347),
+            // `:13416` (348), `:13430` (349), `:13444` (350), `:13457`
+            // (351), `:13471` (352).
+            NpcKind::IceQueen => 345,
+            NpcKind::SantaNK1 => 346,
+            NpcKind::ElfCopter => 347,
+            NpcKind::Nutcracker => 348,
+            NpcKind::NutcrackerSpinning => 349,
+            NpcKind::ElfArcher => 350,
+            NpcKind::Krampus => 351,
+            NpcKind::Flocko => 352,
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
+            // 338-344, above the whole port-local space exactly like the
+            // pumpkin band. `NPC.cs:13281-13313` (338-340), `:13314-13326`
+            // (341), `:13327-13339` (342), `:13340-13354` (343),
+            // `:13355-13368` (344).
+            NpcKind::ZombieElf => 338,
+            NpcKind::ZombieElfBeard => 339,
+            NpcKind::ZombieElfGirl => 340,
+            NpcKind::PresentMimic => 341,
+            NpcKind::GingerbreadMan => 342,
+            NpcKind::Yeti => 343,
+            NpcKind::Everscream => 344,
+>>>>>>> origin/main
+=== HUNK at line 727-754 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
+            // 345-352 decode here (the same ids `to_u16` encodes above) —
+            // they sit above the whole port-local space, so no decode arm
+            // below ever sees them. The 338-344 band lands on a separate
+            // task row. `NPC.cs:13369` (345), `:13386` (346), `:13400`
+            // (347), `:13416` (348), `:13430` (349), `:13444` (350),
+            // `:13457` (351), `:13471` (352).
+            345 => NpcKind::IceQueen,
+            346 => NpcKind::SantaNK1,
+            347 => NpcKind::ElfCopter,
+            348 => NpcKind::Nutcracker,
+            349 => NpcKind::NutcrackerSpinning,
+            350 => NpcKind::ElfArcher,
+            351 => NpcKind::Krampus,
+            352 => NpcKind::Flocko,
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the vanilla ids
+            // 338-344 decode here (the same ids `to_u16` encodes above).
+            // `NPC.cs:13281-13368`.
+            338 => NpcKind::ZombieElf,
+            339 => NpcKind::ZombieElfBeard,
+            340 => NpcKind::ZombieElfGirl,
+            341 => NpcKind::PresentMimic,
+            342 => NpcKind::GingerbreadMan,
+            343 => NpcKind::Yeti,
+            344 => NpcKind::Everscream,
+>>>>>>> origin/main
+=== HUNK at line 1224-1235 ===
+<<<<<<< HEAD
+    /// moon ladders' picks decode through (`S1-F-13b`/`S1-F-13c` slice B's
+    /// spawn wiring). `None` for every id outside the ported families: the
+    /// frost-moon wave kinds 338-344 and every port-local id consume the pick
+    /// and spawn nothing.
+=======
+    /// moon ladders' picks decode through (`S1-F-13b` Phase 2's spawn wiring,
+    /// extended by `S1-F-13c` slice A). `None` for every id outside the two
+    /// families: the still-unported frost kinds (345-352), the pumpkin
+    /// wave-20 unported bosses and every port-local id consume the pick and
+    /// spawn nothing.
+>>>>>>> origin/main
+=== HUNK at line 1241-1330 ===
+<<<<<<< HEAD
+    }
+
+    /// The family-scoped defaults above, or `None` outside the 8 kinds.
+    pub fn frost_moon_defaults(self) -> Option<FrostDefaults> {
+        Some(match self {
+            // `NPC.cs:13369-13385` — the Ice Queen: noGravity + noTileCollide
+            // (`:13381-13382`), no scale/alpha row.
+            NpcKind::IceQueen => FrostDefaults {
+                vanilla_type: 345,
+                ai_style: 60,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            // `NPC.cs:13386-13399` — the Santa-NK1: SetDefaults writes neither
+            // flag; the AI itself sets noGravity + noTileCollide every tick
+            // (`:33684-33685`).
+            NpcKind::SantaNK1 => FrostDefaults {
+                vanilla_type: 346,
+                ai_style: 61,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            // `NPC.cs:13400-13415` — the Elf Copter (`:13412-13413`).
+            NpcKind::ElfCopter => FrostDefaults {
+                vanilla_type: 347,
+                ai_style: 62,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            // `NPC.cs:13416-13429` / `:13430-13443` / `:13444-13456` /
+            // `:13457-13470` — the four aiStyle-3 walkers: no flag rows.
+            NpcKind::Nutcracker => FrostDefaults {
+                vanilla_type: 348,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::NutcrackerSpinning => FrostDefaults {
+                vanilla_type: 349,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::ElfArcher => FrostDefaults {
+                vanilla_type: 350,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Krampus => FrostDefaults {
+                vanilla_type: 351,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            // `NPC.cs:13471-13487` — Flocko (`:13483-13484`).
+            NpcKind::Flocko => FrostDefaults {
+                vanilla_type: 352,
+                ai_style: 63,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            _ => return None,
+        })
+    }
+
+    /// The kind→type map — [`FrostDefaults::vanilla_type`] as the named seam
+    /// the frost spawn wiring and the kill walk read. `None` outside the
+    /// family.
+    pub fn frost_moon_type(self) -> Option<u16> {
+        self.frost_moon_defaults().map(|d| d.vanilla_type)
+=======
+>>>>>>> origin/main
+=== HUNK at line 1556-1579 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): 345's `NPCHit7`
+            // (`NPC.cs:13377`), 346/347's `NPCHit4` (`:13394`/`:13408`),
+            // the four walkers and Flocko's `NPCHit1` (`:13424`/`:13438`/
+            // `:13452`/`:13465`/`:13479`).
+            NpcKind::IceQueen => "NPC_Hit_7",
+            NpcKind::SantaNK1 | NpcKind::ElfCopter => "NPC_Hit_4",
+            NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus
+            | NpcKind::Flocko => "NPC_Hit_1",
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
+            // and the Yeti's `NPCHit1` (`NPC.cs:13286`/`:13348`), 341's
+            // `NPCHit4` (`:13322`), 342 and 344's `NPCHit7`
+            // (`:13335`/`:13363`).
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::Yeti => "NPC_Hit_1",
+            NpcKind::PresentMimic => "NPC_Hit_4",
+            NpcKind::GingerbreadMan | NpcKind::Everscream => "NPC_Hit_7",
+>>>>>>> origin/main
+=== HUNK at line 1788-1811 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): 345's `NPCDeath5`
+            // (`NPC.cs:13378`), 346/347's `NPCDeath14` (`:13395`/`:13410`),
+            // the four walkers' `NPCDeath1` (`:13425`/`:13439`/`:13453`/
+            // `:13466`), Flocko's `NPCDeath6` (`:13480`).
+            NpcKind::IceQueen => "NPC_Killed_5",
+            NpcKind::SantaNK1 | NpcKind::ElfCopter => "NPC_Killed_14",
+            NpcKind::Nutcracker
+            | NpcKind::NutcrackerSpinning
+            | NpcKind::ElfArcher
+            | NpcKind::Krampus => "NPC_Killed_1",
+            NpcKind::Flocko => "NPC_Killed_6",
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
+            // and the Yeti's `NPCDeath1` (`NPC.cs:13287`/`:13349`), 341 and
+            // 342's `NPCDeath6` (`:13323`/`:13336`), 344's `NPCDeath5`
+            // (`:13364`).
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::Yeti => "NPC_Killed_1",
+            NpcKind::PresentMimic | NpcKind::GingerbreadMan => "NPC_Killed_6",
+            NpcKind::Everscream => "NPC_Killed_5",
+>>>>>>> origin/main
+=== HUNK at line 1840-1848 ===
+<<<<<<< HEAD
+            NpcKind::Scarecrow10 | NpcKind::Splinterling => 3,
+            // The Frost Moon walkers (`S1-F-13c` slice B) — aiStyle 3:
+            // NPC.cs:13420 (348), :13434 (349), :13448 (350), :13461 (351).
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning | NpcKind::ElfArcher | NpcKind::Krampus => 3,
+=======
+            NpcKind::Scarecrow10 | NpcKind::Splinterling | NpcKind::ZombieElf | NpcKind::ZombieElfBeard |
+            NpcKind::ZombieElfGirl | NpcKind::GingerbreadMan | NpcKind::Yeti => 3,
+>>>>>>> origin/main
+=== HUNK at line 2033-2060 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): the four aiStyle-3
+            // walkers' caps — 348 and 351 in the cap-2 group
+            // (`NPC.cs:57554-57578`), 349 in the cap-6 group
+            // (`:57403-57427`), 350 the shooters' `num180 = 1f` default
+            // (`:59717` — no type-350 override exists).
+            NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
+            NpcKind::NutcrackerSpinning => 6.0,
+            NpcKind::ElfArcher => 1.0,
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the five
+            // aiStyle-3 walkers. The Zombie Elf trio and the Gingerbread Man
+            // ride the num83 group (`NPC.cs:57606`) — 338 → 1.75f
+            // (`:57637-57639`), 339 → 1.25f (`:57641-57643`), 340 → 2f
+            // (`:57645-57647`), 342 → the group base 1.5f (`:57608`; the C#'s
+            // `:57693-57695` scale factor `1 + (1 - scale)` is 1 at the 1f
+            // default scale). The Yeti rides the cap-2 group (`:57554`,
+            // ±2f, accel 0.07). The Present Mimic (341, aiStyle 25) rides the
+            // documented walker stand-in at its hop launch's 3.5f cap
+            // (`NPC.cs:25617`); the Everscream (344, aiStyle 57) hovers on
+            // the Mourning Wood stand-in's rows — neither reads this table.
+            NpcKind::ZombieElf => 1.75,
+            NpcKind::ZombieElfBeard => 1.25,
+            NpcKind::ZombieElfGirl => 2.0,
+            NpcKind::GingerbreadMan => 1.5,
+            NpcKind::Yeti => 2.0,
+            NpcKind::PresentMimic => 3.5,
+>>>>>>> origin/main
+=== HUNK at line 2356-2383 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): 345 is 130x140
+            // (`NPC.cs:13371-13372`), 346 112x140 (`:13388-13389`), 347
+            // 50x50 (`:13402-13403`), the nutcracker pair 28x76
+            // (`:13418-13419`/`:13432-13433`), 350 18x40
+            // (`:13446-13447`), 351 18x90 (`:13459-13460`), 352 54x54
+            // (`:13473-13474`).
+            NpcKind::IceQueen => (130.0, 140.0),
+            NpcKind::SantaNK1 => (112.0, 140.0),
+            NpcKind::ElfCopter => (50.0, 50.0),
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => (28.0, 76.0),
+            NpcKind::ElfArcher => (18.0, 40.0),
+            NpcKind::Krampus => (18.0, 90.0),
+            NpcKind::Flocko => (54.0, 54.0),
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
+            // and the Gingerbread Man share the C#'s 18x40
+            // (`NPC.cs:13283-13284`/`:13329-13330`); 341 is 24x24
+            // (`:13316-13317`), 343 38x78 (`:13342-13343`), 344 172x130
+            // (`:13357-13358`).
+            NpcKind::ZombieElf
+            | NpcKind::ZombieElfBeard
+            | NpcKind::ZombieElfGirl
+            | NpcKind::GingerbreadMan => (18.0, 40.0),
+            NpcKind::PresentMimic => (24.0, 24.0),
+            NpcKind::Yeti => (38.0, 78.0),
+            NpcKind::Everscream => (172.0, 130.0),
+>>>>>>> origin/main
+=== HUNK at line 2874-2898 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): 345 34000
+            // (`NPC.cs:13376`), 346 18000 (`:13393`), 347 1200 (`:13407`),
+            // the nutcracker pair 1800 (`:13423`/`:13437`), 350 900
+            // (`:13451`), 351 2500 (`:13464`), 352 450 (`:13478`).
+            NpcKind::IceQueen => 34000,
+            NpcKind::SantaNK1 => 18000,
+            NpcKind::ElfCopter => 1200,
+            NpcKind::Nutcracker | NpcKind::NutcrackerSpinning => 1800,
+            NpcKind::ElfArcher => 900,
+            NpcKind::Krampus => 2500,
+            NpcKind::Flocko => 450,
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
+            // group's three rows (`NPC.cs:13294`/`:13301`/`:13309` —
+            // 600/700/500), 341 900 (`:13321`), 342 750 (`:13334`),
+            // 343 3500 (`:13347`), 344 13000 (`:13362`).
+            NpcKind::ZombieElf => 600,
+            NpcKind::ZombieElfBeard => 700,
+            NpcKind::ZombieElfGirl => 500,
+            NpcKind::PresentMimic => 900,
+            NpcKind::GingerbreadMan => 750,
+            NpcKind::Yeti => 3500,
+            NpcKind::Everscream => 13000,
+>>>>>>> origin/main
+=== HUNK at line 3155-3178 ===
+<<<<<<< HEAD
+            // The Frost Moon family (`S1-F-13c` slice B): 345/346 120
+            // (`NPC.cs:13374`/`:13391`), 347 60 (`:13405`), 348 80
+            // (`:13421`), 349/351 100 (`:13435`/`:13462`), 350 70
+            // (`:13449`), 352 75 (`:13476`).
+            NpcKind::IceQueen | NpcKind::SantaNK1 => 120,
+            NpcKind::ElfCopter => 60,
+            NpcKind::Nutcracker => 80,
+            NpcKind::NutcrackerSpinning | NpcKind::Krampus => 100,
+            NpcKind::ElfArcher => 70,
+            NpcKind::Flocko => 75,
+=======
+            // The Frost Moon family, slice A (`S1-F-13c`): the 338-340
+            // group's three rows (`NPC.cs:13292`/`:13299`/`:13307` —
+            // 65/52/78), 341 100 (`:13319`), 342 90 (`:13332`), 343 140
+            // (`:13345`), 344 110 (`:13360`).
+            NpcKind::ZombieElf => 65,
+            NpcKind::ZombieElfBeard => 52,
+            NpcKind::ZombieElfGirl => 78,
+            NpcKind::PresentMimic => 100,
+            NpcKind::GingerbreadMan => 90,
+            NpcKind::Yeti => 140,
+            NpcKind::Everscream => 110,
+>>>>>>> origin/main
