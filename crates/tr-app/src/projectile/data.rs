@@ -573,6 +573,9 @@ pub const NEBULA_BLAZE_1: u16 = 634;
 /// `extraUpdates = 3` (the C# arm sets `friendly` twice — a verbatim quirk
 /// with no effect on the port's `friendly` default).
 pub const NEBULA_BLAZE_2: u16 = 635;
+/// `ProjectileID.HorsemanPumpkin` (1001) — the Headless Horseman's
+/// 480-tick lob (`NPC.cs:62417`; `Projectile.cs:9511-9522`, aiStyle 194).
+pub const HORSEMAN_PUMPKIN: u16 = 1001;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -2166,6 +2169,46 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the other unported styles), 24x16, `penetrate = -1`,
             // `timeLeft *= 5` and the idStatic-12 pair.
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // AI_026 slice A (S1-D-4b-10) — the 14 early-return flyer pets.
+            // Every row: aiStyle 26, friendly, `penetrate = -1`,
+            // `timeLeft *= 5` (3600 → 18000), the stock `tileCollide = true`
+            // reset (`Projectile.cs:745`) — each flight arm sets it false on
+            // its first tick (`:59123` etc.), so `HandleMovement` never
+            // collides them. `netImportant` (all but the 175 — its block has
+            // no such line, `:2612-2620`) and `ignoreWater` (199/211 only)
+            // ride the overlays below.
+            // `Projectile.cs:2612-2620` (175 BabyEater): 34x34.
+            BABY_EATER => (34.0, 34.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2831-2840` (197 BabySkeletronHead): 42x42.
+            BABY_SKELETRON_HEAD => (42.0, 42.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2841-2850` (198 BabyHornet): 26x26.
+            BABY_HORNET => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2851-2861` (199 TikiSpirit): 28x28, ignoreWater.
+            TIKI_SPIRIT => (28.0, 28.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2992-3003` (211 Wisp): 24x24, `light = 1f`
+            // (no port consumer), ignoreWater.
+            WISP => (24.0, 24.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4645-4654` (380 ZephyrFish): 26x26.
+            ZEPHYR_FISH => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:7911-7920` (774 SharkPup): 26x26.
+            SHARK_PUP => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:7963-7972` (815 LilHarpy): 26x26.
+            LIL_HARPY => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:7983-7992` (817 GlitteryButterfly): 26x26.
+            GLITTERY_BUTTERFLY => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8486-8495` (the 884-886 range block; 886
+            // QueenBeePet): 20x20.
+            QUEEN_BEE_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8521-8530` (the 889-892 range block; 892
+            // DukeFishronPet): 20x20.
+            DUKE_FISHRON_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8543-8552` (894 MoonLordPet): 20x20.
+            MOON_LORD_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8589-8598` (the 899-901 range block; 901
+            // DD2BetsyPet): 20x20.
+            DD2_BETSY_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9908-9917` (1046 Pufferfish): 26x26.
+            PUFFERFISH => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -2312,6 +2355,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // `Projectile.cs:9511-9522` — the Horseman's pumpkin lob
+            // (1001, S1-F-13b2 slice B): 26×26, aiStyle 194, hostile,
+            // `tileCollide = false`, `ignoreWater`, `timeLeft = 360`,
+            // `alpha = 255`; the stock penetrate 1 (`:774`). The arm's
+            // `scale = 1f + Main.rand.Next(51) * 0.01f` (`:9518`) is a
+            // spawn-time UpdateNPCs-stream draw — the row carries the
+            // 1f base, the roll rides the lob's queue site at union
+            // (`npc_ai_unicorn_b.rs::horseman_pumpkin_scale`, module
+            // docs union point 5). The aiStyle-194 flight
+            // (`AI_194_HorsemanPumpkin`, `:41293`) is a follow-up.
+            HORSEMAN_PUMPKIN => (
+                26.0,
+                26.0,
+                194,
+                1,
+                360,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:9237-9252` — the Light's Bane slash (974):
             // 20x20, aiStyle 188, `penetrate = 2`, `tileCollide = false`,
             // `ignoreWater = true`, `timeLeft = 30`, the local-immunity pair
@@ -2433,7 +2498,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry,
+        net_important: minion || sentry
+            // AI_026 slice A: the flyer pets' `netImportant = true`
+            // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
+            // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
+            // carries no such line and keeps the stock false).
+            || matches!(
+                kind,
+                BABY_SKELETRON_HEAD | BABY_HORNET | TIKI_SPIRIT | WISP | ZEPHYR_FISH
+                    | SHARK_PUP | LIL_HARPY | GLITTERY_BUTTERFLY | QUEEN_BEE_PET
+                    | DUKE_FISHRON_PET | MOON_LORD_PET | DD2_BETSY_PET | PUFFERFISH
+            ),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -2444,10 +2519,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
+            // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
+            // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
+            || matches!(kind, TIKI_SPIRIT | WISP)
             // `Projectile.cs:9244`: the Light's Bane slash ignores water.
             || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
-            || kind == RAINBOW_CRYSTAL_EXPLOSION,
+            || kind == RAINBOW_CRYSTAL_EXPLOSION
+            // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
+            || kind == HORSEMAN_PUMPKIN,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -2483,6 +2563,25 @@ pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
+// AI_026 slice A (S1-D-4b-10): the 14 early-return flyer pets of
+// `AI_026` (`Projectile.cs:59120-60091`) — `ProjectileID.cs:904/948/950/
+// 952/976/1314/2102/2184/2188/2326/2338/2342/2356/2646`. Everything else
+// in the mega-family (the idle/walk/jump/attack machine, `:60092+`) is
+// slice B (task/S1-D-4b-11-melee-b).
+pub const BABY_EATER: u16 = 175;
+pub const BABY_SKELETRON_HEAD: u16 = 197;
+pub const BABY_HORNET: u16 = 198;
+pub const TIKI_SPIRIT: u16 = 199;
+pub const WISP: u16 = 211;
+pub const ZEPHYR_FISH: u16 = 380;
+pub const SHARK_PUP: u16 = 774;
+pub const LIL_HARPY: u16 = 815;
+pub const GLITTERY_BUTTERFLY: u16 = 817;
+pub const QUEEN_BEE_PET: u16 = 886;
+pub const DUKE_FISHRON_PET: u16 = 892;
+pub const MOON_LORD_PET: u16 = 894;
+pub const DD2_BETSY_PET: u16 = 901;
+pub const PUFFERFISH: u16 = 1046;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
@@ -2625,6 +2724,24 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Projectile.cs:68948-68955`) wraps at `projFrames`.
         LIGHTNING_AURA_1 | LIGHTNING_AURA_2 => 6,
         LIGHTNING_AURA_3 => 8,
+        // AI_026 slice A (S1-D-4b-10) — the flyer pets' sheets
+        // (`Main.cs:8585/8593/8594/8600/8623/8637/8639/8641/8674/8680/
+        // 8682/8689/8718`). The 197 has no override anywhere in the table —
+        // the init loop's 1 (`Main.cs:8441-8443`) stands; its arm never
+        // reads `frame` (the spin rides `rotation`).
+        BABY_EATER => 2,
+        BABY_HORNET => 4,
+        TIKI_SPIRIT => 8,
+        WISP => 10,
+        ZEPHYR_FISH => 4,
+        SHARK_PUP => 8,
+        LIL_HARPY => 10,
+        GLITTERY_BUTTERFLY => 18,
+        QUEEN_BEE_PET => 8,
+        DUKE_FISHRON_PET => 6,
+        MOON_LORD_PET => 8,
+        DD2_BETSY_PET => 12,
+        PUFFERFISH => 12,
         // The Rainbow Crystal's 8-frame sheet (`Main.cs:8476`) — `AI_123`'s
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
