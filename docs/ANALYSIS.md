@@ -17277,10 +17277,10 @@ with three torches on its floor).
 
 | mode | surface SHA256 | cave SHA256 |
 | --- | --- | --- |
-| color | `0E532C5BE2BD341C3BBAB0EA425184AA23E8F7458A11B2AD43F9C4166164C2F3` | `F4CA493C8619061C1BA07630FFC3E9907F2455D8BB1655A8E415D19EF0C8E167` |
-| white | `5A6E74365009B7FD2251AA7CD7EE717596C06E3EBB75519DDF0BACA449909A00` | `DF4F757E0DF3E0FB9446F1B9A77744C8CCCECE4AE210C82C1915F08AD3C50F50` |
-| retro | `8A2892D26C5004CBAF674C62AECFEB6C97950A403768CA0BE70DACCC85ADCE59` | `D543B656D0BD50744025BAD8EAB83CA953D21BF863A429F5C5350EB221567515` |
-| trippy | `FDF0E8E53C5C7D5D19CDB7363D6D0165E1514B1ADDB841B8DAC517B1D68F3C5C` | `B7FFE52458DCA456638827A09297FF46E09908FB9F34CFBC4F39C22C99212F52` |
+| color | `0E532C5BE2BD341C3BBAB0EA425184AA23E8F7458A11B2AD43F9C4166164C2F3` | `1E3DA95E94C45A8C8DCA3CB62979FD7EE669C9AB6C94A7C52987E32A85758179` |
+| white | `91563F56738BAB7614E3F5EE4C773534615C2AC8710C1FB86A61CC23DD143447` | `CD20AEE77E0B57A690190EFF907F2FB7B25F8AEE5920EC0688E3096C770DF016` |
+| retro | `E50314437A8C7D115457CF6733C21D61F8CC47538A4721A7D115D94236FD3226` | `AC140390249396157D3AC76FF72E4D5E9C5419C5F2E07A65ED8F8F6921D97BEE` |
+| trippy | `3146F9A2DA8C582ECEE52BDAD63FE065B3B3A6FC8BA0FE1B638556BA94567909` | `76F00760E84B4CE4A8F389E470F1D89377E04FB64C040BDFDCCA28893F7FEF23` |
 
 Observations (cave scene, the torch ring right of the centre torch, screen
 row at torch height; mean-of-RGB per tile step): Retro's subtractive carry
@@ -17308,6 +17308,21 @@ matrix came out Color-identical for all four modes: `App::new` seeds
 settings-screen close path cannot drop a live pin either. Test
 `s1_e_19b_light_mode_pin_survives_apply_settings` (settings_ui.rs) pins the
 boot order, the repeat-apply and the no-pin config fallback.
+
+**Post-merge re-pin (MERGER-L6, 2026-11-19).** After the sync over main's
+S1-G-1 waves (vines/ropes/cracks/pylons), one shot pair per mode was re-taken
+on the merged state (×2 SHA256-equal each; the recipe above, pristine
+`Terrustaria.trwld` copy per run via `TR_WORLD`). The color-surface baseline
+stayed byte-equal; the other seven shifted (2.7k-21.7k px). Investigated, not
+silent: an A/B build at the pre-vine base `8ab0ede3` reproduces every old
+baseline byte-exactly, and the shift bisects to the vine-strip pass
+(`934e8242`, S1-G-1 wave A): `draw_tiles` now routes `VineThreads` cells to
+the deferred `DrawVines` strip pass (`TileDrawing.cs:429`, `:536-545`), which
+lights every segment with its OWN `Lighting.GetColor(x, i)` (`:9081`) - the
+old inline draw tinted vine cells through the generic tile path (dimmer,
+pre-strip approximation). The bright strips in the new shots are the C#'s
+per-segment lighting; the engine behaviour is the landed, cited correction,
+so the baselines are re-pinned to the merged state (the SHAs above).
 
 ## The bestiary cursor and portrait (fix/bestiary-cursor-and-icon, 2026-11-18)
 
