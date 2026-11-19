@@ -14930,10 +14930,12 @@ Documented gaps, all deliberate:
   block's order reserves the arm's slot (first in `Hurt`) for it.
 - **The Hallowed `onHitDodge` grant** (`:6938-6941`, buff 59's source) is an
   armor-set row — the buff can be granted only by tests/debug today.
-- **`long_invince` is consume-only**: the 120/80 read exists, its arming
-  sources (item 6187 et al., `:14590/:14627/:15147/:15589`) ride C-7.
+- **`long_invince` arming**: the Star Veil 862 (`:15147`) arms it with
+  S1-C-7 wave B; the other sources (item 6187 et al.,
+  `:14590/:14627/:15589`) ride later waves.
 - **The panic/squire hurt buffs** (`:38242-38247`, `AddBuff(63, 480)` /
-  `AddBuff(205, 300)`) ride S1-C-7.
+  `AddBuff(205, 300)`) ride S1-C-7 (wave B arms the 1578 honeycomb half only —
+  the `panic` buff itself stays deferred, see "The hurt modifiers").
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) — carried for state parity.
 - **The contact/thorns restructure** (Phase 2, landed): the contact block runs
@@ -14976,10 +14978,12 @@ hitbox with `HEAL_MANA = (100, 100, 255)` (`CombatText.cs:228`), the placement
 
 Documented gaps, all deliberate:
 
-- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): the port's hurt callers
-  carry no crit flag end-to-end (research/04 deviation 10), so the restore is
-  always the un-doubled raw damage. The slot's order is preserved — the double
-  would land on `raw` before the cuffs arm.
+- **The crit ×2** (`Crit → num *= 2`, `:38248-38251`): **landed with S1-C-7
+  wave B** — `hurt_inner` carries the `crit` flag and doubles `raw` AFTER the
+  defense-input capture (`num2` reads the PRE-crit damage), so the cuffs
+  restore the doubled raw `num`. Every ported caller passes `crit = false`
+  (the single-player C# lanes all do); the flag rides for parity + the maths
+  test (`s1_c_7b_the_crit_doubles_the_raw_num_not_the_reduced_damage`).
 - **The +40 `statManaMax2` stat rows** (1595/2221 `:14925-14928`, and the
   982/6188/6189 band's +40/+60 regen `:14929-14934`) ride **S1-C-12** (the
   accessory stat chain) — the flag arms here, the stat grants land there.
@@ -14990,6 +14994,121 @@ Documented gaps, all deliberate:
 - **The respawn clears the pending text** (`respawn`'s pending strip) — the C#
   `CombatText` pool is global and survives death; the port's queue is per-hit
   one-shot state, drained the same tick, so nothing observable diverges.
+
+## The hurt modifiers (S1-C-7 wave B, 2026-11-18)
+
+**Code-only mode**: this wave was implemented without invoking any compiler —
+no `cargo`/`rustc`/`rustfmt`/test runs, no `dotnet`, no `graphify` (the Lead's
+task constraint). The tests below are written as code and were NOT executed;
+verification is by C#-source comparison and inspection only.
+
+`Player.Hurt`'s retaliate block (`Player.cs:38401-38517`), the dismount-on-hit
+(`:38396-38400`) and the crit ×2 (`:38248-38251`) land in
+`player.rs::hurt_inner` + the new `crates/tr-app/src/hurt_modifiers.rs`.
+
+- **The gate** (`:38401`): `(whoAmI == Main.myPlayer && ImmunityCooldownID.
+  Sets.Retaliate[cooldownCounter]) & flag`. `flag` is the PRE-hit not-immune
+  state (`:38208`); `hurt_inner` only reaches the queue on an accepted hit, so
+  that half is the queue itself. The Retaliate set is {General, BossNoCheese,
+  PaladinsShield} (`ImmunityCooldownID.cs:49`): the port's `retaliate_lane`
+  argument carries the membership — the contact (`:31423`), projectile
+  (`Projectile.cs:14868`) and fall/petrify lanes pass true (General), the lava
+  (`ImmunityCooldownID.Lava`, `:27708`) and tile-contact
+  (`TileContactDamage`, `:28981`) lanes pass false — vanilla lava/spike hits
+  never retaliate.
+- **The queue**: `hurt_inner` records a `RetaliateRequest` — the final
+  post-floor `num2` (`:38378-38383`) plus the hit-moment position/center/
+  velocity, captured BEFORE `Hurt`'s own knockback (`:38519-38524`) overwrites
+  the velocity (the C# block runs inline before it). The drain
+  (`hurt_modifiers::drain_retaliate`) rolls the block on the HIT LANE's stream
+  at the pass tail: contact → `world_sim/npcs.rs` (`UpdateNpcs`,
+  `Main.cs:17767`), hostile shots → `world_sim/projectiles.rs`
+  (`UpdateProjectiles`, `Main.cs:17775`), fall/petrify →
+  `world_sim/player.rs` (`UpdatePlayers`, `Main.cs:17754`).
+- **The block**, in the C#'s exact order and RNG draw order: the brain's
+  per-NPC `Next(500) < 300 + num2*2` gate → radius `Next(200 + num2/2,
+  301 + num2*2)` with the three sequential compression steps (>500 ×0.75 of
+  the excess, >700 ×0.5, >900 ×0.25, `:38411-38422`) → Confused buff 31
+  `Next(90 + num2/3, 300 + num2/2)` via `Npc::buffs.add_buff` (the
+  `NPC.AddBuff` port); the dart 565 at `Center + Next(-40,40) / -Next(20,60)`,
+  `velocity * 0.3`, damage 0 (`:38430`); the star cloak's 3 stars — type 726,
+  the overrides starVeil 725 → beeCloak 724 → manaCloak 723 → snakeCloak 1133
+  LAST wins (`:38437-38456`), damage 75 ×2 expert (×3 master unported), spawn
+  at `position + Next(-400,400) / -Next(500,800)` (top-left), aim at the live
+  center with the x jitter `Next(-100,101)`, speed `23/len`, kb 5,
+  `ai1 = position.Y` via the new `ProjectilePool::set_ai1` (`:38469-38479`);
+  the honeycomb's count 1 + two `Next(3)==0` + a third only while `strongBees`
+  (`:38484-38496`), base 13 (18 strong) ×1.5 expert truncated at the
+  `beeDamage((int)num18)` call, per bee the named-argument left-to-right
+  evaluation SpeedX/SpeedY `Next(-35,36)*0.02` BEFORE `beeType()` (the
+  `Next(2)` flip → 566/181), `beeDamage` (`Next(1,4)` strong / `Next(2)`
+  plain), `beeKB(0)` (0.5 strong / 0 plain) (`:38513`, helpers
+  `:12417-12444`); then `AddBuff(48, 300)` — Honey (`:38515`).
+- **The equip folds** (`ApplyEquipFunctional`): 532 starCloak (`:15585`),
+  862 starCloak + longInvince + starVeil override (`:15146-15148`), 1247
+  starCloak + honeyComb + beeCloak override (`:14961-14963`), 4001 manaFlower
+  (folded to the -0.08 `mana_cost` row, the 555 convention) + starCloak +
+  manaCloak override (`:14460-14462`), 6186 starCloak + snakeCloak override
+  (`:14622-14623`), 1132 honeyComb (`:15074`), 1578 honeyComb (`:15078`),
+  1249 jumpBoost + honeyComb (`:14880-14881`), 3251 jumpBoost + honeyComb +
+  noFallDmg — its own arm, since the pre-existing horseshoe `noFallDmg` arm
+  matched later and a 3251 pattern there was unreachable (fixed in passing;
+  the `hasLuck_LuckyHorseshoe` half `:14876` stays deferred) (`:14873-14874`),
+  6184 honeyComb (`:14613`), 3333 strongBees (`:15346`). `ResetEffects`
+  clears: `:18322` (strongBees), `:18386` (honeyCombItem), `:18714-18718`
+  (the cloak + the four overrides). The C# `Item` references fold to armed
+  bools (the `brain_of_confusion` convention).
+- **The crit ×2** (`:38248-38251`): `hurt_inner`'s `crit` flag doubles `raw`
+  AFTER the defense-input capture — `num2` reads the PRE-crit damage, the
+  cuffs restore the doubled `num`. Every ported caller passes false (the
+  single-player C# lanes all do: contact `:31423`, projectile
+  `Projectile.cs:14868`, lava `:27708`, tile `:28981`, fall/petrify); the
+  crit-true callers are the unported PVP pair (`Player.cs:44098`,
+  `Projectile.cs:14672`) and net (`MessageBuffer.cs:3879`).
+- **The dismount-on-hit** (`:38396-38400`): the source projectile type in
+  `ProjectileID.Sets.DismountsPlayersOnHit` (`ProjectileID.cs:546`:
+  877/878/879, the golf-ball returns) AND `mount.Active` →
+  `Mount.TryDismount`. `hurt_with_source` (the projectile lane) carries the
+  type; the request queues (`pending_dismount`) and drains through
+  `try_dismount(&World)` at the contact/projectile pass tails. The knockback
+  gate gains the C# `(!mount.Active || !mount.Cart)` half (`:38519`).
+
+Documented deviations, all deliberate:
+
+- **The drain latency**: the C# rolls the block inline inside `Hurt` (mid-
+  pass); the port drains at the hitting pass's tail (the S1-E-21c batch
+  convention) — the retaliate spawns/confusion land at the end of the same
+  fixed step, and the hit-moment snapshot preserves the pre-knockback reads.
+  The dismount lands at the pass tail too: a cart rider hit by a golf-ball
+  return keeps the cart's knockback suppression on the hit tick (the C#
+  dismounts inline BEFORE the knockback gate, so the pop lands the same hit).
+- **Master mode is unported** (classic + expert only): the stars' ×3 and the
+  bees' ×2 master arms are cited but unreachable; expert reads
+  `buffs.expert_mode`.
+- **The retaliate projectile kinds** (565/566/181/723-726/1133) have no
+  `proj_data` rows — the plain `pool.spawn` carries the slots (the pet
+  precedent, `buff_effects_accessory.rs`); their AI/box work lands with the
+  projectile-AI tasks. The stars' `ai1` payload rides the new typed
+  `set_ai1` setter (the `set_crit` convention).
+- **The `GetProjectileSource_Accessory` entity sources** have no port model
+  (the Item references fold to armed bools); the `makeStrongBee` scratch bool
+  folds to the `(kind, strong)` pair (its only readers are `beeDamage`/`beeKB`
+  in the same spawn expression).
+- **The NPC `active` gate** folds to the `hp > 0` live-list convention (the
+  `buff_effects_accessory` precedent).
+- **Deferred families**: 1578's `panic` hurt buff (`AddBuff(63, 480)`,
+  `:38242-38244`), 6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
+  `accSnakeBand`, 4001's manaFlower auto-potion half (`:52588`, the port
+  folds only the -0.08 `manaCost` row), 3251's `hasLuck_LuckyHorseshoe`
+  (`:14876`, no luck-horseshoe field yet). Combat text stays FROZEN
+  (task/combat-text owns it); paladin/beetle/solar ride a later wave.
+
+Tests (written, NOT run — code-only mode): `hurt_modifiers.rs`'s
+`s1_c_7b_*` ×13 (the ScriptRng draw-order mirrors: the brain gate/radius/
+compression/dart, the star aim/overrides/expert, the bee count/flip/damage/
+expert scaling, the source order, the dismount drain) + `player.rs`'s
+`s1_c_7b_*` ×4 (the crit maths, the queue snapshot, the dismount set gate,
+the equip arms/clears).
 
 ## The respawn fidelity (R-03-5, 2026-11-13)
 

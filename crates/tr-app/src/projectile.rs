@@ -12081,6 +12081,15 @@ impl ProjectilePool {
         }
     }
 
+    /// The spawn-site `ai[1]` payload setter — the star cloak's falling
+    /// stars carry `ai1 = position.Y` (`Player.cs:38478`, S1-C-7 wave B);
+    /// the plain `spawn` has no ai arguments (the `set_crit` convention).
+    pub fn set_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[1] = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }
@@ -16248,10 +16257,13 @@ impl ProjectilePool {
             return;
         }
         // `Projectile.cs:14862-14870` — `bool dodgeable =
-        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`.
+        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
+        // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
+        // hands the shot's type over for the dismount-on-hit gate
+        // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt(p.damage, cx, rng, p.is_damage_dodgeable());
+        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
