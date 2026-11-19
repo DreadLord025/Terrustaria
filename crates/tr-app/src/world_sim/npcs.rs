@@ -128,7 +128,7 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
 /// `Player.DefaultTileRangeX/Y = 5/3` (`Player.cs:57113-57114`).
 ///
 /// Returns `(LX, LY, HX, HY)` in world pixels.
-fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
+pub(crate) fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
     let lx = ((p.x / 16.0) as i32 - 5) as f32 * 16.0;
     let ly = ((p.y / 16.0) as i32 - 3) as f32 * 16.0;
     let hx = (((p.x + crate::player::WIDTH) / 16.0).ceil() as i32 - 1 + 5) as f32 * 16.0 + 15.0;
@@ -2321,6 +2321,221 @@ pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32
     true
 }
 
+/// The saucer/scutlix/dutchman carrier write-through PRE-pass (S1-D-8b's
+/// migrated scan family): the `AI_075` type-390 rider link, the saucer
+/// mounts' nearest-core lookup + crew counts, and the `AI_093` Dutchman
+/// crew count. The radius scans read the spatial hash
+/// (`crate::npc_spatial::NpcSpatial`) over the per-tick `NpcSnapshot` —
+/// candidates arrive in ascending slot order, the exact order the former
+/// linear `npcs.iter()` scans visited, with the predicates, the strict
+/// `< 1600.0` reach and the first-wins tie-break unchanged. The pass's own
+/// `hp = 0` kills mirror into the snapshot (`snap.kill`) so later scans in
+/// the family see the deaths exactly as the live reads did. The display
+/// inheritance stays a live write pass (it mutates OTHER slots).
+fn carrier_link_pre_pass(
+    npcs: &mut [Npc],
+    snap: &mut crate::world_sim::npc_snapshot::NpcSnapshot,
+) {
+    let spatial = crate::npc_spatial::NpcSpatial::build(snap);
+    for i in 0..npcs.len() {
+        if npcs[i].kind != NpcKind::ScutlixRider
+            && npcs[i].kind != NpcKind::MartianSaucer
+            && npcs[i].kind != NpcKind::MartianSaucerTurret
+            && npcs[i].kind != NpcKind::MartianSaucerCannon
+            && npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && npcs[i].kind != NpcKind::FlyingDutchman
+        {
+            continue;
+        }
+        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
+        // links have no port model — the count within the reach stands
+        // in: the ship's death rides it).
+        if npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = npcs[i].center();
+            let count = spatial.count_living_kind_within(
+                snap,
+                scx,
+                scy,
+                NpcKind::FlyingDutchmanCannon,
+                1600.0,
+            );
+            npcs[i].crew_cannons = count;
+            // The display inheritance for the 492 cannons (`AI_093`'s
+            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
+            // cannons with it, and its `spriteDirection` flips them.
+            let ship_facing = npcs[i].sprite_dir;
+            let ship_rot = npcs[i].rotation;
+            for m in npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
+            continue;
+        }
+        let link_kind = if npcs[i].kind == NpcKind::ScutlixRider {
+            NpcKind::Scutlix
+        } else if npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
+        } else {
+            NpcKind::MartianSaucerCore
+        };
+        let (rcx, rcy) = npcs[i].center();
+        let best = spatial.nearest_living_kind(snap, rcx, rcy, link_kind, 1600.0);
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = npcs[j].center();
+                npcs[i].carrier_x = mcx;
+                npcs[i].carrier_y = mcy;
+                // The saucer family's extra payload: the core's mirrored
+                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
+                // / `:35669-35676`: every mount copies the carrier's
+                // `rotation` and `spriteDirection`), and the crew counts
+                // within the reach.
+                if link_kind == NpcKind::MartianSaucerCore {
+                    npcs[i].carrier_timer = npcs[j].ai[3];
+                    npcs[i].carrier_phase = npcs[j].ai[0];
+                    npcs[i].carrier_rot = npcs[j].rotation;
+                    npcs[i].carrier_facing = npcs[j].sprite_dir;
+                    let turrets = spatial.count_living_kind_within(
+                        snap,
+                        mcx,
+                        mcy,
+                        NpcKind::MartianSaucerTurret,
+                        1600.0,
+                    );
+                    let cannons = spatial.count_living_kind_within(
+                        snap,
+                        mcx,
+                        mcy,
+                        NpcKind::MartianSaucerCannon,
+                        1600.0,
+                    );
+                    npcs[i].crew_turrets = turrets;
+                    npcs[i].crew_cannons = cannons;
+                }
+            }
+            None => {
+                // The Scutlix rider falls with its carrier; the saucer
+                // mounts (the shell/guns) fall with the core.
+                if npcs[i].carrier_x >= 0.0 {
+                    npcs[i].carrier_x = -1.0;
+                    npcs[i].carrier_y = -1.0;
+                    npcs[i].hp = 0;
+                    // Mirror the kill into the read-only view: a later
+                    // mount's scan / crew count must not see it (the live
+                    // `hp > 0` reads didn't either).
+                    snap.kill(i);
+                } else if npcs[i].kind == NpcKind::ScutlixRider {
+                    // Never linked yet — the machine's init spawns.
+                }
+            }
+        }
+    }
+}
+
+/// The verbatim pre-migration linear scan (S1-D-8b's A/B reference): the
+/// family exactly as it ran over `npcs.iter()` before the spatial hash.
+/// Test-only — the twin-seed equivalence tests run it against the spatial
+/// path over byte-identical pools.
+#[cfg(test)]
+fn carrier_link_pre_pass_linear(npcs: &mut [Npc]) {
+    for i in 0..npcs.len() {
+        if npcs[i].kind != NpcKind::ScutlixRider
+            && npcs[i].kind != NpcKind::MartianSaucer
+            && npcs[i].kind != NpcKind::MartianSaucerTurret
+            && npcs[i].kind != NpcKind::MartianSaucerCannon
+            && npcs[i].kind != NpcKind::FlyingDutchmanCannon
+            && npcs[i].kind != NpcKind::FlyingDutchman
+        {
+            continue;
+        }
+        if npcs[i].kind == NpcKind::FlyingDutchman {
+            let (scx, scy) = npcs[i].center();
+            let count = npcs
+                .iter()
+                .filter(|m| {
+                    m.kind == NpcKind::FlyingDutchmanCannon
+                        && m.hp > 0
+                        && {
+                            let (mcx, mcy) = m.center();
+                            (mcx - scx).hypot(mcy - scy) < 1600.0
+                        }
+                })
+                .count() as i32;
+            npcs[i].crew_cannons = count;
+            let ship_facing = npcs[i].sprite_dir;
+            let ship_rot = npcs[i].rotation;
+            for m in npcs.iter_mut() {
+                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
+                    m.carrier_rot = ship_rot;
+                    m.carrier_facing = ship_facing;
+                }
+            }
+            continue;
+        }
+        let link_kind = if npcs[i].kind == NpcKind::ScutlixRider {
+            NpcKind::Scutlix
+        } else if npcs[i].kind == NpcKind::FlyingDutchmanCannon {
+            NpcKind::FlyingDutchman
+        } else {
+            NpcKind::MartianSaucerCore
+        };
+        let (rcx, rcy) = npcs[i].center();
+        let mut best: Option<(usize, f32)> = None;
+        for (j, m) in npcs.iter().enumerate() {
+            if m.kind != link_kind || m.hp <= 0 {
+                continue;
+            }
+            let (mcx, mcy) = m.center();
+            let d = (mcx - rcx).hypot(mcy - rcy);
+            if d < 1600.0 && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((j, d));
+            }
+        }
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = npcs[j].center();
+                npcs[i].carrier_x = mcx;
+                npcs[i].carrier_y = mcy;
+                if link_kind == NpcKind::MartianSaucerCore {
+                    npcs[i].carrier_timer = npcs[j].ai[3];
+                    npcs[i].carrier_phase = npcs[j].ai[0];
+                    npcs[i].carrier_rot = npcs[j].rotation;
+                    npcs[i].carrier_facing = npcs[j].sprite_dir;
+                    let turrets = npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerTurret
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    let cannons = npcs
+                        .iter()
+                        .filter(|m| {
+                            m.kind == NpcKind::MartianSaucerCannon
+                                && m.hp > 0
+                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
+                        })
+                        .count() as i32;
+                    npcs[i].crew_turrets = turrets;
+                    npcs[i].crew_cannons = cannons;
+                }
+            }
+            None => {
+                if npcs[i].carrier_x >= 0.0 {
+                    npcs[i].carrier_x = -1.0;
+                    npcs[i].carrier_y = -1.0;
+                    npcs[i].hp = 0;
+                } else if npcs[i].kind == NpcKind::ScutlixRider {
+                    // Never linked yet — the machine's init spawns.
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -2455,115 +2670,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
     // live centre before the AI tick (the vanilla reads `nPC5.Center`
     // live in the same pass), and a rider whose carrier died falls with
-    // it (the retire lands before the retain pass below).
-    for i in 0..app.npcs.len() {
-        if app.npcs[i].kind != NpcKind::ScutlixRider
-            && app.npcs[i].kind != NpcKind::MartianSaucer
-            && app.npcs[i].kind != NpcKind::MartianSaucerTurret
-            && app.npcs[i].kind != NpcKind::MartianSaucerCannon
-            && app.npcs[i].kind != NpcKind::FlyingDutchmanCannon
-            && app.npcs[i].kind != NpcKind::FlyingDutchman
-        {
-            continue;
-        }
-        // The Dutchman's own crew count (`AI_093`'s `Main.npc[ai[i]]`
-        // links have no port model — the count within the reach stands
-        // in: the ship's death rides it).
-        if app.npcs[i].kind == NpcKind::FlyingDutchman {
-            let (scx, scy) = app.npcs[i].center();
-            let count = app
-                .npcs
-                .iter()
-                .filter(|m| {
-                    m.kind == NpcKind::FlyingDutchmanCannon && m.hp > 0 && {
-                        let (mcx, mcy) = m.center();
-                        (mcx - scx).hypot(mcy - scy) < 1600.0
-                    }
-                })
-                .count() as i32;
-            app.npcs[i].crew_cannons = count;
-            // The display inheritance for the 492 cannons (`AI_093`'s
-            // `NPC.cs:38718-38726`): the ship's `rotation` banks the
-            // cannons with it, and its `spriteDirection` flips them.
-            let ship_facing = app.npcs[i].sprite_dir;
-            let ship_rot = app.npcs[i].rotation;
-            for m in app.npcs.iter_mut() {
-                if m.kind == NpcKind::FlyingDutchmanCannon && m.carrier_x >= 0.0 {
-                    m.carrier_rot = ship_rot;
-                    m.carrier_facing = ship_facing;
-                }
-            }
-            continue;
-        }
-        let link_kind = if app.npcs[i].kind == NpcKind::ScutlixRider {
-            NpcKind::Scutlix
-        } else if app.npcs[i].kind == NpcKind::FlyingDutchmanCannon {
-            NpcKind::FlyingDutchman
-        } else {
-            NpcKind::MartianSaucerCore
-        };
-        let (rcx, rcy) = app.npcs[i].center();
-        let mut best: Option<(usize, f32)> = None;
-        for (j, m) in app.npcs.iter().enumerate() {
-            if m.kind != link_kind || m.hp <= 0 {
-                continue;
-            }
-            let (mcx, mcy) = m.center();
-            let d = (mcx - rcx).hypot(mcy - rcy);
-            if d < 1600.0 && best.is_none_or(|(_, bd)| d < bd) {
-                best = Some((j, d));
-            }
-        }
-        match best {
-            Some((j, _)) => {
-                let (mcx, mcy) = app.npcs[j].center();
-                app.npcs[i].carrier_x = mcx;
-                app.npcs[i].carrier_y = mcy;
-                // The saucer family's extra payload: the core's mirrored
-                // timer + phase, the display inheritance (`NPC.cs:35625-35651`
-                // / `:35669-35676`: every mount copies the carrier's
-                // `rotation` and `spriteDirection`), and the crew counts
-                // within the reach.
-                if link_kind == NpcKind::MartianSaucerCore {
-                    app.npcs[i].carrier_timer = app.npcs[j].ai[3];
-                    app.npcs[i].carrier_phase = app.npcs[j].ai[0];
-                    app.npcs[i].carrier_rot = app.npcs[j].rotation;
-                    app.npcs[i].carrier_facing = app.npcs[j].sprite_dir;
-                    let turrets = app
-                        .npcs
-                        .iter()
-                        .filter(|m| {
-                            m.kind == NpcKind::MartianSaucerTurret
-                                && m.hp > 0
-                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
-                        })
-                        .count() as i32;
-                    let cannons = app
-                        .npcs
-                        .iter()
-                        .filter(|m| {
-                            m.kind == NpcKind::MartianSaucerCannon
-                                && m.hp > 0
-                                && (m.center().0 - mcx).hypot(m.center().1 - mcy) < 1600.0
-                        })
-                        .count() as i32;
-                    app.npcs[i].crew_turrets = turrets;
-                    app.npcs[i].crew_cannons = cannons;
-                }
-            }
-            None => {
-                // The Scutlix rider falls with its carrier; the saucer
-                // mounts (the shell/guns) fall with the core.
-                if app.npcs[i].carrier_x >= 0.0 {
-                    app.npcs[i].carrier_x = -1.0;
-                    app.npcs[i].carrier_y = -1.0;
-                    app.npcs[i].hp = 0;
-                } else if app.npcs[i].kind == NpcKind::ScutlixRider {
-                    // Never linked yet — the machine's init spawns.
-                }
-            }
-        }
-    }
+    // it (the retire lands before the retain pass below). S1-D-8b: the
+    // family's radius scans read the spatial hash over the same per-tick
+    // snapshot (ascending slot order = the linear scan's visit order);
+    // the pass mirrors its own `hp = 0` kills via `snap.kill`.
+    carrier_link_pre_pass(&mut app.npcs, &mut snap);
     // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
     // the morning roll's pending flag + the players' life-max gate. The
     // march state (the type/x/warn) rides the World — `invasion_goblins`
@@ -2674,11 +2785,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let water_candle_count = app.scene_metrics.water_candle_count;
     let peace_candle_count = app.scene_metrics.peace_candle_count;
     let camera_y = app.camera.y;
+    // S1-E-21e — `Main.player[target].ZoneGraveyard`, the fifth live term of
+    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+    // (`NPC.cs:60302`) the fighter-moan gate reads.
+    let zone_graveyard = app.scene_metrics.zone_graveyard;
     // The AI group's stream: `Main.SwapRandom("UpdateNPCs")` wraps
     // `NPC.UpdateNPC` (`Main.cs:17767-17769`) — the AI draws ride it in
     // slot order, one shared stream across the tick closure (the
     // scoped-bind pattern, `clock.rs:108-111`).
     let npcs_rng = app.rngs.stream(RngKey::UpdateNpcs);
+    // Plantera's hook-centroid anchor pre-pass (S1-D-3-plantera-minions,
+    // `NPC.cs:31743-31762`): the C# scans the NPC slots INSIDE the boss's
+    // own AI tick; the port pre-computes it once per tick over the pool
+    // (the carrier pre-pass precedent). `type_of` resolves the vanilla
+    // type — no NpcKind maps to 263 yet, so every kind reads its own
+    // protocol id and the centroid stays None (the boss-centre stand-in)
+    // until the hook kind lands with `npc_ai_style52`.
+    {
+        let type_of = |n: &Npc| n.kind.to_u16() as i32;
+        for i in 0..app.npcs.len() {
+            if app.npcs[i].kind != NpcKind::Plantera || app.npcs[i].hp <= 0 {
+                continue;
+            }
+            let anchor = crate::npc_ai_plantera_anchor::hook_centroid(&app.npcs, type_of);
+            app.npcs[i].plantera_hook_anchor = anchor;
+        }
+    }
     let player = &mut app.player;
     // Limit the scope of borrows to just the tick closure
     {
@@ -2692,12 +2824,86 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // spawn requests that carry an owner reference (the
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
+                    // S1-E-21e — `AI_003_Fighters`' idle counter
+                    // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
+                    // movement integrates: `old_x` still holds the previous
+                    // tick's pre-integration stamp (`update_rng` re-stamps
+                    // it, `NPC.cs:90496`), which is the C#'s
+                    // `oldPosition.X` read (`:57126`). The plain-walker
+                    // kinds' `ai[3]` is free for it (`fighter_walker_kind`).
+                    // The player-hitbox reset (`:57146`) reads the live
+                    // boxes ahead of the move.
+                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
+                        let (nw, nh) = n.size();
+                        let player_intersects = n.x < player.x + crate::player::WIDTH
+                            && n.x + nw > player.x
+                            && n.y < player.y + crate::player::HEIGHT
+                            && n.y + nh > player.y;
+                        n.ai[3] = crate::ambient_sound::fighter_idle_counter(
+                            n.kind.cs_id() as i32,
+                            n.ai[2],
+                            n.ai[3],
+                            n.vx,
+                            n.vy,
+                            n.facing,
+                            n.x,
+                            n.old_x,
+                            // `justHit` rides the port's established
+                            // `hurt_cd > 0` stand-in (`npc.rs:13420`).
+                            n.hurt_cd > 0.0,
+                            player_intersects,
+                        );
+                    }
                     n.update_rng(world, player, step, npcs_rng);
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
                     if n.look_for_home_timeout > 0 {
                         n.look_for_home_timeout -= 1;
+                    }
+                    // S1-E-21e — `AI_003_Fighters`' ambient moan arms
+                    // (`NPC.cs:57336-57367`) ride the AI's tail, after its
+                    // draws and before `UpdateNPC_CritterSounds`
+                    // (`NPC.cs:90323`) — all on the `UpdateNPCs` stream
+                    // (`Main.cs:17767`). The gate is the full
+                    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+                    // (`NPC.cs:60300-60330`, `fighter_not_discouraged`):
+                    // the event/exclusion terms and the switch's critter-set
+                    // default all ride along — the excluded moan types (the
+                    // mummies, the face monster, …) are not discouraged even
+                    // by day above the surface. The kind gate keeps the
+                    // counter-only walkers (the scarecrows 305-314,
+                    // Splinterling 326, the renumbered goblins/pirates)
+                    // draw-free.
+                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
+                        let npc_type = n.kind.cs_id() as i32;
+                        let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+                            npc_type,
+                            n.y as f64,
+                            world.world_surface * 16.0,
+                            world.eclipse,
+                            world.day_time,
+                            n.spawned_from_statue,
+                            zone_graveyard,
+                            world.snow_moon,
+                            world.invasion_type,
+                            world
+                                .seeds
+                                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+                            n.ai[1],
+                            n.ai[2],
+                        );
+                        let (nx, ny) = (n.x, n.y);
+                        crate::ambient_sound::fighter_ambient_moans(
+                            npc_type,
+                            n.ai[3],
+                            not_discouraged,
+                            n.shimmer_transparency,
+                            npcs_rng,
+                            &mut |legacy_case, style, rng| {
+                                audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                            },
+                        );
                     }
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
@@ -2746,6 +2952,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
+        let audio = &mut app.audio;
         for n in app.npcs.iter() {
             let (w, h) = n.size();
             let switch = crate::collision::switch_tiles(
@@ -2769,11 +2976,41 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
             // send sits on every fired switch.
             switch_sends.extend(switch.switches.iter().copied());
+            // S1-E-21i — the NPC-tripped switches' Mech-28 clicks: the
+            // pitch draws ride the `UpdateNPCs` stream (`NPC.UpdateNPC`
+            // runs under the `Main.cs:17767-17769` swap), drained per NPC
+            // so the play order matches the slot order.
+            for (px, py) in wiring.take_switch_clicks() {
+                audio.play_switch_click(px as f32, py as f32, npcs_rng);
+            }
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
+    // `:38396-38517`): the accepted contact hit queued its retaliate request
+    // (`hurt_inner`'s tail) and possibly a dismount-on-hit; the C# rolls the
+    // block inline under the `UpdateNPCs` swap (`Main.cs:17767`), the port
+    // drains at the pass tail on the same stream (the S1-E-21c batch
+    // convention, ANALYSIS "The hurt modifiers"). The drain sits after the
+    // switch-tile scan — that scan still draws the scoped `npcs_rng`
+    // binding, so the retaliate rolls re-borrow the stream last.
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_dismount(p, &app.world);
+    }
+    if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
+        let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::hurt_modifiers::drain_retaliate(
+            app.player.as_mut().unwrap(),
+            &mut app.projectiles,
+            &mut app.npcs,
+            req,
+            app.local_id as u8,
+            expert,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
     }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
     // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4
@@ -3299,6 +3536,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut limbs);
+    // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
+    // `:31983-31994` / `:32054-32073`): the hooks (263, aiStyle 52), the
+    // tentacles (264, aiStyle 53) and the spore (265, aiStyle 50) have no
+    // port kinds/arms yet — the machine's core writes the requests and
+    // this pass drains them so they never go stale; the actual spawns
+    // land with the three minion machines (ANALYSIS "The Plantera
+    // machine", the documented follow-up). The hook-anchor average
+    // therefore reads Plantera's own centre until then.
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::Plantera {
+            continue;
+        }
+        n.wants_plantera_hooks = 0;
+        n.wants_plantera_tentacles = 0;
+        n.wants_plantera_spore = None;
+    }
     update_brain_state(app);
     // The Skeletron head's anchor write-through (the hands' tether reads
     {
@@ -3509,11 +3762,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         );
         let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
-        // (`NPC.cs:49891`) and the Frost Legion throws'
-        // (`NPC.cs:29022`/`:29084`).
+        // (`NPC.cs:49891`), the Frost Legion throws'
+        // (`NPC.cs:29022`/`:29084`) and Plantera's seeds
+        // (`NPC.cs:31966-31969` — every volley kind except the 277 thorn
+        // ball).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
+            || kind == crate::projectile::SEED_PLANTERA
+            || kind == crate::projectile::POISON_SEED_PLANTERA
         {
             300
         } else {
@@ -4088,6 +4345,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
+                    // `Player.UpdateBuffs`' Invisibility (10) / Battle (13)
+                    // arms (`Player.cs:9991`/`:10003` → `NPC.GetSpawnRate`'s
+                    // `player.invis`/`player.enemySpawns`, `NPC.cs:702-740`):
+                    // the flags ride the buff scan (S1-E-7 wave A).
+                    invis: player.invis,
+                    enemy_spawns: player.enemy_spawns,
                     // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
@@ -4404,6 +4667,118 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 mod tests {
     use super::*;
     use tr_core::World;
+
+    /// S1-D-8b's A/B equivalence proof: the migrated carrier family
+    /// (spatial hash over the snapshot) against the verbatim pre-migration
+    /// linear scan, over twin pools built from the same seeds. Every
+    /// write-visible field must match bit-for-bit — including the kill
+    /// cascade (a mount whose core is out of reach dies, and later scans
+    /// must not see it) and the display inheritance.
+    #[test]
+    fn the_spatial_carrier_pass_matches_the_linear_scan_over_twin_seeds() {
+        // A tiny deterministic LCG — no game RNG stream is touched.
+        struct Lcg(u64);
+        impl Lcg {
+            fn next(&mut self) -> u64 {
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                self.0 >> 33
+            }
+            fn f32(&mut self, lo: f32, hi: f32) -> f32 {
+                lo + (self.next() % 10_000) as f32 / 10_000.0 * (hi - lo)
+            }
+        }
+        let kinds = [
+            NpcKind::ScutlixRider,
+            NpcKind::Scutlix,
+            NpcKind::MartianSaucer,
+            NpcKind::MartianSaucerTurret,
+            NpcKind::MartianSaucerCannon,
+            NpcKind::MartianSaucerCore,
+            NpcKind::FlyingDutchman,
+            NpcKind::FlyingDutchmanCannon,
+            NpcKind::Slime,
+        ];
+        for seed in [1u64, 42, 512, 20261118] {
+            // Build the twin pools from the SAME seed — byte-identical.
+            let build = || {
+                let mut rng = Lcg(seed);
+                let mut npcs: Vec<Npc> = Vec::new();
+                for i in 0..120 {
+                    let kind = kinds[i % kinds.len()];
+                    // Clusters within reach + far strays + cell edges.
+                    let (x, y) = match i % 4 {
+                        0 => (rng.f32(-400.0, 400.0), rng.f32(-400.0, 400.0)),
+                        1 => (rng.f32(1200.0, 2000.0), rng.f32(-800.0, 800.0)),
+                        2 => (rng.f32(-6400.0, 6400.0), rng.f32(-6400.0, 6400.0)),
+                        _ => (1600.0 * (i % 3) as f32, -1600.0 * (i % 2) as f32),
+                    };
+                    let mut n = Npc::new(kind, x, y, 1, 0.0);
+                    n.uid = (i + 1) as u32;
+                    n.hp = if rng.next() % 4 == 0 { 0 } else { n.max_hp };
+                    // Half the mounts start linked (the fall-with-carrier
+                    // arm), half never linked.
+                    n.carrier_x = if rng.next() % 2 == 0 { 10.0 } else { -1.0 };
+                    n.carrier_y = 20.0;
+                    n.ai[0] = rng.f32(0.0, 4.0);
+                    n.ai[3] = rng.f32(0.0, 60.0);
+                    n.rotation = rng.f32(-3.0, 3.0);
+                    n.sprite_dir = if rng.next() % 2 == 0 { 1 } else { -1 };
+                    npcs.push(n);
+                }
+                npcs
+            };
+            let mut a = build();
+            let mut b = build();
+            // A: the migrated spatial path. B: the verbatim linear scan.
+            let mut snap = crate::world_sim::npc_snapshot::NpcSnapshot::build(&a);
+            carrier_link_pre_pass(&mut a, &mut snap);
+            carrier_link_pre_pass_linear(&mut b);
+            assert_eq!(a.len(), b.len());
+            for (i, (na, nb)) in a.iter().zip(&b).enumerate() {
+                assert_eq!(na.hp, nb.hp, "seed {seed} slot {i} hp");
+                assert_eq!(
+                    na.carrier_x.to_bits(),
+                    nb.carrier_x.to_bits(),
+                    "seed {seed} slot {i} carrier_x"
+                );
+                assert_eq!(
+                    na.carrier_y.to_bits(),
+                    nb.carrier_y.to_bits(),
+                    "seed {seed} slot {i} carrier_y"
+                );
+                assert_eq!(
+                    na.carrier_timer.to_bits(),
+                    nb.carrier_timer.to_bits(),
+                    "seed {seed} slot {i} carrier_timer"
+                );
+                assert_eq!(
+                    na.carrier_phase.to_bits(),
+                    nb.carrier_phase.to_bits(),
+                    "seed {seed} slot {i} carrier_phase"
+                );
+                assert_eq!(
+                    na.carrier_rot.to_bits(),
+                    nb.carrier_rot.to_bits(),
+                    "seed {seed} slot {i} carrier_rot"
+                );
+                assert_eq!(
+                    na.carrier_facing, nb.carrier_facing,
+                    "seed {seed} slot {i} carrier_facing"
+                );
+                assert_eq!(
+                    na.crew_turrets, nb.crew_turrets,
+                    "seed {seed} slot {i} crew_turrets"
+                );
+                assert_eq!(
+                    na.crew_cannons, nb.crew_cannons,
+                    "seed {seed} slot {i} crew_cannons"
+                );
+            }
+        }
+    }
 
     /// `AI_000_TransformBoundNPC`'s 376 → 369 arm (`NPC.cs:19853-19856`): the
     /// talk transforms the Sleeping Angler into the Angler in place and
@@ -11624,6 +11999,35 @@ mod dw3_tests {
         twin.hp = twin.max_hp;
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
         twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
+        // S1-E-21e: `AI_003_Fighters`' ambient-moan arms (`NPC.cs:57336-57367`)
+        // ride the SAME `UpdateNPCs` stream after the AI's draws — the C#
+        // `UpdateNPC` includes them, so the twin replays the gate + arms too
+        // (the fixture's default world opens the NotDiscouraged gate; the
+        // type-3 arm spends its `Next(1000)` roll every tick).
+        let twin_not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+            twin.kind.cs_id() as i32,
+            twin.y as f64,
+            twin_world.world_surface * 16.0,
+            twin_world.eclipse,
+            twin_world.day_time,
+            twin.spawned_from_statue,
+            false, // the fixture's scene_metrics.zone_graveyard default
+            twin_world.snow_moon,
+            twin_world.invasion_type,
+            twin_world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            twin.ai[1],
+            twin.ai[2],
+        );
+        crate::ambient_sound::fighter_ambient_moans(
+            twin.kind.cs_id() as i32,
+            twin.ai[3],
+            twin_not_discouraged,
+            twin.shimmer_transparency,
+            &mut twin_rng,
+            &mut |_, _, _| {},
+        );
         assert_eq!(after, twin_rng, "one AI tick == one update_rng draw shape");
 
         // No other stage stream moved (the AI group's isolation).
@@ -11846,5 +12250,76 @@ mod dw3_tests {
                 key.name()
             );
         }
+    }
+
+    /// S1-E-21e — the fighter-moan wiring's stream contract: the idle counter
+    /// ticks BEFORE `update_rng` (the `old_x` still holds the prior-tick
+    /// stamp, `NPC.cs:57126`'s `oldPosition.X` read) and the moan arms run
+    /// AFTER the AI's draws, BEFORE the critter emitter (`NPC.cs:57336` vs
+    /// `:90323`), all on the `UpdateNPCs` stream (`Main.cs:17767`). A lone
+    /// stuck zombie above the surface: by day the `NotDiscouraged` gate is
+    /// closed (`NPC.cs:60302`) and the pass is draw-free; by night the gate
+    /// opens and the type-3 arm spends exactly one `Next(1000)` roll plus the
+    /// case-14 `Next(3)` slot draw inside `play_fighter_moan` — nothing else.
+    #[test]
+    fn s1_e_21e_the_moan_wiring_draws_on_the_npc_stream() {
+        let build = |day: bool| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.day_time = day;
+            app.world = world;
+            // Far from the zombie: no contact damage (which would draw the
+            // damage-variance roll) and no player-hitbox counter reset.
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            // Above the surface line (`world_surface * 16` = 800 px) so the
+            // day arm's surface term holds; the zombie falls only a fraction
+            // of a pixel in one tick and stays above it.
+            let mut zombie = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            app.npcs.push(zombie);
+            // Seed 146: the type-3 arm's `Next(1000)` hits 0, then the
+            // case-14 default `Next(3)` draws slot 1 (`Zombie_1`).
+            app.rngs = crate::app::rng::NamedRngs::new(146);
+            app
+        };
+        let mut control = build(true); // day + above surface: the gate closes
+        let mut app = build(false); // night: the gate opens
+        let control_before = control.audio.played_count();
+        let app_before = app.audio.played_count();
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The idle counter ticked once in both (stuck: `x == old_x` at AI
+        // time, `NPC.cs:57126`); it stays under the 60 cap so the moan gate's
+        // `ai[3] < num57` term passes.
+        assert_eq!(control.npcs[0].ai[3], 1.0, "the counter ticked (control)");
+        assert_eq!(app.npcs[0].ai[3], 1.0, "the counter ticked (app)");
+        // Control: the discouraged gate is draw-free — no play, no draw.
+        assert_eq!(
+            control.audio.played_count() - control_before,
+            0,
+            "the day gate plays nothing"
+        );
+        assert_eq!(
+            *control.rngs.stream(RngKey::UpdateNpcs),
+            UnifiedRandom::new(146),
+            "the closed gate consumes no UpdateNpcs draws"
+        );
+        // App: the moan fired — exactly the arm roll + the case-14 slot draw.
+        assert_eq!(
+            app.audio.played_count() - app_before,
+            1,
+            "the night moan played once"
+        );
+        let mut witness = UnifiedRandom::new(146);
+        let _ = witness.next_max(1000); // the type-3 arm's trigger roll
+        let _ = witness.next_range(0, 3); // case 14's default slot pick
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the moan spends exactly the arm roll + the slot draw"
+        );
     }
 }

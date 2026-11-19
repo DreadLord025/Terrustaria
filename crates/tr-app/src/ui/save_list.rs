@@ -451,10 +451,7 @@ mod tests {
     use tr_core::World;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::test_world_helpers::test_scratch(&format!("savelist-{name}"))
     }
 
     fn player(name: &str, favorite: bool, life_max: i32) -> PlayerEntry {
@@ -572,9 +569,10 @@ mod tests {
 
     #[test]
     fn list_worlds_missing_dir_is_empty() {
-        let missing = std::env::temp_dir().join("tr-savelist-nope");
-        let _ = std::fs::remove_dir_all(&missing);
+        let dir = temp_dir("tr-savelist-nope");
+        let missing = dir.join("absent");
         assert!(list_worlds(&missing, 0).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -631,8 +629,7 @@ mod tests {
         std::fs::write(dir.join("somebody.plr"), b"unreadable").unwrap();
         assert!(list_players(Some(&dir), None, 0).is_empty());
         // A missing player directory is not an error either.
-        let missing = std::env::temp_dir().join("tr-savelist-noplayers");
-        let _ = std::fs::remove_dir_all(&missing);
+        let missing = dir.join("absent-players");
         assert!(list_players(Some(&missing), None, 0).is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -663,6 +660,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            last_saved_binary: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
         std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
@@ -727,6 +725,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 0,
+            last_saved_binary: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
     }
@@ -993,6 +992,7 @@ mod tests {
                 inventory: [(0, 0, 0); 58],
                 // Slots 0 and 4 starred — the BUG-03 half of the card.
                 inv_favorites: 1 << 0 | 1 << 4,
+                last_saved_binary: 0,
             },
         )
         .unwrap();
