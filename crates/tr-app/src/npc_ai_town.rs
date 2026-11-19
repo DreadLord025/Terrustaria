@@ -611,6 +611,17 @@ pub struct TownEnv<'a> {
     pub downed_fishron: bool,
     pub downed_golem: bool,
     pub downed_cultist: bool,
+    /// `NPC.homeless` (`NPC.cs:6219`) — distinct from `home == None`
+    /// in the C# (a homeless NPC keeps its last home tiles until
+    /// UpdateHomeTileState rewrites them); the port's `Npc.home` folds
+    /// the two, so the seam carries the flag for the `:53423` /
+    /// `:53804` gates. The wiring latches it from the home updates.
+    pub homeless: bool,
+    /// `NPC.breath` (`NPC.cs:6247`) — the Nurse's heal gate
+    /// (`:55422`); the stock full breath reads > 0.
+    pub breath: i32,
+    /// `NPC.shimmering` (`NPC.cs:92141`) — the `:53296` home-stamp gate.
+    pub shimmering: bool,
 }
 
 /// `NPC.UpdateHomeTileState` (`NPC.cs:52904-52914`) — the home-tile
@@ -648,7 +659,10 @@ pub enum TownPartnerWrite {
 /// bodies (`NPC.cs:54504`, `:54776`, `:54814`, `:54931`, `:54947`,
 /// `:54963`, `:54970`, `:54976`). Every one carries `npcProj = true`,
 /// `noDropItem = true`; `time_left_override` is the Golfer/Goblin
-/// 480 (`:54507-54514`).
+/// 480 (`:54507-54514`). `variation_index` is the trailing
+/// `townNpcVariationIndex` argument the Mechanic/Wizard/Party Girl/
+/// Princess/Dryad calls pass (`:54504`/`:54931`/`:54947`/`:54963`/
+/// `:54970`); the other calls pass none (0).
 #[derive(Clone, Copy, Debug)]
 pub struct TownShot {
     pub kind: i32,
@@ -661,6 +675,7 @@ pub struct TownShot {
     pub ai0: f32,
     pub ai1: f32,
     pub time_left_override: Option<i32>,
+    pub variation_index: i32,
 }
 
 /// The melee sweep's hit request (attack 15, `NPC.cs:55069-55078`):
@@ -688,11 +703,6 @@ pub struct TownOutputs {
     pub saved_state: Option<SavedState>,
     /// `NPC.taxCollector = true` (`NPC.cs:53306`).
     pub tax_collector_present: bool,
-    /// The door open/close requests (`WorldGen.OpenDoor`/`CloseDoor`/
-    /// `ShiftTallGate`, `NPC.cs:54047-54073`/`:53838-53854`). The
-    /// caller runs them through `tr_core::edit::{open_door, close_door}`
-    /// and writes the latch back via [`TownDoorLatch`].
-    pub door_requests: Vec<TownDoorRequest>,
     /// `NPC.ai[3] = 1` despawn requests (`NPC.cs:53337-53347`): the
     /// Old Man after Skeletron — `life = -1`, `active = false`.
     pub despawn: bool,
@@ -715,17 +725,23 @@ pub enum SavedState {
     Bartender,
 }
 
-/// A door/gate mutation request. `closing` distinguishes the state-1
-/// close pass from the walk-open pass; `direction` is the OpenDoor
-/// swing (0 for the tall gate).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TownDoorRequest {
-    pub x: i32,
-    pub y: i32,
-    pub closing: bool,
-    pub direction: i32,
-    /// true = tall gate 388/389 (`ShiftTallGate`), false = door 10/11.
-    pub tall_gate: bool,
+/// The door/gate mutation seam — `WorldGen.OpenDoor` / `CloseDoor` /
+/// `ShiftTallGate` (`NPC.cs:54047-54073` / `:53838-53854`). The arm
+/// calls these INLINE (the C#'s attempt order and the success/failure
+/// branches are tick-visible: the all-fail direction flip feeds the
+/// social ladder later in the same tick), so the wiring implements
+/// this trait over `tr_core::edit::{open_door, close_door}` + the
+/// tall-gate port when it lands; the tests drive a recording fake.
+pub trait TownDoorOps {
+    /// `WorldGen.OpenDoor(x, y, direction)` (`WorldGen.cs:37630`).
+    fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool;
+    /// `WorldGen.CloseDoor(x, y)` (`WorldGen.cs:31810`).
+    fn close_door(&mut self, x: i32, y: i32) -> bool;
+    /// `WorldGen.ShiftTallGate(x, y, closing)` — UNPORTED in tr-core
+    /// (no `shift_tall_gate` yet); the wiring's impl returns false
+    /// until it lands (the cited skip: tall gates 388/389 never
+    /// open/close, the arm takes the all-fail flip).
+    fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool;
 }
 
 /// The door latch the caller keeps on the NPC (the C#'s
@@ -1387,9 +1403,9 @@ pub fn town_stat_bonuses(
     let mut num2 = 1.0f32;
     let mut num3 = 2.0f32;
     // `:53000-53011` — the difficulty defense (the ward adds).
-    let ward_add = if stats.master_mode {
+    let ward_add = if env.master_mode {
         20
-    } else if stats.expert_mode {
+    } else if env.expert_mode {
         15
     } else {
         10
@@ -1445,15 +1461,15 @@ pub fn town_stat_bonuses(
     boss(env.downed_fishron, 0.15, 8);
     boss(env.downed_golem, 0.15, 8);
     boss(env.downed_cultist, 0.15, 20);
-    // `:53132-53138` — the infected-seed Dryad (immortal, 99999).
+    // `:53132-53138` — the infected-seed Dryad: flag2 (the flee-TOWARD
+    // marker, returned via the caller's env read), full heal, immortal,
+    // defDefense = 99999. The defDefense write is a PERSISTENT defaults
+    // change the read-only seam cannot carry — the wiring applies it to
+    // the kind table; this tick's defense keeps the ladder value (the
+    // C# wrote defense at :53002 BEFORE this block, verbatim).
     if env.infected_seed && net_id == 20 {
         npc.hp = npc.max_hp;
-        npc.defense_override = Some(99999);
         npc.immortal = true;
-        // The C# sets defDefense = 99999; the seam's defaults are
-        // read-only, so the override carries it (flag2's flee-toward
-        // behaviour rides the returned marker below).
-        return (num2, num3);
     }
     // `:53139-53146` — the skyblock fold.
     if env.net_mode != 1 && env.skyblock_low_tiles {
@@ -1492,6 +1508,7 @@ pub fn town_npc_ai(
     env: &TownEnv<'_>,
     stats: TownKindStats,
     door: &mut TownDoorLatch,
+    doors: &mut dyn TownDoorOps,
     who_am_i: usize,
     rng: &mut UnifiedRandom,
     out: &mut TownOutputs,
@@ -1499,21 +1516,36 @@ pub fn town_npc_ai(
     let world = env.world;
     let net_id = npc.kind.net_id();
     let (w, h) = npc.size();
+    // The C# `townNPC` flag: every is_town_npc_like kind writes
+    // `townNPC = true` in SetDefaults (`NPC.cs:8983+`); the port's
+    // narrower is_town_npc() set is the HOUSING set, not this flag.
+    let town_npc_flag = npc.kind.is_town_npc_like();
+    // The C# `stinky` latch: buff 120 (`NPC.cs:92061-92064`).
+    let stinky = npc.buffs.find_buff_index(120).is_some();
     let cx = npc.x + w / 2.0;
     let cy = npc.y + h / 2.0;
+    // The C# re-reads `base.Center` at every use site; the teleport
+    // home (`:53448`) moves the NPC mid-tick, so the danger scan and
+    // everything after it read the POST-teleport centre. The port
+    // shadows cx/cy there (the pre-teleport reads above keep the
+    // entry values, verbatim).
 
     // `:52967` — ShimmeredTownNPCs[type] = IsShimmerVariant. The
     // bitmap lives in town.rs (the save seam); the caller applies it
     // from variation_index + shimmer_town_transform. Recorded here as
     // a read-only note: no draw, no state the arm reads back.
 
-    // `:52968-52976` — the Andrew/Slimefors easter eggs.
+    // `:52968-52976` — the Andrew/Slimefors easter eggs. The C# writes
+    // `defDefense` (the BASE the stat ladder below reads), so the port
+    // adjusts the seam's defaults copy BEFORE the ladder runs — a
+    // defense_override here would be clobbered by it.
+    let mut stats = stats;
     if net_id == 441 && npc.given_name == "Andrew" {
-        npc.defense_override = Some(200);
+        stats.def_defense = 200;
     }
     if env.only_shimmer_ocean && net_id == 680 && npc.given_name == "Slimefors" {
         npc.hp = npc.max_hp;
-        npc.defense_override = Some(99999);
+        stats.def_defense = 99999;
     }
 
     // `:52977-52981` — the sit-gate chance: 300, pets 0.
@@ -1588,8 +1620,8 @@ pub fn town_npc_ai(
     // stamp. No ported kind is a TownCritter; the else arm runs.
     if town_critter(net_id) && npc.target == 255 {
         // The critter TargetClosest + facing: unported kinds, cited.
-    } else if npc.home.is_none() && npc.vy == 0.0 {
-        // `:53296-53298` — `!shimmering` is the shimmer skip's gate.
+    } else if npc.home.is_none() && npc.vy == 0.0 && !env.shimmering {
+        // `:53296-53298` — the homeless home stamp.
         out.home_updates.push(HomeTileUpdate {
             homeless: true,
             x: cx as i32 / 16,
@@ -1697,11 +1729,14 @@ pub fn town_npc_ai(
     }
 
     // `:53423-53450` — the night/rain teleport home when no player is
-    // near either the NPC or the resting spot.
+    // near either the NPC or the resting spot. The C# re-reads
+    // `this.position` for the rect AFTER the earlier arms may have
+    // moved it; the port re-reads npc.x/y here too (the teleport
+    // itself is the only mover inside this block).
     let dungeon_tile = tile_at(world, num6, num7).is_some_and(|t| tile_dungeon(t.kind));
-    if npc.home.is_some()
+    if !env.homeless
         && env.net_mode != 1
-        && npc.kind.is_town_npc()
+        && town_npc_flag
         && (flag || (net_id == 37 && dungeon_tile))
         && !is_in_a_good_resting_spot(net_id, npc.ai[0], npc.wet, env.day_time, num6, num7, floor_x, floor_y)
     {
@@ -1716,24 +1751,27 @@ pub fn town_npc_ai(
             if !flag7 {
                 break;
             }
+            // The C# `new Rectangle((int)(...), ...)` truncates each
+            // origin to int (`:53432-53435`); the player rect truncates
+            // its position too (`:53439`).
             let rect = if k == 0 {
                 (
-                    npc.x + w / 2.0 - s_width as f32 / 2.0 - safe_x as f32,
-                    npc.y + h / 2.0 - s_height as f32 / 2.0 - safe_y as f32,
+                    (npc.x + w / 2.0 - s_width as f32 / 2.0 - safe_x as f32) as i32 as f32,
+                    (npc.y + h / 2.0 - s_height as f32 / 2.0 - safe_y as f32) as i32 as f32,
                     (s_width + safe_x * 2) as f32,
                     (s_height + safe_y * 2) as f32,
                 )
             } else {
                 (
-                    floor_x as f32 * 16.0 + 8.0 - s_width as f32 / 2.0 - safe_x as f32,
-                    floor_y as f32 * 16.0 + 8.0 - s_height as f32 / 2.0 - safe_y as f32,
+                    (floor_x as f32 * 16.0 + 8.0 - s_width as f32 / 2.0 - safe_x as f32) as i32 as f32,
+                    (floor_y as f32 * 16.0 + 8.0 - s_height as f32 / 2.0 - safe_y as f32) as i32 as f32,
                     (s_width + safe_x * 2) as f32,
                     (s_height + safe_y * 2) as f32,
                 )
             };
             for p in env.players {
                 if p.candidate.active
-                    && rect_intersects(rect, (p.candidate.x, p.candidate.y, p.candidate.width as f32, p.candidate.height as f32))
+                    && rect_intersects(rect, (p.candidate.x as i32 as f32, p.candidate.y as i32 as f32, p.candidate.width as f32, p.candidate.height as f32))
                 {
                     flag7 = false;
                     break;
@@ -1749,6 +1787,9 @@ pub fn town_npc_ai(
             }
         }
     }
+    // The post-teleport centre re-read (see the entry note).
+    let cx = npc.x + w / 2.0;
+    let cy = npc.y + h / 2.0;
 
     // `:53451-53469` — the kind-group flags + the danger ranges.
     let flag8 = matches!(net_id, 300 | 447 | 610); // the duck family
@@ -1920,11 +1961,11 @@ pub fn town_npc_ai(
     // -----------------------------------------------------------------
     if npc.ai[0] == 0.0 {
         town_state_idle(npc, env, door, who_am_i, rng, out, IdleCtx {
-            flag, flag5, flag8, flag10, flag11, flag12, flag16, flag17, num6, num7, floor_x, floor_y, num8, num,
+            flag, flag5, flag8, flag10, flag11, flag12, flag16, flag17, num6, num7, floor_x, floor_y, num8, stinky,
         });
     } else if npc.ai[0] == 1.0 {
-        town_state_walk(npc, env, door, who_am_i, rng, out, WalkCtx {
-            flag, flag8, flag9, flag10, flag12, flag14, flag15, flag17, num6, num7, floor_x, floor_y, num14,
+        town_state_walk(npc, env, door, doors, rng, out, WalkCtx {
+            flag, flag8, flag9, flag10, flag12, flag14, flag15, flag17, num6, num7, floor_x, floor_y, town_npc_flag,
         });
     } else if npc.ai[0] == 2.0 || npc.ai[0] == 11.0 {
         // `:54245-54266` — the small-talk / tax-collector pause.
@@ -2034,6 +2075,7 @@ pub fn town_npc_ai(
                     ai0: npc.ai[2],
                     ai1: 0.0,
                     time_left_override: None,
+                    variation_index: 0,
                 });
             }
         }
@@ -2155,16 +2197,21 @@ pub fn town_npc_ai(
             can_talk, flag31, flag17, num12, num13, num14, num3, num, who_am_i,
         });
         // `:55422-55442` — the Nurse's heal scan.
-        if env.net_mode != 1 && npc.ai[0] < 2.0 && npc.vy == 0.0 && net_id == 18 {
-            // `breath > 0` — the NPC breath counter; the port's Npc has
-            // no breath field, the stock full breath reads > 0.
+        if env.net_mode != 1 && npc.ai[0] < 2.0 && npc.vy == 0.0 && net_id == 18 && env.breath > 0 {
             let mut num116 = -1i32;
             let mut worst = 0i32;
             for (m, other) in env.npcs {
+                // `:55428` — CanHitLine takes the FULL hitboxes
+                // (`base.position, width, height` vs the target's), not
+                // the centre points; the shared seam walks centre to
+                // centre, so the port passes the boxes through the
+                // projectile seam's box form.
                 if other.town_ai7
                     && other.life != other.life_max
                     && (num116 == -1 || other.life_max - other.life > worst)
-                    && can_hit_line_centers(world, cx, cy, other.center().0, other.center().1)
+                    && crate::projectile::can_hit_line(
+                        world, npc.x, npc.y, w, h, other.x, other.y, other.width, other.height,
+                    )
                     && other.distance(cx, cy) < 500.0
                 {
                     num116 = *m as i32;
@@ -2298,7 +2345,7 @@ struct IdleCtx {
     floor_x: i32,
     floor_y: i32,
     num8: i32,
-    num: i32,
+    stinky: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2319,7 +2366,7 @@ fn town_state_idle(
         npc.facing = c.num8;
     }
     // `:53628-53631` — the stinky NPC flees at once.
-    if npc.buffs.find_buff_index(120).is_some() {
+    if c.stinky {
         npc.ai[0] = 1.0;
     }
     // `:53632-53635`.
@@ -2446,7 +2493,6 @@ fn town_state_idle(
             npc.net_update = true;
         }
     }
-    let _ = c.num;
 }
 
 // ---------------------------------------------------------------------
@@ -2466,7 +2512,7 @@ struct WalkCtx {
     num7: i32,
     floor_x: i32,
     floor_y: i32,
-    num14: i32,
+    town_npc_flag: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2474,9 +2520,9 @@ fn town_state_walk(
     npc: &mut Npc,
     env: &TownEnv<'_>,
     door: &mut TownDoorLatch,
-    _who_am_i: usize,
+    doors: &mut dyn TownDoorOps,
     rng: &mut UnifiedRandom,
-    out: &mut TownOutputs,
+    _out: &mut TownOutputs,
     c: WalkCtx,
 ) {
     let world = env.world;
@@ -2499,7 +2545,7 @@ fn town_state_walk(
     if !flag22 {
         // `:53804-53814` — the far-from-home timer burn.
         let dungeon_tile = tile_at(world, c.num6, c.num7).is_some_and(|t| tile_dungeon(t.kind));
-        if env.net_mode != 1 && npc.home.is_some() && !dungeon_tile && (c.num6 < c.floor_x - 35 || c.num6 > c.floor_x + 35) {
+        if env.net_mode != 1 && !env.homeless && !dungeon_tile && (c.num6 < c.floor_x - 35 || c.num6 > c.floor_x + 35) {
             if npc.x < (c.floor_x * 16) as f32 && npc.facing == -1 {
                 npc.ai[1] -= 5.0;
             } else if npc.x > (c.floor_x * 16) as f32 && npc.facing == 1 {
@@ -2521,7 +2567,9 @@ fn town_state_walk(
         npc.local_ai[3] = 60.0;
         npc.net_update = true;
     }
-    // `:53833-53864` — the door-close pass.
+    // `:53833-53864` — the door-close pass. The C# clears closeDoor
+    // only when CloseDoor/ShiftTallGate SUCCEEDS, then the ±4 far-arm
+    // clears it unconditionally; a non-door tile clears it at once.
     if door.close_door
         && ((npc.x + w / 2.0) / 16.0 > (door.door_x + 2) as f32 || (npc.x + w / 2.0) / 16.0 < (door.door_x - 2) as f32)
     {
@@ -2532,16 +2580,17 @@ fn town_state_walk(
             || (npc.y + h / 2.0) / 16.0 < (door.door_y - 4) as f32;
         match tile_kind {
             Some(11) => {
-                out.door_requests.push(TownDoorRequest { x: door.door_x, y: door.door_y, closing: true, direction: npc.facing, tall_gate: false });
-                // The C# clears closeDoor only when CloseDoor succeeds;
-                // the caller drains the request and clears the latch on
-                // success — the far-arm clear below is unconditional.
+                if doors.close_door(door.door_x, door.door_y) {
+                    door.close_door = false;
+                }
                 if far {
                     door.close_door = false;
                 }
             }
             Some(389) => {
-                out.door_requests.push(TownDoorRequest { x: door.door_x, y: door.door_y, closing: true, direction: 0, tall_gate: true });
+                if doors.shift_tall_gate(door.door_x, door.door_y, true) {
+                    door.close_door = false;
+                }
                 if far {
                     door.close_door = false;
                 }
@@ -2611,8 +2660,11 @@ fn town_state_walk(
             npc.vx = num21;
         }
     }
-    // `:53951-53966` — the step helpers.
-    let flag23 = !((c.floor_y_home_tile(npc) * 16 - 32) as f32 > npc.y);
+    // `:53951-53966` — the step helpers. flag23: the home tile's row
+    // minus 32 px is NOT above the NPC (the C# `homeTileY * 16 - 32 >
+    // position.Y` → false).
+    let home_tile_y = npc.home.map(|(_, y)| y).unwrap_or(-1);
+    let flag23 = !((home_tile_y * 16 - 32) as f32 > npc.y);
     if !flag23 && npc.vy == 0.0 {
         step_down(world, npc);
     }
@@ -2695,31 +2747,24 @@ fn town_state_walk(
         let tile5 = tile_at(world, num23, num24 - 2);
         let flag26 = h / 16.0 < 3.0;
         let door_tile = tile5.is_some_and(|t| nactive(t) && (t.kind == 10 || t.kind == 388));
-        if npc.kind.is_town_npc() && door_tile && (rng.next_max(10) == 0 || c.flag) {
+        if c.town_npc_flag && door_tile && (rng.next_max(10) == 0 || c.flag) {
             if env.net_mode != 1 {
-                // The three open attempts, in C# order: own direction,
-                // reverse, tall gate. The requests drain through
-                // tr_core::edit; the latch arms on the FIRST success —
-                // the caller reports it back, so the port requests all
-                // three and the caller stops at the first true (the
-                // request list carries the order).
-                out.door_requests.push(TownDoorRequest { x: num23, y: num24 - 2, closing: false, direction: npc.facing, tall_gate: false });
-                out.door_requests.push(TownDoorRequest { x: num23, y: num24 - 2, closing: false, direction: -npc.facing, tall_gate: false });
-                out.door_requests.push(TownDoorRequest { x: num23, y: num24 - 2, closing: false, direction: 0, tall_gate: true });
-                // The latch + ai[1] += 80 ride the caller's success
-                // callback; the all-fail flip is requested as a fourth
-                // "flip" marker the caller applies when none opened.
-                door.close_door = true;
-                door.door_x = num23;
-                door.door_y = num24 - 2;
-                npc.ai[1] += 80.0;
-                npc.net_update = true;
-                // NOTE: the C# flips direction only when ALL THREE
-                // fail; the caller's drain reports the outcome and the
-                // wiring applies the flip. The port records the intent
-                // here (the latch is armed optimistically and the
-                // caller corrects it — see ANALYSIS "The town-NPC
-                // aiStyle-7 re-port", the door-drain note).
+                // `:54047-54078` — the three open attempts in C# order:
+                // own direction, reverse, tall gate; the first success
+                // arms the latch + ai[1] += 80, the all-fail flips.
+                let opened = doors.open_door(num23, num24 - 2, npc.facing)
+                    || doors.open_door(num23, num24 - 2, -npc.facing)
+                    || doors.shift_tall_gate(num23, num24 - 2, false);
+                if opened {
+                    door.close_door = true;
+                    door.door_x = num23;
+                    door.door_y = num24 - 2;
+                    npc.net_update = true;
+                    npc.ai[1] += 80.0;
+                } else {
+                    npc.facing *= -1;
+                    npc.net_update = true;
+                }
             }
         } else {
             // `:54083-54186` — the obstacle/jump/turn logic.
@@ -2840,17 +2885,20 @@ fn town_state_walk(
         }
     }
     // `:54226-54242` — the stuck flip: position unchanged and velocity
-    // unchanged-plus-gravity for 30 ticks.
-    if npc.old_x == npc.x
+    // unchanged-plus-gravity for 30 ticks. The C#'s `this.localAI[2]++
+    // >= 30f` is a POST-increment: the comparison reads the OLD value,
+    // the counter advances every tick the first four conjuncts hold
+    // (the `&&` chain short-circuits before it when they don't).
+    let stuck_shape = npc.old_x == npc.x
         && npc.old_y == npc.y
         && npc.old_vx == npc.vx
         && npc.old_vy == npc.vy + NPC_GRAVITY
-        && !c.flag17
-        && {
-            npc.local_ai[2] += 1.0;
-            npc.local_ai[2] >= 30.0
-        }
-    {
+        && !c.flag17;
+    let stuck_count = npc.local_ai[2];
+    if stuck_shape {
+        npc.local_ai[2] += 1.0;
+    }
+    if stuck_shape && stuck_count >= 30.0 {
         npc.local_ai[2] = 0.0;
         if env.net_mode != 1 {
             npc.ai[0] = 1.0;
@@ -2864,22 +2912,12 @@ fn town_state_walk(
             npc.net_update = true;
         }
     }
-    let _ = c.num14;
-    let _ = c.num7;
 }
 
 /// `NPC.gravity`'s stock value (`NPC.cs:90881`) — the stuck test's
 /// `velocity + (0, NPC.gravity)` probe. The generic UpdateNPC tail sets
 /// it per tick; the town arm reads the stock 0.3.
 const NPC_GRAVITY: f32 = 0.3;
-
-impl WalkCtx {
-    /// The `homeTileY` read of `:53952` — the NPC's home tile Y (−1
-    /// when homeless, the C# field default).
-    fn floor_y_home_tile(&self, npc: &Npc) -> i32 {
-        npc.home.map(|(_, y)| y).unwrap_or(-1)
-    }
-}
 
 // ---------------------------------------------------------------------
 // The social ladder (NPC.cs:55197-55421)
@@ -3146,10 +3184,13 @@ fn aim_guard(vec: (f32, f32), sprite_dir: i32, fallback_y: f32) -> (f32, f32) {
     }
 }
 
-/// The target lookups — the danger scan's slots index `Main.npc[]`
-/// (the stinky-player fallback stores player slots; the C# reads them
-/// through `Main.npc[num15]` too, a vanilla quirk kept: the port reads
-/// the NPC list and falls back to the player list for the same index).
+/// The target lookups — the danger scan's slots index `Main.npc[]`.
+/// The stinky-player fallback (`:53539-53548`) stores PLAYER slots into
+/// the same num15/num16, and the attack bodies then read
+/// `Main.npc[num15]` — a vanilla quirk (the player index is read as an
+/// NPC index); the port keeps it verbatim: the lookup is always the
+/// NPC list, a player-slot index simply finds whatever NPC sits there
+/// (or nothing).
 fn target_view<'a>(env: &'a TownEnv<'_>, slot: i32) -> Option<&'a TownNpcView> {
     env.npcs.iter().find(|(s, _)| *s == slot as usize).map(|(_, v)| v)
 }
@@ -3182,13 +3223,22 @@ fn player_distance(p: &TownPlayer, cx: f32, cy: f32) -> f32 {
     ((px - cx) * (px - cx) + (py - cy) * (py - cy)).sqrt()
 }
 
-/// `NPCID.Sets.Skeletons` — the Skeleton Merchant's ignore list
-/// (`NPC.cs:53483`'s `type == 453` gate). The set's rows
-/// (`ID/NPCID.cs`'s Skeletons factory): the skeleton family.
+/// `NPCID.Sets.Skeletons` (`ID/NPCID.cs:10478`) — the Skeleton
+/// Merchant's ignore list (`NPC.cs:53483`'s `type == 453` gate).
 fn is_skeleton(net_id: i32) -> bool {
     matches!(
         net_id,
-        21 | 26..=29 | 31 | 32 | 45 | 77 | 111 | 172 | 186..=195 | 201..=203 | 225 | 226 | 269..=280 | 281..=286 | 322..=324 | 331 | 332 | 471 | 481 | 533 | 590 | 605 | 693
+        21 | 44
+            | 77
+            | 110
+            | 167
+            | 197
+            | 201..=203
+            | 291..=293
+            | 322..=324
+            | 449..=452
+            | 481
+            | 635
     )
 }
 
@@ -3262,6 +3312,8 @@ fn town_attack_ranged_arc(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRan
             ai0,
             ai1,
             time_left_override: if net_id == 588 || net_id == 107 { Some(480) } else { None },
+            // `:54504` — only the Mechanic's call passes the variation.
+            variation_index: if net_id == 124 { npc.variation_index } else { 0 },
         });
     }
     if npc.ai[1] <= 0.0 {
@@ -3426,6 +3478,7 @@ fn town_attack_straight(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRando
             ai0: 0.0,
             ai1,
             time_left_override: None,
+            variation_index: 0,
         });
     }
     // `:54780-54787` — the volley's aim-Y latch into ai[2].
@@ -3522,6 +3575,7 @@ fn town_attack_magic(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRandom, 
                     ai0: 0.0,
                     ai1: 0.0,
                     time_left_override: None,
+                    variation_index: npc.variation_index,
                 });
             }
         } else if net_id == 160 || net_id == 663 {
@@ -3556,6 +3610,7 @@ fn town_attack_magic(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRandom, 
                     ai0: 0.0,
                     ai1: 0.0,
                     time_left_override: None,
+                    variation_index: npc.variation_index,
                 });
             }
         } else {
@@ -3571,6 +3626,7 @@ fn town_attack_magic(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRandom, 
                 ai0: 0.0,
                 ai1: if net_id == 20 { c.who_am_i as f32 } else { 0.0 },
                 time_left_override: None,
+                variation_index: if net_id == 20 { npc.variation_index } else { 0 },
             });
         }
     }
@@ -3632,7 +3688,10 @@ fn town_attack_melee(npc: &mut Npc, env: &TownEnv<'_>, rng: &mut UnifiedRandom, 
                 && !other.friendly
                 && other.damage > 0
                 && rect_intersects(rect, (other.x, other.y, other.width, other.height))
-                && (other.no_tile_collide || can_hit_centers(env.world, cx, cy, other.center().0, other.center().1))
+                && (other.no_tile_collide
+                    || crate::projectile::can_hit(
+                        env.world, npc.x, npc.y, w, h, other.x, other.y, other.width, other.height,
+                    ))
             {
                 out.strikes.push(TownStrike {
                     slot: *m,
@@ -3837,11 +3896,59 @@ mod tests {
             downed_fishron: false,
             downed_golem: false,
             downed_cultist: false,
+            expert_mode: false,
+            master_mode: false,
+            homeless: false,
+            breath: 200,
+            shimmering: false,
         }
     }
 
     fn stats() -> TownKindStats {
-        TownKindStats { def_life_max: 250, def_defense: 15, expert_mode: false, master_mode: false }
+        TownKindStats { def_life_max: 250, def_defense: 15 }
+    }
+
+    /// A live, non-talking player slot at (x, y).
+    fn player(x: f32, y: f32) -> TownPlayer {
+        TownPlayer {
+            candidate: TargetCandidate {
+                active: true,
+                dead: false,
+                ghost: false,
+                x,
+                y,
+                width: 20,
+                height: 42,
+                aggro: 0,
+                item_animation: 0,
+                npc_type_no_aggro: false,
+                tank_pet: None,
+            },
+            talk_npc: -1,
+            stinky: false,
+            sitting: false,
+            can_be_talked_to: true,
+        }
+    }
+
+    /// The recording door fake: every attempt succeeds on demand.
+    struct FakeDoors {
+        attempts: Vec<(i32, i32, i32, bool)>, // (x, y, dir, tall)
+        succeed: bool,
+    }
+    impl TownDoorOps for FakeDoors {
+        fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool {
+            self.attempts.push((x, y, direction, false));
+            self.succeed
+        }
+        fn close_door(&mut self, x: i32, y: i32) -> bool {
+            self.attempts.push((x, y, 0, false));
+            self.succeed
+        }
+        fn shift_tall_gate(&mut self, x: i32, y: i32, _closing: bool) -> bool {
+            self.attempts.push((x, y, 0, true));
+            self.succeed
+        }
     }
 
     /// `NPC.cs:52765-52784` — the resting-spot test: exact tile by day,
@@ -3938,8 +4045,9 @@ mod tests {
                 w.tiles[i] = Tile::default();
             }
         }
-        // Re-block only the home and −1 columns.
-        for x in 58..=60 {
+        // Re-block only the home and −1 columns' OWN tiles (58/59):
+        // the +1 try probes (60..62), which must stay clear.
+        for x in 58..=59 {
             for y in 117..=119 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile { kind: 1, ..Default::default() };
@@ -3972,37 +4080,72 @@ mod tests {
         assert!(!avoid3, "the home-bound walk may fall");
     }
 
-    /// `NPC.cs:53782` — the idle wander turn draws Next(80) ONLY inside
-    /// the ±25 band with localAI[3] == 0; the ±50 hard turn draws
-    /// nothing. Witness: the stream advances exactly one draw per
-    /// in-band idle tick.
+    /// `NPC.cs:53782` — the idle wander turn draws Next(80) inside the
+    /// ±25 band with localAI[3] == 0. The full-tick witness: the idle
+    /// arm's Next(80), then the social ladder's gates in else-if order
+    /// (Next(300) talk, Next(1800) gossip, Next(1200) party — the Guide
+    /// is not 208 and no party is up, so the gate's BODY is skipped but
+    /// the DRAW happens — Next(600) bartender, Next(1800) small-talk).
+    /// The attack-chance ladder draws NOTHING: the Guide's AttackType
+    /// is 1, so the type-0 else-if chain short-circuits before its
+    /// Next(num118), and the type-2/3 `if`s fail on AttackType.
     #[test]
     fn s1_d_3_town_the_idle_wander_draws_next_80_in_band() {
         let w = ground();
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         let npcs: Vec<(usize, TownNpcView)> = Vec::new();
         let e = env(&w, &players, &npcs);
         let mut n = guide(60.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
         n.ai[1] = 500.0; // the idle timer never expires this tick
         n.local_ai[3] = 0.0;
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
-        let mut rng = UnifiedRandom::new(99);
-        let mut witness = UnifiedRandom::new(99);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
-        // The only draw on this path is the Next(80) wander gate
-        // (day, no danger, in band, no talk, ai[1] > 0).
-        let _ = witness.next_max(80);
-        assert_eq!(rng.next_max(1_000_000), witness.next_max(1_000_000), "exactly one Next(80) drawn");
+        // A seed where every reached gate draws NON-zero (the bodies
+        // would add draws); the Next(80) wander result is free. The
+        // Guide's idle tick reaches EIGHT social gates: talk 300,
+        // gossip 1800, party 1200, bartender 600, small-talk 1800,
+        // tax 600, player-talk 1200 (the sit/interact gates need
+        // ai[0] == 1 and are skipped).
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            let _ = r.next_max(80);
+            if r.next_max(300) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(1200) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1200) != 0
+            {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
+        // The full draw sequence of this tick, in order.
+        let _ = witness.next_max(80); // the wander gate
+        let _ = witness.next_max(300); // the talk gate
+        let _ = witness.next_max(1800); // the gossip gate
+        let _ = witness.next_max(1200); // the party gate (drawn, body skipped)
+        let _ = witness.next_max(600); // the bartender gate
+        let _ = witness.next_max(1800); // the small-talk gate
+        let _ = witness.next_max(600); // the tax gate (drawn, type gate fails)
+        let _ = witness.next_max(1200); // the player-talk gate
+        assert_eq!(rng.next_max(1_000_000), witness.next_max(1_000_000), "the full-tick stream matches");
     }
 
     /// `NPC.cs:53688` — the night go-home walk draws Next(200) and
     /// faces the home; `:53795` the walk's good-rest return draws
-    /// Next(200) and sets localAI[3] = 60.
+    /// Next(200) and sets localAI[3] = 60. The player stands ON the
+    /// resting spot so the teleport-home block (`:53423`) refuses.
     #[test]
     fn s1_d_3_town_the_night_schedule_walks_home_then_rests() {
         let w = ground();
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         let npcs: Vec<(usize, TownNpcView)> = Vec::new();
         let mut e = env(&w, &players, &npcs);
         e.day_time = false; // night → flag = true
@@ -4010,19 +4153,23 @@ mod tests {
         let mut n = guide(40.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
         n.local_ai[3] = 0.0;
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
         let mut rng = UnifiedRandom::new(5);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
         assert_eq!(n.ai[0], 1.0, "the night idle starts the go-home walk");
         assert_eq!(n.facing, 1, "home is to the right");
         let mut witness = UnifiedRandom::new(5);
         assert_eq!(n.ai[1], 200.0 + witness.next_max(200) as f32);
         // At home: the walk arm returns to idle with localAI[3] = 60.
+        // wet = true silences the social ladder (flag31 needs !wet), so
+        // the tick's ONLY draw is the good-rest Next(200).
         let mut n2 = guide(60.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
         n2.ai[0] = 1.0;
         n2.ai[1] = 100.0;
+        n2.wet = true;
         let mut rng2 = UnifiedRandom::new(6);
-        town_npc_ai(&mut n2, &e, stats(), &mut door, 0, &mut rng2, &mut out);
+        town_npc_ai(&mut n2, &e, stats(), &mut door, &mut doors, 0, &mut rng2, &mut out);
         assert_eq!(n2.ai[0], 0.0);
         assert_eq!(n2.local_ai[3], 60.0);
         let mut witness2 = UnifiedRandom::new(6);
@@ -4035,7 +4182,7 @@ mod tests {
     #[test]
     fn s1_d_3_town_the_left_walk_keeps_the_clamp_quirk() {
         let w = ground();
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         let npcs: Vec<(usize, TownNpcView)> = Vec::new();
         let e = env(&w, &players, &npcs);
         let mut n = guide(60.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
@@ -4044,19 +4191,21 @@ mod tests {
         n.facing = -1;
         n.vx = -0.99; // one accel step from the −1 cap
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
         let mut rng = UnifiedRandom::new(3);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
         // −0.99 − 0.07 = −1.06, NOT clamped back to −1 (the quirk).
         assert!(n.vx < -1.0, "the left accel overshoots the cap: {}", n.vx);
     }
 
     /// `NPC.cs:54043-54078` — the door gate draws Next(10) whenever the
     /// door tile matches (the `|` is non-short-circuiting: the draw
-    /// happens even in the rain), and the open requests carry the
-    /// own-direction / reverse / tall-gate order.
+    /// happens even in the rain). The three open attempts run in C#
+    /// order (own direction, reverse, tall gate); the first success
+    /// arms the latch + ai[1] += 80, the all-fail flips the direction.
     #[test]
-    fn s1_d_3_town_the_door_open_requests_and_the_next_10() {
+    fn s1_d_3_town_the_door_open_attempts_and_the_next_10() {
         let mut w = ground();
         // A closed door (10) at (61, 117..119): the probe tile5 row.
         for y in 117..=119 {
@@ -4064,28 +4213,51 @@ mod tests {
             w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: ((y - 117) * 18) as i16, ..Default::default() };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         let npcs: Vec<(usize, TownNpcView)> = Vec::new();
         let e = env(&w, &players, &npcs);
-        // The Guide walks right at the door: x such that num23 = 61.
+        // The Guide walks right at the door: num23 = (x+9+15)/16 = 61.
         let mut n = guide(61.0 * 16.0 - 9.0 - 15.0 + 1.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
         n.ai[0] = 1.0;
         n.ai[1] = 500.0;
         n.facing = 1;
         n.vx = 0.5;
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
-        let mut rng = UnifiedRandom::new(11);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
-        let opens: Vec<_> = out.door_requests.iter().filter(|r| !r.closing).collect();
-        if !opens.is_empty() {
-            assert_eq!(opens.len(), 3, "the three open attempts in order");
-            assert_eq!(opens[0].direction, n.facing);
-            assert_eq!(opens[1].direction, -n.facing);
-            assert!(opens[2].tall_gate);
-            assert!(door.close_door);
-            assert_eq!((door.door_x, door.door_y), (61, 117));
+        // A seed whose Next(10) == 0 (the door gate fires in daytime).
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(10) == 0 {
+                break;
+            }
+            seed += 1;
         }
+        let mut rng = UnifiedRandom::new(seed);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
+        assert_eq!(doors.attempts.len(), 3, "the three open attempts in order");
+        assert_eq!(doors.attempts[0], (61, 117, 1, false), "own direction first");
+        assert_eq!(doors.attempts[1], (61, 117, -1, false), "reverse second");
+        assert_eq!(doors.attempts[2], (61, 117, 0, true), "tall gate third");
+        // All failed: the direction flips, the latch stays clear.
+        assert_eq!(n.facing, -1, "the all-fail flip");
+        assert!(!door.close_door);
+        // The success path: the latch arms and ai[1] += 80.
+        let mut n2 = guide(61.0 * 16.0 - 9.0 - 15.0 + 1.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
+        n2.ai[0] = 1.0;
+        n2.ai[1] = 500.0;
+        n2.facing = 1;
+        n2.vx = 0.5;
+        let mut door2 = TownDoorLatch::default();
+        let mut doors2 = FakeDoors { attempts: Vec::new(), succeed: true };
+        let mut rng2 = UnifiedRandom::new(seed);
+        town_npc_ai(&mut n2, &e, stats(), &mut door2, &mut doors2, 0, &mut rng2, &mut out);
+        assert_eq!(doors2.attempts.len(), 1, "the first success stops the chain");
+        assert!(door2.close_door);
+        assert_eq!((door2.door_x, door2.door_y), (61, 117));
+        assert_eq!(n2.ai[1], 579.0, "500 − 1 (the walk decrement) + 80");
+        assert_eq!(n2.facing, 1, "no flip on success");
     }
 
     /// `NPC.cs:55231-55256` — the talk latch: the Next(300) gate, the
@@ -4094,7 +4266,7 @@ mod tests {
     #[test]
     fn s1_d_3_town_the_talk_latch_draws_and_writes_the_partner() {
         let w = ground();
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         // A talkable Merchant 40 px to the right, idle, grounded.
         let partner = TownNpcView {
             net_id: 17,
@@ -4126,18 +4298,20 @@ mod tests {
         let mut n = guide(60.0 * 16.0, 120.0 * 16.0 - 40.0, Some((60, 120)));
         n.ai[1] = 500.0;
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
-        // Find a seed whose Next(300) == 0 (the talk gate fires).
+        // Find a seed whose Next(80) != 0 (the idle wander gate must
+        // not add a draw) and whose Next(300) == 0 (the talk gate fires).
         let mut seed = 0;
         loop {
             let mut r = UnifiedRandom::new(seed);
-            if r.next_max(300) == 0 {
+            if r.next_max(80) != 0 && r.next_max(300) == 0 {
                 break;
             }
             seed += 1;
         }
         let mut rng = UnifiedRandom::new(seed);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
         assert_eq!(n.ai[0], 3.0, "the talk state");
         assert_eq!(n.ai[2], 1.0, "the partner slot");
         assert_eq!(n.facing, 1, "the partner is to the right");
@@ -4151,8 +4325,10 @@ mod tests {
             }
             _ => panic!("expected the talk write"),
         }
-        // The duration witness: Next(2) then the branch draw.
+        // The duration witness: Next(80) (idle wander), Next(300) (the
+        // talk gate), Next(2) then the branch draw.
         let mut witness = UnifiedRandom::new(seed);
+        let _ = witness.next_max(80);
         let _ = witness.next_max(300);
         let dur = 420.0 * if witness.next_max(2) != 0 {
             witness.next_range(1, 3) as f32
@@ -4230,7 +4406,7 @@ mod tests {
     #[test]
     fn s1_d_3_town_the_attack_cooldown_draws_twice() {
         let w = ground();
-        let players: Vec<TownPlayer> = Vec::new();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
         let npcs: Vec<(usize, TownNpcView)> = Vec::new();
         let e = env(&w, &players, &npcs);
         // The Merchant (17): attack 10, cooldown 60 + Next(60).
@@ -4240,15 +4416,40 @@ mod tests {
         n.ai[1] = 1.0; // expires this tick (after the decrement)
         n.local_ai[3] = 0.0; // not the fire tick (10)
         let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
         let mut out = TownOutputs::default();
-        let mut rng = UnifiedRandom::new(21);
-        town_npc_ai(&mut n, &e, stats(), &mut door, 0, &mut rng, &mut out);
+        // A seed whose Next(60) cooldown draws are both non-zero (the
+        // localAI[1] decrement then suppresses flag32, so the attack
+        // ladder draws nothing) and whose SEVEN social gates all draw
+        // non-zero (the player-talk gate at Next(1200) would otherwise
+        // fire and overwrite ai[1]).
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            let a = r.next_max(60);
+            let b = r.next_max(60);
+            if a != 0
+                && b != 0
+                && r.next_max(300) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(1200) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1200) != 0
+            {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
         assert_eq!(n.ai[0], 0.0);
-        let mut witness = UnifiedRandom::new(21);
+        let mut witness = UnifiedRandom::new(seed);
         let t1 = 60.0 + witness.next_max(60) as f32;
         let half = 30 + witness.next_max(60);
         assert_eq!(n.ai[1], t1);
-        assert_eq!(n.local_ai[1], half as f32);
+        assert_eq!(n.local_ai[1], half as f32 - 1.0, "the social ladder's decrement");
         assert_eq!(n.local_ai[3], half as f32);
     }
 
