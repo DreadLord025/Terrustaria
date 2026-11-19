@@ -644,10 +644,63 @@ fn liquid_place(def: &TileObjectDef, tile: &Tile) -> bool {
     }
 }
 
+/// `Main.tileWaterDeath` (`Main.cs` `tileWaterDeath` assignments, 10 ids:
+/// `:8061-8067` the 215/4/51/697/93/98/552 block, `:8309` the 405, `:9504` the
+/// 646, `:9508` the 372). A literal extraction like `torch.rs::NO_ATTACH` —
+/// `tools/GenTileData` emits `TileID.Sets` only, not the `Main.`-prefixed
+/// death tables. Read by the global `LiquidPlace` fallback
+/// (`TileObjectData.cs:5060-5067`).
+const TILE_WATER_DEATH: &[u16] = &[215, 4, 51, 697, 93, 98, 552, 405, 646, 372];
+
+/// `TileObjectData.CheckLiquidPlacement` (`TileObjectData.cs:5039-5042`):
+/// `GetTileData(type, style)?.LiquidPlace(checkTile) ?? LiquidPlace(type,
+/// checkTile)`. A registered def answers through its own `LiquidPlace`
+/// ([`liquid_place`]); an unregistered kind falls back to the global
+/// `LiquidPlace` (`:5044-5071`) — lava refuses a `tileLavaDeath` kind, any
+/// other liquid refuses a `tileWaterDeath` kind, an empty cell always passes.
+/// Read by `Player.PlaceThing_Tiles_IsBlockedByLava` (`Player.cs:41498`).
+pub fn check_liquid_placement(kind: u16, style: i32, tile: &Tile) -> bool {
+    // `GetTileData(type, style)` returns null on a negative style
+    // (`TileObjectData.cs:5129` throws → the `?.` yields null), so the global
+    // fallback answers; guard before `get_tile_data`'s debug_assert.
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                return liquid_place(td, tile);
+            }
+        }
+    }
+    // :5050-5069 — the global fallback.
+    if tile.liquid > 0 {
+        match tile.liquid_kind() {
+            crate::tile::LiquidKind::Lava => !crate::tiledata::TILE_LAVA_DEATH.has(kind),
+            _ => !TILE_WATER_DEATH.contains(&kind),
+        }
+    } else {
+        true
+    }
+}
+
 /// Membership in [`TILE_CUT`] — read by the placement cut rule
 /// (`Player.cs:41303`) and the door sweep (`WorldGen.cs:37704-37717`).
 pub fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
+}
+
+/// `Player.PlaceThing_IsReplaceableBlock` (`Player.cs:39753-39760`): a
+/// `tileCut` target is replaceable EXCEPT the two named exemptions (484,
+/// 711); the drip-tile band 373-375 plus 461/709 is always replaceable;
+/// everything else answers `TileID.Sets.BreakableWhenPlacing`. Read by the
+/// lava gate's OR chain (`Player.cs:39743`).
+pub fn is_replaceable_block(kind: u16) -> bool {
+    if (tile_cut(kind) && kind != 484 && kind != 711)
+        || (373..=375).contains(&kind)
+        || kind == 461
+        || kind == 709
+    {
+        return true;
+    }
+    breakable_when_placing(kind)
 }
 
 /// Membership in [`BREAKABLE_WHEN_PLACING`] (`Player.cs:41303`).

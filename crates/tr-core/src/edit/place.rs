@@ -110,6 +110,9 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     if kind == 380 {
         return place_planter_box(world, x, y, style);
     }
+    if kind == 19 {
+        return place_platform(world, x, y, style);
+    }
     // Legacy single-tile route (`WorldGen.PlaceTile`).
     place_tile(world, x, y, kind)
 }
@@ -199,6 +202,33 @@ fn place_planter_box(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     cell.frame_y = (18 * style) as i16;
     touch(world, x, y);
     ensure_frame_important(world, 380); // `Main.cs:7632`
+    after_edit(world, x, y);
+    true
+}
+
+/// `WorldGen.PlaceTile` case 19 (`WorldGen.cs:60221-60225`): the platform
+/// legacy write — `frameY = 18 * style`, active, type 19. Like the planter
+/// box, the C# case touches no other field, so `frameX` stays as the cell had
+/// it. Tile 19 is registered in `TileObjectData` but `CustomPlace`-false
+/// (`registry.rs` D_19), so vanilla routes it through this legacy branch, NOT
+/// `TileObject.Place`. `Main.tileFrameImportant[19]` is a boot static
+/// (`Main.cs:7654`): mirroring it keeps the style's `frameY` through the
+/// re-frame (the generic block chain would otherwise clobber it with a
+/// merge-frame — the pre-fix defect, the platform drew as a plain block).
+fn place_platform(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let Some(prev) = world.tile(x, y).copied() else {
+        return false;
+    };
+    if prev.active() || prev.wall == WALL_UNBREAKABLE {
+        return false;
+    }
+    let i = world.index(x, y);
+    let cell = &mut world.tiles[i];
+    cell.flags |= crate::tile::FLAG_ACTIVE;
+    cell.kind = 19;
+    cell.frame_y = (18 * style) as i16;
+    touch(world, x, y);
+    ensure_frame_important(world, 19); // `Main.cs:7654`
     after_edit(world, x, y);
     true
 }
@@ -630,6 +660,37 @@ mod tests {
         assert!(!place_item_tile(&mut w, 10, 19, 380, 0, 1));
         assert_eq!(w.revision, before, "a refused placement writes nothing");
         assert!(w.tile(10, 19).unwrap().active() && w.tile(10, 19).unwrap().kind == 1);
+    }
+
+    /// S1-P-i32: `WorldGen.PlaceTile` case 19 (`WorldGen.cs:60221-60225`) —
+    /// the platform legacy write is `frameY = 18 * style`, type 19, with
+    /// `Main.tileFrameImportant[19]` mirrored (`Main.cs:7654`). The pre-fix
+    /// port fell through to the generic single-tile write, which left the
+    /// frames at the `-1` sentinel and never marked the kind frame-important,
+    /// so the re-frame drew the platform as a plain merged block. Written,
+    /// not run (code-only mode).
+    #[test]
+    fn s1_p_i32_platform_items_write_the_style_frame_y() {
+        // Tile 19 is registered but `CustomPlace`-false: the legacy route.
+        assert!(crate::tileobject::def_for_tile(19).is_some());
+        assert!(!crate::tileobject::routes_through_tile_object(19, 0));
+        for style in [0i32, 1, 2, 5] {
+            let mut w = object_world();
+            assert!(
+                place_item_tile(&mut w, 10, 19, 19, style, 1),
+                "style {style}"
+            );
+            let t = *w.tile(10, 19).unwrap();
+            assert!(t.active() && t.kind == 19, "style {style}");
+            assert_eq!(t.frame_y, (18 * style) as i16, "style {style} frameY");
+            assert!(w.frame_important[19], "frame_important[19] mirrored");
+        }
+        // An occupied cell refuses and writes nothing (the case-19 guard).
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 1);
+        let before = w.revision;
+        assert!(!place_item_tile(&mut w, 10, 19, 19, 0, 1));
+        assert_eq!(w.revision, before, "a refused placement writes nothing");
     }
 
     #[test]

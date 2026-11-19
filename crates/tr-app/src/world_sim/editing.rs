@@ -3341,22 +3341,73 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     {
         return false;
     }
-    if let Some(p) = &app.player {
+    // `Collision.EmptyTile` (`Collision.cs:1359-1381`) — consulted by
+    // `WorldGen.PlaceTile` only for SOLID placements (`WorldGen.cs:59373`:
+    // `forced || EmptyTile(i, j) || !tileSolid[num] || …`); a non-solid tile
+    // bypasses the overlap entirely (a torch stands inside the player). The
+    // cell refuses when any live player OR NPC hitbox intersects it. The
+    // player arm keeps the port's 20x42 box; the NPC arm reads each NPC's own
+    // `size()` box (`NPC.base.width/height`, the `SetDefaults_ForNetId` scale).
+    // The C# `!dead && !ghost` player filters fold to the port's live-player
+    // check (no hardcore ghosts / PVP deaths — `player.rs::ghost_like`).
+    let held_solid = registry::place_tile(app.inventory[app.selected].kind)
+        .is_some_and(|k| td::TILE_SOLID.has(k));
+    if held_solid {
         let (x0, y0) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
-        if x0 < p.x + crate::player::WIDTH
-            && x0 + TILE_PX > p.x
-            && y0 < p.y + crate::player::HEIGHT
-            && y0 + TILE_PX > p.y
-        {
-            return false;
+        if let Some(p) = &app.player {
+            if x0 < p.x + crate::player::WIDTH
+                && x0 + TILE_PX > p.x
+                && y0 < p.y + crate::player::HEIGHT
+                && y0 + TILE_PX > p.y
+            {
+                return false;
+            }
+        }
+        for n in &app.npcs {
+            let (nw, nh) = n.size();
+            if x0 < n.x + nw && x0 + TILE_PX > n.x && y0 < n.y + nh && y0 + TILE_PX > n.y {
+                return false;
+            }
         }
     }
-    [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
-        app.world.tile(tx + dx, ty + dy).is_some_and(|n| {
-            n.wall != 0
-                || (n.active() && (n.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(n.kind))
-        })
-    })
+    // The default adjacency arm of `BlockPlacementForAssortedThings`
+    // (`Player.cs:41247-41261`): a cardinal neighbour supports the placement
+    // when it is active and (`tileSolid` OR `TileID.Sets.IsBeam` OR `tileRope`
+    // OR the minecart track 314), or it carries any wall; failing all four
+    // neighbours, the target cell's OWN wall > 0 still accepts (:41257-41260).
+    let neighbour_supports = |n: &tr_core::tile::Tile| {
+        n.wall != 0
+            || (n.active()
+                && (td::TILE_SOLID.has(n.kind)
+                    || td::SET_IS_BEAM.has(n.kind)
+                    || td::TILE_ROPE.has(n.kind)
+                    || n.kind == 314))
+    };
+    if [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        .iter()
+        .any(|&(dx, dy)| app.world.tile(tx + dx, ty + dy).is_some_and(neighbour_supports))
+    {
+        return true;
+    }
+    if t.wall > 0 {
+        return true;
+    }
+    // The platform fallback (`Player.cs:41332-41345`): when the default arm
+    // refused a platform-placing item, ANY active tile in the 3x3 around the
+    // target accepts (the diagonals included — the platform hangs off a
+    // corner). The C# scans `k = x-1..=x+1, l = y-1..=y+1`; the target itself
+    // is inactive (checked above), so it contributes nothing.
+    let held_kind = registry::place_tile(app.inventory[app.selected].kind);
+    if held_kind.is_some_and(|k| td::SET_PLATFORMS.has(k)) {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if app.world.tile(tx + dx, ty + dy).is_some_and(|n| n.active()) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The item gate shared by both placement routes (the head of `can_place` and
@@ -3365,6 +3416,20 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
 /// unit-testable without the app harness.
 fn item_gate_blocks(kind: u16, count: u32) -> bool {
     count == 0 || registry::is_weapon(kind) || kind == 80
+}
+
+/// `Player.PlaceThing_Tiles_IsBlockedByLava` (`Player.cs:41489-41504`): a
+/// target holding lava refuses a solid `createTile` outright (`tileSolid`),
+/// else it refuses when `TileObjectData.CheckLiquidPlacement` says no
+/// (`:41498`). A dry target never blocks. Free of `App` for unit witnesses.
+fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile::Tile) -> bool {
+    if target.liquid > 0 && target.liquid_kind() == tr_core::tile::LiquidKind::Lava {
+        if td::TILE_SOLID.has(create_tile) {
+            return true;
+        }
+        return !tr_core::tileobject::check_liquid_placement(create_tile, place_style, target);
+    }
+    false
 }
 
 /// The routing decision of `use_tile_item`: the legacy neighbour/overlap
@@ -3433,6 +3498,25 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
     // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
     let style = registry::place_style(held.kind);
+    // `PlaceThing_Tiles`' lava gate (`Player.cs:39743`): an inactive target in
+    // lava refuses a solid tile outright, and a non-solid tile whose
+    // `TileObjectData.CheckLiquidPlacement` refuses (`IsBlockedByLava`,
+    // `:41489-41504`) — unless the target is a replaceable block or the item
+    // is one of the grass/moss overrides (:39743's OR chain). The gate reads
+    // the target BEFORE the assorted cut rule, exactly as the C# evaluates it
+    // ahead of `TryPlacing`; a lava cell never carries a cuttable plant, so
+    // the ordering is observation-equivalent.
+    if let Some(target) = app.world.tile(tx, ty).copied() {
+        let grass_override = matches!(kind, 199 | 23 | 662 | 661 | 2 | 109 | 60 | 70 | 633)
+            || td::TILE_MOSS.has(kind);
+        if !target.active()
+            && !grass_override
+            && !tr_core::tileobject::is_replaceable_block(target.kind)
+            && is_blocked_by_lava(kind, style, &target)
+        {
+            return false;
+        }
+    }
     // The plant rules of `PlaceThing_Tiles_BlockPlacementForAssortedThings`
     // (`Player.cs:41036-41360`) run on the non-`TileObject` placement route
     // before the can-place chain — seeds (82) are forced onto that route by
@@ -7312,6 +7396,182 @@ mod tests {
             draws_after(seed, 1),
             "the crit's draw only"
         );
+    }
+
+    // ---- S1-P-i32: the tile-validity / adjacency census fixes --------------
+    //
+    // Witnesses for the three WRONGs the census found in the legacy
+    // placement pre-check (`can_place`) and the missing lava gate. Written,
+    // not run (code-only mode). Each pins the C# line it restores.
+
+    /// `Player.cs:41253` — the default adjacency arm accepts a neighbour that
+    /// is `tileSolid` OR `IsBeam` OR `tileRope` OR the minecart track 314.
+    /// The pre-fix port only read `tileSolid`, so a block could not be placed
+    /// against a rope / beam / track. Each support kind now accepts; a
+    /// non-solid, non-support neighbour (a torch 4) still refuses.
+    #[test]
+    fn s1_p_i32_adjacency_accepts_beam_rope_and_track_neighbours() {
+        // A rig with NO floor under the target and NO walls: the only support
+        // is the single neighbour we stage, so the verdict isolates the
+        // adjacency predicate. Target (10, 10); the neighbour sits at (11,10).
+        for (kind, label) in [
+            (124u16, "beam (IsBeam)"),
+            (213, "rope (tileRope)"),
+            (314, "minecart track"),
+            (1, "solid stone (the control)"),
+        ] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = World::new("adj".into(), 40, 40);
+            app.world.frame_important = vec![false; td::TILE_COUNT];
+            app.player = None; // no overlap gate
+            app.inventory[app.selected] = slot(2, 5); // dirt places tile 0 (solid)
+            set_tile(&mut app.world, 11, 10, kind);
+            assert!(can_place(&app, 10, 10), "{label} must support the block");
+        }
+        // A torch (4) is none of solid/beam/rope/track: it refuses.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("adj".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        set_tile(&mut app.world, 11, 10, 4);
+        assert!(!can_place(&app, 10, 10), "a torch is no adjacency support");
+    }
+
+    /// `Player.cs:41257-41260` — when all four cardinal neighbours fail, the
+    /// target cell's OWN wall > 0 still accepts the placement. The pre-fix
+    /// port never read the target's wall.
+    #[test]
+    fn s1_p_i32_the_targets_own_wall_supports_placement() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("wall".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        // No neighbours at all; only the target's own background wall.
+        let i = app.world.index(10, 10);
+        app.world.tiles[i].wall = 2;
+        assert!(can_place(&app, 10, 10), "the cell's own wall accepts");
+        // Without the wall and without neighbours: refused.
+        app.world.tiles[i].wall = 0;
+        assert!(!can_place(&app, 10, 10), "no support at all refuses");
+    }
+
+    /// `Collision.EmptyTile` (`Collision.cs:1373-1379`) — an NPC hitbox over
+    /// the cell refuses a SOLID placement. The pre-fix port only checked the
+    /// player. The blue slime's 24x18 box (`npc/data.rs:2500`, scale 1.0)
+    /// covers the target cell.
+    #[test]
+    fn s1_p_i32_an_npc_over_the_cell_refuses_a_solid_block() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5); // solid dirt
+        // Floor below supports the target (10, 19); the slime sits on it.
+        let npc = Npc::new(NpcKind::Slime, 10.0 * TILE_PX, 19.0 * TILE_PX, 1, 0.0);
+        app.npcs.push(npc);
+        assert!(!can_place(&app, 10, 19), "the slime's box refuses the block");
+        // Move the slime clear: the same cell now places.
+        app.npcs[0].x = 30.0 * TILE_PX;
+        assert!(can_place(&app, 10, 19), "a clear cell accepts");
+    }
+
+    /// `WorldGen.cs:59373` — `EmptyTile` is consulted only for SOLID
+    /// placements (`forced || EmptyTile || !tileSolid[num] || …`); a
+    /// non-solid tile bypasses the overlap. A torch (tile 4, non-solid)
+    /// placed into the player's own cell is NOT refused by the overlap gate
+    /// (the pre-fix port refused every kind over the player).
+    #[test]
+    fn s1_p_i32_a_non_solid_tile_bypasses_the_player_overlap() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // Park the player so its 20x42 box covers the target (10, 19).
+        let mut p = Player::spawn(&app.world);
+        p.x = 10.0 * TILE_PX;
+        p.y = 18.0 * TILE_PX;
+        app.player = Some(p);
+        // Torch item 8 places tile 4 (non-solid): the overlap gate stands down.
+        app.inventory[app.selected] = slot(8, 5);
+        assert!(can_place(&app, 10, 19), "a torch is not blocked by the player box");
+        // The same cell with a SOLID block item IS refused.
+        app.inventory[app.selected] = slot(2, 5);
+        assert!(!can_place(&app, 10, 19), "a solid block is blocked by the player box");
+    }
+
+    /// `Player.cs:41489-41504` (`IsBlockedByLava`) + `:39743` — a solid tile
+    /// refuses an inactive lava cell outright; a non-solid tile answers
+    /// `CheckLiquidPlacement`. The pre-fix port had no lava gate at all.
+    #[test]
+    fn s1_p_i32_lava_refuses_solid_blocks_and_water_death_torches() {
+        // The pure predicate: a solid createTile in lava always blocks.
+        let mut lava = tr_core::tile::Tile::default();
+        lava.liquid = 200;
+        lava.set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        assert!(is_blocked_by_lava(0, 0, &lava), "dirt (solid) in lava blocks");
+        assert!(is_blocked_by_lava(1, 0, &lava), "stone (solid) in lava blocks");
+        // A dry cell never blocks.
+        let dry = tr_core::tile::Tile::default();
+        assert!(!is_blocked_by_lava(0, 0, &dry), "a dry cell never blocks");
+        // Torch (4) is non-solid and `tileWaterDeath`/`lavaDeath`: the global
+        // LiquidPlace fallback refuses it in lava (style 0, no sub-tile).
+        assert!(is_blocked_by_lava(4, 0, &lava), "a plain torch refuses lava");
+        // The full item route: a dirt stack over a lava cell refuses and keeps
+        // the item; the cell stays empty.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].liquid = 200;
+        app.world.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        assert!(!use_tile_item(&mut app, 10, 19), "lava refuses the dirt");
+        assert_eq!(app.inventory[app.selected].count, 5, "the item is kept");
+        assert!(!app.world.tile(10, 19).unwrap().active(), "nothing written");
+    }
+
+    /// `Player.cs:39753-39760` (`PlaceThing_IsReplaceableBlock`) — the
+    /// replaceable-block predicate the lava gate's OR chain reads: a tileCut
+    /// target is replaceable except 484/711, the drip band 373-375 + 461/709
+    /// always, else `BreakableWhenPlacing`.
+    #[test]
+    fn s1_p_i32_replaceable_block_matches_the_csharp_predicate() {
+        use tr_core::tileobject::is_replaceable_block;
+        assert!(is_replaceable_block(3), "grass is tileCut");
+        assert!(is_replaceable_block(82), "a herb is tileCut");
+        assert!(!is_replaceable_block(484), "484 is the named tileCut exemption");
+        assert!(!is_replaceable_block(711), "711 is the named tileCut exemption");
+        for k in [373u16, 374, 375, 461, 709] {
+            assert!(is_replaceable_block(k), "drip {k} is always replaceable");
+        }
+        assert!(is_replaceable_block(186), "a large pile is BreakableWhenPlacing");
+        assert!(!is_replaceable_block(1), "stone is not replaceable");
+    }
+
+    /// `Player.cs:41332-41345` — the platform fallback: when the default
+    /// adjacency arm refuses, ANY active tile in the 3x3 (diagonals included)
+    /// accepts a platform-placing item. A torch neighbour (4) is no default
+    /// support, but its diagonal presence still carries the platform. The
+    /// pre-fix port had no fallback, so the platform refused.
+    #[test]
+    fn s1_p_i32_platform_fallback_accepts_any_3x3_active_tile() {
+        // Wood Platform item 94 places tile 19 (a SET_PLATFORMS member).
+        assert_eq!(registry::place_tile(94), Some(19));
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("plat".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(94, 5);
+        // A torch at the DIAGONAL (11, 11): no cardinal support, no wall.
+        set_tile(&mut app.world, 11, 11, 4);
+        assert!(can_place(&app, 10, 10), "the diagonal torch carries the platform");
+        // The same diagonal with a BLOCK item (dirt, no fallback) refuses.
+        app.inventory[app.selected] = slot(2, 5);
+        assert!(!can_place(&app, 10, 10), "a block gets no platform fallback");
+        // Clear the torch: even the platform now refuses (no 3x3 support).
+        let i = app.world.index(11, 11);
+        app.world.tiles[i] = tr_core::tile::Tile::default();
+        app.inventory[app.selected] = slot(94, 5);
+        assert!(!can_place(&app, 10, 10), "no support at all refuses the platform");
     }
 }
 
