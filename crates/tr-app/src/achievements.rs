@@ -911,7 +911,8 @@ mod tests {
         // conditions, a wood pickup closes TIMBER's ten-item row.
         m.notify(CondKind::NpcKilled(13));
         m.notify(CondKind::ItemPickup(9));
-        let path = std::env::temp_dir().join("tr-ach-test.trdat");
+        let dir = crate::test_world_helpers::test_scratch("ach-save-roundtrip");
+        let path = dir.join("tr-ach-test.trdat");
         save(&path, &m).unwrap();
         let mut fresh = AchievementManager::registry();
         load(&path, &mut fresh);
@@ -937,6 +938,6 @@ mod tests {
                 .completed,
             false
         );
-        std::fs::remove_file(&path).unwrap();
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }
