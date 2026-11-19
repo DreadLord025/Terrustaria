@@ -2431,6 +2431,81 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `timeLeft *= 5` and the idStatic-12 pair (`:3526-3527`,
             // the state group below — NOT the local pair).
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 12, 0, 1.0)),
+            // ===== S1-P-i25: the summon-staff minions' missing rows =====
+            // The slot-counting / sacrifice machinery needs every summon
+            // staff's minion kind to carry its `SetDefaults` slice; these
+            // rows were absent, so the staves' spawns declined and the
+            // budget never booked them. The AI machines stay the documented
+            // deferrals (the aiStyle-26/54/156/164/169/206 dispatch no-ops).
+            // `Projectile.cs:2791-2813` (191-194, the Pygmy Staff's four):
+            // 18x18, aiStyle 26, penetrate -1, `timeLeft *= 5`, a full slot;
+            // the 192/193/194 scale ladder (1.025/1.05/1.075).
+            191 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            192 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.025)),
+            193 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.05)),
+            194 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.075)),
+            // `Projectile.cs:4099-4111` (317, the Raven Staff): 28x28,
+            // aiStyle 54, penetrate 1, `timeLeft *= 5`, a full slot, the
+            // LOCAL pair (10).
+            317 => (28.0, 28.0, 54, 1, 18000, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:4742-4754` (390-392, the Spider Staff's trio):
+            // 30x30, aiStyle 26, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the idStatic pair (15).
+            390 | 391 | 392 => (30.0, 30.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 15, 0, 1.0)),
+            // `Projectile.cs:7777-7792` (755, the Sanguine Staff's bat):
+            // 10x10, aiStyle 156, penetrate -1, `timeLeft *= 5`, a full slot,
+            // tileCollide false, ignoreWater, the LOCAL pair (-1).
+            755 => (10.0, 10.0, 156, -1, 18000, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // `Projectile.cs:8067-8081` (831, the Storm Tiger Staff's gem):
+            // 10x10, aiStyle 164, penetrate -1, `timeLeft = 60` (NOT *5), a
+            // full slot, tileCollide false, ignoreWater, hide.
+            831 => (10.0, 10.0, 164, -1, 60, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:8284-8300` (864, the Smolstar): 10x10, aiStyle
+            // 169, penetrate -1, `timeLeft = 60`, a full slot, tileCollide
+            // false, ignoreWater, the LOCAL pair (10), armorPenetration 25
+            // (no port field — dropped).
+            864 => (10.0, 10.0, 169, -1, 60, 0, false, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:8922-8940` (946, the Empress Blade): 10x10,
+            // aiStyle 156, penetrate -1, `timeLeft *= 5`, a full slot,
+            // tileCollide false, ignoreWater, the LOCAL pair (-1), scale
+            // 0.75, manualDirectionChange/drawLayer (render-side, dropped).
+            946 => (10.0, 10.0, 156, -1, 18000, 0, false, false, false, (true, -1, false, -1, 0, 0.75)),
+            // `Projectile.cs:8969-8983` (951, the Flinx Staff): 26x26,
+            // aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot, the
+            // idStatic pair (10), decidesManualFallThrough.
+            951 => (26.0, 26.0, 67, -1, 18000, 0, true, false, false, (false, -2, true, 10, 0, 1.0)),
+            // `Projectile.cs:9182-9196` (970, Abigail's counter): 10x10,
+            // aiStyle 164, penetrate -1, `timeLeft = 60`, a full slot,
+            // tileCollide false, ignoreWater, hide.
+            970 => (10.0, 10.0, 164, -1, 60, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:9667-9680` (1022, the Dead Cells Mushroom Boi):
+            // 20x30, aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the LOCAL pair (18), decidesManualFallThrough.
+            1022 => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, (true, 18, false, -1, 0, 1.0)),
+            // `Projectile.cs:10195-10209` (1093, the Palworld Cattiva) /
+            // `:10362-10376` (1112, the Trusty Cattiva): 14x22, aiStyle 67,
+            // penetrate -1, `timeLeft *= 5`, a full slot, the LOCAL pair (9),
+            // decidesManualFallThrough, alpha 255.
+            1093 | 1112 => (14.0, 22.0, 67, -1, 18000, 0, true, false, false, (true, 9, false, -1, 255, 1.0)),
+            // `Projectile.cs:10210-10221` (1094, the Palworld Foxsparks) /
+            // `:10377-10388` (1113, the Trusty Foxsparks): 18x18, aiStyle 26,
+            // penetrate -1, `timeLeft *= 5`, a full slot, alpha 255.
+            1094 | 1113 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:10450-10463` (1118, the Clay Pot Minion): 14x22,
+            // aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot, the
+            // LOCAL pair (30), decidesManualFallThrough.
+            1118 => (14.0, 22.0, 67, -1, 18000, 0, true, false, false, (true, 30, false, -1, 0, 1.0)),
+            // `Projectile.cs:10464-10478` (1119, the Forbidden Minion):
+            // 14x22, aiStyle 206, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the LOCAL pair (30), tileCollide false, ignoreWater.
+            1119 => (14.0, 22.0, 206, -1, 18000, 0, false, false, false, (true, 30, false, -1, 0, 1.0)),
+            // `Projectile.cs:6729-6753` (625-628, the Stardust Dragon chain):
+            // 24x24, aiStyle 121, penetrate -1, `timeLeft *= 5`, tileCollide
+            // false, ignoreWater, alpha 255, the LOCAL pair (7); the 626/627
+            // BODY segments carry 0.5 slots, the 625 head / 628 tail 0 (the
+            // slot block excludes them, `:16709`). The chain AI is excluded.
+            625 | 628 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
+            626 | 627 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
             // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
             // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
             // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
@@ -2804,6 +2879,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
             (true, false, 0.0)
         }
+        // S1-P-i25: the summon-staff minions' missing identification rows —
+        // every one a full slot (`minionSlots = 1f`, the cited `SetDefaults`
+        // arms), the dragon BODY segments (626/627) half a slot
+        // (`Projectile.cs:6735-6738`), the head/tail (625/628) zero (the slot
+        // block excludes them, `:16709`).
+        191 | 192 | 193 | 194 | 317 | 390 | 391 | 392 | 755 | 831 | 864 | 946 | 951
+        | 970 | 1022 | 1093 | 1094 | 1112 | 1113 | 1118 | 1119 => (true, false, 1.0),
+        625 | 628 => (true, false, 0.0),
+        626 | 627 => (true, false, 0.5),
         FROST_HYDRA | QUEEN_SPIDER | MOONLORD_TURRET | RAINBOW_CRYSTAL | FLAME_BURST_TOWER_1
         | FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 | BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2
         | BALLISTRA_TOWER_3 | LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3
@@ -2905,6 +2989,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (AI_026 slice C; its wet-swim arm `:64475-64485` is a
                     // live C# branch the port folds dry with the wet flags).
                     | SLIME_MINION
+                    // S1-P-i25: the new aiStyle-26/54/67 minion rows set no
+                    // ignoreWater either — the pygmies (`:2791-2813`), the
+                    // raven (`:4099-4111`), the spiders (`:4742-4754`), the
+                    // foxsparks (`:10210-10221`/`:10377-10388`), the flinx
+                    // (`:8969-8983`), the mushroom boi (`:9667-9680`), the
+                    // cattivas (`:10195-10209`/`:10362-10376`) and the clay
+                    // pot (`:10450-10463`).
+                    | 191 | 192 | 193 | 194 | 317 | 390 | 391 | 392 | 1094 | 1113
+                    | 951 | 1022 | 1093 | 1112 | 1118
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
@@ -2943,6 +3036,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             kind,
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+                // S1-P-i25: the new aiStyle-67 rows' `decidesManualFallThrough`
+                // — the flinx (`:8980`), the mushroom boi (`:9679`), the
+                // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
+                | 951 | 1022 | 1093 | 1112 | 1118
         ),
     })
 }
@@ -3079,6 +3176,42 @@ pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
     831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625, 626, 627, 628,
 ];
+
+/// `Main.projPet` (`Main.cs:8728-8852`): the projectile ids the game treats as
+/// pets/minions for the use-path gates — `FreeUpPetsAndMinions`'s call gate
+/// (`Player.cs:42778`) and the pet-buff shoot arm (`:48561`). Verbatim id list.
+pub const PROJ_PET: &[u16] = &[
+    492, 499, 653, 701, 703, 702, 764, 765, 319, 334, 324, 266, 313, 314, 317, 175, 111, 112, 127,
+    191, 192, 193, 194, 197, 198, 199, 200, 208, 209, 210, 211, 236, 268, 269, 353, 373, 375, 380,
+    387, 388, 390, 391, 392, 393, 394, 395, 1093, 1094, 1112, 1113, 1118, 1119, 398, 407, 423, 533,
+    613, 623, 625, 626, 627, 628, 755, 758, 759, 774, 815, 816, 817, 821, 825, 831, 833, 834, 835,
+    854, 858, 859, 860, 864, 875, 946, 951, 963, 970, 1022, 881, 882, 883, 884, 885, 886, 887, 888,
+    889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 934, 956, 957, 958, 959, 960,
+    994, 998, 1003, 1004, 1018, 1056, 1090, 1027, 1046, 1050, 1095, 1096,
+];
+
+/// `ProjectileID.Sets.LightPet` (`ProjectileID.cs:523`): the light-pet
+/// projectile ids — the other half of `FreeUpPetsAndMinions`'s call gate
+/// (`Player.cs:42778`, `LightPet[shoot] || projPet[shoot]`).
+pub const LIGHT_PET_PROJ: &[u16] = &[18, 500, 72, 87, 86, 211, 492, 650, 702, 891, 896, 895];
+
+/// `Player.ItemCheck_ApplyPetBuffs`' summon-staff rows (`Player.cs:53190-53281`):
+/// the item types whose use grants `AddBuff(sItem.buffType, 3600)` at the
+/// use-start (`:42766`), the minion-buff PERSISTENCE mechanism — the 3600-tick
+/// grant is what the keep-alive arm's 18000 refresh then pins while the minion
+/// lives (the `:42880` `item.buffTime` grant is 0 for the staves, a ghost).
+/// Verbatim: the 1157/1309/1802/2364/2365 single-item arms (`:53190`/`:53194`/
+/// `:53218`/`:53234`/`:53238`) plus the 24-case switch (`:53254-53277`).
+pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
+    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3249, 3474, 3531, 4269, 4273,
+    4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
+];
+
+/// `ProjectileID.Sets.MinionShot` (`ProjectileID.cs:431`): the minion attack
+/// shot kinds — `WhipTagEffect.CanRunHitEffects`'s gate
+/// (`GameContent/Items/WhipTagEffect.cs:81-85`) treats them as summon shots
+/// alongside the `minion`/`sentry` flags.
+pub const MINION_SHOT: &[u16] = &[374, 376, 389, 195, 408, 433, 614, 818, 1044, 1097, 1106, 1120];
 
 pub const SENTRY_SHOT: &[u16] = &[
     680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,

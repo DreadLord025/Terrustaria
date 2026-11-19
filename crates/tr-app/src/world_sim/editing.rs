@@ -281,6 +281,54 @@ fn limit_point_to_player_reachable_area(
     mid + off * scale
 }
 
+/// `WorldGen.SolidTile2` (`WorldGen.cs:70492-70509`) for the sentry landing
+/// scan: an active solid tile that is either a flat full block or a
+/// half-brick/top-slope platform, and not actuated off. A null (out-of-bounds)
+/// tile reads true (the C#'s `Main.tile[i, j] == null` arm).
+fn sentry_solid_tile2(world: &tr_core::World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && ((tr_core::tiledata::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope()))
+            || t.slope() == 0)
+        && !t.half_brick()
+        && !t.inactive()
+}
+
+/// `Player.PickSentryLandingSpot` (`Player.cs:49525-49543`): the sentry staff's
+/// spawn point — the cursor column scanned down to the first solid row (the
+/// `SolidTile2` three-column test), one row above it, at the cursor's exact X
+/// and `row * 16 - 24`. The 3571/3569/5463 staves (the Rainbow Crystal / Moon
+/// Lord turret / Dead Cells barnacle) skip the scan and land at the cursor row
+/// (`num` true). `gravDir` folds to 1 (no gravity potion in the port).
+fn pick_sentry_landing_spot(
+    world: &tr_core::World,
+    item_type: u16,
+    cursor: Vec2,
+) -> (f32, f32) {
+    let skip_scan = item_type == 3571 || item_type == 3569 || item_type == 5463;
+    let col = (cursor.x / 16.0) as i32;
+    let mut row = (cursor.y / 16.0) as i32;
+    if !skip_scan {
+        // `:49536-49539` — the down-scan: stop at the first solid row in any of
+        // the three columns (or the world's bottom margin), then step back one.
+        while row < world.height - 10
+            && world.tile(col, row).is_some()
+            && !sentry_solid_tile2(world, col, row)
+            && world.tile(col - 1, row).is_some()
+            && !sentry_solid_tile2(world, col - 1, row)
+            && world.tile(col + 1, row).is_some()
+            && !sentry_solid_tile2(world, col + 1, row)
+        {
+            row += 1;
+        }
+        row -= 1;
+    }
+    (cursor.x, row as f32 * 16.0 - 24.0)
+}
+
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
@@ -713,6 +761,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                // S1-P-i25 — `Player.ItemCheck_ApplyPetBuffs`' summon-staff
+                // grant (`Player.cs:42766` → `:53190-53281`): the use-start
+                // `AddBuff(sItem.buffType, 3600)` is the minion-buff
+                // PERSISTENCE mechanism — the keep-alive arm's 18000 refresh
+                // pins this 3600-tick buff while the minion lives. The port
+                // previously granted only the `:42880` `item.buffTime` (0 for
+                // the staves — a ghost the sweep drops), so the buff never
+                // persisted and AI_062's flag read let the minion despawn.
+                // The `MinionTargetingFeature` alt-use gate (`:42764`) folds
+                // out: the port's right-click aim is its own seam above and
+                // never reaches this left-button shoot path.
+                if crate::projectile::MINION_STAFF_PET_BUFF_ITEMS.contains(&held.kind)
+                    && def.buff_type > 0
+                {
+                    p.buffs.add_buff(def.buff_type, 3600);
+                }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
                 // tick (`Player.cs:42780`) BEFORE the spawn, and the
@@ -721,10 +785,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
                     p.buffs.add_buff(def.buff_type, def.buff_time);
                 }
-                if proj > 0 {
-                    // The C# gates on `sItem.shoot` (`Player.cs:42780`) — the
-                    // projectile id, never the item type.
-                    app.projectiles.free_up_pets_and_minions(p, proj, app.local_id as u8);
+                // `Player.cs:42778` — the free-up gate:
+                // `item.shoot >= 0 && item.shoot < ProjectileID.Count &&
+                // (LightPet[item.shoot] || Main.projPet[item.shoot])`. The
+                // sentry staves' shoot kinds are in NEITHER set, so the C#
+                // never frees for them (their refresh rides the shoot arm's
+                // own same-kind kill + `UpdateMaxTurrets`); the port
+                // previously called the free-up for every shoot > 0.
+                if proj > 0
+                    && (crate::projectile::PROJ_PET.contains(&proj)
+                        || crate::projectile::LIGHT_PET_PROJ.contains(&proj))
+                {
+                    app.projectiles
+                        .free_up_pets_and_minions(p, proj, held.kind, app.local_id as u8);
                 }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
@@ -784,7 +857,107 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
                     let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
-                    if GEM_STAFF_BOLTS.contains(&proj) {
+                    // S1-P-i25 — the summon-staff minion spawn arm
+                    // (`Player.ItemCheck_Shoot`'s per-item `SpawnMinionOnCursor`
+                    // arms, `Player.cs:48067-48085`/`:48436-48496`/`:48556-48559`).
+                    // A summon item whose shoot is a MINION (not a sentry, not a
+                    // whip) spawns at the CURSOR via `SpawnMinionOnCursor`
+                    // (`:49573-49603`) — NOT the generic player-centre flight:
+                    // the point is `Main.MouseWorld` clamped by
+                    // `LimitPointToPlayerReachableArea`, the velocity is ZERO
+                    // (the Optic Staff's `RotatedBy` of a zero vector stays zero),
+                    // the damage is the UNSCALED `sItem.damage` (`:47060`'s local
+                    // `damage`, not the class-multiplied `Damage` — the pool's
+                    // `summon_tick_block` applies `minionDamage` at `:16707`), and
+                    // the knockback takes `GetWeaponKnockback`'s `minionKB` bonus
+                    // (`:47151`/`:53348-53351`). The `ai0/ai1` seeds ride
+                    // `SpawnMinionOnCursor`'s item switch (`:49582-49598`).
+                    if def.summon
+                        && crate::projectile::proj_data(proj).is_some_and(|d| d.minion)
+                    {
+                        // `GetWeaponKnockback` (`:53346-53369`) — the summon
+                        // `minionKB` add, then the glove/Titan/stealth scales.
+                        let minion_kb = p.weapon_knockback(def, fx_kb);
+                        // `SpawnMinionOnCursor`'s cursor point + reach clamp
+                        // (`:49575-49577`).
+                        let cursor =
+                            limit_point_to_player_reachable_area(Vec2::new(pcx, pcy), world_pos, &app.world);
+                        // The per-item kind + ai seeds. `damage` is the prefixed
+                        // UNSCALED item damage (`fx_dmg`), the C# local `damage`.
+                        let unscaled = fx_dmg;
+                        let owner = app.local_id as u8;
+                        if held.kind == 3531 {
+                            // The Stardust Dragon Staff's chain spawn
+                            // (`:48498-48554`) needs the aiStyle-121 dragon chain
+                            // (excluded — the 625-628 rows book slots but the
+                            // chain AI is a follow-up). No spawn this wave; the
+                            // buff grant + free-up above already ran.
+                        } else if held.kind == 1157 {
+                            // `:48436-48440` — the Pygmy Staff: one
+                            // `Main.rand.Next(191, 195)` kind pick, ai1 = 60
+                            // (`:49584-49585`), then `localAI[0] = 30`.
+                            let kind = loot_rng.next_range(191, 195) as u16;
+                            if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 60.0,
+                            ) {
+                                app.projectiles.set_local_ai0(slot, 30.0);
+                            }
+                        } else if held.kind == 2535 {
+                            // `:48468-48474` — the Optic Staff spawns BOTH twins
+                            // (387 + 388) at the cursor, zero velocity (the
+                            // `RotatedBy` of `Vector2.Zero`), ai1 = 1 (`:49589`).
+                            for k in [proj, proj + 1] {
+                                let _ = app.projectiles.spawn_with_data_ai_owned(
+                                    k, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 1.0,
+                                );
+                            }
+                        } else if held.kind == 2551 {
+                            // `:48476-48481` — the Spider Staff cycles
+                            // 390/391/392 via `nextCycledSpiderMinionType` (never
+                            // reset, `Player.cs:1280`), then increments mod 3.
+                            let kind = (proj as i32 + p.next_cycled_spider_minion_type) as u16;
+                            let _ = app.projectiles.spawn_with_data_ai_owned(
+                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
+                            );
+                            p.next_cycled_spider_minion_type += 1;
+                            p.next_cycled_spider_minion_type %= 3;
+                        } else if held.kind == 2584 {
+                            // `:48483-48486` — the Pirate Staff: one
+                            // `Main.rand.Next(3)` offset onto 393/394/395.
+                            let kind = proj + loot_rng.next_range(0, 3) as u16;
+                            let _ = app.projectiles.spawn_with_data_ai_owned(
+                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
+                            );
+                        } else if held.kind == 5664 || held.kind == 6149 {
+                            // `:48452-48456` — the Foxsparks staves spawn then
+                            // set `localAI[0] = 30`.
+                            if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
+                            ) {
+                                app.projectiles.set_local_ai0(slot, 30.0);
+                            }
+                        } else if held.kind == 6161 {
+                            // `:49442-49444` — the Clay Pot's generic-tail spawn
+                            // writes `originalDamage = damage` (the spawn seam
+                            // already books it for a minion row).
+                            let _ = app.projectiles.spawn_with_data_ai_owned(
+                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
+                            );
+                        } else {
+                            // The plain `SpawnMinionOnCursor` staves. The ai1
+                            // seed is 1 for 2364/2365/2621/2749/3474
+                            // (`:49587-49593`), the ai0 seed 45 for 6164
+                            // (`:49595-49596`); every other staff keeps 0/0.
+                            let (ai0, ai1) = match held.kind {
+                                2364 | 2365 | 2621 | 2749 | 3474 => (0.0, 1.0),
+                                6164 => (45.0, 0.0),
+                                _ => (0.0, 0.0),
+                            };
+                            let _ = app.projectiles.spawn_with_data_ai_owned(
+                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, ai0, ai1,
+                            );
+                        }
+                    } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
                         // from the bolt kind and the matching body robe
@@ -8158,6 +8331,132 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+
+    /// S1-P-i25 — the summon spawn arm books the UNSCALED item damage as
+    /// `originalDamage` (`Player.cs:49601`), not the class-multiplied shot: the
+    /// pool's `summon_tick_block` applies `minionDamage` later (`:16707`). The
+    /// velocity is ZERO (`SpawnMinionOnCursor`, `:49600`) — the minion is born
+    /// at the cursor, not flying from the player.
+    #[test]
+    fn i25_the_minion_spawns_at_the_cursor_with_unscaled_damage() {
+        let mut app = app_with_staff(2364); // Hornet Staff — shoot 373, damage 12
+        app.player.as_mut().unwrap().minion_damage = 3.0; // a big multiplier
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 373)
+            .expect("the Hornet spawned");
+        let p = &app.projectiles.slots()[slot];
+        assert_eq!(p.original_damage, 12, "the UNSCALED item damage, not 12*3");
+        assert_eq!(p.damage, 12, "the spawn damage is unscaled too");
+        assert_eq!((p.vel.x, p.vel.y), (0.0, 0.0), "zero spawn velocity");
+        assert_eq!(p.ai[1], 1.0, "the Hornet Staff's ai1 seed (`:49587-49593`)");
+        assert!(p.minion, "the minion identification row");
+        assert_eq!(p.minion_slots, 1.0, "a full slot");
+    }
+
+    /// S1-P-i25 — the Spider Staff cycles 390/391/392 across uses via
+    /// `nextCycledSpiderMinionType` (`Player.cs:48478-48480`), never reset.
+    #[test]
+    fn i25_the_spider_staff_cycles_its_three_kinds() {
+        let mut app = app_with_staff(2551); // Spider Staff — shoot 390
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            app.mine_down = true;
+            app.mine_prev_down = false;
+            crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+            // Record the newest spider kind, then clear the pool + swing so the
+            // next press is a fresh use (the autoReuse repeat needs a release).
+            let kind = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && matches!(s.kind, 390 | 391 | 392))
+                .map(|s| s.kind)
+                .last()
+                .expect("a spider spawned");
+            seen.push(kind);
+            for s in app.projectiles.slots_mut() {
+                s.active = false;
+            }
+            app.swing = 0.0;
+            app.attack_cd = 0.0;
+            app.reuse_delay = 0.0;
+            app.mine_down = false;
+        }
+        assert_eq!(seen, vec![390, 391, 392, 390], "the mod-3 cycle");
+        assert_eq!(app.player.as_ref().unwrap().next_cycled_spider_minion_type, 1);
+    }
+
+    /// S1-P-i25 — the Optic Staff spawns BOTH twins (387 + 388) in one use
+    /// (`Player.cs:48468-48474`), each a half slot, ai1 = 1.
+    #[test]
+    fn i25_the_optic_staff_spawns_both_twins() {
+        let mut app = app_with_staff(2535); // Optic Staff — shoot 387
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let kinds: Vec<u16> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|s| s.active && s.minion)
+            .map(|s| s.kind)
+            .collect();
+        assert_eq!(kinds, vec![387, 388], "both twins, slot order");
+        for s in app.projectiles.slots().iter().filter(|s| s.active && s.minion) {
+            assert_eq!(s.minion_slots, 0.5, "the twins' half slot");
+            assert_eq!(s.ai[1], 1.0, "the Optic ai1 seed");
+            assert_eq!((s.vel.x, s.vel.y), (0.0, 0.0), "the RotatedBy-zero velocity");
+        }
+    }
+
+    /// S1-P-i25 — the Pygmy Staff picks one of 191-194 via `Main.rand.Next(191,
+    /// 195)` (`Player.cs:48438`), seeds ai1 = 60 (`:49584-49585`) and
+    /// `localAI[0] = 30` (`:48439`). The pick rides the UpdatePlayers stream.
+    #[test]
+    fn i25_the_pygmy_staff_picks_a_kind_and_seeds_the_ai() {
+        let mut app = app_with_staff(1157); // Pygmy Staff — shoot 191
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.minion)
+            .expect("a pygmy spawned");
+        let p = &app.projectiles.slots()[slot];
+        assert!(matches!(p.kind, 191 | 192 | 193 | 194), "the Next(191,195) pick");
+        assert_eq!(p.ai[1], 60.0, "the Pygmy ai1 seed");
+        assert_eq!(p.local_ai[0], 30.0, "the localAI[0] = 30 write");
+        assert_eq!(p.minion_slots, 1.0, "a full slot");
+    }
+
+    /// S1-P-i25 — the use-start `ItemCheck_ApplyPetBuffs` grant is 3600 ticks
+    /// (`Player.cs:53190-53281`), the minion-buff PERSISTENCE mechanism: the
+    /// keep-alive arm's 18000 refresh pins it while the minion lives. The
+    /// `:42880` `item.buffTime` grant is 0 for the staves (a ghost).
+    #[test]
+    fn i25_the_minion_buff_grant_is_3600_and_persists() {
+        let mut app = app_with_staff(2364); // Hornet Staff — buff 125
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(125).expect("buff 125 granted");
+        assert_eq!(p.buffs.buff_time[b], 3600, "the ApplyPetBuffs 3600 grant");
+        // The keep-alive arm refreshes to 18000 while the Hornet lives.
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(125).expect("buff 125 kept");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
+        assert!(p.hornet_minion, "the arm's flag");
     }
 }
 

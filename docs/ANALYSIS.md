@@ -13114,6 +13114,79 @@ The summon system's harness: the per-player slot budget (`maxMinions`/`numMinion
 `slotsMinions`, `Player.cs:1260-1264`), the keep-alive buff arms, `AI_062`'s
 follow/target/return machine and the sentry cap/lifetime/targeting.
 
+### The minion summon use-path (S1-P-i25, code-only 2026-11-20)
+
+The summon-staff USE machinery (`Player.ItemCheck_Shoot`'s minion arms + the
+budget/sacrifice/buff chain), audited distrust-verbatim against the C# and
+gap-filled. Verdicts + cites:
+
+- **The summon spawn arm was MISSING** — summon staves fell through to the generic
+  `Item.shoot` flight (player-centre spawn, aim velocity, class-multiplied damage).
+  The C# spawns minions via `SpawnMinionOnCursor` (`Player.cs:49573-49603`): the
+  CURSOR point clamped by `LimitPointToPlayerReachableArea` (`:45447-45473`), ZERO
+  velocity, the UNSCALED `sItem.damage` as both `Damage` and `originalDamage`
+  (`:49600-49601` — the pool applies `minionDamage` at `Projectile.cs:16707`), and
+  `GetWeaponKnockback`'s `minionKB` add (`:47151`/`:53348-53351`). Now ported as the
+  first branch of `update_editing`'s spawn chain (`world_sim/editing.rs`), gated
+  `def.summon && proj_data(proj).minion`. The per-item arms: Pygmy 1157
+  (`Next(191,195)` pick + ai1=60 + `localAI[0]=30`, `:48436-48440`/`:49584`), Optic
+  2535 (both twins 387+388, zero `RotatedBy` velocity, ai1=1, `:48468-48474`),
+  Spider 2551 (`nextCycledSpiderMinionType` mod-3 cycle 390/391/392, `:48476-48481`,
+  the field never reset — `Player.cs:1280`), Pirate 2584 (`Next(3)` offset,
+  `:48483-48486`), Foxsparks 5664/6149 (`localAI[0]=30`, `:48452-48456`), the ai1=1
+  seed for 2364/2365/2621/2749/3474 and ai0=45 for 6164 (`:49587-49596`). The
+  Stardust Dragon 3531 chain spawn (`:48498-48554`) stays deferred with the
+  aiStyle-121 chain (the 625-628 rows book slots, the chain AI is a follow-up).
+- **`FreeUpPetsAndMinions` was WRONG on three counts** (`Player.cs:51701-51851`),
+  fixed in `projectile.rs::free_up_pets_and_minions`: (1) the sacrifice sort is
+  ASCENDING `minionSlots` (the C# insertion at `:51736-51747` inserts before the
+  first strictly-larger entry), not descending — the kill walk eats the SMALLEST
+  slots first; (2) the sacrificable arm `return`s at `:51830`, so the same-kind
+  outright-kill tail (`:51832-51850`) NEVER runs for a sacrificable staff (it is
+  the sentry/pet refresh); (3) the tail's 5131 special keys on `sItem.type`
+  (`:51845`), not `shoot` — the fn now takes `staff_item`. The list also includes
+  ALL owned minions (no per-kind filter, `:51731`) and `num` counts the dragon
+  kinds the removal pass drops.
+- **The free-up call gate was WRONG** — the port called it for every `shoot > 0`;
+  the C# gates on `LightPet[shoot] || Main.projPet[shoot]` (`Player.cs:42778`). The
+  sentry staves' shoot kinds are in NEITHER set, so the C# never frees for them.
+  Added `PROJ_PET` (`Main.cs:8728-8852`) + `LIGHT_PET_PROJ` (`ProjectileID.cs:523`)
+  verbatim tables and the gate.
+- **The slot block excluded the wrong dragon kinds** — `Projectile.cs:16709` is
+  `type != 625 && type != 628` (the HEAD/TAIL carry no slot block); the port
+  excluded 626/627 (the BODY segments, 0.5 slots each) — the inverse. Fixed in
+  `summon_tick_block`; the bodies now book, the head/tail never double-book.
+- **The minion-buff PERSISTENCE grant was MISSING** — the port granted only the
+  `:42880` `item.buffTime` (0 for the staves, a ghost). The C#'s
+  `ItemCheck_ApplyPetBuffs` (`Player.cs:42766` → `:53190-53281`) grants
+  `AddBuff(sItem.buffType, 3600)` at the use-start for the 28 summon-staff item
+  types; THAT 3600 buff is what the keep-alive arm's 18000 refresh pins while the
+  minion lives. Added `MINION_STAFF_PET_BUFF_ITEMS` + the grant. (This SUPERSEDES
+  the "0-time grant is a ghost" note below for the summon staves — the ghost was
+  the missing 3600 grant, not an inherent C# behaviour.)
+- **The maxMinions cap set-bonuses were MISSING** — `HallowedSummoner`
+  (`ArmorSetBonuses.cs:225-229`, `maxMinions += 2`, the 8 cartesian triples of
+  4873/4899 × 551/4900 × 552/4901) and `ChlorophyteSummon` (`:134-139`,
+  `maxMinions += 2`, the 5524/1004/1005 triple) added to `tr_core::armor_sets`
+  `SET_STATS`. The per-piece rows (`grant_summon_caps`, `Player.cs:13254-13948`/
+  `:15324-15329`) and the buff cap effects (110/150, `:10173-10180`) were already
+  faithful.
+- **The missing minion `proj_data` rows** — the slot-counting needs every summon
+  staff's minion kind to carry its `SetDefaults` slice; 191-194/317/390-392/755/
+  831/864/946/951/970/1022/1093/1094/1112/1113/1118/1119/625-628 were absent (the
+  staves' spawns declined). Added verbatim (`Projectile.cs` cites in `data.rs`);
+  the AI machines stay the documented dispatch no-ops (aiStyle 26/54/156/164/169/
+  206). The `is_summon_shot` flag now books for minion/sentry spawns (the whip
+  `CanRunHitEffects` gate).
+- **RNG**: the only new draws are the Pygmy `Next(191,195)` and Pirate `Next(3)`
+  kind picks, on the `UpdatePlayers` stream at the spawn site (the C#
+  `ItemCheck_Shoot` runs under `UpdatePlayers`, `Main.cs:17754`); the generic
+  crit roll precedes them (it is a no-op for Summon — `class_crit(Summon) = 0`,
+  but the C# `Projectile.Damage` rolls crit on HIT, not spawn — the port's
+  spawn-time roll is the documented stand-in). The spider cycle and the ai seeds
+  draw nothing. Witnesses WRITTEN NOT RUN (`use_loop_tests::i25_*`,
+  `test_DW_6_1/6_2` corrected to the ascending order); no compiler invoked.
+
 Deviations and notes:
 
 - **The 0-time summon grant is a ghost.** The summon staves' `Item.buffTime` rows are 0

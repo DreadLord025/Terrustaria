@@ -12198,11 +12198,15 @@ impl ProjectilePool {
         // epsilon (f32 verbatim, the same cast order as the C#).
         let recomputed = (self.slots[i].original_damage as f32 * pl.minion_damage + 5.0e-6) as i32;
         self.slots[i].damage = recomputed;
-        // `:16709` — the dragon-chain kinds (625/628) carry no block; the
-        // relink arms of 626/627 are stubbed (the chain is excluded, plan
-        // decision #3 of the Constraints), so both kinds self-kill over cap
-        // without the link surgery.
-        if is_minion && kind != 626 && kind != 627 {
+        // `:16709` — `this.minion && numUpdates == -1 && type != 625 &&
+        // type != 628`: the dragon HEAD (625) and TAIL (628) carry no slot
+        // block; the BODY segments (626/627, 0.5 slots each) DO book against
+        // the budget. (The port previously excluded 626/627 — the inverse of
+        // the C# — so the head/tail double-booked and the bodies never counted.)
+        // The 626/627 over-cap relink arms (`:16714-16731`) stay stubbed with
+        // the excluded dragon chain; both kinds self-kill over cap without the
+        // link surgery.
+        if is_minion && kind != 625 && kind != 628 {
             // `:16711` — `minionPos = Main.player[owner].numMinions`.
             self.slots[i].minion_pos = pl.num_minions as u16;
             // `:16712` — the over-cap check, the local owner only.
@@ -12217,17 +12221,29 @@ impl ProjectilePool {
         }
     }
 
-    /// `Player.FreeUpPetsAndMinions` (`Player.cs:51701-51830`): the summon-staff
+    /// `Player.FreeUpPetsAndMinions` (`Player.cs:51701-51851`): the summon-staff
     /// use frees budget before the spawn. The pet pairs (1093/1112 and
-    /// 1094/1113) die outright; the `MinionSacrificable` minions sort by
-    /// `minionSlots` descending and die while the freed slots stay below
+    /// 1094/1113) die outright; a `MinionSacrificable` staff sorts this owner's
+    /// minions by `minionSlots` ASCENDING (the C# insertion at `:51736-51747`
+    /// inserts before the first LARGER entry, ties keep pool order) and kills
+    /// from the head while the freed slots stay below
     /// `maxMinions - StaffMinionSlotsRequired[staff]` (the const 1,
-    /// `ItemID.cs:1322`). The Stardust Dragon kinds drop out of the list and
-    /// the relink arms are stubbed per the exclusion.
+    /// `ItemID.cs:1322` — `CreateIntSet(1)` defaults every id to 1,
+    /// `SetFactory.cs:116-131`). The non-sacrificable tail (`:51832-51850`)
+    /// is the `else` path — it never runs for a sacrificable staff (the C#
+    /// `return`s at `:51830`). The Stardust Dragon kinds drop out of the list
+    /// and the relink arms are stubbed per the exclusion.
     /// `staff` is the item's `shoot` id — the C# gates on `sItem.shoot`
-    /// (`Player.cs:51734`), never the item type.
-    pub fn free_up_pets_and_minions(&mut self, p: &crate::player::Player, staff: u16, owner: u8) {
-        // `:51704-51727` — the two pet pairs die outright when their staff is
+    /// (`Player.cs:51725`), never the item type; `staff_item` is `sItem.type`
+    /// for the 5131 special (`:51845`).
+    pub fn free_up_pets_and_minions(
+        &mut self,
+        p: &crate::player::Player,
+        staff: u16,
+        staff_item: u16,
+        owner: u8,
+    ) {
+        // `:51703-51724` — the two pet pairs die outright when their staff is
         // re-used: the first pair kills BOTH its kinds, the second
         // cross-kills (a used 1094 kills the 1113s and vice versa).
         if staff == 1093 || staff == 1112 {
@@ -12247,68 +12263,118 @@ impl ProjectilePool {
                 }
             }
         }
-        // `:51828-51849` — the non-sacrificable tail: every minion of THIS
-        // shoot kind dies on a re-use (the sentry staves' own refresh), plus
-        // the two pet specials (the Slime Staff's 72 → the 86/87 pair, the
-        // 5131 → the 881/934 pair).
+        if MINION_SACRIFICABLE.contains(&staff) {
+            // `:51727-51749` — the insertion-sorted list over this owner's
+            // active minions (ALL kinds — the C# has no per-kind filter here),
+            // ascending `minionSlots`, ties in pool-index order (the `>` at
+            // `:51738` inserts only before a strictly larger entry). `num`
+            // accumulates EVERY minion's slots, including the dragon kinds
+            // the removal pass below drops from the list.
+            let mut order: Vec<usize> = Vec::new();
+            let mut total = 0.0f32;
+            for (i, s) in self.slots.iter().enumerate() {
+                if !s.active || s.owner != owner || !s.minion {
+                    continue;
+                }
+                let pos = order
+                    .iter()
+                    .position(|&j| self.slots[j].minion_slots > s.minion_slots)
+                    .unwrap_or(order.len());
+                order.insert(pos, i);
+                total += s.minion_slots;
+            }
+            // `:51754-51771` — the dragon-chain kinds leave the list (626
+            // outright; 627 unless its `localAI[1]` link points at a 628 tail,
+            // which re-appends at the tail of the list with its previous link
+            // — the relink surgery is stubbed with the excluded chain, the
+            // append order is kept).
+            let mut tail_connector: Option<usize> = None;
+            let mut m = 0usize;
+            while m < order.len() {
+                let kind = self.slots[order[m]].kind;
+                if kind == 626 {
+                    order.remove(m);
+                    continue;
+                }
+                if kind == 627 {
+                    let link = self.slots[order[m]].local_ai[1] as usize;
+                    if self.slots.get(link).is_some_and(|s| s.kind == 628) {
+                        tail_connector = Some(order[m]);
+                    }
+                    order.remove(m);
+                    continue;
+                }
+                m += 1;
+            }
+            if let Some(tc) = tail_connector {
+                order.push(tc);
+                // `:51775-51778` — `((ProjectileKey)ai[0]).TryGetActive
+                // (ProjectileID.Sets.StardustDragon)`: the previous link rides
+                // the list too when the key resolves to an active dragon kind
+                // (625-628, `ProjectileID.cs:540`'s set); the port's chain is
+                // excluded, so an unresolved key appends nothing (the C#
+                // asserts — unreachable without the chain).
+                let key = self.slots[tc].ai[0];
+                let (k_owner, k_slot, k_gen) =
+                    crate::net::projectile_key_parts(key.to_bits() as i32);
+                if let Some(prev) = self.slots.get(k_slot) {
+                    if prev.active
+                        && prev.owner == k_owner
+                        && prev.generation == k_gen
+                        && matches!(prev.kind, 625 | 626 | 627 | 628)
+                    {
+                        order.push(k_slot);
+                    }
+                }
+            }
+            // `:51784-51824` — the kill walk: while `num - num3 > maxMinions
+            // - num2`, the head entry dies unless it is the protected kind
+            // (`num4`, the 387/388 twins' alternating boundary) or a dragon
+            // head/tail/guardian (625/628/623).
+            let required = 1.0f32; // `StaffMinionSlotsRequired[staff]`, `ItemID.cs:1322`
+            let mut freed = 0.0f32;
+            let mut boundary = 388u16;
+            for &i in &order {
+                if !(total - freed > p.max_minions as f32 - required) {
+                    break;
+                }
+                let kind = self.slots[i].kind;
+                if kind == boundary || matches!(kind, 625 | 628 | 623) {
+                    continue;
+                }
+                if kind == 388 && boundary == 387 {
+                    boundary = 388;
+                }
+                if kind == 387 && boundary == 388 {
+                    boundary = 387;
+                }
+                freed += self.slots[i].minion_slots;
+                // `:51804-51822` — the 626/627 relink is stubbed (the chain
+                // exclusion); the kill lands either way.
+                let s = &mut self.slots[i];
+                s.active = false;
+                s.time_left = 0;
+            }
+            // `:51826-51829` — the 9-slot achievement is unported (no
+            // achievement system); the C# `return`s here either way.
+            return;
+        }
+        // `:51832-51850` — the non-sacrificable tail: every owned projectile
+        // of THIS shoot kind dies on a re-use (the sentry staves' own
+        // refresh — NO minion gate here), plus the two pet specials (the
+        // Slime Staff's shoot 72 → the 86/87 pair, the ITEM 5131 → the
+        // 881/934 pair).
         for s in self.slots.iter_mut() {
             if !s.active || s.owner != owner {
                 continue;
             }
-            let kill = (s.minion && s.kind == staff)
+            let kill = s.kind == staff
                 || (staff == 72 && matches!(s.kind, 86 | 87))
-                || (staff == 5131 && matches!(s.kind, 881 | 934));
+                || (staff_item == 5131 && matches!(s.kind, 881 | 934));
             if kill {
                 s.active = false;
                 s.time_left = 0;
             }
-        }
-        if !MINION_SACRIFICABLE.contains(&staff) {
-            return;
-        }
-        // `:51731-51792` — the descending `minionSlots` sort over this owner's
-        // minions; the dragon-chain kinds leave the list (the relink arms are
-        // stubbed with the chain).
-        let mut order: Vec<usize> = (0..self.slots.len())
-            .filter(|&i| {
-                let s = &self.slots[i];
-                s.active
-                    && s.owner == owner
-                    && s.minion
-                    && MINION_SACRIFICABLE.contains(&s.kind)
-                    && !matches!(s.kind, 626 | 627)
-            })
-            .collect();
-        order.sort_by(|&a, &b| {
-            self.slots[b]
-                .minion_slots
-                .partial_cmp(&self.slots[a].minion_slots)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let total: f32 = order.iter().map(|&i| self.slots[i].minion_slots).sum();
-        let mut freed = 0.0f32;
-        let budget = p.max_minions as f32 - 1.0;
-        // `num4` — the 387/388 pair boundary: the pirate pair sacrifices one at
-        // a time.
-        let mut boundary = 388u16;
-        for &i in &order {
-            if !(total - freed > budget) {
-                break;
-            }
-            let kind = self.slots[i].kind;
-            if kind == boundary || matches!(kind, 625 | 628 | 623) {
-                continue;
-            }
-            if kind == 388 && boundary == 387 {
-                boundary = 388;
-            }
-            if kind == 387 && boundary == 388 {
-                boundary = 387;
-            }
-            freed += self.slots[i].minion_slots;
-            let s = &mut self.slots[i];
-            s.active = false;
-            s.time_left = 0;
         }
     }
 
@@ -12602,12 +12668,23 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i25 — the spawn-site `localAI[1]` payload setter: the Pygmy
+    /// Staff's `localAI[0] = 30` and the Foxsparks' `localAI[0] = 30` ride
+    /// `set_local_ai0`; the Optic twins' zero offset/velocity need no write.
+    /// The Stardust Dragon chain's `localAI[1]` links (excluded) would ride
+    /// this seam (the `set_ai1` convention).
+    pub fn set_local_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.local_ai[1] = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }
 
     #[cfg(test)]
-    fn slots_mut(&mut self) -> &mut [Projectile] {
+    pub(crate) fn slots_mut(&mut self) -> &mut [Projectile] {
         &mut self.slots
     }
 
@@ -13145,6 +13222,16 @@ impl ProjectilePool {
             minion_slots: data.minion_slots,
             minion_pos: 0,
             original_damage: if data.minion || data.sentry { damage } else { 0 },
+            // `WhipTagEffect.CanRunHitEffects`'s gate
+            // (`GameContent/Items/WhipTagEffect.cs:81-85`): `minion ||
+            // MinionShot[type] || sentry || SentryShot[type]` — the summon
+            // slots AND the minion/sentry attack shots carry the flag so the
+            // whip tag damage fires for them (the `tag_damage_for` gate,
+            // `Projectile.cs:12919`).
+            is_summon_shot: data.minion
+                || data.sentry
+                || MINION_SHOT.contains(&kind)
+                || SENTRY_SHOT.contains(&kind),
             net_important: data.net_important,
             ignore_water: data.ignore_water,
             should_fall_through: false,
@@ -30242,11 +30329,12 @@ mod use_path_tests {
         pool.slots.iter().filter(|s| s.active && s.minion).count()
     }
 
-    /// DW-6.1 — the sacrifice: over the budget, the descending-`minionSlots`
-    /// order kills the OTHER kinds' minions (`Projectile.cs:51738-51827`) so
-    /// the new spawn fits, while the same-shoot-kind minions die outright in
-    /// the verbatim tail (`:51828-51849` — re-using a staff never stacks its
-    /// own kind).
+    /// DW-6.1 — the sacrifice: over the budget, the ASCENDING-`minionSlots`
+    /// insertion order (`Player.cs:51736-51747`) kills minions from the head
+    /// while `total - freed > maxMinions - StaffMinionSlotsRequired`
+    /// (`:51784-51824`) so the new spawn fits. A sacrificable staff `return`s
+    /// before the non-sacrificable tail (`:51830`); the same-kind outright kill
+    /// is the tail's job for NON-sacrificable staves (the sentries).
     #[test]
     fn test_DW_6_1_the_sacrifice_frees_the_budget() {
         let mut pool = ProjectilePool::new();
@@ -30256,9 +30344,10 @@ mod use_path_tests {
         let a = spawn_minion(&mut pool, HORNET, 100.0);
         let b = spawn_minion(&mut pool, FLYING_IMP, 200.0);
         assert_eq!(live_minions(&pool), 2);
-        // A third staff (the Slime Staff's shoot 266) has no kind in the pool:
-        // the tail kills nothing, the sacrifice frees one slot.
-        pool.free_up_pets_and_minions(&p, 266, 0);
+        // A third staff (the Slime Staff's shoot 266, item 1309) has no kind in
+        // the pool: the sacrificable arm frees one slot (the non-sacrificable
+        // tail never runs for a sacrificable staff — the C# `return`s).
+        pool.free_up_pets_and_minions(&p, 266, 1309, 0);
         assert_eq!(live_minions(&pool), 1, "one sacrificed");
         assert!(
             !pool.slots[a].active || !pool.slots[b].active,
@@ -30267,18 +30356,20 @@ mod use_path_tests {
         // At the base cap of 1 the same use empties the budget: `total(2.0) -
         // freed > 1 - 1 = 0` holds twice.
         p.max_minions = 1;
-        pool.free_up_pets_and_minions(&p, 266, 0);
+        pool.free_up_pets_and_minions(&p, 266, 1309, 0);
         assert_eq!(live_minions(&pool), 0, "both make room");
-        // The verbatim tail: re-using the Hornet Staff (shoot 373) kills the
-        // Hornets outright — the same kind never stacks.
+        // The sacrificable arm at cap 1 with a single Hornet: `total(1.0) -
+        // freed > 1 - 1 = 0` holds once, the Hornet (the only entry) dies.
         let hornet = spawn_minion(&mut pool, HORNET, 300.0);
-        pool.free_up_pets_and_minions(&p, 373, 0);
-        assert!(!pool.slots[hornet].active, "the same-shoot kind dies");
+        pool.free_up_pets_and_minions(&p, 373, 2364, 0);
+        assert!(!pool.slots[hornet].active, "the over-budget minion dies");
     }
 
-    /// DW-6.2 — the ordering: the half-slot spiders sort after the full-slot
-    /// minions (the descending `minionSlots` sort) and the protected kinds
-    /// (623) never die.
+    /// DW-6.2 — the ordering: the C# insertion sort (`Player.cs:51736-51747`)
+    /// is ASCENDING `minionSlots` (insert before the first strictly-larger
+    /// entry), so the kill walk eats the SMALLEST slots first; the protected
+    /// kinds (623 the guardian, 625/628 the dragon head/tail) are skipped, never
+    /// killed and never counted toward `freed`.
     #[test]
     fn test_DW_6_2_the_sacrifice_order_and_protected_kinds() {
         let mut pool = ProjectilePool::new();
@@ -30288,16 +30379,18 @@ mod use_path_tests {
         let spider = spawn_minion(&mut pool, RETANIMINI, 100.0); // 0.5 slots
         let guardian = spawn_minion(&mut pool, STARDUST_GUARDIAN, 200.0); // 0 slots — protected
         let hornet = spawn_minion(&mut pool, HORNET, 300.0); // 1.0 slot
-        pool.free_up_pets_and_minions(&p, 266, 0);
-        // `total(1.5) > maxMinions(2) - 1 = 1` once: the full-slot Hornet dies.
-        assert!(!pool.slots[hornet].active, "the full-slot minion dies first");
-        assert!(pool.slots[spider].active, "the half slot survives at cap 2");
+        pool.free_up_pets_and_minions(&p, 266, 1309, 0);
+        // Ascending order [guardian 0, spider 0.5, hornet 1.0], total 1.5.
+        // `1.5 - 0 > 2 - 1 = 1`: the guardian is skipped (623), the spider
+        // (0.5) dies, then `1.5 - 0.5 = 1.0 > 1` is false — the hornet holds.
+        assert!(!pool.slots[spider].active, "the smallest slot dies first");
+        assert!(pool.slots[hornet].active, "the full slot survives at cap 2");
         assert!(pool.slots[guardian].active, "the protected kind survives");
-        // At cap 1 the half slot follows; the 0-slot protected kind still
-        // never dies and never counts.
+        // At cap 1 the hornet follows; the 0-slot protected kind still never
+        // dies and never counts.
         p.max_minions = 1;
-        pool.free_up_pets_and_minions(&p, 266, 0);
-        assert!(!pool.slots[spider].active, "the half slot follows at cap 1");
+        pool.free_up_pets_and_minions(&p, 266, 1309, 0);
+        assert!(!pool.slots[hornet].active, "the full slot follows at cap 1");
         assert!(pool.slots[guardian].active, "the protected kind holds");
     }
 

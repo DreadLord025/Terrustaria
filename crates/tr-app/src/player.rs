@@ -506,6 +506,12 @@ pub struct Player {
     pub hornet_minion: bool,
     pub imp_minion: bool,
     pub spider_minion: bool,
+    /// `Player.nextCycledSpiderMinionType` (`Player.cs:1280`, int default 0):
+    /// the Spider Staff's spawn cycle (`:48478-48480`) — each use spawns
+    /// `shoot + nextCycledSpiderMinionType` (390/391/392) then increments mod
+    /// 3. Never reset by `ResetEffects` (no C# reset site), so it persists
+    /// across uses and lives.
+    pub next_cycled_spider_minion_type: i32,
     pub twins_minion: bool,
     pub pirate_minion: bool,
     pub vampire_frog: bool,
@@ -1905,6 +1911,7 @@ impl Player {
             hornet_minion: false,
             imp_minion: false,
             spider_minion: false,
+            next_cycled_spider_minion_type: 0,
             twins_minion: false,
             pirate_minion: false,
             vampire_frog: false,
@@ -4126,6 +4133,32 @@ impl Player {
             registry::DamageClass::Magic => self.magic_crit,
             _ => 0,
         }
+    }
+
+    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
+    /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
+    /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
+    /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
+    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
+    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
+    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
+    /// spawn, so the minion/sentry shots carry the bonus — the port's throw
+    /// path previously passed the raw `fx_kb` and dropped it.
+    pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
+        let mut kb = knock_back;
+        if def.summon {
+            kb += self.minion_kb;
+        }
+        if def.melee && self.kb_glove {
+            kb *= 2.0;
+        }
+        if self.kb_buff {
+            kb *= 1.5;
+        }
+        if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        kb
     }
 
     /// `Player.ItemCheck`'s food consumption side (`:14353`'s gate): the
