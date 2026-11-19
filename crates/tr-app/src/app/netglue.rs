@@ -3372,6 +3372,14 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The Plantera minions (S1-D-3-wire-plantera-minions): the net
+        // state overwrites the position below; the bare stats seed is
+        // enough (the noGravity/noTileCollide kinds have no world probe —
+        // the `npc_from_net` fallback's shape).
+        crate::npc::NpcKind::FungiSpore
+        | crate::npc::NpcKind::PlanterasHook
+        | crate::npc::NpcKind::PlanterasTentacle
+        | crate::npc::NpcKind::Spore => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
     })
 }
 

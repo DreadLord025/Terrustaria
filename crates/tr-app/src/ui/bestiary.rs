@@ -905,6 +905,13 @@ fn portrait_data(
         (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
+        // The Plantera minions (S1-D-3-wire-plantera-minions): the
+        // portrait rests each kind's `SetDefaults` box
+        // (`NPC.cs:12364-12437`) - the pumpkin/frost arms' shape.
+        (NpcKind::FungiSpore, _) => (sheet_i, 12.0, 12.0, 12.0, white),
+        (NpcKind::PlanterasHook, _) => (sheet_i, 40.0, 40.0, 40.0, white),
+        (NpcKind::PlanterasTentacle, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        (NpcKind::Spore, _) => (sheet_i, 18.0, 18.0, 18.0, white),
         (NpcKind::BrainOfCthulhu, _) => (sheet_i, 110.0, 160.0, 110.0, white),
         (NpcKind::Creeper, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::GoblinPeon, _) => (sheet_i, 48.0, 38.0, 48.0, white),

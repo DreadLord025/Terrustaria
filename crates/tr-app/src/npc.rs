@@ -645,6 +645,26 @@ pub enum NpcKind {
     /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379+`,
     /// M4-BOSS-10).
     Plantera,
+    /// `NPCID.FungiSpore` (261) — the mushroom contact hazard
+    /// (`SetDefaults` `NPC.cs:12364-12378`: 12x12, aiStyle 50, dmg 80,
+    /// def 0, 1 HP, kb 0, npcSlots 0; dies on any tile contact).
+    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    FungiSpore,
+    /// `NPCID.PlanterasHook` (263) — the boss's leash anchor
+    /// (`SetDefaults` `NPC.cs:12396-12409`: 40x40, aiStyle 52, dmg 60,
+    /// def 24, 4000 HP, dontTakeDamage, noGravity + noTileCollide).
+    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    PlanterasHook,
+    /// `NPCID.PlanterasTentacle` (264) — the phase-2 orbiting bite
+    /// (`SetDefaults` `NPC.cs:12410-12422`: 24x24, aiStyle 53, dmg 60,
+    /// def 20, 1000 HP, noGravity + noTileCollide).
+    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    PlanterasTentacle,
+    /// `NPCID.Spore` (265) — the boss's launched spore (`SetDefaults`
+    /// `NPC.cs:12423-12437`: 18x18, aiStyle 50, dmg 70, def 0, 1 HP,
+    /// kb 0, npcSlots 0; flies through tiles).
+    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    Spore,
     /// `NPCID.BrainofCthulhu` (266) — the crimson boss (`NPC.cs:12438`:
     /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1;
     /// the death sets the downedBoss2 equivalent).
@@ -1935,7 +1955,14 @@ impl Npc {
     }
 
     /// `NPC.cs:77986`: `this.timeLeft--`, once per NPC update.
+    /// The hook (263) is on `DoesntDespawnToInactivity`'s list
+    /// (`NPC.cs:77826` — `CheckActive` returns before the decrement,
+    /// `:77895-77898`): its timeLeft never ticks; only the orphan strike
+    /// ends it (S1-D-3-wire-plantera-minions).
     pub(crate) fn tick_despawn(&mut self) {
+        if self.kind == NpcKind::PlanterasHook {
+            return;
+        }
         if self.despawn_timer > 0 {
             self.despawn_timer -= 1;
         }
@@ -2386,7 +2413,11 @@ impl Npc {
             wants_servant: None,
             wants_bee: None,
             defense_override: None,
-            dont_take_damage: false,
+            // `SetDefaults` case 263's `dontTakeDamage = true` (`NPC.cs:
+            // 12406`) - the hook is unkillable by damage; only the orphan
+            // strike (the aiStyle-52 arm) ends it. Every other kind keeps
+            // the false default (`NPC.cs:8507`, the SetDefaults reset).
+            dont_take_damage: kind == NpcKind::PlanterasHook,
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
@@ -2723,6 +2754,12 @@ impl Npc {
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
             NpcKind::Plantera => 0.0,
+            // The Plantera minions (S1-D-3-wire-plantera-minions): 261/265
+            // write `knockBackResist = 0f` (`NPC.cs:12376`/`:12435`);
+            // 263/264 write none, so the C# class default 1f stands
+            // (`NPC.cs:8533`) - NOT this fn's 0.4 catch-all.
+            NpcKind::FungiSpore | NpcKind::Spore => 0.0,
+            NpcKind::PlanterasHook | NpcKind::PlanterasTentacle => 1.0,
             NpcKind::BrainOfCthulhu => 0.45,
             NpcKind::Creeper => 0.8,
             NpcKind::BoundGoblin => 0.5,
@@ -3053,6 +3090,12 @@ impl Npc {
             NpcKind::Retinazer => 10,
             NpcKind::Spazmatism => 10,
             NpcKind::Plantera => 14,
+            // The Plantera minions (S1-D-3-wire-plantera-minions):
+            // 261/265 def 0 (`NPC.cs:12370`/`:12429`), 263 def 24
+            // (`:12404`), 264 def 20 (`:12416`).
+            NpcKind::FungiSpore | NpcKind::Spore => 0,
+            NpcKind::PlanterasHook => 24,
+            NpcKind::PlanterasTentacle => 20,
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
             // def 15 both (`:10254`, `:10279`).
@@ -3390,6 +3433,11 @@ impl Npc {
             NpcKind::Retinazer => 120000.0,
             NpcKind::Spazmatism => 120000.0,
             NpcKind::Plantera => 150000.0,
+            // The Plantera minions (S1-D-3-wire-plantera-minions): none of
+            // the four `SetDefaults` rows writes `value` (`NPC.cs:12364-
+            // 12378`/`:12396-12409`/`:12410-12422`/`:12423-12437`), so the
+            // C# field default 0 stands - they drop no money.
+            NpcKind::FungiSpore | NpcKind::PlanterasHook | NpcKind::PlanterasTentacle | NpcKind::Spore => 0.0,
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
 
@@ -3909,6 +3957,16 @@ impl Npc {
             // hurt_cd-for-justHit recoil gate, the missing netUpdate /
             // expert / ftw / kb-0 branches).
             55 => self.ai_055_creeper_family(world, player, rng),
+            // `else if (this.aiStyle == 50)` (`NPC.cs:31651-31716`) - the
+            // spore pair (FungiSpore 261 / Spore 265). S1-D-3-wire-plantera-
+            // minions: the pure module `npc_ai_style50.rs` claims the axis;
+            // the arm is RNG-free by construction (the FungiSpore light's
+            // one `Next(28,42)` is the documented draw-pass skip).
+            50 => self.ai_050_spore_family(world, player),
+            // aiStyles 52/53 (the hook 263 / the tentacle 264) need the
+            // whole NPC pool (the boss slot + the sibling scan), so they
+            // ride the sim's `update_plantera_minions` pass (the worm
+            // precedent) - the kind arms below stay empty on purpose.
             // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
             // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
             // two kinds only (the aiStyle-26/22 kinds ride another slice).
@@ -4215,6 +4273,73 @@ impl Npc {
         self.y += self.vy;
     }
 
+    /// S1-D-3-wire-plantera-minions: the aiStyle-50 family arm — the spore
+    /// pair (`NPC.AI()`'s `else if (this.aiStyle == 50)` block,
+    /// `NPC.cs:31651-31716`). The machine lives in `npc_ai_style50.rs`
+    /// (`ai_style50`, RNG-free by construction); this seam feeds the
+    /// session player as the one `TargetCandidate` (the port is
+    /// single-player, `npc_target::session_candidate`), classic difficulty
+    /// (`expert = false`, the port's stock) and ticker 0 (the
+    /// `EverLastingTicker` is not plumbed — the S1-D-3p precedent).
+    ///
+    /// The arm's `noTileCollide` write is RETURNED (`Style50Outcome`): the
+    /// FungiSpore opts into tile collision (`:31656`) and dies on contact
+    /// (hp already 0 — the `HitEffect` dust + `checkDead` pair is the
+    /// documented skip, the death removal rides the sim's `hp > 0`
+    /// retain); the Spore flies through (`:31667`). The integration below
+    /// is `NPC.UpdateNPC`'s tail (`NPC.cs:90490-90498` →
+    /// `:92538-92544`): raw `position += velocity` under noTileCollide,
+    /// else the blocked-axis collision with the `collideX/Y` latches the
+    /// NEXT tick's contact-death gate reads.
+    ///
+    /// RNG: the arm draws NOTHING (module docs). The FungiSpore's
+    /// per-tick `UpdateNPC_CastLights` `Next(28,42)` (`NPC.cs:92386`) is
+    /// the documented visual skip — the `npc_lights.rs` precedent: an
+    /// arm that draws `Main.rand` for dust/light stays unported whole so
+    /// the stream is untouched (`fungi_spore_light` keeps the maths for
+    /// the light-pass wave).
+    fn ai_050_spore_family(&mut self, world: &World, player: &Player) {
+        let players = [crate::npc_target::session_candidate(player)];
+        let outcome = crate::npc_ai_style50::ai_style50(
+            self,
+            world,
+            &players,
+            self.kind.cs_id() as i32,
+            false,
+            0,
+        );
+        // The contact death (`:31657-31662`): the velocity/target tail did
+        // NOT run; the C# `HitEffect(0, 100.0)` + `checkDead()` pair is the
+        // dust skip + the sim's death retain (hp is already 0).
+        if outcome.died_on_contact {
+            return;
+        }
+        // `NPC.cs:90490-90498` — the movement split on noTileCollide.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        if outcome.no_tile_collide {
+            self.integrate_no_tile_collide();
+        } else {
+            // `:92538-92544` — the blocked axes zero the velocity and
+            // latch collideX/Y for the next tick's death gate.
+            let (w, h) = self.size();
+            let nx = self.x + self.vx;
+            self.collide_x = crate::player::collides_rect(world, nx, self.y, w, h);
+            if self.collide_x {
+                self.vx = 0.0;
+            } else {
+                self.x = nx;
+            }
+            let ny = self.y + self.vy;
+            self.collide_y = crate::player::collides_rect(world, self.x, ny, w, h);
+            if self.collide_y {
+                self.vy = 0.0;
+            } else {
+                self.y = ny;
+            }
+        }
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -4329,6 +4454,19 @@ impl Npc {
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
             NpcKind::Plantera => self.update_plantera(world, player, rng),
+            // The Plantera minions (S1-D-3-wire-plantera-minions): the
+            // hook (52) and the tentacle (53) run in the sim's pool pass
+            // `world_sim/npcs.rs::update_plantera_minions` (the C# arms
+            // read `NPC.plantBoss` + the sibling slots, `NPC.cs:32080`/
+            // `:32129`/`:32260`); these kind arms keep the match exhaustive
+            // and route nowhere - the pool pass owns the AI + integration.
+            NpcKind::PlanterasHook | NpcKind::PlanterasTentacle => {}
+            // The spore pair rides the aiStyle-50 axis above
+            // (`ai_050_spore_family`); these arms are unreachable through
+            // `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::FungiSpore | NpcKind::Spore => {
+                unreachable!("aiStyle 50 rides the style axis (S1-D-3-wire-plantera-minions)")
+            }
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             // S1-D-3 W-2: the Creeper (aiStyle 55) rides the style axis
             // (`ai_055_creeper_family`) — this arm is unreachable through
@@ -6593,6 +6731,46 @@ impl Npc {
                 // The C#'s gate is `life > lifeMax / 2` (`:262`'s arm).
                 self.phase_frame(self.hp > self.max_hp / 2);
             }
+            // The Plantera minions (S1-D-3-wire-plantera-minions).
+            // `FindFrame` has NO case 261/265 (`NPC.cs:66684-77370`) and
+            // the post-switch tail is aiStyle-39 only (`:77292`): both
+            // spores are single-frame (`Main.npcFrameCount[261] = [265]
+            // = 1`, the 260-269 row `Main.cs:67110`) - the row never
+            // leaves its `SetFrameSize` 0.
+            NpcKind::FungiSpore | NpcKind::Spore => {}
+            // `case 263` (`NPC.cs:72609-72630`): at rest the strip walks
+            // DOWN one row per >4 counter while `frame.Y > 0`; moving,
+            // the `frame.Y < 2` gate (PIXELS - with the sheet's row
+            // height >= 2 only row 0 qualifies) walks UP one row per >4
+            // counter. No wrap clamp - the C# arm has none.
+            NpcKind::PlanterasHook => {
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    if self.frame > 0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 4.0 {
+                            self.frame_counter = 0.0;
+                            self.frame -= 1;
+                        }
+                    }
+                } else if self.frame == 0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                }
+            }
+            // `case 250 : case 264 : case 268` (`NPC.cs:72884-72897`):
+            // the shared 6-tick strip - `frameCounter >= 6` advances one
+            // row and zeroes the counter, the row wraps at
+            // `Main.npcFrameCount[264]` = 4 (`Main.cs:67110`).
+            NpcKind::PlanterasTentacle => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame = self.next_row(1);
+                    self.frame_counter = 0.0;
+                }
+            }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 // `case 125/126` (`NPC.cs:76905-76926`, shared with the
                 // EoC's `case 4`): the Twins' sheets
@@ -7731,7 +7909,11 @@ impl Npc {
 
     /// `noTileCollide` + `noGravity` movement: the raw integration, no
     /// tile interaction (`SetDefaults` cases 4/5 set both flags).
-    fn integrate_no_tile_collide(&mut self) {
+    /// `pub(crate)`: the Plantera minion pool pass
+    /// (`world_sim/npcs.rs::update_plantera_minions`,
+    /// S1-D-3-wire-plantera-minions) integrates the hook/tentacle the
+    /// same way (`NPC.cs:90490-90498`).
+    pub(crate) fn integrate_no_tile_collide(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
     }
@@ -13690,16 +13872,19 @@ impl Npc {
     /// machine is the hook-anchor leash movement + the seed volleys + the
     /// phase-2 tentacle/spore transition, ported in `npc_ai_plantera`.
     /// The seam is kind-262-specific: the hook average (`:31743-31762`)
-    /// reads the live aiStyle-52 hooks — kinds 263/264/265 have no port
-    /// arms yet, so the anchor falls back to Plantera's own centre (the
-    /// documented seam; the C# would divide by a zero hook count there).
+    /// reads the live aiStyle-52 hooks — S1-D-3-wire-plantera-minions
+    /// landed kinds 263/264/265, the real spawn drain and the pool pass,
+    /// so the anchor reads the hooks' centroid whenever they live (the
+    /// own-centre fallback covers only the pre-spawn tick; the C# would
+    /// divide by a zero hook count there).
     /// The C# arm writes neither `direction` nor `spriteDirection` — the
     /// stand-in's per-tick facing write is dropped (the boss head rolls
     /// via `rotation`, `GetBossHeadRotation` `:7613-7616`).
     fn update_plantera(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The sim's pre-pass writes the hook centroid (`NPC.cs:31743-31762`,
         // `npc_ai_plantera_anchor::hook_anchor`); no hook live = the own
-        // centre stand-in (the documented seam until kind 263 lands).
+        // centre stand-in (the pre-spawn tick only — the drain spawns the
+        // three hooks on the boss's first tick, S1-D-3-wire-plantera-minions).
         let anchor = self.plantera_hook_anchor.unwrap_or_else(|| self.center());
         crate::npc_ai_plantera::step(self, world, player, rng, anchor);
         // The stand-in's world-bottom despawn tail is kept (the C# arm
@@ -15487,6 +15672,13 @@ impl Npc {
             NpcKind::Retinazer => 52,
             NpcKind::Spazmatism => 53,
             NpcKind::Plantera => 54,
+            // The Plantera minions (S1-D-3-wire-plantera-minions): the
+            // vanilla type ids, unused by every arm above (the G6 key
+            // stays injective).
+            NpcKind::FungiSpore => 261,
+            NpcKind::PlanterasHook => 263,
+            NpcKind::PlanterasTentacle => 264,
+            NpcKind::Spore => 265,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 53,
             NpcKind::BoundGoblin => 58,
@@ -19818,7 +20010,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 240] = [
+    pub(super) const ALL_KINDS: [NpcKind; 244] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -20060,6 +20252,11 @@ mod tests {
         NpcKind::GingerbreadMan,
         NpcKind::Yeti,
         NpcKind::Everscream,
+        // The Plantera minion family (S1-D-3-wire-plantera-minions).
+        NpcKind::FungiSpore,
+        NpcKind::PlanterasHook,
+        NpcKind::PlanterasTentacle,
+        NpcKind::Spore,
     ];
 
     #[test]
@@ -23361,8 +23558,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            240,
-            "every decodable kind resolves (the wire roster's size - 240 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees)"
+            244,
+            "every decodable kind resolves (the wire roster's size - 244 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four)"
         );
         assert!(
             covered > 43,
@@ -27485,8 +27682,7 @@ mod s1_d_2_tests {
 
 }
 
-// =====================================================================
-// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no
+// ==============================================================// S1-F-13c WIRING witnesses — WRITTEN, NOT RUN (code-only mode: no
 // cargo/rustc). These pin the LIVE routing: the style axis claims the
 // three Frost Moon bosses (344/345/346) onto their named machines, the
 // hover stand-ins are retired, the bosses attack (the shot lanes fill),
@@ -27722,3 +27918,220 @@ mod s1_f_13c_wire_tests {
         assert!(crate::projectile::proj_data(180).is_some());
     }
 }
+/// S1-D-3-wire-plantera-minions (census §5 W-8): the four minion kinds'
+/// wiring witnesses — WRITTEN NOT RUN (code-only mode, no compiler
+/// invoked). The machines' own witnesses live in `npc_ai_style50.rs` /
+/// `npc_ai_style52.rs` / `npc_ai_style53.rs` / `npc_ai_plantera_anchor.rs`;
+/// these pin the WIRING: the SetDefaults rows through the port tables,
+/// the axis claim, the pool pass, the spawn drain and the FindFrame arms.
+#[cfg(test)]
+mod s1_d_3_wire_plantera_minions_tests {
+    use super::*;
+
+    fn air() -> World {
+        // height 400 keeps UnderworldLayer = height - 200 positive (the
+        // npc_ai_style52 test precedent).
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 30.0;
+        w
+    }
+
+    /// The `SetDefaults` rows through the port's tables
+    /// (`NPC.cs:12364-12378`/`:12396-12409`/`:12410-12422`/`:12423-12437`).
+    #[test]
+    fn the_minion_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, lifeMax, kb)
+        let table = [
+            (NpcKind::FungiSpore, 261u16, 50u8, 12.0, 12.0, 80, 0, 1, 0.0),
+            (NpcKind::PlanterasHook, 263, 52, 40.0, 40.0, 60, 24, 4000, 1.0),
+            (NpcKind::PlanterasTentacle, 264, 53, 24.0, 24.0, 60, 20, 1000, 1.0),
+            (NpcKind::Spore, 265, 50, 18.0, 18.0, 70, 0, 1, 0.0),
+        ];
+        for (kind, ty, style, w, h, dmg, def, life, kb) in table {
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} box");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(n.value(), 0.0, "{kind:?} no money");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+            // The protocol ids (gate-reassigned 153/154/155/215) round-trip; the bestiary net ids
+            // are the vanilla types.
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind));
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+        }
+        // `dontTakeDamage = true` is the hook's alone (`NPC.cs:12406`).
+        assert!(Npc::new(NpcKind::PlanterasHook, 0.0, 0.0, 1, 0.0).dont_take_damage);
+        for kind in [NpcKind::FungiSpore, NpcKind::PlanterasTentacle, NpcKind::Spore] {
+            assert!(!Npc::new(kind, 0.0, 0.0, 1, 0.0).dont_take_damage);
+        }
+    }
+
+    /// The aiStyle-50 axis claim: a full `update_rng` tick runs the spore
+    /// machine (the +0.02 gravity, the EncourageDespawn(5)) and draws
+    /// NOTHING on the caller's stream (the arm is RNG-free; the
+    /// FungiSpore light is the documented draw-pass skip).
+    #[test]
+    fn the_spore_pair_rides_the_style50_axis_draw_free() {
+        let w = air();
+        let mut player = Player::spawn(&w);
+        for kind in [NpcKind::FungiSpore, NpcKind::Spore] {
+            // Away from the session player's spawn box: the contact pass
+            // (`Player.Update_NPCCollision`'s DamageVar roll) legitimately
+            // draws on overlap — this witness pins the AI ARM's draw-freedom.
+            let mut n = Npc::new(kind, 120.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            let mut rng = UnifiedRandom::new(7);
+            let witness = rng.clone();
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(rng, witness, "{kind:?} the style-50 arm draws no RNG");
+            // `:31669` — the float gravity landed (the FungiSpore is in
+            // open air, so no contact death).
+            assert!(n.vy > 0.0, "{kind:?} the +0.02 gravity");
+            // `:31653` — EncourageDespawn(5) ran FIRST.
+            assert_eq!(n.despawn_timer, 5, "{kind:?} the despawn encouragement");
+            // `:31715` — the tilt rides the final velocity.
+            assert_eq!(n.rotation, n.vx * 0.2, "{kind:?} the vx*0.2 tilt");
+        }
+    }
+
+    /// The FungiSpore's contact death (`NPC.cs:31657-31662`): a tick
+    /// with collideX/Y latched zeroes the hp and SKIPS the velocity tail.
+    #[test]
+    fn the_fungi_spore_dies_on_tile_contact() {
+        let w = air();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::FungiSpore, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        n.collide_y = true; // the previous tick's landing latch
+        n.vx = 3.0;
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(1));
+        assert_eq!(n.hp, 0, "the contact death (`:31659` life = 0)");
+        assert_eq!(n.vx, 3.0, "the velocity tail did NOT run on the death tick");
+        // The Spore flies through tiles — the same latch never kills it.
+        let mut s = Npc::new(NpcKind::Spore, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        s.collide_y = true;
+        s.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(1));
+        assert_eq!(s.hp, 1, "the Spore keeps noTileCollide (`:31667`)");
+    }
+
+    /// The hook's FindFrame arm (`NPC.cs:72609-72630`): at rest the strip
+    /// walks DOWN one row per >4 counter; moving, only row 0 climbs.
+    #[test]
+    fn the_hook_frame_walks_down_at_rest_and_up_moving() {
+        let mut h = Npc::new(NpcKind::PlanterasHook, 0.0, 0.0, 1, 0.0);
+        h.frame = 2;
+        for _ in 0..5 {
+            h.find_frame();
+        }
+        assert_eq!(h.frame, 1, "the >4 counter stepped one row down");
+        h.frame = 0;
+        h.vx = 6.0;
+        for _ in 0..5 {
+            h.find_frame();
+        }
+        assert_eq!(h.frame, 1, "the moving row-0 climb");
+        // The `frame.Y < 2` PIXEL gate: row 1 (>= 2 px on any sheet) does
+        // not climb further.
+        for _ in 0..20 {
+            h.find_frame();
+        }
+        assert_eq!(h.frame, 1, "the pixel gate holds row 1");
+    }
+
+    /// The tentacle's FindFrame arm (`NPC.cs:72884-72897`, the shared
+    /// case 250/264/268): the 6-tick strip wraps at npcFrameCount 4.
+    #[test]
+    fn the_tentacle_frame_wraps_the_four_row_strip() {
+        let mut t = Npc::new(NpcKind::PlanterasTentacle, 0.0, 0.0, 1, 0.0);
+        for _ in 0..24 {
+            t.find_frame();
+            assert!(t.frame < 4, "row {} of 4", t.frame);
+        }
+        assert_eq!(t.frame, 0, "24 ticks = one full 4x6 lap");
+        // The spores never advance (no FindFrame case, single frame).
+        for kind in [NpcKind::FungiSpore, NpcKind::Spore] {
+            let mut s = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for _ in 0..30 {
+                s.find_frame();
+            }
+            assert_eq!(s.frame, 0, "{kind:?} single frame");
+        }
+    }
+
+    /// The hook's timeLeft never ticks (`DoesntDespawnToInactivity`,
+    /// `NPC.cs:77826` — CheckActive returns before the decrement).
+    #[test]
+    fn the_hook_never_despawns_to_inactivity() {
+        let mut h = Npc::new(NpcKind::PlanterasHook, 0.0, 0.0, 1, 0.0);
+        h.despawn_timer = 937;
+        for _ in 0..2000 {
+            h.tick_despawn();
+        }
+        assert_eq!(h.despawn_timer, 937, "the hook is on the exempt list");
+        assert!(!h.despawn_expired());
+        // The tentacle/spore DO tick (not on the list).
+        let mut t = Npc::new(NpcKind::PlanterasTentacle, 0.0, 0.0, 1, 0.0);
+        t.despawn_timer = 3;
+        for _ in 0..3 {
+            t.tick_despawn();
+        }
+        assert!(t.despawn_expired());
+    }
+
+    /// The pool pass: an orphan hook (no live Plantera) dies through the
+    /// strike; with the boss live the hook survives (the machine's own
+    /// witnesses pin the anchor-search RNG order).
+    #[test]
+    fn the_pool_pass_strikes_orphans_and_keeps_anchored_minions() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air();
+        // Orphan: no boss in the pool.
+        let hook = Npc::new(NpcKind::PlanterasHook, 50.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        app.npcs.push(hook);
+        crate::world_sim::npcs::update_plantera_minions(&mut app);
+        assert_eq!(app.npcs[0].hp, 0, "the orphan strike (`:32080-32085`)");
+        // With the boss: the hook survives.
+        app.npcs.clear();
+        let mut boss = Npc::new(NpcKind::Plantera, 60.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        boss.target = 0;
+        app.npcs.push(boss);
+        let mut h = Npc::new(NpcKind::PlanterasHook, 50.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        h.despawn_timer = 937;
+        // The jungle zone keeps the retreat gate off (`:32090` — the
+        // stock ctx's true would be overwritten by the metrics' false).
+        app.scene_metrics.zone_jungle = true;
+        app.npcs.push(h);
+        let mut player = Player::spawn(&app.world);
+        player.x = 70.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        crate::world_sim::npcs::update_plantera_minions(&mut app);
+        assert!(app.npcs[1].hp > 0, "the anchored hook lives");
+        // The tentacle without a boss dies the same way.
+        app.npcs.clear();
+        app.npcs.push(Npc::new(NpcKind::PlanterasTentacle, 0.0, 0.0, 1, 0.0));
+        crate::world_sim::npcs::update_plantera_minions(&mut app);
+        assert_eq!(app.npcs[0].hp, 0, "the tentacle orphan strike (`:32254-32259`)");
+    }
+
+    /// The anchor pre-pass union: with a live hook the centroid reads the
+    /// hook's centre (the cs_id-based type_of — the protocol id 154 would
+    /// never match the C# type 263).
+    #[test]
+    fn the_centroid_reads_the_vanilla_type_not_the_protocol_id() {
+        let hook = Npc::new(NpcKind::PlanterasHook, 100.0, 200.0, 1, 0.0);
+        let boss = Npc::new(NpcKind::Plantera, 0.0, 0.0, 1, 0.0);
+        let type_of = |n: &Npc| n.kind.cs_id() as i32;
+        let pool = [boss, hook.clone()];
+        assert_eq!(
+            crate::npc_ai_plantera_anchor::hook_centroid(&pool, type_of),
+            Some(hook.center()),
+            "the hook kind resolves to 263 through cs_id"
+        );
+    }
+}
+
