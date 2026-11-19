@@ -17368,6 +17368,93 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The Player family (S1-E-5, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
+46 `Lighting.AddLight` call sites** — every RNG-free one — as pure functions
+returning `(tile_x, tile_y, rgb)` contributions, mirroring `npc_lights.rs`'s
+shape and sharing the `entity_lights.rs` anchor vocabulary
+(`tile_x`/`tile_y`/`XAnchor`). The feed runs in `app/frame/draw.rs` beside the
+item/NPC feeds, into the **same** `EntityLights` pair (one list pair per engine
+in the C#, not one per family). Landed:
+
+* **The four `UpdateBuffs` arms**: Shine 11 (`:9995`,
+  `(int)(position.X + (float)(width / 2)) / 16` — the **int** division inside
+  the cast, width 20 → 10, the live `height` for the y half), Inferno 116
+  (`:10215`, quotient-truncating centre), Electrified 144 (`:10316`,
+  pixel-truncating centre), Ice Barrier 62 (`:10466`, only at
+  `statLife <= statLifeMax2 * 0.5`; the port's single `max_hp` stands in for
+  both caps). Inferno's/Electrified's RGBs agree with `buff_effects.rs`'s
+  S1-E-7b accumulator, which has no consumer yet — this scan is the live
+  wiring; when the accumulator's scan lands, those two arms move to it.
+* **The Jellyfish Necklace family** (`UpdateEquips` → `ApplyEquipFunctional`,
+  `:15224-15262`): 1303/1860 dry (0.225, 0.05, 0.15) / wet (1.8, 0.4, 1.2),
+  1861 the arctic pair. The walk reads `equipped[3..10]` — the C# reaches the
+  arms only through the slot-3..10 loop (`:12946-12952`), so armor slots 0..2
+  and the vanity rows never light (`IsItemSlotUnlockedAndUsable` folds true
+  like `doll_flags`).
+* **`ItemCheck_EmitHeldItemLight`** (`:49810-50194`), all 22 light lines: the
+  biome torch (the `num3` → `num2` chain `:49824-49893` verbatim, clamped to
+  `TorchID.Count - 1 = 23`, `TorchID.TorchColor` via
+  `tile_light::torch_color`), candles 105/713, Water Candle 148 (no wet gate),
+  Peace Candle 3117 (the `itemLocation.X -= direction * 4` nudge `:50019`;
+  the light rides `velocity.X` but not the mount `+ pos`), Shadow Candle 5322,
+  glowsticks 282/3002/286/3112/4776/5643 (the holdStyle-1 nudges
+  `:50403-50412`; 5643 reads `LightParams.disco`), and 4952 — which has
+  **holdStyle 6** (Item.cs case 4952), so its location comes from the
+  `:50563-50573` arm (`Center.X + 8·dir`, `Y + 40 − 2 + headgear row offset`),
+  then the light adds `(8·dir, −10·gravDir)` (`:50178`). Every point rides
+  the ported `Player::rotated_relative_point`; `num` is the C#'s constant
+  `1f` (`:49812`).
+
+**RNG argument (stream order preserved by construction).** Every `Main.rand`
+draw in the ported region sits inside a dust branch gated on
+`stealth >= 1f` (`:49813`, `:49902`/`:49922`/`:49950`/…) or the 4952 tail's
+`Next(40)` (`:50182`); the port skips those branches **wholesale** (the dust
+system is S1-E-2/S1-E-3), so no draw is consumed and none is skipped
+mid-stream — the `AddLight` lines themselves are RNG-free. The feed collects
+after the fixed step like the item/NPC feeds; with zero draws in every arm,
+the placement cannot move the UpdatePlayers stream. The witness tests pin
+the arm order, the anchor forms and the gates (written, **not run** —
+code-only mode).
+
+**Deliberate folds / deviations:**
+
+* `UsingBiomeTorches` (`:3950-3959`) is `unlockedBiomeTorches &&
+  builderAccStatus[11] == 0`: the port reads `p.unlocked_biome_torches`
+  (without the Torch God unlock the plain torch stays plain) and folds the
+  builder toggle to 0 (on). `happyFunTorchTime` folds to false (no field).
+* `BiomeTorchHoldStyle` (`:40291-40346`): the `ZoneShimmer` (`:40297`),
+  `ZoneLihzhardTemple` (`:40305`), `ZoneUndergroundDesert` and remix-world
+  desert arms (`:40337-40344`) read fields the port's `Zones` does not carry
+  and are skipped **in place**; the dungeon arm (`:40301`, before the
+  underworld one) and the surface-desert half land.
+* The `ItemCheck` gate `!JustDroppedAnItem && IsAllowedToHoldItems`
+  (`:42847`) folds to true (neither flag ported); `ApplyItemPositionOffsetFromMount`
+  folds to zero (no mount offsets); 4952's `petting.isPetting` gate folds
+  false; `gravDir` is 1 in the port.
+* 4776's `Utils.FloodFillTile` spread (`:50135`) is dropped — it writes the
+  light map directly, not the entity list; only the `AddLight(pos2, rgb)`
+  line (`:50136`) lands.
+* The dead player is skipped by the feed (like the dead NPCs); vanilla's
+  residual buff light while dead needs the unported death visuals.
+
+**What stays dropped (the other 14 sites):** the mount lights (`:21354`,
+`:24495-24497` Rudolph's trail, `:45032`), the three Vortex-stealth armor
+chains (`:31279`/`:31297`/`:31315`), the wing lights (`:29547`, `:36026`),
+the Snapping Stone trio (`:24575-24583`, `accSnappingStoneLightUp`), and the
+phase-blade held light (`:44916`, needs `Item.GetPhaseColor`). **The light
+pets are not Player.cs sites at all** — Fairy Bell / Wisp in a Bottle /
+Magic Lantern / Suspicious Looking Tentacle emit from `Projectile.AI`
+(projectile family, another worker); **NightOwl (12)** sets `nightVision`
+only (`:9997-10000`), no `AddLight`.
+
+**Code-only mode (2026-11-18 user directive):** this family was finished
+without invoking any compiler — no cargo/rustc/rustfmt/test runs. The tests
+in `player_lights.rs` (18, incl. the biome-zone order, the unlock gate, the
+slot-range walk, the holdStyle-6 anchor and the negative-coordinate
+truncation) are written but **not run**; the first build after the merge
+must run `cargo test -p tr-app player_lights` plus the catalog command.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
