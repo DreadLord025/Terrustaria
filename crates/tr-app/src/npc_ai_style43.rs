@@ -770,7 +770,7 @@ pub fn queen_bee_ai(
         // `:30714-30745` — the fire tick: `ai[1] % num651 == num651-1`,
         // the NPC's BOTTOM above the player's TOP (`position.Y`, not
         // the centre), and CanHit from vector79. Sound Item17 skipped.
-        if npc.ai[1] % num651 as f32 == (num651 - 1) as f32
+        if npc.ai[1] % num651 as f32 == ((num651 - 1) as f32)
             && npc.y + h < player.y
             && crate::projectile::can_hit(
                 world,
