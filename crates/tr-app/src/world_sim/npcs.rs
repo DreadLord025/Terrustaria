@@ -3643,6 +3643,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let (w, h) = kind.size();
             let mut limb = Npc::new(kind, ccx - w * 0.5, ccy - h * 0.5, side, 0.0);
             limb.ai[0] = side as f32;
+            // `Main.npc[num474].target = this.target` (`NPC.cs:27642`/
+            // `:27647`/`:27652`/`:27658`): the limbs inherit the head's
+            // target — the cannon's state-1 steer reads it BEFORE its
+            // first TargetClosest (`:28717`). The head's init
+            // `TargetClosest()` (`:27637`) picks the only active player;
+            // the port's v1 head does not target, so the drain stands in
+            // the single-player result: slot 0 (documented stand-in —
+            // `Npc::new` starts at the ClearTarget 255, which would
+            // index past the port's one-slot player slice).
+            limb.target = 0;
             if timed {
                 limb.ai[3] = 150.0;
             }
@@ -3680,6 +3690,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.prime_present = true;
             app.world.prime_x = prime.x + pw * 0.5;
             app.world.prime_y = prime.y;
+            // S1-D-3 prime wiring: the faithful limb arms' seam reads
+            // (`Main.npc[(int)ai[1]]` — `NPC.cs:28249`'s INTEGER half-width
+            // centre, `:28446`/`:28489`'s velocity blends, `:28326`'s phase
+            // gate) — the head slot's live fields, not the legacy centre.
+            app.world.prime_head_x = prime.x;
+            app.world.prime_head_width = pw as i32;
+            app.world.prime_head_vx = prime.vx;
+            app.world.prime_head_vy = prime.vy;
+            app.world.prime_head_ai1 = prime.ai[1];
             let _ = ph;
         } else {
             app.world.prime_present = false;

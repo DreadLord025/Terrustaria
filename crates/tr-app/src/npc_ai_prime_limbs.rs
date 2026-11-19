@@ -4,13 +4,20 @@
 //!
 //! S1-D-3 (prime-limbs round, code-only mode): this module is the faithful
 //! 1:1 port of the three arms as pure step functions over `Npc` + a shared
-//! context seam. It is NOT wired into the live dispatch yet —
-//! `npc.rs::update_prime_limb` (the v1 shared tether approximation for all
-//! four limbs) keeps running byte-identical until the wiring round (the
-//! sibling D-3 rounds land the same way: module + tests first, dispatch
-//! claim second — the `npc_ai_style28.rs` pattern, commit `040df4c5`, and
-//! the saw's `npc_ai_style33.rs`, commit `e5faaf42`). Every other file is
-//! byte-identical except the one `mod` line in `main.rs` and the docs.
+//! context seam.
+//!
+//! S1-D-3 prime wiring (this round): WIRED — the style axis in
+//! `npc.rs::update_rng` claims aiStyles 34/35/36 (`34 | 35 | 36 =>
+//! ai_prime_limb_family`), which fills `PrimeLimbContext` from the sim's
+//! head write-through (`world_sim/npcs.rs`'s `prime_head_*` fields) and
+//! integrates `position += velocity` after the arm (`UpdateNPC`,
+//! `NPC.cs:90498` — the pure fns leave it to the caller). The v1
+//! `npc.rs::update_prime_limb` stand-in now serves ONLY the saw (129,
+//! aiStyle 33) until its own wiring round; the head (127, `update_prime`)
+//! and the saw's share are byte-identical. The module's landing round
+//! followed the sibling pattern (`npc_ai_style28.rs`, commit `040df4c5`,
+//! and the saw's `npc_ai_style33.rs`, commit `e5faaf42`): module + tests
+//! first, dispatch claim second.
 //!
 //! Ids + styles VERIFIED against the source (the task brief's ids were off
 //! by one — 127 is the HEAD, not the cannon):
@@ -150,7 +157,6 @@
 //!   the arm's own C# style and `faceTarget = true` (the default):
 //!   vice `:28332-28333` (TWICE, kept), `:28455`, `:28497`; laser
 //!   `:28886`, `:28964`. The cannon arm calls NONE.
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dispatch claim is the follow-up round
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

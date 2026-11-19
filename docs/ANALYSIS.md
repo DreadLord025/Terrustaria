@@ -25069,3 +25069,69 @@ stamp. Same shape as the sibling's `Style33Context` plus the
 velocity pair — the port's `World.prime_*` write-through carries
 only the position today, so the wiring round must extend it (or read
 the head's NPC slot directly) before claiming the dispatch.
+
+### The wiring (S1-D-3 prime wiring, 2026-11-19, code-only mode)
+
+**Base-branch note**: this round is based on
+`origin/task/S1-D-3-prime-limbs` (ff3f45f3, fast-forward merge after the
+worktree was cut from origin/main c7fe175d) — the module was pushed but
+NOT yet merged to main. The merger lands both branches; this branch's
+diff against main therefore includes the module itself.
+
+The dispatch claim (`npc.rs::update_rng`'s style axis):
+`34 | 35 | 36 => self.ai_prime_limb_family(world, player, rng)`. Each
+style's only `SetDefaults` user is its limb (`npc/data.rs`'s ai_style
+rows: Vice 34, Cannon 35, Laser 36), so the axis claim IS the kind
+claim — the kind match's cannon/vice/laser arms are now
+`unreachable!` (the aiStyle-5/9 precedent). `update_prime_limb` serves
+ONLY the saw (129, aiStyle 33) until its own wiring round; the head
+(127, `update_prime`) and the saw's share are byte-identical (witness
+`the_saw_still_rides_the_stand_in_byte_identical` compares the direct
+call against the `update_rng` route field-for-field).
+
+The seam feed: the sim's head write-through (`world_sim/npcs.rs`) now
+carries `World.prime_head_x` (position.X — the INTEGER half-width
+centres read it), `prime_head_width` (INT), `prime_head_vx/vy` (the
+vice's blends) and `prime_head_ai1` (the phase gate) alongside the
+legacy `prime_x` FLOAT centre (the v1 saw arm still reads it).
+`head_ai_style` reads 32 when present (the write-through only anchors
+a live SkeletronPrime), -1 otherwise — the C#'s
+`!active || aiStyle != 32` despawn gate. `net_mode` is 0 (the port is
+single-player): the shot gates pass, the head-gone despawn kills on
+the first tick. `ticker` is 0 (the zombie arm's stand-in — the stamp's
+only reader is the unported target-line fade).
+
+The integration: the pure fns do NOT integrate (the module docs'
+`NPC.cs:90498` note) — the wrapper owns `position += velocity` after
+the arm, the raw noTileCollide/noGravity step (`SetDefaults`
+`:10573-10632`).
+
+The spawn seam: the limb-spawn drain now sets `limb.target = 0` —
+the C#'s `Main.npc[num474].target = this.target` (`NPC.cs:27642`/
+`:27647`/`:27652`/`:27658`) after the head's init `TargetClosest()`
+(`:27637`). Documented stand-in: the port's v1 head does not target,
+so the drain stands in the single-player result (slot 0, the only
+active player). Without it the cannon's state-1 steer would read the
+ClearTarget 255 (`:28717` reads `this.target` BEFORE its first
+TargetClosest). The wrapper also guards an out-of-slice target back
+to 0 (the C#'s 255-slot `Main.player` array indexes an inactive slot
+safely; the port's one-slot slice would panic — the TR_NPC debug
+spawn path can produce an unacquired limb).
+
+RNG argument (census preservation): the axis passes the caller's
+`UpdateNPCs` stream (`Main.SwapRandom`, `Main.cs:17767`) straight
+through. The vice arm takes no RNG parameter — zero draws by
+construction. The cannon/laser draw exactly two `Next(-40, 41)`
+(X then Y) per FIRED shot only, gated `netMode != 1` AND the STRICT
+`localAI[0]` threshold — a non-firing tick draws nothing. The wiring
+witnesses assert the stream state through `update_rng` (clone-before
+/ replay-two-draws), so the retirement cannot silently shift the
+shared stream. The despawn's HitEffect gore stays the cosmetic skip.
+
+Tests-as-code: 6 wiring witnesses WRITTEN NOT RUN (no compiler
+invoked) — the cannon's reversed-dock 140-tick retirement + two-draw
+parity, the vice's desync-99 retirement + zero-draw parity, the
+laser's 200-tick 8-unit-lead retirement + two-draw parity, the
+head-gone despawn (all three kinds, ai[2] += 10, zero draws), the
+saw byte-identical pin, the head's init-latch pin. The module's 16
+witnesses ride along from the base branch, also not run.
