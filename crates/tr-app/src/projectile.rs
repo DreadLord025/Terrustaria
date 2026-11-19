@@ -612,6 +612,17 @@ pub struct Projectile {
     pub net_important: bool,
     /// `Projectile.ignoreWater` (stock false, `:752`).
     pub ignore_water: bool,
+    /// `Projectile.shouldFallThrough` (`:462`, reset false `:709`) — the
+    /// aiStyle-67 manual platform decision (`decidesManualFallThrough`,
+    /// `:460`/`:17583-17586`): the pirate arm writes it from the owner's
+    /// feet (`:49561`) and the jump helper from the target (`:51206`).
+    pub should_fall_through: bool,
+    /// `Projectile.stepSpeed` (stock 1f, `:342`, reset `:10884`) —
+    /// `Collision.StepUp`'s rise rate (`:50605`).
+    pub step_speed: f32,
+    /// `Projectile.gfxOffY` — the StepUp draw lift, decayed per tick
+    /// (`:16740-16764`).
+    pub gfx_off_y: f32,
 }
 
 impl Default for Projectile {
@@ -671,6 +682,9 @@ impl Default for Projectile {
             original_damage: 0,
             net_important: false,
             ignore_water: false,
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 }
@@ -2029,7 +2043,7 @@ impl Projectile {
         }
     }
 
-    /// `AI()`'s aiStyle-2 branch (`Projectile.cs:23205-23688`) — the thrown
+    /// `AI()`'s aiStyle-2 branch (`Projectile.cs:23205-23689`) — the thrown
     /// family the starting weapons fire: the shuriken (3), the throwing knife
     /// (48), the snowball (166), the Wand of Sparking's spark (954) and the
     /// Dutchman's shell (240). The branch is the wind head
@@ -2043,18 +2057,55 @@ impl Projectile {
     /// `:23219-23244`, the 909/162/281/240/497/861/306/304 visual blocks) are
     /// SKIPPED — the pool has no dust/gore/sound layer — while the state each
     /// of them writes is ported where the trajectory reads it (`ai[0]`, the
-    /// `alpha`/`frame` markers, the `damage * 0.9f` decay of 304).
+    /// `alpha`/`frame` markers, the `damage * 0.9f` decay of 304). The skipped
+    /// effects take their `Main.rand` gating rolls with them (the 93 dust
+    /// `Next(5)` `:23211`, the 968 dust loop's 16 `NextFloat` `:23229-23231`,
+    /// the 162/281/240 gore `Next(61,64)` `:23312`/`:23357`/`:23402`, the
+    /// spark dust `Next(100)` `:23541`, the 54 dust `Next(20)` `:23685`) —
+    /// the `ai_volcano`/yoyo precedent (ANALYSIS: no roll is consumed for an
+    /// unrendered effect).
     ///
-    /// `rng` is the update pass's named stream: the type-93 arm's
-    /// `28 + Main.rand.Next(6)` delay is the branch's only trajectory roll
-    /// (`:23662-23665`).
-    fn ai_style2(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng, wind: f32) {
+    /// `rng` is the update pass's named stream: the 909 frame roll
+    /// (`1 + Main.rand.Next(6)`, `:23268`) and the type-93 arm's
+    /// `28 + Main.rand.Next(6)` delay (`:23662-23665`) are the branch's
+    /// behaviour rolls, in the C#'s order.
+    ///
+    /// `npcs` feeds the snowball's town-NPC refusal (`:23570-23577`); the
+    /// 861's `Main.myPlayer == this.owner` gate folds to the pool's `simulated`
+    /// test (only the owner's machine runs the arm at all).
+    fn ai_style2(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        wind: f32,
+    ) {
         // `:23207-23210` — `Main.windPhysics`'s head (the general tail at
         // `:16777` applies the same term again to every eligible style, and
         // aiStyle 2 is on `ShouldUseWindPhysics`'s list `:22110-22132`, and
         // the general tail sits at `:16777`).
         if wind != 0.0 {
             self.vel.x += wind * WIND_PHYSICS_STRENGTH;
+        }
+        // `:23219-23239` — the 968 head: the one-shot dust burst's state
+        // latch (the 8-dust loop SKIPPED, its 16 rolls with it), the
+        // `alpha - 50` fade and the `frame = (int)ai[1]` pin. This head owns
+        // no `ai[0]` counter — the 968 is absent from the per-kind chain
+        // below, so it falls to the default tail arm, which counts the age
+        // and applies the 20-tick gravity (`:23659-23675`).
+        if self.kind == 968 {
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = 1.0;
+            }
+            self.alpha = (self.alpha - 50).max(0);
+            self.frame = self.ai[1] as i32;
+        }
+        // `:23240-23244` — the 304 spawn latch: `localAI[0]++` and alpha 0
+        // (the shell-style invisible start the 30-tick decay ramps out of).
+        if self.kind == 304 && self.local_ai[0] == 0.0 {
+            self.local_ai[0] += 1.0;
+            self.alpha = 0;
         }
         // `:23245-23256` — the rotation ladder.
         if self.kind == 1085 {
@@ -2064,24 +2115,33 @@ impl Projectile {
         } else {
             self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.03 * self.direction as f32;
         }
-        // `:23219-23244`'s type 968 is the one arm that leaves `ai[0]` alone
-        // (its clock rides `localAI[0]`); every other arm counts the age here.
-        if self.kind != 968 {
-            self.ai[0] += 1.0;
-        }
         match self.kind {
-            // `:23257-23275` — the 38-tick arm.
+            // `:23257-23275` — the 38-tick arm: the frame roll latches
+            // `ai[1] = 1 + rand.Next(6)` once (the `netUpdate` flag is MP
+            // bookkeeping, skipped) and `frame = ai[1] - 1` pins the sheet
+            // row every tick after.
             909 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 38.0 {
                     self.vel.y += 0.4;
                     self.vel.x *= 0.97;
                 }
+                if self.ai[1] == 0.0 {
+                    self.ai[1] = 1.0 + rng.next_range(0, 6) as f32;
+                }
+                if self.ai[1] > 0.0 {
+                    self.frame = self.ai[1] as i32 - 1;
+                }
             }
             // `:23276-23365` — the 18-tick pair (the "spent" alpha marker and
             // the `SoundID.Item14` latch are the ported state; the dust/gore
-            // of the `ai[0] == 3f` burst are SKIPPED).
+            // of the `ai[0] == 3f` burst are SKIPPED, the gore's
+            // `Next(61,64)` roll with them).
             162 | 281 => {
-                self.ai[1] = self.ai[1].max(1.0);
+                if self.ai[1] == 0.0 {
+                    self.ai[1] = 1.0;
+                }
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 18.0 {
                     self.vel.y += 0.28;
                     self.vel.x *= 0.99;
@@ -2091,18 +2151,11 @@ impl Projectile {
                 }
             }
             // `:23366-23410` — the Dutchman's shell: the 16-tick arm.
-            240 => {
-                self.ai[1] = self.ai[1].max(1.0);
-                if self.ai[0] >= 16.0 {
-                    self.vel.y += 0.18;
-                    self.vel.x *= 0.991;
-                }
-                if self.ai[0] > 2.0 {
-                    self.alpha = 0;
-                }
-            }
-            // `:23411-23428` — the 30-tick arm that aims while rising.
+            240 => self.ai_dutchman_shell(),
+            // `:23411-23428` — the 30-tick arm that aims while rising (the
+            // per-tick dust 27 is SKIPPED — it rolls nothing).
             497 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 30.0 {
                     self.vel.x *= 0.99;
                     self.vel.y += 0.5;
@@ -2110,9 +2163,45 @@ impl Projectile {
                     self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
                 }
             }
-            // `:23429-23494` — the glow-stick: the ground friction, the
-            // `velocity.X` dead zone, the `Kill()` at rest and the +0.1 fall.
+            // `:23429-23494` — the glow-stick: the owner pickup timer, the
+            // ground friction, the `velocity.X` dead zone, the `Kill()` at
+            // rest, the +0.1 fall and the two-mode frame/rotation machine.
+            // The C# arm owns no `ai[0]` counter (its clock is `localAI[0]`).
             861 => {
+                // `:23431-23448` — the `Main.myPlayer == this.owner` block:
+                // the 30-tick pickup grace, then any live player whose
+                // hitbox overlaps picks the stick up (`Kill`). The port has
+                // a single player and the pool's `simulated` gate already
+                // pins the arm to the owner's machine, so the 255-slot scan
+                // folds to the owner test: the `whoAmI != owner` arm is
+                // unreachable and `!(localAI[0] < 30)` is the whole gate.
+                self.local_ai[0] += 1.0;
+                if self.local_ai[0] > 30.0 {
+                    self.local_ai[0] = 30.0;
+                }
+                if self.local_ai[0] >= 30.0 {
+                    if let Some(p) = player {
+                        if !p.dead {
+                            let mine = tr_core::whip::Rect::new(
+                                self.pos.x as i32,
+                                self.pos.y as i32,
+                                self.w as i32,
+                                self.h as i32,
+                            );
+                            let theirs = tr_core::whip::Rect::new(
+                                p.x as i32,
+                                p.y as i32,
+                                crate::player::WIDTH as i32,
+                                p.height as i32,
+                            );
+                            if mine.intersects(theirs) {
+                                self.kill();
+                            }
+                        }
+                    }
+                }
+                // `:23449-23465` — the friction, the dead zone, the rest
+                // kill and the fall.
                 if self.vel.y == 0.0 {
                     self.vel.x *= 0.95;
                 } else {
@@ -2122,64 +2211,138 @@ impl Projectile {
                     self.vel.x = 0.0;
                 }
                 if self.vel.x == 0.0 && self.vel.y == 0.0 {
-                    self.active = false;
-                    self.time_left = 0;
+                    self.kill();
                 }
                 self.vel.y += 0.1;
+                // `:23466-23493` — the frame machine: the `ai[1] == 1`
+                // spent stick resets to frame 0 and keeps the shared spin;
+                // the flying stick animates frames 1..projFrames-1 at 5
+                // ticks per frame and aims along the velocity (+π/4, the
+                // left-facing +π/2 flip).
+                if self.ai[1] == 1.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0;
+                    self.rot +=
+                        (self.vel.x.abs() + self.vel.y.abs()) * 0.03 * self.direction as f32;
+                } else {
+                    if self.frame == 0 {
+                        self.frame = 1;
+                    }
+                    self.frame_counter += 1;
+                    if self.frame_counter > 4 {
+                        self.frame_counter = 0;
+                        self.frame += 1;
+                        if self.frame >= proj_frames(self.kind) as i32 {
+                            self.frame = 1;
+                        }
+                    }
+                    self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
+                    self.sprite_direction = if self.vel.x < 0.0 { -1 } else { 1 };
+                    if self.sprite_direction == -1 {
+                        self.rot += std::f32::consts::FRAC_PI_2;
+                    }
+                }
             }
-            // `:23495-23502` — the always-on +0.25 fall.
-            249 => self.vel.y += 0.25,
+            // `:23495-23502` — the always-on +0.25 fall (the `ai[0] >= 0f`
+            // gate is verbatim — a negative spawn payload delays it).
+            249 => {
+                self.ai[0] += 1.0;
+                if self.ai[0] >= 0.0 {
+                    self.vel.y += 0.25;
+                }
+            }
             // `:23503-23510` — the 5-tick arm.
             347 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 5.0 {
                     self.vel.y += 0.25;
                 }
             }
             // `:23511-23519` — the 18-tick `0.995`/`+0.2` arm.
             501 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 18.0 {
                     self.vel.x *= 0.995;
                     self.vel.y += 0.2;
                 }
             }
-            // `:23520-23556` — the spark family: the alpha-out kill at
-            // `ai[0] >= 60f` (the C#'s `ai[0] - 20f >= 40f`) and the
-            // `+0.1f`/`0.99` fall past tick 20 (the dust is SKIPPED).
+            // `:23520-23556` — the spark family: the fade-out kill inside
+            // the `ai[0] > 3f` window (`ai[0] - 20f >= 40f` = tick 60, the
+            // kill does NOT return — the gravity tail still runs) and the
+            // `+0.1f`/`0.99` fall past tick 20. The dust window's 10×/40-tick
+            // fade ramps and the `Next(100)` gate are SKIPPED — no dust
+            // layer, the roll goes with them.
             504 | 954 | 979 => {
                 self.alpha = 255;
+                self.ai[0] += 1.0;
+                if self.ai[0] > 3.0 {
+                    if self.ai[0] > 20.0 && self.ai[0] - 20.0 >= 40.0 {
+                        self.kill();
+                    }
+                }
                 if self.ai[0] >= 20.0 {
                     self.vel.x *= 0.99;
                     self.vel.y += 0.1;
                 }
-                if self.ai[0] >= 60.0 {
-                    self.active = false;
-                    self.time_left = 0;
-                }
             }
             // `:23557-23565` — the 10-tick arm.
             69 | 70 | 621 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 10.0 {
                     self.vel.y += 0.25;
                     self.vel.x *= 0.99;
                 }
             }
-            // `:23566-23596` — the snowball's 20-tick arm (the town-NPC /
-            // other-player kill of `:23568-23588` is SKIPPED: the pool's
-            // friendly-refusal pass owns the town-NPC rules).
+            // `:23566-23596` — the snowball's 20-tick arm. The
+            // `owner == Main.myPlayer && ai[1] == 1f` block kills the
+            // snowball on a town-NPC overlap (`:23570-23577` — the Rotten
+            // Egg's refusal); the `netMode == 1` other-player scan
+            // (`:23578-23588`) is MP-only and skipped. The C# `return`
+            // leaves AI() only — HandleMovement still runs (`:17015`).
             166 => {
+                if self.ai[1] == 1.0 {
+                    let mine = tr_core::whip::Rect::new(
+                        self.pos.x as i32,
+                        self.pos.y as i32,
+                        self.w as i32,
+                        self.h as i32,
+                    );
+                    for n in npcs {
+                        if n.hp <= 0 || !n.kind.is_town_npc() {
+                            continue;
+                        }
+                        let (nw, nh) = n.size();
+                        let theirs = tr_core::whip::Rect::new(
+                            n.x as i32,
+                            n.y as i32,
+                            nw as i32,
+                            nh as i32,
+                        );
+                        if mine.intersects(theirs) {
+                            self.kill();
+                            self.kill_step(world);
+                            return;
+                        }
+                    }
+                }
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 20.0 {
                     self.vel.y += 0.3;
                     self.vel.x *= 0.98;
                 }
             }
-            // `:23597-23609` — the 60-tick arm.
+            // `:23597-23609` — the 60-tick arm (the `ai[0] == 0f` one-shot
+            // `SoundID.Item1` is SKIPPED — no sound layer).
             300 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 60.0 {
                     self.vel.y += 0.2;
                     self.vel.x *= 0.99;
                 }
             }
-            // `:23610-23631` — the fading, `pi/4`-oriented arm.
+            // `:23610-23631` — the fading, `pi/4`-oriented arm (the four
+            // trail dust are SKIPPED — they roll nothing). The C# arm owns
+            // no `ai[0]` counter.
             306 => {
                 self.alpha = (self.alpha - 50).max(0);
                 self.rot = self.vel.y.atan2(self.vel.x) + 0.785;
@@ -2187,6 +2350,7 @@ impl Projectile {
             // `:23632-23649` — the 30-tick decay: the alpha ramp, the 0.9
             // damage/knockback decay and the `alpha >= 255` kill.
             304 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 30.0 {
                     self.alpha += 10;
                     self.damage = (self.damage as f32 * 0.9) as i32;
@@ -2195,12 +2359,14 @@ impl Projectile {
                         self.active = false;
                         self.time_left = 0;
                     }
-                } else {
+                }
+                if self.ai[0] < 30.0 {
                     self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
                 }
             }
             // `:23650-23658` — the 15-tick arm.
             370 | 371 | 936 => {
+                self.ai[0] += 1.0;
                 if self.ai[0] >= 15.0 {
                     self.vel.y += 0.3;
                     self.vel.x *= 0.98;
@@ -2214,6 +2380,7 @@ impl Projectile {
                 } else {
                     20.0
                 };
+                self.ai[0] += 1.0;
                 if self.ai[0] >= delay {
                     if self.kind == 93 {
                         self.ai[0] = 40.0;
@@ -7759,6 +7926,14 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
+        // ahead of the generic emit (`Main.cs:28143-28144` →
+        // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
+        // vanilla draws through the reverse-subtract + additive batches.
+        if self.kind == LIGHTS_BANE {
+            self.draw_lights_bane(r, lookups, camera, zoom, screen);
+            return;
+        }
         // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
         // the C# draws the strip ahead of the sprite (`Main.cs:28182-28243`'s
         // drawers, before the emit at `:30857-30909`), so the quads push first
@@ -7801,6 +7976,47 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+    }
+
+    /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
+    /// slash's three blend batches (S1-G-3). The C# ends the alpha batch,
+    /// begins `Main._multiplyBlendState` (the custom ReverseSubtract state,
+    /// `:27462-27470`) for two stretched `White * 0.3f * num` copies of frame
+    /// 12 plus four `Color.White` copies of the current frame (`:27483-27488`),
+    /// re-begins `BlendState.Additive` (`:27490`) for two `Color.Magenta`
+    /// copies (`:27491-27492`), then restores `BlendState.AlphaBlend`
+    /// (`:27494`). The port pushes the same eight quads, in the same order,
+    /// tagged with [`tr_render::BlendMode`]; `draw_ranges` splits the range
+    /// into one draw per batch. No light tint — the C# draws raw White /
+    /// Magenta here, not `GetAlpha`. The screen placement (the per-quad
+    /// `anchor − origin·stretch` top-lefts) lives in [`lights_bane_quads`].
+    fn draw_lights_bane(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) {
+        let Some(sheet) = lookups.proj_sheets.get(&LIGHTS_BANE).copied() else {
+            return;
+        };
+        // `:27474` — `position = proj.Center - Main.screenPosition`; the ui
+        // range's screen pixels convert like `frame_quad`'s anchor.
+        let anchor = [
+            (self.pos.x + self.w * 0.5 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+        ];
+        for q in lights_bane_quads(
+            &sheet,
+            lookups.atlas_size,
+            self.frame,
+            self.scale,
+            anchor,
+            zoom,
+        ) {
+            r.push_ui_sprite_blend(q.pos, q.size, q.uv, q.tint, self.rot, q.origin, q.blend);
+        }
     }
 
     /// The followup kinds' frame-sliced quad, computed pure so the unit tests
@@ -8167,6 +8383,37 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_188_LightsBane` (`Projectile.cs:42229-42262`) — the Light's Bane
+    /// slash (974): the scale rides `ai[0]`, the 3-tick frame machine kills
+    /// at frame 12, and the rotation follows the velocity.
+    ///
+    /// The sound cue (`:42231-42239`, `SoundID.Item60` at `0.15 * ai[0]`
+    /// volume) and the dust streak (`:42255-42261`, type 278 with its two
+    /// `Main.rand` draws) are SKIPPED — the pool has no sound or dust layer
+    /// (the `ai_volcano` precedent); with them go their RNG draws.
+    fn ai_lights_bane(&mut self, world: &World) {
+        // `:42240` — the scale is the spawn's `ai[0]`.
+        self.scale = self.ai[0];
+        // `:42241` — the age counter the dust streak's window reads.
+        self.local_ai[0] += 1.0;
+        // `:42242-42250` — the frame advances every third tick; the twelfth
+        // frame kills the slash.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 12 {
+                self.kill();
+                return;
+            }
+        }
+        // `:42251` — `rotation = velocity.ToRotation()`.
+        self.rot = self.vel.y.atan2(self.vel.x);
+        // `HandleMovement`: the row keeps `tileCollide = false`
+        // (`Projectile.cs:9243`), so the position follows the velocity.
+        self.kill_step(world);
+    }
+
     /// `AI_189_Volcano` (`Projectile.cs:42264-42371`) — the Volcano (978) and
     /// the Cascade Explosion (1125).
     ///
@@ -8437,6 +8684,897 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI_067_FreakingPirates` (`Projectile.cs:49121-51201`) — the aiStyle-67
+    /// skeleton, ported for the Pirate Staff trio (393/394/395, the `flag`
+    /// branch) and the Vampire Frog (758, `flag2`). The other 12 types stay
+    /// deferred (the dispatch gates them): the Storm Tigers 833-835 (`flag3`,
+    /// the `AI_067_TigerSpecialAttack` chain `:49034-49119`), the Flinx 951
+    /// (`flag5`), the Mushroom Boi 1022 (`flag6`, the 1044 spore + the
+    /// `GetChaseResults` leap), the Cob Whip 1036 (`flag7`), the Cattiva pair
+    /// 1093/1112 (`flag8`, the `TryAssigningHelp` smart-cursor mining), the
+    /// Clay Pot 1118 (`flag9`) and the five pets 500/653/1018/1056/1090.
+    ///
+    /// RNG (arm-level draws mirrored in order; the `Dust.NewDust`/
+    /// `Gore.NewGore` internals belong to the unported dust/gore pools and
+    /// are skipped — ANALYSIS): the state-5 arrival's
+    /// `NextVector2CircularEdge(4,4)` (one `NextFloat`, `Utils.cs:1261-1274`),
+    /// the pirate high-jump's `NextFloatDirection()*NextFloat()` pair +
+    /// the `Next(4)` burst pick + the taken branch's gore-type roll
+    /// (`Next(580,583)` or two `Next(11,14)`), the frog idle frame's
+    /// `Next(50)` (only when the counter reaches 28, the `&&` short-circuit
+    /// of `:51037`) and the pirate idle burst's per-tick `Next(900,1200)`
+    /// comparison + its `Next(580,583)` gore roll on reset.
+    fn ai_freaking_pirates(
+        &mut self,
+        world: &World,
+        mut player: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:49124-49133` — the family flags; only `flag`/`flag2` are ported.
+        let flag = matches!(self.kind, ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN);
+        let flag2 = self.kind == VAMPIRE_FROG;
+        let num = 0.4f32;
+        // `:49147-49155` — no active owner: deactivate (the C# writes
+        // `active = false` directly, not `Kill()`).
+        let Some(_) = player.as_ref() else {
+            self.active = false;
+            return;
+        };
+        // `:49156-49160` — the parameter ladder. `flag10` (the petting
+        // interaction) folds to false — the port has no petting system.
+        let mut num2 = 450.0f32;
+        let num3 = 500.0f32;
+        let num4 = 300.0f32;
+        let flag10 = false;
+        // `:49248-49259` — the pirates' keep-alive pin.
+        if flag {
+            let dead = player.as_ref().is_some_and(|p| p.dead);
+            let held = player.as_ref().is_some_and(|p| p.pirate_minion);
+            if dead {
+                if let Some(p) = player.as_deref_mut() {
+                    p.pirate_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            num2 = 800.0;
+        }
+        // `:49316-49327` — the frog's keep-alive pin.
+        if flag2 {
+            let dead = player.as_ref().is_some_and(|p| p.dead);
+            let held = player.as_ref().is_some_and(|p| p.vampire_frog);
+            if dead {
+                if let Some(p) = player.as_deref_mut() {
+                    p.vampire_frog = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            num2 = 800.0;
+        }
+        let p = player.as_deref().unwrap();
+        let (pcx, pcy) = p.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let player_bottom = p.y + p.height;
+        // `:49405-49440` — the idle home spot beside the owner.
+        let mut vector = player_center;
+        if flag {
+            vector.x -= (15.0 + crate::player::WIDTH * 0.5) * p.facing as f32;
+            vector.x -= self.minion_pos as f32 * 20.0 * p.facing as f32;
+        } else if flag2 {
+            vector.x -= (35.0 + crate::player::WIDTH * 0.5) * p.facing as f32;
+            vector.x -= self.minion_pos as f32 * 40.0 * p.facing as f32;
+        }
+        // `:49556-49567` — the pets' no-target flag (false for the ported
+        // kinds), the manual fall-through decision and the attack parameters.
+        let flag13 = true;
+        self.should_fall_through = player_bottom - 12.0 > self.pos.y + self.h;
+        self.friendly = false;
+        let mut num9 = 0;
+        let mut num10 = 15;
+        let mut attack_target = -1i32;
+        let flag14 = true;
+        let flag15 = self.ai[0] == 5.0;
+        // `:49585-49590` — the frog attacks friendly, 20-tick bites, 60-tick
+        // cooldown.
+        if flag2 {
+            self.friendly = true;
+            num10 = 20;
+            num9 = 60;
+        }
+        // `:49607-49632` — the target search window.
+        let mut flag16 = self.ai[0] == 0.0;
+        if flag {
+            flag16 = self.ai[0] == 0.0 || self.ai[0] == 5.0;
+        }
+        if flag16 & flag13 {
+            // `:49631` — `skipIfCannotHitWithOwnBody: true`, the custom
+            // elimination check is the always-true stub (`:49029-49032`),
+            // `respectOwnerTarget: true`.
+            attack_target =
+                self.minion_find_target_in_range(world, npcs, player.as_deref(), num2, true, true);
+        }
+        // `:49742-49953` — state 1: fly back to the owner.
+        if self.ai[0] == 1.0 {
+            self.tile_collide = false;
+            let num17 = 0.2f32;
+            let mut num18 = 10.0f32;
+            let num19 = 200.0f32;
+            let pv_speed = p.vx.abs() + p.vy.abs();
+            if num18 < pv_speed {
+                num18 = pv_speed;
+            }
+            let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let spinninpoint = player_center - center;
+            let num20 = spinninpoint.length();
+            if num20 > 2000.0 {
+                // `:49767-49770` — the teleport home.
+                self.pos = player_center - Vec2::new(self.w, self.h) * 0.5;
+            }
+            // `:49771-49779` — arrived below the owner's feet: land.
+            if num20 < num19
+                && p.vy == 0.0
+                && self.pos.y + self.h <= player_bottom
+                && !box_solid(world, self.pos, self.w, self.h)
+            {
+                self.ai[0] = 0.0;
+                if self.vel.y < -6.0 {
+                    self.vel.y = -6.0;
+                }
+            }
+            let num21 = 60.0f32;
+            if num20 < num21 {
+                // `:49791-49802` — close: bleed the speed (the 1090's
+                // normalize arm is deferred).
+                self.local_ai[0] = 0.0;
+            } else {
+                // `:49803-49855` — far: steer at the owner.
+                let aim = safe_normalize(spinninpoint) * num18;
+                if self.vel.x < aim.x {
+                    self.vel.x += num17;
+                    if self.vel.x < 0.0 {
+                        self.vel.x += num17 * 1.5;
+                    }
+                }
+                if self.vel.x > aim.x {
+                    self.vel.x -= num17;
+                    if self.vel.x > 0.0 {
+                        self.vel.x -= num17 * 1.5;
+                    }
+                }
+                if self.vel.y < aim.y {
+                    self.vel.y += num17;
+                    if self.vel.y < 0.0 {
+                        self.vel.y += num17 * 1.5;
+                    }
+                }
+                if self.vel.y > aim.y {
+                    self.vel.y -= num17;
+                    if self.vel.y > 0.0 {
+                        self.vel.y -= num17 * 1.5;
+                    }
+                }
+            }
+            // `:49856-49859` — the facing.
+            if self.vel.x != 0.0 {
+                self.sprite_direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            }
+            // `:49879-49892` — the pirates' flight frames 10-13.
+            if flag {
+                self.frame_counter += 1;
+                if self.frame_counter > 3 {
+                    self.frame += 1;
+                    self.frame_counter = 0;
+                }
+                if self.frame < 10 || self.frame > 13 {
+                    self.frame = 10;
+                }
+                self.rot = self.vel.x * 0.1;
+            }
+            // `:49913-49922` — the frog's flight frames 14-17.
+            if flag2 {
+                let num22 = 3;
+                self.frame_counter += 1;
+                if self.frame_counter >= num22 * 4 {
+                    self.frame_counter = 0;
+                }
+                self.frame = 14 + self.frame_counter / num22;
+                self.rot = self.vel.x * 0.15;
+            }
+        }
+        // `:49954-49965` — state 2 with the cooldown running: the C# returns
+        // after the reset for every ported kind (`num10 >= 0`).
+        if self.ai[0] == 2.0 && self.ai[1] < 0.0 {
+            self.friendly = false;
+            self.ai[1] += 1.0;
+            if num10 >= 0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                return;
+            }
+        } else if self.ai[0] == 2.0 {
+            // `:49966-50057` — state 2: the bite.
+            self.sprite_direction = self.direction;
+            self.rot = 0.0;
+            if flag {
+                // `:49970-49978` — frames 4-6 (+3 airborne), the integer
+                // cast binds the numerator (`(int)(num10 - ai[1]) / 5`).
+                self.friendly = true;
+                self.frame = 4 + (num10 as f32 - self.ai[1]) as i32 / (num10 / 3);
+                if self.vel.y != 0.0 {
+                    self.frame += 3;
+                }
+            }
+            if flag2 {
+                // `:50015-50039` — the friendly window is the middle half of
+                // the bite; frames 18-20 / 21-23 mirror around the apex.
+                let num25 = (num10 as f32 - self.ai[1]) / num10 as f32;
+                if num25 > 0.25 && num25 < 0.75 {
+                    self.friendly = true;
+                }
+                let mut num26 = (num25 * 5.0) as i32;
+                if num26 > 2 {
+                    num26 = 4 - num26;
+                }
+                if self.vel.y != 0.0 {
+                    self.frame = 21 + num26;
+                } else {
+                    self.frame = 18 + num26;
+                }
+                if self.vel.y == 0.0 {
+                    self.vel.x *= 0.8;
+                }
+            }
+            // `:50040-50056` — the bite gravity and the cooldown hand-off.
+            self.vel.y += 0.4;
+            if self.vel.y > 10.0 {
+                self.vel.y = 10.0;
+            }
+            self.ai[1] -= 1.0;
+            if self.ai[1] <= 0.0 {
+                if num9 <= 0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                    return;
+                }
+                self.ai[1] = -num9 as f32;
+            }
+        }
+        // `:50058-50098` — state 5: the pirates' teleport strike.
+        if self.ai[0] == 5.0 {
+            if attack_target < 0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                self.local_ai[0] = 0.0;
+                return;
+            }
+            let n = &npcs[attack_target as usize];
+            let (nw, nh) = n.size();
+            let mut center = npc_center(n);
+            let num27 = nw.min(nh) * 0.5 * 0.5;
+            let ang = self.minion_pos as f32 * (std::f32::consts::PI * 2.0) / 0.5862069;
+            center += Vec2::new(ang.cos(), ang.sin()) * num27;
+            let num28 = 16.0f32;
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            self.vel = move_towards(Vec2::ZERO, center - my_center, num28);
+            self.local_ai[0] = (center - my_center).length() / num28;
+            self.direction = if self.vel.x >= 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
+            if self.local_ai[0] < 2.0 {
+                // `:50075-50086` — arrived: bite from the ring point. The
+                // `NextVector2CircularEdge(4,4)` is one `NextFloat` draw
+                // (`Utils.cs:1261-1274`); the C# then overwrites Y twice
+                // (`abs` then `-3`) — both writes kept verbatim.
+                self.ai[0] = 2.0;
+                self.ai[1] = num10 as f32;
+                self.vel *= 0.3;
+                let a = rng.next_float() * std::f32::consts::TAU;
+                self.vel += Vec2::new(a.cos(), a.sin()) * 4.0;
+                self.vel.y = self.vel.y.abs();
+                self.vel.y = -3.0;
+                self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+                return;
+            }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 180.0 {
+                if num9 <= 0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                    return;
+                }
+                self.ai[1] = -num9 as f32;
+            }
+        }
+        // `:50103-50270` — the target pursuit.
+        if attack_target >= 0 {
+            let num29 = if flag2 { 50.0f32 } else { 20.0f32 };
+            let n = &npcs[attack_target as usize];
+            let mut vector6 = npc_center(n);
+            let target_center = vector6;
+            vector = vector6;
+            if self.is_in_range_of_me_or_my_owner(world, n, num2, player.as_deref()) {
+                // `:50128` — the jump helper.
+                self.pirates_try_jumping_to_target(vector6, target_center);
+                // `:50129-50183` — the pirates' high leap / boss teleport.
+                if flag && self.ai[1] == 0.0 {
+                    let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                    let bottom = self.pos.y + self.h;
+                    // `base.wet` folds to false (no liquid-wet flags on the
+                    // slot — the sentry precedent, ANALYSIS).
+                    if self.vel.y > 2.0 && target_center.y - bottom < -250.0 {
+                        if self.pos.y % 1.0 < 0.5 {
+                            self.ai[0] = 5.0;
+                            self.ai[1] = 0.0;
+                            return;
+                        }
+                        let mut num30 = ((vector6.y - my_center.y) * -1.0 * 2.0 * 0.4).sqrt();
+                        if num30 > 26.0 {
+                            num30 = 26.0;
+                        }
+                        self.vel.y = 0.0 - num30;
+                        // `:50146` — two float draws steer the leap.
+                        self.vel.x += (rng.next_float() * 2.0 - 1.0) * rng.next_float() * 5.0;
+                        // `:50147-50174` — the burst pick draws `Next(4)`;
+                        // the dust spawns are skipped but the taken branch's
+                        // gore-type rolls stay on the stream (one
+                        // `Next(580,583)` or two `Next(11,14)`).
+                        if rng.next_range(0, 4) == 0 {
+                            let _ = rng.next_range(580, 583);
+                        } else {
+                            let _ = (rng.next_range(11, 14), rng.next_range(11, 14));
+                        }
+                    }
+                    // `:50176-50182` — the far-boss teleport (the boss proxy
+                    // is `revenge::BOSS_KINDS`, the scan's precedent).
+                    if (vector6 - my_center).length() > 600.0
+                        && crate::revenge::BOSS_KINDS.contains(&n.kind)
+                    {
+                        self.ai[0] = 5.0;
+                        self.ai[1] = 0.0;
+                        return;
+                    }
+                }
+                // `:50216-50231` — close enough: bite.
+                let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                if flag14 && my_center.distance(vector) < num29 && self.ai[0] != 2.0 {
+                    let mut flag17 = true;
+                    if flag && self.vel.y != 0.0 {
+                        flag17 = false;
+                    }
+                    if flag17 && self.vel.length() > 10.0 {
+                        self.vel /= self.vel.length() / 10.0;
+                    }
+                    self.ai[0] = 2.0;
+                    self.ai[1] = num10 as f32;
+                    self.direction = if vector6.x - my_center.x > 0.0 { 1 } else { -1 };
+                }
+            }
+            // `:50261-50269` — the frog stands off 20 px behind its aim.
+            if flag2 {
+                let num40 = if vector6.x - (self.pos.x + self.w * 0.5) < 0.0 { -1 } else { 1 };
+                vector.x += 20.0 * -num40 as f32;
+            }
+        }
+        // `:50271-50300` — idle and far from the owner: fly back.
+        if self.ai[0] == 0.0 && attack_target < 0 {
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let vector7 = player_center - my_center;
+            let mut flag18 = false;
+            if vector7.length() > 2000.0 {
+                self.pos = player_center - Vec2::new(self.w, self.h) * 0.5;
+            } else if vector7.length() > num3 || vector7.y.abs() > num4 {
+                flag18 = true;
+                if self.vel.y > 0.0 && vector7.y < 0.0 {
+                    self.vel.y = 0.0;
+                }
+                if self.vel.y < 0.0 && vector7.y > 0.0 {
+                    self.vel.y = 0.0;
+                }
+            }
+            if flag18 {
+                self.ai[0] = 1.0;
+            }
+        }
+        // `:50301-51149` — states 0/3: the ground walk.
+        if self.ai[0] == 0.0 || self.ai[0] == 3.0 {
+            if attack_target < 0 {
+                // `:50305-50308` — the home spot on the wrong side of the
+                // owner snaps to the owner.
+                let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                if my_center.distance(player_center) > 60.0
+                    && my_center.distance(vector) > 60.0
+                    && csign(vector.x - player_center.x) != csign(my_center.x - player_center.x)
+                {
+                    vector = player_center;
+                }
+                // `:50327-50336` — drop the home spot to the ground (20 rows).
+                let size = Vec2::new(self.w, self.h);
+                let mut r_top = vector - size * 0.5;
+                for _ in 0..20 {
+                    if box_solid(world, r_top, self.w, self.h) {
+                        break;
+                    }
+                    r_top.y += 16.0;
+                    vector.y += 16.0;
+                }
+                // `:50337-50338` — clamp the spot through the owner's tiles.
+                let tc = crate::collision::tile_collision(
+                    world,
+                    [player_center.x - size.x * 0.5, player_center.y - size.y * 0.5],
+                    [vector.x - player_center.x, vector.y - player_center.y],
+                    self.w,
+                    self.h,
+                    false,
+                    false,
+                );
+                vector = player_center + Vec2::new(tc.vel[0], tc.vel[1]);
+                // `:50339-50346` — already close: hold position.
+                if my_center.distance(vector) < 32.0 && self.ai[0] != 3.0 {
+                    let num43 = player_center.distance(vector);
+                    if player_center.distance(my_center) < num43 {
+                        vector = my_center;
+                    }
+                }
+                // `:50347-50363` — too far: walk the owner→spot line in 0.05
+                // steps and stop at the first solid box.
+                let vector9 = player_center - vector;
+                if vector9.length() > num3 || vector9.y.abs() > num4 {
+                    let r2_top = player_center - size * 0.5;
+                    let vector10 = vector - player_center;
+                    let mut vector11 = r2_top;
+                    let mut num44 = 0.0f32;
+                    while num44 < 1.0 {
+                        let vector12 = r2_top + vector10 * num44;
+                        if box_solid(world, vector12, self.w, self.h) {
+                            break;
+                        }
+                        vector11 = vector12;
+                        num44 += 0.05;
+                    }
+                    vector = vector11 + size * 0.5;
+                }
+            }
+            self.tile_collide = true;
+            // `:50366-50422` — the walk parameter ladder.
+            let mut num45 = 0.5f32;
+            let mut num46 = 4.0f32;
+            let mut num47 = 4.0f32;
+            let num48 = 0.1f32;
+            if flag && attack_target != -1 {
+                num45 = 1.0;
+                num46 = 8.0;
+                num47 = 8.0;
+            }
+            if flag2 && attack_target != -1 {
+                num45 = 0.7;
+                num46 = 6.0;
+                num47 = 6.0;
+            }
+            let pv_speed = p.vx.abs() + p.vy.abs();
+            if num47 < pv_speed {
+                num47 = pv_speed;
+                num45 = 0.7;
+            }
+            // `:50435-50566` — the horizontal steer.
+            let mut num50 = 0i32;
+            let mut flag19 = false;
+            let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+            let mut num51 = vector.x - my_center.x;
+            let vector13 = vector - my_center;
+            if flag10 {
+                num51 = 0.0;
+            }
+            if num51.abs() > 5.0 {
+                if num51 < 0.0 {
+                    num50 = -1;
+                    if self.vel.x > 0.0 - num46 {
+                        self.vel.x -= num45;
+                    } else {
+                        self.vel.x -= num48;
+                    }
+                } else {
+                    num50 = 1;
+                    if self.vel.x < num46 {
+                        self.vel.x += num45;
+                    } else {
+                        self.vel.x += num48;
+                    }
+                }
+                // `:50509-50557` — the jump intent: the pirates never
+                // auto-jump on the flat (`flag` clears flag21), the frog
+                // only without a target.
+                let mut flag21 = true;
+                if flag {
+                    flag21 = false;
+                }
+                if flag2 && attack_target == -1 {
+                    flag21 = false;
+                }
+                if flag21 {
+                    flag19 = true;
+                }
+            } else {
+                self.vel.x *= 0.9;
+                if self.vel.x.abs() < num45 * 2.0 {
+                    self.vel.x = 0.0;
+                }
+            }
+            // `:50567-50584` — the wall probe ahead.
+            let flag22 = vector13.x.abs() >= 64.0 || (vector13.y <= -48.0 && vector13.x.abs() >= 8.0);
+            if (num50 != 0) & flag22 {
+                let mut num53 = (self.pos.x + self.w * 0.5) as i32 / 16;
+                let num54 = self.pos.y as i32 / 16;
+                num53 = num53 + num50 + self.vel.x as i32;
+                for num55 in num54..num54 + self.h as i32 / 16 + 1 {
+                    if solid_tile(world, num53, num55) {
+                        flag19 = true;
+                    }
+                }
+            }
+            // `:50605` — the step-up.
+            let mut pos = [self.pos.x, self.pos.y];
+            let mut vel = [self.vel.x, self.vel.y];
+            crate::collision::step_up(
+                world,
+                &mut pos,
+                &mut vel,
+                self.w,
+                self.h,
+                &mut self.step_speed,
+                &mut self.gfx_off_y,
+                false,
+            );
+            self.pos = Vec2::new(pos[0], pos[1]);
+            self.vel = Vec2::new(vel[0], vel[1]);
+            // `:50606-50608` — the fall-through lift (`flag23` is the
+            // deferred 1022's; `num57` stays 1).
+            let num56 = get_lerp_value(0.0, 100.0, vector13.y)
+                * get_lerp_value(-2.0, -6.0, self.vel.y);
+            if self.vel.y == 0.0 {
+                if flag19 {
+                    // `:50617-50663` — the three-column ground probe and the
+                    // jump ladder (the last column's write wins, the C#'s
+                    // loop overwrites `velocity.Y` per column).
+                    for num58 in 0..3 {
+                        let mut num59 = (self.pos.x + self.w * 0.5) as i32 / 16;
+                        if num58 == 0 {
+                            num59 = self.pos.x as i32 / 16;
+                        }
+                        if num58 == 2 {
+                            num59 = (self.pos.x + self.w) as i32 / 16;
+                        }
+                        let num60 = (self.pos.y + self.h) as i32 / 16;
+                        let ground = world.tile(num59, num60);
+                        let stands = solid_tile(world, num59, num60)
+                            || ground.is_some_and(|t| {
+                                t.half_brick()
+                                    || t.slope() > 0
+                                    || (tr_core::tiledata::SET_PLATFORMS.has(t.kind)
+                                        && t.active()
+                                        && !t.inactive())
+                            });
+                        if !stands {
+                            continue;
+                        }
+                        // `:50633-50662` — the try/catch: the first two
+                        // probes' null tiles throw into the catch's -9.1;
+                        // the later `SolidTile` calls read null as solid
+                        // (`WorldGen.cs:70115-70117`).
+                        let num59 = (self.pos.x + self.w * 0.5) as i32 / 16
+                            + num50
+                            + self.vel.x as i32;
+                        let num60 = (self.pos.y + self.h * 0.5) as i32 / 16;
+                        if world.tile(num59, num60 - 1).is_none()
+                            || world.tile(num59, num60 - 2).is_none()
+                        {
+                            self.vel.y = -9.1;
+                        } else if !solid_tile(world, num59, num60 - 1)
+                            && !solid_tile(world, num59, num60 - 2)
+                        {
+                            self.vel.y = -5.1;
+                        } else if !solid_tile(world, num59, num60 - 2) {
+                            self.vel.y = -7.1;
+                        } else if solid_tile(world, num59, num60 - 5) {
+                            self.vel.y = -11.1;
+                        } else if solid_tile(world, num59, num60 - 4) {
+                            self.vel.y = -10.1;
+                        } else {
+                            self.vel.y = -9.1;
+                        }
+                    }
+                    // `:50664-50711` — the height ladder toward the aim.
+                    let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                    if vector.y - my_center.y < -48.0 {
+                        let num61 = (vector.y - my_center.y) * -1.0;
+                        self.vel.y = if num61 < 60.0 {
+                            -6.0
+                        } else if num61 < 80.0 {
+                            -7.0
+                        } else if num61 < 100.0 {
+                            -8.0
+                        } else if num61 < 120.0 {
+                            -9.0
+                        } else if num61 < 140.0 {
+                            -10.0
+                        } else if num61 < 160.0 {
+                            -11.0
+                        } else if num61 < 190.0 {
+                            -12.0
+                        } else if num61 < 210.0 {
+                            -13.0
+                        } else if num61 < 270.0 {
+                            -14.0
+                        } else if num61 < 310.0 {
+                            -15.0
+                        } else {
+                            -16.0
+                        };
+                    }
+                    // `:50712-50715` — the wet double-jump folds out (no
+                    // wet flag on the slot).
+                }
+            }
+            // `:50733-50743` — the speed cap.
+            if self.vel.x > num47 {
+                self.vel.x = num47;
+            }
+            if self.vel.x < 0.0 - num47 {
+                self.vel.x = 0.0 - num47;
+            }
+            // `:50744-50767` — the facing.
+            if self.ai[0] != 2.0 {
+                if self.vel.x < 0.0 {
+                    self.direction = -1;
+                }
+                if self.vel.x > 0.0 {
+                    self.direction = 1;
+                }
+                if self.vel.x == 0.0 {
+                    self.direction = if player_center.x > my_center.x { 1 } else { -1 };
+                }
+                if self.vel.x > num45 && num50 == 1 {
+                    self.direction = 1;
+                }
+                if self.vel.x < 0.0 - num45 && num50 == -1 {
+                    self.direction = -1;
+                }
+            }
+            self.sprite_direction = self.direction;
+            // `:50897-50932` — the pirates' walk frames 0-3 / fall frame 14.
+            if flag {
+                self.rot = 0.0;
+                if self.vel.y == 0.0 {
+                    if self.vel.x == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    } else if self.vel.x.abs() >= 0.5 {
+                        self.frame_counter += self.vel.x.abs() as i32;
+                        self.frame_counter += 1;
+                        if self.frame_counter > 10 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                        if self.frame >= 4 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    }
+                } else if self.vel.y != 0.0 {
+                    self.frame_counter = 0;
+                    self.frame = 14;
+                }
+            }
+            // `:51029-51098` — the frog's idle blink / walk / rise / fall.
+            if flag2 {
+                self.rot = 0.0;
+                if self.vel.y == 0.0 {
+                    if self.vel.x == 0.0 {
+                        // `:51036-51050` — the blink: the `Next(50)` draws
+                        // only when the counter reaches 28 (the `&&`
+                        // short-circuit).
+                        let num63 = 4;
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 7 * num63 && rng.next_range(0, 50) == 0 {
+                            self.frame_counter = 0;
+                        }
+                        let mut num64 = self.frame_counter / num63;
+                        if num64 >= 4 {
+                            num64 = 6 - num64;
+                        }
+                        if num64 < 0 {
+                            num64 = 0;
+                        }
+                        self.frame = 1 + num64;
+                    } else if self.vel.x.abs() >= 0.5 {
+                        self.frame_counter += self.vel.x.abs() as i32;
+                        self.frame_counter += 1;
+                        let num65 = 15;
+                        if self.frame_counter >= 8 * num65 {
+                            self.frame_counter = 0;
+                        }
+                        self.frame = self.frame_counter / num65 + 5;
+                    } else {
+                        self.frame = 0;
+                        self.frame_counter = 0;
+                    }
+                } else if self.vel.y != 0.0 {
+                    if self.vel.y < 0.0 {
+                        if self.frame > 9 || self.frame < 5 {
+                            self.frame = 5;
+                            self.frame_counter = 0;
+                        }
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 1 && self.frame < 9 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                    } else {
+                        if self.frame > 13 || self.frame < 9 {
+                            self.frame = 9;
+                            self.frame_counter = 0;
+                        }
+                        self.frame_counter += 1;
+                        if self.frame_counter >= 2 && self.frame < 11 {
+                            self.frame += 1;
+                            self.frame_counter = 0;
+                        }
+                    }
+                }
+            }
+            // `:51144-51148` — the gravity + the fall-through lift.
+            self.vel.y += num + num56;
+            if self.vel.y > 10.0 {
+                self.vel.y = 10.0;
+            }
+        }
+        // `:51150-51171` — the pirates' idle burst: the counter and the
+        // per-tick `Next(900,1200)` comparison stay (they reset the state);
+        // the dust spawns are skipped, the gore-type roll stays on the
+        // stream.
+        if flag {
+            self.local_ai[0] += 1.0;
+            if self.vel.x == 0.0 {
+                self.local_ai[0] += 1.0;
+            }
+            if self.local_ai[0] >= rng.next_range(900, 1200) as f32 {
+                self.local_ai[0] = 0.0;
+                let _ = rng.next_range(580, 583);
+            }
+        }
+        // `:51172-51200` — the 1090's frame cycle is deferred.
+    }
+
+    /// `AI_067_FreakingPirates_TryJumpingToTarget`
+    /// (`Projectile.cs:51203-51256`) — the ported kinds' half: the manual
+    /// fall-through decision and the sqrt jump. The 1022's `GetChaseResults`
+    /// leap (`:51218-51241`) and the wet gate (`:51208-51211`, no wet flag)
+    /// are deferred; the 393-395 `vy > 2` block (`:51213-51217`) is two
+    /// discarded reads in the C# — a no-op.
+    fn pirates_try_jumping_to_target(&mut self, to_target: Vec2, target_center: Vec2) {
+        self.should_fall_through = target_center.y > self.pos.y + self.h;
+        let flag2 = self.vel.y == 0.0;
+        let num3 = 30.0f32;
+        let my_center_y = self.pos.y + self.h * 0.5;
+        if (to_target.y < my_center_y - num3) & flag2 {
+            let mut num4 = ((to_target.y - my_center_y) * -1.0 * 2.0 * 0.4).sqrt();
+            if num4 > 26.0 {
+                num4 = 26.0;
+            }
+            self.vel.y = 0.0 - num4;
+        }
+    }
+
+    /// `HandleMovement`'s half for the aiStyle-67 pirate/frog minions
+    /// (`Projectile.cs:17469-19865`): `flag6 = shouldFallThrough`
+    /// (`decidesManualFallThrough`, `:17583-17586`), the dry collision branch
+    /// (`:17700-17894`) — the >16 px/tick hoik step loop (`:17711-17846`)
+    /// with its 0.0001 last-velocity snap, else the single `TileCollision`
+    /// (`:17849`) — then `UpdatePosition`'s `position += velocity`
+    /// (`:19858`/`:20445`). The `gfxOffY` decay (`:16740-16764`) rides here
+    /// per tick. SKIPPED (ANALYSIS): the slope passes (every inner
+    /// `SlopeCollision` is gated on `!correctSlopeCollision`, which is false
+    /// for these `projPet` kinds — `:707`/`:17744`), the `UpdatePosition`
+    /// slope correction (`:20447-20474`, the twins precedent), the
+    /// `SwitchTiles` plate presses (`:17788-17791`/`:19859-19864`, no plate
+    /// layer), the `ignoreDoors`/`hoik` collision parameters (the port's
+    /// `tile_collision` carries the fall pair only), and the blocked-move
+    /// chain (`:17904-19854`): the tile-cut prologue including its
+    /// `Next(3)` draw (the `dd2_sentry_step` precedent) and every type arm —
+    /// the pirates/frog match none before the `!correctSlopeCollision` gate
+    /// at `:18398`, so a blocked move only stops them.
+    fn pirate_movement(&mut self, world: &World) {
+        // `:16740-16764` — the StepUp draw-lift decay.
+        let num = 1.0 + self.vel.x.abs() / 3.0;
+        if self.gfx_off_y > 0.0 {
+            self.gfx_off_y -= num * self.step_speed;
+            if self.gfx_off_y < 0.0 {
+                self.gfx_off_y = 0.0;
+            }
+        } else if self.gfx_off_y < 0.0 {
+            self.gfx_off_y += num * self.step_speed;
+            if self.gfx_off_y > 0.0 {
+                self.gfx_off_y = 0.0;
+            }
+        }
+        self.gfx_off_y = self.gfx_off_y.clamp(-16.0, 16.0);
+        if !self.tile_collide {
+            // `:17476`'s gate — no tile pass, just the integrate.
+            self.pos += self.vel;
+            return;
+        }
+        let fall = self.should_fall_through;
+        let last_velocity = self.vel;
+        // `:17702-17710` — the step size clamp.
+        let num2 = (self.w.min(self.h) as i32).clamp(3, 16) as f32;
+        if self.vel.length() > num2 {
+            // `:17711-17846` — the hoik step loop.
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                fall,
+                fall,
+            );
+            let mut num3 = self.vel.length();
+            let num4 = num2;
+            let mut vector8 = safe_normalize(self.vel);
+            if tc.vel[1] == 0.0 {
+                vector8.y = 0.0;
+            }
+            let mut zero = Vec2::ZERO;
+            let mut num5 = 0;
+            while num3 > 0.0 {
+                num5 += 1;
+                if num5 > 300 {
+                    break;
+                }
+                let num6 = num3.min(num4);
+                num3 -= num6;
+                let step_vel = vector8 * num6;
+                let tc = crate::collision::tile_collision(
+                    world,
+                    [self.pos.x, self.pos.y],
+                    [step_vel.x, step_vel.y],
+                    self.w,
+                    self.h,
+                    fall,
+                    fall,
+                );
+                let vector10 = Vec2::new(tc.vel[0], tc.vel[1]);
+                self.pos += vector10;
+                self.vel = vector10;
+                zero += self.vel;
+            }
+            self.vel = zero;
+            // `:17795-17802` — the last-velocity snap.
+            if (self.vel.x - last_velocity.x).abs() < 0.0001 {
+                self.vel.x = last_velocity.x;
+            }
+            if (self.vel.y - last_velocity.y).abs() < 0.0001 {
+                self.vel.y = last_velocity.y;
+            }
+        } else {
+            // `:17849` — the single collision pass.
+            let tc = crate::collision::tile_collision(
+                world,
+                [self.pos.x, self.pos.y],
+                [self.vel.x, self.vel.y],
+                self.w,
+                self.h,
+                fall,
+                fall,
+            );
+            self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        // `UpdatePosition` (`:20445`) — the dry integrate.
+        self.pos += self.vel;
+    }
+
     /// `Projectile.Minion_FindTargetInRange` (`Projectile.cs:48990-49027`) —
     /// the minion target walk: the owner's whip mark first (`respectOwnerTarget`)
     /// then the closest chaseable NPC whose distance to the minion *or* the
@@ -8698,16 +9836,29 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    /// `AI()`'s aiStyle-2 block (`Projectile.cs:23205-23690`) — the Flying
-    /// Dutchman's cannon shell (240): the shell is invisible (the alpha 0)
-    /// and bursts into dust and gore when its `ai[0]` reaches 3.
-    ///
-    /// The dust and the gore are SKIPPED — no dust/gore layer.
+    /// `AI()`'s aiStyle-2 block (`Projectile.cs:23366-23410`) — the Flying
+    /// Dutchman's cannon shell (240): the `SoundID.Item14` one-shot latch,
+    /// the 16-tick gravity delay (`+0.18f` / `×0.991f`) and the alpha-0
+    /// invisibility the `ai[0] > 2f` gate opens on the third tick (the shell
+    /// spawns at alpha 255, `SetDefaults` `:3226`). The `ai[0] == 3f` dust
+    /// and gore burst is SKIPPED — no dust/gore layer, the gore's
+    /// `Next(61,64)` roll goes with it.
     fn ai_dutchman_shell(&mut self) {
-        // `:23367` — the shell is invisible.
-        self.alpha = 0;
-        // `:23368-23416` — the burst at `ai[0] == 3` (the dust and the gore
-        // are skipped).
+        // `:23368-23372` — the sound latch (the sound itself is skipped).
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+        }
+        // `:23373-23378` — the age counter and the 16-tick fall.
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 16.0 {
+            self.vel.y += 0.18;
+            self.vel.x *= 0.991;
+        }
+        // `:23379-23409` — the shell turns invisible past tick 2 (the
+        // `ai[0] == 3f` burst is skipped).
+        if self.ai[0] > 2.0 {
+            self.alpha = 0;
+        }
     }
 
     /// `AI()`'s aiStyle-79 block (`Projectile.cs:30791-30910`) — the Martian
@@ -9114,6 +10265,117 @@ fn is_followup_draw(kind: u16) -> bool {
     )
 }
 
+
+/// `Main.DrawProj_LightsBane`'s eight quads in push order (`Main.cs:27483-27492`),
+/// as `(blend, scale-stretch, sheet-row, tint)` — pure so the batch layout is
+/// unit-testable without a GPU. The multiply batch (`Main._multiplyBlendState`,
+/// `:27462-27470`) draws two stretched `White * 0.3f * num` copies of row 12
+/// (`:27483-27484`, stretches `(1, 6)` and `(2, 2)`) then four `Color.White`
+/// copies of the current frame (`:27485-27488`); the additive batch
+/// (`BlendState.Additive`, `:27490`) draws two `Color.Magenta` copies
+/// (`:27491-27492`). `num = Remap(frame, 0, 3, 0, 1) * Remap(frame, 4, 12, 1, 0)`
+/// (`:27480`, `Utils.cs:345-348`).
+///
+/// The ghost tint is XNA's TWO byte-truncating multiplies, not one fused
+/// float: `Color.White * 0.3f` stores `(byte)(255f * 0.3f) = 76` per channel
+/// (alpha included — `Color.operator*(Color, float)` scales every channel
+/// and truncates), then `* num` stores `(byte)(76f * num)`. Fusing
+/// `0.3 * num` drifts up to 1 LSB (e.g. frame 6: 57/255, not 0.225).
+fn lights_bane_batches(
+    frame: i32,
+) -> [(tr_render::BlendMode, [f32; 2], i32, [f32; 4]); 8] {
+    let num = remap(frame as f32, 0.0, 3.0, 0.0, 1.0) * remap(frame as f32, 4.0, 12.0, 1.0, 0.0);
+    // `Color.White * 0.3f * num` (`:27483-27484`) evaluates left-to-right
+    // through TWO `Color.operator*` byte truncations: `(byte)(255f * 0.3f)`
+    // = 76 per channel, then `(byte)(76f * num)` — the house XNA helper
+    // (`ui::color::mul`, the `bars.rs` precedent), not one fused float.
+    let ghost = crate::ui::color::tint(crate::ui::color::mul(
+        crate::ui::color::mul([255, 255, 255, 255], 0.3),
+        num,
+    ));
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let magenta = [1.0, 0.0, 1.0, 1.0];
+    let m = tr_render::BlendMode::Multiply;
+    let a = tr_render::BlendMode::Additive;
+    [
+        (m, [1.0, 6.0], 12, ghost),
+        (m, [2.0, 2.0], 12, ghost),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (m, [1.0, 1.0], frame, white),
+        (a, [1.0, 1.0], frame, magenta),
+        (a, [1.0, 1.0], frame, magenta),
+    ]
+}
+
+/// One blend-batch quad of `DrawProj_LightsBane` in the
+/// [`SpriteRenderer::push_ui_sprite_blend`] convention: `pos` is the
+/// UNROTATED top-left (`anchor − origin`), `origin` the sprite-local pivot
+/// in scaled screen pixels — the helper shifts the top-left by
+/// `origin − R·origin` so the origin texel lands on `pos + origin`, i.e.
+/// exactly the C#'s `position` anchor (`Main.cs:27474`).
+struct LightsBaneQuad {
+    pos: [f32; 2],
+    size: [f32; 2],
+    uv: [f32; 4],
+    tint: [f32; 4],
+    origin: [f32; 2],
+    blend: tr_render::BlendMode,
+}
+
+/// `Main.DrawProj_LightsBane`'s eight placed quads (`Main.cs:27477-27492`),
+/// computed pure so the screen placement is unit-testable without a GPU
+/// (the `frame_quad` / `palm_placement` precedent). `anchor` is `:27474`'s
+/// `proj.Center − Main.screenPosition` already in the ui range's screen
+/// pixels; `scale` is `proj.scale`.
+///
+/// XNA's `SpriteBatch.Draw(texture, position, rect, color, rotation,
+/// origin, scale, …)` multiplies the texture-space origin by the scale
+/// vector: the pivot inside the drawn quad sits at `origin · scale` and
+/// the rotation keeps it on `position`. The per-quad scale here is
+/// `vector2 · stretch` (`:27483-27484`'s `(1, 6)`/`(2, 2)` stretches over
+/// `:27479`'s `(0.7, 0.7)·proj.scale`), so the ghosts' pivots are stretched
+/// too — `origin = half · s · stretch` and `pos = anchor − origin` per
+/// quad, exactly the `push_sprite_origin_rot` convention (the
+/// `foliage.rs::palm_placement` precedent: pos = anchor − origin).
+fn lights_bane_quads(
+    sheet: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    frame: i32,
+    scale: f32,
+    anchor: [f32; 2],
+    zoom: f32,
+) -> [LightsBaneQuad; 8] {
+    // `:27477-27478` — `rectangle = asset.Frame(1, 13, 0, proj.frame)`
+    // (the drawer's own 13-row slice, NOT `Main.projFrames[974]` = 1) and
+    // `vector = rectangle.Size() / 2f`.
+    let frame_h = sheet.height / 13;
+    let uv = frame_slice_uv(sheet, atlas_size, frame, 13);
+    let half = [sheet.width as f32 * 0.5, frame_h as f32 * 0.5];
+    // `:27479` — `vector2 = new Vector2(0.7f, 0.7f) * proj.scale`; the ui
+    // range's screen pixels carry the zoom too (`frame_quad`'s shape).
+    let s = 0.7 * scale * zoom;
+    // `:27481` — `value = asset.Frame(1, 13, 0, 12)`, the last row.
+    let uv12 = frame_slice_uv(sheet, atlas_size, 12, 13);
+    let size = [sheet.width as f32 * s, frame_h as f32 * s];
+    lights_bane_batches(frame).map(|(blend, stretch, row, tint)| {
+        let uv = if row == 12 { uv12 } else { uv };
+        // XNA multiplies the origin by the per-quad scale vector — the
+        // ghosts' `(1, 6)`/`(2, 2)` stretches stretch the pivot with the
+        // quad. The instance pipeline rotates about the top-left, so the
+        // pivot is in scaled screen pixels like `frame_quad`'s.
+        let origin = [half[0] * s * stretch[0], half[1] * s * stretch[1]];
+        LightsBaneQuad {
+            pos: [anchor[0] - origin[0], anchor[1] - origin[1]],
+            size: [size[0] * stretch[0], size[1] * stretch[1]],
+            uv,
+            tint,
+            origin,
+            blend,
+        }
+    })
+}
 
 /// The frame rect of `Main.DrawProjDirect`'s default emit — `Main.cs:34386-34388`
 /// builds it (`num474 = value134.Height / Main.projFrames[proj.type]`,
@@ -11079,6 +12341,9 @@ impl ProjectilePool {
             original_damage: if data.minion || data.sentry { damage } else { 0 },
             net_important: data.net_important,
             ignore_water: data.ignore_water,
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
@@ -11688,19 +12953,16 @@ impl ProjectilePool {
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
                         157 => self.slots[i].ai_sharp_tears(world, rng),
-                        // The aiStyle-2 Flying Dutchman shell
-                        // (`:23366-23417`): the shell is invisible.
+                        // The aiStyle-2 thrown family
+                        // (`Projectile.cs:23205-23689`): the wind head, the
+                        // per-kind gravity ladder and the fall clamp. The
+                        // 909 frame roll and the type-93 delay roll draw
+                        // the pass's named stream, and the wind head reads
+                        // the pool's `Main.windSpeedCurrent`. The 240 shell
+                        // arm rides inside `ai_style2`'s per-kind ladder.
                         2 => {
-                            // `:23366-23410` — the shell's own invisibility
-                            // arm rides ahead of the shared flight.
-                            if self.slots[i].kind == DUTCHMAN_SHELL {
-                                self.slots[i].ai_dutchman_shell();
-                            }
-                            // The type-93 delay roll draws the pass's named
-                            // stream, and the wind head reads the pool's
-                            // `Main.windSpeedCurrent`.
                             let wind = self.wind_speed;
-                            self.slots[i].ai_style2(world, rng, wind);
+                            self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind);
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
@@ -11724,6 +12986,10 @@ impl ProjectilePool {
                         // the four variation choreographies and the alpha
                         // ramp.
                         187 => self.slots[i].ai_insanity_shadow(world),
+                        // The aiStyle-188 Light's Bane slash
+                        // (`:42229-42262`): the scale latch, the 3-tick
+                        // frame machine and the velocity rotation.
+                        188 => self.slots[i].ai_lights_bane(world),
                         // The aiStyle-189 Volcano / Cascade Explosion
                         // (`:42264-42303`): the alpha flash, the scale ramp
                         // and the five-frame life.
@@ -11750,6 +13016,34 @@ impl ProjectilePool {
                                 sep_attack,
                                 sep_home,
                             );
+                        }
+                        // `AI_067_FreakingPirates` (`:49121-51201`, the
+                        // dispatch at `:30162`): the pirate trio (393-395)
+                        // and the Vampire Frog (758) — the first slice of
+                        // the 16-type family (S1-D-4b-7). The other types'
+                        // rows exist but stay gated here until their arms
+                        // land (the Tigers' special-attack chain, the
+                        // whip, the smart-cursor miners, the five pets).
+                        67 => {
+                            if matches!(
+                                self.slots[i].kind,
+                                ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN
+                                    | VAMPIRE_FROG
+                            ) {
+                                self.slots[i].ai_freaking_pirates(
+                                    world,
+                                    player.as_deref_mut(),
+                                    &npcs[..],
+                                    rng,
+                                );
+                                // `HandleMovement`'s pirate half — the
+                                // manual fall-through collision + integrate
+                                // (the arm's early returns still move, the
+                                // twins precedent `:19858`).
+                                if self.slots[i].active {
+                                    self.slots[i].pirate_movement(world);
+                                }
+                            }
                         }
                         // The Nebula Arcanum pair (`:34638-34887`): the two
                         // flight modes + the homing + the subshot roll; the
@@ -18585,6 +19879,9 @@ mod phasmal_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 
@@ -18821,6 +20118,9 @@ mod ritual_projectile_tests {
             old_pos: [Vec2::ZERO; 10],
             old_rot: [0.0; 10],
             old_sprite_direction: [0; 10],
+            should_fall_through: false,
+            step_speed: 1.0,
+            gfx_off_y: 0.0,
         }
     }
 
@@ -18994,7 +20294,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 45] = [
+    const BASELINE_ROWS: [u16; 44] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -19033,7 +20333,6 @@ mod widened_state_tests {
         SCRAMBLER_SHOT,
         PIRATE_ARROW,
         MARTIAN_RAY,
-        DUTCHMAN_SHELL,
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
@@ -19141,6 +20440,11 @@ mod widened_state_tests {
         // leaves the reset sweep as well.
         let spike = proj_data(DEERCLOPS_ICE_SPIKE).unwrap_or_else(|| panic!("the spike lost its row"));
         assert_eq!(spike.alpha, 255, "`alpha = 255` (`:9083`)");
+        // S1-D-4b-8: the Dutchman's shell (`:3226`) writes `alpha = 255` in
+        // its `SetDefaults` arm — the aiStyle-2 arm's `ai[0] > 2f` gate
+        // turns it invisible on tick 3 — so it leaves the reset sweep too.
+        let shell = proj_data(DUTCHMAN_SHELL).unwrap_or_else(|| panic!("the shell lost its row"));
+        assert_eq!(shell.alpha, 255, "`alpha = 255` (`:3226`)");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -26927,8 +28231,9 @@ mod s1_d_4b_5_tests {
 #[cfg(test)]
 mod s1_d_4b_5e_tests {
     use super::*;
-    /// S1-D-4b-5e — the aiStyle-2 shell (`Projectile.cs:23366-23417`): the
-    /// shell is invisible.
+    /// S1-D-4b-5e — the aiStyle-2 shell (`Projectile.cs:23366-23410`): the
+    /// shell spawns at alpha 255 (`SetDefaults` `:3226`) and turns invisible
+    /// on the third tick (the `ai[0] > 2f` gate).
     #[test]
     fn s1_d_4b_5e_the_dutchman_shell_is_invisible() {
         let mut shell = Projectile {
@@ -26938,7 +28243,400 @@ mod s1_d_4b_5e_tests {
             ..Default::default()
         };
         shell.ai_dutchman_shell();
-        assert_eq!(shell.alpha, 0, "the shell is invisible");
+        assert_eq!(shell.ai[0], 1.0, "the age counter");
+        assert_eq!(shell.ai[1], 1.0, "the sound latch");
+        assert_eq!(shell.alpha, 255, "still visible on tick 1");
+        shell.ai_dutchman_shell();
+        assert_eq!(shell.alpha, 255, "still visible on tick 2");
+        shell.ai_dutchman_shell();
+        assert_eq!(shell.alpha, 0, "the shell is invisible from tick 3");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_8_tests {
+    //! S1-D-4b-8 — the aiStyle-2 thrown family completed
+    //! (`Projectile.cs:23205-23689`): the per-type state machines the first
+    //! landing left out (the 909 frame roll, the 968 head, the 861 pickup +
+    //! frame machine, the 304 spawn latch, the 166 town-NPC refusal) and the
+    //! exact per-arm `ai[0]` increment semantics. The dust/gore/sound blocks
+    //! are documented skips; their `Main.rand` rolls go with them (ANALYSIS).
+
+    use super::*;
+
+    /// A counting stream over the golden `FastRandom` — the RNG proof reads
+    /// how many draws each arm consumes, in the C#'s order.
+    struct CountingRng {
+        inner: tr_core::tile_light::FastRandom,
+        ranges: usize,
+        floats: usize,
+    }
+    impl CountingRng {
+        fn new() -> Self {
+            Self { inner: tr_core::tile_light::FastRandom::new(7), ranges: 0, floats: 0 }
+        }
+    }
+    impl tr_core::loot::DropRng for CountingRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges += 1;
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            self.inner.next_float()
+        }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// [`world`] with a dirt floor from row 30 — the town-NPC spawn scan
+    /// needs ground under its feet.
+    fn ground_world() -> World {
+        let mut w = world();
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn just(kind: u16) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            w: 10.0,
+            h: 10.0,
+            direction: 1,
+            time_left: 18000,
+            ..Default::default()
+        }
+    }
+
+    /// One arm tick with no player and no NPCs — the plain-flight shape.
+    fn tick(p: &mut Projectile, w: &World, rng: &mut CountingRng) {
+        p.ai_style2(w, &[], None, rng, 0.0);
+    }
+
+    /// The dispatch test: every aiStyle-2 row the pool carries reaches the
+    /// arm through `match data.ai_style` — one tick moves the age counter
+    /// (or the shell's alpha gate) exactly as the C# arm does.
+    #[test]
+    fn s1_d_4b_8_the_style2_rows_dispatch_to_the_arm() {
+        let mut w = world();
+        for kind in [SHURIKEN, THROWING_KNIFE, SNOWBALL, SPARK, DUTCHMAN_SHELL] {
+            assert_eq!(proj_data(kind).unwrap().ai_style, 2, "kind {kind}");
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_owned(kind, 0, 100.0, 100.0, 4.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row");
+            let mut rng = CountingRng::new();
+            let mut npcs: Vec<Npc> = Vec::new();
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+            let p = &pool.slots[slot];
+            assert_eq!(p.ai[0], 1.0, "kind {kind}: the arm counted the age");
+            assert_eq!(rng.ranges, 0, "kind {kind}: no roll on tick 1");
+            assert_eq!(rng.floats, 0, "kind {kind}: no float on tick 1");
+        }
+    }
+
+    /// `:23257-23275` — the 909: the frame roll latches once
+    /// (`1 + Next(6)`), `frame = ai[1] - 1` pins every tick, and the
+    /// 38-tick gravity delay holds. RNG: exactly one draw, on tick 1.
+    #[test]
+    fn s1_d_4b_8_the_909_rolls_its_frame_once() {
+        let w = world();
+        let mut p = just(909);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(rng.ranges, 1, "the one frame roll");
+        assert!((1.0..=6.0).contains(&p.ai[1]), "ai[1] = {}", p.ai[1]);
+        assert_eq!(p.frame, p.ai[1] as i32 - 1, "the pinned row");
+        let latched = p.ai[1];
+        for _ in 0..36 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(rng.ranges, 1, "no re-roll");
+        assert_eq!(p.ai[1], latched);
+        assert_eq!(p.ai[0], 37.0);
+        assert_eq!(p.vel.y, 0.0, "no gravity before tick 38");
+        tick(&mut p, &w, &mut rng);
+        assert!((p.vel.y - 0.4).abs() < 1e-6, "the +0.4 tick");
+        assert!((p.vel.x - 0.0).abs() < 1e-6);
+    }
+
+    /// `:23219-23239` + the default tail — the 968: the one-shot latch, the
+    /// 50/tick alpha fade floored at 0, `frame = (int)ai[1]`, and the tail's
+    /// 20-tick gravity (the 968 has no chain arm). The 8-dust burst's 16
+    /// `NextFloat` rolls are skipped with the dust.
+    #[test]
+    fn s1_d_4b_8_the_968_fades_and_pins_its_frame() {
+        let w = world();
+        let mut p = just(968);
+        p.alpha = 255;
+        p.ai[1] = 7.0;
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the latch");
+        assert_eq!(p.alpha, 205, "255 - 50");
+        assert_eq!(p.frame, 7, "the ai[1] pin");
+        assert_eq!(p.ai[0], 1.0, "the tail counts the age");
+        assert_eq!(rng.floats, 0, "the dust rolls are skipped");
+        for _ in 0..4 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(p.alpha, 5, "205 - 4*50");
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 0, "floored at 0");
+        assert_eq!(p.local_ai[0], 1.0, "the latch holds");
+        assert_eq!(proj_frames(968), 24, "Main.cs:8706");
+    }
+
+    /// `:23429-23494` — the 861 glow-stick: the 0.995 air friction, the
+    /// +0.1 fall, the 5-tick frame machine wrapping at `projFrames` back to
+    /// 1, and the velocity aim (+π/4, the left-facing +π/2 flip).
+    #[test]
+    fn s1_d_4b_8_the_861_animates_and_aims() {
+        let w = world();
+        let mut p = just(861);
+        p.vel = Vec2::new(4.0, 2.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the arm owns no ai[0] counter");
+        assert!((p.vel.x - 4.0 * 0.995).abs() < 1e-6, "the air friction");
+        assert!((p.vel.y - 2.1).abs() < 1e-6, "the fall");
+        assert_eq!(p.frame, 1, "frame 0 lifts to 1");
+        assert_eq!(p.sprite_direction, 1);
+        let expect_rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_4;
+        assert!((p.rot - expect_rot).abs() < 1e-5, "rot = {}", p.rot);
+        // Five ticks per frame: the wrap lands on tick 10 (frame 2 -> 3),
+        // and frame 4 wraps back to 1 at projFrames = 4 (Main.cs:8664).
+        for _ in 0..14 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(proj_frames(861), 4);
+        assert!((1..=3).contains(&p.frame), "frame = {}", p.frame);
+        // The left-facing flip.
+        p.vel = Vec2::new(-4.0, 0.0);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.sprite_direction, -1);
+        let expect_rot = p.vel.y.atan2(p.vel.x)
+            + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        assert!((p.rot - expect_rot).abs() < 1e-5);
+        // The spent stick (`ai[1] == 1`) resets to frame 0 and keeps the
+        // shared spin instead of the aim.
+        p.ai[1] = 1.0;
+        p.frame = 3;
+        p.frame_counter = 4;
+        let rot_before = p.rot;
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.frame_counter, 0);
+        assert!(p.rot > rot_before, "the spin keeps accumulating");
+    }
+
+    /// `:23449-23464` — the 861 at rest: the 0.95 ground friction, the 0.5
+    /// dead zone and the `Kill()` when both axes are zero.
+    #[test]
+    fn s1_d_4b_8_the_861_dies_at_rest() {
+        let w = world();
+        let mut p = just(861);
+        p.vel = Vec2::new(0.4, 0.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.vel.x, 0.0, "0.4 * 0.95 < 0.5 -> the dead zone");
+        assert!(!p.active, "the rest kill");
+        assert!((p.vel.y - 0.1).abs() < 1e-6, "the fall still runs after Kill");
+    }
+
+    /// `:23431-23448` — the 861 pickup: the 30-tick grace, then the owner's
+    /// hitbox overlap kills the stick (the single-player fold of the
+    /// 255-slot scan).
+    #[test]
+    fn s1_d_4b_8_the_861_is_picked_up_after_thirty_ticks() {
+        let w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        let mut p = just(861);
+        p.pos = Vec2::new(100.0, 100.0);
+        p.vel = Vec2::new(2.0, 0.0);
+        let mut rng = CountingRng::new();
+        for _ in 0..29 {
+            p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+            // Keep the stick on the player while it decelerates.
+            p.pos = Vec2::new(100.0, 100.0);
+            p.vel = Vec2::new(2.0, 0.0);
+        }
+        assert!(p.active, "the grace period holds");
+        assert_eq!(p.local_ai[0], 29.0);
+        p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+        assert!(!p.active, "tick 30 picks the stick up");
+        assert_eq!(p.local_ai[0], 30.0, "the cap");
+    }
+
+    /// `:23240-23244` + `:23632-23649` — the 304: the spawn latch (alpha 0),
+    /// the aim while rising, then the 30-tick decay (+10 alpha, ×0.9 damage
+    /// and knockback) and the `alpha >= 255` kill.
+    #[test]
+    fn s1_d_4b_8_the_304_latches_fades_and_decays() {
+        let w = world();
+        let mut p = just(304);
+        p.alpha = 255;
+        p.damage = 100;
+        p.knock_back = 10.0;
+        p.vel = Vec2::new(3.0, -4.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the spawn latch");
+        assert_eq!(p.alpha, 0, "the invisible start");
+        let expect_rot = (-4.0f32).atan2(3.0) + 1.57;
+        assert!((p.rot - expect_rot).abs() < 1e-5, "the aim while rising");
+        for _ in 0..28 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert_eq!(p.ai[0], 29.0);
+        assert_eq!(p.damage, 100, "no decay before tick 30");
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 10);
+        assert_eq!(p.damage, 90, "(int)(100 * 0.9)");
+        assert!((p.knock_back - 9.0).abs() < 1e-5);
+        // 25 more decay ticks: alpha 10 + 25*10 = 260 >= 255 kills it.
+        for _ in 0..25 {
+            tick(&mut p, &w, &mut rng);
+        }
+        assert!(!p.active, "the alpha-out kill");
+    }
+
+    /// `:23566-23596` — the 166 snowball: the `ai[1] == 1` Rotten Egg mode
+    /// kills it on a town-NPC overlap (the C# `return` leaves AI() only —
+    /// the movement step still runs); without the overlap the 20-tick
+    /// gravity delay holds.
+    #[test]
+    fn s1_d_4b_8_the_snowball_refuses_the_town_npc() {
+        let w = ground_world();
+        let mut guide = Npc::spawn_guide(&w, 30).expect("the Guide spawns");
+        guide.x = 100.0;
+        guide.y = 100.0;
+        let npcs = [guide];
+        let mut p = just(SNOWBALL);
+        p.pos = Vec2::new(104.0, 104.0);
+        p.ai[1] = 1.0;
+        let mut rng = CountingRng::new();
+        p.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!(!p.active, "the town-NPC overlap kills the egg");
+        assert_eq!(p.ai[0], 0.0, "the return precedes the age counter");
+        // The plain snowball (`ai[1] == 0`) passes the same NPC.
+        let mut p2 = just(SNOWBALL);
+        p2.pos = Vec2::new(104.0, 104.0);
+        p2.vel = Vec2::new(4.0, 0.0);
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!(p2.active);
+        assert_eq!(p2.ai[0], 1.0);
+        for _ in 0..18 {
+            p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        }
+        assert_eq!(p2.vel.y, 0.0, "no gravity before tick 20");
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        assert!((p2.vel.y - 0.3).abs() < 1e-6);
+        assert!((p2.vel.x - 4.0 * 0.98).abs() < 1e-6);
+    }
+
+    /// `:23520-23556` — the spark family: alpha pinned at 255, the fade-out
+    /// kill at tick 60 (the kill does not return — the gravity tail runs),
+    /// the +0.1/0.99 fall past tick 20. The dust window's `Next(100)` roll
+    /// is skipped with the dust.
+    #[test]
+    fn s1_d_4b_8_the_spark_fades_out_at_sixty() {
+        let w = world();
+        for kind in [504u16, 954, 979] {
+            let mut p = just(kind);
+            p.vel = Vec2::new(4.0, 0.0);
+            let mut rng = CountingRng::new();
+            for _ in 0..59 {
+                tick(&mut p, &w, &mut rng);
+            }
+            assert!(p.active, "kind {kind}: alive at 59");
+            assert_eq!(p.alpha, 255);
+            assert_eq!(rng.ranges, 0, "kind {kind}: the dust roll is skipped");
+            tick(&mut p, &w, &mut rng);
+            assert!(!p.active, "kind {kind}: the tick-60 kill");
+            assert!(p.vel.y > 0.0, "kind {kind}: the gravity tail still ran");
+        }
+    }
+
+    /// `:23659-23680` — the type-93 tail: the delay re-rolls every tick
+    /// (`28 + Next(6)`), the threshold pins `ai[0] = 40`, and the five
+    /// rising kinds aim at `atan2 + 1.57`. RNG: one draw per tick, always.
+    #[test]
+    fn s1_d_4b_8_the_93_rerolls_its_delay_every_tick() {
+        let w = world();
+        let mut p = just(93);
+        p.vel = Vec2::new(3.0, -4.0);
+        let mut rng = CountingRng::new();
+        for i in 1..=40 {
+            tick(&mut p, &w, &mut rng);
+            assert_eq!(rng.ranges, i, "one draw per tick");
+            if p.ai[0] < 40.0 && i < 34 {
+                let expect_rot = p.vel.y.atan2(p.vel.x) + 1.57;
+                assert!((p.rot - expect_rot).abs() < 1e-4, "the rising aim");
+            }
+        }
+        assert!(p.ai[0] >= 40.0, "the pin holds past the max delay 33");
+        assert!(p.vel.y > -4.0, "the gravity kicked in");
+    }
+
+    /// `:23610-23631` — the 306: the 50/tick fade floored at 0 and the
+    /// `atan2 + 0.785` aim; the arm owns no `ai[0]` counter.
+    #[test]
+    fn s1_d_4b_8_the_306_fades_without_an_age_counter() {
+        let w = world();
+        let mut p = just(306);
+        p.alpha = 120;
+        p.vel = Vec2::new(3.0, 4.0);
+        let mut rng = CountingRng::new();
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 70);
+        assert_eq!(p.ai[0], 0.0, "no age counter");
+        let expect_rot = 4.0f32.atan2(3.0) + 0.785;
+        assert!((p.rot - expect_rot).abs() < 1e-5);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 20);
+        tick(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 0, "floored");
+    }
+
+    /// `:23207-23210` — the wind head adds `windSpeedCurrent * 0.1` before
+    /// anything else; `:23681-23684` — the 32 px/tick fall clamp.
+    #[test]
+    fn s1_d_4b_8_the_wind_head_and_the_fall_clamp() {
+        let w = world();
+        let mut p = just(SHURIKEN);
+        p.vel = Vec2::new(0.0, 40.0);
+        let mut rng = CountingRng::new();
+        p.ai_style2(&w, &[], None, &mut rng, 2.0);
+        assert!((p.vel.x - 0.2).abs() < 1e-6, "the wind head");
+        assert_eq!(p.vel.y, 32.0, "the clamp");
     }
 }
 
@@ -27709,5 +29407,519 @@ mod projectile_ai_tests {
             "and flies on, x = {}",
             pool.slots[slot].pos.x
         );
+    }
+}
+
+#[cfg(test)]
+mod lights_bane_tests {
+    //! S1-G-3: the Light's Bane slash (974) — the SetDefaults row, the
+    //! aiStyle-188 frame machine and `DrawProj_LightsBane`'s batch layout
+    //! (`Projectile.cs:9237-9252`, `:42229-42262`, `Main.cs:27455-27495`).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 64)
+    }
+
+    fn spawn(pool: &mut ProjectilePool) -> usize {
+        pool.spawn_with_data_owned(LIGHTS_BANE, 0, 100.0, 100.0, 8.0, 0.0, 20, 0.0, 1.0, 0.0)
+            .expect("the LightsBane row")
+    }
+
+    fn ticks(pool: &mut ProjectilePool, w: &mut World, n: usize) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..n {
+            pool.update(
+                w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+        }
+    }
+
+    /// The SetDefaults row (`Projectile.cs:9237-9252`): 20x20, aiStyle 188,
+    /// penetrate 2, timeLeft 30, tileCollide off, ignoreWater on, the
+    /// local-immunity pair (true, −1).
+    #[test]
+    fn the_set_defaults_row_matches_the_csharp() {
+        let d = proj_data(LIGHTS_BANE).expect("the row exists");
+        assert_eq!((d.w, d.h), (20.0, 20.0));
+        assert_eq!(d.ai_style, 188);
+        assert_eq!(d.penetrate, 2);
+        assert_eq!(d.time_left, 30);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert!(d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -1);
+        // The drawer's own 13-row slice is NOT the projFrames table — 974
+        // keeps the loop default 1 (`Main.cs:8439-8442`, no override row).
+        assert_eq!(proj_frames(LIGHTS_BANE), 1);
+        assert!(spawnable_kinds().contains(&LIGHTS_BANE), "the sheet packs");
+    }
+
+    /// `AI_188_LightsBane` (`Projectile.cs:42240-42251`): the scale latches
+    /// `ai[0]`, the frame advances every third tick, the rotation follows the
+    /// velocity. The pool's `timeLeft = 30` (`:9249`) kills the slash at tick
+    /// 30 — before the frame machine's own frame-12 kill at tick 36, which
+    /// the arm test below pins directly.
+    #[test]
+    fn the_frame_machine_advances_every_third_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = spawn(&mut pool);
+        ticks(&mut pool, &mut w, 1);
+        let p = &pool.slots[slot];
+        assert_eq!(p.scale, 1.0, "scale = ai[0]");
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!((p.rot - 0.0).abs() < 1e-6, "velocity (8, 0) → rot 0");
+        assert!((p.pos.x - 108.0).abs() < 1e-4, "flies on, no tile collide");
+        ticks(&mut pool, &mut w, 2);
+        assert_eq!(pool.slots[slot].frame, 1, "the third tick advances");
+        assert_eq!(pool.slots[slot].frame_counter, 0);
+        // The 30-tick life (`Projectile.cs:9249`): tick 29 still flies at
+        // frame 9, tick 30 spends the last timeLeft and kills.
+        ticks(&mut pool, &mut w, 26);
+        assert!(pool.slots[slot].active);
+        assert_eq!(pool.slots[slot].frame, 9);
+        ticks(&mut pool, &mut w, 1);
+        assert!(!pool.slots[slot].active, "timeLeft 30 kills");
+    }
+
+    /// The arm's own kill (`Projectile.cs:42245-42248`): the twelfth frame
+    /// kills the slash — reachable when the life counter is refreshed (the
+    /// C# keeps both gates).
+    #[test]
+    fn the_twelfth_frame_kills_the_slash() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: LIGHTS_BANE,
+            frame: 11,
+            frame_counter: 2,
+            ..Default::default()
+        };
+        p.ai_lights_bane(&w);
+        assert!(!p.active, "frame 12 kills");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.frame, 12);
+    }
+
+    /// `Main.cs:27483-27492` — the eight quads: two stretched ghosts of row
+    /// 12 (`White * 0.3f * num`), four White copies of the current frame, all
+    /// multiply; then two Magenta copies, additive. The order is the C#'s
+    /// push order — the batch boundaries the port's blend runs reproduce.
+    #[test]
+    fn the_batch_layout_matches_the_csharp_draw_order() {
+        let b = lights_bane_batches(6);
+        // num at frame 6: Remap(6,0,3)=1, Remap(6,4,12,1,0)=1−2/8=0.75.
+        // The tint is TWO byte truncations: (byte)(255*0.3)=76, then
+        // (byte)(76*0.75)=57 — NOT the fused 0.3*0.75=0.225.
+        let ghost = 57.0 / 255.0;
+        assert_eq!(b[0], (tr_render::BlendMode::Multiply, [1.0, 6.0], 12, [ghost, ghost, ghost, ghost]));
+        assert_eq!(b[1], (tr_render::BlendMode::Multiply, [2.0, 2.0], 12, [ghost, ghost, ghost, ghost]));
+        for q in &b[2..6] {
+            assert_eq!(*q, (tr_render::BlendMode::Multiply, [1.0, 1.0], 6, [1.0, 1.0, 1.0, 1.0]));
+        }
+        for q in &b[6..8] {
+            assert_eq!(*q, (tr_render::BlendMode::Additive, [1.0, 1.0], 6, [1.0, 0.0, 1.0, 1.0]));
+        }
+        // The ghost window: num is 0 at frame 0 and back to 0 at frame 12
+        // (`:27480`'s two remaps), peaking over frames 3..4.
+        assert_eq!(lights_bane_batches(0)[0].3, [0.0; 4]);
+        assert_eq!(lights_bane_batches(12)[0].3, [0.0; 4]);
+        // The peak is 76/255 — `(byte)(255*0.3)` — not 0.3.
+        assert_eq!(lights_bane_batches(3)[0].3, [76.0 / 255.0; 4]);
+    }
+
+    /// The XNA two-step byte quantisation of `Color.White * 0.3f * num`
+    /// (`Main.cs:27483-27484`): `Color.operator*(Color, float)` truncates
+    /// every channel (alpha included) to a byte on EACH multiply, so the
+    /// chain stores `(byte)(255f * 0.3f) = 76` first and `(byte)(76f * num)`
+    /// second. Fusing `0.3 * num` into one float drifts up to 1 LSB — frame
+    /// 6 must be 57/255, not 0.225. Pins the byte ladder over the ghost
+    /// window; expected values derived from the C# expression, never from
+    /// the port.
+    #[test]
+    fn the_ghost_tint_truncates_twice_like_xna() {
+        // num = Remap(f,0,3,0,1) * Remap(f,4,12,1,0); byte = (byte)(76*num).
+        // f=0: 0*1 → 0; f=2: (2/3)*1 → (byte)50.666 = 50; f=3..4: 1 → 76;
+        // f=6: 1*0.75 → 57; f=8: 1*0.5 → 38; f=10: 1*0.25 → 19; f=12: 0.
+        for (frame, byte) in [(0, 0.0), (2, 50.0), (3, 76.0), (4, 76.0), (6, 57.0), (8, 38.0), (10, 19.0), (12, 0.0)] {
+            let t = lights_bane_batches(frame)[0].3;
+            assert_eq!(t, [byte / 255.0; 4], "frame {frame}: (byte)(76*num) = {byte}");
+        }
+        // The fused float would give 0.225 at frame 6 — 0.375 LSB away.
+        let fused = 0.3f32 * 0.75;
+        let stored = lights_bane_batches(6)[0].3[0];
+        assert!((stored - fused).abs() > 1e-6, "not the fused 0.3*num");
+        // Both ghosts carry the same tint (the two `:27483-27484` draws).
+        assert_eq!(lights_bane_batches(6)[0].3, lights_bane_batches(6)[1].3);
+    }
+
+    /// The screen placement (`Main.cs:27474-27492`): every quad's pivot
+    /// lands on the C#'s `position` anchor — `pos` is the UNROTATED
+    /// top-left `anchor − origin` and `origin` is the frame half scaled by
+    /// the PER-QUAD scale vector (XNA multiplies the texture-space origin
+    /// by the scale, so the `(1, 6)`/`(2, 2)` ghosts stretch their pivots
+    /// too). Mirrors the `palm_placement` precedent: a synthetic sheet
+    /// pins the maths without a GPU.
+    #[test]
+    fn the_quads_place_the_origin_texel_on_the_anchor() {
+        // A 20x260 sheet = thirteen 20x20 rows; half = (10, 10).
+        let sheet = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 260,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        let anchor = [100.0, 200.0];
+        // scale 1, zoom 1: s = 0.7, the base quad is 14x14, origin (7, 7).
+        let q = lights_bane_quads(&sheet, atlas, 6, 1.0, anchor, 1.0);
+        let near = |a: [f32; 2], b: [f32; 2]| {
+            assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4, "{a:?} vs {b:?}");
+        };
+        // Ghost 1: stretch (1, 6) → size (14, 84), origin (7, 42).
+        near(q[0].origin, [7.0, 42.0]);
+        near(q[0].pos, [93.0, 158.0]);
+        near(q[0].size, [14.0, 84.0]);
+        // Ghost 2: stretch (2, 2) → size (28, 28), origin (14, 14).
+        near(q[1].origin, [14.0, 14.0]);
+        near(q[1].pos, [86.0, 186.0]);
+        near(q[1].size, [28.0, 28.0]);
+        // The six unstretched copies: origin (7, 7), pos = anchor − origin.
+        for quad in &q[2..8] {
+            near(quad.origin, [7.0, 7.0]);
+            near(quad.pos, [93.0, 193.0]);
+            near(quad.size, [14.0, 14.0]);
+        }
+        // Every pivot lands on the anchor — the helper's `pos + origin`
+        // invariant (`push_ui_sprite_blend` shifts by `origin − R·origin`).
+        for quad in &q {
+            near([quad.pos[0] + quad.origin[0], quad.pos[1] + quad.origin[1]], anchor);
+        }
+        // The ghosts sample row 12 (`:27481`'s `value`), the copies the
+        // current frame (`:27477`'s `rectangle`).
+        let uv12 = frame_slice_uv(&sheet, atlas, 12, 13);
+        let uv6 = frame_slice_uv(&sheet, atlas, 6, 13);
+        assert_eq!(q[0].uv, uv12);
+        assert_eq!(q[1].uv, uv12);
+        for quad in &q[2..8] {
+            assert_eq!(quad.uv, uv6);
+        }
+        // scale 2, zoom 1.5: s = 0.7*2*1.5 = 2.1 — the origin scales with
+        // the quad (XNA's origin·scale), the ghosts' stretches included.
+        let q = lights_bane_quads(&sheet, atlas, 6, 2.0, anchor, 1.5);
+        near(q[0].origin, [21.0, 126.0]);
+        near(q[0].pos, [79.0, 74.0]);
+        near(q[0].size, [42.0, 252.0]);
+        near(q[1].origin, [42.0, 42.0]);
+        near(q[1].pos, [58.0, 158.0]);
+        near(q[2].origin, [21.0, 21.0]);
+        near(q[2].pos, [79.0, 179.0]);
+        for quad in &q {
+            near([quad.pos[0] + quad.origin[0], quad.pos[1] + quad.origin[1]], anchor);
+        }
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_7_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 10;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p.facing = 1;
+        p
+    }
+
+    fn spawn_at(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 400;
+        n.hp = 400;
+        n
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player, npcs: &mut [Npc]) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    /// A draw-recording `Main.rand` stand-in: `next_range` returns `min`
+    /// (the burst comparison never resets, the frog's `Next(50)` roll hits
+    /// 0), `next_float` returns 0 — the census proves count AND order.
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The four rows' `SetDefaults` slice (`Projectile.cs:4755-4768`,
+    /// `:7814-7828`) + the frame sheets (`Main.cs:8518-8520`, `:8631`).
+    #[test]
+    fn s1_d_4b_7_the_four_rows_carry_the_csharp_set_defaults() {
+        for kind in [ONE_EYED_PIRATE, SOULSCOURGE_PIRATE, PIRATE_CAPTAIN] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (20.0, 30.0), "kind {kind}");
+            assert_eq!(d.ai_style, 67, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "the `timeLeft *= 5`");
+            assert!(d.minion, "kind {kind}");
+            assert_eq!(d.minion_slots, 1.0, "kind {kind}");
+            assert!(d.tile_collide, "the stock true — the arm sets neither");
+            assert!(!d.ignore_water, "kind {kind}");
+            assert!(d.uses_local_immunity, "the LOCAL pair (`:4765`)");
+            assert_eq!(d.local_hit_cooldown, 18, "`:4766`");
+            assert!(!d.uses_id_static_immunity, "kind {kind}");
+            assert!(d.decides_manual_fall_through, "`:4767`");
+            assert_eq!(proj_frames(kind), 15, "Main.cs:8518-8520");
+        }
+        let frog = proj_data(VAMPIRE_FROG).unwrap();
+        assert_eq!((frog.w, frog.h), (20.0, 30.0));
+        assert_eq!(frog.ai_style, 67);
+        assert_eq!(frog.penetrate, -1);
+        assert_eq!(frog.time_left, 18000);
+        assert!(frog.minion);
+        assert_eq!(frog.minion_slots, 1.0);
+        assert!(frog.uses_id_static_immunity, "the idStatic pair (`:7826`)");
+        assert_eq!(frog.id_static_hit_cooldown, 10, "`:7827`");
+        assert!(!frog.uses_local_immunity);
+        assert!(frog.decides_manual_fall_through, "`:7825`");
+        assert_eq!(proj_frames(VAMPIRE_FROG), 24, "Main.cs:8631");
+    }
+
+    /// Per-type dispatch: each ported kind's slot moves on its first tick
+    /// (the walk's gravity `:51144` + the integrate), while the deferred
+    /// Storm Tiger row stays inert — the dispatch gates it.
+    #[test]
+    fn s1_d_4b_7_the_dispatch_arms_the_pirates_and_the_frog() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for kind in [ONE_EYED_PIRATE, SOULSCOURGE_PIRATE, PIRATE_CAPTAIN, VAMPIRE_FROG] {
+            let slot = spawn_at(&mut pool, kind, cx + 60.0, cy);
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            let s = &pool.slots[slot];
+            assert!(s.active, "kind {kind} lives");
+            assert!(s.pos.y > cy, "kind {kind} fell — the arm ran ({:?})", s.pos);
+            assert!(s.vel.x < 0.0, "kind {kind} walks home (left)");
+            pool.slots[slot].active = false;
+        }
+        // The deferred types: the row exists (aiStyle 67) but the dispatch
+        // gate leaves the slot inert until their arms land.
+        let tiger = spawn_at(&mut pool, STORM_TIGER_1, cx + 60.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[tiger].pos, Vec2::new(cx + 60.0, cy));
+        assert_eq!(pool.slots[tiger].vel, Vec2::ZERO);
+    }
+
+    /// `:49248-49259` / `:49316-49327` — the keep-alive pins: a live summon
+    /// flag pins `timeLeft = 2`; a dead owner clears the flag (no pin).
+    #[test]
+    fn s1_d_4b_7_the_pirates_and_frog_pin_against_their_summon_flags() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.pirate_minion = true;
+        p.vampire_frog = true;
+        let pirate = spawn_at(&mut pool, ONE_EYED_PIRATE, cx - 150.0, cy);
+        let frog = spawn_at(&mut pool, VAMPIRE_FROG, cx + 150.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[pirate].time_left, 1, "the pin of 2 minus the tail's decrement");
+        assert_eq!(pool.slots[frog].time_left, 1);
+        p.dead = true;
+        pool.slots[pirate].time_left = 18000;
+        pool.slots[frog].time_left = 18000;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(!p.pirate_minion, "the dead owner drops the flag");
+        assert!(!p.vampire_frog);
+        assert_eq!(pool.slots[pirate].time_left, 17999, "no pin after the clear");
+        assert_eq!(pool.slots[frog].time_left, 17999);
+    }
+
+    /// `:50216-50231` + `:49966-50057` — the frog bites a close target:
+    /// `ai[0] = 2`, `ai[1] = 20`, the 20-tick bite counts down into the
+    /// 60-tick cooldown (`ai[1] = -60`), and the cooldown's first tick
+    /// resets to the follow state (`num10 >= 0`, `:49958-49964`).
+    #[test]
+    fn s1_d_4b_7_the_frog_bites_for_twenty_ticks_then_cools_down() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let slot = spawn_at(&mut pool, VAMPIRE_FROG, cx, cy);
+        // The NPC's centre sits 40 px right of the frog's centre — inside
+        // the frog's 50-px bite range (`num29`, `:50107-50111`).
+        let frog_center = Vec2::new(cx + 10.0, cy + 15.0);
+        let mut n = npc_at(NpcKind::Zombie, 0.0, 0.0);
+        let (nw, nh) = n.size();
+        n.x = frog_center.x + 40.0 - nw * 0.5;
+        n.y = frog_center.y - nh * 0.5;
+        let mut npcs = vec![n];
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "the bite armed");
+        assert_eq!(pool.slots[slot].ai[1], 20.0, "`ai[1] = num10`");
+        assert!(pool.slots[slot].friendly, "the frog is friendly (`:49587`)");
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+        }
+        assert_eq!(pool.slots[slot].ai[1], -60.0, "the cooldown (`:50055`)");
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].ai[0], 0.0, "the cooldown resets (`:49960-49961`)");
+        assert_eq!(pool.slots[slot].ai[1], 0.0);
+    }
+
+    /// `:50058-50086` — the pirates' state-5 arrival: inside 2 strike steps
+    /// the pirate snaps onto the ring point, arms the bite (`ai[1] = 15`)
+    /// and the velocity's Y lands on -3 (the C#'s double write). RNG: the
+    /// arrival draws exactly ONE `NextFloat` (the circular-edge angle).
+    #[test]
+    fn s1_d_4b_7_the_pirate_teleport_strike_arrives_with_one_float_draw() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut proj = Projectile {
+            active: true,
+            kind: PIRATE_CAPTAIN,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx, cy),
+            ..Default::default()
+        };
+        proj.ai[0] = 5.0;
+        let my_center = proj.pos + Vec2::new(10.0, 15.0);
+        let mut n = npc_at(NpcKind::Zombie, 0.0, 0.0);
+        let (nw, nh) = n.size();
+        n.x = my_center.x + 20.0 - nw * 0.5;
+        n.y = my_center.y - nh * 0.5;
+        let npcs = vec![n];
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        proj.ai_freaking_pirates(&w, Some(&mut p), &npcs, &mut census);
+        assert_eq!(proj.ai[0], 2.0, "the strike became a bite");
+        assert_eq!(proj.ai[1], 15.0, "`ai[1] = num10` (the pirates' 15)");
+        assert_eq!(proj.vel.y, -3.0, "the C#'s abs-then--3 double write");
+        let num27 = nw.min(nh) * 0.5 * 0.5;
+        let ring = npc_center(&npcs[0]) + Vec2::new(num27, 0.0);
+        assert_eq!(proj.pos, ring - Vec2::new(10.0, 15.0), "the centre snap");
+        assert_eq!(census.floats, 1, "one NextVector2CircularEdge draw");
+        assert!(census.ranges.is_empty(), "no integer draws on the arrival");
+    }
+
+    /// RNG census, idle pirate (`:51150-51171`): exactly one
+    /// `Next(900,1200)` comparison per tick, in order, nothing else — the
+    /// dust/gore internals are skipped but the burst's gate stays.
+    #[test]
+    fn s1_d_4b_7_the_idle_pirate_draws_one_burst_comparison_per_tick() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        let mut proj = Projectile {
+            active: true,
+            kind: ONE_EYED_PIRATE,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx + 100.0, cy),
+            ..Default::default()
+        };
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            proj.ai_freaking_pirates(&w, Some(&mut p), &[], &mut census);
+        }
+        assert_eq!(census.ranges, vec![(900, 1200); 3], "one comparison per tick");
+        assert_eq!(census.floats, 0);
+        assert_eq!(proj.local_ai[0], 3.0, "the counter climbs (vel.x != 0)");
+    }
+
+    /// RNG census, resting frog (`:51036-51050`): the blink's `Next(50)`
+    /// draws ONLY when the frame counter reaches 28 (the `&&`
+    /// short-circuit) — 27 silent ticks, the 28th draws, the 0-roll resets
+    /// the counter and the 29th is silent again.
+    #[test]
+    fn s1_d_4b_7_the_frog_blink_draws_only_at_the_28th_tick() {
+        let mut w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        // The home spot is cx - 45 (35 + width/2, facing 1); the line-walk
+        // trim keeps the aim within the 5-px dead band, so vel.x stays 0.
+        let mut proj = Projectile {
+            active: true,
+            kind: VAMPIRE_FROG,
+            owner: 0,
+            w: 20.0,
+            h: 30.0,
+            pos: Vec2::new(cx - 55.0, cy),
+            ..Default::default()
+        };
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        for i in 1..=29 {
+            proj.vel = Vec2::ZERO;
+            proj.ai_freaking_pirates(&w, Some(&mut p), &[], &mut census);
+            if i < 28 {
+                assert!(census.ranges.is_empty(), "tick {i}: the short-circuit holds");
+            } else if i == 28 {
+                assert_eq!(census.ranges, vec![(0, 50)], "the 28th tick draws");
+                assert_eq!(proj.frame_counter, 0, "the 0-roll resets the blink");
+            } else {
+                assert_eq!(census.ranges.len(), 1, "tick {i}: silent again");
+            }
+        }
+        assert_eq!(census.floats, 0);
     }
 }
