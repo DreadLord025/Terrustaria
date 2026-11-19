@@ -180,6 +180,13 @@ pub(crate) struct PlayerCompositeState {
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
+    /// `Item.type` of the held kind (S1-P-i05) — the useStyle-3 arm's
+    /// 946/4707 umbrella nudge (`Player.cs:51054-51057`). 0 = empty hand.
+    pub(crate) item_type: i32,
+    /// `GetAdjustedItemScale(sItem)` (`Player.cs:42566-42574`) — the
+    /// prefixed `Item.scale` (the `meleeScaleGlove` arm has no port
+    /// granter). The useStyle-3 extension reads it (`:51043`).
+    pub(crate) item_scale: f32,
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
     /// The live mount's draw inputs, `None` = unmounted.
@@ -1210,25 +1217,26 @@ fn use_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f
             ],
             0.0,
         ),
-        // `:51031-51061` (Thrust): the item is pushed forward, then pulled
-        // back to the hand.
-        3 => {
-            if remaining > 2.0 / 3.0 {
-                ([-1000.0, -1000.0], -1.3 * dir)
-            } else {
-                let num14 = (remaining * w * dir * 1.2 - 10.0 * dir).clamp(
-                    if dir < 0.0 { -8.0 } else { f32::MIN },
-                    if dir > 0.0 { 8.0 } else { f32::MAX },
-                );
-                (
-                    [
-                        pos_x + 10.0 + (w * 0.5 - 4.0) * dir - num14,
-                        pos_y + 24.0,
-                    ],
-                    0.8 * dir,
-                )
-            }
-        }
+        // `:51031-51063` (Thrust, S1-P-i05): the item extends forward
+        // through the stab — the verbatim shared port
+        // (`player.rs::thrust_item_placement`): the 0.666 wind-up gate,
+        // the `GetAdjustedItemScale` factor, the snap-to-±8 clamps and
+        // the 946/4707 umbrella nudge. The draw's frame size IS
+        // `Item.GetDrawHitbox`'s stand-in (the atlas icon quad).
+        // `mountOffset` = `HeightOffsetHitboxCenter` stands at 0 (the
+        // port has no mount height offsets); the item kind rides
+        // `item_type` on the state.
+        3 => crate::player::thrust_item_placement(
+            pos_x,
+            pos_y,
+            20.0,
+            dir,
+            remaining,
+            w,
+            s.item_scale,
+            0.0,
+            s.item_type,
+        ),
         // `:51065-51090` (HoldUp): the item is held up beside the shoulder
         // (`width*0.5 - 9 - itemRotation*14*dir - 4`).
         4 => (
@@ -1696,6 +1704,42 @@ mod tests {
         assert!((loc[0] - 124.0).abs() < 1e-6, "{:?}", loc);
     }
 
+    /// S1-P-i05 — the render's useStyle-3 arm delegates to the shared
+    /// verbatim port (`player.rs::thrust_item_placement`,
+    /// `Player.cs:51031-51063`): the 0.666 wind-up gate, the scaled
+    /// extension, the snap clamps and the umbrella nudge all ride the
+    /// state's `item_type`/`item_scale`. WRITTEN NOT RUN.
+    #[test]
+    fn s1_p_i05_the_render_thrust_rides_the_shared_port() {
+        let mut s = state();
+        s.use_style = 3;
+        s.item_type = 946;
+        s.item_scale = 1.0;
+        // The wind-up: offscreen + the cocked rotation.
+        s.swing = 0.9;
+        let (loc, rot) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert_eq!(loc, [-1000.0, -1000.0]);
+        assert!((rot - -1.3).abs() < 1e-6);
+        // Mid-stab: the shared port's value — pos (110, 210) (the state
+        // origin (100, 200) + 10), width 20: loc.X = 110 + 10 + 18 -
+        // 16.4 - 6 = 115.6, loc.Y = 234.
+        s.swing = 0.5;
+        let (loc, rot) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((loc[0] - 115.6).abs() < 1e-4, "{:?}", loc);
+        assert!((loc[1] - 234.0).abs() < 1e-6, "{:?}", loc);
+        assert!((rot - 0.8).abs() < 1e-6);
+        // The scale rides the state (a prefixed umbrella): num14 =
+        // 0.5*44*1.1*1.2 - 10 = 19.04 -> loc.X = 138 - 19.04 - 6 = 112.96.
+        s.item_scale = 1.1;
+        let (loc, _) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((loc[0] - 112.96).abs() < 1e-3, "{:?}", loc);
+        // Facing left mirrors through the shared port.
+        s.item_scale = 1.0;
+        let (loc, rot) = use_item_placement(&s, -1.0, 44.0, 44.0);
+        assert!((loc[0] - (120.0 - 18.0 + 16.4 + 6.0)).abs() < 1e-4, "{:?}", loc);
+        assert!((rot - -0.8).abs() < 1e-6);
+    }
+
     #[test]
     fn s1_g_18_the_throw_style_rides_its_wind_up_and_arc() {
         // `Player.cs:51199-51224` (the wind-up) and `:51246-51271` (the
@@ -2105,6 +2149,8 @@ mod tests {
             use_animation: 0,
             item_uv: None,
             item_size: [16.0, 16.0],
+            item_type: 0,
+            item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             head_armor: -1,
             body_armor: -1,
@@ -2930,6 +2976,8 @@ mod player_draw_tests {
             use_animation: 0,
             item_uv: None,
             item_size: [0.0, 0.0],
+            item_type: 0,
+            item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             mount: None,
             head_armor: -1,

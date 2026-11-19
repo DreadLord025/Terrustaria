@@ -17218,6 +17218,134 @@ Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
 mutation-checked (RED on the pre-fix code; the left-facing cases pin the
 mirrored `atan2`, which is where the `hypot` slip showed).
 
+## The shortsword stab (S1-P-i05, 2026-11-20)
+
+The useStyle-3 (Thrust) audit — the stab arm's `itemLocation` maths, the
+melee hitbox during the stab and the direction lock, C#-verified against
+`Player.cs`. **Scope note:** in 1.4.5.8 the ONLY useStyle-3 items are the
+Umbrella (946, `Item.cs:12320-12332`) and the Tragic Umbrella (4707,
+`:38683-38695`); the Iron Shortsword (6) is useStyle **13** (the rapier)
+since the 1.4 rework (`Item.cs:1455-1471`: `useStyle = 13`, `shoot = 940`,
+`noMelee = true`) — its lunge is a projectile, not this arm. The task's
+"shortsword stab" is therefore the Thrust style itself.
+
+**The census verdicts:**
+
+* **WRONG — the render's thrust placement**
+  (`render/player_layers.rs::use_item_placement`'s style-3 arm vs
+  `Player.cs:51031-51063`): (a) the wind-up gate was `remaining > 2/3`
+  instead of the C#'s `0.666` literal (`:51033` — the double compare
+  `(double)itemAnimation > (double)itemAnimationMax * 0.666`); (b) the
+  `num14` extension dropped the `GetAdjustedItemScale(sItem)` factor
+  (`:51043`); (c) the clamps were a `clamp(-8, 8)` BOUND instead of the
+  C#'s one-sided SNAPS (`:51044-51051`: `num14 > -4 && dir == -1` → -8,
+  `num14 < 4 && dir == 1` → 8 — a value between -4 and 4 snaps OUT to ±8,
+  it is not bounded IN); (d) the 946/4707 `itemLocation.X -= 6 * direction`
+  nudge (`:51054-51057`) was missing. Fixed by delegating to the shared
+  verbatim port `player.rs::thrust_item_placement`.
+* **MISSING — the stab hitbox** (`ItemCheck_GetMeleeHitbox`'s style-3 arm,
+  `Player.cs:45164-45189`): the port had no sim-side `itemLocation` and no
+  melee-hitbox port at all — the umbrella pair could not damage anything
+  (the cursor melee arm's `held_weapon` gate is `projectile.is_some()`,
+  the shooter definition; the umbrellas have no projectile). Ported
+  verbatim as `player.rs::thrust_melee_hitbox`: the wind-up `dontAttack`
+  (`:45168-45172`), the int-truncated `(int)itemLocation` anchor + the
+  `GetAdjustedItemScale`-sized frame (`:45102-45130`), the direction /
+  gravDir corner flips (`:45131-45138`), the stab shape (the left 1.4-shift
+  reads the PRE-growth Width, `Width *= 1.4`, `Y += Height * 0.6` reads the
+  PRE-shrink Height, `Height *= 0.6`, `:45173-45179`) and the umbrella
+  `+14 Height / -10 Width / +10 X when left` pair (`:45180-45188`). The
+  5094-5097 pre-shrink switch (`:45107-45125`) never meets a style-3 item
+  (those four are useStyle 1) — omitted with the cite.
+* **MISSING — the per-tick stab sweep** (`ItemCheck`'s melee block,
+  `Player.cs:43644-43686`): the C# runs `ItemCheck_GetMeleeHitbox` +
+  `ItemCheck_MeleeHitNPCs` EVERY tick while `itemAnimation > 0` — the stab
+  rect moves with the extension, so the hit lands when the rect first
+  intersects, not on the press. Ported as
+  `world_sim/editing.rs::thrust_stab_tick`: the press edge starts the use
+  (`ItemCheck_StartActualUse` `:51657-51698` — `attackCD = 0`,
+  `ResetMeleeHitCooldowns`, `ApplyItemAnimation`), then every animation
+  tick the rect scans the NPC pool in slot order through
+  `resolve_melee_strike` — the cursor arm's strike resolution extracted
+  VERBATIM (the class multiplier → crit roll → `DamageVar` → the
+  Flymeal/cane arms → the penetration sum → `StrikeNPC` → the
+  combat-text/net/sound tails; the `UpdatePlayers` draw order is
+  byte-identical to the pre-extract inline code). The one-hit-per-swing
+  lock is `Player.meleeNPCHitCooldown` (`:3180`), ported as a uid-keyed map
+  (the C# indexes stable NPC slots; the port's pool compacts — the
+  established `Npc.uid` identity): cleared at the use's start (`:44216`),
+  decremented once per non-`dontAttack` damage tick (`:43664`, the
+  `:43651` gate skips the wind-up ticks), re-armed to the CURRENT
+  `itemAnimation` on a landed hit (`:44414`), gated `<= 0` in the scan
+  (`:44246`); `ApplyAttackCooldown` (`:44428-44431`) sets
+  `attackCD = max(1, (int)(itemAnimationMax * 0.33))` after each landed
+  hit. The sweep runs BEFORE the cursor HUD guard (the C#'s melee block is
+  cursor-independent; only the use-START reads `controlUseItem`), so an
+  in-flight stab completes with the pointer over the hotbar.
+* **WRONG — the direction lock** (`Player.HorizontalMovement`
+  `Player.cs:19834-19846`): the port's run-key turn had no `flag3` gate —
+  the C# turns only when `(itemAnimation == 0 || useTurn) &&
+  mount.AllowDirectionChange && !sandStorm` (`:19837`). A mid-stab player
+  turned freely; now the facing locks for the whole animation (the
+  umbrellas are `useTurn: false`). `FrameInputs.use_turn` carries the held
+  row, `MountState::allow_direction_change` ports `Mount.cs:630-639` (the
+  Scutlix 9's `abilityCooldown < row/2` gate; every other mount true), and
+  `!sand_storm` joins (the dash owns its 4-tick turn cadence,
+  `:36301-36304`).
+* **CORRECT — the body rows** (`PlayerFrame` `Player.cs:36377-36387`):
+  BOTH branches set row 3 (the vanilla quirk — the `:36385` else is dead);
+  the port already did this. The citation was wrong (`:36363-36372`, the
+  DrinkLong arm) — re-cited.
+* **CORRECT — the composite arms**: the style-3 arm sets NO composite
+  arms (`Player.cs:51031-51063` has no `SetCompositeArm*` call — the
+  per-frame reset at `:43376-43377` leaves them disabled, the body-row
+  cells carry the pose); the port's `apply_item_composite_arms` has no
+  style-3 arm either. No change.
+
+**Deviations (deliberate):**
+
+* `GetAdjustedItemScale` (`Player.cs:42566-42582`) folds to the prefixed
+  `Item.scale` — the `meleeScaleGlove` ×1.1 arm has no port granter (the
+  Titan Glove's scale half is the documented S1-C-12 skip). The prefix
+  rides the held tuple into the draw and the `hand_key` (the G6 rule: a
+  reforge changes the held item's pixels).
+* The held frame is the atlas icon quad — the established
+  `Item.GetDrawHitbox` stand-in the renderer already uses (the umbrellas'
+  44×44 stock frame matches their icon).
+* The `CanHit` wall check (`:44287`) and the `nPC.immune[whoAmI] == 0`
+  gate (`:44246`) ride the port's established `strike_melee` `hurt_cd`
+  stand-in (the cursor melee arm's convention).
+* The cursor arm keeps its full-swing `attack_cd` overwrite after
+  `resolve_melee_strike` (the established start-arm stand-in); the stab
+  sweep keeps the C#'s `ApplyAttackCooldown` value. The extraction added
+  the `:44414`/`:44419` tail to the shared helper — for the cursor arm the
+  cooldown insert is inert (its next press re-starts the swing) and the
+  `attack_cd` write is overwritten by the caller's start arm, so the
+  cursor path's behaviour and RNG draws are unchanged.
+* `mountOffset` (`HeightOffsetHitboxCenter`) stands at 0 and `gravDir` at
+  1 — the port's established folds (no mount height offsets, no gravity
+  flip).
+
+**RNG:** zero new draws. The sweep's landed hits ride the SAME
+`UpdatePlayers` resolution the cursor arm uses (crit → `DamageVar` → the
+probe/combat-text/hit-sound tails, in that order); the use-start's
+`UseSound` rides `start_swing_extras` like every other swing. The
+non-landed ticks draw nothing (the C#'s `ItemCheck_GetMeleeHitbox` +
+scan are pure).
+
+**Witnesses (WRITTEN NOT RUN — code-only mode):**
+`player.rs::s1_p_i05_thrust_tests` (4: the 0.666 boundary incl. the
+0.6661/0.6665 pair that discriminates the 2/3 gate, the extension / snap /
+scale / nudge / mountOffset maths both facings, the hitbox rect table incl.
+the scaled + umbrella + plain shapes, the facing lock's four arms),
+`mount.rs::s1_p_i05_the_scutlix_cooldown_gates_the_direction_change` (the
+Scutlix cooldown gate + the non-Scutlix always-true), `render/player_layers.rs::
+s1_p_i05_the_render_thrust_rides_the_shared_port` (the delegation + the
+state-carried scale/type), `world_sim/editing.rs` (3: the press starts the
+stab and the 8 wind-up ticks never hit, one hit per swing with the
+cooldown counting 14 → 1 across the animation + the second press re-arms,
+the sim's `frame_inputs.use_turn` lock).
+
 ## The draw phase order (S1-B-7, 2026-11-14)
 
 `Main.DoDraw` (`Main.cs:61707-62507`) draws the world in a fixed

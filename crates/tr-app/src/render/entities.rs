@@ -1584,14 +1584,16 @@ pub(crate) fn push_layers(
 /// The starter player through the pure layer builders (`assemble_layers`):
 /// `LegacyPlayerRenderer`'s layer order with the held item in its
 /// `weaponDrawOrder` slot (`PlayerDrawSet.cs:358`). `held` carries the selected
-/// item kind and the swing timer (`None` = empty hand — remote players).
+/// item kind, the remaining swing fraction and the item's prefix (S1-P-i05 —
+/// `GetAdjustedItemScale` reads the prefixed instance, `Player.cs:42566`);
+/// `None` = empty hand — remote players.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_player(
     r: &mut SpriteRenderer,
     assets: &PlayerAssets,
     lookups: &assets::Lookups,
     player: &Player,
-    held: Option<(u16, f32)>,
+    held: Option<(u16, f32, u16)>,
     // `Player.armor[0..3]` item kinds (head/body/legs, 0 = empty); the layer
     // builders swap the shirt/pants/hair pieces for the armor sheets.
     armor: ArmorKinds,
@@ -1605,7 +1607,7 @@ pub(crate) fn draw_player(
     let (cx, cy) = player.center();
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
-    let swing = held.map_or(0.0, |(_, s)| s);
+    let swing = held.map_or(0.0, |(_, s, _)| s);
     // `Player.armor[0..3]`'s slot ids (`head`/`body`/`legs`, `Player.cs`): the
     // registry item → slot resolution the C# `Item.equipSlot` fields do at
     // `SetDefaults`. The generated slots are i16 with −1 = none
@@ -1647,12 +1649,12 @@ pub(crate) fn draw_player(
         // `position + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`).
         gfx_off_y: player.gfx_off_y,
         swing,
-        hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
+        hold_style: held.map_or(0, |(kind, _, _)| crate::item::hold_style(kind)),
         // The held item's real useStyle (`Item.useStyle` — the per-style
         // body rows and the held-item draw both read it).
-        use_style: held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
+        use_style: held.map_or(1, |(kind, _, _)| crate::item::use_style(kind)),
         item_uv: held
-            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .and_then(|(kind, _, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
         // `Player.itemRotation` — the shooting styles' aim rotation
         // (`Player.cs:47371-47378`), computed by the sim.
@@ -1663,9 +1665,20 @@ pub(crate) fn draw_player(
         swing_max_ticks: player.frame_inputs.swing_anim_max * 60.0,
         use_animation: player.frame_inputs.use_animation,
         item_size: held
-            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .and_then(|(kind, _, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
             .unwrap_or([0.0, 0.0]),
+        // S1-P-i05: the useStyle-3 arm's per-item inputs — `Item.type`
+        // (the 946/4707 umbrella nudge, `Player.cs:51054-51057`) and
+        // `GetAdjustedItemScale` (`:42566-42574`, the PREFIXED scale —
+        // `Item.Prefix` mutates the instance the C# reads).
+        item_type: held.map_or(0, |(kind, _, _)| i32::from(kind)),
+        item_scale: held.map_or(1.0, |(kind, _, prefix)| {
+            crate::player::adjusted_item_scale(
+                crate::prefix::prefixed_stats(kind, prefix)
+                    .map_or_else(|| crate::registry::get(kind).map_or(1.0, |d| d.scale), |s| s.scale),
+            )
+        }),
         light: light_c,
         head_armor,
         body_armor,

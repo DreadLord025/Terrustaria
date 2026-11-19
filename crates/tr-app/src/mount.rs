@@ -2419,6 +2419,20 @@ impl MountState {
         mount_data(self.kind)
     }
 
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-639`): true for every
+    /// mount except the Scutlix (9), whose ability cooldown must be under
+    /// half the row's (`_abilityCooldown < _data.abilityCooldown / 2`).
+    /// An inactive mount allows the change (`_type == -1` never equals 9).
+    /// S1-P-i05: the run-key direction lock (`Player.cs:19837`) reads it.
+    pub(crate) fn allow_direction_change(&self) -> bool {
+        if self.kind == 9 {
+            return self
+                .data()
+                .is_some_and(|d| self.ability_cooldown < d.ability_cooldown / 2);
+        }
+        true
+    }
+
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) — the state transitions; the
     /// buff add/clear and the hitbox growth are returned for the caller
     /// (the net SendData(13) :6222-6225 and the sound/dust effects have no port
@@ -3048,6 +3062,28 @@ mod tests {
     }
 
     use super::*;
+
+    /// S1-P-i05 — the Scutlix's `AllowDirectionChange` (`Mount.cs:630-639`):
+    /// the ability cooldown must drop under half the row's 20; every other
+    /// mount (and the inactive state) allows the change. The run-key
+    /// direction lock (`Player.cs:19837`) reads it. WRITTEN NOT RUN.
+    #[test]
+    fn s1_p_i05_the_scutlix_cooldown_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the change");
+        m.set_mount(9, false);
+        m.ability_cooldown = 20;
+        assert!(!m.allow_direction_change(), "the full cooldown locks it");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 == 20/2 is still locked");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "under half unlocks it");
+        // A non-Scutlix mount always allows it (the `_type == 9` gate).
+        let mut horse = MountState::default();
+        horse.set_mount(40, false);
+        horse.ability_cooldown = 100;
+        assert!(horse.allow_direction_change(), "the horse never locks");
+    }
 
     #[test]
     fn the_twelve_ground_rows_carry_the_exact_c_constants() {
