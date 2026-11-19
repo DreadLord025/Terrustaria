@@ -457,31 +457,42 @@ mod tests {
     }
 
     /// `WouldSpotOverlapWithSentry` (`:52983-53013`): a sentry whose 30-px
-    /// recentred hitbox covers a probe refuses; the aura's 8-px inflate widens
-    /// the catch. A clear spot passes.
+    /// recentred hitbox covers a probe refuses; the aura's `Inflate(8, 0)`
+    /// widens the RAW box 8 px each side (the C# `else if` — the recentre is
+    /// skipped entirely on the aura branch). A clear spot passes.
     #[test]
     fn the_overlap_test_recentres_and_inflates_the_hitbox() {
         let mut pool = ProjectilePool::new();
-        // A Frost Hydra (80×74) centred so its box left edge is past 30.
-        let slot = pool
+        // A Frost Hydra (80×74) at top-left (100,100) — its left edge is past
+        // 30, so the non-aura branch recentres: X = 100 + 80/2 - 30/2 = 125,
+        // W 30 → [125,155)×[100,174).
+        let hydra = pool
             .spawn_with_data_ai_owned(308, 0, 100.0, 100.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
             .unwrap();
-        // Hitbox (100,100,80,74) → recentre: X = 100 + 40 - 15 = 125, W 30.
-        // Probe (worldX, worldY-8): pick worldX 130, worldY 108 → (130,100)
-        // sits inside [125,155)×[100,174).
+        // Probe (worldX, worldY-8): worldX 130, worldY 108 → (130,100) sits
+        // inside the recentred box.
         assert!(would_spot_overlap_with_sentry(&pool, 130, 108, false));
         // A probe well outside passes.
         assert!(!would_spot_overlap_with_sentry(&pool, 400, 108, false));
-        // The aura inflate (±8) catches a probe just left of the recentred box.
-        // Use a Lightning Aura kind (16×16) at (100,100): no recentre (X>30
-        // but W 16 → X = 100+8-15 = 93, W 30); aura inflates to [85,123).
+        // The aura branch (`:52995-52998`): `hitbox.Inflate(8, 0)` on the RAW
+        // box — the Hydra's [100,180) becomes [92,188). Probe (95,100) is
+        // inside the inflated box but OUTSIDE the plain recentred [125,155):
+        // the inflate widens the catch.
+        assert!(would_spot_overlap_with_sentry(&pool, 95, 108, true));
+        assert!(!would_spot_overlap_with_sentry(&pool, 95, 108, false));
+        // A Lightning Aura kind (16×16) at (100,100): the aura branch inflates
+        // its RAW [100,116) to [92,124); probe (93,100) is caught. The plain
+        // branch recentres it to X = 100 + 16/2 - 15 = 93, W 30 → [93,123),
+        // which also contains 93 — the aura-only delta is the ±8 reach past
+        // the recentred box, proven by the Hydra case above.
         let aura = pool
             .spawn_with_data_ai_owned(688, 0, 100.0, 100.0, 0.0, 0.0, 4, 0.0, 0.0, 0.0)
             .unwrap();
-        let _ = aura;
-        // Probe (88,100): inside the inflated aura box, outside the plain one.
-        assert!(would_spot_overlap_with_sentry(&pool, 88, 108, true));
-        let _ = slot;
+        assert!(would_spot_overlap_with_sentry(&pool, 93, 108, true));
+        // (123,100): inside the aura's inflated [92,124) but outside the
+        // plain recentred [93,123) — the aura catches the extra column.
+        assert!(would_spot_overlap_with_sentry(&pool, 123, 108, true));
+        let _ = (hydra, aura);
     }
 
     /// `GetRequiredDD2CrystalsToUse` (`:42386-42409`): the 12 poppers cost 10,

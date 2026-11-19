@@ -13434,10 +13434,25 @@ cursor/tile placement. S1-P-i26 ports the use machinery verbatim.
   C#'s two sentry call sites (`:48210`/`:49092`).
 - Tests (written, not run): `world_sim/editing/sentry.rs`'s 8 unit witnesses (the
   landing/resting spots, the overlap recentre/inflate, the crystal cost/reverse
-  payment/lock, the reload ladders, the downed gate); `sentry_use_tests`'s 5
+  payment/lock, the reload ladders, the downed gate); `sentry_use_tests`'s 9
   integration/RNG witnesses (the Frost Hydra/Houndius/barnacle spawn payloads, the
-  Flameburst/Trap popper payment + reload, the crit-draw delta);
-  `sentry_tests::the_dd2_tower_lifetime_holds_while_the_event_runs`.
+  Flameburst/Trap popper payment + reload, the crit-draw delta, the downed-tier
+  refusal, the Ballista shot-delay ladder, the summon knockback, the over-cap
+  spawn sweep); `sentry_tests::the_dd2_tower_lifetime_holds_while_the_event_runs`.
+- **Retry round (W3-i26b) fixes, all C#-verified:** (1) the `sentry_app` fixture
+  now latches `mine_released = true` — the sentry staves are NOT autoReuse, so the
+  fire gate reads `prev_mine_released && !prev_mine_down` (`Player.cs:42733`);
+  without the released latch the fire block never ran and no spawn witness could
+  pass. (2) Both spawn arms now truncate the class-scaled damage with the
+  `GetWeaponDamage` epsilon (`(raw + 5e-6) as i32`, `Player.cs:53421-53429`) — the
+  ammo path's `weapon_damage` precedent; the plain `raw as i32` dropped the
+  5E-06f the C# adds before the cast. (3) The overlap witness's aura probe is
+  rebuilt on the true `Inflate(8, 0)` geometry (the C# inflates the RAW box and
+  SKIPS the recentre on the aura branch — the old probe (88,100) sat outside
+  every box); the new probes (95/93/123,100) prove the ±8 reach past the
+  recentred 30-px box. (4) A `ProjectilePool::set_time_left` spawn-site setter
+  (the `set_ai1` convention) backs the over-cap sweep witness's aged-slot
+  fixture. Module behaviour otherwise untouched.
 
 ### The Twins' minion arm (S1-D-4b-6)
 

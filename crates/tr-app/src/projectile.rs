@@ -12604,6 +12604,15 @@ impl ProjectilePool {
         }
     }
 
+    /// The spawn-site `timeLeft` override — the C# sites that write
+    /// `Main.projectile[num].timeLeft` after `NewProjectile` (the sentry
+    /// witnesses' aged-slot fixture; the `set_ai1` convention).
+    pub fn set_time_left(&mut self, slot: usize, value: i32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.time_left = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }

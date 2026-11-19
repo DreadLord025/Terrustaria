@@ -880,13 +880,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         // 10876-10877`); the port's spawn seam takes the
                         // top-left, so subtract half the row's size.
                         let data = crate::projectile::proj_data(proj).unwrap();
+                        // `GetWeaponDamage` (`Player.cs:53421-53429`): the
+                        // class-scaled damage truncates `(float)damage *
+                        // multiplier + 5E-06f` — the epsilon rides the cast
+                        // (the ammo path's `weapon_damage` precedent).
+                        let sentry_damage = (raw + 5e-6) as i32;
                         let slot = app.projectiles.spawn_with_data_ai(
                             proj,
                             spawn_x - data.w * 0.5,
                             spawn_y - data.h * 0.5,
                             0.0,
                             speed_y,
-                            raw as i32,
+                            sentry_damage,
                             sentry_kb,
                             ai0,
                             0.0,
@@ -946,13 +951,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             _ => {}
                         }
                         let data = crate::projectile::proj_data(proj).unwrap();
+                        // `GetWeaponDamage` (`Player.cs:53421-53429`): the
+                        // class-scaled damage truncates `(float)damage *
+                        // multiplier + 5E-06f` — the epsilon rides the cast
+                        // (the ammo path's `weapon_damage` precedent).
+                        let sentry_damage = (raw + 5e-6) as i32;
                         let slot = app.projectiles.spawn_with_data_ai(
                             proj,
                             wx as f32 - data.w * 0.5,
                             (wy - push) as f32 - data.h * 0.5,
                             0.0,
                             0.0,
-                            raw as i32,
+                            sentry_damage,
                             sentry_kb,
                             ai0,
                             ai1,
@@ -8393,6 +8403,13 @@ mod sentry_use_tests {
         };
         app.mine_down = true;
         app.mine_prev_down = false;
+        // The press edge: the sentry staves are NOT autoReuse, so the fire
+        // gate reads `prev_mine_released && !prev_mine_down`
+        // (`Player.cs:42733` `controlUseItem && releaseUseItem`). The previous
+        // frame the button was released (`mine_released = true`,
+        // `mine_prev_down = false`); this frame it is pressed. Without the
+        // released latch the fire block never runs for a non-autoReuse staff.
+        app.mine_released = true;
         // Mute the listener: `play_sound` returns None before the pitch draw
         // (`sound.rs:82-84`), so the use start draws nothing on UpdatePlayers.
         app.audio.set_listener(crate::sound::Listener {
@@ -8549,6 +8566,139 @@ mod sentry_use_tests {
             mirrored, control_after,
             "the only delta is the one crit draw the sentry skips"
         );
+    }
+
+    /// The DD2 use gate refuses before any tier is downed and outside the
+    /// event (`:52083-52086`): no swing, no spawn, no crystal payment. A
+    /// downed tier opens it (the resting spot's tile-above is clear air).
+    #[test]
+    fn the_dd2_popper_refuses_without_a_downed_tier() {
+        let mut app = sentry_app(3818);
+        app.inventory[1] = ItemSlot {
+            kind: 3822,
+            name: "DD2 Energy Crystal",
+            count: 10,
+            prefix: 0,
+        };
+        fire(&mut app);
+        assert!(
+            app.projectiles.slots().iter().all(|p| !p.active),
+            "no tower spawns before a tier is downed"
+        );
+        assert_eq!(app.inventory[1].count, 10, "no crystals paid");
+        // A downed tier opens the gate. The staff is not autoReuse — the C#
+        // needs the release edge for a second use (`Player.cs:42733`), so the
+        // witness releases and re-presses between the two fires.
+        app.world.dd2_downed_t1 = true;
+        app.mine_down = false;
+        fire(&mut app);
+        app.mine_down = true;
+        fire(&mut app);
+        assert!(
+            app.projectiles
+                .slots()
+                .iter()
+                .any(|p| p.active && p.kind == 663),
+            "the tower spawns once a tier is downed"
+        );
+        assert_eq!(app.inventory[1].count, 0, "the 10 crystals paid");
+    }
+
+    /// The Ballista popper (3824 → 677) seeds `ai1` with the
+    /// `GetBallistraShotDelay` ladder (`Projectile.cs:68653-68669`): 160 stock,
+    /// 100 with setSquireT3, 60 with ballistaPanic, 30 with both.
+    #[test]
+    fn the_ballista_popper_seeds_the_shot_delay_ladder() {
+        let cases: [(bool, bool, f32); 4] = [
+            (false, false, 160.0),
+            (true, false, 100.0),
+            (false, true, 60.0),
+            (true, true, 30.0),
+        ];
+        for (squire_t3, panic, want) in cases {
+            let mut app = sentry_app(3824);
+            app.world.dd2_downed_t1 = true;
+            app.inventory[1] = ItemSlot {
+                kind: 3822,
+                name: "DD2 Energy Crystal",
+                count: 10,
+                prefix: 0,
+            };
+            {
+                let p = app.player.as_mut().unwrap();
+                p.set_squire_t3 = squire_t3;
+                p.ballista_panic = panic;
+            }
+            fire(&mut app);
+            let s = app
+                .projectiles
+                .slots()
+                .iter()
+                .find(|p| p.active && p.kind == 677)
+                .expect("the Ballista tower spawned");
+            assert_eq!(s.ai[0], 0.0, "the Ballista carries no ai0");
+            assert_eq!(
+                s.ai[1], want,
+                "squireT3={squire_t3} panic={panic} → {want}"
+            );
+        }
+    }
+
+    /// The sentry knockback takes `GetWeaponKnockback`'s summon arm
+    /// (`Player.cs:53346-53369`): `KnockBack += minionKB` (`:53348-53351`),
+    /// then the `kbBuff` ×1.5 (`:53356-53359`). The Frost Hydra staff's base
+    /// knockback is 7.5.
+    #[test]
+    fn the_sentry_spawn_carries_the_summon_knockback() {
+        let mut app = sentry_app(1572);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.minion_kb = 1.5;
+            p.kb_buff = true;
+        }
+        fire(&mut app);
+        let s = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 308)
+            .expect("the Frost Hydra spawned");
+        // (7.5 + 1.5) × 1.5 = 13.5.
+        assert!(
+            (s.knock_back - 13.5).abs() < 1e-4,
+            "the summon knockback ladder: {}",
+            s.knock_back
+        );
+    }
+
+    /// The spawn sweep runs right after the sentry spawn (`Player.cs:48210`):
+    /// at `max_turrets = 1` a second Frost Hydra use evicts the older, lower-
+    /// `timeLeft` sentry (`UpdateMaxTurrets` `:53076-53088` — the lowest life
+    /// dies while the wipable count exceeds the budget). The aged slot is
+    /// seeded through the pool seam directly (the use path's own first spawn
+    /// would carry the fresh 36000 and tie the scan's first-listed keep).
+    #[test]
+    fn the_spawn_sweep_evicts_the_lowest_life_sentry_over_cap() {
+        let mut app = sentry_app(1572);
+        app.player.as_mut().unwrap().max_turrets = 1;
+        // An aged Hydra already on the field (timeLeft 35000 < the fresh
+        // spawn's 36000) — the pool seam the AI arms' own spawns use.
+        let aged = app
+            .projectiles
+            .spawn_with_data_ai(308, 600.0, 4000.0, 0.0, 0.0, 100, 7.5, 0.0, 0.0)
+            .expect("the aged Hydra");
+        app.projectiles.set_time_left(aged, 35000);
+        fire(&mut app);
+        let live: Vec<usize> = app
+            .projectiles
+            .slots()
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.active && p.kind == 308)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(live.len(), 1, "the cap sweep keeps one");
+        assert_ne!(live[0], aged, "the aged lower-life Hydra was evicted");
     }
 }
 
