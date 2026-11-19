@@ -7664,13 +7664,17 @@ mod saucer_tests {
 
     #[test]
     fn the_core_gun_fires_the_447_in_the_window() {
-        // The gun phase (`NPC.cs:36408-36500`): the firing window opens
-        // at `ai[3] % 120 >= 60` and fires the 447 projectile (80 dmg).
+        // The gun phase (`NPC.cs:36411-36495`): the firing window opens
+        // at `ai[3] % 120 >= 60` and fires the 447 projectile (80 dmg)
+        // with the owner payload `ai0 = whoAmI + 1` (`:36437`) — the
+        // S1-D-3 aiStyle-76 audit moved the shot onto the payload list
+        // (the deathray arm reads the owner slot back).
         let (_app, mut player) = app_with_player();
         let world = surface_world();
         let mut rng = UnifiedRandom::new(7);
         let mut n = Npc::new(NpcKind::MartianSaucerCore, 150.0 * TILE_PX, 1600.0, 1, 0.0);
         n.hp = n.max_hp;
+        n.slot = 3;
         // Force the gun phase.
         n.ai[0] = 2.0;
         n.ai[3] = 55.0;
@@ -7679,14 +7683,15 @@ mod saucer_tests {
         let mut shot = None;
         for _ in 0..30 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if let Some(s) = n.wants_hostile_shot.pop() {
+            if let Some(s) = n.wants_hostile_shot_ai.pop() {
                 shot = Some(s);
                 break;
             }
         }
         let s = shot.expect("the 447 fires in the window");
-        assert_eq!(s.0, 447);
-        assert_eq!(s.5, 80);
+        assert_eq!(s.kind, 447);
+        assert_eq!(s.damage, 80);
+        assert_eq!(s.ai0, 4.0, "the owner payload is whoAmI + 1 (:36437)");
     }
 
     #[test]

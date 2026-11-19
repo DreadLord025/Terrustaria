@@ -24628,6 +24628,108 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
   aiStyle-39 only (`:77292`) — single frame,
   `Main.npcFrameCount[384] = 1` (`Main.cs:67122`, the 380-389 row's 5th
   entry).
+
+## The Martian Saucer core audit (S1-D-3 aiStyle-76, code-only)
+
+`NPC.AI()`'s `else if (this.aiStyle == 76)` arm (`NPC.cs:36071-36519`)
+was ALREADY ported on main — `npc.rs::update_saucer_core` (M4-EVENT-4e,
+2026-11-08), the sole kind being the MartianSaucerCore 395 (the census of
+`this.aiStyle = 76;` across `NPC.cs` returns exactly one hit, `:14052`,
+the `type == 395` SetDefaults row `:14045-14062`). No new module was
+created (the no-parallel-implementations rule); this round is the
+distrust-verbatim audit of the live arm against the whole C# block, with
+surgical fixes. CODE-ONLY MODE: no cargo/rustc/rustfmt/tests invoked; the
+11 witness tests (`npc.rs::s1_d_3_s76_audit_tests`) are WRITTEN NOT RUN,
+verified by C# re-reading + hand-arithmetic.
+
+The defects found and fixed (each cited to the C# line):
+
+- **The despawn ride was nested under the far gate.** The C#'s
+  `if (ai[0] == -1 || ai[0] == -2)` (`:36130`) is its OWN if/else-if
+  chain — a core that entered -1/-2 while the player was far keeps
+  climbing after the player returns inside the 5600-px window. The v1
+  ran the ride only while `far`, freezing the negative phases near the
+  player. Fixed: the ride chains off the phase, not the distance.
+- **The living-player restore reset -1 to 0.** The C# restores only
+  -2 → 2 (`:36137-36140`); the `if (ai[0] == 0) ai[0] = 0;` at
+  `:36141-36144` is DEAD code (the phase is -1 or -2 there). The v1's
+  `if -2 { 2 } else { 0 }` killed the -1 climb on the first restore
+  tick. Fixed: -1 stays -1, the counters still zero (`:36145-36147`).
+- **The despawn timers were missing.** `EncourageDespawn(10)`
+  (`:36133`, the only-lowering `:7249-7256` write) and the DIRECT
+  `timeLeft = 300` (`:36136`, not an EncourageDespawn) now run; the
+  dead-player branch takes neither (the `!player19.dead` gate).
+- **The vulnerable wobble never dropped the shield.** The C# sets
+  `dontTakeDamage = false` at `:36383` (the SetDefaults `true` row
+  `:14060` holds until then). The port now models the SetDefaults
+  shield at construction (`Npc::new`) and drops it in the wobble —
+  the core is unkillable by damage until the crew-dead bridge hands
+  it the vulnerable phase (the bridge itself stays the documented
+  M4-EVENT-4f follow-up).
+- **The gun's 447 dropped its owner payload.** `NewProjectile(..., 447,
+  80, 0f, myPlayer, whoAmI + 1)` (`:36437`) — the deathray arm
+  (`Projectile.cs:30818`) reads `ai0 - 1` to find its owner. The v1
+  pushed the plain shot tuple; the shot now rides
+  `wants_hostile_shot_ai` with `ai0 = slot + 1` (the shell's entry
+  shot already did, `update_saucer_mount`).
+- **The side picks used Rust `signum`.** The band-0 approach's -600
+  offset (`:36229`) and the band-2 approach's +300 (`:36285`) multiply
+  `Math.Sign`, which returns **0 on the exact tie** — Rust's
+  `f32::signum` returns +1 on +0.0, sending the core 600 px the wrong
+  way when it sits exactly above the player. The new `math_sign`
+  helper carries the C# tie. The band-CHANGE writes (`:36217`,
+  `:36433`) use the `Sign(...) == 1 ? 1 : -1` ternary instead — the
+  tie folds to -1 there; both forms are pinned by witnesses.
+- **The clearance probe dropped `!tileSolidTop`.** The C# predicate is
+  `nactive() && tileSolid[type] && !tileSolidTop[type]`
+  (`:36247`/`:36256` and the three replicas) — platforms do NOT stop
+  the scan. `ground_clearance` now carries the term (the Dutchman's
+  `:38908`/`:38917` probe shares the helper, same predicate), and the
+  row-0 landing keeps the C#'s literal `count--` shape (the v1 clamped
+  it to 0). The probe columns are the C#'s cast-then-divide
+  (`(int)Center.X / 16`, `(int)(position.Y + height) / 16`,
+  `:36244-36245`), not divide-then-cast.
+- **The dive/park/dash Y targets were inverted at low clearance.** The
+  C# eases toward -4 but caps the steepness at the clearance
+  (`0f - num1111 > num1110` → `-clearance`, `:36266-36270`,
+  `:36347-36351`, `:36481-36485`): a 0-px clearance eases toward 0,
+  not -4. The v1's `-(clear.max(-4.0))` ran -0/-4 backwards. Fixed in
+  all three arms.
+- **The wobble rotation ran f32 cos of 6.283.** `RotatedBy` takes a
+  DOUBLE and computes `(float)Math.Cos(radians)` (`Utils.cs:1675-1684`)
+  on the promoted f32 angle; the angle literal is
+  `(float)Math.PI * 2f` = TAU, not 6.283. The three cosine bands now
+  promote to f64 and use TAU; the 120+ raw-angle band uses TAU too.
+- **The gun chase had an invented zero guard.** The C#'s
+  `vector154.Normalize()` (`:36454`) has NO `.max(0.001)` floor — the
+  port's guard is gone (the approach arms' <50/<70 gates make their
+  zero vectors unreachable; the chase's exact-coincidence NaN is the
+  C#'s own behaviour, carried verbatim).
+- **The netUpdate writes were missing** (`:36116`, `:36128`, `:36148`,
+  `:36223`, `:36392`, `:36441`, `:36449`, `:36517`) — all landed.
+
+RNG by construction: the whole arm draws NO `Main.rand` — no
+`Next`/`NextFloat` anywhere in `:36071-36519`; `NewNPC`'s only draw is
+the getGoodWorld gate (`:80752`, constants-off in the port);
+`TargetClosest` (`:77652-77781`) is the deterministic Manhattan scan
+(now riding `npc_target::target_closest`, style 76, the S1-D-3p
+helper); `EncourageDespawn` and the 9999 instant-kill
+`StrikeNPCNoInteraction` path (`:81237`'s `Damage >= 9999 &&
+owner == 255` flag — no loot/dust/combat-text draws) draw nothing. The
+`rng` parameter stays for the dispatch signature, untouched; the
+witness `s1_d_3_s76_audit_the_arm_draws_no_rng` pins a `UnifiedRandom`
+state across all six scan bands, the wobble, the gun and both rides.
+
+Documented folds (unchanged from M4-EVENT-4e): the off-world
+`active = false` (`:36516`) folds to hp=0 through the death pass; the
+classic-only constants (no expert difficulty flags in the arm itself —
+the 80 damage is the literal `num1126`); the crew spawn's
+`localAI[0..3]` sibling slots ride the pre-pass write-through (the
+port's link model). The shell's missile battery + the classic/expert
+phase bridge remain the M4-EVENT-4f follow-ups — with the shield now
+modelled, the core is damage-immune until that bridge lands (the C#
+behaviour; the v1 let the player kill the shielded core outright).
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
