@@ -164,6 +164,12 @@ mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai_misc;
+// S1-D-4 empress proj: the Empress of Light's five projectile AIs
+// (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
+// a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
+// remainder; the dispatch claim + the R7 request drain are the wiring
+// follow-up (module doc + docs/ANALYSIS.md "S1-D-4 empress proj").
+mod projectile_ai_empress;
 mod rain;
 mod regen;
 mod research;

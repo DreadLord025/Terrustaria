@@ -15370,6 +15370,34 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // S1-D-4 empress proj — the Empress of Light's
+                        // five projectile kinds (872/873/874/919/923,
+                        // aiStyles 173/171/0/179/180 — none had an arm
+                        // here before, they rode the `_ => {}` no-op).
+                        // The gate is KIND-keyed
+                        // (`projectile_ai_empress::EMPRESS_PROJ_KINDS`),
+                        // so every other kind — including the style-171
+                        // weapon variants 931/1039 when they land — keeps
+                        // the fall-through byte-identical. The single-
+                        // player port maps `Main.player[0]` to the local
+                        // player (R7's machine targets index 0); the npc
+                        // slice maps through `npc_ref` (the 636 snap gate
+                        // stays false until R7's NpcKind row merges).
+                        _ if crate::projectile_ai_empress::handles(self.slots[i].kind) => {
+                            let empress_players: Vec<(f32, f32)> = player
+                                .as_ref()
+                                .map(|pl| vec![pl.center()])
+                                .unwrap_or_default();
+                            let empress_npcs: Vec<crate::projectile_ai_empress::EmpressNpcRef> =
+                                npcs.iter().map(crate::projectile_ai_empress::npc_ref).collect();
+                            let _ = crate::projectile_ai_empress::empress_proj_tick(
+                                &mut self.slots[i],
+                                i,
+                                &empress_players,
+                                &empress_npcs,
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     }
@@ -16734,8 +16762,14 @@ mod tests {
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
         // style match (the Present's aiStyle 58 lives only in that module).
+        // S1-D-4 empress: the same shape — the five Empress kinds
+        // (872/873/874/919/923) ride `projectile_ai_empress::handles`'
+        // `_ if` catch-arm (styles 173/171/0/179/180 for CLAIMED kinds only).
         let frost_gated: std::collections::BTreeSet<u8> = (0..=2048u16)
-            .filter(|&k| crate::projectile_frost_shots::handles(k))
+            .filter(|&k| {
+                crate::projectile_frost_shots::handles(k)
+                    || crate::projectile_ai_empress::handles(k)
+            })
             .filter_map(|k| proj_data(k).map(|d| d.ai_style))
             .collect();
         for style in &rowed {

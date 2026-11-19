@@ -28844,3 +28844,116 @@ the case-2 stream contract, the pixie draw), 3 in world_sim/npcs.rs
 (the Skeletron roar wiring, the drain's ordered-draws contract with
 the muted draw-free control, the worm soundDelay cadence). **No
 compiler invoked.**
+## S1-D-4 empress proj — the Empress of Light's projectile AIs (code-only)
+
+**Task.** R7's Empress machine (`npc_ai_empress.rs`, `task/S1-D-3-empress-audit`,
+ebdf83e3, pushed not merged) documented its projectile AIs as the remainder.
+This round ports them into the NEW `crates/tr-app/src/projectile_ai_empress.rs`
+as pure per-kind functions behind a kind gate, adds the five missing
+`proj_data` rows, and claims a gated dispatch arm. **No compiler invoked**
+(code-only wave); the 9 witness tests are WRITTEN, NOT RUN.
+
+**Census (verified, the brief's guesses corrected).** Ids from
+`ID/ProjectileID.cs`, styles/flags from each `SetDefaults` arm, arms located
+through the `AI()` if/else chain (`Projectile.cs:23199-36807`):
+
+| id | name | aiStyle | SetDefaults | AI arm | main row |
+|----|------|---------|-------------|--------|----------|
+| 872 | HallowBossLastingRainbow (`ProjectileID.cs:2298`) | 173 | `:8403-8415` | `AI_173_HallowBossRainbowTrail` `:45429-45440` | MISSING → added |
+| 873 | HallowBossRainbowStreak (`:2300`) — the prismatic bolt | 171 | `:8354-8366` | `AI_171_HallowBossRainbowStreak` `:45451-45558` | MISSING → added |
+| 874 | HallowBossDeathAurora (`:2302`) | **0** | `:8367-8379` | NONE (no style-0 arm in `AI()`) | MISSING → added |
+| 919 | FairyQueenLance (`:2392`) — the ethereal lance | 179 | `:8714-8726` | `AI_179_FairyQueenLance` `:45032-45056` | MISSING → added |
+| 923 | FairyQueenSunDance (`:2400`) | 180 | `:8757-8770` | `AI_180_FairyQueenSunDance` `:44984-45030` | MISSING → added |
+
+The brief's "874 PrismaticBolt / 873 EtherealLance / 872 SunDance?" was
+remapped: the prismatic bolt is 873, the ethereal lance is 919, the sun
+dance is 923; 874 is the death-aurora flash (a pure visual). **871**
+(HallowBossSplitShotCore, style 172, `:8380-8392`,
+`AI_172_HallowBossRainbowPelletStorm` `:45569-45625` + the
+`HallowBossPelletStormInfo` struct `:197-237`) and **924** (FairyQueenHymn —
+NO `SetDefaults` arm exists; an unused id) are NOT spawned by `AI_120`
+(R7's request set is exactly {874, 873, 919, 872, 923}) — both stay
+unclaimed and unrowed. Boundaries: R56's style 194 untouched; R19b's ai001
+slice-C kinds untouched (none of the five is aiStyle 1); the style-171
+weapon variants **931/1039** are EXCLUDED from the gate — their `AI_171`
+parameter overrides (`:45462-45492`, `:45551-45554`) and the friendly
+`FindTargetWithLineOfSight` branch (`:45507-45526`, `:45627-45660`) belong
+to the player-weapon port. For hostile 873 `friendly` is constant false
+(`:8361`), so the friendly branch is unreachable by construction.
+
+**Coverage.** All four AI arms ported WHOLE (not just the two highest-value):
+- **872 / AI_173**: the opacity = `GetLerpValue(0,60,timeLeft)` ×
+  `GetLerpValue(660,600,timeLeft)`; the velocity rotates by `ai[0]` FIRST,
+  then `ai[0] += (π/360)/30` while `< π/360` (a 30-tick curvature ramp into
+  a constant-curvature spiral); `rotation = ToRotation + π/2`.
+- **873 / AI_171 (hostile)**: three timeLeft phases — `>140` swirl
+  (`×0.98` then the cos-phased turn, phase = `whoAmI%6/6 + x/320 + y/160`),
+  `140≥t>30` homing (`Vector2.SmoothStep` toward
+  `DirectionTo(player[(int)ai[0]].Center)*30` at amount
+  `Lerp(0.05,0.1,GetLerpValue(140,30,t))`; an out-of-range index keeps the
+  velocity), `≤30` straight. The opacity ramp `GetLerpValue(240,220,t)` is
+  1 for the whole 200-tick life (alpha 0 from tick 1 — the spawn's 255 never
+  shows). The SmoothStep is XNA's zero-tangent Hermite (the ReLogic double
+  twin `Vector2D.cs:437-456` pins the polynomial; the guards are unreachable
+  at amount ∈ [0.05, 0.1]).
+- **919 / AI_179**: `localAI[0]++`; at `≥60` the velocity re-writes to
+  `ai[0].ToRotationVector2()*40` EVERY tick + the 1-in-3 dust; the 360-tick
+  self-kill (unreachable at the stock 240 life, kept verbatim) returns
+  BEFORE the alpha/rotation tail; `alpha = (int)Lerp(255,0,GetLerpValue(0,20,localAI[0]))`
+  (truncation), `rotation = ai[0]`.
+- **923 / AI_180**: the first-tick sound (skipped, no rand); `localAI[0]++`;
+  the 180-tick kill; `alpha -= 15` floored 0; `scale` = the 0→20 × 180→120
+  ramp product; `rotation = ai[0] + GetLerpValue(50,180,localAI[0])·π/9`;
+  `ai[1]` in range → velocity zero + (live 636 only) the centre snap; out
+  of range → `Kill()`. The 13-point `CastLightOpen` walk is the lighting skip.
+- **874 / style 0**: no AI writes; only `HandleMovement`'s default arm
+  (`position += velocity`, `:19851`) — the port integrates after the match.
+
+**RNG by construction** (every draw cited; the dust-pool assumption is R7's:
+below the 50 % skip tier `Dust.cs:142-148`, on-screen, `ChildSafety.Disabled`):
+- 872 / 874 / 923: **zero** `Main.rand` draws (pure maths / no arm / sound +
+  light only).
+- 873: **zero in the AI**. The 20-dust death burst is in `Kill()`
+  (`:71490-71521`): per dust `NewDustPerfect` 6 (`Dust.cs:170-175`, `:190`)
+  + the colour `NextFloat` (`:71502`) + the velocity `NextFloat` (`:71519`)
+  = 8 × 20 = 160 draws — the port's kill seam runs no `Kill()` visuals
+  pool-wide (the ai001/ai026 precedent), a documented pool-wide skip.
+- 919: the ONE site — every tick `localAI[0] ≥ 60`: `Next(3)` ALWAYS (1
+  draw); on 0 the dust's 6 (`Next(1)`×2 with w/h clamped to 5,
+  `Next(-20,21)`×2, `Next(3)`, `Next(-20,21)`; type 267 is in none of the
+  extra-draw lists `Dust.cs:214-252`) + the colour `NextFloat` (`:45044`;
+  `AI_171_GetColor` `:45560-45567` draws nothing) = 8 total. The visuals
+  skip; the draws are consumed in C# order (witness-pinned).
+
+**Deliberate deviations / remainder.**
+- The movement is the `HandleMovement` default-arm stand-in (all five are
+  `tileCollide = false`); `Vector2.Normalize` guards zero → zero (the
+  Fishron/R7 precedent, differs only on exact overlap).
+- The double-precision casts are kept where the C# spells them
+  (`RotatedBy`/`ToRotation`/`ToRotationVector2` compute cos/sin/atan2 in
+  double then cast — `Utils.cs:1655-1684`).
+- **Wiring remainder**: the spawner is UNWIRED — R7's
+  `EmpressRequest::Projectile` drain + the `NpcKind::HallowBoss` (636) row
+  land with R7's merge; until then `npc_ref`'s `is_empress` is false, so the
+  sun-dance centre snap cannot fire through the live dispatch (the core is
+  faithful and witness-tested through `EmpressNpcRef`). The dispatch arm is
+  KIND-gated ahead of `_ => {}` — every unclaimed kind (incl. 931/1039)
+  keeps the fall-through byte-identical.
+- **Damage-side slices** (the wiring/damage work owns them): the telegraph
+  invuln (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
+  `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+  `:14788-14796`), 919's ±40-px line hitbox (`Colliding` `:15625-15641`),
+  923's three-segment beam (`:15642-15668`), 872's every-2nd-of-50 oldPos
+  hitbox (`:15675-15694` — needs the 120-entry `TrailCacheLength` ring,
+  `ProjectileID.cs:522`, vs the port's fixed 10).
+- **Render-side slices**: 872/873's mode-2 trail rings (cache 120/60,
+  `ProjectileID.cs:521-522`), the `GetAlpha`/`AI_173_GetColor` tints
+  (`:45442-45449`, `:78999-79002`), 923's `drawLayer = 2` (`:8769`) + beam
+  draw (`Main.cs:28268`), the sounds (`SoundID.Item159` `:44988`).
+
+**Verification.** Code-only: the C# arms re-read whole (the SetDefaults
+slices, the AI bodies, the Kill burst, the Colliding/Damage gates, the
+Utils/Dust/Vector2D helpers); the dispatch insertion checked against the
+existing arm list (no style-0/171/173/179/180 arm existed — the five kinds
+rode `_ => {}`); the 9 witness tests are WRITTEN, NOT RUN — **no compiler
+invoked**.
