@@ -478,21 +478,22 @@ mod tests {
     /// the 200×200 test world — flying right at 10 px/tick.
     fn shot(kind: u16) -> Projectile {
         let d = proj_data(kind).expect("rowed kind");
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            pos: Vec2::new(1600.0, 800.0),
-            vel: Vec2::new(10.0, 0.0),
-            w: d.w,
-            h: d.h,
-            time_left: d.time_left,
-            extra_updates: d.extra_updates,
-            tile_collide: d.tile_collide,
-            alpha: d.alpha,
-            scale: d.scale,
-            ..Default::default()
-        }
+        // Field-by-field on `Default` — the struct has private bookkeeping
+        // fields (E0451 outside projectile.rs).
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.extra_updates = d.extra_updates;
+        p.tile_collide = d.tile_collide;
+        p.alpha = d.alpha;
+        p.scale = d.scale;
+        p
     }
 
     /// A/B: the gate never claims slice A's low-id arrow family, the
