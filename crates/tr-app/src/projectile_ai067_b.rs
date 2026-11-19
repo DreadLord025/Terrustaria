@@ -633,15 +633,16 @@ mod s1_d_4b_12_tests {
     }
 
     fn pet(kind: u16, w: f32, h: f32, pos: Vec2) -> Projectile {
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            w,
-            h,
-            pos,
-            ..Default::default()
-        }
+        // Field-by-field on `Default` — the struct has private bookkeeping
+        // fields (E0451 outside projectile.rs).
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.w = w;
+        p.h = h;
+        p.pos = pos;
+        p
     }
 
     /// A draw-recording `Main.rand` stand-in (the sibling's `CensusRng`
