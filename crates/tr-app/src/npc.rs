@@ -488,6 +488,33 @@ pub enum NpcKind {
     EaterOfWorldsBody,
     /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
     EaterOfWorldsTail,
+    /// `NPCID.WyvernHead` (87) — the sky-serpent's head (`NPC.cs:9939-9956`:
+    /// 32×32, aiStyle 6, 4000 HP, dmg 80, def 10, kb 0, value 10000,
+    /// npcSlots 5, noGravity/noTileCollide/netAlways; the fixed 14-link
+    /// chain `NPC.cs:51156-51190`, the altitude gates `:52053-52078`).
+    /// S1-D-3 wyvern: the head machine is `npc_ai_wyvern.rs` (UNWIRED).
+    WyvernHead,
+    /// `NPCID.WyvernLegs` (88) — the claw segments at chain indices 1/8
+    /// (`NPC.cs:9957-9974`: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20,
+    /// kb 0, value 10000, dontCountMe; `:51167-51170`).
+    WyvernLegs,
+    /// `NPCID.WyvernBody` (89) — the default chain segment (`NPC.cs`:
+    /// 9975-9992: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value **2000** — the one segment with a different coin row,
+    /// dontCountMe).
+    WyvernBody,
+    /// `NPCID.WyvernBody2` (90) — the chain segment at index 11 (`NPC.cs`:
+    /// 9993-10010: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51171-51173`).
+    WyvernBody2,
+    /// `NPCID.WyvernBody3` (91) — the chain segment at index 12 (`NPC.cs`:
+    /// 10011-10028: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51174-51176`).
+    WyvernBody3,
+    /// `NPCID.WyvernTail` (92) — the chain's tail at index 13 (`NPC.cs`:
+    /// 10029-10046: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value 10000, dontCountMe; `:51177-51179`).
+    WyvernTail,
     /// `NPCID.Merchant` (17) — the second town NPC (`NPC.cs:8980`: 18x40,
     /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's
     /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`).
@@ -646,6 +673,12 @@ pub enum NpcKind {
     /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
     /// aiStyle 6, dmg 22, def 6, 60 HP).
     LeechBody,
+    /// `NPCID.LeechTail` (119) — the chain's closing link (`NPC.cs:
+    /// 10437-10452`: 14×14, aiStyle 6, dmg 18, def 10, 60 HP,
+    /// noGravity/noTileCollide, behindTiles). W-A2-3: the budget-exhausted
+    /// body spawns `type + 1` (`NPC.cs:51357`), and the tail rides the
+    /// leader-death list (`NPC.cs:51411`).
+    LeechTail,
     /// `NPCID.TheDestroyer` (134) — the mech worm's head (`NPC.cs:10659-10679`:
     /// 38×38 scale 1.25, aiStyle 37, dmg 70, def 0, 80000 HP the whole chain
     /// shares via realLife, alpha 255 fade-in; S1-D-3-wire-destroyer).
@@ -2978,6 +3011,14 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 0.0,
+            // The wyvern family: knockBackResist 0 (`NPC.cs:9953`/`:9970`/
+            // `:9987`/`:10005`/`:10023`/`:10041`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             // `SetDefaults` case 17: knockBackResist 0.5.
@@ -3035,8 +3076,8 @@ impl Npc {
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
-            // 115/117/118: knockBackResist 0.
-            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // 115/117-119: knockBackResist 0 (`NPC.cs:10448` — the tail).
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
             NpcKind::EyeOfCthulhu => 1.0,
@@ -3327,6 +3368,14 @@ impl Npc {
             NpcKind::EaterOfWorldsHead => 2,
             NpcKind::EaterOfWorldsBody => 4,
             NpcKind::EaterOfWorldsTail => 8,
+            // The wyvern: the head 10, every segment 20 (`NPC.cs:9948`/
+            // `:9965`/`:9982`/`:10000`/`:10018`/`:10036`).
+            NpcKind::WyvernHead => 10,
+            NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 20,
             NpcKind::Guide => 15,
             // `SetDefaults` case 17: defense 15.
             NpcKind::Merchant => 15,
@@ -3385,11 +3434,13 @@ impl Npc {
             NpcKind::BoundGoblin => 15,
             NpcKind::GoblinTinkerer => 15,
             NpcKind::KingSlime => 10,
-            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
-            // per-tick tiers ride `defense_override`.
+            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) / 119 (10,
+            // `:10444` — W-A2-3) — the hungry's per-tick tiers ride
+            // `defense_override`.
             NpcKind::Hungry => 10,
             NpcKind::LeechHead => 2,
             NpcKind::LeechBody => 6,
+            NpcKind::LeechTail => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
             NpcKind::EyeOfCthulhu => 12,
@@ -3687,6 +3738,15 @@ impl Npc {
             NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 800.0,
+            // The wyvern: the head/legs/body2/body3/tail 10000, the plain
+            // body 2000 (`NPC.cs:9954`/`:9971`/`:9989`/`:10007`/`:10025`/
+            // `:10043`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => 10000.0,
+            NpcKind::WyvernBody => 2000.0,
             NpcKind::Guide => 0.0,
             // The town NPCs carry no coin value.
             NpcKind::Merchant => 0.0,
@@ -3741,8 +3801,9 @@ impl Npc {
             NpcKind::BoundGoblin => 0.0,
             NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
-            // The hungry/leech rows carry no value line.
-            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // The hungry/leech rows carry no value line (119 neither,
+            // `NPC.cs:10437-10452`).
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
             NpcKind::ServantOfCthulhu => 0.0,
@@ -5346,7 +5407,18 @@ impl Npc {
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail
             | NpcKind::LeechHead
-            | NpcKind::LeechBody => {}
+            | NpcKind::LeechBody
+            | NpcKind::LeechTail => {}
+            // The wyvern family: the chain assembly + the follower trail run
+            // in the world sim's worm pass; the head's altitude-gate machine
+            // (`npc_ai_wyvern.rs`, S1-D-3) is UNWIRED — the sim wiring is the
+            // follow-up wave (docs/ANALYSIS.md "The Wyvern family").
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => {}
             // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
             // roster rides alive. The 11 aiStyle-3 walkers ride the walker
             // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
@@ -6845,7 +6917,9 @@ impl Npc {
                     self.frame_counter = 0.0;
                 }
             }
-            NpcKind::LeechHead | NpcKind::LeechBody => {
+            // 117-119: `Main.npcFrameCount` = 1 (`Main.cs:67095`), no
+            // `FindFrame` case — the single row (W-A2-3: the tail).
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => {
                 self.frame = 0;
             }
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
@@ -7233,6 +7307,17 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            // The wyvern family: `FindFrame` has no case 87-92 either
+            // (`NPC.cs:66705-77291` — the switch carries no 87..92 arm) and
+            // `Main.npcFrameCount` 87..92 = 1 (`Main.cs:67092-67093`): the
+            // single-frame segments hold row 0; the chain rotation is the
+            // AI's write (`:51878`/`:52201`).
+            NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail => {}
             NpcKind::GoblinPeon
             | NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
@@ -13393,11 +13478,14 @@ impl Npc {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
-        // The steering toward the player (`:51670-51743`'s 9/0.3 pair).
+        // The steering toward the player (`:51670-51743`'s 9/0.3 pair —
+        // W-A2-3: read from the shared `worm_tunables` row, the same
+        // source the worm pass's head machine reads).
+        let (num45, num46) = self.kind.worm_tunables();
         let (dx, dy) = (pcx - cx, pcy - cy);
         let d = (dx * dx + dy * dy).sqrt().max(0.001);
-        self.vx += (dx / d * 9.0 - self.vx) * 0.3;
-        self.vy += (dy / d * 9.0 - self.vy) * 0.3;
+        self.vx += (dx / d * num45 - self.vx) * num46;
+        self.vy += (dy / d * num45 - self.vy) * num46;
         // The cycle.
         self.ai[2] += 1.0;
         let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
@@ -17033,6 +17121,9 @@ impl Npc {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            // W-A2-3: the leech tail's G6 key (the free 56 slot — the
+            // protocol id 148 is the wire space, not this one).
+            NpcKind::LeechTail => 56,
             NpcKind::TheDestroyer => 50,
             // S1-D-3-wire-destroyer: the family's render-key rows — the
             // vanilla type ids (135/136/139) are unused by every arm above
@@ -17141,6 +17232,16 @@ impl Npc {
             NpcKind::DetonatingBubble => 371,
             NpcKind::Sharkron => 372,
             NpcKind::Sharkron2 => 373,
+            // The wyvern family (S1-D-3): the gate-reassigned protocol ids
+            // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
+            // Scutlix/saucer arms above, so the hash rides the port band
+            // (the pirate renumber's precedent); injective either way.
+            NpcKind::WyvernHead => 223,
+            NpcKind::WyvernLegs => 224,
+            NpcKind::WyvernBody => 225,
+            NpcKind::WyvernBody2 => 226,
+            NpcKind::WyvernBody3 => 227,
+            NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -17712,6 +17813,7 @@ mod tests {
             NpcKind::EaterOfWorldsTail,
             NpcKind::LeechHead,
             NpcKind::LeechBody,
+            NpcKind::LeechTail,
             NpcKind::TheDestroyer,
             NpcKind::TheDestroyerBody,
             NpcKind::TheDestroyerTail,
@@ -20674,19 +20776,46 @@ mod tests {
     fn the_leech_head_grows_the_chain() {
         // The leech head rides the worm pass: the init rolls the 3..5
         // budget (`AI_006`'s `Next(3, 6)`), the links chain via
-        // `worm_next`.
+        // `worm_next`. W-A2-3 (T3e): the budget-exhausted body spawns
+        // `type + 1` = the 119 tail (`NPC.cs:51357`), NOT another body.
         let w = ground_air();
         let mut leech = Npc::new(NpcKind::LeechHead, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
         leech.hp = leech.max_hp;
         assert!(leech.kind.is_worm() && leech.kind.is_worm_head());
         assert_eq!(leech.kind.worm_next(), NpcKind::LeechBody);
-        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechBody);
+        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechTail);
         assert_eq!(leech.max_hp, 60);
         assert_eq!(leech.defense(), 2);
         let mut body = Npc::new(NpcKind::LeechBody, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
         assert_eq!(body.max_hp, 60);
         assert_eq!(body.defense(), 6);
         assert_eq!(body.kind.contact_damage(), 22);
+        // The tail's `SetDefaults` row (`NPC.cs:10437-10452`): 14x14,
+        // 60 HP, def 10, dmg 18, the shared hit/death cues, kb 0.
+        let tail = Npc::new(NpcKind::LeechTail, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        assert_eq!(tail.size(), (14.0, 14.0));
+        assert_eq!(tail.max_hp, 60);
+        assert_eq!(tail.defense(), 10);
+        assert_eq!(tail.kind.contact_damage(), 18);
+        assert_eq!(tail.knock_back_resist(), 0.0);
+        assert!(tail.behind_tiles);
+        assert!(tail.kind.is_worm() && tail.kind.shares_carrier_life());
+        assert!(!tail.kind.is_worm_head() && !tail.kind.is_worm_mid());
+        assert_eq!(tail.kind.ai_style(), 6);
+        assert_eq!(tail.kind.hit_sound(), Some("NPC_Hit_9"));
+        assert_eq!(tail.kind.death_sound(), Some("NPC_Killed_12"));
+        // The protocol id round-trips (the free 148 hole) and the
+        // bestiary folds onto 117 like every other worm family.
+        assert_eq!(NpcKind::LeechTail.to_u16(), 148);
+        assert_eq!(NpcKind::from_u16(148), Some(NpcKind::LeechTail));
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::LeechTail, SlimeVariant::Blue).net_id,
+            117
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::LeechBody, SlimeVariant::Blue).net_id,
+            117
+        );
     }
 
     #[test]
@@ -21804,7 +21933,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 253] = [
+    pub(super) const ALL_KINDS: [NpcKind; 260] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -21971,6 +22100,7 @@ mod tests {
         NpcKind::Hungry,
         NpcKind::LeechHead,
         NpcKind::LeechBody,
+        NpcKind::LeechTail,
         NpcKind::TheDestroyer,
         NpcKind::TheDestroyerBody,
         NpcKind::TheDestroyerTail,
@@ -22061,6 +22191,13 @@ mod tests {
         NpcKind::DetonatingBubble,
         NpcKind::Sharkron,
         NpcKind::Sharkron2,
+        // The wyvern family (S1-D-3 wyvern).
+        NpcKind::WyvernHead,
+        NpcKind::WyvernLegs,
+        NpcKind::WyvernBody,
+        NpcKind::WyvernBody2,
+        NpcKind::WyvernBody3,
+        NpcKind::WyvernTail,
     ];
 
     #[test]
@@ -25538,7 +25675,7 @@ mod s1_f_3_tests {
         let mut sentinel = 0;
         let mut bad: Vec<String> = Vec::new();
         // The kind roster walks the wire-id space (the round-trip test pins
-        // exactly 201 decodable ids).
+        // the decodable-id count to ALL_KINDS' size).
         for wire in 0..=u16::MAX {
             let Some(kind) = NpcKind::from_u16(wire) else {
                 continue;
@@ -25563,8 +25700,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            253,
-            "every decodable kind resolves (the wire roster's size - 253 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + S1-F-13d's ForceBubble/MartianTurret)"
+            260,
+            "every decodable kind resolves (the wire roster's size - 260 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six)"
         );
         assert!(
             covered > 43,
@@ -29190,6 +29327,14 @@ mod s1_d_2_tests {
         (NpcKind::GingerbreadMan, 3),
         (NpcKind::Yeti, 3),
         (NpcKind::Everscream, 57),
+        // The wyvern family (S1-D-3 wyvern, `NPC.cs:9945`/`:9962`/
+        // `:9980`/`:9998`/`:10016`/`:10034`).
+        (NpcKind::WyvernHead, 6),
+        (NpcKind::WyvernLegs, 6),
+        (NpcKind::WyvernBody, 6),
+        (NpcKind::WyvernBody2, 6),
+        (NpcKind::WyvernBody3, 6),
+        (NpcKind::WyvernTail, 6),
     ];
 
     #[test]
@@ -30678,8 +30823,10 @@ mod s1_f_13d_tests {
         assert_eq!(NpcKind::from_u16(387), None);
         // GATE UPDATE (L-B): the branch's free holes 149/152-155 were taken
         // by the landed queenbee bees (149/152) + plantera minions
-        // (153/154/155); 148 stays reserved (R78 LeechTail, L-G lane).
-        assert_eq!(NpcKind::from_u16(148), None, "hole 148 stays free");
+        // (153/154/155); 148 was reserved for R78 LeechTail (L-G lane).
+        // GATE UPDATE (L-G): R78 LANDED — the reservation is consumed,
+        // 148 now decodes to LeechTail (the W-A2-3 roster row).
+        assert_eq!(NpcKind::from_u16(148), Some(NpcKind::LeechTail), "R78's LeechTail took the reserved 148");
         assert!(!(78..=84).contains(&213));
         assert!(!(78..=84).contains(&214));
         // Wave A's band stays untouched (GATE UPDATE L-B: 189 is MotherSlime

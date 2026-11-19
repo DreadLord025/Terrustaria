@@ -136,6 +136,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
+    // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
+    ("NPC_Killed_8", 4),
     ("NPC_Killed_10", 4),
     ("NPC_Killed_11", 4),
     ("NPC_Killed_12", 4),

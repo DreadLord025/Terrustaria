@@ -248,11 +248,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsHead
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
+        // The wyvern family: `{ 87..92, SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:6600-6641`) — On Fire! immunity, all six kinds.
+        NpcKind::WyvernHead
+        | NpcKind::WyvernLegs
+        | NpcKind::WyvernBody
+        | NpcKind::WyvernBody2
+        | NpcKind::WyvernBody3
+        | NpcKind::WyvernTail => &[31],
         NpcKind::KingSlime => &[20, 31],
         // The eye and the servant: no `DebuffImmunitySets` rows.
         NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
-        // The hungry/leeches: no `DebuffImmunitySets` rows.
-        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => &[],
+        // The hungry/leeches: no `DebuffImmunitySets` rows (119 neither).
+        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => &[],
         // The goblins: no `DebuffImmunitySets` rows.
         NpcKind::GoblinThief
         | NpcKind::GoblinWarrior

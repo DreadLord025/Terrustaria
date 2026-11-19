@@ -119,6 +119,7 @@ mod npc_ai_style67;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
+mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
 mod npc_ai_style31;
