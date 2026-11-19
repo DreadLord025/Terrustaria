@@ -61,6 +61,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
+mod npc_ai_unicorn;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
