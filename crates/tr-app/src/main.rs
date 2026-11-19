@@ -88,6 +88,7 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+mod projectile_ai026_a;
 mod rain;
 mod regen;
 mod research;
