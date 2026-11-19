@@ -2894,7 +2894,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
             // (`Projectile.cs:4672`/`:4694`).
-            || matches!(kind, FORCE_BUBBLE | CTHULUNADO),
+            || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
