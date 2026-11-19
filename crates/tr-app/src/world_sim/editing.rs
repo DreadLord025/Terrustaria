@@ -8001,6 +8001,11 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.world.dd2_wave = 1;
     app.world.dd2_wave_kills = 0.0;
     app.world.dd2_lost = false;
+    // `:272`: `WonThisRun = false`; `:257-259`: the crystal-drop budget
+    // zeroes; `:270`: `_spawnedBetsyT3 = false` (S1-E-12c).
+    app.world.dd2_won = false;
+    app.world.dd2_crystal_drops = tr_core::dd2_victory::CrystalDropState::default();
+    app.world.dd2_betsy_spawned = false;
     app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
     app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_START;
     crate::world_sim::npcs::wipe_dd2_entities(app);

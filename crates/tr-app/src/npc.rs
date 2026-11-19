@@ -10281,10 +10281,52 @@ impl Npc {
     /// counts to 180 (the port's `caster_counter`) while `dontTakeDamage`
     /// holds; the count's expiry makes the crystal vulnerable. The loss
     /// scene (`ai[1] == 1`, `:40862-40967`): the rise + fade + the 600-tick
-    /// `StopInvasion` end. The hp's tier is baked by the `SetDefaults` row
-    /// (the 1000/3000/5000 difficulty arms ride the difficulty system);
-    /// the lane spawning + the win scene (`ai[1] == 2`) = the follow-ups.
+    /// `StopInvasion` end. The win scene (`ai[1] == 2`, `:40758-40857`):
+    /// the shield + cosine bob + the 600-tick `StopInvasion(win: true)` end
+    /// (S1-E-12c). The hp's tier is baked by the `SetDefaults` row (the
+    /// 1000/3000/5000 difficulty arms ride the difficulty system); the
+    /// lane spawning = the follow-up.
     fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+        // `AI()`'s aiStyle-105 WIN-scene arm (`NPC.cs:40758-40857`,
+        // `ai[1] == 2`): the crystal is shielded, bobs on a cosine for 120
+        // ticks then holds, and at 600 runs `DD2Event.StopInvasion(win: true)`
+        // + the real death (`:40796-40803`). The scene's entry
+        // (`StartVictoryScene`, `DD2Event.cs:481-505` — the `(2,2)` flip +
+        // the portal marks) rides `dd2_report_kill`'s win sentinel; the
+        // 600-tick stop's medal/broadcast resolve rides `update_dd2_event`
+        // (the machine holds no `App`). Deferred presentation (ANALYSIS):
+        // the `ai[0] == 3` `DD2_WinScene` cue + the 713 projectile + the
+        // redundant portal re-mark (`:40762-40778` — `StartVictoryScene`
+        // already flipped every 549), the dust rings (`:40804-40856`) and
+        // the `MoonlordDeathDrama` light (`:40791-40795`).
+        if self.ai[1] == 2.0 {
+            // `:40760-40761`: the hostile-only shield folds into the full
+            // `dont_take_damage` (the loss arm's recorded deviation).
+            self.dont_take_damage = true;
+            self.hp = self.max_hp;
+            // `:40780-40790`: `ai[0]++`, `noGravity`, the 120-tick cosine
+            // bob then a hold. The port moves y by the written velocity
+            // (the machine owns the scene flight, like the loss arm).
+            self.ai[0] += 1.0;
+            if self.ai[0] <= 120.0 {
+                let t = self.ai[0] / 120.0;
+                self.vy = (t * std::f32::consts::TAU).cos() * 0.25 - 0.25;
+            } else {
+                self.vy = 0.0;
+            }
+            // `:40796-40803`: the 600-tick end — `StopInvasion(win: true)`,
+            // `dontTakeDamage = false`, `life = 0`, `checkDead` (the
+            // intercept no longer fires: `ai[1] == 2 != 1`). The win-side
+            // medals/broadcast ride the sim's stop resolve.
+            if self.ai[0] >= 600.0 {
+                self.wants_event_stop = true;
+                self.dont_take_damage = false;
+                self.hp = 0;
+            }
+            self.y += self.vy;
+            let _ = (world, player);
+            return;
+        }
         // `AI()`'s aiStyle-105 loss-scene arm (`NPC.cs:40862-40967`,
         // `ai[1] == 1`): the crystal floats up and fades over 600 ticks,
         // then `DD2Event.StopInvasion()` + the real death (`:40954-40967`).
@@ -10328,18 +10370,16 @@ impl Npc {
             let _ = (world, player);
             return;
         }
+        // `AI()`'s aiStyle-105 spawn-in arm (`NPC.cs:40734-40757`,
+        // `ai[1] == 0`): the 180-tick shield (`localAI[0]` — the port's
+        // caster_counter) holds `dontTakeDamage`, then the crystal opens.
+        // The C# never kills the crystal here — the old 600-tick
+        // "win-death" hack is gone (S1-E-12c): the win scene's end rides
+        // the `ai[1] == 2` arm above, the loss scene's the `ai[1] == 1`
+        // arm. The portal spawn (`:40744-40755`, `CheckArenaScore` + the
+        // two 549s) stays deferred with the arena rules.
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
-        // The 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
-        // `:40959-40966`): `DD2Event.StopInvasion(); life = 0` — the
-        // ai[0] counter advances inside the phase (the `ai[1] == 1`
-        // entry) and the sim resolves the event's stop.
-        self.ai[0] += 1.0;
-        if self.ai[0] >= 600.0 {
-            self.wants_event_stop = true;
-            self.dont_take_damage = false;
-            self.hp = 0;
-        }
         let _ = (world, player);
     }
 
