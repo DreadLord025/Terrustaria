@@ -23062,6 +23062,103 @@ flop (the Shark/Orca 0.94 decay vs the cited rand triple) and the rotation
 tail (the Orca's `SafeNormalize`/`ToRotation`/`WrapAngle` aim with the π
 fold vs the generic ±0.2 tilt).
 **Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
+## The bat/fish reconcile (S1-D-3 census W-10 slice, task/S1-D-3-reconcile-batfish, 2026-11-19, code-only mode)
+The census slice (`docs/research/50-entity-ai-census.md` §W-10 — the Lead's
+brief labels it W-9) reconciled the landed-but-unwired faithful modules
+against the live stand-in arms. **Code-only mode**: no cargo/rustc/rustfmt/
+tests/graphify invoked — reads/writes + git only; verification = re-reading
+the C# arms line by line (the distrust-verbatim rule, the f1701eb0 defect
+catalogue checklist: missing gates / f32 reciprocal order / int-vs-float
+division / strict bounds / RNG draw order / short-circuit operators).
+**Per-kind verdicts:**
+- **CaveBat 49 / JungleBat 51 / Hellbat 60 / VoodooDemon 66 (aiStyle 14):
+  CLAIMED.** `npc.rs::update_cave_bat` now routes through
+  `npc_ai_style14::bat_ai` (`NPC.cs:22849-23486`); the hash-jitter stand-in
+  (research/25 finding 25-6: a positional hash + `flyer_step` instead of
+  the C#'s velocity ramps, the VoodooDemon's sickle absent) is retired.
+  Audit of the module against the C#: FAITHFUL — the ungated second
+  generic pass (`:23265-23331`, dry bats accelerate 0.2/tick X), the
+  Hellbat's own second arm (`:23198-23263`), the direction-aware bounce
+  clamps (`:22852-22875`), the drift reset gate (`:23363`), the X-before-Y
+  shot draws (`:23446-23447`) and the short-circuited `Next(300)`
+  (`:23453`) all match; no defect found.
+- **Goldfish 55 / Piranha 58 / Shark 65 (aiStyle 16): CLAIMED.**
+  `npc.rs::update_swimmer` now routes through
+  `npc_ai_style16::ai_016_step` (`NPC.cs:23492-24021`);
+  `npc_ai::swim_step`/`SwimParams` are DELETED (the stand-in lacked the
+  head `TargetClosest` `:23494-23497`, the integer feet-slope division
+  `:23709-23736`, the collide-latch bounces `:23737-23761`, the
+  beach-avoid `ai[0]` writes `:23932-23956`, and integrated inside the
+  AI). Audit: FAITHFUL — the Dolphin `Next(300,1200)` BEFORE `++ai[3]`
+  (`:23576-23577`), the flop triple order (`:23977-23979`), the Arapaima
+  asymmetric 7/4 snap caps (`:23786-23797`) and the 157 damp exemption
+  (`:23957`) all match; no defect found.
+- **The aiStyle-8 casters (FireImp 24 / GoblinSorcerer 29 / DarkCaster 32
+  / Tim 45 / DesertDjinn 533): EXCLUDED — census-confirmed WIRED.** The
+  live `update_caster` already delegates to the faithful
+  `npc_ai_bat::ai_style_8_step` (the census's style-8 row: WIRED-DELEGATE;
+  the S1-D-3s port). The fuller `npc_ai_caster.rs` (S1-D-3-aistyle7) stays
+  the UNWIRED reference: its extra fidelity is the rand-DRAWING dust
+  bursts / Djinn volley / ambient gates the live arm skips wholesale
+  under the S1-E-5 RNG rule — swapping it in would ADD ~100+ draws per
+  teleport-arrival tick to the shared `UpdateNPCs` stream, a determinism
+  break the port cannot absorb until the dust system lands. Reconcile
+  verdict: keep the wired arm, do NOT double-port (the census's own
+  instruction). No code touched for the casters.
+**Wiring seams (the pure modules stay pure):**
+- `update_cave_bat`/`update_swimmer` feed this tick's `Entity.wet` via the
+  `is_wet` pass and the session-player `TargetCandidate`
+  (`npc_target::session_candidate`) + the parallel `players_wet` /
+  `player_wet` flags; `netMode` folds to 0, the ticker to 0 (the
+  `npc_ai_bat` wiring convention); `justHit` rides the established
+  `hurt_cd > 0` stand-in (only the unported Pufferfish 688 reads it).
+- The `DemonSickleShot` drains into `wants_hostile_shot` as
+  `(DEMON_SICKLE 44, x, y, vx, vy, 21)`; the sim's timed-shot list
+  (`world_sim/npcs.rs`) applies the `timeLeft = 300` write
+  (`NPC.cs:23450`). The new `proj_data` row is the verbatim
+  `Projectile.cs:1271-1282` slice (48×48, aiStyle 18, hostile, penetrate
+  −1, alpha 100, scale 0.9, light 0.2); the aiStyle-18 arm gains the 44's
+  one-tick `ai[1]` latch (`:25369-25373`, the Item8 cue is the audio
+  skip — no rand draw either way) and `proj_lights` covers 44 beside 45
+  (`:16402-16407`).
+- The shared `Npc::integrate_flyer_collision` is the no-gravity
+  `UpdateCollision` stand-in (`NPC.cs:92523-92580`): `oldVelocity`
+  captured, the blocked axes flagged into `collideX`/`collideY` for the
+  NEXT tick's bounce arms (`:92538-92540`), the wet path halved by
+  `waterMovementSpeed` 0.5 (`:6015`/`:92561` — none of the seven kinds
+  overrides it), the dry path at full velocity
+  (`Collision_MoveWhileDry`, `:92591-92608`). **Documented granularity
+  deviation**: the C# snaps the blocked axis inside `ApplyTileCollision`
+  BEFORE the wet halving (`Collision.TileCollision`, `:92725`); the
+  stand-in snaps the slowed step (the port's established
+  `collides_rect` shape, the `npc_ai_bat` tail precedent) — sub-pixel on
+  the contact tick, no RNG consequence.
+- The fish bob phase rides the C#'s own `ai[0]` now; the `swim_phase`
+  mirror is retired for the swimmers (the field stays for the
+  Deerclops's unrelated damage-gate counter, `npc.rs:13865`). The three
+  fish tests read `ai[0]`; `find_frame`'s swimmer arm never read
+  `swim_phase` (it keys on `wet`), so the render is untouched.
+**RNG argument (the census's preserve-RNG requirement):** the wiring
+moves NO draw for the ported kinds. The bats 49/51/60 draw nothing in
+either the stand-in (the hash was deterministic) or the faithful arm —
+stream-neutral. The VoodooDemon's stand-in drew nothing where the C#
+draws the shot pair / reset roll; the faithful arm ADDS exactly the cited
+draws on exactly the cited ticks (`:23446-23447` X-then-Y on
+`ai[0] == 20/40/60/80` with `CanHit`; one `Next(300)` on the in-view
+non-shot ticks) — that is the fidelity restoration the census demands,
+not a drift: every other kind's position in the shared `UpdateNPCs`
+stream is unchanged on ticks where the VoodooDemon does not fire, and
+the module's witnesses pin the per-tick counts. The fish dry flop keeps
+the stand-in's exact `Next(-50,-20)`, `Next(-20,20)`, `Next(2)` order
+(`:23977-23979` — the stand-in already drew it correctly); the wet paths
+draw nothing in both. The Shark's dry decay draws nothing in both. The
+Dolphin/Pufferfish draw arms are unreachable (no kinds). The casters are
+untouched, so their stream is byte-identical.
+**Tests**: 2 routing pins (`s1_d_3_reconcile_the_bats_ride_the_faithful_arm`,
+`s1_d_3_reconcile_the_fish_ride_the_faithful_arm`, `npc.rs`) + the
+modules' 28 witnesses — all WRITTEN NOT RUN (code-only mode). The merge
+gate must run `cargo test --workspace --skip
+migrates_version_2_kinds_to_item_ids` before landing.
 ## Plantera's Tentacle (S1-D-3 aiStyle-53, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/npc_ai_style53.rs` ports `NPC.AI`'s inline

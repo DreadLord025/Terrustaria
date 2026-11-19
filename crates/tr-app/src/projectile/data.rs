@@ -463,6 +463,10 @@ pub const GREEN_LASER: u16 = 20;
 pub const WATER_BOLT: u16 = 27;
 /// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
 pub const FLAMELASH: u16 = 34;
+/// `ProjectileID.DemonSickle` (44) — the Demon/VoodooDemon's hostile sickle
+/// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
+/// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
+pub const DEMON_SICKLE: u16 = 44;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
@@ -919,6 +923,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         MAGIC_MISSILE => 0.8,                  // `:980`
         GREEN_LASER => 0.75,                   // `:1025`
         FLAMELASH => 0.8,                      // `:1168`
+        DEMON_SICKLE => 0.2,                   // `:1276`
         DEMON_SCYTHE => 0.2,                   // `:1288`
         DUAL_HOOK_BLUE | DUAL_HOOK_RED => 0.4, // `:1546`
         RAINBOW_ROD_BULLET => 0.8,             // `:1600`
@@ -1672,6 +1677,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // `:1271-1282` — the demon sickle (the Demon/VoodooDemon's
+            // hostile shot, `NPC.cs:23449`): 48x48, aiStyle 18, alpha 100,
+            // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
+            // `timeLeft = 300` (`NPC.cs:23450`).
+            DEMON_SICKLE => (48.0, 48.0, 18, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
             // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
             // `penetrate = 5`, `scale = 0.9f`.
             DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),

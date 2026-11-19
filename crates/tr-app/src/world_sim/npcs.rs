@@ -3891,15 +3891,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`), the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`), the Golem family's eye beams
-        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3) and Plantera's seeds
+        // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
-        // ball).
+        // ball) and the VoodooDemon's DemonSickle (`NPC.cs:23450` — the
+        // S1-D-3 bat reconcile's `bat_ai` shot drain).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
             || kind == crate::projectile::SNOW_BALL_HOSTILE
             || kind == crate::projectile::GOLEM_EYE_BEAM
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
+            || kind == crate::projectile::DEMON_SICKLE
         {
             300
         } else {

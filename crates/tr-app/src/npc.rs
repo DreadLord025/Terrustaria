@@ -1137,8 +1137,10 @@ pub struct Npc {
     /// `NPC.stepSpeed` (`NPC.cs:6097`): the step-up lift's decay rate —
     /// 1 for lifts under 9 px, 2 above (`NPC.cs:62794-62801`).
     pub step_speed: f32,
-    /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
-    /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
+    /// The Deerclops's damage-gate ramp counter (`AI_123`, `NPC.cs:44024-
+    /// 44039`) — a bespoke reuse of the slot. The fish bob phase moved to
+    /// the C#'s own `ai[0]` with the S1-D-3 reconcile (`npc_ai_style16`);
+    /// this mirror is retired for the swimmers.
     pub swim_phase: f32,
     /// The worm chain id (`AI_006`): every segment of one worm shares it;
     /// 0 = not a worm.
@@ -4053,7 +4055,10 @@ impl Npc {
             // with a type-specific shadowflame machine, not aiStyle 8 caster.
             NpcKind::GoblinSummoner => self.update_goblin_summoner(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
-                self.update_cave_bat(world, player, dt)
+                // S1-D-3 reconcile: the four kinds ride the faithful
+                // aiStyle-14 machine (`npc_ai_style14::bat_ai`,
+                // `NPC.cs:22849-23486`) — the hash-jitter stand-in retired.
+                self.update_cave_bat(world, player, rng)
             }
             // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
             // style axis (`ai_005_hover_family`) — these arms are unreachable
@@ -7736,38 +7741,85 @@ impl Npc {
         }
     }
 
-    /// `AI_014_Bats`' core (`NPC.cs` case 49's aiStyle): the erratic flight
-    /// through the framework's flyer step with the direction perturbation
-    /// on the aiTimer (the vanilla randomizes velocity.X/Y every ~30 ticks
-    /// toward the player).
-    fn update_cave_bat(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        let (pcx, pcy) = player.center();
-        let (cx, cy) = self.center();
-        // The vanilla: `AI_014`'s velocity reroll rides `ai[1]` counting to
-        // 30 (`NPC.cs` case 49's AI block) — the deterministic hash stands
-        // in for `Main.rand` (the shared streams' order).
-        self.anim += 1.0;
-        if self.anim % 30.0 < 1.0 {
-            let jitter = ((self.x as i32).wrapping_mul(0x4982_2D4Eu32 as i32) >> 24) & 0x7;
-            self.vx = if jitter % 2 == 0 { 1.2 } else { -1.2 };
-            self.vy = if jitter < 4 { -0.8 } else { 0.8 };
-        }
-        crate::npc_ai::flyer_step(
-            self,
+    /// The aiStyle-14 flyer family (`NPC.AI()`'s `if (this.aiStyle == 14)`
+    /// arm, `NPC.cs:22849-23486`) through the faithful
+    /// `npc_ai_style14::bat_ai` — the S1-D-3 bat/fish reconcile retires the
+    /// hash-jitter stand-in (research/25 finding 25-6). The wrapper owns
+    /// only the seams the pure arm cannot: this tick's `Entity.wet` (the
+    /// `is_wet` pass, the `update_swimmer` shape), the session-player
+    /// `TargetCandidate` slice + the parallel `wet` flag (`Style14Env`),
+    /// the DemonSickle shot drain (`Projectile.NewProjectile(44, 21, 0f)`
+    /// + `timeLeft = 300`, `:23449-23450` — the sim's hostile-shot pass
+    /// applies the 300 override) and the no-gravity `UpdateCollision`
+    /// integration (`integrate_flyer_collision`; `this.noGravity = true`,
+    /// `:22851`). The flap/tilt live in `find_frame`'s case-49 group
+    /// (`NPC.cs:74824-74881`), not here. RNG: the arm draws only on the
+    /// VoodooDemon's shot/reset ticks (the module's witnesses pin the
+    /// order); the three bat kinds draw nothing.
+    fn update_cave_bat(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let players_wet = [player.wet];
+        let env = crate::npc_ai_style14::Style14Env {
             world,
-            pcx,
-            pcy,
-            crate::npc_ai::FlyerParams {
-                accel: 0.15,
-                max_speed: 2.5,
-            },
-        );
-        let _ = (cx, cy);
-        // The 5-frame flap (`Main.npcFrameCount[49] = 5`).
-        self.frame_counter += 1.0;
-        if self.frame_counter >= 4.0 {
-            self.frame_counter = 0.0;
-            self.frame = (self.frame + 1) % 5;
+            players: &players,
+            players_wet: &players_wet,
+            // The port is single-player (`Main.netMode == 0`); the ticker
+            // is not plumbed (0 — the `npc_ai_bat` wiring convention).
+            net_mode: 0,
+            ticker: 0,
+        };
+        if let Some(shot) = crate::npc_ai_style14::bat_ai(self, &env, rng) {
+            // `:23449-23450` — type 44 (`ProjectileID.DemonSickle`),
+            // damage 21, knockback 0; the `timeLeft = 300` write rides the
+            // sim's timed-shot list (`world_sim/npcs.rs`).
+            self.wants_hostile_shot
+                .push((crate::projectile::DEMON_SICKLE, shot.x, shot.y, shot.vx, shot.vy, 21));
+        }
+        self.integrate_flyer_collision(world);
+    }
+
+    /// The no-gravity `UpdateCollision` stand-in for the pure flyer/fish
+    /// arms (`NPC.cs:92523-92580`): `oldVelocity` captured, the blocked
+    /// axes flagged into `collideX`/`collideY` for the NEXT tick's bounce
+    /// arms (`:92538-92540`), the free axes integrated. The wet slowdown
+    /// is `Collision_MoveWhileWet`'s `waterMovementSpeed` 0.5 (`:92561`,
+    /// `:6015` — none of the ported bats/fish overrides it); the dry path
+    /// integrates at full velocity (`Collision_MoveWhileDry`,
+    /// `:92591-92608`). The floor/ceiling snap on a blocked Y axis is the
+    /// port's established `Collision.TileCollision` stand-in (the
+    /// `npc_ai_bat` tail shape) — the C# snaps inside `ApplyTileCollision`
+    /// BEFORE the wet halving; the stand-in snaps the slowed step
+    /// (documented granularity, ANALYSIS "The bat/fish reconcile").
+    fn integrate_flyer_collision(&mut self, world: &World) {
+        let (w, h) = self.size();
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        let slow = if self.wet { 0.5 } else { 1.0 };
+        let nx = self.x + self.vx * slow;
+        self.collide_x = collides_rect(world, nx, self.y, w, h);
+        if self.collide_x {
+            self.vx = 0.0;
+        } else {
+            self.x = nx;
+        }
+        let ny = self.y + self.vy * slow;
+        self.collide_y = collides_rect(world, self.x, ny, w, h);
+        if self.collide_y {
+            if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.on_ground = true;
+            } else if self.vy < 0.0 {
+                let ty = (ny / TILE_PX).floor() as i32;
+                self.y = (ty + 1) as f32 * TILE_PX;
+            }
+            self.vy = 0.0;
+        } else {
+            self.y = ny;
+            self.on_ground = false;
         }
     }
 
@@ -14963,87 +15015,47 @@ impl Npc {
         );
     }
 
-    /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16
-    /// block): the wet path rides the machine — `flag25` folds the kind
-    /// gate (`:23701`'s Goldfish exclusion), the player's `wet`/alive and
-    /// `CanHit`; the dry path is the beached flop (`:23963-
-    /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
-    /// jump through `Main.rand`).
+    /// The aiStyle-16 fish family (`NPC.AI()`'s `if (this.aiStyle == 16)`
+    /// block, `NPC.cs:23492-24021`) through the faithful
+    /// `npc_ai_style16::ai_016_step` — the S1-D-3 bat/fish reconcile
+    /// retires the `swim_step` approximation (no head `TargetClosest`, no
+    /// feet-slope integer division, no collide-latch bounces, no beach
+    /// avoid `ai[0]` writes, inline integration inside the AI). The
+    /// wrapper owns the seams: this tick's `Entity.wet` (the `is_wet`
+    /// pass), the session-player candidate slice + `player_wet`
+    /// (`Ai16Ctx`), the `justHit` flag (the port's established
+    /// `hurt_cd > 0` stand-in — only the unported Pufferfish 688 reads
+    /// it), and the no-gravity `UpdateCollision` integration
+    /// (`integrate_flyer_collision`; `noGravity = true`,
+    /// `SetDefaults` `:9462`/`:9505`/`:9611`). The bob phase now rides the
+    /// C#'s own `ai[0]` (the `swim_phase` mirror is retired for the fish;
+    /// the field stays for the Deerclops's unrelated counter). RNG: the
+    /// three ported kinds' only draws are the dry flop triple
+    /// `Next(-50,-20)`, `Next(-20,20)`, `Next(2)` (`:23977-23979`) — the
+    /// exact order the stand-in already drew; the wet paths draw nothing
+    /// (the module's witnesses pin both).
     fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
-        let params = match self.kind {
-            NpcKind::Shark => crate::npc_ai::SwimParams::SHARK,
-            NpcKind::Piranha => crate::npc_ai::SwimParams::PIRANHA,
-            _ => crate::npc_ai::SwimParams::GOLDFISH,
-        };
         self.wet = is_wet(world, self.x, self.y, w, h);
-        if self.wet {
-            let (pcx, pcy) = player.center();
-            // `flag25` (`:23701-23707`): the kind gate + the player wet +
-            // alive + `CanHit(base.position, base.width, base.height,
-            // player.position, player.width, player.height)`.
-            let aggro_ok = params.aggro
-                && player.wet
-                && !player.dead
-                && crate::projectile::can_hit(
-                    world,
-                    self.x,
-                    self.y,
-                    w,
-                    h,
-                    player.x,
-                    player.y,
-                    crate::player::WIDTH,
-                    player.height,
-                );
-            crate::npc_ai::swim_step(self, world, pcx, pcy, aggro_ok, params);
-        } else {
-            // The beached flop (`:23963-23989`).
-            if self.kind == NpcKind::Shark {
-                // `:23967-23974`: the Shark's stand decay.
-                if self.vy == 0.0 {
-                    self.vx *= 0.94;
-                    if self.vx > -0.2 && self.vx < 0.2 {
-                        self.vx = 0.0;
-                    }
-                }
-            } else {
-                // `:23975-23981`: the random jump (`Next(-50,-20)*0.1`,
-                // `Next(-20,20)*0.1`, the direction coin).
-                self.vy = rng.next_range(-50, -20) as f32 * 0.1;
-                self.vx = rng.next_range(-20, 20) as f32 * 0.1;
-                self.facing = if rng.next_max(2) == 0 {
-                self.sprite_dir = self.facing;
-                    1
-                } else {
-                    -1
-                };
-            }
-            // `:23983-23988`: the gravity + the sink phase.
-            self.vy = (self.vy + 0.3).min(10.0);
-            self.swim_phase = 1.0;
-            // The generic tile integration (`UpdateCollision`): the flop
-            // stops at the walls (the wet path's bounce flips ride the wet
-            // branch only).
-            let nx = self.x + self.vx;
-            if !collides_rect(world, nx, self.y, w, h) {
-                self.x = nx;
-            } else {
-                self.vx = 0.0;
-            }
-            let ny = self.y + self.vy;
-            if !collides_rect(world, self.x, ny, w, h) {
-                self.y = ny;
-                self.on_ground = false;
-            } else if self.vy > 0.0 {
-                let ty = ((ny + h) / TILE_PX).floor() as i32;
-                self.y = ty as f32 * TILE_PX - h;
-                self.vy = 0.0;
-                self.on_ground = true;
-            } else {
-                self.vy = 0.0;
-            }
-        }
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let ctx = crate::npc_ai_style16::Ai16Ctx {
+            players: &players,
+            player_wet: player.wet,
+            // `NPC.justHit` (`:23502`/`:23518`) — the port's strike path
+            // has no one-tick flag; `hurt_cd > 0` is the established
+            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). Only
+            // the unported Pufferfish (688) reads it.
+            just_hit: self.hurt_cd > 0.0,
+            // The ticker is not plumbed (0 — the `npc_ai_bat` convention).
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style16::ai_016_step(self, world, &ctx, rng);
+        // `Ai16Effects::light` — only the unported AnglerFish (102)
+        // requests it (`:23762-23765`); the entity-lights feed lands with
+        // its kind.
+        let _ = fx;
+        self.integrate_flyer_collision(world);
     }
 
     fn contact(&mut self, player: &mut Player, rng: &mut UnifiedRandom) {
@@ -17105,7 +17117,8 @@ mod tests {
     fn the_swimmer_bobs_idly_in_water() {
         // `AI_016`'s idle machine (`NPC.cs:23848-23960`): the X drift to
         // the 1-px cap with the wall flip, the ±0.3 vertical bob through
-        // `ai[0]`, the 0.95 damping.
+        // `ai[0]` (the faithful arm writes the C#'s own slot — the S1-D-3
+        // reconcile retired the `swim_phase` mirror), the 0.95 damping.
         let w = water_pool();
         let mut player = surface_player(&w);
         player.wet = false;
@@ -17117,10 +17130,10 @@ mod tests {
         let mut sank = false;
         for _ in 0..600 {
             fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-            if fish.swim_phase == -1.0 {
+            if fish.ai[0] == -1.0 {
                 rose = true;
             }
-            if fish.swim_phase == 1.0 {
+            if fish.ai[0] == 1.0 {
                 sank = true;
             }
             // The idle drift's fixed point is 2.0 (x*0.95 + 0.1 = x) — the
@@ -17156,7 +17169,7 @@ mod tests {
         for _ in 0..120 {
             shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert_eq!(shark.swim_phase, 0.0, "the chase phase set");
+        assert_eq!(shark.ai[0], 0.0, "the chase phase set (:23768-23772)");
         assert!(shark.x > start + 10.0, "the shark closed in");
         let speed = (shark.vx * shark.vx + shark.vy * shark.vy).sqrt();
         assert!(speed > 1.0, "the chase reached speed ({speed})");
@@ -17179,7 +17192,7 @@ mod tests {
             fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             assert!(fish.vx.abs() <= 2.01, "the goldfish stayed idle");
         }
-        assert!(fish.swim_phase != 0.0, "the chase phase never set");
+        assert!(fish.ai[0] != 0.0, "the chase phase never set");
     }
 
     #[test]
@@ -17220,6 +17233,104 @@ mod tests {
             }
         }
         assert!(jumped, "the flopping goldfish jumped");
+    }
+
+    /// The S1-D-3 reconcile's routing pins — WRITTEN NOT RUN (code-only
+    /// mode). The four bats ride `npc_ai_style14::bat_ai` through
+    /// `update_cave_bat`: the dry CaveBat's generic approach runs TWICE
+    /// per tick (`NPC.cs:23116-23182` + `:23265-23331`, the second pass
+    /// ungated on `wet`), the VoodooDemon's shot tick drains a type-44
+    /// request into `wants_hostile_shot` (`:23449`), and the three bat
+    /// kinds never move the RNG stream (the module's witnesses pin the
+    /// per-tick draw counts; this pins the WIRING end to end).
+    #[test]
+    fn s1_d_3_reconcile_the_bats_ride_the_faithful_arm() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        // Park the player left + above the bat: facing −1, directionY −1.
+        player.x = 900.0;
+        player.y = 900.0;
+        player.dead = false;
+        let mut bat = Npc::new(NpcKind::CaveBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        let before = rng.peek();
+        bat.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        // Two −0.1 X passes (`:23120` + `:23269`), two −0.04 Y passes.
+        assert!((bat.vx - -0.2).abs() < 1e-5, "the twice-run approach: {}", bat.vx);
+        assert!((bat.vy - -0.08).abs() < 1e-5, "the twice-run Y: {}", bat.vy);
+        assert_eq!(bat.target, 0, "TargetClosest ran (:22897)");
+        assert_eq!(bat.facing, -1);
+        assert_eq!(rng.peek(), before, "the bats draw no Main.rand");
+        assert!(bat.wants_hostile_shot.is_empty(), "the CaveBat never shoots");
+        // The VoodooDemon's first shot tick (ai[0] 19 → 20, `:23440`):
+        // exactly two `Next(-100, 101)` draws, X then Y (`:23446-23447`),
+        // and the drained request is type 44 / damage 21 at the centre.
+        let mut vd = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
+        vd.ai[0] = 19.0;
+        player.x = 1100.0;
+        player.y = 1000.0;
+        // The shot spawns at the AI-time centre (the collision tail moves
+        // the body afterwards).
+        let (cx, cy) = vd.center();
+        let mut rng2 = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        vd.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert_eq!(vd.wants_hostile_shot.len(), 1, "the sickle drained");
+        let (kind, sx, sy, svx, svy, dmg) = vd.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::DEMON_SICKLE, "type 44 (:23449)");
+        assert_eq!(dmg, 21, "damage 21 (:23449)");
+        assert_eq!((sx, sy), (cx, cy), "spawned at the centre (:23445)");
+        let dx = 1100.0 + 10.0 - cx + witness.next_range(-100, 101) as f32;
+        let dy = 1000.0 + 21.0 - cy + witness.next_range(-100, 101) as f32;
+        let s = 0.2f32 / (dx * dx + dy * dy).sqrt();
+        assert_eq!((svx, svy), (dx * s, dy * s), "the 0.2-normalised jittered aim");
+        assert_eq!(rng2.peek(), witness.peek(), "exactly two draws, X then Y");
+    }
+
+    /// The reconcile's fish routing pin — WRITTEN NOT RUN. The dry
+    /// Goldfish flop draws the cited triple in order (`NPC.cs:23977-
+    /// 23979`) through the caller's stream, the wet bob rides the C#'s own
+    /// `ai[0]` (not the retired `swim_phase` mirror), and the wet idle
+    /// path draws NOTHING.
+    #[test]
+    fn s1_d_3_reconcile_the_fish_ride_the_faithful_arm() {
+        let mut w = World::new("t".into(), 200, 120);
+        // A water column at tiles x 60..64, y 60..70.
+        for x in 60..64 {
+            for y in 60..70 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 1300.0;
+        player.y = 1000.0;
+        player.wet = false;
+        // The dry flop: vy 0 arms the triple; the gravity lands after.
+        let mut fish = Npc::new(NpcKind::Goldfish, 1600.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(777);
+        let mut mirror = rng.clone();
+        let want_vy = mirror.next_range(-50, -20) as f32 * 0.1;
+        let want_vx = mirror.next_range(-20, 20) as f32 * 0.1;
+        let want_dir = if mirror.next_max(2) == 0 { 1 } else { -1 };
+        fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, mirror, "exactly the cited flop triple, in order");
+        assert_eq!(fish.facing, want_dir, "the Next(2) coin (:23979)");
+        // The flop velocities stand (the air world never blocks them);
+        // the gravity lands AFTER the draw (`:23983`), the phase is the
+        // C#'s own ai[0] = 1 sink (`:23988`).
+        assert_eq!(fish.vx, want_vx, "Next(-20, 20) * 0.1 (:23978)");
+        assert_eq!(fish.vy, want_vy + 0.3, "Next(-50, -20) * 0.1 + gravity");
+        assert_eq!(fish.ai[0], 1.0, "the sink phase rides ai[0]");
+        assert!(fish.wants_hostile_shot.is_empty());
+        // The wet idle: inside the water column, no draws at all.
+        let mut wetfish = Npc::new(NpcKind::Goldfish, 62.0 * 16.0, 64.0 * 16.0, 1, 0.0);
+        let mut rng2 = UnifiedRandom::new(9);
+        let untouched = rng2.clone();
+        wetfish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(wetfish.wet, "the is_wet pass ran");
+        assert_eq!(rng2, untouched, "the wet goldfish path draws nothing");
+        assert_eq!(wetfish.ai[0], 1.0, "the idle bob arms (:23848-23852)");
     }
 
     #[test]

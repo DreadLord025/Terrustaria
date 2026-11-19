@@ -5565,11 +5565,19 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-18 arm (`Projectile.cs:25367-25476`): the DemonScythe
-    /// 45's flight — `rotation += 0.8f * direction`, the counter `ai[0]++`,
-    /// the `velocity *= 1.06f` acceleration from tick 30 and the `ai[0] =
-    /// 200f` clamp that stops it at 100. The 44/263/274/1092 riders of the
-    /// same style have no ported row; the 2× dust 27 is SKIPPED.
+    /// 45 / DemonSickle 44 flight — `rotation += 0.8f * direction`, the
+    /// counter `ai[0]++`, the `velocity *= 1.06f` acceleration from tick 30
+    /// and the `ai[0] = 200f` clamp that stops it at 100. The 44's one-tick
+    /// `ai[1]` latch + Item8 cue (`:25369-25373`) rides the state write
+    /// (the sound seam is the documented skip — no rand draw either way);
+    /// the 263/274/1092 riders of the same style have no ported row; the
+    /// 2× dust 27 is SKIPPED.
     fn ai_demon_scythe(&mut self, world: &World) {
+        // `:25369-25373` — the sickle's one-tick latch (`SoundEngine.
+        // PlaySound(Item8)` is the audio skip; the state write stands).
+        if self.ai[1] == 0.0 && self.kind == DEMON_SICKLE {
+            self.ai[1] = 1.0;
+        }
         self.rot += 0.8;
         self.ai[0] += 1.0;
         if self.ai[0] >= 30.0 {
@@ -22049,6 +22057,33 @@ mod magic_ai_tests {
             before < after || after == before,
             "the clamp replaced the multiply"
         );
+    }
+
+    /// The S1-D-3 bat reconcile's DemonSickle seam — WRITTEN NOT RUN
+    /// (code-only mode). The 44 row is the verbatim `Projectile.cs:1271-
+    /// 1282` slice (hostile, penetrate −1, aiStyle 18, alpha 100, scale
+    /// 0.9, light 0.2), and the style-18 arm's one-tick `ai[1]` latch
+    /// (`:25369-25373`) fires for 44 only — the friendly 45 never latches.
+    #[test]
+    fn s1_d_3_reconcile_the_demon_sickle_row_and_latch() {
+        let d = proj_data(DEMON_SICKLE).expect("the 44 row landed");
+        assert_eq!((d.w, d.h), (48.0, 48.0), "`:1273-1274`");
+        assert_eq!(d.ai_style, 18, "`:1277`");
+        assert_eq!(d.penetrate, -1, "`:1279`");
+        assert_eq!(d.alpha, 100, "`:1275`");
+        assert_eq!(d.scale, 0.9, "`:1281`");
+        assert_eq!(d.light, 0.2, "`:1276`");
+        let mut pool = ProjectilePool::new();
+        pool.spawn_hostile(DEMON_SICKLE, Vec2::new(160.0, 160.0), Vec2::new(0.2, 0.0), 21, 0.0);
+        assert!(!pool.slots()[0].friendly, "the hostile spawn (`:1278`)");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].ai[1], 1.0, "the one-tick latch (:25371)");
+        // The friendly scythe never latches (the gate is type 44 only).
+        let mut pool2 = ProjectilePool::new();
+        pool2.spawn_with_data(DEMON_SCYTHE, 160.0, 160.0, 0.2, 0.0, 20, 0.0);
+        step(&mut pool2, &mut w);
+        assert_eq!(pool2.slots()[0].ai[1], 0.0, "45 keeps ai[1] 0");
     }
 
     #[test]
