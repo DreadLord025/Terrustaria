@@ -734,7 +734,8 @@ mod tests {
         pl2.local_ai[1] = 80.0;
         pl2.vx = 15.0;
         let mut rng2 = UnifiedRandom::new(0);
-        step(&mut pl2, &w, &player, &mut rng2, pl2.center());
+        let center2 = pl2.center();
+        step(&mut pl2, &w, &player, &mut rng2, center2);
         assert_eq!(pl2.wants_hostile_shot.len(), 1, "the clear line fires");
     }
 
