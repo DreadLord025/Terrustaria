@@ -2512,6 +2512,7 @@ pub(crate) mod front_flow_tests {
                 shoe_color: [160, 105, 60],
                 inventory,
                 inv_favorites: 0,
+                last_saved_binary: 0,
             },
         )
         .unwrap();
