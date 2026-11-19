@@ -25022,3 +25022,134 @@ dispatch, `npc_ai_golem.rs`'s six body cores + their 14 written-not-run
 witnesses, `world_sim/npcs.rs`'s two anchor passes + the spawn resolve +
 the death chain, `npc/data.rs`'s rows). **No compiler invoked.** The
 sibling code stays byte-identical.
+## The aiStyle-48 census (S1-D-3, docs-only, code-only mode, 2026-11-19)
+
+**Census.** A whole-tree `aiStyle = 48` grep finds **exactly one NPC kind**:
+GolemHeadFree 249 (`SetDefaults` case 249, `NPC.cs:12207-12220` — `noGravity`,
+70x70, dmg 80, def 32, lifeMax 16000, kbResist 0, `dontTakeDamage = true`
+`:12219`). The five `Projectile.cs` hits (`:3382`/`:3445`/`:3797`/`:3842`/
+`:5041`) are projectile-aiStyle machines, out of NPC scope. The arm is
+`NPC.AI()`'s inline `else if (this.aiStyle == 48)` block (`NPC.cs:31351-31586`,
+no `AI_048_*` method).
+
+**Coverage: LANDED + WIRED.** The sibling `task/S1-D-3-golem-audit` (merge
+`c7fe175d`, the 4-arm rewrite) already ports style 48: the kind-gated arm
+`npc.rs::update_golem_rng`'s `NpcKind::GolemHeadFree` block (`npc.rs:14467-14558`)
+over the pure cores in `npc_ai_golem.rs` (`free_head_hover_velocity` `:232`,
+`free_head_fireball_step` `:276`, `free_head_barrage_step` `:300`,
+`free_head_beam_tier` `:340`, `free_head_barrage_trigger` `:482`,
+`free_head_blocked_lead` `:490`, `enrage_balance` `:35`). The earlier
+TR-D3s48 partial (`npc_ai_style48.rs` + an `npc.rs` style-axis claim) was a
+competing duplicate — DISCARDED per the coordination note; this round is the
+distrust-verbatim census audit of the landed arm. No golem-module edit.
+
+**Verified faithful (line-by-line vs `NPC.cs:31351-31586`).**
+
+- *The enrage gate* (`:31354-31362`): solo `GetMyBalance` 1, +3 getGood
+  (parked false), x2 on `(!temple && !jungle) || Center.Y < worldSurface*16` —
+  `enrage_balance(false, 3.0, ...)` at `npc.rs:14027-14035`, the shared
+  four-arm gate.
+- *The hover* (`:31378-31417`): the 7-speed aim at `player.Center - (0, 300)`,
+  the 0.05 per-axis converge with the sign-cross DOUBLE add, the post-increment
+  sign test — `free_head_hover_velocity` matches the structure and the order
+  (X then Y), no invented clamp.
+- *The fireball salvo* (`:31418-31465`): `(num+4)/5` base + the four BODY-hp
+  tier adds; the mouth window `ai[1] < 20 || > 280` written to `localAI[0]`
+  BEFORE the flag53 pin `ai[1] = 20` (`:31437-31448` — the port keeps this
+  order); the `>= 300` reset + the normalized 8-speed 258 fireball at dmg 20
+  from `(cx, cy - 10)` (`:31449-31465`, the `10f*scale` folds at scale 1).
+- *The barrage ladder's mixed DOUBLE/INTEGER tiers* (`:31467-31505`): base
+  `num`, `+num` at the DOUBLE `lifeMax/1.25` and `/1.5`, then the INTEGER
+  `/2`/`/3`/`/4`/`/5`/`/6` — `free_head_barrage_step` splits them correctly
+  (f32 divisions for the first two, raw `i32` divisions for the last five);
+  the World carries the raw `golem_hp`/`golem_max_hp` ints
+  (`world_sim/npcs.rs:2861-2862`/`:3794-3795`), so the integer tiers are
+  reproducible (a ratio could not). flag54 (the BODY's blocked line,
+  `:31497-31501`, via `world.golem_x/y` = the body's centre) adds `num*10`.
+- *The restored RNG triggers*: `ai[2] > 100 + Main.rand.Next(4800)`
+  (`:31506`) — ONE draw per tick, every tick, strict `>`; the blocked-line
+  lead `NextFloat()` X THEN Y, two draws PER BEAM, only while flag54
+  (`:31555-31556`) — `free_head_blocked_lead` keeps the order; the tier
+  escalation `(int)(dmg*1.5)` / `speed*2.5` (`:31553-31554`).
+- *The beams* (`:31509-31569`): two at `+-14` from `cy - 50`, base 24 dmg /
+  11 speed, +1/+0.25 at each BODY 50/40/30/20/10 % tier (`:31521-31548`),
+  the normalized aim, the 3-tick spawn lead (`:31563-31564`), the
+  `timeLeft = 300` override in the shot drain (`world_sim/npcs.rs:3897-3900`,
+  `:31568`).
+- *The shield*: `dontTakeDamage = true` from `SetDefaults` (`:12219`) never
+  clears — the sim's spawn writes it (`world_sim/npcs.rs:3434`); the
+  `golemBoss < 0` orphan guard (`:31372-31376`) rides `!world.golem_present`
+  -> `hp = 0` (the family's documented direct-write stand-in for
+  `StrikeNPCNoInteraction(9999, 0f, 0)` — the C#'s `owner == 255` +
+  `Damage >= 9999` bypass flag `:81237` pierces the shield, so the kill
+  itself is behaviourally right; the death-chain gore/sound fold with it).
+- *The `TargetClosest` calls* (`:31377`, `:31451`) fold into the port's
+  single-player target seam (the family-wide documented fold).
+
+**Gaps found (for the follow-up — NOT fixed this round, the golem module is
+the sibling's).**
+
+- **G1 — the `noTileCollide` phase machine is UNPORTED** (`:31363-31371`).
+  The C# free head defaults `noTileCollide = false` (case 249 sets no such
+  line) and PHASES it per tick: its own blocked line sets it true (with
+  flag53), and `noTileCollide && Collision.SolidTiles(position, w, h)`
+  re-collides it. The port's arm integrates RAW every tick
+  (`npc.rs:14556-14557`, `x += vx; y += vy`) — the head flies through temple
+  walls even on clear-line ticks where the C# collides. `local_ai[0]` is
+  taken by the mouth flag; the discarded TR-D3s48 partial had added a
+  dedicated `Npc::no_tile_collide` field for exactly this. The fix needs the
+  field (or a free local slot) + the two-probe phase + the seam's
+  `player::collides_rect` pass gated on it. Behavioural, the largest gap.
+- **G2 — the f32-vs-DOUBLE tier boundaries + the accumulation order** (the
+  f1701eb0 catalogue class). The C# casts `(double)life < (double)lifeMax *
+  0.8` etc. (`:31420`/`:31424`/`:31428`/`:31432`, `:31469`/`:31473`,
+  `:31524-31544`); `free_head_fireball_step`/`free_head_beam_tier` compare in
+  f32 (`npc_ai_golem.rs:279-291`/`:343-349`). At non-exact products the
+  boundary flips: e.g. lifeMax 21000 at the 30 % beam tier —
+  `21000.0f32 * 0.3f32` rounds ABOVE 6300.0, so `life == 6300` takes the tier
+  in the port but not in the C# (`6300 < 6300.0` is false in double). The
+  sibling's OWN attached-head core uses f64 for the same class
+  (`head_fireball_step`, `npc_ai_golem.rs:367-371`) — the free-head cores
+  should match. Second residual: the C# adds each tier to `ai[1]`/`ai[2]`
+  SEQUENTIALLY (five/eight rounded f32 adds, `:31419-31434`/`:31468-31504`);
+  the port pre-sums the ladder in f32 and does ONE `+=` (`npc.rs:14489`/
+  `:14522`) — a different rounding path that can drift the 300-cadence /
+  the trigger crossing by a tick over long fights. Both are ulp-class;
+  fix = f64 compares + per-tier sequential adds (or a stream-witnessed
+  proof of equivalence, which does not hold in general).
+- **G3 — the facing write is a stand-in**: the port writes
+  `facing`/`sprite_dir` from the velocity sign (`npc.rs:14554-14555`); the
+  C# arm writes NO direction — it rides `TargetClosest`'s
+  `SetTargetTrackingValues` target-face (`:77744-77755`). Diverges while the
+  head drifts away from the player; folds with the family's TargetClosest
+  seam but was not cited there.
+- **G4 — the dust tail's stream offset, quantified**: the skipped 228-dust
+  tail (`:31572-31585`, the standing cosmetic-skip) draws **SEVEN**
+  `Main.rand` values EVERY tick while the head lives — `Next(2)` `:31575`,
+  `NextFloatDirection()` + `NextFloat()` `:31576`, `NextFloatDirection()` +
+  `NextFloat()` + `NextFloat()` `:31579`, `NextFloat()` `:31581`. Unlike the
+  event-gated dust skips elsewhere in the family, this is a CONSTANT 7-draw
+  per-tick offset on the shared `UpdateNpcs` stream — every downstream
+  vanilla-synced roll drifts while the free head is alive. The gameplay
+  draws (the trigger + the leads) are restored in the C#'s order, so the
+  port's own stream is self-consistent; the offset matters only for
+  vanilla-stream parity (the standing deviation, now counted).
+- **G5 — FindFrame reads the POST-pin cadence**: the C# case 249
+  (`:72963-72976`) reads `localAI[0] == 1` — the PRE-pin mouth flag; the port
+  RECOMPUTES `ai[1] < 20 || > 280` (`npc.rs:6296`) AFTER the flag53 pin
+  `ai[1] = 20`. On a blocked-line tick whose pre-pin `ai[1]` was in the
+  window (e.g. 285 -> flag53 pins 20), the C# shows the mouth OPEN (the
+  stored flag 1) and the port shows it CLOSED (20 fails both tests). Fix =
+  read `local_ai[0]` (the arm already stores it). The dropped
+  `frameCounter` 16-wrap (`:72972-72975`) is cited dead (no reader for this
+  type) — accepted.
+
+**Verdict.** Style 48 is COVERED by the landed golem-audit arm — the census
+finds no missing kind and no competing port needed. The cores are faithful
+in structure, constants, tier SPLIT (DOUBLE vs INTEGER) and RNG order; the
+five gaps above (G1 behavioural, G2 ulp-class x2, G3/G5 small, G4 the
+quantified standing skip) are the follow-up's scope. The three-way reconcile
+is already recorded (ANALYSIS "The Golem family (S1-D-3)" — axis 47
+delegates, style46/47 stay unwired references); the discarded TR-D3s48
+partial adds nothing the landed arm lacks except the G1 field sketch.
+Docs-only round — **no compiler invoked**.
