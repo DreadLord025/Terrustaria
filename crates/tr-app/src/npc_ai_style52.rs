@@ -702,13 +702,22 @@ mod tests {
         // Retreat (player above the surface): ×2 → 12 at full life.
         let high = [cand(1000.0, 100.0)];
         assert!((speed_of(&mut setup(30000), &ctx, &high) - 12.0).abs() < 1e-4);
-        // Dead target: ×2 → 12; dead + retreat → ×4 = 24.
+        // Dead target: x2 -> 12; dead + retreat -> x4 = 24. The anchor is
+        // placed > 12 + 24 = 36 px out so even the x4 case stays in the
+        // normalised-flight band (the snap band would mask the ladder).
+        let setup_dead = |hp: i32| {
+            let mut pool = [boss(900.0, 700.0), hook(500.0, 500.0)];
+            pool[0].hp = hp;
+            pool[1].ai = [60.0, 60.0, 0.0, 0.0]; // far anchor (dist ~445)
+            pool[1].local_ai[0] = 500.0;
+            pool
+        };
         let mut dead = [cand(1000.0, 800.0)];
         dead[0].dead = true;
-        assert!((speed_of(&mut setup(30000), &ctx, &dead) - 12.0).abs() < 1e-4);
+        assert!((speed_of(&mut setup_dead(30000), &ctx, &dead) - 12.0).abs() < 1e-4);
         let mut dead_high = [cand(1000.0, 100.0)];
         dead_high[0].dead = true;
-        assert!((speed_of(&mut setup(30000), &ctx, &dead_high) - 24.0).abs() < 1e-4);
+        assert!((speed_of(&mut setup_dead(30000), &ctx, &dead_high) - 24.0).abs() < 1e-4);
     }
 
     /// `NPC.cs:32218-32237` — inside `12 + speed` the hook SNAPS (velocity
