@@ -12003,6 +12003,81 @@ the `.trplayer` sidecar v5; moving them into the world file), `SavedOreTiers`
 fields), the TownManager rooms, the weighted pressure plates (no port store),
 the creative powers/research — each needs its own scope.
 surface branch of the tower-place retry is constants-off.
+
+## AI_026 slice A — the flyer pets (S1-D-4b-10, code-only mode)
+
+**Merger compile fix (P2):** the wisp's control-offset read used the
+non-existent `Player::control_up`; the port's merged jump binding carries
+controlUp (W/ArrowUp feed `control_jump`, the sleeping/sitting exit-mask
+precedent player.rs:2260-2264), so `OwnerView::capture` maps
+`control_up: p.control_jump`. Two witness tests renamed their local
+`pet` bindings (they shadowed the `pet()` ctor).
+
+The aiStyle-26 mega-family (`AI_026`, `Projectile.cs:58102-65024`, 6 922
+lines over 68 types) lands in two disjoint slices. **Slice A** (this task,
+`crates/tr-app/src/projectile_ai026_a.rs`) ports the **14 early-return
+flyer pets**: 175 BabyEater, 197 BabySkeletronHead, 198 BabyHornet, 199
+TikiSpirit, 211 Wisp, 380 ZephyrFish, 774 SharkPup, 815 LilHarpy, 817
+GlitteryButterfly, 886 QueenBeePet, 892 DukeFishronPet, 894 MoonLordPet,
+901 DD2BetsyPet, 1046 Pufferfish. All five flight arms (`:59120-59243`,
+`:59244-59407`, `:59408-59781`, `:59782-59948`, `:59949-60091`) `return`
+before the idle/walk/jump/attack machine (`:60092+`), so slice A needs
+none of it — **slice B** (`task/S1-D-4b-11-melee-b`) owns everything else
+in `AI_026` (the ground pets, the pygmies/spiders, the Pal summons, the
+266 slime minion's hop machine). The dispatch gate (`projectile.rs`'s
+`26 =>` arm) routes ONLY the 14 (`AI_026_A_KINDS`); every other
+aiStyle-26 kind keeps the pre-existing `_ => {}` fall-through,
+byte-identical (the 266's row already existed and stays unarmed).
+
+- **Code-only mode.** This task ran with NO compiler/test invocation
+  (no cargo/rustc/rustfmt, no dotnet, no graphify) — file edits + git
+  only. The witness tests in `projectile_ai026_a::tests` are written,
+  NOT run; the first build/test pass belongs to the merge round.
+- **The flail premise correction.** The task row's original framing
+  ("the Flail's helper 405 included") was wrong twice over: the flails
+  are aiStyle **15** (`DefaultToFlail`, `Projectile.cs:10753-10762`,
+  already ported as `ai_flail`), and the type **405 FlaironBubble is
+  aiStyle 70** (`Projectile.cs:30304-30354`, ported with S1-D-4b-1) —
+  neither belongs to `AI_026`. The ROADMAP S1-D-4b-8 row is corrected.
+- **RNG order.** Per tick, in the C#'s order: the flyer group's Y jitter
+  `Next(-10, 21)` THEN the X jitter (`:59446-59447`, skipped for the
+  892/894 pair); the 197's `localAI[0] += Next(10)` (`:59357`); the
+  teleports' 12 dusts × (`NextFloat` X then Y) (`:59182`/`:59314`/
+  `:59655`/`:59996`). **The 24 teleport `NextFloat` draws are CONSUMED**
+  even though the dust visuals are unported — the task's RNG-order
+  constraint wins over the `ai_flying_minion` dust-skip precedent; the
+  dusts' INTERNAL rolls (`Dust.cs:114-152`'s pool-occupancy gates +
+  `:170-190`'s position/velocity/frame/scale draws) are skipped with the
+  layer (they depend on the unmodelled `Main.dust` occupancy, so no
+  fixed count exists to replay). The wisp's flight dust (`:59864`) has
+  no explicit `Main.rand` in `AI_026` — skipped wholesale. No head rand
+  fires for the 14 (the pygmy `Next(2, 10)` `:58919` is slice B).
+- **The head's unobservable parts.** `flag2`/`flag3` (the direction band
+  `:59008-59026`, num = 85 for all 14), `flag9` (petting `:58118`),
+  `flag12`/`flag13` (the -1/-2 direction forcing `:59016-59026`) feed
+  only the idle machine the 14 never reach — not ported. The `flag11`
+  `timeLeft = 2` pin (`:58944-58947`) IS observable and is ported.
+- **Deviations (the standing ones).** `Collision.SolidCollision` →
+  `box_solid` (the 5-point stand-in, documented since M4-PROJ-8);
+  `netUpdate` → no-op (single-player); `base.wet` → always dry (no
+  liquid-wet slot flags, the `:5473` precedent — the 774/1046 frame
+  offsets always ride the `!wet` +4/+6 branch); the pet keep-alive
+  flags' GRANT side (the pet buff/item pass) is unported — the 14 new
+  `Player` flags stay false until it lands, the AI-side clear/pin is
+  exact; the 211's `light = 1f` has no port consumer. The C#'s source
+  quirks are ported verbatim: the 892's `type == 892 || type == 892`
+  close-damp typo (`:59500`, only the 892 damps 0.95), the 892/894/901
+  dead `speed = 6` write (`:59470-59474`, the unconditional overwrite
+  wins), the wisp's unconditional `speed / dist` normalization at
+  dist = 0 (`:59898`, IEEE NaN semantics kept).
+- **The rows.** `proj_data` gains the 14 (aiStyle 26, friendly,
+  penetrate -1, timeLeft 18000 = 3600 × 5, the stock tileCollide true —
+  each arm clears it on its first tick); `netImportant` on all but the
+  175 (its `SetDefaults` block `:2612-2620` has no such line),
+  `ignoreWater` on the 199/211 only; `proj_frames` gains the 13 sheets
+  (the 197 has no `Main.projFrames` override — the init loop's 1 stands,
+  and its arm never reads `frame`).
+
 ## The lunar battery projectiles (M4-EVENT-16)
 
 The Moon Lord's and the pillars' shots run through six aiStyles, all ported
@@ -21040,3 +21115,72 @@ only READS `ai[2] == 0`), and `FindFrame`'s style-39 tail (`:77292+`:
 `type != 417` zeroes the rotation, `frameCounter += |vx| * 1.1`, the 6-px
 frame bands). The four unported kinds (153/154/496/497) ride
 `Style39Type` + `size_override` until their `NpcKind`s land.
+## The aiStyle-26 tails (S1-F-13b2 slice B, 2026-11-19, code-only mode)
+
+Branch `task/S1-F-13b2-unicorn-b`, disjoint from slice A
+(`task/S1-F-13b2-unicorn`'s `npc_ai_unicorn.rs` + `Npc` field/dispatch
+edits). **Code-only mode: no compiler invoked on this branch** — no
+cargo/rustc/rustfmt/tests run; the `s1_f_13b2b_*` tests are written,
+not run, and the merge verification (the catalog `cargo test` command)
+belongs to the union step. Everything lives in the NEW file
+`crates/tr-app/src/npc_ai_unicorn_b.rs` (pure free functions over
+passed-in state — compiles against `origin/main` alone, sidestepping
+slice A's not-yet-merged `gfx_off_y`/`step_speed` fields and the private
+`frame_counter`), plus the `proj_data` 1001 row
+(`projectile/data.rs`) and its `mod` declaration.
+
+Ported, each with its C# cite in the file:
+- **FindFrame case 315** (`NPC.cs:74465-74497`): the ±1 turn dead-band
+  (runs even wet+airborne, before the reset), the airborne row-0 reset,
+  the |vx|-per-tick gallop at >= 8, wrap past row 10 to row 1.
+- **FindFrame case 329** (`NPC.cs:74375-74403`): falling row 3 / rising
+  row 2 (counter 0, sprite untouched — the breaks precede the
+  `spriteDirection` assignment), the |vx|*0.4 walk at > 4 (strict),
+  clamp rows 2..=9. Row-index convention: the port's `frame: u32` is
+  the C# `frame.Y / num`, so the sheet row height `num` cancels; frame
+  counts 315=11 / 329=10 (`Main.cs:67082`, already in the port's
+  `NPC_FRAME_COUNT`).
+- **The gallop dust** (`NPC.cs:62421-62439`): rows 4..=7 only;
+  `Next(3)` ALWAYS when the gate passes, the two `NextFloat` jitters
+  (x then y) ONLY on the spawn branch, then `NewDustPerfect` type 6
+  with the NPC velocity — the empty-pool internals are seven further
+  draws (`Next(1)`×2, `Next(-20,21)`×2, `Next(3)`, `Next(-20,21)`,
+  `Next(-10,6)` — the type-6 tweak, `Dust.cs:214-221`); post-spawn
+  `scale 0.6 / fadeIn 1.1 / noGravity / noLight`, sentinel included.
+  The draws ride the UpdateNPCs stream IN-STEP at the C# position
+  (after the lob + AddLight, before the stuck counter) — deliberately
+  NOT the deferred spark-queue seam (`player.rs`), whose C# draws
+  happen outside the AI. Stream-replay witness tests clone the stream
+  and require state equality across seeds 0..8 × rows {3,4,7,8}.
+- **AddLight** (`NPC.cs:62420`): `Center`, (0.4, 0.36, 0.2), every
+  Horseman tick; render-side `EntityLights` feed (the `npc_lights.rs`
+  S1-E-5 precedent), no RNG.
+- **gfxOffY decay** (`NPC.cs:90395-90420`): pre-AI, after the
+  old-target/direction latches; `(1 + |vx|/3) * stepSpeed` toward 0,
+  zero-crossing snap, ±16 clamp. Render adds it to the draw Y
+  (`Main.cs:25414` etc.) at union.
+- **Projectile 1001** (`Projectile.cs:9511-9522`): the `proj_data` row
+  (26×26, aiStyle 194, hostile via the spawn seam, `tileCollide=false`,
+  `ignoreWater`, `timeLeft=360`, `alpha=255`, stock penetrate 1).
+
+Union points (the file's module docs carry the full wiring list):
+1. `gfx_off_y_decay` → `Npc::update_rng` ahead of the AI dispatch, on
+   slice A's fields.
+2. `horseman_gallop_dust` → slice A's `if horseman` block at the
+   deferred comment; `unicorn_step` gains `&mut DustPool` + `&SpawnCtx`
+   threaded from the `update_npcs` tick closure (the `audio` pattern).
+3. `horseman_light` → beside `npc_light` in `app/frame/draw.rs`'s NPC
+   light loop.
+4. The FindFrame fns → `Npc::find_frame`'s 315/329 arms (inside
+   `impl Npc`, so the private `frame_counter` needs no accessor).
+5. `horseman_pumpkin_scale` → the lob's FOURTH draw at slice A's queue
+   site (`Projectile.cs:9518`'s `Next(51)` runs at `NewProjectile` time
+   inside the AI); the value rides a new `HostileShotAi.scale` field to
+   the spawned slot. Rolling it at the post-tick drain instead would
+   move the draw past every later NPC's AI draws — a stream deviation,
+   so the row carries the 1f base only.
+
+Still deferred after the union: the aiStyle-194 flight
+(`AI_194_HorsemanPumpkin`, `Projectile.cs:41293`) — until it lands the
+1001 slot spawns with the row's data but no bespoke AI (the pool
+previously dropped the shot entirely for want of the row).
