@@ -2036,8 +2036,9 @@ pub(crate) mod front_flow_tests {
         // one), so the fixture entry carries a path (`app/flow.rs:845`).
         let mut app = flow_app(None, Vec::new(), Vec::new());
         open_world_select(&mut app, vec![world_entry("W1")]);
+        let dir = crate::test_world_helpers::test_scratch("flow-delete-gate");
         for w in &mut app.worlds {
-            w.path = Some(std::env::temp_dir().join("terrustaria-delete-gate.trwld"));
+            w.path = Some(dir.join("terrustaria-delete-gate.trwld"));
         }
         frames(&mut app, 13);
         assert!(!app.pointer.clicks_disabled());
@@ -2049,6 +2050,7 @@ pub(crate) mod front_flow_tests {
             matches!(app.menu, Some(ref m) if m.page == menu::Page::ConfirmDeleteWorld),
             "Delete parks the mode-9 confirm page"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -2320,6 +2322,10 @@ pub(crate) mod front_flow_tests {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
+            mine_hardness: 0.0,
+            mine_crack_style: 0,
+            mine_crack_target: None,
+            mine_crack_rng: tr_core::UnifiedRandom::new(0),
             place_prev_down: false,
             place_released: false,
             mine_prev_down: false,
@@ -2409,6 +2415,7 @@ pub(crate) mod front_flow_tests {
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
+            vine_wind_counter: 0.0,
             leaves: Vec::new(),
             gore: tr_core::gore::GorePool::new(),
             entity_lights: crate::entity_lights::EntityLights::default(),
@@ -2478,9 +2485,7 @@ pub(crate) mod front_flow_tests {
         // (`IO/FavoritesFile.cs:27-36`) saves a store beside the character, not
         // inside it; the next re-list (a re-entry into the screen) reads it
         // back. Before the fix the click only flipped the in-memory flag.
-        let dir = std::env::temp_dir().join("tr-flow-char-fav");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_world_helpers::test_scratch("flow-char-fav");
         let path = dir.join("Belsin.plr");
         let mut inventory = [(0i32, 0i32, 0u8); 58];
         inventory[0] = (3507, 1, 0);
