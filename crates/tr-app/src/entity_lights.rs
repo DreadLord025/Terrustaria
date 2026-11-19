@@ -129,6 +129,19 @@ pub(crate) fn tile_y(pos: Vec2, size: f32, anchor: XAnchor) -> i32 {
     }
 }
 
+/// `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`, S1-E-7 wave A):
+/// `Lighting.AddLight((int)(position.X + width / 2) / 16, (int)(position.Y +
+/// height / 2) / 16, 0.8f, 0.95f, 1f)` while buff 11 is held. The C# truncates
+/// the centre coordinate to int BEFORE the /16 (`XAnchor::CenterTruncated`);
+/// `Player.Center` is `position + size/2` per axis.
+pub(crate) fn shine_light(p: &crate::player::Player) -> Option<(i32, i32, [f32; 3])> {
+    if p.buffs.find_buff_index(11).is_none() {
+        return None;
+    }
+    let (cx, cy) = p.center();
+    Some((cx as i32 / 16, cy as i32 / 16, [0.8, 0.95, 1.0]))
+}
+
 /// `WorldItem.UpdateItem_VisualEffects` (`WorldItem.cs:1204-1649`): the
 /// `AddLight` source this drop contributes this tick, or `None`.
 ///
@@ -404,6 +417,25 @@ mod tests {
         p.demon_torch = 1.0;
         p.disco = [255, 0, 0];
         p
+    }
+
+    #[test]
+    fn s1_e_7a_shine_lights_the_players_center_tile() {
+        // `Player.cs:9993-9996`: the truncating `/16` anchor — centre
+        // (170.9, 661.0) → (170/16, 661/16) = (10, 41), NOT (10, 41) via the
+        // quotient form (170.9/16 = 10.68 → 10 the same, but 661/16 = 41.3 →
+        // 41 vs (int)661/16 = 41 — the negative/edge case differs; the
+        // truncation is pinned by construction).
+        let w = tr_core::World::new("t".into(), 64, 800);
+        let mut p = crate::player::Player::spawn(&w);
+        assert!(shine_light(&p).is_none(), "no buff, no light");
+        p.buffs.add_buff(11, 600);
+        p.x = 160.9;
+        p.y = 640.0;
+        let (x, y, rgb) = shine_light(&p).expect("Shine emits");
+        let (cx, cy) = p.center();
+        assert_eq!((x, y), (cx as i32 / 16, cy as i32 / 16));
+        assert_eq!(rgb, [0.8, 0.95, 1.0]);
     }
 
     #[test]

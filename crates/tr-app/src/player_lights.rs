@@ -15,7 +15,9 @@
 //!
 //! * **Shine (buff 11)** — `UpdateBuffs`' arm (`Player.cs:9993-9996`):
 //!   `(int)(position.X + (float)(width / 2)) / 16` — the **int** division
-//!   inside the cast, so width 20 folds to exactly 10.
+//!   inside the cast, so width 20 folds to exactly 10. The LIVE feed is
+//!   S1-E-7a's `entity_lights::shine_light`; this family's arm is a
+//!   documented skip (no double-feed), witnessed against the live feed.
 //! * **Inferno (116)** `:10215`, **Electrified (144)** `:10316`, **Ice
 //!   Barrier (62)** `:10466` — the other three buff-arm lights. Inferno's
 //!   and Electrified's RGBs also ride `buff_effects.rs`'s accumulator
@@ -224,8 +226,8 @@ fn light_tile(v: Vec2) -> (i32, i32) {
 /// rgb) triples the arms add this tick.
 ///
 /// * Shine 11 (`:9995`): `(int)(position.X + (float)(width / 2)) / 16` —
-///   `width / 2` is **int** division (20 → 10), then truncate, then
-///   divide. The y half is the same form with `height / 2` (42 → 21).
+///   SKIPPED here: S1-E-7a's `entity_lights::shine_light` is the live
+///   feed (same anchor form); emitting twice would double-feed.
 /// * Inferno 116 (`:10215`) / Ice Barrier 62 (`:10466`):
 ///   `(int)(Center.X / 16f)` — truncate the quotient.
 /// * Electrified 144 (`:10316`): `(int)Center.X / 16` — truncate first.
@@ -241,13 +243,13 @@ pub(crate) fn player_buff_lights(p: &Player) -> Vec<(i32, i32, [f32; 3])> {
             continue;
         }
         match bt {
-            // `:9993-9996` — Shine. `width / 2` / `height / 2` are the
-            // C#'s **int** divisions (20 → 10, the live height 42 → 21).
-            11 => {
-                let x = (p.x + (WIDTH as i32 / 2) as f32) as i32 / 16;
-                let y = (p.y + (p.height as i32 / 2) as f32) as i32 / 16;
-                out.push((x, y, [0.8, 0.95, 1.0]));
-            }
+            // `:9993-9996` — Shine. The LIVE feed is S1-E-7a's
+            // `entity_lights::shine_light` (draw.rs feeds it before this
+            // family); emitting it here too would double-feed the same
+            // `EntityLights` pair. Skipped in the feed path only — the
+            // module's own witness tests still pin the C# int-division
+            // anchor form (`width / 2` = 20 → 10, height 42 → 21).
+            11 => {}
             // `:10212-10215` — Inferno: the flag arm's light half (the
             // RGB matches `buff_effects.rs::DebuffEffects.inferno_light`).
             116 => {
@@ -543,38 +545,40 @@ mod tests {
     }
 
     #[test]
-    fn shine_lights_the_body_center_with_the_int_half_width() {
+    fn shine_is_skipped_here_and_agrees_with_the_live_feed() {
         // `:9995` — `(int)(position.X + (float)(width / 2)) / 16`: the
-        // int division makes width 20 fold to 10 (not 10.0 from a float
-        // halving of an odd width — here both agree, but the form is the
-        // C#'s). At (160, 176): x = (160+10)/16 = 10, y = (176+21)/16 = 12.
+        // int division makes width 20 fold to 10. At (160, 176):
+        // x = (160+10)/16 = 10, y = (176+21)/16 = 12. The LIVE feed is
+        // S1-E-7a's `entity_lights::shine_light` — this family skips
+        // buff 11 so the pair never double-feeds; pin both the skip and
+        // the agreement with the live feed's anchor.
         let mut p = player();
         p.x = 160.0;
         p.y = 176.0;
         p.buffs.buff_type[0] = 11;
         p.buffs.buff_time[0] = 600;
-        let lights = player_buff_lights(&p);
-        assert_eq!(lights, vec![(10, 12, [0.8, 0.95, 1.0])]);
+        assert!(player_buff_lights(&p).is_empty(), "no double-feed");
+        assert_eq!(
+            crate::entity_lights::shine_light(&p),
+            Some((10, 12, [0.8, 0.95, 1.0]))
+        );
     }
 
     #[test]
     fn shine_negative_position_truncates_then_divides() {
         // The int form truncates the pixel sum BEFORE dividing: at
-        // x = -20, (-20 + 10) = -10, -10/16 = 0 (int division toward
-        // zero). The float-quotient form would give (int)(-10/16) = 0
-        // too here, but at x = -30: (-30+10) = -20, -20/16 = -1 while
-        // (int)(-20/16f) = -1 as well — the forms differ only when the
-        // sum is fractional, which the int-width fold prevents. Pin the
-        // negative tile anyway.
+        // x = -30: (-30+10) = -20, -20/16 = -1. The live S1-E-7a feed
+        // owns the emission; pin its negative tile (this family skips).
         let mut p = player();
         p.x = -30.0;
         p.y = -30.0;
         p.buffs.buff_type[0] = 11;
         p.buffs.buff_time[0] = 600;
-        let lights = player_buff_lights(&p);
+        assert!(player_buff_lights(&p).is_empty(), "no double-feed");
+        let (x, y, _) = crate::entity_lights::shine_light(&p).expect("Shine emits");
         // x: (-30 + 10) = -20 -> -20/16 = -1; y: (-30 + 21) = -9 -> 0.
-        assert_eq!(lights[0].0, -1);
-        assert_eq!(lights[0].1, 0);
+        assert_eq!(x, -1);
+        assert_eq!(y, 0);
     }
 
     #[test]
