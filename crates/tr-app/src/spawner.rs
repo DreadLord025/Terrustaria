@@ -2981,6 +2981,25 @@ mod tests {
     }
 
     #[test]
+    fn s1_e_7a_invis_and_battle_flags_feed_the_spawn_modifiers() {
+        // S1-E-7 wave A: the Invisibility (10) / Battle (13) buff arms
+        // (`Player.cs:9991`/`:10003`) set `player.invis`/`enemySpawns`, which
+        // `NPC.GetSpawnRate` reads (`NPC.cs:702-740`): invis ×1.2 rate / ×0.8
+        // cap, battle ×0.5 rate / ×2 cap. Day surface base: 360 / 5.
+        let w = ground_tall();
+        let mut c = ctx_at(&w, true);
+        c.flags.invis = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!(r.spawn_rate, (360.0 * 1.2) as i32);
+        assert_eq!(r.max_spawns, (5.0 * 0.8) as i32);
+        let mut c = ctx_at(&w, true);
+        c.flags.enemy_spawns = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!(r.spawn_rate, (360.0 * 0.5) as i32);
+        assert_eq!(r.max_spawns, (5.0 * 2.0) as i32);
+    }
+
+    #[test]
     fn spawns_land_outside_the_safe_area() {
         let w = ground_tall();
         let mut rng = UnifiedRandom::new(0xDEAD_BEEFu32 as i32);

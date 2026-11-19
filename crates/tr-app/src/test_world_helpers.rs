@@ -1,9 +1,28 @@
 //! The shared test-world builders — the ground + the furnished-room
-//! fixtures the housing/town tests compose.
+//! fixtures the housing/town tests compose — plus the per-test scratch-dir
+//! helper the disk-writing tests share.
 
 use tr_core::tile::FLAG_ACTIVE;
 use tr_core::Tile;
 use tr_core::World;
+
+/// A unique per-test scratch directory under the system temp dir:
+/// `tr-test-<pid>-<name>`. The pid separates concurrent test binaries
+/// (parallel gates in sibling worktrees), the name separates tests inside
+/// one binary — pass the test's own slug so no two tests share a path.
+/// The directory starts empty (a stale leftover is wiped first).
+pub fn test_scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("tr-test-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("test scratch dir");
+    dir
+}
+
+/// Best-effort cleanup for `test_scratch` — errors are ignored (a locked
+/// or already-removed scratch dir must never fail a test).
+pub fn remove_scratch(dir: &std::path::Path) {
+    let _ = std::fs::remove_dir_all(dir);
+}
 
 /// A 200x200 world with the dirt ground at y=120.
 pub fn ground() -> World {
