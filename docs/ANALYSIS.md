@@ -11295,6 +11295,93 @@ The batch review's three spell-arm findings (the missing
 `MathHelper.Lerp(0f, 0.2f, …)` wrap on the aim blend, the 800f target-search
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
+
+## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
+
+**Code-only mode**: this slice was written without invoking any compiler
+(no cargo/rustc/rustfmt/tests/graphify). The witness tests in
+`crates/tr-app/src/projectile_ai001_a.rs::tests` are WRITTEN, NOT RUN — each
+expected value was verified by re-reading the cited C# and hand arithmetic
+(the derivations ride the test doc-comments). A follow-up build must run
+`cargo test -p tr-app projectile_ai001_a` before merging.
+
+The port ran ONE generic flight (`ai_style1_flight`: `ai[0]++`, gravity
+`+0.1` after 15 ticks, `atan2 + 1.57` rotation, ±16 clamp) for every rowed
+aiStyle-1 kind, where the C# `AI_001` (`Projectile.cs:54002-57798`) carries
+~142 per-type branches. Slice A ports the **14 lowest-id rowed kinds** in
+the new module `projectile_ai001_a.rs`, gated inside the aiStyle-1 dispatch
+arm (`projectile.rs`, the `1 => match kind` block) ahead of the generic
+`ai_arrow`; **every other kind keeps the generic flight byte-identical**
+(the A/B witness `s1_d_5a_the_seam_gates_only_the_slice_a_kinds` pins the
+plain arrow's 15-tick gravity and a slice-B kind's counting flight).
+
+**Census** (the rowed aiStyle-1 kinds on main, `projectile/data.rs`):
+- Already faithful per-type behaviour (M4-PROJ-6 Phase 3, unchanged):
+  **20** GreenLaser, **88** PurpleLaser, **355** VenomFang, **660**
+  SkyFracture (the `ai_style1_rider` hooks) and **837** BookOfSkullsSkull
+  (`ai_book_of_skulls`). The plain arrows **1/2** (WoodenArrow/FlameArrow)
+  legitimately ride the generic flight — the C# has no per-type branch for
+  them beyond the generic tail.
+- Ported by this slice (`SLICE_A_KINDS`): **14, 81, 83, 98, 100, 180, 184,
+  248, 259, 270, 325, 389, 436, 438**.
+- **Slice B's disjoint territory (ids ≥ 449)**: 449 SaucerLaser, 462
+  PhantasmalBolt, 581 VortexDart, 601 CannonExplosive, 622
+  BlowupSmokeMoonlord, 634/635 NebulaBlaze1/2, 645 PoisonDart, 662/685
+  DD2Spear/T3, 675 DarkMageFlame, 680 BallistaShot, 686 BetsyFireball, 687
+  BetsyBreath, 962 DeerclopsIceChunk, 980 TrapVenomDart.
+- Census deferrals (rowed but NOT slice A, with reasons): **178**
+  CannonBomb — `timeLeft = 2` (`:2641-2649`), no per-type `AI_001` branch
+  exists; it dies before any gravity, the generic flight is already
+  faithful. **185** TrapSpikyBall — the C# `SetDefaults` gives it aiStyle
+  **14** (`:2717-2727`), so its rowed aiStyle 1 is a DATA deviation for a
+  separate fix (the row also packs it with the darts at 10×10 vs the C#
+  14×14). **82** PiratesMusketBall — no `proj_data` row for kind 82 yet:
+  the `data.rs:1391` arm the comment calls "the Corsair's musket ball 82"
+  is a DUPLICATE `MUSKET_BALL` (14) arm, unreachable behind `:1148` — the
+  row + arm land together (the C# shares 81's latch `:55346` and gravity
+  `:56888`). The census also records the other duplicate rows:
+  `SCRAMBLER_SHOT` = 436 = `BRAIN_SCRAMBLER` and `MARTIAN_RAY` = 438 =
+  `RAY_GUNNER` (same ids, later arms unreachable), and the
+  `PHANTASMAL_BOLT` / `BLOWUP_SMOKE_MOONLORD` duplicate match rows.
+- No pre-existing test pinned the old generic flight for a slice-A kind:
+  the Retanimini bolt test (`s1_d_4b_6_the_retanimini_fires_the_bolts`)
+  asserts only damage/timeLeft/vel.x, all unchanged; the DW-3.2 gravity
+  pins ride the plain arrow and the riders, both outside the slice.
+
+Per-kind C# cites (all in `Projectile.cs`): the first-tick `ai[1]` latches
+`:55229/:55239/:55254/:55296/:55306/:55311/:55321/:55346/:55351/:55356`
+(sound SKIPPED, the latch state rides); 81's gravity `:56888-56895`; the
+`flag3` skip switch `:55947-56032` (every slice-A kind except 81 rests its
+counter — the generic `ai[0] >= 15f` arm `:57568-57579` is unreachable for
+them); 259's fade `:56699-56709`; 270's homing `:56056-56089`, alpha/frame
+`:56657-56697`, rotation `:57597-57607`; 325's fade+latch `:55164-55196`,
+rotation `:57744-57747`; 436's head block `:54150-54174`, rotation
+`:57662-57670`; 438's speed fade `:55660-55671`; 248's spin `:57586-57596`;
+the shared rotation tail `:57748-57751` and clamp `:57753-57768`.
+
+Deliberate deviations (the pool-wide conventions, same as M4-PROJ-6):
+- **Dust/sound/light skipped** — every `Main.rand` draw in these kinds'
+  blocks feeds dust/sound only (the skull's `:56079-56087` burst, the
+  flaming wood's `:55175-55189` rolls, the light plots `:54173/:54831/
+  :55171`). **RNG order is preserved BY CONSTRUCTION**: the module takes
+  no rng parameter, so the `UpdateProjectiles` stream (`Main.cs:17775-
+  17777`) sees exactly the draws it saw before for every kind.
+- **`base.direction` is the velocity-sign stand-in** (`:17016-17026` +
+  `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 1) —
+  the same substitution `ai_book_of_skulls` uses; it feeds 270's mirror
+  and 436's extra π.
+- **The skull's `Player.FindClosest` folds to the owner center** — the
+  port has one player; no owner resolved → no steer (the C# always has a
+  player). The steer window `30 < ai[1] < 110` and the 18-speed 1.02
+  boost ride verbatim.
+- **The rotation tail runs BEFORE the ±16 clamp**, as the C# orders it
+  (`:57582` then `:57753`); the generic `ai_style1_flight` keeps its own
+  pre-existing order for the unported kinds (untouched).
+- **Movement is the port's destination-box tile probe** (the
+  `ai_style1_flight` stand-in for `HandleMovement`'s default arm
+  `:19843-19848`), not the C#'s swept collision — the same documented
+  model every ported flight arm uses.
+
 ## .trwld v6 — the world flags, wires and tile entities (M6-SAVE-1) (re-landed)
 
 Re-landed: the `M5-CHEST-gen-flag-extras` merge (`07d786ab`) dropped this work from
