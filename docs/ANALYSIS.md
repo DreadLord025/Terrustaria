@@ -23669,6 +23669,111 @@ Flocko `FindFrame` arm (`:72413+`) stays deferred with the sibling's
 other animation arms. The sibling was NOT touched by this round
 (byte-identical on its branch); no compiler was invoked — the audit is
 read-only against `git show 5ef9b24b:...`.
+## The aiStyle-61 census (S1-D-3, 2026-11-19, code-only mode)
+The 2026-11-19 aiStyle-61 round ran the escape-clause census before porting:
+a whole-tree `aiStyle\s*=\s*61` grep over `decompiled/` finds **exactly
+one NPC SetDefaults row** — SantaNK1, type 346 (`NPC.cs:13386-13399`, the
+`aiStyle = 61` at `:13390`; `NPCID.cs:11369` `SantaNK1 = 346`). The only
+other hits are `Projectile.cs:4512` (the 360-366/381/382/760/775 group)
+and `Projectile.cs:9426` (type 985) — the projectile machine's own style
+space, out of NPC scope. The arm is the inline
+`else if (this.aiStyle == 61)` block of `NPC.AI` (`NPC.cs:33681-33921`)
+with **no per-type branch** — the whole family is one kind.
+**Census verdict: SantaNK1 only → no other kind to port, so no
+`npc_ai_style61.rs` was created.** The round is the docs-only
+distrust-verbatim audit of the sibling's coverage: `fdd646fe`
+(`task/S1-F-13c-boss-ai-b`, S1-F-13c slice C part 2, MERGED via `8e216a35`
+— `git merge-base --is-ancestor fdd646fe HEAD` exit 0) ports the WHOLE
+arm as `crates/tr-app/src/npc_ai_frost_boss_b.rs::santa_nk1_ai`. The audit
+read the whole arm against the sibling's fn line-for-line (the f1701eb0
+defect catalogue classes checked) and found it **faithful**:
+* `:33683-33704` — `num921 = 2f` then the THREE sequential f64 hp-band
+  writes (3/4/5 at <75%/<50%/<25%, `(double)life < (double)lifeMax * k`)
+  — the port keeps the f64 raw-int compares, not an f32 ratio.
+* `:33691-33692` — `flag64` = `active && !dead && Distance(Center) <= 2000`
+  (`Entity.cs:195-198` — the float sqrt of the centre deltas); the port
+  replays `(dx*dx + dy*dy).sqrt() <= 2000.0` with `FrostBossBTarget`
+  carrying `active`/`dead`.
+* `:33705-33710` — the light gate `InWorld && !SolidTile` at the
+  truncated-shift centre (`Utils.cs:1807-1810` `(int)x >> 4`,
+  `WorldGen.cs:9688-9695`/`:70111-70132`); the `AddLight(0.3, 0.26, 0.05)`
+  itself is a documented no-rand drop, the probe kept for the 1:1 shape.
+* `:33711-33719` — the day arm: `EncourageDespawn(10)` (`NPC.cs:7249-7256`
+  — only ever LOWERS `timeLeft`), speed 8, the `vx == 0 → 0.1` nudge.
+* `:33720-33767` — the 300-tick idle → 240-tick volley cycle draws NOTHING
+  in its state machine; the volley (180 BulletDeadeye, Damage 36) is
+  flag64-gated, hp-tiered cadence 16/14/11/8 (the else-if chain picks the
+  lowest tier first), origin `Center + (direction*50, Next(15,36))` (the
+  Y draw FIRST, inside the Vector2 ctor), aim at the player's CENTRE-X /
+  CENTRE-Y (`:33753-33754`) + ±40 jitters, the 15f normalisation, ×0.015
+  speed jitters; the volley end is strictly `> 240`. The named-arg
+  `NewProjectile` draws SpeedX then SpeedY (no ai0/ai1 args).
+* `:33769-33847` — **the three unconditional per-tick rolls verified**:
+  the `Main.netMode != 1` block runs EVERY tick — even by day and in the
+  idle state. The denominators `num927/num928/num929 = 600/1200/2700`
+  scale by ×0.5 (<25%), ×0.75 (<50%), ×0.9 (<75%) via `(int)(double * k)`
+  truncation → 300/600/1350, 450/900/2025, 540/1080/2430 (exact). The
+  Spike roll `Next(num927) == 0` (`:33792`) spawns 352 (Damage 80) from
+  the behind-origin `(Center.X − direction*24, Center.Y − 64)` with
+  `Next(1,100)*direction` against 1f, normalised, NO jitters. The Missile
+  trigger `Next(num928) == 0` (`:33800`) sets `localAI[1] = 1` and the
+  window increments on the SAME tick (→2), fires 350 (Damage 42, ±50 aim
+  jitters, 12.5f normalise, ×0.015 jitters) at `% 12` ONLY when flag64,
+  resets at ≥100. The Present trigger `Next(num929) == 0` (`:33825`) sets
+  `localAI[2] = 2` (→3 same tick), fires 351 (Damage 50, `Next(-100,101)`
+  against −300f, 11f normalise, ×0.01 jitters) at `% 9` — NOT flag64-gated
+  (presents rain at a dead/far target too), resets at ≥100. The port
+  draws all three triggers unconditionally in textual order and gates
+  only the window shots — the sibling's `santa_attack_block_probe`
+  witness replays the whole block against a same-seeded stream.
+* `:33848-33920` — the shared floater tail rides `floater_movement`: the
+  <50px centre damp with the `(double)` ±0.1 snap-to-zero, the
+  `(vx*20 ± num921)/21` approach (two separate direction ifs), the 80×20
+  probe at `(Center.X − 40, pos.Y + height − 20)` (the C#'s int div
+  `80/2`), the over-player +0.5 drop, the −0.025/−0.2 rise (floor −4) and
+  +0.025/+0.5 fall ramps, the 10f cap. The tail is byte-identical to the
+  aiStyle-57 block's `:32970-33042` (re-read side-by-side this round).
+Defaults check: `santa_nk1_ai_defaults()` = (112, 140, 18000) matches
+`NPC.cs:13388-13393`; the full stat row (damage 120 / defense 56 / value
+10000 / kb 0 / npcSlots 4, `NPCHit4`/`NPCDeath14`) is on main
+(`npc.rs:2998`/`:3327`, the sound tests `npc.rs:25421-25422`);
+`npc/data.rs:1238-1245` carries `ai_style: 61` with the flags FALSE —
+correct: the C# SetDefaults writes neither flag, the AI sets
+`noGravity`/`noTileCollide` every tick (`:33684-33685`), the caller's
+integration contract.
+**Gaps for the merger (this round's findings):**
+* **The live SantaNK1 is UNWIRED** — `npc.rs:4211` still runs the
+  `update_hover` stand-in (max_speed 2 / accel 0.1 / bounce 0.7): no
+  idle/volley machine, none of the three attack rolls, no day despawn.
+  The faithful machine exists on main but nothing dispatches to it
+  (`frost_boss_b_ai_step` has no caller outside the module's tests). The
+  wiring round replaces the hover arm, copies `Npc`'s fields in/out of
+  `FrostBossBState`, runs `npc_target::target_closest` at the `:33688`
+  (night) and `:33725` (idle→volley flip) seams and drains
+  `FrostBossBShot` into the hostile-shot pass — the S1-F-13c wiring
+  pattern.
+* **Projectile rows 350/351/352 unported** — `Projectile.cs:4400-4429`:
+  350 Missile (14×14, aiStyle 1, hostile, alpha 255, penetrate −1,
+  tileCollide false, timeLeft 300), 351 Present (24×24, aiStyle 58,
+  hostile, alpha 255, penetrate −1, tileCollide false), 352 Spike (30×30,
+  aiStyle 14, hostile, penetrate −1, timeLeft 1200). 180 BulletDeadeye
+  exists as `PIRATE_ARROW` (`projectile/data.rs:187`, the Deadeye row
+  `:1495`). Their AI arms (the Missile's `:55130` homing, the Present's
+  `:79027` bounce, the Spike's `:24848`/`:79369` arms) are the projectile
+  wave's scope.
+* **`Player::solid_collision` missing `!inActive()`** (`player.rs:2147`
+  vs `Collision.cs:2715`) — the same gap the S1-D-3q census recorded for
+  the 57 tail; actuated-off tiles read solid in the port's floater probe.
+* **Deferred no-rand layers** (the sibling's module docs): the
+  `AddLight(0.3, 0.26, 0.05)` (`:33709`), the `netUpdate` write
+  (`:33728`), `GetSpawnSource_ForProjectile` (`NPC.cs:90749-90752` — a
+  plain `EntitySource_Parent`, no rand), the half-hp gore 517
+  (`:81352-81355`) and the death gores 518-522+ (`:89355+`).
+  `GetBossHeadRotation` has NO 346 case (`NPC.cs:7624` is 345 only); the
+  `FindFrame` case 346 (`:72369-72412`) IS already ported
+  (`npc.rs:6468-6504`, the gift-throw rows 6..8 / walk rows 1..5).
+No compiler was invoked this round — the audit is read-only against the
+merged tree; the sibling was NOT touched (byte-identical).
 ## The roller family's aiStyle-39 arm (S1-D-3 aiStyle-39, 2026-11-19)
 
 `crates/tr-app/src/npc_ai_style39.rs` ports `NPC.AI()`'s
