@@ -1622,4 +1622,149 @@ mod tests {
         assert_eq!(filled.liquid, 255, "the pool filled");
         assert_eq!(filled.liquid_kind(), LiquidKind::Honey, "num3 = 2 is honey");
     }
+
+    // --- S1-A-7: the C#-differential parity proof ----------------------------
+    //
+    // The port's worldgen draws xorshift64 where vanilla draws the Knuth
+    // subtractive UnifiedRandom (research/35 deviation #5), so a full world is
+    // NOT byte-comparable with a C#-generated one by design. What IS provable is
+    // the ALGORITHM: feed the verbatim C# WorldGen.TileRunner the PORT's stream
+    // and the two tile arrays must agree field-by-field. The C# side is
+    // tools/WorldGenParityHarness (DIFF mode): it extracts TileRunner verbatim
+    // from the decompile, replays the port's xorshift64 draws, and dumps the
+    // post-runner tile array to assets/test/parity_tiles.bin. This test replays
+    // the SAME scenario on the port and compares every tile + the final stream
+    // state. Regen:
+    //   python tools/WorldGenParityHarness/extract.py
+    //   dotnet run --project tools/WorldGenParityHarness -- assets/test diff <state>
+    // where <state> = Xorshift64::from_seed(42).0 (pinned below).
+
+    /// The port's seed-42 stream state (`Xorshift64::from_seed(42).0`), the
+    /// initial state the C# DIFF harness replays. Pinned so a change to the
+    /// splitmix finaliser is caught here, not silently re-based.
+    const S1_A_7_PORT_SEED42_STATE: u64 = 0xbdd7_3226_2feb_6e95;
+
+    /// The C# DIFF harness's post-runner tile dump (x-major, 11 bytes/tile:
+    /// kind u16, wall u16, liquid u8, active u8, slope u8, halfbrick u8,
+    /// lava u8, honey u8, shimmer u8).
+    const S1_A_7_PARITY_TILES: &[u8] =
+        include_bytes!("../../../../assets/test/parity_tiles.bin");
+
+    /// Build the exact scenario world the C# DIFF harness builds: a 200×400
+    /// all-active-stone grid plus the protection-zoo / liquid tiles, with the
+    /// frame-important table booted the same way (kind 10 important).
+    fn s1_a_7_scenario_world() -> World {
+        let mut world = World::new("S1A7Parity".into(), 200, 400);
+        super::super::pipeline::boot_statics(&mut world);
+        // The C# harness parses Main.tileFrameImportant from Main.cs; kind 10
+        // (door) is frame-important there. boot_statics does not set it, so set
+        // it explicitly to match the C# guard (the only encountered kind whose
+        // importance differs between the two boots).
+        world.frame_important[10] = true;
+        for i in 0..world.tiles.len() {
+            let mut tile = Tile::default();
+            tile.kind = 1; // stone
+            tile.flags |= FLAG_ACTIVE;
+            world.tiles[i] = tile;
+        }
+        let put = |world: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = world.index(x, y);
+            world.tiles[idx].kind = kind;
+            world.tiles[idx].flags |= FLAG_ACTIVE;
+        };
+        put(&mut world, 40, 100, 41);  // silver brick: generation-protected
+        put(&mut world, 41, 100, 10);  // frame-important door: guard skips
+        put(&mut world, 42, 100, 53);  // sand above the surface: protected
+        put(&mut world, 43, 100, 396); // sandstone: yields to ore
+        put(&mut world, 60, 250, 53);  // sand below the surface
+        let liquid = |world: &mut World, x: i32, y: i32, amount: u8, lava: bool| {
+            let idx = world.index(x, y);
+            world.tiles[idx].liquid = amount;
+            if lava {
+                world.tiles[idx].flags |= FLAG_LIQUID_LAVA;
+            }
+        };
+        liquid(&mut world, 100, 250, 255, true);
+        liquid(&mut world, 101, 250, 128, false);
+        liquid(&mut world, 150, 320, 255, false);
+        world
+    }
+
+    #[test]
+    fn s1_a_7_the_tile_runner_matches_the_csharp_differential() {
+        // Pin the initial state against the splitmix finaliser.
+        assert_eq!(
+            Rng::from_seed(42).0,
+            S1_A_7_PORT_SEED42_STATE,
+            "the port's seed-42 state drifted — re-run the C# DIFF harness"
+        );
+
+        let mut world = s1_a_7_scenario_world();
+        let mut rng = Rng(S1_A_7_PORT_SEED42_STATE);
+        let flags = world.seeds;
+        let surface = 150.0;
+
+        // The six TileRunner calls, in the C# harness's order, with the GenVars
+        // depth anchors folded into opts (the port's seam for the C# globals).
+        tile_runner(&mut world, &mut rng, 100, 100, 60.0, 4, 7, surface,
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() });
+        tile_runner(&mut world, &mut rng, 50, 50, 4.0, 1, 7, surface,
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() });
+        tile_runner(&mut world, &mut rng, 100, 250, 4.0, 1, 59, surface,
+            &TileRunnerOpts { flags, water_line: 245.0, ..TileRunnerOpts::default() });
+        tile_runner(&mut world, &mut rng, 150, 320, 4.0, 1, -2, surface,
+            &TileRunnerOpts { flags, water_line: 315.0, lava_line: 330.0, ..TileRunnerOpts::default() });
+        tile_runner(&mut world, &mut rng, 160, 320, 4.0, 1, -1, surface,
+            &TileRunnerOpts { flags, ..TileRunnerOpts::default() });
+        tile_runner(&mut world, &mut rng, 50, 170, 4.0, 1, 7, surface,
+            &TileRunnerOpts { flags, mud_wall: true, lava_line: 200.0, ..TileRunnerOpts::default() });
+
+        // The final stream state must equal the C# DIFF harness's portState.
+        // (Pinned from the harness run; a draw-order divergence trips this.)
+        assert_eq!(rng.0, 15_617_404_204_499_142_279, "the draw ledger diverged from the C#");
+
+        // Field-by-field tile comparison against the C# dump (x-major).
+        let dump = S1_A_7_PARITY_TILES;
+        let w = i32::from_le_bytes([dump[0], dump[1], dump[2], dump[3]]);
+        let h = i32::from_le_bytes([dump[4], dump[5], dump[6], dump[7]]);
+        assert_eq!((w, h), (200, 400), "the dump dimensions");
+        let mut off = 8usize;
+        let mut mismatches = 0usize;
+        for x in 0..w {
+            for y in 0..h {
+                let kind = u16::from_le_bytes([dump[off], dump[off + 1]]);
+                let wall = u16::from_le_bytes([dump[off + 2], dump[off + 3]]);
+                let liquid = dump[off + 4];
+                let active = dump[off + 5] != 0;
+                let slope = dump[off + 6];
+                let halfbrick = dump[off + 7] != 0;
+                let lava = dump[off + 8] != 0;
+                let honey = dump[off + 9] != 0;
+                let shimmer = dump[off + 10] != 0;
+                off += 11;
+                let t = world.tile(x, y).unwrap();
+                let port_liquid_kind = t.liquid_kind();
+                let ok = t.kind == kind
+                    && t.wall == wall
+                    && t.liquid == liquid
+                    && t.active() == active
+                    && t.slope() == slope
+                    && t.half_brick() == halfbrick
+                    && (port_liquid_kind == LiquidKind::Lava) == lava
+                    && (port_liquid_kind == LiquidKind::Honey) == honey
+                    && (port_liquid_kind == LiquidKind::Shimmer) == shimmer;
+                if !ok {
+                    mismatches += 1;
+                    if mismatches <= 8 {
+                        panic!(
+                            "tile ({x},{y}) diverges: port kind={} wall={} liq={} act={} slope={} hb={} kind={:?} | C# kind={kind} wall={wall} liq={liquid} act={active} slope={slope} hb={halfbrick} lava={lava} honey={honey} shimmer={shimmer}",
+                            t.kind, t.wall, t.liquid, t.active(), t.slope(), t.half_brick(), port_liquid_kind
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(mismatches, 0, "{mismatches} tiles diverge from the C# differential");
+        assert_eq!(off, dump.len(), "the dump was fully consumed");
+    }
 }
