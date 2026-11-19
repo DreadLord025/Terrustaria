@@ -651,8 +651,10 @@ mod tests {
         n.facing = 1;
         // localAI[1] starts 0 (SetDefaults :8570) → first tick expires.
         let mut rng = UnifiedRandom::new(42);
-        let witness = rng.clone();
-        let first = rng.next_range(600, 1800); // the idle→walk draw
+        let mut witness = rng.clone();
+        // Mirror the cited draw on the witness stream (the style-52
+        // pattern) — drawing on `rng` itself would desync the arm.
+        let first = witness.next_range(600, 1800); // the idle→walk draw
         let out = ai_style66(&mut n, &w, &players, 357, 1.0, 0, &mut rng);
         assert!(!out.transform_to_digger);
         assert_eq!(n.ai[0], 1.0, ":34307");
@@ -663,8 +665,8 @@ mod tests {
         // Run the walk to expiry; the next draw is Next(300, 900).
         n.local_ai[1] = 1.0;
         n.net_update = false;
-        let witness2 = rng.clone();
-        let second = rng.next_range(300, 900);
+        let mut witness2 = rng.clone();
+        let second = witness2.next_range(300, 900);
         let _ = ai_style66(&mut n, &w, &players, 357, 1.0, 0, &mut rng);
         assert_eq!(n.ai[0], 0.0, ":34302");
         assert_eq!(n.local_ai[1], second as f32, ":34303 Next(300,900)");
@@ -737,8 +739,8 @@ mod tests {
         let mut n = crawler(484, 1000.0, 1000.0);
         n.vy = 2.0; // airborne — the flicker still draws
         let mut rng = UnifiedRandom::new(77);
-        let witness = rng.clone();
-        let roll = rng.next_range(90, 111);
+        let mut witness = rng.clone();
+        let roll = witness.next_range(90, 111);
         let out = ai_style66(&mut n, &w, &players, 484, 1.0, 0, &mut rng);
         assert_eq!(rng, witness, "exactly one Next(90,111)");
         let num983 = roll as f32 * 0.01 * ((1.0f32 + 0.5) / 2.0);
@@ -806,7 +808,9 @@ mod tests {
         t.local_ai[1] = 5000.0;
         let _ = ai_style66(&mut t, &w, &edge, 374, 1.0, 0, &mut rng);
         assert_eq!(t.ai[1], 1.0, "exactly 160 counts (the !(> 160) gate)");
-        // One px farther: 161 > 160 → no increment.
+        // One px farther: the player CENTRE must sit at 161 — position
+        // (1156, 981) centres at (1166, 1002), distance 161 > 160 → no
+        // increment. (Position 1155 centres at 1165 = exactly 160.)
         let out = [cand(1156.0, 981.0)];
         let mut t2 = crawler(374, 1000.0, 1000.0);
         t2.local_ai[1] = 5000.0;
@@ -871,14 +875,14 @@ mod tests {
         assert!(!gold_worm_sparkle([20, 20, 20], &mut rng));
         assert_eq!(rng, witness, "the gate short-circuits the draw");
         // Lit: max 255 → threshold 255/30 = 8; the draw is consumed.
-        let witness2 = rng.clone();
-        let roll = rng.next_max(300);
+        let mut witness2 = rng.clone();
+        let roll = witness2.next_max(300);
         let got = gold_worm_sparkle([255, 0, 0], &mut rng);
         assert_eq!(got, roll < 8);
         assert_eq!(rng, witness2, "exactly one Next(300)");
         // The max channel picks the threshold: G 90 → 3.
-        let witness3 = rng.clone();
-        let roll3 = rng.next_max(300);
+        let mut witness3 = rng.clone();
+        let roll3 = witness3.next_max(300);
         let got3 = gold_worm_sparkle([21, 90, 30], &mut rng);
         assert_eq!(got3, roll3 < 3);
         assert_eq!(rng, witness3);

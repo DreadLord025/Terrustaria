@@ -2057,8 +2057,9 @@ mod tests {
         // `:46343-46451` — hand-traced tick 0, classic: num83 = 0,
         // angle = π/8 → dir ≈ (0.92388, 0.38268); the classic outward
         // push +0.5 → normalize ≈ (0.97815, 0.26287); the target is
-        // still → no flip; spawn = (400,0) + dir×300; ai0 = atan2 of
-        // (target - spawn) = atan2(-78.86, -293.44).
+        // still → no flip; spawn = targetCentre(400,0) + dir×300
+        // (`:46396` vector32 = center3 + vector30*num84 - vel*30);
+        // ai0 = atan2 of (lead - spawn) = atan2(-78.86, -293.44).
         let mut s = state_at_center(0.0, 0.0);
         s.ai0 = 4.0;
         let env = env_night();
@@ -2068,9 +2069,12 @@ mod tests {
         assert_eq!(rng, witness, "the lance state draws NO gameplay RNG");
         let lances = proj(&out, 919);
         assert_eq!(lances.len(), 1);
-        let a = PI / 8.0;
-        let dx = a.cos() + 0.5;
-        let dy = a.sin();
+        // `:46374` — the ring angle is FLOAT arithmetic in the C#
+        // ((float)Math.PI / 8f); mirror the f32 rounding, then the
+        // RotatedBy cos/sin (the module's rotated_by seam).
+        let a32 = (PI / 8.0) as f32;
+        let dx = (a32 as f64).cos() as f32 + 0.5;
+        let dy = (a32 as f64).sin() as f32;
         let len = (dx * dx + dy * dy).sqrt();
         let (ux, uy) = (dx / len, dy / len);
         match lances[0] {
@@ -2518,7 +2522,10 @@ mod tests {
         assert_eq!(s.defense, 60); // (50 × 1.2) = 60
         assert_eq!(s.local_ai0, 0.0); // 44 wraps
         assert_eq!(s.alpha, 95); // flag5 fade
-        assert!(out.dont_take_damage); // flag6 default true
+        // `:46919` — dontTakeDamage = !flag6; flag6 stays TRUE outside
+        // the materialize/dash windows → the quiet tick is VULNERABLE
+        // (the C# default; the earlier comment had the polarity wrong).
+        assert!(!out.dont_take_damage); // flag6 true → !flag6 = false
         assert_eq!(s.damage, 80); // num16 = 1
     }
 
