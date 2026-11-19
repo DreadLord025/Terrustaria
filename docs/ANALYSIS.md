@@ -16924,6 +16924,80 @@ which for every aiStyle-3 kind, so it needs its own branch and its own test pass
 **The helper landed with S1-D-3p (2026-11-18)** — see "The shared target selection
 (S1-D-3p)" below; the caller migration is the documented remainder.
 
+## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
+
+`NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)
+is ported as `crates/tr-app/src/npc_ai_style37.rs` — pure functions over the
+NPC pool (`destroyer_step(npcs, me, ctx, world, players, rng, ticker)`), with
+the side effects the `Npc` struct cannot carry returned in `DestroyerEvents`
+(the `wants_sphere`/`wants_limbs` seam convention). **Code-only mode**: no
+compiler was invoked; the 10 witness tests are written, not run.
+
+Faithful details kept: the Mech Queen chain walk's 10-link reset
+(`:49772-49776`), the fade-in's parent-alpha gate (`alpha < 128`, `:49795`)
+and 42-step floor (`:49806-49810`), the orphan check's `ai[1] <= 0 ||
+parent.life <= 0` (`:49816-49823`), the head's `ai[0] == 0` one-shot spawn
+(`:49833`), the laser cadence's **two draws every tick** (`Next(4)` `:49858`
+then `Next(1400, 26000)` `:49859` — the threshold draw happens even on a
+non-firing tick) and the four `Next(-20, 21)` jitters in source order inside
+the `Collision.CanHit` gate (`:49866-49872`), the muzzle's float-X /
+INTEGER-Y halves (`:49865`), the speed-8 normalise then ×0.05 spread then ×5
+muzzle offset (`:49868-49876`), `GetAttackDamage_ForProjectiles(22, 18)` =
+`(int)Remap(difficulty, 1, 2, 22, 18)` clamped (`NPC.cs:7052-7055`,
+`Utils.cs:315-348`), the tile probe's `nactive && (solid || (solidTop &&
+frameY == 0)) || liquid > 64` with NO `inActive()` test (`:49912` — unlike
+`Collision`'s gates), the head's 1000-px player-proximity dive gate
+(`:49934-49951`), the daytime double-sink + family despawn
+(`:49959-49977`), the getGoodWorld ×1.2 accel (`:49981-49985`), the 16-px
+snapped aim with INTEGER player halves (`:49987-49994`), the follower's
+`(int)(44 * scale)` spacing with the Mech Queen 10%-per-depth compression
+and the `num24 / num2 * num` INTEGER division (`:49998-50027`), the
+velocity-zeroed teleport + the pre-move-centre final rotation (`:50030-50033`),
+the three-way air steer and the burrow's aligned/any-aligned/dominant-axis
+ladder with the two perpendicular ×2 turn boosts (`:50037-50205`), the
+`+ 1.57f` rotation literal (NOT π/2, `:50021`/`:50206`), the head's
+`localAI[0]` burrow-state net flag + the oldVelocity sign-reversal flag
+(`:50207-50229`), and the Mech Queen ride's `RotatedBy(velocity.X * 0.025)`
+about `GetMechQueenCenter` + 100 px (`:50231-50241`, `Utils.cs:1675-1684`,
+`NPC.cs:50954-50961`).
+
+Deliberate deviations (the wiring remainder):
+
+* **Wiring deferred.** The sim's Destroyer still rides the aiStyle-6 worm
+  pass (`npc.rs`'s `NpcKind::TheDestroyer => {}` arm +
+  `world_sim/npcs.rs::update_worms_in`'s 80-budget same-kind chain). The
+  machine is not called from `Npc::update_rng`'s style axis yet — the port
+  has no body/tail kinds (135/136), so the chain the machine expects
+  (`ai[1]` parent links, `ai[0]` child links) does not exist in the pool.
+  The machine is type-parameterised (`DestroyerCtx::npc_type`) so the
+  body/tail branches activate unchanged when those kinds land.
+* **Seam effects.** Dust 182 (`:49801`), `Lighting.AddLight(0.3, 0.1, 0.05)`
+  (`:49929`), `SoundEngine.PlaySound(15)` (`:50093`), `HitEffect`/`checkDead`
+  (`:49827-49828`), the 80-link `NewNPC` allocation + `SendData(23)`
+  (`:49847-49852`), the laser's `Projectile.NewProjectile` (`:49877`) and
+  the family `active = false` despawn (`:49974`) ride `DestroyerEvents` —
+  the caller resolves them (the port's pool has no `active` field and
+  compacts every frame).
+* **Stock flags.** `netMode = 0`, classic difficulty, no Mech Queen
+  (S1-D-3j), no getGoodWorld — the same constants-off convention as the
+  other difficulty-gated machines. `soundDelay`/`justHit` have no `Npc`
+  fields; the ctx carries them (the wiring's `justHit` stand-in is
+  `hurt_cd > 0.0`, the port's recoil convention).
+* **Pool indices vs C# slots.** `Main.npc` is a fixed 201-slot array
+  (`Main.cs:66989`); the port's Vec compacts. A missing `ai[1]` slot reads
+  as the C#'s `try/catch` outcome (`:49999-50007`: keep the snapped player
+  aim); the orphan check treats it as a dead parent (the C# would throw —
+  the port's chain never carries dangling links because the worm pass
+  kills them, `:51425-51433`).
+* **RNG argument.** The machine's only draws are the body laser's: per
+  tick `Next(4)` (`UnifiedRandom.cs:134-141` → `next_max(4)`) then
+  `Next(1400, 26000)` (`:120-132` → `next_range`), and on a firing tick
+  four `Next(-20, 21)` in the order aim-X, aim-Y, spread-X, spread-Y. All
+  take the caller's `UnifiedRandom` (the exact `Main.rand` stream) — the
+  witness tests clone the stream and replay the draws in source order, so
+  any reordering or extra draw fails the equality. No other stream is
+  touched; the head's machine is draw-free.
+
 ## The shared target selection (S1-D-3p, 2026-11-18)
 
 `NPC.TargetClosest`/`TryTrackingTarget`/`SetTargetTrackingValues`
