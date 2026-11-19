@@ -318,18 +318,20 @@ internal class Program
             }
             plain = ms.ToArray();
         }
-        // The real envelope: AES-CBC, key = IV = UTF-16LE("h3y_gUyZ"), zero pad.
+        // The real envelope: AES-CBC, key = IV = UTF-16LE("h3y_gUyZ"), PKCS7.
+        // S1-J-5c: InternalSavePlayerFile (Player.cs:54734-54742) uses a bare
+        // `new RijndaelManaged()` — default Padding = PKCS7 — and
+        // FlushFinalBlock appends the pad. (The harness previously zero-padded
+        // with PaddingMode.None, mirroring the READ path's :55074 setting;
+        // that was a harness bug, not the vanilla write envelope.)
         byte[] key = Encoding.Unicode.GetBytes("h3y_gUyZ");
-        int padded = plain.Length + (16 - plain.Length % 16) % 16;
-        byte[] buf = new byte[padded];
-        Array.Copy(plain, buf, plain.Length);
         byte[] cipher;
         using (var aes = Aes.Create())
         {
             aes.Key = key; aes.IV = key;
-            aes.Mode = CipherMode.CBC; aes.Padding = PaddingMode.None;
+            aes.Mode = CipherMode.CBC; aes.Padding = PaddingMode.PKCS7;
             using var enc = aes.CreateEncryptor();
-            cipher = enc.TransformFinalBlock(buf, 0, buf.Length);
+            cipher = enc.TransformFinalBlock(plain, 0, plain.Length);
         }
         File.WriteAllBytes(Path.Combine(outDir, "golden.plr"), cipher);
 

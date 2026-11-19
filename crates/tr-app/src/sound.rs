@@ -187,6 +187,12 @@ pub fn legacy_family_pitch(family: Family, rng: &mut dyn FnMut(i32, i32) -> i32)
         // Case 17 (`:862`): the run-step roll — the same window as the dig
         // arm, drawn from the same `Main.rand` (S1-E-21 wave D).
         Family::Run => rng(-10, 11) as f32 * 0.01,
+        // Case 6 (`:714`): the grass roll — the wider ±0.30 window
+        // (S1-E-21i, the KillWall grass arm).
+        Family::Grass => rng(-30, 31) as f32 * 0.01,
+        // Cases 8/9 (`:736`/`:747`): the door open/close rolls share the
+        // ±0.20 window (S1-E-21i, WorldGen.OpenDoor/CloseDoor).
+        Family::Door => rng(-20, 21) as f32 * 0.01,
         Family::Item(cue) => match cue {
             53 => rng(-20, -11) as f32 * 0.02,
             55 => -(rng(-20, -11) as f32) * 0.02,
@@ -207,6 +213,31 @@ pub enum Family {
     Item(i32),
     /// `type == 17` — the run/footstep case (`:854-864`, the `:862` roll).
     Run,
+    /// `type == 6` — the grass case (`:706-716`, the `:714` roll).
+    Grass,
+    /// `type == 8`/`9` — the door open/close cases (`:728-749`, the
+    /// `:736`/`:747` rolls — one shared window).
+    Door,
+}
+
+/// One `LegacySoundPlayer.PlaySound` case-28 (Mech) play's pitch decision
+/// (`LegacySoundPlayer.cs:997-1007`, S1-E-21i — the `Wiring.HitSwitch`
+/// clicks). `playing_0` is the `SoundInstanceMech[0].State == Playing` read
+/// (`:998-1001`): while the click is live a new play returns `null` BEFORE
+/// the pitch draw — `None` models that refusal. Otherwise the ONE
+/// `Main.rand.Next(-10, 11) * 0.01` draw (`:1005`) rides the caller's
+/// stream — the stage swap wrapping the `HitSwitch` call (`Main.cs:17754`
+/// the player, `:17763` the weighted plates, `:17767` the NPCs, `:17802`
+/// the wiring tick), never the wiring stand-in stream. The caller must
+/// gate on audibility BEFORE calling (the C# reaches the switch only past
+/// `:390-436`).
+pub fn mech_case28(playing_0: bool, rng: &mut dyn FnMut(i32, i32) -> i32) -> Option<f32> {
+    // `:998-1001` — the playing guard returns before any draw.
+    if playing_0 {
+        return None;
+    }
+    // `:1005` — one `Main.rand.Next(-10, 11) * 0.01` pitch draw.
+    Some(rng(-10, 11) as f32 * 0.01)
 }
 
 /// One `LegacySoundPlayer.PlaySound` case-2 (item) play's decisions
@@ -672,4 +703,48 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
         let (_, tweak, _) = item_use_case2(style, &mut roll);
         assert!((tweak - want).abs() < 1e-6, "style {style}");
     }
+}
+
+/// S1-E-21i — the grass/door pitch windows (`LegacySoundPlayer.cs:714`
+/// case 6, `:736`/`:747` cases 8/9): one draw per play, the exact window
+/// and the 0.01 scale.
+#[test]
+fn s1_e_21i_the_grass_and_door_pitch_windows() {
+    // Case 6 (`:714`): Next(-30, 31) * 0.01.
+    let mut draw = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-30, 31), "the grass roll's window");
+        12
+    };
+    assert!(
+        (legacy_family_pitch(Family::Grass, &mut draw) - 0.12).abs() < 1e-6,
+        "12 * 0.01"
+    );
+    // Cases 8 and 9 (`:736`/`:747`): the shared Next(-20, 21) * 0.01.
+    let mut draw = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-20, 21), "the door roll's window");
+        -20
+    };
+    assert!(
+        (legacy_family_pitch(Family::Door, &mut draw) - (-0.2)).abs() < 1e-6,
+        "-20 * 0.01 — the window floor"
+    );
+}
+
+/// S1-E-21i — case 28's playing guard (`LegacySoundPlayer.cs:998-1001`)
+/// returns BEFORE the pitch draw (`:1005`); a fresh slot draws exactly one
+/// Next(-10, 11) * 0.01.
+#[test]
+fn s1_e_21i_mech_case28_guards_before_the_pitch_draw() {
+    // The live-instance refusal draws nothing.
+    let mut roll = |_: i32, _: i32| panic!("the guarded play draws nothing");
+    assert_eq!(mech_case28(true, &mut roll), None);
+    // A fresh slot draws one pitch in the ±0.10 window.
+    let mut roll = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-10, 11), "the mech roll's window");
+        7
+    };
+    assert!(
+        (mech_case28(false, &mut roll).unwrap() - 0.07).abs() < 1e-6,
+        "7 * 0.01"
+    );
 }
