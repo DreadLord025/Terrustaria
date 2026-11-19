@@ -235,6 +235,9 @@ mod tests {
     // throws there; the port's width guard skips the block before any
     // draw). The 141/411 frame-important boot bits are inert without the
     // kinds. The DEFAULT_WORLD re-pin is deferred to the gate (below).
+    // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
+    // below) moves this pin too — glass & co. beside a wall change the
+    // generated `wall_frame`. Stale-by-design; the gate re-pins it.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -270,6 +273,14 @@ mod tests {
     // failing run and SEED42_512 stayed UNCHANGED (the width-guard proof
     // held). Old -> new: 311316399 -> 3647283075 (gate log
     // TR-LD-gate-k2b.log).
+    // S1-P-i33 (2026-11-20, code-only): the wall-framing mask fix
+    // (`Framing.WallFrame`'s neighbour test, `Framing.cs:345-376` — an active
+    // `TruncatesWalls` tile 54/328/459/748 now joins the mask, and an
+    // echo-coated invisible wall drops out) changes the generated
+    // `wall_frame` cells wherever glass & co. sit beside a wall. BOTH pins
+    // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
+    // on this branch). The `a == b` determinism assertion stays green — the
+    // mask is a pure function of the tile/wall state, no RNG draw added.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

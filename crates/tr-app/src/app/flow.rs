@@ -2329,6 +2329,7 @@ pub(crate) mod front_flow_tests {
             mine_target: None,
             mine_timer: 0.0,
             mine_hardness: 0.0,
+            mine_wall_hits: 0,
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(0),

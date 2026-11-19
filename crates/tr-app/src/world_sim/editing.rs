@@ -1581,31 +1581,50 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
         }
-        if app.mine_target == Some((tx, ty)) {
-            app.mine_timer += dt;
-        } else {
-            app.mine_target = Some((tx, ty));
-            app.mine_timer = 0.0;
-        }
-        // The walls need a hammer (`Main.tileHammer`'s rule — the port
-        // gates on the held hammer power alone) and the hammer paces the
-        // dig (the baseline assumes the copper hammer's 35). The demon altar
-        // is an *active* tile, so its hammer arm lives in the branch above
-        // (`Player.cs:45665`), never here.
+        // The walls need a hammer (`ItemCheck_UseMiningTools_TryHittingWall`,
+        // `Player.cs:45910`: `sItem.hammer > 0` AND
+        // `Player.CanPlayerSmashWall`). The smash gate refuses the
+        // unbreakable 350 and a fully enclosed unsafe wall (`:45917-45940`);
+        // the port folds it in here (the core `break_wall` carries the
+        // progression refusals). The demon altar is an *active* tile, so its
+        // hammer arm lives in the branch above (`Player.cs:45665`), never here.
         let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
-        if tool_hammer <= 0 {
+        if tool_hammer <= 0 || !edit::can_player_smash_wall(&app.world, tx, ty) {
             app.mine_target = None;
             app.mine_timer = 0.0;
+            app.mine_wall_hits = 0;
         } else {
-            let hardness =
-                (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
+            // `PickWall` (`Player.cs:45912`, `:45942-45967`): each hit adds
+            // `(int)(hammer * 1.5f)` to the wall's `hitTile` book and breaks
+            // at `>= 100`, paced by `itemTime = useTime / 2` (`:45913`). The
+            // break fires after `ceil(100 / (hammer * 1.5))` hits, each
+            // `useTime / 2` ticks apart — an INTEGER hit count (the C# damage
+            // book is integer), uniform for every wall (the old wall-1 0.7 s /
+            // other 0.35 s split was an invention).
+            let use_time = registry::get(held.kind).map(|d| d.use_time).unwrap_or(0);
+            let per_hit = (tool_hammer as f32 * 1.5) as i32;
+            let hits_needed = if per_hit > 0 { (100 + per_hit - 1) / per_hit } else { 1 };
+            let ticks_per_hit = i32::from((use_time / 2).max(1));
+            if app.mine_target != Some((tx, ty)) {
+                app.mine_target = Some((tx, ty));
+                app.mine_wall_hits = 0;
+                app.mine_timer = 0.0;
+            }
+            app.mine_timer += dt;
             // The crack overlay's damage denominator
             // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
-            app.mine_hardness = hardness;
-            if app.mine_timer >= hardness {
+            app.mine_hardness = (hits_needed * ticks_per_hit) as f32 / 60.0;
+            // One hit per `useTime / 2` ticks; the break lands on the
+            // `hits_needed`-th hit (exact integer cadence).
+            let elapsed_ticks = (app.mine_timer * 60.0).round() as i32;
+            let hits = elapsed_ticks / ticks_per_hit;
+            if hits >= hits_needed {
                 break_wall(app, tx, ty);
                 app.mine_target = None;
                 app.mine_timer = 0.0;
+                app.mine_wall_hits = 0;
+            } else {
+                app.mine_wall_hits = hits;
             }
         }
     } else {
@@ -1963,12 +1982,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let used = if extracted_secs.is_some() {
             true
         } else if held_wall {
-            if can_place_wall(app, tx, ty) {
-                place_wall_item(app, tx, ty, registry::place_wall(held.kind).unwrap_or(1));
-                true
-            } else {
-                false
-            }
+            // `PlaceThing_Walls` (`Player.cs:39600-39634`): the replacement
+            // arm, the plain place and the fill-empty-space tail — the route
+            // owns the success re-read and the stack consumption.
+            place_wall_route(app, tx, ty)
         } else if !held_weapon {
             // `Player.ItemCheck_UseWiringTools` (`Player.cs:43572`): the
             // wrench family, the cutter and the actuator answer before the
@@ -2016,7 +2033,13 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
-    if let Some(id) = registry::by_wall(wall) {
+    // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
+    // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
+    // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
+    // stone 1 drops StoneBlock 26, glass 21 drops 392, and the natural
+    // unsafe walls (dirt 2, mud 15, …) drop NOTHING (S1-P-i33).
+    let id = edit::kill_wall_drop(wall);
+    if id > 0 {
         // The wall break runs in `Player.ItemCheck` — the `UpdatePlayers`
         // stream.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -2026,42 +2049,185 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
+/// `Player.PlaceThing_Walls`' placement gate (`Player.cs:39602-39610`), minus
+/// the reach/timing halves the caller owns: the cell must not already carry
+/// the held wall (`wall == createWall` refuses, `:39607` — a DIFFERENT wall
+/// passes on to the replacement route), and one of the four neighbours must
+/// be active OR walled (`!active && wall <= 0` on all four refuses). The
+/// cell's OWN tile never supports a wall — the C# reads only the neighbours.
+/// A wall may sit behind an active tile.
 pub(crate) fn can_place_wall(app: &App, tx: i32, ty: i32) -> bool {
     let Some(t) = app.world.tile(tx, ty) else {
         return false;
     };
-    if t.wall != 0
-        || app.inventory[app.selected].count == 0
-        || registry::is_weapon(app.inventory[app.selected].kind)
-    {
+    let held = app.inventory[app.selected];
+    let Some(create_wall) = registry::place_wall(held.kind) else {
+        return false;
+    };
+    if held.count == 0 || registry::is_weapon(held.kind) {
         return false;
     }
-    // A neighbouring wall or block (including one in the cell itself) supports it.
-    if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
-        return true;
+    // `:39607` — the same-wall refusal.
+    if t.wall == create_wall {
+        return false;
     }
-    [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+    // `:39607` — the four-neighbour support: active() OR wall > 0. The port's
+    // out-of-world read answers the C#'s boundary-tile reads as inactive and
+    // wall-less (`PlaceWall`'s own 2-cell guard refuses those cells anyway).
+    [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dy)| {
         app.world
             .tile(tx + dx, ty + dy)
-            .is_some_and(|n| n.wall != 0)
+            .is_some_and(|n| n.active() || n.wall != 0)
     })
 }
 
-pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
-    if edit::place_wall(&mut app.world, tx, ty, wall) {
-        app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-        // `WorldGen.PlaceWall` plays the plain 0 (`WorldGen.cs:75141`) — the
-        // case-0 variation + pitch ride the `UpdatePlayers` stream
-        // (`Player.ItemCheck` under the `Main.cs:17754` swap).
-        app.audio.play_place_sound(
-            (0, 1),
-            tx as f32 * TILE_PX,
-            ty as f32 * TILE_PX,
-            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-        );
-        app.request_edit(tx, ty, 3, wall);
-        app.world_key = None;
+/// `Player.PlaceThing_Walls` (`Player.cs:39600-39634`) — the wall placement
+/// route: the replacement arm first when tile replacement is enabled
+/// (`TileReplacementEnabled`, `:39612-39615` → `PlaceThing_TryReplacingWalls`),
+/// then the plain `WorldGen.PlaceWall` (`:39620`) with the success re-read
+/// (`wall == createWall`, `:39621`), then `PlaceThing_Walls_FillEmptySpace`
+/// (`:39628`). Returns whether either arm consumed the action tick.
+pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
+    let held = app.inventory[app.selected];
+    let Some(create_wall) = registry::place_wall(held.kind) else {
+        return false;
+    };
+    if !can_place_wall(app, tx, ty) {
+        return false;
     }
+    // `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`): the
+    // `PlaceThing_ValidWallForReplacement` gate (`:39831-39839`: wall > 0 and
+    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The port's
+    // replacement toggle (`builderAccStatus[10]`) defaults ON like vanilla's
+    // and has no UI yet (ANALYSIS, S1-P-i33).
+    let cell_wall = app.world.tile(tx, ty).map_or(0, |t| t.wall);
+    if cell_wall > 0
+        && cell_wall != edit::WALL_UNBREAKABLE
+        && edit::near_friendly_wall(&app.world, tx, ty)
+    {
+        if let Some(old) = edit::replace_wall(&mut app.world, tx, ty, create_wall) {
+            // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
+            // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
+            // item (`:62551`) — both on the `UpdatePlayers` stream, sound
+            // before drop, the `KillWall` order. The new wall's placement
+            // does NOT play the Dig 0 (that is `PlaceWall`'s own, `:75141`).
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio.play_wall_break_sound(
+                edit::kill_wall_sound(old),
+                tx as f32 * TILE_PX,
+                ty as f32 * TILE_PX,
+                rng,
+            );
+            let id = edit::kill_wall_drop(old);
+            if id > 0 {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                spawn_item_drop(&mut app.items, rng, id, 1, tx, ty);
+            }
+            // The C# sends `17` action 22 (`Player.cs:39822`); the port's
+            // edit record carries the post-edit wall either way.
+            app.request_edit(tx, ty, 3, create_wall);
+            app.world_key = None;
+            // The replacement consumes the held item like a placement
+            // (`item.consumable`, the `Player.cs:43280` tick).
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            return true;
+        }
+        // A refused replacement (350 handled above; progression walls) falls
+        // through to the plain place, which the occupied cell refuses —
+        // `PlaceThing_TryReplacingWalls` returns `canUse` unchanged on
+        // failure (`Player.cs:39828`).
+    }
+    if edit::place_wall(&mut app.world, tx, ty, create_wall) {
+        place_wall_item(app, tx, ty, create_wall);
+        // `PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`).
+        fill_empty_wall_space(app, tx, ty, create_wall);
+        return true;
+    }
+    false
+}
+
+/// `Player.PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`): after a
+/// successful wall placement with `stack > 1`, each of the four neighbours
+/// (left, right, up, down — the `i == 0..3` order) that is empty and has ALL
+/// FOUR of its own neighbours carrying `createWall` (`num3 != 4` skips) gets
+/// the wall too, consuming one item per fill. The centre cell the caller just
+/// placed is part of each neighbour's count, which is why the fill only ever
+/// closes single-cell holes.
+fn fill_empty_wall_space(app: &mut App, tx: i32, ty: i32, create_wall: u16) {
+    // `:39638` — the last item never fills.
+    if app.inventory[app.selected].count <= 1 {
+        return;
+    }
+    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        let (num, num2) = (tx + dx, ty + dy);
+        // `:39663` — only empty cells.
+        if app.world.tile(num, num2).is_none_or(|t| t.wall != 0) {
+            continue;
+        }
+        // `:39667-39692` — all four neighbours must carry the SAME wall.
+        let mut num3 = 0;
+        for (jx, jy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+            if app
+                .world
+                .tile(num + jx, num2 + jy)
+                .is_some_and(|t| t.wall == create_wall)
+            {
+                num3 += 1;
+            }
+        }
+        if num3 != 4 {
+            continue;
+        }
+        // `:39697-39704` — PlaceWall + the success re-read, then the stack
+        // decrement (`SetDefaults(0)` at zero).
+        if edit::place_wall(&mut app.world, num, num2, create_wall) {
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            // `WorldGen.PlaceWall`'s Dig 0 (`WorldGen.cs:75141`) per fill,
+            // on the `UpdatePlayers` stream — same as the main placement.
+            app.audio.play_place_sound(
+                (0, 1),
+                num as f32 * TILE_PX,
+                num2 as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            app.request_edit(num, num2, 3, create_wall);
+            app.world_key = None;
+            if app.inventory[app.selected].count == 0 {
+                return;
+            }
+        }
+    }
+}
+
+/// `Player.PlaceThing_Walls`' post-placement tail (`Player.cs:39621-39633`):
+/// the item decrement + the Dig 0 + the edit record. The core
+/// `edit::place_wall` has already landed by the time this runs (the caller
+/// re-reads `wall == createWall`, `:39621`); the fill-empty-space arm
+/// (`:39628`) is the route's own tail, not this one's.
+pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    // `WorldGen.PlaceWall` plays the plain 0 (`WorldGen.cs:75141`) — the
+    // case-0 variation + pitch ride the `UpdatePlayers` stream
+    // (`Player.ItemCheck` under the `Main.cs:17754` swap).
+    app.audio.play_place_sound(
+        (0, 1),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
+    app.request_edit(tx, ty, 3, wall);
+    app.world_key = None;
 }
 
 /// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
@@ -8434,5 +8600,272 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+}
+
+/// S1-P-i33 — the wall placement/removal census fixes: the adjacency gate,
+/// the unsafe→safe replacement, the fill-empty-space tail, the hammer smash
+/// gate + damage cadence, and the drop conversions. Code-only mode: the
+/// witnesses are WRITTEN NOT RUN (no compiler invoked on the branch).
+#[cfg(test)]
+mod wall_placement_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A wall-edit rig: the player parked three tiles right of `(tx, ty)`,
+    /// the camera pinned so the screen-centre cursor points at the target,
+    /// and the audio listener at the camera so the placement/break cues are
+    /// audible (their RNG draws ride the `UpdatePlayers` stream).
+    fn wall_app(world: World, tx: i32, ty: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut player = Player::spawn(&app.world);
+        player.x = (tx + 3) as f32 * TILE_PX;
+        player.y = ty as f32 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    fn empty_world() -> World {
+        World::new("walls".into(), 40, 40)
+    }
+
+    fn set_wall(w: &mut World, x: i32, y: i32, wall: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].wall = wall;
+    }
+
+    fn hold_wall(app: &mut App, kind: u16, count: u32) {
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+    }
+
+    /// `PlaceThing_Walls`' adjacency gate (`Player.cs:39607`): a neighbour
+    /// that is ACTIVE (even wall-less) supports the placement; the cell's own
+    /// tile never does. The old port required a neighbouring WALL or the
+    /// cell's own solid tile — both wrong.
+    #[test]
+    fn s1_p_i33_an_active_wallless_neighbour_supports_the_wall() {
+        let mut w = empty_world();
+        // A stone block to the LEFT of the target, no wall anywhere.
+        let i = w.index(9, 10);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall (createWall 4)
+        assert!(can_place_wall(&app, 10, 10), "the active neighbour supports");
+        // The cell's OWN tile does not support: a lone block with no
+        // neighbours refuses.
+        let mut w2 = empty_world();
+        let j = w2.index(10, 10);
+        w2.tiles[j] = Tile { kind: 1, ..Default::default() };
+        w2.tiles[j].flags |= FLAG_ACTIVE;
+        let mut app2 = wall_app(w2, 10, 10);
+        hold_wall(&mut app2, 93, 5);
+        assert!(!can_place_wall(&app2, 10, 10), "the own tile never supports");
+    }
+
+    /// The same-wall refusal (`Player.cs:39607`): a cell already carrying the
+    /// held wall refuses; a DIFFERENT wall passes on to the replacement route.
+    #[test]
+    fn s1_p_i33_same_wall_refuses_but_a_different_wall_passes() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // a wood-wall neighbour for support
+        set_wall(&mut w, 10, 10, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        assert!(!can_place_wall(&app, 10, 10), "same wall refuses");
+        // A different existing wall passes the gate (the replacement arm).
+        set_wall(&mut app.world, 10, 10, 2); // unsafe dirt
+        assert!(can_place_wall(&app, 10, 10), "a different wall passes");
+    }
+
+    /// `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`) +
+    /// `WorldGen.ReplaceWall` (`WorldGen.cs:62530-62556`): placing a safe wall
+    /// onto an unsafe wall converts it, drops the OLD wall's item, and plays
+    /// the OLD wall's break cue — not the placement Dig.
+    #[test]
+    fn s1_p_i33_unsafe_wall_converts_to_safe_and_drops_the_old_item() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // support neighbour
+        set_wall(&mut w, 10, 10, 2); // unsafe dirt wall
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "converted to wood");
+        // The unsafe dirt wall (2) drops NOTHING (`kill_wall_drop(2) == 0`).
+        assert!(app.items.is_empty(), "unsafe dirt drops no item");
+        assert_eq!(app.inventory[app.selected].count, 4, "one item consumed");
+    }
+
+    /// The replacement drops the OLD wall's converted item: a dungeon unsafe
+    /// wall (7) replaced by its safe item's wall drops the safe item 135.
+    #[test]
+    fn s1_p_i33_replacing_a_dungeon_wall_drops_the_safe_item() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4);
+        set_wall(&mut w, 10, 10, 7); // blue dungeon unsafe
+        w.downed_skeletron = true; // the progression gate opens
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 135, 5); // Blue Brick Wall → 17
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 17);
+        assert!(
+            app.items.iter().any(|d| d.kind == 135),
+            "the old dungeon wall drops its safe item 135"
+        );
+    }
+
+    /// `PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`): the fill
+    /// only closes a neighbour hole whose four sides ALL carry the same wall.
+    /// A plus-shape around the target leaves every plus cell with an open
+    /// outer side, so only the main placement lands (one item).
+    #[test]
+    fn s1_p_i33_fill_empty_space_needs_a_full_enclosure() {
+        let mut w = empty_world();
+        // A plus of wood walls around the hole (10,10).
+        for (x, y) in [(9, 10), (11, 10), (10, 9), (10, 11)] {
+            set_wall(&mut w, x, y, 4);
+        }
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5);
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        // The hole (10,10) is filled by the main placement.
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        // Each plus cell still has an open outer side (e.g. (9,10)'s left
+        // (8,10) is empty), so the fill closes nothing more.
+        assert_eq!(app.inventory[app.selected].count, 4, "only the hole filled");
+    }
+
+    /// The fill-empty-space tail fires when the placed cell completes a
+    /// neighbour's four-wall enclosure: a 2x2 block missing one corner, the
+    /// placement fills the corner AND the fill closes the remaining hole.
+    #[test]
+    fn s1_p_i33_fill_empty_space_consumes_a_second_item() {
+        let mut w = empty_world();
+        // Enclose (11,10) on three sides; (10,10) is the fourth (the target).
+        set_wall(&mut w, 12, 10, 4);
+        set_wall(&mut w, 11, 9, 4);
+        set_wall(&mut w, 11, 11, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5);
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        // Main placement fills (10,10); the fill then sees (11,10) enclosed
+        // on all four sides (10,10 / 12,10 / 11,9 / 11,11) and fills it too.
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        assert_eq!(app.world.tile(11, 10).unwrap().wall, 4, "the fill closed the hole");
+        assert_eq!(app.inventory[app.selected].count, 3, "two items consumed");
+    }
+
+    /// The last item never fills (`Player.cs:39638`): with `stack == 1` the
+    /// main placement lands but the fill-empty-space tail returns early.
+    #[test]
+    fn s1_p_i33_the_last_item_never_fills() {
+        let mut w = empty_world();
+        set_wall(&mut w, 12, 10, 4);
+        set_wall(&mut w, 11, 9, 4);
+        set_wall(&mut w, 11, 11, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 1); // the last item
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        assert_eq!(app.world.tile(11, 10).unwrap().wall, 0, "no fill on the last item");
+        assert_eq!(app.inventory[app.selected].count, 0);
+    }
+
+    /// `Player.CanPlayerSmashWall` (`Player.cs:45917-45940`) gates the hammer:
+    /// a fully enclosed unsafe wall refuses the break; opening a neighbour
+    /// lets it through. The unbreakable 350 always refuses.
+    #[test]
+    fn s1_p_i33_the_hammer_refuses_an_enclosed_unsafe_wall() {
+        let mut w = empty_world();
+        // A 3x3 of unsafe dirt wall; the centre is fully enclosed.
+        for x in 9..=11 {
+            for y in 9..=11 {
+                set_wall(&mut w, x, y, 2);
+            }
+        }
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 3505, 1); // Copper Hammer (hammer 35)
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 2, "enclosed unsafe refuses");
+        // Open a neighbour → the hammer breaks it.
+        set_wall(&mut app.world, 9, 9, 0);
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the open edge lets it break");
+    }
+
+    /// The hammer's wall cadence is the `PickWall` damage model
+    /// (`Player.cs:45912`/`:45945`): `ceil(100 / (hammer * 1.5))` hits at
+    /// `useTime / 2` ticks — uniform for every wall (no wall-1 special case).
+    #[test]
+    fn s1_p_i33_the_hammer_cadence_is_the_damage_model() {
+        // Copper Hammer: hammer 35 → 52 per hit → 2 hits; useTime 23 → 11
+        // ticks per hit → 22 ticks ≈ 0.3667 s. A house wall (wood 4) breaks.
+        let mut w = empty_world();
+        set_wall(&mut w, 10, 10, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 3505, 1);
+        app.mine_down = true;
+        // 21 ticks: not yet broken (22 needed).
+        for _ in 0..21 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "21 ticks is short");
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the 22nd tick breaks");
+    }
+
+    /// `break_wall`'s drop is the `KillWall_GetItemDrops` conversion, not a
+    /// reverse `createWall` lookup: stone wall 1 drops StoneBlock 26, glass 21
+    /// drops 392, and the natural unsafe dirt wall 2 drops nothing.
+    #[test]
+    fn s1_p_i33_the_break_drop_is_the_conversion_table() {
+        for (wall, expect) in [(1u16, Some(26u16)), (21, Some(392)), (2, None)] {
+            let mut w = empty_world();
+            set_wall(&mut w, 10, 10, wall);
+            let mut app = wall_app(w, 10, 10);
+            break_wall(&mut app, 10, 10);
+            match expect {
+                Some(id) => assert!(
+                    app.items.iter().any(|d| d.kind == id),
+                    "wall {wall} drops {id}"
+                ),
+                None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
+            }
+        }
     }
 }
