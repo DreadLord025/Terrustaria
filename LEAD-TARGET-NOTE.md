@@ -1,2 +1,0 @@
-# LEAD SPEED NOTE — switch to per-lane target dir (apply at your NEXT gate; delete before commit)
-Overseer L6: shared TR-L7-TARGET lock + cross-lane cache churn = 10-20min waits. FIX: from your NEXT cargo command use cmd /c "set CARGO_TARGET_DIR=C:\Users\DreadLord\Desktop\TR-M8-TARGET&& cargo test ..." — one cold build (~10min), then incremental gates (~1-3min), no contention. D-5deb is your LAST branch (see LEAD-LANE-NOTE-FINAL.md) — after it: census/cleanup/report/idle. If the cold build costs more than the remaining single gate, you may stay on shared — your call.
