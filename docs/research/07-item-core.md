@@ -156,7 +156,7 @@ Rust:
 | Roll modes (`Prefix(-1..-4)`) | PASS | `prefix.rs::roll_prefix` `:477`, `reforge_roll` `:553` | modes ported (`exact_and_special_modes` `:972`); the draw source is the C# `Main.rand` algorithm — a per-world `prefix_rng: UnifiedRandom` (`app/mod.rs:638`, seeded `:2896`) — pinned by `natural_roll_matches_the_csharp_stream` `:648` and a 40 000-roll histogram vs a `dotnet` oracle `:688` (S1-A-5). The worldgen chest seam still feeds the splitmix `chest_rng` (`roll_prefix_splitmix` `:568`) until S1-A-4 |
 | `GrantPrefixBenefits` 62-80 | PASS | `prefix.rs::grant_prefix_benefits` `:577-628` | arm-for-arm identical to `Player.cs:13953-14047`; C# `statManaMax2 += 20` `:13973` folds into the port's derived `mana_max` (`player.rs:590`, re-granted per tick at `:2655`/`:2681`) |
 | `BestPrefixValue` + reforge top tier | PASS | `prefix.rs::best_prefix_value` `:529`, `reforge_roll` `:553` | pinned by `best_prefix_value_matches_the_visible_table` `:939`, `reforge_roll_never_lands_none_and_flags_the_top_tier` `:953` |
-| Reforge cost | PARTIAL | `shop.rs::reforge_cost` `:1272-1277` | `value × stack × PriceAdjustment / 3` matches the inline block `Main.cs:41584-41601`; the Discount-Card ×0.8 arm (`Main.cs:41588-41590`) is not modelled (no discount accessory) |
+| Reforge cost | PASS | `shop.rs::reforge_cost` | **S1-P-i45 (2026-11-20)**: `value × stack` (long) → Discount-Card ×0.8 (double, truncate, `Main.cs:41587-41590`) → ×PriceAdjustment (float, truncate, `:41591`) → integer /3 — the full inline block incl. the discount arm; the `<1 → 1` clamp (`num58`, `:41598-41601`) is display-only, the charge (`:41658`) is unclamped. Pinned by `the_reforge_cost_follows_the_inline_block` + `the_reforge_cost_discount_card_arm` |
 | `GetItemExpectedPrice` | PARTIAL | `shop.rs::buy_price` `:1257`, `::sell_price` `:1282` | the non-`buyOnce` arms (×adjustment / ÷adjustment) match `Player.cs:35387-35388` incl. banker's rounding; but the port reads the **kind default** `ITEMS[i].value` while the C# reads the instance's `GetStoreValue()` (`Item.cs:49901-49908`, prefix `value²`), and the `buyOnce` + `discountAvailable` arms (`:35369-35383`, `:35390-35396`) are absent |
 | Rarity name colour | PARTIAL | `ui\tooltip.rs::item_name_color` `:107-129` | −11, −1, 1..10 and ≥11 are byte-identical to `Main.cs:20568-20619` (verified in this pass); the `diff == 1`/`diff == 2` master/journey overrides (`:20620-20627`) and the dynamic −12/−13 arms (`:20564-20567`) are not modelled |
 | Tooltip rows | PARTIAL | `ui\tooltip.rs::item_tooltip_lines` `:166-296` | **S1-E-20 (2026-11-14)**: the rows now match `MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-21010`) over a `TooltipContext` — the hover name (the affix + the stack suffix), the per-item `Item.ToolTip` text, the player-side layers (the damage multiplier, the crit, `minionKB`, the quiver, the gloves, the shroomite scale) and the life/mana/fishing/quest/vanity/material rows; the stat rows are faithful (damage + class suffix, crit, use-time tiers, knockback words, defense/pick/`axe × 5`/hammer, `tileBoost` sign only when positive — all verified against `Main.cs:20843-20875`); missing: `Item.ToolTip` per-item text, the player-side layers, heal/mana/fishing-pole/mount/pet/quest/vanity/`tileWand` rows and the stack-suffixed `GetHoverName` (below) |
@@ -296,10 +296,18 @@ vanilla tooltip) and for the *price* math (no money-format or discount-card test
 ROADMAP DONE rows re-verified in this pass: M3-ITEM-1 (table scale-up) **PASS**
 (6196/6196 rows + variants table + tests); M3-PREFIX (roll engine + tables) **PASS**
 (tables/rounding/rare ladder/benefits all match the cited C#); M3-REFORGE-1 (cost +
-best tier) **PARTIAL** (correct except the missing discount arm, which the row itself
-admits); `Main.cs` tooltip localization row `PORT_MAP.md:162` **PARTIAL** (stat rows
-only). PORT_MAP's `Item.cs` → `item.rs` "partial" row (`:165`) is confirmed — and the
-pickup double-add above is the concrete reason it cannot be marked done.
+best tier) **PASS as of S1-P-i45 (2026-11-20)** — the discount arm landed, the roll
+engine reads the corrected `registry::item` seam (kind 6171), the accessory pool
+honours `!vanity`, the ctx-5 transfer gate refuses non-prefixable cursors, the
+slot/button hit boxes match `Main.cs:41673`/`:41639-41641` (no `mH` offset), the
+presentation RNG tail consumes the top-tier particle draws (602) / non-top Item37
+pitch draw on `global()` after the roll + plays the cues (the particle VISUALS are
+the documented skip), and the hover-scale/cooldown-clear + force-close/inventory-close
+chain ports `Main.cs:41559-41578`/`:45676-45683`; the collapsed Tinkerer chat-button
+entry stays the recorded #9 deviation (ANALYSIS "Reforge fidelity (S1-P-i45)");
+`Main.cs` tooltip localization row `PORT_MAP.md:162` **PARTIAL** (stat rows only).
+PORT_MAP's `Item.cs` → `item.rs` "partial" row (`:165`) is confirmed — and the pickup
+double-add above is the concrete reason it cannot be marked done.
 
 ## Task seeds
 

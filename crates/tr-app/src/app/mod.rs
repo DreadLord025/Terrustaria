@@ -217,8 +217,17 @@ pub(crate) struct App {
     /// keeps it at one item (`ItemSlot.cs:821-836`).
     pub(crate) reforge_slot: ItemSlot,
     /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
-    /// roll (`:41924`), decremented per tick (`:17121-17123`).
+    /// roll (`:41910`), decremented per tick (`:17121-17123`) and cleared
+    /// while the button is unhovered (`:41568`).
     pub(crate) reforge_cooldown: i32,
+    /// `Main.mouseReforge` (`Main.cs:1947`): the reforge button's hover latch,
+    /// set in the draw block (`:41656`/`:41665`) and read by the per-frame
+    /// scale/cooldown update (`:41559-41572`).
+    pub(crate) mouse_reforge: bool,
+    /// `Main.reforgeScale` (`Main.cs:1949`, init 0.8 `:67157`): the button's
+    /// hover animation scale — +0.02/frame toward 1 while hovered, −0.02
+    /// toward 1 while not (`:41561-41572`).
+    pub(crate) reforge_scale: f32,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -1585,29 +1594,76 @@ impl App {
         true
     }
 
-    /// The reforge slot transfer (`ItemSlot.cs:821-836`): swap with the
-    /// cursor when the cursor's item is single; a stack splits one item in
-    /// (only into the empty slot), mirroring the vanilla's clone-1 rule.
+    /// The reforge slot transfer (`ItemSlot.Handle(ref reforgeItem, 5)`,
+    /// `ItemSlot.cs:588-597` → `LeftClick`'s action-1 arms). The ctx-5
+    /// movement gate (`PickItemMovementAction`, `ItemSlot.cs:1515-1520`)
+    /// accepts only a prefixable cursor (`CanHavePrefixes`) or air — a
+    /// non-prefixable cursor refuses the move outright. Then the three
+    /// action-1 arms (`ItemSlot.cs:1019-1106`):
+    /// - cursor stack 1 + held item + `IsNotTheSameAs` → swap (`:1020-1023`);
+    /// - air cursor + held item → take it out (`:1044-1046`);
+    /// - cursor stack 1 + empty slot → place it (`:1060-1077`);
+    /// - cursor stack >1 + empty slot → clone ONE in (`:1078-1084`).
+    /// Every arm that moves an item plays `SoundEngine.PlaySound(7)`.
     pub(crate) fn reforge_slot_click(&mut self) {
-        if self.mouse_item.count > 1 {
-            if self.reforge_slot.count == 0 {
+        // `ItemSlot.cs:1515-1520` — ctx 5 → action 1 only when the cursor is
+        // prefixable or air; otherwise action -1 (the `:928-931` gate refuses).
+        let cursor_prefixable =
+            self.mouse_item.kind == 0 || crate::prefix::can_have_prefixes(self.mouse_item.kind);
+        if !cursor_prefixable {
+            return;
+        }
+        let moved = if self.mouse_item.count == 1
+            && self.mouse_item.kind != 0
+            && self.reforge_slot.kind != 0
+        {
+            // `:1020-1023` — swap only when the two are NOT the same
+            // (`IsNotTheSameAs`, `Item.cs:49847-49854`: same type+stack but a
+            // different prefix, or a different type/stack).
+            let same = self.reforge_slot.kind == self.mouse_item.kind
+                && self.reforge_slot.count == self.mouse_item.count
+                && self.reforge_slot.prefix == self.mouse_item.prefix;
+            if !same {
+                std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+                true
+            } else {
+                false
+            }
+        } else if self.mouse_item.kind == 0 && self.reforge_slot.kind != 0 {
+            // `:1044-1046` — air cursor takes the held item out.
+            std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+            true
+        } else if self.mouse_item.kind != 0 && self.reforge_slot.kind == 0 {
+            if self.mouse_item.count == 1 {
+                // `:1060-1077` — a single item places whole.
+                std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+            } else {
+                // `:1078-1084` — a stack clones ONE into the empty slot.
                 self.reforge_slot = self.mouse_item;
                 self.reforge_slot.count = 1;
                 self.mouse_item.count -= 1;
             }
-            return;
+            true
+        } else {
+            false
+        };
+        if moved {
+            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
         }
-        std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
     }
 
     /// `Main.ReforgeItemInReforgeSlot` (`Main.cs:41902-41933`): the charge
-    /// (`BuyItem`'s purse gate) precedes the roll; then the reset-to-
+    /// (`BuyItem`'s purse gate, `:41658`) precedes the roll; then the reset-to-
     /// defaults + `Prefix(-2)` — the port recomputes the stats from the
     /// kind's defaults, so the reset is the prefix-field write — and the
-    /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
-    /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
-    /// consumes the bare-`Main.rand` stand-in (`NamedRngs::global`) — the menu
-    /// path runs outside every swap (`S1-A-11` §4).
+    /// top-tier 60-tick cooldown (`Main.cs:41907-41910`). The presentation
+    /// tail (`Main.cs:41906-41932`) — the `BestReforge`/`Item37` sound and the
+    /// top-tier particle draws — runs AFTER the roll on the same shared
+    /// `Main.rand` (`prefix::reforge_presentation_tail`; the particle visuals
+    /// are the documented skip, the draws are consumed verbatim). Both the
+    /// roll and the tail consume the bare-`Main.rand` stand-in
+    /// (`NamedRngs::global`) — the menu path runs outside every swap
+    /// (`S1-A-11` §4).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1618,6 +1674,7 @@ impl App {
                 .unwrap_or(def.value),
             self.reforge_slot.count.max(1),
             self.shop_mood,
+            self.discount_available,
         );
         if self.reforge_cooldown > 0 || self.coins < cost {
             return;
@@ -1630,8 +1687,12 @@ impl App {
         let (prefix, top_tier) = crate::prefix::reforge_roll(kind, self.rngs.global());
         self.reforge_slot.prefix = prefix;
         if top_tier {
-            self.reforge_cooldown = 60;
+            self.reforge_cooldown = 60; // `Main.cs:41910`
         }
+        // The presentation tail (`Main.cs:41906-41932`): the sound + the
+        // top-tier particle draws, in the C#'s order on the same global
+        // stream (the roll's draws are already consumed above).
+        crate::prefix::reforge_presentation_tail(top_tier, self.rngs.global(), &mut self.audio);
     }
 
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
@@ -1712,13 +1773,29 @@ impl App {
 
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
     /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
-    /// `dropItemCheck`); the slot item returns to the cursor if held there
-    /// is impossible, so it drops to the inventory's first free slot.
+    /// `dropItemCheck`); the slot item returns to the inventory through
+    /// `Player.GetOrDropItem` (`Player.cs:7193-7200`, `GetItemSettings.
+    /// ReturnItemFromSlot`): the pickup stack first, and the OVERFLOW spawns
+    /// a world drop at the player's centre with the prefix preserved
+    /// (`Item.RequestNewItem(..., item2.prefix, ...)`, `:7198`) — the old
+    /// port silently destroyed the item when the inventory was full.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
         self.shop_mood = 1.0;
         self.in_reforge_menu = false;
+        self.return_reforge_slot();
+    }
+
+    /// `Player.dropItemCheck`'s reforge arm (`Player.cs:5123-5127`): with the
+    /// menu closed, `GetOrDropItem(Main.reforgeItem, ReturnItemFromSlot)`
+    /// returns the slot item to the inventory (the pickup stack first) and
+    /// clears it; the OVERFLOW spawns a world drop at the player's centre
+    /// with the prefix preserved (`Player.cs:7196-7199`, `Item.RequestNewItem`
+    /// keeps the rolled prefix — `Item.NewItem`'s `Prefix(exact)` applies it
+    /// directly, `Item.cs:49730`, no fresh roll). Shared by `close_shop` and
+    /// the inventory-close chain (`Main.cs:45676-45683`).
+    pub(crate) fn return_reforge_slot(&mut self) {
         if self.reforge_slot.count > 0 {
             if let Some(i) = crate::item::slot_for_pickup(
                 &mut self.inventory,
@@ -1728,7 +1805,90 @@ impl App {
                 self.inventory[i].count = (self.inventory[i].count + self.reforge_slot.count)
                     .min(crate::registry::max_stack(self.reforge_slot.kind));
                 self.reforge_slot = EMPTY_SLOT;
+            } else {
+                // The velocity/phase triplet rides the port's pinned ItemDrop
+                // model on the bare-`Main.rand` stand-in (the close runs from
+                // the click/talk handlers outside every swap, S1-A-11 §4 —
+                // the recorded spawn-order deviation, `world_sim/items.rs`).
+                let (cx, cy) = self
+                    .player
+                    .as_ref()
+                    .map(|p| p.center())
+                    .unwrap_or((0.0, 0.0));
+                let rng = self.rngs.global();
+                let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+                let vy = -1.5 - rng.next_float();
+                let phase = rng.next_float() * std::f32::consts::TAU;
+                self.items.push(ItemDrop::new(
+                    self.reforge_slot.kind,
+                    self.reforge_slot.count,
+                    self.reforge_slot.prefix,
+                    cx,
+                    cy,
+                    vx,
+                    vy,
+                    phase,
+                ));
+                self.reforge_slot = EMPTY_SLOT;
             }
+        }
+    }
+
+    /// The reforge menu's per-frame head (`Main.DrawInventory`'s inline block,
+    /// `Main.cs:41557-41578`): the button's hover-scale animation and the
+    /// unhovered cooldown clear, then the force-close gate. Runs every frame
+    /// the menu is open (the C# block sits in `DrawInventory`, which runs
+    /// whenever `playerInventory`). The hover latch (`mouse_reforge`) is
+    /// resolved here from the button hit box (`:41649-41666`, the C# sets it
+    /// in the draw block every frame); the scale ramps +0.02/frame toward 1
+    /// while hovered, −0.02 toward 1 while not (`:41561-41572`), and an
+    /// unhovered button clears the cooldown (`:41568`). The force-close
+    /// (`:41574-41578`) fires when a chest opens, the shop closes (the port's
+    /// collapsed `talkNPC == -1`/`npcShop != 0` pair — the menu rides beside
+    /// the Tinkerer shop), or the crafting panel opens.
+    pub(crate) fn update_reforge_menu(&mut self) {
+        if !self.in_reforge_menu {
+            return;
+        }
+        // `:41649-41666` — the button hover latch + the hover-edge sound 12.
+        // The C# sets `mouseReforge` in the draw block every frame the button
+        // draws (the slot holds an item); the port resolves the same hit box
+        // here (the per-frame head) so the scale/cooldown update below reads
+        // the live latch.
+        let hovered = self.reforge_slot.kind > 0
+            && crate::ui::inventory::reforge_button_hit(self.mouse_pos);
+        if hovered && !self.mouse_reforge {
+            crate::chest::play_menu_sound(self, 12); // `:41652-41655`
+        }
+        self.mouse_reforge = hovered;
+        // `:41559-41572` — the hover-scale animation + the unhovered clear.
+        if self.mouse_reforge {
+            if self.reforge_scale < 1.0 {
+                self.reforge_scale += 0.02;
+            }
+        } else {
+            self.reforge_cooldown = 0; // `:41568`
+            if self.reforge_scale > 1.0 {
+                self.reforge_scale -= 0.02;
+            }
+        }
+        // `:41574-41578` — the force-close gate. The C# closes on
+        // `chest != -1 || npcShop != 0 || talkNPC == -1 || InGuideCraftMenu`.
+        // The port collapses the Tinkerer's chat-button entry into the
+        // shop-open (the recorded #9 deviation — `world_sim/npcs.rs:971`
+        // auto-opens the menu beside the shop with `talk_npc = None`), so the
+        // `talkNPC == -1`/`npcShop != 0` pair maps to the port's shop-closed
+        // state (`shop_npc.is_none()`): the menu lives while its shop is open
+        // and closes when the shop closes. A container opening
+        // (`open_container`) or the crafting panel (`crafting_open`) also
+        // force-closes, exactly the C#'s `chest != -1`/`InGuideCraftMenu`.
+        let force_close = self.open_container() != crate::bank::CHEST_CLOSED
+            || self.shop_npc.is_none()
+            || self.crafting_open;
+        if force_close {
+            self.in_reforge_menu = false;
+            self.mouse_reforge = false;
+            self.return_reforge_slot(); // `dropItemCheck` (`Player.cs:5123-5127`)
         }
     }
 
@@ -3261,6 +3421,8 @@ impl App {
             in_reforge_menu: false,
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
+            mouse_reforge: false,
+            reforge_scale: 0.8, // `Main.cs:67157`
             shop_mood: 1.0,
             discount_available: false,
             shop_closed_flag: false,

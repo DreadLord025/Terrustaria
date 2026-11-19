@@ -58,6 +58,32 @@ const LABEL_COLOR: [f32; 4] = [1.0; 4];
 /// Fallback cell size when `Inventory_Back` is absent (`ItemSlot.cs:2499` uses
 /// `TextureAssets.InventoryBack.Size()`; the retail sheet is 52x52).
 const SLOT_FALLBACK_PX: f32 = 52.0;
+
+/// The reforge menu's input-slot hit box (`Main.cs:41673`):
+/// `mouseX >= num51 && mouseX <= num51 + InventoryBack.Width() * inventoryScale`
+/// and the same for Y with `num52`, where `num51 = 50`, `num52 = 270`
+/// (`Main.cs:41581-41582`) and `inventoryScale = 0.85` (`Main.cs:41017`, restored
+/// at `:41526` before the reforge block). The C# compares are inclusive on the
+/// right/bottom. Neither coordinate rides `Main.mH` — the reforge block uses the
+/// literal `(50, 270)`; `mH` only shifts the equipment column's `num20`
+/// (`Main.cs:41146`). `cell` is the `Inventory_Back` width (52 px retail).
+pub(crate) fn reforge_slot_hit(mouse: Vec2, cell: f32) -> bool {
+    let (x, y) = (50.0_f32, 270.0_f32); // `Main.cs:41581-41582`
+    mouse.x >= x
+        && mouse.x <= x + cell * INVENTORY_SCALE
+        && mouse.y >= y
+        && mouse.y <= y + cell * INVENTORY_SCALE
+}
+
+/// The reforge button's hit box (`Main.cs:41639-41641`): the centre is
+/// `(num59, num60) = (num51 + 70, num52 + 40) = (120, 310)` and the test is the
+/// STRICT `mouseX > num59 - 15 && mouseX < num59 + 15` (and Y), i.e. the open
+/// interval `(105, 135) x (295, 325)`. Like the slot it does not ride `Main.mH`.
+pub(crate) fn reforge_button_hit(mouse: Vec2) -> bool {
+    let (cx, cy) = (120.0_f32, 310.0_f32); // `Main.cs:41639-41640`
+    mouse.x > cx - 15.0 && mouse.x < cx + 15.0 && mouse.y > cy - 15.0 && mouse.y < cy + 15.0
+}
+
 /// `Main.cs:41381-41382`: `CanDemonHeartAccessoryBeShown()` and
 /// `CanMasterModeAccessoryBeShown()`. The port models neither, so accessory
 /// slots 8/9 and vanity slots 18/19 stay hidden (`Main.cs:41398,41471,41504`).
@@ -998,6 +1024,44 @@ mod tests {
         for k in 0..4 {
             assert_eq!(coin_ammo_y(k, AMMO_SCALE), coin_ammo_y(k, COIN_SCALE));
         }
+    }
+
+    #[test]
+    fn reforge_slot_hit_matches_the_csharp_rect() {
+        // `Main.cs:41673`: `mouseX >= 50 && mouseX <= 50 + InventoryBack.Width()
+        // * inventoryScale` (and Y with 270) — INCLUSIVE edges, cell 52 at
+        // scale 0.85 (`Main.cs:41017`), so the box is [50, 94.2] x [270, 314.2].
+        // No `Main.mH` term: the reforge block's coordinates are literal
+        // (`Main.cs:41581-41582`); the minimap push shifts only the equipment
+        // column's `num20` (`Main.cs:41146`).
+        let cell = 52.0;
+        assert!(reforge_slot_hit(Vec2::new(50.0, 270.0), cell));
+        assert!(reforge_slot_hit(Vec2::new(70.0, 290.0), cell));
+        assert!(reforge_slot_hit(Vec2::new(50.0 + 52.0 * 0.85, 270.0 + 52.0 * 0.85), cell));
+        assert!(!reforge_slot_hit(Vec2::new(49.9, 290.0), cell));
+        assert!(!reforge_slot_hit(Vec2::new(70.0, 269.9), cell));
+        assert!(!reforge_slot_hit(Vec2::new(94.3, 290.0), cell));
+        assert!(!reforge_slot_hit(Vec2::new(70.0, 314.3), cell));
+        // The old port added `(screenHeight - 600) / 2` — at 900 px that
+        // pushed the box to y 420..464; the literal rect refuses it.
+        assert!(!reforge_slot_hit(Vec2::new(70.0, 440.0), cell));
+    }
+
+    #[test]
+    fn reforge_button_hit_is_the_strict_30x30() {
+        // `Main.cs:41639-41641`: centre (120, 310), STRICT `> cx-15 && < cx+15`
+        // (and Y) — the open interval (105, 135) x (295, 325). The edges
+        // themselves are OUT (unlike the slot's inclusive compare).
+        assert!(reforge_button_hit(Vec2::new(120.0, 310.0)));
+        assert!(reforge_button_hit(Vec2::new(105.1, 295.1)));
+        assert!(reforge_button_hit(Vec2::new(134.9, 324.9)));
+        assert!(!reforge_button_hit(Vec2::new(105.0, 310.0)));
+        assert!(!reforge_button_hit(Vec2::new(135.0, 310.0)));
+        assert!(!reforge_button_hit(Vec2::new(120.0, 295.0)));
+        assert!(!reforge_button_hit(Vec2::new(120.0, 325.0)));
+        // No `Main.mH` term here either — the 900-px screen's +150 offset
+        // (the old port's shape) misses the literal centre.
+        assert!(!reforge_button_hit(Vec2::new(120.0, 460.0)));
     }
 
     #[test]

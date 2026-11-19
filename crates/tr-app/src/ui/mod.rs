@@ -909,26 +909,28 @@ pub fn draw_hud(
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
         // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
-        // button (30x30), the cost label above the button (`Lang.inter[46]`
+        // button centre, the cost label beside the slot (`Lang.inter[46]`
         // + the coin breakdown — the port prints the copper total), the
         // `Lang.inter[20]` "place an item here" hint on the empty slot and
-        // the held item's name; the cooldown greys the label. The port's
-        // text-panel fidelity rides the same coordinates + m_h offset.
+        // the held item's name; the cooldown greys the label. The C# draws
+        // at the literal coordinates — neither rides `Main.mH` (only the
+        // equipment column's `num20` does, `Main.cs:41146`) — so the labels
+        // align with the click hit boxes (`ui::inventory::reforge_*_hit`).
         if let Some((slot, cost, cooldown)) = reforge {
-            text::hud_text(r, lookups, 50.0, 250.0 + m_h, 0.85, [1.0; 4], "Reforge");
+            text::hud_text(r, lookups, 50.0, 250.0, 0.85, [1.0; 4], "Reforge");
             if slot.count > 0 {
                 let def = &crate::itemdata::ITEMS[slot.kind as usize];
                 text::hud_text(
                     r,
                     lookups,
                     76.0,
-                    274.0 + m_h,
+                    274.0,
                     0.85,
                     [1.0; 4],
                     &format!("{} x{}", def.name, slot.count),
                 );
             } else {
-                text::hud_text(r, lookups, 76.0, 274.0 + m_h, 0.85, [0.8; 4], "place an item here");
+                text::hud_text(r, lookups, 76.0, 274.0, 0.85, [0.8; 4], "place an item here");
             }
             let label = if cooldown > 0 {
                 "cooling down".to_string()
@@ -937,7 +939,7 @@ pub fn draw_hud(
             };
             let ready = cooldown == 0;
             let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
-            text::hud_text(r, lookups, 120.0, 316.0 + m_h, 0.85, tint, &label);
+            text::hud_text(r, lookups, 120.0, 316.0, 0.85, tint, &label);
         }
         // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
         // panel draws together with the inventory (`OpenChest` sets
