@@ -279,13 +279,19 @@ struct FlailHit {
 }
 
 /// What one flail AI tick hands back to the pool: the family's helper
-/// spawn and the `player.ChangeDir` facing the C# writes mid-machine (the
+/// spawn, the `player.ChangeDir` facing the C# writes mid-machine (the
 /// port's facing is run-key driven, so the value rides out and the dispatch
-/// arm applies it after the AI pass).
+/// arm applies it after the AI pass — `None` on the ticks the C# never
+/// calls `ChangeDir`), the release's `ResetLocalNPCHitImmunity`
+/// (`Projectile.cs:43883` → `:43719-43722`, `Array.Clear(localNPCImmunity)`
+/// — the pool owns the immunity array, so the clear rides out as a flag)
+/// and the per-tick `player.itemRotation` write (`:44162-44167`).
 #[derive(Default)]
 struct FlailTick {
     spawn: Option<FlailSpawnRequest>,
     facing: Option<i32>,
+    reset_immunity: bool,
+    item_rotation: Option<f32>,
 }
 
 
@@ -4887,6 +4893,17 @@ impl Projectile {
             .is_some_and(|t| t.liquid_kind() != tr_core::tile::LiquidKind::Lava)
     }
 
+    /// The state-6 `!base.shimmerWet` read (`Projectile.cs:44042`): the
+    /// mid-tile liquid idiom above, narrowed to shimmer.
+    fn flail_shimmer_wet(&self, world: &World) -> bool {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        world
+            .tile(cx as i32, cy as i32)
+            .filter(|t| t.liquid > 0)
+            .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer)
+    }
+
     /// `AI_015_Flails` (`Projectile.cs:43724-44169`) — the whole flail
     /// machine: the kill gates, the per-kind parameter table
     /// (`flail_params`), the seven `ai[0]` states, the movement, the 1058/247
@@ -4894,14 +4911,17 @@ impl Projectile {
     /// move/tile-collision pass; `ai_flail_bounce` (the dispatcher's
     /// `HandleMovement` peer) runs after it.
     ///
-    /// Documented deviations (ANALYSIS): the `mapFullscreen` kill (no map
-    /// mode), the `noItems` gate (no field), `player.heldProj` /
-    /// `SetDummyItemTime` / `itemRotation` (no consumers — the held-item pose
-    /// is a render follow-up), `ownerHitCheck`/`drawLayer` (no consumers),
-    /// the dust call (no dust system) and the tile-impact/sound arms of the
-    /// bounce (a decor follow-up). The `player.ChangeDir` writes ride back in
-    /// `FlailTick.facing` (the port's facing is run-key driven), with the
-    /// same-tick reads served by the local `eff_dir`.
+    /// Documented deviations (ANALYSIS): the `noItems` gate (no field),
+    /// `player.heldProj` / `SetDummyItemTime` (no consumers — the held-item
+    /// pose is a render follow-up), `ownerHitCheck`/`drawLayer` (no
+    /// consumers), the dust call (no dust system) and the tile-impact/sound
+    /// arms of the bounce (a decor follow-up). The `player.ChangeDir` writes
+    /// ride back in `FlailTick.facing` (the port's facing is run-key driven),
+    /// with the same-tick reads served by the local `eff_dir`; the
+    /// `player.itemRotation` write rides `FlailTick.item_rotation` and the
+    /// release's `ResetLocalNPCHitImmunity` rides `FlailTick.reset_immunity`.
+    /// The `mapFullscreen` kill, the `controlUseItem` re-grab arms, the wet
+    /// drag and the shimmer gravity skip are ported (S1-P-i07).
     #[allow(clippy::too_many_arguments)]
     fn ai_flail(
         &mut self,
@@ -4940,6 +4960,13 @@ impl Projectile {
             self.time_left = 0;
             return tick;
         }
+        // `:43732-43736` — `Main.myPlayer == this.owner && Main.mapFullscreen`:
+        // the local owner opening the fullscreen map kills its own flails.
+        if inputs.local_owner == self.owner as u8 && inputs.map_fullscreen {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
         // `:43737-43741` — the Flaming Mace's water extinguish.
         if self.kind == FLAMING_MACE && self.flail_in_liquid(world) {
             self.kind = MACE;
@@ -4971,8 +4998,11 @@ impl Projectile {
         let num18 = num17 + 160.0;
         self.local_hit_cooldown = num11 as i32;
         // The effective player direction — the C# writes `player.ChangeDir`
-        // mid-machine and reads it back in the same pass.
+        // mid-machine and reads it back in the same pass. `None` until an arm
+        // actually calls it (the state-2 re-grab `break`s before its
+        // `ChangeDir`, `:43942-43948`).
         let mut eff_dir = inputs.player_dir;
+        let mut dir_changed = false;
         match self.ai[0] as i32 {
             0 => {
                 // The held state (`:43841-43898`).
@@ -4993,6 +5023,7 @@ impl Projectile {
                 } else {
                     -1
                 };
+                dir_changed = true;
                 if !inputs.channel {
                     // `:43872-43885` — the release throws; the C# `break`s
                     // out of the switch here.
@@ -5003,7 +5034,12 @@ impl Projectile {
                         self.vel.x *= -1.0;
                     }
                     self.pos = mounted - Vec2::new(self.w * 0.5, self.h * 0.5);
-                    self.local_ai[1] = 0.0; // `ResetLocalNPCHitImmunity`
+                    // `:43883` `ResetLocalNPCHitImmunity` (`:43719-43722`):
+                    // `Array.Clear(localNPCImmunity)` — the per-slot NPC
+                    // immunity array, NOT `localAI[1]` (the hold-orbit
+                    // counter, which keeps its count across the release).
+                    tick.reset_immunity = true;
+                    self.net_update = true;
                     self.local_hit_cooldown = num13 as i32;
                 } else {
                     // `:43888-43897` — the charge orbit.
@@ -5028,21 +5064,29 @@ impl Projectile {
                 self.ai[1] += 1.0;
                 let flag3 = grown || (head - mounted).length() >= num3;
                 let num19 = 1.3f32;
-                if inputs.channel {
-                    // `:43905-43916` — the mid-flight re-grab; the Drippler
+                if inputs.control_use_item {
+                    // `:43905-43916` — the mid-flight re-grab (`controlUseItem`,
+                    // NOT `channel`); the C# `break`s out of the state switch
+                    // here — no `ChangeDir`, no cooldown write. The Drippler
                     // spawns its extra ball on both this and the arm end.
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
                     self.vel *= 0.2;
                     self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
-                } else if flag3 {
-                    self.ai[0] = 2.0;
-                    self.ai[1] = 0.0;
-                    self.vel *= 0.3;
-                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                } else {
+                    if flag3 {
+                        self.ai[0] = 2.0;
+                        self.ai[1] = 0.0;
+                        self.net_update = true;
+                        self.vel *= 0.3;
+                        self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                    }
+                    // `:43930-43931` — outside the `controlUseItem` break.
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
+                    self.local_hit_cooldown = num13 as i32;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
-                self.local_hit_cooldown = num13 as i32;
             }
             2 => {
                 // The retract (`:43934-43955`).
@@ -5052,49 +5096,61 @@ impl Projectile {
                     self.time_left = 0;
                     return tick;
                 }
-                if inputs.channel {
+                if inputs.control_use_item {
+                    // `:43942-43948` — the re-grab `break`s before the
+                    // `ChangeDir`; the facing stays as-is.
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
                     self.vel *= 0.2;
                 } else {
                     self.vel *= 0.98;
                     self.vel = Self::move_towards_vec(self.vel, to_player * num5, num4);
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             3 => {
                 // The spin orbit (`:43957-43998`).
-                if !inputs.channel {
+                if !inputs.control_use_item {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    // `break` — the C# falls out of the state switch into
-                    // the shared tail below, then HandleMovement's move.
-                }
-                let dist = (head - mounted).length();
-                let want_collide = self.ai[1] == 1.0;
-                let flag4 = dist <= num17;
-                if flag4 != want_collide {
-                    self.tile_collide = flag4;
-                    self.ai[1] = if flag4 { 1.0 } else { 0.0 };
-                }
-                let to_player = (mounted - head).normalize_or_zero();
-                if dist > num10 {
-                    if dist >= num17 {
-                        self.vel *= 0.5;
-                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
-                    }
-                    self.vel *= 0.98;
-                    self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                    self.net_update = true;
+                    // `:43964` — the C# `break`s out of the state switch into
+                    // the shared tail; no tileCollide write, no velocity
+                    // change, no `ChangeDir` on this tick.
                 } else {
-                    if self.vel.length() < 6.0 {
-                        self.vel.x *= 0.96;
-                        self.vel.y += 0.2;
+                    let dist = (head - mounted).length();
+                    // `:43967`: `tileCollide = ai[1] == 1f` EVERY tick — the
+                    // flag4 comparison below only re-arms the latch when the
+                    // distance crosses num17.
+                    self.tile_collide = self.ai[1] == 1.0;
+                    let flag4 = dist <= num17;
+                    if flag4 != self.tile_collide {
+                        self.tile_collide = flag4;
+                        self.ai[1] = if flag4 { 1.0 } else { 0.0 };
+                        self.net_update = true;
                     }
-                    if inputs.player_vel.0 == 0.0 {
-                        self.vel.x *= 0.96;
+                    let to_player = (mounted - head).normalize_or_zero();
+                    if dist > num10 {
+                        if dist >= num17 {
+                            self.vel *= 0.5;
+                            self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
+                        }
+                        self.vel *= 0.98;
+                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                    } else {
+                        if self.vel.length() < 6.0 {
+                            self.vel.x *= 0.96;
+                            self.vel.y += 0.2;
+                        }
+                        if inputs.player_vel.0 == 0.0 {
+                            self.vel.x *= 0.96;
+                        }
                     }
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             4 => {
                 // The final reel-in (`:44000-44017`).
@@ -5107,13 +5163,19 @@ impl Projectile {
                 }
                 self.vel *= 0.98;
                 self.vel = Self::move_towards_vec(self.vel, to_player * num7, num6);
-                let ahead = (head + self.vel - mounted).normalize_or_zero();
+                // `:44011`: `Utils.DirectionFrom(Target: Center + velocity,
+                // Origin: mountedCenter)` = `Normalize(Origin - Target)`
+                // (`Utils.cs:1960-1963`) — the vector points BACK from the
+                // ahead point to the mount, so the kill fires when the ahead
+                // point has PASSED the player (the two directions oppose).
+                let ahead = (mounted - (head + self.vel)).normalize_or_zero();
                 if to_player.dot(ahead) < 0.0 {
                     self.active = false;
                     self.time_left = 0;
                     return tick;
                 }
                 eff_dir = if center.x < head.x { 1 } else { -1 };
+                dir_changed = true;
             }
             5 => {
                 // The bounce stagger (`:44019-44032`).
@@ -5122,30 +5184,39 @@ impl Projectile {
                 if grown {
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
+                    // `:44025` — the graduation `break`s before the
+                    // `ChangeDir`; the else arm below owns it.
                 } else {
                     self.local_hit_cooldown = num13 as i32;
                     self.vel.y += 0.6;
                     self.vel.x *= 0.95;
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             6 => {
                 // The post-release spin (`:44034-44047`).
-                if !inputs.channel || (head - mounted).length() > num18 {
+                if !inputs.control_use_item || (head - mounted).length() > num18 {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    // `break` — the C# falls out of the state switch into
-                    // the shared tail below, then HandleMovement's move.
+                    self.net_update = true;
+                    // `:44040` — `break`: no gravity, no drag, no
+                    // `ChangeDir` on the bail tick.
+                } else {
+                    // `!shimmerWet` (`:44042`) — the shimmer arm skips the
+                    // gravity add (the flail floats in shimmer).
+                    if !self.flail_shimmer_wet(world) {
+                        self.vel.y += 0.8;
+                    }
+                    self.vel.x *= 0.95;
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                // `!shimmerWet` — no shimmer in the port, so the arm always
-                // adds gravity.
-                self.vel.y += 0.8;
-                self.vel.x *= 0.95;
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             _ => {}
         }
-        let mut tick = self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+        let mut tick = self.flail_tail(world, eff_dir, dir_changed, tick, inputs, npcs, rng);
         // `HandleMovement` (`Projectile.cs:17015`) with the aiStyle-15 arm
         // (`:19321`): the C# runs the sub-step move and the bounce handler
         // AFTER the AI returns — the port's per-AI move idiom keeps both
@@ -5163,6 +5234,12 @@ impl Projectile {
     fn flail_move(&mut self, world: &World) {
         let pos_before = self.pos;
         let last_velocity = self.vel;
+        // `HandleMovement`'s wet arm (`Projectile.cs:17612-17655`): while wet
+        // the POSITION advance is the velocity scaled by the liquid factor
+        // (water 0.5 / honey 0.25 / shimmer 0.375), but a BLOCKED component
+        // keeps its full value (`wetVelocity.X = velocity.X` when the axis
+        // changed). The collision probe still runs on the full velocity.
+        let wet_factor = self.flail_wet_factor(world);
         if self.tile_collide {
             // `Collision.Move`'s per-axis advance clamped to the blocked
             // face, then the blocked component zeroed — the port steps the
@@ -5194,8 +5271,29 @@ impl Projectile {
                     }
                 }
             }
+            // The wet drag scales the unblocked axes' displacement by the
+            // liquid factor. The C# scales the velocity BEFORE the collision
+            // probe and restores a blocked component to its full value
+            // (`:17647-17654`); the port probes at full velocity then scales
+            // the surviving displacement — the same mid-tile approximation
+            // the family's liquid reads use (recorded in ANALYSIS).
+            if let Some(f) = wet_factor {
+                let mut disp = self.pos - pos_before;
+                if self.vel.x != 0.0 {
+                    disp.x *= f;
+                }
+                if self.vel.y != 0.0 {
+                    disp.y *= f;
+                }
+                self.pos = pos_before + disp;
+            }
         } else {
-            self.pos += self.vel;
+            // `UpdatePosition` (`:20439-20446`): wet integrates the scaled
+            // velocity, dry the full velocity.
+            self.pos += match wet_factor {
+                Some(f) => self.vel * f,
+                None => self.vel,
+            };
         }
         // `HandleMovement`'s `flag` (`:17896-17899`, the arm at `:17904`):
         // the per-aiStyle velocity chain — the flail's bounce handler — runs
@@ -5205,6 +5303,23 @@ impl Projectile {
         if last_velocity != self.vel {
             self.ai_flail_bounce(last_velocity, pos_before);
         }
+    }
+
+    /// The liquid drag factor for the flail's move (`HandleMovement`
+    /// `Projectile.cs:17612-17655`): shimmer 0.375, honey 0.25, water 0.5;
+    /// `None` when dry (or lava — the C# wet arm keys on `honeyWet`/
+    /// `shimmerWet`/plain-wet, and lava sets `lavaWet` but the plain wet
+    /// halving still applies; the port's mid-tile idiom folds lava into the
+    /// water factor, recorded in ANALYSIS).
+    fn flail_wet_factor(&self, world: &World) -> Option<f32> {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        let t = world.tile(cx as i32, cy as i32).filter(|t| t.liquid > 0)?;
+        Some(match t.liquid_kind() {
+            tr_core::tile::LiquidKind::Shimmer => 0.375,
+            tr_core::tile::LiquidKind::Honey => 0.25,
+            _ => 0.5,
+        })
     }
 
     /// `AI_015_HandleMovementCollision` (`Projectile.cs:43655-43717`) — runs
@@ -5237,6 +5352,7 @@ impl Projectile {
             // `:43687-43698` — the fly-out bounce drops into the stagger.
             self.ai[0] = 5.0;
             self.local_hit_cooldown = 10;
+            self.net_update = true;
             loud = true;
             // `CreateImpactExplosion` + `CreateImpactExplosion2_
             // FlailTileCollision` are dust-only (no port seam); the
@@ -5245,9 +5361,14 @@ impl Projectile {
             // full pre-move velocity from the post-move position.
             self.pos = pos_before - last_velocity;
         }
+        // `:43699-43707` — the loud bounce nets an update.
+        if loud {
+            self.net_update = true;
+        }
         // `:43708-43712` — the repeated-bounce bail-out.
         if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
             self.ai[0] = 4.0;
+            self.net_update = true;
         }
         // `:43702-43706` — `Collision.HitTiles` ×count (the tile damage — no
         // generic projectile→tile seam in the port) and
@@ -5306,6 +5427,7 @@ impl Projectile {
         &mut self,
         world: &World,
         eff_dir: i32,
+        dir_changed: bool,
         mut tick: FlailTick,
         inputs: FlailInputs,
         npcs: &[Npc],
@@ -5322,6 +5444,11 @@ impl Projectile {
                 let to_player = center - head;
                 self.rot = to_player.y.atan2(to_player.x) - std::f32::consts::PI / 2.0;
                 self.direction = if to_player.x < 0.0 { 1 } else { -1 };
+                // `:44073-44074` — the Flairon's spriteDirection follows its
+                // direction. (`:44073`'s `player.itemRotation` write is
+                // overwritten by the common tail's `:44162` below, exactly
+                // like the C#, so only the spriteDirection survives.)
+                self.sprite_direction = self.direction;
                 // `:44075-44095` — the bubble cadence. The C# re-rolls
                 // `Next(3, 6)` every tick in the held state (and halves the
                 // knockback there); the jitter is the item-stream roll.
@@ -5342,11 +5469,15 @@ impl Projectile {
                         self.local_ai[2] = 0.0;
                         // `vector8 = ((vector7 * -1).SafeNormalize(0) *
                         // (Next(45, 65) * 0.1)).RotatedBy(
-                        // (NextDouble() - 0.5) * (π/2))`.
+                        // (NextDouble() - 0.5) * (π/2))` — the jitter is a
+                        // DOUBLE draw (`Main.rand.NextDouble()`), cast to
+                        // f32 only after the multiply (`Utils.RotatedBy`
+                        // takes double radians, `Utils.cs:1675-1684`).
                         let back = (-to_player).normalize_or_zero();
                         let speed = rng.next_range(45, 65) as f32 * 0.1;
-                        let jitter = (rng.next_float() - 0.5) * std::f32::consts::PI / 2.0;
-                        let v = (back * speed).rotate(Vec2::from_angle(jitter));
+                        let jitter = (rng.next_double() - 0.5)
+                            * std::f64::consts::FRAC_PI_2;
+                        let v = (back * speed).rotate(Vec2::from_angle(jitter as f32));
                         let req = self.flail_spawn(FLAIRON_BUBBLE, v, self.damage, knock, -10.0);
                         tick.spawn = Some(req);
                     }
@@ -5368,7 +5499,10 @@ impl Projectile {
                         self.local_ai[0] = 17.0;
                         let mut best: Option<(usize, f32)> = None;
                         for (idx, n) in npcs.iter().enumerate() {
-                            if n.hp <= 0 || n.dont_take_damage {
+                            // `CanBeChasedBy` (`NPC.cs:90030-90041`): active
+                            // && chaseable && lifeMax > 5 && !dontTakeDamage
+                            // && !friendly && !immortal.
+                            if !n.can_be_chased_by() {
                                 continue;
                             }
                             let (nx, ny) = n.center();
@@ -5407,6 +5541,7 @@ impl Projectile {
         // (the Flairon's tail set its own above).
         if self.kind != FLAIRON {
             self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
         }
         // `:44148-44158` — the rotation arm; the 1058/247 tails set
         // `flag = false` and keep their own rotation.
@@ -5419,7 +5554,22 @@ impl Projectile {
         }
         // `:44159` — the per-tick lifetime re-pin.
         self.time_left = 2;
-        tick.facing = Some(eff_dir);
+        // `:44162-44167` — `player.itemRotation =
+        // DirectionFrom(mountedCenter).ToRotation()` (+π when the head is
+        // left of the mount), wrapped. `Entity.DirectionFrom`
+        // (`Entity.cs:210-213`) = `Normalize(Center - Source)`.
+        if let Some(m) = inputs.mounted_center {
+            let mounted = Vec2::from(m);
+            let d = head - mounted;
+            let mut rot = d.y.atan2(d.x);
+            if head.x < mounted.x {
+                rot += std::f32::consts::PI;
+            }
+            tick.item_rotation = Some(wrap_angle(rot));
+        }
+        // The facing only rides out on the ticks the C# actually calls
+        // `player.ChangeDir` (the re-grab/bail `break`s skip it).
+        tick.facing = if dir_changed { Some(eff_dir) } else { None };
         tick
     }    /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
     /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
@@ -12125,8 +12275,16 @@ pub struct YoyoInputs {
 pub struct FlailInputs {
     /// `Main.MouseWorld` (`Projectile.cs:43863`) — the hold state's aim.
     pub aim: Option<(f32, f32)>,
-    /// `Player.channel` (`:43872`, `:43905`, `:43942`, `:43959`, `:44035`).
+    /// `Player.channel` (`:43872`) — the hold state's release gate ONLY.
     pub channel: bool,
+    /// `Player.controlUseItem` (`:43905`, `:43942`, `:43959`, `:44035`) —
+    /// the raw use-button state the flight/retract/spin/post-spin re-grab
+    /// arms read (NOT `channel`: the button can be held while `channel`
+    /// is false, and the re-grab still fires).
+    pub control_use_item: bool,
+    /// `Main.mapFullscreen` (`:43732`) — the local owner's fullscreen map
+    /// kills its own flails.
+    pub map_fullscreen: bool,
     /// The kill gates (`:43727`): dead / `CCed` — the port drops the
     /// `noItems` arm (no field, documented).
     pub player_dead: bool,
@@ -12147,6 +12305,10 @@ pub struct FlailInputs {
     /// `Main.myPlayer` — the family's spawns are local-owner only
     /// (`:43912`, `:44075`, `:44110`).
     pub local_owner: u8,
+    /// `Main.LocalPlayer.inventory[selectedItem].shoot` (`:43850`) — the
+    /// dual-flail `flag5` only arms when the selected item no longer shoots
+    /// this projectile type. `None` when there is no selected item.
+    pub selected_shoot: Option<u16>,
 }
 
 impl Default for FlailInputs {
@@ -12156,6 +12318,8 @@ impl Default for FlailInputs {
         Self {
             aim: None,
             channel: false,
+            control_use_item: false,
+            map_fullscreen: false,
             player_dead: false,
             player_cced: false,
             mounted_center: None,
@@ -12164,6 +12328,7 @@ impl Default for FlailInputs {
             player_dir: 1,
             melee_speed: 1.0,
             local_owner: 0,
+            selected_shoot: None,
         }
     }
 }
@@ -12590,6 +12755,15 @@ impl ProjectilePool {
     pub fn set_ai1(&mut self, slot: usize, value: f32) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.ai[1] = value;
+        }
+    }
+
+    /// The spawn-site `ai[2]` payload setter — the dual-flail sibling's
+    /// `ai9 = 1f` drawLayer flag (`Player.cs:49420-49421`, the `set_ai1`
+    /// convention).
+    pub fn set_ai2(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[2] = value;
         }
     }
 
@@ -14421,13 +14595,19 @@ impl ProjectilePool {
                         15 => {
                             // `AI_015_Flails`'s `flag5` (`:43847-43862`): the
                             // Blue Moon/Sunfury sibling scan — the 26↔35 pair,
-                            // same owner. It runs here, like the aiStyle-99
-                            // `flag` above, because the AI only sees its slot.
+                            // same owner, AND only when the local owner's
+                            // SELECTED item no longer shoots this type
+                            // (`localPlayer.inventory[selectedItem].shoot !=
+                            // this.type`, `:43850`). It runs here, like the
+                            // aiStyle-99 `flag` above, because the AI only
+                            // sees its slot.
                             let (slot_owner, slot_kind) = {
                                 let p = &self.slots[i];
                                 (p.owner, p.kind)
                             };
                             let flag5 = (slot_kind == BLUE_MOON || slot_kind == SUNFURY)
+                                && slot_owner as u8 == flail_inputs.local_owner
+                                && flail_inputs.selected_shoot != Some(slot_kind)
                                 && self.slots.iter().any(|p| {
                                     p.active
                                         && p.owner == slot_owner
@@ -14457,11 +14637,21 @@ impl ProjectilePool {
                                     self.slots[slot].alpha = 255;
                                 }
                             }
+                            // `:43883` `ResetLocalNPCHitImmunity` — the
+                            // release clears the slot's NPC immunity array.
+                            if tick.reset_immunity {
+                                let base = i * 256;
+                                self.local_immunity[base..base + 256].fill(0);
+                            }
                             // The facing the C# forces with `player.ChangeDir`
-                            // mid-machine.
-                            if let Some(dir) = tick.facing {
-                                if let Some(p) = player.as_deref_mut() {
+                            // mid-machine, and the per-tick `itemRotation`
+                            // (`:44162-44167`).
+                            if let Some(p) = player.as_deref_mut() {
+                                if let Some(dir) = tick.facing {
                                     p.facing = dir;
+                                }
+                                if let Some(rot) = tick.item_rotation {
+                                    p.item_rotation = rot;
                                 }
                             }
                         }
@@ -16931,17 +17121,29 @@ impl ProjectilePool {
                 return None;
             }
         }
-        // The damage/knockback multipliers.
-        let mut dmg_mult = if p.ai[0] == 0.0 { 1.2 } else { 1.0 };
-        if (p.kind == BLUE_MOON || p.kind == SUNFURY)
-            && self.slots.iter().any(|s| {
-                s.active
-                    && s.owner == p.owner
-                    && s.kind != p.kind
-                    && (s.kind == BLUE_MOON || s.kind == SUNFURY)
-            })
-        {
-            dmg_mult *= 0.8;
+        // The damage/knockback multipliers. `:14447-14461`: the held state
+        // ×1.2 with the Blue Moon/Sunfury dual ×0.8 — the sibling scan sits
+        // INSIDE the `ai[0] == 0` arm, so the discount never applies to a
+        // thrown/spinning head.
+        let mut dmg_mult = if p.ai[0] == 0.0 {
+            let mut m = 1.2;
+            if (p.kind == BLUE_MOON || p.kind == SUNFURY)
+                && self.slots.iter().any(|s| {
+                    s.active
+                        && s.owner == p.owner
+                        && s.kind != p.kind
+                        && (s.kind == BLUE_MOON || s.kind == SUNFURY)
+                })
+            {
+                m *= 0.8;
+            }
+            m
+        } else {
+            1.0
+        };
+        // `:14462-14465`: the fly-out AND the retract deal DOUBLE damage.
+        if p.ai[0] == 1.0 || p.ai[0] == 2.0 {
+            dmg_mult *= 2.0;
         }
         let kb_mult = match p.ai[0] as i32 {
             0 => 0.35,
@@ -19820,6 +20022,11 @@ mod flail_tests {
         FlailInputs {
             aim,
             channel,
+            // The legacy fixtures drive the re-grab arms through the same
+            // held-button value (the pre-split tests used `channel` for
+            // both); the new control-use witnesses set it explicitly.
+            control_use_item: channel,
+            map_fullscreen: false,
             player_dead: false,
             player_cced: false,
             mounted_center: Some(mounted),
@@ -19828,6 +20035,7 @@ mod flail_tests {
             player_dir: 1,
             melee_speed: 1.0,
             local_owner: 0,
+            selected_shoot: None,
         }
     }
 
@@ -20321,6 +20529,296 @@ mod flail_tests {
         pool.update(&mut w, &mut npcs, None, None, None, YoyoInputs::default(),
             FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(npcs[0].hp, hp, "the orphan path deals nothing");
+    }
+
+    // ---- S1-P-i07 witnesses: the flail physics census fixes ----
+    // Each test pins one C#-verified defect the census found in the M4-PROJ-3b
+    // port. Tests are WRITTEN NOT RUN (code-only swarm).
+
+    #[test]
+    fn s1_p_i07_the_reel_in_overshoot_kill_uses_direction_from() {
+        // `Projectile.cs:44011`: `Vector2.Dot(vector4,
+        // Utils.DirectionFrom(Target: Center + velocity, Origin:
+        // mountedCenter).SafeNormalize(0)) < 0` → Kill.
+        // `Utils.DirectionFrom(Origin, Target)` = `Normalize(Origin - Target)`
+        // (`Utils.cs:1960-1963`), so the second vector points BACK from the
+        // ahead point to the mount. The kill fires only when the ahead point
+        // has PASSED the player. The old port computed `ahead - mounted`
+        // (the forward vector), which flipped the test: it killed flails
+        // still approaching and spared ones that had overshot.
+        let mut w = world();
+        // Case A — overshoot: head 20 px right of the mount, velocity +30
+        // carries the ahead point to +50, PAST the player. C# kills.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(30.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the overshot ahead point kills");
+        // Case B — approaching: head 60 px right (outside num7 = 15),
+        // velocity -8 moves toward the player; the ahead point (+52) has NOT
+        // passed the mount. C# survives; the old port killed it.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(-8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[slot].active, "an approaching flail is not killed by the Dot test");
+    }
+
+    #[test]
+    fn s1_p_i07_the_fly_out_and_retract_deal_double_damage() {
+        // `Projectile.cs:14462-14465`: `aiStyle == 15 && (ai[0] == 1 || ai[0]
+        // == 2)` → `num *= 2f`. The old port applied no flight multiplier.
+        let w = ground();
+        for state in [1.0f32, 2.0f32] {
+            let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+            npcs[0].x = 540.0;
+            npcs[0].y = 490.0;
+            npcs[0].defense_override = Some(0);
+            npcs[0].hp = 10_000;
+            npcs[0].max_hp = 10_000;
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(BALL_O_HURT, 540.0 - 11.0, 490.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots[slot].ai[0] = state;
+            let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(slot, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+            let dealt = 10_000 - npcs[0].hp;
+            // 200 × 2 = 400 pre-variance; ±15% DamageVar → 340..460.
+            assert!(
+                (340..=460).contains(&dealt),
+                "state {state} deals ×2 (expected ~400±15%), got {dealt}"
+            );
+        }
+    }
+
+    #[test]
+    fn s1_p_i07_the_dual_discount_is_held_only() {
+        // `Projectile.cs:14450-14460`: the Blue Moon/Sunfury ×0.8 sibling
+        // scan sits INSIDE the `ai[0] == 0` arm. A thrown head (state 1)
+        // gets ×2 with NO discount even while its sibling is active. The
+        // old port applied the discount in every state.
+        let w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        npcs[0].defense_override = Some(0);
+        npcs[0].hp = 10_000;
+        npcs[0].max_hp = 10_000;
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 540.0 - 11.0, 490.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[moon].ai[0] = 1.0; // thrown, not held
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(moon, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+        let dealt = 10_000 - npcs[0].hp;
+        // 200 × 2 = 400 (no ×0.8 in flight); ±15% → 340..460. The old port
+        // would have dealt 200 × 0.8 = 160 (~136..184).
+        assert!(
+            (340..=460).contains(&dealt),
+            "the thrown dual head deals ×2 without the held discount, got {dealt}"
+        );
+    }
+
+    #[test]
+    fn s1_p_i07_the_release_clears_npc_immunity_not_the_orbit_counter() {
+        // `Projectile.cs:43883` calls `ResetLocalNPCHitImmunity`
+        // (`:43719-43722`), which is `Array.Clear(localNPCImmunity)` — the
+        // per-slot NPC immunity array. The old port zeroed `localAI[1]`
+        // (the hold-orbit counter) instead, leaving the immunity array
+        // stale and resetting the orbit phase.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        // Seed a held orbit count and a stale immunity entry.
+        pool.slots[slot].local_ai[1] = 7.0;
+        pool.local_immunity[slot * 256 + 3] = 9;
+        let ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 1.0, "released");
+        assert_eq!(pool.slots[slot].local_ai[1], 7.0, "the orbit counter survives the release");
+        assert_eq!(pool.local_immunity[slot * 256 + 3], 0, "the immunity array is cleared");
+    }
+
+    #[test]
+    fn s1_p_i07_the_regrab_reads_control_use_item_not_channel() {
+        // `Projectile.cs:43905/43942/43959/44035` read `player.controlUseItem`,
+        // NOT `player.channel`. The button can be held while `channel` is
+        // false (e.g. the channel was cancelled) and the re-grab still fires.
+        // The old port gated every re-grab on `channel`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let mut ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        ins.channel = false;
+        ins.control_use_item = true; // button held, channel not set
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 6.0, "the held button re-grabs mid-flight");
+        assert!((pool.slots[slot].vel.x - 2.0).abs() < 1e-3, "velocity ×0.2");
+    }
+
+    #[test]
+    fn s1_p_i07_the_spin_release_break_skips_the_velocity_and_facing() {
+        // `Projectile.cs:43959-43965`: state 3's `!controlUseItem` arm sets
+        // ai[0]=4, ai[1]=0, netUpdate, then `break`s — no tileCollide write,
+        // no velocity change, no ChangeDir on that tick. The old port fell
+        // through into the orbit physics and forced the facing.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 3.0;
+        pool.slots[slot].vel = Vec2::new(5.0, 0.0);
+        pool.slots[slot].tile_collide = true;
+        let mut ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        ins.control_use_item = false;
+        ins.player_dir = -1;
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "bailed to the reel-in");
+        // The break leaves the velocity untouched by the state arm; the
+        // reel-in (state 4) does not run this tick (the switch already
+        // matched state 3). flail_move integrates the unchanged velocity.
+        assert!(pool.slots[slot].vel.x >= 5.0, "no orbit drag on the bail tick");
+        assert!(pool.slots[slot].net_update, "the bail nets an update");
+    }
+
+    #[test]
+    fn s1_p_i07_the_map_fullscreen_kills_the_local_flail() {
+        // `Projectile.cs:43732-43736`: `Main.myPlayer == owner &&
+        // Main.mapFullscreen` → Kill. The old port had no map arm.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.map_fullscreen = true;
+        ins.local_owner = 0; // matches the slot's owner 0
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the fullscreen map kills the local flail");
+        // A foreign owner's flail is not killed by the local map.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].owner = 1;
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.map_fullscreen = true;
+        ins.local_owner = 0;
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[slot].active, "a foreign flail survives the local map");
+    }
+
+    #[test]
+    fn s1_p_i07_the_wet_move_halves_the_advance() {
+        // `Projectile.cs:17642-17655` + `UpdatePosition` `:20439-20446`:
+        // while wet the position integrates `velocity * 0.5` (water). The
+        // old port always integrated the full velocity.
+        let mut w = world();
+        // Water at the head's mid-tile (the flail_in_liquid idiom).
+        let i = w.index(31, 31);
+        w.tiles[i].liquid = 200;
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].tile_collide = false;
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let moved = pool.slots[slot].pos.x - (500.0 - 11.0);
+        assert!((moved - 5.0).abs() < 1e-3, "water halves the advance, got {moved}");
+    }
+
+    #[test]
+    fn s1_p_i07_the_shimmer_spin_skips_gravity() {
+        // `Projectile.cs:44042-44045`: state 6 adds `velocity.Y += 0.8` only
+        // when `!shimmerWet`. In shimmer the flail floats (no gravity add).
+        let mut w = world();
+        let i = w.index(31, 31);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 6.0;
+        pool.slots[slot].tile_collide = false;
+        pool.slots[slot].vel = Vec2::new(4.0, 0.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.control_use_item = true;
+        tick(&mut w, &mut pool, ins);
+        // No +0.8 gravity; the X drag ×0.95 still applies.
+        assert!(pool.slots[slot].vel.y.abs() < 1e-3, "shimmer skips the gravity add");
+        assert!((pool.slots[slot].vel.x - 3.8).abs() < 1e-3, "the X drag still applies");
+    }
+
+    #[test]
+    fn s1_p_i07_the_flower_pow_scan_uses_can_be_chased_by() {
+        // `Projectile.cs:44121` gates the petal target on `CanBeChasedBy`
+        // (`NPC.cs:90030-90041`: chaseable && lifeMax>5 && !dontTakeDamage &&
+        // !friendly && !immortal). The old port only checked hp>0 and
+        // !dontTakeDamage, so it aimed at friendly/immortal/non-chaseable
+        // NPCs. A friendly NPC inside 600 px must NOT draw a petal.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        npcs[0].friendly = true; // a town NPC — not chaseable
+        let (mut pool, slot) = spawn(FLOWER_POW, 500.0 - 17.0, 500.0 - 17.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].tile_collide = false; // keep the head at the scan point
+        pool.slots[slot].local_ai[0] = 19.0; // the scan fires this tick
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        let petals = pool.slots.iter().filter(|p| p.active && p.kind == FLOWER_POW_PETAL).count();
+        assert_eq!(petals, 0, "a friendly NPC draws no petal");
+    }
+
+    #[test]
+    fn s1_p_i07_the_tail_writes_the_item_rotation() {
+        // `Projectile.cs:44162-44167`: `player.itemRotation =
+        // DirectionFrom(mountedCenter).ToRotation()` (+π when the head is
+        // left of the mount), wrapped. The old port never wrote it.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        let mut player = crate::player::Player::spawn(&w);
+        player.item_rotation = 99.0; // a sentinel the tail must overwrite
+        pool.update(&mut w, &mut [], Some((500.0, 500.0)), None, Some(&mut player),
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        // Head right of the mount → rotation ≈ atan2(0, +60) = 0.
+        assert!(player.item_rotation.abs() < 1e-3, "itemRotation tracks the chain, got {}", player.item_rotation);
+    }
+
+    #[test]
+    fn s1_p_i07_the_flag5_needs_the_selected_item_gate() {
+        // `Projectile.cs:43850`: the dual-flail sibling flag only arms when
+        // `localPlayer.inventory[selectedItem].shoot != this.type`. While the
+        // Blue Moon is still selected (shoot == 26), flag5 is false and the
+        // throw is NOT mirrored. The old port ignored the selected item.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.selected_shoot = Some(BLUE_MOON); // the Blue Moon is still selected
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[moon].vel.x > 0.0, "selected-shoot gate keeps the throw unmirrored");
+        // Switch the selected item away (shoot != 26) → flag5 arms, mirror.
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.selected_shoot = Some(SUNFURY); // a different flail selected
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[moon].vel.x < 0.0, "the sibling flag mirrors the throw");
     }
 }
 
