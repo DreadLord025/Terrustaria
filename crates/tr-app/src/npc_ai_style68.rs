@@ -618,13 +618,16 @@ mod tests {
         let c = ctx(&players);
         let mut n = bird(363, 1000.0, 1000.0);
         n.facing = -1;
+        n.old_direction = -1; // the UpdateNPC pre-AI latch (:90393-90395)
         n.target = 0; // there WAS a target
+        n.old_target = 0;
         n.wet = true; // stay perched (the dry arm would take off)
         ai_style_68(&mut n, 363, &w, &c, &mut UnifiedRandom::new(1));
         assert_eq!(n.facing, -1, "the old direction wins (:34644)");
         // No old target (255): the new facing stands.
         let mut n2 = bird(363, 1000.0, 1000.0);
         n2.facing = -1;
+        n2.old_direction = -1;
         n2.target = 255;
         n2.wet = true;
         ai_style_68(&mut n2, 363, &w, &c, &mut UnifiedRandom::new(1));
@@ -981,7 +984,8 @@ mod tests {
         let c = Style68Ctx { net_mode: 1, ..ctx(&players) };
         let mut n = bird(363, 1000.0, 1000.0);
         n.target = 0;
-        n.net_update = false; // TargetClosest's change flag may set it
+        n.old_target = 0; // the pre-AI latch (:90393-90395) — an unchanged
+        n.net_update = false; // target arms NO flag; the takeoff is what's skipped
         // Wet: the single-player arm would flutter; the client returns
         // after the swim with no state change.
         n.wet = true;
