@@ -446,7 +446,20 @@ impl App {
             }
             C2s::Edit { x, y, kind, tile } => {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
-                apply_edit(&mut self.world, x, y, kind, tile);
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                // S1-E-21i — the `KillWall` replay's sound arm
+                // (`MessageBuffer.cs:1177`): the host is `netMode == 2`, so
+                // the positioned gate refuses before any draw
+                // (`LegacySoundPlayer.cs:386-388` — the listener's `server`
+                // flag); the play call keeps the C#'s shape.
+                if let Some(wall) = broken_wall {
+                    self.audio.play_wall_break_sound(
+                        tr_core::edit::kill_wall_sound(wall),
+                        x as f32 * 16.0,
+                        y as f32 * 16.0,
+                        self.rngs.global(),
+                    );
+                }
                 self.world_key = None;
                 // The replicated change: the applied tile read back as a
                 // `20 SectionRange` (`SendTileSquare` on the host).
@@ -606,6 +619,12 @@ impl App {
                 // `:1887-1893` — the Dead Man's Chest trips its wiring.
                 if is_rigged(&self.world, cx, cy) {
                     self.wiring.hit_switch(&mut self.world, cx, cy);
+                    // S1-E-21i — the trip's Mech-28 click: the host's
+                    // positioned gate refuses (netMode 2), draw-free.
+                    for (px, py) in self.wiring.take_switch_clicks() {
+                        self.audio
+                            .play_switch_click(px as f32, py as f32, self.rngs.global());
+                    }
                     server.broadcast_except(
                         &S2c::HitSwitch(net::HitSwitch {
                             x: cx as i16,
@@ -728,6 +747,13 @@ impl App {
             C2s::HitSwitch(hs) => {
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32); // `:2687`
+                // S1-E-21i — the click plays on the host's stream shape
+                // (the bare `Main.rand`; the handler runs outside every
+                // swap). The netMode-2 gate refuses it, draw-free.
+                for (px, py) in self.wiring.take_switch_clicks() {
+                    self.audio
+                        .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
                 self.world_key = None;
                 server.broadcast_except(&S2c::HitSwitch(hs), id); // `:2691`
             }
@@ -1375,7 +1401,19 @@ impl App {
                 self.world.day_time = day;
             }
             S2c::Edit { x, y, kind, tile } => {
-                apply_edit(&mut self.world, x, y, kind, tile);
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                // S1-E-21i — the client's `KillWall` replay plays too
+                // (`MessageBuffer.cs:1177`); the message handler runs
+                // outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike
+                // precedent), so the draws ride the bare stream.
+                if let Some(wall) = broken_wall {
+                    self.audio.play_wall_break_sound(
+                        tr_core::edit::kill_wall_sound(wall),
+                        x as f32 * 16.0,
+                        y as f32 * 16.0,
+                        self.rngs.global(),
+                    );
+                }
                 self.world_key = None;
             }
             // `case 82` — a NetModule envelope.
@@ -1665,6 +1703,13 @@ impl App {
             S2c::HitSwitch(hs) => {
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32);
+                // S1-E-21i — the client's click replay: the message handler
+                // runs outside every swap (`Main.cs:16895`'s NpcStrike
+                // precedent), so the pitch draws ride the bare stream.
+                for (px, py) in self.wiring.take_switch_clicks() {
+                    self.audio
+                        .play_switch_click(px as f32, py as f32, self.rngs.global());
+                }
                 self.world_key = None;
             }
             // `case 80` — which chest a player has open
@@ -2636,6 +2681,39 @@ fn npc_seed(
             crate::npc::Npc::spawn_eye(world, tx)?
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
+        // S1-D-3ff wave A — the nine slimes and ten walkers plant their
+        // feet on the column surface (the generic surface ctor, the
+        // pumpkin walkers' precedent — the family machines take over on
+        // the first tick); the five eyes ride the eye-variant ctor a few
+        // tiles above the surface.
+        crate::npc::NpcKind::MotherSlime
+        | crate::npc::NpcKind::LavaSlime
+        | crate::npc::NpcKind::DungeonSlime
+        | crate::npc::NpcKind::CorruptSlime
+        | crate::npc::NpcKind::IlluminantSlime
+        | crate::npc::NpcKind::IceSlime
+        | crate::npc::NpcKind::Crimslime
+        | crate::npc::NpcKind::SpikedIceSlime
+        | crate::npc::NpcKind::UmbrellaSlime
+        | crate::npc::NpcKind::DoctorBones
+        | crate::npc::NpcKind::TheGroom
+        | crate::npc::NpcKind::BaldZombie
+        | crate::npc::NpcKind::ZombieEskimo
+        | crate::npc::NpcKind::PincushionZombie
+        | crate::npc::NpcKind::SlimedZombie
+        | crate::npc::NpcKind::SwampZombie
+        | crate::npc::NpcKind::TwiggyZombie
+        | crate::npc::NpcKind::FemaleZombie
+        | crate::npc::NpcKind::ZombieRaincoat => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::CataractEye
+        | crate::npc::NpcKind::SleepyEye
+        | crate::npc::NpcKind::DialatedEye
+        | crate::npc::NpcKind::GreenEye
+        | crate::npc::NpcKind::PurpleEye => {
+            crate::npc::Npc::spawn_eye_variant(world, tx, kind)?
+        },
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::Merchant
         | crate::npc::NpcKind::Dryad
@@ -2886,6 +2964,22 @@ fn npc_seed(
         crate::npc::NpcKind::MourningWood
         | crate::npc::NpcKind::Pumpking
         | crate::npc::NpcKind::Poltergeist => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The Frost Moon family, slice A (`S1-F-13c`): the same seed shape
+        // as the pumpkin roster — the walkers (the Zombie Elf trio, the
+        // Present Mimic, the Gingerbread Man and the Yeti, whose aiStyle-3/25
+        // stand-ins ride the walker family) plant the feet on the column
+        // surface; the Everscream's aiStyle-57 hover stand-in rides the
+        // hover ctor (`NPC.cs:13281-13368` SetDefaults).
+        crate::npc::NpcKind::ZombieElf
+        | crate::npc::NpcKind::ZombieElfBeard
+        | crate::npc::NpcKind::ZombieElfGirl
+        | crate::npc::NpcKind::PresentMimic
+        | crate::npc::NpcKind::GingerbreadMan
+        | crate::npc::NpcKind::Yeti => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Everscream => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
@@ -3532,7 +3626,7 @@ mod handshake_tests {
         // The host edits the tile (the real flow: `editing.rs` mutates the
         // world, then asks for the replication) and the client receives the
         // `20` body.
-        crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5);
+        let _ = crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5);
         host_app.request_edit(50, 60, 0, 5);
         pump(&mut host_app, &mut client_app, 15);
         assert_eq!(
