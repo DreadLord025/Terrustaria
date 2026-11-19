@@ -285,6 +285,28 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_128", 68),
     ("Zombie_129", 69),
     ("Zombie_130", 69),
+    // S1-E-21e — the fighter-moan slots (`AI_003_Fighters`,
+    // `NPC.cs:57340-57367`): case 14's default `Next(3)` (`:817`), the
+    // style-542 slot 7 (`:796`) and the 489/586 `Next(21, 24)` (`:808`);
+    // case 26's `Next(3, 5)` (`:971`); case 29's Style-is-the-slot rows
+    // 6/7/8 (`:1045`) and the full per-style switch's named slots (the
+    // later waves' callers); case 45's pinned slot 109 (the duck quack,
+    // `NPC.cs:23678-23681`, `:1060`). Cases 14/26/29 are NOT on the
+    // ambient-scaling list (`LegacySoundPlayer.cs:1444-1457`) — they ride
+    // `Main.soundVolume`; case 45 does scale.
+    ("Zombie_0", 14),
+    ("Zombie_1", 14),
+    ("Zombie_2", 14),
+    ("Zombie_3", 26),
+    ("Zombie_4", 26),
+    ("Zombie_5", 29),
+    ("Zombie_6", 29),
+    ("Zombie_7", 29),
+    ("Zombie_8", 29),
+    ("Zombie_21", 14),
+    ("Zombie_22", 14),
+    ("Zombie_23", 14),
+    ("Zombie_109", 45),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
@@ -759,6 +781,58 @@ impl Audio {
         if let Some(old) = self.zombie_slots.insert(voice.slot, sink) {
             old.detach();
         }
+    }
+
+    /// S1-E-21e — one fighter-moan play (`AI_003_Fighters`' ambient arms,
+    /// `NPC.cs:57340-57367`: `PlaySound(14/26/29, (int)position.X,
+    /// (int)position.Y[, Style])` — the int overload, `SoundEngine.cs:102-108`,
+    /// draws NO `GetRandomPitch` NextFloat). The attenuation gate
+    /// (`LegacySoundPlayer.cs:369-436`) runs FIRST — a muted or out-of-range
+    /// play consumes nothing — then the case's slot/pitch draws ride the
+    /// caller's stream (the moan rolls run under the `UpdateNPCs` swap,
+    /// `Main.cs:17767`) through [`crate::ambient_sound::critter_legacy_voice`]:
+    ///
+    /// * case 14 (`:793-824`): the style-542 slot 7 (no draw), the 489/586
+    ///   `Next(21, 24)` or the default `Next(3)` — ONE slot draw, NO pitch
+    ///   draw, ×0.4, the array entry overwritten without a Stop.
+    /// * case 26 (`:969-978`): `Next(3, 5)` + one `Next(-10, 11)` pitch,
+    ///   ×0.9, overwrite without a Stop.
+    /// * case 29 (`:1008-1050`): the Style IS the slot, the per-style volume
+    ///   arms, the playing guard returns BEFORE the pitch draw, ×mult, one
+    ///   `Next(-10, 11)` pitch.
+    ///
+    /// Cases 14/26/29 are not on the ambient-scaling list
+    /// (`LegacySoundPlayer.cs:1444-1457`) — the gate scales `Main.soundVolume`.
+    /// Returns the asset played; `None` when the gate refused, the id is not
+    /// a moan case, or a case-29 playing guard blocked the slot.
+    pub fn play_fighter_moan(
+        &mut self,
+        legacy_id: u32,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The moan arms' three cases only — anything else is a caller bug.
+        if !matches!(legacy_id, 14 | 26 | 29) {
+            return None;
+        }
+        // The attenuation gate first — the int overload draws nothing
+        // before the switch (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(legacy_id, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let voice = crate::ambient_sound::critter_legacy_voice(
+            legacy_id,
+            style as u32,
+            &mut |lo, hi| rng.next_range(lo, hi),
+            &|slot| self.zombie_playing(slot),
+        )?;
+        // The slot handling is the critter family's: detach-not-stop on the
+        // overwrite (case 14/26 replace the entry without a Stop, case 29's
+        // guard already refused a busy slot).
+        self.play_critter(voice, x, y);
+        Some(voice.asset)
     }
 
     /// `WorldGen.PlayLiquidChangeSound` (`WorldGen.cs:4632-4650`, S1-E-25):
@@ -2925,6 +2999,116 @@ mod tests {
         }
     }
 
+    /// S1-E-21e — the fighter moans' RNG contract: the moan arms' rolls ride
+    /// the caller's stream (`UpdateNPCs`, `Main.cs:17767`), and each legacy
+    /// case's slot/pitch draws run AFTER the attenuation gate on the SAME
+    /// stream (`LegacySoundPlayer.cs:369-436`'s prologue precedes the
+    /// switch). Case 14 draws one slot and no pitch (`:793-824`), case 26 a
+    /// slot + a pitch (`:969-978`), case 29 one pitch behind the playing
+    /// guard (`:1008-1050`); a muted or out-of-range play consumes nothing.
+    #[test]
+    fn s1_e_21e_the_moan_draws_ride_the_passed_stream_after_the_gate() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 14 default (`:817`): exactly one Next(3) slot draw, NO pitch.
+        // Seed 7 draws 1 → Zombie_1.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(0, 3);
+        assert_eq!(
+            audio.play_fighter_moan(14, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        // Case 14 style 542 (`:796-803`): slot 7 pinned, ZERO draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_fighter_moan(14, 542, 0.0, 0.0, &mut rng),
+            Some("Zombie_7")
+        );
+        assert_eq!(rng.peek(), peek, "the pinned slot draws nothing");
+        // Case 14 styles 489/586 (`:805-813`): the Next(21, 24) slot arm,
+        // still no pitch. Seed 7 draws 22 → Zombie_22.
+        for style in [489, 586] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _slot = witness.next_range(21, 24);
+            assert_eq!(
+                audio.play_fighter_moan(14, style, 0.0, 0.0, &mut rng),
+                Some("Zombie_22")
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one slot draw, no pitch draw");
+        }
+        // Case 26 (`:969-978`): Next(3, 5) + one Next(-10, 11) pitch. Seed 7
+        // draws 3 then 8 → Zombie_3.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _slot = witness.next_range(3, 5);
+        let _pitch = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_fighter_moan(26, 1, 0.0, 0.0, &mut rng),
+            Some("Zombie_3")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "slot + pitch");
+        // Case 29 (`:1008-1050`): the Style IS the slot, one pitch draw.
+        // Seed 7 draws -2; the moan styles 6/7/8 keep mult 1.0.
+        for style in [6, 7, 8] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _pitch = witness.next_range(-10, 11);
+            assert_eq!(
+                audio.play_fighter_moan(29, style, 0.0, 0.0, &mut rng),
+                Some(match style {
+                    6 => "Zombie_6",
+                    7 => "Zombie_7",
+                    _ => "Zombie_8",
+                })
+            );
+            assert_eq!(rng.peek(), witness.peek(), "one pitch draw");
+        }
+        // Muted (soundVolume 0): cases 14/26/29 are NOT ambient-scaling
+        // (`LegacySoundPlayer.cs:1444-1457`) — the gate precedes the switch
+        // and the play is draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (14, 542), (14, 489), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_fighter_moan(case, style, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "case {case}: the muted play is draw-free");
+        }
+        // Out of range (distance >= SOUND_ATTENUATION_DISTANCE): the gate
+        // refuses before any draw, volume back at 1.
+        let mut l = audio.listener;
+        l.sound_volume = 1.0;
+        audio.set_listener(l);
+        for (case, style) in [(14u32, 1i32), (26, 1), (29, 7)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(
+                audio.play_fighter_moan(case, style, 3000.0, 0.0, &mut rng),
+                None
+            );
+            assert_eq!(rng.peek(), peek, "case {case}: the far play is draw-free");
+        }
+        // Every moan asset resolves to a registered bank row.
+        for name in [
+            "Zombie_0",
+            "Zombie_1",
+            "Zombie_2",
+            "Zombie_3",
+            "Zombie_4",
+            "Zombie_5",
+            "Zombie_6",
+            "Zombie_7",
+            "Zombie_8",
+            "Zombie_21",
+            "Zombie_22",
+            "Zombie_23",
+            "Zombie_109",
+        ] {
     /// S1-E-21i — the wall-break play's RNG contract
     /// (`WorldGen.cs:60423-60441`'s four arms): Shatter (13) draws NOTHING,
     /// Grass (6) draws one `Next(-30, 31)`, NPCHit25 draws one
