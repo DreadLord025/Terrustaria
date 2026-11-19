@@ -21990,8 +21990,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            206,
-            "every decodable kind resolves (the wire roster's size — 206 after S1-F-13c slice A's frost seven)"
+            214,
+            "every decodable kind resolves (the wire roster's size — 214 after S1-F-13c slices A+B's frost fifteen)"
         );
         assert!(
             covered > 43,

@@ -4301,9 +4301,12 @@ mod tests {
                 }
             }
         }
+        // Every frost wave id is ported now (slices A+B): every Some pick
+        // spawns; the only no-spawn outcome left is the wave-20 boss-cap
+        // refusal, which the dedicated cap tests pin.
         assert!(
-            saw_ported_spawn && saw_unported_consume,
-            "the sweep must exercise both outcomes (spawned {saw_ported_spawn}, consumed {saw_unported_consume})"
+            saw_ported_spawn,
+            "the sweep must exercise the spawn outcome"
         );
     }
 
