@@ -197,7 +197,7 @@ pub fn destroyer_segments_count(get_good_world: bool) -> i32 {
 /// `NpcKind::Probe` spawn (the port's slot allocation is the sim's job).
 pub fn probe_launch_on_hit(
     n: &mut Npc,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn tr_core::loot::DropRng,
     mech_queen_up: bool,
 ) -> Option<(f32, f32)> {
     // `:89268` — type 135, alive, host (`Main.netMode != 1`; the port is
@@ -207,7 +207,10 @@ pub fn probe_launch_on_hit(
     }
     let max_value = if mech_queen_up { 50 } else { 25 };
     // `:89275` — the `ai[2] == 0` gate BEFORE the draw (short-circuit).
-    if n.ai[2] == 0.0 && rng.next_max(max_value) == 0 {
+    // `next_range(0, max)` is the same single Sample()*max draw as the
+    // concrete `next_max` (UnifiedRandom.cs:126-130 vs :140) — the strike
+    // paths hand a `dyn DropRng` (the projectile pass's stream seam).
+    if n.ai[2] == 0.0 && rng.next_range(0, max_value) == 0 {
         n.ai[2] = 1.0;
         n.net_update = true;
         let (w, h) = n.size();
@@ -1605,7 +1608,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
         // Tick 1: the spawn draws NOTHING (the C# NewNPC has no rand).
-        let spawn_witness = rng.clone();
+        let mut spawn_witness = rng.clone();
         let events = destroyer_family_step(
             &mut npcs, &w, &players, &mut rng, &mut next_id, 0,
         );
