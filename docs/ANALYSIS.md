@@ -24893,3 +24893,111 @@ re-read line-by-line (the rotations, the nesting of the slam's else-if,
 the release checks, the pin order, the lead draws). The 14 new witness
 tests + the 7 updated golem tests + the extended wire-gate test are
 WRITTEN, NOT RUN — **no compiler invoked**.
+## The NPC sound sites wave (S1-E-21g, 2026-11-19, code-only mode)
+
+**Scope.** The NPC.cs `PlaySound` census (~250 sites) minus the landed
+waves: wave C owns the StrikeNPC/checkDead hit+death cues, wave E the
+fighter moans, S1-E-25 the critter table; E21f (player) and E21h
+(projectile) are siblings' territory. Wave G lands the boss/AI-side
+subset: the roars, the caster teleport puffs, the attack-loop cues and
+the worm dig cadence — 19 call sites across 10 machines.
+
+**The queue seam.** The AI machines run without the `Audio` borrow, so
+the sites queue `NpcSoundRequest` on `Npc::wants_sound` (the
+`wants_hostile_shot` shape). `world_sim/npcs.rs` drains per NPC right
+after `update_rng` — BEFORE the moan/critter emitters (the C#'s plays
+sit inside `AI()`, which precedes `UpdateNPC_CritterSounds`,
+`NPC.cs:90323`) — and the worm pass drains its own queue after the
+chain walk. Every play method gates attenuation BEFORE any case draw
+(the E21e precedent, `LegacySoundPlayer.cs:369-436` precedes the type
+switch); the draws ride the `UpdateNPCs` stream (`Main.cs:17767`).
+
+**The overload split (the wave's RNG argument).** `SoundEngine.cs:93-99`
+(the `SoundID.*` style façade) consumes the `GetRandomPitch`
+NextFloat on the audio-only `sound_style_random`; `:102-108` (the
+int overload) draws NONE. Wave G ports both: `play_npc_hit_int` /
+`play_npc_death_int` (no NextFloat) vs `play_npc_death_style` /
+`play_npc_item_cue` / `play_eow_dig` (façade). The gameplay draws:
+case 2 one `Next(-6,7)*0.01` (the Item8/14/34 puffs), case 3/4 one
+`Next(-10,11)*0.01`, case 27 one `Next(-10,11)*0.01` in BOTH the
+live-instance and fresh branches (`:984`/`:994`), cases 15/36/42
+NOTHING.
+
+**The landed sites** (C# cites → port homes):
+- EoC spin hand-off pair `NPC.cs:20364` (int 3) + `:20375` (roar 0)
+  → `update_eye_of_cthulhu`'s phase-3 else arm; the gore/dust draws
+  between them are SKIPPED (the standing deviation), so the pair queues
+  back to back.
+- EoC dash roar `:20500` (case 36 style 0) → the final-phase
+  `ai[1]==1` arm. The expert `:20694` (style −1, +0.6 pitch) is
+  coded in `roar_case36` but unwired (no expert rage states).
+- EoC death roar `HitEffect :87297` — played TWICE (inside the
+  `num567 < 2` gore loop) → the death-retain pass, after the death
+  cue. Headless both pass (the fresh-slot table); with a live device
+  the second refuses on case 15's guard.
+- Skeletron charge roar `:22169` (`ai[2]==2` after the increment)
+  → `update_skeletron`'s charge arm; the Dungeon Guardian's
+  first-tick roar `:21946` is table-complete behind `cs_id()==68`
+  (no ported kind yet, the E21e duck precedent).
+- Brain retreat pair `:32408` + `:32418` → `update_brain`'s
+  `ai[0]<0` head, latched on the generic `local_ai[2]` (the C#'s
+  `localAI[2]`; `brain_local[2]` carries the Creeper count — the
+  documented repurpose). Both blink puffs `:32505` (new centre) /
+  `:32622` (OLD centre — the C# plays before the position rewrite).
+- Caster teleport pair `:20862` (departure, OLD position) + `:20931`
+  (arrival, placed position) + the cast puff `:21232` (`type!=172`)
+  → `npc_ai_bat::ai_style_8_step`.
+- Spazmatism flamethrower loop `:27493` (Item34 at the 23-tick
+  `localAI[2]` wrap) → `npc_ai_style31`.
+- Golem fist launch `:19415` (Item14 at `ai[1]==1` of the dash) →
+  the fists' `ai[0]==2` arm; the `Next(2)` dust roll behind it
+  stays skipped (it draws AFTER the play — order holds).
+- Tower dissolve cry `:39059` (int 4 style 22, `ai[1]%60==1`) →
+  `update_ancient_cultist`'s dissolve counter (`ai[2]`, the recorded
+  stand-in).
+- Moon Lord crash cry `:41432` (NPCDeath61 at `ai[1]==1` of the
+  crash) + the three laser wind-ups `:41838`/`:42338`/`:42611`
+  (int 4 style 6 at the 35-ticks-out mark) → the core/hand/head/TrueEye
+  machines.
+- Leech tunnel-entry burst `:50968` (NPCDeath13, `localAI[1]` latch)
+  → the worm pass's chain init.
+- Worm dig rumble `:51976-51995` — the `soundDelay==0` cadence,
+  distance/40 clamped 10..20 re-armed BEFORE the play; EoW heads play
+  the `EOWDiggin` trackable (`:51990`), other heads the roar at the
+  int overload's DEFAULT Style 1 (`:51994`). `Npc::sound_delay`
+  ticks BEFORE the machine (`NPC.cs:90381-90384`). The Destroyer's
+  own `AI_037` roar (`:50081-50093`) shares the shape — the worm
+  pass stands for it (the port's Destroyer rides the worm machine).
+
+**The maths.** `sound.rs::roar_case15` (`:826-842`): style 4 → slot
+1 at ×0.25, the null-or-Stopped guard refuses BEFORE the instance;
+`roar_case36` (`:1309-1325`): Style-is-slot, −1 → slot 0 +0.6 pitch,
+NO guard. `Audio` gained the `SoundInstanceRoar[3]` slots and the
+`SoundInstancePixie` slot; `play_pixie` ports case 27's
+draw-in-both-branches shape (the wing-hum seam — no ported Pixie kind
+yet, table-complete like the duck). Bank: `Roar_1/2`, `Pixie`,
+`NPC_Killed_13/61`, `Item_14/17`, `eow_dig` join (all assets
+verified on disk).
+
+**Deviations / deferrals.** The gore/dust draws around the EoC/Brain
+pairs and the leech burst are skipped (the standing gore/dust deviation
+— the plays' relative order is kept, the interleaved stream draws are
+not: a documented RNG-stream deviation for those three sites, the same
+class as wave E's dust skips). The tower shield-flip cries
+(`:39089`/`:39093`) need the shield-strength mirror (unported).
+The Sand Shark (`:40581`, case 15 style 4), the duck (`:23680`),
+the Pixie (`:24855`), the Queen Bee charge hiss (`:24449`), the
+Goblin Summoner apparition cue (`:56403`), the Deerclops screams and
+the DD2/Pal cue families await their kinds/machines — the case maths
+and bank rows are table-complete. The EoC expert rage roars
+(`:20694`/`:20729`) await the expert states.
+
+**Verification.** Code-only: the census grepped every `PlaySound` in
+NPC.cs, each landed site re-read with its enclosing method + guards;
+the bank assets and `soundid.rs` rows verified by grep. Witness
+tests WRITTEN, NOT RUN — `s1_e_21g_*`: 2 in sound.rs (the case-15/36
+tables), 4 in audio.rs (the roar draw-neutrality, the overload split,
+the case-2 stream contract, the pixie draw), 3 in world_sim/npcs.rs
+(the Skeletron roar wiring, the drain's ordered-draws contract with
+the muted draw-free control, the worm soundDelay cadence). **No
+compiler invoked.**

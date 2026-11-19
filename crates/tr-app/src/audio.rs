@@ -65,6 +65,32 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_8", 3),
     ("NPC_Hit_9", 3),
     ("NPC_Hit_11", 3),
+    // S1-E-21g — the case-15/36 roar bank (`Sounds/Roar_0..2`,
+    // `LegacySoundPlayer.cs:227-230`): the boss spawn/phase roars
+    // (`NPC.cs:20375`/`:21946`/`:22169`/`:32418`), the EoC dash roars
+    // (`:20500`/`:20694` — case 36) and the Sand Shark's quiet style-4
+    // remap (`:40581`, case 15's ×0.25 arm).
+    ("Roar_1", 15),
+    ("Roar_2", 15),
+    // S1-E-21g — the case-36 dash roars share the `SoundRoar` slots but
+    // ride the legacy id 36 (`LegacySoundPlayer.cs:1309-1325`); the bank
+    // resolves the asset by name, the play methods pass the case id.
+    // S1-E-21g — the Pixie wing hum (`Sounds/Pixie`,
+    // `LegacySoundPlayer.cs:178`, case 27 `:979-996`).
+    ("Pixie", 27),
+    // S1-E-21g — the wave-G death cues the AI-side plays name: the
+    // leech head's tunnel-entry burst (`NPCDeath13`, `NPC.cs:50968`),
+    // the tower dissolve (`NPCDeath22`, `:39059`) and the Moon Lord
+    // crash cry (`NPCDeath61`, `:41432`); `NPC_Killed_6` (the parts'
+    // laser wind-up, `:41838`/`:42338`/`:42611`) is already above.
+    ("NPC_Killed_13", 4),
+    ("NPC_Killed_61", 4),
+    // S1-E-21g — the attack/shot cues the caster teleport plays
+    // (`SoundID.Item8`, `NPC.cs:20862`/`:20931`) and the EoC servant
+    // launch (`SoundID.Item14`, the goblin-fist arm `:19415`) — Item_8
+    // is already in the wave-A bank; Item_14/17 join here.
+    ("Item_14", 2),
+    ("Item_17", 2),
     // The Headless Horseman's hit cue (`NPC.cs:12978`'s `NPCHit12`,
     // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
     ("NPC_Hit_12", 3),
@@ -347,6 +373,9 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     "dd2_wyvern_hurt_0",
     "deerclops_death",
     "deerclops_hit_0",
+    // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
+    // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
+    "eow_dig",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -532,6 +561,19 @@ pub struct Audio {
     /// the entry WITHOUT a Stop (`:1002`) — the wiring switch click,
     /// S1-E-21i.
     mech_slots: [Option<rodio::Sink>; 1],
+    /// The `SoundInstanceRoar[3]` slots (`LegacySoundPlayer.cs:118`/`:326-329`,
+    /// `Sounds/Roar_0..2` `:227-230`): case 15's null-or-Stopped guard reads
+    /// them (`:834`) and replaces the picked slot on a fresh play (`:836`);
+    /// case 36 overwrites WITHOUT any guard (`:1316`). S1-E-21g.
+    roar_slots: [Option<rodio::Sink>; 3],
+    /// The `SoundInstancePixie` slot (`LegacySoundPlayer.cs:129`/`:178`):
+    /// case 27's playing branch RE-DRAWS the pitch on the live instance
+    /// and returns null (`:980-986`) — the draw is consumed either way;
+    /// a fresh play stops the old instance (`:987-990`). The wing-hum
+    /// loop stand-in, S1-E-21g (the Pixie 75's `Next(40)` ambience arm,
+    /// `NPC.cs:24853-24856`); no ported Pixie kind yet — the seam is
+    /// table-complete for the future kind.
+    pixie_slot: Option<rodio::Sink>,
 }
 
 impl Audio {
@@ -633,6 +675,8 @@ impl Audio {
             splash_slots: [None, None, None, None, None, None],
             zombie_slots: HashMap::new(),
             mech_slots: [None],
+            roar_slots: [None, None, None],
+            pixie_slot: None,
         }
     }
 
@@ -1044,6 +1088,45 @@ impl Audio {
         // variance 0 (`SoundStyle.cs:42`), before the legacy gate.
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
+        self.npc_hit_play(cue, style, pitch_offset, x, y, rng)
+    }
+
+    /// S1-E-21g — the int-overload peer of [`Audio::play_npc_hit_sound`]
+    /// (`SoundEngine.cs:102-108`: `PlaySound(int type, int x, int y,
+    /// int Style)` calls the legacy player DIRECTLY — NO `GetRandomPitch`
+    /// NextFloat). The wave-G call sites: the EoC's phase hand-off
+    /// `PlaySound(3, pos)` (`NPC.cs:20364`, the default Style 1) and the
+    /// Brain of Cthulhu's retreat entry (`NPC.cs:32408`). Only the styles
+    /// the wired sites name resolve; anything else is a caller bug.
+    pub fn play_npc_hit_int(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The C# sites pass `(int)base.position.X/Y` — truncate here.
+        let (x, y) = (x.trunc(), y.trunc());
+        let cue = match style_num {
+            1 => "NPC_Hit_1",
+            _ => return None,
+        };
+        let style = npc_sound_style(cue, "NPC_Hit_", 3)?;
+        self.npc_hit_play(cue, style, 0.0, x, y, rng)
+    }
+
+    /// The shared case-3 tail of both hit overloads: the attenuation gate
+    /// (`LegacySoundPlayer.cs:369-436`), the case-3 maths (`:646-672`),
+    /// the slot Stop+re-create (`:663-667`) and the emit.
+    fn npc_hit_play(
+        &mut self,
+        cue: &'static str,
+        style: &crate::soundid::SoundStyleDef,
+        pitch_offset: f32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
             .is_none()
         {
@@ -1103,6 +1186,72 @@ impl Audio {
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
+        self.npc_death_play(cue, style, pitch_offset, x, y, rng)
+    }
+
+    /// S1-E-21g — one case-4 play resolved from a `SoundID.NPCDeathN`
+    /// STYLE façade (`SoundEngine.cs:93-99` — the `GetRandomPitch`
+    /// NextFloat IS consumed, on the audio-only stream). The wave-G
+    /// sites: the Moon Lord core's crash cry (`NPCDeath61`,
+    /// `NPC.cs:41432`), the leech head's tunnel-entry burst
+    /// (`NPCDeath13`, `:50968`). The int-overload sites (styles 22/6)
+    /// use [`Audio::play_npc_death_int`] instead — no NextFloat.
+    pub fn play_npc_death_style(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // `SoundEngine.cs:88-91` — the Vector2 façade truncates.
+        let (x, y) = (x.trunc(), y.trunc());
+        let cue = match style_num {
+            13 => "NPC_Killed_13",
+            61 => "NPC_Killed_61",
+            _ => return None,
+        };
+        let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
+        let draw = self.sound_style_random.next_float();
+        let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
+        self.npc_death_play(cue, style, pitch_offset, x, y, rng)
+    }
+
+    /// S1-E-21g — the int-overload peer of [`Audio::play_npc_death_sound`]
+    /// (`SoundEngine.cs:102-108` — NO `GetRandomPitch` NextFloat). The
+    /// wave-G call sites: the tower dissolve's `PlaySound(4, Center, 22)`
+    /// (`NPC.cs:39059`) and the Moon parts' laser wind-up
+    /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`).
+    pub fn play_npc_death_int(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The C# sites pass `(int)base.position.X/Y` (or the truncated
+        // Center via `:83-85`) — truncate here.
+        let (x, y) = (x.trunc(), y.trunc());
+        let cue = match style_num {
+            6 => "NPC_Killed_6",
+            22 => "NPC_Killed_22",
+            _ => return None,
+        };
+        let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
+        self.npc_death_play(cue, style, 0.0, x, y, rng)
+    }
+
+    /// The shared case-4 tail of both death overloads: the attenuation
+    /// gate, the case-4 maths (`LegacySoundPlayer.cs:673-695`), the
+    /// no-Stop slot overwrite (`:690`) and the emit.
+    fn npc_death_play(
+        &mut self,
+        cue: &'static str,
+        style: &crate::soundid::SoundStyleDef,
+        pitch_offset: f32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
             .is_none()
         {
@@ -1135,6 +1284,158 @@ impl Audio {
             let _ = self.emit(cue, x, y, volume_scale, pitch);
         }
         Some(cue)
+    }
+
+    /// S1-E-21g — one case-15 boss-roar play (`NPC.cs:20375`/`:22169`/
+    /// `:32418`/`:87297`, `PlaySound(15, pos, style)` — the int overload,
+    /// NO `GetRandomPitch`). The attenuation gate runs FIRST
+    /// (`LegacySoundPlayer.cs:369-436`); case 15 (`:826-842`) draws
+    /// NOTHING — the style-4 remap + the `SoundInstanceRoar[num]`
+    /// null-or-Stopped guard are the whole decision
+    /// ([`crate::sound::roar_case15`]). Returns the asset played; `None`
+    /// when the gate or the slot guard refused.
+    pub fn play_roar(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(15, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let probe = sound::roar_case15(style, false)?;
+        let playing = self.roar_slots[probe.0]
+            .as_ref()
+            .is_some_and(|s| !s.empty());
+        let (slot, tweak) = sound::roar_case15(style, playing)?;
+        let cue = match slot {
+            0 => "Roar_0",
+            1 => "Roar_1",
+            _ => "Roar_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // `:836` — a fresh CreateInstance replaces the (Stopped) slot.
+        if let Some(old) = self.roar_slots[slot].take() {
+            old.stop();
+        }
+        self.roar_slots[slot] = self.emit(cue, x, y, tweak, 0.0);
+        Some(cue)
+    }
+
+    /// S1-E-21g — one case-36 dash-roar play (the EoC's `NPC.cs:20500`/
+    /// `:20694`, `PlaySound(36, pos, style)` — the int overload). The
+    /// gate first; case 36 (`LegacySoundPlayer.cs:1309-1325`) has NO
+    /// guard and NO draws — the Style is the slot, `-1` → slot 0 at
+    /// `Pitch += 0.6` ([`crate::sound::roar_case36`]). The slot is
+    /// overwritten outright (`:1316`).
+    pub fn play_dash_roar(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(36, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (slot, pitch) = sound::roar_case36(style);
+        let cue = match slot {
+            0 => "Roar_0",
+            1 => "Roar_1",
+            _ => "Roar_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(old) = self.roar_slots[slot].take() {
+            old.stop();
+        }
+        self.roar_slots[slot] = self.emit(cue, x, y, 1.0, pitch);
+        Some(cue)
+    }
+
+    /// S1-E-21g — one case-27 Pixie wing-hum play (`NPC.cs:24853-24856`,
+    /// the type-75 `Next(40) == 0` ambience arm; no ported Pixie kind yet
+    /// — the seam is table-complete for the future kind, the E21e duck
+    /// precedent). The int overload draws no NextFloat. The gate first;
+    /// case 27 (`LegacySoundPlayer.cs:979-996`): a LIVE instance re-draws
+    /// the pitch (`:984`) and returns null — the ONE
+    /// `Main.rand.Next(-10, 11) * 0.01` draw is consumed EITHER WAY; a
+    /// fresh play stops the old instance (`:987-990`) and draws the same
+    /// roll (`:994`). Returns the asset on a fresh play; `None` when the
+    /// gate refused or the live-instance branch consumed the draw.
+    pub fn play_pixie(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(27, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        // The pitch draw rides the caller's stream in BOTH branches.
+        let pitch = rng.next_range(-10, 11) as f32 * 0.01;
+        if self.pixie_slot.as_ref().is_some_and(|s| !s.empty()) {
+            // `:980-986` — the live instance's Volume/Pan/Pitch update,
+            // then `return null` (no new source).
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(old) = self.pixie_slot.take() {
+            old.stop();
+        }
+        self.pixie_slot = self.emit("Pixie", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some("Pixie")
+    }
+
+    /// S1-E-21g — one `SoundID.ItemN` style play from an NPC AI site
+    /// (the caster teleport's Item8 `NPC.cs:20862`/`:20931`/`:21232`,
+    /// the Brain's blinks `:32505`/`:32622`, the Spazmatism flamethrower's
+    /// Item34 `:27493`): the same façade as wave A
+    /// ([`Audio::play_use_sound`]) — the `GetRandomPitch` NextFloat on the
+    /// audio-only stream, the attenuation gate, then case 2's one
+    /// `Main.rand` pitch draw on the caller's `UpdateNPCs` stream.
+    pub fn play_npc_item_cue(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // `SoundEngine.cs:88-91` — the Vector2 façade truncates.
+        let (x, y) = (x.trunc(), y.trunc());
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.sound_id == 2 && s.style == style_num)?;
+        self.play_use_sound(idx as u16, x, y, 0.0, rng)
+    }
+
+    /// S1-E-21g — the EoW head's dig rumble (`NPC.cs:51990`,
+    /// `SoundID.EOWDiggin` — the `CreateTrackable("eow_dig")` style,
+    /// `SoundID.cs:1763`, case 42 `LegacySoundPlayer.cs:1376-1381`): the
+    /// façade's NextFloat rides the audio-only stream (variance 0.02),
+    /// the gate, then NO gameplay draw — the pinned single variation.
+    pub fn play_eow_dig(
+        &mut self,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.trackable == Some("eow_dig"))?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("eow_dig", x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some("eow_dig")
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue
@@ -2379,6 +2680,132 @@ pub fn music_box_track(box_id: i32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S1-E-21g — the roar plays are stream-NEUTRAL: case 15
+    /// (`LegacySoundPlayer.cs:826-842`) and case 36 (`:1309-1325`) draw
+    /// nothing from `Main.rand` and no NextFloat — the attenuation gate
+    /// is the only refusal, and the style-4 remap picks `Roar_1`.
+    #[test]
+    fn s1_e_21g_the_roar_plays_draw_nothing() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
+        assert_eq!(audio.play_roar(4, 0.0, 0.0), Some("Roar_1"));
+        assert_eq!(audio.play_dash_roar(-1, 0.0, 0.0), Some("Roar_0"));
+        assert_eq!(audio.play_dash_roar(2, 0.0, 0.0), Some("Roar_2"));
+        assert_eq!(rng.peek(), peek, "the roar cases consume no draws");
+        // The gate refuses the out-of-range play — still draw-free.
+        assert_eq!(audio.play_roar(0, 5000.0, 0.0), None);
+        assert_eq!(audio.play_dash_roar(0, 5000.0, 0.0), None);
+        assert_eq!(rng.peek(), peek);
+        // Headless the slots never play, so the case-15 guard's
+        // null-or-Stopped test passes every time (the fresh-slot table,
+        // the wave-C convention).
+        assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
+    }
+
+    /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on
+    /// the passed stream and NO NextFloat; the style façades
+    /// (`NPCDeath61`/`NPCDeath13`) add the audio-only NextFloat but the
+    /// same one gameplay draw.
+    #[test]
+    fn s1_e_21g_the_int_and_style_death_peers_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // The int overload: one Next(-10, 11), no style-stream movement.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(22, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_22")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(
+            audio.sound_style_random, style_before,
+            "the int overload draws no NextFloat"
+        );
+        // The style façade: the same one gameplay draw + the NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(61, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_61")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(
+            audio.sound_style_random, style_before,
+            "the façade consumed the NextFloat"
+        );
+        // The hit int peer (the EoC/Brain hand-off): one draw, no NextFloat.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_hit_int(1, 0.0, 0.0, &mut rng),
+            Some("NPC_Hit_1")
+        );
+        assert_eq!(rng.peek(), witness.peek());
+        assert_eq!(audio.sound_style_random, style_before);
+        // Muted: draw-free on every peer.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_hit_int(1, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_int(6, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(13, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted plays are draw-free");
+    }
+
+    /// S1-E-21g — the caster Item8 puff rides wave A's case-2 path: the
+    /// NextFloat on the audio-only stream, then ONE default
+    /// `Next(-6, 7) * 0.01` gameplay draw after the gate.
+    #[test]
+    fn s1_e_21g_the_item_cue_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            audio.play_npc_item_cue(8, 0.0, 0.0, &mut rng),
+            Some("Item_8")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "case 2's one pitch draw");
+        // Out of range: the gate refuses BEFORE the case draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_item_cue(8, 5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // The EoW dig trackable: no gameplay draw at all (case 42).
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_eow_dig(0.0, 0.0), Some("eow_dig"));
+        assert_eq!(rng.peek(), peek, "the trackable is draw-free");
+    }
+
+    /// S1-E-21g — case 27's live-instance branch consumes the pitch draw
+    /// and returns null; headless the slot never plays so the fresh
+    /// branch draws the same ONE roll (`LegacySoundPlayer.cs:984`/`:994`).
+    #[test]
+    fn s1_e_21g_the_pixie_draws_one_pitch_per_call() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_pixie(0.0, 0.0, &mut rng), Some("Pixie"));
+        assert_eq!(rng.peek(), witness.peek(), "one pitch draw");
+        // The gate refuses before the draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_pixie(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
+    }
 
     /// A headless system (no sinks) — `decide_new_music` only touches the
     /// fade table and the picked ids.

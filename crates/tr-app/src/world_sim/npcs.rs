@@ -1048,6 +1048,62 @@ pub(crate) fn update_worms(app: &mut App) {
     let world = &app.world;
     let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
     update_worms_in(world, player, &mut app.npcs, rng, &mut app.next_worm_id);
+    // S1-E-21g — the worm pass's queued plays (the leech entry burst,
+    // the dig roars): the same drain as the per-NPC loop, after the
+    // pass's draws on the same UpdateNPCs stream.
+    for n in app.npcs.iter_mut() {
+        for req in n.wants_sound.drain(..) {
+            play_npc_sound_request(&mut app.audio, req, rng);
+        }
+    }
+}
+
+/// S1-E-21g — one drained [`crate::npc::NpcSoundRequest`]: the queue's
+/// cue dispatches to the faithful play method. Every method gates the
+/// attenuation BEFORE any gameplay draw (the E21e precedent —
+/// `LegacySoundPlayer.cs:369-436` precedes the type switch); the case
+/// draws ride the caller's stream (the `UpdateNPCs` swap for every
+/// wave-G site, `Main.cs:17767`). The int overloads
+/// (`SoundEngine.cs:102-108`) draw NO `GetRandomPitch` NextFloat; the
+/// style façades (`:93-99`) consume it on the audio-only stream.
+fn play_npc_sound_request(
+    audio: &mut crate::audio::Audio,
+    req: crate::npc::NpcSoundRequest,
+    rng: &mut UnifiedRandom,
+) {
+    use crate::npc::NpcSoundCue;
+    match req.cue {
+        NpcSoundCue::Roar(style) => {
+            audio.play_roar(style, req.x, req.y);
+        }
+        NpcSoundCue::DashRoar(style) => {
+            audio.play_dash_roar(style, req.x, req.y);
+        }
+        NpcSoundCue::Item8 => {
+            audio.play_npc_item_cue(8, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item14 => {
+            audio.play_npc_item_cue(14, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item34 => {
+            audio.play_npc_item_cue(34, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcHit(style) => {
+            audio.play_npc_hit_int(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath(style) => {
+            audio.play_npc_death_int(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath61 => {
+            audio.play_npc_death_style(61, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath13 => {
+            audio.play_npc_death_style(13, req.x, req.y, rng);
+        }
+        NpcSoundCue::EowDig => {
+            audio.play_eow_dig(req.x, req.y);
+        }
+    }
 }
 
 /// The worm pass's core — the pieces the tests drive directly (the world,
@@ -1078,6 +1134,19 @@ pub(crate) fn update_worms_in(
         }
         npcs[i].worm_inited = true;
         let kind = npcs[i].kind;
+        // S1-E-21g — `NPC.cs:50965-50968`: the leech head's (117)
+        // tunnel-entry burst — `localAI[1]` 0 → 1 latched at the chain
+        // init, `SoundID.NPCDeath13` at base.position (the style façade).
+        // The 20-gore/dust burst behind it draws Main.rand — SKIPPED
+        // (the port's gore/dust deviation, ANALYSIS wave G).
+        if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
+            npcs[i].local_ai[1] = 1.0;
+            npcs[i].wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::NpcDeath13,
+                x: npcs[i].x,
+                y: npcs[i].y,
+            });
+        }
         // The tails (9/12/15) sit outside the chain-spawn lists
         // (`:51393`/`:51436`) — they end the chain.
         if !kind.is_worm_head() && !kind.is_worm_mid() {
@@ -1358,6 +1427,37 @@ fn worm_head_step(
         let mut dx = (((pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
         let mut dy = (((pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
         let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
+        // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
+        // re-arms the delay BEFORE the play (`:51987`), then the EoW
+        // heads (13..15) play the `EOWDiggin` trackable (`:51990`) and
+        // every other head the case-15 roar at the DEFAULT Style 1
+        // (`:51994` — the int overload's `Style = 1`, `SoundEngine.cs:102`).
+        // The type exclusions (621/87/117/454/412) map to the leech and
+        // the crawltipede; the Skyblock `lowTiles` term is constant-false
+        // in the port (no skyblock), so the 13..15 arm always passes.
+        // `num64` is the C#'s `num62` — the pre-scale tile-snapped
+        // distance (`:51866`), NOT the aim length after the `(d-w)/d`
+        // rescale (`:51905` overwrites num62 for the followers only).
+        // The Destroyer's own `AI_037` roar (`:50081-50093`) shares this
+        // shape — the port's worm pass stands for it (ANALYSIS, wave G).
+        let silent_kind = matches!(
+            npc.kind,
+            NpcKind::LeechHead | NpcKind::SolarCrawltipedeHead
+        );
+        if !silent_kind && npc.sound_delay == 0 {
+            npc.sound_delay = (len / 40.0).clamp(10.0, 20.0) as i32;
+            let cue = if npc.kind == NpcKind::EaterOfWorldsHead {
+                crate::npc::NpcSoundCue::EowDig
+            } else {
+                crate::npc::NpcSoundCue::Roar(1)
+            };
+            npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue,
+                x: npc.x,
+                y: npc.y,
+            });
+        }
         let num67 = num45 / len;
         dx *= num67;
         dy *= num67;
@@ -2939,6 +3039,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // spawn requests that carry an owner reference (the
                     // Saucer deathray's `ai0 = whoAmI + 1`) read it.
                     n.slot = i;
+                    // S1-E-21g — `NPC.UpdateNPC`'s soundDelay decay
+                    // (`NPC.cs:90381-90384`) runs BEFORE the AI: the
+                    // machine's `soundDelay == 0` test sees the decayed
+                    // value, exactly the C#'s order.
+                    if n.sound_delay > 0 {
+                        n.sound_delay -= 1;
+                    }
                     // S1-E-21e — `AI_003_Fighters`' idle counter
                     // (`NPC.cs:57034-57149`) runs at AI time, BEFORE the
                     // movement integrates: `old_x` still holds the previous
@@ -2970,6 +3077,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         );
                     }
                     n.update_rng(world, player, step, npcs_rng);
+                    // S1-E-21g — the AI machine's queued sound plays
+                    // (the `wants_hostile_shot` shape): drained right
+                    // after the machine's draws, BEFORE the moan/critter
+                    // emitters — the C#'s plays sit inside `AI()` which
+                    // precedes both (`NPC.cs:90323`). Each play gates
+                    // attenuation BEFORE any case draw (the E21e
+                    // precedent); the draws ride the UpdateNPCs stream.
+                    for req in n.wants_sound.drain(..) {
+                        play_npc_sound_request(audio, req, npcs_rng);
+                    }
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
@@ -3343,6 +3460,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(cue) = npc.kind.death_sound() {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
+        }
+        // S1-E-21g — `NPC.HitEffect`'s EoC death arm (`NPC.cs:87275-87297`):
+        // the type-4 kill plays the case-15 roar TWICE — the play sits
+        // inside the `num567 < 2` gore loop (`:87289-87298`), after the
+        // fourth gore's two draws per pass. The port's gore/dust layer
+        // is skipped (the standing deviation), so the two plays queue
+        // back to back; the second usually refuses on the case-15
+        // playing guard (`:834`) with a live output device, and both
+        // pass headless (the fresh-slot table, the wave-C convention).
+        // The C# runs HitEffect inside StrikeNPC (the striking stage's
+        // stream); the port's death batching rides UpdateNPCs — the
+        // same recorded deviation as the death cue above. Roars draw
+        // nothing, so the stream choice is unobservable here.
+        if npc.kind == NpcKind::EyeOfCthulhu {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            play_npc_sound_request(
+                &mut app.audio,
+                crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Roar(0),
+                    x: npc.x,
+                    y: npc.y,
+                },
+                rng,
+            );
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            play_npc_sound_request(
+                &mut app.audio,
+                crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Roar(0),
+                    x: npc.x,
+                    y: npc.y,
+                },
+                rng,
+            );
         }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
@@ -12729,6 +12880,155 @@ mod dw3_tests {
             *app.rngs.stream(RngKey::UpdateNpcs),
             witness,
             "the moan spends exactly the arm roll + the slot draw"
+        );
+    }
+
+    /// S1-E-21g — the wave-G wiring's stream contract: the AI machines
+    /// queue their plays (`wants_sound`) and the sim drains them AFTER
+    /// the machine's draws on the `UpdateNPCs` stream, attenuation
+    /// BEFORE any case draw (the E21e precedent). A Skeletron head at
+    /// the charge's second tick queues exactly one case-15 roar — which
+    /// draws NOTHING (`LegacySoundPlayer.cs:826-842`). The head's own
+    /// classic-charge AI draws nothing either, so the whole pass is
+    /// stream-neutral.
+    #[test]
+    fn s1_e_21g_the_roar_wiring_queues_and_plays_draw_free() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        // Night: the day arm would flip the head into the enraged state
+        // (`NPC.cs:21958-21962`) before the charge tick runs.
+        world.day_time = false;
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // The charge state, one tick before the roar (`ai[2] == 1` → 2).
+        // Inside the headless listener's 2500-px radius (camera at 0),
+        // far from the player (no contact-damage variance roll).
+        let mut head = Npc::new(NpcKind::SkeletronHead, 1400.0, 1000.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.ai[1] = 1.0;
+        head.ai[2] = 1.0;
+        app.npcs.push(head);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the charge's second tick roared once"
+        );
+        assert!(app.npcs[0].wants_sound.is_empty(), "the queue drained");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            UnifiedRandom::new(7),
+            "the classic charge + the roar are draw-free"
+        );
+        // The next tick does NOT re-roar (`ai[2] == 3` now).
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// S1-E-21g — the drain's stream contract in isolation (the machines'
+    /// own AI draws legitimately share the stream): the caster teleport's
+    /// Item8 pair spends exactly TWO case-2 `Next(-6, 7)` pitch draws in
+    /// play order, the int death peer ONE case-4 `Next(-10, 11)`, and the
+    /// roar/EoW-trackable peers NONE — every draw AFTER the attenuation
+    /// gate (a muted listener drains the whole queue draw-free).
+    #[test]
+    fn s1_e_21g_the_sound_drain_spends_the_case_draws_in_order() {
+        use crate::npc::{NpcSoundCue, NpcSoundRequest};
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let req = |cue| NpcSoundRequest { cue, x: 100.0, y: 100.0 };
+        // The caster pair (`NPC.cs:20862`/`:20931`): two case-2 pitches.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
+        // The tower cry (`:39059`, the int overload): one case-4 pitch.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::NpcDeath(22)), &mut rng);
+        // The roar + the EoW trackable: nothing.
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::Roar(0)), &mut rng);
+        play_npc_sound_request(&mut audio, req(NpcSoundCue::EowDig), &mut rng);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let _ = witness.next_range(-6, 7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(rng, witness, "the queue's draws, in play order");
+        assert_eq!(audio.played_count(), 5, "all five plays landed");
+        // Muted: the same queue is entirely draw-free (the gate precedes
+        // every case switch, `LegacySoundPlayer.cs:369-436`).
+        let mut l = crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        for cue in [
+            NpcSoundCue::Item8,
+            NpcSoundCue::Item34,
+            NpcSoundCue::NpcHit(1),
+            NpcSoundCue::NpcDeath(6),
+            NpcSoundCue::NpcDeath61,
+            NpcSoundCue::NpcDeath13,
+            NpcSoundCue::Roar(4),
+            NpcSoundCue::DashRoar(-1),
+            NpcSoundCue::EowDig,
+        ] {
+            play_npc_sound_request(&mut audio, req(cue), &mut rng);
+        }
+        assert_eq!(rng.peek(), peek, "the muted drain is draw-free");
+    }
+
+    /// S1-E-21g — the soundDelay cadence: the worm head's dig roar
+    /// re-arms the delay (distance/40 clamped 10..20) and the per-tick
+    /// decay runs BEFORE the machine — the roar plays once, then stays
+    /// silent until the delay expires. The roar itself draws nothing
+    /// (the chain budget roll is the pass's only gameplay draw here).
+    #[test]
+    fn s1_e_21g_the_worm_dig_roar_rides_the_sound_delay_cadence() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // The head starts INSIDE the ground (the dig arm, `flag3`) and
+        // inside the headless listener's radius; far from the player.
+        let mut worm = Npc::new(NpcKind::GiantWormHead, 1000.0, 1980.0, 1, 0.0);
+        worm.hp = worm.max_hp;
+        app.npcs.push(worm);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::GiantWormHead)
+            .unwrap();
+        assert!(
+            (9..=20).contains(&head.sound_delay),
+            "the cadence re-armed: {}",
+            head.sound_delay
+        );
+        assert!(
+            app.audio.played_count() - before >= 1,
+            "the dig roar played"
+        );
+        // The next tick: the delay holds — no second roar.
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            0,
+            "the soundDelay cadence gates the next tick"
         );
     }
 }
