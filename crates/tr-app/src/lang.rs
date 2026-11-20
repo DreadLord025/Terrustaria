@@ -699,14 +699,23 @@ pub fn prefixed_item_name(id: u16, prefix: u16) -> String {
         .replace("{ItemName}", &item_name(id))
 }
 
-/// `Lang.GetTooltip(itemId)` (`Lang.cs:193-196`): the per-item tooltip text
-/// from the `ItemTooltip.<ItemID const name>` language key (the cache the
-/// C# builds from `ItemID`'s field names, `Lang.cs:537-549`). `None` when the
-/// item carries no tooltip text.
+/// `Lang.GetTooltip(itemId)` (`Lang.cs:193-196`) + `ItemTooltip.Lines`
+/// (`ItemTooltip.cs:21-32,66-81`): the per-item tooltip text from the
+/// `ItemTooltip.<ItemID const name>` language key (the cache the C# builds
+/// from `ItemID`'s field names, `Lang.cs:537-549`). `None` when the item
+/// carries no tooltip text — the `!_text.HasValue` arm (`ItemTooltip.cs:71`,
+/// `HasValue` = `EnglishValue != Key`, `LocalizedText.cs:33`) and the
+/// `ItemTooltip.None` slot at id 0 (`Lang.cs:539,546` — zero lines,
+/// `ItemTooltip.cs:26-28`; W4-c21).
 pub fn item_tooltip_text(id: u16) -> Option<String> {
     let Some(name) = crate::itemdata::NAMES.get(id as usize) else {
         return None;
     };
+    // The `ItemTooltip.None` slot (`Lang.cs:539,546` fills only `id > 0`):
+    // zero lines (`ItemTooltip.cs:26-28`), not one empty line.
+    if id == 0 {
+        return None;
+    }
     let value = item_tooltip(id);
     if value == format!("ItemTooltip.{name}") {
         None
@@ -945,8 +954,14 @@ pub fn projectile_name(id: i32) -> String {
 }
 
 /// `Lang._itemTooltipCache[id]` (`Lang.cs:538-550`):
-/// `ItemTooltip.{const name}` — the item's own tooltip row.
+/// `ItemTooltip.{const name}` — the item's own tooltip row. The C# fills only
+/// `0 < id < ItemID.Count` (`:546`); every other slot stays `ItemTooltip.None`
+/// (`:539`, zero lines). The port answers the empty string for those ids
+/// instead of the C# IndexOutOfRange (the W4-c21 bounds convention).
 pub fn item_tooltip(id: u16) -> String {
+    if id == 0 || id as usize >= crate::itemdata::NAMES.len() {
+        return String::new();
+    }
     text(&format!("ItemTooltip.{}", crate::itemdata::NAMES[id as usize]))
 }
 
@@ -1246,5 +1261,36 @@ mod tests {
         assert_eq!(emoji_name(-1), "");
         assert_eq!(emoji_name(crate::emotes::EMOTE_COUNT), "");
         assert_eq!(emoji_name(i32::MAX), "");
+    }
+
+    /// W4-c21 — `Lang.GetTooltip` (`Lang.cs:193-196`) indexes
+    /// `_itemTooltipCache` sized `ItemID.Count` = 6196 (`Lang.cs:1225`); the
+    /// cache fills only `0 < id < Count` (`:546`), so id 0 stays
+    /// `ItemTooltip.None` (zero lines) and out-of-range ids answer empty
+    /// instead of the C# IndexOutOfRange. `item_tooltip_text` maps a missing
+    /// row to `None` — `ItemTooltip.ValidateTooltip`'s `!HasValue` arm
+    /// (`ItemTooltip.cs:71-75`).
+    #[test]
+    fn w4_c21_item_tooltip_bounds_answer_none() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // A shipped row: `ItemID.HermesBoots` = 54.
+        assert_eq!(item_tooltip(54), "The wearer can run super fast");
+        assert_eq!(
+            item_tooltip_text(54).as_deref(),
+            Some("The wearer can run super fast")
+        );
+        // Id 0: the `ItemTooltip.None` slot — no text, no phantom empty line.
+        assert_eq!(item_tooltip(0), "");
+        assert_eq!(item_tooltip_text(0), None);
+        // An in-cache id with no `ItemTooltip.*` row (the Iron Pickaxe):
+        // the manager answers the key itself -> `!HasValue` -> no lines.
+        assert_eq!(item_tooltip_text(1), None);
+        // At/over `ItemID.Count`: out of the cache, empty (no panic).
+        let count = crate::itemdata::NAMES.len() as u16;
+        assert_eq!(item_tooltip(count), "");
+        assert_eq!(item_tooltip(u16::MAX), "");
+        assert_eq!(item_tooltip_text(count), None);
+        assert_eq!(item_tooltip_text(u16::MAX), None);
     }
 }
