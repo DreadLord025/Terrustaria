@@ -281,9 +281,113 @@ pub struct PackInfoLayout {
     pub version_panel: [f32; 4],
 }
 
+/// `UIWorkshopPublishWorldListItem`
+/// (`UIWorkshopPublishWorldListItem.cs:11-140`), research/18b row 60
+/// (W4-d83): the world publish row. Same 82 px / padding 6 chrome as the
+/// pack row (`:53-59`) but **no** canPublish grey arms (`:61-71` are the
+/// plain shared pairs) and no rejection routing — the click only checks
+/// the target (`:73-79`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorkshopPublishWorldRow {
+    /// `_orderInList` (`:21`).
+    pub order_in_list: i32,
+    /// `BackgroundColor`.
+    pub background_color: [u8; 4],
+    /// `BorderColor`.
+    pub border_color: [u8; 4],
+}
+
+impl WorkshopPublishWorldRow {
+    /// The ctor's appearance half (`:25-31`, `:53-59`).
+    pub fn new(order_in_list: i32) -> Self {
+        Self {
+            order_in_list,
+            background_color: REST_BG,
+            border_color: REST_BORDER,
+        }
+    }
+
+    /// `MouseOver`/`MouseOut` (`:90-100`) — the plain shared pairs.
+    pub fn mouse_over(&mut self) {
+        self.background_color = HOVER_BG;
+        self.border_color = HOVER_BORDER;
+    }
+
+    pub fn mouse_out(&mut self) {
+        self.background_color = REST_BG;
+        self.border_color = REST_BORDER;
+    }
+
+    /// `PublishButtonClick` (`:73-79`): only the target check — opens
+    /// `WorkshopPublishInfoStateForWorld` (the caller's state push).
+    pub fn publish_click(&self, listening_is_target: bool) -> bool {
+        listening_is_target
+    }
+
+    /// The `DrawSelf` two-panel walk (`:107-139`): like the pack row's
+    /// split, but the panels start at `num + 6` (not +8, `:116`), the
+    /// name anchors at `inner.Y + 3` (`:113`), and the **second** panel
+    /// (world size) grows +40 for non-English cultures (`:127-131`) —
+    /// the first (difficulty) keeps `num2`.
+    pub fn info_layout(
+        inner: [f32; 4],
+        icon_w: f32,
+        publish_button_size: [f32; 2],
+        english: bool,
+    ) -> PublishWorldLayout {
+        let num = inner[0] + 4.0 + icon_w; // the icon sits Left 4 (`:33`)
+        let num2 = (inner[2] - 22.0 - icon_w - publish_button_size[0]) / 2.0; // `:114`
+        let h = publish_button_size[1]; // `:115`
+        let y = inner[1] + inner[3] - h; // `:116`
+        let x = num + 6.0;
+        let size_w = if english { num2 } else { num2 + 40.0 }; // `:127-131`
+        PublishWorldLayout {
+            name_pos: [num + 6.0, inner[1] + 3.0], // `:113`
+            difficulty_panel: [x, y, num2, h],     // `:117-118`
+            size_panel: [x + num2 + 5.0, y, size_w, h], // `:126-132`
+        }
+    }
+}
+
+/// The publish-world row's layout outputs
+/// (`UIWorkshopPublishWorldListItem.cs:107-139`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PublishWorldLayout {
+    pub name_pos: [f32; 2],
+    /// The difficulty panel (`GetDifficulty`), spliced 10/10/10/10.
+    pub difficulty_panel: [f32; 4],
+    /// The world-size panel (`UI.WorldSizeFormat`), +40 non-English.
+    pub size_panel: [f32; 4],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The publish-world row (`UIWorkshopPublishWorldListItem.cs:53-139`):
+    /// plain colour pairs (no grey arms), target-only click, the +6 panel
+    /// origin and the second panel's non-English +40.
+    #[test]
+    fn the_publish_world_row_keeps_plain_pairs_and_grows_the_size_panel() {
+        let mut row = WorkshopPublishWorldRow::new(4);
+        assert_eq!(row.background_color, REST_BG);
+        row.mouse_over();
+        assert_eq!(row.background_color, HOVER_BG);
+        assert_eq!(row.border_color, HOVER_BORDER);
+        row.mouse_out();
+        assert_eq!(row.border_color, REST_BORDER);
+        assert!(row.publish_click(true));
+        assert!(!row.publish_click(false));
+        // inner (10, 50, 500, 70), icon 60, button 100x41:
+        // num2 = (500-22-60-100)/2 = 159; x = 10+4+60+6 = 80; y = 79.
+        let l = WorkshopPublishWorldRow::info_layout([10.0, 50.0, 500.0, 70.0], 60.0, [100.0, 41.0], true);
+        assert_eq!(l.name_pos, [80.0, 53.0]);
+        assert_eq!(l.difficulty_panel, [80.0, 79.0, 159.0, 41.0]);
+        assert_eq!(l.size_panel, [244.0, 79.0, 159.0, 41.0]);
+        let ru = WorkshopPublishWorldRow::info_layout([10.0, 50.0, 500.0, 70.0], 60.0, [100.0, 41.0], false);
+        assert_eq!(ru.size_panel, [244.0, 79.0, 199.0, 41.0], "+40 (`:130`)");
+        assert_eq!(ru.difficulty_panel[2], 159.0, "the first panel keeps num2");
+    }
 
     /// The import row (`UIWorkshopImportWorldListItem.cs:74-105`): the
     /// colour swap, the label latch, the valid+target click gate and the

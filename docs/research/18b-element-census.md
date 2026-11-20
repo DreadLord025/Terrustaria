@@ -177,9 +177,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 57 | `UIVerticalSlider` | LANDED (`ui/sliders.rs::VerticalSlider`, 5/4/4/4 spliced frame + Right/Bottom-edge insets (-9/-8) + bottom-up fill + CenteredRectangle knob + hit Inflate(4,0) + aim/lock machine + two independent sound one-shots + clamped bottom-up GetLerpValue `UIVerticalSlider.cs:39-138`) |
 | 58 | `UIWorkshopImportWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopImportWorldRow`, shared rest/hover pairs, Import label latch, valid+target click gate + name trim + invalid Gray status prefix, 100/150(+40)/remainder panel walk + divider /8 scale `:66-198`; SocialAPI/keyboard caller's seams) |
 | 59 | `UIWorkshopPublishResourcePackListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishPackRow`, zip grey arms (Lerp hover→120 *1 / Lerp rest→80 *0.7), rejection-vs-publish click routing, (W-22-icon-btn)/2 two-panel split `:95-215`; spliced 10/10/10/10 panels) |
-| 60 | `UIWorkshopPublishWorldListItem` | pending |
-| 61 | `UIWorldCreationPreview` | pending |
-| 62 | `UIWorldListItem` | pending |
+| 60 | `UIWorkshopPublishWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishWorldRow`, plain shared pairs (no grey arms), target-only click, +6 panel origin + second-panel non-English +40 `:53-139`) |
+| 61 | `UIWorldCreationPreview` | LANDED (re-audit: whole class pre-landed `ui/world_creation.rs::preview_layers`/`draw_preview` — UpdateOption mapping, 0/3→Normal bg, DarkGray Expert/Master tint, Master bunny *1.2 XNA wrap, +4 layer offset + border `UIWorldCreationPreview.cs:44-132`; nothing left) |
+| 62 | `UIWorldListItem` | LANDED (draw/click/colours/labels pre-landed S1-H-10 `ui/world_select.rs`; missing halves added: conditional cloud/seed slot num-walk + their hover keys + status-icon label keys + SeedCopied + WorldFileData.GetFullSeedText/GetSerializedSeedsSum `UIWorldListItem.cs:113-162/:271-318/:460-464`, `WorldFileData.cs:123-197`; slots parked until SocialAPI/generator-version data lands) |
 | 63 | `UIWrappedSearchBar` | pending |
 | 64 | `UISortableElement` | pending |
 

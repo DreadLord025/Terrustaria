@@ -909,6 +909,176 @@ pub fn draw(
     );
 }
 
+// --- W4-d83 (research/18b row 62): the element halves the S1-H-10 screen
+// port left out — the conditional cloud/seed button slots, their hover
+// labels, the status icons' hover labels and the seed-copy text. The card
+// geometry/colours/click table above are the landed halves; the port's
+// screen still skips the cloud/seed buttons (no SocialAPI.Cloud, and the
+// save-list entries carry no WorldGeneratorVersion — documented deviation
+// at `card_layout`), so these pins are parked for the data to arrive.
+
+/// The ctor's conditional button slots (`UIWorldListItem.cs:113-136`): the
+/// cloud button exists only when `SocialAPI.Cloud != null`, the seed button
+/// only when `WorldGeneratorVersion != 0`. Each present slot takes the
+/// running `num` and advances it 24; rename follows at the walked `num`,
+/// and the label sits 24 + 4 past rename (`:145`, `:159`). Returns
+/// `(cloud_left, seed_left, rename_left, label_left)` relative to the inner
+/// left — the base walk is play 4, favorite 28 (`:94-112`).
+#[allow(dead_code)] // parked: the screen skips both slots until the data lands
+pub fn conditional_button_lefts(has_cloud: bool, has_seed: bool) -> (Option<f32>, Option<f32>, f32, f32) {
+    let mut num = 4.0 + 24.0; // after play + favorite (`:103`, `:112`)
+    let cloud = has_cloud.then(|| {
+        let left = num;
+        num += 24.0; // `:123`
+        left
+    });
+    let seed = has_seed.then(|| {
+        let left = num;
+        num += 24.0; // `:135`
+        left
+    });
+    let rename = num; // `:139`
+    num += 24.0; // `:145`
+    (cloud, seed, rename, num + 4.0) // `:159-162`
+}
+
+/// The cloud/seed hover labels (`UIWorldListItem.cs:271-291`): the cloud
+/// label flips on `IsCloudSave`, the seed label formats `UI.CopySeed` with
+/// the cropped full seed text. Returns the `UI.*` key (the seed one carries
+/// its argument separately — the caller formats).
+#[allow(dead_code)] // parked with the slots
+pub fn cloud_label_key(is_cloud_save: bool) -> &'static str {
+    if is_cloud_save {
+        "UI.MoveOffCloud" // `:275`
+    } else {
+        "UI.MoveToCloud" // `:279`
+    }
+}
+
+/// The status icons' hover labels (`UIWorldListItem.cs:310-318`) — they
+/// draw on the **right-hand** delete label (`DeleteMouseOut` clears it,
+/// `:183`, `:198`), not the left one.
+#[allow(dead_code)] // parked: the icons' hit-test has no action yet
+pub fn status_icon_label_key(newly_generated: bool) -> &'static str {
+    if newly_generated {
+        "UI.WorldNewlyGenerated" // `:312`
+    } else {
+        "UI.WorldHasBeenPlayed" // `:317`
+    }
+}
+
+/// `SeedButtonClick` (`UIWorldListItem.cs:460-464`): the clipboard takes
+/// `GetFullSeedText()` (**uncropped**) and the label shows `UI.SeedCopied`.
+/// The full seed text is [`full_seed_text`].
+#[allow(dead_code)] // parked with the seed slot
+pub fn seed_copied_key() -> &'static str {
+    "UI.SeedCopied" // `:463`
+}
+
+/// `WorldFileData.GetFullSeedText` (`WorldFileData.cs:123-155`): the
+/// `"{size}.{gameMode+1}.{evil}.{seedsSum}.{seedText}"` share string. The
+/// size id is the exact-dimension match (1 small / 2 medium / 3 large, 0
+/// for a custom size, `:126-137`); evil is 1 corruption / 2 crimson / 0
+/// neither (`:138-146`); `seeds_sum` is
+/// [`serialized_seeds_sum`]. `seed_text` arrives pre-cropped when the
+/// caller passes the `allowCropping` form (`:149-152`, the 340 px
+/// `CreateCroppedText` — the caller's font seam).
+#[allow(dead_code)] // parked with the seed slot
+pub fn full_seed_text(
+    world_size: (i32, i32),
+    game_mode: u8,
+    has_corruption: bool,
+    has_crimson: bool,
+    seeds_sum: i32,
+    seed_text: &str,
+) -> String {
+    let size = match world_size {
+        (4200, 1200) => 1, // `:126-129`
+        (6400, 1800) => 2, // `:130-133`
+        (8400, 2400) => 3, // `:134-137`
+        _ => 0,
+    };
+    let evil = if has_crimson {
+        2 // `:143-146` — crimson overwrites corruption
+    } else if has_corruption {
+        1
+    } else {
+        0
+    };
+    format!("{size}.{}.{evil}.{seeds_sum}.{seed_text}", game_mode as i32 + 1) // `:147`, `:154`
+}
+
+/// `WorldFileData.GetSerializedSeedsSum` (`WorldFileData.cs:157-197`): the
+/// secret-seed bit sum — drunk 1, bees 2, worthy 4, anniversary 8, starve
+/// 16, remix 32, traps 64, zenith 128, skyblock 256. The port's
+/// `SeedFlags` bits are the same values (`tr_core::seeds`), so the sum is
+/// the masked bits.
+#[allow(dead_code)] // parked with the seed slot
+pub fn serialized_seeds_sum(flags: tr_core::seeds::SeedFlags) -> i32 {
+    use tr_core::seeds::SeedFlags as F;
+    const ALL: u16 = F::DRUNK
+        | F::NOT_THE_BEES
+        | F::FOR_THE_WORTHY
+        | F::TENTH_ANNIVERSARY
+        | F::DONT_STARVE
+        | F::REMIX
+        | F::NO_TRAPS
+        | F::ZENITH
+        | F::SKYBLOCK;
+    (flags.bits() & ALL) as i32
+}
+
+#[cfg(test)]
+mod element_tests {
+    use super::*;
+
+    /// The conditional slot walk (`UIWorldListItem.cs:113-162`): neither
+    /// slot → rename 52 / label 80 (the landed layout); both → cloud 52,
+    /// seed 76, rename 100, label 128; each alone shifts by 24.
+    #[test]
+    fn the_cloud_and_seed_slots_walk_the_ctor_num() {
+        assert_eq!(conditional_button_lefts(false, false), (None, None, 52.0, 80.0));
+        assert_eq!(
+            conditional_button_lefts(true, true),
+            (Some(52.0), Some(76.0), 100.0, 128.0)
+        );
+        assert_eq!(conditional_button_lefts(true, false), (Some(52.0), None, 76.0, 104.0));
+        assert_eq!(conditional_button_lefts(false, true), (None, Some(52.0), 76.0, 104.0));
+        assert_eq!(cloud_label_key(true), "UI.MoveOffCloud");
+        assert_eq!(cloud_label_key(false), "UI.MoveToCloud");
+        assert_eq!(status_icon_label_key(true), "UI.WorldNewlyGenerated");
+        assert_eq!(status_icon_label_key(false), "UI.WorldHasBeenPlayed");
+        assert_eq!(seed_copied_key(), "UI.SeedCopied");
+    }
+
+    /// The share string (`WorldFileData.cs:123-197`): the exact-dimension
+    /// size ids (custom → 0), gameMode+1, crimson-over-corruption, the bit
+    /// sum, and the raw seed text tail.
+    #[test]
+    fn the_full_seed_text_formats_the_five_parts() {
+        use tr_core::seeds::SeedFlags as F;
+        assert_eq!(serialized_seeds_sum(F::none()), 0);
+        assert_eq!(
+            serialized_seeds_sum(F::from(F::DRUNK | F::REMIX | F::ZENITH)),
+            1 + 32 + 128
+        );
+        assert_eq!(
+            full_seed_text((4200, 1200), 0, true, false, 0, "abc"),
+            "1.1.1.0.abc"
+        );
+        assert_eq!(
+            full_seed_text((8400, 2400), 2, true, true, 33, "x|y"),
+            "3.3.2.33.x|y",
+            "crimson overwrites corruption (`:143-146`)"
+        );
+        assert_eq!(
+            full_seed_text((5000, 1500), 3, false, false, 256, ""),
+            "0.4.0.256.",
+            "a custom size reads 0"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
