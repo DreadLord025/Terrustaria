@@ -249,6 +249,15 @@ mod tests {
     // `numOasis == 0`. The DEFAULT_WORLD re-pin below is deferred to the
     // merge gate (no compiler on this branch); the a == b determinism
     // asserts stay in place.
+    // W4-d103 pass 20 (2026-11-20, code-only): the `Waterfalls` pass
+    // (`WorldGen.cs:16610-16666`) lands on a fresh `pass_rng("Waterfalls")`
+    // stream after `living trees`. Unlike the Oasis width guard, the two
+    // sweeps run at EVERY width (the 20-tile margin only), so this pin is
+    // stale-by-design IF the 512 fixture carries a qualifying liquid edge
+    // (a solid cell with air on both sides beside liquid, or a half-brick
+    // shore) — unmeasured, no compiler on this branch. The gate re-pins
+    // whichever pin moved; the a == b determinism asserts stay in place
+    // (the pass draws only its own fresh stream).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -298,6 +307,13 @@ mod tests {
     // DESIGN on the 4200-wide default world. The re-pin is DEFERRED to the
     // merge gate (no compiler on this branch); a == b stays green — the
     // pass draws only its own fresh stream.
+    // W4-d103 pass 20 (code-only): the Waterfalls half-brick sweeps (the
+    // liquid-edge pounds + the half-brick shore arms, the `tileSolid[191]`
+    // window over the living wood) move this pin BY DESIGN on the
+    // 4200-wide default world — the lake/ocean/cave liquid edges qualify.
+    // The re-pin is DEFERRED to the merge gate (no compiler on this
+    // branch); a == b stays green — the pass draws only its own fresh
+    // stream, and the half-brick flag rides the existing tile hash mix.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -1387,6 +1387,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Waterfalls slot (`WorldGen.cs:16610`): after Smooth World
+    // (`:16419`) and Living Trees (`:15476`), before Planting Trees
+    // (`:20179`) — W4-d103 pass 20. The executed chain's Living Trees sits
+    // after `slopes` from the pre-scaffold order (vanilla runs it before
+    // Smooth World), so the step lands after the living wood exists — the
+    // sweep's `tileSolid[191] = false` window has its vanilla consumer.
+    step!("waterfalls", "Waterfalls", step_waterfalls),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2611,6 +2618,23 @@ fn step_living_trees(
     );
 }
 
+/// The vanilla Waterfalls slot (`WorldGen.cs:16610`): the liquid-edge
+/// half-brick sweeps on a fresh `pass_rng("Waterfalls")` stream. The
+/// `Skyblock.denySomeGeneration` gate (`:16612`) rides the skyblock flag.
+fn step_waterfalls(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    liquids::pass_waterfalls(world, &mut streams.pass_rng("Waterfalls"));
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3186,8 +3210,9 @@ mod tests {
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d103: + `oasis` (vanilla "Oasis", `WorldGen.cs:16243`) between
-        // `remove water` and `shell piles`.
-        assert_eq!(names.len(), 67);
+        // `remove water` and `shell piles`; + `waterfalls` (vanilla
+        // "Waterfalls", `:16610`) after `living trees`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3279,6 +3304,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "living trees",
+                "waterfalls",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3365,6 +3391,12 @@ mod tests {
         assert_eq!(names[pos("remove water") + 1], "oasis");
         assert_eq!(names[pos("oasis") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
+        // W4-d103 pass 20: the Waterfalls pass (`WorldGen.cs:16610`) slots
+        // after Living Trees (`:15476` — the executed chain runs it after
+        // `slopes`) and before Planting Trees (`:20179`); the vanilla
+        // Smooth World (`:16419`) < Waterfalls pair holds too.
+        assert_eq!(names[pos("living trees") + 1], "waterfalls");
+        assert_eq!(names[pos("waterfalls") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3378,6 +3410,11 @@ mod tests {
         assert!(cpos("Remove Water From Sand") < cpos("Oasis"));
         assert!(cpos("Oasis") < cpos("Shell Piles"));
         assert!(cpos("Shell Piles") < cpos("Smooth World"));
+        // W4-d103 pass 20: the vanilla Waterfalls pairs (`:15476` Living
+        // Trees / `:16419` Smooth World → `:16610` Waterfalls → `:16667` Ice).
+        assert!(cpos("Smooth World") < cpos("Waterfalls"));
+        assert!(cpos("Living Trees") < cpos("Waterfalls"));
+        assert!(cpos("Waterfalls") < cpos("Ice"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

@@ -156,7 +156,7 @@ rather than a port of all 45k lines".
 | Living trees (`:15476-15715`, `GrowLivingTree` `:27973`) | PORTED | `living_trees.rs` | Faithful, incl. the drunk/`extraLivingTrees` ladders; cargo row says done (ROADMAP's status table still says "parked") |
 | Floating islands (`:12924-13133`, houses `:17862`) | PARTIAL | `islands.rs` | Shape-level cloud disc + lake + house; snow/desert variants and furniture sets out |
 | Plants & surface dressing (`Planting Trees` `:20179`, `Herbs`, `Dye Plants`, `Weeds`, `Flowers`, `Mushrooms`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log`, `Cactus…` `:21310`, `Water Plants` `:21973`) | PARTIAL | `surface.rs::plant_trees` (step `"trees"`→`"Planting Trees"`), `biome_detail`/`ocean` steps | Only the tree step, the weeds/flora step and the cacti/coral seaweed arms map to vanilla slots; `Herbs`, `Dye Plants`, `Flowers`, `Mushrooms`, `Moss Grass`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log` are **MISSING** |
-| Liquids (`Settle Liquids` `:19620`, `Settle Liquids Again` `:22137`, `Lakes` `:14556`, `Waterfalls` `:16667`) | PARTIAL | `liquids.rs` (the `Lakes` step) | Static water/lava lakes only; **no liquid simulation pass** and therefore no equivalent of the `Invariant.Assert(Liquid.numLiquid == 0)` (`WorldGenerator.cs:508`); both `Settle Liquids` and `Waterfalls` are missing |
+| Liquids (`Settle Liquids` `:19620`, `Settle Liquids Again` `:22137`, `Lakes` `:14556`, `Waterfalls` `:16667`) | PARTIAL | `liquids.rs` (the `Lakes` step + `pass_waterfalls`, W4-d103 pass 20) | Static water/lava lakes; the `Waterfalls` half-brick sweeps landed 2026-11-20 (code-only, `:16610-16666`); **no liquid simulation pass** and therefore no equivalent of the `Invariant.Assert(Liquid.numLiquid == 0)` (`WorldGenerator.cs:508`); both `Settle Liquids` passes are missing |
 | Shimmer (`Shimmer` `:15195`) | MISSING | — | Not a worldgen liquid in the port (admitted in ANALYSIS M5-STRUCT-5's list) |
 | Spawn selection (`SpawnPoint` `:19460-19588`) | PARTIAL | `pipeline.rs::step_world_tail` `:2355-2401` | Classic: `map.spawn_center` and `heights[center]-6`; the vanilla pass scans for a valid cell (and the remix arm). No `randomSpawn`/`teamBasedSpawns` |
 | Starter NPC (`Guide` `:19850`) | MISSING | — | No spawn-starter-NPC step (spawning is module 24) |
@@ -343,6 +343,8 @@ faithful `GraniteBiome` port) and `Surface Caves` (executed, WORLDGEN-CAVES)
 22 Life Crystals :16755 · 23 Statues :16853 · 24 Surface Chests :17130 ·
 25 Water Chests :17245 · 26 Cave Walls :17711 · 27 Floating Island Houses
 :17859 — **d103 range (19-27, this branch)**.
+Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
+2026-11-20, code-only — pin re-pins deferred to the merge gate).
 28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
 31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
 34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —
