@@ -132,7 +132,7 @@ runtime-side, not the skyblock generator's tail).
 | census + claim (this doc) | (this commit) | claimed |
 | B1 snake_math + dungeon_bounds | (this commit) | landed (code-only; unwired, both pins unchanged) |
 | B2 DungeonControlLine | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B3 DitherSnake | — | pending |
+| B3 DitherSnake | (this commit) | landed (code-only; unwired, both pins unchanged) |
 | B4 DitherSnakePass | — | pending |
 | B5 producer chain + style statics | — | pending |
 | B6 pipeline wire (dither snake) | — | pending |

@@ -308,6 +308,13 @@ mod tests {
     // stamp, IsSelfIntersecting/AdjustTangents, IsInsideBorder and
     // GetPotentialRoomPosition. Still UNWIRED (B6 lands the gated step) —
     // no classic draw, both pins stay, a == b untouched.
+    // W4-f24 B3: `dither_snake.rs` ports `DitherSnake`
+    // (`DitherSnake.cs:10-199`) — Add/closest/GetLineContaining (depth-3
+    // walk), GetPositionAlongSnake, the 12-point circle border tests
+    // (ExtraBuffer 1/cos(π/6)), GetRoomPositionInsideBorder (the ×0.8
+    // shrink + Top/Center/Bottom classification), SetTangents, the 100-sweep
+    // AdjustTangentsToPreventSelfIntersection, and the PlotLine border walk
+    // (Utils.cs:2233-2292 early-exit). Still UNWIRED — both pins stay.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
