@@ -506,6 +506,12 @@ pub struct Player {
     pub hornet_minion: bool,
     pub imp_minion: bool,
     pub spider_minion: bool,
+    /// `Player.nextCycledSpiderMinionType` (`Player.cs:1280`, int default 0):
+    /// the Spider Staff's spawn cycle (`:48478-48480`) — each use spawns
+    /// `shoot + nextCycledSpiderMinionType` (390/391/392) then increments mod
+    /// 3. Never reset by `ResetEffects` (no C# reset site), so it persists
+    /// across uses and lives.
+    pub next_cycled_spider_minion_type: i32,
     pub twins_minion: bool,
     pub pirate_minion: bool,
     pub vampire_frog: bool,
@@ -2021,6 +2027,7 @@ impl Player {
             hornet_minion: false,
             imp_minion: false,
             spider_minion: false,
+            next_cycled_spider_minion_type: 0,
             twins_minion: false,
             pirate_minion: false,
             vampire_frog: false,
@@ -4370,6 +4377,32 @@ impl Player {
             registry::DamageClass::Magic => self.magic_crit,
             _ => 0,
         }
+    }
+
+    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
+    /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
+    /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
+    /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
+    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
+    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
+    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
+    /// spawn, so the minion/sentry shots carry the bonus — the port's throw
+    /// path previously passed the raw `fx_kb` and dropped it.
+    pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
+        let mut kb = knock_back;
+        if def.summon {
+            kb += self.minion_kb;
+        }
+        if def.melee && self.kb_glove {
+            kb *= 2.0;
+        }
+        if self.kb_buff {
+            kb *= 1.5;
+        }
+        if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        kb
     }
 
     /// `Player.ItemCheck`'s food consumption side (`:14353`'s gate): the
@@ -16541,6 +16574,41 @@ mod summon_tests {
         assert_eq!(p.buffs.find_buff_index(161), None);
         p.update(&w, PlayerInput::default());
         assert!(!p.deadly_sphere_minion);
+    }
+
+    /// S1-P-i25 round 2 — `Player.GetWeaponKnockback` (`Player.cs:53346-53369`):
+    /// the summon `minionKB` add FIRST, then the melee glove's ×2, the Titan
+    /// buff's ×1.5 and the shroomite-stealth ranged scale, in that order.
+    #[test]
+    fn i25_get_weapon_knockback_folds_the_bonuses_in_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let summon = crate::registry::get(2364).unwrap(); // Hornet Staff (summon)
+        let melee = crate::registry::get(1).unwrap(); // Iron Pickaxe (melee)
+        let ranged = crate::registry::get(435).unwrap(); // Cobalt Repeater (ranged)
+        // The summon add: minionKB rides a summon item, not a melee one.
+        p.minion_kb = 2.0;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the summon minionKB add");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 5.0, "no add for melee");
+        // The melee glove ×2 (melee only).
+        p.kb_glove = true;
+        assert_eq!(p.weapon_knockback(melee, 5.0), 10.0, "the glove doubles melee");
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the glove skips summon");
+        // The Titan buff ×1.5 rides everything, AFTER the add/glove.
+        p.kb_buff = true;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 10.5, "(5+2)*1.5");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 15.0, "5*2*1.5");
+        // The shroomite-stealth ranged scale (ranged only): 1 + (1-stealth)*0.5.
+        p.kb_buff = false;
+        p.kb_glove = false;
+        p.shroomite_stealth = true;
+        p.stealth = 0.5;
+        assert_eq!(
+            p.weapon_knockback(ranged, 4.0),
+            4.0 * 1.25,
+            "the stealth scale at stealth 0.5"
+        );
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the stealth scale skips summon");
     }
 }
 

@@ -497,6 +497,61 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (1159, 1160, 1161),
         SetStats { max_minions: 1, whip_range: 0.2, ..stats() },
     ),
+    // S1-P-i25 — `:472` Benefits.HallowedSummoner (`:225-229`):
+    // `maxMinions += 2` (the `onHitDodge` half has no port consumer). The
+    // registration is `Set(new int[2]{4873,4899}, new int[2]{551,4900},
+    // new int[2]{552,4901})` — the array overload's cartesian product
+    // (`ArmorSetBonus.cs:98-126`): the ancient hallowed pieces (4899/4900/
+    // 4901) mix freely with the regular ones, 8 triples.
+    (
+        "HallowedSummoner",
+        (4873, 551, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 551, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 4900, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 4900, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 551, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 551, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 4900, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 4900, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    // S1-P-i25 — `:448` Benefits.ChlorophyteSummon (`:134-139`):
+    // `maxMinions += 2` (the `AddBuff(60,5)` leaf-crystal half and the
+    // `setChlorophyte` flag have no port consumer). The concrete triple
+    // (5524 chlorophyte headgear, 1004 shirt, 1005 greaves).
+    (
+        "ChlorophyteSummon",
+        (5524, 1004, 1005),
+        SetStats { max_minions: 2, ..stats() },
+    ),
     // `:476` Benefits.Spooky — `minionDamage += 0.25f`.
     (
         "Spooky",
