@@ -34489,3 +34489,185 @@ Code-only round, branch `task/S1-P-i52-heart-star-pickup` pushed unmerged.
 `s1_p_i52_the_statue_drops_remap_under_the_seasonal_seeds`,
 `s1_p_i52_the_both_seasons_statue_drop_draws_once_on_the_wiring_stream`,
 `s1_p_i52_the_capped_statue_spawn_draws_no_remap_roll`.
+## Hotbar/quick-switch (S1-P-i54, 2026-11-20)
+
+Code-only swarm task (`task/S1-P-i54-hotbar-switch`): the hotbar selection
+machine, the smart-select auto-tool and the QuickHeal hotkey, censused
+against `Player.cs` and fixed verbatim. **No compiler invoked; the 30
+witness tests are WRITTEN, NOT RUN.**
+
+### The census verdicts (C# windows ≤200 lines)
+
+1. **WRONG — Digit1 shop-buy** (`app/loop.rs` old :730-735): the port made
+   `1` buy shop stock slot 0 before selecting. Vanilla `Hotbar1` ALWAYS
+   selects slot 0 (`Player.cs:25095-25134`, the ten-trigger block); shop
+   buying is mouse-only (`UI/ItemSlot.cs:1220`/`:1650` →
+   `HandleShopSlot` :2035). Fixed: every digit buffers through
+   `hotbar_digit`; `buy_shop_item` stays (`#[allow(dead_code)]`) for the
+   recorded click-buy follow-up (M4-TOWN-5).
+2. **WRONG — wheel sign + cycle base** (`app/loop.rs` old :399-406):
+   `selected + step` (wheel-up = next, base = live slot). Vanilla
+   `HandleHotbarControls` (`Player.cs:31766-31796`):
+   `num += ScrollWheelDelta / -120` (:31790 — wheel-up steps BACK) and
+   `Select(ClampHotbarOffset(selectedItemState.Hotbar + num))` (:31794 —
+   the LATCHED hotbar slot, not the overridden live slot). Fixed both.
+   `ClampHotbarOffset` (:31895-31906) ported as
+   `hotbar::clamp_hotbar_offset`.
+3. **WRONG/MISSING — no SelectedItemState machine**: digits/wheel/click
+   wrote `App.selected` directly. Vanilla buffers every request through
+   `Select` (`Player.cs:486-518`: hotbar latch <10, air-refusal ≥10,
+   `PlaySound(12)` unless landing on the override/buffer slot) and applies
+   in `Update` (:520-549) only when `CanChangeSelectedItemImmediately`
+   (:428-438 = `!UsingOrReusingItem && ItemTimeIsZero`;
+   `UsingOrReusingItem` :4068-4078 = itemAnimation>0 || reuseDelay>0 ||
+   channel || pendingItemReuse). `OnSelectionChanged` (:551-567):
+   `itemTime = itemTimeMax = 0`, `lastItemUseAttemptSuccess = true`, and
+   if `controlUseItem`: continue-autoreuse ⇒ `releaseUseItem = true`, else
+   `Main.blockMouse = true; controlUseItem = false`. Ported as
+   `hotbar::SelectionState` + the apply block in `world_sim/player.rs`
+   (the live slot stays `App.selected`; `buffered`/`overridden` are the
+   new `App.selection` halves). The useTime reset on switch was entirely
+   absent before.
+4. **WRONG — channel interruption on switch**: the port cleared
+   `p.channel` only when the new hold was non-channel or the button
+   released (`world_sim/editing.rs` old :594-597). Vanilla `ItemCheck`
+   (`Player.cs:42800-42807`): `HasBufferedChange ⇒ flag5 = false` and
+   `!flag5 ⇒ channel = false` — a buffered switch drops the channel the
+   SAME tick (the switch itself waits for `!channel` via
+   `CanChangeSelectedItemImmediately`, so it lands the NEXT tick — the
+   C# runs `selectedItemState.Update` :25218 BEFORE ItemCheck :28285).
+   Fixed: the player pass clears `channel`/`channel_item`/`channel_target`
+   on a buffered change, and the editing pass's channel-hold block is
+   gated `!has_buffered_change()` so the hold cannot re-arm while the
+   switch is pending.
+5. **WRONG — closed-hotbar left click** (`app/clicks.rs` old :1704-1708):
+   set `selected` directly, no gates. Vanilla `GUIHotbarDrawInner`
+   (`Main.cs:43600-43640`) sets `changeItem = i` (:43622) gated on
+   `!hbLocked && !IgnoreMouseInterface && !controlTorch && !channel`
+   (:43616) and `mouseLeft && !blockMouse` (:43620); `changeItem` feeds
+   `Select` at `Player.cs:25087-25091`. Fixed: the click buffers through
+   `Select` behind the controlTorch/channel/blockMouse gates (hbLocked
+   has no port state — the lock icon is a recorded no-op,
+   `ui/chrome.rs:677-690`).
+6. **MISSING — smart-select auto-tool (LeftShift / cTorch)**: no port at
+   all. Ported as `hotbar::SmartSelectCtx` + `smart_select_lookup`:
+   `PickItemSelectionOverride` (`Player.cs:17410-17432` — the mouse-item
+   slot-58 arm and the AFK-kite arm have no port state), `SmartSelectLookup`
+   (:17434-17460 — the strategy 0/4 → 5 flip at >200px with the ×1.3 Y
+   weight :17450-17452), `SmartSelect_GetToolStrategy` (:17623-17679 —
+   extractinator 219/642⇒7, snow cloud 209 frameX/72<3⇒6, tileHammer⇒1,
+   tileAxe⇒2, alchemy table 184⇒8, in-pick-range⇒3, wet tile && player
+   wet⇒4, fallback wet⇒4), `SmartSelect_GetAvailableToolRanges`
+   (:17681-17716 — the first item of each family pins its tileBoost, the
+   −10 sentinel shrinks the rect into nothing) and
+   `SmartSelect_PickToolForStrategy` (:17472-17621 — all nine strategies;
+   the flare 930 ammo probe scans the carry 57..0). The override applies
+   through `OverrideSelection` (:464-484) inside `Update` and restores
+   when LeftShift releases. Sets reused: `tr_core::smart_cursor`
+   TORCH_ITEMS/WATER_TORCH_ITEMS/PAINT_SCRAPER_ITEMS,
+   `tr_core::extract::extractinator_mode`, `tr_core::tileobject`
+   tile_hammer/tile_axe; the Glowsticks set {282,286,3112,3002,4776,5643}
+   (`ItemID.cs:1374`) is new in `hotbar.rs` (no core set existed).
+7. **MISSING — QuickHeal hotkey (H)**: `Action::QuickHeal` was bound but
+   never consumed. Ported as `world_sim/player.rs::quick_heal` on the
+   press edge (`releaseQuickHeal` latch :24822-24833, the App field
+   `quick_heal_prev`): the gate chain (:5503 — mouse-item pending, CCed,
+   dead, full life, buff 21 live), the chooser
+   (`QuickHeal_GetItemToUse` :5549-5596 — the 58 carry slots then the
+   void vault iff the 4131 lens; smallest non-negative overshoot once one
+   exists else the largest heal; the 227 +30 grace capped at 0), the
+   early dismount (:5512-5515), the UseSound at `base.position` (:5516),
+   `ApplyPotionDelay` (:51853-51886 — 3001 `Next(2400,4201)`, 227/126
+   2700, 1912 2400, 5 1800, else 3600; the hunger reset for 5/1912
+   :12081-12096), `ApplyLifeAndOrMana` (:51888-51952 — the 3001 heal
+   `Next(healLife,121)` + the `NextFloat` i-frame ladder ≤0.1⇒240
+   ≤0.3⇒120 ≤0.6⇒60; the clamp; the HealEffect number), the buffType
+   grant and the stack decrement/TurnToAir (:5535-5542). NO item
+   animation — `ItemCheck_TryStartUse` (:52021-52040) only gates.
+8. **WRONG (minor) — QuickMount**: the port armed a 20-tick swing +
+   attack_cd on the mount key; vanilla plays only the saddle UseSound at
+   `base.Center` (`Player.cs:6086-6093`) — `SetMount`
+   (`Mount.cs:6196-6305`) never touches itemAnimation/itemTime. The
+   invention is removed; the sound now plays (UpdatePlayers case-2
+   draws). The `tongued` guard (:6074) was missing — added (the port HAS
+   `p.tongued`).
+9. **OK — QuickHook (E)**: `world_sim/player.rs`'s hook edge vs
+   `QuickGrapple` (:6296-6478) + the `releaseHook` latch (:27480-27492) —
+   heavily cited by S1-E-21f/S1-L-10a-c; no new WRONG in the hotkey path.
+10. **MISSING (out of scope) — QuickMana/QuickBuff hotkeys**: bound, never
+    consumed (`Player.cs:24834-24845`, `QuickMana` :5598-5640). Flagged
+    for the Lead — own task.
+
+### The i20 channel-seam decision (Lead, autonomous)
+
+The brief's `channel_shoot` seam lives ONLY on the unmerged
+`origin/task/S1-P-i20-magic-staves-a` (80427c2d, not an ancestor of this
+base aa147ce0). Per the Lead addendum the interrupt is written against
+MAIN's existing seam: `Player.channel` / `channel_item` / `channel_target`
+(`player.rs:1395-1411`), the fields the aiStyle-9 owner-block hold reads
+(`projectile.rs:4386`/`:6388`). Clearing them stops the hold both pre-
+and post-i20 (the i20 refactor adds `channel_shoot` beside them; a
+channel-state clear stays compatible).
+
+### Deliberate deviations
+
+- **The one-tick buff/i-frame offset**: the port runs the quick actions
+  (heal/mount/hook) BEFORE the tick's `Player::update` buff head
+  (`update_buffs_tick`, `Player.cs:24535`) and `update_immunity`
+  (:25456) — the existing quick-mount/grapple convention. The C# runs
+  UpdateBuffs before QuickHeal (:24826), so a freshly-armed buff 21 /
+  i-frame window decrements once the SAME port tick (3600→3599). The
+  witnesses pin the port's settled order; the net effect over the buff's
+  lifetime is identical.
+- **`pendingItemReuse`** (`UsingOrReusingItem`'s fourth member,
+  :4074) has no port field — the idle gate reads swing/reuse/channel/
+  itemTime only.
+- **`lastItemUseAttemptSuccess`** (:554, the net-sync latch :6902) has no
+  port field — the OnSelectionChanged reset is a no-op.
+- **`hbLocked`** (the hotbar lock, `Main.cs:42488-42507`) has no port
+  state — the lock icon is a recorded draw no-op (`ui/chrome.rs`); the
+  click gate reads the other three conditions only.
+- **`pStone`** (the Philosopher's Stone / Charm of Myths ×0.75 delay
+  scale, :25477-25486/:51858-51861) has no port accessory flag —
+  constants-off; the Strange Brew delay rolls the unscaled range.
+- **The mouse-item slot-58 override** (`PickItemSelectionOverride`
+  :17412-17416) and the **AFK-kite override** (:17421-17429) have no port
+  state (the live slot indexes the 50-grid; no afkCounter/selectedKite).
+- **The smart-select gamepad arms** (`_lastSmartCursorToolStrategy`
+  :17444-17447, the gravDir tile flip :17466-17469) are unported — no
+  gamepad/gravity-flip state.
+- **The strategy-7 ItemTrader arm** (:17595-17600, the shimmer trade) is
+  unported — the ExtractinatorMode arm (:17601-17605) is the whole pick.
+- **The QuickHeal `cursed` gate** (:5503, buff 23's noItems pair) and the
+  **breath==0 && type 126 achievement** (:5543-5546) are constants-off /
+  unported.
+- **The QuickMana/QuickBuff hotkeys** stay unported (verdict 10).
+
+### RNG order (S1-A-10 contract)
+
+Selection, digits, wheel, smart-select and the mount/hook edges draw NO
+gameplay RNG in C# (`PlaySound(12)` is the fixed MenuTick cue — the
+port's `audio.play("Menu_Tick")`, no stream draw). QuickHeal draws on
+`UpdatePlayers` (the call runs inside `Player.Update`, `Main.cs:17754`)
+in exactly this order: the UseSound's case-2 pitch draws (:5516) FIRST,
+then the 3001 delay `Next(2400,4201)` (:51857), then the 3001 heal
+`Next(healLife,121)` (:51895), then the i-frame `NextFloat` (:51898),
+then the HealEffect's two position-jitter draws (`CombatText.cs:88-89`).
+Every other potion row draws only the sound + the jitter. QuickMount's
+saddle UseSound case-2 draws ride UpdatePlayers at the mount edge (the
+grapple-fire convention). The `play_use_sound` façade's own
+`sound_style_random` NextFloat (`audio.rs:1049-1053`) is unchanged. No
+existing stream reordered.
+
+### Verification
+
+Code-only: every fix re-read against the cited C# windows; the seam call
+sites checked against the actual signatures by read/grep (`App` fields,
+`Player` fields, `registry::get`, `buffs.add_buff/find_buff_index`,
+`combat_text::spawn_amount`, `audio.play_use_sound`,
+`tr_core::smart_cursor::reachable_rect`, `tileobject::tile_hammer/
+tile_axe`, `extract::extractinator_mode`). The 30 witness tests
+(`hotbar.rs` 20 + `world_sim/player.rs` 10) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
+closed-hotbar click test was repointed to the buffered semantics (the
+click buffers; the player tick applies).

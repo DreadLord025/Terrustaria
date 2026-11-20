@@ -163,6 +163,7 @@ mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;
+mod hotbar;
 mod hurt_modifiers;
 mod player;
 mod player_file;

@@ -18,7 +18,6 @@ use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
 use crate::app::App;
-use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
 use crate::npc::{Npc, NpcKind};
@@ -401,8 +400,22 @@ impl ApplicationHandler for App {
                         && self.front.is_none()
                         && !self.inventory_open
                     {
-                        self.selected =
-                            (self.selected as i32 + step).rem_euclid(HOTBAR as i32) as usize;
+                        // S1-P-i54 — `HandleHotbarControls` (`Player.cs:
+                        // 31766-31796`): `num += ScrollWheelDelta / -120`
+                        // (`:31790`) — wheel-UP (+120) steps BACKWARD — and
+                        // the offset applies to the HOTBAR latch
+                        // (`selectedItemState.Hotbar`, :31794), not the live
+                        // slot — an overridden selection (smart-select)
+                        // does not shift the cycle base. The request
+                        // buffers (`Select`); the apply runs on the player
+                        // tick (`selectedItemState.Update`, `:25218`). The
+                        // 12 cue plays at the request (`Select`, `:506`).
+                        let target = crate::hotbar::clamp_hotbar_offset(
+                            self.selection.hotbar as i32 - step,
+                        );
+                        if self.selection.select(self.selected, target, false) {
+                            self.audio.play("Menu_Tick");
+                        }
                     }
                 }
             }
@@ -496,6 +509,11 @@ impl ApplicationHandler for App {
                         if !pressed {
                             #[cfg(feature = "debug")]
                             crate::debug_panel::end_drag(self);
+                            // S1-P-i54 — `TriggersSet.CopyInto`
+                            // (`TriggersSet.cs:844-847`): the left release
+                            // clears `Main.blockMouse`, so the next press
+                            // arms `controlUseItem` again.
+                            self.block_mouse = false;
                         }
                         self.mine_down = pressed;
                         if !pressed {
@@ -643,6 +661,22 @@ impl App {
         self.map_binds[action.index()].as_str() == crate::input_map::key_name(code)
     }
 
+    /// S1-P-i54 — one hotbar digit press (`Player.cs:25095-25134` +
+    /// `:25174-25177`): the digit latches `num7` and `Select` buffers the
+    /// request; the apply + use-timer reset run on the player tick
+    /// (`selectedItemState.Update`, `:25218`). The 12 cue plays at the
+    /// request (`Select`, `:506`). Vanilla has NO shop-buy on the digit
+    /// keys — the shop buys ride `ItemSlot.HandleShopSlot`'s mouse arms
+    /// (`ItemSlot.cs:1220`/`:1650`); the port's old "1 buys stock slot 0"
+    /// was an invention and is gone (the click-buy stays the shop's
+    /// surface). The chat/sign/chest-edit gate (`:25093`) is the caller's:
+    /// those overlays eat the key before `world_key` runs.
+    fn hotbar_digit(&mut self, slot: usize) {
+        if self.selection.select(self.selected, slot, false) {
+            self.audio.play("Menu_Tick");
+        }
+    }
+
     pub(crate) fn world_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Escape => {
@@ -727,44 +761,20 @@ impl App {
             }
             #[cfg(feature = "debug")]
             _ if crate::debug_panel::handle_key(self, code) => {}
-            KeyCode::Digit1 => {
-                // The shop open: the 1 key buys one unit of the first stock
-                // row onto the cursor (`ItemSlot.HandleShopSlot`'s body —
-                // the click-buy rides `handle_inventory_clicks`' shop grid).
-                // The cursor stackability gate (`ItemSlot.cs:2043` — an air
-                // cursor or the same kind/prefix), the cursor-room gate
-                // (`:2055`) and the first-unit cue (`:2064-2073`) ride here;
-                // a refused buy falls through to the hotbar select.
-                let row0 = self.shop_stock.first().copied();
-                let cursor_ok = match row0 {
-                    Some(e) if e.item > 0 && e.stack > 0 => {
-                        self.mouse_item.count == 0
-                            || (self.mouse_item.kind == e.item
-                                && self.mouse_item.prefix == e.prefix
-                                && self.mouse_item.count
-                                    < crate::registry::max_stack(e.item))
-                    }
-                    _ => false,
-                };
-                if self.shop_npc.is_some() && cursor_ok {
-                    let value = row0.map_or(0, |e| crate::itemdata::ITEMS[e.item as usize].value);
-                    if self.buy_shop_item(0) {
-                        // `SoundEngine.PlaySound(18)` on a valued row, else 7.
-                        self.audio.play(if value > 0 { "Coins" } else { "Grab" });
-                        return;
-                    }
-                }
-                self.selected = 0;
-            }
-            KeyCode::Digit2 => self.selected = 1,
-            KeyCode::Digit3 => self.selected = 2,
-            KeyCode::Digit4 => self.selected = 3,
-            KeyCode::Digit5 => self.selected = 4,
-            KeyCode::Digit6 => self.selected = 5,
-            KeyCode::Digit7 => self.selected = 6,
-            KeyCode::Digit8 => self.selected = 7,
-            KeyCode::Digit9 => self.selected = 8,
-            KeyCode::Digit0 => self.selected = 9,
+            // S1-P-i54 — `Main.KeyStatus`' digit arms (`Player.cs:25095-25134`):
+            // Hotbar1 ALWAYS selects (`Main.cs:31790`'s digit loop buffers the
+            // selection; the shop buys are mouse-only, `ItemSlot.cs:1220`/
+            // `:1650` — the i44 Digit1-buy invention retired).
+            KeyCode::Digit1 => self.hotbar_digit(0),
+            KeyCode::Digit2 => self.hotbar_digit(1),
+            KeyCode::Digit3 => self.hotbar_digit(2),
+            KeyCode::Digit4 => self.hotbar_digit(3),
+            KeyCode::Digit5 => self.hotbar_digit(4),
+            KeyCode::Digit6 => self.hotbar_digit(5),
+            KeyCode::Digit7 => self.hotbar_digit(6),
+            KeyCode::Digit8 => self.hotbar_digit(7),
+            KeyCode::Digit9 => self.hotbar_digit(8),
+            KeyCode::Digit0 => self.hotbar_digit(9),
             // `Main.cInv` (`Main.cs:67175`, default `Escape`): the rebind row
             // for `Player.controlInv`. Escape keeps the close chain above
             // (the vanilla's menu/map close order runs before `ToggleInv`),

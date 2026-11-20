@@ -7867,8 +7867,9 @@ impl Player {
             self.try_dismount(world);
             return None;
         }
-        // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
-        if self.cced() || self.dead {
+        // `:6074-6077`: the guards — CCed, tongued (buff 38, the WoF
+        // tongue), dead; gravDir/noItems have no port arms.
+        if self.cced() || self.tongued || self.dead {
             return None;
         }
         let item = inventory
