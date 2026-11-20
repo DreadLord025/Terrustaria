@@ -821,6 +821,11 @@ impl App {
             // check + drained re-push (`:2407-2446`) land with the
             // apply-wiring lanes (g48-g52) / S1-I-4 — bodies + codecs only.
             C2s::ReleaseItemOwnership(_) | C2s::LiquidUpdate(_) => {}
+            // S1-I-1 W4-f21: `52`'s Chest.Unlock/WorldGen.UnlockDoor/
+            // Chest.Lock + the relay + SendTileSquare(2)
+            // (`MessageBuffer.cs:2531-2564`) land with the apply-wiring
+            // lanes (g48-g52) / S1-I-4 — bodies + codecs only.
+            C2s::LockAndUnlock(_) => {}
         }
     }
 
@@ -1872,6 +1877,10 @@ impl App {
             // (`:2428-2435`) land with the apply-wiring lanes (g48-g52) /
             // S1-I-4 — bodies + codecs only.
             S2c::ReleaseItemOwnership(_) | S2c::LiquidUpdate(_) => {}
+            // S1-I-1 W4-f21: `57`'s client WorldGen.tGood/tEvil/tBlood
+            // store (`MessageBuffer.cs:2631-2638`) lands with the
+            // apply-wiring lanes (g48-g52) / S1-I-4.
+            S2c::WorldEvilBytes(_) => {}
         }
     }
 

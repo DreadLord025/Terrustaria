@@ -186,6 +186,20 @@ pub mod id {
     /// (`:2778-2797`) is the send site. The port's liquid lane uses module
     /// 82; this is the verbatim legacy body.
     pub const LIQUID_UPDATE: u8 = 48;
+    /// `52 LockAndUnlock` (`MessageID.cs:117`) — writer
+    /// `NetMessage.cs:1014-1018` (`(byte)action + (short)x + (short)y`,
+    /// the player id `number` is NOT written); reader
+    /// `MessageBuffer.cs:2531-2564` is host-only: kind 1 `Chest.Unlock`,
+    /// 2 `WorldGen.UnlockDoor`, 3 `Chest.Lock`, each relayed as `52` +
+    /// `SendTileSquare(…, 2)`. All send sites are `netMode == 1`
+    /// (`Player.cs:32813`/`:32832`/`:33197`/`:33218`/`:41660`) — C2s-only.
+    pub const LOCK_AND_UNLOCK: u8 = 52;
+    /// `57 Unknown57` (`MessageID.cs:127`) — the world-evil census push:
+    /// writer `NetMessage.cs:1054-1058` (`WorldGen.tGood/tEvil/tBlood`,
+    /// three `byte`s, `WorldGen.cs:4180-4184`); reader
+    /// `MessageBuffer.cs:2631-2638` is client-only. Sends: the join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173` — S2c-only.
+    pub const WORLD_EVIL_BYTES: u8 = 57;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1605,6 +1619,30 @@ pub struct LiquidUpdate {
     pub liquid_type: u8,
 }
 
+/// `msg 52 LockAndUnlock`'s body (`NetMessage.cs:1014-1018`): the action
+/// byte (`number2`), the tile as two `(short)`s (`number3`/`number4`). The
+/// reader (`MessageBuffer.cs:2531-2564`) maps 1 chest-unlock, 2 door-unlock,
+/// 3 chest-lock; any other kind is a silent no-op. The host relays with
+/// `number = 0` (`:2541`/`:2550`/`:2559`) — the player id never rides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LockAndUnlock {
+    /// 1 = `Chest.Unlock`, 2 = `WorldGen.UnlockDoor`, 3 = `Chest.Lock`.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 57 Unknown57`'s body (`NetMessage.cs:1054-1058`): the three
+/// world-evil bytes `WorldGen.tGood`, `tEvil`, `tBlood` in that order
+/// (writer order good→evil→blood; the reader assigns the same order,
+/// `MessageBuffer.cs:2634-2636`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldEvilBytes {
+    pub good: u8,
+    pub evil: u8,
+    pub blood: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1725,6 +1763,10 @@ pub enum C2s {
     /// reader `MessageBuffer.cs:2407-2446`). Deprecated in favour of module
     /// 82's liquid stream, but the arm is live.
     LiquidUpdate(LiquidUpdate),
+    /// `52 LockAndUnlock` — a client unlocked/locked a chest or door
+    /// (`Player.cs:32813`/`:33197`/`:41660`; host apply + relay
+    /// `MessageBuffer.cs:2531-2564`). C2s-only.
+    LockAndUnlock(LockAndUnlock),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1901,6 +1943,10 @@ pub enum S2c {
     /// (`NetMessage.sendWater`'s per-section loop, `NetMessage.cs:2785-2796`;
     /// the drained-tile re-push `MessageBuffer.cs:2441`).
     LiquidUpdate(LiquidUpdate),
+    /// `57 Unknown57` — the world-evil bytes, join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173`; client-only reader
+    /// (`MessageBuffer.cs:2631-2638`). S2c-only.
+    WorldEvilBytes(WorldEvilBytes),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -1957,6 +2003,7 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2029,6 +2076,9 @@ impl C2s {
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             // `NetMessage.cs:987-995`: two (short)s + liquid + liquidType().
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1014-1018`: (byte)action + two (short)s; the
+            // player id is NOT written.
+            Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2162,6 +2212,12 @@ impl C2s {
                 y: r.i16()?,
                 liquid: r.u8()?,
                 liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2533-2535`: ReadByte + two ReadInt16.
+            id::LOCK_AND_UNLOCK => Self::LockAndUnlock(LockAndUnlock {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2328,6 +2384,7 @@ impl S2c {
             Self::Unknown44 => id::UNKNOWN_44,
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
         }
     }
 
@@ -2476,6 +2533,8 @@ impl S2c {
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three bytes.
+            Self::WorldEvilBytes(e) => w.u8(e.good).u8(e.evil).u8(e.blood),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2694,6 +2753,12 @@ impl S2c {
                 y: r.i16()?,
                 liquid: r.u8()?,
                 liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2634-2636`: three ReadByte, good→evil→blood.
+            id::WORLD_EVIL_BYTES => Self::WorldEvilBytes(WorldEvilBytes {
+                good: r.u8()?,
+                evil: r.u8()?,
+                blood: r.u8()?,
             }),
             _ => return None,
         })
@@ -4970,6 +5035,62 @@ mod tests {
         assert_eq!(&f[3..], &[5, 0, 6, 0, 0, 0]);
         // A truncated liquidType byte must not decode.
         assert!(S2c::decode(48, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_lock_and_unlock_round_trips() {
+        // `NetMessage.cs:1014-1018`: (byte)number2 + (short)number3 +
+        // (short)number4 — the player id `number` is NOT on the wire (the
+        // host relay re-sends it as 0, `MessageBuffer.cs:2541`).
+        for action in [1u8, 2, 3, 0, 255] {
+            let b = LockAndUnlock {
+                action,
+                x: -5,
+                y: 1200,
+            };
+            let mut body = vec![action];
+            body.extend_from_slice(&(-5i16).to_le_bytes());
+            body.extend_from_slice(&1200i16.to_le_bytes());
+            let f = C2s::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(f.len(), 3 + 5);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // C2s-only: the reader arm is host-gated, no S2c variant exists.
+        assert!(S2c::decode(52, &mut NetReader::new(&[1, 0, 0, 0, 0])).is_none());
+        // A truncated y must not decode.
+        assert!(C2s::decode(52, &mut NetReader::new(&[1, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_world_evil_bytes_round_trips() {
+        // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three raw bytes
+        // in the writer's order; the reader assigns the same order
+        // (`MessageBuffer.cs:2634-2636`).
+        let b = WorldEvilBytes {
+            good: 200,
+            evil: 100,
+            blood: 50,
+        };
+        let f = S2c::WorldEvilBytes(b).encode();
+        assert_eq!(f[2], 57);
+        assert_eq!(&f[3..], &[200, 100, 50]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::WorldEvilBytes(d) => assert_eq!(d, b),
+            other => panic!("expected 57, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only: no C2s variant (the reader is netMode==1-gated).
+        assert!(C2s::decode(57, &mut NetReader::new(&[1, 2, 3])).is_none());
+        // A truncated blood byte must not decode.
+        assert!(S2c::decode(57, &mut NetReader::new(&[1, 2])).is_none());
     }
 
     #[test]
