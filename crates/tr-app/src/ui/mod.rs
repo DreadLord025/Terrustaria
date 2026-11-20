@@ -19,6 +19,8 @@ pub(crate) mod coin_slot;
 pub mod color;
 pub mod crafting;
 pub mod creative_powers;
+pub mod creative_display;
+pub mod creative_items;
 pub mod cursor;
 pub mod debug_items;
 pub mod ingame_options;

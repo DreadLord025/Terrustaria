@@ -128,18 +128,18 @@ ports — the lane keeps them (no re-split) and ports only their *missing halves
 
 | row | class | status |
 | --- | --- | --- |
-| 22 | `UICreativeInfiniteItemsDisplay` | in progress |
-| 23 | `UICreativeItemGrid` | in progress |
-| 24 | `UICreativeItemsInfiniteFilteringOptions` | partial landed (`craft_filter::FilterBoard` + `crafting::filter_*`); element halves pending |
+| 22 | `UICreativeInfiniteItemsDisplay` | LANDED (`ui/creative_display.rs` state machines) |
+| 23 | `UICreativeItemGrid` | LANDED (`ui/creative_items.rs`; grid base row 30) |
+| 24 | `UICreativeItemsInfiniteFilteringOptions` | LANDED (board `craft_filter` + geometry `crafting` pre-landed; theme/sizing/tint `ui/creative_items.rs`) |
 | 25 | `UICreativePowerButton` | LANDED (empty marker, `ui/creative_powers.rs`) |
 | 26 | `UICyclingImage` | LANDED (`ui/images.rs::CyclingImage`) |
-| 27 | `UIDebugCommandItem` | pending |
-| 28 | `UIDebugLoadoutItem` | pending |
+| 27 | `UIDebugCommandItem` | LANDED (`ui/debug_items.rs`) |
+| 28 | `UIDebugLoadoutItem` | LANDED (`ui/debug_items.rs`) |
 | 29 | `UIDifficultyButton` | LANDED (hover latch `ui/buttons.rs`; draw/click pre-landed) |
-| 30 | `UIDynamicItemCollection` | pending |
+| 30 | `UIDynamicItemCollection` | LANDED (`ui/item_collection.rs`) |
 | 31 | `UIGenProgressBar` | LANDED (S1-E-17, re-verified) |
 | 32 | `UIHairStyleButton` | LANDED (skip + hover latch `ui/buttons.rs`; draw/click pre-landed) |
-| 33 | `UIHeader` | LANDED (S1-E-17, re-verified) |
+| 33 | `UIHeader` | LANDED (S1-E-17 draw + `ui/chrome_elements.rs::HeaderText` setter) |
 | 34 | `UIHorizontalSeparator` | LANDED (ctor pick + hit override `ui/chrome_elements.rs`; draw pre-landed) |
 
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
