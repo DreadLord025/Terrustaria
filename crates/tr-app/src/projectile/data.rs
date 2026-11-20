@@ -2300,10 +2300,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             338..=341 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The 1.4.4 rocket family (`:7939-7952`) — the eight rockets each
             // of the Grenade/Rocket/Proximity launchers resolves to (776-801)
-            // plus the Snowman Cannon's 803-810. 779/783 sit inside the C#
-            // range but no launcher's rocket resolves to them, so the guard
-            // leaves them row-less.
-            776..=801 | 803..=810 if kind != 779 && kind != 783 => (
+            // plus the Snowman Cannon's 803-810. 779/783 are the CLUSTER
+            // shrapnel the cluster rockets' Kill arm spawns
+            // (`:78063-78086`, S1-P-i16) — the same row arm covers them
+            // (the C# range block `:7939` includes both).
+            // The cluster shrapnel 779/783 carry the `NewProjectileSetup`
+            // fuse seed `timeLeft = 60` (`Projectile.cs:11053-11060`) — the
+            // row folds it like the bomb rows fold their 180/300 seeds.
+            779 | 783 => (14.0, 14.0, 16, -1, 60, 0, true, false, false, RESET_STATE),
+            776..=801 | 803..=810 => (
                 14.0,
                 14.0,
                 16,
@@ -2315,6 +2320,42 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // The Snowman Cannon's cluster shrapnel 862/863
+            // (`Projectile.cs:8275-8283`): 14x14, aiStyle 16, penetrate -1,
+            // the `NewProjectileSetup` 60-tick seed (`:11061-11064`).
+            862 | 863 => (14.0, 14.0, 16, -1, 60, 0, true, false, false, RESET_STATE),
+            // S1-P-i16 — the dart guns' ammo projectiles. The Poison Dart
+            // 267 (`Projectile.cs:3529-3537`): 14x14, aiStyle 1, alpha 255,
+            // the stock penetrate 1 / timeLeft 3600.
+            267 => (14.0, 14.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Crystal Dart 477 (`:5518-5528`): 14x14, aiStyle 1,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 1`.
+            477 => (14.0, 14.0, 1, 5, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Cursed Dart 478 (`:5529-5539`): 14x14, aiStyle 1,
+            // alpha 255, `penetrate = 3`, `timeLeft = 300`.
+            478 => (14.0, 14.0, 1, 3, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Ichor Dart 479 (`:5540-5548`): 14x14, aiStyle 1,
+            // alpha 255, the stock penetrate 1 (the split machine rewrites
+            // it per tick, `:57307-57316`).
+            479 => (14.0, 14.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Cursed Dart's flame drop 480 (`:5549-5560`): 12x12,
+            // aiStyle 14, `penetrate = 1`, `timeLeft = 180`, alpha 255
+            // (`noEnchantments` has no port field).
+            480 => (12.0, 12.0, 14, 1, 180, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Electrosphere Launcher's bolt 442 (`:5126-5136`): 14x14,
+            // aiStyle 1, alpha 255, `timeLeft = 600`, the stock penetrate 1.
+            442 => (14.0, 14.0, 1, 1, 600, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Electrosphere sphere 443 (`:5137-5149`): 80x80, aiStyle 77,
+            // alpha 255, `penetrate = -1`, `tileCollide = false`,
+            // `ignoreWater` (the overlay below), the `NewProjectileSetup`
+            // 300-tick seed (`:11065-11068`).
+            443 => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Fireworks Launcher's rockets 167-170 (`:2558-2569`):
+            // 14x14, aiStyle 34, `timeLeft = 45`, the idStatic-1 pair with
+            // `appliesImmunityTimeOnSingleHits` (the plain PVE walk applies
+            // the idStatic stamp regardless of penetrate — the flag's effect
+            // for these pen-1 rows).
+            167..=170 => (14.0, 14.0, 34, 1, 45, 0, true, false, false, (false, -2, true, 1, 0, 1.0)),
             // The Celebration rockets (`:7584-7605` — both arms identical):
             // 14x14, aiStyle 147, `penetrate = 1`, `extraUpdates = 2` and
             // `timeLeft = 360 * MaxUpdates` = 360 × (`extraUpdates + 1`) = 1080
@@ -2935,7 +2976,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i16 — the Electrosphere sphere 443's `ignoreWater = true`
+            // (`Projectile.cs:5147`, the `:5137-5149` row block).
+            || kind == 443,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

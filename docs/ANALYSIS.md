@@ -7699,6 +7699,125 @@ breaks discard the wall item (the C# `KillWall` drops nothing in the
 explosion path either); the water-bomb transforms (784-807) and the
 special bombs (910/911, 102, 773) are out of the ported kinds.
 
+## Rocket & dart ammo (S1-P-i16)
+
+The rocket launchers (`useAmmo == AmmoID.Rocket` 771) and the dart guns
+(`useAmmo == AmmoID.Dart` 283) resolve their ammo through `PickAmmo`'s
+pair table / `Item.shoot` arms (`Player.cs:53458-53568`, already ported
+in `ammo.rs` — the 60-cell table is FAITHFUL, the 1946/3930 formula arms
+are DEAD because the table covers them). The task's "ManageShoot" does
+not exist in the decompile — the real method is `Player.ItemCheck_Shoot`
+(`:47056-49468`), and there is NO per-`useAmmo` velocity arm: the
+launcher/dart velocity is the generic aim × (weapon shootSpeed + ammo
+shootSpeed) (`:47277-47307`). What was missing / wrong is the projectile
+side and the per-weapon spawn arms.
+
+**The WRONGs fixed** (the pre-port `ai_bomb` treated every aiStyle-16 kind
+as a thrown bomb):
+- The flight damage zeroed for rockets — the C# keep-damage list
+  (`:47175`) names 133-144 / 338-341 / 776-801 / 803-810 / 862 / 863, so
+  a rocket KEEPS its fused damage in flight. `ai_rocket` now owns the
+  launcher kinds ahead of the thrown-bomb arc.
+- The thrown-bomb gravity arc applied to rockets — each family has its
+  own tail (`ai_rocket`, `:47311-47537`): the straight rockets ×1.1 below
+  15 (`:47364`), the grenades' `ai[0] > 15` gravity + 0.95 slide
+  (`:47496`), the mines' +0.2 gravity × 0.97 drag with the ±0.1 snaps
+  (`:47483`), the Snowman homing (acquire at `ai[0] > 30`, Manhattan < 600,
+  `CanHit`, the 1/12 lerp at speed 16, `:47197-47309`). The liquid Snowman
+  kinds 805/806/807 HOME (`:47197` lists them) — they are not in the
+  straight/arc/mine lists.
+- `explode_bomb` refused the rocket kinds, so a rocket never exploded —
+  the detonation hook now routes `is_launcher_rocket` to `explode_rocket`
+  (`PrepareBombToBlow` resize/kb + the `damage_pve_boxed` walk + the
+  `rocket_kill_census` draws + `Kill_ExplodeTiles`' radius ladder).
+
+**The rows added** (`projectile/data.rs`): the cluster shrapnel 779/783
+and 862/863 (14×14 ai16, the `NewProjectileSetup` 60-tick seed
+`:11053-11064`), the darts 267/477/478/479/480, the Electrosphere bolt
+442 + sphere 443 (the 300-tick seed `:11065-11068`, `ignoreWater`
+`:5147`), the fireworks rockets 167-170 (aiStyle 34, timeLeft 45, the
+idStatic-1 pair). The 477 carries penetrate 5 / extraUpdates 1, the 478
+penetrate 3 / timeLeft 300.
+
+**The dart AI** (`projectile_ai_darts.rs`, `AI_001`'s dart arm
+`:57292-57364`): the localAI[0] fade latch (alpha → 0 after 3), the
+`ai[0] >= 20` gravity pin (+0.075, NOT the 477), the Ichor split machine
+(the penetrate flip, the `Next(5,30)` threshold every tick, the
+`Next(2,4)` + `Next(4)` count, the per-shard `Next(-100,101)` pair + the
+2× parent-direction blend at 0.9× damage, the `ai[1] = -1000` latch —
+the `IchorDartUpdatePenetrate` modifier `NewProjectileModifiers.cs:15-28`
+folds to the same penetrate restore the per-tick arm runs), the Cursed
+flame drops (`Next(5,20)`, −20 timeLeft, the 480 spawn at 0.8×/0.5×).
+The 477's rotation blend (`:57684-57694`), its tile bounce
+(`HandleMovement` `:18644-18697`: the penetrate spend, the −1 reflection,
+the ×0.85 damage, the post-bounce retarget scan) and its on-hit retarget
+(`:13534-13567`, the victim excluded). The 442 bolt's fade / arrival /
+120-tick hover (`:54726-54771`; 442 is on the `flag3 = false` skip list
+`:55996`, so its `ai[0]` keeps the target tile X). The 443 sphere's
+aiStyle-77 pulse (`:30671-30761`), the 167-170 aiStyle-34 flight
+(`:27136-27188`) and their Kill arms (the 442 sphere spawn + pull-in
+`:73528-73552`, the 478 death flame `:75578-75584`, the fireworks burst
+census `:76464-76674`). The 480 rides the generic `ai_spear` tail with
+its AI_014 dust census (`:25227-25245`).
+
+**The on-hit debuffs** (`StatusNPC`, in `damage_pve`'s landed block):
+267 → Poisoned 20 (`Next(3)` → 3600 else 1800, `:11635-11644`), 478/480 →
+Cursed Flames 39 (`60 × Next(3,7)`, `:11482`), 479 → Ichor 69
+(`60 × Next(7,15)`, `:11486`). The aiStyle-16 NPC-hit fuse
+(`Damage_PVE_Inner` `:13120-13134`): `timeLeft → 3` + the direction to
+the victim's side.
+
+**The wire arms** (`world_sim/editing.rs`'s shooter fire block):
+- 3007 Dart Pistol muzzle `−4·dir X / −2 Y` (`:47272-47276`); 986/281
+  Blowgun/Blowpipe `+6·dir X / −6 Y` (`:47267-47271`) — on top of the
+  port's documented centre + 10·dir spawn stand-in.
+- 2796 Electrosphere FORCES proj 442 post-PickAmmo (`:47169-47172`, the
+  Rocket additive arm's result discarded) + seeds `ai[0]/ai[1]` = the
+  cursor tile (`:49388-49392`).
+- 3546 Fireworks Launcher: TWO rockets per use, each a jittered aim
+  (`Next(-40,41) × 0.05` per axis), the spawn 6 px perpendicular
+  (`RotatedBy(−π/2 · direction)`), the kind `167 + Next(4)`, `ai[1] = 1`
+  (`:49019-49031`).
+- 3930 Celebration Mk2: the fixed 714 (gunProj reset) + `ai0 = 5 ×
+  Next(0,20)` (`:48991-48994`); its 1/2 not-consume roll is already in
+  `ammo.rs`.
+- 760 Proximity Mine Launcher: `DestroyOldestProximityMinesOverMinesCap(20)`
+  (`:49450-49453` → `:46976-47017`) — the lowest-timeLeft mine of the
+  twelve kinds dies (the port latches `detonated`, the pool's next update
+  resolves the blast).
+
+**RNG streams**: the shooting rolls (crit, the 3930 ai0, the 3546 jitter)
+ride `RngKey::UpdatePlayers`; the projectile AI / census / debuff rolls
+ride the pass's `UpdateProjectiles` stream. Every explicit `Main.rand`
+draw stays in the C#'s order; the `Dust.NewDust*` internal rolls go with
+the dust pool (the `celeb2_explosion` convention). One gore = the
+`Next(61,64)` type + the `NewGore` kicks `Next(10,31)` / `Next(-20,21)`
+(`Gore.cs:1327-1328`).
+
+**Deviations / follow-ups**:
+- `base.wet` is the dispatch's centre-cell liquid stand-in (the full
+  `Collision.WetCollision` box probe is the liquid-layer follow-up).
+- `SelfHurtPlayers` stays the documented M2-DEATH deviation; the helpers
+  `rocket_fixed_self_damage` (fixed 60, `ProjectileID.cs:342-422`) and
+  `rockets_skip_self_damage` (`:341`) are ported for the follow-up.
+- The liquid families' `SpreadWater/Lava/Honey/Dry` flood fills
+  (`:77773`/`:77812`/`:77851`/`:77890`) draw nothing — the census is
+  complete without them; the fills are the liquid-layer follow-up.
+- The movement is the kill-on-tile stand-in EXCEPT the 477 bounce and the
+  rocket aiStyle-16 bounce arm (both ported per-axis).
+- `PrepareBombToBlow`'s Mini Nuke arm (`:46825`) reads `type == 808 ||
+  type == 808` in the decompile (808 twice, 809 absent) — legal C#, kept
+  1:1 (the RockGolemHead precedent): the 809 keeps its 14×14 box even
+  though the Kill census `:77893` and the tile-break list `:77309` name it.
+- The cluster shrapnel 779/783/862/863 DO have a `PrepareBombToBlow` arm
+  (48×48 / kb 8, `:46815-46819`) — the earlier "no arm" reading was wrong.
+- The 167-170 `appliesImmunityTimeOnSingleHits` flag has no port field;
+  the plain PVE walk applies the idStatic stamp regardless of penetrate
+  (the flag's effect for these pen-1 rows), noted at the row.
+
+CODE-ONLY MODE: the witness tests are WRITTEN NOT RUN (no compiler invoked
+on this branch); every expected value is hand-derived from the cited C#.
+
 ## Logic sensors & training dummy (M7-TE-2)
 
 The `RequiresUpdates` half of the tile entities (`TileEntity.PerformUpdates`
