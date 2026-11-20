@@ -1,5 +1,12 @@
 # 18c — the missing `UIState` screens: the d86 remainder (census + ports)
 
+> **LANDED (2026-11-21, code-only — witnesses written, not run):**
+> `21fab727` UIManageControls (`ui/manage_controls.rs` + `input_profiles.rs`,
+> 19 witnesses) · `66176102` the AWorkshopPublishInfoState pair data/state
+> half (`ui/workshop_publish_info.rs`, 9 witnesses) · `19641e25` the
+> UIWorldLoad re-verification note in code + ANALYSIS. Scope-outs
+> (UIWorldGenDebug/UITextWrappingTest) recorded below + in ANALYSIS.
+
 > Wave 4 · task/W4-d86-ui-screens-3 · base a725acb0 · researched 2026-11-20 ·
 > sources: `decompiled/Terraria/GameContent/UI/States/*` (29 files),
 > `decompiled/Terraria/GameContent/UI/Elements/*`, `crates/tr-app/src/ui/` +
