@@ -155,6 +155,12 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         301 => (damage as f32 * 0.9) as i32,
         // `:13432-13436` — the Magical Harp's notes (the `(float)` cast).
         QUARTER_NOTE | EIGHTH_NOTE | TIED_EIGHTH_NOTE => (damage as f32 * 0.95) as i32,
+        // `:13437-13442` — the Flamethrower's Flames / the Foxsparks flames.
+        85 | 1106 => (damage as f64 * 0.85) as i32,
+        // `:13443-13445` — the Bouncing Shield.
+        866 => (damage as f64 * 0.8) as i32,
+        // `:13446-13451` — the Slime Whip / Cob Whip.
+        SLIME_WHIP | COB_WHIP => (damage as f64 * 0.4) as i32,
         _ => damage,
     }
 }
@@ -44661,6 +44667,81 @@ mod w4_a4_hit_time_tests {
             // 94f·0.95f = 89.2999989 → 89.
             assert_eq!(pool.slots()[slot].damage, 89, "kind {kind} hit 2 compounds");
             assert_eq!(10_000 - npc.hp, 194, "kind {kind} hit 2 strikes 94");
+        }
+    }
+
+    /// A whip slot parked on the victim with its `GetWhipSettings` cache
+    /// armed (the plain walk early-returns on a whip with no settings).
+    /// The sweep itself is bypassed — the witness drives `damage_pve`
+    /// directly, so only the settings-presence gate matters.
+    fn whip_slot(kind: u16, damage: i32) -> ProjectilePool {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, damage, 0.0)
+            .unwrap();
+        pool.set_whip_params(slot, 0, 0, 30.0);
+        pool
+    }
+
+    /// `:13437-13442` — the Flamethrower's Flames (85) and the Foxsparks
+    /// flames (1106) ×0.85. The 85 is a local-immunity row (the overlay's
+    /// −1 sentinel): the re-hit clears the slot row. The 1106 has no row —
+    /// hand-built.
+    #[test]
+    fn w4_a4_the_flames_decay_their_stores() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(85, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 85, "(int)(100·0.85)");
+        assert_eq!(10_000 - npc.hp, 100, "hit 1 strikes full");
+        npc.immune[0] = 0;
+        pool.local_immunity[slot * 256] = 0;
+        hit(&mut pool, slot, &mut npc);
+        // 85·0.85 = 72.25 → 72.
+        assert_eq!(pool.slots()[slot].damage, 72, "hit 2 compounds");
+        assert_eq!(10_000 - npc.hp, 185, "hit 2 strikes 85");
+        // The rowless Foxsparks twin.
+        let mut pool2 = rowless(1106, 100);
+        let mut n2 = victim();
+        hit(&mut pool2, 0, &mut n2);
+        assert_eq!(pool2.slots()[0].damage, 85, "the 1106 shares the 0.85 arm");
+        n2.immune[0] = 0;
+        hit(&mut pool2, 0, &mut n2);
+        assert_eq!(pool2.slots()[0].damage, 72, "hit 2 compounds");
+    }
+
+    /// `:13443-13445` — the Bouncing Shield (866, rowless) ×0.8:
+    /// 100 → 80 → 64.
+    #[test]
+    fn w4_a4_the_bouncing_shield_decays_its_store() {
+        let mut pool = rowless(866, 100);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 80, "(int)(100·0.8)");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 64, "hit 2 compounds");
+        assert_eq!(10_000 - npc.hp, 180, "100 then 80");
+    }
+
+    /// `:13446-13451` — the Slime Whip / Cob Whip ×0.4, the steepest cut in
+    /// the switch: 100 → 40 → 16.
+    #[test]
+    fn w4_a4_the_slime_and_cob_whips_decay_their_stores() {
+        for kind in [SLIME_WHIP, COB_WHIP] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, 40, "kind {kind}: (int)(100·0.4)");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, 16, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 140, "kind {kind} hit 2 strikes 40");
         }
     }
 }
