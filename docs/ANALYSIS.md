@@ -1175,6 +1175,103 @@ Base-vs-blend still exactly 32 826 px in the slash bbox (952,242)-(1121,601)
 — the same confined slash region as the M8 re-take. The committed PNGs are
 these re-takes.
 
+## The atlas composite order (S1-G-11, 2026-11-20, code-only)
+
+Research/41 D-3/D-11: merging every sheet into one atlas loses the vanilla's
+cross-texture composite order. The audit's framing ("XNA's `Deferred` sort")
+is corrected by the source: **`SpriteSortMode.Deferred` does not sort** — it
+flushes in submission order (only `Texture`/`BackToFront`/`FrontToBack`
+reorder, and the Terraria sources use none of them). The vanilla's
+composite-order machinery is `TileBatch`'s **layered mode**
+(`Graphics/TileBatch.cs`):
+
+- `SetLayer(layer, stack)` arms a one-shot `LayerStack = (layer << 8) | stack`
+  (`:235-242`); the first call latches `_layeredSortingEnabled` and throws if
+  sprites were already queued (`SetLayerStack`, `:244-255`).
+- `GetNextSpriteIndex` (`:421-439`): the armed layer wins; else a draw whose
+  texture differs from the current batch's auto-increments the layer by one
+  (`:433-436` — this is what lifts glow/flame overlays above the tile
+  sprites); the arming is consumed either way (`:437`).
+- Draws bucket per `(LayerStack, Texture)` (`SwitchBatch`/`CreateBatch`,
+  `:485-536`), push order kept inside a bucket; `End` → `FlushLayered` sorts
+  the buckets by `SortKey = (LayerStack << 16) | textureId` (`:49`, `:674`)
+  and flushes them in that order (`:672-725`), resetting all pass state
+  (`:717-724`). `textureId` is the texture's **first-use ordinal within the
+  pass** (`CreateBatch`, `:513-521`).
+- `TileDrawing`'s layer constants (`TileDrawing.cs:791-794`):
+  LiquidBehindTiles 0, BehindTiles 1, Tiles 2, OverTiles 3.
+
+The port (`crates/tr-render/src/batch.rs` + `sprite.rs`, three commits on
+`task/W4-d68-composite-order`):
+
+- `batch.rs` — the pure state machine: `layer_stack`/`sort_key` (the u64
+  widening of the C# composition, same lexicographic `(layer, stack,
+  texture)` order), `BatchCursor` (`set_layer`/`take_layer` =
+  `SetLayerStack`/`GetNextSpriteIndex`'s arming + auto-increment),
+  `sorted_draw_order`/`needs_reorder` (the stable bucket flush), and the
+  uv0 → sheet reverse lookup `sheet_rect_contains`/`sheet_at` (the atlas
+  erased the `Texture2D` reference identity the C# compares at `:428/433`,
+  so the source sheet is recovered from the uv — half-texel slack on the low
+  edges for the `(x0+sx)/aw` round-trip, exclusive high edges, lowest-id
+  wins on overlap).
+- `sprite.rs` — `SpriteInstance` gains a CPU-only `sort: [u32; 2]` (the u64
+  key's words; stride 84 → 92, the vertex attrs stop at `blend` — the GPU
+  skips the trailing 8 bytes). `set_tile_layer`/`end_tile_batch` arm/reset
+  the world range's `BatchCursor`; every world push resolves its key through
+  `world_sort` (the `sheet_id_at` last-hit cache rides the tile runs).
+  `draw_ranges` runs `reorder_layered` before upload: each contiguous
+  same-blend run is stably sorted by the key, **never across a blend-run
+  boundary** — the C# flushes each `Begin` blend batch before re-beginning
+  the next (`Main.cs:27457-27494`, the S1-G-3 batches), so a multiply quad
+  can never ride an alpha batch regardless of its layer.
+
+**The frozen default.** No caller arms `set_tile_layer` yet (the tile-pass
+wiring — `TileDrawing.cs:456/523-526/879-887/1365-1398/1526-1536`'s
+`SetLayer` sites — waits on the per-layer draw passes, S1-G-13's consumers).
+Until then every key is 0, `needs_reorder` short-circuits, and the upload is
+byte-identical to the pre-S1-G-11 straight copy
+(`unlayered_ranges_stay_byte_identical`); a stable sort of the sorted range
+is the identity, so the G6-kept world range re-uploads safely. The
+`WorldFrameKey` is untouched — the keys are resolved at push time and ride
+the cached instances.
+
+**Deviations (batch.rs documents both):**
+
+1. **Texture ids are stable, not first-use.** The vanilla id is the runtime
+   first-use ordinal of a `Texture2D` reference — load-order dependent, and
+   painted variants go through `TilePaintSystemV2`'s render-target cache.
+   The port assigns lexicographic 1-based per-sheet ids
+   (`SpriteRenderer::sheet_batch_id`), deterministic across runs and atlas
+   repacks. The ordering *between layers* is exact; between two sheets
+   inside one layer the port follows its stable id order instead of the
+   vanilla load order.
+2. **`LayerBatchKey.Equals` ignores `Texture`** (`TileBatch.cs:75-78`) while
+   `GetHashCode` includes it (`:80-83`) — same-layer different-texture draws
+   merge only on a hash collision, nondeterministic in the vanilla itself.
+   The port keys by `(LayerStack, Texture)` always, the collision-free
+   reading.
+
+Tests (WRITTEN NOT RUN — code-only mode, no cargo in this pass):
+`batch.rs` — the composition pins, the arming/auto-increment sequence
+(including the back-to-previous-texture bump: the C# compares against the
+CURRENT batch, not a history), the stable within-bucket order, the identity
+permutation, the one-ulp low-edge slack + exclusive high edges, the
+lowest-id overlap pick under entry-order reversal; `sprite.rs` — the frozen
+byte-identity, the in-run stable sort + blend-boundary containment + the
+u64 high word + the idempotent re-flush, the stride/attr-span pins updated
+to 92.
+
+**Goldens re-pin note.** The frozen default changes no pixels, so the
+committed goldens stay valid *until the tile pass arms the layers*. When
+that wiring lands, the cross-sheet composite order inside the world range
+changes by design (that is the D-3/D-11 fix) — every world-frame golden
+(`docs/screenshots/*`, the G6 replay hashes, the S1-G-3 lights-bane pair
+included, since the world range rides under the slash) must be re-taken and
+re-pinned in that task, with the pixel diff confined to overlapping
+translucent cross-sheet regions. The stable sheet ids make the re-pin
+deterministic; an atlas repack (S1-G-12b) moves UVs but not ids, so it
+re-pins goldens without touching the order.
+
 ## Living trees (M5-LIVING-trees)
 
 `crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
