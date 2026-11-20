@@ -39244,3 +39244,120 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+
+## The NPC spawn / teleport-in dust lane (W4-g61, code-only)
+
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, commits `0a4af190` +
+`6345f7b7` + `8d23e298`.** `crates/tr-app/src/npc_spawn_visuals.rs`
+(2 081 lines) ports the SPAWN-time visual family as an UNWIRED pure
+module over the d50 `DustPool` contract + the S1-E-4 `GorePool` (the
+style56 Env convention, widened with the gore pool and an inline
+`play_sound` callback so the pitch draws land at the C# call position
+between the dust draws). The death dust (g59/g60) and the per-hit dust
+(g62) are separate lanes — untouched.
+
+**The census (29 sites, all cited):**
+
+* `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`): `Next(3,7)` gores 11-13
+  (the velocity `NextFloat` BEFORE the type `Next(11,14)` — argument
+  order), scale 0.7 / velocity ×0.5 post-writes; ten type-16 dust
+  (14×14, alpha 100, scale 1.5) with the +5 position nudge and the
+  two-`NextFloat` velocity overwrite. Callers: the statue arms
+  (`Wiring.cs:825/:2275/:2329/:2397` — `wiring.rs:980`'s documented
+  gap), the caught-frog/statue-critter poofs (`NPC.cs:79884/:79913` —
+  `bug_net.rs:56-61`'s documented skip), the party-hat-off transition
+  (`:90247`).
+* `NPC.BigMimicSpawnSmoke` (`NPC.cs:77494-77515`): 20× type-54 (alpha
+  50, scale 1.5, velocity ×2, noGravity) + the 3×2 gore-99 grid (the
+  INTEGER products `(width*j)*0.45−20` / `(height*k)*0.5+10`, scale
+  1.1, velocity ×0.3). The `netMode==2` `SendData(51,..,4)` relay
+  dropped (single-player).
+* `NPC.TransformVisuals` (`NPC.cs:80963-81033`, the `Transform` tail
+  `:81136`): the netOffset round trip kept verbatim; the 158↔159
+  gore-only arm (Item8 + three gore-99 at the top / INTEGER-half /
+  bottom −10 seats); the 478→479 flutterfly (30× type-238 SpeedY−2
+  with per-dust `Next(2)` noGravity gates, then gores 684/685/686 +
+  `684+Next(3)` — the type draw BEFORE that gore's allocator pair;
+  684-686 are NOT SafeGore, the armed blood gate re-types inside the
+  allocator); the 406→405 ring (`Next(10,21)` count + one phase
+  `NextFloat`, per-dust the 0×0 type-229 spawn at the FLOAT-half
+  Centre, the `UnitY.RotatedBy(num5*2πf/num3+num4)` seat, position
+  centre+v2×(22,22)/2, scale 0.6+NextFloat×1.8 BEFORE fadeIn
+  NextFloat×2, velocity ×scale); the 428→427 / 427→426 fairy ladders
+  (SEPARATE `if`s in the C# — `SelectRandom(229,240)` = one `Next(2)`
+  vs `(229,240,240)` = one `Next(3)`, drawn BEFORE the allocator;
+  fadeIn 0.25; velocity ×scale/2 vs ×scale×0.75).
+* `Main.TeleportEffect` (`Main.cs:13233-13464`), all eleven arms:
+  0/1 the wizard/rod `W*H/5` INTEGER count with the `Next(20,70)*0.01`
+  scale ASSIGNMENT + j<10/j<5 bumps (Item6/Item8 first); 2 the
+  chaos-state 50×mult type-58 GhostWhite puff (no sound); 3 the
+  50×mult type-180 chain — five `Next(3)` ×0.75 rolls, two `Next(3)`
+  ×2/×1.2 bumps, one `Next(2)` gate whose body draws
+  `Next(75,100)`/`Next(25,75)`, the unconditional ×0.8 tail; 4 the
+  portal burst (`GetPortalColor` parity hsl 0.12/0.52 alpha 66 → the
+  `:13330` alpha-255 overwrite, scale 1.2 / fadeIn 0.4); 5/7 the
+  water/lava columns (`dustWater()`/35, height+24 box, NewDustDirect,
+  Y×0−3.5 / X×1.5, alpha 130, fadeIn 1.2 — the sound AFTER the loop);
+  9 the pylon hop (Inflate(15,15) FIRST, 100×mult
+  `SpawnInWorldDust` — `TeleportPylonsSystem.cs:327-393`'s colour
+  table, type 43 alpha 254 scale 0.5, velocity ×0.1 / Y−0.2); 10 the
+  harmony shimmer (Inflate, 60×mult, the fadeIn/scale/hue `NextFloat`
+  triple BEFORE the allocator, the OVERWRITTEN `Next(20,70)` roll
+  still drawn, the n<80% lerp gate + its `NextFloat`, the
+  `dustIndex!=6000` CloneDust pair ×0.65 + white); 11 the frog hop
+  (50, no mult, `Next(4)` colour pick + the
+  `NextVector2FromRectangle` float pair inside NewDustPerfect, ×2
+  velocity, no sound); 13 the sparkle (Item8, 21× 2×2 type-27 alpha
+  100, the `Next(1,3)` SCALE argument, ×1.75 + i%3 ×1.5,
+  noLightEmittance). Styles 6/8 have no C# arm.
+* `NPC.Teleport` (`NPC.cs:81035-81058`): the PRE-move `teleportTime>0`
+  0.3 mult, Entry at the old rect / Exit at the new (the `side`
+  parameter is unread in the C# body — dropped), the style-4
+  lastPortalColorIndex latch BETWEEN the calls, time=1/style written
+  last; the `SendData(65)` server relay dropped.
+* `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:92194-92241`, called at
+  `:90322` after the AI + cast lights): style 0's `Next(100)` gate
+  against 100×time×2 with NO in-arm decrement (the dust box origin is
+  the INTEGER-cast getRect position); 4/12 decrement −0.02 BEFORE the
+  gate (portal colour keeps alpha 66 / the
+  `(float)(timeForVisualEffects/60.0)%1f` clock hue at l=0.75 alpha
+  0); 13 instant clear; the shared `max(0, time−0.005)` tail; the
+  time<=0 head gate draws nothing.
+* `NPC.MakeTransitionEffectsForTextureChanges`
+  (`NPC.cs:90236-90263`): 0→1 20× `139+Next(4)` (type draw per dust,
+  the height/4 INTEGER box, SpeedY−2); 1→0 the poof delegation; the
+  633-only 0↔2 20× NewDustDirect type-262 (noGravity, scale 2).
+
+**`NewNPC` itself draws no spawn dust** — `NPC.cs:80750-80795`'s only
+draw is the getGoodWorld `Next(3)` bunny/squirrel swap (`:80752`,
+already carried constants-off in the sim's spawn seams) and `OnSpawn`
+(`:8402-8424`) stamps only the boss presence statics. The per-kind
+spawn smoke lives in the callers above.
+
+**The d50 seam widening (commit `6345f7b7`):**
+`DustPool::new_dust_perfect` / `new_dust_direct` / `clone_dust`
+(`particles.rs`) generalised from `&mut UnifiedRandom` to the
+`DustRng` trait — behaviour identical (`UnifiedRandom` implements it;
+the existing callers compile unchanged), so the teleport arms roll a
+recording witness stream through the same internals.
+
+**Drops (cited at the sites):** the `netMode==2` server relays, the
+`SoundEngine` pitch draws (the `play_sound` callback carries the cue
+request at the C# position for the wiring round's
+`play_use_sound`/case-2 pitch seam), the `TeleportationSide` parameter
+(unread in the C# body). The teleport fields ride a caller-owned
+`(teleportTime, teleportStyle, lastPortalColorIndex)` triple — the
+port's `Npc` has no teleport fields yet.
+
+**Verification:** code-only — every block re-read against the cited
+C# windows (≤100-line reads, direct file paths, no junction
+recursion); 17 `w4_g61_*` witnesses with a `RecordingRng` that logs
+every `Next`/`NextFloat` call shape and pins the exact slot sequence
+per site (the argument-before-allocator order, the gate chains, the
+sentinel writes, the clone pairs, the overwrite-still-drawn rolls).
+WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive. The
+wiring follow-up drains the poof at the bug-net/statue seams, the
+mimic smoke at the key-summon seam, TransformVisuals at
+`transform_to_kind`'s tail and the teleport family at the caster /
+town / frog teleport call sites.
