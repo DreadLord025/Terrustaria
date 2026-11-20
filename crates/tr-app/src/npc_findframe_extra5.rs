@@ -97,6 +97,21 @@ pub enum FindFrameExtra5Kind {
     /// `NPCID.RustyArmoredBonesSwordNoArmor` = 272 (`NPCID.cs:11221`)
     /// — the same group.
     RustyArmoredBonesSwordNoArmor,
+    /// `NPCID.BlueArmoredBones` = 273 (`NPCID.cs:11223`) — the same
+    /// group.
+    BlueArmoredBones,
+    /// `NPCID.BlueArmoredBonesMace` = 274 (`NPCID.cs:11225`) — the
+    /// same group.
+    BlueArmoredBonesMace,
+    /// `NPCID.BlueArmoredBonesNoPants` = 275 (`NPCID.cs:11227`) — the
+    /// same group, the ONE 16-row sheet (`Main.cs:67111` slot 5).
+    BlueArmoredBonesNoPants,
+    /// `NPCID.BlueArmoredBonesSword` = 276 (`NPCID.cs:11229`) — the
+    /// same group.
+    BlueArmoredBonesSword,
+    /// `NPCID.HellArmoredBones` = 277 (`NPCID.cs:11231`) — the same
+    /// group.
+    HellArmoredBones,
 }
 
 impl FindFrameExtra5Kind {
@@ -113,6 +128,11 @@ impl FindFrameExtra5Kind {
             Self::RustyArmoredBonesFlail => 270,
             Self::RustyArmoredBonesSword => 271,
             Self::RustyArmoredBonesSwordNoArmor => 272,
+            Self::BlueArmoredBones => 273,
+            Self::BlueArmoredBonesMace => 274,
+            Self::BlueArmoredBonesNoPants => 275,
+            Self::BlueArmoredBonesSword => 276,
+            Self::HellArmoredBones => 277,
         }
     }
 
@@ -133,6 +153,13 @@ impl FindFrameExtra5Kind {
             Self::RustyArmoredBonesFlail => 15,
             Self::RustyArmoredBonesSword => 15,
             Self::RustyArmoredBonesSwordNoArmor => 15,
+            // Main.cs:67111 (273..277): 15, 15, 16, 15, 15 — 275 is
+            // the ONE 16-row sheet in the group.
+            Self::BlueArmoredBones => 15,
+            Self::BlueArmoredBonesMace => 15,
+            Self::BlueArmoredBonesNoPants => 16,
+            Self::BlueArmoredBonesSword => 15,
+            Self::HellArmoredBones => 15,
         }
     }
 }
@@ -151,6 +178,11 @@ pub fn find_frame_kind_extra5(vanilla_type: i16) -> Option<FindFrameExtra5Kind> 
         270 => FindFrameExtra5Kind::RustyArmoredBonesFlail,
         271 => FindFrameExtra5Kind::RustyArmoredBonesSword,
         272 => FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
+        273 => FindFrameExtra5Kind::BlueArmoredBones,
+        274 => FindFrameExtra5Kind::BlueArmoredBonesMace,
+        275 => FindFrameExtra5Kind::BlueArmoredBonesNoPants,
+        276 => FindFrameExtra5Kind::BlueArmoredBonesSword,
+        277 => FindFrameExtra5Kind::HellArmoredBones,
         _ => return None,
     })
 }
@@ -385,9 +417,9 @@ pub fn find_frame_extra5(kind: FindFrameExtra5Kind, s: &mut FrameState, i: &Fram
                 s.row = 0;
             }
         }
-        // `case 269/270/271/272` in the Armored Bones group (`NPC.cs:
-        // 75825-75882`, the 269..280 list — 273..277 ride batch 3,
-        // 278..280 the next slice): the grounded ±1 flip (`:75839-
+        // `case 269..277` in the Armored Bones group (`NPC.cs:75825-
+        // 75882`, the 269..280 list — 278..280 ride the next slice):
+        // the grounded ±1 flip (`:75839-
         // 75846`); the grounded idle snaps row 0 + zeroes the counter
         // (`:75847-75859` — the `type == 140` row-1 branch is DEAD
         // inside this case list, the header's skip); the walk lifts
@@ -401,7 +433,12 @@ pub fn find_frame_extra5(kind: FindFrameExtra5Kind, s: &mut FrameState, i: &Fram
         FindFrameExtra5Kind::RustyArmoredBonesAxe
         | FindFrameExtra5Kind::RustyArmoredBonesFlail
         | FindFrameExtra5Kind::RustyArmoredBonesSword
-        | FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor => {
+        | FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor
+        | FindFrameExtra5Kind::BlueArmoredBones
+        | FindFrameExtra5Kind::BlueArmoredBonesMace
+        | FindFrameExtra5Kind::BlueArmoredBonesNoPants
+        | FindFrameExtra5Kind::BlueArmoredBonesSword
+        | FindFrameExtra5Kind::HellArmoredBones => {
             if i.vy == 0.0 {
                 // `:75839-75846`.
                 if i.direction == 1 {
@@ -474,6 +511,11 @@ mod tests {
             FindFrameExtra5Kind::RustyArmoredBonesFlail,
             FindFrameExtra5Kind::RustyArmoredBonesSword,
             FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
+            FindFrameExtra5Kind::BlueArmoredBones,
+            FindFrameExtra5Kind::BlueArmoredBonesMace,
+            FindFrameExtra5Kind::BlueArmoredBonesNoPants,
+            FindFrameExtra5Kind::BlueArmoredBonesSword,
+            FindFrameExtra5Kind::HellArmoredBones,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -600,13 +642,79 @@ mod tests {
         }
     }
 
+    /// 273..277 the blue/hell Armored Bones ride the SAME group
+    /// machine — the 275 NoPants' 16-row sheet is the ONE count
+    /// variant: its walk reaches row 15 before the wrap to 2, the
+    /// 15-row twins wrap at 14 (`NPC.cs:75872-75875` reads
+    /// `Main.npcFrameCount[type]`; `Main.cs:67111` slot 5 = 16).
+    #[test]
+    fn f26s5_blue_hell_bones_wrap_at_their_own_counts() {
+        for k in [
+            FindFrameExtra5Kind::BlueArmoredBones,
+            FindFrameExtra5Kind::BlueArmoredBonesMace,
+            FindFrameExtra5Kind::BlueArmoredBonesSword,
+            FindFrameExtra5Kind::HellArmoredBones,
+        ] {
+            let rows = rows_over(k, input(4.0, 0.0), 13);
+            assert_eq!(rows, vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2]);
+        }
+        let rows = rows_over(FindFrameExtra5Kind::BlueArmoredBonesNoPants, input(4.0, 0.0), 15);
+        assert_eq!(rows, vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 2, 3]);
+    }
+
+    /// The 15-kind strip sweep: a 5x3x3 vx/vy/direction input grid,
+    /// 60 ticks each — every row stays inside its sheet (the f27
+    /// precedent).
+    #[test]
+    fn f26s5_fifteen_kind_strip_sweep_stays_inside_the_sheets() {
+        let kinds = [
+            FindFrameExtra5Kind::ZombieMushroom,
+            FindFrameExtra5Kind::ZombieMushroomHat,
+            FindFrameExtra5Kind::FungoFish,
+            FindFrameExtra5Kind::AnomuraFungus,
+            FindFrameExtra5Kind::MushiLadybug,
+            FindFrameExtra5Kind::IchorSticker,
+            FindFrameExtra5Kind::RustyArmoredBonesAxe,
+            FindFrameExtra5Kind::RustyArmoredBonesFlail,
+            FindFrameExtra5Kind::RustyArmoredBonesSword,
+            FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
+            FindFrameExtra5Kind::BlueArmoredBones,
+            FindFrameExtra5Kind::BlueArmoredBonesMace,
+            FindFrameExtra5Kind::BlueArmoredBonesNoPants,
+            FindFrameExtra5Kind::BlueArmoredBonesSword,
+            FindFrameExtra5Kind::HellArmoredBones,
+        ];
+        for k in kinds {
+            let count = k.frame_count();
+            for vx in [-4.0f32, -1.0, 0.0, 1.0, 4.0] {
+                for vy in [-3.0f32, 0.0, 3.0] {
+                    for direction in [-1i32, 0, 1] {
+                        let i = FrameInput { vx, vy, direction };
+                        let mut s = FrameState::default();
+                        for tick in 0..60 {
+                            find_frame_extra5(k, &mut s, &i);
+                            assert!(
+                                s.row < count,
+                                "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
+                                k.vanilla_type(),
+                                s.row
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// The seam maps exactly the batch's vanilla types and nothing
     /// else.
     #[test]
     fn f26s5_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra5(t);
-            let claimed = [254, 255, 256, 257, 258, 268, 269, 270, 271, 272];
+            let claimed = [
+                254, 255, 256, 257, 258, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277,
+            ];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
