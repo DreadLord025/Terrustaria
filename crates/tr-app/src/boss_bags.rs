@@ -727,6 +727,36 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, num, 1);
             quick_spawn(rng, out, num2, 1);
         }
+        // Deerclops (`Player.cs:7677-7714` — the C#'s SECOND switch).
+        5111 => {
+            // NO dev-armor roll (the Deerclops bag is not in the
+            // hardmode dev-set group).
+            quick_spawn(rng, out, 5100, 1); // Bone Helm (expert-exclusive)
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 5109, 1); // Deerclops Mask
+            }
+            if rng.next_max(14) == 0 {
+                quick_spawn(rng, out, 5385, 1); // Dizzy Hat
+            }
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 5098, 1); // Chester Pet Item
+            }
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 5101, 1); // Eyebrella
+            }
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 5113, 1); // Dont Starve Shader Item
+            }
+            // `:7699-7713` — the weapon pick: Next(4) → 5117/5118/5119/
+            // 5095 (the Pew-matic Horn / Weather Pain / Houndius
+            // Shootius / Lucy the Axe).
+            match rng.next_max(4) {
+                0 => quick_spawn(rng, out, 5117, 1), // Pew-matic Horn
+                1 => quick_spawn(rng, out, 5118, 1), // Weather Pain
+                2 => quick_spawn(rng, out, 5119, 1), // Houndius Shootius
+                _ => quick_spawn(rng, out, 5095, 1), // Lucy the Axe
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -2054,6 +2084,71 @@ mod tests {
             spawn_replay(&mut r, &mut want, num, 1);
             spawn_replay(&mut r, &mut want, num2, 1);
             money_replay_on(&mut r, 657, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_deerclops_bag_zero_script_grants_the_whole_arm() {
+        // NO dev-armor roll: the Bone Helm leads, the mask 1/7, the
+        // Dizzy Hat 1/14, the three 1/3 optionals (Chester/Eyebrella/
+        // Shader), the weapon pick 0 → Pew-matic Horn — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(5111, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..7],
+            [5100, 5109, 5385, 5098, 5101, 5113, 5117],
+            "{its:?}"
+        );
+        assert!(its[7..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_deerclops_bag_weapon_picks() {
+        for (pick, weapon) in [(1i32, 5118u16), (2, 5119), (3, 5095)] {
+            // mask miss, hat miss, three optionals miss, pick k.
+            let mut rng = ScriptRng::new(&[6, 13, 2, 2, 2, pick]);
+            let mut out = Vec::new();
+            open_boss_bag(5111, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..2], [5100, weapon], "pick {pick}: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_deerclops_bag_replays_the_csharp_draw_order() {
+        for seed in [73i32, 668668] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(5111, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            spawn_replay(&mut r, &mut want, 5100, 1);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 5109, 1);
+            }
+            if r.next_max(14) == 0 {
+                spawn_replay(&mut r, &mut want, 5385, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 5098, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 5101, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 5113, 1);
+            }
+            match r.next_max(4) {
+                0 => spawn_replay(&mut r, &mut want, 5117, 1),
+                1 => spawn_replay(&mut r, &mut want, 5118, 1),
+                2 => spawn_replay(&mut r, &mut want, 5119, 1),
+                _ => spawn_replay(&mut r, &mut want, 5095, 1),
+            }
+            money_replay_on(&mut r, 668, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
