@@ -86,8 +86,10 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "mushroom patches" => PassMessage::Gen(13),
         // WorldGen.cs:11722 (Tunnels).
         "cave fields" => PassMessage::Key("WorldGeneration.SurfaceTunnels"),
-        // WorldGen.cs:12761 (Marble; the granite half shares the pass slot).
-        "granite and marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12761 (Marble — the W4-d101 pass-9 split row).
+        "marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12843 (Granite — Lang.gen[81], the pass-9 split row).
+        "granite" => PassMessage::Gen(81),
         // WorldGen.cs:11900.
         "stone-in-dirt blobs" => PassMessage::Gen(4),
         // WorldGen.cs:11930.

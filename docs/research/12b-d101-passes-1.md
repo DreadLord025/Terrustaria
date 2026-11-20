@@ -84,4 +84,13 @@ stay in place untouched.
 | Dirt Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Rock Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Generate Ice Biome | (this commit) | landed (code-only; hash re-pin deferred; DUAL_DUNGEON table "Ice"→"Generate Ice Biome" corrected per GenPassNameID.cs:239) |
-| Granite (own row) | — | pending |
+| Granite (own row) | (this commit) | landed (RNG-neutral split; pins unchanged by it) |
+
+## Lane result
+
+All nine rows executed: `EXECUTED_PIPELINE` grows 66 → 75 steps; the
+unexecuted classic census drops 51 → 42 (d102-d106 own the remainder).
+Both hash pins are stale-by-design (passes 1, 3-8 move them; passes 2 and 9
+are 512-neutral / fully neutral) — the merge gate re-measures sequentially
+after the sibling lanes, per the S1-K-2-wave-B convention. The `a == b`
+determinism asserts in `world_hash.rs` are untouched.

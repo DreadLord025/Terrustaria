@@ -267,6 +267,10 @@ mod tests {
     // the snow walk retypes the eastern band (the Reset origin draws land
     // in [0.6, 0.75]·width) and its fringe drip reaches below the lava
     // line; deferred to the gate.
+    // W4-d101 pass 9 (code-only): the marble/granite step split is
+    // RNG-NEUTRAL — same call order, same per-pass streams, no new tiles —
+    // so this pin does not move from it (only the progress weight sum
+    // gains the Granite slot's own weight, which draws nothing).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -329,6 +333,7 @@ mod tests {
     // W4-d101 pass 8 (code-only): the Generate Ice Biome walk retypes the
     // snow band's dirt/stone/clay/sand into 147/161 (+ wall 40) — a large
     // deliberate move; deferred to the gate.
+    // W4-d101 pass 9: the marble/granite row split is RNG-neutral (above).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

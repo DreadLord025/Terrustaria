@@ -1314,7 +1314,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // pressure simulation's low-resistance air), so the step moves after
     // the carve. The two passes draw from their own isolated streams, so
     // the move is RNG-neutral for every other step.
-    step!("granite and marble", "Marble", step_granite_marble),
+    // W4-d101 pass 9: the combined step splits into its two vanilla rows —
+    // Marble (`:12757`) then Granite (`:12839`), the same call order and
+    // the same per-pass streams (`pass_rng("Marble")`/`pass_rng("Granite")`),
+    // so no draw shifts; the census's "Granite folded into Marble" note
+    // closes.
+    step!("marble", "Marble", step_marble),
+    step!("granite", "Granite", step_granite),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
     // The vanilla Clay slot (`WorldGen.cs:11959`): after Dirt In Rocks
@@ -1875,7 +1881,10 @@ fn step_mushroom(
     );
 }
 
-fn step_granite_marble(
+/// The vanilla Marble slot (`WorldGen.cs:12757-12838`): the slab caves.
+/// W4-d101 pass 9 split the old combined `granite and marble` step into
+/// its two vanilla rows — the call order and streams are unchanged.
+fn step_marble(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
@@ -1888,6 +1897,20 @@ fn step_granite_marble(
         gv.layers().rock_layer,
         &mut streams.pass_rng("Marble"),
     );
+}
+
+/// The vanilla Granite slot (`WorldGen.cs:12839-12926`): the pressure-sim
+/// caves, recruited into the pre-carved cave pockets (`GraniteBiome.
+/// CanPlace`'s inactive-origin gate — the M5-BIOME-2 move after the cave
+/// carve stands). W4-d101 pass 9: its own executed row.
+fn step_granite(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
     biomes::pass_granite(
         world,
         gv.layers().rock_layer,
@@ -3391,7 +3414,10 @@ mod tests {
         // `WorldGen.cs:12107`) after `dirt layer caves`.
         // W4-d101 pass 8: + `generate ice biome` (vanilla "Generate Ice
         // Biome", `WorldGen.cs:12312`) after `wavy caves`.
-        assert_eq!(names.len(), 74);
+        // W4-d101 pass 9: `granite and marble` splits into `marble` +
+        // `granite` (vanilla `:12757` / `:12839`) — same order, same
+        // streams, +1 row.
+        assert_eq!(names.len(), 75);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3436,8 +3462,10 @@ mod tests {
                 "dirt wall backgrounds",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
                 // order) — the `GraniteBiome.CanPlace` inactive-origin gate
-                // needs the pre-carved caves.
-                "granite and marble",
+                // needs the pre-carved caves. W4-d101 pass 9: the two halves
+                // carry their own vanilla rows now.
+                "marble",
+                "granite",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
                 "clay",
@@ -3664,6 +3692,33 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Generate Ice Biome") == cpos("Wavy Caves") + 1);
         assert!(cpos("Grass") == cpos("Generate Ice Biome") + 1);
+    }
+
+    /// W4-d101 pass 9: the `marble` + `granite` rows sit adjacent in the
+    /// vanilla order (Marble `WorldGen.cs:12757` → Granite `:12839`),
+    /// after the cave carve (the M5-BIOME-2 CanPlace-gate move stands).
+    /// The split is RNG-neutral: same call order, same per-pass streams.
+    #[test]
+    fn w4_d101_marble_and_granite_carry_their_own_vanilla_rows() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("granite"), pos("marble") + 1);
+        assert_eq!(pos("marble"), pos("cave fields") + 3); // + mount caves + dirt wall backgrounds
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Granite") == cpos("Marble") + 1);
+        // Every classic pass now has an executed row except the other
+        // lanes' unexecuted slices — Granite is off the missing list.
+        let executed: std::collections::HashSet<&str> = EXECUTED_PIPELINE
+            .iter()
+            .map(|s| s.vanilla)
+            .collect();
+        assert!(executed.contains("Granite"));
+        assert!(executed.contains("Marble"));
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
