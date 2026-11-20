@@ -33985,3 +33985,94 @@ mod w4_d25_style28_census_tests {
         assert_eq!(rng, witness, "still draw-free");
     }
 }
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 29 slice).
+// WRITTEN, NOT RUN (code-only mode). 29 Hungry: the style's ONLY member
+// (115, `NPC.cs:10382`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style29::style29_step` behind `ai_029_hungry_family`) ->
+// VERIFY-ONLY: the machine is unchanged; the W-1d AddLight tail
+// (`NPC.cs:26403`) lands on the draw-side feed (`npc_lights`' Hungry
+// row, the CenterTruncated anchor) in this slice. RNG-free by
+// construction (the arm carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style29_census_tests {
+    use super::*;
+
+    /// The axis claims style 29 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_29_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "29" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 29 claimed once");
+        assert!(src.contains("aiStyle 29 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the Hungry rides the LIVE axis arm draw-free — the
+    /// INTEGER half-width anchor (`NPC.cs:26280`, odd width 101 → 50),
+    /// the per-tick damage reset + the f64 hp ladder (`:26223-26250`),
+    /// the aim/sprite writes (`:26393-26402`), the strike-tick justHit
+    /// BEFORE the wall gate (`:26211-26219`) and the no-wall death.
+    #[test]
+    fn w4_d25_the_hungry_rides_the_29_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_width = 101; // odd: the INTEGER half is 50, anchor 1050
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 1200.0;
+        p.y = 1279.0;
+        let mut n = Npc::new(NpcKind::Hungry, 1050.0, 1300.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 0.5; // the band row: y2 = 1000 + 600*0.5 = 1300
+        let mut rng = UnifiedRandom::new(29);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // Full hp: the damage reset, NO defense write, the approach.
+        assert_eq!(n.damage_override, None, "damage = defDamage (:26223)");
+        assert_eq!(n.defense(), 10, "the classic high tier writes no defense");
+        assert_eq!(n.vx, 0.1, "the aim (145, -15) accelerates +0.1 (:26305)");
+        assert_eq!(n.sprite_dir, 1, "the right-aim sprite flip (:26395)");
+        assert_eq!(n.rotation, (-15.0f64).atan2(145.0) as f32, "(:26396)");
+        assert_eq!(rng, witness, "the hungry tick draws nothing");
+        // The <50% tier through the live seam: 60 dmg / def 30.
+        w.wof_life = 3920;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.damage_override, Some(60), "(:26227/:26253)");
+        assert_eq!(n.defense(), 30, "(:26228)");
+        assert_eq!(rng, witness, "still draw-free");
+        // The strike tick: justHit arms the recoil BEFORE the gate, and
+        // the no-wall death still lands (:26211-26219). The update tail
+        // clears the flag (:90516).
+        w.wof_present = false;
+        n.just_hit = true;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 10.0, "the recoil precedes the gate (:26211)");
+        assert_eq!(n.hp, 0, "no wall → the Hungry deactivates (:26217)");
+        assert!(!n.just_hit, "the tail cleared the strike flag (:90516)");
+        assert_eq!(rng, witness, "the whole census is draw-free");
+    }
+}
