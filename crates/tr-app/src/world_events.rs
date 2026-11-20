@@ -289,6 +289,23 @@ pub(crate) fn update_time_cultist(
     false
 }
 
+/// `NPC.SetEventFlagCleared` + `OnGameEventClearedForTheFirstTime`
+/// (`NPC.cs:78759-78795`): the FIRST clear of a progression flag arms the
+/// next lantern night. The C#'s switch arms `NextNightIsLanternNight` on
+/// the default row and on cases 10/16/17/18; only cases 4 (Pumpking),
+/// 21 (Evergreen) and 22 (Santa-NK1) skip it — none of those three kinds
+/// is ported, so every ported first-clear arms the flag. `was_down` is
+/// the flag's pre-kill value (the C# `eventFlag != flag` edge).
+///
+/// The case-10 credits roll and the case-16/17/18 mech-trio Plantera-bulb
+/// pass (`WorldGen.GeneratePlanteraBulbOnAllMechsDefeated`) are unported
+/// (the credits event and the bulb pass are later waves).
+pub(crate) fn on_game_event_cleared_first_time(ev: &mut WorldEvents, was_down: bool) {
+    if !was_down {
+        ev.next_night_is_lantern_night = true;
+    }
+}
+
 /// `CultistRitual.CultistSlain` (`CultistRitual.cs:48-51`): `- 3600`.
 pub(crate) fn cultist_slain(ev: &mut WorldEvents) {
     ev.cultist_delay -= 3600;
