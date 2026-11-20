@@ -39244,3 +39244,81 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## W4-d47 FindFrame mid-band slice 2 (code-only mode, task/W4-d47-findframe-mid-2, 2026-11-20)
+
+`crates/tr-app/src/npc_findframe_mid2.rs` ports the SECOND 12 missing
+`NPC.FindFrame` case ids of the 150-350 band (the wave census's `ff_missing`
+list: every C# case id in `NPC.cs:66684-77370` whose port has no arm). Slice 1
+(`task/W4-d46-findframe-mid-1`) owns the first 12 (150/151/152/156/157/158/
+159/160/162/163/164/165); this module owns **166/168/169/170/171/172/173/175/
+176/178/179/180**. The kinds are NOT in `NpcKind` yet — the machines land as
+pure functions over `FrameState`/`FrameInput` (the S1-D-3 waves A/B
+precedent), and the `find_frame` bridge is the wiring round. No arm draws
+`Main.rand`, so the wiring cannot move a stream.
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **166 SwampThing** (`NPC.cs:75618-75664`, 13 rows): three bands — the
+  grounded idle cycles rows 0..5 on the +2 counter (>7 steps), the grounded
+  walk cycles rows 7..12 on the |vx|+1 counter (>9 steps, BOTH clamps run so
+  the first walk tick lifts row 0 straight to 7), the air holds row 6 and
+  zeroes the counter. The grounded flip writes only on direction ±1.
+* **168 CorruptPenguin** (`:76392-76456`, the 148/149/470 group, 12 rows):
+  the `localAI[0]` 2/3/4 colour bank offsets EVERY row write +3/+6/+9
+  (`num40`, `:76397-76410` — the bank rides the new `FrameInput.local_ai0`
+  slot). The walk bands are <6/<12/<15 over rows 0/1/2; the >=15 tail zeroes
+  the counter and HOLDS row 2 (the walker-band row-hold quirk, the case-3
+  precedent). Both air arms write row 2 + bank.
+* **169 IceElemental** (`:73994-74059`, the case-2 eye group, 4 rows): the
+  plain 8-tick strip. 169 is in NEITHER flip list — the first `if`
+  (`:74019`) carries 2/190-194/317/318 and the second branch (`:74032`) is
+  dead code for every member (its `type == 2` arm is shadowed by the first
+  list; 121/660 are the only remaining members and are not this slice's).
+  So the Ice Elemental writes NO spriteDirection/rotation — the port keeps
+  that exactly (the witness pins it). The type-23 dust, the 121/660
+  localAI[0] init and the 660-only 6-tick cadence are the group's other
+  members, skipped with cites.
+* **170/171/180 the Pigron trio** (`:73418-73432`, 14 rows each):
+  `spriteDirection = direction` UNCONDITIONALLY (no ground gate — unlike
+  the walker groups), the 4-tick counter walks every row and wraps past 13.
+* **172 RuneWizard** (`:77019-77054`, the 29/32/45 caster pose group, 3
+  rows): row 0 stands, row 1 casts (`ai[1] > 0`), row 2 airborne — the air
+  gate wins over the cast. The `type == 32 && localAI[3] == 1` +3
+  Skeletron-pose bank is the Dark Caster's, not carried.
+* **173 Crimera** (`:76966-76978`, shared with the Eater of Souls' case 6,
+  2 rows): the plain 8-tick flap; no direction/rotation write.
+* **175 AngryTrapper** (`:74970-74994`, the 43/56 man-eater group, 3 rows):
+  the 0/1/2/1 chomp over the 1..23 counter (six ticks a phase). The reset is
+  EXACT `== 23` (`:74990`) — a fractional counter overshoots it, no band
+  writes past 24 and the row HOLDS 1 forever; the quirk is kept verbatim
+  and witnessed (the Hungry's `>= 15` reset at `npc.rs` is the sibling
+  arm's different shape — the C# really writes `==` here).
+* **176 MossHornet** (`:74958-74969`, 2 rows): the >4 counter steps every 5
+  ticks; the wrap is `frame.Y > num` (row > 1), NOT the frame-count wrap.
+* **178 Steampunker** (`:68573` in the humanoid town case list,
+  `:68634-69655`, 23 rows): the town walk — `num57 = ExtraFramesCount[178]`
+  = 9 (`NPCID.cs:10464`, `isLikeATownNPC` true via `townNPC`), so the walk
+  band wraps at row 14 (rows 2..13); the idle snaps to row 0 (178 is not the
+  140/489 idle-row-1 pair), the air holds row 1 (178 is NOT in the `:69647`
+  pin list). The town `ai[0]` sit/talk/attack pose zones (`:68662-69488`)
+  are the documented skip — the port's town machines do not model them
+  (the `npc.rs::humanoid_town_frame` precedent).
+* **179 CrimsonAxe** (`:74622-74641`, the 83/84 cursed-hammer group, 5
+  rows): `ai[0] == 2` (the bonked state) pins row 0 and zeroes the counter;
+  else the 4-tick spin walks the strip and wraps at the frame count. The
+  wrap check sits INSIDE the step branch (the C#'s nesting), not after it.
+
+Frame counts (`Main.cs:67100-67102`, counted entry-by-entry and pinned
+against the port's `render/entities.rs::NPC_FRAME_COUNT`): 166=13, 168=12,
+169=4, 170/171=14, 172=3, 173=2, 175=3, 176=2, 178=23, 179=5, 180=14.
+
+11 witnesses WRITTEN NOT RUN (no compiler invoked — code-only mode): the
+count-table pin, the Swamp Thing's idle/walk/air bands, the penguin's four
+colour banks (idle/walk/tail/air each), the Ice Elemental's flip-free flap,
+the pigron trio's 14-row cycle + unconditional flip, the Rune Wizard's
+three poses + the direction-0 hold, the Crimera's case-6 cadence, the
+trapper's chomp + the exact-reset quirk, the Moss Hornet's 5-tick buzz, the
+Steampunker's 2..13 band + idle/air rows, the Crimson Axe's spin/bonk, and
+the M4-NPC-3t strip sweep (every arm over a 5x3x3x2x2x4 input grid, 40 ticks
+each, asserting the row never leaves its own sheet).
+
