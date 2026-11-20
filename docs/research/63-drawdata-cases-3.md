@@ -505,3 +505,143 @@ Port `drawdata.rs:816-833`: the three `+3` parity gates in the same order, the
 `flip_x = x % 2 == 0` (:128) — the C# only SETS the flip on even x and leaves the
 default `None` otherwise, which is the same boolean. **PORTED.** (581's own index
 is batch 5; the arm is shared.)
+
+### Batch 5 — shimmerfly/soul bottles / pressure plates / big-cage group head: 581, 660, 572, 428, 442, 275, 276, 277, 278, 279, 280, 281, 296, 297, 309 (15 ids)
+
+C# `TileDrawing.cs:5537-5638` (581's body shared with 270/271, cited in batch 4;
+the big-cage group body continues to :5755 — batches 6-7 audit the remaining ids).
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 581 | shares the 270/271 parity-chain mod 6 + flip | :5537-5563 | `drawdata.rs:816-833` | PORTED |
+| 660 | parity chain mod 5 (below) | :5564-5590 | `drawdata.rs:836-853` | PORTED |
+| 572 | `for (num10 = Main.tileFrame[typeCache] + x % 4; num10 > 3; num10 -= 4) {}` | :5591-5604 | `drawdata.rs:856-864` | PORTED |
+| 428 | `tileTop += 4;` + pressed-plate `addFrX += 18` | :5605-5611 | static `drawdata.rs:868-870` + `cases_b.rs:280-284` | PORTED (wired) |
+| 442 | 20×20, top/width by `tileFrameX / 22` sub-switch | :5612-5628 | `drawdata.rs:873-885` | PORTED |
+| 275 | big-cage group: top 2 + `bunnyCageFrame[idx] * 54` | :5629-5685 | static `drawdata.rs:890-911` + `drawdata_furniture.rs:117` | PORTED-UNWIRED |
+| 276 | `squirrelCageFrame[idx] * 54` | :5694-5704 | :120 | PORTED-UNWIRED |
+| 277 | `mallardCageFrame[idx] * 54` | :5706-5708 | :121 | PORTED-UNWIRED |
+| 278 | `duckCageFrame[idx] * 54` | :5709-5711 | :122 | PORTED-UNWIRED |
+| 279 | `birdCageFrame[idx] * 54` | :5718-5721 | :125 | PORTED-UNWIRED |
+| 280 | `blueBirdCageFrame[idx] * 54` | :5722-5724 | :126 | PORTED-UNWIRED |
+| 281 | `redBirdCageFrame[idx] * 54` | :5725-5727 | :127 | PORTED-UNWIRED |
+| 296 | `scorpionCageFrame[0, idx] * 54` | :5735-5738 | :129 | PORTED-UNWIRED |
+| 297 | shares 296's arm (row 0) | :5736 | :129 | PORTED-UNWIRED |
+| 309 | `penguinCageFrame[idx] * 54` | :5739-5741 | :130 | PORTED-UNWIRED |
+
+**660 ShimmerflyinaBottle** — C# verbatim (:5564-5590): the 270 shape with mod 5 —
+`num11 = Main.tileFrame[typeCache] + x % 5`, the same three `+3` parity gates
+(x%2/x%3/x%4), `while (num11 > 4) num11 -= 5;`, `addFrX = num11 * 18; addFrY = 0;`,
+flip on even x. Port `drawdata.rs:836-853` term-for-term. Animator:
+`step_gt_gt(660, 8, 4)` (`drawdata_anim.rs:314`, `Main.cs:18782-18791`).
+**PORTED.**
+
+**572 SoulBottles** — C# verbatim (:5591-5604):
+
+```csharp
+		case 572:
+		{
+			int num10;
+			for (num10 = Main.tileFrame[typeCache] + x % 4; num10 > 3; num10 -= 4)
+			{
+			}
+			addFrX = num10 * 18;
+			addFrY = 0;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		}
+```
+
+Port `drawdata.rs:856-864`: the empty-body `for` becomes a `while` — same unwind,
+no parity gates here (the 4-column bottle has none in C#). Animator:
+`step_ge_ge(572, 6, 4)` (`drawdata_anim.rs:434`, `Main.cs:19276-19283`).
+**PORTED.**
+
+**428 WeightedPressurePlate** — C# verbatim (:5605-5611):
+
+```csharp
+		case 428:
+			tileTop += 4;
+			if (PressurePlateHelper.PressurePlatesPressed.ContainsKey(new Point(x, y)))
+			{
+				addFrX += 18;
+			}
+			break;
+```
+
+Static arm `drawdata.rs:868-870` carries `top += 4` (the `+=` matters — the
+default top is 0, but the C# adds); its comment "treats plates as not pressed" is
+STALE as a behaviour claim: `cases_b.rs:280-284` adds `add_fr_x += 18` when
+`env.wiring.plate_is_pressed(x, y)` (`wiring.rs:571`, the ported
+`PressurePlatesPressed` map), wired at `tiles.rs:700-712`. **PORTED, wired.**
+
+**442 ProjectilePressurePad** — C# verbatim (:5612-5628):
+
+```csharp
+		case 442:
+			tileWidth = 20;
+			tileHeight = 20;
+			switch (tileFrameX / 22)
+			{
+			case 1:
+				tileTop = -4;
+				break;
+			case 2:
+				tileTop = -2;
+				tileWidth = 24;
+				break;
+			case 3:
+				tileTop = -2;
+				break;
+			}
+			break;
+```
+
+Port `drawdata.rs:873-885`: same sub-switch on `fx / 22` (the 20×20 tree-style
+22 px grid), variant 2 widens to 24, default keeps top 0. **PORTED.** (The pad's
+projectile-trigger state is wiring, not DrawData.)
+
+**Big-animal cage group** — C# group head, verbatim (:5670-5674):
+
+```csharp
+		{
+			tileTop = 2;
+			Main.critterCage = true;
+			int bigAnimalCageFrame = this.GetBigAnimalCageFrame(x, y, tileFrameX, tileFrameY);
+			switch (typeCache)
+```
+
+The probe, verbatim (:6542-6547):
+
+```csharp
+	private int GetBigAnimalCageFrame(int x, int y, int tileFrameX, int tileFrameY)
+	{
+		int num = x - tileFrameX / 18;
+		int num2 = y - tileFrameY / 18;
+		return num / 6 * (num2 / 4) % Main.cageFrames;
+	}
+```
+
+Port `big_animal_cage_frame` (`drawdata_furniture.rs:99-103`) is term-for-term;
+`CAGE_FRAMES = 25` (:32, `Main.cs:66901`). The per-id inner arms map to
+`cage_table` (:117-132) exactly as the table above lists; `cage_draw_data`
+(:169-201) applies `top = 2` and `add_fr_y = frame * 54`. The scorpion pair reads
+row 0 of the 2-D table (`scorpionCageFrame[0, idx]`, :5737) — the port's
+`CageAnim::Scorpion` row-0 convention (:51-53/:129) carries it.
+
+**Why UNWIRED (same finding as d64's cage batches):** the live draw path
+(`tiles.rs:671-734`) runs `draw_data` → `apply_world_corrections` → `cases_b` →
+`cases_a`; `furniture_post_pass` (`drawdata_furniture.rs:262`) has zero callers
+outside its own tests (grep-verified across `crates/`). The static fallback
+(`drawdata.rs:890-911`) sets only `top = 2`. Cage kinds animate through
+`AnimateTiles_CritterCages` (`Main.cs:13511`, called at `Main.cs:19303`), which
+moves the `*CageFrame` tables — the port defers it (`drawdata_anim.rs:21/:455`),
+so the tables stay zero-initialised (`Main.cs:66902-66972`) and row 0 is the
+exact C# t=0 state: pixel-identical today, **frozen** until the animator +
+post-pass wiring land (furniture lane W4-d57). Tests pin the rewrite:
+per-kind sweep `drawdata_furniture.rs:323-370`, zero-table byte-equality :471-493.
+The `Main.critterCage = true` side effect (:5672) gates that animator and is
+likewise deferred (documented :167-168).
