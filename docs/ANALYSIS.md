@@ -39338,5 +39338,11 @@ for the 284 `-vel*0.3` twin. The 286 gore has NO `Next(100)` position pair
 (fixed pos−10). The 183 bee four applies signs FIRST then ×0.3 — the
 opposite order of the corner rows, a distinct fn. The 1023 barrel
 overwrites the velocity with the spoke direction × `NextFloat` × 8.
-Remainder: sites 120-165 (waves L+), the UpdateProjectiles slot dispatch
-(the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
+Wave L (sites 120-131): `projectile_gore_l.rs`, 4 witnesses written not
+run. The 312 block is two passes (scale 0.4 then 0.8) × four corners,
+scale BEFORE signs. The 246 gore is the 483 row verbatim (keep-one). The
+370/371 duck gores normalize a `Next(-10,11)` pair (no draw for the
+normalize), the 371 scales the vector ×0.4 before both uses and draws its
+type `Next(435,438)` after the speed; both set `sticky = false`.
+Remainder: sites 132-165 (the `Kill_Bombs_DoUsualKillCode` family, waves
+M+), the UpdateProjectiles slot dispatch (the wiring wave).
