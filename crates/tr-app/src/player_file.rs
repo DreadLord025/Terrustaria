@@ -107,6 +107,33 @@ const ITEM_ID_COUNT: i32 = 6196;
 /// `skinVariant` clamp ceiling (`LoadPlayer_LastMinuteFixes`, `Player.cs:55830`).
 const PLAYER_VARIANT_COUNT: i32 = 12;
 
+/// `Main.buffNoSave` (`Main.cs:8969-9073` + the mount loop `:9206-9213`): the
+/// buff types the save writes as (0, 0) instead of their live values
+/// (`Serialize:54866-54870`). The explicit set, the 173..=181 range
+/// (`:9070-9073`), and every `BuffID.Sets.MountType != -1` buff
+/// (`ID/BuffID.cs:169`). `buffNoSave[0]` is false, so a padded empty slot
+/// writes its (0, 0) unchanged.
+fn buff_no_save(id: i32) -> bool {
+    const SET: [i32; 91] = [
+        20, 22, 23, 24, 28, 30, 31, 34, 35, 37, 38, 39, 43, 44, 46, 47, 156, 149, 48, 58, 59,
+        60, 62, 63, 64, 67, 68, 69, 70, 395, 72, 80, 87, 158, 146, 147, 215, 88, 89, 94, 95,
+        96, 97, 98, 99, 100, 103, 119, 120, 125, 126, 133, 134, 135, 139, 140, 137, 144, 161,
+        163, 164, 170, 171, 172, 182, 187, 188, 194, 195, 196, 197, 198, 199, 205, 213, 214,
+        263, 271, 322, 320, 321, 325, 335, 150, 93, 159, 29, 348, 366, 353, 355,
+    ];
+    // The tail of the explicit block (`:9060-9069`).
+    const TAIL: [i32; 10] = [385, 386, 389, 390, 393, 394, 397, 398, 399, 400];
+    // The mount buffs (`BuffID.Sets.MountType`, `ID/BuffID.cs:169` — the
+    // CreateIntSet keys; `Main.cs:9206-9213` marks each no-save).
+    const MOUNTS: [i32; 66] = [
+        90, 118, 128, 129, 130, 131, 132, 141, 142, 143, 162, 166, 168, 184, 193, 208, 210,
+        212, 220, 222, 224, 226, 228, 230, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249,
+        251, 253, 255, 265, 269, 272, 275, 276, 277, 278, 279, 280, 281, 282, 283, 305, 318,
+        338, 342, 346, 370, 374, 377, 378, 379, 380, 381, 384, 387, 388, 391, 392,
+    ];
+    SET.contains(&id) || TAIL.contains(&id) || MOUNTS.contains(&id) || (173..=181).contains(&id)
+}
+
 /// The read `.plr` — the character-card state plus the per-player payloads
 /// the port models. The reader walks the full `Deserialize`
 /// (`Player.cs:55134-55762`) with the C# version gates, consuming and
@@ -158,6 +185,12 @@ pub struct PlayerFile {
     /// `Player.voidVaultInfo` (`Player.cs:1590`, a `BitsByte`; bit 0 is
     /// `IsVoidVaultEnabled`, `:3900-3910`). Read at >= 199 (`:55501-55504`).
     pub void_vault_info: u8,
+    /// `Player.buffType`/`buffTime` (`Player.cs:1510-1512`, maxBuffs = 44
+    /// `:57106`) — the COMPACTED live pairs: the `Deserialize` zero-type arm
+    /// (`:55593-55597`) shrinks the target so only non-zero buffs remain,
+    /// in file order. The write pads back to 44 with (0, 0) and zeroes the
+    /// `Main.buffNoSave` types (`Serialize:54864-54876`).
+    pub buffs: Vec<(i32, i32)>,
     /// `Player.bank` (the piggy bank's 40 slots, `Chest.cs:142-144` maxItems),
     /// each `(type, stack, prefix)` — read at >= 58 (`Deserialize:55449-55456`;
     /// the < 58 arm reads 20, `:55464-55471`). `netDefaults` airs an
@@ -684,7 +717,7 @@ fn read_player_fields(
     // and 44 at >= 252 (`Player.maxBuffs`, `Player.cs:57106`). The zero-type
     // compaction (`num28--; num27--`, `:55593-55597`) still consumes exactly
     // `count` (type, time) pairs — each iteration advances either the read
-    // index or shrinks the target. The port models no buffs; drop them.
+    // index or shrinks the target. W4-f44 ph3: the compacted live pairs ride.
     if version >= 11 {
         let mut count: i32 = if version < 74 { 10 } else { 22 };
         if version >= 252 {
@@ -693,10 +726,12 @@ fn read_player_fields(
         let mut i: i32 = 0;
         while i < count {
             let buff_type = r.i32().ok_or(PlayerFileError::Truncated("buffType"))?;
-            r.i32().ok_or(PlayerFileError::Truncated("buffTime"))?;
+            let buff_time = r.i32().ok_or(PlayerFileError::Truncated("buffTime"))?;
             if buff_type == 0 {
                 i -= 1;
                 count -= 1;
+            } else {
+                tail.buffs.push((buff_type, buff_time));
             }
             i += 1;
         }
@@ -923,6 +958,7 @@ struct PlayerTail {
     play_time_ticks: i64,
     hair_dye: u8,
     team: u8,
+    buffs: Vec<(i32, i32)>,
     current_loadout: i32,
     loadouts: [LoadoutData; 3],
     void_vault_info: u8,
@@ -949,6 +985,7 @@ impl Default for PlayerTail {
             play_time_ticks: 0,
             hair_dye: 0,
             team: 0,
+            buffs: Vec::new(),
             current_loadout: 0,
             loadouts: Default::default(),
             void_vault_info: 0,
@@ -1000,6 +1037,7 @@ fn finish_player_file(
         play_time_ticks: tail.play_time_ticks,
         hair_dye: tail.hair_dye,
         team: tail.team,
+        buffs: tail.buffs,
         skin_variant,
         hair,
         life,
@@ -1129,6 +1167,7 @@ fn read_legacy_port_subset(
         play_time_ticks,
         hair_dye,
         team: 0, // the subset shape has no team byte
+        buffs: Vec::new(), // the subset files end after the inventory
         skin_variant,
         hair,
         life,
@@ -1212,6 +1251,10 @@ pub struct PlayerFileWrite {
     pub loadouts: [LoadoutData; 3],
     /// `Player.voidVaultInfo` (`:54863`) — bit 0 the vault-enabled flag.
     pub void_vault_info: u8,
+    /// `Player.buffType`/`buffTime`'s live pairs (`:54864-54876`) — the write
+    /// pads to maxBuffs = 44 with (0, 0) and zeroes the `Main.buffNoSave`
+    /// types; a fresh player has none.
+    pub buffs: Vec<(i32, i32)>,
     /// `Player.bank`'s 40 slots (`:54838-54843`) — the piggy bank.
     pub bank: [(i32, i32, u8); 40],
     /// `Player.bank2`'s 40 slots (`:54844-54849`) — the safe.
@@ -1254,6 +1297,7 @@ impl Default for PlayerFileWrite {
             play_time_ticks: 0,
             hair_dye: 0,
             team: 0,
+            buffs: Vec::new(),
             skin_variant: 0,
             hair: 0,
             life: 100,
@@ -1431,12 +1475,18 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.u8(file.void_vault_info);
     // --- S1-J-5 increment 2: buffs through hideInfo (`:54864-54893`) ------
     // buffs: maxBuffs = 44 (`Player.cs:57106`) x (buffType, buffTime)
-    // (`:54864-54876`). Fresh buffType/buffTime are all-zero (`:1510-1512`)
-    // and `Main.buffNoSave[0]` is false, so the else arm writes the (0, 0)
-    // pair — byte-identical to the no-save arm.
-    for _ in 0..44 {
-        w.i32(0); // buffType[i]
-        w.i32(0); // buffTime[i]
+    // (`:54864-54876`). W4-f44 ph3: the caller's live pairs ride in order;
+    // `Main.buffNoSave` types write (0, 0) (`:54866-54870`), the remaining
+    // slots pad with the fresh all-zero buffType/buffTime (`:1510-1512`).
+    for i in 0..44 {
+        let (buff_type, buff_time) = file.buffs.get(i).copied().unwrap_or((0, 0));
+        if buff_no_save(buff_type) {
+            w.i32(0);
+            w.i32(0);
+        } else {
+            w.i32(buff_type);
+            w.i32(buff_time);
+        }
     }
     // spawn points (`:54877-54888`): spN is a fresh null string[200]
     // (`Player.cs:2488`), so the first iteration writes the -1 sentinel
@@ -1737,6 +1787,42 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: buffs round-trip through the compaction read and the
+    /// padded write; `Main.buffNoSave` types zero on write; an over-long
+    /// list truncates to maxBuffs = 44 (the C# array bound).
+    #[test]
+    fn the_buffs_round_trip_compacted_and_no_save_types_zero() {
+        // Interleaved zero padding: the read compaction keeps only the live
+        // pairs in file order (`:55589-55598`).
+        let buffs = vec![(26, 3600), (113, 60), (1, 999)];
+        let written = PlayerFileWrite { buffs: buffs.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.buffs, buffs);
+        // A no-save type (20, `Main.cs:8969`) writes (0, 0) — the read drops
+        // it via the zero-type compaction; its neighbours survive.
+        let written = PlayerFileWrite { buffs: vec![(26, 60), (20, 500), (113, 7)], ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The buffs start at 2402 (24 + 87 header + 120 + 60 + 580 + 50 +
+        // 1080 + 400 + 1 vault).
+        let mut r = Reader::new(&plain);
+        r.skip(2402).unwrap();
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (26, 60));
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (0, 0)); // no-save 20
+        assert_eq!((r.i32().unwrap(), r.i32().unwrap()), (113, 7));
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.buffs, vec![(26, 60), (113, 7)]);
+        // The 173..=181 range is no-save too (`Main.cs:9070-9073`).
+        // The range's neighbours outside the set stay savable (172/182 are
+        // explicit no-save entries themselves, `Main.cs:9032-9033`).
+        assert!(buff_no_save(173) && buff_no_save(181) && !buff_no_save(169) && !buff_no_save(183));
+        // Over-long list: only the first 44 slots exist (`:54864`).
+        let long: Vec<(i32, i32)> = (0..50).map(|i| (i + 500, i)).collect();
+        let written = PlayerFileWrite { buffs: long.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.buffs.len(), 44);
+        assert_eq!(file.buffs[43], long[43]);
     }
 
     /// W4-f44 ph3: the piggy bank / safe / forge slots round-trip, the write
