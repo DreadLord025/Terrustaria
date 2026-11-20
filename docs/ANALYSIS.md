@@ -509,6 +509,156 @@ still accumulates). The axe/hammer arms share ONE `hitTile` book (`:45660`
 `HitObject(x, y, 1)` runs before the arm split); the hammer arms keep their
 pre-i29 pacing until i31.
 
+### The hammer interaction census (S1-P-i31, 2026-11-20, code-only — tests written NOT run)
+
+`task/S1-P-i31-hammer-slopes` (stacked on the i29→i30 `HitTile` mining chain,
+HEAD `0c888e89`) censuses the hammer interaction: the hammer arm of
+`ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`Player.cs:45665-45704`),
+the pound cycle `TryPoundingTile` (`:45969-46311`), the wall passes
+`TryFindingWallToHammer`/`TryHittingWall`/`PickWall` (`:45832-45967`) and the
+`WorldGen.CanPoundTile`/`ForbidsSloping`/`SlopeTile`/`PoundTile` family
+(`WorldGen.cs:80695-80838`). Census verdicts against the pre-i31 port:
+
+- **WRONG (fixed): the pound/slope cycle was entirely absent.** No
+  `poundRelease` latch, no `TryPoundingTile`, no player-path
+  `CanPoundTile`/`SlopeTile`/`PoundTile` — only the ungated worldgen slices
+  (`temple.rs::slope_tile_p2`, `tileobject.rs::slope_tile_flatten`, both kept
+  as-is: their generation-time contracts are unchanged). The port now has
+  `crates/tr-core/src/edit/hammer.rs` (the gated family + the whole pound
+  cycle as `try_pound_tile`, returning a `PoundOutcome` the app seam acts
+  on) and the `App.pound_release` latch wired in `update_editing` in the C#
+  order: the non-target clear (`:45608-45615`, BEFORE the reach return),
+  the mining action, the release set (`:45635-45638`), the wall pass
+  (`:45639-45643`).
+- **WRONG (fixed): the wall removal ignored `CanPlayerSmashWall`.** The old
+  wall arm broke any wall but 350 on a time-per-tile pacing. The C#
+  (`Player.cs:45917-45940`) refuses an INTERIOR unsafe wall (every 3×3
+  neighbour the same unsafe wall) and the port now ports the rule verbatim
+  (`edit::can_player_smash_wall`), the finder's banker's-rounded mouse
+  quadrant 2×2 scan with the last-cell overwrite quirk
+  (`edit::try_finding_wall_to_hammer`, `:45832-45906` — `Math.Round` is
+  to-even, so the scan side flips with the tile's parity), and `PickWall`'s
+  `(int)(hammer * 1.5f)` accumulation in the WALL book with
+  `itemTime = useTime / 2` (`:45912-45913`). The `TryHittingWall` gate's
+  tile composition (`:45910`: an active cursor tile blocks only when it is
+  `tileHammer` or `poundRelease` is set) is ported exactly.
+- **WRONG (fixed): the altar refusal did not hurt.** `Player.cs:45675-45679`
+  zeroes the damage AND lands `Hurt(ByOther(4), statLife / 2, -direction)`
+  on a sub-80 hammer or a pre-hardmode world. `hammer_tile_hit` now lands
+  the hurt through the port's `Player::hurt` lane (the `-direction`
+  hitDirection maps to a knockback origin on the facing side; the dodge
+  rolls ride `UpdatePlayers`). The altar smash itself keeps the
+  M5-HARDFORCE-ores seam (`smash_altar` + `altars_smashed` + BEGONE_EVIL),
+  now fired from the `HitTile` accumulation's break instead of the old
+  time-based pacing.
+- **WRONG (fixed): the hammer tiles beyond the altar were unminable.** The
+  i29 gate refused the orb 31 / the replicas 695/696 outright ("the i31
+  task"). `hammer_tile_hit` now accumulates `sItem.hammer` per hit on every
+  `tileHammer` kind; the orb/heart drops + the EoW/BoC summons ride the
+  existing `check_orb` kill cascade unchanged.
+- **UNCHANGED (verified): the `tileHammer` set.** {26, 695, 31, 696}
+  (`Main.cs:7204-7207`) — `tool::is_hammer_tile` and
+  `tileobject::tile_hammer` both match.
+- **UNCHANGED (verified): the platform pound is the PLAYER inline copy.**
+  `Player.cs:46008-46054` differs from `WorldGen.PoundPlatform`
+  (`:80840-80889`, zero callers in the decompile): the last step gates on
+  `CanPoundTile` and writes `slope(0)` directly before `PoundTile`. The
+  port uses the player copy.
+
+Deviations (deliberate, recorded):
+
+- **The 470/314 pound seams.** `TEDisplayDoll.TryChangePose`
+  (`TEDisplayDoll.cs:894-921`) and `Minecart.FrameTrack(pound: true)`
+  (`Minecart.cs:943+`) have no port behaviour half (the doll's TE payload
+  is discarded, `tile_entities.rs`; the track-switch tables are unported,
+  `minecart.rs`). `try_pound_tile` returns `Consumed` — the latch is spent,
+  nothing changes, exactly the C# no-entity/no-switch outcome.
+- **The pound net replication.** The C# sends `SendData(17)` subtypes
+  7/14/15/23 + `SendTileSquare` for the pound arms; the port's `request_edit`
+  has no slope/half-brick kind (a kind-0 break would mis-replicate), so the
+  pound updates the local world + caches only. MP slope replication is the
+  net follow-up.
+- **The pound audio.** One Dig-0 play per LANDED gated write — the C# cue
+  sits INSIDE `SlopeTile`/`PoundTile` after the `CanPoundTile` gate
+  (`WorldGen.cs:80770-80782`/`:80807-80822`), so a refused write plays
+  nothing (`PoundOutcome::GateRefused`); the platform's last step is a
+  DIRECT `slope(0)` write + `PoundTile` (`Player.cs:46047-46048`) — ONE cue,
+  matching the C# exactly. The case-0 variation/pitch draws ride
+  `UpdatePlayers` through `play_place_sound` (the attenuation gate first),
+  so the stream order is preserved. No audio deviation remains here.
+- **The fail-tick dust.** `KillTile(fail, effectOnly)`'s dust on the locked-
+  door refusal and the `SlopeTile`/`PoundTile` effects have no per-tick dust
+  path (the i29 deviation, unchanged).
+- **The flatten player-push** ports the single-player arm of
+  `WorldGen.cs:80787-80795`/`:80826-80834` (the box-intersection lift +
+  `gfxOffY` booking); the 255-player loop collapses to the port's one
+  player.
+- **The wall finder's out-of-world reads** fall to wall 0 (the C# array
+  would throw at the world edge; walls never generate there) — the edge
+  cell stays breakable, the same outcome as the C#'s interior rule.
+
+RNG: the hammer/pound/wall ticks draw NO gameplay RNG except the altar
+self-hurt's dodge rolls, the Dig-0 sound variation/pitch and the
+`smash_altar` ore draws — all on the `UpdatePlayers` stream (`Main.cs:17754`,
+the `Player.ItemCheck` swap). The `HitTile` book itself is RNG-free (the
+crack-style/wobble rolls are the render-side i29 deviation). No stream
+reordered; the worldgen pins are untouched (the player-path edits never run
+during generation).
+
+Tests: 21 `edit::hammer` unit tests (the `CanPoundTile` switch/boulders/
+generation exclusions/`ForbidsSloping`, the `SlopeTile`/`PoundTile` writes,
+the poundable/target tables, `CanPlayerSmashWall`'s four arms, the finder's
+house/edge/active keeps + the banker's quadrant scan, the flat-stone cycle,
+the right-lean/ceiling flips, the platform cycle + diagonal flip, the
+locked-door refusal, the wire-pipe/trap/pressure-pad frame tables, the
+470/314 seams, the gate-refused no-write/no-cue arm, the flatten-lift flag)
++ 9 `s1_p_i31_*` app witnesses (the
+release-then-press latch, the full cycle over presses, the platform cycle,
+the orb break vs the pick refusal, the altar self-hurt, the house-wall
+break + the WALL-book damage, the interior-unsafe-wall refusal, the
+locked-door latch keep, the flatten lift). WRITTEN, NOT RUN — no compiler
+invoked (code-only mode).
+
+Resume record (W3-i31d): the original writer went quiet mid-task; the
+resume verified the in-flight port by inspection (every cross-module
+signature, the borrow shapes — the disjoint `world_chests` closure vs the
+`&mut app.world` pound borrow, the closure-captured `App.world` prune
+predicates — both `App` literal sites carry the new fields, the removed
+`update_editing` `tile` binding has no remaining readers), dropped one
+unused `Tile` import in `edit/hammer.rs` and corrected the witness count
+(20 core, not 17). No behaviour change; HEAD stayed `0c888e89` (the i30 OLD
+tip — the gate owns the merge-over onto i30's chainsaw tip `0b0a7954`;
+`hammer.rs` is disjoint from the chainsaw rows).
+
+Resume record (W3-i31c, second resume): the writer committed `66f9c5e6`
+(the union incl. the `GateRefused` split) and pushed mid-verification; this
+resume's final review round then landed the remaining WRONG-vs-C# fixes on
+top (all cite-verified against the decompile):
+
+- **The break-tick tail prune.** The C# arms prune AFTER BOTH branches —
+  the pick (`Player.cs:53822-53825`), the axe (`:45764-45767`), the hammer
+  (`:45698-45701`) and `PickWall` (`:45963-45966`) each run the tail
+  `Prune()` even on the break tick (a SECOND prune after
+  `ClearMiningCacheAt`'s own, `HitTile.cs:149-157`). The port's `else if`
+  shapes pruned once; all four arms now prune twice on a break, the C#
+  order (the TTL decay ladder therefore advances one extra step on break
+  ticks — the faithful behaviour).
+- **The wall break's `ClearMiningCacheAt(x, y, 2)`** (`Player.cs:45948`)
+  ignores its type argument and always prunes the TILE book (`:53848-53849`
+  passes 1); `wall_hammer_tick` now clears + prunes the TILE slot at the
+  wall cell alongside the WALL slot's `Clear` (`:45947`), before
+  `KillWall` (`:45949`).
+- **The no-match fall-through** (`Player.cs:45665-45667` + `:45777-45781`):
+  ANY `tileHammer` tile refuses the wall pass even without a matching
+  hammer, and the shared `sItem.pick > 0` cadence tail runs before the
+  pound on the fall-through too (a hamaxe over a plain poundable tile).
+  Both were missing; `mining_tick`'s no-match arm now carries them.
+
+The gate owns the merge-over onto i30's chainsaw tip `0b0a7954`; the i31
+diff stays disjoint from the chainsaw rows except `mining_tick`'s shared
+seams (the tail-prune fix touches the pick/axe arms' break paths — cite
+`Player.cs:53822`/`:45764`, chain-consistent).
+
 ## Lighting
 
 Terraria's light is a **tile light map**, not a per-vertex shader effect:

@@ -11,6 +11,11 @@ mod place;
 pub use place::{place_alch, place_item_tile, place_tile};
 mod wall;
 pub use wall::{break_wall, kill_wall_sound, place_wall};
+mod hammer;
+pub use hammer::{
+    can_player_smash_wall, can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable,
+    pound_damage, pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
+};
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,

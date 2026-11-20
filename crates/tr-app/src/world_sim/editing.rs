@@ -433,6 +433,13 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
                 app.world.tile(x, y).is_some_and(|t| t.active())
             }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
         break_tile(app, tx, ty);
+        // `:53822-53825` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        }
         return true;
     }
     // `:53815` — the fail tick (`KillTile(fail: true)`): the port's
@@ -654,7 +661,11 @@ fn drill_live(app: &App, held: ItemSlot) -> bool {
 /// those ports are the i30/i31 tasks. The demon-altar hammer arm below
 /// keeps its pre-i29 time-based pacing (the i31 task ports the hammer
 /// hit-buffer model).
-fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
+fn mining_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot) {
+    // The wall-pass gate (`Player.cs:45650` `canHitWalls = true`): every
+    // early return leaves it true — the wall pass (`:45639-45643`) runs
+    // even when the tile arm did nothing (the exposed-wall case).
+    app.mining_can_hit_walls = true;
     let Some(def) = registry::get(held.kind) else {
         app.mine_target = None;
         app.mine_timer = 0.0;
@@ -729,13 +740,46 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
     let pick_match = tool_pick > 0 && !axe_tile && !hammer_tile;
     let axe_match = tool_axe > 0 && axe_tile;
     let hammer_match = tool_hammer > 0 && hammer_tile;
+    app.mine_target = Some((tx, ty));
     if !pick_match && !axe_match && !hammer_match {
         app.mine_target = None;
         app.mine_timer = 0.0;
+        // No tool arm ran — the pound + wall passes still run (the C#
+        // `ActuallyUseMiningTool` falls through to `:45781`). The
+        // `tileHammer` refusal (`:45665-45667`) fires even WITHOUT a
+        // matching hammer (a pick over an altar refuses the wall pass).
+        let tile_hit_id = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+        let mut can_hit_walls = !hammer_tile;
+        // `:45777-45780` — the shared `sItem.pick > 0` tail runs on the
+        // no-match fall-through too (a hamaxe over a plain poundable tile
+        // re-arms the pickSpeed cadence before the pound).
+        if tool_pick > 0 {
+            let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+            let use_time = held_use_time_ticks(held);
+            app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+        }
+        try_pounding_tile_tick(app, tx, ty, tile_hit_id, &mut can_hit_walls, held);
+        app.mining_can_hit_walls = can_hit_walls;
         return;
     }
-    app.mine_target = Some((tx, ty));
-    if pick_match {
+    // `:45660` — the shared tile-book slot, taken BEFORE the arm split
+    // (`hitTile.HitObject(x, y, 1)`); the pound arm (`:45781`) reuses it.
+    let tile_hit_id = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    // `:45656-45659` + `:45667` — the wall-pass gate: a matching tool on its
+    // tile (or ANY tileHammer tile) refuses the wall pass this tick; the
+    // pound arm can flip it back (`:45986`).
+    let mut can_hit_walls = !(pick_match || axe_match || hammer_tile);
+    if hammer_match {
+        // The hammer arm (`Player.cs:45665-45704`, S1-P-i31): the damage
+        // accumulates in the shared `HitTile` book, `sItem.hammer` per hit.
+        hammer_tile_hit(app, tx, ty, tile.kind, tool_hammer, tile_hit_id, held);
+        if app.world.tile(tx, ty).is_some_and(|t| t.active()) {
+            sync_mine_crack_state(app, tx, ty);
+        } else {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+        }
+    } else if pick_match {
         // The pick arm (`:45772-45780`): `PickTile(x, y, sItem.pick)`, then
         // `itemTime = (int)(useTime * pickSpeed)`.
         let broke = pick_tile_hit(app, tx, ty, tool_pick);
@@ -748,23 +792,101 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
         } else {
             sync_mine_crack_state(app, tx, ty);
         }
-        return;
-    }
-    if hammer_match && tile.kind == 26 {
-        // The demon-altar hammer arm (`:45665-45704`) — the pre-i29
-        // time-based pacing kept (the i31 task ports the hammer hit-buffer
-        // model). A sub-80 hammer or a pre-hardmode world refuses.
-        if tool_hammer < 80 || !app.world.hard_mode {
+    } else if axe_match {
+        // The axe arm (`Player.cs:45706-45771`, S1-P-i30).
+        let broke = axe_tile_hit(app, tx, ty, tile.kind, tool_axe, held);
+        if broke {
             app.mine_target = None;
             app.mine_timer = 0.0;
-            return;
+        } else {
+            sync_mine_crack_state(app, tx, ty);
         }
-        app.mine_timer += dt;
-        let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
-        app.mine_hardness = hardness;
-        if app.mine_timer >= hardness {
-            app.mine_timer = 0.0;
-            break_tile(app, tx, ty);
+    }
+    // `:45777-45780` — the shared `sItem.pick > 0` tail: the dual-power
+    // hamaxes/draxes take the pickSpeed re-arm even on the hammer/axe arms
+    // (the per-arm re-arms above are the pure-tool copies).
+    if tool_pick > 0 && !pick_match {
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        let use_time = held_use_time_ticks(held);
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+    }
+    // `:45781` — the pound arm runs on EVERY mining tick (the release latch
+    // gates it), after the tool arms.
+    try_pounding_tile_tick(app, tx, ty, tile_hit_id, &mut can_hit_walls, held);
+    // The wall pass (`:45639-45643`) — the caller in `update_editing` reads
+    // the returned gate; the pound may have cleared it (`:45986`).
+    app.mining_can_hit_walls = can_hit_walls;
+}
+
+/// The hammer arm's one hit — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
+/// (`Player.cs:45665-45704`, S1-P-i31). `num2 += sItem.hammer` (`:45670`);
+/// a `CanKillTile` refusal zeroes it (`:45671-45674`); the demon altar 26
+/// additionally needs a ≥ 80 hammer in hardmode — otherwise the damage
+/// zeroes AND the smasher takes `Hurt(ByOther(4), statLife / 2, -direction)`
+/// (`:45675-45679`). At `>= 100` the cell breaks (`KillTile` — the altar's
+/// case-26 arm runs `SmashAltar` + BEGONE_EVIL through `break_tile`'s
+/// cascade, the M5-HARDFORCE-ores seam); otherwise the fail tick
+/// (`KillTile(fail: true)` — the per-tick sound/dust is the recorded i29
+/// deviation, the damage stays in the book). `ApplyItemTime(sItem)`
+/// (`:45702`) re-arms `itemTime = useTime` (NO pickSpeed scale — the shared
+/// `sItem.pick > 0` tail in `mining_tick` handles the dual-power tools).
+fn hammer_tile_hit(
+    app: &mut App,
+    tx: i32,
+    ty: i32,
+    kind: u16,
+    hammer_power: i32,
+    tile_hit_id: usize,
+    held: ItemSlot,
+) {
+    let mut damage = hammer_power;
+    // `:45671-45674`.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:45675-45679` — the altar refusal + self-hurt. The C# `Hurt` runs on
+    // EVERY refused hit (the damage zeroed, the swing still plays). The
+    // `-base.direction` hitDirection maps to a knockback origin on the
+    // player's FACING side (`hurt_inner`'s `from_x` convention: the pop
+    // pushes AWAY from `from_x`, so `-direction` → origin at
+    // `centre + direction * 16`). The hurt's dodge rolls ride the
+    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`).
+    if kind == 26 && (hammer_power < 80 || !app.world.hard_mode) {
+        damage = 0;
+        let (half_hp, facing) = app
+            .player
+            .as_ref()
+            .map(|p| (p.hp / 2, p.facing))
+            .unwrap_or((0, 1));
+        if half_hp > 0 {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            if let Some(p) = app.player.as_mut() {
+                let from_x = p.x + crate::player::WIDTH * 0.5 + facing as f32 * TILE_PX;
+                // The C# `Hurt(ByOther(4), statLife / 2, -direction)` takes
+                // the default `cooldownCounter = -1` (General) — the
+                // retaliate lane (`ImmunityCooldownID.Sets.Retaliate`
+                // membership, the `hurt` wrapper's true).
+                let _ = p.hurt(half_hp, from_x, rng, true);
+            }
+        }
+    }
+    // `:45681` — the accumulation; `>= 100` breaks.
+    let total = app.hit_tile.add_damage(tile_hit_id, damage, true);
+    if total >= 100 {
+        // `:45683` — `ClearMiningCacheAt(x, y, 1)` (its own Prune runs
+        // here, `HitTile.cs:149-157`).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45684` — `WorldGen.KillTile(x, y)`. The altar's case-26 arm
+        // (`WorldGen.cs:49444-49449`) smashes AFTER the tile dies: the ore
+        // seeding + BEGONE_EVIL ride the M5-HARDFORCE-ores seam here (the
+        // kill cascade's `check_orb` handles the orb 31 / heart 695/696
+        // drops and the EoW/BoC summons).
+        let was_altar = kind == 26;
+        break_tile(app, tx, ty);
+        if was_altar && !app.world.tile(tx, ty).is_some_and(|t| t.active()) {
             let altars = app.world.altars_smashed;
             let ore = {
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -775,26 +897,213 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
             let _ = ore;
             app.world_key = None;
         }
+    }
+    // `:45698-45701` — a non-zero damage prunes the book AFTER both
+    // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
+    // above + this tail — the C# order, kept).
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45702` — `ApplyItemTime(sItem)`: `itemTime = useTime` (the
+    // dual-power pick tail in `mining_tick` overrides for the hamaxes).
+    let use_time = held_use_time_ticks(held);
+    app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+}
+
+/// The pound arm's tick wrapper — `ItemCheck_UseMiningTools_TryPoundingTile`
+/// (`Player.cs:45969-46311`, S1-P-i31). The `poundRelease` latch gates it;
+/// the world-state cycle lives in [`tr_core::edit::try_pound_tile`]. The
+/// `hitTile.AddDamage(tileHitId, damageAmount)` (`:45993`) runs BEFORE the
+/// cycle: a locked door's zero damage keeps the latch and plays the fail
+/// tick's Dig 0 (`:45995-45997`); a fresh pound's 100 always clears the
+/// threshold. `ApplyItemTime(sItem)` (`:45987`) fires on every accepted
+/// pound (the dual-power pick tail already ran in `mining_tick` — the C#
+/// order is the same: `:45777-45780` then `:45987`).
+fn try_pounding_tile_tick(
+    app: &mut App,
+    tx: i32,
+    ty: i32,
+    tile_hit_id: usize,
+    can_hit_walls: &mut bool,
+    held: ItemSlot,
+) {
+    // `:45971-45974`.
+    if !app.pound_release {
         return;
     }
-    // The axe arm (`Player.cs:45706-45771`, S1-P-i30): the chop damage
-    // accumulates in the same `HitTile` book the pick arm uses — the shared
-    // `hitTile` field, one slot per (x, y, 1). The non-altar hammer tiles
-    // (the orb 31, the hearts 695/696) stay with the i31 task.
-    if axe_match {
-        let broke = axe_tile_hit(app, tx, ty, tile.kind, tool_axe, held);
-        if broke {
-            app.mine_target = None;
-            app.mine_timer = 0.0;
-        } else {
-            sync_mine_crack_state(app, tx, ty);
+    let hammer_power = registry::get(held.kind).map_or(0, |d| i32::from(d.hammer));
+    let tile = app.world.tile(tx, ty).copied();
+    // `:45975-45985` — the hammer / active / poundable gates clear the latch.
+    if hammer_power <= 0
+        || !tile.is_some_and(|t| t.active() && edit::is_tile_poundable(t.kind))
+    {
+        app.pound_release = false;
+        return;
+    }
+    // `:45986-45987` — the wall pass is refused for this tick; the item
+    // time re-arms (`ApplyItemTime(sItem)` — plain `useTime`, NO pickSpeed
+    // scale; the C# pound runs AFTER the `:45777-45780` pick tail, so it
+    // overrides the dual-power re-arm too).
+    *can_hit_walls = false;
+    let use_time = held_use_time_ticks(held);
+    app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+    // `:45988-45998` — the damage add; the locked-door zero keeps the latch.
+    let damage = edit::pound_damage(&app.world, tx, ty);
+    let total = app.hit_tile.add_damage(tile_hit_id, damage, true);
+    if total < 100 {
+        // The fail tick: `KillTile(fail, effectOnly)` dust (skipped) + the
+        // Dig 0 cue (`SoundEngine.PlaySound(0, x*16, y*16)`, `:45996`). The
+        // case-0 variation + pitch draws ride the `UpdatePlayers` stream
+        // (the ItemCheck swap), only when audible (`play_place_sound`).
+        app.audio.play_place_sound(
+            (0, 1),
+            tx as f32 * TILE_PX,
+            ty as f32 * TILE_PX,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+        return;
+    }
+    // `:45999` — `ClearMiningCacheAt(x, y, 1)`.
+    app.hit_tile
+        .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    // The cycle (`:46004-46309`). The chest closure captures the DISJOINT
+    // `world_chests` field (not `app`) so it coexists with the `&mut
+    // app.world` borrow — the `chest_holds_items(app)` helper borrows all
+    // of `app` and would conflict.
+    let chests = &app.world_chests;
+    let holds = |x: i32, y: i32| {
+        chests
+            .iter()
+            .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
+    };
+    let outcome = edit::try_pound_tile(&mut app.world, tx, ty, holds);
+    match outcome {
+        edit::PoundOutcome::Pounded { lift } => {
+            // The SlopeTile/PoundTile Dig 0 cue (`WorldGen.cs:80782`/
+            // `:80822`) — one play per landed write, INSIDE the gate (a
+            // refused write plays nothing: the GateRefused arm below).
+            // The platform's last step is a DIRECT `slope(0)` write +
+            // `PoundTile` (`Player.cs:46047-46048`) — ONE cue, not two.
+            app.audio.play_place_sound(
+                (0, 1),
+                tx as f32 * TILE_PX,
+                ty as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            if lift {
+                // The flatten player-push (`WorldGen.cs:80787-80795` /
+                // `:80826-80834`): every living player whose box intersects
+                // the cell rides to its top, the drop booked in `gfxOffY`.
+                // The port has one player.
+                let rect_x = tx as f32 * TILE_PX;
+                let rect_y = ty as f32 * TILE_PX;
+                if let Some(p) = app.player.as_mut() {
+                    if !p.dead
+                        && p.x + crate::player::WIDTH > rect_x
+                        && p.x < rect_x + TILE_PX
+                        && p.y + p.height > rect_y
+                        && p.y < rect_y + TILE_PX
+                    {
+                        p.gfx_off_y += p.y + p.height - rect_y;
+                        p.y = rect_y - p.height;
+                    }
+                }
+            }
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            // `:46310` — the latch clears on the cycle arms.
+            app.pound_release = false;
         }
+        edit::PoundOutcome::GateRefused => {
+            // Every SlopeTile/PoundTile call refused at the CanPoundTile
+            // gate (`WorldGen.cs:80770`/`:80807`): NO cue, no lift — but
+            // the latch still clears (`Player.cs:46310`) and the caches
+            // wake (the platform's ungated direct `slope(0)` write may
+            // have landed, `:46047`).
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            app.pound_release = false;
+        }
+        edit::PoundOutcome::Framed | edit::PoundOutcome::Consumed => {
+            // The frame arms carry no sound (`SendTileSquare` only); the
+            // Consumed seams (470/314) change nothing in the port. The
+            // frame writes replicate through `SendTileSquare` in the C# —
+            // no port net kind yet (ANALYSIS); the local caches still wake.
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            app.pound_release = false;
+        }
+        // The locked-door / refused arms keep the latch (`:45997` returns
+        // before the `:46310` clear). The slope/half-brick net replication
+        // (SendData 17 subtypes 7/14/23) has no port kind yet — the pound
+        // does NOT `request_edit` (a kind-0 break would mis-replicate);
+        // recorded deviation, ANALYSIS.
+        edit::PoundOutcome::LockedDoor | edit::PoundOutcome::Refused => {}
+    }
+}
+
+/// The wall pass — `ItemCheck_UseMiningTools_TryFindingWallToHammer` +
+/// `ItemCheck_UseMiningTools_TryHittingWall` + `PickWall`
+/// (`Player.cs:45832-45967`, S1-P-i31). Runs when the mining tick left
+/// `canHitWalls` true (`:45639`): the finder picks the wall cell (the
+/// cursor's own, or the mouse-quadrant 2×2 scan), the hit gate
+/// (`:45910`) checks the tile/wall/poundRelease composition, and
+/// `PickWall(x, y, (int)(hammer * 1.5f))` accumulates in the WALL book
+/// (`hitTile.HitObject(x, y, 2)`). `itemTime = useTime / 2` (`:45913`).
+fn wall_hammer_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot, mouse: (f32, f32)) {
+    let hammer_power = registry::get(held.kind).map_or(0, |d| i32::from(d.hammer));
+    if hammer_power <= 0 {
         return;
     }
-    // A hammer tile the altar arm did not claim (orb/hearts) — no mining
-    // this pass (the i31 task).
-    app.mine_target = None;
-    app.mine_timer = 0.0;
+    let (wx, wy) = edit::try_finding_wall_to_hammer(&app.world, tx, ty, mouse);
+    // `:45910` — the hit gate.
+    let Some(cell) = app.world.tile(wx, wy).copied() else {
+        return;
+    };
+    if cell.wall == 0 {
+        return;
+    }
+    let tile_blocks = cell.active()
+        && wx == tx
+        && wy == ty
+        && (tr_core::tool::is_hammer_tile(cell.kind) || app.pound_release);
+    if tile_blocks {
+        return;
+    }
+    if !edit::can_player_smash_wall(&app.world, wx, wy) {
+        return;
+    }
+    // `:45912` — `PickWall(wX, wY, (int)((float)sItem.hammer * 1.5f))`.
+    let damage = (hammer_power as f32 * 1.5) as i32;
+    let wall_id = app.hit_tile.hit_object(wx, wy, tr_core::hit_tile::WALL);
+    let total = app.hit_tile.add_damage(wall_id, damage, true);
+    if total >= 100 {
+        // `:45947` — `hitTile.Clear(tileId)` clears the WALL slot.
+        app.hit_tile.clear(wall_id);
+        // `:45948` — `ClearMiningCacheAt(x, y, 2)`. The C# ignores the type
+        // argument and always prunes the TILE book (`Player.cs:53848-53849`
+        // passes 1): a TILE slot at the cell, if any, clears + prunes.
+        app.hit_tile
+            .try_clearing_and_pruning(wx, wy, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45949` — `WorldGen.KillWall(x, y)`.
+        break_wall(app, wx, wy);
+    }
+    // `:45963-45966` — a non-zero damage prunes AFTER both branches (the
+    // fail tick's KillWall(fail) dust is the recorded deviation).
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45913` — `itemTime = useTime / 2`.
+    let use_time = held_use_time_ticks(held);
+    app.item_time = (use_time / 2).max(0) as f32 * ONE_TICK_SECS;
 }
 
 /// The axe arm's one chop — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
@@ -871,6 +1180,13 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         // (5295), replants an acorn sapling into the felled base cell.
         if replant_base {
             try_replanting_tree(app, tx, ty);
+        }
+        // `:45764-45767` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
         }
         // `:45768` — `ApplyItemTime(sItem)`: `itemTime = useTime` verbatim
         // (`Player.cs:4416-4419` — NO `pickSpeed` scale; the pick arm's
@@ -1801,6 +2117,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     if tr_core::tool::is_axe_tile(tile.kind) {
         return registry::get(held.kind).map(|d| d.axe).unwrap_or(0) > 0;
     }
+    // S1-P-i31 — the hammer tiles (`Main.tileHammer`) answer to the hammer
+    // power (`Player.cs:45656`), never the pick.
+    if tr_core::tool::is_hammer_tile(tile.kind) {
+        return registry::get(held.kind).map(|d| d.hammer).unwrap_or(0) > 0;
+    }
     let pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
     let below_surface = (ty as f64) > app.world.world_surface;
     pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
@@ -2122,10 +2443,6 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    let Some(tile) = app.world.tile(tx, ty).copied() else {
-        app.edit_target = None;
-        return;
-    };
     let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
 
     // S1-P-i29 — the pickaxe/drill mining interaction, ported from
@@ -2166,45 +2483,52 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         app.swing = 2.0 * ONE_TICK_SECS;
         app.swing_max = 3.0 * ONE_TICK_SECS;
     }
-    if app.mine_down && !app.inventory_open && is_mining_tool {
-        if tile.active() {
-            mining_tick(app, dt, tx, ty, held);
-        } else if tile.wall != 0 {
-            // No block in the cell: mining it removes the exposed wall.
-            // The walls need a hammer (`Main.tileHammer`'s rule — the port
-            // gates on the held hammer power alone) and the hammer paces the
-            // dig (the baseline assumes the copper hammer's 35). The wall
-            // hammer's hit-buffer model is the i31 task; the port keeps the
-            // time-based pacing. The demon altar is an *active* tile, so its
-            // hammer arm lives in `mining_tick`, never here.
-            if app.swing <= 0.0 {
-                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
+    if !app.inventory_open && is_mining_tool {
+        // S1-P-i31 — the hammer interaction (`ItemCheck_UseMiningTools`,
+        // `Player.cs:45584-45644`). The C# order: the `poundRelease` clear
+        // (`:45608-45615`, BEFORE the reach return), the mining action
+        // (`:45626-45634`), the release latch (`:45635-45638`), the wall
+        // pass (`:45639-45643`). The action-ready gate mirrors `:45608`:
+        // `toolTime == 0 && itemAnimation > 0 && controlUseItem`.
+        let action_ready =
+            ticks_of(app.tool_time) <= 0 && app.swing > 0.0 && app.mine_down;
+        // `:45608-45615` — a non-target cursor tile clears the pound latch
+        // (runs even out of reach — the C# clear precedes the `!flag`
+        // return at `:45616`).
+        if action_ready {
+            let target_ok = app
+                .world
+                .tile(tx, ty)
+                .is_some_and(|t| t.active() && edit::is_a_hammer_target(t.kind));
+            if !target_ok {
+                app.pound_release = false;
             }
-            if app.mine_target == Some((tx, ty)) {
-                app.mine_timer += dt;
-            } else {
-                app.mine_target = Some((tx, ty));
-                app.mine_timer = 0.0;
-            }
-            let tool_hammer = held_def.map(|d| d.hammer).unwrap_or(0);
-            if tool_hammer <= 0 {
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-            } else {
-                let hardness =
-                    (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
-                app.mine_hardness = hardness;
-                if app.mine_timer >= hardness {
-                    break_wall(app, tx, ty);
-                    app.mine_target = None;
-                    app.mine_timer = 0.0;
-                }
-            }
+        }
+        let (range_x, range_y) = mining_tile_range(app);
+        let in_reach = app.player.as_ref().is_some_and(|p| {
+            tile_in_reach_rect(p, tx, ty, range_x, range_y, held_def.map_or(0, |d| d.tile_boost))
+        });
+        if app.mine_down && in_reach {
+            // The tile arm (`:45626-45634`) — `mining_tick` handles the
+            // inactive-cell early return (`:45652-45654`) itself and leaves
+            // `mining_can_hit_walls` true for the wall pass.
+            mining_tick(app, tx, ty, held);
         } else {
             app.mine_target = None;
             app.mine_timer = 0.0;
+            app.mining_can_hit_walls = true;
+        }
+        // `:45635-45638` — `releaseUseItem` sets the pound latch (the
+        // release tick and every tick after, until a pound consumes it).
+        if in_reach && app.mine_released {
+            app.pound_release = true;
+        }
+        // `:45639-45643` — the wall pass: the finder + the hit gate +
+        // `PickWall`. The gate reads the SAME `toolTime == 0` the action
+        // used (the C# `toolTime` does not change inside UseMiningTools —
+        // `ApplyItemTime` writes `itemTime` only).
+        if in_reach && action_ready && app.mining_can_hit_walls {
+            wall_hammer_tick(app, tx, ty, held, (world_pos.x, world_pos.y));
         }
     } else {
         app.mine_target = None;
@@ -6354,6 +6678,281 @@ mod tests {
             pristine,
             "the altar smash never draws UpdateWorldGen"
         );
+    }
+
+    // ---- S1-P-i31: the hammer interaction --------------------------------
+    //
+    // The C# chain: `ItemCheck_UseMiningTools` (`Player.cs:45584`) → the
+    // hammer arm (`:45665-45704`), `TryPoundingTile` (`:45969-46311`),
+    // `TryFindingWallToHammer`/`TryHittingWall`/`PickWall`
+    // (`:45832-45967`). The pound latch (`poundRelease`, `:1502`) sets on
+    // the release (`:45635-45638`) and is consumed by the next press's
+    // mining tick. WRITTEN, NOT RUN (code-only mode).
+
+    /// A hammer-held rig over one tile: the Copper Hammer (3505, hammer 35,
+    /// useTime 23, autoReuse) unless overridden.
+    fn hammer_world_at(kind: u16, tx: i32, ty: i32) -> App {
+        let mut app = pick_world_at(kind, tx, ty);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        app
+    }
+
+    /// One press-release-press cycle: hold `hold` frames, release one
+    /// frame (the `releaseUseItem` tick that sets `poundRelease`), press
+    /// again for `press` frames.
+    fn pound_cycle(app: &mut App, hold: usize, press: usize) {
+        app.mine_down = true;
+        mine_frames(app, hold);
+        app.mine_down = false;
+        mine_frames(app, 1);
+        app.mine_down = true;
+        mine_frames(app, press);
+    }
+
+    /// S1-P-i31 — the pound latch: a held hammer never pounds (the C#
+    /// `poundRelease` gates `TryPoundingTile`, `:45971`); the release sets
+    /// it (`:45635-45638`) and the next press's first ready tick consumes
+    /// it — the flat stone becomes a half brick exactly once.
+    #[test]
+    fn s1_p_i31_the_pound_needs_a_release_then_a_press() {
+        let mut app = hammer_world_at(1, 30, 260);
+        // A long hold: no pound, the stone stays flat (a hammer does not
+        // mine a plain block — `:45656` pick_match false).
+        mine_frames(&mut app, 60);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.active() && !t.half_brick() && t.slope() == 0, "the hold never pounds");
+        assert!(!app.pound_release, "the latch stays clear while held");
+        // The release sets the latch.
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert!(app.pound_release, "releaseUseItem sets poundRelease");
+        // The press: the first ready tick pounds (the half brick).
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.half_brick(), "the press pounds the flat stone to a half brick");
+        assert!(!app.pound_release, "the pound consumes the latch");
+        // Holding on: no second pound (the latch is spent).
+        mine_frames(&mut app, 60);
+        assert!(app.world.tile(30, 260).unwrap().half_brick(), "one pound per cycle");
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 0);
+    }
+
+    /// S1-P-i31 — the full cycle over repeated presses: flat → half →
+    /// slope 1 → 2 → 3 → 4 → flat (`Player.cs:46239-46301` +
+    /// `WorldGen.PoundTile`/`SlopeTile`). Each cycle is one release+press.
+    #[test]
+    fn s1_p_i31_the_stone_cycles_half_then_four_slopes() {
+        let mut app = hammer_world_at(1, 30, 260);
+        let steps: [(bool, u8); 7] = [
+            (true, 0),
+            (false, 1),
+            (false, 2),
+            (false, 3),
+            (false, 4),
+            (false, 0),
+            (true, 0),
+        ];
+        for (half, slope) in steps {
+            // The initial hold is already running (mining_app presses);
+            // release + press lands one pound.
+            app.mine_down = false;
+            mine_frames(&mut app, 1);
+            app.mine_down = true;
+            mine_frames(&mut app, 3);
+            let t = app.world.tile(30, 260).unwrap();
+            assert_eq!(t.half_brick(), half, "half at slope {slope}");
+            assert_eq!(t.slope(), slope);
+            // Let the swing finish so the next press re-arms cleanly.
+            mine_frames(&mut app, 40);
+        }
+    }
+
+    /// S1-P-i31 — the platform cycle (`Player.cs:46008-46054`): the
+    /// isolated platform slopes 1 → 2, then the CanPoundTile arm writes
+    /// slope 0 + the half brick, then the half brick clears.
+    #[test]
+    fn s1_p_i31_the_platform_slopes_then_half_bricks() {
+        let mut app = hammer_world_at(19, 30, 260);
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 1);
+        pound_cycle(&mut app, 40, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 2);
+        pound_cycle(&mut app, 40, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.half_brick() && t.slope() == 0, "the platform's third pound half-bricks");
+        pound_cycle(&mut app, 40, 3);
+        assert!(!app.world.tile(30, 260).unwrap().half_brick(), "the fourth clears it");
+    }
+
+    /// S1-P-i31 — the hammer arm on the shadow orb 31 (`Main.tileHammer`,
+    /// `Player.cs:45665-45704`): the Copper Hammer's 35 accumulates
+    /// 35 + 35 + 35 = 105 ≥ 100 → the orb breaks on the third hit; a pick
+    /// never damages it (`:45656`).
+    #[test]
+    fn s1_p_i31_the_hammer_breaks_the_orb_the_pick_never_does() {
+        let mut app = hammer_world_at(31, 30, 260);
+        mine_frames(&mut app, 2);
+        assert!(app.world.tile(30, 260).unwrap().active(), "the orb stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 35);
+        mine_frames(&mut app, 23);
+        assert_eq!(hit_damage(&app, 30, 260), 70, "two hits accumulate");
+        mine_frames(&mut app, 23);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the third hit breaks the orb");
+        // The pick refuses the hammer tile.
+        let mut pick = pick_world_at(31, 30, 260);
+        mine_frames(&mut pick, 60);
+        assert!(pick.world.tile(30, 260).unwrap().active(), "a pick never breaks the orb");
+        assert_eq!(hit_damage(&pick, 30, 260), 0);
+    }
+
+    /// S1-P-i31 — the altar refusal hurts the smasher (`Player.cs:45675-
+    /// 45679`): a pre-hardmode Pwnhammer hit zeroes the damage AND lands
+    /// `Hurt(statLife / 2)` — the player's hp drops by half (no defence in
+    /// the fixture), the altar stands.
+    #[test]
+    fn s1_p_i31_the_refused_altar_hit_halves_the_smashers_life() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 26, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 367; // the Pwnhammer
+        let hp0 = app.player.as_ref().unwrap().hp;
+        mine_frames(&mut app, 3);
+        assert!(app.world.tile(30, 260).unwrap().active(), "pre-hardmode refuses");
+        let hp1 = app.player.as_ref().unwrap().hp;
+        assert!(hp1 < hp0, "the refused hit hurts: {hp0} -> {hp1}");
+        // The hurt is statLife / 2 through the defence-free lane (the
+        // fixture player wears nothing): hp0 - hp0/2, floored at the
+        // endurance/1 minimum the hurt pipeline applies.
+        assert_eq!(hp1, hp0 - hp0 / 2, "the hurt is exactly half the life");
+        assert_eq!(app.world.altars_smashed, 0);
+    }
+
+    /// S1-P-i31 — the wall pass (`Player.cs:45832-45967`): the hammer on an
+    /// exposed HOUSE wall accumulates `(int)(35 * 1.5) = 52` per hit in the
+    /// WALL book; two hits (104 ≥ 100) break it and drop the wall item.
+    /// The cadence is `useTime / 2` (`:45913`).
+    #[test]
+    fn s1_p_i31_the_hammer_breaks_an_exposed_house_wall() {
+        let mut w = World::new("wall".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i].wall = 24; // a house wall (Main.wallHouse)
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        mine_frames(&mut app, 2);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 24, "the wall stands after hit 1");
+        let wall_dmg = app
+            .hit_tile
+            .try_finding(30, 260, tr_core::hit_tile::WALL)
+            .map_or(0, |id| app.hit_tile.data[id].damage);
+        assert_eq!(wall_dmg, 52, "the first wall hit's (int)(35 * 1.5)");
+        // useTime 23 / 2 = 11 ticks between wall hits.
+        mine_frames(&mut app, 12);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 0, "the second hit breaks the wall");
+        assert!(
+            app.items.iter().any(|it| it.kind == registry::by_wall(24).unwrap()),
+            "the wall item dropped"
+        );
+    }
+
+    /// S1-P-i31 — `CanPlayerSmashWall` (`Player.cs:45917-45940`): an
+    /// INTERIOR unsafe wall (every 3×3 neighbour the same unsafe wall)
+    /// refuses the hammer; the same wall at the patch edge breaks.
+    #[test]
+    fn s1_p_i31_the_interior_unsafe_wall_refuses_the_hammer() {
+        let mut w = World::new("wall".into(), 64, 800);
+        for x in 28..33 {
+            for y in 258..263 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2; // the unsafe dirt wall
+            }
+        }
+        w.compute_column_surface();
+        // The interior cell (30, 260): every neighbour is wall 2.
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        mine_frames(&mut app, 60);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 2, "the interior unsafe wall stands");
+        // The edge cell (28, 260): its left neighbour is wall 0.
+        let mut w2 = World::new("wall".into(), 64, 800);
+        for x in 28..33 {
+            for y in 258..263 {
+                let i = w2.index(x, y);
+                w2.tiles[i].wall = 2;
+            }
+        }
+        w2.compute_column_surface();
+        let mut app2 = mining_app(w2, 28, 260);
+        app2.inventory[app2.selected].kind = 3505;
+        mine_frames(&mut app2, 60);
+        assert_eq!(app2.world.tile(28, 260).unwrap().wall, 0, "the edge unsafe wall breaks");
+    }
+
+    /// S1-P-i31 — the locked golden door refuses the pound and KEEPS the
+    /// latch (`Player.cs:45989-45998`): the stone under a locked door never
+    /// half-bricks, and the latch survives for the next tick.
+    #[test]
+    fn s1_p_i31_the_locked_door_refuses_the_pound() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The locked door above (the golden frames, WorldGen.cs:69191-69197).
+        let j = w.index(30, 259);
+        w.tiles[j] = Tile { kind: 10, frame_x: 0, frame_y: 594, ..Default::default() };
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 10);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(!t.half_brick() && t.slope() == 0, "the locked door refuses the pound");
+        assert!(app.pound_release, "the refused pound keeps the latch");
+    }
+
+    /// S1-P-i31 — the flatten player-push (`WorldGen.cs:80787-80795`): a
+    /// player standing INSIDE the pounded cell rides to its top when the
+    /// half brick clears (the un-half pound), the drop booked in gfxOffY.
+    #[test]
+    fn s1_p_i31_the_flatten_lifts_the_player_out_of_the_cell() {
+        let mut app = hammer_world_at(1, 30, 260);
+        // Park the player inside the target cell (the rig's player sits 3
+        // tiles right; move it onto the cell, feet 8 px into it).
+        let p = app.player.as_mut().unwrap();
+        p.x = 30.0 * TILE_PX + 2.0;
+        p.y = 260.0 * TILE_PX + 8.0 - p.height;
+        // First cycle: flat → half (no lift — the half brick SETS).
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert!(app.world.tile(30, 260).unwrap().half_brick());
+        let y_after_half = app.player.as_ref().unwrap().y;
+        // Second cycle: half → slope 1 (the cycle arm, no flatten lift).
+        pound_cycle(&mut app, 40, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 1);
+        assert_eq!(app.player.as_ref().unwrap().y, y_after_half, "the slope arm does not lift");
+        // Run the cycle to slope 4, then the flatten pound (slope 4 → 0)
+        // lifts the player to the cell top.
+        pound_cycle(&mut app, 40, 3); // 2
+        pound_cycle(&mut app, 40, 3); // 3
+        pound_cycle(&mut app, 40, 3); // 4
+        let gfx0 = app.player.as_ref().unwrap().gfx_off_y;
+        pound_cycle(&mut app, 40, 3); // 0 — the flatten
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.y, 260.0 * TILE_PX - p.height, "the player rides to the cell top");
+        assert!(p.gfx_off_y > gfx0, "the drop books into gfxOffY");
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
