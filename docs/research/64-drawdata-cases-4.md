@@ -336,7 +336,11 @@ Audit notes (R2):
 - Kind 5's live app draw routes through the dedicated tree path
   (`tree::trunk_sheet_offset_at`, documented :216-218); the DrawData arm itself
   is complete and the world correction is applied on the generic path too.
-- No second-switch glow rows exist for any R2 id.
+- Glow cross-reference (correction, found in R5): 634 DOES have a second-switch
+  glow row — `GlowMask[315]`, `Color.White`, rect `(tileFrameX, tileFrameY +
+  addFrY, w, h)` (:6070-6074) — ported at `cases_a.rs:320` (`rect_anim_y`),
+  produced but unconsumed (`_glow`, TILE-DRAW-2). The other R2 ids have no
+  second-switch rows.
 
 ### R3 — torch + the top-2 furniture group: 4, 78, 85, 133, 134, 173, 210, 233, 254, 283, 378, 457, 466, 520, 651 (15 ids, indices 30-44)
 
@@ -510,6 +514,89 @@ Audit notes (R4):
   leaves `addFrY` at the prologue default in both.
 - No second-switch glow rows exist for any R4 id (637's glow row is audited
   with its first-switch index in R5).
+
+### R5 — plant/sapling tails + the 18-px group head: 61, 71, 110, 201, 637, 703, 20, 590, 595, 615, 16, 17, 26, 32, 69 (15 ids, indices 60-74)
+
+C# `TileDrawing.cs:4850-4908` (the plant/sapling bodies were quoted verbatim in
+R4's window; the 18-px group head):
+
+```csharp
+		case 16:
+		case 17:
+		case 26:
+		case 32:
+		case 69:
+		case 72:
+		case 77:
+		case 124:
+		case 137:
+		case 138:
+		case 352:
+		case 462:
+		case 487:
+		case 488:
+		case 574:
+		case 575:
+		case 576:
+		case 577:
+		case 578:
+		case 664:
+		case 695:
+		case 704:
+		case 712:
+		case 713:
+		case 714:
+		case 715:
+		case 716:
+			tileHeight = 18;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 61 | plant arm: `tileHeight = 20;` + parity flip | :4852 | `drawdata.rs:313-316` | PORTED |
+| 71 | shares the plant arm | :4853 | :313 | PORTED |
+| 110 | shares | :4854 | :313 | PORTED |
+| 201 | shares | :4855 | :313 | PORTED |
+| 637 | shares (MushroomBlock plant shape) + second-switch glow | :4856, :6075-6079 | :313; glow `cases_a.rs:324` | PORTED (glow unconsumed + texture deviation) |
+| 703 | shares the plant arm | :4857 | :313 | PORTED |
+| 20 | sapling arm: `tileHeight = 18;` + parity flip | :4864-4872 | `drawdata.rs:319-322` (`20 \| 590 \| 595 \| 615`) | PORTED |
+| 590 | shares the sapling arm | :4865 | :319 | PORTED |
+| 595 | shares | :4866 | :319 | PORTED |
+| 615 | own label, identical body (`tileHeight = 18;` + flip) | :4873-4879 | :319 (folded into the same `\|` arm — same values) | PORTED |
+| 16 | `tileHeight = 18;` (Anvils) | :4880-4908 | `drawdata.rs:327-346` (the 27-label `\|` arm) | PORTED |
+| 17 | shares (Furnaces) | :4881 | :327 | PORTED |
+| 26 | shares (DemonAltar) | :4882 | :327 | PORTED |
+| 32 | shares (thorns) | :4883 | :327 | PORTED |
+| 69 | shares (MushroomTrees) | :4884 | :327 | PORTED |
+
+Audit notes (R5):
+- The 18-px arm's label set is exactly the C#'s 27 labels: the port spells
+  574-578 as `574..=578` and 712-716 as `712..=716` — same ids, same single
+  `height = 18` assignment, no other state touched.
+- 637's second-switch glow verbatim (:6075-6079):
+
+```csharp
+		case 637:
+			glowTexture = this.GetTileDrawTexture(tileCache, x, y);
+			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight);
+			glowColor = Color.Lerp(Color.White, color, 0.75f);
+			break;
+```
+
+  Port `cases_a.rs:324`: `rect_framed(height)` = `(fx + add_fr_x, fy + add_fr_y,
+  w, h)` — faithful; `lerp_white_75` (:300-303) is the XNA per-byte float lerp
+  with truncation (`lerp(255, 0, .75) = 63.75 → 63`, pinned :912). Two recorded
+  deviations: the glow TEXTURE is the painted tile sheet
+  (`GetTileDrawTexture`), not a GlowMask — the port emits `mask: 0` and does
+  not bind the sheet (:46-48, :321-323); and the record is unconsumed
+  (`tiles.rs:731` `_glow`, TILE-DRAW-2). The cell colour fed is the shaded
+  light bytes (`tiles.rs:724-730`, alpha 255 — `Lighting.GetColor` has no
+  alpha), matching the C# `color` local (:4539).
+- 615's C# label is separate from the 20/590/595 group but the body is
+  byte-identical; folding it into one Rust arm changes no behaviour.
+- No other R5 id has a second-switch row (638's row :6080-6084 belongs to
+  index 126, audited in R9).
 
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
