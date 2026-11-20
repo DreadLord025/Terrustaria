@@ -9,8 +9,8 @@
 //! 61/62/63/64/67** — the Old Man, the Man Eater, the Bunny pair, the
 //! Harpy, the Snatcher, the Corrupt Goldfish, the Vulture, the Demon,
 //! the jellyfish pair and the Crab (`ID/NPCID.cs:10751-10811`).
-//! Batch 1 lands the first six (37/43/46/47/48/56); batch 2 adds
-//! 57/61/62/63/64/67.
+//! Landed in two 6-kind batches (37/43/46/47/48/56, then
+//! 57/61/62/63/64/67).
 //!
 //! Shape: the kinds are NOT in `NpcKind` yet (their AI/spawn machines are
 //! later rounds), so — like `npc_findframe_a.rs` / `npc_findframe_b.rs`
@@ -44,6 +44,8 @@
 //!   the Harpy's; the 210/211 double-increment + 0.2 tilt
 //!   (`:74859-74863`) and the 49/51/60/634 `num292--` list
 //!   (`:74867-74870`) are other members' too;
+//! * the jellyfish group's 103/242/256 members (`:73918-73920`) — the
+//!   `ai[1] == 1` attack gate (`:73921`) DOES carry 63/64 and is ported;
 //! * the disabled profile-texture block (`NPC.cs:68637`, `if (false &&
 //!   …)`) — dead in the C# itself.
 
@@ -52,7 +54,7 @@
 #![allow(dead_code)]
 
 /// The slice-1 kinds, keyed by their VANILLA `NPC.type`
-/// (`ID/NPCID.cs`'s `public const short` rows). Batch 1: the first six.
+/// (`ID/NPCID.cs`'s `public const short` rows).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FindFrameLow1Kind {
     /// `NPCID.OldMan` = 37 (`NPCID.cs:10751`) — `case 37` (the humanoid
@@ -73,6 +75,22 @@ pub enum FindFrameLow1Kind {
     /// `NPCID.Snatcher` = 56 (`NPCID.cs:10789`) — `case 56` (the 43/175
     /// man-eater chomp group).
     Snatcher,
+    /// `NPCID.CorruptGoldfish` = 57 (`NPCID.cs:10791`) — `case 57` (the
+    /// 55/58 fish group).
+    CorruptGoldfish,
+    /// `NPCID.Vulture` = 61 (`NPCID.cs:10799`) — `case 61`.
+    Vulture,
+    /// `NPCID.Demon` = 62 (`NPCID.cs:10801`) — `case 62` (shared with
+    /// the Voodoo Demon's 66, already in `npc.rs`).
+    Demon,
+    /// `NPCID.BlueJellyfish` = 63 (`NPCID.cs:10803`) — `case 63` (the
+    /// 64/103/242/256 jellyfish group).
+    BlueJellyfish,
+    /// `NPCID.PinkJellyfish` = 64 (`NPCID.cs:10805`) — `case 64`.
+    PinkJellyfish,
+    /// `NPCID.Crab` = 67 (`NPCID.cs:10811`) — `case 67` (the 217-219
+    /// critter walk group).
+    Crab,
 }
 
 impl FindFrameLow1Kind {
@@ -85,6 +103,12 @@ impl FindFrameLow1Kind {
             Self::CorruptBunny => 47,
             Self::Harpy => 48,
             Self::Snatcher => 56,
+            Self::CorruptGoldfish => 57,
+            Self::Vulture => 61,
+            Self::Demon => 62,
+            Self::BlueJellyfish => 63,
+            Self::PinkJellyfish => 64,
+            Self::Crab => 67,
         }
     }
 
@@ -101,8 +125,16 @@ impl FindFrameLow1Kind {
             Self::Bunny => 7,
             Self::CorruptBunny => 7,
             Self::Harpy => 6,
-            // Main.cs:67089 (entries 50-59): 56 = 3.
+            // Main.cs:67089 (entries 50-59): 56 = 3, 57 = 6.
             Self::Snatcher => 3,
+            Self::CorruptGoldfish => 6,
+            // Main.cs:67090 (entries 60-69): 61 = 6, 62 = 5, 63/64 = 7,
+            // 67 = 8.
+            Self::Vulture => 6,
+            Self::Demon => 5,
+            Self::BlueJellyfish => 7,
+            Self::PinkJellyfish => 7,
+            Self::Crab => 8,
         }
     }
 }
@@ -118,15 +150,14 @@ pub struct FrameState {
     pub counter: f32,
     /// `NPC.spriteDirection` (±1).
     pub sprite_dir: i32,
-    /// `NPC.rotation` — only the tilt arms (48, and batch 2's 61/62)
-    /// write it.
+    /// `NPC.rotation` — only the tilt arms (48/61/62) write it.
     pub rotation: f32,
 }
 
 /// The per-tick inputs the arms read: `velocity`, `direction`, `wet` and
-/// the `ai` slots (batch 2's jellyfish `ai[1]` attack gate reads one;
-/// batch 1 reads none). `ai_action` is not carried — none of these kinds
-/// reads the `num2` motion class (`NPC.cs:66696-66704`) in its arm.
+/// the `ai` slots (only the jellyfish group's `ai[1]` attack gate reads
+/// one). `ai_action` is not carried — none of these kinds reads the
+/// `num2` motion class (`NPC.cs:66696-66704`) in its arm.
 #[derive(Clone, Copy, Debug)]
 pub struct FrameInput {
     pub vx: f32,
@@ -288,6 +319,141 @@ pub fn find_frame_low1(kind: FindFrameLow1Kind, s: &mut FrameState, i: &FrameInp
                 s.row = 0;
             }
         }
+        // `case 57` in the fish group (`NPC.cs:74181-74226`, shared with
+        // 55/58/102/241/465/592/607): `spriteDirection = direction`
+        // UNCONDITIONALLY (no ground gate), then the wet/dry split —
+        // wet walks the <6/<12/<18/<24 bands over rows 0/1/2/3 and the
+        // tail zeroes the counter (the row HOLDS 3); dry walks <6/<12
+        // over rows 4/5 and the tail zeroes the counter (the row HOLDS
+        // 5). The hold-then-restart shape is verbatim.
+        FindFrameLow1Kind::CorruptGoldfish => {
+            // `:74189`.
+            s.sprite_dir = i.direction;
+            s.counter += 1.0;
+            if i.wet {
+                // `:74193-74212`.
+                if s.counter < 6.0 {
+                    s.row = 0;
+                } else if s.counter < 12.0 {
+                    s.row = 1;
+                } else if s.counter < 18.0 {
+                    s.row = 2;
+                } else if s.counter < 24.0 {
+                    s.row = 3;
+                } else {
+                    s.counter = 0.0;
+                }
+            } else if s.counter < 6.0 {
+                // `:74214-74217`.
+                s.row = 4;
+            } else if s.counter < 12.0 {
+                // `:74218-74221`.
+                s.row = 5;
+            } else {
+                // `:74222-74225`.
+                s.counter = 0.0;
+            }
+        }
+        // `case 61` (`NPC.cs:73537-73557`): the Vulture faces by
+        // `direction` unconditionally, tilts `vx * 0.1`, and the FULL
+        // still snap (`vx == 0 && vy == 0`) pins row 0 + zero counter;
+        // otherwise the 25-tick cycle (`num147 * num148` = 5 * 5) walks
+        // rows 1..5 (`(counter / 5) + 1` — the +1 lifts the whole strip
+        // off row 0, which belongs to the still pose).
+        FindFrameLow1Kind::Vulture => {
+            // `:73539-73540`.
+            s.sprite_dir = i.direction;
+            s.rotation = i.vx * 0.1;
+            if i.vx == 0.0 && i.vy == 0.0 {
+                // `:73541-73546`.
+                s.row = 0;
+                s.counter = 0.0;
+                return;
+            }
+            // `:73547-73555` — num147 = 5, num148 = 5.
+            s.counter += 1.0;
+            if s.counter >= 25.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter / 5.0) as u32 + 1;
+        }
+        // `case 62 : case 66` (`NPC.cs:73887-73902`): the Demon faces by
+        // `direction` unconditionally and tilts `vx * 0.1`; the same
+        // 25-tick cycle as the Vulture but WITHOUT the still snap and
+        // WITHOUT the +1 — rows 0..4 (`counter / 5`). 66 (the Voodoo
+        // Demon) is already in `npc.rs`; this arm owns 62.
+        FindFrameLow1Kind::Demon => {
+            // `:73890-73891`.
+            s.sprite_dir = i.direction;
+            s.rotation = i.vx * 0.1;
+            // `:73892-73900` — num6 = 5, num7 = 5.
+            s.counter += 1.0;
+            if s.counter >= 25.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter / 5.0) as u32;
+        }
+        // `case 63 : case 64 : …` (`NPC.cs:73916-73960`, the jellyfish
+        // group): the `ai[1] == 1` attack gate (63/64/103/242 — NOT
+        // 256) runs the >4 counter over rows 4..6 (BOTH clamps run
+        // every tick: >6 wraps to 4, <4 lifts to 4) and RETURNS; the
+        // normal strip walks the <6/<12/<18 bands over rows 0/1/2, the
+        // tail pins row 3 and the >= 23 reset zeroes the counter.
+        FindFrameLow1Kind::BlueJellyfish | FindFrameLow1Kind::PinkJellyfish => {
+            if i.ai[1] == 1.0 {
+                // `:73921-73937`.
+                s.counter += 1.0;
+                if s.counter > 4.0 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                if s.row > 6 {
+                    s.row = 4;
+                }
+                if s.row < 4 {
+                    s.row = 4;
+                }
+                return;
+            }
+            // `:73939-73959`.
+            s.counter += 1.0;
+            if s.counter < 6.0 {
+                s.row = 0;
+                return;
+            }
+            if s.counter < 12.0 {
+                s.row = 1;
+                return;
+            }
+            if s.counter < 18.0 {
+                s.row = 2;
+                return;
+            }
+            s.row = 3;
+            if s.counter >= 23.0 {
+                s.counter = 0.0;
+            }
+        }
+        // `case 67 : case 217 : case 218 : case 219`
+        // (`NPC.cs:74571-74589`): the Crab's plain 6-tick strip over
+        // its 8 rows; the flip rides the ground ONLY (`vy == 0` →
+        // `spriteDirection = direction` unconditionally, 0 included) —
+        // the air keeps animating but never flips.
+        FindFrameLow1Kind::Crab => {
+            // `:74575-74578`.
+            if i.vy == 0.0 {
+                s.sprite_dir = i.direction;
+            }
+            // `:74579-74588`.
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.counter = 0.0;
+                s.row += 1;
+                if s.row >= count {
+                    s.row = 0;
+                }
+            }
+        }
     }
 }
 
@@ -309,11 +475,11 @@ mod tests {
         out
     }
 
-    /// The batch-1 `Main.npcFrameCount` rows, counted entry-by-entry out
+    /// The `Main.npcFrameCount` rows, counted entry-by-entry out
     /// of the `Main.cs:67082` initializer (the line/slot arithmetic in
     /// `frame_count`'s doc).
     #[test]
-    fn the_batch_1_frame_counts_match_the_main_initializer() {
+    fn the_slice_1_frame_counts_match_the_main_initializer() {
         let table = [
             (FindFrameLow1Kind::OldMan, 37, 21),
             (FindFrameLow1Kind::ManEater, 43, 3),
@@ -321,6 +487,12 @@ mod tests {
             (FindFrameLow1Kind::CorruptBunny, 47, 7),
             (FindFrameLow1Kind::Harpy, 48, 6),
             (FindFrameLow1Kind::Snatcher, 56, 3),
+            (FindFrameLow1Kind::CorruptGoldfish, 57, 6),
+            (FindFrameLow1Kind::Vulture, 61, 6),
+            (FindFrameLow1Kind::Demon, 62, 5),
+            (FindFrameLow1Kind::BlueJellyfish, 63, 7),
+            (FindFrameLow1Kind::PinkJellyfish, 64, 7),
+            (FindFrameLow1Kind::Crab, 67, 8),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -455,5 +627,135 @@ mod tests {
         find_frame_low1(FindFrameLow1Kind::Harpy, &mut s, &input(0.0, 0.0));
         assert_eq!(s.sprite_dir, -1);
         assert_eq!(s.rotation, 0.0);
+    }
+
+    /// The Corrupt Goldfish's fish strip (`NPC.cs:74189-74225`): the
+    /// unconditional flip (direction 0 included), the wet 0/1/2/3 bands
+    /// with the row-3 hold at the >= 24 tail, the dry 4/5 bands with the
+    /// row-5 hold at the >= 12 tail.
+    #[test]
+    fn the_corrupt_goldfish_wet_and_dry_bands_hold_then_restart() {
+        let mut s = FrameState::default();
+        let wet = FrameInput { wet: true, direction: -1, ..input(0.0, 0.0) };
+        let mut rows = Vec::new();
+        for _ in 0..25 {
+            find_frame_low1(FindFrameLow1Kind::CorruptGoldfish, &mut s, &wet);
+            rows.push(s.row);
+        }
+        // ticks 1-5 row 0, 6-11 row 1, 12-17 row 2, 18-23 row 3,
+        // tick 24 (counter 24) zeroes the counter and HOLDS row 3,
+        // tick 25 restarts at row 0.
+        assert_eq!(&rows[..6], &[0, 0, 0, 0, 0, 1]);
+        assert_eq!(&rows[10..12], &[1, 2]);
+        assert_eq!(&rows[16..18], &[2, 3]);
+        assert_eq!(&rows[22..25], &[3, 3, 0]);
+        assert_eq!(s.sprite_dir, -1);
+        // Dry: rows 4/5, the tail holds 5.
+        let mut s = FrameState::default();
+        let dry = FrameInput { direction: 0, ..input(0.0, 0.0) };
+        let mut rows = Vec::new();
+        for _ in 0..13 {
+            find_frame_low1(FindFrameLow1Kind::CorruptGoldfish, &mut s, &dry);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, [4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 4]);
+        // direction 0 IS written (the unconditional flip).
+        assert_eq!(s.sprite_dir, 0);
+    }
+
+    /// The Vulture (`NPC.cs:73539-73555`): the still snap pins row 0;
+    /// the moving 25-tick cycle walks rows 1..5 (the +1 offset), the
+    /// tilt rides vx * 0.1 and the flip copies direction verbatim.
+    #[test]
+    fn the_vulture_still_snap_and_the_plus_one_flap_cycle() {
+        let mut s = FrameState { row: 3, counter: 9.0, sprite_dir: 1, rotation: 0.5 };
+        find_frame_low1(FindFrameLow1Kind::Vulture, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // Moving (vy only still counts — the snap needs BOTH zero).
+        let i = input(0.0, 1.0);
+        let mut rows = Vec::new();
+        for _ in 0..25 {
+            find_frame_low1(FindFrameLow1Kind::Vulture, &mut s, &i);
+            rows.push(s.row);
+        }
+        assert_eq!(&rows[..5], &[1, 1, 1, 1, 2]);
+        assert_eq!(&rows[5..10], &[2, 2, 2, 2, 3]);
+        assert_eq!(&rows[20..25], &[5, 5, 5, 5, 1]);
+        let tilt = input(-2.0, 0.0);
+        find_frame_low1(FindFrameLow1Kind::Vulture, &mut s, &tilt);
+        assert_eq!(s.rotation, -0.2);
+    }
+
+    /// The Demon (`NPC.cs:73890-73900`): the same 25-tick cycle WITHOUT
+    /// the still snap and WITHOUT the +1 — rows 0..4; the still tick
+    /// keeps cycling (row 1 on the first tick).
+    #[test]
+    fn the_demon_cycle_starts_at_row_zero_and_never_still_snaps() {
+        let rows = rows_over(FindFrameLow1Kind::Demon, input(0.0, 0.0), 25);
+        assert_eq!(&rows[..5], &[0, 0, 0, 0, 1]);
+        assert_eq!(&rows[5..10], &[1, 1, 1, 1, 2]);
+        assert_eq!(&rows[20..25], &[4, 4, 4, 4, 0]);
+    }
+
+    /// The jellyfish normal strip (`NPC.cs:73939-73959`): the
+    /// 0/1/2/3 bands at 6/12/18, the >= 23 reset — row 3 holds ticks
+    /// 18-23 then the cycle restarts.
+    #[test]
+    fn the_jellyfish_normal_strip_bands_and_the_23_reset() {
+        for kind in [FindFrameLow1Kind::BlueJellyfish, FindFrameLow1Kind::PinkJellyfish] {
+            let rows = rows_over(kind, input(0.0, 0.0), 24);
+            assert_eq!(&rows[..6], &[0, 0, 0, 0, 0, 1]);
+            assert_eq!(&rows[10..12], &[1, 2]);
+            assert_eq!(&rows[17..24], &[3, 3, 3, 3, 3, 3, 0]);
+        }
+    }
+
+    /// The jellyfish attack gate (`NPC.cs:73921-73937`): ai[1] == 1
+    /// lifts any row into the 4..6 band (the <4 clamp), the >4 counter
+    /// steps every 5 ticks, the >6 wrap returns to 4, and the arm
+    /// RETURNS before the normal strip.
+    #[test]
+    fn the_jellyfish_attack_gate_clamps_into_the_four_to_six_band() {
+        let mut s = FrameState { row: 0, counter: 0.0, sprite_dir: 1, rotation: 0.0 };
+        let attack = FrameInput { ai: [0.0, 1.0, 0.0, 0.0], ..input(0.0, 0.0) };
+        find_frame_low1(FindFrameLow1Kind::BlueJellyfish, &mut s, &attack);
+        assert_eq!(s.row, 4);
+        let mut rows = Vec::new();
+        for _ in 0..15 {
+            find_frame_low1(FindFrameLow1Kind::BlueJellyfish, &mut s, &attack);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, [4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 4, 4]);
+        // The gate's return keeps the normal strip untouched: the
+        // counter never enters the <6/<12/<18 bands while attacking.
+        assert!(s.counter <= 4.0);
+    }
+
+    /// The Crab (`NPC.cs:74575-74588`): the plain 6-tick strip over 8
+    /// rows; the flip rides the ground only — the air keeps stepping
+    /// but leaves spriteDirection alone (direction 0 on the ground IS
+    /// written).
+    #[test]
+    fn the_crab_six_tick_strip_and_the_grounded_only_flip() {
+        let mut s = FrameState::default();
+        let ground = FrameInput { direction: -1, ..input(1.0, 0.0) };
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            find_frame_low1(FindFrameLow1Kind::Crab, &mut s, &ground);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
+        assert_eq!(s.sprite_dir, -1);
+        // Row 7 + one step = 8 → the wrap to 0.
+        s.row = 7;
+        s.counter = 5.0;
+        find_frame_low1(FindFrameLow1Kind::Crab, &mut s, &ground);
+        assert_eq!(s.row, 0);
+        // The air: the strip steps, the flip does NOT fire.
+        let air = FrameInput { direction: 1, ..input(1.0, 1.0) };
+        s.counter = 5.0;
+        find_frame_low1(FindFrameLow1Kind::Crab, &mut s, &air);
+        assert_eq!(s.row, 1);
+        assert_eq!(s.sprite_dir, -1);
     }
 }
