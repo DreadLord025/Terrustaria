@@ -541,6 +541,14 @@ pub(crate) fn npc_sound_style(
         .find(|s| s.sound_id == 42 && s.trackable == Some(base))
 }
 
+/// research/32 — resolve a kill-table NPC style to its bank asset name
+/// (`NPC_Hit_<n>`/`NPC_Killed_<n>`): only the styles the break table names
+/// resolve; anything else is a bank gap (`None`).
+fn kill_npc_cue(prefix: &str, style: u16) -> Option<&'static str> {
+    let wanted = format!("{prefix}{style}");
+    SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == wanted)
+}
+
 fn sound_type(cue: &str) -> u32 {
     SFX_CUES
         .iter()
@@ -662,7 +670,54 @@ pub struct Audio {
     /// `NPC.cs:24853-24856`); no ported Pixie kind yet — the seam is
     /// table-complete for the future kind.
     pixie_slot: Option<rodio::Sink>,
+    /// `SoundInstanceDig[3]` (`LegacySoundPlayer.cs:18`): case 0 stops the
+    /// picked variation's old instance then re-creates it (`:443-447`) —
+    /// one voice per Dig slot, research/32 D4 closure.
+    dig_slots: [Option<rodio::Sink>; 3],
+    /// `SoundInstanceItem[]` (`LegacySoundPlayer.cs`'s item array,
+    /// `SoundID.ItemCount` long): case 2's per-style slot — the 53/55/159
+    /// playing guards (`:559-562`/`:583-586`) read it, the default arm
+    /// stops the old instance (`:590-593`), the no-stop list detaches
+    /// (`:595-605`). A map over the styles the bank can name.
+    item_slots: HashMap<usize, rodio::Sink>,
+    /// `SoundInstanceTink[3]` (`LegacySoundPlayer.cs:927-931`): case 21
+    /// picks `Next(3)`, stops the slot's old instance, re-creates.
+    tink_slots: [Option<rodio::Sink>; 3],
+    /// `SoundInstancePlayerHit[3]` (`:506-510`): case 1's slot pool.
+    player_hit_slots: [Option<rodio::Sink>; 3],
+    /// `SoundInstanceCoin[5]` (`:1344`): case 38 overwrites the picked
+    /// slot WITHOUT a Stop — the old chime plays out (detach).
+    coin_slots: [Option<rodio::Sink>; 5],
+    /// The single-instance legacy slots (`LegacySoundPlayer.cs:96-141`),
+    /// in [`SINGLE_SLOT_CUES`] order: cases 5/6/7/8/9/10/11/12/13/16/17/
+    /// 18/22/23/24/40 — every one but Coins (18) and Chat (24) stops the
+    /// old instance before the re-create (the per-case citations ride the
+    /// table).
+    single_slots: [Option<rodio::Sink>; 16],
 }
+
+/// The single-instance cues and their legacy case ids, in `single_slots`
+/// order (`LegacySoundPlayer.cs`'s `SoundInstance*` fields). The bool is
+/// the Stop-before-recreate flag: cases 18 (`:866`) and 24 (`:958`)
+/// overwrite WITHOUT a Stop; every other listed case stops first.
+const SINGLE_SLOT_CUES: &[(&str, bool)] = &[
+    ("Player_Killed", true), // case 5 (`:697-701`)
+    ("Grass", true),         // case 6 (`:707-711`)
+    ("Grab", true),          // case 7 (`:718-722`)
+    ("Door_Opened", true),   // case 8 (`:729-733`)
+    ("Door_Closed", true),   // case 9 (`:740-744`)
+    ("Menu_Open", true),     // case 10 (`:751-755`)
+    ("Menu_Close", true),    // case 11 (`:761-765`)
+    ("Menu_Tick", true),     // case 12 (`:773-777`)
+    ("Shatter", true),       // case 13 (`:784-788`)
+    ("Double_Jump", true),   // case 16 (`:844-848`)
+    ("Run", true),           // case 17 (`:855-859`)
+    ("Coins", false),        // case 18 (`:866` — no Stop)
+    ("Unlock", true),        // case 22 (`:938-942`)
+    ("Drown", true),         // case 23 (`:948-952`)
+    ("Chat", false),         // case 24 (`:958` — no Stop)
+    ("Camera", true),        // case 40 (`:1360-1364`)
+];
 
 impl Audio {
     pub fn new(content: Option<&Path>) -> Self {
@@ -766,6 +821,12 @@ impl Audio {
             mech_slots: [None],
             roar_slots: [None, None, None],
             pixie_slot: None,
+            dig_slots: [None, None, None],
+            item_slots: HashMap::new(),
+            tink_slots: [None, None, None],
+            player_hit_slots: [None, None, None],
+            coin_slots: [None, None, None, None, None],
+            single_slots: std::array::from_fn(|_| None),
         }
     }
 
@@ -1048,8 +1109,9 @@ impl Audio {
     /// Trackable styles (`SoundId == 42`, case 42 `:1376-1381`) play the
     /// pinned first variation like [`NPC_CUSTOM_CUES`] (no pitch roll).
     /// Returns the cue asset played (the test seam); `None` when the
-    /// attenuation gate refused. The instance stop/re-create pool is the
-    /// standing D4 deviation.
+    /// attenuation gate or a 53/55/159 playing guard refused. The case-2
+    /// instance pool (`:580-607`) is live: the default styles stop the old
+    /// voice, the `:595-605` list detaches it (research/32 D4 closure).
     pub fn play_use_sound(
         &mut self,
         style_index: u16,
@@ -1077,25 +1139,34 @@ impl Audio {
         {
             return None;
         }
-        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+        let (cue, volume_scale, pitch, slot_style) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
-            // only the caller's offset, clamped at `:1410`.
+            // only the caller's offset, clamped at `:1410`. The trackable
+            // instance table (`TrackableSoundInstances[num]`, `:1380`) is
+            // overwritten with NO Stop — the old voice plays out; the port
+            // keeps the fire-and-forget shape for the pinned trackables
+            // (the D3 pin's single-variation families, no guard reads them).
             let base = style.trackable.expect("trackable style carries an asset");
             let cue = if style.variations == 1 {
                 base.to_string()
             } else {
                 format!("{base}_0")
             };
-            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0))
+            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0), None)
         } else {
             debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
+            // The 53/55/159 playing guards read the FINAL style — for the
+            // guarded styles the remap never fires, so the input style is
+            // the slot (`:559-562`/`:583-586`).
+            let playing = self.item_playing(style.style);
             let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
-            let (num, tweak, pitch) = sound::item_use_case2(style.style, &mut roll);
+            let (num, tweak, pitch) = sound::item_use_case2(style.style, playing, &mut roll)?;
             let cue = format!("Item_{num}");
             (
                 cue,
                 style.volume * tweak,
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
+                Some(num),
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
@@ -1107,7 +1178,20 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        self.emit(name, x, y, volume_scale, pitch);
+        let sink = self.emit(name, x, y, volume_scale, pitch);
+        if let (Some(num), Some(sink)) = (slot_style, sink) {
+            // `:589-607` — the default arm stops the slot's old instance,
+            // the `:595-605` list replaces it without a Stop (detach).
+            // Headless (no sink) the slot stays empty — the fresh-instance
+            // table convention of the other slot families.
+            if let Some(old) = self.item_slots.insert(num as usize, sink) {
+                if sound::item_case2_pool(num) {
+                    old.stop();
+                } else {
+                    old.detach();
+                }
+            }
+        }
         Some(name)
     }
 
@@ -1151,17 +1235,7 @@ impl Audio {
         if sound::play_sound(0, x, y, self.listener, 1.0).is_none() {
             return None;
         }
-        let variation = rng.next_range(0, 3);
-        let pitch =
-            sound::legacy_family_pitch(sound::Family::Dig, &mut |lo, hi| rng.next_range(lo, hi));
-        let cue = match variation {
-            0 => "Dig_0",
-            1 => "Dig_1",
-            _ => "Dig_2",
-        };
-        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
-        Some(cue)
+        Some(self.dig_play(x, y, rng))
     }
 
     /// The shared output tail of the pitched play paths: prepare (attenuate +
@@ -1188,6 +1262,61 @@ impl Audio {
             channel: 0,
         });
         Some(sink)
+    }
+
+    /// `SoundInstanceItem[num].State == Playing` — the case-2 guard input
+    /// (`LegacySoundPlayer.cs:559-562`/`:583-586`), read live off the slot.
+    fn item_playing(&self, style: i32) -> bool {
+        self.item_slots
+            .get(&(style as usize))
+            .is_some_and(|s| !s.empty())
+    }
+
+    /// The single-instance pool's replace (`SINGLE_SLOT_CUES`): stop or
+    /// detach the slot's old voice per the case's flag, then store the
+    /// fresh sink. An unlisted cue keeps the fire-and-forget shape (the
+    /// bank-gap names never reach a slot).
+    fn replace_single(&mut self, cue: &str, sink: Option<rodio::Sink>) {
+        let Some(idx) = SINGLE_SLOT_CUES.iter().position(|(n, _)| *n == cue) else {
+            return;
+        };
+        if let Some(old) = self.single_slots[idx].take() {
+            if SINGLE_SLOT_CUES[idx].1 {
+                old.stop();
+            } else {
+                old.detach();
+            }
+        }
+        self.single_slots[idx] = sink;
+    }
+
+    /// The case-0 Dig play (`LegacySoundPlayer.cs:440-452`): the caller
+    /// passed the attenuation gate; `Next(3)` picks the variation slot,
+    /// the slot's old instance is Stop()ed (`:443-446`), the fresh one
+    /// plays at the ±0.10 pitch (`:450`). Both draws ride the caller's
+    /// stream, variation first. Returns the cue played.
+    fn dig_play(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> &'static str {
+        let variation = rng.next_range(0, 3);
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Dig, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sink = self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        let idx = variation as usize % 3;
+        if let Some(old) = self.dig_slots[idx].take() {
+            old.stop();
+        }
+        self.dig_slots[idx] = sink;
+        cue
     }
 
     /// S1-E-21 wave C — `NPC.StrikeNPC`'s hit-sound arm
@@ -1622,24 +1751,17 @@ impl Audio {
             return None;
         }
         let (cue, pitch) = if id == 0 {
-            // Case 0 (`:442`/:450): the variation pick, then the pitch roll.
-            let variation = rng.next_range(0, 3);
-            let pitch =
-                sound::legacy_family_pitch(sound::Family::Dig, &mut |lo, hi| rng.next_range(lo, hi));
-            (
-                match variation {
-                    0 => "Dig_0",
-                    1 => "Dig_1",
-                    _ => "Dig_2",
-                },
-                pitch,
-            )
+            // Case 0 (`:442`/:450): the variation pick + the pitch roll +
+            // the Dig slot's Stop/re-create (`:443-447`).
+            return Some(self.dig_play(x, y, rng));
         } else {
-            // Case 18 (`:865-869`): Volume/Pan only — no pitch, no draws.
+            // Case 18 (`:865-869`): Volume/Pan only — no pitch, no draws;
+            // the slot is overwritten WITHOUT a Stop (`:866`).
             ("Coins", 0.0)
         };
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        let sink = self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single(cue, sink);
         Some(cue)
     }
 
@@ -1688,7 +1810,9 @@ impl Audio {
         let pitch =
             sound::legacy_family_pitch(sound::Family::Run, &mut |lo, hi| rng.next_range(lo, hi));
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit("Run", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        // `:855-859` — the old step is Stop()ed, one voice per Run slot.
+        let sink = self.emit("Run", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single("Run", sink);
         Some("Run")
     }
 
@@ -1725,7 +1849,14 @@ impl Audio {
             1 => "Player_Hit_1",
             _ => "Player_Hit_2",
         };
-        self.emit(cue, -1.0, -1.0, 1.0, pitch_offset.clamp(-1.0, 1.0));
+        // `:506-510` — the picked slot's old instance is Stop()ed, then
+        // re-created (one voice per Player_Hit slot).
+        let sink = self.emit(cue, -1.0, -1.0, 1.0, pitch_offset.clamp(-1.0, 1.0));
+        let idx = slot as usize % 3;
+        if let Some(old) = self.player_hit_slots[idx].take() {
+            old.stop();
+        }
+        self.player_hit_slots[idx] = sink;
         Some(cue)
     }
 
@@ -1742,7 +1873,9 @@ impl Audio {
             return None;
         }
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit("Player_Killed", x, y, 1.0, 0.0);
+        // `:697-701` — the old death voice is Stop()ed, then re-created.
+        let sink = self.emit("Player_Killed", x, y, 1.0, 0.0);
+        self.replace_single("Player_Killed", sink);
         Some("Player_Killed")
     }
 
@@ -1773,7 +1906,9 @@ impl Audio {
             rng.next_range(lo, hi)
         });
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit("Double_Jump", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        // `:844-848` — the old jump voice is Stop()ed, then re-created.
+        let sink = self.emit("Double_Jump", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single("Double_Jump", sink);
         Some("Double_Jump")
     }
 
@@ -1853,7 +1988,7 @@ impl Audio {
         if sound::play_sound(id, -1.0, -1.0, self.listener, 1.0).is_none() {
             return None;
         }
-        let (cue, tweak, pitch) = if is_coin {
+        let (cue, tweak, pitch, coin_slot) = if is_coin {
             // Case 38 — the port has no `Main.starGame` (the star seed is
             // unported; ANALYSIS S1-E-21f), so the ×0.15 arm is off.
             let (slot, tweak, pitch) =
@@ -1865,14 +2000,24 @@ impl Audio {
                 3 => "Coin_3",
                 _ => "Coin_4",
             };
-            (cue, tweak, pitch)
+            (cue, tweak, pitch, Some(slot as usize % 5))
         } else {
             let pitch =
                 sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
-            ("Grab", 1.0, pitch)
+            ("Grab", 1.0, pitch, None)
         };
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit(cue, -1.0, -1.0, tweak, pitch.clamp(-1.0, 1.0));
+        let sink = self.emit(cue, -1.0, -1.0, tweak, pitch.clamp(-1.0, 1.0));
+        if let Some(idx) = coin_slot {
+            // `:1344` — the coin slot is overwritten WITHOUT a Stop.
+            if let Some(old) = self.coin_slots[idx].take() {
+                old.detach();
+            }
+            self.coin_slots[idx] = sink;
+        } else {
+            // `:718-722` — the Grab voice is Stop()ed, then re-created.
+            self.replace_single(cue, sink);
+        }
         Some(cue)
     }
 
@@ -1899,7 +2044,8 @@ impl Audio {
         let pitch =
             sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit("Grab", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        let sink = self.emit("Grab", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single("Grab", sink);
         Some("Grab")
     }
 
@@ -1930,7 +2076,13 @@ impl Audio {
             _ => "Coin_4",
         };
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
+        // `:1344` — the coin slot is overwritten WITHOUT a Stop.
+        let sink = self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
+        let idx = slot as usize % 5;
+        if let Some(old) = self.coin_slots[idx].take() {
+            old.detach();
+        }
+        self.coin_slots[idx] = sink;
         Some(cue)
     }
 
@@ -1945,7 +2097,9 @@ impl Audio {
             return None;
         }
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
+        // `:948-952` — the old gasp is Stop()ed, then re-created.
+        let sink = self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
+        self.replace_single("Drown", sink);
         Some("Drown")
     }
 
@@ -2019,7 +2173,9 @@ impl Audio {
                     return None;
                 }
                 self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.emit("Shatter", x, y, 1.0, 0.0);
+                // `:784-788` — the old shatter is Stop()ed, then re-created.
+                let sink = self.emit("Shatter", x, y, 1.0, 0.0);
+                self.replace_single("Shatter", sink);
                 Some("Shatter")
             }
             6 => {
@@ -2031,7 +2187,9 @@ impl Audio {
                     rng.next_range(lo, hi)
                 });
                 self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.emit("Grass", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+                // `:707-711` — the old grass voice is Stop()ed, re-created.
+                let sink = self.emit("Grass", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+                self.replace_single("Grass", sink);
                 Some("Grass")
             }
             // The NPCHit25 style arm — wave C's case-3 façade.
@@ -2074,7 +2232,10 @@ impl Audio {
             sound::legacy_family_pitch(sound::Family::Door, &mut |lo, hi| rng.next_range(lo, hi));
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let cue = if open { "Door_Opened" } else { "Door_Closed" };
-        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        // `:729-733`/`:740-744` — the old door voice is Stop()ed, then
+        // re-created (one voice per open/close slot).
+        let sink = self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single(cue, sink);
         Some(cue)
     }
 
@@ -2117,6 +2278,135 @@ impl Audio {
             old.detach();
         }
         Some("Mech_0")
+    }
+
+    /// research/32 D1/D4 — the draw-free single-voice cues: the menu clicks
+    /// (cases 10/11/12, `LegacySoundPlayer.cs:750-782`), the unlock (case
+    /// 22, `:937-946`), the coin-pile Coins (case 18, `:865-870`), the chat
+    /// open (case 24, `:957-962`) and the camera shutter (case 40,
+    /// `:1359-1368`). The int overload (`SoundEngine.cs:102-108`) draws NO
+    /// `GetRandomPitch` and the cases draw NO `Main.rand` — the play is
+    /// stream-neutral; the only decision is the attenuation gate and the
+    /// slot's Stop-then-recreate (Coins/Chat overwrite without a Stop).
+    /// Case 12's `FocusHelper.AllowInputProcessing` gate (`:771`) folds to
+    /// true — the port always claims focus (the standing D12 deviation).
+    /// Returns the cue played; `None` when the gate refused or the name is
+    /// not a single-voice cue.
+    pub fn play_single_voice(&mut self, cue: &str, x: f32, y: f32) -> Option<&'static str> {
+        let name = SINGLE_SLOT_CUES
+            .iter()
+            .map(|(n, _)| *n)
+            .find(|n| *n == cue)?;
+        // The attenuation gate (`LegacySoundPlayer.cs:369-436`) — the
+        // positioned Unlock rides the distance walk, the rest are 2D.
+        if sound::play_sound(sound_type(name), x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sink = self.emit(name, x, y, 1.0, 0.0);
+        self.replace_single(name, sink);
+        Some(name)
+    }
+
+    /// research/32 D1 — one case-7 Grab play (`LegacySoundPlayer.cs:717-
+    /// 727`): the int overload draws no `GetRandomPitch`; after the
+    /// attenuation gate ONE `Main.rand.Next(-10, 11) * 0.01` pitch draw
+    /// (`:725`) rides the caller's stream, then the single Grab voice is
+    /// Stop()ed and re-created (`:718-722`). The click-handler sites pass
+    /// the bare-`Main.rand` stand-in (`rngs.global()` — the handlers run
+    /// outside every SwapRandom block, the S1-P-i43 convention); the
+    /// world-pass sites pass their stage stream. `x`/`y` `-1` = the 2D
+    /// flag arm. Returns the cue; `None` when the gate refused (no draw).
+    pub fn play_grab_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(7, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sink = self.emit("Grab", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        self.replace_single("Grab", sink);
+        Some("Grab")
+    }
+
+    /// research/32 D1/D4 — one case-21 Tink play (`LegacySoundPlayer.cs:
+    /// 924-936`, the `WorldGen.KillTile_PlaySounds` stone/dirt/metal arm
+    /// `WorldGen.cs:66502`): the int overload draws no `GetRandomPitch`;
+    /// after the gate ONE `Main.rand.Next(3)` variation pick (`:926`)
+    /// selects `Tink_<n>`, the slot's old instance is Stop()ed (`:927-930`)
+    /// and the fresh one plays at pitch 0 (the case sets NO pitch). The
+    /// draw rides the breaking stage's stream. Returns the cue played.
+    pub fn play_tink_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(21, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let variation = rng.next_range(0, 3);
+        let cue = match variation {
+            0 => "Tink_0",
+            1 => "Tink_1",
+            _ => "Tink_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sink = self.emit(cue, x, y, 1.0, 0.0);
+        let idx = variation as usize % 3;
+        if let Some(old) = self.tink_slots[idx].take() {
+            old.stop();
+        }
+        self.tink_slots[idx] = sink;
+        Some(cue)
+    }
+
+    /// research/32 D1/D4 — one `KillTile_PlaySounds`/`CheckPot` cue on the
+    /// faithful per-case paths (`WorldGen.cs:66427-66575`/`:56856-56867`):
+    /// the `tr_core::edit` `(sound id, style)` pair resolves to the case's
+    /// slot pool + draws. The `SoundID.ItemN` arms are STYLE plays (the
+    /// `SoundEngine.cs:93-99` façade — the `GetRandomPitch` NextFloat on
+    /// the audio-only stream, then case 2); 0/6/13/18/21 are the int
+    /// overload; 3/4 are wave C's façades. `volume_scale` carries the
+    /// caller's C# `volumeScale` argument (the ported kill-table sites all
+    /// pass 1). Returns the cue played; `None` for an unlisted family or a
+    /// refused gate/guard.
+    pub fn play_kill_cue(
+        &mut self,
+        (id, style): tr_core::edit::SoundCue,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        match id {
+            0 => self.play_place_sound((0, 1), x, y, rng),
+            2 => {
+                // The Vector2 façade truncates (`SoundEngine.cs:88-91`) —
+                // the kill-table sites pass `i * 16, j * 16` ints already.
+                let idx = crate::soundid::SOUND_STYLES
+                    .iter()
+                    .position(|s| s.sound_id == 2 && s.style == i32::from(style))?;
+                self.play_use_sound(idx as u16, x, y, 0.0, rng)
+            }
+            3 => {
+                let cue = kill_npc_cue("NPC_Hit_", style)?;
+                self.play_npc_hit_sound(cue, x, y, rng)
+            }
+            4 => {
+                let cue = kill_npc_cue("NPC_Killed_", style)?;
+                self.play_npc_death_sound(cue, x, y, rng)
+            }
+            6 => self.play_wall_break_sound((6, 1), x, y, rng),
+            13 => self.play_wall_break_sound((13, 1), x, y, rng),
+            18 => self.play_single_voice("Coins", x, y),
+            21 => self.play_tink_sound(x, y, rng),
+            _ => None,
+        }
     }
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
