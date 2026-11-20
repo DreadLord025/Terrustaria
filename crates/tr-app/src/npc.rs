@@ -8289,18 +8289,19 @@ impl Npc {
                 }
             }
             NpcKind::GolemHead => {
-                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): the mouth
-                // row rides the fireball window (the first/last 20 of the
-                // 300 cadence — `:31178`'s window with the localAI[0]
-                // writes at `:31181`/`:31186` (phase 0) and
-                // `:31240`/`:31244` (phase 1), folded: the port tests the
-                // window directly); in phase 1 the head-turn rows ride
-                // `localAI[1]` (`npc.head_turn`): +4 on the left side
-                // (`:72953-72955`), +2 on the right (`:72957-72959`),
-                // NOTHING in-band (`:31223`'s zero — the three-way the
-                // v1 missed).
-                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                let mut row = if mouth { 1 } else { 0 };
+                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): W4-c5 —
+                // the mouth row reads the STORED `localAI[0]` flag the AI
+                // writes on the first/last 20 of the 300 cadence
+                // (`:31181`/`:31186` phase 0, `:31238`/`:31242` phase 1 —
+                // `:72934`/`:72945` read `localAI[0] == 1f`), NOT a
+                // recomputed ai[1] window (the case-249 R23 G5 precedent:
+                // the flag can diverge from the post-write counter, e.g.
+                // the fire tick's reset). In phase 1 the head-turn rows
+                // ride `localAI[1]` (mirrored to `npc.head_turn` by
+                // `golem_head_step`): +4 on the left side (`:72953-72955`),
+                // +2 on the right (`:72957-72959`), NOTHING in-band
+                // (`:31223`'s zero — the three-way the v1 missed).
+                let mut row = if self.local_ai[0] == 1.0 { 1 } else { 0 };
                 if self.ai[0] == 1.0 {
                     row += match self.head_turn {
                         -1 => 4,
@@ -23200,19 +23201,22 @@ mod tests {
         assert_eq!(head.head_turn, 0, "the in-band turn");
         assert_eq!(head.frame, 1, "the mouth row without the turn offset");
         // The player to the left: -1 -> +4; mid-cadence -> the closed
-        // mouth (row 0 + 4).
+        // mouth (row 0 + 4). W4-c5: ai[1] is preset BEFORE the tick — the
+        // row reads the flag the AI writes on the post-add counter.
         player.x = (100.0 * 16.0 - 200.0) as f32;
-        head.update_golem(&w, &player);
         head.ai[1] = 150.0;
+        head.update_golem(&w, &player);
         head.find_frame();
         assert_eq!(head.head_turn, -1, "the left turn");
+        assert_eq!(head.local_ai[1], -1.0, "the C# slot the turn mirrors");
         assert_eq!(head.frame, 4, "the +4 row");
         // The player to the right: +1 -> +2 with the mouth open.
         player.x = (100.0 * 16.0 + 200.0) as f32;
-        head.update_golem(&w, &player);
         head.ai[1] = 295.0;
+        head.update_golem(&w, &player);
         head.find_frame();
         assert_eq!(head.head_turn, 1, "the right turn");
+        assert_eq!(head.local_ai[0], 1.0, "the AI wrote the mouth flag");
         assert_eq!(head.frame, 3, "the mouth +2 row");
         // The free head: case 249's mouth-only rows, no turn — R23 G5:
         // the row reads the STORED `localAI[0]` flag (`NPC.cs:72963`),
@@ -23225,6 +23229,87 @@ mod tests {
         free.local_ai[0] = 0.0;
         free.find_frame();
         assert_eq!(free.frame, 0, "the free head's closed row");
+    }
+
+    /// W4-c5 witness 1 — `FindFrame` case 246 reads the STORED
+    /// `localAI[0]` mouth flag (`NPC.cs:72934`/`:72945`), NOT a recomputed
+    /// `ai[1]` window (the case-249 R23 G5 precedent): the flag can
+    /// diverge from the counter, and the row follows the FLAG.
+    #[test]
+    fn w4_c5_the_head_mouth_row_reads_the_stored_local_ai0_flag() {
+        let mut head = Npc::new(NpcKind::GolemHead, 1600.0, 1543.0, -1, 0.0);
+        head.hp = head.max_hp;
+        // Phase 0: the counter is mid-cadence (the old window read would
+        // pick row 0) but the flag rides OPEN — the C# picks row 1.
+        head.ai[0] = 0.0;
+        head.ai[1] = 150.0;
+        head.local_ai[0] = 1.0;
+        head.find_frame();
+        assert_eq!(head.frame, 1, "the flag wins over the window (phase 0)");
+        // And the mirror: a window-open counter with the flag CLOSED
+        // picks row 0 — the read is the flag alone.
+        head.ai[1] = 5.0;
+        head.local_ai[0] = 0.0;
+        head.find_frame();
+        assert_eq!(head.frame, 0, "the closed flag holds row 0");
+        // Phase 1: the same flag read, then the turn adds ride on top
+        // (`:72943-72960`). The flag open + a left turn -> 1 + 4.
+        head.ai[0] = 1.0;
+        head.ai[1] = 150.0;
+        head.local_ai[0] = 1.0;
+        head.head_turn = -1;
+        head.find_frame();
+        assert_eq!(head.frame, 5, "the phase-1 mouth + left turn");
+        head.head_turn = 1;
+        head.find_frame();
+        assert_eq!(head.frame, 3, "the phase-1 mouth + right turn");
+    }
+
+    /// W4-c5 witness 2 — the AI→frame seam end to end: `golem_head_step`
+    /// writes `localAI[0]` on the 300-cadence window (`NPC.cs:31181`/
+    /// `:31186` phase 0, `:31238`/`:31242` phase 1) and `find_frame` reads
+    /// it back — the fire tick's counter reset leaves the flag OPEN (the
+    /// divergence the window recompute could never show).
+    #[test]
+    fn w4_c5_the_ai_written_mouth_flag_drives_the_head_frame() {
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.zones.jungle = true; // solo balance: the enrage gate off
+        let mut head = Npc::new(
+            NpcKind::GolemHead,
+            100.0 * 16.0 - 3.0 - 35.0,
+            100.0 * 16.0 - 57.0 - 35.0,
+            -1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        head.alpha = 0;
+        // Phase 0, the last-20 window: 299 -> 300 fires, the reset leaves
+        // ai[1] = 0 with the flag OPEN (`:31181` wrote it pre-fire).
+        head.ai[1] = 299.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.ai[1], 0.0, "the fire tick's reset");
+        assert_eq!(head.local_ai[0], 1.0, "the window write survives it");
+        head.find_frame();
+        assert_eq!(head.frame, 1, "the stored flag drives the row");
+        // Mid-cadence: the flag closes and the row follows.
+        head.ai[1] = 150.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.local_ai[0], 0.0);
+        head.find_frame();
+        assert_eq!(head.frame, 0);
+        // Phase 1: the same seam on the num688 ladder (solo balance 1 ->
+        // 1/tick at full hp); 295 -> 296 opens the mouth, no fire.
+        head.hp = head.max_hp / 3;
+        head.ai[0] = 1.0;
+        head.ai[1] = 295.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.local_ai[0], 1.0, "the phase-1 window write");
+        head.find_frame();
+        assert_eq!(head.frame, 1, "in-band: no turn offset");
     }
 
     #[test]
