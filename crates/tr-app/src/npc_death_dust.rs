@@ -223,7 +223,7 @@ fn lane_covers(ty: u16) -> bool {
         668 | 552..=554 | 561..=563 | 555..=557 | 551 | 558..=560 | 566 | 567
             | 576 | 577 | 564 | 565 | 572..=575 | 570 | 571 | 568 | 569 | 550 | 441
             | 588 | 589 | 633 | 368 | 353 | 354 | 369 | 376 | 663 | 342
-            | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490
+            | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490 | 305..=314
     )
 }
 
@@ -383,6 +383,14 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
             fx.burst(50, 5, 2.5 * hd, -2.5);
             fx.rng.next_max(3);
             fx.rng.next_max(3);
+        }
+        // `NPC.cs:84804-84815` — the Scarecrow decade (305-314): 60×
+        // type-194 at `(2×hitDirection, -2)`, scale 1.1; the five
+        // gores (441-445) are constant-argument.
+        305..=314 => {
+            for _ in 0..60 {
+                fx.d_full(fx.pos, fx.w, fx.h, 194, 2.0 * hd, -2.0, 0, Color::default(), 1.1);
+            }
         }
         _ => {}
     }
@@ -664,6 +672,43 @@ mod tests {
         assert_eq!(rng, r, "50×6 internals + 2 wing picks");
         assert!(pool.slot(49).active);
         assert!(!pool.slot(50).active);
+    }
+
+    /// `NPC.cs:84806-84809` — the Scarecrow decade: 60×194, scale 1.1
+    /// (the rolled scale ×1.1, NOT an overwrite), speeds (2×hd, -2).
+    #[test]
+    fn w4_g60_the_scarecrow_burst_scales_the_roll() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 305,
+            pos: Vec2::new(100.0, 100.0),
+            w: 24,
+            h: 46,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        let rolls = replay_spawn(&mut r, 24, 46);
+        let d = pool.slot(0);
+        assert_eq!(d.dust_type, 194);
+        assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 1.1);
+        assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1 + 2.0);
+        assert_eq!(d.velocity.y, rolls[3] as f32 * 0.1 - 2.0);
+        for _ in 1..60 {
+            replay_spawn(&mut r, 24, 46);
+        }
+        assert_eq!(rng, r, "60×6 internals, nothing else");
+        assert!(pool.slot(59).active);
+        assert!(!pool.slot(60).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
