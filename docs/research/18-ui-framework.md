@@ -154,6 +154,19 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 ### `UIState` subclasses with no Rust screen at all
 
+**Wave-4 split (2026-11-20, branches `task/W4-d84/d85/d86-ui-screens-*`, table order):**
+d84 = first 6 (the Workshop/ResourcePack cluster: `UIWorkshopHub`,
+`UIWorkshopSelectResourcePackToPublish`, `UIWorkshopSelectWorldToPublish`,
+`UIWorkshopWorldImport`, `UIResourcePackSelectionMenu`, `UIResourcePackInfoMenu`).
+**d85 = second 6 (table rows 7-12)**: `UIDebugCommandsList`,
+`UIDebugLoadoutsList`, the `UIDebugLoadoutItem`-family row (both debug lists
+plus their row elements `UIDebugCommandItem`/`UIDebugLoadoutItem`),
+`UIReportsPage`, `UIWorldCreationAdvanced`,
+`UIWorldCreationAdvancedSecretSeedsList`.
+d86 = the rest (`UIWorldGenDebug`, `UITextWrappingTest`, `UIManageControls`,
+the `AWorkshopPublishInfoState` pair if not folded into d84).
+`UICreativePowersMenu` is Journey-mode (c24 lane) - skipped by all three.
+
 | C# state (file) | Lines | Rust counterpart | Notes |
 | --- | --- | --- | --- |
 | `UIWorkshopHub` | 13 | none | Steam Workshop hub |
