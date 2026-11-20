@@ -71,6 +71,7 @@ impl FlyerParams {
     /// `AI_002_FloatingEye` citation — the A-1 audit, research/54 §2).
     /// Test-only: `the_flyer_homes_and_bounces` pins the legacy archetype;
     /// no live caller remains (`update_eye` retired with the wiring).
+    #[allow(dead_code)] // test-only A/B pin (W4-b2b) — no live caller
     pub const FLOATING_EYE: Self = Self {
         accel: 0.12,
         max_speed: 3.0,

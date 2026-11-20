@@ -80,6 +80,7 @@
 //! * The arm does NOT integrate position: `NPC.Update`'s generic tail is
 //!   the caller's (the `npc_ai_style31.rs` precedent). The lens drops are
 //!   FAITHFUL already (`loot_db_gen.rs:540`, audit §2d) — untouched.
+#![allow(dead_code)] // WIRED (W4-b2b: the aiStyle-2 axis claims 2); the EyeOut/EyeDust feed fields stay parked until the dust/sound/light passes (the style27/28/29 precedent)
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

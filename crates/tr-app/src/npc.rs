@@ -27050,7 +27050,12 @@ mod tests {
     /// aiStyle-2 arm has NO flip of its own — `FindFrame`'s case-2 group
     /// writes `spriteDirection` off `velocity.X` (`NPC.cs:74019-74031`):
     /// a moving eye flips with its flight, a `vx == 0` eye keeps the
-    /// previous flip (neither one-sided `if` fires).
+    /// previous flip (neither one-sided `if` fires). The steer itself
+    /// never leaves vx at 0 on a centred aim — TargetClosest's tie faces
+    /// +1 (`NPC.cs:77751`, the `<` compare) and the default arm
+    /// accelerates — so the zero-vx keep is pinned on FindFrame directly
+    /// (the tie-steer is the wiring witness
+    /// `w4_b2b_the_dead_centre_tie_faces_right_and_steers`).
     #[test]
     fn bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim() {
         let mut w = World::new("t".into(), 200, 100);
@@ -27065,15 +27070,14 @@ mod tests {
         n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
         assert!(n.vx < 0.0, "the eye steers left");
         assert_eq!(n.sprite_dir, -1, "FindFrame flips with the flight");
-        // A dead-centre target steers nothing on a resting eye:
-        // `vx == 0` → neither one-sided `if` fires, the flip is preserved.
-        player.x = n.x + n.size().0 * 0.5 - crate::player::WIDTH * 0.5;
-        player.y = n.y + n.size().1 * 0.5 - crate::player::HEIGHT * 0.5;
+        // A resting eye (`vx == 0`) keeps its flip: neither one-sided
+        // `if` fires (`:74021-74030`), and the rotation freezes with it.
         n.vx = 0.0;
         n.vy = 0.0;
-        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
-        assert_eq!(n.vx, 0.0, "the dead-centre aim steers nothing");
+        let rot = n.rotation;
+        n.find_frame();
         assert_eq!(n.sprite_dir, -1, "a zero vx keeps the flip");
+        assert_eq!(n.rotation, rot, "a zero vx freezes the rotation");
     }
 
     /// BUG-07: the WoF eye has NO flip of its own — `:26066-26068` copies the
@@ -33601,5 +33605,142 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_b2b_eye_wiring_witnesses {
+    //! W4-b2b — the aiStyle-2 WIRING witnesses (the axis adapter, not the
+    //! pure arm: `npc_ai_eye.rs`'s own 15 pin the machine). The census
+    //! draw delta: the retired `update_eye` stand-in drew ZERO; the wired
+    //! arm draws exactly ONE `Next(40)` per tick per ported eye kind (the
+    //! `:52710` family dust gate — the burst's INTERNAL draws are the
+    //! S1-E-1 documented skip). Mirrored-oracle stream witnesses over the
+    //! LIVE `update_rng` path (preamble + axis + FindFrame + contact):
+    //! the player parks far away so the contact lane draws nothing.
+    //! Code-only mode: WRITTEN NOT RUN.
+    use super::*;
+    use super::tests::bare;
+
+    /// Night air, the eye at (1000, 1000) — below the default surface
+    /// line (30 tiles), so the dawn gate never fires by accident.
+    fn night_air() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        w.day_time = false;
+        w
+    }
+
+    /// The draw-delta census: every ported eye kind consumes exactly one
+    /// Next(40) per tick through the live axis (the stand-in drew zero).
+    #[test]
+    fn w4_b2b_every_eye_kind_draws_exactly_one_next_forty_per_tick() {
+        let w = night_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 2000.0; // far right, same row: no contact overlap
+        player.y = 1000.0;
+        for kind in [
+            NpcKind::DemonEye,
+            NpcKind::WanderingEye,
+            NpcKind::CataractEye,
+            NpcKind::SleepyEye,
+            NpcKind::DialatedEye,
+            NpcKind::GreenEye,
+            NpcKind::PurpleEye,
+        ] {
+            let mut n = bare(kind);
+            n.x = 1000.0;
+            n.y = 1000.0;
+            let mut rng = UnifiedRandom::new(42);
+            let mut oracle = rng.clone();
+            let _ = oracle.next_max(40);
+            n.update_rng(&w, &mut player, 0.0, &mut rng);
+            assert_eq!(rng, oracle, "{kind:?}: exactly one Next(40) on the live stream");
+        }
+    }
+
+    /// The dead-centre tie: TargetClosest's `<` compare faces +1 on an
+    /// exact centre tie (`NPC.cs:77751`), so the default arm STEERS
+    /// (+0.1 X / +0.04 Y) — the faithful arm never leaves vx at 0 on a
+    /// centred aim (the BUG-07 repoint's correction).
+    #[test]
+    fn w4_b2b_the_dead_centre_tie_faces_right_and_steers() {
+        let w = night_air();
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 1000.0;
+        n.y = 1000.0;
+        let mut player = crate::player::Player::spawn(&w);
+        // The player's centre EXACTLY on the eye's (30x32 vs 20x42).
+        player.x = n.x + 15.0 - crate::player::WIDTH * 0.5;
+        player.y = n.y + 16.0 - crate::player::HEIGHT * 0.5;
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        assert_eq!(n.facing, 1, "the centre tie faces +1");
+        assert_eq!(n.direction_y, 1, "the Y tie faces +1 too");
+        assert_eq!(n.vx, 0.1, "the tie-facing steer runs");
+        assert_eq!(n.vy, 0.04);
+    }
+
+    /// The dawn flee through the axis: day + at/above the surface line →
+    /// EncourageDespawn(10) + directionY -1 (`:52308-52325`).
+    #[test]
+    fn w4_b2b_the_dawn_flee_rides_the_axis() {
+        let mut w = night_air();
+        w.day_time = true; // the default surface line: 30 tiles = 480 px
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 1000.0;
+        n.y = 400.0; // above the line
+        n.vx = 2.0;
+        n.vy = 2.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 2000.0;
+        player.y = 400.0;
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10)");
+        assert_eq!(n.direction_y, -1, "the flee climbs");
+        assert_eq!(n.facing, 1, "the dead-store quirk: vx > 0 → 1");
+    }
+
+    /// The integration seam feeds the NEXT tick's kick: the adapter's
+    /// `integrate_flyer_collision` captures oldVelocity post-AI, and the
+    /// arm's bounce reads it (`:52285-52293`, the 2-floor).
+    #[test]
+    fn w4_b2b_the_collision_latch_feeds_the_next_ticks_kick() {
+        let w = night_air();
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 1000.0;
+        n.y = 1000.0;
+        n.collide_x = true; // last tick blocked X
+        n.old_vx = -3.0;
+        n.vx = 99.0; // the CURRENT velocity is ignored by the kick
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 500.0; // target left: facing -1
+        player.y = 1000.0;
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        // Kick: -3 * -0.5 = 1.5 → floor 2 (facing -1); steer -0.1 +0.05.
+        assert!((n.vx - 1.95).abs() < 1e-5, "kick 2 then steer, got {}", n.vx);
+        assert!(!n.collide_x, "the free move clears the latch");
+        assert_eq!(n.old_vx, n.vx, "oldVelocity captured post-AI");
+    }
+
+    /// The adapter latches `Entity.wet` pre-AI and the wet tail runs
+    /// (`:52718-52730`): falling drag ×0.95 then −0.5 buoyancy.
+    #[test]
+    fn w4_b2b_the_wet_latch_feeds_the_wet_tail() {
+        let mut w = night_air();
+        let i = w.index(62, 62); // the eye's top-left tile at (1000, 1000)
+        w.tiles[i].liquid = 255;
+        let mut n = bare(NpcKind::DemonEye);
+        n.x = 1000.0;
+        n.y = 1000.0;
+        n.vy = 2.0; // above the 1.5 fall gate: no Y steer this tick
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 2000.0;
+        player.y = 1000.0;
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        assert!(n.wet, "the adapter latched WetCollision pre-AI");
+        assert!(
+            (n.vy - (2.0f32 * 0.95 - 0.5)).abs() < 1e-5,
+            "drag then buoyancy, got {}",
+            n.vy
+        );
     }
 }
