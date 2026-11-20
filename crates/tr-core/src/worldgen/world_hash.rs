@@ -264,6 +264,11 @@ mod tests {
     // the temple family — the enclosed-space + jungle wall fills repaint the
     // cave walls on their own stream, moving this pin BY DESIGN; deferred.
     // a == b untouched.
+    // W4-g37 B5 (code-only): the Floating Island Houses pass
+    // (`WorldGen.cs:17859-17874`, `passes_b.rs::pass_floating_island_houses`)
+    // now builds the recorded island sites (the FloatingIslands pass no longer
+    // builds houses inline) — the sunplate shells + skyware interiors + chests
+    // move this pin BY DESIGN; deferred. a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -318,6 +323,8 @@ mod tests {
     // the treasure + scatter chests move this pin BY DESIGN; deferred.
     // W4-g37 B4 (code-only): the Cave Walls pass (see SEED42_512 above) — the
     // wall fills move this pin BY DESIGN; deferred.
+    // W4-g37 B5 (code-only): the Floating Island Houses pass (see SEED42_512
+    // above) — the island houses move this pin BY DESIGN; deferred.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

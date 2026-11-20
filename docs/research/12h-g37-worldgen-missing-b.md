@@ -237,6 +237,39 @@ Traps, Final Cleanup.
 - **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B5 Floating Island Houses — landing notes (this commit)
+
+- **The d103/d104 overlap resolved**: the port previously built the island
+  houses INLINE in `pass_floating_islands` (a shape-level plank box). Vanilla
+  runs `FloatingIslandHouses` (`:17859-17874`) as a SEPARATE later pass over
+  the sites `FloatingIslands` records (`GenVars.floatingIslandHouseX/Y/Style`
+  + `skyLake`, `:13108-13111`). This commit ports the faithful two-pass split:
+  `pass_floating_islands` now records `(x, y, style, skyLake)` sites into the
+  new `GenVars.island_house_sites` (the house cap still bounds them), and
+  `passes_b.rs::pass_floating_island_houses` builds the non-lake sites. The
+  shape-level `build_house` is removed; the islands tests now count recorded
+  sites. (d103/d104's pending claims defer to the merger — this lane's B5 is
+  the faithful port.)
+- **`IslandHouse`** (`WorldGen.cs:79203-79484`) → `passes_b.rs::island_house`:
+  the ±30 dungeon/87/3/83-wall veto, the `Next(2)` direction + `Next(7,12)` /
+  `Next(5,7)` rolls, the surface-anchor scan (the 192/191/384 exclusions), the
+  sunplate-202 shell (the top-corner skip) + the skyware-82 interior (wall-0
+  only), the door opening + the style-9 door, the far wall column, the
+  `skyIslandHouseCount` cycle chest (style 13, `AddBuriedChest(i, num13-3)`),
+  the fountain (islandStyle > 0), the counter advance, the window-21 walls,
+  the 14-style-7 table + the 15-style-10 chairs + the left-chair frame shift,
+  the 91 banners (`Next(7,10)`), the palm trees (islandStyle == 1). The
+  classic islandStyle is 0 → the fountain/palm arms are no-ops; the
+  remix/drunk/getGood door/chest variants are deferred.
+- **`SwitchFountain`** (`:51150-51185`): the 2×4 frameY ±72 toggle; the
+  `Wiring.running` SkipWire tail is a runtime concern (no-op in gen).
+- **Pipeline**: `step!("floating island houses", …)` after `floating islands`;
+  count 70→71; witness `w4_g37_the_island_houses_step_follows_the_islands`;
+  progress `Key("WorldGeneration.FloatingIslandHouses")` (`:17863`).
+- **Hash notes**: both pins move BY DESIGN (the house build moved passes +
+  became faithful); deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -246,8 +279,8 @@ Traps, Final Cleanup.
 | B1 Statues | a0bf6174 | ported — witnesses written not run |
 | B2 Surface Chests | 1cf9f0f1 | ported — witnesses written not run |
 | B3 Water Chests | 4c58c56c | ported — witnesses written not run |
-| B4 Cave Walls | (this commit) | ported — witnesses written not run |
-| B5 Floating Island Houses | — | pending |
+| B4 Cave Walls | ef7c9f76 | ported — witnesses written not run |
+| B5 Floating Island Houses | (this commit) | ported — witnesses written not run |
 | B6 Quick Cleanup | — | pending |
 | B7 Hellforge | — | pending |
 | B8 Spreading Grass | — | pending |

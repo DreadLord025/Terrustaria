@@ -367,6 +367,13 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.floatingIslandHouseX/Y/Style` + `skyLake` + `numIslandHouses`
+    /// (`GenVars.cs`, the `FloatingIslands` pass's recorded house sites,
+    /// `WorldGen.cs:13108-13111`): the `FloatingIslandHouses` pass
+    /// (`:17859-17874`) walks these — W4-g37 B5. Each entry is
+    /// `(x, y, island_style, sky_lake)`; the lakes are skipped by the house
+    /// pass (`:17868`).
+    pub(crate) island_house_sites: Vec<(i32, i32, i32, bool)>,
 }
 
 impl Default for GenVars {
@@ -404,6 +411,9 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // The C# allocates the house-site arrays in Reset; the port grows
+            // the Vec as the FloatingIslands pass records sites.
+            island_house_sites: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1380,6 +1390,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "floating islands",
         "Floating Islands",
         step_floating_islands
+    ),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`): after
+    // Floating Islands (`:12924`, which records the house sites) — W4-g37 B5.
+    // Own `pass_rng("Floating Island Houses")` stream.
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
     ),
     // The vanilla Remove Water From Sand / Shell Piles slots
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
@@ -2664,7 +2682,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2673,9 +2691,33 @@ fn step_floating_islands(
         world,
         &heights,
         &mut streams.drng,
-        streams.chest_stock.as_deref_mut(),
-        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        &mut gv.island_house_sites,
+    );
+}
+
+/// The vanilla Floating Island Houses slot (`WorldGen.cs:17859-17874`) —
+/// W4-g37 B5: build the house sites the Floating Islands pass recorded. Own
+/// `pass_rng("Floating Island Houses")` stream.
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let sites = gv.island_house_sites.clone();
+    let mut rng = streams.pass_rng("Floating Island Houses");
+    passes_b::pass_floating_island_houses(
+        world,
+        &sites,
+        world_surface,
+        rock_layer,
         &mut gv.sky_island_house_count,
+        &mut rng,
+        streams.chest_stock.as_deref_mut(),
     );
 }
 
@@ -3269,7 +3311,9 @@ mod tests {
         // Chests", `:17130`) after `cave houses`. B3: + `water chests`
         // (vanilla "Water Chests", `:17245`) after `surface chests`. B4: +
         // `cave walls` (vanilla "Cave Walls", `:17711`) after `temple part 2`.
-        assert_eq!(names.len(), 70);
+        // B5: + `floating island houses` (vanilla "Floating Island Houses",
+        // `:17859`) after `floating islands`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3369,6 +3413,9 @@ mod tests {
                 "vines",
                 "muds walls in jungle",
                 "floating islands",
+                // W4-g37 B5: the vanilla Floating Island Houses slot
+                // (`WorldGen.cs:17859`) follows Floating Islands.
+                "floating island houses",
                 "remove water",
                 "shell piles",
                 "slopes",
@@ -3655,6 +3702,24 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Temple") < cpos("Cave Walls"));
         assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
+    }
+
+    /// W4-g37 B5: `floating island houses` sits right after `floating islands`
+    /// (the vanilla FloatingIslandHouses anchor `WorldGen.cs:17859` follows the
+    /// FloatingIslands pass that records the sites).
+    #[test]
+    fn w4_g37_the_island_houses_step_follows_the_islands() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("floating islands") + 1);
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
     }
 
     #[test]

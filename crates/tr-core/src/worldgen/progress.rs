@@ -127,6 +127,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "water chests" => PassMessage::Gen(33),
         // WorldGen.cs:17718 (W4-g37 B4).
         "cave walls" => PassMessage::Gen(63),
+        // WorldGen.cs:17863 (W4-g37 B5).
+        "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

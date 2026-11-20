@@ -1626,3 +1626,289 @@ pub(crate) fn pass_cave_walls(
         }
     }
 }
+
+// --- B5: Floating Island Houses ----------------------------------------------
+
+/// `WorldGen.IslandHouse(i, j, islandStyle)` (`WorldGen.cs:79203-79484`): the
+/// skyware house on the island's surface — the ±30 dungeon/evil-wall veto, the
+/// width/height rolls, the surface-anchor scan, the sunplate-202 shell + the
+/// skyware-82 interior, the door, the chest (the `skyIslandHouseCount` cycle),
+/// the fountain (islandStyle > 0), the window walls, the table + chairs, the
+/// banners, and the palm trees (islandStyle == 1). The classic islandStyle is
+/// 0, so the fountain/palm arms are no-ops; the remix/drunk/getGood arms are
+/// deferred.
+#[allow(clippy::too_many_arguments)]
+fn island_house(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    island_style: i32,
+    world_surface: f64,
+    rock_layer: f64,
+    sky_count: &mut u32,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) {
+    // `:79206-79216`: the ±30 dungeon/evil-wall veto.
+    for k in (i - 30)..=(i + 30) {
+        for l in (j - 30)..=(j + 30) {
+            if in_world(world, k, l, 0) {
+                let w = world.tile(k, l).map(|t| t.wall).unwrap_or(0);
+                if crate::scene::is_dungeon_wall(w) || w == 87 || w == 3 || w == 83 {
+                    return;
+                }
+            }
+        }
+    }
+    // `:79221-79222`: the sunplate 202 shell + the skyware 82 interior.
+    let kind: u16 = 202;
+    let wall: u16 = 82;
+    // `:79224-79230`: the direction + width/height rolls.
+    let num2 = if rng.range(0, 2) == 0 { -1 } else { 1 };
+    let num3 = rng.range(7, 12);
+    let num4 = rng.range(5, 7);
+    // `:79231-79247`: the surface anchor.
+    let anchor_x = i + (num3 + 2) * num2;
+    // The C# `vector2D.Y` defaults to 0 (the `default(Vector2D)` at :79223) and
+    // is only set by the surface scan; the port keeps the island row as the
+    // fallback (the scan always finds the cloud disc on a real island).
+    let mut vec_y = j as f64;
+    if (j as f64) > world_surface {
+        vec_y = (j - 5) as f64;
+    } else {
+        for m in (j - 15)..(j + 30) {
+            let ok = world.tile(anchor_x, m).is_some_and(|t| {
+                t.wall > 0
+                    && t.active()
+                    && crate::edit::solid_tile(world, anchor_x, m)
+                    && t.kind != 192
+                    && t.kind != 191
+                    && t.kind != 384
+            });
+            if ok {
+                vec_y = (m - 1) as f64;
+                break;
+            }
+        }
+    }
+    let vec_x = i as f64;
+    // `:79249-79268`: the shell bounds.
+    let mut num5 = (vec_x - num3 as f64 - 1.0) as i32;
+    let mut num6 = (vec_x + num3 as f64 + 1.0) as i32;
+    let mut num7 = (vec_y - num4 as f64 - 1.0) as i32;
+    let mut num8 = (vec_y + 2.0) as i32;
+    num5 = num5.max(0);
+    num6 = num6.min(world.width);
+    num7 = num7.max(0);
+    num8 = num8.min(world.height);
+    // `:79269-79283`: the sunplate shell (the top-corner skip).
+    for n in num5..=num6 {
+        for num9 in (num7 - 1)..(num8 + 1) {
+            if num9 != num7 - 1 || (n != num5 && n != num6) {
+                if let Some(t) = world.tile_mut(n, num9) {
+                    t.flags |= FLAG_ACTIVE;
+                    t.liquid = 0;
+                    t.kind = kind;
+                    t.wall = 0;
+                    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                    t.set_slope(0);
+                }
+            }
+        }
+    }
+    // `:79284-79303`: the interior bounds.
+    let mut num5 = (vec_x - num3 as f64) as i32;
+    let mut num6 = (vec_x + num3 as f64) as i32;
+    let mut num7 = (vec_y - num4 as f64) as i32;
+    let mut num8 = (vec_y + 1.0) as i32;
+    num5 = num5.max(0);
+    num6 = num6.min(world.width);
+    num7 = num7.max(0);
+    num8 = num8.min(world.height);
+    // `:79304-79314`: the skyware interior (the top-corner skip, wall-0 only).
+    for num10 in num5..=num6 {
+        for num11 in num7..num8 {
+            if (num11 != num7 || (num10 != num5 && num10 != num6))
+                && world.tile(num10, num11).map(|t| t.wall).unwrap_or(0) == 0
+            {
+                if let Some(t) = world.tile_mut(num10, num11) {
+                    t.flags &= !FLAG_ACTIVE;
+                    t.wall = wall;
+                }
+            }
+        }
+    }
+    // `:79315-79322`: the door opening.
+    let mut num12 = i + (num3 + 1) * num2;
+    let num13 = vec_y as i32;
+    for num14 in (num12 - 2)..=(num12 + 2) {
+        for dy in 0..3 {
+            if let Some(t) = world.tile_mut(num14, num13 - dy) {
+                t.flags &= !FLAG_ACTIVE;
+            }
+        }
+    }
+    // `:79334-79337`: the classic door (style 9; the remix 5/38 arms deferred).
+    place_tile(world, num12, num13, 10, true, false, 9, rng);
+    // `:79338-79347`: the far wall column.
+    num12 = i + (num3 + 1) * -num2 - num2;
+    for num15 in num7..=(num8 + 1) {
+        if let Some(t) = world.tile_mut(num12, num15) {
+            t.flags |= FLAG_ACTIVE;
+            t.liquid = 0;
+            t.kind = kind;
+            t.wall = 0;
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.set_slope(0);
+        }
+    }
+    // `:79348-79368`: the chest main-item cycle.
+    let mut num16 = *sky_count;
+    if num16 > 3 {
+        num16 = rng.range(0, 4) as u32;
+    }
+    let main_item: u16 = match num16 {
+        0 => 159,
+        1 => 65,
+        2 => 158,
+        _ => 2219,
+    };
+    // `:79373-79376`: the classic chest (style 13; getGood 2 deferred).
+    add_buried_chest(
+        world, i, num13 - 3, main_item, false, 13, false,
+        world_surface, rock_layer, rng, stock.as_deref_mut(),
+    );
+    // `:79377-79393`: the fountain (islandStyle > 0 — classic 0, no-op).
+    if island_style > 0 {
+        for num17 in 0..100000 {
+            let num18 = i + rng.range(-50, 51);
+            let num19 = num13 + rng.range(0, 21);
+            let not_sunplate = world.tile(num18, num19).map(|t| t.kind).unwrap_or(0) != 202;
+            if (num17 >= 50000 || not_sunplate)
+                && !world.tile(num18, num19).is_some_and(|t| t.active())
+            {
+                place_2xx(world, num18, num19, 207, island_style);
+                if world.tile(num18, num19).is_some_and(|t| t.active()) {
+                    switch_fountain(world, num18, num19);
+                    break;
+                }
+            }
+        }
+    }
+    // `:79394`: the counter advance.
+    *sky_count += 1;
+    // `:79395-79419`: the window walls (classic — the remix gate is false).
+    {
+        let num20 = i - num3 / 2 + 1;
+        let num21 = i + num3 / 2 - 1;
+        let num22 = if num3 > 10 { 2 } else { 1 };
+        let num23 = (num7 + num8) / 2 - 1;
+        for num24 in (num20 - num22)..=(num20 + num22) {
+            for num25 in (num23 - 1)..=(num23 + 1) {
+                if let Some(t) = world.tile_mut(num24, num25) {
+                    t.wall = 21;
+                }
+            }
+        }
+        for num26 in (num21 - num22)..=(num21 + num22) {
+            for num27 in (num23 - 1)..=(num23 + 1) {
+                if let Some(t) = world.tile_mut(num26, num27) {
+                    t.wall = 21;
+                }
+            }
+        }
+    }
+    // `:79420-79441`: the table + chairs (classic 14 style 7 / 15 style 10).
+    let num28 = i + (num3 / 2 + 1) * -num2;
+    place_tile(world, num28, num8 - 1, 14, true, false, 7, rng);
+    place_tile(world, num28 - 2, num8 - 1, 15, true, false, 10, rng);
+    place_tile(world, num28 + 2, num8 - 1, 15, true, false, 10, rng);
+    // `:79442-79443`: the left chair's frame shift.
+    if let Some(t) = world.tile_mut(num28 - 2, num8 - 1) {
+        t.frame_x += 18;
+    }
+    if let Some(t) = world.tile_mut(num28 - 2, num8 - 2) {
+        t.frame_x += 18;
+    }
+    // `:79444-79461`: the banners (classic).
+    place_tile(world, num5 + 1, num7, 91, true, false, rng.range(7, 10), rng);
+    place_tile(world, num6 - 1, num7, 91, true, false, rng.range(7, 10), rng);
+    let (i2, j2) = if num2 > 0 { (num5, num7 + 1) } else { (num6, num7 + 1) };
+    place_tile(world, i2, j2, 91, true, false, rng.range(7, 10), rng);
+    // `:79462-79483`: the palm trees (islandStyle == 1 — classic 0, no-op).
+    if island_style != 1 {
+        return;
+    }
+    let mut num29 = rng.range(3, 6);
+    for _num30 in 0..100000 {
+        let num31 = i + rng.range(-50, 51);
+        let num32 = num13 + rng.range(-10, 21);
+        if !world.tile(num31, num32).is_some_and(|t| t.active()) {
+            super::ocean::grow_palm_tree(world, num31, num32 + 1, 0, false, rng);
+            if world.tile(num31, num32).is_some_and(|t| t.active()) {
+                num29 -= 1;
+            }
+        }
+        if num29 <= 0 {
+            break;
+        }
+    }
+}
+
+/// `WorldGen.SwitchFountain(i, j)` (`WorldGen.cs:51150-51185`): the 2×4
+/// fountain's frameY ±72 toggle (the on/off state). The `Wiring.running`
+/// SkipWire tail is a runtime-wiring concern — no-op during generation.
+fn switch_fountain(world: &mut World, i: i32, j: i32) {
+    let (fx, fy) = world
+        .tile(i, j)
+        .map(|t| (t.frame_x as i32, t.frame_y as i32))
+        .unwrap_or((0, 0));
+    let mut num3 = fx / 18;
+    while num3 >= 2 {
+        num3 -= 2;
+    }
+    let mut num4 = fy / 18;
+    if num4 >= 4 {
+        num4 -= 4;
+    }
+    let num = i - num3;
+    let num2 = j - num4;
+    for k in num..(num + 2) {
+        for l in num2..(num2 + 4) {
+            if let Some(t) = world.tile_mut(k, l) {
+                if t.active() && t.kind == 207 {
+                    if t.frame_y < 72 {
+                        t.frame_y += 72;
+                    } else {
+                        t.frame_y -= 72;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The `Floating Island Houses` pass (`WorldGen.cs:17859-17874`): walk the
+/// recorded house sites (`GenVars.numIslandHouses`), skipping the sky lakes,
+/// and build each `IslandHouse`. Returns the number built.
+pub(crate) fn pass_floating_island_houses(
+    world: &mut World,
+    sites: &[(i32, i32, i32, bool)],
+    world_surface: f64,
+    rock_layer: f64,
+    sky_count: &mut u32,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
+    let mut built = 0u32;
+    for &(x, y, style, lake) in sites {
+        if !lake {
+            island_house(
+                world, x, y, style, world_surface, rock_layer, sky_count, rng,
+                stock.as_deref_mut(),
+            );
+            built += 1;
+        }
+    }
+    built
+}
