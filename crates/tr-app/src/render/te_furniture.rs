@@ -540,6 +540,319 @@ pub(crate) fn tint(c: [u8; 4]) -> [f32; 4] {
 }
 
 // ---------------------------------------------------------------------------
+// TEDisplayDoll.Draw — the pose / placement decision (TEDisplayDoll.cs:339-495)
+// ---------------------------------------------------------------------------
+
+/// `DisplayDollPoseID` (`DisplayDollPoseID.cs:3-14`): the pose byte's enum.
+/// 0-3 are the always-valid poses; 4-8 (Use1-5) need the misc item's
+/// useStyle to support them (`IsValidPose`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum DollPose {
+    Standing = 0,
+    Sitting = 1,
+    Jumping = 2,
+    Walking = 3,
+    Use1 = 4,
+    Use2 = 5,
+    Use3 = 6,
+    Use4 = 7,
+    Use5 = 8,
+}
+
+impl DollPose {
+    fn from_byte(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => DollPose::Standing,
+            1 => DollPose::Sitting,
+            2 => DollPose::Jumping,
+            3 => DollPose::Walking,
+            4 => DollPose::Use1,
+            5 => DollPose::Use2,
+            6 => DollPose::Use3,
+            7 => DollPose::Use4,
+            8 => DollPose::Use5,
+            _ => return None,
+        })
+    }
+}
+
+/// One `SupportedUseStylePoses` row (`TEDisplayDoll.DisplayDollPose`,
+/// `TEDisplayDoll.cs:17-24`): the pose, the `itemAnimation` fraction of the
+/// 1000-tick max, and the optional aim radians.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct UsePose {
+    pub pose: DollPose,
+    pub item_anim_percent: f32,
+    pub item_aim_radians: Option<f32>,
+}
+
+/// `TEDisplayDoll`'s static `SupportedUseStylePoses` table
+/// (`TEDisplayDoll.cs:56-83`, the `RegisterUsePose` calls in order). The
+/// key is `Item.useStyle`; the aim literals are the C#'s — `0.7853981f`
+/// is the written π/4 approximation, `-PI/2`/`-PI/4`/`PI/2` the casts.
+pub(crate) fn supported_use_poses(use_style: u8) -> &'static [UsePose] {
+    const P: f32 = std::f32::consts::PI;
+    match use_style {
+        // :56-60 — the swing family, five poses down the use fraction.
+        1 => &[
+            UsePose { pose: DollPose::Use1, item_anim_percent: 1.0, item_aim_radians: None },
+            UsePose { pose: DollPose::Use2, item_anim_percent: 0.8, item_aim_radians: None },
+            UsePose { pose: DollPose::Use3, item_anim_percent: 0.6, item_aim_radians: None },
+            UsePose { pose: DollPose::Use4, item_anim_percent: 0.4143, item_aim_radians: None },
+            UsePose { pose: DollPose::Use5, item_anim_percent: 0.2, item_aim_radians: None },
+        ],
+        // :61-63, :69-73 — the single-pose use styles.
+        7 | 3 | 4 | 6 | 2 | 8 | 9 | 11 | 14 | 15 => &[
+            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: None },
+        ],
+        // :64-68 — the gun aim ladder (useStyle 5).
+        5 => &[
+            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: Some(-P / 2.0) },
+            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: Some(-P / 4.0) },
+            UsePose { pose: DollPose::Use3, item_anim_percent: 0.5, item_aim_radians: Some(0.0) },
+            UsePose { pose: DollPose::Use4, item_anim_percent: 0.5, item_aim_radians: Some(0.7853981) },
+            UsePose { pose: DollPose::Use5, item_anim_percent: 0.5, item_aim_radians: Some(P / 2.0) },
+        ],
+        // :74-76 — the drink tilt (useStyle 12).
+        12 => &[
+            UsePose { pose: DollPose::Use1, item_anim_percent: 0.75, item_aim_radians: None },
+            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: None },
+            UsePose { pose: DollPose::Use3, item_anim_percent: 0.25, item_aim_radians: None },
+        ],
+        // :77-81 — the spear aim ladder (useStyle 13), same radians as 5.
+        13 => &[
+            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: Some(-P / 2.0) },
+            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: Some(-P / 4.0) },
+            UsePose { pose: DollPose::Use3, item_anim_percent: 0.5, item_aim_radians: Some(0.0) },
+            UsePose { pose: DollPose::Use4, item_anim_percent: 0.5, item_aim_radians: Some(0.7853981) },
+            UsePose { pose: DollPose::Use5, item_anim_percent: 0.5, item_aim_radians: Some(P / 2.0) },
+        ],
+        _ => &[],
+    }
+}
+
+/// `IsValidPose` (`TEDisplayDoll.cs:135-155`): poses 0-3 always valid; a
+/// Use pose is valid only when the misc item is present and its useStyle
+/// supports that exact pose. `misc_use_style` is `None` for an air misc.
+pub(crate) fn doll_pose_valid(pose: u8, misc_use_style: Option<u8>) -> bool {
+    if pose <= 3 {
+        return true;
+    }
+    let Some(style) = misc_use_style else {
+        return false;
+    };
+    let Some(p) = DollPose::from_byte(pose) else {
+        return false;
+    };
+    supported_use_poses(style).iter().any(|row| row.pose == p)
+}
+
+/// The resolved doll draw state — the fields `TEDisplayDoll.Draw` writes
+/// onto `_dollPlayer` before `PlayerFrame`/`DrawPlayer`
+/// (`TEDisplayDoll.cs:339-495`). The renderer consumes these; the actual
+/// `LegacyPlayerRenderer.DrawPlayer` call is the wiring step.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DollDraw {
+    /// `dollPlayer.direction` (`:349-355`): -1 default, +1 when the anchor
+    /// `frameX % 72 == 36`.
+    pub direction: i32,
+    /// `dollPlayer.Male` (`:350,356-359`): true default, false when
+    /// `frameX / 72 == 1` (the womannequin column).
+    pub male: bool,
+    /// The effective pose after `IsValidPose` + the mount override
+    /// (`:393-405`): an invalid pose falls to Standing; a mounted doll
+    /// forces Sitting/Jumping to Standing.
+    pub pose: DollPose,
+    /// `dollPlayer.velocity` (`:406-452`): Zero for Standing/Sitting/use,
+    /// UnitX*direction for Walking, UnitY for Jumping.
+    pub velocity: [f32; 2],
+    /// `num2` (`:392,419`): the sitting Y lift, 14 when Sitting else 0.
+    pub sit_lift: f32,
+    /// `dollPlayer.sitting.isSitting` (`:370,418`).
+    pub sitting: bool,
+    /// `dollPlayer.itemAnimationMax`/`itemAnimation` (`:371-372,437-438`):
+    /// 0/0 for the non-use poses, 1000/(int)(1000*percent) for a use pose.
+    pub item_animation_max: i32,
+    pub item_animation: i32,
+    /// `dollPlayer.itemRotation` (`:439-447`): 0 default, the aim radians
+    /// (negated when direction == -1) for a use pose with an aim.
+    pub item_rotation: f32,
+    /// The walking leg/body row (`:413-414`): `legFrame.Height * 9` when
+    /// Walking, else the rest row 0. The renderer reads it as the frame Y.
+    pub leg_frame_row: u32,
+    /// `dollPlayer.position` (`:454`):
+    /// `(tileLeftX+1, tileTopY+3)*16 + (-width/2, -height-6+num2)`.
+    pub position: [f32; 2],
+    /// The mount type from `_equip[8]` (`:373-389`): -1 = no mount.
+    pub mount_type: i32,
+}
+
+/// `TEDisplayDoll.Draw`'s decision half (`TEDisplayDoll.cs:339-495`).
+/// `frame_x` is the anchor tile's `frameX`; `equip8_mount` is
+/// `_equip[8].mountType` (-1 when air); `misc_use_style` is the misc item's
+/// useStyle (None when air); `width`/`height` are the doll player's hitbox
+/// (20/42 stock, grown by the mount). The armor/dye copy, ResetEffects,
+/// UpdateDyes, DisplayDollUpdate and the held-projectile preview ride the
+/// wiring step — this resolves the pose, velocity, frames and position.
+pub(crate) fn display_doll_draw(
+    pose_byte: u8,
+    frame_x: i16,
+    equip8_mount: i32,
+    misc_use_style: Option<u8>,
+    width: f32,
+    height: f32,
+    tile_left_x: i32,
+    tile_top_y: i32,
+) -> DollDraw {
+    // :349-359 — direction and gender off the anchor frame.
+    let mut direction = -1i32;
+    let mut male = true;
+    if frame_x as i32 % 72 == 36 {
+        direction = 1;
+    }
+    if frame_x as i32 / 72 == 1 {
+        male = false;
+    }
+    // :393-397 — the pose, invalid falls to Standing.
+    let mut pose = if doll_pose_valid(pose_byte, misc_use_style) {
+        DollPose::from_byte(pose_byte).unwrap_or(DollPose::Standing)
+    } else {
+        DollPose::Standing
+    };
+    // :398-405 — a mounted doll forces Sitting/Jumping to Standing.
+    let mounted = equip8_mount != -1;
+    if mounted && (pose == DollPose::Sitting || pose == DollPose::Jumping) {
+        pose = DollPose::Standing;
+    }
+    // :406-452 — the per-pose velocity / frames / item animation.
+    let mut velocity = [0.0f32, 0.0];
+    let mut sit_lift = 0.0f32;
+    let mut sitting = false;
+    let mut item_animation_max = 0i32;
+    let mut item_animation = 0i32;
+    let mut item_rotation = 0.0f32;
+    let mut leg_frame_row = 0u32;
+    match pose {
+        DollPose::Standing => {}
+        DollPose::Walking => {
+            velocity = [direction as f32, 0.0];
+            // :413-414 — legFrame.Y = Height*9, bodyFrame.Y follows.
+            leg_frame_row = 9;
+        }
+        DollPose::Sitting => {
+            sitting = true;
+            sit_lift = 14.0;
+        }
+        DollPose::Jumping => {
+            velocity = [0.0, 1.0];
+        }
+        _ => {
+            // :427-449 — the use pose: find the matching row, set the
+            // 1000-tick animation and the aim rotation.
+            if let Some(style) = misc_use_style {
+                for row in supported_use_poses(style) {
+                    if row.pose == pose {
+                        item_animation_max = 1000;
+                        item_animation = (1000.0 * row.item_anim_percent) as i32;
+                        item_rotation = 0.0;
+                        if let Some(aim) = row.item_aim_radians {
+                            item_rotation = aim;
+                            if direction == -1 {
+                                item_rotation *= -1.0;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    // :454 — position = (tileLeftX+1, tileTopY+3)*16 + (-width/2, -height-6+num2).
+    let position = [
+        (tile_left_x + 1) as f32 * 16.0 - width / 2.0,
+        (tile_top_y + 3) as f32 * 16.0 - height - 6.0 + sit_lift,
+    ];
+    DollDraw {
+        direction,
+        male,
+        pose,
+        velocity,
+        sit_lift,
+        sitting,
+        item_animation_max,
+        item_animation,
+        item_rotation,
+        leg_frame_row,
+        position,
+        mount_type: equip8_mount,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TEHatRack.Draw — the two-hat placement (TEHatRack.cs:165-201)
+// ---------------------------------------------------------------------------
+
+/// One hat's draw placement from `TEHatRack.Draw` (`TEHatRack.cs:165-201`).
+/// The rack draws its two hats as two invisible-body doll players, each
+/// carrying one head-slot item; the renderer draws only the head layer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HatRackDraw {
+    /// The first hat's draw direction (`:185`'s `direction *= -1`): the
+    /// negated frame direction. The second hat draws at `-direction`
+    /// (`:198` flips it back).
+    pub direction: i32,
+    /// The shared anchor `vector = (tileLeftX+1.5, tileTopY+4)*16` (`:184`).
+    pub anchor: [f32; 2],
+    /// First hat position (`:186`):
+    /// `vector + (-width/2, -height-6) + (direction*14, -2)`.
+    pub hat0_pos: [f32; 2],
+    /// Second hat position (`:199`):
+    /// `vector + (-width/2, -height-6) + (direction*12, 16)` — the
+    /// direction is negated AGAIN between the two draws (`:198`).
+    pub hat1_pos: [f32; 2],
+}
+
+/// `TEHatRack.Draw`'s placement half (`TEHatRack.cs:165-201`). `frame_x`
+/// is the anchor tile's `frameX`; `width`/`height` the doll player hitbox.
+/// The direction flips twice (`:185` then `:198`), so the second hat's
+/// offset uses the ORIGINAL frame direction while the first uses its
+/// negation. Both hats draw with `invis = true` (`:180,192`) — only the
+/// head armor layer shows.
+pub(crate) fn hat_rack_draw(
+    frame_x: i16,
+    width: f32,
+    height: f32,
+    tile_left_x: i32,
+    tile_top_y: i32,
+) -> HatRackDraw {
+    // :168-173 — direction -1 default, +1 when frameX % 216 == 54.
+    let mut direction = -1i32;
+    if frame_x as i32 % 216 == 54 {
+        direction = 1;
+    }
+    // :184 — the shared anchor.
+    let anchor = [
+        (tile_left_x as f32 + 1.5) * 16.0,
+        (tile_top_y + 4) as f32 * 16.0,
+    ];
+    let base = [-width / 2.0, -height - 6.0];
+    // :185 — direction *= -1 before the first hat.
+    let d0 = -direction;
+    let hat0_pos = [
+        anchor[0] + base[0] + d0 as f32 * 14.0,
+        anchor[1] + base[1] - 2.0,
+    ];
+    // :198 — direction *= -1 again (back to the frame direction).
+    let d1 = -d0;
+    let hat1_pos = [
+        anchor[0] + base[0] + d1 as f32 * 12.0,
+        anchor[1] + base[1] + 16.0,
+    ];
+    HatRackDraw { direction: d0, anchor, hat0_pos, hat1_pos }
+}
+
+// ---------------------------------------------------------------------------
 // Tests-as-code (written, NOT run — code-only mode)
 // ---------------------------------------------------------------------------
 
@@ -775,5 +1088,143 @@ mod tests {
         assert_eq!(d.color, [255, 255, 255, 50]);
         // second = GetColor((255,0,0,255), (200,200,200,255)).
         assert_eq!(d.second, Some([200, 0, 0, 255]));
+    }
+
+    // -- the display doll pose ------------------------------------------------
+
+    #[test]
+    fn poses_0_to_3_are_always_valid() {
+        // TEDisplayDoll.cs:138-141: (uint)testedPose <= 3.
+        for p in 0..=3u8 {
+            assert!(doll_pose_valid(p, None));
+        }
+        // A use pose needs the misc item's useStyle support.
+        assert!(!doll_pose_valid(4, None));
+        assert!(doll_pose_valid(4, Some(1)));
+        assert!(!doll_pose_valid(8, Some(12))); // useStyle 12 stops at Use3
+        assert!(doll_pose_valid(8, Some(5)));
+        assert!(!doll_pose_valid(9, Some(1))); // out of the enum
+    }
+
+    #[test]
+    fn the_swing_use_fractions_match_the_register_calls() {
+        // TEDisplayDoll.cs:56-60.
+        let rows = supported_use_poses(1);
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0].item_anim_percent, 1.0);
+        assert_eq!(rows[3].item_anim_percent, 0.4143);
+        assert_eq!(rows[4].item_anim_percent, 0.2);
+        // The gun ladder's aim radians (:64-68).
+        let gun = supported_use_poses(5);
+        assert_eq!(gun[0].item_aim_radians, Some(-std::f32::consts::PI / 2.0));
+        assert_eq!(gun[3].item_aim_radians, Some(0.7853981));
+    }
+
+    #[test]
+    fn standing_doll_faces_left_and_stands_bottom_centred() {
+        // TEDisplayDoll.cs:349,408-410,454 — frameX 0, no mount, pose 0.
+        let d = display_doll_draw(0, 0, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(d.direction, -1);
+        assert!(d.male);
+        assert_eq!(d.pose, DollPose::Standing);
+        assert_eq!(d.velocity, [0.0, 0.0]);
+        // (10+1)*16 - 10 = 166; (20+3)*16 - 42 - 6 = 320.
+        assert_eq!(d.position, [166.0, 320.0]);
+        assert_eq!(d.item_animation, 0);
+    }
+
+    #[test]
+    fn frame_36_faces_right_and_frame_72_is_the_womannequin() {
+        // TEDisplayDoll.cs:352-359.
+        let d = display_doll_draw(0, 36, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(d.direction, 1);
+        assert!(d.male);
+        let w = display_doll_draw(0, 72, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(w.direction, -1); // 72 % 72 == 0
+        assert!(!w.male);
+    }
+
+    #[test]
+    fn walking_pins_leg_row_9_and_velocity_direction() {
+        // TEDisplayDoll.cs:411-415.
+        let d = display_doll_draw(3, 0, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(d.pose, DollPose::Walking);
+        assert_eq!(d.velocity, [-1.0, 0.0]);
+        assert_eq!(d.leg_frame_row, 9);
+    }
+
+    #[test]
+    fn sitting_lifts_14_and_jumping_falls() {
+        // TEDisplayDoll.cs:416-423.
+        let s = display_doll_draw(1, 0, -1, None, 20.0, 42.0, 10, 20);
+        assert!(s.sitting);
+        assert_eq!(s.sit_lift, 14.0);
+        assert_eq!(s.position[1], 334.0); // 320 + 14
+        let j = display_doll_draw(2, 0, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(j.velocity, [0.0, 1.0]);
+    }
+
+    #[test]
+    fn a_mount_forces_sitting_and_jumping_to_standing() {
+        // TEDisplayDoll.cs:398-405.
+        let d = display_doll_draw(1, 0, 3, None, 20.0, 42.0, 10, 20);
+        assert_eq!(d.pose, DollPose::Standing);
+        assert_eq!(d.mount_type, 3);
+        let j = display_doll_draw(2, 0, 3, None, 20.0, 42.0, 10, 20);
+        assert_eq!(j.pose, DollPose::Standing);
+        // Walking survives the mount.
+        let w = display_doll_draw(3, 0, 3, None, 20.0, 42.0, 10, 20);
+        assert_eq!(w.pose, DollPose::Walking);
+    }
+
+    #[test]
+    fn an_invalid_use_pose_falls_to_standing() {
+        // TEDisplayDoll.cs:394-397 — pose 4 with no misc item.
+        let d = display_doll_draw(4, 0, -1, None, 20.0, 42.0, 10, 20);
+        assert_eq!(d.pose, DollPose::Standing);
+        assert_eq!(d.item_animation, 0);
+    }
+
+    #[test]
+    fn a_use_pose_sets_the_1000_tick_animation_and_aim() {
+        // TEDisplayDoll.cs:437-447 — useStyle 5, Use4 (aim +0.7853981),
+        // direction -1 negates the aim.
+        let d = display_doll_draw(7, 0, -1, Some(5), 20.0, 42.0, 10, 20);
+        assert_eq!(d.pose, DollPose::Use4);
+        assert_eq!(d.item_animation_max, 1000);
+        assert_eq!(d.item_animation, 500);
+        assert_eq!(d.item_rotation, -0.7853981);
+        // Facing right keeps the aim sign.
+        let r = display_doll_draw(7, 36, -1, Some(5), 20.0, 42.0, 10, 20);
+        assert_eq!(r.item_rotation, 0.7853981);
+        // The swing family's Use2 is 0.8 of 1000.
+        let s = display_doll_draw(5, 0, -1, Some(1), 20.0, 42.0, 10, 20);
+        assert_eq!(s.item_animation, 800);
+        assert_eq!(s.item_rotation, 0.0);
+    }
+
+    // -- the hat rack ----------------------------------------------------------
+
+    #[test]
+    fn hat_rack_anchor_and_double_direction_flip() {
+        // TEHatRack.cs:168-199 — frameX 0: direction -1, first hat draws
+        // at +1 (the :185 flip), second at -1 (the :198 flip back).
+        let h = hat_rack_draw(0, 20.0, 42.0, 10, 20);
+        // anchor = (11.5*16, 24*16) = (184, 384).
+        assert_eq!(h.anchor, [184.0, 384.0]);
+        assert_eq!(h.direction, 1);
+        // hat0: 184 - 10 + 14 = 188; 384 - 48 - 2 = 334.
+        assert_eq!(h.hat0_pos, [188.0, 334.0]);
+        // hat1: 184 - 10 - 12 = 162; 384 - 48 + 16 = 352.
+        assert_eq!(h.hat1_pos, [162.0, 352.0]);
+    }
+
+    #[test]
+    fn hat_rack_frame_54_faces_the_other_way() {
+        // TEHatRack.cs:170-173: frameX % 216 == 54 → direction +1.
+        let h = hat_rack_draw(54, 20.0, 42.0, 10, 20);
+        assert_eq!(h.direction, -1);
+        assert_eq!(h.hat0_pos, [160.0, 334.0]); // 184 - 10 - 14
+        assert_eq!(h.hat1_pos, [186.0, 352.0]); // 184 - 10 + 12
     }
 }
