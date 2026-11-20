@@ -5,10 +5,10 @@
 //! humanoid town group, 355-366 are wave C (`npc_findframe_c.rs`,
 //! `task/W4-d48-findframe-high-1`), 368/369 the town group, 370-373 the
 //! fishron family, 376 the SleepingAngler arm — so the second gap is
-//! exactly: **367, 374, 375, 377, 378, 379, 380, 430, 431, 432, 433,
-//! 434**. This commit carries the FIRST 6 (367/374/375/377/378/379);
-//! 380 + the armed zombies ride the next commit. The next gap after
-//! the 12 (435 ArmedZombieTwiggy onward) rides a later wave.
+//! exactly **367, 374, 375, 377, 378, 379, 380, 430, 431, 432, 433,
+//! 434**. Commit 1 carried the first 6 (367/374/375/377/378/379); this
+//! adds 380 + the five armed zombies 430-434. The next gap (435
+//! ArmedZombieTwiggy onward) rides a later wave.
 //!
 //! Shape: the kinds are NOT in `NpcKind` yet (the roster wave
 //! `task/W4-d39-npc-kinds-351-420` owns them), so — the
@@ -42,7 +42,7 @@
 // in `NpcKind` yet) — the `npc_findframe_b.rs` precedent.
 #![allow(dead_code)]
 
-/// The wave-D kinds, keyed by their VANILLA `NPC.type`
+/// The 12 wave-D kinds, keyed by their VANILLA `NPC.type`
 /// (`ID/NPCID.cs`'s `public const short` rows — the port-local
 /// `NpcKind` ids do not exist for them yet).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,6 +60,19 @@ pub enum FindFrameKind {
     ChatteringTeethBomb,
     /// `NPCID.CultistArcherBlue` = 379 — `case 379/380`.
     CultistArcherBlue,
+    /// `NPCID.CultistArcherWhite` = 380 — `case 379/380`.
+    CultistArcherWhite,
+    /// `NPCID.ArmedZombie` = 430 — the `case 430..436/591` group.
+    ArmedZombie,
+    /// `NPCID.ArmedZombieEskimo` = 431 — the group.
+    ArmedZombieEskimo,
+    /// `NPCID.ArmedZombiePincussion` = 432 — the group (the C# const
+    /// spells it "Pincussion", `NPCID.cs`).
+    ArmedZombiePincussion,
+    /// `NPCID.ArmedZombieSlimed` = 433 — the group.
+    ArmedZombieSlimed,
+    /// `NPCID.ArmedZombieSwamp` = 434 — the group.
+    ArmedZombieSwamp,
 }
 
 impl FindFrameKind {
@@ -72,6 +85,12 @@ impl FindFrameKind {
             Self::Grasshopper => 377,
             Self::ChatteringTeethBomb => 378,
             Self::CultistArcherBlue => 379,
+            Self::CultistArcherWhite => 380,
+            Self::ArmedZombie => 430,
+            Self::ArmedZombieEskimo => 431,
+            Self::ArmedZombiePincussion => 432,
+            Self::ArmedZombieSlimed => 433,
+            Self::ArmedZombieSwamp => 434,
         }
     }
 
@@ -89,6 +108,14 @@ impl FindFrameKind {
             Self::Grasshopper => 2,
             Self::ChatteringTeethBomb => 4,
             Self::CultistArcherBlue => 12,
+            // Main.cs:67122 (entries 380-389): 380 = 12.
+            Self::CultistArcherWhite => 12,
+            // Main.cs:67127 (entries 430-439): 430-436 = 7 each.
+            Self::ArmedZombie
+            | Self::ArmedZombieEskimo
+            | Self::ArmedZombiePincussion
+            | Self::ArmedZombieSlimed
+            | Self::ArmedZombieSwamp => 7,
         }
     }
 }
@@ -124,7 +151,8 @@ pub struct FrameInput {
     /// arms that gate on `direction == 1` / `== -1`).
     pub direction: i32,
     /// `NPC.ai[2]` — the cultist archers' draw frame (1..5, `> 0` rides
-    /// rows 2..6, `NPC.cs:71590-71596`).
+    /// rows 2..6, `NPC.cs:71590-71596`) and the armed zombies' swing
+    /// band (`< 5/10/15` picks rows 3/4/5/6, `NPC.cs:70887-70905`).
     pub ai2: f32,
 }
 
@@ -258,7 +286,7 @@ pub fn find_frame_high2(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput)
         // idle snaps row 0 WITHOUT zeroing the counter; the walk floor
         // is row 7, the `|vx| * 2` accumulator steps at > 6 and wraps
         // at `npcFrameCount` (12) back to 7. Air pins row 1, counter 0.
-        FindFrameKind::CultistArcherBlue => {
+        FindFrameKind::CultistArcherBlue | FindFrameKind::CultistArcherWhite => {
             if i.vy == 0.0 {
                 if i.direction == 1 {
                     s.sprite_dir = 1;
@@ -290,6 +318,66 @@ pub fn find_frame_high2(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput)
                 s.row = 1;
             }
         }
+        // `case 430..436 : case 591` (`NPC.cs:70879-70951`): the armed
+        // zombies' swing band first — `ai[2] > 0` picks rows 3/4/5/6
+        // at the < 5/10/15 ladder and breaks BEFORE any flip. Then the
+        // grounded one-sided flips; the air OR counter-motion row-2
+        // pin (`direction == -1 && vx > 0` / `== 1 && vx < 0`); the
+        // idle row 0; then the wave-A zombie stride — the `|vx|`
+        // accumulator walks the 8/16/24/32 bands over rows 0/1/2/1 and
+        // at >= 32 only ZEROES the counter, holding the row (`:70947-
+        // 70950`, the reset-tick row-hold quirk).
+        FindFrameKind::ArmedZombie
+        | FindFrameKind::ArmedZombieEskimo
+        | FindFrameKind::ArmedZombiePincussion
+        | FindFrameKind::ArmedZombieSlimed
+        | FindFrameKind::ArmedZombieSwamp => {
+            if i.ai2 > 0.0 {
+                s.row = if i.ai2 < 5.0 {
+                    3
+                } else if i.ai2 < 10.0 {
+                    4
+                } else if i.ai2 < 15.0 {
+                    5
+                } else {
+                    6
+                };
+                return;
+            }
+            if i.vy == 0.0 {
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+            }
+            if i.vy != 0.0
+                || (i.direction == -1 && i.vx > 0.0)
+                || (i.direction == 1 && i.vx < 0.0)
+            {
+                s.counter = 0.0;
+                s.row = 2;
+                return;
+            }
+            if i.vx == 0.0 {
+                s.counter = 0.0;
+                s.row = 0;
+                return;
+            }
+            s.counter += i.vx.abs();
+            if s.counter < 8.0 {
+                s.row = 0;
+            } else if s.counter < 16.0 {
+                s.row = 1;
+            } else if s.counter < 24.0 {
+                s.row = 2;
+            } else if s.counter < 32.0 {
+                s.row = 1;
+            } else {
+                s.counter = 0.0;
+            }
+        }
     }
 }
 
@@ -297,7 +385,7 @@ pub fn find_frame_high2(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput)
 /// `npc_findframe_a::find_frame_kind` shape, keyed on the vanilla id
 /// because the `NpcKind` rows do not exist yet — the roster wave
 /// `task/W4-d39-npc-kinds-351-420` owns them). Returns `None` for every
-/// id outside this wave's kinds.
+/// id outside this wave's 12.
 pub fn find_frame_kind_high2(vanilla_type: i16) -> Option<FindFrameKind> {
     Some(match vanilla_type {
         367 => FindFrameKind::Scorpion,
@@ -306,6 +394,12 @@ pub fn find_frame_kind_high2(vanilla_type: i16) -> Option<FindFrameKind> {
         377 => FindFrameKind::Grasshopper,
         378 => FindFrameKind::ChatteringTeethBomb,
         379 => FindFrameKind::CultistArcherBlue,
+        380 => FindFrameKind::CultistArcherWhite,
+        430 => FindFrameKind::ArmedZombie,
+        431 => FindFrameKind::ArmedZombieEskimo,
+        432 => FindFrameKind::ArmedZombiePincussion,
+        433 => FindFrameKind::ArmedZombieSlimed,
+        434 => FindFrameKind::ArmedZombieSwamp,
         _ => return None,
     })
 }
@@ -328,8 +422,8 @@ mod tests {
         out
     }
 
-    /// The batch-1 `Main.npcFrameCount` rows, counted entry-by-entry out
-    /// of the `Main.cs:67082` initializer (the line/slot arithmetic in
+    /// The 12 `Main.npcFrameCount` rows, counted entry-by-entry out of
+    /// the `Main.cs:67082` initializer (the line/slot arithmetic in
     /// `frame_count`'s doc) and cross-checked against the port's
     /// verbatim `NPC_FRAME_COUNT` table.
     #[test]
@@ -341,6 +435,12 @@ mod tests {
             (FindFrameKind::Grasshopper, 377, 2),
             (FindFrameKind::ChatteringTeethBomb, 378, 4),
             (FindFrameKind::CultistArcherBlue, 379, 12),
+            (FindFrameKind::CultistArcherWhite, 380, 12),
+            (FindFrameKind::ArmedZombie, 430, 7),
+            (FindFrameKind::ArmedZombieEskimo, 431, 7),
+            (FindFrameKind::ArmedZombiePincussion, 432, 7),
+            (FindFrameKind::ArmedZombieSlimed, 433, 7),
+            (FindFrameKind::ArmedZombieSwamp, 434, 7),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -352,11 +452,12 @@ mod tests {
             );
             assert_eq!(find_frame_kind_high2(vanilla), Some(kind), "{kind:?} seam");
         }
-        // The band edges stay outside this batch (d48 owns 355-366,
-        // batch 2 owns 380 + 430-434).
+        // The band edges stay outside this wave (d48 owns 355-366,
+        // the next wave owns 435+).
         assert_eq!(find_frame_kind_high2(366), None);
         assert_eq!(find_frame_kind_high2(376), None);
-        assert_eq!(find_frame_kind_high2(380), None);
+        assert_eq!(find_frame_kind_high2(435), None);
+        assert_eq!(find_frame_kind_high2(591), None);
     }
 
     /// `NPC.cs:76833-76849`: at vx = 1 the accumulator gains 2 a tick
@@ -489,12 +590,14 @@ mod tests {
     /// even when direction is 0 (the plain copy, not the gated ifs).
     #[test]
     fn cultist_archer_draw_band_pins_the_ai2_row() {
-        let mut s = FrameState { counter: 5.0, sprite_dir: -1, ..Default::default() };
-        let mut i = input(0.0, 0.0);
-        i.direction = 0;
-        i.ai2 = 3.0;
-        find_frame_high2(FindFrameKind::CultistArcherBlue, &mut s, &i);
-        assert_eq!((s.row, s.counter, s.sprite_dir), (4, 0.0, 0));
+        for kind in [FindFrameKind::CultistArcherBlue, FindFrameKind::CultistArcherWhite] {
+            let mut s = FrameState { counter: 5.0, sprite_dir: -1, ..Default::default() };
+            let mut i = input(0.0, 0.0);
+            i.direction = 0;
+            i.ai2 = 3.0;
+            find_frame_high2(kind, &mut s, &i);
+            assert_eq!((s.row, s.counter, s.sprite_dir), (4, 0.0, 0));
+        }
     }
 
     /// `NPC.cs:71597-71620`: the idle snaps row 0 but KEEPS the
@@ -511,7 +614,54 @@ mod tests {
         assert_eq!(rows[15], 11);
         assert_eq!(rows[19], 7); // the >= 12 wrap back to the floor
         let mut s = FrameState { counter: 9.0, ..Default::default() };
-        find_frame_high2(FindFrameKind::CultistArcherBlue, &mut s, &input(3.0, -1.0));
+        find_frame_high2(FindFrameKind::CultistArcherWhite, &mut s, &input(3.0, -1.0));
         assert_eq!((s.row, s.counter), (1, 0.0));
+    }
+
+    /// `NPC.cs:70887-70905`: the swing ladder picks 3/4/5/6 at the
+    /// < 5/10/15 boundaries and breaks BEFORE the flip — the sprite
+    /// keeps its old value even with a unit direction.
+    #[test]
+    fn armed_zombie_swing_ladder_and_early_break() {
+        let mut s = FrameState { sprite_dir: 1, ..Default::default() };
+        let mut i = input(1.0, 0.0);
+        i.direction = -1;
+        for (ai2, row) in [(1.0, 3u32), (4.9, 3), (5.0, 4), (9.9, 4), (10.0, 5), (14.9, 5), (15.0, 6)] {
+            i.ai2 = ai2;
+            find_frame_high2(FindFrameKind::ArmedZombie, &mut s, &i);
+            assert_eq!(s.row, row, "ai2 {ai2}");
+            assert_eq!(s.sprite_dir, 1, "the ladder breaks before the flip");
+        }
+    }
+
+    /// `NPC.cs:70918-70928`: the air OR counter-motion pins row 2 with
+    /// the counter zeroed; the plain idle pins row 0.
+    #[test]
+    fn armed_zombie_counter_motion_pins_row_two() {
+        let mut s = FrameState::default();
+        let mut i = input(1.0, 0.0); // moving right...
+        i.direction = -1; // ...while facing left
+        find_frame_high2(FindFrameKind::ArmedZombieEskimo, &mut s, &i);
+        assert_eq!((s.row, s.counter), (2, 0.0));
+        i.direction = 1;
+        i.vx = -1.0; // the mirrored arm
+        find_frame_high2(FindFrameKind::ArmedZombieSlimed, &mut s, &i);
+        assert_eq!(s.row, 2);
+        i.vy = -3.0;
+        i.vx = 1.0;
+        find_frame_high2(FindFrameKind::ArmedZombieSwamp, &mut s, &i);
+        assert_eq!(s.row, 2); // airborne
+        find_frame_high2(FindFrameKind::ArmedZombiePincussion, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+    }
+
+    /// `NPC.cs:70930-70950`: at vx = 4 the |vx| accumulator walks the
+    /// 8/16/24/32 bands 0/1/2/1 and the >= 32 tick only zeroes the
+    /// counter — the row HOLDS at 1 for the reset tick (the wave-A
+    /// zombie quirk), then the next tick restarts at row 0.
+    #[test]
+    fn armed_zombie_stride_holds_the_row_on_the_reset_tick() {
+        let rows = rows_over(FindFrameKind::ArmedZombie, input(4.0, 0.0), 9);
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 1, 1, 1, 0]);
     }
 }
