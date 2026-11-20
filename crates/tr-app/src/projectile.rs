@@ -10585,11 +10585,12 @@ impl Projectile {
     /// `AI()`'s aiStyle-133 block (`Projectile.cs:36435-36498`) — the Dark
     /// Mage raise marker (673) and the heal mark (674).
     ///
-    /// The port's kind set carries the 673 only (the 674 has no `proj_data`
-    /// row), so the arm ports the marker's ramp: the summon cue at the 70th
+    /// The 673 arm ports the marker's ramp: the summon cue at the 70th
     /// tick (SKIPPED — no tracked-sound layer), the counter, the opacity
-    /// curve and the kill past 80.
-    fn ai_dark_mage_raise(&mut self, world: &World) {
+    /// curve and the kill past 80. The 674 arm (W4-d14) is the 40-tick
+    /// heal scan: every live NPC with damage >= 1 / lifeMax >= 30 inside
+    /// 1000 px except the Dark Mages (564/565) heals min(500, missing).
+    fn ai_dark_mage_raise(&mut self, world: &World, npcs: &mut [Npc]) {
         if self.kind == DARK_MAGE_MARKER {
             // `:36438-36440` — the summon cue at `ai[0] == 70` (SKIPPED: no
             // tracked-sound layer in the pool).
@@ -10619,8 +10620,43 @@ impl Projectile {
             // The C# assigns it after the kill arm, so the dying tick lands
             // on the value 0 (the alpha 255).
             self.alpha = alpha_of(opacity);
+        } else if self.kind == DARK_MAGE_HEAL {
+            // `:36456-36497` — the 674 heal arm (W4-d14): the first-tick cue
+            // (SKIPPED — no tracked-sound layer), the counter, then at 40 the
+            // 1000-px scan heals every live NPC with damage >= 1 and lifeMax
+            // >= 30 except the Dark Mages themselves (564/565), capped at
+            // 500 and at the missing life; the marker dies after the scan.
+            self.ai[0] += 1.0;
+            if self.ai[0] >= 40.0 {
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                for n in npcs.iter_mut() {
+                    // `:36481` — `nPC.active && damage >= 1 && lifeMax >= 30
+                    // && Distance <= 1000 && type != 564 && type != 565`.
+                    // The port's liveness is `hp > 0` (the vec carries no
+                    // active field — `can_be_chased_by`'s convention).
+                    let damage = n.damage_override.unwrap_or(n.kind.contact_damage());
+                    if n.hp > 0
+                        && damage >= 1
+                        && n.max_hp >= 30
+                        && center.distance(npc_center(n)) <= 1000.0
+                        && !matches!(n.kind, NpcKind::DD2DarkMage | NpcKind::DD2DarkMageT3)
+                    {
+                        // `:36483-36494` — `num985 = min(500, lifeMax - life)`;
+                        // only a positive heal lands (`HealEffect` + netUpdate
+                        // are the combat-text/net layers — the hp write is the
+                        // state).
+                        let heal = 500.min(n.max_hp - n.hp);
+                        if heal > 0 {
+                            n.hp += heal;
+                            n.net_update = true;
+                        }
+                    }
+                }
+                // `:36497` — `this.Kill()`.
+                self.active = false;
+                self.time_left = 0;
+            }
         }
-        // The 674's heal arm (`:36456-36498`) has no ported row.
         // `HandleMovement`: the marker's row keeps `tileCollide = false`, so
         // the position simply follows the (zero) velocity.
         self.kill_step(world);
@@ -17546,7 +17582,7 @@ impl ProjectilePool {
                         70 => self.slots[i].ai_flairon_bubble(world, &npcs[..], rng),
                         // The aiStyle-133 Dark Mage raise marker
                         // (`:36435-36453`): the opacity ramp and the kill.
-                        133 => self.slots[i].ai_dark_mage_raise(world),
+                        133 => self.slots[i].ai_dark_mage_raise(world, npcs),
                         // The aiStyle-187 Insanity shadow (`:42502-42591`):
                         // the four variation choreographies and the alpha
                         // ramp.
@@ -40131,7 +40167,7 @@ mod s1_d_4b_1_tests {
         // Tick 1: `ai[0] = 1` → the opacity is 1/20, and the C#'s
         // `Opacity` is a property over `alpha` (`Projectile.cs:540-549`):
         // the write lands on `alpha = (int)((1 - 0.05) * 255) = 242`.
-        p.ai_dark_mage_raise(&w);
+        p.ai_dark_mage_raise(&w, &mut []);
         assert_eq!(p.ai[0], 1.0);
         assert_eq!(p.alpha, 242, "the ramp opens on the alpha");
         assert!(
@@ -40140,30 +40176,77 @@ mod s1_d_4b_1_tests {
         );
         // Tick 20: `ai[0] = 20` → the opacity is 1 → the alpha 0.
         for _ in 0..19 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 20.0);
         assert_eq!(p.alpha, 0, "the ramp is open");
         // Tick 60: the opacity holds at 1.
         for _ in 0..40 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 60.0);
         assert_eq!(p.alpha, 0, "the ramp holds");
         // Tick 70: the descending range has fallen to 0.5 → the alpha 127.
         for _ in 0..10 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 70.0);
         assert_eq!(p.alpha, 127, "the ramp closes ({})", p.alpha);
         // Tick 80: the marker dies and the opacity write lands on 0 (the
         // alpha 255).
         for _ in 0..10 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 80.0);
         assert!(!p.active, "the marker dies at the 80th tick");
         assert_eq!(p.alpha, 255, "the dying tick lands on the opacity 0");
+    }
+
+    /// W4-d14 — the 674 heal arm (`Projectile.cs:36465-36497`): the counter
+    /// runs to 40, then the scan heals min(500, missing) on every live NPC
+    /// with damage >= 1 / lifeMax >= 30 inside 1000 px except the Dark Mages,
+    /// and the marker dies. Code-only: WRITTEN NOT RUN.
+    #[test]
+    fn w4_d14_the_dark_mage_heal_scans_at_forty_and_dies() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: DARK_MAGE_HEAL,
+            w: 10.0,
+            h: 10.0,
+            alpha: 255,
+            time_left: 900,
+            pos: Vec2::new(320.0, 400.0),
+            ..Default::default()
+        };
+        // A wounded zombie (damage >= 1, lifeMax 40 >= 30) at the marker,
+        // a full-health one, a Dark Mage (excluded) and a distant one.
+        let mut wounded = Npc::new(NpcKind::Zombie, 320.0, 400.0, 1, 0.0);
+        wounded.max_hp = 40;
+        wounded.hp = 10;
+        let mut full = Npc::new(NpcKind::Zombie, 330.0, 400.0, 1, 0.0);
+        full.max_hp = 40;
+        full.hp = 40;
+        let mut mage = Npc::new(NpcKind::DD2DarkMage, 320.0, 400.0, 1, 0.0);
+        mage.max_hp = 800;
+        mage.hp = 100;
+        let mut far = Npc::new(NpcKind::Zombie, 1400.0, 400.0, 1, 0.0);
+        far.max_hp = 40;
+        far.hp = 10;
+        let mut npcs = [wounded, full, mage, far];
+        for _ in 0..39 {
+            p.ai_dark_mage_raise(&w, &mut npcs);
+        }
+        assert_eq!(p.ai[0], 39.0);
+        assert!(p.active, "the scan has not fired yet");
+        assert_eq!(npcs[0].hp, 10, "no heal before 40");
+        p.ai_dark_mage_raise(&w, &mut npcs);
+        assert_eq!(p.ai[0], 40.0);
+        assert!(!p.active, ":36497 — the marker dies after the scan");
+        assert_eq!(npcs[0].hp, 40, "min(500, 40-10) = 30 heals to full");
+        assert_eq!(npcs[1].hp, 40, "the missing-life cap: no overheal");
+        assert_eq!(npcs[2].hp, 100, ":36481 — the 564/565 exclusion");
+        assert_eq!(npcs[3].hp, 10, "the 1000-px distance gate");
     }
 
     /// S1-D-4b-1 — the aiStyle-187 Insanity shadow

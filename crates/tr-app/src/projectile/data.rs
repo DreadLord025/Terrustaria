@@ -352,6 +352,10 @@ pub const DD2_BOMB: u16 = 681;
 /// Mage's summon/heal casts (`Projectile.cs:7208-7220`: 10x10, aiStyle
 /// 133, alpha 255, tileCollide false, timeLeft 900).
 pub const DARK_MAGE_MARKER: u16 = 673;
+/// `ProjectileID.DD2DarkMageHeal` (674) — the heal cast's ground marker,
+/// the 673 row's twin (`Projectile.cs:7208-7220`); the AI()'s aiStyle-133
+/// block's 40-tick heal scan is `:36465-36497`.
+pub const DARK_MAGE_HEAL: u16 = 674;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
@@ -2579,8 +2583,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
-            // `penetrate = -1`, no tile collision, water-ignoring.
-            DARK_MAGE_MARKER => (
+            // `penetrate = -1`, no tile collision, water-ignoring. The 674
+            // heal marker shares the row verbatim (the `||` group); W4-d14.
+            DARK_MAGE_MARKER | DARK_MAGE_HEAL => (
                 10.0,
                 10.0,
                 133,
@@ -4219,7 +4224,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d14 — `Projectile.cs:7215`: the Dark Mage cast markers
+            // (673/674) set `ignoreWater = true` (the 673 row's flag was
+            // missing from the overlay; the 674 heal twin shares it).
+            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
