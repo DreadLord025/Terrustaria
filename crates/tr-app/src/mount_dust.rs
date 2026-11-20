@@ -828,9 +828,10 @@ mod tests {
     }
 
     /// W4-e4 — sites 3939/4000: the 20-dust rings spend 1 phase + 20 ×
-    /// (internals + Next(2) + 2 floats); 228 rides the tweak chain (7),
-    /// 6 too (7) → 1 + 20×10 = 201 each. The vx > 0 X-flip and the
-    /// Next(2) halving are mirrored per dust.
+    /// (internals + Next(2) + 1 scale float); 228 rides the tweak chain
+    /// (7), 6 too (7), fadeIn is the constant 0 (no draw) → 1 + 20×9 =
+    /// 181 each. The vx > 0 X-flip and the Next(2) halving are mirrored
+    /// per dust (twin-pool parity, so the count is implicit).
     #[test]
     fn w4_e4_wolf_and_witch_rings_mirror_the_flip_and_halve() {
         let w = world();
