@@ -2104,6 +2104,106 @@ impl NpcKind {
         })
     }
 
+    /// `NPC.noGravity` as `StrikeNPC_Inner`'s knockback reads it
+    /// (`NPC.cs:81453`/`:81465`) — the Y-pop's 0.5-vs-0.75 selector and the
+    /// weak-hit branch's coefficient. The value is the LIVE flag at strike
+    /// time: the `SetDefaults` row plus the AI-head writes. The port models
+    /// the AI-head sources that reach a knockback-relevant kind:
+    /// `AI_002_FloatingEye` sets it for every eye (`NPC.cs:52280`), the
+    /// aiStyle-14 bat block for the bat family + Voodoo Demon
+    /// (`NPC.cs:22851`), and the aiStyle-49 head for the Angry Nimbus
+    /// (`NPC.cs:31589`). The Pumpkin/Frost tables carry their own rows.
+    /// The CONDITIONAL AI writes (the aiStyle-107 DD2 charge state
+    /// `:63016`/`:63797`/`:63956`, the Goblin Summoner's ghost `:56497` —
+    /// which also zeroes kb) are live state the static table does not model
+    /// (ANALYSIS "The player→NPC strike mechanics").
+    ///
+    /// Only the kinds with `knockBackResist > 0` matter here (the knockback
+    /// gate refuses resist 0); the flyers below are the ones a strike can
+    /// actually push. The grounded walkers keep the `SetDefaults` false.
+    pub fn no_gravity(self) -> bool {
+        // The Pumpkin/Frost families carry their own SetDefaults rows.
+        if let Some(d) = self.pumpkin_moon_defaults() {
+            return d.no_gravity;
+        }
+        if let Some(d) = self.frost_moon_defaults() {
+            return d.no_gravity;
+        }
+        match self {
+            // AI_002_FloatingEye's head write (`NPC.cs:52280`) — every eye.
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => true,
+            // The aiStyle-14 bat block (`NPC.cs:22851`) — the bat family and
+            // the Voodoo Demon (66, `NPC.cs:9629`).
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => true,
+            // The aiStyle-5 flyers' SetDefaults rows: Eater of Souls (6,
+            // `:8744`), Hornet (42, `:9291`), Meteor Head (23, `:9073`),
+            // Servant of Cthulhu (5, `:8730`), the volley bees (210/211,
+            // `:11707`/`:11720`).
+            NpcKind::EaterOfSouls
+            | NpcKind::Hornet
+            | NpcKind::MeteorHead
+            | NpcKind::ServantOfCthulhu
+            | NpcKind::Bee
+            | NpcKind::BeeSmall => true,
+            // The Creeper (267, `NPC.cs:12466`), the Probe (139, `:10731`),
+            // the Martian Drone (388, `:13948`), the Drippler (490,
+            // `:14620`), the Poltergeist (330, `:13190`), the Dungeon
+            // Spirit (288, `:12751`), the Piranha (58, `:9505` — 57 is the
+            // CorruptGoldfish) and the Shark (65, `:9612`).
+            NpcKind::Creeper
+            | NpcKind::Probe
+            | NpcKind::MartianDrone
+            | NpcKind::Drippler
+            | NpcKind::Poltergeist
+            | NpcKind::DungeonSpirit
+            | NpcKind::Piranha
+            | NpcKind::Shark => true,
+            // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
+            // noGravity matters to the knockback (the leeches are resist 0).
+            NpcKind::Hungry => true,
+            // W3-i11 census completion — the remaining ported kinds whose
+            // `SetDefaults` writes `noGravity = true` AND `knockBackResist > 0`
+            // (the Y-pop's 0.5 selector reaches them). The Goldfish (55,
+            // `:9462`, kb 0.5 `:9471`), the Brain of Cthulhu (266, `:12450`,
+            // kb 0.45 `:12449`), the Plantera's Hook/Tentacle (263/264,
+            // `:12399`/`:12420`, no kb row → the class default 1f `:8533`).
+            NpcKind::Goldfish
+            | NpcKind::BrainOfCthulhu
+            | NpcKind::PlanterasHook
+            | NpcKind::PlanterasTentacle => true,
+            // The Stardust pillars' flyers: the Cell Big/Small (405/406,
+            // `:15033`/`:15047`, kb 0.3/0.4), the Jellyfish Big (407,
+            // `:15097`, kb 0.03), the Solar Corite (418, `:15378`, kb 0.2),
+            // the Nebula Floater (420, `:15169`, kb 0.5) and the Brain
+            // Suckler (421, `:15141`, kb 0.5).
+            NpcKind::StardustCellBig
+            | NpcKind::StardustCellSmall
+            | NpcKind::StardustJellyfishBig
+            | NpcKind::SolarCorite
+            | NpcKind::NebulaFloater
+            | NpcKind::BrainSuckler => true,
+            // The DD2 flyers: the Wyvern T1/T2/T3 (558/559/560,
+            // `:16217`/`:16235`/`:16253`, kb 0.2/0.2/0.05) and the Kobold
+            // Flyer T2/T3 (574/575, `:16491`/`:16509`, kb 0.4/0.25).
+            NpcKind::DD2WyvernT1
+            | NpcKind::DD2WyvernT2
+            | NpcKind::DD2WyvernT3
+            | NpcKind::DD2KoboldFlyerT2
+            | NpcKind::DD2KoboldFlyerT3 => true,
+            // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
+            // aiStyle-49 AI head sets `noGravity = true` every tick
+            // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            NpcKind::AngryNimbus => true,
+            _ => false,
+        }
+    }
+
     /// The C#'s `aiStyle` for this kind - the first dispatch axis of
     /// `NPC.AI` (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain).
     /// Every row is the `SetDefaults` assignment for the kind's vanilla

@@ -3,6 +3,8 @@
 
 mod accessory_defense;
 mod ammo;
+mod bow_launch;
+mod gun_launch;
 mod angler;
 mod armor_sets;
 mod app;
@@ -54,6 +56,7 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+mod melee_swing;
 mod menu;
 mod minecart;
 mod mount;
@@ -164,9 +167,14 @@ mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;
+mod hotbar;
 mod hurt_modifiers;
+// S1-P-i10: the melee on-hit debuff infliction (Player.StatusToNPC,
+// Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
+mod melee_on_hit;
 mod player;
 mod player_file;
+mod potions;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
@@ -179,6 +187,7 @@ mod projectile_ai_moonlord;
 
 
 mod projectile_ai001_a;
+mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
 mod projectile_ai067_b;
@@ -197,6 +206,19 @@ mod projectile_ai_light_items;
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
 // witness tests are WRITTEN NOT RUN).
 mod projectile_ai_golf;
+// S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
+// 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
+mod projectile_ai_darts;
+// S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
+// arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
+// 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.
+mod projectile_special_bullets;
+// S1-P-i28: the thrown-consumable projectile family's missing flight arms
+// (aiStyle 68 molotov / 113 bone javelin / 36 bees / the 507 javelin AI_001
+// arm) + the death hooks (water splash, beenade bee burst, molotov fires) and
+// the on-hit debuffs. The dispatch claim + the death-hook drain are wired in
+// projectile.rs (module doc + docs/ANALYSIS.md "The thrown consumables").
+mod projectile_ai_thrown;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
@@ -206,6 +228,10 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
+// thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
+// small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
+mod projectile_ai_spear;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /

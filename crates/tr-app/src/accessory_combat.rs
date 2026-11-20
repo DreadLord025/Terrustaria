@@ -15,9 +15,11 @@
 //!
 //! Deviations (also in ANALYSIS): `aggro` has no port field (no
 //! multiplayer aggro consumer — same precedent as the Scout Sling row
-//! in `player.rs`), and `autoReuseGlove`/`meleeScaleGlove` have no port
-//! fields or consumers yet (the Titan Glove row, `player.rs`), so those
-//! halves are documented and skipped. No RNG rides these arms.
+//! in `player.rs`), and `meleeScaleGlove` has no port field or consumer
+//! yet, so that half is documented and skipped. `autoReuseGlove` IS
+//! ported (S1-P-i12): the gloves grant it and `TryAllowingItemReuse`
+//! (`Player.cs:52905-52920`) reads it in the use path. No RNG rides
+//! these arms.
 
 use crate::player::Player;
 
@@ -83,11 +85,12 @@ fn putrid_scent(p: &mut Player) {
 fn flesh_knuckles(_p: &mut Player) {}
 
 /// The Power Glove (`Player.cs:15299-15305`): `kbGlove = true`,
-/// `autoReuseGlove = true`, `meleeScaleGlove = true` (the two glove
-/// flags have no port fields/consumers yet — skipped), `meleeSpeed +=
-/// 0.12f`.
+/// `autoReuseGlove = true` (the reuse gate `TryAllowingItemReuse`,
+/// `:52905-52920`), `meleeScaleGlove = true` (no port consumer yet —
+/// skipped), `meleeSpeed += 0.12f`.
 fn power_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
 }
 
@@ -95,6 +98,7 @@ fn power_glove(p: &mut Player) {
 /// rows plus `meleeDamage += 0.12f`.
 fn mechanical_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
     p.melee_damage += 0.12;
 }
@@ -107,16 +111,21 @@ fn mechanical_glove(p: &mut Player) {
 /// of the switch arm removed it (S1-C-12e dedupe).
 fn berserker_glove(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
 }
 
 /// The Fire Gauntlet (`Player.cs:15306-15314`): the Mechanical Glove's
-/// rows plus `magmaStone = true` (no port field/consumer yet — skipped;
-/// the on-hit fire debuff rides the hurt/melee pipeline, C-7).
+/// rows plus `magmaStone = true` (S1-P-i10 — the melee OnFire3 consumer
+/// is `melee_on_hit.rs::status_to_npc`, `:6552-6566`; the projectile
+/// consumers stay unported). `autoReuseGlove`/`meleeScaleGlove` have no
+/// port fields yet — skipped like the Mechanical Glove's arm.
 fn fire_gauntlet(p: &mut Player) {
     p.kb_glove = true;
+    p.auto_reuse_glove = true;
     p.melee_speed_bonus += 0.12;
     p.melee_damage += 0.12;
+    p.magma_stone = true;
 }
 
 /// The `ApplyEquipFunctional` seam for the combat/damage family: returns
@@ -310,12 +319,14 @@ mod tests {
         assert!(near(p.melee_damage, 1.0), "no meleeDamage row at :14411");
 
         // Fire Gauntlet (`Player.cs:15306-15314`): the Mechanical rows
-        // + the unported magma stone.
+        // + the magma stone flag (S1-P-i10 — the melee OnFire3 consumer
+        // is `melee_on_hit.rs`).
         let mut p = fresh();
         assert!(apply_combat_accessory(1343, &mut p));
         assert!(p.kb_glove);
         assert!(near(p.melee_speed_bonus, 0.12));
         assert!(near(p.melee_damage, 1.12));
+        assert!(p.magma_stone, "the gauntlet arms the magma stone (:15313)");
     }
 
     #[test]

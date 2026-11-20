@@ -194,12 +194,15 @@ pub(crate) struct YoyoBeamRequest {
 }
 
 /// What one yoyo AI tick hands back to the pool: the owner-wide lifetime
-/// sweep (`Projectile.cs:67764-67771`) and the Terrarian's beam request —
-/// both write across the pool's slot array.
+/// sweep (`Projectile.cs:67764-67771`), the Terrarian's beam request —
+/// both write across the pool's slot array — and the pose block's
+/// `player.ChangeDir` facing (`:67840`/`:67845`, the `FlailTick.facing`
+/// precedent).
 #[derive(Default)]
 struct YoyoTick {
     sweep: bool,
     beam: Option<YoyoBeamRequest>,
+    facing: Option<i32>,
 }
 
 /// One flail helper spawn — the family's `Projectile.NewProjectile` calls
@@ -279,13 +282,19 @@ struct FlailHit {
 }
 
 /// What one flail AI tick hands back to the pool: the family's helper
-/// spawn and the `player.ChangeDir` facing the C# writes mid-machine (the
+/// spawn, the `player.ChangeDir` facing the C# writes mid-machine (the
 /// port's facing is run-key driven, so the value rides out and the dispatch
-/// arm applies it after the AI pass).
+/// arm applies it after the AI pass — `None` on the ticks the C# never
+/// calls `ChangeDir`), the release's `ResetLocalNPCHitImmunity`
+/// (`Projectile.cs:43883` → `:43719-43722`, `Array.Clear(localNPCImmunity)`
+/// — the pool owns the immunity array, so the clear rides out as a flag)
+/// and the per-tick `player.itemRotation` write (`:44162-44167`).
 #[derive(Default)]
 struct FlailTick {
     spawn: Option<FlailSpawnRequest>,
     facing: Option<i32>,
+    reset_immunity: bool,
+    item_rotation: Option<f32>,
 }
 
 
@@ -473,8 +482,14 @@ pub struct Projectile {
     pub rot: f32,
     pub damage: i32,
     pub knock_back: f32,
-    /// The crit decision rolled at throw time (the roll rides the editing
-    /// pass's `UpdatePlayers` stream, not the projectile step's).
+    /// The crit decision. The C# rolls crit PER-HIT inside
+    /// `Damage_PVE_Inner` (`Projectile.cs:12883-12917`) on the
+    /// `UpdateProjectiles` stream — the damage walks compute it locally and
+    /// no longer read this field. A retained seam (S1-P-i11): the plain
+    /// `spawn`'s crit argument still lands here and `set_crit` still writes
+    /// it, but no production caller passes a non-false flag today; the whip
+    /// test's "never self-crits" witness reads it. The data-carrying spawn
+    /// leaves it false.
     pub crit: bool,
     /// `Projectile.friendly` (`:3115`): true = the player's shots (the pool's
     /// PVE pass hits NPCs), false = the hostile shots (the player-contact
@@ -560,6 +575,12 @@ pub struct Projectile {
     pub tile_collide: bool,
     /// `Projectile.arrow`.
     pub arrow: bool,
+    /// `Projectile.noDropItem` (`Projectile.cs:314`, reset false `:746`): the
+    /// multi-shot bows stamp it on their spawned arrows so the kill path skips
+    /// the ammo-recovery drop (`Projectile.cs:77367`). The Tsunami 2624
+    /// (`Player.cs:47806`), the Chlorophyte Shotbow 1229 (`:48305`), the Blood
+    /// Rain Bow 4381 (`:47497`) and the Fairy Queen's non-932 shot (`:47955`).
+    pub no_drop_item: bool,
     /// `Projectile.trap`.
     pub trap: bool,
     /// `GrappleMovement`'s pull input: the attached aiStyle-7 hook's center
@@ -571,7 +592,7 @@ pub struct Projectile {
     /// the yoyo rotation spins by it (`Projectile.cs:68096`) and the pose
     /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
     pub direction: i32,
-    bounces: u8,
+    pub(crate) bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
     /// per tick and places the tile on landing.
@@ -599,6 +620,15 @@ pub struct Projectile {
     /// `ApplyStatsFromSource`'s `bonusTagDamage` (`:11127`) — the item's
     /// (or the parent's) bonus tag damage, the minion prefixes' row.
     pub bonus_tag_damage: i32,
+    /// `Projectile.armorPenetration` (`Projectile.cs:22098`'s field): the
+    /// firing item's prefix penetration (`ApplyStatsFromSource` `:11128`
+    /// copies `item.armorPenetration` — the summon prefixes 85/86/87/91/95
+    /// carry 10/5/8/10/25) plus the parent's on a child spawn (`:11138`).
+    /// `Damage_PVE_Inner`'s `num5` (`:12831`) adds it to the owner's
+    /// `GetArmorPenetration` sum before `checkArmorPenetration` (`:13632`).
+    /// The gem-staff ArPenSpread's +4 (`:22084`) is still unported (the
+    /// `gem_staves_finalize` note).
+    pub armor_penetration: i32,
     /// `AI_103`'s mark spawn (`Projectile.cs:33467-33475`'s
     /// `NPC.NewNPC(..., localAI[0])`) and `AI_108`'s 579 pair
     /// (`:33850-33855`'s `for num815 < 2`): the (kind, x, y, vx, vy)
@@ -627,7 +657,7 @@ pub struct Projectile {
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
     /// The flag also keeps the blast itself — which rides the same style —
     /// from ever spawning a second one.
-    blast_spawned: bool,
+    pub(crate) blast_spawned: bool,
     /// The summon identification (M4-PROJ-8): `Projectile.minion` /
     /// `Projectile.sentry` (the stock false, `Projectile.cs:700`/`:775`) —
     /// the flags the pool's per-tick minion/sentry block (`:16704-16740`,
@@ -680,12 +710,43 @@ pub struct Projectile {
     /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
     /// that played nothing this sub-step.
     pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
+    /// `:751-753`) — the damage-class flags the per-hit crit block reads
+    /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
+    /// spawn copies them from `proj_data`; the plain `spawn` leaves the
+    /// false default (the SetDefaults reset).
+    pub melee: bool,
+    pub ranged: bool,
+    pub magic: bool,
+    /// `Projectile.appliesImmunityTimeOnSingleHits` (`:717`, reset false) —
+    /// the id-static gate's single-hit override (`:13969`/`:14116`).
+    pub applies_immunity_time_on_single_hits: bool,
+    /// `Projectile.bonusCritChance` (`:803`, reset 0) — the per-hit crit
+    /// block's additive bonus (`:12886-12889`). The C# writers are the monk
+    /// staff's 698 ground-impact (`:69501`, +25), the revolver's
+    /// `revolverCritChanceBonus` (`:11131`) and the item-source copy
+    /// (`:11139`) — all unported state; the field rides for completeness
+    /// and stays 0 on every ported shot.
+    pub bonus_crit_chance: i32,
+    /// S1-P-i16 — one slot's queued child-spawn requests for the pool's
+    /// post-AI drain: `(kind, x, y, vx, vy, damage, knock_back, ai0, ai1,
+    /// time_left_delta)`. The dart split machines (the Ichor Dart's fan
+    /// `Projectile.cs:57332-57348`, the Cursed Dart's flame drops
+    /// `:57351-57362`) and the cluster rockets' shrapnel ring
+    /// (`Kill_Bombs_DoUsualKillCode` `:78063-78086`) spawn mid-iteration in
+    /// C#; the slot arms cannot reach the pool's array, so they park the
+    /// requests here (`wants_mark_spawn` pattern) and the dispatch resolves
+    /// them after the sub-steps. `time_left_delta` is subtracted from the
+    /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
+    pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
     // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
     // reset false `:756-760`). The generic `Update` wet block
     // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
     // probes them at the tick head (the one-tick-lag deviation, ANALYSIS
     // "Fishing rod (S1-P-i35)"). Only the aiStyle-61 arm reads them today.
-    /// `Projectile.wet` — any liquid overlaps the inset probe.
+    /// `Projectile.wet` — any liquid overlaps the inset probe (S1-P-i35
+    /// supersedes the i16 centre-cell stand-in; the i16 bomb kill arm
+    /// `AI_016_Bombs` `Projectile.cs:46906-46911` reads it).
     pub wet: bool,
     /// `Projectile.lavaWet` — the FULL box overlaps lava (`LavaCollision`).
     pub lava_wet: bool,
@@ -744,6 +805,7 @@ impl Default for Projectile {
             h: SIZE,
             tile_collide: true,
             arrow: false,
+            no_drop_item: false,
             trap: false,
             direction: 1,
             grapple_center: Vec2::ZERO,
@@ -757,6 +819,7 @@ impl Default for Projectile {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             wants_mark_spawn: Vec::new(),
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
@@ -774,6 +837,12 @@ impl Default for Projectile {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
+            wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -782,6 +851,87 @@ impl Default for Projectile {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
+    }
+}
+
+/// S1-P-i16 — `AI_016_Bombs`' rocket-family membership
+/// (`Projectile.cs:47175`'s keep-damage list, the launcher subset): the
+/// plain launcher rockets 133-144, the Snowman Cannon's 338-341 and the
+/// 1.4.4 family 776-801/803-810 plus the cluster shrapnel 862/863. These
+/// keep their damage in flight (the thrown bombs zero it, `:47177`) and
+/// take the per-family flight arms instead of the thrown-bomb arc.
+pub(crate) fn is_launcher_rocket(kind: u16) -> bool {
+    matches!(kind, 133..=144 | 338..=341 | 776..=801 | 803..=810 | 862 | 863)
+}
+
+/// The straight-flight rocket set — the Rocket Launcher's 134/137/140/143,
+/// the Snowman homing family's plain siblings and the 1.4.4 rocket kinds
+/// (`AI_016_Bombs` `Projectile.cs:47311`/`:47476`/`:47534`'s shared lists,
+/// minus the unported 303/930): the ×1.1 speed-up below 15 (`:47364-47367`)
+/// and the velocity-pointing rotation (`:47476-47482`).
+pub(crate) fn rocket_straight(kind: u16) -> bool {
+    // `:47311`'s exact list (the ported subset): the liquid Snowman kinds
+    // 805/806/807 are NOT here — the homing arm (`:47197`) claims them first.
+    matches!(kind, 134 | 137 | 140 | 143 | 776 | 780 | 793 | 796 | 799 | 784 | 787 | 790)
+}
+
+/// The arcing grenade set (`Projectile.cs:47369`/`:47496`): the Grenade
+/// Launcher's 133/136/139/142 + the 1.4.4 grenade kinds — the `ai[0] > 15`
+/// gravity with the 0.95 ground-slide.
+pub(crate) fn rocket_arc(kind: u16) -> bool {
+    // `:47369`'s list — the liquid Snowman kind 805 homes (`:47197`), it is
+    // NOT an arcing grenade.
+    matches!(kind, 133 | 136 | 139 | 142 | 777 | 781 | 794 | 797 | 800 | 785 | 788 | 791)
+}
+
+/// The proximity-mine set (`Projectile.cs:47376`/`:47483`): the Proximity
+/// Mine Launcher's 135/138/141/144 + the 1.4.4 mine kinds — the
+/// `velocity.Y += 0.2f; velocity *= 0.97f` settle with the ±0.1 zero snaps.
+pub(crate) fn rocket_mine(kind: u16) -> bool {
+    // `:47376`'s list — the liquid Snowman kinds 806/807 home (`:47197`),
+    // they are NOT settling mines.
+    matches!(kind, 135 | 138 | 141 | 144 | 778 | 782 | 795 | 798 | 801 | 786 | 789 | 792)
+}
+
+/// The homing rocket set (`Projectile.cs:47197`/`:47463`): the Snowman
+/// Cannon's 338-341 + the 1.4.4 homing kinds 803/804/808/809/810 AND the
+/// liquid Snowman kinds 805/806/807 (the C# arm lists them — they home
+/// FIRST, the straight/arc/mine lists never see them) — the 30-tick acquire
+/// (Manhattan < 600, `Collision.CanHit`), the 1/12 lerp toward the target at
+/// speed 16, the spriteDirection/rotation pair.
+pub(crate) fn rocket_homing(kind: u16) -> bool {
+    matches!(kind, 338..=341 | 803..=810)
+}
+
+/// The cluster rocket set (`Kill_Bombs_DoUsualKillCode`
+/// `Projectile.cs:78020`): the death spawns a 6-shard ring of 779/783/862/863.
+pub(crate) fn rocket_cluster(kind: u16) -> bool {
+    matches!(kind, 776 | 780 | 777 | 781 | 778 | 782 | 803 | 804)
+}
+
+/// The liquid rocket families' kill-on-wet set (`AI_016_Bombs`
+/// `Projectile.cs:46908`, the ported subset — 906/903-905/1077 unrowed):
+/// the dry 799/800/801/810, wet 784/785/786/805, lava 787/788/789/806 and
+/// honey 790/791/792/807 kinds die (`timeLeft = 1`) when wet.
+pub(crate) fn rocket_liquid(kind: u16) -> bool {
+    matches!(kind, 799 | 800 | 801 | 810 | 784 | 785 | 786 | 805 | 787 | 788 | 789 | 806 | 790 | 791 | 792 | 807)
+}
+
+/// `ProjectileID.Sets.RocketsSkipDamageForPlayers` (`ProjectileID.cs:341`,
+/// the rowed subset): the Snowman rockets never hurt their owner — the
+/// `Kill()` gate (`Projectile.cs:70667`) excludes them from `SelfHurtPlayers`.
+pub(crate) fn rockets_skip_self_damage(kind: u16) -> bool {
+    matches!(kind, 338..=341 | 803..=810 | 862 | 863)
+}
+
+/// `ProjectileID.Sets.FixedSelfDamageForPlayers` (`ProjectileID.cs:342-422`):
+/// every launcher rocket and cluster shard's self-damage is FIXED 60 — the
+/// `SelfHurtPlayers` value override (`Projectile.cs:15033-15038`).
+pub(crate) fn rocket_fixed_self_damage(kind: u16) -> Option<i32> {
+    if is_launcher_rocket(kind) && !rockets_skip_self_damage(kind) {
+        Some(60)
+    } else {
+        None
     }
 }
 
@@ -2555,11 +2705,15 @@ impl Projectile {
     /// flight with the aim-seeking orbit, the return, the dropped and ghost
     /// states, the rotation) plus the generic tile slide, the double-yoyo
     /// `flag` arm, the lifetime sweep, the Terrarian's beam timer and the
-    /// per-type specials. The accessory terms (yoyoString/magicString/
-    /// meleeSpeed) stay at their base values until M3-EQUIP-3.
+    /// per-type specials. `meleeSpeed` is live (S1-P-i09 — the lifetime
+    /// divisor `:67750` and the range/speed division `:67886-67887`); the
+    /// yoyoString/magicString accessory terms stay with M3-EQUIP-3's
+    /// unported grants. The dust rolls (`:67868-67881`) and the
+    /// `AI_AdjustPlayerItemRotationToFaceProjectile` tail (`:68104`, the
+    /// held-item pose) are documented skips (ANALYSIS "The yoyo family").
     ///
     /// Returns the [`YoyoTick`] — the pool-side effects the arm cannot write
-    /// itself (the sweep and the beam spawn).
+    /// itself (the sweep, the beam spawn and the `ChangeDir` facing).
     #[allow(clippy::too_many_arguments)]
     fn ai_yoyo(
         &mut self,
@@ -2576,18 +2730,27 @@ impl Projectile {
 
         // `:67745-67774` — the lifetime clock: `localAI[0]++` (the double
         // yoyo's jitter draws from the seeded stream), the seconds
-        // (`/ 60f` — the division by `((1 + meleeSpeed) / 2)` is 1/1 at the
-        // port's default meleeSpeed) against the per-yoyo table.
+        // (`/ 60f / ((1 + meleeSpeed) / 2f)`, `:67750` — the meleeSpeed
+        // divisor is live, S1-P-i09; the yoyoString ×1.5 boost
+        // `:67752-67755` stays with M3-EQUIP-3's unported grant) against
+        // the per-yoyo table.
         self.local_ai[0] += 1.0;
         if flag {
             // `:67746-67749`.
             self.local_ai[0] += rng.next_range(10, 31) as f32 * 0.1;
         }
-        let lifetime = yoyo_lifetime(self.kind);
-        if lifetime != -1.0 && self.local_ai[0] / 60.0 > lifetime {
+        let mut lifetime = yoyo_lifetime(self.kind);
+        // `:67756-67759` — the dropped twin and the Magic String ghost
+        // never expire (`ai[0] <= -2f` forces the -1 no-timeout).
+        if self.ai[0] <= -2.0 {
+            lifetime = -1.0;
+        }
+        let seconds = self.local_ai[0] / 60.0 / ((1.0 + inputs.melee_speed) / 2.0);
+        if lifetime != -1.0 && seconds > lifetime {
             self.ai[0] = -1.0;
             // `:67764-67773` — the owner-wide sweep rides the tick out (this
-            // slot included; setting it here is idempotent).
+            // slot included; setting it here is idempotent). The sweep's
+            // per-slot `netUpdate = true` (`:67769`) lands in the dispatch.
             tick.sweep = true;
         }
 
@@ -2610,24 +2773,56 @@ impl Projectile {
                 if rng.next_range(0, 3) == 0 {
                     mag *= 2.0;
                 }
-                // `:67795-67796` — the quarter of the yoyo's own velocity.
-                let mut bx = self.vel.x * 0.25 + jx / jl * mag;
-                let mut by = self.vel.y * 0.25 + jy / jl * mag;
+                // `:67795-67796` — the quarter of the yoyo's own velocity
+                // (`vector *= 0.25f; vector += vector2` — the normalize
+                // then the magnitude multiply, in the C#'s order).
+                let mut bx = self.vel.x * 0.25;
+                let mut by = self.vel.y * 0.25;
+                bx += jx / jl * mag;
+                by += jy / jl * mag;
                 // `:67797-67813` — the closest chasable NPC within the 400 px
-                // manhattan distance behind the `CanHit` gate retargets the
-                // beam at 8 px/tick straight at it.
+                // manhattan distance behind the `CanBeChasedBy` + `CanHit`
+                // gates retargets the beam at 8 px/tick straight at it. The
+                // retarget normalizes the EUCLIDEAN offset (`:67809`'s
+                // `(vector - base.Center).SafeNormalize(Vector2.Zero)` — the
+                // manhattan value is the scan's gate only, S1-P-i09 fix);
+                // the box `CanHit` rides the shared walk (`can_hit`, the
+                // `Collision.CanHit` port). On a pick `vector` is OVERWRITTEN
+                // to the NPC centre (`:67807-67808`) before the normalize —
+                // the closest candidate's offset replaces the jittered one.
                 let mut closest = 400.0f32;
                 for n in npcs.iter() {
-                    if n.hp <= 0 {
+                    if !chaseable(n) {
                         continue;
                     }
                     let (nx, ny) = n.center();
                     let d = (cx - nx).abs() + (cy - ny).abs();
-                    if d < closest && yoyo_can_hit(world, cx, cy, nx, ny) {
+                    let (nw, nh) = n.size();
+                    if d < closest
+                        && can_hit(
+                            world,
+                            self.pos.x,
+                            self.pos.y,
+                            self.w,
+                            self.h,
+                            n.x,
+                            n.y,
+                            nw,
+                            nh,
+                        )
+                    {
                         closest = d;
-                        let l = d.max(f32::EPSILON);
-                        bx = (nx - cx) / l * 8.0;
-                        by = (ny - cy) / l * 8.0;
+                        let (dx, dy) = (nx - cx, ny - cy);
+                        let l = (dx * dx + dy * dy).sqrt();
+                        // `SafeNormalize(Vector2.Zero)` — the zero offset
+                        // stays zero (no epsilon-division blow-up).
+                        if l > 0.0 {
+                            bx = dx / l * 8.0;
+                            by = dy / l * 8.0;
+                        } else {
+                            bx = 0.0;
+                            by = 0.0;
+                        }
                     }
                 }
                 // `:67814` — the ×0.8 damp, the spawn at the center minus the
@@ -2646,6 +2841,12 @@ impl Projectile {
             }
         }
 
+        // `:67819-67823` — the counterweight kinds (556-561/1079) flag out
+        // of the pose block (they ride `AI_099_1_Counterweights`, the other
+        // arm — unported, no row). The yoyo arm itself never sees them, but
+        // the guard is carried verbatim for a future row.
+        let flag2 = matches!(self.kind, 556..=561 | 1079);
+
         // `:67824-67828` — the owner's death kills the string.
         if inputs.player_dead {
             self.active = false;
@@ -2653,16 +2854,24 @@ impl Projectile {
             return tick;
         }
 
-        // `:67829-67852` — the pose block's `direction` write (the ±2 px X
-        // comparison against the owner center). The heldProj /
-        // `SetDummyItemTime(2)` / `player.ChangeDir` player-side writes stay
-        // stubbed until M3-ITEM-2d; the counterweights (the other aiStyle-99
-        // arm) never reach here.
-        if self.ai[0] != -2.0 {
+        // `:67829-67852` — the pose block: only the LONE flying yoyo takes
+        // it (`!flag2 && !flag && ai[0] != -2f`, `:67829`); the double and
+        // the dropped twin take the `drawLayer = 0` else (a draw-layer
+        // write the port's counterweight-before-yoyo draw order already
+        // encodes — M4-PROJ-4c). The ±2 px X comparison writes the slot's
+        // `direction` AND the player's facing through `ChangeDir`
+        // (`:67840`/`:67845` — the facing rides the tick out, the flail
+        // precedent; S1-P-i09). The C#'s `itemTime == 1 && num7 > 0`
+        // channel-clear (`:67831-67835`) is dead code (`num7 = 0` seeded,
+        // never written). `heldProj` / `SetDummyItemTime(2)` stay stubbed
+        // until M3-ITEM-2d's dummy-time gadget.
+        if !flag2 && !flag && self.ai[0] != -2.0 {
             if let Some((ox, _)) = owner {
                 if cx > ox + 2.0 {
+                    tick.facing = Some(1);
                     self.direction = 1;
                 } else if cx < ox - 2.0 {
+                    tick.facing = Some(-1);
                     self.direction = -1;
                 }
             }
@@ -2685,14 +2894,17 @@ impl Projectile {
         let mut accel = 10.0f32;
         let mut speed = yoyo_top_speed(self.kind);
         let mut arrive = 3.0f32;
-        let range = yoyo_max_range(self.kind);
+        let mut range = yoyo_max_range(self.kind);
         // `:67864-67867` — the Kraken's ×0.75 top speed under the double.
         if self.kind == KRAKEN_YOYO && flag {
             speed *= 0.75;
         }
-        // The yoyoString range boost (`num11 * 1.25f + 30f`) and the
-        // meleeSpeed division (`(1 + meleeSpeed * 3f) / 4f`) are 1/1 at the
-        // defaults — M3-EQUIP-3 flips them.
+        // The yoyoString range boost (`num11 * 1.25f + 30f`, `:67882-67885`)
+        // stays with M3-EQUIP-3's unported grant. The meleeSpeed division
+        // (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) is live (S1-P-i09).
+        let melee_div = (1.0 + inputs.melee_speed * 3.0) / 4.0;
+        range /= melee_div;
+        speed /= melee_div;
         accel = (14.0 - speed / 2.0).max(1.0);
         arrive = 5.0 + speed / 2.0;
         // `:67894-67897` — the double yoyo's wider arrive radius.
@@ -2716,11 +2928,14 @@ impl Projectile {
             let flag4 = player_dist > range * 1.3;
             // The owner-only aim update (`:67918-67956`).
             if let Some((mut aim_x, mut aim_y)) = inputs.aim {
-                if !inputs.channel {
-                    // The release (`:67920-67925`; the `CCed` arm is stubbed
-                    // false — no CC system ported).
+                if !inputs.channel || inputs.player_cced {
+                    // The release (`:67920-67925`) — the `CCed` arm is live
+                    // (S1-P-i09): `Player.cced()` is ported (frozen / webbed
+                    // / stoned), and `ItemCheck` itself clears the channel
+                    // on a CC (`Player.cs:42598-42602`).
                     self.ai[0] = -1.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true; // `:67924`
                 } else {
                     // The aim clamped to the range (`:67932-67939`), then the
                     // `range - 1f` re-clamp (`:67943-67950`).
@@ -2744,12 +2959,14 @@ impl Projectile {
                     if self.ai[0] != aim_x || self.ai[1] != aim_y {
                         self.ai[0] = aim_x;
                         self.ai[1] = aim_y;
+                        self.net_update = true; // `:67953`
                     }
                 }
             }
             // The 1.3× forced return (`:67957-67961`).
             if flag4 && self.ai[0] >= 0.0 {
                 self.ai[0] = -1.0;
+                self.net_update = true; // `:67960`
             }
             if self.ai[0] >= 0.0 {
                 if flag3 {
@@ -2816,8 +3033,11 @@ impl Projectile {
             }
         }
 
-        // `:68032-68036` — the Magic String's ghost: no damage, full alpha.
-        // (Its spawn path rides M3-EQUIP-3's magicString flag.)
+        // `:68023-68031` — the Magic String's `-1 → -3` transition and the
+        // 0.75-damage dropped-twin spawn ride M3-EQUIP-3's magicString
+        // grant (the flag is never set in the port, so the arm is dead
+        // until then — the ghost STATE below is carried). `:68032-68036`
+        // — the ghost itself: no damage, full alpha.
         if self.ai[0] == -3.0 {
             self.damage = 0;
             self.alpha = 255;
@@ -4751,6 +4971,27 @@ impl Projectile {
             self.vel.y += 0.2;
         }
         self.rot += self.vel.x * 0.1;
+        // S1-P-i28 — the greek fires' (400-402) per-kind overlay
+        // (`Projectile.cs:25271-25302`, inside the aiStyle-14 arm, AFTER the
+        // default gravity/rotation above): a wet kill, a friction arm
+        // (`0.15 < velocity.Y < 0.25 → velocity.X *= 0.8`), and the rotation
+        // REPLACED by `(0 - velocity.X) * 0.05`. The dust (`:25282-25296`) and
+        // the 326-328 sound gate (`:25277-25281`, a different kind) are skipped.
+        // The wet probe folds to the port's `is_wet` box-overlap convention
+        // (the molotov/bee wet folds, ANALYSIS); the 1107-1109 twins share the
+        // C# block but have no ported row.
+        if matches!(self.kind, 400 | 401 | 402) {
+            if crate::npc::is_wet(world, self.pos.x, self.pos.y, self.w, self.h) {
+                self.kill_time_left = self.time_left;
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            if self.vel.y < 0.25 && self.vel.y > 0.15 {
+                self.vel.x *= 0.8;
+            }
+            self.rot = (0.0 - self.vel.x) * 0.05;
+        }
         // The tile-kill scan: the box inset to `(x + 4, y + 4)` with the
         // +8 px center probe against solid, non-127 tiles (`:25726-25737`).
         let cx = self.pos.x + 4.0;
@@ -4780,20 +5021,47 @@ impl Projectile {
                 }
             }
         }
+        // `Projectile.cs:25303-25306` — the aiStyle-14 arm's tail clamp:
+        // `if (velocity.Y > 16f) velocity.Y = 16f`. Applies to every style-14
+        // kind (the beenade's fall included); the pre-existing port omitted it.
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
         self.pos += self.vel;
     }
 
-    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39331` the
-    /// outbound, `:39468-39545` the return). The OUT state flies straight
-    /// (`ai[1]++`; at `>= 30f` — the Light Disc 106 at `>= 45f` — the return
-    /// state sets) and bounces off a tile or an NPC hit by reversing the
-    /// velocity and setting `ai[0] = 1` (`:14594-14602`, `:13068-13080`).
+    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39341` the
+    /// outbound, `:39365-39555` the return, `:39556-39638` the rotation tail)
+    /// for the ported kinds 6/52/113 + the Light Disc 106 (S1-P-i08). The OUT
+    /// state flies straight (`ai[1]++`; at `>= 30f` — the Light Disc 106 at
+    /// `>= 45f` — the return state sets); there is NO outbound decel for
+    /// these kinds (the gravity/friction arms `:39041-39129` belong to the
+    /// unported phaseblades/320/383). The tile/bounds bounce lives in
+    /// `HandleMovement`'s aiStyle-3 arm (`:19512-19571`, the world-edge flag
+    /// `:17900-17903`): the generic kinds reverse BOTH axes from
+    /// `lastVelocity` and set `ai[0] = 1` unconditionally (`:19563-19568`);
+    /// the 33/106/866 trio reverses per changed axis and does NOT arm the
+    /// return (`:19550-19560`); both play the Dig thud (`PlaySound(0, …)`
+    /// `:19571`). The NPC-hit reverse (`:13068-13080`) rides `damage_pve`.
     /// The RETURN state disables tile collision, seeks the owner at the
-    /// speed 9 / accel 0.4 (the per-type overrides are the special
-    /// boomerangs; the plain 6/52/113 use the defaults) with the ±2×
-    /// crossing boost, kills past 3000 px from the owner and when the
-    /// owner's box intersects (`:39538-39544`).
-    fn ai_boomerang(&mut self, world: &World, owner: Option<(f32, f32)>) {
+    /// speed 9 / accel 0.4 (the 106 at 16 / 1.2, `:39432-39436`) scaled by
+    /// the `meleeSpeed` remap (`:39462-39475`: `Remap(1.5, 0, 1, 1,
+    /// 1/meleeSpeed, clamped: false)` clamped to [1, 10]), kills past
+    /// 3000 px (`:39499-39502`) and on the owner-box catch
+    /// (`:39551-39554`, the PRE-movement truncated rects). The rotation
+    /// tail: the 106 spins 0.3 (`:39556-39559`), every other non-phaseblade
+    /// 0.4 (`:39635-39638`), both × `direction` — which tracks
+    /// `velocity.X`'s sign after each sub-step's movement while outbound
+    /// and freezes on the return (`AutomaticallyChangesDirection`
+    /// `:17281-17288` excludes aiStyle 3 at `ai[0] == 1`, the flip
+    /// `:17016-17026`).
+    fn ai_boomerang(
+        &mut self,
+        world: &World,
+        owner: Option<(f32, f32)>,
+        melee_speed: f32,
+        catch_allowed: bool,
+    ) {
         // `AI_003_Boomerang`'s whoosh head (`Projectile.cs:38868-38891`,
         // S1-E-21h): every kind but the Phaseblade family (unported) and
         // 383 re-arms `soundDelay = 8` (× `extraUpdates + 1`) and plays
@@ -4806,56 +5074,58 @@ impl Projectile {
             self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
         }
         if self.ai[0] == 0.0 {
-            // The outbound flight; the 106 Light Disc returns at 45 ticks.
+            // The outbound flight (`:39024-39034` + the generic tail
+            // `:39335-39340`); the 106 Light Disc returns at 45 ticks
+            // (`:39035-39040`).
             self.ai[1] += 1.0;
-            let limit = if self.kind == 106 { 45.0 } else { 30.0 };
+            let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
             if self.ai[1] >= limit {
                 self.ai[0] = 1.0;
                 self.ai[1] = 0.0;
             }
-            if self.tile_collide {
-                let nx = self.pos.x + self.vel.x;
-                let ny = self.pos.y + self.vel.y;
-                let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-                let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
-                if hit_x || hit_y {
-                    // `:14594-14602`: the outbound tile hit reverses into the
-                    // return state instead of killing.
-                    if self.ai[0] == 0.0 {
-                        self.vel = -self.vel;
-                    }
-                    self.ai[0] = 1.0;
-                    return;
-                }
-                self.pos.x = nx;
-                self.pos.y = ny;
-            } else {
-                self.pos += self.vel;
-            }
         } else {
-            // The return (`:39468-39545`): `tileCollide = false`, the owner
-            // seek at the speed 9 / accel 0.4, the ±2× crossing boost.
+            // The return (`:39365-39555`): `tileCollide = false`, the owner
+            // seek with the ±2× crossing boost.
             self.tile_collide = false;
             let Some((ox, oy)) = owner else {
                 return;
             };
+            // The per-type speed/accel table (`:39399-39461`): the ported
+            // kinds ride the defaults 9/0.4; the 106 overrides 16/1.2
+            // (`:39432-39436`). The other rows are the unported specials.
+            let (mut speed, mut accel) = if self.kind == LIGHT_DISC {
+                (16.0f32, 1.2f32)
+            } else {
+                (9.0f32, 0.4f32)
+            };
+            // `:39462-39475`: `OwnedBySomeone & flag3` (the ported kinds are
+            // friendly non-trap non-phaseblade — both true) scales BOTH by
+            // `Remap(1.5f, 0f, 1f, 1f, 1f/meleeSpeed, clamped: false)` =
+            // `Lerp(1, 1/meleeSpeed, 1.5)` (`Utils.cs:345-348`), clamped to
+            // [1, 10].
+            let mut scale = 1.0 + (1.0 / melee_speed - 1.0) * 1.5;
+            if scale > 10.0 {
+                scale = 10.0;
+            }
+            if scale < 1.0 {
+                scale = 1.0;
+            }
+            speed *= scale;
+            accel *= scale;
             let cx = self.pos.x + self.w * 0.5;
             let cy = self.pos.y + self.h * 0.5;
             let mut dx = ox - cx;
             let mut dy = oy - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            // `:39500-39505`: the 3000 px cut-off kills the stray.
+            // `:39499-39502`: the 3000 px cut-off kills the stray.
             if dist > 3000.0 {
-                self.active = false;
-                self.time_left = 0;
+                self.kill();
                 return;
             }
-            // The `meleeSpeed` remap (`:39487-39497`) is ×1 at the port's
-            // default melee speed.
-            let (speed, accel) = (9.0f32, 0.4f32);
-            let inv = speed / dist.max(f32::EPSILON);
+            let inv = speed / dist;
             dx *= inv;
             dy *= inv;
+            // `:39518-39549`: the per-axis steer with the crossing boost.
             if self.vel.x < dx {
                 self.vel.x += accel;
                 if self.vel.x < 0.0 && dx > 0.0 {
@@ -4878,18 +5148,102 @@ impl Projectile {
                     self.vel.y -= accel;
                 }
             }
-            self.pos += self.vel;
-            // `:39538-39544`: the owner's box catches the boomerang.
-            // The 20x42 hitbox (/).
-            let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
-            let hit = self.pos.x + self.w > ox - pw * 0.5
-                && self.pos.x < ox + pw * 0.5
-                && self.pos.y + self.h > oy - ph * 0.5
-                && self.pos.y < oy + ph * 0.5;
-            if hit {
-                self.active = false;
-                self.time_left = 0;
+            // `:39551-39554`: the owner's box catches the boomerang — the
+            // PRE-movement position (the C# integrates in `UpdatePosition`
+            // AFTER the AI), the `(int)`-truncated rects and XNA's strict
+            // `Rectangle.Intersects`. The owner rect stands in from the
+            // center tuple at the stock 20×42 box (the port's player-box
+            // convention). The `Main.myPlayer == owner` gate rides
+            // `catch_allowed`.
+            if catch_allowed {
+                let proj_rect = tr_core::whip::Rect::new(
+                    self.pos.x as i32,
+                    self.pos.y as i32,
+                    self.w as i32,
+                    self.h as i32,
+                );
+                let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
+                let owner_rect = tr_core::whip::Rect::new(
+                    (ox - pw * 0.5) as i32,
+                    (oy - ph * 0.5) as i32,
+                    pw as i32,
+                    ph as i32,
+                );
+                if proj_rect.intersects(owner_rect) {
+                    self.kill();
+                    return;
+                }
             }
+        }
+        // The rotation tail (`:39556-39638`): the 106 spins 0.3, every other
+        // non-phaseblade kind 0.4, both × `direction` (the direction the
+        // PREVIOUS sub-step's movement settled — the C# flips it after
+        // `HandleMovement`, below).
+        if self.kind == LIGHT_DISC {
+            self.rot += 0.3 * self.direction as f32;
+        } else if !is_a_phaseblade(self.kind) {
+            self.rot += 0.4 * self.direction as f32;
+        }
+        // The movement + the aiStyle-3 tile response (`HandleMovement`
+        // `:19512-19571`; the port's `collides_rect` stand-in for
+        // `Collision.TileCollision`, the recorded M4-PROJ-3 deviation).
+        // `tileCollide` stays true on the 30/45-tick flip tick (the RETURN
+        // arm clears it the NEXT tick), so the flip tick still bounces.
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let mut hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let mut hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            // `:17900-17903`: the world-edge flag feeds the same response
+            // (the bounds are `WorldGen.cs:6553-6554`, the out-of-world
+            // guard's own reading). The edge rides the matching axis of the
+            // probe (the port's stand-in — the C# flag is axis-less but the
+            // per-axis reversal below reads the collision axes).
+            hit_x |= self.pos.x <= 0.0 || self.pos.x + self.w >= world.width as f32 * 16.0;
+            hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
+            if hit_x || hit_y {
+                if matches!(self.kind, 33 | LIGHT_DISC | 866) {
+                    // `:19550-19560`: the 33/106/866 trio reverses only the
+                    // changed axis and does NOT arm the return — the Light
+                    // Disc keeps bouncing outbound until its 45-tick timer.
+                    if hit_x {
+                        self.vel.x = -self.vel.x;
+                    }
+                    if hit_y {
+                        self.vel.y = -self.vel.y;
+                    }
+                } else {
+                    // `:19563-19568`: the generic arm reverses BOTH axes
+                    // from `lastVelocity` and sets the return state
+                    // unconditionally (no `ai[0] == 0` gate here — that gate
+                    // is the NPC arm's, `:13070`).
+                    self.vel = -self.vel;
+                    self.ai[0] = 1.0;
+                }
+                // `UpdatePosition` (`:19858` → `:20445`) integrates the
+                // POST-bounce velocity on the bounce tick — the boomerang
+                // steps away from the wall the same tick it reverses.
+                self.pos += self.vel;
+                // `:19571`: `SoundEngine.PlaySound(0, (int)X, (int)Y)` — the
+                // int-id Dig thud (case 0's `Next(3)` + pitch rolls ride the
+                // drain's stream). The single intent slot keeps the whoosh
+                // when both land on one sub-step (the recorded deviation).
+                if self.wants_sound.is_none() {
+                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+                }
+            } else {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+        // `:17016-17026` + `AutomaticallyChangesDirection` (`:17281-17288`):
+        // the direction tracks `velocity.X`'s sign after the movement while
+        // outbound (`ai[0] != 1`); the return freezes it. Zero maps to +1
+        // (the C# `else` arm).
+        if self.ai[0] != 1.0 {
+            self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         }
     }
 
@@ -4979,6 +5333,17 @@ impl Projectile {
             .is_some_and(|t| t.liquid_kind() != tr_core::tile::LiquidKind::Lava)
     }
 
+    /// The state-6 `!base.shimmerWet` read (`Projectile.cs:44042`): the
+    /// mid-tile liquid idiom above, narrowed to shimmer.
+    fn flail_shimmer_wet(&self, world: &World) -> bool {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        world
+            .tile(cx as i32, cy as i32)
+            .filter(|t| t.liquid > 0)
+            .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer)
+    }
+
     /// `AI_015_Flails` (`Projectile.cs:43724-44169`) — the whole flail
     /// machine: the kill gates, the per-kind parameter table
     /// (`flail_params`), the seven `ai[0]` states, the movement, the 1058/247
@@ -4986,14 +5351,17 @@ impl Projectile {
     /// move/tile-collision pass; `ai_flail_bounce` (the dispatcher's
     /// `HandleMovement` peer) runs after it.
     ///
-    /// Documented deviations (ANALYSIS): the `mapFullscreen` kill (no map
-    /// mode), the `noItems` gate (no field), `player.heldProj` /
-    /// `SetDummyItemTime` / `itemRotation` (no consumers — the held-item pose
-    /// is a render follow-up), `ownerHitCheck`/`drawLayer` (no consumers),
-    /// the dust call (no dust system) and the tile-impact/sound arms of the
-    /// bounce (a decor follow-up). The `player.ChangeDir` writes ride back in
-    /// `FlailTick.facing` (the port's facing is run-key driven), with the
-    /// same-tick reads served by the local `eff_dir`.
+    /// Documented deviations (ANALYSIS): the `noItems` gate (no field),
+    /// `player.heldProj` / `SetDummyItemTime` (no consumers — the held-item
+    /// pose is a render follow-up), `ownerHitCheck`/`drawLayer` (no
+    /// consumers), the dust call (no dust system) and the tile-impact/sound
+    /// arms of the bounce (a decor follow-up). The `player.ChangeDir` writes
+    /// ride back in `FlailTick.facing` (the port's facing is run-key driven),
+    /// with the same-tick reads served by the local `eff_dir`; the
+    /// `player.itemRotation` write rides `FlailTick.item_rotation` and the
+    /// release's `ResetLocalNPCHitImmunity` rides `FlailTick.reset_immunity`.
+    /// The `mapFullscreen` kill, the `controlUseItem` re-grab arms, the wet
+    /// drag and the shimmer gravity skip are ported (S1-P-i07).
     #[allow(clippy::too_many_arguments)]
     fn ai_flail(
         &mut self,
@@ -5032,6 +5400,13 @@ impl Projectile {
             self.time_left = 0;
             return tick;
         }
+        // `:43732-43736` — `Main.myPlayer == this.owner && Main.mapFullscreen`:
+        // the local owner opening the fullscreen map kills its own flails.
+        if inputs.local_owner == self.owner as u8 && inputs.map_fullscreen {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
         // `:43737-43741` — the Flaming Mace's water extinguish.
         if self.kind == FLAMING_MACE && self.flail_in_liquid(world) {
             self.kind = MACE;
@@ -5063,8 +5438,11 @@ impl Projectile {
         let num18 = num17 + 160.0;
         self.local_hit_cooldown = num11 as i32;
         // The effective player direction — the C# writes `player.ChangeDir`
-        // mid-machine and reads it back in the same pass.
+        // mid-machine and reads it back in the same pass. `None` until an arm
+        // actually calls it (the state-2 re-grab `break`s before its
+        // `ChangeDir`, `:43942-43948`).
         let mut eff_dir = inputs.player_dir;
+        let mut dir_changed = false;
         match self.ai[0] as i32 {
             0 => {
                 // The held state (`:43841-43898`).
@@ -5085,6 +5463,7 @@ impl Projectile {
                 } else {
                     -1
                 };
+                dir_changed = true;
                 if !inputs.channel {
                     // `:43872-43885` — the release throws; the C# `break`s
                     // out of the switch here.
@@ -5095,7 +5474,12 @@ impl Projectile {
                         self.vel.x *= -1.0;
                     }
                     self.pos = mounted - Vec2::new(self.w * 0.5, self.h * 0.5);
-                    self.local_ai[1] = 0.0; // `ResetLocalNPCHitImmunity`
+                    // `:43883` `ResetLocalNPCHitImmunity` (`:43719-43722`):
+                    // `Array.Clear(localNPCImmunity)` — the per-slot NPC
+                    // immunity array, NOT `localAI[1]` (the hold-orbit
+                    // counter, which keeps its count across the release).
+                    tick.reset_immunity = true;
+                    self.net_update = true;
                     self.local_hit_cooldown = num13 as i32;
                 } else {
                     // `:43888-43897` — the charge orbit.
@@ -5120,21 +5504,29 @@ impl Projectile {
                 self.ai[1] += 1.0;
                 let flag3 = grown || (head - mounted).length() >= num3;
                 let num19 = 1.3f32;
-                if inputs.channel {
-                    // `:43905-43916` — the mid-flight re-grab; the Drippler
+                if inputs.control_use_item {
+                    // `:43905-43916` — the mid-flight re-grab (`controlUseItem`,
+                    // NOT `channel`); the C# `break`s out of the state switch
+                    // here — no `ChangeDir`, no cooldown write. The Drippler
                     // spawns its extra ball on both this and the arm end.
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
                     self.vel *= 0.2;
                     self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
-                } else if flag3 {
-                    self.ai[0] = 2.0;
-                    self.ai[1] = 0.0;
-                    self.vel *= 0.3;
-                    self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                } else {
+                    if flag3 {
+                        self.ai[0] = 2.0;
+                        self.ai[1] = 0.0;
+                        self.net_update = true;
+                        self.vel *= 0.3;
+                        self.flail_helper(&mut tick, inputs, DRIPPLER_EXTRA_BALL, self.vel * num19, 0.0);
+                    }
+                    // `:43930-43931` — outside the `controlUseItem` break.
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
+                    self.local_hit_cooldown = num13 as i32;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
-                self.local_hit_cooldown = num13 as i32;
             }
             2 => {
                 // The retract (`:43934-43955`).
@@ -5144,49 +5536,61 @@ impl Projectile {
                     self.time_left = 0;
                     return tick;
                 }
-                if inputs.channel {
+                if inputs.control_use_item {
+                    // `:43942-43948` — the re-grab `break`s before the
+                    // `ChangeDir`; the facing stays as-is.
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
                     self.vel *= 0.2;
                 } else {
                     self.vel *= 0.98;
                     self.vel = Self::move_towards_vec(self.vel, to_player * num5, num4);
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             3 => {
                 // The spin orbit (`:43957-43998`).
-                if !inputs.channel {
+                if !inputs.control_use_item {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    // `break` — the C# falls out of the state switch into
-                    // the shared tail below, then HandleMovement's move.
-                }
-                let dist = (head - mounted).length();
-                let want_collide = self.ai[1] == 1.0;
-                let flag4 = dist <= num17;
-                if flag4 != want_collide {
-                    self.tile_collide = flag4;
-                    self.ai[1] = if flag4 { 1.0 } else { 0.0 };
-                }
-                let to_player = (mounted - head).normalize_or_zero();
-                if dist > num10 {
-                    if dist >= num17 {
-                        self.vel *= 0.5;
-                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
-                    }
-                    self.vel *= 0.98;
-                    self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                    self.net_update = true;
+                    // `:43964` — the C# `break`s out of the state switch into
+                    // the shared tail; no tileCollide write, no velocity
+                    // change, no `ChangeDir` on this tick.
                 } else {
-                    if self.vel.length() < 6.0 {
-                        self.vel.x *= 0.96;
-                        self.vel.y += 0.2;
+                    let dist = (head - mounted).length();
+                    // `:43967`: `tileCollide = ai[1] == 1f` EVERY tick — the
+                    // flag4 comparison below only re-arms the latch when the
+                    // distance crosses num17.
+                    self.tile_collide = self.ai[1] == 1.0;
+                    let flag4 = dist <= num17;
+                    if flag4 != self.tile_collide {
+                        self.tile_collide = flag4;
+                        self.ai[1] = if flag4 { 1.0 } else { 0.0 };
+                        self.net_update = true;
                     }
-                    if inputs.player_vel.0 == 0.0 {
-                        self.vel.x *= 0.96;
+                    let to_player = (mounted - head).normalize_or_zero();
+                    if dist > num10 {
+                        if dist >= num17 {
+                            self.vel *= 0.5;
+                            self.vel = Self::move_towards_vec(self.vel, to_player * num9, num9);
+                        }
+                        self.vel *= 0.98;
+                        self.vel = Self::move_towards_vec(self.vel, to_player * num9, num8);
+                    } else {
+                        if self.vel.length() < 6.0 {
+                            self.vel.x *= 0.96;
+                            self.vel.y += 0.2;
+                        }
+                        if inputs.player_vel.0 == 0.0 {
+                            self.vel.x *= 0.96;
+                        }
                     }
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             4 => {
                 // The final reel-in (`:44000-44017`).
@@ -5199,13 +5603,19 @@ impl Projectile {
                 }
                 self.vel *= 0.98;
                 self.vel = Self::move_towards_vec(self.vel, to_player * num7, num6);
-                let ahead = (head + self.vel - mounted).normalize_or_zero();
+                // `:44011`: `Utils.DirectionFrom(Target: Center + velocity,
+                // Origin: mountedCenter)` = `Normalize(Origin - Target)`
+                // (`Utils.cs:1960-1963`) — the vector points BACK from the
+                // ahead point to the mount, so the kill fires when the ahead
+                // point has PASSED the player (the two directions oppose).
+                let ahead = (mounted - (head + self.vel)).normalize_or_zero();
                 if to_player.dot(ahead) < 0.0 {
                     self.active = false;
                     self.time_left = 0;
                     return tick;
                 }
                 eff_dir = if center.x < head.x { 1 } else { -1 };
+                dir_changed = true;
             }
             5 => {
                 // The bounce stagger (`:44019-44032`).
@@ -5214,30 +5624,39 @@ impl Projectile {
                 if grown {
                     self.ai[0] = 6.0;
                     self.ai[1] = 0.0;
+                    self.net_update = true;
+                    // `:44025` — the graduation `break`s before the
+                    // `ChangeDir`; the else arm below owns it.
                 } else {
                     self.local_hit_cooldown = num13 as i32;
                     self.vel.y += 0.6;
                     self.vel.x *= 0.95;
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             6 => {
                 // The post-release spin (`:44034-44047`).
-                if !inputs.channel || (head - mounted).length() > num18 {
+                if !inputs.control_use_item || (head - mounted).length() > num18 {
                     self.ai[0] = 4.0;
                     self.ai[1] = 0.0;
-                    // `break` — the C# falls out of the state switch into
-                    // the shared tail below, then HandleMovement's move.
+                    self.net_update = true;
+                    // `:44040` — `break`: no gravity, no drag, no
+                    // `ChangeDir` on the bail tick.
+                } else {
+                    // `!shimmerWet` (`:44042`) — the shimmer arm skips the
+                    // gravity add (the flail floats in shimmer).
+                    if !self.flail_shimmer_wet(world) {
+                        self.vel.y += 0.8;
+                    }
+                    self.vel.x *= 0.95;
+                    eff_dir = if center.x < head.x { 1 } else { -1 };
+                    dir_changed = true;
                 }
-                // `!shimmerWet` — no shimmer in the port, so the arm always
-                // adds gravity.
-                self.vel.y += 0.8;
-                self.vel.x *= 0.95;
-                eff_dir = if center.x < head.x { 1 } else { -1 };
             }
             _ => {}
         }
-        let mut tick = self.flail_tail(world, eff_dir, tick, inputs, npcs, rng);
+        let mut tick = self.flail_tail(world, eff_dir, dir_changed, tick, inputs, npcs, rng);
         // `HandleMovement` (`Projectile.cs:17015`) with the aiStyle-15 arm
         // (`:19321`): the C# runs the sub-step move and the bounce handler
         // AFTER the AI returns — the port's per-AI move idiom keeps both
@@ -5255,6 +5674,12 @@ impl Projectile {
     fn flail_move(&mut self, world: &World) {
         let pos_before = self.pos;
         let last_velocity = self.vel;
+        // `HandleMovement`'s wet arm (`Projectile.cs:17612-17655`): while wet
+        // the POSITION advance is the velocity scaled by the liquid factor
+        // (water 0.5 / honey 0.25 / shimmer 0.375), but a BLOCKED component
+        // keeps its full value (`wetVelocity.X = velocity.X` when the axis
+        // changed). The collision probe still runs on the full velocity.
+        let wet_factor = self.flail_wet_factor(world);
         if self.tile_collide {
             // `Collision.Move`'s per-axis advance clamped to the blocked
             // face, then the blocked component zeroed — the port steps the
@@ -5286,8 +5711,29 @@ impl Projectile {
                     }
                 }
             }
+            // The wet drag scales the unblocked axes' displacement by the
+            // liquid factor. The C# scales the velocity BEFORE the collision
+            // probe and restores a blocked component to its full value
+            // (`:17647-17654`); the port probes at full velocity then scales
+            // the surviving displacement — the same mid-tile approximation
+            // the family's liquid reads use (recorded in ANALYSIS).
+            if let Some(f) = wet_factor {
+                let mut disp = self.pos - pos_before;
+                if self.vel.x != 0.0 {
+                    disp.x *= f;
+                }
+                if self.vel.y != 0.0 {
+                    disp.y *= f;
+                }
+                self.pos = pos_before + disp;
+            }
         } else {
-            self.pos += self.vel;
+            // `UpdatePosition` (`:20439-20446`): wet integrates the scaled
+            // velocity, dry the full velocity.
+            self.pos += match wet_factor {
+                Some(f) => self.vel * f,
+                None => self.vel,
+            };
         }
         // `HandleMovement`'s `flag` (`:17896-17899`, the arm at `:17904`):
         // the per-aiStyle velocity chain — the flail's bounce handler — runs
@@ -5297,6 +5743,23 @@ impl Projectile {
         if last_velocity != self.vel {
             self.ai_flail_bounce(last_velocity, pos_before);
         }
+    }
+
+    /// The liquid drag factor for the flail's move (`HandleMovement`
+    /// `Projectile.cs:17612-17655`): shimmer 0.375, honey 0.25, water 0.5;
+    /// `None` when dry (or lava — the C# wet arm keys on `honeyWet`/
+    /// `shimmerWet`/plain-wet, and lava sets `lavaWet` but the plain wet
+    /// halving still applies; the port's mid-tile idiom folds lava into the
+    /// water factor, recorded in ANALYSIS).
+    fn flail_wet_factor(&self, world: &World) -> Option<f32> {
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        let t = world.tile(cx as i32, cy as i32).filter(|t| t.liquid > 0)?;
+        Some(match t.liquid_kind() {
+            tr_core::tile::LiquidKind::Shimmer => 0.375,
+            tr_core::tile::LiquidKind::Honey => 0.25,
+            _ => 0.5,
+        })
     }
 
     /// `AI_015_HandleMovementCollision` (`Projectile.cs:43655-43717`) — runs
@@ -5329,6 +5792,7 @@ impl Projectile {
             // `:43687-43698` — the fly-out bounce drops into the stagger.
             self.ai[0] = 5.0;
             self.local_hit_cooldown = 10;
+            self.net_update = true;
             loud = true;
             // `CreateImpactExplosion` + `CreateImpactExplosion2_
             // FlailTileCollision` are dust-only (no port seam); the
@@ -5337,9 +5801,14 @@ impl Projectile {
             // full pre-move velocity from the post-move position.
             self.pos = pos_before - last_velocity;
         }
+        // `:43699-43707` — the loud bounce nets an update.
+        if loud {
+            self.net_update = true;
+        }
         // `:43708-43712` — the repeated-bounce bail-out.
         if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
             self.ai[0] = 4.0;
+            self.net_update = true;
         }
         // `:43702-43706` — `Collision.HitTiles` ×count (the tile damage — no
         // generic projectile→tile seam in the port) and
@@ -5398,6 +5867,7 @@ impl Projectile {
         &mut self,
         world: &World,
         eff_dir: i32,
+        dir_changed: bool,
         mut tick: FlailTick,
         inputs: FlailInputs,
         npcs: &[Npc],
@@ -5414,6 +5884,11 @@ impl Projectile {
                 let to_player = center - head;
                 self.rot = to_player.y.atan2(to_player.x) - std::f32::consts::PI / 2.0;
                 self.direction = if to_player.x < 0.0 { 1 } else { -1 };
+                // `:44073-44074` — the Flairon's spriteDirection follows its
+                // direction. (`:44073`'s `player.itemRotation` write is
+                // overwritten by the common tail's `:44162` below, exactly
+                // like the C#, so only the spriteDirection survives.)
+                self.sprite_direction = self.direction;
                 // `:44075-44095` — the bubble cadence. The C# re-rolls
                 // `Next(3, 6)` every tick in the held state (and halves the
                 // knockback there); the jitter is the item-stream roll.
@@ -5434,11 +5909,15 @@ impl Projectile {
                         self.local_ai[2] = 0.0;
                         // `vector8 = ((vector7 * -1).SafeNormalize(0) *
                         // (Next(45, 65) * 0.1)).RotatedBy(
-                        // (NextDouble() - 0.5) * (π/2))`.
+                        // (NextDouble() - 0.5) * (π/2))` — the jitter is a
+                        // DOUBLE draw (`Main.rand.NextDouble()`), cast to
+                        // f32 only after the multiply (`Utils.RotatedBy`
+                        // takes double radians, `Utils.cs:1675-1684`).
                         let back = (-to_player).normalize_or_zero();
                         let speed = rng.next_range(45, 65) as f32 * 0.1;
-                        let jitter = (rng.next_float() - 0.5) * std::f32::consts::PI / 2.0;
-                        let v = (back * speed).rotate(Vec2::from_angle(jitter));
+                        let jitter = (rng.next_double() - 0.5)
+                            * std::f64::consts::FRAC_PI_2;
+                        let v = (back * speed).rotate(Vec2::from_angle(jitter as f32));
                         let req = self.flail_spawn(FLAIRON_BUBBLE, v, self.damage, knock, -10.0);
                         tick.spawn = Some(req);
                     }
@@ -5460,7 +5939,10 @@ impl Projectile {
                         self.local_ai[0] = 17.0;
                         let mut best: Option<(usize, f32)> = None;
                         for (idx, n) in npcs.iter().enumerate() {
-                            if n.hp <= 0 || n.dont_take_damage {
+                            // `CanBeChasedBy` (`NPC.cs:90030-90041`): active
+                            // && chaseable && lifeMax > 5 && !dontTakeDamage
+                            // && !friendly && !immortal.
+                            if !n.can_be_chased_by() {
                                 continue;
                             }
                             let (nx, ny) = n.center();
@@ -5499,6 +5981,7 @@ impl Projectile {
         // (the Flairon's tail set its own above).
         if self.kind != FLAIRON {
             self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
         }
         // `:44148-44158` — the rotation arm; the 1058/247 tails set
         // `flag = false` and keep their own rotation.
@@ -5511,7 +5994,22 @@ impl Projectile {
         }
         // `:44159` — the per-tick lifetime re-pin.
         self.time_left = 2;
-        tick.facing = Some(eff_dir);
+        // `:44162-44167` — `player.itemRotation =
+        // DirectionFrom(mountedCenter).ToRotation()` (+π when the head is
+        // left of the mount), wrapped. `Entity.DirectionFrom`
+        // (`Entity.cs:210-213`) = `Normalize(Center - Source)`.
+        if let Some(m) = inputs.mounted_center {
+            let mounted = Vec2::from(m);
+            let d = head - mounted;
+            let mut rot = d.y.atan2(d.x);
+            if head.x < mounted.x {
+                rot += std::f32::consts::PI;
+            }
+            tick.item_rotation = Some(wrap_angle(rot));
+        }
+        // The facing only rides out on the ticks the C# actually calls
+        // `player.ChangeDir` (the re-grab/bail `break`s skip it).
+        tick.facing = if dir_changed { Some(eff_dir) } else { None };
         tick
     }    /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
     /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
@@ -5520,7 +6018,18 @@ impl Projectile {
     /// (the dynamite 29 another ×0.99); the flight damage zeroes (the
     /// explosion carries it); the detonation fires when `timeLeft <= 3`
     /// (`:47165-47167`).
-    fn ai_bomb(&mut self, world: &World) {
+    fn ai_bomb(&mut self, world: &World, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
+        // S1-P-i16 — the launcher rockets ride their own per-family flight
+        // (`AI_016_Bombs`' rocket arms, `Projectile.cs:46906-47537`), NOT the
+        // thrown-bomb arc: they keep their damage in flight (`:47175`'s
+        // keep-damage list), accelerate/settle/home per family and detonate
+        // on contact. The thrown bombs below keep their frozen M4-PROJ-9
+        // behaviour (dust draws skipped — the rocket arms keep the explicit
+        // `Main.rand` draws, the `celeb2_explosion` convention).
+        if is_launcher_rocket(self.kind) {
+            self.ai_rocket(world, npcs, rng, local_owner);
+            return;
+        }
         self.ai[0] += 1.0;
         if STICKY_BOMBS.contains(&self.kind) {
             // The sticky scan (`:46956-47025`): the box inset ±4 px vs
@@ -5561,9 +6070,13 @@ impl Projectile {
                 self.vel.y = -0.2;
             }
         }
-        // The gravity tail (`:47505-47520`): the thrown arc — the gravity
-        // waits `ai[0] > 5f`.
-        if self.ai[0] > 5.0 {
+        // The gravity tail (`:47505-47523`): the thrown arc. S1-P-i28 — the
+        // grenades (30/397/517) wait `ai[0] > 10f` (`:47507`'s first clause),
+        // the other bombs `ai[0] > 5f` (the second clause). The C# pins
+        // `ai[0] = 10` inside the arm, so the grenade's counter rests at 10.
+        let grenade = matches!(self.kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE);
+        let gravity_ready = if grenade { self.ai[0] > 10.0 } else { self.ai[0] > 5.0 };
+        if gravity_ready {
             self.ai[0] = 10.0;
             if self.vel.y == 0.0 && self.vel.x != 0.0 {
                 self.vel.x *= 0.97;
@@ -5598,25 +6111,283 @@ impl Projectile {
             self.pos += self.vel;
         }
         self.rot += self.vel.x * 0.1;
-        // The flight damage zeroes (`:47175-47176` — the kinds outside the
-        // keep-damage list; all the port's bombs are) — the explosion
-        // re-arms the damage.
-        self.damage = 0;
+        // The flight damage zeroes (`:47175-47177` — the kinds OUTSIDE the
+        // keep-damage list). S1-P-i28 — the grenades (30/397/517) ARE on the
+        // keep-damage list (`:47175`), so they keep their flight damage and
+        // hit NPCs directly; the bombs/dynamite zero it (the explosion
+        // re-arms the damage).
+        if !matches!(self.kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE) {
+            self.damage = 0;
+        }
         // The detonation (`:47165-47167`): `timeLeft <= 3` on the local
         // owner.
         if self.time_left <= 3 && !self.detonated {
             // `Kill_Bombs_DoUsualKillCode`'s explosion cue
-            // (`Projectile.cs:78331` the bomb family 28/37/516/519,
+            // (`Projectile.cs:78331` the bomb family 28/30/37/397/517/516/519,
             // `:78386` the dynamite 29): `SoundID.Item14` at the slot's
             // PRE-`PrepareBombToBlow` `base.position` (S1-E-21h). The port
             // queues it at the detonation latch — one cue per death; the
             // bomb-fuse instance Stop (`:70675`) has no pool (D4). Gated to
             // the kinds `explode_bomb` accepts — the same set the C# kill
-            // arms name.
-            if matches!(self.kind, BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE) {
+            // arms name (S1-P-i28 adds the three grenades).
+            if matches!(
+                self.kind,
+                BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE
+                    | GRENADE | STICKY_GRENADE | BOUNCY_GRENADE
+            ) {
                 self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
             }
             self.detonated = true;
+        }
+    }
+
+    /// S1-P-i16 — `AI_016_Bombs`' launcher-rocket flight
+    /// (`Projectile.cs:46904-47537`), the per-family arms in the C#'s order.
+    /// The dust/gore BODIES are skipped (no draw layer); every explicit
+    /// `Main.rand` draw that is not a `Dust.NewDust*` internal stays on the
+    /// pass's `UpdateProjectiles` stream in the C#'s order — the wet/lava/
+    /// honey dust-type picks (`:47110-47121`, one `Next(3)` per tick) and
+    /// the generic smoke gate are the only rolls these kinds spend
+    /// (the `celeb2_explosion` census convention).
+    fn ai_rocket(&mut self, world: &World, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
+        // `:46906-46911` — the liquid families die when wet (owner-gated).
+        // `base.wet` is the dispatch's centre-cell stand-in (the field doc).
+        if self.owner == local_owner && self.wet && rocket_liquid(self.kind) {
+            self.time_left = 1;
+        }
+        // `:47105-47121` — the smoke dust-type pick. 776/780/803/804 use the
+        // fixed 228 (no draw); the wet/lava/honey kinds roll `Next(3)` EVERY
+        // tick (the type feeds only the skipped dust, the draw stays).
+        if matches!(self.kind, 784 | 805 | 787 | 806 | 790 | 807) {
+            let _ = rng.next_range(0, 3);
+        }
+        // `:47157-47159` — the remote owner's five-tick floor (the port
+        // simulates local slots only; kept for the shape).
+        if self.time_left < 5 && self.owner != local_owner {
+            self.time_left = 5;
+        }
+        // `:47165-47167` — the fuse: the local owner's `timeLeft <= 3` kill.
+        if self.owner == local_owner && self.time_left <= 3 {
+            self.detonated = true;
+            return;
+        }
+        // `:47175-47177` — every launcher rocket is on the keep-damage list:
+        // the flight damage stays (the WRONG the pre-port arm zeroed).
+        // `:47197-47310` — the Snowman homing family's dust/alpha/homing arm.
+        if rocket_homing(self.kind) {
+            // `:47199-47211` — the alpha ramp on `localAI[1]`.
+            self.local_ai[1] += 1.0;
+            if self.local_ai[1] > 6.0 {
+                self.alpha = 0;
+            } else {
+                self.alpha = ((255.0 - 42.0 * self.local_ai[1]) as i32 + 100).min(255);
+            }
+            // `:47212-47269` — the two dust loops: the `Next(2)` gates and
+            // the scale `Next(10)`/fadeIn `Next(5)` draws ride ONLY past
+            // `localAI[1] > 9` (the C# `continue` at `:47221-47224` skips
+            // the whole body below it). 808/809's first-gate clone dust
+            // draws a `NextVector2Circular(3,3)` pair (`:47252`, two
+            // floats, `Utils.cs:1266-1269`); the second clone's velocity is
+            // the deterministic timeLeft rotation (`:47258`, no draw).
+            if self.local_ai[1] > 9.0 {
+                for _ in 0..2 {
+                    if rng.next_range(0, 2) == 0 {
+                        let _ = rng.next_range(0, 10); // dust scale (`:47228`)
+                        if matches!(self.kind, 808 | 809) {
+                            let _ = rng.next_float();
+                            let _ = rng.next_float();
+                        }
+                    }
+                    if rng.next_range(0, 2) == 0 {
+                        let _ = rng.next_range(0, 5); // smoke fadeIn (`:47266`)
+                    }
+                }
+            }
+            // `:47270-47309` — the homing: the acquire opens at `ai[0] > 30`
+            // (the counter increments HERE, `:47278`), the nearest chaseable
+            // NPC by Manhattan distance < 600 with a clear `CanHit` line;
+            // the miss aims 100 velocity-ticks ahead. The 1/12 lerp toward
+            // the target direction at speed 16.
+            let mut tx = self.pos.x;
+            let mut ty = self.pos.y;
+            let mut reach = 600.0f32;
+            self.ai[0] += 1.0;
+            let mut found = false;
+            if self.ai[0] > 30.0 {
+                self.ai[0] = 30.0;
+                let cx = self.pos.x + self.w * 0.5;
+                let cy = self.pos.y + self.h * 0.5;
+                for n in npcs {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let (nw, nh) = n.size();
+                    let nx = n.x + nw * 0.5;
+                    let ny = n.y + nh * 0.5;
+                    let d = (cx - nx).abs() + (cy - ny).abs();
+                    if d < reach && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh) {
+                        reach = d;
+                        tx = nx;
+                        ty = ny;
+                        found = true;
+                    }
+                }
+            }
+            if !found {
+                tx = self.pos.x + self.w * 0.5 + self.vel.x * 100.0;
+                ty = self.pos.y + self.h * 0.5 + self.vel.y * 100.0;
+            }
+            let toward = safe_normalize_or(
+                Vec2::new(tx, ty) - Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                -Vec2::Y,
+            ) * 16.0;
+            // `Vector2.Lerp(value1: velocity, value2: toward, 1/12)` —
+            // `v1 + (v2 - v1) * amount` (XNA's form).
+            self.vel = self.vel + (toward - self.vel) * (1.0 / 12.0);
+        } else if rocket_straight(self.kind) {
+            // `:47311-47368` — the straight-flight arm: the two dust loops
+            // gated on `|vx| >= 8 || |vy| >= 8` (the scale `Next(10)` and
+            // fadeIn `Next(5)` per loop; 793/796's clone pair draws a
+            // circular two-float each), then the ×1.1 speed-up below 15.
+            if self.vel.x.abs() >= 8.0 || self.vel.y.abs() >= 8.0 {
+                for _ in 0..2 {
+                    let _ = rng.next_range(0, 10); // dust scale (`:47325`)
+                    if matches!(self.kind, 793 | 796) {
+                        let _ = rng.next_float();
+                        let _ = rng.next_float();
+                    }
+                    let _ = rng.next_range(0, 5); // smoke fadeIn (`:47360`)
+                }
+            }
+            if self.vel.x.abs() < 15.0 && self.vel.y.abs() < 15.0 {
+                self.vel *= 1.1;
+            }
+        } else if rocket_arc(self.kind) {
+            // `:47369-47375` — the grenade smoke dust: ONE `NewDust` with a
+            // scale `Next(10)` (`:47372`) — the internal jitter goes with
+            // the dust pool, the explicit scale draw stays.
+            let _ = rng.next_range(0, 10);
+        } else if rocket_mine(self.kind) {
+            // `:47376-47394` — the mine settle: near-zero velocity fades the
+            // alpha (+2, cap 200); moving resets it and spawns the smoke
+            // dust (scale `1.6 + Next(5) * 0.1`, `:47390`).
+            if self.vel.x > -0.2 && self.vel.x < 0.2 && self.vel.y > -0.2 && self.vel.y < 0.2 {
+                self.alpha = (self.alpha + 2).min(200);
+            } else {
+                self.alpha = 0;
+                let _ = rng.next_range(0, 5);
+            }
+        } else if matches!(self.kind, 779 | 783 | 862 | 863) {
+            // `:47395-47416` — the cluster shrapnel: the `Next(25)` and
+            // `Next(5)` dust gates, then the one-shot frame pick `Next(4)`.
+            if rng.next_range(0, 25) == 0 {
+                // the 228 dust — no explicit draws
+            }
+            if rng.next_range(0, 5) == 0 {
+                // the 31 dust — no explicit draws
+            }
+            if self.frame_counter == 0 {
+                self.frame_counter = 1;
+                self.frame = rng.next_range(0, 4);
+            }
+        }
+        // `:47462` — the shared counter increment (the homing arm incremented
+        // its own inside the acquire block — the C# increments TWICE for
+        // those kinds, `:47278` then `:47462`; kept).
+        self.ai[0] += 1.0;
+        // `:47463-47529` — the per-family velocity tail.
+        if rocket_homing(self.kind) {
+            // `:47463-47475` — the spriteDirection + rotation pair.
+            if self.vel.x < 0.0 {
+                self.sprite_direction = -1;
+                self.rot = (-self.vel.y).atan2(-self.vel.x) - 1.57;
+            } else {
+                self.sprite_direction = 1;
+                self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+            }
+        } else if rocket_straight(self.kind) {
+            // `:47476-47482` — the velocity-pointing rotation.
+            if self.vel != Vec2::ZERO {
+                self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+            }
+        } else if rocket_mine(self.kind) {
+            // `:47483-47495` — the mine settle: gravity + 0.97 drag with the
+            // ±0.1 zero snaps.
+            self.vel.y += 0.2;
+            self.vel *= 0.97;
+            if self.vel.x > -0.1 && self.vel.x < 0.1 {
+                self.vel.x = 0.0;
+            }
+            if self.vel.y > -0.1 && self.vel.y < 0.1 {
+                self.vel.y = 0.0;
+            }
+        } else if rocket_arc(self.kind) {
+            // `:47496-47506` — the grenade arc: after 15 ticks the gravity
+            // with the 0.95 ground-slide.
+            if self.ai[0] > 15.0 {
+                if self.vel.y == 0.0 {
+                    self.vel.x *= 0.95;
+                }
+                self.vel.y += 0.2;
+            }
+        } else if matches!(self.kind, 779 | 783 | 862 | 863) {
+            // `:47507-47528` — the shrapnel rides the >10-tick bomb tail
+            // (the 30/397/517/681/588/779/783/862/863/1088 list): the 10 cap,
+            // the 0.97 ground-slide with the ±0.01 snap, the gravity.
+            if self.ai[0] > 10.0 {
+                self.ai[0] = 10.0;
+                if self.vel.y == 0.0 && self.vel.x != 0.0 {
+                    self.vel.x *= 0.97;
+                    if self.vel.x > -0.01 && self.vel.x < 0.01 {
+                        self.vel.x = 0.0;
+                    }
+                }
+                self.vel.y += 0.2;
+            }
+        }
+        // `:47530-47537` — the rotation tail: the straight/homing families
+        // set their own above; every OTHER rocket (the grenades, the mines,
+        // the shrapnel) spins `rotation += velocity.X * 0.1f`.
+        if !rocket_straight(self.kind) && !rocket_homing(self.kind) {
+            self.rot += self.vel.x * 0.1;
+        }
+        // The movement — `HandleMovement`'s aiStyle-16 bounce arm
+        // (`Projectile.cs:19747-19778`): the −0.4 axis reflections (the Y
+        // only past 0.7), then the straight/homing families' contact kill
+        // (`velocity *= 0; alpha = 255; timeLeft = 3`, `:19773-19778`).
+        // The port's tile-model stand-in probes the destination box per
+        // axis (the `ai_bomb` precedent).
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            let mut contact = false;
+            if hit_x {
+                self.vel.x = -self.vel.x * 0.4;
+                contact = true;
+            } else {
+                self.pos.x = nx;
+            }
+            if hit_y {
+                if self.vel.y > 0.7 {
+                    self.vel.y = -self.vel.y * 0.4;
+                } else {
+                    self.vel.y = 0.0;
+                }
+                contact = true;
+            } else {
+                self.pos.y = ny;
+            }
+            // `:19773-19778` — the straight/homing rocket contact: the
+            // zero-velocity fuse (the grenades/mines keep bouncing).
+            if contact && (rocket_straight(self.kind) || rocket_homing(self.kind)) {
+                self.vel = Vec2::ZERO;
+                self.alpha = 255;
+                self.time_left = 3;
+            }
+        } else {
+            self.pos += self.vel;
         }
     }
 
@@ -11602,7 +12373,8 @@ pub(crate) fn chaseable_held(n: &Npc) -> bool {
 }
 
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
-fn npc_center(n: &Npc) -> Vec2 {
+/// `pub(crate)`: S1-P-i18's special-bullet homing / re-target arms read it.
+pub(crate) fn npc_center(n: &Npc) -> Vec2 {
     let (w, h) = n.size();
     Vec2::new(n.x + w * 0.5, n.y + h * 0.5)
 }
@@ -11834,8 +12606,9 @@ fn line_solid(t: &tr_core::tile::Tile) -> bool {
 /// `immune` is the C#'s `projectile.localNPCImmunity[i] != 0` skip
 /// (`:45645-45648`) — the row lives on the pool's per-slot array, which the
 /// arm signature cannot reach, so the gem arm passes it empty and the
-/// deviation is recorded there.
-fn find_target_with_line_of_sight(
+/// deviation is recorded there. `pub(crate)`: S1-P-i18's NanoBullet re-target
+/// passes its own slot's local-immunity row.
+pub(crate) fn find_target_with_line_of_sight(
     world: &World,
     npcs: &[Npc],
     pos: Vec2,
@@ -11863,6 +12636,21 @@ fn find_target_with_line_of_sight(
         }
     }
     result
+}
+
+/// `Projectile.FindTargetWithLineOfSight` — the public wrapper for the
+/// per-type AI modules (`special_arrows`' Chlorophyte retarget,
+/// `Projectile.cs:18553`); the body is [`find_target_with_line_of_sight`].
+pub(crate) fn find_target_with_line_of_sight_pub(
+    world: &World,
+    npcs: &[Npc],
+    pos: Vec2,
+    w: f32,
+    h: f32,
+    max_range: f32,
+    immune: &[i32],
+) -> i32 {
+    find_target_with_line_of_sight(world, npcs, pos, w, h, max_range, immune)
 }
 
 /// `Utils.GetLerpValue(from, to, t, clamped: true)` (`Utils.cs:315-340`):
@@ -12189,6 +12977,20 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    /// `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The world-sim
+    /// pass sets it per fixed step through [`ProjectilePool::set_spear_owner`]
+    /// (the `set_disco`/`set_wind` setter pattern — no `update` signature
+    /// churn). `None` = no player link: the aiStyle-19 arm holds the slot
+    /// (the orphan guard, the yoyo precedent).
+    spear_owner: Option<crate::projectile_ai_spear::SpearOwner>,
+    /// S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime`,
+    /// `Projectile.cs:45941`): the `itemAnimation`/`itemTime` value the arm
+    /// asks the owner to re-arm this tick. The world-sim pass drains it after
+    /// the step and re-arms `app.swing`/`app.item_time` (the `FlailTick.facing`
+    /// write-back precedent). `None` = no hold fired.
+    pending_spear_hold: Option<i32>,
+
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
     /// feeds it through [`ProjectilePool::set_bobber_inputs`] before the pass
@@ -12226,10 +13028,12 @@ impl Default for ProjectilePool {
 /// (`Projectile.cs:67733+`): the aim world point
 /// (`Main.ReverseGravitySupport(Main.MouseScreen) + Main.screenPosition`,
 /// `:67928`), the held-button channel state (`Player.channel` — the release
-/// arm `:67920-67925`) and the owner's death (`:67824`). The accessory flags
-/// (yoyoString / magicString) and `meleeSpeed` land with M3-EQUIP-3 — the AI's
-/// terms stay at their ported base values until then.
-#[derive(Clone, Copy, Debug, Default)]
+/// arm `:67920-67925`), the owner's death (`:67824`), `CCed` (the same release
+/// arm) and `meleeSpeed` (the lifetime divisor `:67750` and the range/top-speed
+/// division `:67886-67887` — S1-P-i09 wires the ported `Player.melee_speed()`).
+/// The accessory flags (yoyoString / magicString) stay with M3-EQUIP-3 — their
+/// terms (`:67752-67755`, `:67882-67885`, `:68023-68031`) are unported grants.
+#[derive(Clone, Copy, Debug)]
 pub struct YoyoInputs {
     /// The aim point in world pixels; `None` = no player link — the orphan
     /// guard, the slot holds position (unreachable in game: the pool only
@@ -12239,6 +13043,26 @@ pub struct YoyoInputs {
     pub channel: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
+    /// `Player.CCed` (`:67920`) — the release arm fires on a CC even while
+    /// the button is held (`Player.ItemCheck`'s `channel = false`,
+    /// `Player.cs:42598-42602`).
+    pub player_cced: bool,
+    /// `player.meleeSpeed` (`:67750`, `:67886-67887`).
+    pub melee_speed: f32,
+}
+
+impl Default for YoyoInputs {
+    /// `meleeSpeed = 1f` — the C# base; a 0 here would divide the lifetime
+    /// and range/speed scalings wrong (the `FlailInputs` precedent).
+    fn default() -> Self {
+        Self {
+            aim: None,
+            channel: false,
+            player_dead: false,
+            player_cced: false,
+            melee_speed: 1.0,
+        }
+    }
 }
 
 /// What `AI_015_Flails` reads off `Main.player[owner]` each tick — the
@@ -12252,8 +13076,16 @@ pub struct YoyoInputs {
 pub struct FlailInputs {
     /// `Main.MouseWorld` (`Projectile.cs:43863`) — the hold state's aim.
     pub aim: Option<(f32, f32)>,
-    /// `Player.channel` (`:43872`, `:43905`, `:43942`, `:43959`, `:44035`).
+    /// `Player.channel` (`:43872`) — the hold state's release gate ONLY.
     pub channel: bool,
+    /// `Player.controlUseItem` (`:43905`, `:43942`, `:43959`, `:44035`) —
+    /// the raw use-button state the flight/retract/spin/post-spin re-grab
+    /// arms read (NOT `channel`: the button can be held while `channel`
+    /// is false, and the re-grab still fires).
+    pub control_use_item: bool,
+    /// `Main.mapFullscreen` (`:43732`) — the local owner's fullscreen map
+    /// kills its own flails.
+    pub map_fullscreen: bool,
     /// The kill gates (`:43727`): dead / `CCed` — the port drops the
     /// `noItems` arm (no field, documented).
     pub player_dead: bool,
@@ -12274,6 +13106,10 @@ pub struct FlailInputs {
     /// `Main.myPlayer` — the family's spawns are local-owner only
     /// (`:43912`, `:44075`, `:44110`).
     pub local_owner: u8,
+    /// `Main.LocalPlayer.inventory[selectedItem].shoot` (`:43850`) — the
+    /// dual-flail `flag5` only arms when the selected item no longer shoots
+    /// this projectile type. `None` when there is no selected item.
+    pub selected_shoot: Option<u16>,
 }
 
 impl Default for FlailInputs {
@@ -12283,6 +13119,8 @@ impl Default for FlailInputs {
         Self {
             aim: None,
             channel: false,
+            control_use_item: false,
+            map_fullscreen: false,
             player_dead: false,
             player_cced: false,
             mounted_center: None,
@@ -12291,6 +13129,7 @@ impl Default for FlailInputs {
             player_dir: 1,
             melee_speed: 1.0,
             local_owner: 0,
+            selected_shoot: None,
         }
     }
 }
@@ -12493,6 +13332,8 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            spear_owner: None,
+            pending_spear_hold: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -12526,6 +13367,38 @@ impl ProjectilePool {
             .collect();
         let list = crate::grapple::blacklisted_tiles(world, &attached);
         self.hook_blacklist.insert(owner, list);
+    }
+
+    /// `Player.UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`) as
+    /// `QuickGrapple` calls it at fire time (`:6407`), BEFORE the sound and the
+    /// spawn. The pool owns the per-owner refused-tile set; this rebuilds it
+    /// from the owner's currently attached hooks.
+    pub fn rebuild_hook_blacklist(&mut self, world: &World, owner: u8) {
+        self.refresh_hook_blacklist(world, owner);
+    }
+
+    /// `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): kill every
+    /// aiStyle-7 slot this owner holds, clear the owner's refused-tile set
+    /// (`ClearGrapplingBlacklist`, `:33563` → `:6200-6203`) and drop the
+    /// registration. The C# resets `grappling[0] = -1; grapCount = 0` (`:33564-
+    /// 33565`); the port rebuilds `hook_reg` from the live set on the next
+    /// projectile pass, so clearing it here keeps the pull from reading a dead
+    /// slot in the same tick.
+    pub fn remove_all_grappling_hooks(&mut self, owner: u8) {
+        self.hook_blacklist.remove(&owner);
+        let hooks: Vec<usize> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.active && p.owner == owner && proj_data(p.kind).is_some_and(|d| d.ai_style == 7)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for i in hooks {
+            self.kill(i);
+        }
+        self.clear_hook_reg();
     }
 
     /// The wind vector the AI arms' tail applies
@@ -12684,6 +13557,23 @@ impl ProjectilePool {
             }
         }
         out
+
+    /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    /// `Main.player[owner]` reads). The world-sim pass builds it per fixed
+    /// step from the live player + the swing timers (the `set_disco` setter
+    /// pattern). `None` clears the link (the arm's orphan guard).
+    pub fn set_spear_owner(&mut self, owner: Option<crate::projectile_ai_spear::SpearOwner>) {
+        self.spear_owner = owner;
+    }
+
+    /// S1-P-i06 — drain the lances' channel-hold write-back
+    /// (`SetDummyItemTime(third)`, `Projectile.cs:45941`): the world-sim pass
+    /// re-arms `app.swing`/`app.item_time` to this many ticks. `None` when no
+    /// lance held this tick.
+    pub fn take_spear_hold(&mut self) -> Option<i32> {
+        self.pending_spear_hold.take()
+
+    }
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -12861,6 +13751,38 @@ impl ProjectilePool {
         }
     }
 
+    /// `Main.projectile[num].noDropItem = true` — the multi-shot bows stamp it
+    /// on each spawned arrow right after `NewProjectile` (`Player.cs:47806`
+    /// the Tsunami, `:48305` the Chlorophyte Shotbow, `:47497` the Blood Rain
+    /// Bow, `:47955` the Fairy Queen's non-932 shot); the kill path's
+    /// ammo-recovery drop reads it (`Projectile.cs:77367`).
+    pub fn set_no_drop_item(&mut self, slot: usize, value: bool) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.no_drop_item = value;
+        }
+    }
+
+    /// `ApplyStatsFromSource`'s bonus-crit stamp (`Projectile.cs:11129-11132`):
+    /// the Revolver 2269's `revolverCritChanceBonus` joins the slot at spawn;
+    /// `Damage_PVE_Inner`'s per-hit roll adds it (`:12886-12894`, S1-P-i11 —
+    /// the crit itself is never rolled at throw time).
+    pub fn set_bonus_crit_chance(&mut self, slot: usize, value: i32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.bonus_crit_chance = value;
+        }
+    }
+
+    /// `ApplyStatsFromSource`'s armor-penetration copy
+    /// (`Projectile.cs:11128`): the firing item's `armorPenetration` (the
+    /// prefix's `arpen` row, `Item.cs:586`) joins the slot at spawn — the
+    /// `set_crit` convention. `Damage_PVE_Inner`'s `num5` (`:12831`) reads
+    /// it on every hit.
+    pub fn set_armor_penetration(&mut self, slot: usize, value: i32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.armor_penetration = value;
+        }
+    }
+
     /// The spawn-site `ai[1]` payload setter — the star cloak's falling
     /// stars carry `ai1 = position.Y` (`Player.cs:38478`, S1-C-7 wave B);
     /// the plain `spawn` has no ai arguments (the `set_crit` convention).
@@ -12870,12 +13792,32 @@ impl ProjectilePool {
         }
     }
 
+    /// The spawn-site `ai[2]` payload setter — the dual-flail sibling's
+    /// `ai9 = 1f` drawLayer flag (`Player.cs:49420-49421`, the `set_ai1`
+    /// convention).
+    pub fn set_ai2(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[2] = value;
+        }
+    }
+
     /// S1-D-3 W-9 — the spawn-site `localAI[0]` payload setter: the
     /// aimed sharknado bolt's enrage flag (`NPC.cs:49505`'s third
     /// `NewProjectile` arg, `flag6 ? 1 : 0`; the `set_ai1` convention).
     pub fn set_local_ai0(&mut self, slot: usize, value: f32) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.local_ai[0] = value;
+        }
+    }
+
+    /// S1-P-i14 — the spawn-site `localAI[1]` payload setter: the Xenopopper
+    /// bubble's deferred fused speed (`Player.cs:47623`,
+    /// `Main.projectile[num26].localAI[1] = speed`; the `set_local_ai0`
+    /// convention). The bubble's AI_078 releases the resolved bullet
+    /// (`localAI[0]`) at this speed.
+    pub fn set_local_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.local_ai[1] = value;
         }
     }
 
@@ -12899,6 +13841,19 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i16 — the aiStyle-16 `Kill()` latch for an EXTERNAL kill (the
+    /// Proximity Mine Launcher's cap, `Player.cs:47013`): the C# `Kill()`
+    /// runs `PrepareBombToBlow` + `Damage()` inline; the port latches
+    /// `detonated` so the pool's end-of-tick explosion pass resolves the
+    /// rocket death path (the `ai_bomb` fuse convention). The slot stays
+    /// active until that pass — the C#'s `Kill()` deactivates at its tail,
+    /// the port's `explode_rocket` does the same.
+    pub fn detonate(&mut self, slot: usize) {
+        if slot < self.slots.len() && self.slots[slot].active {
+            self.slots[slot].detonated = true;
+        }
+    }
+
     /// S1-I-4d: the `Projectile.Update` tail clear (`Projectile.cs:17244`) —
     /// `this.netUpdate = false` on every slot once the cadence has read it. The
     /// net cadence (`netglue::proj_sync_cadence`) calls this after arming the
@@ -12909,10 +13864,12 @@ impl ProjectilePool {
         }
     }
 
-    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6458-6477`):
+    /// `QuickGrapple`'s `Projectile.NewProjectile` (`Player.cs:6460-6478`):
     /// the aim direction normalized by its own length and scaled to
     /// `shootSpeed`, spawned at the player center. The degenerate aim
-    /// (`0,0` or NaN) falls back to the facing, as the source does.
+    /// (`0,0` or both-NaN) falls back to the facing, as the source does.
+    /// `NewProjectile` centres the box (`Projectile.cs:10876-10877`:
+    /// `position = X - width/2`), so the spawn site subtracts the half-box.
     pub fn spawn_hook(
         &mut self,
         kind: u16,
@@ -12925,15 +13882,29 @@ impl ProjectilePool {
         facing: i32,
     ) -> Option<usize> {
         let delta = aim - player_center;
-        // `:6459-6467` — the degenerate aim (both zero, or NaN) falls back to
-        // the facing; otherwise the direction scales to `shootSpeed`.
-        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0) || delta.is_nan() {
+        // `:6468-6477` — the degenerate aim (both zero, or both NaN) falls back
+        // to the facing; otherwise the direction scales to `shootSpeed`.
+        let (vx, vy) = if (delta.x == 0.0 && delta.y == 0.0)
+            || (delta.x.is_nan() && delta.y.is_nan())
+        {
             (facing as f32 * shoot_speed, 0.0)
         } else {
             let k = shoot_speed / delta.length();
             (delta.x * k, delta.y * k)
         };
-        self.spawn_with_data_ai_owned(kind, owner, player_center.x, player_center.y, vx, vy, damage, knock_back, 0.0, 0.0)
+        let data = proj_data(kind)?;
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            player_center.x - data.w * 0.5,
+            player_center.y - data.h * 0.5,
+            vx,
+            vy,
+            damage,
+            knock_back,
+            0.0,
+            0.0,
+        )
     }
 
 
@@ -13262,7 +14233,7 @@ impl ProjectilePool {
     /// `EntitySource_Parent` arm, `:11136`) and its own `GetWhipSettings`
     /// override (`30 * MaxUpdates` for the arms, `:48410-48417`).
     fn spawn_whip_arm(&mut self, parent: usize, arm: WhipArmSpawn, owner: Option<(f32, f32)>) {
-        let (kind, damage, kb, tag_type, tag_bonus, animation) = {
+        let (kind, damage, kb, tag_type, tag_bonus, animation, arpen) = {
             let p = &self.slots[parent];
             (
                 p.kind,
@@ -13271,6 +14242,7 @@ impl ProjectilePool {
                 p.tag_effect_type,
                 p.bonus_tag_damage,
                 p.whip_use_animation,
+                p.armor_penetration,
             )
         };
         // `:47710`: from the player center (`player.Center.X, player.Center.Y`).
@@ -13301,6 +14273,9 @@ impl ProjectilePool {
         p.ai[2] = arm.ai2;
         p.tag_effect_type = tag_type;
         p.bonus_tag_damage = tag_bonus;
+        // `ApplyStatsFromSource`'s `EntitySource_Parent` arm (`:11138`):
+        // the child carries the parent's armor penetration too.
+        p.armor_penetration = arpen;
         self.set_whip_settings(slot, animation);
     }
 
@@ -13433,6 +14408,11 @@ impl ProjectilePool {
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
+            melee: data.melee,
+            ranged: data.ranged,
+            magic: data.magic,
+            applies_immunity_time_on_single_hits: data.applies_immunity_time_on_single_hits,
+            bonus_crit_chance: 0,
             ..Default::default()
         };
         let base = slot * 256;
@@ -13763,6 +14743,22 @@ impl ProjectilePool {
             _ => {}
         }
     }
+
+    /// S1-P-i18 — `StatusNPC`'s special-bullet debuff arms
+    /// (`Projectile.cs:11173-11726`), called from `Damage_PVE_Inner` at
+    /// `:13580` BEFORE `StrikeNPC` (`:13649`). Delegates to the module's
+    /// [`crate::projectile_special_bullets::bullet_on_hit_debuffs`] (the
+    /// per-type durations + the 285's one-draw Confused roll). The nano's
+    /// roll rides the pass's `UpdateProjectiles` stream; every other arm is
+    /// draw-free. `NPC.AddBuff` itself is rand-free.
+    fn special_bullet_status_npc(
+        &self,
+        slot: usize,
+        npc: &mut Npc,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        crate::projectile_special_bullets::bullet_on_hit_debuffs(self.slots[slot].kind, npc, rng);
+    }
     /// The aiStyle-165 on-hit arms after the tag application, inside
     /// `Damage_PVE_Inner` (`Projectile.cs:13904-14263`): the `MinionAttackTargetNPC`
     /// override (`:14257-14263`) and the per-type whip switch
@@ -13882,6 +14878,11 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
+            // S1-P-i17 — `base.oldVelocity = base.velocity`
+            // (`Projectile.cs:16766`): captured at the START of every
+            // sub-step; the Bee Arrow's death swarm (`:76417-76423`)
+            // reads the last sub-step's start velocity.
+            let mut old_velocity = self.slots[i].vel;
             // `Projectile.cs:16768-16771` — the per-slot cue cooldown ticks
             // down once per update, ahead of the AI sub-steps, and only
             // while positive: a `-1` latch stays down (S1-E-21h — the
@@ -13890,6 +14891,9 @@ impl ProjectilePool {
                 self.slots[i].sound_delay -= 1;
             }
             for sub in 0..sub_steps {
+                // `Projectile.cs:16766` — the sub-step's start velocity
+                // (the bee swarm's `oldVelocity` read, S1-P-i17).
+                old_velocity = self.slots[i].vel;
                 // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
                 // spawn-delay countdown: while `ai[1] > 0` the WHOLE
                 // sub-step is skipped (ahead of the out-of-world guard, the
@@ -14073,9 +15077,133 @@ impl ProjectilePool {
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
                                 crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
                             }
+                            // S1-P-i06 — the North Pole's falling flake (344,
+                            // `AI_001`'s type hook `Projectile.cs:57062-57114`):
+                            // the tile-kill probe, the localAI[1] fade/gravity/
+                            // sibling-push machine, `frame = (int)ai[1]`. The
+                            // sibling separation scans the pool (the
+                            // `minion_separation` borrow pattern). Kind-disjoint
+                            // from A/B/C/frostmoon/moonlord. The 344 has its own
+                            // gravity-chain arm, so the generic flight's
+                            // `ai[0] >= 15` gravity does NOT apply — the arm
+                            // owns the whole body (no `ai_style1_flight` tail).
+                            NORTH_POLE_FLAKE => {
+                                let push = crate::projectile_ai_spear::snowflake_sibling_push(
+                                    &self.slots,
+                                    i,
+                                );
+                                crate::projectile_ai_spear::ai_north_pole_snowflake(
+                                    &mut self.slots[i],
+                                    world,
+                                    push,
+                                );
+                                // `UpdatePosition` (`:20445`) — the 344 is not
+                                // in the skip list; `tileCollide = false` so the
+                                // free move integrates the velocity.
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
+                            // S1-P-i16 — the dart guns' ammo projectiles
+                            // (267/477/478/479) + the Electrosphere bolt
+                            // 442: `AI_001`'s dart arm (`Projectile.cs:
+                            // 57292-57364`) + the 442 block (`:54726-
+                            // 54771`), kind-disjoint from A/B/C and the
+                            // rider/frostmoon/moonlord sets.
+                            kind if crate::projectile_ai_darts::covers(kind) => {
+                                crate::projectile_ai_darts::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    &npcs[..],
+                                    rng,
+                                    local_owner,
+                                )
+                            }
+                            // S1-P-i17 — the special arrows' per-type
+                            // `AI_001` arms (`Projectile.cs:54002-57798`),
+                            // gated to `special_arrows::ARROW_KINDS` ONLY
+                            // (15 kinds, disjoint from A/B/C, the riders,
+                            // the frost/empress sets and the moon-lord
+                            // shots): the per-kind gravity pins, the
+                            // Jester/Bee resting counters, the Shimmer's
+                            // inverted gravity, the Chlorophyte bounce.
+                            // The 469's water kill (`:54012-54015`) runs
+                            // HERE (the world's liquid probe) before the
+                            // arm — `bee_water_kill` reads the tile liquid
+                            // flags (`wet && !honeyWet && !shimmerWet`).
+                            kind if crate::special_arrows::covers(kind) => {
+                                if crate::special_arrows::bee_water_kill(
+                                    &self.slots[i],
+                                    world,
+                                ) {
+                                    self.slots[i].kill_time_left = self.slots[i].time_left;
+                                    self.slots[i].active = false;
+                                    self.slots[i].time_left = 0;
+                                } else {
+                                    crate::special_arrows::step(
+                                        &mut self.slots[i],
+                                        world,
+                                        npcs,
+                                    )
+                                }
+                            }
+                            // S1-P-i18 — the special bullets' per-type
+                            // `AI_001` arms + `HandleMovement` bounces
+                            // (36/89/104/207/242/279/283/284/285/286/287,
+                            // `projectile_special_bullets`), gated to its own
+                            // kind list ONLY (disjoint from A/B/C, the riders,
+                            // the frostmoon and moonlord sets): every other
+                            // kind keeps its existing arm byte-identical.
+                            kind if crate::projectile_special_bullets::covers(kind) => {
+                                crate::projectile_special_bullets::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
+                            // S1-P-i28 — the Javelin (507, `AI_001`'s
+                            // 507/508/662/680/685 gravity arm
+                            // `Projectile.cs:57471-57478`): kind-disjoint from
+                            // A/B/C, the riders and the frostmoon/moonlord
+                            // sets, so the gate order never double-applies.
+                            kind if crate::projectile_ai_thrown::covers_ai001(kind) => {
+                                crate::projectile_ai_thrown::javelin_friendly_step(
+                                    &mut self.slots[i],
+                                    world,
+                                )
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
-                        3 => self.slots[i].ai_boomerang(world, owner),
+                        3 => {
+                            // `AI_003_Boomerang` (S1-P-i08): the meleeSpeed
+                            // remap reads the owner's stat (`Projectile.cs:
+                            // 39464`; the flail inputs already carry it);
+                            // the catch's `Main.myPlayer == owner` gate
+                            // (`:39551`) rides the local-owner comparison.
+                            let catch_allowed = self.slots[i].owner == local_owner;
+                            self.slots[i].ai_boomerang(
+                                world,
+                                owner,
+                                flail_inputs.melee_speed,
+                                catch_allowed,
+                            );
+                        }
+                        // S1-P-i17 — `AI()`'s `else if (this.aiStyle == 5)`
+                        // (`Projectile.cs:23830-24065`): the falling star
+                        // 92 (the Holy Arrow's death spawn) — the ai[1]
+                        // floor arms tileCollide, the alpha pulse, the
+                        // spin, the light. The other aiStyle-5 kinds
+                        // (9/12/503/723-726/955/1037/1049/1133) have no
+                        // rows yet — the arm is kind-gated so they keep
+                        // the no-op fall-through when they land.
+                        5 => {
+                            if self.slots[i].kind == FALLING_STAR {
+                                crate::special_arrows::falling_star_step(
+                                    &mut self.slots[i],
+                                    world,
+                                );
+                            }
+                        }
                         // `AI()`'s `else if (this.aiStyle == 10)`
                         // (`Projectile.cs:24367-24370`) -> `AI_010`. The
                         // SnowBallHostile 109 (S1-D-3q) is the first kind
@@ -14107,10 +15235,18 @@ impl ProjectilePool {
                             self.slots[i].ai_leaf_blower(world, rng);
                         }
                         7 => {
-                            let dead = player.as_ref().is_some_and(|p| p.dead);
+                            // `:52567` — the kill gate is `dead || CCed`.
+                            let dead = player.as_ref().is_some_and(|p| p.dead || p.cced());
                             let local = self.slots[i].owner == local_owner;
-                            let center = owner
-                                .map(|(x, y)| Vec2::new(x, y))
+                            // `:52572` — the hook reads its owner's
+                            // `MountedCenter` (the port folds it to center).
+                            let center = player
+                                .as_ref()
+                                .map(|p| {
+                                    let (x, y) = p.mounted_center();
+                                    Vec2::new(x, y)
+                                })
+                                .or_else(|| owner.map(|(x, y)| Vec2::new(x, y)))
                                 .unwrap_or(self.slots[i].pos);
                             // The crack roll reborrows the pass's threaded
                             // stream (the slot borrow and the `&mut *rng`
@@ -14141,25 +15277,9 @@ impl ProjectilePool {
                                 self.register_hook(i);
                                 if latched {
                                     let owner = self.slots[i].owner;
-                                    // `:52772` — the latch rebuilds the
-                                    // owner's refused-tile set.
-                                    self.refresh_hook_blacklist(world, owner);
-                                    // `:52773-52774` — the Queen Slime's hook
-                                    // (935) drags its owner to the hook.
-                                    if self.slots[i].kind == 935 {
-                                        if let Some(p) = player.as_deref_mut() {
-                                            let center = self.slots[i].center();
-                                            let target = crate::grapple::queen_slime_hook_teleport(
-                                                world,
-                                                Vec2::new(p.x, p.y),
-                                                Vec2::new(crate::player::WIDTH as f32, p.height),
-                                                Vec2::new(center.0, center.1),
-                                            );
-                                            // `Player.Teleport(vector, 10)` — the
-                                            // style-10 instant move.
-                                            p.teleport(target.x, target.y);
-                                        }
-                                    }
+                                    // `:52711-52754` — the attach-cap recycle
+                                    // runs FIRST (the C# kills the oldest before
+                                    // the blacklist rebuild / teleport below).
                                     let cap =
                                         crate::grapple::hook_spec_id(self.slots[i].kind).max_attached;
                                     let mut count = 0usize;
@@ -14180,6 +15300,25 @@ impl ProjectilePool {
                                     }
                                     if count > cap && worst != usize::MAX {
                                         self.kill(worst);
+                                    }
+                                    // `:52771` — the latch rebuilds the
+                                    // owner's refused-tile set (AFTER the recycle).
+                                    self.refresh_hook_blacklist(world, owner);
+                                    // `:52772-52775` — the Queen Slime's hook
+                                    // (935) drags its owner to the hook.
+                                    if self.slots[i].kind == 935 {
+                                        if let Some(p) = player.as_deref_mut() {
+                                            let center = self.slots[i].center();
+                                            let target = crate::grapple::queen_slime_hook_teleport(
+                                                world,
+                                                Vec2::new(p.x, p.y),
+                                                Vec2::new(crate::player::WIDTH as f32, p.height),
+                                                Vec2::new(center.0, center.1),
+                                            );
+                                            // `Player.Teleport(vector, 10)` — the
+                                            // style-10 instant move.
+                                            p.teleport(target.x, target.y);
+                                        }
                                     }
                                 }
                             }
@@ -14248,6 +15387,17 @@ impl ProjectilePool {
                                         &mut self.slots[i],
                                     );
                                 }
+                                // S1-P-i16 — the Cursed Dart's flame drop
+                                // 480: the AI_014 dust block's draw census
+                                // (`Projectile.cs:25227-25245`), then the
+                                // SAME generic spear tail (AI_014 has no
+                                // 480 flight branch).
+                                480 => {
+                                    crate::projectile_ai_darts::flame_drop_dust(
+                                        &mut self.slots[i],
+                                        rng,
+                                    );
+                                }
                                 _ => {}
                             }
                             self.slots[i].ai_spear(world)
@@ -14265,7 +15415,118 @@ impl ProjectilePool {
                                 rng,
                             );
                         }
-                        16 => self.slots[i].ai_bomb(world),
+                        // S1-P-i06 — the spear family (`AI()`'s
+                        // `else if (this.aiStyle == 19)`,
+                        // `Projectile.cs:25477-25480` → `AI_019_Spears`
+                        // `:45857-46073`). The owner snapshot rides the
+                        // pool's `set_spear_owner` seam (the `set_disco`
+                        // pattern); a `None` link holds the slot (the orphan
+                        // guard). The sub-shots the arm queues drain into the
+                        // pool here (the `MinionShot` pattern); the movement
+                        // is the shared `kill_step` (the `tileCollide = false`
+                        // free-move branch, `UpdatePosition` `:20445` — the
+                        // C# runs `HandleMovement` after the AI, `:17015`).
+                        19 => {
+                            if let Some(so) = self.spear_owner {
+                                let shots = crate::projectile_ai_spear::ai_spears(
+                                    &mut self.slots[i],
+                                    world,
+                                    &so,
+                                    rng,
+                                );
+                                // The lances' channel hold (`:45939-45942`).
+                                if crate::projectile_ai_spear::lance_channel_hold(
+                                    &self.slots[i],
+                                    &so,
+                                ) {
+                                    self.pending_spear_hold =
+                                        Some(so.item_animation_max / 3);
+                                }
+                                let owner_id = self.slots[i].owner;
+                                for s in shots {
+                                    if let Some(slot) = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        // `NewProjectile` centres the box
+                                        // (`:10876-10877`).
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1,
+                                    ) {
+                                        if let Some(life) = s.time_left {
+                                            self.slots[slot].time_left = life;
+                                        }
+                                    }
+                                }
+                            }
+                            // HandleMovement after the AI (`:17015`/`:20445`).
+                            self.slots[i].kill_step(world);
+                        }
+                        // S1-P-i06 — the spear sub-shots' own styles. The
+                        // Mushroom Spear's spore (131, aiStyle 30 default arm
+                        // `:26775-26784`); the spore cloud 228 / Thunder bolt
+                        // 732 (aiStyle 44 `:27893-27948`); the North Pole
+                        // snowflake 343 (aiStyle 57 `:28867-28905`). Each
+                        // rides the shared `kill_step` after the AI.
+                        30 => {
+                            if self.slots[i].kind == MUSHROOM_SPORE {
+                                crate::projectile_ai_spear::ai_spore(&mut self.slots[i]);
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        44 => {
+                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT) {
+                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i]);
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        57 => {
+                            if self.slots[i].kind == NORTH_POLE_SNOWFLAKE {
+                                let shots = crate::projectile_ai_spear::ai_north_pole_flake(
+                                    &mut self.slots[i],
+                                    rng,
+                                );
+                                let owner_id = self.slots[i].owner;
+                                for s in shots {
+                                    if let Some(slot) = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1,
+                                    ) {
+                                        if let Some(life) = s.time_left {
+                                            self.slots[slot].time_left = life;
+                                        }
+                                    }
+                                }
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        16 => {
+                            // S1-P-i16 — `base.wet`'s centre-cell stand-in
+                            // (the field doc): the liquid-rocket kill arm
+                            // reads it at the AI head.
+                            let p = &self.slots[i];
+                            let wet = world
+                                .tile(
+                                    ((p.pos.x + p.w * 0.5) / 16.0) as i32,
+                                    ((p.pos.y + p.h * 0.5) / 16.0) as i32,
+                                )
+                                .is_some_and(|t| t.liquid > 0);
+                            self.slots[i].wet = wet;
+                            self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
+                        }
                         18 => self.slots[i].ai_demon_scythe(world),
                         // S1-D-4 unarmed styles (census §3c): the four
                         // data-rowed styles with no arm. The bodies live
@@ -14341,6 +15602,48 @@ impl ProjectilePool {
                         20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
+                        // S1-P-i14 (V5 gate) — `AI_078`
+                        // (`Projectile.cs:30762-30790`): the Xenopopper
+                        // bubble 444's steer-toward-`ai[0]` flight — the
+                        // alpha fade, the ±π-wrapped 5% rotation blend, the
+                        // ×0.96 drag, the velocity rotation − π/2 and the
+                        // owner-gated 60-tick life clamp. Draw-free. The
+                        // death release (`Kill()` `:73398-73419`) rides the
+                        // pool's death hook (`xenopopper_bubble_kill`).
+                        78 => {
+                            let p = &mut self.slots[i];
+                            if p.alpha > 0 {
+                                p.alpha -= 30;
+                            }
+                            if p.alpha < 0 {
+                                p.alpha = 0;
+                            }
+                            // `v2 = ai[0].ToRotationVector2()`; the angle
+                            // delta `v2.ToRotation() - velocity.ToRotation()`
+                            // is `ai[0] - vel.ToRotation()` (both round-trip
+                            // the same f32), wrapped to ±π (`:30774-30782`).
+                            let mut delta =
+                                (p.ai[0] - p.vel.y.atan2(p.vel.x)) as f64;
+                            if delta > std::f64::consts::PI {
+                                delta -= std::f64::consts::PI * 2.0;
+                            }
+                            if delta < -std::f64::consts::PI {
+                                delta += std::f64::consts::PI * 2.0;
+                            }
+                            // `:30783-30785` — the f64 literal 0.05000000074505806
+                            // (the f32 0.05f promoted), the ×0.96f drag, the
+                            // rotation minus the f32 π/2.
+                            p.vel = crate::bow_launch::rotated_by(
+                                p.vel,
+                                delta * 0.05000000074505806,
+                            ) * 0.96;
+                            p.rot = p.vel.y.atan2(p.vel.x)
+                                - std::f32::consts::FRAC_PI_2;
+                            // `:30786-30789` — the owner-gated life clamp.
+                            if p.owner == local_owner && p.time_left > 60 {
+                                p.time_left = 60;
+                            }
+                        }
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
                         // The aiStyle-27 followup caster family
@@ -14390,6 +15693,22 @@ impl ProjectilePool {
                         // its segment spawn back to the pool, so it is a
                         // pool-side step like the magnet sphere's.
                         4 => self.vilethorn_step(i),
+                        // S1-P-i16 — the aiStyle-34 fireworks rockets
+                        // (`AI()` `Projectile.cs:27136-27188`): the
+                        // velocity-pointing rotation + the ai[1] launch
+                        // counter; the movement is the kill-on-tile
+                        // stand-in (the generic HandleMovement default).
+                        34 => {
+                            crate::projectile_ai_darts::firework_flight(&mut self.slots[i]);
+                            self.slots[i].kill_step(world);
+                        }
+                        // S1-P-i16 — the aiStyle-77 Electrosphere sphere
+                        // (`AI()` `:30671-30761`): the fade/pulse/frame
+                        // machine + the dust draws; the arm owns its
+                        // integration (tileCollide false).
+                        77 => {
+                            crate::projectile_ai_darts::sphere_pulse(&mut self.slots[i], rng);
+                        }
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
@@ -14423,6 +15742,38 @@ impl ProjectilePool {
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
                         23 => self.slots[i].ai_eye_fire(world),
+                        // S1-P-i28 — the thrown-consumable flight arms.
+                        // aiStyle 68: the Molotov cocktail (399)
+                        // (`Projectile.cs:30166-30239` + the movement-68
+                        // collision `:19780-19786`). The arm owns its
+                        // integration (the stop-and-prime collision).
+                        68 => {
+                            crate::projectile_ai_thrown::molotov_step(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
+                        // aiStyle 113: the Bone javelin (598)
+                        // (`AI_113_TargetSticker` `:40562-40899`). The stick
+                        // pin + Daybroken + the 6-javelin cap ride the on-hit
+                        // seam; the arm reads the pinned NPC off `npcs`.
+                        113 => {
+                            crate::projectile_ai_thrown::bone_javelin_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                            );
+                        }
+                        // aiStyle 36: the bees (181/566), the beenade's
+                        // children (`Projectile.cs:27292-27471`). The arm owns
+                        // its kill-on-tile integration.
+                        36 => {
+                            crate::projectile_ai_thrown::bee_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                            );
+                        }
                         // The aiStyle-158 Baby Bird (759) (`:48757-48928`): the
                         // perch keep-alive, the walk and the home formation.
                         // The sibling reads (the group index and the two
@@ -14737,15 +16088,17 @@ impl ProjectilePool {
                             let tick = self.slots[i].ai_yoyo(world, npcs, owner, flag, inputs, rng);
                             // `:67764-67771` — the sweep flips the whole
                             // owner's aiStyle-99 set with `ai[0] >= 0f` to the
-                            // return state.
+                            // return state (the C# gates on `aiStyle ==
+                            // this.aiStyle`, not a kind list — S1-P-i09).
                             if tick.sweep {
                                 for p in self.slots.iter_mut() {
                                     if p.active
                                         && p.owner == slot_owner
-                                        && YOYO_KINDS.contains(&p.kind)
+                                        && proj_data(p.kind).is_some_and(|d| d.ai_style == 99)
                                         && p.ai[0] >= 0.0
                                     {
                                         p.ai[0] = -1.0;
+                                        p.net_update = true; // `:67769`
                                     }
                                 }
                             }
@@ -14761,6 +16114,13 @@ impl ProjectilePool {
                                     b.knock_back,
                                 );
                             }
+                            // `:67840`/`:67845` — the pose block's
+                            // `player.ChangeDir` facing (the flail precedent).
+                            if let Some(dir) = tick.facing {
+                                if let Some(p) = player.as_deref_mut() {
+                                    p.facing = dir;
+                                }
+                            }
                         }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
@@ -14773,13 +16133,19 @@ impl ProjectilePool {
                         15 => {
                             // `AI_015_Flails`'s `flag5` (`:43847-43862`): the
                             // Blue Moon/Sunfury sibling scan — the 26↔35 pair,
-                            // same owner. It runs here, like the aiStyle-99
-                            // `flag` above, because the AI only sees its slot.
+                            // same owner, AND only when the local owner's
+                            // SELECTED item no longer shoots this type
+                            // (`localPlayer.inventory[selectedItem].shoot !=
+                            // this.type`, `:43850`). It runs here, like the
+                            // aiStyle-99 `flag` above, because the AI only
+                            // sees its slot.
                             let (slot_owner, slot_kind) = {
                                 let p = &self.slots[i];
                                 (p.owner, p.kind)
                             };
                             let flag5 = (slot_kind == BLUE_MOON || slot_kind == SUNFURY)
+                                && slot_owner as u8 == flail_inputs.local_owner
+                                && flail_inputs.selected_shoot != Some(slot_kind)
                                 && self.slots.iter().any(|p| {
                                     p.active
                                         && p.owner == slot_owner
@@ -14809,11 +16175,21 @@ impl ProjectilePool {
                                     self.slots[slot].alpha = 255;
                                 }
                             }
+                            // `:43883` `ResetLocalNPCHitImmunity` — the
+                            // release clears the slot's NPC immunity array.
+                            if tick.reset_immunity {
+                                let base = i * 256;
+                                self.local_immunity[base..base + 256].fill(0);
+                            }
                             // The facing the C# forces with `player.ChangeDir`
-                            // mid-machine.
-                            if let Some(dir) = tick.facing {
-                                if let Some(p) = player.as_deref_mut() {
+                            // mid-machine, and the per-tick `itemRotation`
+                            // (`:44162-44167`).
+                            if let Some(p) = player.as_deref_mut() {
+                                if let Some(dir) = tick.facing {
                                     p.facing = dir;
+                                }
+                                if let Some(rot) = tick.item_rotation {
+                                    p.item_rotation = rot;
                                 }
                             }
                         }
@@ -16566,7 +17942,7 @@ impl ProjectilePool {
                 // post-loop call made hit-killed shots survive one frame —
                 // S1-A-9). The immunity gates make the repeated calls
                 // idempotent, exactly like the C#'s.
-                self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
+                self.damage_pve(world, i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
                 // The hostile shots' player contact (`Damage_PVP`'s
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
@@ -16634,7 +18010,23 @@ impl ProjectilePool {
             // resized box, `Kill_ExplodeTiles` digs the crater, then the
             // projectile dies.
             if self.slots[i].detonated {
-                self.explode_bomb(i, world, npcs);
+                // S1-P-i16 — the rocket death census rides the pass's
+                // `UpdateProjectiles` stream (the thrown bombs keep their
+                // frozen zero-rng `explode_bomb` path).
+                if is_launcher_rocket(self.slots[i].kind) {
+                    let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                    self.explode_rocket(
+                        i,
+                        world,
+                        npcs,
+                        doll_flags(player.as_deref()),
+                        rng,
+                        luck,
+                        local_owner,
+                    );
+                } else {
+                    self.explode_bomb(i, world, npcs);
+                }
             }
             // The per-sub-step `Damage()` calls (`Projectile.cs:17078`) moved
             // inside the sub-step loop (S1-A-9) — see the block at the loop
@@ -16695,6 +18087,48 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+                // (`Projectile.cs:73398-73419`): the 444's death releases
+                // its deferred payload (`localAI[0]` bullet kind,
+                // `localAI[1]` speed) toward the mouse. First of the
+                // kind-disjoint wave-3 arms (C# body order :73398 <
+                // :73528 < :75212 < :75578 < :76308 < :76407 < :76464).
+                self.xenopopper_bubble_kill(i, inputs.aim, local_owner);
+                // S1-P-i16 — the dart/electrosphere/fireworks Kill arms
+                // (the C# body order: the 442 sphere arm sits at `:73528`,
+                // ABOVE the 478 flame's `:75578`; the fireworks aiStyle-34
+                // arm `:76464` follows both).
+                self.dart_electro_firework_kill(i, rng, local_owner);
+                // S1-P-i17 — `Kill()`'s special-arrow arms, in the C#'s
+                // body order: the Hellfire blast (`:76308-76341`, the
+                // resize + box Damage), the Holy Arrow's star / the
+                // star's own chain (`:75212-75248` — the 75212 arm sits
+                // ABOVE the 76308 arm in the C#, but the two kinds are
+                // disjoint so the order between them is unobservable),
+                // then the Bee Arrow's swarm (`:76407-76429`).
+                self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck);
+                // S1-P-i18 — `Kill()`'s special-bullet arms
+                // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
+                // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
+                // `:76000-76034` the 286 AoE burst, `:76035-76039` the common
+                // HitTiles+Item10 arm). Kind-gated; a dead slot never returns
+                // to active, so each fires at most once per death.
+                self.special_bullet_kill(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    luck,
+                    local_owner,
+                );
+                // S1-P-i28 — the thrown-consumable death hooks. The water
+                // bottles' splash conversion (`Kill()` `:77629-77645`), the
+                // beenade's bee burst (`:76431-76463`) and the molotov's
+                // greek-fire burst (`:73921-73951`). The beenade/molotov
+                // bursts spawn through the pool (the arm cannot see the slot
+                // array); the water conversion writes tiles directly.
+                self.thrown_consumable_death(i, world, player.as_deref(), rng);
+
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
                 // home to the owner (`GiveItemToPlayer`), the stack rolled on
@@ -16711,6 +18145,99 @@ impl ProjectilePool {
                     }
                 }
             }
+            // S1-P-i16 — the dart split / cluster ring spawn requests the
+            // AI arms parked mid-iteration (the `wants_mark_spawn`
+            // pattern): resolve them after the sub-steps, in order.
+            let requests = std::mem::take(&mut self.slots[i].wants_dart_spawns);
+            let owner = self.slots[i].owner;
+            for (kind, x, y, vx, vy, damage, kb, ai0, ai1, tl_delta) in requests {
+                if let Some(s) = self.spawn_with_data_ai_owned(
+                    kind, owner, x, y, vx, vy, damage, kb, ai0, ai1,
+                ) {
+                    self.slots[s].time_left -= tl_delta;
+                }
+            }
+        }
+    }
+
+    /// S1-P-i16 — the dart/electrosphere/fireworks `Kill()` arms, in the
+    /// C# body order: the 442 sphere spawn (`Projectile.cs:73528-73552`),
+    /// the 478 flame drop (`:75578-75584`), the aiStyle-34 fireworks burst
+    /// (`:76464-76674`). Kind-gated, one-shot per death (a dead slot never
+    /// returns to `active`).
+    fn dart_electro_firework_kill(&mut self, slot: usize, rng: &mut dyn DropRng, local_owner: u8) {
+        let kind = self.slots[slot].kind;
+        let p = &self.slots[slot];
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        if kind == 442 {
+            // `:73531` — the dust-count draw (the dust bodies skip).
+            let _ = rng.next_range(3, 7);
+            // `:73538-73551` — the owner-gated sphere spawn: the nearby
+            // 443 pull-in (`:73540-73549`) then the new sphere at the
+            // centre with the bolt's damage / 0 knockback.
+            if p.owner == local_owner {
+                let (damage, owner) = (p.damage, p.owner);
+                // The pull-in: every own 443 whose box intersects the
+                // 80×80 centre box gets ai[1] = 1 + the velocity pull.
+                for j in 0..MAX_PROJECTILES {
+                    if j == slot {
+                        continue;
+                    }
+                    let q = &mut self.slots[j];
+                    if q.active && q.owner == owner && q.kind == 443 {
+                        let hit = q.pos.x < center.x + 40.0
+                            && q.pos.x + q.w > center.x - 40.0
+                            && q.pos.y < center.y + 40.0
+                            && q.pos.y + q.h > center.y - 40.0;
+                        if hit {
+                            q.ai[1] = 1.0;
+                            let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
+                            q.vel = (center - qc) / 5.0;
+                        }
+                    }
+                }
+                // The 443's 80×80 half-box subtracts (the C# takes the
+                // centre).
+                let _ = self.spawn_with_data_ai_owned(
+                    443, owner, center.x - 40.0, center.y - 40.0, 0.0, 0.0, damage, 0.0, 0.0, 0.0,
+                );
+            }
+        } else if kind == 478 && p.owner == local_owner {
+            // `:75582` — the death flame drop (the same 0.8×/0.5× shape as
+            // the per-tick drops).
+            let (damage, kb, owner) = (p.damage, p.knock_back, p.owner);
+            let _ = self.spawn_with_data_ai_owned(
+                480,
+                owner,
+                center.x - 6.0,
+                center.y - 6.0,
+                0.0,
+                0.0,
+                (damage as f64 * 0.8) as i32,
+                kb * 0.5,
+                0.0,
+                0.0,
+            );
+        } else if matches!(kind, 167..=170) {
+            // `:76464-76674` — the aiStyle-34 fireworks burst: the sound
+            // (Item14, the cue skip), the per-variant dust census. The
+            // remote owner's timeLeft = 60 (`:76466-76469`) is the
+            // local-only pool's no-op.
+            if kind == 169 {
+                // `:76548-76551` — the star burst's four draws.
+                let _ = rng.next_float(); // the rotation (`NextDouble`)
+                let _ = rng.next_range(5, 9); // the spoke count
+                let _ = rng.next_range(12, 17); // the speed
+                let _ = rng.next_range(3, 7); // the inner speed
+                // The dust loops draw nothing explicit (`:76553-76605`).
+            } else if kind == 170 {
+                // `:76609-76673` — the 400-dust loop: one `Next(3)` gate
+                // per dust (`:76668`).
+                for _ in 0..400 {
+                    let _ = rng.next_range(0, 3);
+                }
+            }
+            // 167/168's dust loops (`:76473-76544`) draw nothing explicit.
         }
     }
 
@@ -17152,6 +18679,463 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i17 — `Kill()`'s special-arrow arms (the death-hook block):
+    /// - the Hellfire Arrow (41, `Projectile.cs:76308-76341`): the box
+    ///   grows to 64×64 centred, `penetrate = -1`, then `Damage()` walks
+    ///   the resized box (the gem-bolt AoE precedent — the C# leaves the
+    ///   resize on the dead slot; the port keeps it too, nothing reads a
+    ///   dead slot's box afterwards).
+    /// - the Holy Arrow (91) / the falling star (92, `ai[0] > 0`)
+    ///   (`:75212-75248`): the star spawn — 2 draws, the 22-speed aim,
+    ///   damage/3 for the arrow / full for the star's own chain, ai1 =
+    ///   the death Y, ai0 = 1 only for the arrow's star.
+    /// - the Bee Arrow (469, `:76407-76429`): the 6-slot swarm with the
+    ///   odd gates, the trail positions off `oldVelocity`, the
+    ///   beeType/beeDamage/beeKB rolls; each bee gets `penetrate = 2`
+    ///   (`:76426`) and `ranged = true`/`magic = false` (`:76424-76425`
+    ///   — the port carries no class flags on slots, recorded).
+    /// The `owner == Main.myPlayer` gates fold to the simulated-slot set
+    /// (the pool only updates local-owned slots). A dead slot never
+    /// returns to active, so each hook fires at most once per death.
+    fn special_arrow_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        old_velocity: Vec2,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let kind = self.slots[slot].kind;
+        // The Hellfire blast: resize + the box walk through the dying
+        // slot (the `gem_bolt_aoe` shape).
+        if crate::special_arrows::hellfire_kill_resize(&mut self.slots[slot]) {
+            self.damage_pve_boxed(slot, npcs, doll_flags(player), rng, luck);
+        }
+        // The Holy Arrow's star / the star's own one-deep chain.
+        let star = crate::special_arrows::holy_arrow_kill(&self.slots[slot], rng)
+            .or_else(|| crate::special_arrows::falling_star_kill(&self.slots[slot], rng));
+        if let Some((x, y, vx, vy, damage, ai0, ai1)) = star {
+            let (owner, kb) = {
+                let p = &self.slots[slot];
+                (p.owner, p.knock_back)
+            };
+            // The corpse-flag lift (the moonlord-trail precedent): the
+            // C# `GetNextSlot` ran while the arrow was STILL active.
+            self.slots[slot].active = true;
+            let _ = self.spawn_with_data_ai_owned(
+                FALLING_STAR, owner, x, y, vx, vy, damage, kb, ai0, ai1,
+            );
+            self.slots[slot].active = false;
+        }
+        // The Bee Arrow's swarm.
+        if kind == BEE_ARROW {
+            let strong = player.is_some_and(|p| p.strong_bees);
+            let mut bees = Vec::new();
+            crate::special_arrows::bee_arrow_kill(
+                &self.slots[slot],
+                old_velocity,
+                strong,
+                rng,
+                &mut bees,
+            );
+            let owner = self.slots[slot].owner;
+            // The corpse-flag lift (the moonlord-trail precedent): the C#
+            // `Kill()` runs the 469 arm while the arrow is STILL active
+            // (`active = false` lands at `:77262`, after), so `GetNextSlot`
+            // skips the dying slot. Lift it for the scan, then restore.
+            self.slots[slot].active = true;
+            for b in bees {
+                let spawned = self.spawn_with_data_owned(
+                    b.kind, owner, b.x, b.y, b.vx, b.vy, b.damage, b.kb, 0.0, 0.0,
+                );
+                if let Some(s) = spawned {
+                    // `:76426` — `penetrate = 2` (the row's 3/4 overridden).
+                    // `maxPenetrate` stays the row's (the C# writes only
+                    // `penetrate`); the `single_hit` immunity gate reads
+                    // `maxPenetrate`, so the bee keeps the group-static
+                    // pair's behaviour.
+                    self.slots[s].penetrate = 2;
+                }
+            }
+            self.slots[slot].active = false;
+        }
+    }
+
+    /// S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+    /// (`Projectile.cs:73398-73419`): the 444's death releases the deferred
+    /// payload the launch stamped (`localAI[0]` = the resolved bullet kind,
+    /// `localAI[1]` = the fused speed, `Player.cs:47622-47623`) as a NEW
+    /// projectile aimed from the bubble's centre toward the mouse world
+    /// point at `localAI[1]` speed, carrying the bubble's damage/knockback/
+    /// owner. The Item96 cue + the `Next(5,9)` dust-171 burst are the
+    /// documented visual skips (the dust layer's draws go with it). The
+    /// `owner == Main.myPlayer` gate folds to `local_owner`; the release is
+    /// draw-free. `aim` is the pass's mouse-world snapshot (`YoyoInputs.aim`,
+    /// the `Main.MouseWorld` read `:73411`); `None` (no local player) declines
+    /// the release, the C#'s owner gate's shape.
+    fn xenopopper_bubble_kill(
+        &mut self,
+        slot: usize,
+        aim: Option<(f32, f32)>,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        if p.kind != XENOPOPPER_BUBBLE || p.owner != local_owner {
+            return;
+        }
+        let Some((mx, my)) = aim else {
+            return;
+        };
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // `vector45 = Normalize(MouseWorld - Center) * localAI[1]` (`:73416-73417`).
+        let dir = (Vec2::new(mx, my) - center).normalize_or_zero() * p.local_ai[1];
+        let kind = p.local_ai[0] as u16;
+        let (damage, kb, owner) = (p.damage, p.knock_back, p.owner);
+        // `GetNextSlot` ran while the bubble was STILL active — lift the
+        // corpse flag for the scan so the bullet takes the NEXT free slot
+        // (the moonlord precedent), then restore.
+        self.slots[slot].active = true;
+        // The C# passes the CENTRE; the port's spawn takes the top-left
+        // (the inferno-blast precedent) — recentre by the resolved row's box.
+        let (w, h) = proj_data(kind).map_or((0.0, 0.0), |d| (d.w, d.h));
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            center.x - w * 0.5,
+            center.y - h * 0.5,
+            dir.x,
+            dir.y,
+            damage,
+            kb,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+    }
+
+    /// S1-P-i18 — `Kill()`'s special-bullet arms (`Projectile.cs:75250-76039`),
+    /// run from the pool's death hook. Kind-gated; a dead slot never returns to
+    /// `active`, so each fires at most once per death (the `moonlord_arrow_kill`
+    /// precedent). The `owner == Main.myPlayer` gates fold to the simulated-slot
+    /// set (the pool only updates local-owned slots). The dust/gore BODIES and
+    /// the `Kill()` sound cues are SKIPPED with their layers (the module's RNG
+    /// note); the 89 split's state-bearing draws ride the pass stream inline
+    /// below, and the 286 burst's per-NPC `DamageVar` rides the boxed walk.
+    fn special_bullet_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            // `:75250-75268` — the CrystalBullet's death split: sound 0 + 5
+            // dust-68 (skipped), then TWO 90 CrystalShard spawns at
+            // `pos + (num651, num652)` with velocity `(num651, num652)`, damage
+            // `(int)((double)damage * 0.5)`, knockback 0, the same owner. The
+            // split draws are state-bearing (they place AND velocity the
+            // shard), so they ride the stream here.
+            CRYSTAL_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                let (pos, vel, damage, owner) = {
+                    let p = &self.slots[slot];
+                    (p.pos, p.vel, p.damage, p.owner)
+                };
+                let shard_damage = (damage as f64 * 0.5) as i32;
+                // `:75262-75266` — per shard the C# draws `Next(40, 70)` then
+                // `Next(-20, 21)` for X, then the same pair for Y, in the
+                // argument evaluation order (shard 0's four before shard 1's).
+                // `num651 = (0f - vel.X) * Next(40,70) * 0.01f + Next(-20,21)
+                // * 0.4f` (the left-to-right float association); the shard
+                // spawns at `pos + (num651, num652)` with velocity
+                // `(num651, num652)`. These draws are STATE-BEARING (they place
+                // AND velocity the shard), so they ride the pass stream here.
+                let mut offsets = [(0.0f32, 0.0f32); 2];
+                for shard in offsets.iter_mut() {
+                    let n = rng.next_range(40, 70) as f32;
+                    let j = rng.next_range(-20, 21) as f32;
+                    let x = (0.0 - vel.x) * n * 0.01 + j * 0.4;
+                    let n = rng.next_range(40, 70) as f32;
+                    let j = rng.next_range(-20, 21) as f32;
+                    let y = (0.0 - vel.y) * n * 0.01 + j * 0.4;
+                    *shard = (x, y);
+                }
+                // `GetNextSlot` ran while the bullet was STILL active (the C#
+                // `Kill()`'s `active = false` lands after this arm); lift the
+                // corpse flag for the scan so the shards take the NEXT free
+                // slots, then restore (the moonlord precedent).
+                self.slots[slot].active = true;
+                for (ox, oy) in offsets {
+                    // `NewProjectile`'s spawn recentre (`:10876-10877`):
+                    // the C# passes `pos + (num651, num652)` as the CENTRE;
+                    // the port's seam takes the top-left, so the 6×6 shard
+                    // box lands at `pos + offset − 3` on each axis.
+                    self.spawn_with_data_ai_owned(
+                        CRYSTAL_SHARD,
+                        owner,
+                        pos.x + ox - 3.0,
+                        pos.y + oy - 3.0,
+                        ox,
+                        oy,
+                        shard_damage,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+                self.slots[slot].active = false;
+            }
+            // `:75911-75974` — the VenomBullet's death: sound Item10 + the three
+            // 10-dust-171 loops (dust-only draws, SKIPPED with the dust layer —
+            // the module's RNG note), then the owner-gated debuff-spread burst.
+            // The burst's `Damage()` re-hits the already-dead bullet's victim
+            // through `Damage_PVE_Inner`'s `type == 283 && !active` arm
+            // (`:12810-12814` → `StatusNPC`), spreading Venom + PotentAcid
+            // across the 80×80 box and two +60px steps along the flight
+            // direction. The C# flips `active = false` around the three
+            // `Damage()` calls and restores it; the port's corpse is already
+            // inactive, so the spread walk runs directly.
+            VENOM_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                self.venom_burst_spread(slot, npcs, dolls);
+            }
+            // `:75975-75999` — the PartyBullet's confetti: 10 dust + 5 gore, no
+            // `Damage()`. Purely visual — the whole arm is a documented skip
+            // (no state, no spawn, no damage; its draws go with the layers).
+            PARTY_BULLET => {}
+            // `:76000-76034` — the ExplodingBullet's death: sound Item14 + 7
+            // dust-31 + 3×2 dust-6 + 1 gore (dust/gore-only draws, SKIPPED with
+            // the layers), then the owner-gated 80×80 AoE `Damage()` burst.
+            EXPLODING_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                self.exploding_bullet_burst(slot, npcs, dolls, rng, luck);
+            }
+            // `:76035-76039` — the common bullet arm (36/104/207/242/279/285/287
+            // and the unrowed siblings): `Collision.HitTiles` dust + Item10,
+            // both skipped, no explicit draw, no state.
+            METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
+            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            _ => {}
+        }
+    }
+
+    /// S1-P-i28 — the thrown-consumable death hooks (`Kill()`): the water
+    /// bottles' splash conversion (`Projectile.cs:77629-77645`), the beenade's
+    /// bee burst (`:76431-76463`) and the molotov's greek-fire burst
+    /// (`:73921-73951`). The bursts spawn through the pool with the dying
+    /// slot's owner; the water conversion writes tiles directly. The death
+    /// hook fires once (a dead slot never returns to active).
+    fn thrown_consumable_death(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
+                crate::projectile_ai_thrown::water_death(&self.slots[slot], world);
+            }
+            BEENADE => {
+                let strong = player.is_some_and(|p| p.strong_bees);
+                let bees =
+                    crate::projectile_ai_thrown::beenade_death(&self.slots[slot], strong, rng);
+                let owner = self.slots[slot].owner;
+                for b in bees {
+                    // `NewProjectile` centres the box (`:10876-10877`); the
+                    // C# spawns at `base.position` (the beenade's top-left),
+                    // so the bee's top-left is that point minus its half-box.
+                    let row = proj_data(b.kind);
+                    let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                    self.spawn_with_data_ai_owned(
+                        b.kind, owner, b.x - hw, b.y - hh, b.vx, b.vy, b.damage, b.knock_back,
+                        0.0, 0.0,
+                    );
+                }
+            }
+            MOLOTOV_COCKTAIL => {
+                let fires = crate::projectile_ai_thrown::molotov_death(&self.slots[slot], rng);
+                let owner = self.slots[slot].owner;
+                for f in fires {
+                    let row = proj_data(f.kind);
+                    let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                    self.spawn_with_data_ai_owned(
+                        f.kind, owner, f.x - hw, f.y - hh, f.vx, f.vy, f.damage, 0.0, 0.0, 0.0,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The 283 VenomBullet's debuff-spread burst (`Projectile.cs:75940-75973`):
+    /// `localAI[1] = -1`, `penetrate = 1`, the recentred 80×80 resize, the
+    /// idStatic cooldown capture (`expectedTime = GameUpdateCount + cooldown`)
+    /// and temporary set to 5, then THREE `Damage()` walks — the second and
+    /// third stepped `+oldVelocity.ToRotation().ToRotationVector2() * width *
+    /// 0.75` (= +60px along the flight direction) — then
+    /// `ResetStaticImmunityMatching(expectedTime)`. The bullet RESTS its counter
+    /// and flies straight, so `oldVelocity == velocity` at death (the port reads
+    /// `p.vel`, documented). The spread's `Damage()` re-hits through the
+    /// `type == 283 && !active` arm (`:12810`), so each walk applies `StatusNPC`
+    /// (Venom + PotentAcid) to every NPC in the box — the port's
+    /// [`ProjectilePool::venom_spread_walk`] replicates that without the strike.
+    fn venom_burst_spread(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+        let (center, vel, expected_time) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.vel,
+                self.update_count + p.id_static_hit_cooldown as u64,
+            )
+        };
+        let p = &mut self.slots[slot];
+        p.local_ai[1] = -1.0;
+        p.penetrate = 1;
+        p.w = 80.0;
+        p.h = 80.0;
+        p.pos = center - Vec2::splat(40.0);
+        p.id_static_hit_cooldown = 5;
+        // The three spread walks, the 2nd/3rd stepped +60px along the flight.
+        let dir = if vel == Vec2::ZERO || vel.is_nan() {
+            Vec2::ZERO
+        } else {
+            vel.normalize()
+        };
+        for step in 0..3 {
+            self.venom_spread_walk(slot, npcs, dolls);
+            if step < 2 {
+                self.slots[slot].pos += dir * 80.0 * 0.75;
+            }
+        }
+        // `ResetStaticImmunityMatching(expectedTime)` (`:621-630`): clear every
+        // idStatic entry of this kind whose stamp equals the captured time.
+        self.id_static
+            .retain(|&(k, _), stamp| !(k == VENOM_BULLET && *stamp == expected_time));
+    }
+
+    /// One `Damage()` walk of the 283's spread burst: the `type == 283 &&
+    /// !active` arm (`Projectile.cs:12810-12814`) runs `StatusNPC` (Venom 70/600
+    /// + PotentAcid 395/120) on every NPC the 80×80 box overlaps that passes the
+    /// `Damage_PVE` gate (`:12578`, the idStatic cooldown) — NO strike, NO
+    /// penetrate change (the arm returns before both). The bullet is inactive,
+    /// so the port's normal `damage_pve` (which the update loop gates on active)
+    /// cannot run it; this walk replicates the debuff-only path.
+    fn venom_spread_walk(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+        let (px, py, pw, ph) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y, p.w, p.h)
+        };
+        for idx in 0..npcs.len() {
+            let n = &npcs[idx];
+            if n.hp <= 0 || n.dont_take_damage {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12611`).
+            if refuses_friendly(n, VENOM_BULLET, dolls.0, dolls.1) {
+                continue;
+            }
+            // `Damage_PVE`'s gate (`:12578`): the idStatic cooldown.
+            if !self.target_allowed(slot, &self.slots[slot], idx as u16) {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            let hit = px < n.x + nw && px + pw > n.x && py < n.y + nh && py + ph > n.y;
+            if !hit {
+                continue;
+            }
+            // `:12810-12814` → `StatusNPC`: the Venom + PotentAcid spread, and
+            // NOTHING else — the early arm returns before the strike, the
+            // crit/variance rolls and the rest of StatusNPC. Draw-free. No new
+            // idStatic stamp is written here (the early return skips the
+            // immunity application); the original hit's stamp (captured as
+            // `expectedTime`, temporarily 5 during the burst) gates re-hits,
+            // and `ResetStaticImmunityMatching` clears it after.
+            crate::projectile_special_bullets::venom_burst_debuffs(&mut npcs[idx]);
+        }
+    }
+
+    /// The 286 ExplodingBullet's AoE death burst (`Projectile.cs:76019-76033`):
+    /// `localAI[1] = -1`, `penetrate = 1`, the recentred 80×80 resize, the
+    /// idStatic cooldown capture + temporary set to 5, ONE `Damage()` walk
+    /// through the resized box, then `ResetStaticImmunityMatching(expectedTime)`.
+    /// The `Damage()` rides the box walk (`damage_pve_boxed`, the gem_bolt_aoe
+    /// precedent). The 286's `appliesImmunityTimeOnSingleHits` (`:3754`) makes
+    /// the idStatic stamp land even at penetrate 1 — the boxed walk carries the
+    /// same override.
+    fn exploding_bullet_burst(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let (center, expected_time) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                self.update_count + p.id_static_hit_cooldown as u64,
+            )
+        };
+        let p = &mut self.slots[slot];
+        p.local_ai[1] = -1.0;
+        p.penetrate = 1;
+        p.w = 80.0;
+        p.h = 80.0;
+        p.pos = center - Vec2::splat(40.0);
+        p.id_static_hit_cooldown = 5;
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        self.id_static
+            .retain(|&(k, _), stamp| !(k == EXPLODING_BULLET && *stamp == expected_time));
+    }
+
+    /// S1-P-i28 — `Projectile.KillOldestJavelin` (`Projectile.cs:15074-15101`,
+    /// called from the bone javelin's on-hit arm `:13979-13990`): scan the
+    /// pool for the owner's bone javelins stuck (`ai[0]==1`) on this NPC
+    /// (`ai[1]==target`), excluding the just-pinned slot; once 6 are found,
+    /// kill the one with the lowest `timeLeft` (the oldest). The C# breaks the
+    /// scan at the buffer length (6), so only the first 6 in slot order count.
+    fn kill_oldest_javelin(&mut self, protected: usize, target: u16) {
+        let owner = self.slots[protected].owner;
+        let mut oldest = usize::MAX;
+        let mut lowest = i32::MAX;
+        let mut count = 0usize;
+        for (i, p) in self.slots.iter().enumerate() {
+            if i != protected
+                && p.active
+                && p.owner == owner
+                && p.kind == BONE_JAVELIN
+                && p.ai[0] == 1.0
+                && p.ai[1] == target as f32
+            {
+                if p.time_left < lowest {
+                    lowest = p.time_left;
+                    oldest = i;
+                }
+                count += 1;
+                if count >= 6 {
+                    break;
+                }
+            }
+        }
+        // `:15088-15091` — fewer than 6 found: nothing dies.
+        if count >= 6 && oldest != usize::MAX {
+            self.kill(oldest);
+        }
+    }
+
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
     /// burst. The sound and the 15 (+30) dust spawns are SKIPPED (no sound or
     /// dust layer in the pool), and the `AoeExplosion` feature's damage half
@@ -17347,12 +19331,19 @@ impl ProjectilePool {
     /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
     /// digs the radius circle, and the slot deactivates.
     fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+        // S1-P-i28 — the grenades (30/397/517) resize to 128×128 and set
+        // knockback 8 but KEEP their damage (`PrepareBombToBlow`
+        // `Projectile.cs:46799-46803` — no `damage =` line), unlike the bombs
+        // (damage 100) and dynamite (damage 250). `None` = keep the slot's
+        // current damage.
         let (w, h, damage, knock_back) = match self.slots[slot].kind {
             // `:46775-46781`: the bombs — 128×128, damage 100, knockback 8.
-            BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH => (128.0, 128.0, 100, 8.0),
+            BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH => (128.0, 128.0, Some(100), 8.0),
             // `:46787-46791`: the dynamite — 250×250, damage 250,
             // knockback 10.
-            DYNAMITE => (250.0, 250.0, 250, 10.0),
+            DYNAMITE => (250.0, 250.0, Some(250), 10.0),
+            // `:46799-46803`: the grenades — 128×128, knockback 8, damage kept.
+            GRENADE | STICKY_GRENADE | BOUNCY_GRENADE => (128.0, 128.0, None, 8.0),
             _ => {
                 self.slots[slot].detonated = false;
                 return;
@@ -17365,12 +19356,15 @@ impl ProjectilePool {
         p.w = w;
         p.h = h;
         p.pos = Vec2::new(cx - w * 0.5, cy - h * 0.5);
-        p.damage = damage;
+        if let Some(d) = damage {
+            p.damage = d;
+        }
         p.knock_back = knock_back;
         p.tile_collide = false;
         p.detonated = false;
         // `Damage()` — the PVE walk through the resized box.
         self.damage_pve(
+            world,
             slot,
             npcs,
             None,
@@ -17378,6 +19372,38 @@ impl ProjectilePool {
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
         );
+        // S1-P-i28 — `Kill_ExplodeTiles` (`Projectile.cs:77265-77296`): the
+        // grenades (30/397/517) take the `ExplodeCrackedTiles` arm
+        // (`:77271-77295` → `:78758-78778`) — ONLY cracked-brick tiles in the
+        // radius-4 circle die, no walls. The bombs/dynamite take the full
+        // crater arm (`:77297+`) below.
+        if matches!(self.slots[slot].kind, GRENADE | STICKY_GRENADE | BOUNCY_GRENADE) {
+            let p = &self.slots[slot];
+            let ccx = (p.pos.x + p.w * 0.5) / 16.0;
+            let ccy = (p.pos.y + p.h * 0.5) / 16.0;
+            let min_i = ((ccx - 4.0) as i32).max(0);
+            let max_i = ((ccx + 4.0) as i32).min(world.width - 1);
+            let min_j = ((ccy - 4.0) as i32).max(0);
+            let max_j = ((ccy + 4.0) as i32).min(world.height - 1);
+            for ty in min_j..=max_j {
+                for tx in min_i..=max_i {
+                    let dx = (tx as f32 - ccx).abs();
+                    let dy = (ty as f32 - ccy).abs();
+                    if (dx * dx + dy * dy).sqrt() >= 4.0 {
+                        continue;
+                    }
+                    let Some(t) = world.tile(tx, ty) else {
+                        continue;
+                    };
+                    if t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind) {
+                        let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                    }
+                }
+            }
+            self.slots[slot].active = false;
+            self.slots[slot].time_left = 0;
+            return;
+        }
         // `Kill_ExplodeTiles`: the radius circle kills the tiles
         // (`ExplodeTiles` `:78707+` — the distance check per tile), the
         // 3×3 walls around each kill follow (`:78741-78762`).
@@ -17436,6 +19462,337 @@ impl ProjectilePool {
         // The kill bookkeeping.
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
+    }
+
+    /// S1-P-i16 — the launcher rockets' `Kill()` path
+    /// (`Projectile.cs:70661-70687` → `PrepareBombToBlow` `:46770-46848` →
+    /// `Damage()` → `Kill_Bombs_DoUsualKillCode` `:77648-78210` →
+    /// `Kill_ExplodeTiles` `:77265-77365`). The resize re-knockbacks but the
+    /// DAMAGE STAYS (the flight kept it — `:47175`); the box walk hits
+    /// through the resized box; the family's draw census + the cluster
+    /// ring ride the pass's stream; the tile break is the radius circle
+    /// with the `ShouldWallExplode` gate (the `celeb2_death` shape).
+    ///
+    /// `SelfHurtPlayers` (`:70667-70670`) stays the documented M2-DEATH
+    /// deviation (ANALYSIS "Bombs") — the fixed-60 self-damage table
+    /// (`ProjectileID.cs:342-422`) is ported as
+    /// [`rocket_fixed_self_damage`] for the follow-up.
+    fn explode_rocket(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn tr_core::loot::DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        // `PrepareBombToBlow` (`:46770-46848`): `tileCollide = false`,
+        // `ai[1] = 0`, `alpha = 255`, then the per-family resize/knockback.
+        // The damage is NOT re-armed for any rocket family (only the
+        // thrown bombs/scarab/dry-bomb arms set it).
+        {
+            let p = &mut self.slots[slot];
+            p.tile_collide = false;
+            p.ai[1] = 0.0;
+            p.alpha = 255;
+            let (w, h, kb) = if matches!(kind, 779 | 783 | 862 | 863) {
+                // `:46815-46819` — the cluster shrapnel: 48×48, kb 8 (the
+                // damage stays — the arm sets none).
+                (48.0, 48.0, 8.0)
+            } else if matches!(kind, 133..=138 | 338 | 339) {
+                // `:46820-46824` — 128×128, knockback 8.
+                (128.0, 128.0, 8.0)
+            } else if matches!(kind, 794 | 797 | 795 | 798 | 793 | 796 | 808) {
+                // `:46825-46829` — the Mini Nuke family: 250×250, kb 12.
+                // The decompiled arm reads `type == 808 || type == 808`
+                // (808 TWICE, 809 absent) — legal C#, kept 1:1 (the
+                // RockGolemHead precedent, `world_sim/editing.rs`'s herb
+                // note): the 809 keeps its 14×14 box in vanilla, even
+                // though the Kill census `:77893` and the tile-break list
+                // `:77309` name it. Recorded in ANALYSIS "Rocket & dart
+                // ammo".
+                (250.0, 250.0, 12.0)
+            } else if matches!(kind, 776 | 780 | 777 | 781 | 778 | 782 | 803 | 804) {
+                // `:46830-46834` — the cluster family: 128×128, kb 12.
+                (128.0, 128.0, 12.0)
+            } else if matches!(kind, 784..=792 | 799..=801 | 805..=807 | 810) {
+                // `:46835-46843` — the liquid/dry families: 48×48, kb 12.
+                (48.0, 48.0, 12.0)
+            } else if matches!(kind, 139..=144 | 340 | 341) {
+                // `:46844-46848` — Rocket III/IV: 200×200, kb 10.
+                (200.0, 200.0, 10.0)
+            } else {
+                // No other rocket kind has a PrepareBombToBlow arm.
+                (p.w, p.h, p.knock_back)
+            };
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.w = w;
+            p.h = h;
+            p.pos = Vec2::new(cx - w * 0.5, cy - h * 0.5);
+            p.knock_back = kb;
+            p.detonated = false;
+        }
+        // `Damage()` (`:70671`) — the box walk through the resized box (the
+        // `celeb2_death` precedent — the dolls/luck ride the pass's player).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `Kill_Bombs_DoUsualKillCode` — the family's draw census + spawns.
+        self.rocket_kill_census(slot, rng, local_owner);
+        // `Kill_ExplodeTiles` (`:77297-77365`): the tile-breaking rocket
+        // kinds, owner-gated (`:77267` — the pool's local slots pass).
+        let radius = match kind {
+            // `:77309-77312` — the Mini Nuke II family: radius 7.
+            796 | 797 | 798 | 809 => Some(7),
+            // `:77318-77321` — Rocket IV / Snowman IV: radius 5.
+            142 | 143 | 144 | 341 => Some(5),
+            // `:77297`'s list at the stock 3 — the grenade II/III family,
+            // the cluster II family + its 783/863 shrapnel.
+            136 | 137 | 138 | 339 | 780 | 781 | 782 | 804 | 783 | 863 => Some(3),
+            _ => None,
+        };
+        if let Some(radius) = radius {
+            let p = &self.slots[slot];
+            // `:77338` — the compare spot is `base.position` (the resized
+            // top-left; only the 716/718/773/1086/1087 arms use the centre).
+            let spot = p.pos;
+            let min_i = ((spot.x / 16.0 - radius as f32) as i32).max(0);
+            let max_i = ((spot.x / 16.0 + radius as f32) as i32).min(world.width);
+            let min_j = ((spot.y / 16.0 - radius as f32) as i32).max(0);
+            let max_j = ((spot.y / 16.0 + radius as f32) as i32).min(world.height);
+            // `ShouldWallExplode` (`:78616-78633`).
+            let mut wall_splode = false;
+            for i in min_i..=max_i {
+                for j in min_j..=max_j {
+                    let dx = (i as f32 - spot.x / 16.0).abs();
+                    let dy = (j as f32 - spot.y / 16.0).abs();
+                    if (dx * dx + dy * dy).sqrt() < radius as f32
+                        && world.tile(i, j).is_some_and(|t| t.wall == 0)
+                    {
+                        wall_splode = true;
+                        break;
+                    }
+                }
+            }
+            // `ExplodeTiles` (`:78707-78756`) — the `celeb2_death` shape.
+            for i in min_i..=max_i {
+                for j in min_j..=max_j {
+                    let dx = (i as f32 - spot.x / 16.0).abs();
+                    let dy = (j as f32 - spot.y / 16.0).abs();
+                    if (dx * dx + dy * dy).sqrt() >= radius as f32 {
+                        continue;
+                    }
+                    let mut flag = true;
+                    if let Some(t) = world.tile(i, j) {
+                        if t.active() {
+                            flag = can_explode_tile(t.kind, t.frame_y as i32 / 18);
+                            if flag {
+                                let _ = tr_core::edit::kill_tile(world, i, j, false);
+                            }
+                        }
+                    }
+                    if !(wall_splode && flag) {
+                        continue;
+                    }
+                    for k in (i - 1)..=(i + 1) {
+                        for l in (j - 1)..=(j + 1) {
+                            if let Some(wt) = world.tile(k, l) {
+                                if wt.wall != 0 && wt.wall != 350 {
+                                    let _ = tr_core::edit::break_wall(world, k, l);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The kill bookkeeping.
+        self.slots[slot].active = false;
+        self.slots[slot].time_left = 0;
+    }
+
+    /// S1-P-i16 — `Kill_Bombs_DoUsualKillCode`'s rocket-family arms
+    /// (`Projectile.cs:77648-78210`) as the DRAW CENSUS: every explicit
+    /// `Main.rand` draw stays on the pass's `UpdateProjectiles` stream in
+    /// the C#'s order, the dust/gore bodies are skipped (the
+    /// `celeb2_explosion` convention). One `Gore.NewGore` row = the
+    /// `Next(61, 64)` type + the `NewGore` kicks `Next(10, 31)` /
+    /// `Next(-20, 21)` (`Gore.cs:1327-1328`); the `NewGoreDirect` rows are
+    /// the same call (`Gore.cs:1281-1284`). The cluster ring's spawns ride
+    /// `wants_dart_spawns` (the pool resolves them after the sub-steps).
+    ///
+    /// The liquid families' `SpreadWater/Lava/Honey/Dry` flood fills
+    /// (`:77773`/`:77812`/`:77851`/`:77890`, `DelegateMethods.cs:598-687`)
+    /// are the documented liquid-layer follow-up (ANALYSIS "Rocket & dart
+    /// ammo") — the fills draw nothing, so the census is complete without
+    /// them.
+    fn rocket_kill_census(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
+        // One gore's draw row: the type pick + the two NewGore kicks.
+        fn gore(rng: &mut dyn tr_core::loot::DropRng) {
+            let _ = rng.next_range(61, 64);
+            let _ = rng.next_range(10, 31);
+            let _ = rng.next_range(-20, 21);
+        }
+        let kind = self.slots[slot].kind;
+        // The visual resize (the C# resizes BEFORE the dust loops; the
+        // box the dust spawns read has no port consumer, so the resize is
+        // state-only — the recentre keeps the centre fixed).
+        let resize = |p: &mut Projectile, size: f32| {
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.w = size;
+            p.h = size;
+            p.pos = Vec2::new(cx - size * 0.5, cy - size * 0.5);
+        };
+        if matches!(kind, 784 | 785 | 786 | 805 | 787 | 788 | 789 | 806 | 790 | 791 | 792 | 807) {
+            // `:77732-77853` — the wet/lava/honey families: the 22×22
+            // resize, the 30+80×2 dust (no explicit draws), 8 gores
+            // (`:77759-77770`'s 2×2×2 loop shape), the Spread flood fill
+            // (the liquid-layer follow-up — no draws).
+            resize(&mut self.slots[slot], 22.0);
+            for _ in 0..8 {
+                gore(rng);
+            }
+        } else if matches!(kind, 799 | 800 | 801 | 810) {
+            // `:77854-77892` — the dry family: the same shape (the sound
+            // is 62 for 799, 14 otherwise — the cue skip).
+            resize(&mut self.slots[slot], 22.0);
+            for _ in 0..8 {
+                gore(rng);
+            }
+        } else if matches!(kind, 793 | 796 | 794 | 797 | 795 | 798 | 808 | 809) {
+            // `:77893-77979` — the Mini Nuke family: the 50×50 resize, the
+            // 50 smoke dust with a `Next(5)` scale + a `Next(2)` gate (one
+            // `Next(10)` fadeIn when taken) each (`:77909-77917`), the 30
+            // triple-dust with `Next(61)` + `Next(5)` + `Next(21)` and the
+            // noGravity branch's `Next(5)` (`:77925-77948`), the three
+            // 1/11-step rings' one `NextFloat` rotation + one `NextFloat`
+            // velocity scale per particle (`:77951-77965`), 12 gores
+            // (`:77966-77977`'s 3×2×2 loop), the 10×10 recentre.
+            resize(&mut self.slots[slot], 50.0);
+            for _ in 0..50 {
+                let _ = rng.next_range(0, 5); // dust scale (`:77909`)
+                if rng.next_range(0, 2) == 0 {
+                    let _ = rng.next_range(0, 10); // fadeIn (`:77915`)
+                }
+            }
+            for i in 0..30 {
+                let _ = rng.next_range(0, 61); // first dust scale (`:77925`)
+                let _ = rng.next_range(0, 5); // second dust scale (`:77930`)
+                let _ = rng.next_range(0, 21); // third dust scale (`:77936`)
+                if i % 2 == 0 {
+                    // `:77934`/`:77946` — the noGravity-TRUE branch
+                    // (`num33 % 2 == 0`) spends the extra scale draw.
+                    let _ = rng.next_range(0, 5);
+                }
+            }
+            for _ in 1..=3 {
+                let _ = rng.next_float(); // ring rotation (`:77953`)
+                let mut t = 0.0f32;
+                while t < 1.0 {
+                    let _ = rng.next_float(); // velocity scale (`:77961`)
+                    t += 1.0 / 11.0;
+                }
+            }
+            for _ in 0..12 {
+                gore(rng);
+            }
+            resize(&mut self.slots[slot], 10.0);
+        } else if matches!(kind, 779 | 783 | 862 | 863) {
+            // `:77980-78019` — the cluster shrapnel: the 22×22 resize, the
+            // 15+5×2+3 dust (no explicit draws), the four-corner `Next(5)`
+            // gates each spawning one gore when taken (`:78006-78018`).
+            resize(&mut self.slots[slot], 22.0);
+            for _ in 0..4 {
+                if rng.next_range(0, 5) == 0 {
+                    gore(rng);
+                }
+            }
+        } else if rocket_cluster(kind) {
+            // `:78020-78087` — the cluster rockets: the 22×22 resize, the
+            // 30+40×2+8 dust (no explicit draws), 4 gores (`:78051-78062`'s
+            // single-iteration 2×2 loop), then the owner-gated 6-shard ring
+            // (`:78063-78086`): one `NextFloat` ring rotation, then per
+            // shard (the C#'s f32 `num54 += 1f/6f` accumulation — 6
+            // iterations, drift included) one `NextFloat` radius scale +
+            // the spawn + one `Next(30)` timeLeft decrement.
+            resize(&mut self.slots[slot], 22.0);
+            for _ in 0..4 {
+                gore(rng);
+            }
+            // `:78063-78086` — the ring is OWNER-gated (the remote owner's
+            // cluster explodes with gores but no shards — and no ring
+            // draws).
+            if self.slots[slot].owner != local_owner {
+                return;
+            }
+            // `:78065-78077` — the shard kind by parent.
+            let shard = match kind {
+                780 | 781 | 782 => 783u16,
+                803 => 862,
+                804 => 863,
+                _ => 779,
+            };
+            let damage = self.slots[slot].damage / 2;
+            let center = Vec2::new(
+                self.slots[slot].pos.x + self.slots[slot].w * 0.5,
+                self.slots[slot].pos.y + self.slots[slot].h * 0.5,
+            );
+            let base_angle = rng.next_float() * std::f32::consts::TAU;
+            // `:78079` — the C#'s `for (float num54 = 0f; num54 < 1f; num54
+            // += 1f/6f)`: the f32 accumulation rounds the sixth step to
+            // exactly 1.0, so the loop runs SIX iterations (the f64
+            // accumulation would drift below 1.0 and run a seventh — the
+            // gate fix; the shard count is the C#'s 6).
+            let mut t = 0.0f32;
+            while t < 1.0 {
+                let angle = base_angle + t * std::f32::consts::TAU;
+                let mut v = Vec2::from_angle(angle) * (4.0 + rng.next_float() * 2.0);
+                v += Vec2::new(0.0, -1.0);
+                let delta = rng.next_range(0, 30);
+                // `NewProjectile(..., base.Center, vector2, num52,
+                // damage/2, 0f, owner)` — the C# takes the CENTRE; the
+                // port's spawn takes the top-left (the 14×14 shard's
+                // half-box subtracts).
+                self.slots[slot].wants_dart_spawns.push((
+                    shard,
+                    center.x - 7.0,
+                    center.y - 7.0,
+                    v.x,
+                    v.y,
+                    damage,
+                    0.0,
+                    0.0,
+                    0.0,
+                    delta,
+                ));
+                t += 1.0f32 / 6.0f32;
+            }
+        } else if matches!(kind, 133..=138 | 338 | 339) {
+            // `:78088-78141` — the plain rockets: the 22×22 recentre, the
+            // 30+20×2 dust (no explicit draws), 8 gores (`:78117-78140`'s
+            // 2×4 loop).
+            resize(&mut self.slots[slot], 22.0);
+            for _ in 0..8 {
+                gore(rng);
+            }
+        } else if matches!(kind, 139..=144 | 340 | 341) {
+            // `:78142-78210` — Rocket III/IV: the 80×80 recentre, the 40
+            // smoke dust with a `Next(2)` gate (one `Next(10)` fadeIn when
+            // taken) each (`:78162-78166`), the 70×2 dust (no draws), 12
+            // gores (`:78176-78203`'s 3×4 loop), the 10×10 recentre.
+            resize(&mut self.slots[slot], 80.0);
+            for _ in 0..40 {
+                if rng.next_range(0, 2) == 0 {
+                    let _ = rng.next_range(0, 10);
+                }
+            }
+            for _ in 0..12 {
+                gore(rng);
+            }
+            resize(&mut self.slots[slot], 10.0);
+        }
     }
 
     /// The target-selection gate of `Damage_PVE` (`:12577-12583`): the slot's
@@ -17499,17 +19856,29 @@ impl ProjectilePool {
                 return None;
             }
         }
-        // The damage/knockback multipliers.
-        let mut dmg_mult = if p.ai[0] == 0.0 { 1.2 } else { 1.0 };
-        if (p.kind == BLUE_MOON || p.kind == SUNFURY)
-            && self.slots.iter().any(|s| {
-                s.active
-                    && s.owner == p.owner
-                    && s.kind != p.kind
-                    && (s.kind == BLUE_MOON || s.kind == SUNFURY)
-            })
-        {
-            dmg_mult *= 0.8;
+        // The damage/knockback multipliers. `:14447-14461`: the held state
+        // ×1.2 with the Blue Moon/Sunfury dual ×0.8 — the sibling scan sits
+        // INSIDE the `ai[0] == 0` arm, so the discount never applies to a
+        // thrown/spinning head.
+        let mut dmg_mult = if p.ai[0] == 0.0 {
+            let mut m = 1.2;
+            if (p.kind == BLUE_MOON || p.kind == SUNFURY)
+                && self.slots.iter().any(|s| {
+                    s.active
+                        && s.owner == p.owner
+                        && s.kind != p.kind
+                        && (s.kind == BLUE_MOON || s.kind == SUNFURY)
+                })
+            {
+                m *= 0.8;
+            }
+            m
+        } else {
+            1.0
+        };
+        // `:14462-14465`: the fly-out AND the retract deal DOUBLE damage.
+        if p.ai[0] == 1.0 || p.ai[0] == 2.0 {
+            dmg_mult *= 2.0;
         }
         let kb_mult = match p.ai[0] as i32 {
             0 => 0.35,
@@ -17608,6 +19977,7 @@ impl ProjectilePool {
     /// and run their on-hit arms (`:13579-13956`).
     fn damage_pve(
         &mut self,
+        world: &World,
         slot: usize,
         npcs: &mut [Npc],
         flail: Option<FlailInputs>,
@@ -17616,7 +19986,7 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
-        let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
+        let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
                 return;
@@ -17628,10 +19998,15 @@ impl ProjectilePool {
                 p.uses_id_static_immunity,
                 p.max_penetrate,
                 p.knock_back,
-                p.crit,
                 p.pos + Vec2::splat(SIZE * 0.5),
             )
         };
+        // `Damage_PVE_Inner`'s `ownedBySomeone` (`Projectile.cs:12557` →
+        // `:578-588`): `!npcProj && !trap`. The port has no `npcProj` field
+        // (the hostile shots ride `friendly = false`), so the gate is the
+        // owner slot + the trap flag. The per-hit crit block (`:12883`) and
+        // the luck-carrying `DamageVar` (`:12938`) both ride it.
+        let owned_by_someone = owner_idx < 255 && !self.slots[slot].trap;
         // `Player.killGuide`/`killClothier` — the worn-doll flags the friendly
         // gate reads (`Player.cs:15124`/`:15128`).
         let (kill_guide, kill_clothier) = doll_flags(player.as_deref());
@@ -17714,6 +20089,15 @@ impl ProjectilePool {
             if p.kind == SLIME_MINION && !p.friendly {
                 continue;
             }
+            // S1-P-i16 — the Electrosphere sphere 443 (`AI()` aiStyle-77,
+            // `Projectile.cs:30687-30689`): the pull-in latch (`ai[1] == 1`)
+            // flips `friendly = false`, so a sphere being reeled back to its
+            // bolt deals no NPC damage (`Damage_PVE_Inner`'s `!friendly`
+            // refusal `:12611`). The fresh sphere spawns friendly (the
+            // `:788` default) and hits normally.
+            if p.kind == 443 && !p.friendly {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -17729,6 +20113,23 @@ impl ProjectilePool {
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
             if !single_hit && n.immune[owner_idx] != 0 {
                 continue;
+            }
+            // S1-P-i06 — the spear family's `ownerHitCheck` gate
+            // (`Damage_PVE_Inner` `:12637`: `!targetNPC.noTileCollide &&
+            // this.ownerHitCheck && !this.CanHitWithMeleeWeapon(targetNPC)`
+            // → return). `DefaultToSpear` sets `ownerHitCheck` (`:10728`);
+            // the port keys it on `SPEAR_KINDS` (the only ported
+            // ownerHitCheck family). The sight lines read the owner snapshot
+            // (`CanHitWithMeleeWeapon` `:12400-12411`). The NPC's
+            // `noTileCollide` has no port field — the ghost kinds are the
+            // exception, none is a spear target here, so the gate runs
+            // unconditionally for the family (ANALYSIS).
+            if SPEAR_KINDS.contains(&p.kind) {
+                if let Some(so) = self.spear_owner {
+                    if !crate::projectile_ai_spear::owner_can_hit(world, &so, n) {
+                        continue;
+                    }
+                }
             }
             // The flail family's hit gates — `Colliding` (`:15336-15356`,
             // the state-0 ellipse replaces the box test),
@@ -17764,6 +20165,16 @@ impl ProjectilePool {
             } else if skip_box_test {
                 // The flail state-0 ellipse already decided the hit.
                 true
+            } else if SPEAR_KINDS.contains(&p.kind) && self.spear_owner.is_some() {
+                // S1-P-i06 — `Colliding`'s aiStyle-19 arm
+                // (`Projectile.cs:15815-15843`): the extension box stepped
+                // from the centre, then the box itself. The arm only returns
+                // on a HIT; a miss falls through to the base-rect test
+                // (`:15888`), so the two are OR'd.
+                let (nw, nh) = n.size();
+                let target = tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32);
+                crate::projectile_ai_spear::spear_colliding(p, &self.spear_owner.unwrap(), target)
+                    || proj_rect.intersects(target)
             } else if p.kind == MOONLORD_TURRET_LASER {
                 // `Colliding`'s type-642 arm (`Projectile.cs:15942-15954`):
                 // the base-rect overlap above OR the beam line — the
@@ -17800,31 +20211,235 @@ impl ProjectilePool {
                 continue;
             }
             let hit = center;
+            // `Damage_PVE_Inner`'s per-hit crit block (`Projectile.cs:12829`,
+            // `:12883-12917`): `crit` starts false and each set class flag
+            // rolls an independent `Next(1, 101) <= classCrit + bonus` on the
+            // `UpdateProjectiles` stream — BEFORE the tag math and DamageVar.
+            // The spawn-time roll is gone (the C# never rolls crit at spawn).
+            let mut crit = false;
+            if owned_by_someone {
+                let (melee_crit, ranged_crit, magic_crit) = player
+                    .as_deref()
+                    .map(|pl| (pl.melee_crit, pl.ranged_crit, pl.magic_crit))
+                    .unwrap_or((0, 0, 0));
+                let p = &self.slots[slot];
+                crit = tr_core::damage::projectile_hit_crit(
+                    rng,
+                    p.melee,
+                    p.ranged,
+                    p.magic,
+                    melee_crit,
+                    ranged_crit,
+                    magic_crit,
+                    p.bonus_crit_chance,
+                );
+                // `TryConsumingTimerCrit` (`:12902`) and the monk-set /
+                // sentry-backpack arms (`:12903-12916`) are unported
+                // accessories — no port state, no draws.
+            }
             // `:12919-12933`: the tag-damage math runs on the hit's damage —
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
-            // set the slot flag directly.
-            let (mut dmg, hit_crit) =
+            // set the slot flag directly. The tag's forced crit wins.
+            let (mut dmg, mut hit_crit) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            // `:12934-12937`: the Eye-of-Cthulhu yoyo's homing dash (1130)
+            // never crits.
+            if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
+                hit_crit = false;
+            }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
+            // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
+            // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
+            // `velocity = (npc.Center - Center) * 0.75`. The C# arm sits
+            // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
+            // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
+            // below reads the fresh pin. ALL scalars are copied before the
+            // mutation so the `p` borrow ends here (E0502).
+            let pkind = p.kind;
+            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
+            let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
+            if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
+                let (ncx, ncy) = n.center();
+                let (pcx, pcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
+                let pin_vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
+                let pj = &mut self.slots[slot];
+                pj.ai[0] = 1.0;
+                pj.ai[1] = idx as f32;
+                pj.vel = pin_vel;
+            }
+            // S1-P-i17 — `Damage_PVE_Inner`'s Hellfire clamp
+            // (`Projectile.cs:13252-13255`): the 41's contact pins
+            // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
+            // and the yoyo doublings `:13389`, ABOVE the strike).
+            if hellfire_clamp {
+                self.slots[slot].time_left = 1;
+            }
+            // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
+            // 13300`, S1-P-i09): the dropped twin squashes its velocity to
+            // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
+            // at -16); the flying yoyo faces the hit side, recoils away
+            // from the NPC (`velocity = velocity * -0.5 + away * 16`, the
+            // Kraken's 4), ages its lifetime clock 20 ticks — plus 40 more
+            // and a ×0.75 damage cut when the owner has no line of sight
+            // (`Collision.CanHit` box walk). The `Player.Counterweight`
+            // call (`:13272`, `Player.cs:12356-12415`) is the accessory
+            // arm — yoyoGlove/counterWeight are unported grants
+            // (M3-EQUIP-3), so the call folds out (ANALYSIS).
+            if proj_data(pkind).is_some_and(|d| d.ai_style == 99) {
+                // The slot scalars were copied out above (the `p` borrow
+                // ended at the Hellfire clamp).
+                let (ncx, ncy) = n.center();
+                let dropped = self.slots[slot].ai[0] == -2.0;
+                if dropped {
+                    // `:13258-13262` — `num14 = velocity.Length();
+                    // velocity.Normalize(); velocity *= num14 / 5f`. The
+                    // zero-velocity Normalize is the port's safe no-op
+                    // (the house SafeNormalize convention; the C# XNA
+                    // Normalize NaNs and the AI's NaN-kill collects it
+                    // next tick).
+                    let len = self.slots[slot].vel.length();
+                    if len > 0.0 {
+                        self.slots[slot].vel /= len;
+                        self.slots[slot].vel *= len / 5.0;
+                    }
+                    // `:13263-13267` — the `Next(50, 81) * 0.1` lift,
+                    // clamped at -16.
+                    self.slots[slot].vel.y -= rng.next_range(50, 81) as f32 * 0.1;
+                    if self.slots[slot].vel.y < -16.0 {
+                        self.slots[slot].vel.y = -16.0;
+                    }
+                    self.slots[slot].net_update = true; // `:13268`
+                } else {
+                    // `:13273-13280` — the facing against the OWNER's
+                    // center (the orphan guard keeps the stock direction).
+                    if let Some((ox, _)) = owner {
+                        self.slots[slot].direction = if ncx < ox { -1 } else { 1 };
+                    }
+                    if self.slots[slot].ai[0] >= 0.0 {
+                        // `:13281-13298` — the recoil. The away vector
+                        // reads `base.Center` (the slot's true centre —
+                        // the walk's `center` local is the port's pos+3
+                        // hit-point convention, not the C# centre).
+                        let (bcx, bcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
+                        let (away_x, away_y) = (bcx - ncx, bcy - ncy);
+                        let l = (away_x * away_x + away_y * away_y).sqrt();
+                        let (ax, ay) = if l > 0.0 {
+                            (away_x / l, away_y / l)
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        let kick = if pkind == KRAKEN_YOYO { 4.0 } else { 16.0 };
+                        // `:13283-13291` — `vector4.Normalize(); velocity
+                        // *= -0.5f; velocity += vector4 * num15`.
+                        self.slots[slot].vel *= -0.5;
+                        self.slots[slot].vel.x += ax * kick;
+                        self.slots[slot].vel.y += ay * kick;
+                        self.slots[slot].net_update = true; // `:13292`
+                        self.slots[slot].local_ai[0] += 20.0;
+                        // The no-LOS penalty reads the owner's box; the
+                        // orphan (no player) skips it — the C# always has
+                        // Main.player[owner].
+                        if let Some(pl) = player.as_deref() {
+                            if !can_hit(
+                                world,
+                                ppx,
+                                ppy,
+                                pw,
+                                ph,
+                                pl.x,
+                                pl.y,
+                                crate::player::WIDTH,
+                                pl.height,
+                            ) {
+                                self.slots[slot].local_ai[0] += 40.0;
+                                dmg = (dmg as f64 * 0.75) as i32;
+                            }
+                        }
+                    }
+                }
+            }
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
             // (`countUp: false`) form, so the spawn arms below see the same
             // counter value on this hit. The counter starts at -1, so the
-            // effects land on hit #2 (M4-PROJ-4b).
-            if let Some(pl) = player.as_deref_mut() {
-                let kind = self.slots[slot].kind;
-                let doubled = (kind == THE_EYE_OF_CTHULHU_YOYO && pl.every_some_yoyo_hits(7, false))
-                    || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
-                if doubled {
-                    dmg = ((dmg as f32) * 2.0) as i32;
+            // effects land on hit #2 (M4-PROJ-4b). `flag8 = !targetNPC.
+            // immortal` (`:12815`) gates both — an immortal target (the
+            // dummy) never doubles AND never peeks (S1-P-i09).
+            if !n.immortal {
+                if let Some(pl) = player.as_deref_mut() {
+                    let kind = self.slots[slot].kind;
+                    let doubled =
+                        (kind == THE_EYE_OF_CTHULHU_YOYO && pl.every_some_yoyo_hits(7, false))
+                            || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
+                    if doubled {
+                        dmg = ((dmg as f32) * 2.0) as i32;
+                    }
                 }
+            }
+            // `Damage_PVE_Inner`'s aiStyle-3 boomerang arm (`Projectile.cs:
+            // 13068-13080`, S1-P-i08): the outbound hit reverses BOTH axes
+            // and arms the return; a returning boomerang's hit only re-arms
+            // `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse alone).
+            // The 301/866/902 + phaseblade exclusions are the C#'s; the 106's
+            // `LightDisc_Bounce` dust (`:13072-13075`, `:20317-20329`) is the
+            // skipped cosmetic layer — its rolls go with it (the volcano/
+            // yoyo precedent). Runs BEFORE the strike, as the C# orders it.
+            if proj_data(self.slots[slot].kind).is_some_and(|d| d.ai_style == 3)
+                && !matches!(self.slots[slot].kind, 301 | 866 | 902)
+                && !is_a_phaseblade(self.slots[slot].kind)
+            {
+                let p = &mut self.slots[slot];
+                if p.ai[0] == 0.0 {
+                    p.vel = -p.vel;
+                }
+                p.ai[0] = 1.0;
             }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
+            // `Damage_PVE_Inner`'s `num5` (`Projectile.cs:12831`): the
+            // owner's `GetArmorPenetration(this.melee)` plus the slot's own
+            // `armorPenetration` (the firing item's prefix `arpen` row,
+            // `ApplyStatsFromSource` `:11128`); `:13630-13633` adds
+            // `checkArmorPenetration(num5, 0f)` to the rolled damage for
+            // every owned non-hostile shot BEFORE the strike. The melee
+            // flag folds to `is_whip` — the whip is the melee projectile
+            // family this seam identifies (the flail/yoyo/boomerang
+            // `melee = true` rows have no slot flag yet; their Sharpened
+            // +12 stays missed, recorded in ANALYSIS). The debuff bonuses
+            // (ichor/broken armor/Betsy's curse) ride the melee hit's
+            // convention (false until the NPC debuff scan lands here).
+            if let Some(pl) = player.as_deref() {
+                let num5 = pl.get_armor_penetration(is_whip) + self.slots[slot].armor_penetration;
+                dmg += tr_core::damage::check_armor_penetration(
+                    num5,
+                    0.0,
+                    n.defense(),
+                    false,
+                    false,
+                    false,
+                );
+            }
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
+            // S1-P-i17 — `StatusNPC(victimIndex)` (`Projectile.cs:13580`):
+            // the per-type debuff arms run BEFORE the strike (`:13649`)
+            // and unconditionally on the contact path — a statue/dodge
+            // refusal still applies the debuff. The ported arrow-family
+            // arms: the FlameArrow's 1/3 OnFire, the Frostburn's 1/3
+            // Frostburn, the Cursed/Ichor/Venom fixed durations and the
+            // Shadowflame roll (`special_arrows::status_npc`; the draws
+            // ride this pass's `UpdateProjectiles` stream in the C#'s
+            // order). The accessory chains (`accPoisonBarb`/`meleeEnchant`
+            // /`frostBurn`/`magmaStone`) are unported player flags — the
+            // melee-only ones never fire for an arrow by construction.
+            crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
+            self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+            let landed = Npc::strike_projectile(
+                npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
+            );
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe launch gate (`:89266-89285`) — the
             // Next(25) roll rides the strike's stream (the C# HitEffect runs
@@ -17845,20 +20460,102 @@ impl ProjectilePool {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
             }
-            // `:14087-14119`: the immunity application.
-            if uses_local && self.slots[slot].local_hit_cooldown != -2 {
+            // `Projectile.cs:13967-14119`: the immunity application, in the
+            // C#'s if/else order. The id-static gate reads the CURRENT
+            // `penetrate` (not maxPenetrate) with the single-hit override
+            // (`:13969`); the −1 cooldown wraps to the u32::MAX block-forever
+            // sentinel via `GameUpdateCount + (uint)cooldown` (`:13972`).
+            let p = &self.slots[slot];
+            if uses_id_static {
+                if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                    npcs[idx].immune[owner_idx] = 0;
+                    self.id_static.insert(
+                        (p.kind, idx as u16),
+                        self.update_count
+                            .wrapping_add(p.id_static_hit_cooldown as u32 as u64),
+                    );
+                }
+            } else if p.kind == LAST_PRISM_LASER {
+                // `:13992-13995` — the Last Prism laser (632):
+                // `GetSlowMagicUseTime(5)`; the `slowMagicUse` state is
+                // unported (`Player.cs:47019-47026` returns the original
+                // time when the flag is false), so the window is 5.
+                npcs[idx].immune[owner_idx] = 5;
+            } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
+                // `:14016-14023` — the 634/635/659 per-type arm: 5 ticks.
+                npcs[idx].immune[owner_idx] = 5;
+            } else if p.kind == MAGIC_MISSILE {
+                // `:14032-14035` — the Magic Missile (16): 8 ticks.
+                npcs[idx].immune[owner_idx] = 8;
+            } else if p.kind == TYPHOON {
+                // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
+                npcs[idx].immune[owner_idx] = 6;
+            } else if uses_local && p.local_hit_cooldown != -2 {
+                // `:14111-14115` — the local pair.
                 npcs[idx].immune[owner_idx] = 0;
-                self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
-                npcs[idx].immune[owner_idx] = 0;
-                self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
-                    self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
-                );
-            } else if max_penetrate != 1 {
+                self.local_immunity[slot * 256 + idx] = p.local_hit_cooldown;
+            } else if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                // `:14116-14119` — the stock per-owner window, gated on the
+                // CURRENT penetrate with the single-hit override.
                 npcs[idx].immune[owner_idx] = OWNER_IMMUNE_TICKS;
             }
             if landed {
+                // S1-P-i16 — `Damage_PVE_Inner`'s aiStyle-16 arm
+                // (`Projectile.cs:13120-13134`): any bomb/rocket NPC hit
+                // fuses `timeLeft` to 3 (the C# `if (timeLeft > 3)` guard)
+                // and points `direction` at the victim's side. The arm
+                // runs PRE-strike in C#; the fuse/direction are read by
+                // the NEXT tick's AI, so the port's post-strike placement
+                // is observationally identical (no draw between).
+                if proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) == 16 {
+                    let p = &mut self.slots[slot];
+                    if p.time_left > 3 {
+                        p.time_left = 3;
+                    }
+                    let (nw, _) = npcs[idx].size();
+                    let npc_cx = npcs[idx].x + nw * 0.5;
+                    let proj_cx = p.pos.x + p.w * 0.5;
+                    p.direction = if npc_cx < proj_cx { -1 } else { 1 };
+                }
+                // S1-P-i16 — `StatusNPC`'s dart debuffs
+                // (`Projectile.cs:11635-11645` the 267 Poison Dart,
+                // `:11482-11489` the 478/480 Cursed Flames + the 479
+                // Ichor), called at `:13580` — BEFORE the tag application.
+                // The rolls ride the pass's `UpdateProjectiles` stream.
+                match self.slots[slot].kind {
+                    267 => {
+                        // `:11637-11644` — Next(3): 1/3 the 3600-tick
+                        // Poisoned, else 1800.
+                        if rng.next_range(0, 3) == 0 {
+                            npcs[idx].buffs.add_buff(20, 3600);
+                        } else {
+                            npcs[idx].buffs.add_buff(20, 1800);
+                        }
+                    }
+                    478 | 480 => {
+                        // `:11484` — Cursed Flames 39, 60 × Next(3, 7).
+                        let t = 60 * rng.next_range(3, 7);
+                        npcs[idx].buffs.add_buff(39, t);
+                    }
+                    479 => {
+                        // `:11488` — Ichor 69, 60 × Next(7, 15).
+                        let t = 60 * rng.next_range(7, 15);
+                        npcs[idx].buffs.add_buff(69, t);
+                    }
+                    _ => {}
+                }
+                // S1-P-i16 — the 477 Crystal Dart's on-hit retarget
+                // (`Projectile.cs:13534-13567`): penetrate > 1, the victim
+                // excluded, one Next(count) pick.
+                if self.slots[slot].kind == 477 && self.slots[slot].penetrate > 1 {
+                    crate::projectile_ai_darts::retarget(
+                        &mut self.slots[slot],
+                        npcs,
+                        world,
+                        rng,
+                        Some(idx),
+                    );
+                }
                 // `:13579-13581`: the whip debuffs (`StatusNPC`'s
                 // `ApplyWhipDebuffs`).
                 if is_whip {
@@ -17883,6 +20580,24 @@ impl ProjectilePool {
                 if fk == CURSED_FLARE {
                     // `:11693-11696` — CursedInferno, no roll.
                     npcs[idx].buffs.add_buff(39, 600);
+
+                }
+                // S1-P-i28 — `StatusNPC`'s thrown-consumable debuffs
+                // (`Projectile.cs:13580`): the poisoned knife's 1/2 Poisoned,
+                // the molotov/fire's OnFire, the bone javelin's Daybroken
+                // (the stick pin above already landed). The explicit rolls
+                // ride this pass's stream in C# order.
+                crate::projectile_ai_thrown::thrown_on_hit(
+                    &self.slots[slot],
+                    &mut npcs[idx],
+                    idx as u16,
+                    rng,
+                );
+                // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
+                // `:15074-15101`): the bone javelin caps the sticks on one NPC
+                // at 6 — the 6th stick kills the oldest (lowest timeLeft).
+                if self.slots[slot].kind == BONE_JAVELIN {
+                    self.kill_oldest_javelin(slot, idx as u16);
                 }
                 // `:13581-13584`: any tag-carrying item's projectile applies
                 // its tag to the hit NPC (the whip's, in the port today).
@@ -17940,7 +20655,7 @@ impl ProjectilePool {
         rng: &mut dyn DropRng,
         luck: f32,
     ) {
-        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
+        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
                 return;
@@ -17952,9 +20667,13 @@ impl ProjectilePool {
                 p.uses_id_static_immunity,
                 p.max_penetrate,
                 p.knock_back,
-                p.crit,
             )
         };
+        // `ownedBySomeone` (`:12557`): the owner slot + the trap flag. The
+        // boxed seam has no player reference, so the class crits read 0 (the
+        // base-4 default is the player's; the death-burst callers pass no
+        // player — the per-hit roll still rides the stream in the C# order).
+        let owned_by_someone = owner < 255 && !self.slots[slot].trap;
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -17987,11 +20706,31 @@ impl ProjectilePool {
                 continue;
             }
             let (cx, cy) = (px + pw * 0.5, py + ph * 0.5);
+            // `Damage_PVE_Inner`'s per-hit crit block (`:12883-12917`) — the
+            // boxed walk rolls it like the plain pass, BEFORE DamageVar. The
+            // class crits read 0 (no player in this seam); the roll still
+            // consumes its draws on the stream in the C# order.
+            let mut crit = false;
+            if owned_by_someone {
+                let p = &self.slots[slot];
+                crit = tr_core::damage::projectile_hit_crit(
+                    rng, p.melee, p.ranged, p.magic, 0, 0, 0, p.bonus_crit_chance,
+                );
+            }
+            if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
+                crit = false; // `:12934-12937`
+            }
             // Projectile.cs:12938, NPC.cs:81189,81239 — the boxed Damage() walk
             // applies DamageVar and defense/crit like the plain PVE pass.
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
+            // `:13580` — `StatusNPC` before `StrikeNPC` (S1-P-i18): the 286
+            // burst's box walk carries no per-type debuff of its own, but the
+            // shared call keeps the order for any special bullet that reaches
+            // the boxed walk.
+            self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            let landed =
+                Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8), false);
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe gate rides the strike's stream.
             if landed {
@@ -18008,23 +20747,33 @@ impl ProjectilePool {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
             }
-            if uses_local && self.slots[slot].local_hit_cooldown != -2 {
+            // `Projectile.cs:13967-14119` — the same if/else order as the
+            // plain walk: id-static first (CURRENT penetrate + the override),
+            // the per-type arms, then local, then the stock window.
+            let p = &self.slots[slot];
+            if uses_id_static {
+                if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                    npcs[idx].immune[owner] = 0;
+                    self.id_static.insert(
+                        (p.kind, idx as u16),
+                        self.update_count
+                            .wrapping_add(p.id_static_hit_cooldown as u32 as u64),
+                    );
+                }
+            } else if p.kind == LAST_PRISM_LASER {
+                // `:13992-13995` — `GetSlowMagicUseTime(5)`; `slowMagicUse`
+                // is unported (`Player.cs:47019-47026`), so the window is 5.
+                npcs[idx].immune[owner] = 5;
+            } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
+                npcs[idx].immune[owner] = 5; // `:14016-14023`
+            } else if p.kind == MAGIC_MISSILE {
+                npcs[idx].immune[owner] = 8; // `:14032-14035`
+            } else if p.kind == TYPHOON {
+                npcs[idx].immune[owner] = 6; // `:14036-14039`
+            } else if uses_local && p.local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
-                self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && max_penetrate != 1 {
-                // `:13967-13973` — the idStatic application's
-                // `penetrate != 1 || appliesImmunityTimeOnSingleHits` gate
-                // (no ported row sets the override flag — the three C#
-                // setters `:2568`/`:3754`/`:10643` are unported kinds),
-                // then the stamp `GameUpdateCount + (uint)cooldown` — a −1
-                // cooldown wraps to u32::MAX (the block-forever sentinel,
-                // the 644 shard burst's stock pair).
-                npcs[idx].immune[owner] = 0;
-                self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
-                    self.update_count.wrapping_add(self.slots[slot].id_static_hit_cooldown as u32 as u64),
-                );
-            } else if max_penetrate != 1 {
+                self.local_immunity[slot * 256 + idx] = p.local_hit_cooldown;
+            } else if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
                 npcs[idx].immune[owner] = OWNER_IMMUNE_TICKS;
             }
             if landed {
@@ -18232,7 +20981,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        p.ai_boomerang(&w, None);
+        p.ai_boomerang(&w, None, 1.0, true);
         assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
         assert_eq!(p.sound_delay, 8);
         // The pool decrements ahead of the AI (`:16768-16771`); while the
@@ -18240,7 +20989,7 @@ mod s1_e_21h_sound_tests {
         for _ in 0..7 {
             p.sound_delay -= 1;
             p.wants_sound = None;
-            p.ai_boomerang(&w, None);
+            p.ai_boomerang(&w, None, 1.0, true);
             assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
         }
         assert_eq!(p.sound_delay, 1, "one tick left on the cooldown");
@@ -18248,7 +20997,7 @@ mod s1_e_21h_sound_tests {
         // re-arm 24, not 8, once the cooldown reaches 0.
         p.sound_delay = 0;
         p.extra_updates = 2;
-        p.ai_boomerang(&w, None);
+        p.ai_boomerang(&w, None, 1.0, true);
         assert_eq!(p.sound_delay, 24, "8 × (extraUpdates + 1)");
         assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 7)));
         // The Magic Missile: below the speed sum the gate refuses.
@@ -18304,7 +21053,7 @@ mod s1_e_21h_sound_tests {
                 tile_collide: false,
                 ..Default::default()
             };
-            p.ai_bomb(&w);
+            p.ai_bomb(&w, &[], &mut tr_core::tile_light::FastRandom::new(0), 0);
             assert!(p.detonated);
             assert_eq!(
                 p.wants_sound,
@@ -18313,7 +21062,7 @@ mod s1_e_21h_sound_tests {
             );
             // The latch holds: a re-run queues nothing new.
             p.wants_sound = None;
-            p.ai_bomb(&w);
+            p.ai_bomb(&w, &[], &mut tr_core::tile_light::FastRandom::new(0), 0);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per death");
         }
     }
@@ -18452,6 +21201,10 @@ mod tests {
         // 31/147/181/193 left with the unarmed-styles slice
         // (projectile_ai_misc). 120 stays: StardustGuardian rowed but arm
         // UNOWNED (R62's kinds are 872/873/874/919/923 — next-wave item).
+        // 36 LEFT the list at the gate: S1-P-i28 armed the aiStyle-36 bee
+        // flight (`projectile_ai_thrown::bee_step`, the beenade's children
+        // AND the Bee Arrow's death swarm — the i17 rows now ride a live
+        // arm, the i17 "follow-up" note is superseded).
         const UNARMED_ROWED: [u8; 1] = [120];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
@@ -18648,6 +21401,57 @@ mod tests {
         assert!(list.contains(&(9, 29)), "{:?}", list);
         // The solid ground row stays latchable.
         assert!(!list.contains(&(10, 30)), "{:?}", list);
+    }
+
+    /// W3-i39 — `spawn_hook` centres the box (`Projectile.cs:10876-10877`:
+    /// `position = X - width/2`). The spawn site is the player CENTER, so the
+    /// slot's top-left sits half a box up-left of it. WRITTEN NOT RUN.
+    #[test]
+    fn i39_spawn_hook_centres_the_box() {
+        let mut pool = ProjectilePool::new();
+        let center = Vec2::new(40.0 * 16.0, 60.0 * 16.0);
+        let slot = pool
+            .spawn_hook(crate::projectile::HOOK, center, center + Vec2::new(0.0, 100.0), 11.5, 0, 7.0, 0, 1)
+            .expect("the hook row spawns");
+        let p = &pool.slots()[slot];
+        let d = proj_data(crate::projectile::HOOK).unwrap();
+        assert_eq!(p.pos, center - Vec2::new(d.w * 0.5, d.h * 0.5), "top-left = center - half-box");
+        assert_eq!(p.center(), (center.x, center.y), "the center is the spawn point");
+    }
+
+    /// W3-i39 retry — `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33574`):
+    /// the kill sweep also clears the owner's refused-tile set
+    /// (`ClearGrapplingBlacklist`, `:33563`) and drops the registration
+    /// (`grappling[0] = -1; grapCount = 0`, `:33564-33565`). Another owner's
+    /// hooks and blacklist survive. WRITTEN NOT RUN.
+    #[test]
+    fn i39_remove_all_clears_the_blacklist_and_registration() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        // Owner 3's attached hook over the dirt row (y=30), plus owner 5's.
+        for (slot, owner) in [(0usize, 3u8), (1, 5)] {
+            pool.slots[slot] = Projectile {
+                active: true,
+                kind: crate::projectile::HOOK,
+                owner,
+                ai: [2.0, 0.0, 0.0, 0.0],
+                w: 18.0,
+                h: 18.0,
+                pos: Vec2::new(10.0 * 16.0 + 8.0 - 9.0, 29.0 * 16.0 + 8.0 - 9.0),
+                ..Default::default()
+            };
+            pool.refresh_hook_blacklist(&w, owner);
+            pool.register_hook(slot);
+        }
+        assert!(pool.hook_blacklist.contains_key(&3));
+        assert!(pool.hook_blacklist.contains_key(&5));
+        assert_eq!(pool.hook_reg().1, 2);
+        pool.remove_all_grappling_hooks(3);
+        assert!(!pool.slots()[0].active, "owner 3's hook is killed");
+        assert!(pool.slots()[1].active, "owner 5's hook survives");
+        assert!(!pool.hook_blacklist.contains_key(&3), "owner 3's blacklist cleared");
+        assert!(pool.hook_blacklist.contains_key(&5), "owner 5's blacklist survives");
+        assert_eq!(pool.hook_reg().1, 0, "the registration drops");
     }
 
     /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the
@@ -19107,6 +21911,143 @@ mod tests {
         assert_eq!(npc.immune[0], 0);
     }
 
+    #[test]
+    fn the_id_static_block_forever_sentinel_stamps_on_a_single_hit() {
+        // W3-i11 — `Projectile.cs:13967-13973`: the id-static gate reads the
+        // CURRENT penetrate with the single-hit override; the −1 cooldown
+        // wraps to the u32::MAX block-forever sentinel. The 644 shard's
+        // resize-and-`Damage` burst sets `penetrate = maxPenetrate = -1`
+        // (`:72167-72168`/`:34351-34352`) BEFORE the walk, so the gate passes
+        // and the −1 idStatic cooldown (`:466` default) stamps the sentinel —
+        // the old `cooldown > 0` gate skipped it entirely.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(
+                RAINBOW_CRYSTAL_EXPLOSION,
+                npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0,
+            )
+            .unwrap();
+        // The burst window (`rainbow_crystal_burst`): friendly flips true
+        // (`:34345`/`:72160`) and penetrate/maxPenetrate go −1
+        // (`:34351-34352`/`:72167-72168`) before `Damage()`.
+        pool.slots_mut()[slot].friendly = true;
+        pool.slots_mut()[slot].penetrate = -1;
+        pool.slots_mut()[slot].max_penetrate = -1;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the burst lands");
+        // The sentinel stamp: update_count 0 + (u32::MAX) — never expires.
+        let stamp = pool.id_static.get(&(RAINBOW_CRYSTAL_EXPLOSION, 0)).copied();
+        assert_eq!(stamp, Some(u32::MAX as u64), "the −1 cooldown wraps to the sentinel");
+        assert_eq!(npc.immune[0], 0, "the id-static arm clears the per-owner window");
+        // A second hit on the same NPC is refused (the sentinel blocks).
+        let hp_after = npc.hp;
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, hp_after, "the block-forever sentinel refuses the re-hit");
+    }
+
+    #[test]
+    fn the_nebula_blaze_and_spirit_flame_apply_five_tick_immunity() {
+        // W3-i11 — `Projectile.cs:14016-14023`: the 634/635/659 per-type arms
+        // set `immune[owner] = 5`. The old walk fell through to the stock
+        // 10-tick window (penetrate −1).
+        let w = ground();
+        for kind in [NEBULA_BLAZE_1, NEBULA_BLAZE_2, SPIRIT_FLAME] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
+        }
+    }
+
+    #[test]
+    fn the_magic_missile_and_typhoon_apply_their_per_type_immunity() {
+        // W3-i11 — `Projectile.cs:14032-14039`: the Magic Missile (16) sets 8,
+        // the Razorblade Typhoon (409) sets 6.
+        let w = ground();
+        for (kind, want) in [(MAGIC_MISSILE, 8), (TYPHOON, 6)] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
+        }
+    }
+
+    #[test]
+    fn the_last_prism_laser_applies_five_tick_immunity_in_both_walks() {
+        // W3-i11 — `Projectile.cs:13992-13995`: the Last Prism laser (632)
+        // sets `immune[owner] = GetSlowMagicUseTime(5)`; the `slowMagicUse`
+        // state is unported (`Player.cs:47019-47026` returns the original
+        // time when the flag is false), so the window is 5. The old walks
+        // fell through to the stock 10-tick window (penetrate −1). Both the
+        // plain PVE pass and the boxed `Damage()` walk carry the arm, in
+        // the C# if/else position (after id-static, before 634/635/659).
+        let w = ground();
+        // The plain walk.
+        {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "the laser lands");
+            assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (plain walk)");
+            // penetrate −1 keeps the shot alive, but the 5-tick window
+            // refuses the immediate re-hit (`:12620-12624`).
+            let hp_after = npc.hp;
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert_eq!(npc.hp, hp_after, "the per-owner window refuses the re-hit");
+        }
+        // The boxed walk — same arm, same position in the if/else chain.
+        {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve_boxed(
+                slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0,
+            );
+            assert!(npc.hp < 10_000, "the laser lands (boxed walk)");
+            assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (boxed walk)");
+        }
+    }
+
     /// S1-C-8: `Damage()`'s PVE hit test is `Colliding(Damage_GetHitbox(),
     /// npc.getRect())` (`Projectile.cs:12499`/`:12654`) — a rectangle overlap,
     /// not the slot-centre point. A shot whose box covers the NPC while its
@@ -19144,6 +22085,7 @@ mod tests {
         let before = npc.hp;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot,
             std::slice::from_mut(&mut npc),
             None,
@@ -19185,6 +22127,7 @@ mod tests {
         let before = npc.hp;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot,
             std::slice::from_mut(&mut npc),
             None,
@@ -19197,6 +22140,122 @@ mod tests {
             before - 1,
             "S1-C-2: projectile→NPC damage must apply DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)"
         );
+    }
+
+    /// S1-P-i49 — the summon prefixes' armor penetration reaches the strike:
+    /// `ApplyStatsFromSource` copies `item.armorPenetration` onto the shot
+    /// (`Projectile.cs:11128`), `Damage_PVE_Inner`'s `num5` adds it to the
+    /// owner's `GetArmorPenetration` (`:12831`) and `checkArmorPenetration`
+    /// lifts the rolled damage before the defense line (`:13632`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_p_i49_the_prefix_armor_penetration_lifts_the_pve_strike() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(200); // the raw 40 floors at 1 without pen
+        let mut player = crate::player::Player::spawn(&w);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        // The Eager (95) row: arpen 25, no other stat (`Item.cs:942-944`).
+        let arpen = crate::prefix::prefixed_stats(1157, 95).unwrap().armor_penetration;
+        assert_eq!(arpen, 25);
+        pool.set_armor_penetration(slot, arpen);
+        let before = npc.hp;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some(player.center()),
+            Some(&mut player),
+            &mut rng,
+        );
+        // `checkArmorPenetration(25, 0, 200)` = 25/2 = 12 (`NPC.cs:81148`);
+        // the ±15% DamageVar rolls 40 into [34, 46], + 12 − 100 stays under
+        // the floor, so the strike lands exactly 1.
+        let lost = before - npc.hp;
+        assert_eq!(lost, 1, "the pen lifts the pre-defense sum, still floored");
+        // The observable lift: at defense 80 the no-pen strike floors at 1
+        // while the +12 pen pushes (34..46 + 12) − 40 into [6, 18].
+        let mut npc3 = one_npc(&w);
+        npc3.x = 20.0 * TILE_PX;
+        npc3.y = 24.0 * TILE_PX;
+        npc3.hp = 500;
+        npc3.max_hp = 500;
+        npc3.defense_override = Some(80);
+        let slot3 = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.set_armor_penetration(slot3, arpen);
+        let mut rng3 = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w,
+            slot3,
+            std::slice::from_mut(&mut npc3),
+            None,
+            Some(player.center()),
+            Some(&mut player),
+            &mut rng3,
+        );
+        let lost3 = 500 - npc3.hp;
+        assert!(
+            (6..=18).contains(&lost3),
+            "the +12 penetration lifts the strike past the floor: lost {lost3}"
+        );
+        // The no-owner lane keeps the pre-existing no-pen behaviour (the
+        // C# gates on `ownedBySomeone`, `:13630`).
+        let mut npc2 = one_npc(&w);
+        npc2.x = 20.0 * TILE_PX;
+        npc2.y = 24.0 * TILE_PX;
+        npc2.hp = 500;
+        npc2.max_hp = 500;
+        npc2.defense_override = Some(200);
+        let slot2 = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.set_armor_penetration(slot2, arpen);
+        let mut rng2 = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w,
+            slot2,
+            std::slice::from_mut(&mut npc2),
+            None,
+            None,
+            None,
+            &mut rng2,
+        );
+        assert_eq!(npc2.hp, 499, "the ownerless shot keeps the floor of 1");
     }
 
     /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base
@@ -20225,8 +23284,9 @@ mod boomerang_tests {
 
     #[test]
     fn the_outbound_boomerang_bounces_off_a_wall() {
-        // `:14594-14602`: the outbound tile hit reverses the velocity and
-        // sets the return state instead of killing.
+        // `HandleMovement`'s aiStyle-3 arm (`:19563-19568`, S1-P-i08): the
+        // outbound tile hit reverses both axes from `lastVelocity` and sets
+        // the return state instead of killing.
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(
             WOODEN_BOOMERANG,
@@ -20316,39 +23376,508 @@ mod boomerang_tests {
 
     #[test]
     fn the_stray_boomerang_dies_past_3000_px() {
-        // `:39500-39505`: the 3000 px cut-off.
+        // `:39499-39502`: the 3000 px cut-off. The slot starts ALREADY past
+        // the cut-off (3100 px from the owner) so the first return tick kills
+        // it — the seek cannot reel a 3100-px stray back inside the window
+        // (S1-P-i08: the old fixture started 100 px out and relied on the
+        // catch near the loop boundary, which the pre-movement catch rects
+        // shift by a tick).
         let mut pool = ProjectilePool::new();
         pool.slots[0] = Projectile {
             active: true,
             kind: WOODEN_BOOMERANG,
             owner: 0,
-            pos: Vec2::new(200.0, 200.0),
+            pos: Vec2::new(3200.0, 200.0),
             vel: Vec2::new(30.0, 0.0),
             damage: 10,
             ..Default::default()
         };
         pool.slots[0].ai = [1.0, 0.0, 0.0, 0.0];
         let mut w = world();
-        let mut died = false;
-        for _ in 0..120 {
-            pool.update(
-                &mut w,
-                &mut [],
-                Some((100.0, 200.0)),
-                None,
-                None,
-                YoyoInputs::default(),
-                FlailInputs::default(),
-                &mut tr_core::tile_light::FastRandom::new(7),
-                0,
-                true,
-            );
-            if !pool.slots[0].active {
-                died = true;
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((100.0, 200.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool.slots[0].active, "the stray kills past the cut-off");
+        assert_eq!(pool.slots[0].time_left, 0);
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i08_boomerang_tests {
+    //! S1-P-i08 (`task/S1-P-i08-boomerang`, code-only mode — tests WRITTEN
+    //! NOT RUN): the useStyle-1 aiStyle-3 boomerang variant's census fixes.
+    //! (1) the tile bounce lives in `HandleMovement`'s aiStyle-3 arm
+    //! (`Projectile.cs:19512-19571`), not `Kill()`'s PVP path — the generic
+    //! kinds reverse both axes from `lastVelocity` and arm the return
+    //! unconditionally, the 33/106/866 trio reverses per changed axis and
+    //! does NOT arm the return; (2) the NPC-hit reverse (`:13068-13080`)
+    //! runs pre-strike in `damage_pve`; (3) the return's `meleeSpeed` remap
+    //! (`:39462-39475`), the pre-movement truncated catch rects
+    //! (`:39551-39554`), the rotation tail (`:39556-39638`) and the
+    //! direction latch (`:17016-17026` + `:17281-17288`); (4) the Light Disc
+    //! 106's row, 45-tick window and 16/1.2 return seek. The throw-side
+    //! witnesses (the stack limits, the exact-center spawn, the facing
+    //! flip) live in `world_sim/editing.rs`'s `s1_p_i08_*` tests.
+
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut tr_core::World,
+        owner: Option<(f32, f32)>,
+        melee_speed: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(
+            w,
+            &mut [],
+            owner,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs {
+                melee_speed,
+                ..FlailInputs::default()
+            },
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// A counting stream — the RNG census reads how many draws the machine
+    /// consumes (zero: every roll in `AI_003`'s ported kinds rides the
+    /// skipped dust arms).
+    struct CountingRng {
+        inner: tr_core::tile_light::FastRandom,
+        draws: usize,
+    }
+    impl CountingRng {
+        fn new() -> Self {
+            Self {
+                inner: tr_core::tile_light::FastRandom::new(7),
+                draws: 0,
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for CountingRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws += 1;
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws += 1;
+            self.inner.next_float()
+        }
+    }
+
+    #[test]
+    fn s1_p_i08_the_light_disc_row_is_verbatim() {
+        // `Projectile.cs:1936-1945`: 32×32, aiStyle 3, penetrate −1, melee,
+        // light 0.4; the stock 3600 life / tileCollide / extraUpdates 0.
+        let d = proj_data(LIGHT_DISC).expect("the 106 row");
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert_eq!(d.ai_style, 3);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(!d.arrow && !d.trap);
+        assert_eq!(set_defaults_light(LIGHT_DISC), 0.4, "`:1944`");
+        assert!(spawnable_kinds().contains(&LIGHT_DISC), "the sheet packs");
+        // The item side (`itemdata.rs` id 561): useStyle 1, shoot 106,
+        // shootSpeed 16, autoReuse, not consumable.
+        let def = crate::registry::get(561).unwrap();
+        assert_eq!(def.projectile, Some(LIGHT_DISC));
+        assert_eq!(def.use_style, 1);
+        assert_eq!(def.shoot_speed, 16.0);
+        assert!(def.auto_reuse);
+        assert!(!def.consumable);
+    }
+
+    #[test]
+    fn s1_p_i08_the_light_disc_flips_at_45_ticks_not_30() {
+        // `:39035-39040`: the 106's outbound window is 45 ticks; the generic
+        // kinds flip at 30 (`:39335-39340`). The owner sits far away so the
+        // return seek cannot catch it mid-test.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 200.0, 200.0, 4.0, 0.0, 60, 8.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..44 {
+            tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+        }
+        assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 44");
+        assert_eq!(pool.slots[0].ai[1], 44.0);
+        tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return at tick 45");
+        assert_eq!(pool.slots[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn s1_p_i08_the_disc_wall_bounce_keeps_the_outbound_state() {
+        // `HandleMovement` `:19550-19560`: the 33/106/866 trio reverses the
+        // changed axis ONLY and does NOT set `ai[0] = 1` — the disc keeps
+        // flying outbound (the old port armed the return on every wall).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 128.0, 256.0, 10.0, 0.0, 60, 8.0);
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, Some((100.0, 260.0)), 1.0, &mut rng);
+            if pool.slots[0].vel.x < 0.0 {
+                bounced = true;
                 break;
             }
         }
-        assert!(died, "the stray kills past the cut-off");
+        assert!(bounced, "the wall reversed the X axis");
+        assert_eq!(pool.slots[0].ai[0], 0.0, "NOT the return state");
+        assert_eq!(pool.slots[0].vel.y, 0.0, "the unchanged axis holds");
+        assert!(pool.slots[0].active, "the disc lives on");
+    }
+
+    #[test]
+    fn s1_p_i08_the_generic_wall_bounce_arms_the_return_and_steps_away() {
+        // `:19563-19568` + `UpdatePosition` `:20445`: the generic arm
+        // reverses BOTH axes from `lastVelocity`, sets `ai[0] = 1`
+        // unconditionally, and the bounce tick integrates the POST-bounce
+        // velocity (the old port froze the position on the bounce tick).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 128.0, 256.0, 10.0, 2.0, 10, 5.0);
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..20 {
+            let before = pool.slots[0].pos;
+            tick(&mut pool, &mut w, Some((100.0, 900.0)), 1.0, &mut rng);
+            if pool.slots[0].ai[0] == 1.0 {
+                bounced = true;
+                assert_eq!(pool.slots[0].vel, Vec2::new(-10.0, -2.0), "both axes");
+                assert_eq!(
+                    pool.slots[0].pos,
+                    before + Vec2::new(-10.0, -2.0),
+                    "the post-bounce step"
+                );
+                break;
+            }
+        }
+        assert!(bounced, "the wall armed the return");
+    }
+
+    #[test]
+    fn s1_p_i08_the_wall_thud_queues_the_dig_cue() {
+        // `:19571`: `PlaySound(0, (int)X, (int)Y)` — the int-id Dig thud
+        // rides the intent out (the whoosh keeps the single slot when both
+        // land on one sub-step — the recorded deviation).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 128.0, 256.0, 10.0, 0.0, 10, 5.0);
+        // Silence the whoosh head so the bounce tick's cue is observable.
+        pool.slots_mut()[0].sound_delay = 100;
+        let mut w = world();
+        for y in 12..24 {
+            for x in 14..20 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut thud = None;
+        for _ in 0..20 {
+            tick(&mut pool, &mut w, Some((100.0, 900.0)), 1.0, &mut rng);
+            if let Some(cue) = pool.drain_proj_sounds().into_iter().next() {
+                thud = Some(cue);
+                break;
+            }
+        }
+        let cue = thud.expect("the bounce queued a cue");
+        assert_eq!((cue.0, cue.1), (0, 0), "the int-id Dig play");
+    }
+
+    #[test]
+    fn s1_p_i08_the_world_edge_bounces_the_boomerang() {
+        // `:17900-17903`: the world-edge flag feeds the same aiStyle-3
+        // response (the out-of-world guard skips aiStyle 3, `:16684`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 990.0, 256.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut bounced = false;
+        for _ in 0..10 {
+            tick(&mut pool, &mut w, Some((500.0, 900.0)), 1.0, &mut rng);
+            if pool.slots[0].vel.x < 0.0 {
+                bounced = true;
+                break;
+            }
+        }
+        assert!(bounced, "the right edge reversed the flight");
+        assert!(pool.slots[0].active, "no out-of-world kill");
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the generic edge arm returns");
+    }
+
+    #[test]
+    fn s1_p_i08_the_npc_hit_reverses_pre_strike() {
+        // `Damage_PVE_Inner` `:13068-13080`: the outbound hit reverses both
+        // axes and arms the return BEFORE the strike; the returning hit
+        // only re-arms `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse).
+        let mut w = world();
+        let mut npc = Npc::new(NpcKind::Slime, 300.0, 300.0, 1, 0.0);
+        npc.max_hp = 400;
+        npc.hp = 400;
+        let (nw, nh) = npc.size();
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai(
+            WOODEN_BOOMERANG,
+            ncx,
+            ncy,
+            8.0,
+            0.0,
+            20,
+            4.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 800.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w,
+            std::slice::from_mut(&mut npc),
+            Some((100.0, 900.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[0].vel.x, -8.0, "the outbound hit reversed");
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return armed");
+        assert!(npc.hp < npc.max_hp, "the strike still landed");
+        // A second contact while returning: no double reverse. The return
+        // seek steers toward the far owner (down-left), so vel.x never
+        // snaps back to the pre-hit +8.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w,
+            std::slice::from_mut(&mut npc),
+            Some((100.0, 900.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        assert_ne!(pool.slots[0].vel.x, 8.0, "no second reverse");
+    }
+
+    #[test]
+    fn s1_p_i08_the_return_seek_scales_with_melee_speed() {
+        // `:39462-39475`: `Remap(1.5, 0, 1, 1, 1/meleeSpeed, clamped: false)`
+        // = `Lerp(1, 1/ms, 1.5)` clamped to [1, 10]. At meleeSpeed 2 the
+        // factor is 1 (the floor); at 0.5 it is 2.5 — the accel 0.4 → 1.0.
+        let mut w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 2.0, true);
+        assert_eq!(p.vel.x, -0.4, "meleeSpeed 2 floors the factor at 1");
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 0.5, true);
+        assert_eq!(p.vel.x, -1.0, "meleeSpeed 0.5 → ×2.5: accel 0.4 → 1.0");
+        // The 106's own table: 16/1.2 (`:39432-39436`) × the same factor.
+        let mut d = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::ZERO,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        d.ai_boomerang(&w, Some((200.0, 316.0)), 1.0, true);
+        assert_eq!(d.vel.x, -1.2, "the disc's accel 1.2 at ×1");
+    }
+
+    #[test]
+    fn s1_p_i08_the_catch_reads_the_pre_movement_truncated_rects() {
+        // `:39551-39554`: the catch tests the PRE-movement `(int)` rects with
+        // XNA's strict `Intersects` — a box whose post-move position would
+        // overlap does NOT catch on this tick, and a foreign owner never
+        // catches (`Main.myPlayer == owner`).
+        let w = world();
+        // The owner center (300, 300) → rect (290, 279, 20, 42). The disc
+        // box at (322, 290) is 32 wide: left 322 ≥ owner right 310 — no
+        // overlap pre-move; the −16 step would land it at 306 (overlap).
+        let mut p = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(322.0, 290.0),
+            vel: Vec2::new(-16.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        assert!(p.active, "the pre-move rects do not intersect");
+        assert!(p.pos.x < 322.0, "the step still integrates");
+        // The POST-move box (≈307..339) DOES overlap the owner rect
+        // (290..310) — the old post-move catch would have killed here.
+        // One tick later the pre-move box overlaps → the catch kills.
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        assert!(!p.active, "the next tick catches");
+        // The foreign-owner gate: the same overlap, catch_allowed false.
+        let mut q = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 1,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(300.0, 290.0),
+            vel: Vec2::new(-16.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, false);
+        assert!(q.active, "a non-local owner never catches here");
+    }
+
+    #[test]
+    fn s1_p_i08_the_rotation_tail_and_direction_latch() {
+        // `:39556-39559` / `:39635-39638`: the 106 spins 0.3, the generic
+        // kinds 0.4, × direction. `:17016-17026` + `:17281-17288`: the
+        // direction tracks velocity.X's sign while outbound and FREEZES on
+        // the return (the old port never spun or flipped at all).
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            w: 22.0,
+            h: 22.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::new(-6.0, 0.0),
+            sound_delay: 100,
+            ..Default::default()
+        };
+        p.ai_boomerang(&w, None, 1.0, true);
+        assert_eq!(p.direction, -1, "the outbound sign latch (post-move)");
+        // The rotation read the PRE-move direction (+1, the spawn default)
+        // — the C# spins inside AI() ahead of HandleMovement's flip.
+        assert!((p.rot - 0.4).abs() < 1e-6, "0.4 × the pre-move +1");
+        // The return: the direction freezes at its settled value while the
+        // velocity swings positive toward the owner on the right.
+        let mut q = Projectile {
+            active: true,
+            kind: LIGHT_DISC,
+            owner: 0,
+            w: 32.0,
+            h: 32.0,
+            pos: Vec2::new(200.0, 300.0),
+            vel: Vec2::new(-8.0, 0.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            direction: -1,
+            sound_delay: 100,
+            ..Default::default()
+        };
+        q.ai_boomerang(&w, Some((600.0, 316.0)), 1.0, true);
+        assert!(q.vel.x > -8.0, "the seek steers right");
+        assert_eq!(q.direction, -1, "the return freezes the direction");
+        assert!((q.rot - (-0.3)).abs() < 1e-6, "the disc spins 0.3 × −1");
+    }
+
+    #[test]
+    fn s1_p_i08_the_machine_draws_no_rng() {
+        // RNG census: every `Main.rand` roll in `AI_003`'s ported kinds
+        // (6/52/113/106) rides the dust arms (`:38892-38984`) — the skipped
+        // cosmetic layer takes its rolls with it (the volcano/yoyo
+        // precedent). Outbound + return + the bounce tick: zero draws.
+        let mut w = world();
+        for y in 12..24 {
+            for x in 40..46 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 256.0, 10.0, 0.0, 10, 5.0);
+        let mut census = CountingRng::new();
+        for _ in 0..40 {
+            tick(&mut pool, &mut w, Some((300.0, 900.0)), 1.0, &mut census);
+        }
+        assert_eq!(census.draws, 0, "the boomerang machine draws nothing");
+        // The disc's whole life too (its 45-tick window + the return).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LIGHT_DISC, 320.0, 256.0, 10.0, 0.0, 60, 8.0);
+        let mut census = CountingRng::new();
+        for _ in 0..60 {
+            tick(&mut pool, &mut w, Some((300.0, 900.0)), 1.0, &mut census);
+        }
+        assert_eq!(census.draws, 0, "the disc machine draws nothing either");
     }
 }
 
@@ -20408,6 +23937,11 @@ mod flail_tests {
         FlailInputs {
             aim,
             channel,
+            // The legacy fixtures drive the re-grab arms through the same
+            // held-button value (the pre-split tests used `channel` for
+            // both); the new control-use witnesses set it explicitly.
+            control_use_item: channel,
+            map_fullscreen: false,
             player_dead: false,
             player_cced: false,
             mounted_center: Some(mounted),
@@ -20416,6 +23950,7 @@ mod flail_tests {
             player_dir: 1,
             melee_speed: 1.0,
             local_owner: 0,
+            selected_shoot: None,
         }
     }
 
@@ -20595,18 +24130,25 @@ mod flail_tests {
     #[test]
     fn DW_3_4_the_reel_in_kills_at_num7_or_the_overshoot() {
         // `:44004-44015`: the catch kill and the Dot < 0 overshoot kill.
+        // Gate fix (i07 sign-flip): the fixtures use the box CENTRE, not the
+        // top-left — the catch needs `Distance(mounted) <= num7 = 15`, and
+        // the Dot kill needs the ahead point (`Center + velocity`) to cross
+        // PAST the mount (the C# `DirectionFrom(Target: ahead, Origin:
+        // mounted)` back-vector, `Utils.cs:1960-1963`). The old fixtures
+        // pinned the pre-i07 forward-vector bug's geometry.
         let mut w = world();
-        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        // Catch: top-left (495,495) → centre (506,506), dist 8.49 ≤ 15.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 495.0, 495.0);
         pool.slots[slot].ai[0] = 4.0;
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         tick(&mut w, &mut pool, ins);
         assert!(!pool.slots[slot].active, "the reel-in catch kills");
-        // The overshoot: the head moving away from the player while already
-        // inside the kill distance is killed by the Dot test on the next
-        // tick's velocity.
-        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0, 500.0);
+        // Overshoot: centre (516,500) (dist 16 > 15), velocity −30 toward the
+        // mount carries the ahead point to 492.6 — PAST the mount (500). The
+        // back-vector opposes `to_player` → Dot < 0 → Kill.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 505.0, 489.0);
         pool.slots[slot].ai[0] = 4.0;
-        pool.slots[slot].vel = Vec2::new(30.0, 0.0); // away from the player
+        pool.slots[slot].vel = Vec2::new(-30.0, 0.0);
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         tick(&mut w, &mut pool, ins);
         assert!(!pool.slots[slot].active, "the overshoot kills");
@@ -20910,6 +24452,300 @@ mod flail_tests {
             FlailInputs::default(), &mut tr_core::tile_light::FastRandom::new(7), 0, true);
         assert_eq!(npcs[0].hp, hp, "the orphan path deals nothing");
     }
+
+    // ---- S1-P-i07 witnesses: the flail physics census fixes ----
+    // Each test pins one C#-verified defect the census found in the M4-PROJ-3b
+    // port. Tests are WRITTEN NOT RUN (code-only swarm).
+
+    #[test]
+    fn s1_p_i07_the_reel_in_overshoot_kill_uses_direction_from() {
+        // `Projectile.cs:44011`: `Vector2.Dot(vector4,
+        // Utils.DirectionFrom(Target: Center + velocity, Origin:
+        // mountedCenter).SafeNormalize(0)) < 0` → Kill.
+        // `Utils.DirectionFrom(Origin, Target)` = `Normalize(Origin - Target)`
+        // (`Utils.cs:1960-1963`), so the second vector points BACK from the
+        // ahead point to the mount. The kill fires only when the ahead point
+        // has PASSED the player. The old port computed `ahead - mounted`
+        // (the forward vector), which flipped the test: it killed flails
+        // still approaching and spared ones that had overshot.
+        let mut w = world();
+        // Case A - overshoot: centre (516,500) (dist 16 > num7 = 15), velocity
+        // −30 toward the mount carries the ahead point to 492.6, PAST the
+        // mount (500). The back-vector opposes `to_player` → C# kills.
+        // (Gate fix: the old fixture moved the head AWAY from the mount, which
+        // the C# back-vector test does NOT kill — the ahead point never
+        // crosses the mount.)
+        let (mut pool, slot) = spawn(BALL_O_HURT, 505.0, 489.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(-30.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the overshot ahead point kills");
+        // Case B — approaching: head 60 px right (outside num7 = 15),
+        // velocity -8 moves toward the player; the ahead point (+52) has NOT
+        // passed the mount. C# survives; the old port killed it.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 4.0;
+        pool.slots[slot].vel = Vec2::new(-8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[slot].active, "an approaching flail is not killed by the Dot test");
+    }
+
+    #[test]
+    fn s1_p_i07_the_fly_out_and_retract_deal_double_damage() {
+        // `Projectile.cs:14462-14465`: `aiStyle == 15 && (ai[0] == 1 || ai[0]
+        // == 2)` → `num *= 2f`. The old port applied no flight multiplier.
+        let w = ground();
+        for state in [1.0f32, 2.0f32] {
+            let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+            npcs[0].x = 540.0;
+            npcs[0].y = 490.0;
+            npcs[0].defense_override = Some(0);
+            npcs[0].hp = 10_000;
+            npcs[0].max_hp = 10_000;
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(BALL_O_HURT, 540.0 - 11.0, 490.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots[slot].ai[0] = state;
+            let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+            let dealt = 10_000 - npcs[0].hp;
+            // 200 × 2 = 400 pre-variance; ±15% DamageVar → 340..460.
+            assert!(
+                (340..=460).contains(&dealt),
+                "state {state} deals ×2 (expected ~400±15%), got {dealt}"
+            );
+        }
+    }
+
+    #[test]
+    fn s1_p_i07_the_dual_discount_is_held_only() {
+        // `Projectile.cs:14450-14460`: the Blue Moon/Sunfury ×0.8 sibling
+        // scan sits INSIDE the `ai[0] == 0` arm. A thrown head (state 1)
+        // gets ×2 with NO discount even while its sibling is active. The
+        // old port applied the discount in every state.
+        let w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        npcs[0].defense_override = Some(0);
+        npcs[0].hp = 10_000;
+        npcs[0].max_hp = 10_000;
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 540.0 - 11.0, 490.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots[moon].ai[0] = 1.0; // thrown, not held
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
+            .unwrap();
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, moon, &mut npcs, Some(ins), Some((500.0, 500.0)), None, &mut rng);
+        let dealt = 10_000 - npcs[0].hp;
+        // 200 × 2 = 400 (no ×0.8 in flight); ±15% → 340..460. The old port
+        // would have dealt 200 × 0.8 = 160 (~136..184).
+        assert!(
+            (340..=460).contains(&dealt),
+            "the thrown dual head deals ×2 without the held discount, got {dealt}"
+        );
+    }
+
+    #[test]
+    fn s1_p_i07_the_release_clears_npc_immunity_not_the_orbit_counter() {
+        // `Projectile.cs:43883` calls `ResetLocalNPCHitImmunity`
+        // (`:43719-43722`), which is `Array.Clear(localNPCImmunity)` — the
+        // per-slot NPC immunity array. The old port zeroed `localAI[1]`
+        // (the hold-orbit counter) instead, leaving the immunity array
+        // stale and resetting the orbit phase.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        // Seed a held orbit count and a stale immunity entry.
+        pool.slots[slot].local_ai[1] = 7.0;
+        pool.local_immunity[slot * 256 + 3] = 9;
+        let ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 1.0, "released");
+        assert_eq!(pool.slots[slot].local_ai[1], 7.0, "the orbit counter survives the release");
+        assert_eq!(pool.local_immunity[slot * 256 + 3], 0, "the immunity array is cleared");
+    }
+
+    #[test]
+    fn s1_p_i07_the_regrab_reads_control_use_item_not_channel() {
+        // `Projectile.cs:43905/43942/43959/44035` read `player.controlUseItem`,
+        // NOT `player.channel`. The button can be held while `channel` is
+        // false (e.g. the channel was cancelled) and the re-grab still fires.
+        // The old port gated every re-grab on `channel`.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let mut ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        ins.channel = false;
+        ins.control_use_item = true; // button held, channel not set
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 6.0, "the held button re-grabs mid-flight");
+        assert!((pool.slots[slot].vel.x - 2.0).abs() < 1e-3, "velocity ×0.2");
+    }
+
+    #[test]
+    fn s1_p_i07_the_spin_release_break_skips_the_velocity_and_facing() {
+        // `Projectile.cs:43959-43965`: state 3's `!controlUseItem` arm sets
+        // ai[0]=4, ai[1]=0, netUpdate, then `break`s — no tileCollide write,
+        // no velocity change, no ChangeDir on that tick. The old port fell
+        // through into the orbit physics and forced the facing.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0, 500.0);
+        pool.slots[slot].ai[0] = 3.0;
+        pool.slots[slot].vel = Vec2::new(5.0, 0.0);
+        pool.slots[slot].tile_collide = true;
+        let mut ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        ins.control_use_item = false;
+        ins.player_dir = -1;
+        tick(&mut w, &mut pool, ins);
+        assert_eq!(pool.slots[slot].ai[0], 4.0, "bailed to the reel-in");
+        // The break leaves the velocity untouched by the state arm; the
+        // reel-in (state 4) does not run this tick (the switch already
+        // matched state 3). flail_move integrates the unchanged velocity.
+        assert!(pool.slots[slot].vel.x >= 5.0, "no orbit drag on the bail tick");
+        assert!(pool.slots[slot].net_update, "the bail nets an update");
+    }
+
+    #[test]
+    fn s1_p_i07_the_map_fullscreen_kills_the_local_flail() {
+        // `Projectile.cs:43732-43736`: `Main.myPlayer == owner &&
+        // Main.mapFullscreen` → Kill. The old port had no map arm.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.map_fullscreen = true;
+        ins.local_owner = 0; // matches the slot's owner 0
+        tick(&mut w, &mut pool, ins);
+        assert!(!pool.slots[slot].active, "the fullscreen map kills the local flail");
+        // A foreign owner's flail is not killed by the local map.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        pool.slots[slot].owner = 1;
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.map_fullscreen = true;
+        ins.local_owner = 0;
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[slot].active, "a foreign flail survives the local map");
+    }
+
+    #[test]
+    fn s1_p_i07_the_wet_move_halves_the_advance() {
+        // `Projectile.cs:17642-17655` + `UpdatePosition` `:20439-20446`:
+        // while wet the position integrates `velocity * 0.5` (water). The
+        // old port always integrated the full velocity.
+        let mut w = world();
+        // Water at the head's mid-tile (the flail_in_liquid idiom).
+        let i = w.index(31, 31);
+        w.tiles[i].liquid = 200;
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].tile_collide = false;
+        pool.slots[slot].vel = Vec2::new(10.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        tick(&mut w, &mut pool, ins);
+        let moved = pool.slots[slot].pos.x - (500.0 - 11.0);
+        assert!((moved - 5.0).abs() < 1e-3, "water halves the advance, got {moved}");
+    }
+
+    #[test]
+    fn s1_p_i07_the_shimmer_spin_skips_gravity() {
+        // `Projectile.cs:44042-44045`: state 6 adds `velocity.Y += 0.8` only
+        // when `!shimmerWet`. In shimmer the flail floats (no gravity add).
+        let mut w = world();
+        let i = w.index(31, 31);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 6.0;
+        pool.slots[slot].tile_collide = false;
+        pool.slots[slot].vel = Vec2::new(4.0, 0.0);
+        let mut ins = inputs(None, true, (500.0, 500.0), (500.0, 500.0));
+        ins.control_use_item = true;
+        tick(&mut w, &mut pool, ins);
+        // No +0.8 gravity; the X drag ×0.95 still applies.
+        assert!(pool.slots[slot].vel.y.abs() < 1e-3, "shimmer skips the gravity add");
+        assert!((pool.slots[slot].vel.x - 3.8).abs() < 1e-3, "the X drag still applies");
+    }
+
+    #[test]
+    fn s1_p_i07_the_flower_pow_scan_uses_can_be_chased_by() {
+        // `Projectile.cs:44121` gates the petal target on `CanBeChasedBy`
+        // (`NPC.cs:90030-90041`: chaseable && lifeMax>5 && !dontTakeDamage &&
+        // !friendly && !immortal). The old port only checked hp>0 and
+        // !dontTakeDamage, so it aimed at friendly/immortal/non-chaseable
+        // NPCs. A friendly NPC inside 600 px must NOT draw a petal.
+        let mut w = ground();
+        let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
+        npcs[0].x = 540.0;
+        npcs[0].y = 490.0;
+        npcs[0].friendly = true; // a town NPC — not chaseable
+        let (mut pool, slot) = spawn(FLOWER_POW, 500.0 - 17.0, 500.0 - 17.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].tile_collide = false; // keep the head at the scan point
+        pool.slots[slot].local_ai[0] = 19.0; // the scan fires this tick
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        let petals = pool.slots.iter().filter(|p| p.active && p.kind == FLOWER_POW_PETAL).count();
+        assert_eq!(petals, 0, "a friendly NPC draws no petal");
+    }
+
+    #[test]
+    fn s1_p_i07_the_tail_writes_the_item_rotation() {
+        // `Projectile.cs:44162-44167`: `player.itemRotation =
+        // DirectionFrom(mountedCenter).ToRotation()` (+π when the head is
+        // left of the mount), wrapped. The old port never wrote it.
+        let mut w = world();
+        let (mut pool, slot) = spawn(BALL_O_HURT, 560.0 - 11.0, 500.0 - 11.0);
+        pool.slots[slot].ai[0] = 1.0;
+        pool.slots[slot].vel = Vec2::new(8.0, 0.0);
+        let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
+        let mut player = crate::player::Player::spawn(&w);
+        player.item_rotation = 99.0; // a sentinel the tail must overwrite
+        pool.update(&mut w, &mut [], Some((500.0, 500.0)), None, Some(&mut player),
+            YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
+        // Head right of the mount → rotation ≈ atan2(0, +60) = 0.
+        assert!(player.item_rotation.abs() < 1e-3, "itemRotation tracks the chain, got {}", player.item_rotation);
+    }
+
+    #[test]
+    fn s1_p_i07_the_flag5_needs_the_selected_item_gate() {
+        // `Projectile.cs:43850`: the dual-flail sibling flag only arms when
+        // `localPlayer.inventory[selectedItem].shoot != this.type`. While the
+        // Blue Moon is still selected (shoot == 26), flag5 is false and the
+        // throw is NOT mirrored. The old port ignored the selected item.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.selected_shoot = Some(BLUE_MOON); // the Blue Moon is still selected
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[moon].vel.x > 0.0, "selected-shoot gate keeps the throw unmirrored");
+        // Switch the selected item away (shoot != 26) → flag5 arms, mirror.
+        let mut pool = ProjectilePool::new();
+        let moon = pool
+            .spawn_with_data_ai(BLUE_MOON, 500.0, 500.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let _sibling = pool
+            .spawn_with_data_ai(SUNFURY, 500.0, 520.0, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
+            .unwrap();
+        let mut ins = inputs(Some((600.0, 500.0)), false, (500.0, 500.0), (500.0, 500.0));
+        ins.selected_shoot = Some(SUNFURY); // a different flail selected
+        tick(&mut w, &mut pool, ins);
+        assert!(pool.slots[moon].vel.x < 0.0, "the sibling flag mirrors the throw");
+    }
 }
 
 
@@ -21127,6 +24963,179 @@ mod bomb_tests {
         );
     }
 
+    // ---- S1-P-i16: the launcher rockets' flight & death -------------------
+
+    /// The straight rocket keeps its damage and accelerates ×1.1 below 15
+    /// (`Projectile.cs:47175` keep-damage + `:47364-47367`), and its
+    /// rotation points along the velocity (`:47476-47482`).
+    #[test]
+    fn s1_p_i16_the_rocket_keeps_damage_and_accelerates() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(134, 160.0, 160.0, 5.0, 0.0, 95, 4.0);
+        let mut w = world();
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7), 0, false,
+        );
+        let p = &pool.slots[0];
+        assert_eq!(p.damage, 95, ":47175 — the keep-damage list");
+        assert!((p.vel.x - 5.5).abs() < 1e-4, ":47366 — the ×1.1 speed-up");
+        assert!(
+            (p.rot - (0.0f32.atan2(5.5) + 1.57)).abs() < 1e-4,
+            ":47480 — the velocity-pointing rotation"
+        );
+    }
+
+    /// The rocket's tile contact zeroes the velocity and fuses timeLeft to 3
+    /// (`HandleMovement` `Projectile.cs:19773-19778`), then the fuse end
+    /// detonates: `PrepareBombToBlow` resizes 128×128 / kb 8 (the damage
+    /// STAYS 95), the box walk hits, and the 134 rocket digs NO crater
+    /// (it is not on `Kill_ExplodeTiles`' list `:77297`).
+    #[test]
+    fn s1_p_i16_the_rocket_contact_fuses_and_explodes_without_a_crater() {
+        let mut pool = ProjectilePool::new();
+        // The rocket flies right into a wall ~2 tiles out: the ×1.1
+        // speed-up (8 → 8.8 → 9.68) needs TWO ticks to reach it.
+        pool.spawn_with_data(134, 10.0 * 16.0, 10.0 * 16.0, 8.0, 0.0, 95, 4.0);
+        let mut w = world();
+        for y in 5..20 {
+            put(&mut w, 12, y, 1);
+        }
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        // Tick 1: 8.8 px of travel — the box stays clear of the wall.
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(pool.slots[0].vel.x > 8.0, "still flying");
+        // Tick 2: the contact (the destination box hits the wall).
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert_eq!(pool.slots[0].vel, Vec2::ZERO, ":19775 — the contact zero");
+        assert_eq!(pool.slots[0].time_left, 3 - 1, ":19777 — the fuse (then the tick's −1)");
+        assert_eq!(pool.slots[0].alpha, 255, ":19776");
+        // One more tick: the AI head sees timeLeft 2 <= 3 → the detonation
+        // latch → the explosion pass (`explode_rocket` deactivates).
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots[0].active, "the rocket exploded");
+        // The wall survives — the 134 rocket is not a tile-breaker.
+        assert!(
+            w.tile(12, 10).unwrap().flags & FLAG_ACTIVE != 0,
+            ":77297 — the 134 is not on the tile-break list"
+        );
+    }
+
+    /// The Rocket IV (143) digs radius 5 (`Kill_ExplodeTiles`
+    /// `Projectile.cs:77318-77321`), the Mini Nuke II (796) radius 7
+    /// (`:77309-77312`).
+    #[test]
+    fn s1_p_i16_the_rocket_iv_and_mini_nuke_dig_their_craters() {
+        for (kind, radius) in [(143u16, 5i32), (796, 7)] {
+            let mut pool = ProjectilePool::new();
+            // The rocket sits in OPEN air (the pool's out-of-world /
+            // tile-contact guards must not fire before the fuse); the
+            // stone slab sits below the resized box's reach.
+            pool.spawn_with_data(kind, 30.0 * 16.0, 10.0 * 16.0, 0.0, 0.0, 95, 4.0);
+            pool.slots_mut()[0].time_left = 3; // the fuse fires on the first AI tick
+            let mut w = world();
+            for y in 12..40 {
+                for x in 10..50 {
+                    put(&mut w, x, y, 1);
+                }
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.update(
+                &mut w, &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+            assert!(!pool.slots[0].active, "kind {kind} exploded");
+            // The compare spot is the RESIZED top-left (`:77338`): the
+            // 143's 200×200 box recentres to (23.75, 3.75) tiles, the 796's
+            // 250×250 to (22.19, 2.19) — the crater digs DOWN into the slab.
+            let spot_x = (pool.slots[0].pos.x / 16.0) as i32;
+            let spot_y = (pool.slots[0].pos.y / 16.0) as i32;
+            // A slab tile within the radius of the spot digs.
+            let probe_y = spot_y + radius - 1;
+            assert!(
+                w.tile(spot_x, probe_y).unwrap().flags & FLAG_ACTIVE == 0,
+                "kind {kind}: the slab tile at distance {} dug", radius - 1
+            );
+            // A slab tile radius+1 out survives.
+            assert!(
+                w.tile(spot_x + radius + 1, probe_y).unwrap().flags & FLAG_ACTIVE != 0,
+                "kind {kind}: radius {radius} + 1 survives"
+            );
+        }
+    }
+
+    /// The cluster rocket's death spawns a 6-shard ring of 779 at half
+    /// damage (`Kill_Bombs_DoUsualKillCode` `Projectile.cs:78063-78086`),
+    /// each with a `Next(30)` timeLeft decrement.
+    #[test]
+    fn s1_p_i16_the_cluster_rocket_spawns_the_shard_ring() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(776, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 90, 4.0);
+        pool.slots_mut()[0].time_left = 3;
+        // Gate fix: the parent's slot is RECYCLED by the first shard (the
+        // pool's lowest-free-index spawn), so `slots[0]` after the update is
+        // a live 779, not the dead parent. Snapshot the parent's generation
+        // and assert the parent died by its absence (no live 776 remains).
+        let parent_gen = pool.slots()[0].generation;
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == 776),
+            "the cluster rocket exploded"
+        );
+        let _ = parent_gen;
+        let shards: Vec<_> = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 779)
+            .collect();
+        assert_eq!(shards.len(), 6, ":78079 — the 1/6-step ring (6 iterations)");
+        for s in shards {
+            assert_eq!(s.damage, 45, ":78083 — damage / 2");
+            assert_eq!(s.knock_back, 0.0, ":78083 — 0f knockback");
+            // `:78084` — the Next(30) decrement off the 60-tick setup seed:
+            // the shard's timeLeft lands in [31, 60] (Next(30) is 0..29, so
+            // a 0 draw leaves the full 60).
+            assert!(
+                (31..=60).contains(&s.time_left),
+                ":78084 — the Next(30) decrement, got {}", s.time_left
+            );
+        }
+    }
+
+    /// The liquid rocket dies when wet (`AI_016_Bombs`
+    /// `Projectile.cs:46906-46911`): the wet 784 in a water cell fuses
+    /// timeLeft to 1.
+    #[test]
+    fn s1_p_i16_the_wet_rocket_dies_in_water() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(784, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 90, 4.0);
+        let mut w = world();
+        let i = w.index(20, 20);
+        w.tiles[i].liquid = 255; // the water cell
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        // The wet arm set timeLeft 1, then the tick's −1 → 0 → dead.
+        assert!(!pool.slots[0].active, ":46910 — the wet kill");
+    }
+
     #[test]
     fn the_yoyo_data_is_verbatim() {
         // `Projectile.cs:6013-6093` + `:9483-9490`: every yoyo kind is 16×16,
@@ -21293,7 +25302,13 @@ mod yoyo_tests {
     }
 
     /// One tick with the NPC on the projectile's centre (the damage pass
-    /// runs), the player in the fifth slot like the pool's callers.
+    /// runs), the player in the fifth slot like the pool's callers. The
+    /// fixture RE-PINS the slot on the NPC centre and zeroes its velocity
+    /// each tick: the aiStyle-99 hit arm's recoil (`Projectile.cs:13281-
+    /// 13291`, S1-P-i09) kicks the yoyo away on every landed hit, and the
+    /// vanilla's held channel seeks it straight back into the NPC — the
+    /// re-pin is that press, so the touch test lands every tick like the
+    /// fixture's contract says.
     fn tick(
         world: &mut tr_core::World,
         pool: &mut ProjectilePool,
@@ -21301,7 +25316,11 @@ mod yoyo_tests {
         player: &mut Option<crate::player::Player>,
     ) {
         let (nw, nh) = npc.size();
-        let aim = Vec2::new(npc.x + nw * 0.5 + 8.0, npc.y + nh * 0.5);
+        let (ncx, ncy) = (npc.x + nw * 0.5, npc.y + nh * 0.5);
+        let p = &mut pool.slots_mut()[0];
+        p.pos = Vec2::new(ncx - p.w * 0.5, ncy - p.h * 0.5);
+        p.vel = Vec2::ZERO;
+        let aim = Vec2::new(ncx + 8.0, ncy);
         pool.update(
             world,
             std::slice::from_mut(npc),
@@ -21614,7 +25633,7 @@ mod yoyo_tests {
         YoyoInputs {
             aim,
             channel,
-            player_dead: false,
+            ..YoyoInputs::default()
         }
     }
 
@@ -21895,6 +25914,7 @@ mod yoyo_tests {
                 aim: Some((380.0, 320.0)),
                 channel: true,
                 player_dead: true,
+                ..YoyoInputs::default()
             },
             FlailInputs::default(),
             &mut tr_core::tile_light::FastRandom::new(7),
@@ -22276,6 +26296,512 @@ mod yoyo_tests {
         let b = roll_once();
         assert_eq!(a, b, "the seeded pair rolls identically");
         assert!((3..7).contains(&a), "the 3..7 roll: {a}");
+    }
+}
+
+// --- S1-P-i09: the yoyo channel variant's census fixes --------------------
+// Witnesses WRITTEN NOT RUN (code-only mode). Every assertion cites the C#
+// line it pins; the RNG-order witnesses mirror the draws on a clone of the
+// same seed (the S1-D-4b-8 counting-stream precedent).
+#[cfg(test)]
+mod s1_p_i09_yoyo_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    /// The 200×200 empty world the hit-arm witnesses use (no tiles — the
+    /// `can_hit` walk is open everywhere unless a column is planted).
+    fn big_world() -> tr_core::World {
+        tr_core::World::new("t".into(), 200, 200)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            flags: FLAG_ACTIVE,
+            ..Tile::default()
+        };
+    }
+
+    fn inputs(aim: Option<(f32, f32)>, channel: bool) -> YoyoInputs {
+        YoyoInputs {
+            aim,
+            channel,
+            ..YoyoInputs::default()
+        }
+    }
+
+    fn tick(
+        w: &mut tr_core::World,
+        pool: &mut ProjectilePool,
+        owner: Option<(f32, f32)>,
+        inputs: YoyoInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(w, &mut [], owner, None, None, inputs, FlailInputs::default(), rng, 0, true);
+    }
+
+    /// A recording stream — the beam-roll ORDER witness reads the exact
+    /// `(min, max)` sequence the arm draws (`Projectile.cs:67786-67793`).
+    struct RecordRng {
+        inner: tr_core::tile_light::FastRandom,
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl RecordRng {
+        fn new() -> Self {
+            Self {
+                inner: tr_core::tile_light::FastRandom::new(7),
+                ranges: Vec::new(),
+                floats: 0,
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for RecordRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            self.inner.next_float()
+        }
+    }
+
+    /// `:67750` — the lifetime seconds divide by `((1 + meleeSpeed) / 2f)`.
+    /// At meleeSpeed 3 the divisor is 2, so the Wood Yoyo's 3 s budget is
+    /// 360 ticks: tick 360 reads exactly 3.0 (not `> 3.0`, still out) and
+    /// tick 361 returns. The old port divided by 60 only and returned at
+    /// 181 regardless of meleeSpeed.
+    #[test]
+    fn s1_p_i09_the_lifetime_divisor_reads_melee_speed() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        pool.slots[slot].local_ai[0] = 359.0;
+        let mut w = world();
+        let ins = YoyoInputs {
+            melee_speed: 3.0,
+            ..inputs(Some((380.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].local_ai[0], 360.0);
+        assert!(pool.slots[slot].ai[0] >= 0.0, "360/60/2 == 3.0 is not > 3.0");
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[slot].ai[0], -1.0, "tick 361 expires at meleeSpeed 3");
+    }
+
+    /// `:67756-67759` — `ai[0] <= -2f` forces the -1 no-timeout: the dropped
+    /// twin and the Magic String ghost never expire by age, however old
+    /// their clock. The old port aged them out like a flying yoyo.
+    #[test]
+    fn s1_p_i09_the_dropped_twin_and_ghost_never_expire() {
+        for state in [-2.0f32, -3.0] {
+            let mut pool = ProjectilePool::new();
+            // Away from the owner — the ghost's return seek (`:68078-
+            // 68095`) would catch it at the centre, exactly like the C#.
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 100.0, 100.0, 0.0, 0.0, 9, 2.5, state, 0.0)
+                .unwrap();
+            pool.slots[slot].local_ai[0] = 100_000.0;
+            let mut w = world();
+            tick(
+                &mut w,
+                &mut pool,
+                Some((320.0, 320.0)),
+                YoyoInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert_eq!(pool.slots[slot].ai[0], state, "state {state} survives the age");
+            assert!(pool.slots[slot].active, "state {state} still live");
+        }
+    }
+
+    /// `:67886-67887` — the range AND top speed divide by
+    /// `(1 + meleeSpeed * 3f) / 4f`. At meleeSpeed 3 the Wood Yoyo's 130 px
+    /// range becomes 52: the aim 300 px out clamps to 52 then re-clamps to
+    /// 51 (`:67932-67950`), landing at owner + 51 (the base-speed pin is
+    /// `the_aim_clamps_to_the_range`'s 449 = 320 + 129).
+    #[test]
+    fn s1_p_i09_the_melee_speed_divides_the_range() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            melee_speed: 3.0,
+            ..inputs(Some((620.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert!(
+            (pool.slots[0].ai[0] - 371.0).abs() < 1e-3 && pool.slots[0].ai[1] == 320.0,
+            "the 52-px range's 51-px re-clamp: {:?}",
+            (pool.slots[0].ai[0], pool.slots[0].ai[1])
+        );
+    }
+
+    /// `:67920` — the release arm fires on `!channel || CCed`: a frozen
+    /// owner returns the yoyo even while the button is held (the C#
+    /// `ItemCheck` clears the channel on a CC too, `Player.cs:42598-42602`).
+    #[test]
+    fn s1_p_i09_the_cced_owner_releases_the_string() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let ins = YoyoInputs {
+            player_cced: true,
+            ..inputs(Some((380.0, 320.0)), true)
+        };
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), ins, &mut tr_core::tile_light::FastRandom::new(7));
+        assert_eq!(pool.slots[0].ai[0], -1.0, "the CC releases");
+        assert_eq!(pool.slots[0].ai[1], 0.0, "the aim zeroes with the release");
+    }
+
+    /// `:67829` — the pose block runs only for the LONE flying yoyo
+    /// (`!flag2 && !flag && ai[0] != -2f`): the double's slot keeps its
+    /// stock direction while the first faces the string, and the facing
+    /// rides the owner's `ChangeDir` (`:67840`/`:67845`). The dropped twin
+    /// skips the pose too (its nudge is the only direction writer).
+    #[test]
+    fn s1_p_i09_the_pose_block_skips_the_double_and_the_twin() {
+        let mut pool = ProjectilePool::new();
+        let first = pool
+            .spawn_with_data(WOOD_YOYO, 300.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let second = pool
+            .spawn_with_data(WOOD_YOYO, 304.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.facing = 1;
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((400.0, 320.0)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[first].direction, -1, "the lone yoyo faces left");
+        assert_eq!(pool.slots[second].direction, 1, "the double keeps the stock direction");
+        assert_eq!(player.facing, -1, "the ChangeDir facing rides the tick out");
+        // The dropped twin: no pose write, and the nudge (`:68068-68071`,
+        // vx 5 inside the 9 cap) does not touch the direction either.
+        let mut pool = ProjectilePool::new();
+        let twin = pool
+            .spawn_with_data_ai(WOOD_YOYO, 300.0, 312.0, 5.0, 0.0, 9, 2.5, -2.0, 0.0)
+            .unwrap();
+        tick(
+            &mut w,
+            &mut pool,
+            Some((400.0, 320.0)),
+            YoyoInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(pool.slots[twin].direction, 1, "the twin skips the pose block");
+    }
+
+    /// `:67809` — the beam retarget normalizes the EUCLIDEAN offset (the
+    /// manhattan value is the scan's gate only, `:67803-67804`), and the
+    /// `CanBeChasedBy` gate (`:67799`) refuses a `dontTakeDamage` NPC: the
+    /// shielded near slime is skipped for the chaseable far one straight
+    /// above, so the beam flies at (0, 8 × 0.8) — the old port divided by
+    /// the manhattan sum and took the shielded target.
+    #[test]
+    fn s1_p_i09_the_beam_retarget_is_euclidean_and_chaseable_gated() {
+        let mut pool = ProjectilePool::new();
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 312.0, 312.0, 0.0, 0.0, 190, 6.5)
+            .unwrap();
+        pool.slots[terrarian].local_ai[1] = 5.0; // the 6-tick timer fires this tick
+        let mut w = world();
+        // The near slime's centre (350, 360) — offset (30, 40), euclidean
+        // 50 / manhattan 70; shielded, so the scan must skip it.
+        let mut near = Npc::new(NpcKind::Slime, 338.0, 351.0, 1, 0.0);
+        near.dont_take_damage = true;
+        // The far slime's centre (320, 420) — straight above, manhattan
+        // 100 < 400, chaseable (25 HP > 5).
+        let far = Npc::new(NpcKind::Slime, 308.0, 411.0, 1, 0.0);
+        let mut npcs = vec![near, far];
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((320.0, 320.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        let beam = (0..MAX_PROJECTILES)
+            .find(|&i| pool.slots[i].active && pool.slots[i].kind == TERRARIAN_BEAM)
+            .expect("the timer fired");
+        let v = pool.slots[beam].vel;
+        // 6.4 px/tick (8 × 0.8), possibly one 0.985 beam-AI damp if the
+        // spawned slot rides the same pass — either way > 6.0 and vertical.
+        assert!(v.x.abs() < 1e-3, "the beam aims straight up: {v:?}");
+        assert!(v.y > 6.0, "the euclidean 8 px/tick aim after the damp: {v:?}");
+    }
+
+    /// `:67786-67793` — the beam's roll ORDER on the pass's stream: the
+    /// ±100 direction pair (the do/while redraws only on the zero vector),
+    /// then the `Next(10, 41)` magnitude, then the `Next(3)` doubling gate.
+    /// No floats. The mirror clone proves the seed's first pair is non-zero
+    /// (the loop runs once), so the recorded sequence is exactly four.
+    #[test]
+    fn s1_p_i09_the_beam_rolls_draw_in_the_csharp_order() {
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let (jx, jy) = (mirror.next_range(-100, 101), mirror.next_range(-100, 101));
+        assert!(jx != 0 || jy != 0, "the fixture seed draws a non-zero pair");
+        let mut pool = ProjectilePool::new();
+        let terrarian = pool
+            .spawn_with_data(TERRARIAN_YOYO, 312.0, 312.0, 0.0, 0.0, 190, 6.5)
+            .unwrap();
+        pool.slots[terrarian].local_ai[1] = 5.0;
+        let mut w = world();
+        let mut rng = RecordRng::new();
+        tick(&mut w, &mut pool, Some((320.0, 320.0)), YoyoInputs::default(), &mut rng);
+        assert_eq!(
+            rng.ranges,
+            vec![(-100, 101), (-100, 101), (10, 41), (0, 3)],
+            "the direction pair, the magnitude, the doubling gate"
+        );
+        assert_eq!(rng.floats, 0, "the beam block draws no floats");
+    }
+
+    /// `Damage_PVE_Inner`'s aiStyle-99 arm (`:13273-13298`): the flying
+    /// yoyo faces the hit side against the OWNER's centre, recoils
+    /// (`velocity * -0.5 + away * 16`) and ages its clock 20 ticks; with
+    /// the owner's line of sight open (`Collision.CanHit`) that is all.
+    #[test]
+    fn s1_p_i09_the_hit_recoils_and_ages_the_clock() {
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        // The slime's centre (512, 509); the yoyo's centre (524, 509) —
+        // 12 px to the right, boxes overlapping.
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 4.0, 0.0, 20, 4.0, 0.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 300.0;
+        player.y = 490.0;
+        let before = npc.hp;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(npc.hp < before, "the hit landed");
+        let p = &pool.slots[slot];
+        assert_eq!(p.direction, 1, "the NPC right of the owner faces right");
+        assert!(
+            (p.vel - Vec2::new(14.0, 0.0)).length() < 1e-4,
+            "4 × -0.5 + 16 along the away axis: {:?}",
+            p.vel
+        );
+        assert_eq!(p.local_ai[0], 20.0, "the +20 clock age, no LOS penalty");
+    }
+
+    /// `:13294-13298` — the no-LOS arm: a solid column between the yoyo
+    /// and the owner adds 40 more clock ticks and cuts the hit damage to
+    /// `(int)(dmg * 0.75)` BEFORE the strike. Same seed both runs, so the
+    /// variance roll matches and the drop comparison isolates the cut.
+    #[test]
+    fn s1_p_i09_the_no_los_hit_ages_forty_more_and_cuts_the_damage() {
+        let run = |blocked: bool| {
+            let mut w = big_world();
+            if blocked {
+                // The column at tile x = 25 (400 px) sits between the
+                // player (x 300) and the yoyo (x 516).
+                for y in 0..200 {
+                    put_solid(&mut w, 25, y);
+                }
+            }
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 4.0, 0.0, 20, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 300.0;
+            player.y = 490.0;
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((400.0, 509.0)),
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            (before - npc.hp, pool.slots[slot].local_ai[0])
+        };
+        let (clear_drop, clear_age) = run(false);
+        let (blocked_drop, blocked_age) = run(true);
+        assert_eq!(clear_age, 20.0);
+        assert_eq!(blocked_age, 60.0, "the +20 then the +40");
+        assert!(
+            blocked_drop < clear_drop,
+            "the ×0.75 cut: {blocked_drop} vs {clear_drop}"
+        );
+    }
+
+    /// `:13258-13267` — the dropped twin's hit: the velocity squashes to
+    /// len/5 and takes the `Next(50, 81) * 0.1` lift (the draw lands AFTER
+    /// the hit's DamageVar roll on the same stream — the mirror clone
+    /// replays both), clamped at -16. No recoil, no clock age, no facing
+    /// write. The Kraken's recoil kick is 4, not 16 (`:13286-13289`).
+    #[test]
+    fn s1_p_i09_the_dropped_twins_hit_squashes_and_lifts() {
+        // Gate fix (i09×i11): the per-hit crit block rolls ONE Next(1,101)
+        // for the yoyo's melee flag BEFORE DamageVar (`Projectile.cs:12890`,
+        // S1-P-i11's spawn→hit move). The mirror consumes it first.
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let _crit = mirror.next_range(1, 101); // the melee crit roll (:12890)
+        let _var = mirror.next_range(-15, 16); // DamageVar's roll (:12938)
+        let lift = mirror.next_range(50, 81) as f32 * 0.1;
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 10.0, 0.0, 20, 4.0, -2.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let p = &pool.slots[slot];
+        assert!((p.vel.x - 2.0).abs() < 1e-4, "10 / 5 along the axis: {:?}", p.vel);
+        assert!((p.vel.y + lift).abs() < 1e-4, "the mirrored lift: {:?}", p.vel);
+        assert_eq!(p.local_ai[0], 0.0, "the twin's clock never ages on a hit");
+        assert_eq!(p.direction, 1, "no facing write in the dropped arm");
+        // The -16 clamp: a 100 px/tick downward twin squashes to 20 down,
+        // and the lift pushes it past the cap.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 0.0, -100.0, 20, 4.0, -2.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(pool.slots[slot].vel.y, -16.0, "the lift clamps at -16");
+    }
+
+    /// `:13286-13289` — the Kraken's recoil kick is 4 px/tick, not 16.
+    #[test]
+    fn s1_p_i09_the_krakens_recoil_kick_is_four() {
+        let w = big_world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(KRAKEN_YOYO, 516.0, 501.0, 4.0, 0.0, 120, 4.3, 0.0, 0.0)
+            .unwrap();
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some((400.0, 509.0)),
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(
+            (pool.slots[slot].vel - Vec2::new(2.0, 0.0)).length() < 1e-4,
+            "4 × -0.5 + 4: {:?}",
+            pool.slots[slot].vel
+        );
+    }
+
+    /// `:13389`/`:13393` — `flag8 = !targetNPC.immortal` (`:12815`) gates
+    /// the doublings: an immortal target (the dummy) never doubles. The
+    /// counter is seeded at 0 so the very next peek WOULD fire; the
+    /// control run (mortal) doubles the same variance roll.
+    #[test]
+    fn s1_p_i09_the_immortal_target_never_doubles() {
+        let run = |immortal: bool| {
+            let w = big_world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    THE_EYE_OF_CTHULHU_YOYO,
+                    516.0,
+                    501.0,
+                    0.0,
+                    0.0,
+                    20,
+                    4.0,
+                    0.0,
+                    0.0,
+                )
+                .unwrap();
+            let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            npc.immortal = immortal;
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 400.0;
+            player.y = 490.0;
+            player.yoyo_hit_counter = 0; // the next peek fires (0 % 7 == 0)
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((400.0, 509.0)),
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            before - npc.hp
+        };
+        let immortal_drop = run(true);
+        let mortal_drop = run(false);
+        // DamageVar(20) ∈ 17..23, minus the Blue slime's defense/2 (1):
+        // 16..22; the doubling makes it 34..46 − 1 = 33..45. The owner at
+        // x 400 keeps the LOS open (no ×0.75 cut on either run).
+        assert!(immortal_drop < 30, "no doubling on the immortal: {immortal_drop}");
+        assert!(mortal_drop >= 33, "the mortal control doubles: {mortal_drop}");
     }
 }
 
@@ -22844,10 +27370,18 @@ mod ammo_proj_tests {
             assert_eq!(d.penetrate, -1, "kind {kind}");
             assert!(!d.uses_local_immunity, "kind {kind}");
         }
-        // 779/783 sit inside the C# range but no launcher resolves to them —
-        // the scope list excludes them, so the row-less Kinds stay row-less.
-        assert!(proj_data(779).is_none());
-        assert!(proj_data(783).is_none());
+        // S1-P-i16: 779/783 are the CLUSTER SHRAPNEL the cluster rockets'
+        // Kill arm spawns (`Projectile.cs:78063-78086`) — they now carry
+        // the C# range-block row (`:7939-7952`) with the NewProjectileSetup
+        // 60-tick fuse seed (`:11053-11060`), NOT the stock 3600.
+        for kind in [779u16, 783] {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} has no row"));
+            assert_eq!((d.w, d.h), (14.0, 14.0), "kind {kind}");
+            assert_eq!(d.ai_style, 16, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 60, "kind {kind}: the shrapnel fuse seed");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+        }
         // The Celebration rockets (`:7584-7605`): aiStyle 147 (the unported
         // stand-in), penetrate 1, extraUpdates 2 and
         // `timeLeft = 360 * MaxUpdates` = 360 × (2 + 1) = 1080
@@ -22893,10 +27427,13 @@ mod ammo_proj_tests {
             assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
         }
         // The arrow overrides: 117 (`:2058-2068`, extraUpdates 2), 469
-        // (`:5429-5441`), 495 (`:5681-5692`, penetrate 3), 819
-        // (`:7993-8002`, extraUpdates 1) — 10x10 aiStyle-1 arrows with
-        // timeLeft 1200.
-        for (kind, pen, extra) in [(117u16, 1, 2), (469, 1, 0), (495, 3, 0), (819, 1, 1)] {
+        // (`:5435-5445`), 495 (`:5681-5692`, penetrate 3) — 10x10
+        // aiStyle-1 arrows with timeLeft 1200. S1-P-i17: the 819 Blood
+        // Arrow (`:7993-8002`, extraUpdates 1) writes NO timeLeft
+        // override — the stock 3600 stands (the old 1200 was a row
+        // deviation), and the 469's `alpha = 255` (`:5437`) now rides
+        // the row.
+        for (kind, pen, extra) in [(117u16, 1, 2), (469, 1, 0), (495, 3, 0)] {
             let d = proj_data(kind).unwrap();
             assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
             assert_eq!(d.ai_style, 1, "kind {kind}");
@@ -22906,6 +27443,11 @@ mod ammo_proj_tests {
             assert!(d.arrow, "kind {kind}");
             assert!(d.tile_collide, "kind {kind}");
         }
+        let blood = proj_data(819).unwrap();
+        assert_eq!(blood.time_left, TIME_LEFT_DEFAULT, "the 819 stock life");
+        assert_eq!(blood.extra_updates, 1);
+        assert_eq!(blood.alpha, 255, "`:7999`");
+        assert_eq!(proj_data(469).unwrap().alpha, 255, "`:5437`");
         // The Hellwing 485 (`:5604-5615`): the 24x24 box, penetrate -1.
         let hellwing = proj_data(485).unwrap();
         assert_eq!((hellwing.w, hellwing.h), (24.0, 24.0));
@@ -23017,7 +27559,7 @@ mod ammo_proj_tests {
             (469, 10.0, 10.0, 1, 0, 1200, false, -2),
             (485, 24.0, 24.0, -1, 0, 1200, false, -2),
             (495, 10.0, 10.0, 3, 0, 1200, false, -2),
-            (819, 10.0, 10.0, 1, 1, 1200, false, -2),
+            (819, 10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, false, -2),
             (932, 10.0, 10.0, 5, 0, 120, true, 60),
         ];
         let mut pool = ProjectilePool::new();
@@ -23112,6 +27654,7 @@ mod phasmal_projectile_tests {
             rot: 0.0,
             damage: 30,
             knock_back: 0.0,
+            no_drop_item: false,
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
@@ -23131,6 +27674,7 @@ mod phasmal_projectile_tests {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             direction: 1,
             whip_settings: None,
             whip_use_animation: 0.0,
@@ -23167,6 +27711,12 @@ mod phasmal_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
+            wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -23512,6 +28062,7 @@ mod ritual_projectile_tests {
             rot: 0.0,
             damage: 0,
             knock_back: 0.0,
+            no_drop_item: false,
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
@@ -23531,6 +28082,7 @@ mod ritual_projectile_tests {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             direction: 1,
             whip_settings: None,
             whip_use_animation: 0.0,
@@ -23567,6 +28119,12 @@ mod ritual_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
+            wants_dart_spawns: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,

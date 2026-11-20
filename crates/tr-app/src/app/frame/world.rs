@@ -10,6 +10,7 @@ use crate::app::App;
 use crate::audio;
 use crate::npc::NpcKind;
 use crate::player;
+use crate::ui;
 use tr_core::TILE_PX;
 use crate::world_sim::clock::advance_time_with_events;
 
@@ -41,6 +42,9 @@ impl App {
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();
+    // `Main.DrawInventory`'s shop-close rule (`Main.cs:41784-41787`) — the
+    // interface pass closes the shop when the inventory closes.
+    self.update_shop_close();
     for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
         let target = if i == self.selected { 1.0 } else { 0.75 };
         if *scale < target {
@@ -104,6 +108,27 @@ impl App {
     /// runs in the players→NPCs gap.
     fn players_phase(&mut self, dt: f32, screen: Vec2) {
     self.phase("players");
+    // The `dropItemCheck` right-click edge (`Player.cs:5147`'s
+    // `Main.mouseRight && !mouseInterface && Main.mouseRightRelease`): the
+    // press edge outside every slot hit, captured BEFORE the player pass —
+    // `update_editing` refreshes `place_prev_down` only after it. The
+    // `mouseInterface` stand-in covers every drawn slot surface: the grid/
+    // closed hotbar, the coin/ammo rows, the equipment columns and the
+    // trash cell (`Main.DrawInventory`'s `ItemSlot.Handle` sites).
+    let over_ui_slot = self.slot_at_mouse().is_some()
+        || self.coin_ammo_at_mouse().is_some()
+        || (self.inventory_open && {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let m_h = self.main_m_h();
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+            ui::inventory::equip_cell_at(self.mouse_pos, screen, m_h, self.equip_page, cell)
+                .is_some()
+                || ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop)
+        });
+    self.drop_right_edge =
+        self.place_down && !self.place_prev_down && !over_ui_slot;
     self.update_player(dt);
     // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
     // every active player is fully asleep
@@ -534,6 +559,27 @@ impl App {
     /// The world-branch tail's camera walks (`Main.cs:17814-17815`, S1-B-4)
     /// and `SceneState.Update` (`:17816`) — they freeze with the world step.
     fn camera_scene_tail(&mut self, dt: f32, screen: Vec2) {
+                    // `Chest.UpdateChestFrames()` (`Main.cs:17810`): the lid
+                    // animation ticks after `UpdateWorld_ServerOrClient` and
+                    // before the camera walks — the port's slot is the head
+                    // of this step-gated tail (S1-P-i43). The eat chime
+                    // (`Chest.cs:3628-3631`, `PlaySound(7, chest centre)`)
+                    // plays for every cue the walk reports — the int overload
+                    // consumes one case-7 `Next(-10, 11)` pitch draw on the
+                    // BARE stream (the `:17810` call site sits outside every
+                    // SwapRandom block, the Lead's faithful-cue decision).
+                    // Dormant until the eat timer's producer lands.
+                    let open = self.open_container();
+                    let eat_cues =
+                        crate::chest::update_chest_frames(&mut self.world_chests, open);
+                    for j in eat_cues {
+                        let (cx, cy) = self.world_chests[j].tile;
+                        self.audio.play_chest_eat_sound(
+                            cx as f32 * 16.0 + 16.0,
+                            cy as f32 * 16.0 + 16.0,
+                            self.rngs.global(),
+                        );
+                    }
                     let mut camera_state = std::mem::take(&mut self.camera_state);
                     crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
                     crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);

@@ -197,8 +197,15 @@ pub(crate) struct App {
     pub(crate) shop_npc: Option<usize>,
     /// The stock captured at the open (`Chest.item[]`) — the rows carry
     /// their per-row price fields (`Item.shopCustomPrice`/`buyOnce`/
-    /// `isAShopItem`), priced by `Item.GetStoreValue`.
+    /// `isAShopItem`), priced by `Item.GetStoreValue`. Sold-in rows append
+    /// as buyOnce clones (`Chest.AddItemToShop`); a buyOnce row depletes
+    /// and turns to air (`ItemSlot.cs:2090-2093`).
     pub(crate) shop_stock: Vec<crate::shop::ShopEntry>,
+    /// `Main.shopSellbackHelper` (`Main.cs:1775`): the bought-goods memo
+    /// the sell payout refunds through (`Player.cs:35191-35195`); cleared
+    /// whenever the shop index changes (`Main.UpdateOldNPCShop`,
+    /// `Main.cs:18204-18211`).
+    pub(crate) shop_sellback: crate::shop::SellbackHelper,
     /// The happiness multiplier captured at the open
     /// (`currentShoppingSettings.PriceAdjustment`).
     pub(crate) shop_mood: f32,
@@ -217,8 +224,17 @@ pub(crate) struct App {
     /// keeps it at one item (`ItemSlot.cs:821-836`).
     pub(crate) reforge_slot: ItemSlot,
     /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
-    /// roll (`:41924`), decremented per tick (`:17121-17123`).
+    /// roll (`:41910`), decremented per tick (`:17121-17123`) and cleared
+    /// while the button is unhovered (`:41568`).
     pub(crate) reforge_cooldown: i32,
+    /// `Main.mouseReforge` (`Main.cs:1947`): the reforge button's hover latch,
+    /// set in the draw block (`:41656`/`:41665`) and read by the per-frame
+    /// scale/cooldown update (`:41559-41572`).
+    pub(crate) mouse_reforge: bool,
+    /// `Main.reforgeScale` (`Main.cs:1949`, init 0.8 `:67157`): the button's
+    /// hover animation scale — +0.02/frame toward 1 while hovered, −0.02
+    /// toward 1 while not (`:41561-41572`).
+    pub(crate) reforge_scale: f32,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -239,6 +255,15 @@ pub(crate) struct App {
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
+    /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
+    /// overridden halves of the selection machine (S1-P-i54); the live
+    /// slot stays `selected` above. The switch applies only when idle
+    /// (`CanChangeSelectedItemImmediately`, `:428-438`).
+    pub(crate) selection: crate::hotbar::SelectionState,
+    /// `Main.blockMouse` (`Main.cs:2445`): a mid-use switch blocks the
+    /// held left button until its release (`OnSelectionChanged`,
+    /// `Player.cs:563`; the release clears it, `TriggersSet.cs:846`).
+    pub(crate) block_mouse: bool,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
@@ -576,6 +601,13 @@ pub(crate) struct App {
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     pub(crate) mouse_item: ItemSlot,
+    /// `Player.releaseQuickMana` (`Player.cs:1768`): the quick-mana press
+    /// latch (S1-P-i37). `Player.Update` (`:24834-24845`) fires `QuickMana`
+    /// only while the latch stands (the key's press edge), then drops it
+    /// until the key releases. Starts false — the first held tick counts as
+    /// the edge. (The QuickHeal twin `releaseQuickHeal` `:1770` is the i54
+    /// hotbar worker's `quick_heal_prev` — not duplicated here.)
+    pub(crate) quick_mana_prev: bool,
     /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
     /// slot whose head rides the cursor for a housing relocation; −1 with
     /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
@@ -589,6 +621,33 @@ pub(crate) struct App {
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
+    /// `Player.controlThrow` (`Main.cThrowItem`, default `T` —
+    /// `Main.cs:67168`; the task's "Q key" is the rebind row, the vanilla
+    /// seed is T): the held throw key, refreshed once per frame from the
+    /// bind table (`world_sim/player.rs`'s input assembly).
+    pub(crate) control_throw: bool,
+    /// The right-button press edge captured BEFORE the player pass —
+    /// `Main.mouseRight && !mouseInterface && Main.mouseRightRelease`'s
+    /// `dropItemCheck` arm (`Player.cs:5147`). `update_editing` refreshes
+    /// `place_prev_down` AFTER the player pass, so the drop gate reads this
+    /// pre-pass snapshot instead (the C# evaluates the gate inside
+    /// `Player.Update`, before the item-check pass).
+    pub(crate) drop_right_edge: bool,
+    /// `Player.noThrow` (`Player.cs:1456`): the NPC-hover throw lockout
+    /// (`Main.cs:43030`/`:43067` arm it to 4); `dropItemCheck` zeroes it on
+    /// a closed inventory and counts it down (`Player.cs:5109-5116`). The
+    /// hover sites are unported, so nothing arms it today — the field keeps
+    /// the check's shape.
+    pub(crate) no_throw: i32,
+    /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
+    /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
+    /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
+    /// (`:43333`), which is the press-after-release frame. Starts true
+    /// (the button starts released, `Main.cs:1689`'s false static would be
+    /// set true by the first menu draw; the port's first in-world frame
+    /// with the button already held has no prior release — matching the
+    /// vanilla's menu-drawn latch).
+    pub(crate) ui_right_release_latch: bool,
     /// `Main.mouseLeftRelease`'s in-world arm — the left button's release
     /// edge the achievement popup's click reads (`InGamePopups.cs:124`'s
     /// `Main.mouseLeft && Main.mouseLeftRelease`), consumed per frame.
@@ -702,6 +761,9 @@ pub(crate) struct App {
     /// `releaseMount` latch). An `App` field rather than a `static` so two
     /// headless apps in one test process cannot share it.
     pub(crate) mount_prev: bool,
+    /// `Player.releaseQuickHeal` (`Player.cs:1770`): the quick-heal press
+    /// edge latch (`:24822-24833`), the per-player twin of `mount_prev`.
+    pub(crate) quick_heal_prev: bool,
     /// `Main.gamePaused` (`Main.cs:645`): the world-sim freeze written by the
     /// two pause sources — the focus arm (`Main.cs:17138`) and the in-game
     /// gate's arm pair (`Main.cs:17197-17201`). Cleared on world load
@@ -1583,10 +1645,38 @@ impl App {
         }
     }
 
-    /// `Player.BuyItem`'s shape: the purse covers the price → deduct and
-    /// deposit the item through the pickup stack (`Player.PickupItem`'s
-    /// slot_for_pickup). Returns false when the purse is short or the slot
-    /// is out of range.
+    /// `Main.DrawInventory`'s shop-close rule (`Main.cs:41784-41787`):
+    /// `npcShop > 0 && (!playerInventory || talkNPC == -1)` →
+    /// `SetNPCShopIndex(0)`. The port's shop opens collapse the talk onto
+    /// the open (`try_open_town_shop_at_cursor`), so the talk index rides
+    /// `shop_npc` — the inventory close is the operative half. Runs in the
+    /// click cluster beside the other interface handlers (the C# runs it
+    /// inside `DrawInventory`).
+    pub(crate) fn update_shop_close(&mut self) {
+        if self.shop_npc.is_some() && !self.inventory_open {
+            self.close_shop();
+        }
+    }
+
+    /// One unit of the shop buy — `ItemSlot.HandleShopSlot`'s loop body
+    /// (`UI/ItemSlot.cs:2053-2095`) with the `BuyItem` charge
+    /// (`Player.cs:35400-35414`): the purse covers the row's buying value
+    /// → deduct, memo the purchase (`shopSellbackHelper.Add`, `:2084-2087`
+    /// — plain-currency non-buyOnce rows only), push ONE unit onto the
+    /// cursor (`Main.mouseItem`, `:2075-2088` — the vanilla buy lands on
+    /// the CURSOR, not the inventory) and deplete a buyOnce row
+    /// (`:2090-2093`). The caller gates the cursor room and plays the
+    /// first-unit cue. Returns false when the purse is short, the slot is
+    /// out of range or the row is air.
+    ///
+    /// S1-P-i54: the Digit1 shop-buy arm is gone (vanilla `Hotbar1` always
+    /// selects, `Player.cs:25095-25097`; the shop buys are mouse-only,
+    /// `ItemSlot.cs:1220`/`:1650`). The consumer is the shop-grid click
+    /// (`app/clicks.rs`).
+    ///
+    /// Deviation: the charge rides the port's aggregate `App.coins` purse
+    /// (the recorded coin model, ANALYSIS) — the C# `BuyItem` spends the
+    /// inventory + bank coin stacks through `TryPurchasing`.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -1595,56 +1685,153 @@ impl App {
         let Some(entry) = self.shop_stock.get(slot) else {
             return false;
         };
-        let item = entry.item;
+        if entry.item == 0 || entry.stack == 0 {
+            return false; // `:2043`'s `inv[slot].type <= 0` / `:2060`'s stack gate
+        }
         let price =
             crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         if self.coins < price {
             return false;
         }
-        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item, 0) {
-            Some(i) => i,
-            None => return false,
-        };
-        // `Player.PickupItem`'s deposit: the stack merge on the same kind,
-        // else the fresh slot.
-        let sl = &mut self.inventory[idx];
-        if sl.kind == item && sl.count > 0 {
-            sl.count += 1;
-        } else {
-            *sl = crate::item::ItemSlot {
-                kind: item,
-                name: crate::itemdata::ITEMS[item as usize].name,
-                count: 1,
-                prefix: 0,
+        // `:2075-2083` — an air cursor takes the row's kind (and prefix);
+        // the unit rides the cursor stack (`:2088`).
+        if self.mouse_item.count == 0 {
+            self.mouse_item = ItemSlot {
+                kind: entry.item,
+                name: crate::itemdata::ITEMS[entry.item as usize].name,
+                count: 0,
+                prefix: entry.prefix,
             };
+        }
+        // `:2084-2087` — the sellback memo (no custom currencies in the
+        // port, so the `shopSpecialCurrency == -1` half is always true).
+        if !entry.buy_once {
+            self.shop_sellback.add(entry.item, entry.prefix, 1);
+        }
+        self.mouse_item.count += 1;
+        // `:2090-2093` — a buyOnce row depletes; at 0 it turns to air
+        // (`SetDefaults(0)`, `Item.cs:48685-48688`).
+        let entry = &mut self.shop_stock[slot];
+        if entry.buy_once {
+            entry.stack = entry.stack.saturating_sub(1);
+            if entry.stack == 0 {
+                *entry = crate::shop::ShopEntry {
+                    item: 0,
+                    when: crate::shop::StockWhen::Always,
+                    shop_custom_price: None,
+                    buy_once: false,
+                    is_a_shop_item: false,
+                    prefix: 0,
+                    stack: 0,
+                };
+            }
         }
         self.coins -= price;
         true
     }
 
-    /// The reforge slot transfer (`ItemSlot.cs:821-836`): swap with the
-    /// cursor when the cursor's item is single; a stack splits one item in
-    /// (only into the empty slot), mirroring the vanilla's clone-1 rule.
+    /// `Player.SellItem`'s transaction half (`Player.cs:35168-35329`) over
+    /// the port's purse: the payout (`shop::sell_payout` — the ÷5, the
+    /// stack multiply and the sellback refund) lands in `App.coins`;
+    /// returns the payout, or 0 on the `calcForSelling <= 0` refusal
+    /// (`:35170-35174`). The C# spawns the payout as coin stacks through
+    /// the four denomination loops (74/73/72/71, descending slots 53→0,
+    /// `DoCoins` carrying at 100) and restores the cloned inventory when
+    /// no room exists (`:35321-35328`) — the aggregate purse cannot fill
+    /// up, so the refusal half folds out (the recorded coin-model
+    /// deviation, ANALYSIS). The item removal + `AddItemToShop` ride the
+    /// caller (`ItemSlot.cs:854-867`/`:1225-1238`).
+    pub(crate) fn sell_item(&mut self, item: &ItemSlot) -> i64 {
+        let value = crate::prefix::prefixed_stats(item.kind, item.prefix)
+            .map(|s| s.value)
+            .unwrap_or(crate::itemdata::ITEMS[item.kind as usize].value);
+        let amount = self.shop_sellback.get_amount(item.kind, item.prefix);
+        let payout = crate::shop::sell_payout(
+            value,
+            false,
+            false,
+            self.discount_available,
+            self.shop_mood,
+            item.count,
+            amount,
+        );
+        if payout <= 0 {
+            return 0;
+        }
+        self.coins += payout as u64;
+        payout
+    }
+
+    /// The reforge slot transfer (`ItemSlot.Handle(ref reforgeItem, 5)`,
+    /// `ItemSlot.cs:588-597` → `LeftClick`'s action-1 arms). The ctx-5
+    /// movement gate (`PickItemMovementAction`, `ItemSlot.cs:1515-1520`)
+    /// accepts only a prefixable cursor (`CanHavePrefixes`) or air — a
+    /// non-prefixable cursor refuses the move outright. Then the three
+    /// action-1 arms (`ItemSlot.cs:1019-1106`):
+    /// - cursor stack 1 + held item + `IsNotTheSameAs` → swap (`:1020-1023`);
+    /// - air cursor + held item → take it out (`:1044-1046`);
+    /// - cursor stack 1 + empty slot → place it (`:1060-1077`);
+    /// - cursor stack >1 + empty slot → clone ONE in (`:1078-1084`).
+    /// Every arm that moves an item plays `SoundEngine.PlaySound(7)`.
     pub(crate) fn reforge_slot_click(&mut self) {
-        if self.mouse_item.count > 1 {
-            if self.reforge_slot.count == 0 {
+        // `ItemSlot.cs:1515-1520` — ctx 5 → action 1 only when the cursor is
+        // prefixable or air; otherwise action -1 (the `:928-931` gate refuses).
+        let cursor_prefixable =
+            self.mouse_item.kind == 0 || crate::prefix::can_have_prefixes(self.mouse_item.kind);
+        if !cursor_prefixable {
+            return;
+        }
+        let moved = if self.mouse_item.count == 1
+            && self.mouse_item.kind != 0
+            && self.reforge_slot.kind != 0
+        {
+            // `:1020-1023` — swap only when the two are NOT the same
+            // (`IsNotTheSameAs`, `Item.cs:49847-49854`: same type+stack but a
+            // different prefix, or a different type/stack).
+            let same = self.reforge_slot.kind == self.mouse_item.kind
+                && self.reforge_slot.count == self.mouse_item.count
+                && self.reforge_slot.prefix == self.mouse_item.prefix;
+            if !same {
+                std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+                true
+            } else {
+                false
+            }
+        } else if self.mouse_item.kind == 0 && self.reforge_slot.kind != 0 {
+            // `:1044-1046` — air cursor takes the held item out.
+            std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+            true
+        } else if self.mouse_item.kind != 0 && self.reforge_slot.kind == 0 {
+            if self.mouse_item.count == 1 {
+                // `:1060-1077` — a single item places whole.
+                std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+            } else {
+                // `:1078-1084` — a stack clones ONE into the empty slot.
                 self.reforge_slot = self.mouse_item;
                 self.reforge_slot.count = 1;
                 self.mouse_item.count -= 1;
             }
-            return;
+            true
+        } else {
+            false
+        };
+        if moved {
+            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
         }
-        std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
     }
 
     /// `Main.ReforgeItemInReforgeSlot` (`Main.cs:41902-41933`): the charge
-    /// (`BuyItem`'s purse gate) precedes the roll; then the reset-to-
+    /// (`BuyItem`'s purse gate, `:41658`) precedes the roll; then the reset-to-
     /// defaults + `Prefix(-2)` — the port recomputes the stats from the
     /// kind's defaults, so the reset is the prefix-field write — and the
-    /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
-    /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
-    /// consumes the bare-`Main.rand` stand-in (`NamedRngs::global`) — the menu
-    /// path runs outside every swap (`S1-A-11` §4).
+    /// top-tier 60-tick cooldown (`Main.cs:41907-41910`). The presentation
+    /// tail (`Main.cs:41906-41932`) — the `BestReforge`/`Item37` sound and the
+    /// top-tier particle draws — runs AFTER the roll on the same shared
+    /// `Main.rand` (`prefix::reforge_presentation_tail`; the particle visuals
+    /// are the documented skip, the draws are consumed verbatim). Both the
+    /// roll and the tail consume the bare-`Main.rand` stand-in
+    /// (`NamedRngs::global`) — the menu path runs outside every swap
+    /// (`S1-A-11` §4).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1655,6 +1842,7 @@ impl App {
                 .unwrap_or(def.value),
             self.reforge_slot.count.max(1),
             self.shop_mood,
+            self.discount_available,
         );
         if self.reforge_cooldown > 0 || self.coins < cost {
             return;
@@ -1667,8 +1855,12 @@ impl App {
         let (prefix, top_tier) = crate::prefix::reforge_roll(kind, self.rngs.global());
         self.reforge_slot.prefix = prefix;
         if top_tier {
-            self.reforge_cooldown = 60;
+            self.reforge_cooldown = 60; // `Main.cs:41910`
         }
+        // The presentation tail (`Main.cs:41906-41932`): the sound + the
+        // top-tier particle draws, in the C#'s order on the same global
+        // stream (the roll's draws are already consumed above).
+        crate::prefix::reforge_presentation_tail(top_tier, self.rngs.global(), &mut self.audio);
     }
 
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
@@ -1749,13 +1941,32 @@ impl App {
 
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
     /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
-    /// `dropItemCheck`); the slot item returns to the cursor if held there
-    /// is impossible, so it drops to the inventory's first free slot.
+    /// `dropItemCheck`); the slot item returns to the inventory through
+    /// `Player.GetOrDropItem` (`Player.cs:7193-7200`, `GetItemSettings.
+    /// ReturnItemFromSlot`): the pickup stack first, and the OVERFLOW spawns
+    /// a world drop at the player's centre with the prefix preserved
+    /// (`Item.RequestNewItem(..., item2.prefix, ...)`, `:7198`) — the old
+    /// port silently destroyed the item when the inventory was full.
+    /// `Main.UpdateOldNPCShop` (`Main.cs:18204-18211`) clears the sellback
+    /// memo on the index change — the close is one.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
+        self.shop_sellback.clear();
         self.shop_mood = 1.0;
         self.in_reforge_menu = false;
+        self.return_reforge_slot();
+    }
+
+    /// `Player.dropItemCheck`'s reforge arm (`Player.cs:5123-5127`): with the
+    /// menu closed, `GetOrDropItem(Main.reforgeItem, ReturnItemFromSlot)`
+    /// returns the slot item to the inventory (the pickup stack first) and
+    /// clears it; the OVERFLOW spawns a world drop at the player's centre
+    /// with the prefix preserved (`Player.cs:7196-7199`, `Item.RequestNewItem`
+    /// keeps the rolled prefix — `Item.NewItem`'s `Prefix(exact)` applies it
+    /// directly, `Item.cs:49730`, no fresh roll). Shared by `close_shop` and
+    /// the inventory-close chain (`Main.cs:45676-45683`).
+    pub(crate) fn return_reforge_slot(&mut self) {
         if self.reforge_slot.count > 0 {
             if let Some(i) = crate::item::slot_for_pickup(
                 &mut self.inventory,
@@ -1765,7 +1976,90 @@ impl App {
                 self.inventory[i].count = (self.inventory[i].count + self.reforge_slot.count)
                     .min(crate::registry::max_stack(self.reforge_slot.kind));
                 self.reforge_slot = EMPTY_SLOT;
+            } else {
+                // The velocity/phase triplet rides the port's pinned ItemDrop
+                // model on the bare-`Main.rand` stand-in (the close runs from
+                // the click/talk handlers outside every swap, S1-A-11 §4 —
+                // the recorded spawn-order deviation, `world_sim/items.rs`).
+                let (cx, cy) = self
+                    .player
+                    .as_ref()
+                    .map(|p| p.center())
+                    .unwrap_or((0.0, 0.0));
+                let rng = self.rngs.global();
+                let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+                let vy = -1.5 - rng.next_float();
+                let phase = rng.next_float() * std::f32::consts::TAU;
+                self.items.push(ItemDrop::new(
+                    self.reforge_slot.kind,
+                    self.reforge_slot.count,
+                    self.reforge_slot.prefix,
+                    cx,
+                    cy,
+                    vx,
+                    vy,
+                    phase,
+                ));
+                self.reforge_slot = EMPTY_SLOT;
             }
+        }
+    }
+
+    /// The reforge menu's per-frame head (`Main.DrawInventory`'s inline block,
+    /// `Main.cs:41557-41578`): the button's hover-scale animation and the
+    /// unhovered cooldown clear, then the force-close gate. Runs every frame
+    /// the menu is open (the C# block sits in `DrawInventory`, which runs
+    /// whenever `playerInventory`). The hover latch (`mouse_reforge`) is
+    /// resolved here from the button hit box (`:41649-41666`, the C# sets it
+    /// in the draw block every frame); the scale ramps +0.02/frame toward 1
+    /// while hovered, −0.02 toward 1 while not (`:41561-41572`), and an
+    /// unhovered button clears the cooldown (`:41568`). The force-close
+    /// (`:41574-41578`) fires when a chest opens, the shop closes (the port's
+    /// collapsed `talkNPC == -1`/`npcShop != 0` pair — the menu rides beside
+    /// the Tinkerer shop), or the crafting panel opens.
+    pub(crate) fn update_reforge_menu(&mut self) {
+        if !self.in_reforge_menu {
+            return;
+        }
+        // `:41649-41666` — the button hover latch + the hover-edge sound 12.
+        // The C# sets `mouseReforge` in the draw block every frame the button
+        // draws (the slot holds an item); the port resolves the same hit box
+        // here (the per-frame head) so the scale/cooldown update below reads
+        // the live latch.
+        let hovered = self.reforge_slot.kind > 0
+            && crate::ui::inventory::reforge_button_hit(self.mouse_pos);
+        if hovered && !self.mouse_reforge {
+            crate::chest::play_menu_sound(self, 12); // `:41652-41655`
+        }
+        self.mouse_reforge = hovered;
+        // `:41559-41572` — the hover-scale animation + the unhovered clear.
+        if self.mouse_reforge {
+            if self.reforge_scale < 1.0 {
+                self.reforge_scale += 0.02;
+            }
+        } else {
+            self.reforge_cooldown = 0; // `:41568`
+            if self.reforge_scale > 1.0 {
+                self.reforge_scale -= 0.02;
+            }
+        }
+        // `:41574-41578` — the force-close gate. The C# closes on
+        // `chest != -1 || npcShop != 0 || talkNPC == -1 || InGuideCraftMenu`.
+        // The port collapses the Tinkerer's chat-button entry into the
+        // shop-open (the recorded #9 deviation — `world_sim/npcs.rs:971`
+        // auto-opens the menu beside the shop with `talk_npc = None`), so the
+        // `talkNPC == -1`/`npcShop != 0` pair maps to the port's shop-closed
+        // state (`shop_npc.is_none()`): the menu lives while its shop is open
+        // and closes when the shop closes. A container opening
+        // (`open_container`) or the crafting panel (`crafting_open`) also
+        // force-closes, exactly the C#'s `chest != -1`/`InGuideCraftMenu`.
+        let force_close = self.open_container() != crate::bank::CHEST_CLOSED
+            || self.shop_npc.is_none()
+            || self.crafting_open;
+        if force_close {
+            self.in_reforge_menu = false;
+            self.mouse_reforge = false;
+            self.return_reforge_slot(); // `dropItemCheck` (`Player.cs:5123-5127`)
         }
     }
 
@@ -3295,9 +3589,12 @@ impl App {
             next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            shop_sellback: crate::shop::SellbackHelper::default(),
             in_reforge_menu: false,
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
+            mouse_reforge: false,
+            reforge_scale: 0.8, // `Main.cs:67157`
             shop_mood: 1.0,
             discount_available: false,
             shop_closed_flag: false,
@@ -3393,6 +3690,8 @@ impl App {
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
             selected: 0,
+            selection: crate::hotbar::SelectionState::new(),
+            block_mouse: false,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
                 s[0] = 1.0;
@@ -3571,11 +3870,16 @@ impl App {
             music: audio::MusicSystem::new(assets::content_dir()),
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
+            quick_mana_prev: false,
             mouse_npc_index: -1,
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
             ui_right_release: false,
+            control_throw: false,
+            drop_right_edge: false,
+            no_throw: 0,
+            ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
@@ -3626,6 +3930,7 @@ impl App {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            quick_heal_prev: false,
             // `Main.gamePaused` starts false and `ResetGameCounter` pins
             // `GameUpdateCount` at 65536 (`Main.cs:6442-6445`, the `OnWorldLoad`
             // hook at `:6605`) — both ride this constructor, so a `swap_world`
@@ -5372,5 +5677,181 @@ mod dye_pin_tests {
         assert_eq!(crate::env::parse_tr_dmount(" 2871 "), 2871);
         assert_eq!(crate::env::parse_tr_dmount("nope"), 0);
         assert_eq!(crate::env::parse_tr_dmount(""), 0);
+    }
+}
+/// S1-P-i44 — the shop TRANSACTION witnesses: the buy lands on the CURSOR
+/// (`ItemSlot.HandleShopSlot`, `ItemSlot.cs:2053-2095`), the sell pays the
+/// purse and re-stocks the sold units (`Player.SellItem` +
+/// `Chest.AddItemToShop`), the sellback memo refunds the bought units at
+/// their buy price, and the close clears the memo
+/// (`Main.UpdateOldNPCShop`, `Main.cs:18204-18211`). Written, not run.
+#[cfg(test)]
+mod s1_p_i44_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// An open Merchant shop with the base stock, mood 1 and a funded
+    /// purse. The stock resolves through the same seam the open uses.
+    fn shop_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.shop_npc = Some(0);
+        app.shop_stock =
+            crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
+        app.shop_mood = 1.0;
+        app.coins = 1_000_000;
+        app
+    }
+
+    fn held(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    #[test]
+    fn the_buy_charges_the_purse_and_lands_on_the_cursor() {
+        // `ItemSlot.cs:2059-2088`: the Mining Helmet 88 costs its 40000
+        // store value at mood 1; the unit rides `Main.mouseItem`, NOT the
+        // inventory grid; the sellback memo records the purchase.
+        let mut app = shop_app();
+        assert_eq!(app.shop_stock[0].item, 88);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert!(app.inventory.iter().all(|s| s.count == 0), "no grid deposit");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 1);
+        // A second unit stacks on the cursor and the memo.
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.mouse_item.count, 2);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 2);
+        // The plain stock row never depletes (`:2090` gates on buyOnce).
+        assert_eq!(app.shop_stock[0].stack, 1);
+    }
+
+    #[test]
+    fn the_short_purse_refuses_the_buy() {
+        // `Player.BuyItem`'s gate (`Player.cs:35411-35414`): nothing moves.
+        let mut app = shop_app();
+        app.coins = 39_999;
+        assert!(!app.buy_shop_item(0));
+        assert_eq!(app.coins, 39_999);
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_happiness_and_discount_ride_the_buy_charge() {
+        // `Player.cs:35387` — the mood multiplies the buy; `:35373` — the
+        // Discount Card truncates ×0.8 first.
+        let mut app = shop_app();
+        app.shop_mood = 0.75;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 30000);
+        let mut app = shop_app();
+        app.discount_available = true;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 32000);
+    }
+
+    #[test]
+    fn the_buy_once_row_depletes_and_turns_to_air() {
+        // `ItemSlot.cs:2090-2093`: a buyOnce row loses one unit per buy and
+        // `SetDefaults(0)` at zero; the memo never records it (`:2084`).
+        let mut app = shop_app();
+        app.shop_stock.push(crate::shop::ShopEntry {
+            item: 9,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: true,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 2,
+        });
+        let slot = app.shop_stock.len() - 1;
+        assert!(app.buy_shop_item(slot));
+        assert_eq!(app.shop_stock[slot].stack, 1);
+        assert_eq!(app.shop_sellback.get_amount(9, 0), 0, "no memo on buyOnce");
+        assert!(app.buy_shop_item(slot));
+        assert_eq!(app.shop_stock[slot].item, 0, "the depleted row is air");
+        assert_eq!(app.shop_stock[slot].stack, 0);
+        assert!(!app.buy_shop_item(slot), "an air row sells nothing");
+    }
+
+    #[test]
+    fn the_sell_pays_the_purse_at_a_fifth() {
+        // `Player.cs:35184-35190`: the Torch 8 (value 50) sells 50/5 = 10
+        // per unit × the stack; a value-0 item refuses.
+        let mut app = shop_app();
+        let payout = app.sell_item(&held(8, 7));
+        assert_eq!(payout, 70);
+        assert_eq!(app.coins, 1_000_000 + 70);
+        // The value-0 refusal (`:35170-35174`) pays nothing.
+        let before = app.coins;
+        assert_eq!(app.sell_item(&held(9, 5)), 0);
+        assert_eq!(app.coins, before);
+    }
+
+    #[test]
+    fn the_sellback_refund_pays_the_buy_price_back() {
+        // The round trip: buy 3 helmets (40000 each), sell all 3 — the
+        // memo refunds every unit at its buy price (`Player.cs:35191-35195`),
+        // so the purse returns to its start and the shop gains NO row
+        // (`Chest.cs:672-676`).
+        let mut app = shop_app();
+        for _ in 0..3 {
+            assert!(app.buy_shop_item(0));
+        }
+        assert_eq!(app.coins, 1_000_000 - 120000);
+        let stock_len = app.shop_stock.len();
+        let item = app.mouse_item;
+        let payout = app.sell_item(&item);
+        assert_eq!(payout, 120000, "3 × the 40000 buy price");
+        assert_eq!(app.coins, 1_000_000);
+        crate::shop::add_item_to_shop(&mut app.shop_stock, &mut app.shop_sellback, &item);
+        assert_eq!(app.shop_stock.len(), stock_len, "bought goods never re-stock");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_sell_prices_the_prefixed_instance() {
+        // `Item.cs:614-615`'s ×value²: the Large Mining Helmet (prefix 1)
+        // is worth 50176, selling 10035 (`shop.rs`'s seed vector).
+        let mut app = shop_app();
+        let item = ItemSlot {
+            prefix: 1,
+            ..held(88, 1)
+        };
+        assert_eq!(app.sell_item(&item), 10035);
+    }
+
+    #[test]
+    fn the_close_clears_the_stock_and_the_memo() {
+        // `Main.UpdateOldNPCShop` (`Main.cs:18204-18211`): the index change
+        // clears the sellback helper; `close_shop` is the port's index-0.
+        let mut app = shop_app();
+        assert!(app.buy_shop_item(0));
+        assert!(app.shop_sellback.get_amount(88, 0) > 0);
+        app.close_shop();
+        assert!(app.shop_npc.is_none());
+        assert!(app.shop_stock.is_empty());
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+        assert_eq!(app.shop_mood, 1.0);
+    }
+
+    #[test]
+    fn the_inventory_close_closes_the_shop() {
+        // `Main.cs:41784-41787`: `npcShop > 0 && !playerInventory` →
+        // `SetNPCShopIndex(0)`.
+        let mut app = shop_app();
+        app.update_shop_close();
+        assert!(app.shop_npc.is_some(), "the open inventory keeps the shop");
+        app.inventory_open = false;
+        app.update_shop_close();
+        assert!(app.shop_npc.is_none());
+        assert!(app.shop_stock.is_empty());
     }
 }
