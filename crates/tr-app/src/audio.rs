@@ -167,6 +167,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the
     // `Sounds/NPC_Killed_*.xnb` assets exist; the bank-gap close.
+    // W4-d35 (A): the 73/74/75/77/78 hit/death cues (the Sounds/NPC_*.xnb
+    // assets ship; the S1-E-21 wave-C bank-gap close).
+    ("NPC_Hit_5", 3),
+    ("NPC_Killed_7", 4),
     ("NPC_Killed_33", 4),
     ("NPC_Killed_39", 4),
     ("NPC_Killed_45", 4),

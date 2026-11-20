@@ -585,6 +585,15 @@ impl NpcKind {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            // W4-d35 (A): the 73/74/75/77/78 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::GoblinScout => 429,
+            NpcKind::Bird => 430,
+            NpcKind::Pixie => 431,
+            NpcKind::ArmoredSkeleton => 432,
+            NpcKind::Mummy => 433,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -915,6 +924,11 @@ impl NpcKind {
             225 => NpcKind::WyvernBody,
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
+            429 => NpcKind::GoblinScout,
+            430 => NpcKind::Bird,
+            431 => NpcKind::Pixie,
+            432 => NpcKind::ArmoredSkeleton,
+            433 => NpcKind::Mummy,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1796,6 +1810,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (A): the 73/74/75/77/78 HitSound rows.
+            NpcKind::GoblinScout => "NPC_Hit_1",
+            NpcKind::Bird => "NPC_Hit_1",
+            NpcKind::Pixie => "NPC_Hit_5",
+            NpcKind::ArmoredSkeleton => "NPC_Hit_2",
+            NpcKind::Mummy => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2120,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (A): the 73/74/75/77/78 DeathSound rows.
+            NpcKind::GoblinScout => "NPC_Killed_1",
+            NpcKind::Bird => "NPC_Killed_1",
+            NpcKind::Pixie => "NPC_Killed_7",
+            NpcKind::ArmoredSkeleton => "NPC_Killed_2",
+            NpcKind::Mummy => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2199,6 +2225,8 @@ impl NpcKind {
             // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            // W4-d35 (A): the 75 noGravity flyers (kb>0).
+            NpcKind::Pixie => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2450,6 +2478,14 @@ impl NpcKind {
             // Spirit); 72 - :13888 (the ForceBubble).
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
+            // aiStyle 3 - W4-d35 (A; NPC.cs :9732, :9786, :9799).
+            NpcKind::GoblinScout
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => 3,
+            // aiStyle 22 - W4-d35 (A; NPC.cs :9772).
+            NpcKind::Pixie => 22,
+            // aiStyle 24 - W4-d35 (A; NPC.cs :9747).
+            NpcKind::Bird => 24,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -2980,6 +3016,12 @@ impl NpcKind {
             // 384 18x40 (`:13885`/`:13887`).
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
+            // W4-d35 (A): the 73/74/75/77/78 SetDefaults boxes.
+            NpcKind::GoblinScout => (18.0, 40.0),
+            NpcKind::Bird => (14.0, 14.0),
+            NpcKind::Pixie => (20.0, 20.0),
+            NpcKind::ArmoredSkeleton => (18.0, 40.0),
+            NpcKind::Mummy => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3053,6 +3095,12 @@ impl NpcKind {
             // `NPC.type` ids (`NPCID.cs:10821`/`:11177`/`:11253`/`:11445`).
             // The BlazingWheel's protocol id is port-local 353, so its
             // C#-type consumers (the AI arms' type gates) read 72 here.
+            // W4-d35 (A): the 73/74/75/77/78 vanilla NPC.type rows.
+            NpcKind::GoblinScout => 73,
+            NpcKind::Bird => 74,
+            NpcKind::Pixie => 75,
+            NpcKind::ArmoredSkeleton => 77,
+            NpcKind::Mummy => 78,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3621,6 +3669,12 @@ impl NpcKind {
             // 300 (`:12228`), 288 200 (`:12745`), 384 1000 (`:13884`).
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
+            // W4-d35 (A): the 73/74/75/77/78 lifeMax rows.
+            NpcKind::GoblinScout => 80,
+            NpcKind::Bird => 5,
+            NpcKind::Pixie => 150,
+            NpcKind::ArmoredSkeleton => 260,
+            NpcKind::Mummy => 130,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -3985,6 +4039,12 @@ impl NpcKind {
             // head's `damage = 0` (`:8563`, the branch writes none).
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
+            // W4-d35 (A): the 73/74/75/77/78 damage rows.
+            NpcKind::GoblinScout => 20,
+            NpcKind::Bird => 0,
+            NpcKind::Pixie => 55,
+            NpcKind::ArmoredSkeleton => 40,
+            NpcKind::Mummy => 50,
             NpcKind::DungeonSpirit => 70,
         }
     }

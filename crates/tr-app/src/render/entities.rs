@@ -3167,6 +3167,15 @@ pub(crate) fn draw_npcs(
             NpcKind::AngryNimbus => {
                 pumpkin_moon_draw(assets.npc_sheet(250), npc_rows(250), n, w, h)
             }
+            // W4-d35 (A): the 73/74/75/77/78 draw arms. **Sheet deferral**:
+            // NPC_73/74/75/77/78 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::GoblinScout => humanoid_draw(assets.npc_sheet(73), 16, n, w, h),
+            NpcKind::Bird => generic_anchor(assets.npc_sheet(74), 5, n, w, h),
+            NpcKind::Pixie => generic_anchor(assets.npc_sheet(75), 4, n, w, h),
+            NpcKind::ArmoredSkeleton => humanoid_draw(assets.npc_sheet(77), 15, n, w, h),
+            NpcKind::Mummy => humanoid_draw(assets.npc_sheet(78), 16, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }

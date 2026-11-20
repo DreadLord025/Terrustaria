@@ -1594,6 +1594,12 @@ fn portrait_data(
         // `SetDefaults` box: 489 the 18x40 humanoid box (`NPC.cs:14607-
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d35 (A): the 73/74/75/77/78 portraits rest the SetDefaults box.
+        (NpcKind::GoblinScout, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Bird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::Pixie, _) => (sheet_i, 20.0, 20.0, 20.0, white),
+        (NpcKind::ArmoredSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Mummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

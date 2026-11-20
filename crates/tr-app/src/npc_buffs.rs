@@ -484,6 +484,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d35 (A): the 73/74/75/77/78 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::GoblinScout => &[],
+        NpcKind::Bird => &[31],
+        NpcKind::Pixie => &[],
+        NpcKind::ArmoredSkeleton => &[20],
+        NpcKind::Mummy => &[],
     }
 }
 

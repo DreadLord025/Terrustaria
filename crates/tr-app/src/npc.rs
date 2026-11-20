@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.GoblinScout` (73) - W4-d35 data wave (`NPC.cs:9732-9746`):
+    /// 18x40, aiStyle 3, dmg 20, def 6, 80 HP,
+    /// kb 0.7, value 200. UNWIRED (data-only; the AI lands with its wave).
+    GoblinScout,
+    /// `NPCID.Bird` (74) - W4-d35 data wave (`NPC.cs:9747-9771`):
+    /// 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
+    /// kb 0.8, value 0; catchItem 2015. UNWIRED (data-only; the AI lands with its wave).
+    Bird,
+    /// `NPCID.Pixie` (75) - W4-d35 data wave (`NPC.cs:9772-9785`):
+    /// 20x20, aiStyle 22, dmg 55, def 20, 150 HP,
+    /// kb 0.6, value 350, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    Pixie,
+    /// `NPCID.ArmoredSkeleton` (77) - W4-d35 data wave (`NPC.cs:9786-9798`):
+    /// 18x40, aiStyle 3, dmg 40, def 28, 260 HP,
+    /// kb 0.4, value 400. UNWIRED (data-only; the AI lands with its wave).
+    ArmoredSkeleton,
+    /// `NPCID.Mummy` (78) - W4-d35 data wave (`NPC.cs:9799-9811`):
+    /// 18x40, aiStyle 3, dmg 50, def 16, 130 HP,
+    /// kb 0.6, value 600. UNWIRED (data-only; the AI lands with its wave).
+    Mummy,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2952,6 +2972,10 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
+                .or_else(|| match kind {
+                    NpcKind::GoblinScout => Some(0.95),
+                    _ => None,
+                })
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -3528,6 +3552,13 @@ impl Npc {
             // (`:8533`) — the stock `_ => 0.4` below never sees it.
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
+            // W4-d35 (A): the 73/74/75/77/78 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::GoblinScout => 0.7,
+            NpcKind::Bird => 0.8,
+            NpcKind::Pixie => 0.6,
+            NpcKind::ArmoredSkeleton => 0.4,
+            NpcKind::Mummy => 0.6,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3908,6 +3939,12 @@ impl Npc {
             // (`:12227`), 288 30 (`:12744`), 384 20 (`:13886`).
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
+            // W4-d35 (A): the 73/74/75/77/78 defense rows.
+            NpcKind::GoblinScout => 6,
+            NpcKind::Bird => 0,
+            NpcKind::Pixie => 20,
+            NpcKind::ArmoredSkeleton => 28,
+            NpcKind::Mummy => 16,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4280,6 +4317,12 @@ impl Npc {
             // writes none).
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
+            // W4-d35 (A): the 73/74/75/77/78 value rows (copper).
+            NpcKind::GoblinScout => 200.0,
+            NpcKind::Bird => 0.0,
+            NpcKind::Pixie => 350.0,
+            NpcKind::ArmoredSkeleton => 400.0,
+            NpcKind::Mummy => 600.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6286,6 +6329,13 @@ impl Npc {
             // routes to the same machines for direct-kind callers).
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
+            // W4-d35 (A): the 73/74/75/77/78 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::GoblinScout
+            | NpcKind::Bird
+            | NpcKind::Pixie
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9040,6 +9090,13 @@ impl Npc {
                     }
                 }
             }
+            // W4-d35 (A): the 73/74/75/77/78 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::GoblinScout
+            | NpcKind::Bird
+            | NpcKind::Pixie
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => {}
         }
     }
 
@@ -18600,6 +18657,12 @@ impl Npc {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            // W4-d35 (A): the port-local band (to_u16's ids).
+            NpcKind::GoblinScout => 429,
+            NpcKind::Bird => 430,
+            NpcKind::Pixie => 431,
+            NpcKind::ArmoredSkeleton => 432,
+            NpcKind::Mummy => 433,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23669,7 +23732,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23947,6 +24010,12 @@ mod tests {
         NpcKind::WyvernBody,
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
+        // W4-d35 (A): the 73/74/75/77/78 data-wave kinds.
+        NpcKind::GoblinScout,
+        NpcKind::Bird,
+        NpcKind::Pixie,
+        NpcKind::ArmoredSkeleton,
+        NpcKind::Mummy,
         NpcKind::WyvernTail,
     ];
 
@@ -27559,7 +27628,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31201,6 +31270,12 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody, 6),
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
+        // W4-d35 (A).
+        (NpcKind::GoblinScout, 3),
+        (NpcKind::Bird, 24),
+        (NpcKind::Pixie, 22),
+        (NpcKind::ArmoredSkeleton, 3),
+        (NpcKind::Mummy, 3),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -33544,5 +33619,116 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+
+#[cfg(test)]
+mod w4_d35_a_tests {
+    //! W4-d35 batch A (73/74/75/77/78) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:9732-9746`, `NPC.cs:9747-9771`, `NPC.cs:9772-9785`, `NPC.cs:9786-9798`, `NPC.cs:9799-9811`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_a_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::GoblinScout, 73u16, 3u8, 18.0, 40.0, 20, 6, 80, 0.7f32, 200.0f32, 0.95f32, 0u8),
+            (NpcKind::Bird, 74u16, 24u8, 14.0, 14.0, 0, 0, 5, 0.8f32, 0.0f32, 1.0f32, 0u8),
+            (NpcKind::Pixie, 75u16, 22u8, 20.0, 20.0, 55, 20, 150, 0.6f32, 350.0f32, 1.0f32, 0u8),
+            (NpcKind::ArmoredSkeleton, 77u16, 3u8, 18.0, 40.0, 40, 28, 260, 0.4f32, 400.0f32, 1.0f32, 0u8),
+            (NpcKind::Mummy, 78u16, 3u8, 18.0, 40.0, 50, 16, 130, 0.6f32, 600.0f32, 1.0f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::GoblinScout.hit_sound(), Some("NPC_Hit_1"), "GoblinScout hit");
+        assert_eq!(NpcKind::GoblinScout.death_sound(), Some("NPC_Killed_1"), "GoblinScout death");
+        assert_eq!(NpcKind::Bird.hit_sound(), Some("NPC_Hit_1"), "Bird hit");
+        assert_eq!(NpcKind::Bird.death_sound(), Some("NPC_Killed_1"), "Bird death");
+        assert_eq!(NpcKind::Pixie.hit_sound(), Some("NPC_Hit_5"), "Pixie hit");
+        assert_eq!(NpcKind::Pixie.death_sound(), Some("NPC_Killed_7"), "Pixie death");
+        assert_eq!(NpcKind::ArmoredSkeleton.hit_sound(), Some("NPC_Hit_2"), "ArmoredSkeleton hit");
+        assert_eq!(NpcKind::ArmoredSkeleton.death_sound(), Some("NPC_Killed_2"), "ArmoredSkeleton death");
+        assert_eq!(NpcKind::Mummy.hit_sound(), Some("NPC_Hit_1"), "Mummy hit");
+        assert_eq!(NpcKind::Mummy.death_sound(), Some("NPC_Killed_6"), "Mummy death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::GoblinScout.to_u16(), 429, "GoblinScout proto");
+        assert_eq!(NpcKind::from_u16(429), Some(NpcKind::GoblinScout), "GoblinScout decode");
+        assert_eq!(NpcKind::Bird.to_u16(), 430, "Bird proto");
+        assert_eq!(NpcKind::from_u16(430), Some(NpcKind::Bird), "Bird decode");
+        assert_eq!(NpcKind::Pixie.to_u16(), 431, "Pixie proto");
+        assert_eq!(NpcKind::from_u16(431), Some(NpcKind::Pixie), "Pixie decode");
+        assert_eq!(NpcKind::ArmoredSkeleton.to_u16(), 432, "ArmoredSkeleton proto");
+        assert_eq!(NpcKind::from_u16(432), Some(NpcKind::ArmoredSkeleton), "ArmoredSkeleton decode");
+        assert_eq!(NpcKind::Mummy.to_u16(), 433, "Mummy proto");
+        assert_eq!(NpcKind::from_u16(433), Some(NpcKind::Mummy), "Mummy decode");
+        // flags
+        assert_eq!(NpcKind::GoblinScout.behind_tiles(), false, "GoblinScout behindTiles");
+        assert_eq!(NpcKind::GoblinScout.no_gravity(), false, "GoblinScout noGravity");
+        assert_eq!(NpcKind::Bird.behind_tiles(), false, "Bird behindTiles");
+        assert_eq!(NpcKind::Bird.no_gravity(), false, "Bird noGravity");
+        assert_eq!(NpcKind::Pixie.behind_tiles(), false, "Pixie behindTiles");
+        assert_eq!(NpcKind::Pixie.no_gravity(), true, "Pixie noGravity");
+        assert_eq!(NpcKind::ArmoredSkeleton.behind_tiles(), false, "ArmoredSkeleton behindTiles");
+        assert_eq!(NpcKind::ArmoredSkeleton.no_gravity(), false, "ArmoredSkeleton noGravity");
+        assert_eq!(NpcKind::Mummy.behind_tiles(), false, "Mummy behindTiles");
+        assert_eq!(NpcKind::Mummy.no_gravity(), false, "Mummy noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::GoblinScout);
+        assert!(b.buff_immune.iter().all(|&i| !i), "GoblinScout null entry");
+        let b = NpcBuffs::for_kind(NpcKind::Bird);
+        assert!(b.buff_immune[31], "Bird immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::Pixie);
+        assert!(b.buff_immune.iter().all(|&i| !i), "Pixie null entry");
+        let b = NpcBuffs::for_kind(NpcKind::ArmoredSkeleton);
+        assert!(b.buff_immune[20], "ArmoredSkeleton immune 20");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "ArmoredSkeleton derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::Mummy);
+        assert!(b.buff_immune.iter().all(|&i| !i), "Mummy null entry");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::GoblinScout, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 73, "GoblinScout net");
+        assert_eq!(e.credit_id, "GoblinScout", "GoblinScout credit");
+        assert_eq!(e.name, "Goblin Scout", "GoblinScout name");
+        assert_eq!(NpcKind::GoblinScout.cs_id(), 73, "GoblinScout cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Bird, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 74, "Bird net");
+        assert_eq!(e.credit_id, "Bird", "Bird credit");
+        assert_eq!(e.name, "Bird", "Bird name");
+        assert_eq!(NpcKind::Bird.cs_id(), 74, "Bird cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Pixie, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 75, "Pixie net");
+        assert_eq!(e.credit_id, "Pixie", "Pixie credit");
+        assert_eq!(e.name, "Pixie", "Pixie name");
+        assert_eq!(NpcKind::Pixie.cs_id(), 75, "Pixie cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::ArmoredSkeleton, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 77, "ArmoredSkeleton net");
+        assert_eq!(e.credit_id, "ArmoredSkeleton", "ArmoredSkeleton credit");
+        assert_eq!(e.name, "Armored Skeleton", "ArmoredSkeleton name");
+        assert_eq!(NpcKind::ArmoredSkeleton.cs_id(), 77, "ArmoredSkeleton cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Mummy, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 78, "Mummy net");
+        assert_eq!(e.credit_id, "Mummy", "Mummy credit");
+        assert_eq!(e.name, "Mummy", "Mummy name");
+        assert_eq!(NpcKind::Mummy.cs_id(), 78, "Mummy cs_id");
     }
 }

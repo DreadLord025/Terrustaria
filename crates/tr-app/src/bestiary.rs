@@ -2171,6 +2171,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d35 (A): the 73/74/75/77/78 data-wave entries.
+    BestiaryEntryDef {
+        credit_id: "GoblinScout",
+        net_id: 73,
+        kind: NpcKind::GoblinScout,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Scout",
+    },
+    BestiaryEntryDef {
+        credit_id: "Bird",
+        net_id: 74,
+        kind: NpcKind::Bird,
+        variant: None,
+        quick_unlock: false,
+        name: "Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pixie",
+        net_id: 75,
+        kind: NpcKind::Pixie,
+        variant: None,
+        quick_unlock: false,
+        name: "Pixie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmoredSkeleton",
+        net_id: 77,
+        kind: NpcKind::ArmoredSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Armored Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        kind: NpcKind::Mummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
