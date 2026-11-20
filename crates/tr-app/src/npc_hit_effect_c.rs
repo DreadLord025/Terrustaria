@@ -39,6 +39,8 @@
 //! | 115-120 | `:82406-82413` | the 576/577 DD2 Ogre FLIPPED death (6 gores, Next(5) type gate + π rotations) |
 //! | 121-126 | `:82417-82422` | the 576/577 DD2 Ogre NON-flipped death (6 gores, Next(5) type gate) |
 //! | 127-132 | `:82442-82447` | the 564/565 DD2 Dark Mage death: the first six gores (base 1009 ladder) |
+//! | 133-137 | `:82448-82452` | the 564/565 DD2 Dark Mage death: the +6/+10/+7/+8/+9 tail |
+//! | 138-141 | `:82470-82473` | the 578 DD2 Lightning Bug death (4 gores 999/998/998/997) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -397,8 +399,10 @@ fn ogre_death(
 
 /// The 564/565 DD2 Dark Mage death (`NPC.cs:82437-82452`, sites 127-137):
 /// the 20-dust type-5 burst, then 11 gores at base `num74 = 1009`
-/// (`:82441`). This commit ports the first six gores (sites 127-132,
-/// `:82442-82447`); the +6/+10/+7/+8/+9 tail lands with the next batch.
+/// (`:82441`). The type order is `base/+1/+2/+3/+4/+5/+6/+10/+7/+8/+9`
+/// (the +10 = 1019 gore precedes the +7/+8/+9 trio, `:82449-82452`) at the
+/// Y ladder +0/+15/+15/+15/+35/+35/+35/+35/+25/+25/+25, the +4 gore shifted
+/// -20 in X (`:82446`).
 fn dark_mage_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -420,6 +424,33 @@ fn dark_mage_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 15.0), vel, num74 + 3, s); // :82445
     gore.new_gore(rng, world, Vec2::new(pos.x - 20.0, pos.y + 35.0), vel, num74 + 4, s); // :82446
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 35.0), vel, num74 + 5, s); // :82447
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 35.0), vel, num74 + 6, s); // :82448
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 35.0), vel, num74 + 10, s); // :82449
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 25.0), vel, num74 + 7, s); // :82450
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 25.0), vel, num74 + 8, s); // :82451
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 25.0), vel, num74 + 9, s); // :82452
+}
+
+/// The 578 DD2 Lightning Bug death (`NPC.cs:82466-82473`, sites 138-141):
+/// the 20-dust type-5 burst, then the 4 gores 999/998/998/997 at the
+/// +0/+10/+10/+10 Y ladder (the 999 head at position, the rest at +10).
+fn lightning_bug_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 999, s); // :82470
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 998, s); // :82471
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 998, s); // :82472
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 997, s); // :82473
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -481,10 +512,14 @@ pub fn hit_effect_c(
             ogre_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
         }
     }
-    // `:82426-82454` — the 564/565 DD2 Dark Mage arm (sites 127-132 here;
-    // the +6/+10/+7/+8/+9 tail lands with the next batch).
+    // `:82426-82454` — the 564/565 DD2 Dark Mage arm (sites 127-137, all
+    // eleven gores).
     if (npc_type == 564 || npc_type == 565) && npc.hp <= 0 {
         dark_mage_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82455-82475` — the 578 DD2 Lightning Bug arm (sites 138-141).
+    if npc_type == 578 && npc.hp <= 0 {
+        lightning_bug_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -809,24 +844,46 @@ mod tests {
         assert_eq!(gore.slot(5).position, Vec2::new(132.0, 190.0));
     }
 
-    /// `NPC.cs:82442-82447` — the Dark Mage death's first six gores: base
-    /// 1009, the +1/+2/+3 trio at +15 Y, the +4 gore shifted -20 in X at
-    /// +35 Y, and the +5 gore at +35 Y.
+    /// `NPC.cs:82442-82452` — the Dark Mage death: 11 gores at base 1009,
+    /// the +10 (1019) gore precedes the +7/+8/+9 trio, the +4 gore shifted
+    /// -20 in X, and the Y ladder +0/+15/+35/+25.
     #[test]
-    fn w4_f10_the_dark_mage_death_spawns_the_first_six_gores() {
+    fn w4_f10_the_dark_mage_death_spawns_the_eleven_gores() {
         let w = air();
         let n = boss(100.0, 100.0, 48.0, 64.0);
         let mut gore = GorePool::new();
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(41);
         dark_mage_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
-        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![1009, 1010, 1011, 1012, 1013, 1014]);
-        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
-        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 115.0));
+        let types: Vec<i32> = gore.slots()[..11].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![1009, 1010, 1011, 1012, 1013, 1014, 1015, 1019, 1016, 1017, 1018]
+        );
         // The +4 gore (index 4) is shifted -20 in X at +35 Y.
         assert_eq!(gore.slot(4).position, Vec2::new(80.0, 135.0));
-        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 135.0));
+        // The +10 gore (index 7) sits at +35 Y with no X shift.
+        assert_eq!(gore.slot(7).position, Vec2::new(100.0, 135.0));
+        // The +7/+8/+9 trio (indices 8-10) sits at +25 Y.
+        assert_eq!(gore.slot(8).position, Vec2::new(100.0, 125.0));
+        assert_eq!(gore.slot(10).position, Vec2::new(100.0, 125.0));
+    }
+
+    /// `NPC.cs:82470-82473` — the Lightning Bug death: the 999 head at
+    /// position, then 998/998/997 at +10 Y.
+    #[test]
+    fn w4_f10_the_lightning_bug_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 34.0, 34.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        lightning_bug_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![999, 998, 998, 997]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 110.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 110.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
