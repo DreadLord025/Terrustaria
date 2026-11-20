@@ -58,6 +58,29 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     // :24174 — LunarTowerStardust, 4 ghosts (64,64,64,0)*Opacity,
     // offset 4+|light-0.5|*4 (already drawn: entities.rs glow_stardust).
     NpcGlowRecord { npc: 493, masks: &[132], line: 24174 },
+    // :24184 — LunarTowerNebula, same ghost form (entities.rs glow_nebula).
+    NpcGlowRecord { npc: 507, masks: &[143], line: 24184 },
+    // :24194 — LunarTowerVortex (entities.rs glow_vortex).
+    NpcGlowRecord { npc: 422, masks: &[149], line: 24194 },
+    // :24204 — LunarTowerSolar, offset 2+|light-0.5|*9 + UnitX*2
+    // (entities.rs glow_solar).
+    NpcGlowRecord { npc: 517, masks: &[162], line: 24204 },
+    // :24306/:24312 — StardustWormHead 402: the oldPos trail alternates
+    // GlowMask[133]/[134] per copy parity (:24295 Npc[403]/[404] twin),
+    // the head draws [135]; colour (255,255,255,0)*(1-num339*i/2)*num343.
+    NpcGlowRecord { npc: 402, masks: &[133, 134, 135], line: 24306 },
+    // :24601 — MartianSaucer, (200,200,200,0) steady.
+    NpcGlowRecord { npc: 392, masks: &[48], line: 24601 },
+    // :24605 — MartianSaucerCore (the type==395 arm), same colour.
+    NpcGlowRecord { npc: 395, masks: &[49], line: 24605 },
+    // :24609 — MartianSaucerCannon (type==394), same colour.
+    NpcGlowRecord { npc: 394, masks: &[50], line: 24609 },
+    // :25070/:25074 — SolarDrakomireRider 416: (255-alpha) grey a=255-alpha
+    // + 4 ghosts (64,64,64,0) at rider-velocity rotations (the 415 mount
+    // sync block :25051-25063 feeds position9/spinningpoint6).
+    NpcGlowRecord { npc: 416, masks: &[156], line: 25070 },
+    // :25103 — MartianProbe 399 body, (127-alpha/2) grey a0.
+    NpcGlowRecord { npc: 399, masks: &[100, 101], line: 25103 },
 ];
 
 #[cfg(test)]
