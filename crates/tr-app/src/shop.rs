@@ -101,6 +101,11 @@ pub struct ShopFlags {
     /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`)
     /// — the Party Bundle 5643 (`Chest.cs:1435`).
     pub party_is_up: bool,
+    /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver` (`WorldGen.cs:3289`)
+    /// — the world's rolled silver-tier ore id (9 = Silver, 168 = Tungsten;
+    /// `WorldGen.cs:11290`); the Arms Dealer's bullet split compares it to
+    /// 168 (`Chest.cs:1489`). Fed from `World.ore_tiers.silver`.
+    pub silver_ore_tier: i32,
 }
 
 impl Default for ShopFlags {
@@ -145,6 +150,8 @@ impl Default for ShopFlags {
             not_the_bees: false,
             happy_windy_day: false,
             party_is_up: false,
+            // `SavedOreTiers::new`'s static default (`WorldGen.cs:3303`).
+            silver_ore_tier: 9,
         }
     }
 }
@@ -190,6 +197,9 @@ impl ShopFlags {
             // W4-d122 shop 1: `Main.notTheBeesWorld` rides the seed options
             // (`WorldGen.cs:11116`) — the port's persisted `World.seeds` bit.
             not_the_bees: world.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+            // W4-d122 shop 2: the rolled silver tier (`WorldGen.cs:11268`/
+            // `:11290`) — the port's persisted `ore_tiers`.
+            silver_ore_tier: world.ore_tiers.silver,
             ..Self::default()
         }
     }
@@ -365,6 +375,13 @@ pub enum StockWhen {
     /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`Chest.cs:1435`) —
     /// the Party Bundle 5643.
     PartyIsUp,
+    /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver == 168`
+    /// (`Chest.cs:1489`) — the Tungsten Bullet 4915 over the Silver
+    /// Bullet 278 split inside the blood-moon/hardmode gate.
+    SilverIsTungsten,
+    /// W4-d122 shop 2: `NPC.downedBoss2` ALONE (`Chest.cs:1500`'s first
+    /// conjunct — the Minishark gate reads it with `!dayTime`).
+    DownedBoss2,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -419,20 +436,38 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:1477-1481`: `HasItem(3107)` — the Combat Wrench 3108.
             row(3108, StockWhen::PlayerHasItem(3107)),
         ],
-        // The Arms Dealer (`Chest.cs:1484-1567`): the Musket Balls 97, the
-        // Flintlock 95?/98 rows always; the PlayerHasItem rows; the
-        // silver-tier flip (4915/278), the downedBoss2/night Minishark-ish
-        // 47, the night 324, the hardmode 534/1432/2177 and the graveyard
-        // 4703 sit constants-off.
+        // The Arms Dealer (`Chest.cs:1484-1567`, the registry
+        // `NPCInteractions.Shop(19, 2)`, `NPCInteractions.cs:489` —
+        // `NPCID.ArmsDealer = 19`): the silver/tungsten bullet split, the
+        // Minishark night-or-hardmode gate, the graveyard Quad-Barrel and
+        // the hardmode shotgun trio — every gate verbatim.
         2 => vec![
             row(97, StockWhen::Always),
+            // `:1487-1499`: `bloodMoon || hardMode` → `Silver == 168` ?
+            // the Tungsten Bullet 4915 : the Silver Bullet 278.
+            row(4915, ARMS_BULLET_TUNGSTEN),
+            row(278, ARMS_BULLET_SILVER),
+            // `:1500-1504`: `(downedBoss2 && !dayTime) || hardMode`.
+            row(47, ARMS_MINISHARK),
             row(95, StockWhen::Always),
             row(98, StockWhen::Always),
+            // `:1509-1512`: `ZoneGraveyard && NPC.downedBoss3`.
+            row(4703, ARMS_GRAVEYARD_QUAD),
+            row(324, StockWhen::Night),     // `:1513-1517` the Handgun
+            row(534, StockWhen::HardMode),  // `:1518-1522` the Shotgun
+            row(1432, StockWhen::HardMode), // `:1523-1527` the Clockwork Assault Rifle
+            row(2177, StockWhen::HardMode), // `:1528-1532` the Illegal Gun Parts
+            // `:1533-1557`: the five HasItem rows in the C#'s num order.
             row(1261, StockWhen::PlayerHasItem(1258)),
             row(1836, StockWhen::PlayerHasItem(1835)),
             row(3108, StockWhen::PlayerHasItem(3107)),
             row(1783, StockWhen::PlayerHasItem(1782)),
             row(1785, StockWhen::PlayerHasItem(1784)),
+            // `:1558-1566`: `Main.halloween` — the undertaker outfit
+            // (constants-off, no season system).
+            row(1736, StockWhen::Halloween),
+            row(1737, StockWhen::Halloween),
+            row(1738, StockWhen::Halloween),
         ],
         // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
         // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
@@ -995,6 +1030,31 @@ const CYBORG_PORTAL_STATION: StockWhen = StockWhen::Any(&[
     StockWhen::PlayerHasItem(3384),
     StockWhen::PlayerHasItem(3664),
 ]);
+
+// — W4-d122: the Arms Dealer's compound gates (`Chest.cs:1484-1567`). —
+
+/// `Chest.cs:1487-1493`: `(bloodMoon || hardMode) && Silver == 168` —
+/// the Tungsten Bullet 4915.
+const ARMS_BULLET_TUNGSTEN: StockWhen = StockWhen::All(&[
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::HardMode]),
+    StockWhen::SilverIsTungsten,
+]);
+/// `:1494-1498`'s else arm — the Silver Bullet 278 (the SAME event gate,
+/// the NOT of the ore comparison).
+const ARMS_BULLET_SILVER: StockWhen = StockWhen::All(&[
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::HardMode]),
+    StockWhen::Not(&StockWhen::SilverIsTungsten),
+]);
+/// `Chest.cs:1500`: `(NPC.downedBoss2 && !Main.dayTime) || Main.hardMode`
+/// — the Minishark 47.
+const ARMS_MINISHARK: StockWhen = StockWhen::Any(&[
+    StockWhen::All(&[StockWhen::DownedBoss2, StockWhen::Night]),
+    StockWhen::HardMode,
+]);
+/// `Chest.cs:1509`: `ZoneGraveyard && NPC.downedBoss3` — the Quad-Barrel
+/// Shotgun 4703.
+const ARMS_GRAVEYARD_QUAD: StockWhen =
+    StockWhen::All(&[StockWhen::ZoneGraveyard, StockWhen::DownedBoss3]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -1717,6 +1777,9 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             // `Chest.cs:1422` verbatim (`Night` is `!dayTime` on the flags).
             StockWhen::DayHappyWindyDay => !flags.night && flags.happy_windy_day,
             StockWhen::PartyIsUp => flags.party_is_up,
+            // `Chest.cs:1489` verbatim — the rolled ore id comparison.
+            StockWhen::SilverIsTungsten => flags.silver_ore_tier == 168,
+            StockWhen::DownedBoss2 => flags.downed_boss2,
             // The combinators are handled above — unreachable here.
             StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
         },
@@ -2301,6 +2364,90 @@ mod tests {
         let d = resolve_stock(1, &day, &[930, 3107]);
         let i33 = d.iter().position(|v| *v == 33).unwrap();
         assert_eq!(d[i33 + 1], 4074);
+    }
+
+    /// W4-d122 shop 2 — the Arms Dealer (`Chest.cs:1484-1567`, the registry
+    /// `NPCInteractions.Shop(19, 2)`, `NPCInteractions.cs:489`): the
+    /// silver/tungsten bullet split under the event gate, the Minishark's
+    /// `(downedBoss2 && night) || hardMode` disjunction, the graveyard
+    /// Quad-Barrel conjunct and the hardmode trio — verbatim. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_arms_dealer_stock_splits_the_bullets_and_the_minishark() {
+        // Classic day: the three always rows only.
+        let base = resolve_stock(2, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![97, 95, 98]);
+        // `:1487`: the blood moon opens the Silver Bullet 278 (tier 9).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_stock(2, &bm, &[]), vec![97, 278, 95, 98]);
+        // The tungsten tier flips the split to 4915 (`:1489`).
+        let tungsten = ShopFlags {
+            silver_ore_tier: 168,
+            ..bm
+        };
+        assert_eq!(resolve_stock(2, &tungsten, &[]), vec![97, 4915, 95, 98]);
+        // Hardmode alone opens the same split PLUS the Minishark, the
+        // Handgun stays night-gated, the shotgun trio enters (`:1518-1532`).
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(2, &hm, &[]),
+            vec![97, 278, 47, 95, 98, 534, 1432, 2177]
+        );
+        // `:1500`: boss2 + NIGHT opens the Minishark without hardmode;
+        // boss2 by DAY does not.
+        let b2n = ShopFlags {
+            downed_boss2: true,
+            night: true,
+            ..Default::default()
+        };
+        let n = resolve_stock(2, &b2n, &[]);
+        assert_eq!(n, vec![97, 47, 95, 98, 324], "the night Handgun rides along");
+        let b2d = ShopFlags {
+            downed_boss2: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &b2d, &[]).contains(&47));
+        // `:1509`: the graveyard AND boss3 — neither alone opens 4703.
+        let grave_only = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &grave_only, &[]).contains(&4703));
+        let boss3_only = ShopFlags {
+            downed_boss3: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(2, &boss3_only, &[]).contains(&4703));
+        let quad = ShopFlags {
+            downed_boss3: true,
+            ..grave_only
+        };
+        let q = resolve_stock(2, &quad, &[]);
+        assert_eq!(q, vec![97, 95, 98, 4703], "the Quad-Barrel after the 98 row");
+        // The FULL pin: hardmode + night + blood moon + graveyard + boss3 +
+        // tungsten + every carried scan item.
+        let full = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            zone_graveyard: true,
+            downed_boss3: true,
+            silver_ore_tier: 168,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(2, &full, &[1258, 1835, 3107, 1782, 1784]),
+            vec![
+                97, 4915, 47, 95, 98, 4703, 324, 534, 1432, 2177, 1261, 1836, 3108, 1783, 1785
+            ],
+            "the exact num order (`:1485-1557`; the halloween trio stays off)"
+        );
     }
 
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —

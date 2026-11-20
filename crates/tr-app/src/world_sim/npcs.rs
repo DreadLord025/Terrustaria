@@ -993,6 +993,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
         happy_windy_day: app.wind.happy_windy_day,
         party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-d122 shop 2: the Arms Dealer's ore-tier split
+        // (`Chest.cs:1489`) — the world's rolled silver tier.
+        silver_ore_tier: app.world.ore_tiers.silver,
     };
     let inv_ids: Vec<u16> = app
         .inventory
