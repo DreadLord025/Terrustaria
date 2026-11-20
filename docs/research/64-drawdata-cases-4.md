@@ -1524,6 +1524,81 @@ Audit notes (R18):
   label-exact (612 itself is index 270, R19).
 - UNWIRED rationale as R16/R17. No R18 id has a second-switch row.
 
+### R19 — big-cage end + pufferfish + snail labels: 612, 632, 640, 643, 644, 645, 710, 285, 286 (9 ids, indices 270-278 — remainder complete)
+
+C# `TileDrawing.cs:5703-5791`. The pufferfish arm verbatim (:5746-5752):
+
+```csharp
+			case 710:
+			{
+				int num9 = Main.pufferfishCageFrame[bigAnimalCageFrame] / 33;
+				addFrX = 108 * num9;
+				addFrY = (Main.pufferfishCageFrame[bigAnimalCageFrame] - num9 * 33) * 54;
+				break;
+			}
+```
+
+The snail labels verbatim (:5785-5791):
+
+```csharp
+			case 285:
+				addFrY = Main.snailCageFrame[smallAnimalCageFrame2] * 36;
+				break;
+			case 286:
+			case 582:
+				addFrY = Main.snail2CageFrame[smallAnimalCageFrame2] * 36;
+				break;
+```
+
+| Id | C# inner arm | C# line | Rust arm (`cage_table`) | Verdict |
+| --- | --- | --- | --- | --- |
+| 612 | shares the squirrel arm (last label) | :5703 | `606..=612` :120 | PORTED-UNWIRED |
+| 632 | `case 632:` `case 640:` `case 643:` `case 644:` `case 645:` → `addFrY = Main.macawCageFrame[bigAnimalCageFrame] * 54;` | :5728-5734 | `632 \| 640 \| 643..=645 => (Macaw, 0, 54, BIG)` :128 | PORTED-UNWIRED |
+| 640 | shares the macaw arm | :5729 | :128 | PORTED-UNWIRED |
+| 643-645 | share the macaw arm | :5730-5732 | :128 | PORTED-UNWIRED |
+| 710 | pufferfish: `num9 = frame / 33; addFrX = 108*num9; addFrY = (frame − num9*33) * 54;` | :5746-5752 | `710 => (Pufferfish, …)` :132 + the split in `cage_draw_data` :191-196 | PORTED-UNWIRED |
+| 285 | `addFrY = Main.snailCageFrame[smallAnimalCageFrame2] * 36;` | :5785-5787 | `285 => (Snail, 0, 36, SMALL)` :134 | PORTED-UNWIRED |
+| 286 | `case 286:` `case 582:` → snail2 `*36` | :5788-5791 | `286 \| 582 => (Snail2, 0, 36, SMALL)` :135 | PORTED-UNWIRED |
+
+Audit notes (R19):
+- 710 is the only cage arm that rewrites addFrX: the frame value splits into
+  a 108-wide column block (`/33`) and a 54-tall row within it — the port's
+  special-case branch reproduces both statements with the same `num9`.
+- 285/286's shared group body (`tileTop = 2; Main.critterCage = true;` + the
+  SMALL probe) was quoted verbatim in d64 batch 2; 582's index falls in d64's
+  quarter and is NOT re-audited here.
+- UNWIRED rationale as R16-R18. No R19 id has a second-switch row.
+
+## Remainder summary (R1-R19, 279/279 ids)
+
+Every id in [0, 279) has a faithful case arm somewhere in the port union —
+**0 missing case arms**, confirming the headline census for the first three
+quarters. Verdict tally: 233 PORTED (static or delegated+wired), 43
+PORTED-UNWIRED (the 41 big-cage ids at indices 236-276 — 275-281/296/297/309/
+358/359/413/414/542/550/551/553/554/558/559/599-612/632/640/643-645/710 — plus
+snails 285/286, all in `drawdata_furniture::cage_table`, frozen row 0 until
+W4-d57 wires `furniture_post_pass`), 3 DEVIATION rows (711 glow record absent;
+441/468 temp-frame probe unscaffolded — both behaviour-neutral today).
+233 + 43 + 3 = 279.
+
+Draw-side residuals found by the remainder audit (none are missing cases):
+1. **711** — first-switch glow (`Tile[711]` sheet, framed rect, Transparent
+   colour, :4937-4938) produces no port record (R7). Seed for TILE-DRAW-2.
+2. **441/468** — first-switch `GetTemporaryFrame` Y rewrite has no probe arm
+   (R13); identical pixels while the registry is empty, needs the arm when
+   the registry lands.
+3. **564** — glow rect reads post-clear `addFrY` (0) where C# :6109 reads the
+   pre-clear `tileFrame*36` (R15); rect-only deviation on the unconsumed
+   record.
+4. **4** — the `solid_above` feed drops `WorldGen.SolidTile`'s
+   halfBrick/slope/inactive/null-true terms (R3; ANALYSIS:3954 Phase-4 row,
+   exact predicate already at `cases_a.rs:129`).
+5. **185/186** — `Main.tileShine2` writes unported (R10; sparkle lane).
+6. Known lanes re-confirmed, not re-litigated: all glow records unconsumed
+   (`tiles.rs:731` `_glow`, TILE-DRAW-2); `martianLight` fed 0;
+   `mouseTextColor` fed 255; 637 painted-sheet texture unbound; 184 col-220
+   disco colour unbound; cage animator (`AnimateTiles_CritterCages`) unported.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
