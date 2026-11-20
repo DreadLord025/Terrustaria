@@ -1095,6 +1095,16 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldCreation/PreviewSizeLarge",
         "UI/VK_Shift",
         "UI/VK_Backspace",
+        // W4-d84: the Workshop/ResourcePack cluster (`UIWorkshopHub.cs:122/136/
+        // 150/164`, `UIResourcePackSelectionMenu.cs:136/187`,
+        // `UIResourcePack.cs` icon fallback, `UIWorkshopPublish*ListItem.cs:78`).
+        "UI/Workshop/HubResourcepacks",
+        "UI/Workshop/HubWorlds",
+        "UI/Workshop/HubPublishResourcepacks",
+        "UI/Workshop/HubPublishWorlds",
+        "UI/Workshop/Publish",
+        "UI/TexturePackButtons",
+        "UI/DefaultResourcePackIcon",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_133",
@@ -2215,6 +2225,22 @@ pub struct Lookups {
     pub cc_small_panel_border: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CharInfo` 30x30 (`UICharacterCreation.cs:765`).
     pub cc_char_info: Option<tr_render::SheetRect>,
+    /// W4-d84: the four Workshop-hub button icons
+    /// (`UIWorkshopHub.cs:122/136/150/164`): HubWorlds (import),
+    /// HubResourcepacks (use), HubPublishWorlds, HubPublishResourcepacks —
+    /// the `MakeFancyButton` grid's order (top-left, top-right, bottom-left,
+    /// bottom-right).
+    pub workshop_hub_icons: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Workshop/Publish` (`UIIconTextButton`'s icon,
+    /// `UIWorkshopPublishResourcePackListItem.cs:78`).
+    pub workshop_publish_icon: Option<tr_render::SheetRect>,
+    /// `UI/TexturePackButtons` — the 2x2 toggle/order button frames
+    /// (`UIResourcePackSelectionMenu.cs:136-137`, `:187-188`).
+    pub texture_pack_buttons: Option<tr_render::SheetRect>,
+    /// `UI/DefaultResourcePackIcon` — the atlas fallback icon
+    /// (`ResourcePack.CreateIcon`, `IO/ResourcePack.cs:103-111`; the port
+    /// never decodes a pack's own icon — resource_pack.rs's deviation).
+    pub default_pack_icon: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/HairStyle_Hair` 30x30 (`UICharacterCreation.cs:760`).
     pub cc_hair_style: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/HairStyle_Arrow` 30x30 (`UICharacterCreation.cs:762`).
@@ -2713,6 +2739,16 @@ impl Lookups {
             cc_small_panel: atlas.sheet("UI/CharCreation/SmallPanel").copied(),
             cc_small_panel_border: atlas.sheet("UI/CharCreation/SmallPanelBorder").copied(),
             cc_char_info: atlas.sheet("UI/CharCreation/CharInfo").copied(),
+            workshop_hub_icons: [
+                "UI/Workshop/HubWorlds",
+                "UI/Workshop/HubResourcepacks",
+                "UI/Workshop/HubPublishWorlds",
+                "UI/Workshop/HubPublishResourcepacks",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            workshop_publish_icon: atlas.sheet("UI/Workshop/Publish").copied(),
+            texture_pack_buttons: atlas.sheet("UI/TexturePackButtons").copied(),
+            default_pack_icon: atlas.sheet("UI/DefaultResourcePackIcon").copied(),
             cc_hair_style: atlas.sheet("UI/CharCreation/HairStyle_Hair").copied(),
             cc_hair_arrow: atlas.sheet("UI/CharCreation/HairStyle_Arrow").copied(),
             cc_colors: [
