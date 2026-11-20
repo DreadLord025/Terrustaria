@@ -233,6 +233,168 @@ pub(crate) fn gastropod_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3])
 }
 
 // ---------------------------------------------------------------------
+// Site 11 — `:24862`, the aiStyle-22 arm's type-169 light (IceElemental,
+// `NPCID.cs:11015`). TWIN: no NpcKind yet.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:24859-24870`: `AddLight((int)((x + (float)(width/2)) / 16f),
+/// (int)((y + (float)(height/2)) / 16f), 0f, 0.6f, 0.75f)` inside the
+/// type-169 `netOffset` bracket (`:24861`/`:24870`) — INTEGER halves,
+/// quotient truncation; `pos` includes `netOffset`.
+pub(crate) fn ice_elemental_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        ((pos.x + int_half(w)) / 16.0) as i32,
+        ((pos.y + int_half(h)) / 16.0) as i32,
+        [0.0, 0.6, 0.75],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Sites 12/13/14 — `:25241`/`:25245`/`:25249`, the aiStyle-23 head chain
+// (83 CursedHammer / 179 CrimsonAxe / the else = 84 EnchantedSword,
+// `NPCID.cs:10843`/`:11035`/`:10845`). TWIN: none of the three kinds is
+// in the roster (`npc_lights.rs`'s module docs already park this chain
+// — this module carries the verbatim twins so the wiring wave has the
+// exact colours/anchors).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:25239-25250`: all three arms light the centre tile with the
+/// INTEGER-half quotient form `(int)((x + (float)(width/2)) / 16f)`;
+/// 83 → (0.2, 0.05, 0.3), 179 → (0.3, 0.15, 0.05), the else →
+/// (0.05, 0.2, 0.3). No `netOffset` bracket in this arm.
+pub(crate) fn cursed_weapon_light(vanilla_type: i32, pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    let rgb = if vanilla_type == 83 {
+        [0.2, 0.05, 0.3]
+    } else if vanilla_type == 179 {
+        [0.3, 0.15, 0.05]
+    } else {
+        [0.05, 0.2, 0.3]
+    };
+    (
+        ((pos.x + int_half(w)) / 16.0) as i32,
+        ((pos.y + int_half(h)) / 16.0) as i32,
+        rgb,
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 15 — `:26403`, the aiStyle-29 tail (the Hungry 115, the style's
+// only member). FED: the arm's wall-presence gate (`:26215-26218`)
+// deactivates the NPC when the wall is gone — the port's `hp = 0`
+// convention (`npc_ai_style29.rs`) makes the feed's `hp <= 0` skip the
+// exact stand-in, so a live Hungry always lights.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:26403`: `AddLight((int)(x + (float)(width/2)) / 16,
+/// (int)(y + (float)(height/2)) / 16, 0.3f, 0.2f, 0.1f)` — INTEGER
+/// halves, cast-before-divide. No `netOffset` bracket in aiStyle 29.
+pub(crate) fn hungry_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        (pos.x + int_half(w)) as i32 / 16,
+        (pos.y + int_half(h)) as i32 / 16,
+        [0.3, 0.2, 0.1],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Sites 16/17 — `:32781`/`:32785`, the aiStyle-57 head lights (344
+// Everscream / 325 MourningWood). FED: both kinds ride the wired
+// aiStyle-57 axis arms (`npc.rs`'s `npc_ai_pumpkin_boss` /
+// `npc_ai_frost_boss_b` machines); the lights are unconditional per
+// tick (no gate, no `netOffset`, no early return before them).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:32779-32786`: `AddLight(base.Bottom + new Vector2(0f, -30f),
+/// ...)`. `base.Bottom` = `(x + width/2f, y + height)` (`Entity.cs:
+/// 122-127`, FLOAT halves); the Vector2 overload truncates the quotient
+/// per axis (`Lighting.cs:140-143`). 344 → (0.3, 0.16, 0.125), 325 →
+/// (0.3, 0.125, 0.06).
+pub(crate) fn moon_boss_bottom_light(
+    vanilla_type: i32,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> (i32, i32, [f32; 3]) {
+    let rgb = if vanilla_type == 344 {
+        [0.3, 0.16, 0.125]
+    } else {
+        [0.3, 0.125, 0.06]
+    };
+    (
+        ((pos.x + w / 2.0) / 16.0) as i32,
+        ((pos.y + h - 30.0) / 16.0) as i32,
+        rgb,
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 18 — `:33059`, the aiStyle-58 head light (327 Pumpking, the
+// style's only member). FED: the wired `pumpking_step` axis arm; the
+// light is unconditional (no gate before it, no early return in the
+// arm).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:33057-33060`: `AddLight(base.Center, 0.4f, 0.4f, 0.2f)` —
+/// the Vector2 overload's quotient truncation ([`XAnchor::Center`]).
+pub(crate) fn pumpking_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [0.4, 0.4, 0.2],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 19 — `:33709`, the aiStyle-61 centre light (346 SantaNK1, the
+// style's only member). FED: the wired `frost_boss_b_step` axis arm.
+// The light is gated on the centre tile being in-world and NOT solid
+// (`WorldGen.InWorld` + `!WorldGen.SolidTile`, `:33707`); the probe
+// reads `ToTileCoordinates` (`(int)v >> 4` — the arithmetic shift AFTER
+// truncation, `Utils.cs:1807-1810`), a DIFFERENT form from the light's
+// own quotient truncation for negative centres. Both kept verbatim.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:33705-33710`: `center15 = base.Center`; the gate probes
+/// `center15.ToTileCoordinates()`; the light itself is
+/// `AddLight(center15, 0.3f, 0.26f, 0.05f)` (quotient truncation).
+/// The solid-tile probe is the frost module's verbatim
+/// `WorldGen.SolidTile` port (shared, not copied — the house rule).
+pub(crate) fn santa_nk1_light(
+    pos: Vec2,
+    w: f32,
+    h: f32,
+    world: &World,
+) -> Option<(i32, i32, [f32; 3])> {
+    let cx = pos.x + w / 2.0;
+    let cy = pos.y + h / 2.0;
+    let tx = (cx as i32) >> 4;
+    let ty = (cy as i32) >> 4;
+    if tx >= 0
+        && tx < world.width
+        && ty >= 0
+        && ty < world.height
+        && !crate::npc_ai_frost_boss_b::worldgen_solid_tile(world, tx, ty)
+    {
+        Some((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.3, 0.26, 0.05],
+        ))
+    } else {
+        None
+    }
+}
+
+// Site 20 — `:34162` (the aiStyle-64 firefly glow, type 358
+// LightningBug): DEDUP-TWIN — `npc_ai_style64.rs` already ports the
+// whole `:34154-34173` glow tail verbatim behind
+// `Ai64Effects::light` (the `localAI[2] > 3` gate, the truncated-centre
+// tiles, the scale-multiplied colours). The module is UNWIRED (no
+// firefly NpcKind); its wiring feeds the light ONCE — this module
+// never double-feeds it. Sites 21/22 (`:34166` Lavafly 654 / `:34170`
+// the else) ride the same seam.
+
+// ---------------------------------------------------------------------
 // The dispatcher: the FED sites, keyed on the roster kind. The TWIN
 // sites' kinds are absent (or their machines unwired), so they return
 // `None` here until their wave lands — the per-site table in ANALYSIS
@@ -257,8 +419,19 @@ pub(crate) fn npc_light_a(n: &Npc, world: &World, player_dead: bool) -> Option<(
     match n.kind {
         // Site 4 — `:21561`, the aiStyle-9 else arm (offset position).
         NpcKind::BurningSphere => Some(burning_sphere_light(pos + n.net_offset, w, h)),
+        // Site 15 — `:26403`, the aiStyle-29 tail. A live Hungry always
+        // lights: the wall-gone deactivation (`:26217`) is the port's
+        // `hp = 0` (the feed's dead skip).
+        NpcKind::Hungry => Some(hungry_light(pos, w, h)),
+        // Sites 16/17 — `:32781`/`:32785`, the aiStyle-57 head lights.
+        NpcKind::Everscream => Some(moon_boss_bottom_light(344, pos, w, h)),
+        NpcKind::MourningWood => Some(moon_boss_bottom_light(325, pos, w, h)),
+        // Site 18 — `:33059`, the aiStyle-58 head light.
+        NpcKind::Pumpking => Some(pumpking_light(pos, w, h)),
+        // Site 19 — `:33709`, the aiStyle-61 centre light (tile probe).
+        NpcKind::SantaNK1 => santa_nk1_light(pos, w, h, world),
         _ => {
-            let _ = (world, player_dead);
+            let _ = player_dead;
             None
         }
     }
@@ -381,5 +554,70 @@ mod tests {
         // = 0, NOT the floor -1.
         let (xn, _, _) = gastropod_light(Vec2::new(-14.0, 0.0), 26.0, 26.0);
         assert_eq!(xn, 0); // centre -1 → 0
+    }
+
+    /// Site 11 — `:24862`: the IceElemental's 30x42 box at (160, 176)
+    /// centres (175, 197) → tile (10, 12); (0, 0.6, 0.75).
+    #[test]
+    fn w4_c20_s11_ice_elemental_center_light() {
+        let (x, y, rgb) = ice_elemental_light(Vec2::new(160.0, 176.0), 30.0, 42.0);
+        assert_eq!((x, y), (10, 12));
+        assert_eq!(rgb, [0.0, 0.6, 0.75]);
+    }
+
+    /// Sites 12/13/14 — `:25239-25249`: the three head-chain colours at
+    /// the integer-half centre tile.
+    #[test]
+    fn w4_c20_s12_s13_s14_cursed_weapon_chain() {
+        let h = cursed_weapon_light(83, Vec2::new(160.0, 176.0), 32.0, 32.0);
+        assert_eq!(h, (11, 12, [0.2, 0.05, 0.3]));
+        let a = cursed_weapon_light(179, Vec2::new(160.0, 176.0), 32.0, 32.0);
+        assert_eq!(a.2, [0.3, 0.15, 0.05]);
+        let e = cursed_weapon_light(84, Vec2::new(160.0, 176.0), 32.0, 32.0);
+        assert_eq!(e.2, [0.05, 0.2, 0.3]);
+    }
+
+    /// Site 15 — `:26403`: the Hungry's 30x30 box (`NPC.cs:10380-10381`)
+    /// at (160, 176) centres (175, 191): cast-before-divide gives
+    /// 175/16 = 10, 191/16 = 11.
+    #[test]
+    fn w4_c20_s15_hungry_center_light() {
+        let (x, y, rgb) = hungry_light(Vec2::new(160.0, 176.0), 30.0, 30.0);
+        assert_eq!((x, y), (10, 11));
+        assert_eq!(rgb, [0.3, 0.2, 0.1]);
+    }
+
+    /// Sites 16/17 — `:32781`/`:32785`: Bottom + (0, -30). The
+    /// Everscream's 172x130 box (`NPC.cs:13355+`) at (160, 176) has
+    /// Bottom = (246, 306); -30 → (246, 276) → tile (15, 17).
+    #[test]
+    fn w4_c20_s16_s17_moon_boss_bottom_lights() {
+        let e = moon_boss_bottom_light(344, Vec2::new(160.0, 176.0), 172.0, 130.0);
+        assert_eq!(e, (15, 17, [0.3, 0.16, 0.125]));
+        let m = moon_boss_bottom_light(325, Vec2::new(160.0, 176.0), 164.0, 154.0);
+        // Bottom = (242, 330); -30 → 300 → 300/16 = 18.75 → 18.
+        assert_eq!(m, (15, 18, [0.3, 0.125, 0.06]));
+    }
+
+    /// Site 18 — `:33059`: the Pumpking's 100x100 box at (160, 176)
+    /// centres (210, 226) → tile (13, 14); (0.4, 0.4, 0.2).
+    #[test]
+    fn w4_c20_s18_pumpking_center_light() {
+        let (x, y, rgb) = pumpking_light(Vec2::new(160.0, 176.0), 100.0, 100.0);
+        assert_eq!((x, y), (13, 14));
+        assert_eq!(rgb, [0.4, 0.4, 0.2]);
+    }
+
+    /// Site 19 — `:33705-33710`: the light fires only when the centre
+    /// tile is in-world and not solid. An air world passes; an
+    /// out-of-world centre (negative x) stays dark.
+    #[test]
+    fn w4_c20_s19_santa_light_gates_on_the_center_tile() {
+        let w = tr_core::World::new("t".into(), 200, 120);
+        let lit = santa_nk1_light(Vec2::new(160.0, 176.0), 112.0, 140.0, &w).unwrap();
+        // Centre (216, 246) → tile (13, 15).
+        assert_eq!(lit, (13, 15, [0.3, 0.26, 0.05]));
+        // Centre x = -1 → probe tx = -1 >> 4 = -1: out of world, dark.
+        assert!(santa_nk1_light(Vec2::new(-57.0, 176.0), 112.0, 140.0, &w).is_none());
     }
 }
