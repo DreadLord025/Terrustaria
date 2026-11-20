@@ -1291,6 +1291,48 @@ impl SpriteRenderer {
         self.draw_ranges(gpu, view, camera, zoom, time, None, false, true)
     }
 
+    /// S1-G-13 consumers: the background range alone (the sky half of the
+    /// gated layer path — the skyTarget bind renders the sky quads into the
+    /// sky target while the world/fx ranges stay parked for the screenTarget
+    /// composite). Mechanically `draw_ranges` with the world/fx ranges
+    /// temporarily emptied — the upload offsets and draw order are the same
+    /// code the frozen path runs; no existing caller changes.
+    pub fn render_back(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+        clear: Option<wgpu::Color>,
+    ) -> RenderStats {
+        let world = std::mem::take(&mut self.world);
+        let fx = std::mem::take(&mut self.fx);
+        let stats = self.draw_ranges(gpu, view, camera, zoom, time, clear, true, false);
+        self.world = world;
+        self.fx = fx;
+        stats
+    }
+
+    /// S1-G-13 consumers: the world + world-effect ranges WITHOUT the
+    /// background range (the screenTarget composite draws the sky/backWater/
+    /// background halves first; the direct-screen entity passes follow).
+    /// Same mechanism as [`Self::render_back`]: the back range is temporarily
+    /// emptied so `draw_ranges` neither uploads nor draws it.
+    pub fn render_world_fx_no_back(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+    ) -> RenderStats {
+        let back = std::mem::take(&mut self.back);
+        let stats = self.draw_ranges(gpu, view, camera, zoom, time, None, true, false);
+        self.back = back;
+        stats
+    }
+
     fn draw_ranges(
         &mut self,
         gpu: &Gpu,

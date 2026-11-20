@@ -1183,6 +1183,10 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // S1-G-13 consumers: the fused default draws every
+                            // cell (the frozen path); the layer callbacks pass
+                            // the `solidLayer` halves (`Main.cs:57329-57348`).
+                            crate::render::tiles::TileFilter::All,
                         );
                         *world_key = Some(key);
                     }
