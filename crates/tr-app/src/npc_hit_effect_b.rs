@@ -20,7 +20,7 @@
 //! | 57-63 | `:82134`-`:82140` | the 561/562/563 DD2 javeliner death (7) |
 //! | 64-66 | `:82167`-`:82169` | the 555/556/557 DD2 kobold death (3) |
 //! | 67-76 | `:82193`-`:82202` | the 551 crystal death, `spriteDirection != -1` (10) |
-//! | 77-86 | `:82206`-`:82215` | the 551 `-1` twin (10, commit 4) |
+//! | 77-86 | `:82206`-`:82215` | the 551 `-1` mirrored twin (10) |
 //!
 //! Everything after `:82218` (572/573 onward, the 566/567 `Next(2)` gates,
 //! the 576/577 pair, …) is wave C (`W4-f10-gore-sites-3`).
@@ -350,11 +350,11 @@ pub fn dd2_crystal_crossed_percent(life: i32, life_max: i32, dmg: f64) -> bool {
     before != after && life > 0
 }
 
-/// The 551 DD2 crystal death (`NPC.cs:82185-82217`, sites 67-76): the
-/// 20-dust type-5 preamble then the 10-gore body, `spriteDirection != -1`
-/// arm — types 1079/1080/1080/1081/1082/1083/1084/1085/1085/1086 at the
-/// cited offsets. The `-1` mirrored twin (`:82206-82215`, sites 77-86)
-/// is the next commit (the wave-A partial-arm precedent).
+/// The 551 DD2 crystal death (`NPC.cs:82185-82217`, sites 67-86): the
+/// 20-dust type-5 preamble then the 10-gore body — the
+/// `spriteDirection != -1` arm (types 1079/1080/1080/1081/1082/1083/
+/// 1084/1085/1085/1086 at the cited offsets) or the `-1` mirrored twin
+/// (`:82206-82215`, the same type sequence at the mirrored offsets).
 fn dd2_crystal_death(
     npc: &Npc,
     hit_direction: i32,
@@ -368,18 +368,31 @@ fn dd2_crystal_death(
     let p = Vec2::new(npc.x, npc.y);
     let vel = Vec2::new(npc.vx, npc.vy);
     let s = npc.scale;
-    // `:82191-82203` — the spriteDirection != -1 arm (sites 67-76).
-    debug_assert!(npc.sprite_dir != -1, "the -1 twin is the next commit");
-    gore.new_gore(rng, world, p + Vec2::new(0.0, 54.0), vel, 1079, s); // :82193
-    gore.new_gore(rng, world, p + Vec2::new(72.0, 90.0), vel, 1080, s); // :82194
-    gore.new_gore(rng, world, p + Vec2::new(102.0, 94.0), vel, 1080, s); // :82195
-    gore.new_gore(rng, world, p + Vec2::new(178.0, 0.0), vel, 1081, s); // :82196
-    gore.new_gore(rng, world, p + Vec2::new(136.0, 12.0), vel, 1082, s); // :82197
-    gore.new_gore(rng, world, p + Vec2::new(82.0, 18.0), vel, 1083, s); // :82198
-    gore.new_gore(rng, world, p + Vec2::new(100.0, 26.0), vel, 1084, s); // :82199
-    gore.new_gore(rng, world, p + Vec2::new(170.0, 16.0), vel, 1085, s); // :82200
-    gore.new_gore(rng, world, p + Vec2::new(190.0, 10.0), vel, 1085, s); // :82201
-    gore.new_gore(rng, world, p + Vec2::new(100.0, 36.0), vel, 1086, s); // :82202
+    if npc.sprite_dir != -1 {
+        // `:82191-82203` — the spriteDirection != -1 arm (sites 67-76).
+        gore.new_gore(rng, world, p + Vec2::new(0.0, 54.0), vel, 1079, s); // :82193
+        gore.new_gore(rng, world, p + Vec2::new(72.0, 90.0), vel, 1080, s); // :82194
+        gore.new_gore(rng, world, p + Vec2::new(102.0, 94.0), vel, 1080, s); // :82195
+        gore.new_gore(rng, world, p + Vec2::new(178.0, 0.0), vel, 1081, s); // :82196
+        gore.new_gore(rng, world, p + Vec2::new(136.0, 12.0), vel, 1082, s); // :82197
+        gore.new_gore(rng, world, p + Vec2::new(82.0, 18.0), vel, 1083, s); // :82198
+        gore.new_gore(rng, world, p + Vec2::new(100.0, 26.0), vel, 1084, s); // :82199
+        gore.new_gore(rng, world, p + Vec2::new(170.0, 16.0), vel, 1085, s); // :82200
+        gore.new_gore(rng, world, p + Vec2::new(190.0, 10.0), vel, 1085, s); // :82201
+        gore.new_gore(rng, world, p + Vec2::new(100.0, 36.0), vel, 1086, s); // :82202
+    } else {
+        // `:82204-82216` — the -1 mirrored twin (sites 77-86).
+        gore.new_gore(rng, world, p + Vec2::new(176.0, 54.0), vel, 1079, s); // :82206
+        gore.new_gore(rng, world, p + Vec2::new(158.0, 90.0), vel, 1080, s); // :82207
+        gore.new_gore(rng, world, p + Vec2::new(128.0, 94.0), vel, 1080, s); // :82208
+        gore.new_gore(rng, world, p, vel, 1081, s); // :82209
+        gore.new_gore(rng, world, p + Vec2::new(60.0, 12.0), vel, 1082, s); // :82210
+        gore.new_gore(rng, world, p + Vec2::new(88.0, 18.0), vel, 1083, s); // :82211
+        gore.new_gore(rng, world, p + Vec2::new(86.0, 26.0), vel, 1084, s); // :82212
+        gore.new_gore(rng, world, p + Vec2::new(40.0, 16.0), vel, 1085, s); // :82213
+        gore.new_gore(rng, world, p + Vec2::new(20.0, 10.0), vel, 1085, s); // :82214
+        gore.new_gore(rng, world, p + Vec2::new(142.0, 36.0), vel, 1086, s); // :82215
+    }
 }
 
 /// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
@@ -430,8 +443,7 @@ pub(crate) fn hit_effect_b(
         if dd2_crystal_crossed_percent(npc.hp, npc.max_hp, dmg) {
             outcome.dd2_crystal_check_progress = true;
         }
-        if npc.hp <= 0 && npc.sprite_dir != -1 {
-            // The `-1` mirrored twin is the next commit (sites 77-86).
+        if npc.hp <= 0 {
             dd2_crystal_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
         }
     }
@@ -791,5 +803,75 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the crystal mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82204-82216` — the 551 `-1` mirrored twin: the same type
+    /// sequence, the mirrored offsets, the same draw census.
+    #[test]
+    fn w4_e5_the_crystal_minus_one_twin_mirrors_the_offsets() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 200.0, 120.0);
+        n.sprite_dir = -1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        dd2_crystal_death(&n, -1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..10].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![1079, 1080, 1080, 1081, 1082, 1083, 1084, 1085, 1085, 1086]
+        );
+        let offsets = [
+            (176.0, 54.0), (158.0, 90.0), (128.0, 94.0), (0.0, 0.0),
+            (60.0, 12.0), (88.0, 18.0), (86.0, 26.0), (40.0, 16.0),
+            (20.0, 10.0), (142.0, 36.0),
+        ];
+        for (g, (dx, dy)) in gore.slots()[..10].iter().zip(offsets) {
+            assert_eq!(g.position, Vec2::new(100.0 + dx, 100.0 + dy));
+        }
+        let mut twin = UnifiedRandom::new(43);
+        for _ in 0..20 {
+            let _px = twin.next_max(196);
+            let _py = twin.next_max(116);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the -1 twin mirrors the C# draws");
+    }
+
+    /// The wave-B dispatch on a dead 553 goblin through wave A's
+    /// `hit_effect`: the wave-A arms stay off, the goblin row runs, and
+    /// the CheckProgress seam stays false (the death path).
+    #[test]
+    fn w4_e5_the_dispatch_routes_the_goblin_through_wave_a() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 30.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let out = crate::npc_hit_effect_a::hit_effect(
+            &mut n, 553, &crate::npc_hit_effect_a::HitEffectInputs::default(),
+            -1, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w,
+        );
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1067, 1070, 1069, 1068, 1068]);
+        assert!(!out.dd2_crystal_check_progress);
+        assert!(out.daybreak_add_buff.is_none());
+        assert!(!out.unlock_slime_purple);
+        // A living 551 crossing a percent returns the CheckProgress seam.
+        let mut crystal = boss(100.0, 100.0, 200.0, 120.0);
+        crystal.hp = 100;
+        crystal.max_hp = 200;
+        let out2 = crate::npc_hit_effect_a::hit_effect(
+            &mut crystal, 551, &crate::npc_hit_effect_a::HitEffectInputs::default(),
+            1, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w,
+        );
+        assert!(out2.dd2_crystal_check_progress);
     }
 }

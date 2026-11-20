@@ -39332,7 +39332,19 @@ A's dispatch (`hit_effect_b` runs after wave A's last arm):
   OVERWRITE (`Next(1,10)*0.3*2.5*hitDirection`, `-(3+Next(4)*0.3)`)
   - the NewGore kicks draw first and are discarded; the 40-dust type-10
   loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is wave
-  C.
+  C;
+- the DD2 goblin/javeliner/kobold deaths (`:82079-82171`, sites 52-66):
+  the shared 20-dust type-5 death preamble (`dd2_death_dust`) then the
+  per-family gore rows - goblin 552-554 base 983/1067/1071 (+3/+2 at
+  Y+20, +1 twins at Y+34), javeliner 561-563 base 987/1055/1061 (the +3
+  LEADS, 4 rows at Y+20, +1 twins at Y+34), kobold 555-557 base
+  1031/1034/1037 (the 3-gore staircase);
+- the 551 DD2 crystal (`:82172-82218`, sites 67-86): the
+  `DD2Event.CheckProgress` percent-crossing gate on the hit path
+  (`dd2_crystal_crossed_percent`, returned) and the 10-gore body on
+  death - the `spriteDirection != -1` arm and the `-1` mirrored twin,
+  types 1079/1080x2/1081/1082/1083/1084/1085x2/1086 at the cited
+  offsets.
 
 Deviations / stand-ins (cited at their sites): `hitDirection`/`dmg`
 ride explicit parameters (wave A's `hit_effect` gained them, the C#
