@@ -200,6 +200,19 @@ pub mod id {
     /// `MessageBuffer.cs:2631-2638` is client-only. Sends: the join push
     /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173` — S2c-only.
     pub const WORLD_EVIL_BYTES: u8 = 57;
+    /// `58 InstrumentSound` (`MessageID.cs:129`) — writer
+    /// `NetMessage.cs:1059-1062` (`(byte)player + float pitch`); reader
+    /// `MessageBuffer.cs:2639-2681`: the host forces the id to the sender
+    /// and relays, the client plays the held instrument's sound
+    /// (`Player.cs:46544`/`:46573`/`:46587`/`:46602`/`:46622` send sites).
+    pub const INSTRUMENT_SOUND: u8 = 58;
+    /// `76 QuestsCountSync` (`MessageID.cs:165`) — writer
+    /// `NetMessage.cs:1149-1153` (`(byte)player + int anglerQuestsFinished
+    /// + int golferScoreAccumulated`); reader
+    /// `MessageBuffer.cs:3164-3182`: the host forces the id to the sender
+    /// and relays (`:3178`, the only live send site), the client stores a
+    /// peer's counts when `id != myPlayer || ServerSideCharacter`.
+    pub const QUESTS_COUNT_SYNC: u8 = 76;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1643,6 +1656,30 @@ pub struct WorldEvilBytes {
     pub blood: u8,
 }
 
+/// `msg 58 InstrumentSound`'s body (`NetMessage.cs:1059-1062`): the player
+/// id byte then the pitch float (`number2`, the raw `writer.Write(number2)`
+/// — no cast). The reader (`MessageBuffer.cs:2639-2681`) forces the id to
+/// the sender on the host and relays; the client's switch plays the guitar
+/// chords (4057/4372/4715), drums (4673) or the item sound (507 → Item35,
+/// 1305 → Item47, else Item26) with `Main.musicPitch = pitch`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InstrumentSound {
+    pub player_id: u8,
+    pub pitch: f32,
+}
+
+/// `msg 76 QuestsCountSync`'s body (`NetMessage.cs:1149-1153`): the player
+/// id byte, `anglerQuestsFinished` int, `golferScoreAccumulated` int. The
+/// reader (`MessageBuffer.cs:3164-3182`) skips its own echo unless
+/// `ServerSideCharacter`, forces the id to the sender on the host and
+/// relays to the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QuestsCountSync {
+    pub player_id: u8,
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1767,6 +1804,14 @@ pub enum C2s {
     /// (`Player.cs:32813`/`:33197`/`:41660`; host apply + relay
     /// `MessageBuffer.cs:2531-2564`). C2s-only.
     LockAndUnlock(LockAndUnlock),
+    /// `58 InstrumentSound` — a client played its held instrument
+    /// (`Player.cs:46544` etc.; host id-force + relay
+    /// `MessageBuffer.cs:2642-2650`).
+    InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a client's quest/golf counts (the reader
+    /// accepts them from a peer or `ServerSideCharacter`,
+    /// `MessageBuffer.cs:3164-3182`).
+    QuestsCountSync(QuestsCountSync),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1947,6 +1992,12 @@ pub enum S2c {
     /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173`; client-only reader
     /// (`MessageBuffer.cs:2631-2638`). S2c-only.
     WorldEvilBytes(WorldEvilBytes),
+    /// `58 InstrumentSound` — a peer's instrument, host relay
+    /// (`MessageBuffer.cs:2649`).
+    InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a peer's quest/golf counts, host relay
+    /// (`MessageBuffer.cs:3178`).
+    QuestsCountSync(QuestsCountSync),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2004,6 +2055,8 @@ impl C2s {
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
             Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2079,6 +2132,13 @@ impl C2s {
             // `NetMessage.cs:1014-1018`: (byte)action + two (short)s; the
             // player id is NOT written.
             Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
+            // `NetMessage.cs:1059-1062`: (byte)player + raw float pitch.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            // `NetMessage.cs:1149-1153`: (byte)player + two raw ints.
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2218,6 +2278,18 @@ impl C2s {
                 action: r.u8()?,
                 x: r.i16()?,
                 y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2641-2646`: ReadByte + ReadSingle (the id
+            // force to the sender is the apply arm's, not the codec's).
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3166-3175`: ReadByte + two ReadInt32.
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2385,6 +2457,8 @@ impl S2c {
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
             Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
         }
     }
 
@@ -2535,6 +2609,12 @@ impl S2c {
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
             // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three bytes.
             Self::WorldEvilBytes(e) => w.u8(e.good).u8(e.evil).u8(e.blood),
+            // `NetMessage.cs:1059-1062` / `:1149-1153` — the shared bodies.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2759,6 +2839,16 @@ impl S2c {
                 good: r.u8()?,
                 evil: r.u8()?,
                 blood: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2641-2646` / `:3166-3175` — the shared reads.
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
+            }),
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
             }),
             _ => return None,
         })
@@ -5091,6 +5181,77 @@ mod tests {
         assert!(C2s::decode(57, &mut NetReader::new(&[1, 2, 3])).is_none());
         // A truncated blood byte must not decode.
         assert!(S2c::decode(57, &mut NetReader::new(&[1, 2])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_instrument_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1059-1062`: (byte)number + raw float number2 (no
+        // cast — the pitch rides as a full float, `Player.cs:46544`'s num6).
+        let b = InstrumentSound {
+            player_id: 4,
+            pitch: 0.45,
+        };
+        let mut body = vec![4u8];
+        body.extend_from_slice(&0.45f32.to_le_bytes());
+        let f = C2s::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        match S2c::decode(58, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        // A negative pitch rides verbatim (the drums' num9 can be negative
+        // before the round; the wire is the raw float).
+        let neg = InstrumentSound {
+            player_id: 0,
+            pitch: -0.25,
+        };
+        let f = C2s::InstrumentSound(neg).encode();
+        let mut body = vec![0u8];
+        body.extend_from_slice(&(-0.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        // A truncated pitch must not decode.
+        assert!(C2s::decode(58, &mut NetReader::new(&[4, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_quests_count_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1149-1153`: (byte)number + raw int
+        // anglerQuestsFinished + raw int golferScoreAccumulated.
+        let b = QuestsCountSync {
+            player_id: 2,
+            angler_quests_finished: 42,
+            golfer_score: 1_000_000_000, // the AccumulateGolfingScore cap
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&42i32.to_le_bytes());
+        body.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        let f = C2s::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        match S2c::decode(76, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        // A truncated golf score must not decode.
+        assert!(S2c::decode(76, &mut NetReader::new(&body[..8])).is_none());
     }
 
     #[test]

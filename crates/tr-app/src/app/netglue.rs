@@ -826,6 +826,11 @@ impl App {
             // (`MessageBuffer.cs:2531-2564`) land with the apply-wiring
             // lanes (g48-g52) / S1-I-4 — bodies + codecs only.
             C2s::LockAndUnlock(_) => {}
+            // S1-I-1 W4-f21: `58`'s host id-force + relay and `76`'s
+            // own-echo skip + id-force + relay (`MessageBuffer.cs:2642-2650`,
+            // `:3167-3179`) land with the apply-wiring lanes (g48-g52) /
+            // S1-I-4 — bodies + codecs only.
+            C2s::InstrumentSound(_) | C2s::QuestsCountSync(_) => {}
         }
     }
 
@@ -1881,6 +1886,11 @@ impl App {
             // store (`MessageBuffer.cs:2631-2638`) lands with the
             // apply-wiring lanes (g48-g52) / S1-I-4.
             S2c::WorldEvilBytes(_) => {}
+            // S1-I-1 W4-f21: `58`'s client instrument switch
+            // (`MessageBuffer.cs:2652-2679`) and `76`'s peer-count store
+            // (`:3173-3175`) land with the apply-wiring lanes (g48-g52) /
+            // S1-I-4.
+            S2c::InstrumentSound(_) | S2c::QuestsCountSync(_) => {}
         }
     }
 
