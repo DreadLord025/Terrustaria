@@ -409,7 +409,224 @@ pub fn find_frame_extra2(kind: FindFrameExtra2Kind, s: &mut FrameState, i: &Fram
                 }
             }
         }
-        // The remaining nine kinds land in the next commits.
+        // `case 116` (`NPC.cs:74091-74112`): the Hungry II aims by
+        // velocity — vx > 0 flips +1 and tilts `atan2(vy, vx)`, vx < 0
+        // flips -1 and adds the literal `3.14f` (not PI); vx == 0
+        // freezes both. The 5-tick strip walks the 6 rows and wraps
+        // at the frame count (the wrap sits AFTER the step, outside
+        // it — unlike the cursed-hammer group's nesting).
+        FindFrameExtra2Kind::TheHungryII => {
+            // `:74092-74101`.
+            if i.vx > 0.0 {
+                s.sprite_dir = 1;
+                s.rotation = i.vy.atan2(i.vx);
+            }
+            if i.vx < 0.0 {
+                s.sprite_dir = -1;
+                // The original adds the literal `3.14f`, not PI.
+                s.rotation = i.vy.atan2(i.vx) + 3.14;
+            }
+            // `:74102-74111`.
+            s.counter += 1.0;
+            if s.counter >= 5.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= count {
+                s.row = 0;
+            }
+        }
+        // `case 120` / `case 181` in the humanoid-group case list
+        // (`NPC.cs:68543-68633`) → the shared fighter walk
+        // (`NPC.cs:68647-69655`) via the wave-B keep-one helper.
+        // Neither is `isLikeATownNPC` (`NPC.cs:6856-6866` — only 453 +
+        // the town flag; 120's SetDefaults `:10453-10465` and 181's
+        // `:11292-11315` set no townNPC), so `num57` = 0 and the walk
+        // wraps at the FULL `npcFrameCount`; neither is a town slime,
+        // so `num108` = 6 and `num109` = row 2. The Chaos Elemental
+        // (120) IS in the airborne pin list (`:69647`) → row 0; the
+        // Face Monster (181) is not → the group's row 1. Neither is
+        // the 140/489 idle-row-1 pair.
+        FindFrameExtra2Kind::ChaosElemental | FindFrameExtra2Kind::FaceMonster => {
+            let air_row0 = kind == FindFrameExtra2Kind::ChaosElemental;
+            let bi = crate::npc_findframe_b::FrameInput {
+                vx: i.vx,
+                vy: i.vy,
+                direction: i.direction,
+                wet: i.wet,
+                ai: i.ai,
+            };
+            let mut bs = crate::npc_findframe_b::FrameState {
+                row: s.row,
+                counter: s.counter,
+                sprite_dir: s.sprite_dir,
+                rotation: s.rotation,
+            };
+            crate::npc_findframe_b::humanoid_fighter_frame(&mut bs, &bi, count, air_row0, false);
+            s.row = bs.row;
+            s.counter = bs.counter;
+            s.sprite_dir = bs.sprite_dir;
+            s.rotation = bs.rotation;
+        }
+        // `case 121` in the eye group (`NPC.cs:73994-74059`, shared
+        // with 2/23/169/190-194/317/318/660): the Slimer's one-shot
+        // `localAI[0]` init (`:74014-74018` — while 0, latch 1 and pin
+        // row 2) IS carried; the FIRST flip list (`:74019`) does not
+        // carry 121, so the SECOND branch (`:74032-74043`) fires —
+        // the vx-sign flip (no rotation atan2) + the `vx * 0.1` tilt.
+        // The 8-tick strip (`num142` = 8 — the 6 is type 660's,
+        // `:74046-74049`) walks the 4 rows. The type-23 dust is
+        // another kind's.
+        FindFrameExtra2Kind::Slimer => {
+            // `:74014-74018`.
+            if s.local_ai0 == 0.0 {
+                s.local_ai0 = 1.0;
+                s.row = 2;
+            }
+            // `:74032-74043` — the second flip branch.
+            if i.vx > 0.0 {
+                s.sprite_dir = 1;
+            }
+            if i.vx < 0.0 {
+                s.sprite_dir = -1;
+            }
+            s.rotation = i.vx * 0.1;
+            // `:74044-74058`.
+            s.counter += 1.0;
+            if s.counter >= 8.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= count {
+                s.row = 0;
+            }
+        }
+        // `case 141` (`NPC.cs:72977-72994`): the Toxic Sludge flips
+        // `spriteDirection = direction` UNCONDITIONALLY (no ground
+        // gate), the air pins row 2, and the grounded 8-tick counter
+        // walks rows 0/1 with the `> num` wrap (row > 1 → 0).
+        FindFrameExtra2Kind::ToxicSludge => {
+            // `:72978`.
+            s.sprite_dir = i.direction;
+            if i.vy != 0.0 {
+                // `:72979-72983`.
+                s.row = 2;
+            } else {
+                // `:72984-72993`.
+                s.counter += 1.0;
+                if s.counter >= 8.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row > 1 {
+                    s.row = 0;
+                }
+            }
+        }
+        // `case 142` in the humanoid-group case list
+        // (`NPC.cs:68543-68633`) → the shared TOWN walk
+        // (`NPC.cs:68647-69655`). Santa IS `isLikeATownNPC`
+        // (`townNPC = true`, `NPC.cs:10793`), so `num57` =
+        // `ExtraFramesCount[142]` = 9 (`NPCID.cs:10464`) and the walk
+        // band wraps at row 25 - 9 = 16 (rows 2..15). He is not a town
+        // slime (`num108` = 6, `num109` = row 2), not the 140/489
+        // idle-row-1 pair (idle snaps to row 0), and NOT in the
+        // `:69647` air pin list (the air holds row 1). The town
+        // `ai[0]` sit/talk/attack pose zones (`:68662-69488`, with
+        // their chat-bubble `Main.rand` draws) are the documented skip
+        // — the `npc.rs::humanoid_town_frame` / W4-d47 Steampunker
+        // precedent.
+        FindFrameExtra2Kind::SantaClaus => {
+            if i.vy == 0.0 {
+                // `:68649-68656` — only direction +/-1 writes.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.vx == 0.0 {
+                    // `:69515-69519`.
+                    s.row = 0;
+                    s.counter = 0.0;
+                } else {
+                    // `:69521-69585` — num108 = 6, num109 = row 2.
+                    if s.row < 2 {
+                        s.row = 2;
+                    }
+                    s.counter += i.vx.abs() * 2.0;
+                    s.counter += 1.0;
+                    if s.counter > 6.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    // `:69581-69584` — the ExtraFramesCount-9 wrap.
+                    if s.row >= count - 9 {
+                        s.row = 2;
+                    }
+                }
+            } else {
+                // `:69642-69646` — the group's air row 1 (142 is not
+                // in the `:69647` pin list).
+                s.counter = 0.0;
+                s.row = 1;
+            }
+        }
+        // `case 148` in the penguin group (`NPC.cs:76392-76456`,
+        // shared with 149/168/470): the `localAI[0]` 2/3/4 colour bank
+        // offsets EVERY row write +3/+6/+9 (`num40`, `:76397-76410`).
+        // The grounded flip writes only on direction ±1; the idle
+        // snaps to the bank's row 0 and zeroes the counter; the walk
+        // rides the |vx| accumulator's <6/<12/<15 bands over rows
+        // 0/1/2 (the >= 15 tail zeroes the counter and HOLDS row 2 —
+        // the walker-band row-hold quirk); both air arms write row 2
+        // + bank and zero the counter.
+        FindFrameExtra2Kind::Penguin => {
+            // `:76397-76410` — num40, the colour bank.
+            let bank: u32 = if i.local_ai0 == 2.0 {
+                3
+            } else if i.local_ai0 == 3.0 {
+                6
+            } else if i.local_ai0 == 4.0 {
+                9
+            } else {
+                0
+            };
+            if i.vy == 0.0 {
+                // `:76413-76420`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.vx == 0.0 {
+                    // `:76421-76426`.
+                    s.row = bank;
+                    s.counter = 0.0;
+                } else {
+                    // `:76427-76444`.
+                    s.counter += i.vx.abs() * 1.0;
+                    if s.counter < 6.0 {
+                        s.row = bank;
+                    } else if s.counter < 12.0 {
+                        s.row = 1 + bank;
+                    } else if s.counter < 15.0 {
+                        s.row = 2 + bank;
+                    } else {
+                        // `:76443-76444` — the tail holds row 2.
+                        s.counter = 0.0;
+                        s.row = 2 + bank;
+                    }
+                }
+            } else {
+                // `:76446-76455` — both vy-sign arms write the same
+                // row 2 + bank.
+                s.counter = 0.0;
+                s.row = 2 + bank;
+            }
+        }
+        // The remaining three kinds land in the next commit.
         _ => {}
     }
 }
@@ -546,5 +763,134 @@ mod tests {
         assert_eq!(idle[11], 2);
         assert_eq!(idle[17], 3);
         assert_eq!(idle[22], 3, "the >= 23 reset tick still shows row 3");
+    }
+
+    /// `NPC.cs:74092-74111`: the Hungry II aims by velocity (the
+    /// literal 3.14f left-tilt), freezes at vx == 0, and flaps every
+    /// 5 ticks over its 6 rows.
+    #[test]
+    fn w4_e14_the_hungry_two_aims_and_flaps_five_ticks() {
+        let rows = rows_over(FindFrameExtra2Kind::TheHungryII, input(1.0, 0.0), 30);
+        assert_eq!(&rows[..6], &[0, 0, 0, 0, 1, 1]);
+        assert_eq!(rows[29], 0, "the 6-row strip wraps");
+        let mut s = FrameState { sprite_dir: -1, rotation: 9.0, ..Default::default() };
+        find_frame_extra2(FindFrameExtra2Kind::TheHungryII, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.sprite_dir, s.rotation), (-1, 9.0), "vx == 0 freezes both");
+        find_frame_extra2(FindFrameExtra2Kind::TheHungryII, &mut s, &input(-1.0, 0.0));
+        assert_eq!(s.sprite_dir, -1);
+        assert_eq!(s.rotation, 0.0f32.atan2(-1.0) + 3.14, "the literal 3.14f, not PI");
+        find_frame_extra2(FindFrameExtra2Kind::TheHungryII, &mut s, &input(2.0, 1.0));
+        assert_eq!(s.sprite_dir, 1);
+        assert_eq!(s.rotation, 1.0f32.atan2(2.0));
+    }
+
+    /// `NPC.cs:68647-69655` via the wave-B helper: the Chaos Elemental
+    /// walks rows 2..14 (15 rows, num57 = 0), idles row 0, and pins
+    /// row 0 in the air (the `:69647` list); the Face Monster keeps
+    /// the group's air row 1 and walks rows 2..15 (16 rows).
+    #[test]
+    fn w4_e14_the_humanoid_fighters_walk_and_air_split() {
+        let walk = input(2.0, 0.0);
+        let rows = rows_over(FindFrameExtra2Kind::ChaosElemental, walk, 60);
+        assert!(rows.iter().all(|&r| (2..15).contains(&r)), "the wrap band 2..14: {rows:?}");
+        let idle = rows_over(FindFrameExtra2Kind::ChaosElemental, input(0.0, 0.0), 3);
+        assert_eq!(idle, vec![0, 0, 0]);
+        let air = rows_over(FindFrameExtra2Kind::ChaosElemental, input(0.0, 1.0), 3);
+        assert_eq!(air, vec![0, 0, 0], "120 IS in the :69647 pin list");
+        let fm_air = rows_over(FindFrameExtra2Kind::FaceMonster, input(0.0, 1.0), 3);
+        assert_eq!(fm_air, vec![1, 1, 1], "181 is NOT in the pin list");
+        let fm_rows = rows_over(FindFrameExtra2Kind::FaceMonster, walk, 80);
+        assert!(fm_rows.iter().all(|&r| (2..16).contains(&r)), "the wrap band 2..15: {fm_rows:?}");
+        // The grounded flip writes only on direction +/-1.
+        let mut s = FrameState { sprite_dir: 1, ..Default::default() };
+        let i = FrameInput { direction: 0, vx: 1.0, ..Default::default() };
+        find_frame_extra2(FindFrameExtra2Kind::FaceMonster, &mut s, &i);
+        assert_eq!(s.sprite_dir, 1, "direction 0 leaves the flip alone");
+    }
+
+    /// `NPC.cs:74014-74058`: the Slimer's one-shot localAI[0] init
+    /// pins row 2 on the first tick, then the SECOND flip branch
+    /// (vx-sign + vx*0.1 tilt, no atan2) and the 8-tick 4-row strip.
+    #[test]
+    fn w4_e14_the_slimer_latches_and_tilts() {
+        let mut s = FrameState::default();
+        let i = input(1.0, 0.0);
+        find_frame_extra2(FindFrameExtra2Kind::Slimer, &mut s, &i);
+        assert_eq!((s.local_ai0, s.row), (1.0, 2), "the init latches and pins row 2");
+        assert_eq!(s.sprite_dir, 1);
+        assert_eq!(s.rotation, 0.1, "the vx * 0.1 tilt, not atan2");
+        // The latch never re-fires; the strip walks on.
+        let mut rows = Vec::new();
+        for _ in 0..32 {
+            find_frame_extra2(FindFrameExtra2Kind::Slimer, &mut s, &i);
+            rows.push(s.row);
+        }
+        assert_eq!(s.local_ai0, 1.0);
+        assert_eq!(&rows[..8], &[2, 2, 2, 2, 2, 2, 2, 3], "the step lands 7 ticks after the init tick");
+        assert!(rows.iter().all(|&r| r < 4));
+        // vx == 0 leaves the flip alone but still writes the 0 tilt.
+        let mut t = FrameState { sprite_dir: -1, local_ai0: 1.0, ..Default::default() };
+        find_frame_extra2(FindFrameExtra2Kind::Slimer, &mut t, &input(0.0, 0.0));
+        assert_eq!(t.sprite_dir, -1);
+        assert_eq!(t.rotation, 0.0);
+    }
+
+    /// `NPC.cs:72977-72994`: the Toxic Sludge flips unconditionally,
+    /// pins row 2 in the air, and walks rows 0/1 every 8 ticks on the
+    /// ground (the > num wrap).
+    #[test]
+    fn w4_e14_the_toxic_sludge_walks_two_rows() {
+        let rows = rows_over(FindFrameExtra2Kind::ToxicSludge, input(0.0, 0.0), 16);
+        assert_eq!(&rows[..9], &[0, 0, 0, 0, 0, 0, 0, 1, 1]);
+        assert_eq!(rows[15], 0, "the > 1 wrap lands back on 0");
+        let air = rows_over(FindFrameExtra2Kind::ToxicSludge, input(0.0, -1.0), 3);
+        assert_eq!(air, vec![2, 2, 2]);
+        let mut s = FrameState { sprite_dir: 1, ..Default::default() };
+        let i = FrameInput { direction: 0, ..Default::default() };
+        find_frame_extra2(FindFrameExtra2Kind::ToxicSludge, &mut s, &i);
+        assert_eq!(s.sprite_dir, 0, "the unconditional copy writes direction 0");
+    }
+
+    /// `NPC.cs:68647-69655`: Santa's town walk wraps at row 16
+    /// (25 - ExtraFramesCount 9), idles row 0, and holds row 1 in the
+    /// air (not in the `:69647` pin list).
+    #[test]
+    fn w4_e14_santa_walks_the_extra_frames_band() {
+        let rows = rows_over(FindFrameExtra2Kind::SantaClaus, input(2.0, 0.0), 80);
+        assert!(rows.iter().all(|&r| (2..16).contains(&r)), "the wrap band 2..15: {rows:?}");
+        let idle = rows_over(FindFrameExtra2Kind::SantaClaus, input(0.0, 0.0), 3);
+        assert_eq!(idle, vec![0, 0, 0]);
+        let air = rows_over(FindFrameExtra2Kind::SantaClaus, input(0.0, 1.0), 3);
+        assert_eq!(air, vec![1, 1, 1]);
+        // The first walk tick lifts row 0 straight into the band.
+        let mut s = FrameState::default();
+        find_frame_extra2(FindFrameExtra2Kind::SantaClaus, &mut s, &input(3.0, 0.0));
+        assert_eq!(s.row, 2);
+        assert_eq!(s.counter, 0.0, "|3|*2+1 = 7 > 6 steps on tick 1");
+    }
+
+    /// `NPC.cs:76392-76456`: the Penguin's four colour banks offset
+    /// every row write; the walk bands ride <6/<12/<15 and the tail
+    /// HOLDS row 2; both air arms write row 2 + bank.
+    #[test]
+    fn w4_e14_the_penguin_rides_the_colour_banks() {
+        for (bank_val, bank) in [(0.0f32, 0u32), (2.0, 3), (3.0, 6), (4.0, 9)] {
+            let i = FrameInput { local_ai0: bank_val, vx: 1.0, ..Default::default() };
+            let rows = rows_over(FindFrameExtra2Kind::Penguin, i, 15);
+            assert_eq!(rows[0], bank, "the <6 band rides the bank's row 0");
+            assert_eq!(rows[5], 1 + bank, "tick 6 enters the <12 band");
+            assert_eq!(rows[11], 2 + bank, "tick 12 enters the <15 band");
+            assert_eq!(rows[14], 2 + bank, "the >= 15 tail holds row 2");
+            let idle = FrameInput { local_ai0: bank_val, ..Default::default() };
+            let mut s = FrameState { row: 5, counter: 9.0, ..Default::default() };
+            find_frame_extra2(FindFrameExtra2Kind::Penguin, &mut s, &idle);
+            assert_eq!((s.row, s.counter), (bank, 0.0), "the idle snaps to the bank's row 0");
+            for vy in [-1.0f32, 1.0] {
+                let air = FrameInput { local_ai0: bank_val, vy, ..Default::default() };
+                let mut a = FrameState { counter: 7.0, ..Default::default() };
+                find_frame_extra2(FindFrameExtra2Kind::Penguin, &mut a, &air);
+                assert_eq!((a.row, a.counter), (2 + bank, 0.0), "both air arms write row 2 + bank");
+            }
+        }
     }
 }
