@@ -315,6 +315,13 @@ mod tests {
     // shrink + Top/Center/Bottom classification), SetTangents, the 100-sweep
     // AdjustTangentsToPreventSelfIntersection, and the PlotLine border walk
     // (Utils.cs:2233-2292 early-exit). Still UNWIRED — both pins stay.
+    // W4-f24 B4: `dither_snake.rs` gains the `DitherSnakePass` body
+    // (`DitherSnakePass.cs:22-133`) — CalculateDungeonDitherSnake (the
+    // serpentine grid, the two NextDouble radius walks, the row-end curve
+    // back, the dungeon-side end caps + self-intersection sweep),
+    // GenerateDungeonDitherSnake (paint each line into the outer hitbox) and
+    // ApplyPass's two-dungeon loop. Still UNWIRED (B5 publishes the producer
+    // GenVars, B6 lands the gated step) — both pins stay, a == b untouched.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

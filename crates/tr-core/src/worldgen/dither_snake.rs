@@ -17,8 +17,10 @@
 //! UNWIRED until B6: pure geometry over the line list, no RNG draw, no
 //! tile write — both classic world-hash pins stay; `a == b` untouched.
 
-use super::dungeon_control_line::{adjust_tangents, ControlLine};
-use super::snake_math::Vec2;
+use super::dungeon_bounds::DungeonBounds;
+use super::dungeon_control_line::{adjust_tangents, ControlLine, SnakeStyle};
+use super::snake_math::{lerp, remap, Vec2};
+use crate::world::World;
 
 /// `SnakeOrientation` (`SnakeOrientation.cs:3-9`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,6 +340,185 @@ fn plot_line_bool(
     }
 }
 
+/// `DungeonSide.Left`/`Right` (`DungeonSide.cs:13-15`).
+const DUNGEON_SIDE_LEFT: i32 = -1;
+
+/// `DitherSnakePass.CalculateDungeonDitherSnake`
+/// (`DitherSnakePass.cs:44-133`) — build the snake's control lines over the
+/// dungeon's outer potential bounds. `dungeon_side` is the C#
+/// `GenVars.CurrentDungeonGenVars.dungeonSide` (−1 Left / +1 Right);
+/// `dungeon_location` its `dungeonLocation`; `styles` the
+/// `dungeonGenerationStyles` list (the dual quad, B5); `safe_distance` the
+/// `NormalizedDistanceSafeFromDither` (`WorldGen.cs:11465`). `rng` is the
+/// pass stream (`WorldGen.genRand`) — the two `NextDouble` radius walks
+/// (`:100-101`) are its only draws.
+pub(crate) fn calculate_dungeon_dither_snake(
+    rng: &mut super::Rng,
+    max_tiles_x: i32,
+    outer: &DungeonBounds,
+    dungeon_side: i32,
+    dungeon_location: i32,
+    style_count: usize,
+    safe_distance: f64,
+) -> DitherSnake {
+    let mut snake = DitherSnake::new();
+    // `:50-51`: num = maxTilesX/4200, num2 = (int)(20·num).
+    let num = max_tiles_x as f64 / 4200.0;
+    let num2 = (20.0 * num) as i32;
+    let count = style_count as i32;
+    // `:53-62`: the normalized grid + the radius envelope.
+    let num3 = 1.0 / (num2 - 1) as f64;
+    let num4 = 1.0 / (count - 1) as f64;
+    let num5 = outer.height() as f64 / count as f64;
+    let num6 = 1.0 - safe_distance;
+    let num7 = num5 / 2.0 * (1.0 + num6 / 2.0) - 1.0;
+    let num8 = num7 - 0.1 * num * num5;
+    let num9 = 0.05;
+    let num10 = remap(num, 1.0, 2.0, 1.0, 1.5);
+    let num11 = num7 + num5 / 2.0 * num10;
+    let num12 = num7;
+    // `:63-64`: the grid origin + extent inside the bounds.
+    let grid_origin = Vec2::new(outer.x() as f64 + num11, outer.y() as f64 + num12);
+    let grid_extent = Vec2::new(
+        outer.width() as f64 - num11 * 2.0,
+        outer.height() as f64 - num12 * 2.0,
+    );
+    // `:65`: the per-step radius clamp.
+    let num13 = (num7 - num8).min(grid_extent.x * num3 / 2.0);
+    let mut start_radius = num7;
+    let mut start = Vec2::ZERO;
+    let num14 = num2 * count;
+    let num15 = num14 / count;
+    let mut num16 = num7;
+    let mut num17 = num7;
+    let mut i = 0i32;
+    while i < num14 {
+        let num18 = i % num2;
+        let num19 = i / num2;
+        let mut num20 = num3 * num18 as f64;
+        let y = num4 * num19 as f64;
+        // `:80-88`: the serpentine direction (flip on odd rows, mirror x).
+        let mut num21 = if dungeon_side == DUNGEON_SIDE_LEFT { 1 } else { -1 };
+        if num19 % 2 == 1 {
+            num21 *= -1;
+        }
+        if num21 < 0 {
+            num20 = 1.0 - num20;
+        }
+        let mut point = grid_origin + grid_extent * Vec2::new(num20, y);
+        if i == 0 {
+            start = point;
+            i += 1;
+            continue;
+        }
+        // `:95-99`: the first row snaps to the dungeon location when the
+        // grid point falls on the wrong side of it.
+        if num19 == 0 && (point.x - dungeon_location as f64) * num21 as f64 < 0.0 {
+            start = Vec2::new(dungeon_location as f64, point.y);
+            i += 1;
+            continue;
+        }
+        // `:100-103`: the two NextDouble radius walks + the y jitter.
+        num16 = lerp((num16 - num13).max(num8), (num16 + num13).min(num7), rng.next_f64());
+        num17 = lerp((num17 - num13).max(num8), (num17 + num13).min(num7), rng.next_f64());
+        let num22 = (num16 + num17) / 2.0;
+        point.y += (num16 - num17) / 2.0;
+        let num23 = i / num15;
+        snake.add(ControlLine::new(0, start, point, start_radius, num22, num23, num23 as usize));
+        start = point;
+        start_radius = num22;
+        // `:109-125`: the row-end curve back to the next row's start.
+        if num18 == num2 - 1 && num19 != count - 1 {
+            let anchor = point;
+            let center = Vec2::lerp(anchor, anchor + grid_extent * Vec2::new(0.0, num4), 0.5);
+            let mut num24 = num9;
+            while num24 < 0.5 {
+                let mut curved = anchor.rotated_by(std::f64::consts::TAU * num24 * num21 as f64, center);
+                curved.x = lerp(curved.x, center.x, 1.0 - num10);
+                let mut line = ControlLine::new(0, start, curved, start_radius, num22, num23, num23 as usize);
+                line.curve_line = true;
+                snake.add(line);
+                start = curved;
+                start_radius = num22;
+                num24 += num9;
+            }
+            i += 1;
+        }
+        i += 1;
+    }
+    // `:127-131`: the tangents + the dungeon-side end caps + the
+    // self-intersection sweep.
+    snake.set_tangents();
+    let num25 = if dungeon_side == DUNGEON_SIDE_LEFT { 1 } else { -1 };
+    let n = snake.lines.len();
+    snake.lines[0].start_tangent = Vec2::UNIT_X * num25 as f64;
+    snake.lines[n - 1].end_tangent = Vec2::UNIT_X * num25 as f64;
+    snake.adjust_tangents_to_prevent_self_intersection();
+    snake
+}
+
+/// `DitherSnakePass.GenerateDungeonDitherSnake`
+/// (`DitherSnakePass.cs:33-42`) — paint every line into the dungeon's outer
+/// bounds hitbox. `rng` is the pass stream (the edge-dither rarity rolls).
+pub(crate) fn generate_dungeon_dither_snake(
+    world: &mut World,
+    rng: &mut super::Rng,
+    snake: &mut DitherSnake,
+    styles: &[SnakeStyle],
+    outer: &DungeonBounds,
+    safe_distance: f64,
+) {
+    let bounds = outer.hitbox();
+    for i in 0..snake.lines.len() {
+        let mut line = snake.lines[i];
+        line.paint_rect(world, rng, &snake.lines, styles, bounds, safe_distance);
+        snake.lines[i] = line;
+    }
+}
+
+/// `DitherSnakePass.ApplyPass` (`DitherSnakePass.cs:22-31`) — the two
+/// dungeons' snakes: dungeon 0 over progress [0, 0.5), dungeon 1 over
+/// [0.5, 1]. Each calculates then paints its own snake into its own outer
+/// bounds. The port runs the two halves back-to-back (the progress window
+/// is loading-screen-only, no behavioural role). `dungeons` carries the
+/// per-dungeon (outer bounds, side, location, style count) the producer
+/// chain (B5) publishes; `safe_distance` is the world-wide
+/// `NormalizedDistanceSafeFromDither`.
+pub(crate) fn apply_dither_snake_pass(
+    world: &mut World,
+    rng: &mut super::Rng,
+    dungeons: &[DitherSnakeDungeon],
+    styles: &[SnakeStyle],
+    safe_distance: f64,
+) -> Vec<DitherSnake> {
+    let mut snakes = Vec::new();
+    for d in dungeons {
+        let mut snake = calculate_dungeon_dither_snake(
+            rng,
+            world.width,
+            &d.outer,
+            d.dungeon_side,
+            d.dungeon_location,
+            d.style_count,
+            safe_distance,
+        );
+        generate_dungeon_dither_snake(world, rng, &mut snake, styles, &d.outer, safe_distance);
+        snakes.push(snake);
+    }
+    snakes
+}
+
+/// The per-dungeon inputs `ApplyPass` reads from
+/// `GenVars.CurrentDungeonGenVars` (`DitherSnakePass.cs:25-30`): the outer
+/// potential bounds, the side, the location and the style-list count.
+#[derive(Clone, Debug)]
+pub(crate) struct DitherSnakeDungeon {
+    pub outer: DungeonBounds,
+    pub dungeon_side: i32,
+    pub dungeon_location: i32,
+    pub style_count: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +582,39 @@ mod tests {
         }, &mut ok);
         assert!(!ok);
         assert_eq!(visited, vec![(0, 0), (1, 0), (2, 0)]);
+    }
+
+    /// `CalculateDungeonDitherSnake` builds a non-empty snake with the
+    /// dungeon-side end caps and consumes exactly two NextDouble draws per
+    /// non-skipped grid point (`DitherSnakePass.cs:44-133`). The a == b
+    /// replay pins the determinism (the radius walks ride the pass stream).
+    #[test]
+    fn w4_f24_calculate_snake_is_deterministic() {
+        let mut outer = DungeonBounds::new(4200, 1200);
+        // A right-side dungeon's outer bounds (CreatePotentialDungeonBounds
+        // shape, DungeonUtils.cs:2079-2084): x in [0.51·W, W-0.05·W].
+        outer.set_bounds(2142, 100, 3990, 1030);
+        let safe = 1.0 - 0.075 * (1200.0 / 1200.0);
+        let build = || {
+            let mut rng = super::super::Rng::from_seed(42);
+            calculate_dungeon_dither_snake(&mut rng, 4200, &outer, 1, 3990, 4, safe)
+        };
+        let a = build();
+        let b = build();
+        assert!(!a.lines.is_empty());
+        assert_eq!(a.lines.len(), b.lines.len());
+        for (la, lb) in a.lines.iter().zip(b.lines.iter()) {
+            assert_eq!(la.start, lb.start);
+            assert_eq!(la.end, lb.end);
+            assert_eq!(la.start_radius, lb.start_radius);
+            assert_eq!(la.end_radius, lb.end_radius);
+            assert_eq!(la.start_tangent, lb.start_tangent);
+            assert_eq!(la.end_tangent, lb.end_tangent);
+        }
+        // The dungeon-side end caps: right side (num25 = -1) -> -UnitX.
+        assert_eq!(a.lines[0].start_tangent, -Vec2::UNIT_X);
+        assert_eq!(a.last().end_tangent, -Vec2::UNIT_X);
+        // Every line's style index is in the 4-style quad range.
+        assert!(a.lines.iter().all(|l| l.style < 4));
     }
 }
