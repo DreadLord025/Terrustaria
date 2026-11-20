@@ -7,11 +7,12 @@
 //! 367/374/375/377/378/379/380/430-434, e13 (per e14's header)
 //! 37/43/46/47/48/56/61/62/63/64/67/69/73/74/83, e14
 //! 84/93/94/101/102/103/116/120/121/137/141/142/148/149/181; the
-//! wave-A/wave-B rosters on main cover the rest below 182). Batch 1
-//! owns the FIRST 6 — **182/185/195/196/198/199** — the Floaty Gross,
-//! the Snow Flinx, the Lost Girl, the Nymph, the Lihzahrd and the
-//! Lihzahrd Crawler (`ID/NPCID.cs:11041-11075`); batch 2 adds
-//! 201/202/203/204/205/209. Landed 6 kinds per commit.
+//! wave-A/wave-B rosters on main cover the rest below 182). THIS
+//! module owns **182/185/195/196/198/199/201/202/203/204/205/209** —
+//! the Floaty Gross, the Snow Flinx, the Lost Girl, the Nymph, the
+//! Lihzahrd, the Lihzahrd Crawler, the three post-Plantera dungeon
+//! skeletons, the Spiked Jungle Slime, the Moth and the Cyborg
+//! (`ID/NPCID.cs:11041-11095`). Landed 6 kinds per commit.
 //!
 //! Shape: the kinds are NOT in `NpcKind` yet (their AI/spawn machines
 //! are later rounds), so — like `npc_findframe_a.rs` /
@@ -46,8 +47,10 @@
 //!   — the port's town machines do not model them (the
 //!   `npc.rs::humanoid_town_frame` / W4-e14 Santa precedent); the
 //!   walk/idle/air tail (`:69489-69655`) IS carried. The aiStyle-3
-//!   fighters (185/196/198) never leave `ai[0]` 0/1 (the turn
-//!   counter, `NPC.cs:57381-57397` — the wave-B note).
+//!   fighters (185/196/198/201/202/203) never leave `ai[0]` 0/1 (the
+//!   turn counter, `NPC.cs:57381-57397` — the wave-B note); the
+//!   Cyborg (209) is the town member whose poses the town machine
+//!   owns.
 
 // The wiring is a later round (the kinds are not in `NpcKind` yet) —
 // the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
@@ -73,6 +76,24 @@ pub enum FindFrameExtra3Kind {
     Lihzahrd,
     /// `NPCID.LihzahrdCrawler` = 199 (`NPCID.cs:11075`) — `case 199`.
     LihzahrdCrawler,
+    /// `NPCID.HeadacheSkeleton` = 201 (`NPCID.cs:11079`) — the
+    /// humanoid fighter group (`case 201`, `NPC.cs:68579`).
+    HeadacheSkeleton,
+    /// `NPCID.MisassembledSkeleton` = 202 (`NPCID.cs:11081`) — the
+    /// humanoid fighter group (`case 202`, `NPC.cs:68580`).
+    MisassembledSkeleton,
+    /// `NPCID.PantlessSkeleton` = 203 (`NPCID.cs:11083`) — the
+    /// humanoid fighter group (`case 203`, `NPC.cs:68581`).
+    PantlessSkeleton,
+    /// `NPCID.SpikedJungleSlime` = 204 (`NPCID.cs:11085`) — `case 204`
+    /// (the 1/16/59/… slime group).
+    SpikedJungleSlime,
+    /// `NPCID.Moth` = 205 (`NPCID.cs:11087`) — `case 205`.
+    Moth,
+    /// `NPCID.Cyborg` = 209 (`NPCID.cs:11095`) — the humanoid TOWN
+    /// group (`case 209`, `NPC.cs:68584`; `townNPC = true`,
+    /// `NPC.cs:11684`).
+    Cyborg,
 }
 
 impl FindFrameExtra3Kind {
@@ -85,6 +106,12 @@ impl FindFrameExtra3Kind {
             Self::Nymph => 196,
             Self::Lihzahrd => 198,
             Self::LihzahrdCrawler => 199,
+            Self::HeadacheSkeleton => 201,
+            Self::MisassembledSkeleton => 202,
+            Self::PantlessSkeleton => 203,
+            Self::SpikedJungleSlime => 204,
+            Self::Moth => 205,
+            Self::Cyborg => 209,
         }
     }
 
@@ -99,6 +126,12 @@ impl FindFrameExtra3Kind {
             Self::Nymph => 14,
             Self::Lihzahrd => 16,
             Self::LihzahrdCrawler => 8,
+            Self::HeadacheSkeleton => 15,
+            Self::MisassembledSkeleton => 15,
+            Self::PantlessSkeleton => 16,
+            Self::SpikedJungleSlime => 2,
+            Self::Moth => 3,
+            Self::Cyborg => 26,
         }
     }
 }
@@ -113,6 +146,12 @@ pub fn find_frame_kind_extra3(vanilla_type: i16) -> Option<FindFrameExtra3Kind> 
         196 => FindFrameExtra3Kind::Nymph,
         198 => FindFrameExtra3Kind::Lihzahrd,
         199 => FindFrameExtra3Kind::LihzahrdCrawler,
+        201 => FindFrameExtra3Kind::HeadacheSkeleton,
+        202 => FindFrameExtra3Kind::MisassembledSkeleton,
+        203 => FindFrameExtra3Kind::PantlessSkeleton,
+        204 => FindFrameExtra3Kind::SpikedJungleSlime,
+        205 => FindFrameExtra3Kind::Moth,
+        209 => FindFrameExtra3Kind::Cyborg,
         _ => return None,
     })
 }
@@ -132,10 +171,9 @@ pub struct FrameState {
     pub rotation: f32,
 }
 
-/// The per-tick inputs the arms read: `velocity`, `direction` and
-/// the `ai` slots. `ai_action` is not carried yet — none of batch
-/// 1's arms reads the `num2` motion class (`NPC.cs:66696-66704`);
-/// batch 2's slime arm adds it.
+/// The per-tick inputs the arms read: `velocity`, `direction`, the
+/// `ai` slots and `aiAction` (the slime group's `num2` motion class,
+/// `NPC.cs:66696-66704`).
 #[derive(Clone, Copy, Debug)]
 pub struct FrameInput {
     pub vx: f32,
@@ -144,11 +182,13 @@ pub struct FrameInput {
     /// the arms that gate on `direction == 1` / `== -1`).
     pub direction: i32,
     pub ai: [f32; 4],
+    /// `NPC.aiAction` — 0 the motion class, 1 the attack (`num2 = 4`).
+    pub ai_action: i32,
 }
 
 impl Default for FrameInput {
     fn default() -> Self {
-        Self { vx: 0.0, vy: 0.0, direction: 1, ai: [0.0; 4] }
+        Self { vx: 0.0, vy: 0.0, direction: 1, ai: [0.0; 4], ai_action: 0 }
     }
 }
 
@@ -186,20 +226,28 @@ pub fn find_frame_extra3(kind: FindFrameExtra3Kind, s: &mut FrameState, i: &Fram
                 s.row = 0;
             }
         }
-        // The humanoid-group case list (`NPC.cs:68575-68578` carries
-        // 185/196/198) → the shared fighter walk
+        // The humanoid-group case list (`NPC.cs:68575-68581` carries
+        // 185/196/198/201/202/203) → the shared fighter walk
         // (`NPC.cs:68647-69655`) via the wave-B keep-one helper (the
         // e14 ChaosElemental/FaceMonster delegate precedent). None is
         // `isLikeATownNPC` (`NPC.cs:6856-6866` — only 453 + the town
-        // flag; the three SetDefaults arms `:11365`/`:11510`/`:11537`
-        // set aiStyle 3, no townNPC), so `num57` = 0 and the walk
-        // wraps at the FULL `npcFrameCount`; none is a town slime, so
-        // `num108` = 6 and `num109` = row 2. None of the three is in
-        // the airborne pin list (`:69647`) — the air holds the
-        // group's row 1. None is the 140/489 idle-row-1 pair.
+        // flag; the six SetDefaults arms `:11365`/`:11510`/`:11537`/
+        // `:11576`/`:11589`/`:11602` set aiStyle 3, no townNPC), so
+        // `num57` = 0 and the walk wraps at the FULL `npcFrameCount`;
+        // none is a town slime, so `num108` = 6 and `num109` = row 2.
+        // The airborne pin list (`:69647`) carries 201/202 (row 0)
+        // but NOT 185/196/198/203 (the group's row 1). None is the
+        // 140/489 idle-row-1 pair.
         FindFrameExtra3Kind::SnowFlinx
         | FindFrameExtra3Kind::Nymph
-        | FindFrameExtra3Kind::Lihzahrd => {
+        | FindFrameExtra3Kind::Lihzahrd
+        | FindFrameExtra3Kind::HeadacheSkeleton
+        | FindFrameExtra3Kind::MisassembledSkeleton
+        | FindFrameExtra3Kind::PantlessSkeleton => {
+            let air_row0 = matches!(
+                kind,
+                FindFrameExtra3Kind::HeadacheSkeleton | FindFrameExtra3Kind::MisassembledSkeleton
+            );
             let bi = crate::npc_findframe_b::FrameInput {
                 vx: i.vx,
                 vy: i.vy,
@@ -213,7 +261,7 @@ pub fn find_frame_extra3(kind: FindFrameExtra3Kind, s: &mut FrameState, i: &Fram
                 sprite_dir: s.sprite_dir,
                 rotation: s.rotation,
             };
-            crate::npc_findframe_b::humanoid_fighter_frame(&mut bs, &bi, count, false, false);
+            crate::npc_findframe_b::humanoid_fighter_frame(&mut bs, &bi, count, air_row0, false);
             s.row = bs.row;
             s.counter = bs.counter;
             s.sprite_dir = bs.sprite_dir;
@@ -280,6 +328,118 @@ pub fn find_frame_extra3(kind: FindFrameExtra3Kind, s: &mut FrameState, i: &Fram
                 }
             }
         }
+        // `case 204` in the slime group (`NPC.cs:70801-70846`, shared
+        // with 1/16/59/71/81/138/147/183/184/225/302/304/333-336/535/
+        // 537/658/659/667/676): the `num2` motion class doubles the
+        // counter while moving/airborne and triples it while
+        // attacking; the 8-tick stride walks the 2-row sheet. The
+        // `type == 302 || type == 304` spriteDirection snap
+        // (`:70824-70827`) is the town slimes' — 204 writes no flip.
+        // SAME machine as wave A's slime arm (`npc_findframe_a.rs`,
+        // the 1/16/… group) — the verbatim twin keeps this branch
+        // self-contained (the d49 scorpion precedent); the merger
+        // dedupes to one shared arm.
+        FindFrameExtra3Kind::SpikedJungleSlime => {
+            // `NPC.cs:66696-66704` — the num2 motion class.
+            let num2 = if i.ai_action == 0 {
+                if i.vy < 0.0 {
+                    2
+                } else if i.vy > 0.0 {
+                    3
+                } else if i.vx != 0.0 {
+                    1
+                } else {
+                    0
+                }
+            } else if i.ai_action == 1 {
+                4
+            } else {
+                0
+            };
+            // `:70828-70845`.
+            s.counter += 1.0;
+            if num2 > 0 {
+                s.counter += 1.0;
+            }
+            if num2 == 4 {
+                s.counter += 1.0;
+            }
+            if s.counter >= 8.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= count {
+                s.row = 0;
+            }
+        }
+        // `case 205` (`NPC.cs:74935-74957`): the Moth's half-tick
+        // flutter — `frameCounter += 0.5` then the <2/<4/<6/<8 bands
+        // pick rows 0/1/2/1; the `else` zeroes the counter WITHOUT
+        // writing the row (the vanilla quirk — the row HOLDS 1 for
+        // that tick, then the cycle restarts at row 0).
+        FindFrameExtra3Kind::Moth => {
+            s.counter += 0.5;
+            if s.counter < 2.0 {
+                s.row = 0;
+            } else if s.counter < 4.0 {
+                s.row = 1;
+            } else if s.counter < 6.0 {
+                s.row = 2;
+            } else if s.counter < 8.0 {
+                s.row = 1;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+        // `case 209` in the humanoid-group case list
+        // (`NPC.cs:68584`) → the shared TOWN walk
+        // (`NPC.cs:68647-69655`). The Cyborg IS `isLikeATownNPC`
+        // (`townNPC = true`, `NPC.cs:11684`), so `num57` =
+        // `ExtraFramesCount[209]` = 10 (`NPCID.cs:10464`) and the walk
+        // band wraps at row 26 - 10 = 16 (rows 2..15). He is not a
+        // town slime (`num108` = 6, `num109` = row 2), not the
+        // 140/489 idle-row-1 pair (idle snaps to row 0), and NOT in
+        // the `:69647` air pin list (the air holds row 1). The town
+        // `ai[0]` sit/talk/attack pose zones (`:68662-69488`, with
+        // their chat-bubble `Main.rand` draws) are the documented
+        // skip — the `npc.rs::humanoid_town_frame` / W4-e14 Santa
+        // precedent.
+        FindFrameExtra3Kind::Cyborg => {
+            if i.vy == 0.0 {
+                // `:68649-68656` — only direction ±1 writes.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.vx == 0.0 {
+                    // `:69515-69519`.
+                    s.row = 0;
+                    s.counter = 0.0;
+                } else {
+                    // `:69521-69585` — num108 = 6, num109 = row 2.
+                    if s.row < 2 {
+                        s.row = 2;
+                    }
+                    s.counter += i.vx.abs() * 2.0;
+                    s.counter += 1.0;
+                    if s.counter > 6.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    // `:69581-69584` — the ExtraFramesCount-10 wrap.
+                    if s.row >= count - 10 {
+                        s.row = 2;
+                    }
+                }
+            } else {
+                // `:69642-69646` — the group's air row 1 (209 is not
+                // in the `:69647` pin list).
+                s.counter = 0.0;
+                s.row = 1;
+            }
+        }
     }
 }
 
@@ -313,6 +473,12 @@ mod tests {
             FindFrameExtra3Kind::Nymph,
             FindFrameExtra3Kind::Lihzahrd,
             FindFrameExtra3Kind::LihzahrdCrawler,
+            FindFrameExtra3Kind::HeadacheSkeleton,
+            FindFrameExtra3Kind::MisassembledSkeleton,
+            FindFrameExtra3Kind::PantlessSkeleton,
+            FindFrameExtra3Kind::SpikedJungleSlime,
+            FindFrameExtra3Kind::Moth,
+            FindFrameExtra3Kind::Cyborg,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -339,7 +505,7 @@ mod tests {
         assert_eq!(s.rotation, 0.0);
         find_frame_extra3(FindFrameExtra3Kind::FloatyGross, &mut s, &input(-3.0, 0.0));
         assert_eq!(s.sprite_dir, -1);
-        assert_eq!(s.rotation, -0.3);
+        assert_eq!(s.rotation, -3.0f32 * 0.1, "the C#'s vx * 0.1f product");
     }
 
     /// 185 SnowFlinx: the fighter walk — idle row 0, the |vx|*2+1
@@ -419,13 +585,77 @@ mod tests {
         assert_eq!((s.row, s.counter), (2, 0.0));
     }
 
-    /// The seam maps exactly the batch's vanilla types and nothing
-    /// else.
+    /// 201/202 pin row 0 in the air (the `:69647` list); 203 keeps
+    /// the group's row 1. All three walk their full sheets.
+    #[test]
+    fn f26_dungeon_skeletons_air_pins_split() {
+        for k in [FindFrameExtra3Kind::HeadacheSkeleton, FindFrameExtra3Kind::MisassembledSkeleton] {
+            let air = rows_over(k, input(1.0, -2.0), 3);
+            assert_eq!(air, vec![0, 0, 0], "type {} pins 0", k.vanilla_type());
+        }
+        let air = rows_over(FindFrameExtra3Kind::PantlessSkeleton, input(1.0, -2.0), 3);
+        assert_eq!(air, vec![1, 1, 1]);
+        let walk = rows_over(FindFrameExtra3Kind::PantlessSkeleton, input(1.0, 0.0), 60);
+        assert!(walk.iter().all(|&r| (2..16).contains(&r)));
+        assert!(walk.windows(2).any(|w| w[0] == 15 && w[1] == 2));
+    }
+
+    /// 204 SpikedJungleSlime: the num2 motion class — idle steps
+    /// every 8 ticks, moving every 4, attacking every ~3 (the wave-A
+    /// slime shape, `NPC.cs:70828-70845`).
+    #[test]
+    fn f26_spiked_jungle_slime_motion_class() {
+        let idle = rows_over(FindFrameExtra3Kind::SpikedJungleSlime, input(0.0, 0.0), 9);
+        assert_eq!(&idle[..8], &[0, 0, 0, 0, 0, 0, 0, 1]);
+        let moving = rows_over(FindFrameExtra3Kind::SpikedJungleSlime, input(1.0, 0.0), 5);
+        assert_eq!(moving, vec![0, 0, 0, 1, 1]);
+        let mut s = FrameState::default();
+        let i = FrameInput { ai_action: 1, ..Default::default() };
+        for _ in 0..3 {
+            find_frame_extra3(FindFrameExtra3Kind::SpikedJungleSlime, &mut s, &i);
+        }
+        assert_eq!(s.row, 1, "3 ticks x 3 = 9 >= 8");
+        // No sprite write (the 302/304 snap is the town slimes').
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra3(FindFrameExtra3Kind::SpikedJungleSlime, &mut s, &input(2.0, 0.0));
+        assert_eq!(s.sprite_dir, -1);
+    }
+
+    /// 205 Moth: the half-tick 0/1/2/1 flutter with the reset-tick
+    /// row-HOLD quirk (`NPC.cs:74935-74957`).
+    #[test]
+    fn f26_moth_flutter_holds_on_the_reset_tick() {
+        let rows = rows_over(FindFrameExtra3Kind::Moth, input(0.0, 0.0), 17);
+        // counter 0.5..1.5 → row 0 (3 ticks), 2..3.5 → 1 (4), 4..5.5
+        // → 2 (4), 6..7.5 → 1 (4), 8 → reset (row HOLDS 1), restart.
+        assert_eq!(&rows[..16], &[0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1]);
+        assert_eq!(rows[16], 0, "the cycle restarts after the hold");
+    }
+
+    /// 209 Cyborg: the town walk wraps at 26 - 10 = 16 (rows 2..15,
+    /// `ExtraFramesCount[209]` = 10), idle row 0, air row 1.
+    #[test]
+    fn f26_cyborg_town_band_wraps_at_sixteen() {
+        let idle = rows_over(FindFrameExtra3Kind::Cyborg, input(0.0, 0.0), 3);
+        assert_eq!(idle, vec![0, 0, 0]);
+        let walk = rows_over(FindFrameExtra3Kind::Cyborg, input(1.0, 0.0), 60);
+        assert!(walk.iter().all(|&r| (2..16).contains(&r)), "rows 2..15 only");
+        assert!(walk.windows(2).any(|w| w[0] == 15 && w[1] == 2));
+        let air = rows_over(FindFrameExtra3Kind::Cyborg, input(1.0, 2.0), 3);
+        assert_eq!(air, vec![1, 1, 1]);
+        // direction 0 leaves the flip alone (the ±1-only writes).
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        let i = FrameInput { direction: 0, ..input(1.0, 0.0) };
+        find_frame_extra3(FindFrameExtra3Kind::Cyborg, &mut s, &i);
+        assert_eq!(s.sprite_dir, -1);
+    }
+
+    /// The seam maps exactly the 12 vanilla types and nothing else.
     #[test]
     fn f26_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra3(t);
-            let claimed = [182, 185, 195, 196, 198, 199];
+            let claimed = [182, 185, 195, 196, 198, 199, 201, 202, 203, 204, 205, 209];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
