@@ -985,6 +985,14 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
         crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
+        // W4-d122 shop 1: the Merchant's seed/weather/party gates
+        // (`Chest.cs:1387-1438`).
+        not_the_bees: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+        happy_windy_day: app.wind.happy_windy_day,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
     };
     let inv_ids: Vec<u16> = app
         .inventory

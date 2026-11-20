@@ -11,7 +11,7 @@ use tr_core::{UnifiedRandom, World};
 
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
-/// these; the party/custom-seed gates sit constants-off).
+/// these; the halloween rows sit constants-off — no season system).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
@@ -89,6 +89,18 @@ pub struct ShopFlags {
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
     pub travel_stock: [u16; 40],
+    /// W4-d122 shop 1: `Main.notTheBeesWorld` (`WorldGen.cs:11116`, the
+    /// `SecretSeed.notTheBees` option) — the Merchant's Honey Dispenser
+    /// block 4388 (`Chest.cs:1387`) and the jungle-row anniversary arm
+    /// (`:1417`). Fed from `World.seeds`' `NOT_THE_BEES` bit.
+    pub not_the_bees: bool,
+    /// W4-d122 shop 1: `Main.IsItAHappyWindyDay` (`Main.cs:2903`, the
+    /// sticky windy-day flag the port's `Wind.happy_windy_day` carries) —
+    /// the Pin Wheel 4074 (`Chest.cs:1422`'s `dayTime &&` conjunct).
+    pub happy_windy_day: bool,
+    /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`)
+    /// — the Party Bundle 5643 (`Chest.cs:1435`).
+    pub party_is_up: bool,
 }
 
 impl Default for ShopFlags {
@@ -130,6 +142,9 @@ impl Default for ShopFlags {
             infected_seed: false,
             crimson_world: false,
             travel_stock: [0; 40],
+            not_the_bees: false,
+            happy_windy_day: false,
+            party_is_up: false,
         }
     }
 }
@@ -172,6 +187,9 @@ impl ShopFlags {
             eclipse: world.eclipse,
             downed_boss1: world.downed_eoc,
             downed_golem: world.downed_golem,
+            // W4-d122 shop 1: `Main.notTheBeesWorld` rides the seed options
+            // (`WorldGen.cs:11116`) — the port's persisted `World.seeds` bit.
+            not_the_bees: world.seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
             ..Self::default()
         }
     }
@@ -334,6 +352,19 @@ pub enum StockWhen {
     /// trio is the NOT of the Jetpack gate; `:2224-2227`'s Green Solution
     /// is the NOT of both prior branches).
     Not(&'static StockWhen),
+    /// W4-d122 shop 1: `Main.notTheBeesWorld && !Main.remixWorld`
+    /// (`Chest.cs:1387`) — the Honey Dispenser block 4388.
+    NotTheBeesNotRemix,
+    /// W4-d122 shop 1: `Main.player[Main.myPlayer].ZoneJungle ||
+    /// (Main.tenthAnniversaryWorld && Main.notTheBeesWorld &&
+    /// !Main.remixWorld)` (`Chest.cs:1417`) — the Jungle Rose 33.
+    JungleOrBeesAnniversary,
+    /// W4-d122 shop 1: `Main.dayTime && Main.IsItAHappyWindyDay`
+    /// (`Chest.cs:1422`) — the Pin Wheel 4074.
+    DayHappyWindyDay,
+    /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`Chest.cs:1435`) —
+    /// the Party Bundle 5643.
+    PartyIsUp,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -343,7 +374,9 @@ pub enum StockWhen {
 pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
     let _ = inventory_ids;
     match shop_index {
-        // The Merchant (`Chest.cs:1371-1483`).
+        // The Merchant (`Chest.cs:1371-1483`, the registry
+        // `NPCInteractions.Shop(17, 1)`, `NPCInteractions.cs:488`): every
+        // row in the C#'s num order, every gate verbatim.
         1 => vec![
             row(88, StockWhen::Always),
             row(87, StockWhen::Always),
@@ -352,33 +385,39 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3509, StockWhen::Always),
             row(3506, StockWhen::Always),
             row(8, StockWhen::Always),
-            // `:1379-1382`'s notTheBees row sits constants-off (the custom
-            // seeds).
+            // `:1387-1391`: `Main.notTheBeesWorld && !Main.remixWorld`.
+            row(4388, StockWhen::NotTheBeesNotRemix),
             row(28, StockWhen::Always),
-            row(188, StockWhen::HardMode),
+            row(188, StockWhen::HardMode), // `:1394-1398`
             row(110, StockWhen::Always),
-            row(189, StockWhen::HardMode),
+            row(189, StockWhen::HardMode), // `:1401-1405`
             row(40, StockWhen::Always),
             row(42, StockWhen::Always),
             row(965, StockWhen::Always),
-            row(967, StockWhen::ZoneSnow),
-            row(33, StockWhen::ZoneJungle),
-            // `:1428-1430`'s happy-windy-day row rides the weather pass.
-            row(279, StockWhen::BloodMoon),
-            row(282, StockWhen::Night),
-            // `:1435-1437`'s party row sits constants-off (the BirthdayParty
-            // system lands with the party event).
-            row(346, StockWhen::DownedBoss3),
-            row(488, StockWhen::HardMode),
-            row(1786, StockWhen::Always),
-            row(1348, StockWhen::HardMode),
-            row(3198, StockWhen::HardMode),
-            row(4063, StockWhen::DownedBoss2Or3OrHard),
-            row(4673, StockWhen::DownedBoss2Or3OrHard),
+            row(967, StockWhen::ZoneSnow), // `:1412-1416`
+            // `:1417-1421`: `ZoneJungle || (tenthAnniversaryWorld &&
+            // notTheBeesWorld && !remixWorld)`.
+            row(33, StockWhen::JungleOrBeesAnniversary),
+            // `:1422-1425`: `Main.dayTime && Main.IsItAHappyWindyDay`.
+            row(4074, StockWhen::DayHappyWindyDay),
+            row(279, StockWhen::BloodMoon), // `:1426-1430`
+            row(282, StockWhen::Night),     // `:1431-1434`
+            // `:1435-1438`: `BirthdayParty.PartyIsUp`.
+            row(5643, StockWhen::PartyIsUp),
+            row(346, StockWhen::DownedBoss3), // `:1439-1443`
+            row(488, StockWhen::HardMode),    // `:1444-1448`
+            // `:1449-1459`: the 58-slot scan for the Flower Boots 930 →
+            // the 931/1614 pair (BEFORE the 1786 row in the num order).
             row(931, StockWhen::PlayerHasItem(930)),
             row(1614, StockWhen::PlayerHasItem(930)),
-            // `:1480-1482`'s HasItem(3107) → 3108 row lands with the
-            // inventory-scan pass.
+            row(1786, StockWhen::Always),
+            row(1348, StockWhen::HardMode), // `:1462-1466`
+            row(3198, StockWhen::HardMode), // `:1467-1471`
+            // `:1472-1476`: `downedBoss2 || downedBoss3 || hardMode`.
+            row(4063, StockWhen::DownedBoss2Or3OrHard),
+            row(4673, StockWhen::DownedBoss2Or3OrHard),
+            // `:1477-1481`: `HasItem(3107)` — the Combat Wrench 3108.
+            row(3108, StockWhen::PlayerHasItem(3107)),
         ],
         // The Arms Dealer (`Chest.cs:1484-1567`): the Musket Balls 97, the
         // Flintlock 95?/98 rows always; the PlayerHasItem rows; the
@@ -1668,6 +1707,16 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             // constants-off (the recorded deviation).
             StockWhen::Halloween => false,
             StockWhen::MoonPhaseAtLeast(n) => moon_phase >= n,
+            // W4-d122 shop 1 (`Chest.cs:1387` verbatim).
+            StockWhen::NotTheBeesNotRemix => flags.not_the_bees && !flags.remix_world,
+            // `Chest.cs:1417` verbatim.
+            StockWhen::JungleOrBeesAnniversary => {
+                flags.zone_jungle
+                    || (flags.anniversary_world && flags.not_the_bees && !flags.remix_world)
+            }
+            // `Chest.cs:1422` verbatim (`Night` is `!dayTime` on the flags).
+            StockWhen::DayHappyWindyDay => !flags.night && flags.happy_windy_day,
+            StockWhen::PartyIsUp => flags.party_is_up,
             // The combinators are handled above — unreachable here.
             StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
         },
@@ -2146,6 +2195,112 @@ mod tests {
         // their NPCs — 1..8, 15..19, 22).
         assert!(resolve_stock(0, &ShopFlags::default(), &[]).is_empty());
         assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
+    }
+
+    /// W4-d122 shop 1 — the Merchant (`Chest.cs:1371-1483`, the registry
+    /// `NPCInteractions.Shop(17, 1)`, `NPCInteractions.cs:488`): the FULL
+    /// num order, every gate verbatim — the notTheBees block, the
+    /// jungle-or-anniversary-bees arm, the happy-windy-day Pin Wheel, the
+    /// party bundle, the Flower-Boots scan BEFORE the 1786 row and the
+    /// HasItem(3107) tail. Written, not run (code-only).
+    #[test]
+    fn the_merchant_full_stock_pins_the_num_order_and_every_gate() {
+        // Classic day, phase 0, no carried items: the always rows only.
+        let base = resolve_stock(1, &ShopFlags::default(), &[]);
+        assert_eq!(
+            base,
+            vec![88, 87, 35, 1991, 3509, 3506, 8, 28, 110, 40, 42, 965, 1786]
+        );
+        // `:1387`: notTheBees && !remix → 4388 right after the Torch 8.
+        let bees = ShopFlags {
+            not_the_bees: true,
+            ..Default::default()
+        };
+        let b = resolve_stock(1, &bees, &[]);
+        assert_eq!(&b[..9], &[88, 87, 35, 1991, 3509, 3506, 8, 4388, 28]);
+        // remix ON kills the block again (`:1387`'s second conjunct).
+        let bees_remix = ShopFlags {
+            remix_world: true,
+            ..bees
+        };
+        assert!(!resolve_stock(1, &bees_remix, &[]).contains(&4388));
+        // `:1417`: the jungle alone opens 33; so does the anniversary +
+        // bees + !remix trio WITHOUT the jungle.
+        let jungle = ShopFlags {
+            zone_jungle: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &jungle, &[]).contains(&33));
+        let anni_bees = ShopFlags {
+            anniversary_world: true,
+            not_the_bees: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &anni_bees, &[]).contains(&33));
+        let anni_bees_remix = ShopFlags {
+            remix_world: true,
+            ..anni_bees
+        };
+        assert!(!resolve_stock(1, &anni_bees_remix, &[]).contains(&33));
+        // `:1422`: DAY + happy-windy-day → the Pin Wheel 4074; night kills it.
+        let windy = ShopFlags {
+            happy_windy_day: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(1, &windy, &[]).contains(&4074));
+        let windy_night = ShopFlags {
+            night: true,
+            ..windy
+        };
+        assert!(!resolve_stock(1, &windy_night, &[]).contains(&4074));
+        // `:1435`: the party bundle sits between the Glowstick 282 and the
+        // Skeletron row 346 in the num order.
+        let party = ShopFlags {
+            party_is_up: true,
+            night: true,
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let p = resolve_stock(1, &party, &[]);
+        let i282 = p.iter().position(|v| *v == 282).unwrap();
+        assert_eq!(p[i282 + 1], 5643, "the party row follows the Glowstick");
+        assert_eq!(p[i282 + 2], 346);
+        // The Flower-Boots scan rows sit BEFORE 1786 (`:1449-1461`).
+        let boots = resolve_stock(1, &ShopFlags::default(), &[930]);
+        let i931 = boots.iter().position(|v| *v == 931).unwrap();
+        assert_eq!(boots[i931 + 1], 1614);
+        assert_eq!(boots[i931 + 2], 1786, "the pair precedes the 1786 row");
+        // The FULL pin: hardmode + night + blood moon + snow + jungle +
+        // boss2/3 + windy + party + bees + both scan items.
+        let full = ShopFlags {
+            hard_mode: true,
+            night: true,
+            blood_moon: true,
+            zone_snow: true,
+            zone_jungle: true,
+            downed_boss2: true,
+            downed_boss3: true,
+            not_the_bees: true,
+            happy_windy_day: true,
+            party_is_up: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(1, &full, &[930, 3107]),
+            vec![
+                88, 87, 35, 1991, 3509, 3506, 8, 4388, 28, 188, 110, 189, 40, 42, 965, 967, 33,
+                279, 282, 5643, 346, 488, 931, 1614, 1786, 1348, 3198, 4063, 4673, 3108
+            ],
+            "the exact num order (`:1373-1481`; the day-gated 4074 stays out at night)"
+        );
+        // The day twin: the Pin Wheel enters at its num slot (`:1422`).
+        let day = ShopFlags {
+            night: false,
+            ..full
+        };
+        let d = resolve_stock(1, &day, &[930, 3107]);
+        let i33 = d.iter().position(|v| *v == 33).unwrap();
+        assert_eq!(d[i33 + 1], 4074);
     }
 
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —
