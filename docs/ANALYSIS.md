@@ -39324,3 +39324,13 @@ spawn); the 5's type pick rides BEFORE its spawn. The `DeathSnapshot` gains
 `old_vel`/`ai1` for the ai[1]-driven picks (the 346/335). Witnesses: the
 gated-burst stream census (internals + 20 gates), the Jesters type-pick set,
 the 93 Y kick, the ai[1] picks + noGravity bursts — WRITTEN NOT RUN.
+
+### Batch 3 (10 kinds, the velocity-subtract + plain `:74752-75667` bursts)
+
+158/159/160/161 (10× dust-9/11/19/11, noGravity + velocity −= vel×0.5), 1124
+(5× dust-26), 2/82 (10× dust-6 alpha 100), 51/267 (5× dust-0 scale 0.7),
+3/48/54/599/909 (10× dust-1 speed vel×0.1 scale 0.75), 330 (10× dust-0 speed
+vel×0.4 scale 0.75), 4 (10× dust-14 alpha 150 scale 1.1). All dust-only, no
+explicit draw (the velocity-subtract family's randomness is the internals).
+Witnesses: the velocity-subtract witness-pool comparison + stream-neutrality,
+the batch-3 plain-burst counts/types — WRITTEN NOT RUN.

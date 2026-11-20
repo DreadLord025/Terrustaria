@@ -199,6 +199,27 @@ fn death_bursts(
         // `:75562-75569` — the 55/719: 5 dust-18 scale 1.5, noGravity. No
         // explicit draw.
         55 | 719 => plain_burst(s, dust, rng, ctx, world, 5, 18, 0.0, 0.0, 0, Color::default(), 1.5, None, true),
+        // `:74770-74779` — the 158: 10 dust-9, noGravity + velocity -= vel×0.5.
+        158 => velocity_sub_burst(s, dust, rng, ctx, world, 10, 9, 0.5),
+        // `:74780-74789` — the 159: 10 dust-11, noGravity + velocity -= vel×0.5.
+        159 => velocity_sub_burst(s, dust, rng, ctx, world, 10, 11, 0.5),
+        // `:74790-74799` — the 160: 10 dust-19, noGravity + velocity -= vel×0.5.
+        160 => velocity_sub_burst(s, dust, rng, ctx, world, 10, 19, 0.5),
+        // `:74800-74809` — the 161: 10 dust-11, noGravity + velocity -= vel×0.5.
+        161 => velocity_sub_burst(s, dust, rng, ctx, world, 10, 11, 0.5),
+        // `:74752-74759` — the 1124: 5 dust-26 (no post write, no draw).
+        1124 => plain_burst(s, dust, rng, ctx, world, 5, 26, 0.0, 0.0, 0, Color::default(), 1.0, None, false),
+        // `:75592-75599` — the 2/82: 10 dust-6 alpha 100 (no post write).
+        2 | 82 => plain_burst(s, dust, rng, ctx, world, 10, 6, 0.0, 0.0, 100, Color::default(), 1.0, None, false),
+        // `:75570-75577` — the 51/267: 5 dust-0 scale 0.7 (no post write).
+        51 | 267 => plain_burst(s, dust, rng, ctx, world, 5, 0, 0.0, 0.0, 0, Color::default(), 0.7, None, false),
+        // `:75644-75651` — the 3/48/54/599/909: 10 dust-1, speed = vel×0.1,
+        // scale 0.75 (no post write).
+        3 | 48 | 54 | 599 | 909 => plain_burst(s, dust, rng, ctx, world, 10, 1, s.vel.x * 0.1, s.vel.y * 0.1, 0, Color::default(), 0.75, None, false),
+        // `:75652-75659` — the 330: 10 dust-0, speed = vel×0.4, scale 0.75.
+        330 => plain_burst(s, dust, rng, ctx, world, 10, 0, s.vel.x * 0.4, s.vel.y * 0.4, 0, Color::default(), 0.75, None, false),
+        // `:75660-75667` — the 4 UnholyArrow: 10 dust-14 alpha 150 scale 1.1.
+        4 => plain_burst(s, dust, rng, ctx, world, 10, 14, 0.0, 0.0, 150, Color::default(), 1.1, None, false),
         _ => {}
     }
 }
@@ -288,6 +309,27 @@ fn no_gravity_gate_burst(
         if rng.next_max(2) == 0 {
             dust.slot_mut(idx).no_gravity = true;
         }
+    }
+}
+
+/// `count` dust of `dust_type` (default speed/alpha/color/scale), each with
+/// `noGravity = true` and `velocity -= base.velocity * sub` after the spawn —
+/// the 158/159/160/161 shape (`:74775-74777` et al.). No explicit draw.
+fn velocity_sub_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    dust_type: i32,
+    sub: f32,
+) {
+    for _ in 0..count {
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity -= s.vel * sub;
     }
 }
 
@@ -480,6 +522,55 @@ mod tests {
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), 5);
             assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity));
+        }
+    }
+
+    /// The 158/159/160/161 velocity-subtract bursts: 10 dust each, noGravity,
+    /// velocity -= base.velocity×0.5. Compare against a witness pool that ran
+    /// the same spawns WITHOUT the subtract (the default-block velocity is the
+    /// `Next(-20,21)*0.1` jitter; the subtract shifts it by −vel×0.5).
+    #[test]
+    fn w4_g65_the_velocity_subtract_bursts() {
+        let w = world();
+        for (kind, dust_type) in [(158u16, 9), (159, 11), (160, 19), (161, 11)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 10, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity));
+            let mut witness = DustPool::new();
+            let mut wrng = UnifiedRandom::new(7);
+            plain_burst(&snap(kind), &mut witness, &mut wrng, &ctx(), &w, 10, dust_type, 0.0, 0.0, 0, Color::default(), 1.0, None, false);
+            let vel = Vec2::new(4.0, -2.0);
+            for (a, b) in active.iter().zip(witness.slots().iter().filter(|d| d.active)) {
+                assert_eq!(a.velocity, b.velocity - vel * 0.5, "kind {kind} velocity subtract");
+            }
+            // No explicit draw: the stream matches the witness (internals only).
+            assert_eq!(rng, wrng, "kind {kind} stream-neutral");
+        }
+    }
+
+    /// The 2/82, 51/267, 3-family, 330, 4, 1124 plain bursts carry their
+    /// counts/types/speeds/scales and draw nothing explicit.
+    #[test]
+    fn w4_g65_the_batch3_plain_bursts() {
+        let w = world();
+        for (kind, count, dust_type) in [
+            (2u16, 10, 6), (82, 10, 6), (51, 5, 0), (267, 5, 0),
+            (3, 10, 1), (48, 10, 1), (330, 10, 0), (4, 10, 14), (1124, 5, 26),
+        ] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            let before = rng.clone();
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type), "kind {kind} type");
+            // The plain bursts take no explicit draw beyond the internals; the
+            // stream advanced (the internals ran) but the body arguments are
+            // the C#'s. The 330's speed is vel×0.4 (vs the 3-family's ×0.1).
+            assert_ne!(rng, before, "kind {kind} internals ran");
         }
     }
 }
